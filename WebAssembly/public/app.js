@@ -1,6 +1,7 @@
-const compressedLiteralSample = Uint8Array.from([
-  0x10, 0xfb, 0x00, 0x00, 0x03, 0xff, 0x41, 0x42, 0x43,
-]);
+import { createBigArchiveSample, createRefPackLiteralSample } from "./fixtures.js";
+
+const compressedLiteralSample = createRefPackLiteralSample();
+const bigArchiveSample = createBigArchiveSample();
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -8,7 +9,11 @@ const elements = {
   compressed: document.querySelector("[data-compressed]"),
   decoded: document.querySelector("[data-decoded]"),
   consumed: document.querySelector("[data-consumed]"),
+  bigFiles: document.querySelector("[data-big-files]"),
+  bigBytes: document.querySelector("[data-big-bytes]"),
+  bigFirst: document.querySelector("[data-big-first]"),
   bytes: document.querySelector("[data-bytes]"),
+  bigListing: document.querySelector("[data-big-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -43,38 +48,72 @@ function drawByteBars(bytes) {
   });
 }
 
-async function boot() {
-  setStatus("loading", "loading");
-
-  const response = await fetch("../dist/generals_refpack.wasm");
+async function loadWasm(path) {
+  const response = await fetch(path);
   if (!response.ok) {
     throw new Error(`wasm fetch failed: ${response.status}`);
   }
 
-  const { instance } = await WebAssembly.instantiateStreaming(response, {});
-  const exports = instance.exports;
-  const memory = new Uint8Array(exports.memory.buffer);
-  const inputOffset = exports.generals_refpack_input_ptr();
-  const outputOffset = exports.generals_refpack_output_ptr();
+  return WebAssembly.instantiateStreaming(response, {});
+}
 
-  memory.set(compressedLiteralSample, inputOffset);
+async function boot() {
+  setStatus("loading", "loading");
 
-  const isRefPack = exports.generals_refpack_is(0);
-  const expectedSize = exports.generals_refpack_size(0);
-  const decodedSize = exports.generals_refpack_decode(0, 0);
-  const consumedSize = exports.generals_refpack_last_consumed_size();
-  const decodedBytes = memory.slice(outputOffset, outputOffset + decodedSize);
+  const refpackModule = await loadWasm("../dist/generals_refpack.wasm");
+  const refpackExports = refpackModule.instance.exports;
+  const refpackMemory = new Uint8Array(refpackExports.memory.buffer);
+  const inputOffset = refpackExports.generals_refpack_input_ptr();
+  const outputOffset = refpackExports.generals_refpack_output_ptr();
+
+  refpackMemory.set(compressedLiteralSample, inputOffset);
+
+  const isRefPack = refpackExports.generals_refpack_is(0);
+  const expectedSize = refpackExports.generals_refpack_size(0);
+  const decodedSize = refpackExports.generals_refpack_decode(0, 0);
+  const consumedSize = refpackExports.generals_refpack_last_consumed_size();
+  const decodedBytes = refpackMemory.slice(outputOffset, outputOffset + decodedSize);
   const decodedText = new TextDecoder().decode(decodedBytes);
 
   if (isRefPack !== 1 || expectedSize !== 3 || decodedSize !== 3 || decodedText !== "ABC") {
     throw new Error("RefPack decode validation failed");
   }
 
-  elements.module.textContent = `${exports.generals_refpack_input_capacity()} byte input / ${exports.generals_refpack_output_capacity()} byte output`;
+  const bigModule = await loadWasm("../dist/generals_big.wasm");
+  const bigExports = bigModule.instance.exports;
+  const bigMemory = new Uint8Array(bigExports.memory.buffer);
+  const bigInputOffset = bigExports.generals_big_input_ptr();
+  bigMemory.set(bigArchiveSample.archive, bigInputOffset);
+
+  const isBig = bigExports.generals_big_is(bigArchiveSample.archive.length);
+  const bigFileCount = bigExports.generals_big_parse(bigArchiveSample.archive.length);
+
+  if (isBig !== 1 || bigFileCount !== bigArchiveSample.files.length) {
+    throw new Error("BIG archive validation failed");
+  }
+
+  const bigEntries = [];
+  for (let index = 0; index < bigFileCount; ++index) {
+    const namePtr = bigExports.generals_big_entry_name_ptr(index);
+    const nameSize = bigExports.generals_big_entry_name_size(index);
+    const dataSize = bigExports.generals_big_entry_data_size(index);
+    const name = new TextDecoder().decode(bigMemory.slice(namePtr, namePtr + nameSize));
+    bigEntries.push(`${name} (${dataSize} bytes)`);
+  }
+
+  if (bigEntries[0] !== "data/ini/gamedata.ini (15 bytes)") {
+    throw new Error("BIG archive entry validation failed");
+  }
+
+  elements.module.textContent = `${refpackExports.generals_refpack_input_capacity() / 1024} KiB input / ${refpackExports.generals_refpack_output_capacity() / 1024} KiB output`;
   elements.compressed.textContent = `${compressedLiteralSample.length} bytes`;
   elements.decoded.textContent = `${decodedSize} bytes`;
   elements.consumed.textContent = `${consumedSize} bytes`;
+  elements.bigFiles.textContent = `${bigFileCount} files`;
+  elements.bigBytes.textContent = `${bigArchiveSample.archive.length} bytes`;
+  elements.bigFirst.textContent = bigArchiveSample.files[0].name;
   elements.bytes.textContent = hex(compressedLiteralSample);
+  elements.bigListing.textContent = bigEntries.join("\n");
   elements.output.textContent = decodedText;
   drawByteBars(compressedLiteralSample);
   setStatus("pass", "pass");

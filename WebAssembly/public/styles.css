@@ -93,7 +93,7 @@ output[data-state="fail"] {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   margin-bottom: 18px;
@@ -123,7 +123,7 @@ output[data-state="fail"] {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(260px, 0.8fr);
   gap: 18px;
 }
 
@@ -144,7 +144,8 @@ canvas {
 }
 
 code,
-pre {
+pre,
+[data-big-first] {
   display: block;
   min-height: 44px;
   overflow-x: auto;
@@ -163,19 +164,27 @@ pre {
 pre {
   min-height: 220px;
   margin: 16px 0 0;
+}
+
+.result pre {
   font-size: 32px;
   font-weight: 800;
+}
+
+@media (max-width: 980px) {
+  .metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
   main {
     width: min(100% - 20px, 720px);
     padding: 18px 0;
-  }
-
-  header,
-  .workspace {
-    grid-template-columns: 1fr;
   }
 
   header {

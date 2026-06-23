@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRefPackLiteralSample } from "../public/fixtures.js";
 
 const wasmDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const wasmPath = resolve(wasmDir, "dist/generals_refpack.wasm");
@@ -11,9 +12,7 @@ const memory = new Uint8Array(exports.memory.buffer);
 
 const inputOffset = exports.generals_refpack_input_ptr();
 const outputOffset = exports.generals_refpack_output_ptr();
-const compressed = Uint8Array.from([
-  0x10, 0xfb, 0x00, 0x00, 0x03, 0xff, 0x41, 0x42, 0x43,
-]);
+const compressed = createRefPackLiteralSample();
 
 memory.set(compressed, inputOffset);
 

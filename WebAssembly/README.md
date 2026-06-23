@@ -2,15 +2,17 @@
 
 This directory contains the browser/WebAssembly port work.
 
-The first checked-in target is a small, real game-code module around the
-Electronic Arts RefPack decoder in:
+The first checked-in targets are small, real game-data modules:
 
-`Generals/Code/Libraries/Source/Compression/EAC/refdecode.cpp`
+- Electronic Arts RefPack decoding from
+  `Generals/Code/Libraries/Source/Compression/EAC/refdecode.cpp`
+- BIG archive directory parsing based on the format handling in
+  `Generals/Code/GameEngineDevice/Source/Win32Device/Common/Win32BIGFileSystem.cpp`
 
-RefPack support is needed before browser-side loading of many original game data
-formats can work. This target builds with Emscripten when available and falls
-back to a raw Clang wasm build for dependency-free smoke testing. Later targets
-can add filesystem, browser loop, and SDL/WebGL integration.
+RefPack and BIG support are needed before browser-side loading of many original
+game data formats can work. These targets build with Emscripten when available
+and fall back to raw Clang wasm builds for dependency-free smoke testing. Later
+targets can add filesystem, browser loop, and SDL/WebGL integration.
 
 ## Build
 
@@ -21,6 +23,8 @@ bash tools/build_refpack_wasm.sh
 Output:
 
 `dist/generals_refpack.wasm`
+
+`dist/generals_big.wasm`
 
 ## Smoke Test
 
