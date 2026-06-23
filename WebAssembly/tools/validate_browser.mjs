@@ -94,7 +94,7 @@ try {
       const expectedArmorFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: NoArmor (5 assignments)" : "no armor data";
       const expectedWeaponFirst = realAsset.endsWith("INIZH.big") ? "data/ini/weapon.ini: MarauderTankGun (ARMOR_PIERCING)" : "no weapon data";
       const expectedThingFirst = realAsset.endsWith("INIZH.big")
-        ? "data/ini/object/americavehicle.ini: AmericaVehicleHumvee -> HumveeGun / HumveeArmor"
+        ? "data/ini/object/americavehicle.ini: AmericaVehicleHumvee -> HumveeGun / HumveeArmor, needs AmericaWarFactory"
         : "no object data";
       const expectedCommandFirst = realAsset.endsWith("INIZH.big")
         ? "AmericaDozerCommandSet: 1 Command_ConstructAmericaPowerPlant -> AmericaPowerPlant"

@@ -34,6 +34,10 @@ const elements = {
   thingTemplates: document.querySelector("[data-thing-templates]"),
   thingArmorLinks: document.querySelector("[data-thing-armor-links]"),
   thingWeaponLinks: document.querySelector("[data-thing-weapon-links]"),
+  thingPrereqLinks: document.querySelector("[data-thing-prereq-links]"),
+  thingObjectPrereqs: document.querySelector("[data-thing-object-prereqs]"),
+  thingSciencePrereqs: document.querySelector("[data-thing-science-prereqs]"),
+  thingModules: document.querySelector("[data-thing-modules]"),
   thingFirst: document.querySelector("[data-thing-first]"),
   commandButtons: document.querySelector("[data-command-buttons]"),
   commandFields: document.querySelector("[data-command-fields]"),
@@ -356,6 +360,10 @@ function renderThingEmpty(reason) {
   elements.thingTemplates.textContent = "0 objects";
   elements.thingArmorLinks.textContent = "0 links";
   elements.thingWeaponLinks.textContent = "0 links";
+  elements.thingPrereqLinks.textContent = "0 links";
+  elements.thingObjectPrereqs.textContent = "0 links";
+  elements.thingSciencePrereqs.textContent = "0 links";
+  elements.thingModules.textContent = "0 modules";
   elements.thingFirst.textContent = reason;
   elements.thingListing.textContent = reason;
 }
@@ -408,6 +416,16 @@ function readThingArmorSetString(exports, memory, prefix, index) {
   );
 }
 
+function readThingPrerequisiteString(exports, memory, index) {
+  return readThingString(
+    exports,
+    memory,
+    "generals_thing_prerequisite_value_ptr",
+    "generals_thing_prerequisite_value_size",
+    index
+  );
+}
+
 function parseThingEntries(entries, archiveMemory) {
   const objectEntries = entries.filter(isObjectEntry);
   if (objectEntries.length === 0) {
@@ -422,6 +440,10 @@ function parseThingEntries(entries, archiveMemory) {
   let templateCount = 0;
   let armorSetCount = 0;
   let weaponSetCount = 0;
+  let prerequisiteCount = 0;
+  let objectPrerequisiteCount = 0;
+  let sciencePrerequisiteCount = 0;
+  let moduleCount = 0;
 
   for (const entry of objectEntries) {
     const bytes = entryBytes(entry, archiveMemory);
@@ -439,6 +461,17 @@ function parseThingEntries(entries, archiveMemory) {
     templateCount += parsedCount;
     armorSetCount += exports.generals_thing_armor_set_count();
     weaponSetCount += exports.generals_thing_weapon_set_count();
+    prerequisiteCount += exports.generals_thing_prerequisite_count();
+    moduleCount += exports.generals_thing_module_count();
+
+    for (let prerequisiteIndex = 0; prerequisiteIndex < exports.generals_thing_prerequisite_count(); ++prerequisiteIndex) {
+      const kind = exports.generals_thing_prerequisite_kind(prerequisiteIndex);
+      if (kind === 1) {
+        objectPrerequisiteCount += 1;
+      } else if (kind === 2) {
+        sciencePrerequisiteCount += 1;
+      }
+    }
 
     if (parsedCount > 0 && preview.length < 10) {
       const firstName = readThingTemplateString(exports, memory, "name", 0);
@@ -448,6 +481,7 @@ function parseThingEntries(entries, archiveMemory) {
         templates: parsedCount,
         armorSets: exports.generals_thing_armor_set_count(),
         weaponSets: exports.generals_thing_weapon_set_count(),
+        prerequisites: exports.generals_thing_prerequisite_count(),
       });
     }
 
@@ -456,6 +490,10 @@ function parseThingEntries(entries, archiveMemory) {
       if (name === "AmericaVehicleHumvee") {
         const firstWeaponSet = exports.generals_thing_template_first_weapon_set(index);
         const firstArmorSet = exports.generals_thing_template_first_armor_set(index);
+        const firstPrerequisite = exports.generals_thing_template_first_prerequisite(index);
+        const objectPrerequisite = exports.generals_thing_template_prerequisite_count(index) > 0
+          ? readThingPrerequisiteString(exports, memory, firstPrerequisite)
+          : "";
         featured = {
           file: entry.name,
           name,
@@ -468,6 +506,7 @@ function parseThingEntries(entries, archiveMemory) {
           primaryWeapon: readThingWeaponSetString(exports, memory, "primary", firstWeaponSet),
           secondaryWeapon: readThingWeaponSetString(exports, memory, "secondary", firstWeaponSet + 1),
           armor: readThingArmorSetString(exports, memory, "armor", firstArmorSet),
+          prerequisite: objectPrerequisite,
         };
       }
     }
@@ -478,6 +517,10 @@ function parseThingEntries(entries, archiveMemory) {
     templateCount,
     armorSetCount,
     weaponSetCount,
+    prerequisiteCount,
+    objectPrerequisiteCount,
+    sciencePrerequisiteCount,
+    moduleCount,
     preview,
     featured,
   };
@@ -493,9 +536,14 @@ function renderThingParse(result) {
   elements.thingTemplates.textContent = `${result.templateCount} objects`;
   elements.thingArmorLinks.textContent = `${result.armorSetCount} links`;
   elements.thingWeaponLinks.textContent = `${result.weaponSetCount} links`;
+  elements.thingPrereqLinks.textContent = `${result.prerequisiteCount} links`;
+  elements.thingObjectPrereqs.textContent = `${result.objectPrerequisiteCount} links`;
+  elements.thingSciencePrereqs.textContent = `${result.sciencePrerequisiteCount} links`;
+  elements.thingModules.textContent = `${result.moduleCount} modules`;
 
   if (result.featured) {
-    elements.thingFirst.textContent = `${result.featured.file}: ${result.featured.name} -> ${result.featured.primaryWeapon} / ${result.featured.armor}`;
+    const prerequisite = result.featured.prerequisite ? `, needs ${result.featured.prerequisite}` : "";
+    elements.thingFirst.textContent = `${result.featured.file}: ${result.featured.name} -> ${result.featured.primaryWeapon} / ${result.featured.armor}${prerequisite}`;
   } else {
     const first = result.preview[0];
     elements.thingFirst.textContent = first ? `${first.file}: ${first.firstName}` : "no object data";
@@ -505,14 +553,15 @@ function renderThingParse(result) {
     `${result.featured.name}: ${result.featured.displayName}, side ${result.featured.side}`,
     `cost ${result.featured.buildCost}, build ${formatRealX100(result.featured.buildTime)}s, vision ${formatRealX100(result.featured.visionRange)}`,
     `command ${result.featured.commandSet}`,
+    result.featured.prerequisite ? `prerequisite ${result.featured.prerequisite}` : "",
     `weapons ${result.featured.primaryWeapon}${result.featured.secondaryWeapon ? ` / ${result.featured.secondaryWeapon}` : ""}, armor ${result.featured.armor}`,
     "",
-  ] : [];
+  ].filter((line) => line !== "") : [];
 
   elements.thingListing.textContent = [
     ...featuredLines,
     ...result.preview.map((entry) => {
-      return `${entry.file}: ${entry.templates} objects, ${entry.weaponSets} weapon sets, ${entry.armorSets} armor sets`;
+      return `${entry.file}: ${entry.templates} objects, ${entry.weaponSets} weapon sets, ${entry.armorSets} armor sets, ${entry.prerequisites} prereqs`;
     }),
   ].join("\n");
 }

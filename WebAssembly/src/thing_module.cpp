@@ -4,6 +4,7 @@ static const int INPUT_CAPACITY = 2 * 1024 * 1024;
 static const int MAX_TEMPLATES = 4096;
 static const int MAX_ARMOR_SETS = 8192;
 static const int MAX_WEAPON_SETS = 8192;
+static const int MAX_PREREQUISITES = 8192;
 static const int NAME_CAPACITY = 4 * 1024 * 1024;
 
 enum DirectBlock
@@ -11,7 +12,8 @@ enum DirectBlock
 	BLOCK_NONE = 0,
 	BLOCK_ARMOR_SET = 1,
 	BLOCK_WEAPON_SET = 2,
-	BLOCK_SKIP = 3,
+	BLOCK_PREREQUISITES = 3,
+	BLOCK_SKIP = 4,
 };
 
 enum ThingKindFlag
@@ -53,6 +55,8 @@ struct ThingTemplateRecord
 	int firstArmorSet;
 	int weaponSetCount;
 	int firstWeaponSet;
+	int prerequisiteCount;
+	int firstPrerequisite;
 	int moduleCount;
 	int buildCost;
 	int buildTimeX100;
@@ -89,16 +93,28 @@ struct WeaponSetRecord
 	int line;
 };
 
+struct PrerequisiteRecord
+{
+	int objectIndex;
+	int kind;
+	int valueOffset;
+	int valueSize;
+	int tokenCount;
+	int line;
+};
+
 __attribute__((used, visibility("default"))) unsigned char g_generals_thing_input[INPUT_CAPACITY];
 __attribute__((used, visibility("default"))) char g_generals_thing_names[NAME_CAPACITY];
 
 static ThingTemplateRecord g_generals_thing_templates[MAX_TEMPLATES];
 static ArmorSetRecord g_generals_thing_armor_sets[MAX_ARMOR_SETS];
 static WeaponSetRecord g_generals_thing_weapon_sets[MAX_WEAPON_SETS];
+static PrerequisiteRecord g_generals_thing_prerequisites[MAX_PREREQUISITES];
 static int g_generals_thing_template_count = 0;
 static int g_generals_thing_field_count = 0;
 static int g_generals_thing_armor_set_count = 0;
 static int g_generals_thing_weapon_set_count = 0;
+static int g_generals_thing_prerequisite_count = 0;
 static int g_generals_thing_module_count = 0;
 static int g_generals_thing_line_count = 0;
 static int g_generals_thing_error_count = 0;
@@ -412,7 +428,7 @@ static bool is_direct_nested_block(const char *data, TokenRange token)
 {
 	static const char *blocks[] = {
 		"Draw", "Body", "Behavior", "ClientUpdate", "UnitSpecificSounds",
-		"UnitSpecificFX", "Prerequisites", "InheritableModule", "AddModule",
+		"UnitSpecificFX", "InheritableModule", "AddModule",
 		"ReplaceModule", 0
 	};
 
@@ -442,6 +458,8 @@ static void clear_template(ThingTemplateRecord *record)
 	record->firstArmorSet = g_generals_thing_armor_set_count;
 	record->weaponSetCount = 0;
 	record->firstWeaponSet = g_generals_thing_weapon_set_count;
+	record->prerequisiteCount = 0;
+	record->firstPrerequisite = g_generals_thing_prerequisite_count;
 	record->moduleCount = 0;
 	record->buildCost = 0;
 	record->buildTimeX100 = 100;
@@ -519,6 +537,59 @@ static int start_weapon_set(int objectIndex, int line)
 	record->line = line;
 	++g_generals_thing_templates[objectIndex].weaponSetCount;
 	return setIndex;
+}
+
+static int token_count(const char *data, int start, int end)
+{
+	int cursor = start;
+	TokenRange token;
+	int count = 0;
+	while (next_token(data, &cursor, end, &token)) {
+		++count;
+	}
+
+	return count;
+}
+
+static int start_prerequisite(int objectIndex, int kind, const char *data, int valueStart, int valueEnd, int line, bool firstTokenOnly)
+{
+	if (objectIndex < 0 || objectIndex >= g_generals_thing_template_count ||
+		g_generals_thing_prerequisite_count >= MAX_PREREQUISITES) {
+		++g_generals_thing_error_count;
+		return -1;
+	}
+
+	int storeStart = valueStart;
+	int storeEnd = valueEnd;
+	int count = token_count(data, valueStart, valueEnd);
+	if (firstTokenOnly) {
+		int cursor = valueStart;
+		TokenRange token;
+		if (!next_token(data, &cursor, valueEnd, &token)) {
+			++g_generals_thing_error_count;
+			return -1;
+		}
+		storeStart = token.start;
+		storeEnd = token.end;
+		count = 1;
+	}
+
+	const int valueOffset = store_string(data + storeStart, storeEnd - storeStart);
+	if (valueOffset < 0) {
+		++g_generals_thing_error_count;
+		return -1;
+	}
+
+	const int prereqIndex = g_generals_thing_prerequisite_count++;
+	PrerequisiteRecord *record = &g_generals_thing_prerequisites[prereqIndex];
+	record->objectIndex = objectIndex;
+	record->kind = kind;
+	record->valueOffset = valueOffset;
+	record->valueSize = storeEnd - storeStart;
+	record->tokenCount = count;
+	record->line = line;
+	++g_generals_thing_templates[objectIndex].prerequisiteCount;
+	return prereqIndex;
 }
 
 static void count_field(int objectIndex)
@@ -646,6 +717,15 @@ static void parse_weapon_property(int setIndex, const char *data, int keyStart, 
 	}
 }
 
+static void parse_prerequisite_property(int objectIndex, const char *data, int keyStart, int keyEnd, int valueStart, int valueEnd, int line)
+{
+	if (ascii_equal_ignore_case(data + keyStart, keyEnd - keyStart, "Object")) {
+		start_prerequisite(objectIndex, 1, data, valueStart, valueEnd, line, false);
+	} else if (ascii_equal_ignore_case(data + keyStart, keyEnd - keyStart, "Science")) {
+		start_prerequisite(objectIndex, 2, data, valueStart, valueEnd, line, true);
+	}
+}
+
 static void parse_assignment(DirectBlock directBlock, int objectIndex, int armorSetIndex, int weaponSetIndex, const char *data, int contentStart, int contentEnd)
 {
 	const int equalsIndex = find_equals(data, contentStart, contentEnd);
@@ -664,8 +744,19 @@ static void parse_assignment(DirectBlock directBlock, int objectIndex, int armor
 		parse_armor_property(armorSetIndex, data, keyStart, keyEnd, valueStart, valueEnd);
 	} else if (directBlock == BLOCK_WEAPON_SET) {
 		parse_weapon_property(weaponSetIndex, data, keyStart, keyEnd, valueStart, valueEnd);
+	} else if (directBlock == BLOCK_PREREQUISITES) {
+		parse_prerequisite_property(objectIndex, data, keyStart, keyEnd, valueStart, valueEnd, g_generals_thing_line_count);
 	} else if (directBlock == BLOCK_NONE) {
 		parse_direct_property(objectIndex, data, keyStart, keyEnd, valueStart, valueEnd);
+	}
+}
+
+static void count_nested_block(int objectIndex)
+{
+	count_field(objectIndex);
+	if (objectIndex >= 0 && objectIndex < g_generals_thing_template_count) {
+		++g_generals_thing_templates[objectIndex].moduleCount;
+		++g_generals_thing_module_count;
 	}
 }
 
@@ -697,6 +788,11 @@ __attribute__((used, visibility("default"))) int generals_thing_armor_set_count(
 __attribute__((used, visibility("default"))) int generals_thing_weapon_set_count()
 {
 	return g_generals_thing_weapon_set_count;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_count()
+{
+	return g_generals_thing_prerequisite_count;
 }
 
 __attribute__((used, visibility("default"))) int generals_thing_module_count()
@@ -948,6 +1044,24 @@ __attribute__((used, visibility("default"))) int generals_thing_template_weapon_
 	return g_generals_thing_templates[index].weaponSetCount;
 }
 
+__attribute__((used, visibility("default"))) int generals_thing_template_first_prerequisite(int index)
+{
+	if (index < 0 || index >= g_generals_thing_template_count) {
+		return -1;
+	}
+
+	return g_generals_thing_templates[index].firstPrerequisite;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_template_prerequisite_count(int index)
+{
+	if (index < 0 || index >= g_generals_thing_template_count) {
+		return -1;
+	}
+
+	return g_generals_thing_templates[index].prerequisiteCount;
+}
+
 __attribute__((used, visibility("default"))) int generals_thing_armor_set_object_index(int index)
 {
 	if (index < 0 || index >= g_generals_thing_armor_set_count) {
@@ -1109,12 +1223,67 @@ __attribute__((used, visibility("default"))) int generals_thing_weapon_set_terti
 	return weapon_slot_size(index, 2);
 }
 
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_object_index(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count) {
+		return -1;
+	}
+
+	return g_generals_thing_prerequisites[index].objectIndex;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_kind(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count) {
+		return -1;
+	}
+
+	return g_generals_thing_prerequisites[index].kind;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_value_ptr(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count || g_generals_thing_prerequisites[index].valueOffset < 0) {
+		return 0;
+	}
+
+	return (int)(g_generals_thing_names + g_generals_thing_prerequisites[index].valueOffset);
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_value_size(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count) {
+		return -1;
+	}
+
+	return g_generals_thing_prerequisites[index].valueSize;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_token_count(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count) {
+		return -1;
+	}
+
+	return g_generals_thing_prerequisites[index].tokenCount;
+}
+
+__attribute__((used, visibility("default"))) int generals_thing_prerequisite_line(int index)
+{
+	if (index < 0 || index >= g_generals_thing_prerequisite_count) {
+		return -1;
+	}
+
+	return g_generals_thing_prerequisites[index].line;
+}
+
 __attribute__((used, visibility("default"))) int generals_thing_parse(int inputSize)
 {
 	g_generals_thing_template_count = 0;
 	g_generals_thing_field_count = 0;
 	g_generals_thing_armor_set_count = 0;
 	g_generals_thing_weapon_set_count = 0;
+	g_generals_thing_prerequisite_count = 0;
 	g_generals_thing_module_count = 0;
 	g_generals_thing_line_count = 0;
 	g_generals_thing_error_count = 0;
@@ -1161,7 +1330,7 @@ __attribute__((used, visibility("default"))) int generals_thing_parse(int inputS
 						directBlock = BLOCK_NONE;
 						activeArmorSet = -1;
 						activeWeaponSet = -1;
-					} else if (directBlock == BLOCK_ARMOR_SET || directBlock == BLOCK_WEAPON_SET) {
+					} else if (directBlock == BLOCK_ARMOR_SET || directBlock == BLOCK_WEAPON_SET || directBlock == BLOCK_PREREQUISITES) {
 						parse_assignment(directBlock, activeObject, activeArmorSet, activeWeaponSet, (const char *)g_generals_thing_input, contentStart, contentEnd);
 					}
 				} else if (is_end_token((const char *)g_generals_thing_input, first.start, first.end)) {
@@ -1174,10 +1343,11 @@ __attribute__((used, visibility("default"))) int generals_thing_parse(int inputS
 					count_field(activeObject);
 					activeWeaponSet = start_weapon_set(activeObject, g_generals_thing_line_count);
 					directBlock = BLOCK_WEAPON_SET;
+				} else if (indent <= 2 && token_equals((const char *)g_generals_thing_input, first, "Prerequisites")) {
+					count_nested_block(activeObject);
+					directBlock = BLOCK_PREREQUISITES;
 				} else if (indent <= 2 && is_direct_nested_block((const char *)g_generals_thing_input, first)) {
-					count_field(activeObject);
-					++g_generals_thing_templates[activeObject].moduleCount;
-					++g_generals_thing_module_count;
+					count_nested_block(activeObject);
 					directBlock = BLOCK_SKIP;
 				} else if (indent <= 2) {
 					parse_assignment(BLOCK_NONE, activeObject, -1, -1, (const char *)g_generals_thing_input, contentStart, contentEnd);

@@ -38,6 +38,7 @@ Object AmericaVehicleHumvee
   ShroudClearingRange = 320
   Prerequisites
     Object = AmericaWarFactory
+    Science = SCIENCE_AMERICA
   End
   CommandSet      = AmericaVehicleHumveeCommandSet
   KindOf = PRELOAD SELECTABLE CAN_ATTACK VEHICLE SCORE TRANSPORT
@@ -62,6 +63,10 @@ if (exports.generals_thing_weapon_set_count() !== 2 || exports.generals_thing_ar
   throw new Error(`unexpected set counts: weapon=${exports.generals_thing_weapon_set_count()}, armor=${exports.generals_thing_armor_set_count()}`);
 }
 
+if (exports.generals_thing_prerequisite_count() !== 2) {
+  throw new Error(`expected 2 prerequisites, got ${exports.generals_thing_prerequisite_count()}`);
+}
+
 function readString(ptr, size) {
   return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
 }
@@ -78,6 +83,10 @@ function armorSetString(prefix, index) {
   return readString(exports[`generals_thing_armor_set_${prefix}_ptr`](index), exports[`generals_thing_armor_set_${prefix}_size`](index));
 }
 
+function prerequisiteString(index) {
+  return readString(exports.generals_thing_prerequisite_value_ptr(index), exports.generals_thing_prerequisite_value_size(index));
+}
+
 const name = readString(exports.generals_thing_template_name_ptr(0), exports.generals_thing_template_name_size(0));
 const displayName = templateString("display_name", 0);
 const side = templateString("side", 0);
@@ -85,6 +94,8 @@ const commandSet = templateString("command_set", 0);
 const primaryWeapon = weaponSetString("primary", 0);
 const upgradedSecondary = weaponSetString("secondary", 1);
 const armor = armorSetString("armor", 0);
+const objectPrerequisite = prerequisiteString(0);
+const sciencePrerequisite = prerequisiteString(1);
 const kindFlags = exports.generals_thing_template_kind_flags(0);
 
 if (name !== "AmericaVehicleHumvee" || displayName !== "OBJECT:Humvee" || side !== "America" || commandSet !== "AmericaVehicleHumveeCommandSet") {
@@ -93,6 +104,16 @@ if (name !== "AmericaVehicleHumvee" || displayName !== "OBJECT:Humvee" || side !
 
 if (primaryWeapon !== "HumveeGun" || upgradedSecondary !== "HumveeMissileWeapon" || armor !== "HumveeArmor") {
   throw new Error(`unexpected thing links: ${primaryWeapon}, ${upgradedSecondary}, ${armor}`);
+}
+
+if (exports.generals_thing_template_prerequisite_count(0) !== 2 ||
+    exports.generals_thing_template_first_prerequisite(0) !== 0 ||
+    exports.generals_thing_prerequisite_kind(0) !== 1 ||
+    exports.generals_thing_prerequisite_kind(1) !== 2 ||
+    exports.generals_thing_prerequisite_token_count(0) !== 1 ||
+    objectPrerequisite !== "AmericaWarFactory" ||
+    sciencePrerequisite !== "SCIENCE_AMERICA") {
+  throw new Error(`unexpected prerequisites: ${objectPrerequisite}, ${sciencePrerequisite}`);
 }
 
 if (exports.generals_thing_template_build_cost(0) !== 700 ||
@@ -114,6 +135,7 @@ console.log(JSON.stringify({
   fieldCount: exports.generals_thing_field_count(),
   armorSetCount: exports.generals_thing_armor_set_count(),
   weaponSetCount: exports.generals_thing_weapon_set_count(),
+  prerequisiteCount: exports.generals_thing_prerequisite_count(),
   moduleCount: exports.generals_thing_module_count(),
   name,
   displayName,
@@ -122,5 +144,7 @@ console.log(JSON.stringify({
   primaryWeapon,
   upgradedSecondary,
   armor,
+  objectPrerequisite,
+  sciencePrerequisite,
   kindFlags,
 }, null, 2));

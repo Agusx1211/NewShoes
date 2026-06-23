@@ -15,7 +15,7 @@ The first checked-in targets are small, real game-data modules:
 - Zero Hour weapon template parsing based on the core combat fields in
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp`
 - Zero Hour object/thing template parsing based on direct fields plus
-  `ArmorSet` and `WeaponSet` links from
+  `ArmorSet`, `WeaponSet`, and production prerequisite links from
   `GeneralsMD/Code/GameEngine/Source/Common/Thing/ThingTemplate.cpp`
 - Zero Hour command button and command set parsing based on
   `GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp`

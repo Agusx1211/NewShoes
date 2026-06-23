@@ -70,10 +70,20 @@ function armorSetString(prefix, index) {
   );
 }
 
+function prerequisiteString(index) {
+  return readThingString(
+    thingExports.generals_thing_prerequisite_value_ptr(index),
+    thingExports.generals_thing_prerequisite_value_size(index)
+  );
+}
+
 let totalTemplates = 0;
 let totalFields = 0;
 let totalArmorSets = 0;
 let totalWeaponSets = 0;
+let totalPrerequisites = 0;
+let totalObjectPrerequisites = 0;
+let totalSciencePrerequisites = 0;
 let totalModules = 0;
 let humvee = null;
 const preview = [];
@@ -94,7 +104,17 @@ for (const entry of objectEntries) {
   totalFields += thingExports.generals_thing_field_count();
   totalArmorSets += thingExports.generals_thing_armor_set_count();
   totalWeaponSets += thingExports.generals_thing_weapon_set_count();
+  totalPrerequisites += thingExports.generals_thing_prerequisite_count();
   totalModules += thingExports.generals_thing_module_count();
+
+  for (let prerequisiteIndex = 0; prerequisiteIndex < thingExports.generals_thing_prerequisite_count(); ++prerequisiteIndex) {
+    const kind = thingExports.generals_thing_prerequisite_kind(prerequisiteIndex);
+    if (kind === 1) {
+      ++totalObjectPrerequisites;
+    } else if (kind === 2) {
+      ++totalSciencePrerequisites;
+    }
+  }
 
   if (parsedCount > 0 && preview.length < 8) {
     preview.push({
@@ -125,10 +145,17 @@ for (const entry of objectEntries) {
         kindFlags: thingExports.generals_thing_template_kind_flags(index),
         weaponSetCount: thingExports.generals_thing_template_weapon_set_count(index),
         armorSetCount: thingExports.generals_thing_template_armor_set_count(index),
+        prerequisiteCount: thingExports.generals_thing_template_prerequisite_count(index),
         primaryWeapon: weaponSetString("primary", firstWeaponSet),
         upgradedSecondaryWeapon: weaponSetString("secondary", firstWeaponSet + 1),
         armor: armorSetString("armor", firstArmorSet),
       };
+      const firstPrerequisite = thingExports.generals_thing_template_first_prerequisite(index);
+      if (humvee.prerequisiteCount > 0) {
+        humvee.firstPrerequisiteKind = thingExports.generals_thing_prerequisite_kind(firstPrerequisite);
+        humvee.firstPrerequisite = prerequisiteString(firstPrerequisite);
+        humvee.firstPrerequisiteTokenCount = thingExports.generals_thing_prerequisite_token_count(firstPrerequisite);
+      }
     }
   }
 }
@@ -144,8 +171,11 @@ if (totalTemplates !== 1864) {
 if (totalFields !== 47261 ||
     totalArmorSets !== 1367 ||
     totalWeaponSets !== 861 ||
+    totalPrerequisites !== 630 ||
+    totalObjectPrerequisites !== 595 ||
+    totalSciencePrerequisites !== 35 ||
     totalModules !== 16436) {
-  throw new Error(`unexpected thing aggregate counts: fields=${totalFields}, armorSets=${totalArmorSets}, weaponSets=${totalWeaponSets}, modules=${totalModules}`);
+  throw new Error(`unexpected thing aggregate counts: fields=${totalFields}, armorSets=${totalArmorSets}, weaponSets=${totalWeaponSets}, prerequisites=${totalPrerequisites}, objectPrerequisites=${totalObjectPrerequisites}, sciencePrerequisites=${totalSciencePrerequisites}, modules=${totalModules}`);
 }
 
 if (!humvee) {
@@ -163,9 +193,13 @@ if (humvee.displayName !== "OBJECT:Humvee" ||
     humvee.transportSlotCount !== 3 ||
     humvee.weaponSetCount !== 2 ||
     humvee.armorSetCount !== 1 ||
+    humvee.prerequisiteCount !== 1 ||
     humvee.primaryWeapon !== "HumveeGun" ||
     humvee.upgradedSecondaryWeapon !== "HumveeMissileWeapon" ||
-    humvee.armor !== "HumveeArmor") {
+    humvee.armor !== "HumveeArmor" ||
+    humvee.firstPrerequisiteKind !== 1 ||
+    humvee.firstPrerequisite !== "AmericaWarFactory" ||
+    humvee.firstPrerequisiteTokenCount !== 1) {
   throw new Error(`unexpected Humvee object parse: ${JSON.stringify(humvee)}`);
 }
 
@@ -181,6 +215,9 @@ console.log(JSON.stringify({
   totalFields,
   totalArmorSets,
   totalWeaponSets,
+  totalPrerequisites,
+  totalObjectPrerequisites,
+  totalSciencePrerequisites,
   totalModules,
   humvee,
   preview,
