@@ -16,6 +16,9 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/GameLogic/AI/AI.cpp`
 - Zero Hour mapped UI image parsing based on
   `GeneralsMD/Code/GameEngine/Source/GameClient/System/Image.cpp`
+- Zero Hour water and weather environment parsing based on
+  `GeneralsMD/Code/GameEngine/Source/GameClient/Water.cpp` and
+  `GeneralsMD/Code/GameEngine/Source/GameClient/Snow.cpp`
 - Zero Hour armor template parsing based on
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Armor.cpp`
 - Zero Hour weapon template parsing based on the core combat fields in
@@ -49,7 +52,7 @@ The first checked-in targets are small, real game-data modules:
 - Zero Hour player/faction template parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp`
 
-RefPack, BIG, INI, global game data, AI data, mapped images, armor, weapon, locomotor, FX list, particle
+RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
 progression, and player/faction support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
@@ -76,6 +79,8 @@ Output:
 `dist/generals_aidata.wasm`
 
 `dist/generals_mappedimage.wasm`
+
+`dist/generals_environment.wasm`
 
 `dist/generals_armor.wasm`
 
@@ -147,6 +152,7 @@ npm run test:real-ini
 npm run test:real-gamedata
 npm run test:real-aidata
 npm run test:real-mappedimage
+npm run test:real-environment
 npm run test:real-armor
 npm run test:real-weapon
 npm run test:real-locomotor
