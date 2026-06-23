@@ -7,6 +7,7 @@ let bigRuntime = null;
 let iniRuntime = null;
 let gameDataRuntime = null;
 let aiDataRuntime = null;
+let mappedImageRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -45,6 +46,11 @@ const elements = {
   aiDataBuildLists: document.querySelector("[data-aidata-build-lists]"),
   aiDataStructures: document.querySelector("[data-aidata-structures]"),
   aiDataFirst: document.querySelector("[data-aidata-first]"),
+  mappedImageImages: document.querySelector("[data-mappedimage-images]"),
+  mappedImagePages: document.querySelector("[data-mappedimage-pages]"),
+  mappedImageRotated: document.querySelector("[data-mappedimage-rotated]"),
+  mappedImageArea: document.querySelector("[data-mappedimage-area]"),
+  mappedImageFirst: document.querySelector("[data-mappedimage-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -120,6 +126,7 @@ const elements = {
   iniListing: document.querySelector("[data-ini-listing]"),
   gameDataListing: document.querySelector("[data-gamedata-listing]"),
   aiDataListing: document.querySelector("[data-aidata-listing]"),
+  mappedImageListing: document.querySelector("[data-mappedimage-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -2968,6 +2975,184 @@ function renderAIDataParse(result) {
   elements.aiDataListing.textContent = lines.join("\n");
 }
 
+function formatPixelArea(value) {
+  if (value >= 1000 * 1000) {
+    return `${(value / (1000 * 1000)).toFixed(1)}M px`;
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}k px`;
+  }
+  return `${value} px`;
+}
+
+function renderMappedImageEmpty(reason) {
+  elements.mappedImageImages.textContent = "0 images";
+  elements.mappedImagePages.textContent = "0 pages";
+  elements.mappedImageRotated.textContent = "0 rotated";
+  elements.mappedImageArea.textContent = "0 px";
+  elements.mappedImageFirst.textContent = reason;
+  elements.mappedImageListing.textContent = reason;
+}
+
+function readMappedImageString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseMappedImagePayload(bytes) {
+  const { exports, memory } = mappedImageRuntime;
+  const inputOffset = exports.generals_mappedimage_input_ptr();
+
+  if (bytes.length > exports.generals_mappedimage_input_capacity()) {
+    throw new Error(`MappedImage payload exceeds ${exports.generals_mappedimage_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const imageCount = exports.generals_mappedimage_parse(bytes.length);
+
+  if (imageCount < 0 || exports.generals_mappedimage_error_count() !== 0) {
+    throw new Error(`MappedImage parse failed with ${exports.generals_mappedimage_error_count()} errors`);
+  }
+
+  return imageCount;
+}
+
+function readMappedImage(exports, memory, index) {
+  return {
+    index,
+    name: readMappedImageString(exports, memory, "generals_mappedimage_name_ptr", "generals_mappedimage_name_size", index),
+    texture: readMappedImageString(exports, memory, "generals_mappedimage_texture_ptr", "generals_mappedimage_texture_size", index),
+    status: readMappedImageString(exports, memory, "generals_mappedimage_status_raw_ptr", "generals_mappedimage_status_raw_size", index),
+    line: exports.generals_mappedimage_line(index),
+    fields: exports.generals_mappedimage_field_count_at(index),
+    textureWidth: exports.generals_mappedimage_texture_width(index),
+    textureHeight: exports.generals_mappedimage_texture_height(index),
+    left: exports.generals_mappedimage_left(index),
+    top: exports.generals_mappedimage_top(index),
+    right: exports.generals_mappedimage_right(index),
+    bottom: exports.generals_mappedimage_bottom(index),
+    width: exports.generals_mappedimage_image_width(index),
+    height: exports.generals_mappedimage_image_height(index),
+    statusMask: exports.generals_mappedimage_status_mask(index),
+  };
+}
+
+function findMappedImage(exports, memory, name) {
+  for (let index = 0; index < exports.generals_mappedimage_image_count(); ++index) {
+    const image = readMappedImage(exports, memory, index);
+    if (image.name === name) {
+      return image;
+    }
+  }
+
+  return null;
+}
+
+function formatMappedImage(image) {
+  if (!image) {
+    return "no image";
+  }
+
+  const status = image.status && image.status !== "NONE" ? `, ${image.status}` : "";
+  return `${image.name}: ${image.texture}, ${image.width}x${image.height} from ${image.textureWidth}x${image.textureHeight}${status}`;
+}
+
+function parseMappedImageEntries(entries, archiveMemory) {
+  const mappedEntries = entries.filter((entry) => {
+    return entry.name.startsWith("data/ini/mappedimages/") && entry.name.endsWith(".ini");
+  });
+  if (mappedEntries.length === 0) {
+    return null;
+  }
+
+  const sourceBytes = mappedEntries.reduce((total, entry) => total + entry.dataSize, 0);
+  const combinedBytes = new Uint8Array(sourceBytes + mappedEntries.length - 1);
+  let cursor = 0;
+  for (let index = 0; index < mappedEntries.length; ++index) {
+    const bytes = entryBytes(mappedEntries[index], archiveMemory);
+    combinedBytes.set(bytes, cursor);
+    cursor += bytes.length;
+    if (index + 1 < mappedEntries.length) {
+      combinedBytes[cursor++] = 10;
+    }
+  }
+
+  const { exports, memory } = mappedImageRuntime;
+  const imageCount = parseMappedImagePayload(combinedBytes);
+  const texturePages = new Set();
+  const preview = [];
+  let totalArea = 0;
+
+  for (let index = 0; index < imageCount; ++index) {
+    const image = readMappedImage(exports, memory, index);
+    texturePages.add(image.texture);
+    totalArea += image.width * image.height;
+    if (preview.length < 12) {
+      preview.push(image);
+    }
+  }
+
+  return {
+    entryCount: mappedEntries.length,
+    sourceBytes,
+    imageCount,
+    fieldCount: exports.generals_mappedimage_field_count(),
+    textureAssignments: exports.generals_mappedimage_texture_assignment_count(),
+    texturePages: texturePages.size,
+    rotatedCount: exports.generals_mappedimage_rotated_count(),
+    rawTextureCount: exports.generals_mappedimage_raw_texture_count(),
+    noneStatusCount: exports.generals_mappedimage_none_status_count(),
+    totalArea,
+    first: imageCount > 0 ? readMappedImage(exports, memory, 0) : null,
+    last: imageCount > 0 ? readMappedImage(exports, memory, imageCount - 1) : null,
+    ruler: findMappedImage(exports, memory, "Ruler-Right End"),
+    observer: findMappedImage(exports, memory, "SSObserverUSA"),
+    purchasePower: findMappedImage(exports, memory, "GeneralsPowerWindow_American"),
+    preview,
+  };
+}
+
+function renderMappedImageParse(result) {
+  if (!result) {
+    renderMappedImageEmpty("no mapped image data");
+    return;
+  }
+
+  elements.mappedImageImages.textContent = `${result.imageCount} images`;
+  elements.mappedImagePages.textContent = `${result.texturePages} pages`;
+  elements.mappedImageRotated.textContent = `${result.rotatedCount} rotated`;
+  elements.mappedImageArea.textContent = formatPixelArea(result.totalArea);
+
+  if (result.first) {
+    elements.mappedImageFirst.textContent = `MappedImages: ${result.first.name} -> ${result.first.texture}, ${result.imageCount} images, ${result.texturePages} pages`;
+  } else {
+    elements.mappedImageFirst.textContent = "no mapped image data";
+  }
+
+  const lines = [
+    `${result.entryCount} files, ${formatBytes(result.sourceBytes)}, ${result.imageCount} images, ${result.fieldCount} fields`,
+    `${result.texturePages} texture pages, ${result.textureAssignments} texture refs, ${result.noneStatusCount} NONE, ${result.rotatedCount} rotated, ${result.rawTextureCount} raw`,
+    `total image area ${formatPixelArea(result.totalArea)}`,
+  ];
+
+  for (const image of [
+    result.first,
+    result.ruler,
+    result.observer,
+    result.purchasePower,
+    result.last,
+  ]) {
+    if (image) {
+      lines.push(formatMappedImage(image));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map(formatMappedImage));
+  elements.mappedImageListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -3129,6 +3314,7 @@ function parseArchiveIni(entries, memory) {
     renderPlayerEmpty("no player data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
+    renderMappedImageEmpty("no mapped image data");
     return;
   }
 
@@ -3164,6 +3350,7 @@ function parseArchiveIni(entries, memory) {
   renderPlayerParse(parsePlayerEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
+  renderMappedImageParse(parseMappedImageEntries(entries, memory));
 }
 
 async function boot() {
@@ -3208,6 +3395,11 @@ async function boot() {
   aiDataRuntime = {
     exports: aiDataModule.instance.exports,
     memory: new Uint8Array(aiDataModule.instance.exports.memory.buffer),
+  };
+  const mappedImageModule = await loadWasm("../dist/generals_mappedimage.wasm");
+  mappedImageRuntime = {
+    exports: mappedImageModule.instance.exports,
+    memory: new Uint8Array(mappedImageModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -3299,7 +3491,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
