@@ -8,6 +8,7 @@ let iniRuntime = null;
 let gameDataRuntime = null;
 let aiDataRuntime = null;
 let mappedImageRuntime = null;
+let environmentRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -51,6 +52,11 @@ const elements = {
   mappedImageRotated: document.querySelector("[data-mappedimage-rotated]"),
   mappedImageArea: document.querySelector("[data-mappedimage-area]"),
   mappedImageFirst: document.querySelector("[data-mappedimage-first]"),
+  environmentWaterSets: document.querySelector("[data-environment-water-sets]"),
+  environmentTransparency: document.querySelector("[data-environment-transparency]"),
+  environmentWeather: document.querySelector("[data-environment-weather]"),
+  environmentFields: document.querySelector("[data-environment-fields]"),
+  environmentFirst: document.querySelector("[data-environment-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -127,6 +133,7 @@ const elements = {
   gameDataListing: document.querySelector("[data-gamedata-listing]"),
   aiDataListing: document.querySelector("[data-aidata-listing]"),
   mappedImageListing: document.querySelector("[data-mappedimage-listing]"),
+  environmentListing: document.querySelector("[data-environment-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -181,6 +188,15 @@ function formatRealX100(value) {
   }
 
   return real.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatRealX10000(value) {
+  const real = value / 10000;
+  if (Number.isInteger(real)) {
+    return `${real}`;
+  }
+
+  return real.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function drawByteBars(bytes) {
@@ -3153,6 +3169,231 @@ function renderMappedImageParse(result) {
   elements.mappedImageListing.textContent = lines.join("\n");
 }
 
+function renderEnvironmentEmpty(reason) {
+  elements.environmentWaterSets.textContent = "0 water";
+  elements.environmentTransparency.textContent = "0 transparency";
+  elements.environmentWeather.textContent = "0 weather";
+  elements.environmentFields.textContent = "0 fields";
+  elements.environmentFirst.textContent = reason;
+  elements.environmentListing.textContent = reason;
+}
+
+function readEnvironmentString(exports, memory, ptrFn, sizeFn, ...args) {
+  const ptr = exports[ptrFn](...args);
+  const size = exports[sizeFn](...args);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseEnvironmentPayload(bytes) {
+  const { exports, memory } = environmentRuntime;
+  const inputOffset = exports.generals_environment_input_ptr();
+
+  if (bytes.length > exports.generals_environment_input_capacity()) {
+    throw new Error(`Environment payload exceeds ${exports.generals_environment_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const blockCount = exports.generals_environment_parse(bytes.length);
+
+  if (blockCount < 0 || exports.generals_environment_error_count() !== 0) {
+    throw new Error(`Environment parse failed with ${exports.generals_environment_error_count()} errors`);
+  }
+
+  return blockCount;
+}
+
+function readEnvironmentWaterSet(exports, memory, index) {
+  return {
+    index,
+    name: readEnvironmentString(exports, memory, "generals_environment_water_set_name_ptr", "generals_environment_water_set_name_size", index),
+    skyTexture: readEnvironmentString(exports, memory, "generals_environment_water_set_sky_texture_ptr", "generals_environment_water_set_sky_texture_size", index),
+    waterTexture: readEnvironmentString(exports, memory, "generals_environment_water_set_water_texture_ptr", "generals_environment_water_set_water_texture_size", index),
+    line: exports.generals_environment_water_set_line(index),
+    fields: exports.generals_environment_water_set_field_count_at(index),
+    vertex00: [
+      exports.generals_environment_water_set_vertex_r(index, 0),
+      exports.generals_environment_water_set_vertex_g(index, 0),
+      exports.generals_environment_water_set_vertex_b(index, 0),
+      exports.generals_environment_water_set_vertex_a(index, 0),
+    ],
+    diffuse: [
+      exports.generals_environment_water_set_diffuse_r(index),
+      exports.generals_environment_water_set_diffuse_g(index),
+      exports.generals_environment_water_set_diffuse_b(index),
+      exports.generals_environment_water_set_diffuse_a(index),
+    ],
+    transparentDiffuse: [
+      exports.generals_environment_water_set_transparent_diffuse_r(index),
+      exports.generals_environment_water_set_transparent_diffuse_g(index),
+      exports.generals_environment_water_set_transparent_diffuse_b(index),
+      exports.generals_environment_water_set_transparent_diffuse_a(index),
+    ],
+    uScroll: exports.generals_environment_water_set_u_scroll_per_ms_x10000(index),
+    vScroll: exports.generals_environment_water_set_v_scroll_per_ms_x10000(index),
+    skyTexelsPerUnit: exports.generals_environment_water_set_sky_texels_per_unit_x10000(index),
+    repeat: exports.generals_environment_water_set_repeat_count(index),
+  };
+}
+
+function findEnvironmentWaterSet(exports, memory, name) {
+  for (let index = 0; index < exports.generals_environment_water_set_count(); ++index) {
+    const waterSet = readEnvironmentWaterSet(exports, memory, index);
+    if (waterSet.name === name) {
+      return waterSet;
+    }
+  }
+
+  return null;
+}
+
+function readEnvironmentTransparency(exports, memory, index) {
+  return {
+    index,
+    line: exports.generals_environment_transparency_line(index),
+    fields: exports.generals_environment_transparency_field_count_at(index),
+    depth: exports.generals_environment_transparency_depth_x10000(index),
+    minOpacity: exports.generals_environment_transparency_min_opacity_x10000(index),
+    standingColor: [
+      exports.generals_environment_transparency_standing_color_r(index),
+      exports.generals_environment_transparency_standing_color_g(index),
+      exports.generals_environment_transparency_standing_color_b(index),
+    ],
+    standingTexture: readEnvironmentString(exports, memory, "generals_environment_transparency_standing_water_texture_ptr", "generals_environment_transparency_standing_water_texture_size", index),
+    radarColor: [
+      exports.generals_environment_transparency_radar_color_r(index),
+      exports.generals_environment_transparency_radar_color_g(index),
+      exports.generals_environment_transparency_radar_color_b(index),
+    ],
+    skyboxN: readEnvironmentString(exports, memory, "generals_environment_transparency_skybox_texture_ptr", "generals_environment_transparency_skybox_texture_size", index, 0),
+    additiveBlending: exports.generals_environment_transparency_additive_blending(index),
+  };
+}
+
+function readEnvironmentWeather(exports, memory, index) {
+  return {
+    index,
+    line: exports.generals_environment_weather_line(index),
+    fields: exports.generals_environment_weather_field_count_at(index),
+    snowTexture: readEnvironmentString(exports, memory, "generals_environment_weather_snow_texture_ptr", "generals_environment_weather_snow_texture_size", index),
+    enabled: exports.generals_environment_weather_snow_enabled(index),
+    pointSprites: exports.generals_environment_weather_use_point_sprites(index),
+    frequencyScaleX: exports.generals_environment_weather_snow_frequency_scale_x_x10000(index),
+    frequencyScaleY: exports.generals_environment_weather_snow_frequency_scale_y_x10000(index),
+    amplitude: exports.generals_environment_weather_snow_amplitude_x10000(index),
+    velocity: exports.generals_environment_weather_snow_velocity_x10000(index),
+    pointSize: exports.generals_environment_weather_snow_point_size_x10000(index),
+    maxPointSize: exports.generals_environment_weather_snow_max_point_size_x10000(index),
+    minPointSize: exports.generals_environment_weather_snow_min_point_size_x10000(index),
+    quadSize: exports.generals_environment_weather_snow_quad_size_x10000(index),
+    boxDimensions: exports.generals_environment_weather_snow_box_dimensions_x10000(index),
+    boxDensity: exports.generals_environment_weather_snow_box_density_x10000(index),
+  };
+}
+
+function formatEnvironmentWaterSet(waterSet) {
+  if (!waterSet) {
+    return "no water set";
+  }
+
+  return `${waterSet.name}: sky ${waterSet.skyTexture}, water ${waterSet.waterTexture}, vertex ${waterSet.vertex00.join("/")}, diffuse ${waterSet.diffuse.join("/")}, scroll ${formatRealX10000(waterSet.uScroll)}/${formatRealX10000(waterSet.vScroll)}, repeat ${waterSet.repeat}, line ${waterSet.line}`;
+}
+
+function parseEnvironmentEntries(entries, archiveMemory) {
+  const environmentEntries = [
+    findEntry(entries, "data/ini/water.ini"),
+    findEntry(entries, "data/ini/weather.ini"),
+  ].filter(Boolean);
+
+  if (environmentEntries.length === 0) {
+    return null;
+  }
+
+  const sourceBytes = environmentEntries.reduce((total, entry) => total + entry.dataSize, 0);
+  const combinedBytes = new Uint8Array(sourceBytes + environmentEntries.length - 1);
+  let cursor = 0;
+  for (let index = 0; index < environmentEntries.length; ++index) {
+    const bytes = entryBytes(environmentEntries[index], archiveMemory);
+    combinedBytes.set(bytes, cursor);
+    cursor += bytes.length;
+    if (index + 1 < environmentEntries.length) {
+      combinedBytes[cursor++] = 10;
+    }
+  }
+
+  const { exports, memory } = environmentRuntime;
+  const blockCount = parseEnvironmentPayload(combinedBytes);
+  const preview = [];
+  for (let index = 0; index < exports.generals_environment_water_set_count(); ++index) {
+    preview.push(readEnvironmentWaterSet(exports, memory, index));
+  }
+
+  return {
+    files: environmentEntries.map((entry) => entry.name),
+    sourceBytes,
+    blockCount,
+    waterSetCount: exports.generals_environment_water_set_count(),
+    transparencyCount: exports.generals_environment_transparency_count(),
+    weatherCount: exports.generals_environment_weather_count(),
+    fieldCount: exports.generals_environment_field_count(),
+    lineCount: exports.generals_environment_line_count(),
+    morning: findEnvironmentWaterSet(exports, memory, "MORNING"),
+    afternoon: findEnvironmentWaterSet(exports, memory, "AFTERNOON"),
+    night: findEnvironmentWaterSet(exports, memory, "NIGHT"),
+    transparency: exports.generals_environment_transparency_count() > 0
+      ? readEnvironmentTransparency(exports, memory, 0)
+      : null,
+    weather: exports.generals_environment_weather_count() > 0
+      ? readEnvironmentWeather(exports, memory, 0)
+      : null,
+    preview,
+  };
+}
+
+function renderEnvironmentParse(result) {
+  if (!result) {
+    renderEnvironmentEmpty("no environment data");
+    return;
+  }
+
+  elements.environmentWaterSets.textContent = `${result.waterSetCount} water`;
+  elements.environmentTransparency.textContent = `${result.transparencyCount} transparency`;
+  elements.environmentWeather.textContent = `${result.weatherCount} weather`;
+  elements.environmentFields.textContent = `${result.fieldCount} fields`;
+
+  if (result.morning) {
+    const snowState = result.weather?.enabled ? "snow on" : "snow off";
+    elements.environmentFirst.textContent = `Environment: ${result.morning.name} -> ${result.morning.waterTexture}, ${result.waterSetCount} water sets, ${snowState}`;
+  } else {
+    elements.environmentFirst.textContent = "environment data parsed";
+  }
+
+  const lines = [
+    `${result.files.join(", ")}: ${formatBytes(result.sourceBytes)}, ${result.blockCount} blocks, ${result.fieldCount} fields, ${result.lineCount} lines`,
+    `${result.waterSetCount} water sets, ${result.transparencyCount} transparency settings, ${result.weatherCount} weather settings`,
+  ];
+
+  for (const waterSet of [
+    result.morning,
+    result.afternoon,
+    result.night,
+  ]) {
+    if (waterSet) {
+      lines.push(formatEnvironmentWaterSet(waterSet));
+    }
+  }
+
+  if (result.transparency) {
+    lines.push(`WaterTransparency: depth ${formatRealX10000(result.transparency.depth)}, opacity ${formatRealX10000(result.transparency.minOpacity)}, standing ${result.transparency.standingTexture} ${result.transparency.standingColor.join("/")}, radar ${result.transparency.radarColor.join("/")}, additive ${result.transparency.additiveBlending ? "yes" : "no"}, skybox ${result.transparency.skyboxN}`);
+  }
+  if (result.weather) {
+    lines.push(`Weather: ${result.weather.snowTexture}, enabled ${result.weather.enabled ? "yes" : "no"}, sprites ${result.weather.pointSprites ? "yes" : "no"}, velocity ${formatRealX10000(result.weather.velocity)}, amplitude ${formatRealX10000(result.weather.amplitude)}, box ${formatRealX10000(result.weather.boxDimensions)} @ ${formatRealX10000(result.weather.boxDensity)}`);
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map(formatEnvironmentWaterSet));
+  elements.environmentListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -3315,6 +3556,7 @@ function parseArchiveIni(entries, memory) {
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
+    renderEnvironmentEmpty("no environment data");
     return;
   }
 
@@ -3351,6 +3593,7 @@ function parseArchiveIni(entries, memory) {
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
+  renderEnvironmentParse(parseEnvironmentEntries(entries, memory));
 }
 
 async function boot() {
@@ -3400,6 +3643,11 @@ async function boot() {
   mappedImageRuntime = {
     exports: mappedImageModule.instance.exports,
     memory: new Uint8Array(mappedImageModule.instance.exports.memory.buffer),
+  };
+  const environmentModule = await loadWasm("../dist/generals_environment.wasm");
+  environmentRuntime = {
+    exports: environmentModule.instance.exports,
+    memory: new Uint8Array(environmentModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -3491,7 +3739,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
