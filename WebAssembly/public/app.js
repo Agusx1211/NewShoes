@@ -11,6 +11,7 @@ let weaponRuntime = null;
 let locomotorRuntime = null;
 let fxlistRuntime = null;
 let particleRuntime = null;
+let audioRuntime = null;
 let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
@@ -56,6 +57,11 @@ const elements = {
   particleTextures: document.querySelector("[data-particle-textures]"),
   particleCritical: document.querySelector("[data-particle-critical]"),
   particleFirst: document.querySelector("[data-particle-first]"),
+  audioEvents: document.querySelector("[data-audio-events]"),
+  audioFields: document.querySelector("[data-audio-fields]"),
+  audioSounds: document.querySelector("[data-audio-sounds]"),
+  audioDialog: document.querySelector("[data-audio-dialog]"),
+  audioFirst: document.querySelector("[data-audio-first]"),
   oclLists: document.querySelector("[data-ocl-lists]"),
   oclNuggets: document.querySelector("[data-ocl-nuggets]"),
   oclDebris: document.querySelector("[data-ocl-debris]"),
@@ -94,6 +100,7 @@ const elements = {
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
   fxlistListing: document.querySelector("[data-fxlist-listing]"),
   particleListing: document.querySelector("[data-particle-listing]"),
+  audioListing: document.querySelector("[data-audio-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
@@ -974,6 +981,246 @@ function renderParticleParse(result) {
   lines.push("");
   lines.push(...result.preview.map((template) => `${template.name}: ${template.particleName || "no sprite"}, ${template.shader}/${template.type}, ${template.fields} fields, line ${template.line}`));
   elements.particleListing.textContent = lines.join("\n");
+}
+
+function renderAudioEmpty(reason) {
+  elements.audioEvents.textContent = "0 events";
+  elements.audioFields.textContent = "0 fields";
+  elements.audioSounds.textContent = "0 refs";
+  elements.audioDialog.textContent = "0 dialogs";
+  elements.audioFirst.textContent = reason;
+  elements.audioListing.textContent = reason;
+}
+
+function readAudioString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readAudioEventString(exports, memory, prefix, index) {
+  return readAudioString(
+    exports,
+    memory,
+    `generals_audio_event_${prefix}_ptr`,
+    `generals_audio_event_${prefix}_size`,
+    index
+  );
+}
+
+function readAudioEnumString(exports, memory, kind, index) {
+  return readAudioString(
+    exports,
+    memory,
+    `generals_audio_${kind}_name_ptr`,
+    `generals_audio_${kind}_name_size`,
+    index
+  );
+}
+
+function parseAudioPayload(bytes) {
+  const { exports, memory } = audioRuntime;
+  const inputOffset = exports.generals_audio_input_ptr();
+
+  if (bytes.length > exports.generals_audio_input_capacity()) {
+    throw new Error(`AudioEvent payload exceeds ${exports.generals_audio_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const eventCount = exports.generals_audio_parse(bytes.length);
+
+  if (eventCount < 0 || exports.generals_audio_error_count() !== 0) {
+    throw new Error(`AudioEvent parse failed with ${exports.generals_audio_error_count()} errors`);
+  }
+
+  return eventCount;
+}
+
+function readAudioEvent(exports, memory, index, file) {
+  const category = exports.generals_audio_event_category(index);
+  const priority = exports.generals_audio_event_priority(index);
+  return {
+    file,
+    name: readAudioEventString(exports, memory, "name", index),
+    filename: readAudioEventString(exports, memory, "filename", index),
+    sounds: readAudioEventString(exports, memory, "sounds", index),
+    attack: readAudioEventString(exports, memory, "attack", index),
+    decay: readAudioEventString(exports, memory, "decay", index),
+    category: readAudioEnumString(exports, memory, "category", category),
+    priority: readAudioEnumString(exports, memory, "priority", priority),
+    fields: exports.generals_audio_event_field_count_at(index),
+    line: exports.generals_audio_event_line(index),
+    typeMask: exports.generals_audio_event_type_mask(index),
+    controlMask: exports.generals_audio_event_control_mask(index),
+    volume: exports.generals_audio_event_volume_x100(index),
+    volumeShift: exports.generals_audio_event_volume_shift_x100(index),
+    pitchMin: exports.generals_audio_event_pitch_shift_min_x100(index),
+    pitchMax: exports.generals_audio_event_pitch_shift_max_x100(index),
+    limit: exports.generals_audio_event_limit(index),
+    minRange: exports.generals_audio_event_min_range_x100(index),
+    maxRange: exports.generals_audio_event_max_range_x100(index),
+    soundTokens: exports.generals_audio_event_sound_token_count(index),
+  };
+}
+
+function audioFlagNames(exports, memory, kind, count, mask) {
+  const names = [];
+  for (let index = 0; index < count; ++index) {
+    if (mask & (1 << index)) {
+      names.push(readAudioEnumString(exports, memory, kind, index));
+    }
+  }
+  return names.join(" ") || "none";
+}
+
+function formatAudioEvent(event, exports, memory) {
+  const source = event.filename || event.sounds || "no source";
+  const type = audioFlagNames(exports, memory, "type", 9, event.typeMask);
+  const control = audioFlagNames(exports, memory, "control", 5, event.controlMask);
+  const attack = event.attack ? `, attack ${event.attack}` : "";
+  const decay = event.decay ? `, decay ${event.decay}` : "";
+  const range = event.maxRange ? `, range ${formatRealX100(event.minRange)}-${formatRealX100(event.maxRange)}` : "";
+  return `${event.category} ${event.name}: ${source}, ${event.priority}, volume ${formatRealX100(event.volume)}, ${type}, ${control}${attack}${decay}${range}`;
+}
+
+function parseAudioEntries(entries, archiveMemory) {
+  const audioFiles = [
+    "data/ini/default/soundeffects.ini",
+    "data/ini/music.ini",
+    "data/ini/soundeffects.ini",
+    "data/ini/speech.ini",
+    "data/ini/voice.ini",
+  ];
+  const presentEntries = audioFiles
+    .map((name) => findEntry(entries, name))
+    .filter(Boolean);
+
+  if (presentEntries.length === 0) {
+    return null;
+  }
+
+  const { exports, memory } = audioRuntime;
+  const preview = [];
+  let eventCount = 0;
+  let fieldCount = 0;
+  let soundReferenceCount = 0;
+  let audioEventCount = 0;
+  let musicTrackCount = 0;
+  let dialogEventCount = 0;
+  let uiCount = 0;
+  let worldCount = 0;
+  let voiceCount = 0;
+  let globalCount = 0;
+  let randomCount = 0;
+  let loopCount = 0;
+  let defaultSoundEffect = null;
+  let track1 = null;
+  let genericTankMoveLoop = null;
+  let explosion = null;
+  let evaUnderAttack = null;
+  let rangerVoiceSelect = null;
+
+  for (const entry of presentEntries) {
+    const parsedCount = parseAudioPayload(entryBytes(entry, archiveMemory));
+    eventCount += parsedCount;
+    fieldCount += exports.generals_audio_field_count();
+    soundReferenceCount += exports.generals_audio_sound_reference_count();
+    audioEventCount += exports.generals_audio_category_count(0);
+    musicTrackCount += exports.generals_audio_category_count(1);
+    dialogEventCount += exports.generals_audio_category_count(2);
+    uiCount += exports.generals_audio_type_flag_count(0);
+    worldCount += exports.generals_audio_type_flag_count(1);
+    globalCount += exports.generals_audio_type_flag_count(3);
+    voiceCount += exports.generals_audio_type_flag_count(4);
+    loopCount += exports.generals_audio_control_flag_count(0);
+    randomCount += exports.generals_audio_control_flag_count(1);
+
+    for (let index = 0; index < parsedCount; ++index) {
+      const event = readAudioEvent(exports, memory, index, entry.name);
+      if (preview.length < 12) {
+        preview.push(event);
+      }
+      if (event.name === "DefaultSoundEffect") {
+        defaultSoundEffect = event;
+      } else if (event.name === "Track1") {
+        track1 = event;
+      } else if (event.name === "GenericTankMoveLoop") {
+        genericTankMoveLoop = event;
+      } else if (event.name === "Explosion") {
+        explosion = event;
+      } else if (event.name === "EvaGLA_AllyUnderAttack") {
+        evaUnderAttack = event;
+      } else if (event.name === "RangerVoiceSelect") {
+        rangerVoiceSelect = event;
+      }
+    }
+  }
+
+  return {
+    eventCount,
+    fieldCount,
+    soundReferenceCount,
+    audioEventCount,
+    musicTrackCount,
+    dialogEventCount,
+    uiCount,
+    worldCount,
+    voiceCount,
+    globalCount,
+    loopCount,
+    randomCount,
+    preview,
+    defaultSoundEffect,
+    track1,
+    genericTankMoveLoop,
+    explosion,
+    evaUnderAttack,
+    rangerVoiceSelect,
+  };
+}
+
+function renderAudioParse(result) {
+  if (!result) {
+    renderAudioEmpty("no audio data");
+    return;
+  }
+
+  const { exports, memory } = audioRuntime;
+  elements.audioEvents.textContent = `${result.eventCount} events`;
+  elements.audioFields.textContent = `${result.fieldCount} fields`;
+  elements.audioSounds.textContent = `${result.soundReferenceCount} refs`;
+  elements.audioDialog.textContent = `${result.dialogEventCount} dialogs`;
+
+  if (result.genericTankMoveLoop) {
+    elements.audioFirst.textContent = `Audio: ${result.genericTankMoveLoop.name} -> ${result.genericTankMoveLoop.sounds}, ${result.genericTankMoveLoop.priority}`;
+  } else {
+    const first = result.preview[0];
+    elements.audioFirst.textContent = first ? `Audio: ${first.name}` : "no audio data";
+  }
+
+  const lines = [
+    `${result.eventCount} events, ${result.fieldCount} fields, ${result.soundReferenceCount} sound refs`,
+    `categories audio ${result.audioEventCount}, music ${result.musicTrackCount}, dialog ${result.dialogEventCount}`,
+    `type flags ui ${result.uiCount}, world ${result.worldCount}, voice ${result.voiceCount}, global ${result.globalCount}`,
+    `control flags random ${result.randomCount}, loop ${result.loopCount}`,
+  ];
+
+  for (const event of [
+    result.defaultSoundEffect,
+    result.track1,
+    result.genericTankMoveLoop,
+    result.explosion,
+    result.evaUnderAttack,
+    result.rangerVoiceSelect,
+  ]) {
+    if (event) {
+      lines.push(formatAudioEvent(event, exports, memory));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((event) => `${event.file}: ${event.name}, ${event.category}, ${event.fields} fields, line ${event.line}`));
+  elements.audioListing.textContent = lines.join("\n");
 }
 
 function renderOclEmpty(reason) {
@@ -2060,6 +2307,7 @@ function parseArchiveIni(entries, memory) {
     renderLocomotorEmpty("no locomotor data");
     renderFxListEmpty("no FX list data");
     renderParticleEmpty("no particle system data");
+    renderAudioEmpty("no audio data");
     renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
@@ -2090,6 +2338,7 @@ function parseArchiveIni(entries, memory) {
   renderLocomotorParse(parseLocomotorEntries(entries, memory));
   renderFxListParse(parseFxListEntries(entries, memory));
   renderParticleParse(parseParticleEntries(entries, memory));
+  renderAudioParse(parseAudioEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
@@ -2161,6 +2410,11 @@ async function boot() {
     exports: particleModule.instance.exports,
     memory: new Uint8Array(particleModule.instance.exports.memory.buffer),
   };
+  const audioModule = await loadWasm("../dist/generals_audio.wasm");
+  audioRuntime = {
+    exports: audioModule.instance.exports,
+    memory: new Uint8Array(audioModule.instance.exports.memory.buffer),
+  };
   const oclModule = await loadWasm("../dist/generals_ocl.wasm");
   oclRuntime = {
     exports: oclModule.instance.exports,
@@ -2206,7 +2460,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
