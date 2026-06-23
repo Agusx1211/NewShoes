@@ -13,6 +13,7 @@ let fxlistRuntime = null;
 let particleRuntime = null;
 let audioRuntime = null;
 let damageFxRuntime = null;
+let crateRuntime = null;
 let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
@@ -68,6 +69,11 @@ const elements = {
   damageFxMajor: document.querySelector("[data-damagefx-major]"),
   damageFxThrottle: document.querySelector("[data-damagefx-throttle]"),
   damageFxFirst: document.querySelector("[data-damagefx-first]"),
+  crateTemplates: document.querySelector("[data-crate-templates]"),
+  crateObjects: document.querySelector("[data-crate-objects]"),
+  crateOwned: document.querySelector("[data-crate-owned]"),
+  crateFields: document.querySelector("[data-crate-fields]"),
+  crateFirst: document.querySelector("[data-crate-first]"),
   oclLists: document.querySelector("[data-ocl-lists]"),
   oclNuggets: document.querySelector("[data-ocl-nuggets]"),
   oclDebris: document.querySelector("[data-ocl-debris]"),
@@ -108,6 +114,7 @@ const elements = {
   particleListing: document.querySelector("[data-particle-listing]"),
   audioListing: document.querySelector("[data-audio-listing]"),
   damageFxListing: document.querySelector("[data-damagefx-listing]"),
+  crateListing: document.querySelector("[data-crate-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
@@ -1410,6 +1417,213 @@ function renderDamageFxParse(result) {
   elements.damageFxListing.textContent = lines.join("\n");
 }
 
+function renderCrateEmpty(reason) {
+  elements.crateTemplates.textContent = "0 templates";
+  elements.crateObjects.textContent = "0 choices";
+  elements.crateOwned.textContent = "0 owned";
+  elements.crateFields.textContent = "0 fields";
+  elements.crateFirst.textContent = reason;
+  elements.crateListing.textContent = reason;
+}
+
+function formatProbabilityX100(value) {
+  return formatPercentX100(value * 100);
+}
+
+function readCrateString(exports, memory, ptrFn, sizeFn, ...args) {
+  const ptr = exports[ptrFn](...args);
+  const size = exports[sizeFn](...args);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readCrateTemplateString(exports, memory, prefix, index) {
+  return readCrateString(
+    exports,
+    memory,
+    `generals_crate_template_${prefix}_ptr`,
+    `generals_crate_template_${prefix}_size`,
+    index
+  );
+}
+
+function parseCratePayload(bytes) {
+  const { exports, memory } = crateRuntime;
+  const inputOffset = exports.generals_crate_input_ptr();
+
+  if (bytes.length > exports.generals_crate_input_capacity()) {
+    throw new Error(`CrateData payload exceeds ${exports.generals_crate_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_crate_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_crate_error_count() !== 0) {
+    throw new Error(`CrateData parse failed with ${exports.generals_crate_error_count()} errors`);
+  }
+
+  return templateCount;
+}
+
+function readCrateObject(exports, memory, index) {
+  return {
+    name: readCrateString(
+      exports,
+      memory,
+      "generals_crate_object_name_ptr",
+      "generals_crate_object_name_size",
+      index
+    ),
+    chance: exports.generals_crate_object_chance_x100(index),
+    line: exports.generals_crate_object_line(index),
+  };
+}
+
+function readCrateVeterancy(exports, memory, index) {
+  return index >= 0
+    ? readCrateString(
+      exports,
+      memory,
+      "generals_crate_veterancy_name_ptr",
+      "generals_crate_veterancy_name_size",
+      index
+    )
+    : "any";
+}
+
+function readCrateTemplate(exports, memory, index) {
+  const firstObject = exports.generals_crate_template_first_object(index);
+  const objectCount = exports.generals_crate_template_object_count(index);
+  const objects = Array.from({ length: objectCount }, (_, offset) => {
+    return readCrateObject(exports, memory, firstObject + offset);
+  });
+  const veterancyLevel = exports.generals_crate_template_veterancy_level(index);
+  return {
+    index,
+    name: readCrateTemplateString(exports, memory, "name", index),
+    line: exports.generals_crate_template_line(index),
+    fields: exports.generals_crate_template_field_count_at(index),
+    creationChance: exports.generals_crate_template_creation_chance_x100(index),
+    veterancy: readCrateVeterancy(exports, memory, veterancyLevel),
+    killedByType: readCrateTemplateString(exports, memory, "killed_by_type", index),
+    killerScience: readCrateTemplateString(exports, memory, "killer_science", index),
+    ownedByMaker: exports.generals_crate_template_owned_by_maker(index),
+    objects,
+  };
+}
+
+function formatCrateTemplate(template) {
+  const conditions = [
+    `chance ${formatProbabilityX100(template.creationChance)}`,
+    `veterancy ${template.veterancy}`,
+  ];
+  if (template.killedByType) {
+    conditions.push(`killed by ${template.killedByType}`);
+  }
+  if (template.killerScience) {
+    conditions.push(`science ${template.killerScience}`);
+  }
+  if (template.ownedByMaker) {
+    conditions.push("owned by maker");
+  }
+
+  const objects = template.objects
+    .map((object) => `${object.name} ${formatProbabilityX100(object.chance)}`)
+    .join(", ");
+  return `${template.name}: ${conditions.join(", ")} -> ${objects || "no crate object"}`;
+}
+
+function parseCrateEntries(entries, archiveMemory) {
+  const entry = findEntry(entries, "data/ini/crate.ini");
+  if (!entry) {
+    return null;
+  }
+
+  const { exports, memory } = crateRuntime;
+  parseCratePayload(entryBytes(entry, archiveMemory));
+
+  const preview = [];
+  let salvage = null;
+  let eliteTank = null;
+  let heroicTank = null;
+  let gla100 = null;
+  let gla2500 = null;
+
+  for (let index = 0; index < exports.generals_crate_template_count(); ++index) {
+    const template = readCrateTemplate(exports, memory, index);
+    if (preview.length < 8) {
+      preview.push(template);
+    }
+    if (template.name === "SalvageCrateData") {
+      salvage = template;
+    } else if (template.name === "EliteTankCrateData") {
+      eliteTank = template;
+    } else if (template.name === "HeroicTankCrateData") {
+      heroicTank = template;
+    } else if (template.name === "GLA02_Always100DollarCrate") {
+      gla100 = template;
+    } else if (template.name === "GLA02_Always2500DollarCrate") {
+      gla2500 = template;
+    }
+  }
+
+  return {
+    templateCount: exports.generals_crate_template_count(),
+    objectCount: exports.generals_crate_object_count(),
+    fieldCount: exports.generals_crate_field_count(),
+    ownedByMakerCount: exports.generals_crate_owned_by_maker_count(),
+    veterancyConditionCount: exports.generals_crate_veterancy_condition_count(),
+    kindofConditionCount: exports.generals_crate_kindof_condition_count(),
+    scienceConditionCount: exports.generals_crate_science_condition_count(),
+    preview,
+    salvage,
+    eliteTank,
+    heroicTank,
+    gla100,
+    gla2500,
+  };
+}
+
+function renderCrateParse(result) {
+  if (!result) {
+    renderCrateEmpty("no crate data");
+    return;
+  }
+
+  elements.crateTemplates.textContent = `${result.templateCount} templates`;
+  elements.crateObjects.textContent = `${result.objectCount} choices`;
+  elements.crateOwned.textContent = `${result.ownedByMakerCount} owned`;
+  elements.crateFields.textContent = `${result.fieldCount} fields`;
+
+  if (result.salvage?.objects[0]) {
+    const object = result.salvage.objects[0];
+    elements.crateFirst.textContent = `CrateData: ${result.salvage.name} -> ${object.name} ${formatProbabilityX100(object.chance)}, ${result.salvage.killerScience}/${result.salvage.killedByType}`;
+  } else {
+    const first = result.preview[0];
+    elements.crateFirst.textContent = first ? `CrateData: ${first.name}` : "no crate data";
+  }
+
+  const lines = [
+    `${result.templateCount} templates, ${result.objectCount} weighted crate choices, ${result.fieldCount} source fields`,
+    `conditions veterancy ${result.veterancyConditionCount}, kindof ${result.kindofConditionCount}, science ${result.scienceConditionCount}, owned ${result.ownedByMakerCount}`,
+  ];
+
+  for (const template of [
+    result.salvage,
+    result.eliteTank,
+    result.heroicTank,
+    result.gla100,
+    result.gla2500,
+  ]) {
+    if (template) {
+      lines.push(formatCrateTemplate(template));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((template) => `${template.name}: ${template.objects.length} choices, ${template.fields} fields, line ${template.line}`));
+  elements.crateListing.textContent = lines.join("\n");
+}
+
 function renderOclEmpty(reason) {
   elements.oclLists.textContent = "0 lists";
   elements.oclNuggets.textContent = "0 nuggets";
@@ -2496,6 +2710,7 @@ function parseArchiveIni(entries, memory) {
     renderParticleEmpty("no particle system data");
     renderAudioEmpty("no audio data");
     renderDamageFxEmpty("no damage FX data");
+    renderCrateEmpty("no crate data");
     renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
@@ -2528,6 +2743,7 @@ function parseArchiveIni(entries, memory) {
   renderParticleParse(parseParticleEntries(entries, memory));
   renderAudioParse(parseAudioEntries(entries, memory));
   renderDamageFxParse(parseDamageFxEntries(entries, memory));
+  renderCrateParse(parseCrateEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
@@ -2609,6 +2825,11 @@ async function boot() {
     exports: damageFxModule.instance.exports,
     memory: new Uint8Array(damageFxModule.instance.exports.memory.buffer),
   };
+  const crateModule = await loadWasm("../dist/generals_crate.wasm");
+  crateRuntime = {
+    exports: crateModule.instance.exports,
+    memory: new Uint8Array(crateModule.instance.exports.memory.buffer),
+  };
   const oclModule = await loadWasm("../dist/generals_ocl.wasm");
   oclRuntime = {
     exports: oclModule.instance.exports,
@@ -2654,7 +2875,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !damageFxRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
