@@ -14,6 +14,7 @@ const checks = [
   ["tools/test_real_fxlist_asset.mjs"],
   ["tools/test_real_particle_asset.mjs"],
   ["tools/test_real_audio_asset.mjs"],
+  ["tools/test_real_miscaudio_asset.mjs"],
   ["tools/test_real_damagefx_asset.mjs"],
   ["tools/test_real_crate_asset.mjs"],
   ["tools/test_real_ocl_asset.mjs"],
