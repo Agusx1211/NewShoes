@@ -12,6 +12,7 @@ let locomotorRuntime = null;
 let fxlistRuntime = null;
 let particleRuntime = null;
 let audioRuntime = null;
+let damageFxRuntime = null;
 let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
@@ -62,6 +63,11 @@ const elements = {
   audioSounds: document.querySelector("[data-audio-sounds]"),
   audioDialog: document.querySelector("[data-audio-dialog]"),
   audioFirst: document.querySelector("[data-audio-first]"),
+  damageFxTemplates: document.querySelector("[data-damagefx-templates]"),
+  damageFxAssignments: document.querySelector("[data-damagefx-assignments]"),
+  damageFxMajor: document.querySelector("[data-damagefx-major]"),
+  damageFxThrottle: document.querySelector("[data-damagefx-throttle]"),
+  damageFxFirst: document.querySelector("[data-damagefx-first]"),
   oclLists: document.querySelector("[data-ocl-lists]"),
   oclNuggets: document.querySelector("[data-ocl-nuggets]"),
   oclDebris: document.querySelector("[data-ocl-debris]"),
@@ -101,6 +107,7 @@ const elements = {
   fxlistListing: document.querySelector("[data-fxlist-listing]"),
   particleListing: document.querySelector("[data-particle-listing]"),
   audioListing: document.querySelector("[data-audio-listing]"),
+  damageFxListing: document.querySelector("[data-damagefx-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
@@ -1223,6 +1230,186 @@ function renderAudioParse(result) {
   elements.audioListing.textContent = lines.join("\n");
 }
 
+function renderDamageFxEmpty(reason) {
+  elements.damageFxTemplates.textContent = "0 templates";
+  elements.damageFxAssignments.textContent = "0 fields";
+  elements.damageFxMajor.textContent = "0 major";
+  elements.damageFxThrottle.textContent = "0 throttle";
+  elements.damageFxFirst.textContent = reason;
+  elements.damageFxListing.textContent = reason;
+}
+
+function readDamageFxString(exports, memory, ptrFn, sizeFn, ...args) {
+  const ptr = exports[ptrFn](...args);
+  const size = exports[sizeFn](...args);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readDamageFxTemplateName(exports, memory, index) {
+  return readDamageFxString(
+    exports,
+    memory,
+    "generals_damagefx_template_name_ptr",
+    "generals_damagefx_template_name_size",
+    index
+  );
+}
+
+function readDamageFxCellString(exports, memory, prefix, templateIndex, damageType, veterancy) {
+  return readDamageFxString(
+    exports,
+    memory,
+    `generals_damagefx_cell_${prefix}_ptr`,
+    `generals_damagefx_cell_${prefix}_size`,
+    templateIndex,
+    damageType,
+    veterancy
+  );
+}
+
+function parseDamageFxPayload(bytes) {
+  const { exports, memory } = damageFxRuntime;
+  const inputOffset = exports.generals_damagefx_input_ptr();
+
+  if (bytes.length > exports.generals_damagefx_input_capacity()) {
+    throw new Error(`DamageFX payload exceeds ${exports.generals_damagefx_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_damagefx_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_damagefx_error_count() !== 0) {
+    throw new Error(`DamageFX parse failed with ${exports.generals_damagefx_error_count()} errors`);
+  }
+
+  return templateCount;
+}
+
+function readDamageFxCell(exports, memory, templateIndex, damageType) {
+  const regularVeterancy = 0;
+  return {
+    amount: exports.generals_damagefx_cell_amount_x100(templateIndex, damageType, regularVeterancy),
+    major: readDamageFxCellString(exports, memory, "major_fx", templateIndex, damageType, regularVeterancy),
+    minor: readDamageFxCellString(exports, memory, "minor_fx", templateIndex, damageType, regularVeterancy),
+    throttle: exports.generals_damagefx_cell_throttle_time(templateIndex, damageType, regularVeterancy),
+  };
+}
+
+function readDamageFxTemplate(exports, memory, index) {
+  return {
+    index,
+    name: readDamageFxTemplateName(exports, memory, index),
+    line: exports.generals_damagefx_template_line(index),
+    assignments: exports.generals_damagefx_template_assignment_count(index),
+    explosion: readDamageFxCell(exports, memory, index, 0),
+    crush: readDamageFxCell(exports, memory, index, 1),
+    water: readDamageFxCell(exports, memory, index, 12),
+  };
+}
+
+function formatDamageFxCell(cell) {
+  const major = cell.major || "none";
+  const minor = cell.minor || "none";
+  return `${major}/${minor}, amount ${formatRealX100(cell.amount)}, throttle ${cell.throttle}`;
+}
+
+function formatDamageFxTemplate(template) {
+  return `${template.name}: ${template.assignments} fields; explosion ${formatDamageFxCell(template.explosion)}; crush ${formatDamageFxCell(template.crush)}; water ${template.water.major || "none"}/${template.water.minor || "none"}`;
+}
+
+function parseDamageFxEntries(entries, archiveMemory) {
+  const entry = findEntry(entries, "data/ini/damagefx.ini");
+  if (!entry) {
+    return null;
+  }
+
+  const { exports, memory } = damageFxRuntime;
+  parseDamageFxPayload(entryBytes(entry, archiveMemory));
+
+  const preview = [];
+  let defaultDamage = null;
+  let crushableCar = null;
+  let tank = null;
+  let infantry = null;
+  let empty = null;
+
+  for (let index = 0; index < exports.generals_damagefx_template_count(); ++index) {
+    const template = readDamageFxTemplate(exports, memory, index);
+    if (preview.length < 8) {
+      preview.push(template);
+    }
+    if (template.name === "DefaultDamageFX") {
+      defaultDamage = template;
+    } else if (template.name === "CrushableCarDamageFX") {
+      crushableCar = template;
+    } else if (template.name === "TankDamageFX") {
+      tank = template;
+    } else if (template.name === "InfantryDamageFX") {
+      infantry = template;
+    } else if (template.name === "EmptyDamageFX") {
+      empty = template;
+    }
+  }
+
+  return {
+    templateCount: exports.generals_damagefx_template_count(),
+    assignmentCount: exports.generals_damagefx_assignment_count(),
+    resolvedUpdateCount: exports.generals_damagefx_resolved_update_count(),
+    amountCellCount: exports.generals_damagefx_amount_cell_count(),
+    majorFxCellCount: exports.generals_damagefx_major_fx_cell_count(),
+    minorFxCellCount: exports.generals_damagefx_minor_fx_cell_count(),
+    throttleCellCount: exports.generals_damagefx_throttle_cell_count(),
+    veterancyAssignmentCount: exports.generals_damagefx_veterancy_assignment_count(),
+    preview,
+    defaultDamage,
+    crushableCar,
+    tank,
+    infantry,
+    empty,
+  };
+}
+
+function renderDamageFxParse(result) {
+  if (!result) {
+    renderDamageFxEmpty("no damage FX data");
+    return;
+  }
+
+  elements.damageFxTemplates.textContent = `${result.templateCount} templates`;
+  elements.damageFxAssignments.textContent = `${result.assignmentCount} fields`;
+  elements.damageFxMajor.textContent = `${result.majorFxCellCount} major`;
+  elements.damageFxThrottle.textContent = `${result.throttleCellCount} throttle`;
+
+  if (result.tank) {
+    elements.damageFxFirst.textContent = `DamageFX: ${result.tank.name} -> ${result.tank.explosion.major}/${result.tank.explosion.minor}, amount ${formatRealX100(result.tank.explosion.amount)}`;
+  } else {
+    const first = result.preview[0];
+    elements.damageFxFirst.textContent = first ? `DamageFX: ${first.name}` : "no damage FX data";
+  }
+
+  const lines = [
+    `${result.templateCount} templates, ${result.assignmentCount} source fields, ${result.resolvedUpdateCount} resolved writes`,
+    `cells amount ${result.amountCellCount}, major ${result.majorFxCellCount}, minor ${result.minorFxCellCount}, throttle ${result.throttleCellCount}`,
+    `veterancy-specific fields ${result.veterancyAssignmentCount}`,
+  ];
+
+  for (const template of [
+    result.defaultDamage,
+    result.crushableCar,
+    result.tank,
+    result.infantry,
+    result.empty,
+  ]) {
+    if (template) {
+      lines.push(formatDamageFxTemplate(template));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((template) => `${template.name}: ${template.assignments} fields, line ${template.line}`));
+  elements.damageFxListing.textContent = lines.join("\n");
+}
+
 function renderOclEmpty(reason) {
   elements.oclLists.textContent = "0 lists";
   elements.oclNuggets.textContent = "0 nuggets";
@@ -2308,6 +2495,7 @@ function parseArchiveIni(entries, memory) {
     renderFxListEmpty("no FX list data");
     renderParticleEmpty("no particle system data");
     renderAudioEmpty("no audio data");
+    renderDamageFxEmpty("no damage FX data");
     renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
@@ -2339,6 +2527,7 @@ function parseArchiveIni(entries, memory) {
   renderFxListParse(parseFxListEntries(entries, memory));
   renderParticleParse(parseParticleEntries(entries, memory));
   renderAudioParse(parseAudioEntries(entries, memory));
+  renderDamageFxParse(parseDamageFxEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
@@ -2415,6 +2604,11 @@ async function boot() {
     exports: audioModule.instance.exports,
     memory: new Uint8Array(audioModule.instance.exports.memory.buffer),
   };
+  const damageFxModule = await loadWasm("../dist/generals_damagefx.wasm");
+  damageFxRuntime = {
+    exports: damageFxModule.instance.exports,
+    memory: new Uint8Array(damageFxModule.instance.exports.memory.buffer),
+  };
   const oclModule = await loadWasm("../dist/generals_ocl.wasm");
   oclRuntime = {
     exports: oclModule.instance.exports,
@@ -2460,7 +2654,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !damageFxRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
