@@ -26,6 +26,8 @@ The first checked-in targets are small, real game-data modules:
   and `GeneralsMD/Code/GameEngine/Source/GameNetwork/GameSpy/Chat.cpp`
 - Zero Hour static and dynamic game LOD parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/GameLOD.cpp`
+- Zero Hour control bar scheme parsing based on
+  `GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBarScheme.cpp`
 - Zero Hour armor template parsing based on
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Armor.cpp`
 - Zero Hour weapon template parsing based on the core combat fields in
@@ -59,7 +61,7 @@ The first checked-in targets are small, real game-data modules:
 - Zero Hour player/faction template parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp`
 
-RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, armor, weapon, locomotor, FX list, particle
+RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, control bar scheme, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
 progression, and player/faction support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
@@ -94,6 +96,8 @@ Output:
 `dist/generals_multiplayer.wasm`
 
 `dist/generals_gamelod.wasm`
+
+`dist/generals_controlbar.wasm`
 
 `dist/generals_armor.wasm`
 
@@ -169,6 +173,7 @@ npm run test:real-environment
 npm run test:real-video
 npm run test:real-multiplayer
 npm run test:real-gamelod
+npm run test:real-controlbar
 npm run test:real-armor
 npm run test:real-weapon
 npm run test:real-locomotor
