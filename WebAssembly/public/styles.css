@@ -132,6 +132,32 @@ output[data-state="fail"] {
   padding: 18px;
 }
 
+.file-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  color: #9fb3c8;
+  font-size: 13px;
+}
+
+.file-picker input {
+  min-width: 0;
+  max-width: 220px;
+  color: #dbeafe;
+}
+
+.file-picker input::file-selector-button {
+  border: 1px solid #35506a;
+  border-radius: 6px;
+  margin-right: 8px;
+  padding: 6px 10px;
+  background: #122033;
+  color: #e5edf5;
+  font-weight: 700;
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -162,7 +188,7 @@ pre,
 }
 
 pre {
-  min-height: 220px;
+  min-height: 182px;
   margin: 16px 0 0;
 }
 

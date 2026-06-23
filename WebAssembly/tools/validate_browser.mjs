@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const screenshotsDir = resolve(webRoot, "artifacts/screenshots");
+const realBigPath = resolve(webRoot, "artifacts/real-assets/Gensec.big");
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -56,6 +57,14 @@ await new Promise((resolveListen) => {
 const address = server.address();
 const url = `http://127.0.0.1:${address.port}/public/index.html`;
 const browser = await chromium.launch();
+let realAsset = null;
+
+try {
+  await access(realBigPath);
+  realAsset = realBigPath;
+} catch {
+  realAsset = null;
+}
 
 try {
   const viewports = [
@@ -69,6 +78,10 @@ try {
     const page = await browser.newPage({ viewport });
     await page.goto(url);
     await page.waitForSelector('body[data-validation="pass"]', { timeout: 10000 });
+    if (realAsset) {
+      await page.setInputFiles("[data-big-file]", realAsset);
+      await page.waitForFunction(() => document.querySelector("[data-big-first]")?.textContent === "generalsb.sec");
+    }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();
     const decoded = await page.locator("[data-output]").textContent();
@@ -81,6 +94,7 @@ try {
     url,
     status: captures[0].status,
     decoded: captures[0].decoded,
+    realAsset,
     screenshot: captures[0].screenshot,
     screenshots: captures.map((capture) => capture.screenshot),
   }, null, 2));

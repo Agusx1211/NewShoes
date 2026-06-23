@@ -2,6 +2,8 @@ import { createBigArchiveSample, createRefPackLiteralSample } from "./fixtures.j
 
 const compressedLiteralSample = createRefPackLiteralSample();
 const bigArchiveSample = createBigArchiveSample();
+const textDecoder = new TextDecoder();
+let bigRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -12,6 +14,7 @@ const elements = {
   bigFiles: document.querySelector("[data-big-files]"),
   bigBytes: document.querySelector("[data-big-bytes]"),
   bigFirst: document.querySelector("[data-big-first]"),
+  bigFile: document.querySelector("[data-big-file]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   output: document.querySelector("[data-output]"),
@@ -57,6 +60,50 @@ async function loadWasm(path) {
   return WebAssembly.instantiateStreaming(response, {});
 }
 
+function parseBigArchive(archive, expectedFileCount = null) {
+  const { exports, memory } = bigRuntime;
+  const inputOffset = exports.generals_big_input_ptr();
+  const capacity = exports.generals_big_input_capacity();
+
+  if (archive.length > capacity) {
+    throw new Error(`BIG archive exceeds ${capacity} byte wasm buffer`);
+  }
+
+  memory.set(archive, inputOffset);
+
+  const isBig = exports.generals_big_is(archive.length);
+  const fileCount = exports.generals_big_parse(archive.length);
+
+  if (isBig !== 1 || fileCount < 0) {
+    throw new Error("BIG archive validation failed");
+  }
+
+  if (expectedFileCount !== null && fileCount !== expectedFileCount) {
+    throw new Error("BIG archive entry count validation failed");
+  }
+
+  const entries = [];
+  for (let index = 0; index < fileCount; ++index) {
+    const namePtr = exports.generals_big_entry_name_ptr(index);
+    const nameSize = exports.generals_big_entry_name_size(index);
+    const dataSize = exports.generals_big_entry_data_size(index);
+    const name = textDecoder.decode(memory.slice(namePtr, namePtr + nameSize));
+    entries.push({ name, dataSize });
+  }
+
+  return entries;
+}
+
+function renderBigArchive(archive, entries) {
+  elements.bigFiles.textContent = `${entries.length} files`;
+  elements.bigBytes.textContent = `${archive.length} bytes`;
+  elements.bigFirst.textContent = entries[0]?.name ?? "empty";
+  elements.bigListing.textContent = entries
+    .slice(0, 16)
+    .map((entry) => `${entry.name} (${entry.dataSize} bytes)`)
+    .join("\n");
+}
+
 async function boot() {
   setStatus("loading", "loading");
 
@@ -73,7 +120,7 @@ async function boot() {
   const decodedSize = refpackExports.generals_refpack_decode(0, 0);
   const consumedSize = refpackExports.generals_refpack_last_consumed_size();
   const decodedBytes = refpackMemory.slice(outputOffset, outputOffset + decodedSize);
-  const decodedText = new TextDecoder().decode(decodedBytes);
+  const decodedText = textDecoder.decode(decodedBytes);
 
   if (isRefPack !== 1 || expectedSize !== 3 || decodedSize !== 3 || decodedText !== "ABC") {
     throw new Error("RefPack decode validation failed");
@@ -81,27 +128,13 @@ async function boot() {
 
   const bigModule = await loadWasm("../dist/generals_big.wasm");
   const bigExports = bigModule.instance.exports;
-  const bigMemory = new Uint8Array(bigExports.memory.buffer);
-  const bigInputOffset = bigExports.generals_big_input_ptr();
-  bigMemory.set(bigArchiveSample.archive, bigInputOffset);
+  bigRuntime = {
+    exports: bigExports,
+    memory: new Uint8Array(bigExports.memory.buffer),
+  };
+  const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
-  const isBig = bigExports.generals_big_is(bigArchiveSample.archive.length);
-  const bigFileCount = bigExports.generals_big_parse(bigArchiveSample.archive.length);
-
-  if (isBig !== 1 || bigFileCount !== bigArchiveSample.files.length) {
-    throw new Error("BIG archive validation failed");
-  }
-
-  const bigEntries = [];
-  for (let index = 0; index < bigFileCount; ++index) {
-    const namePtr = bigExports.generals_big_entry_name_ptr(index);
-    const nameSize = bigExports.generals_big_entry_name_size(index);
-    const dataSize = bigExports.generals_big_entry_data_size(index);
-    const name = new TextDecoder().decode(bigMemory.slice(namePtr, namePtr + nameSize));
-    bigEntries.push(`${name} (${dataSize} bytes)`);
-  }
-
-  if (bigEntries[0] !== "data/ini/gamedata.ini (15 bytes)") {
+  if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
     throw new Error("BIG archive entry validation failed");
   }
 
@@ -109,15 +142,31 @@ async function boot() {
   elements.compressed.textContent = `${compressedLiteralSample.length} bytes`;
   elements.decoded.textContent = `${decodedSize} bytes`;
   elements.consumed.textContent = `${consumedSize} bytes`;
-  elements.bigFiles.textContent = `${bigFileCount} files`;
-  elements.bigBytes.textContent = `${bigArchiveSample.archive.length} bytes`;
-  elements.bigFirst.textContent = bigArchiveSample.files[0].name;
   elements.bytes.textContent = hex(compressedLiteralSample);
-  elements.bigListing.textContent = bigEntries.join("\n");
   elements.output.textContent = decodedText;
+  renderBigArchive(bigArchiveSample.archive, bigEntries);
   drawByteBars(compressedLiteralSample);
   setStatus("pass", "pass");
 }
+
+elements.bigFile.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file || !bigRuntime) {
+    return;
+  }
+
+  try {
+    setStatus("loading", "loading");
+    const archive = new Uint8Array(await file.arrayBuffer());
+    const entries = parseBigArchive(archive);
+    renderBigArchive(archive, entries);
+    setStatus("pass", "pass");
+  } catch (error) {
+    console.error(error);
+    elements.bigListing.textContent = error.message;
+    setStatus("fail", "fail");
+  }
+});
 
 boot().catch((error) => {
   console.error(error);

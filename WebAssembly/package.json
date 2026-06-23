@@ -5,6 +5,8 @@
   "scripts": {
     "build:wasm": "bash tools/build_refpack_wasm.sh && bash tools/build_big_wasm.sh",
     "test:wasm": "node tools/test_refpack_module.mjs && node tools/test_big_module.mjs",
+    "extract:real-big": "bash tools/extract_zh_big_sample.sh",
+    "test:real-big": "node tools/test_real_big_asset.mjs",
     "validate": "npm run build:wasm && npm run test:wasm && npm run validate:web",
     "validate:web": "node tools/validate_browser.mjs"
   },

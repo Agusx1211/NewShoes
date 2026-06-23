@@ -50,8 +50,8 @@ else
     -Wl,--no-entry \
     -Wl,--export-memory \
     "${exports[@]}" \
-    -Wl,--initial-memory=262144 \
-    -Wl,--max-memory=262144 \
+    -Wl,--initial-memory=8388608 \
+    -Wl,--max-memory=8388608 \
     "${wasm_dir}/src/big_archive_module.cpp" \
     -o "${out_file}"
 fi

@@ -1,8 +1,8 @@
 extern "C" {
 
-static const int INPUT_CAPACITY = 131072;
+static const int INPUT_CAPACITY = 4 * 1024 * 1024;
 static const int MAX_ENTRIES = 512;
-static const int NAME_CAPACITY = 32768;
+static const int NAME_CAPACITY = 1024 * 1024;
 
 struct BigEntry
 {
