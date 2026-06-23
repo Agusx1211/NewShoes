@@ -93,14 +93,18 @@ try {
       const expectedIniFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: Armor NoArmor" : "no ini: empty";
       const expectedArmorFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: NoArmor (5 assignments)" : "no armor data";
       const expectedWeaponFirst = realAsset.endsWith("INIZH.big") ? "data/ini/weapon.ini: MarauderTankGun (ARMOR_PIERCING)" : "no weapon data";
+      const expectedThingFirst = realAsset.endsWith("INIZH.big")
+        ? "data/ini/object/americavehicle.ini: AmericaVehicleHumvee -> HumveeGun / HumveeArmor"
+        : "no object data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedArmor, expectedWeapon]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedArmor, expectedWeapon, expectedThing]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
           document.querySelector("[data-armor-first]")?.textContent === expectedArmor &&
-          document.querySelector("[data-weapon-first]")?.textContent === expectedWeapon;
-      }, [expectedFirstFile, expectedIniFirst, expectedArmorFirst, expectedWeaponFirst]);
+          document.querySelector("[data-weapon-first]")?.textContent === expectedWeapon &&
+          document.querySelector("[data-thing-first]")?.textContent === expectedThing;
+      }, [expectedFirstFile, expectedIniFirst, expectedArmorFirst, expectedWeaponFirst, expectedThingFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

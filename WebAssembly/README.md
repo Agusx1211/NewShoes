@@ -14,10 +14,13 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Armor.cpp`
 - Zero Hour weapon template parsing based on the core combat fields in
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp`
+- Zero Hour object/thing template parsing based on direct fields plus
+  `ArmorSet` and `WeaponSet` links from
+  `GeneralsMD/Code/GameEngine/Source/Common/Thing/ThingTemplate.cpp`
 
-RefPack, BIG, INI, armor, and weapon support are needed before browser-side
-loading of original combat configuration can work. These targets build with
-Emscripten when available and fall back to raw Clang wasm builds for
+RefPack, BIG, INI, armor, weapon, and object template support are needed before
+browser-side loading of original combat configuration can work. These targets
+build with Emscripten when available and fall back to raw Clang wasm builds for
 dependency-free smoke testing where possible. Later targets can add more typed
 gameplay object factories, filesystem, browser loop, and SDL/WebGL integration.
 
@@ -38,6 +41,8 @@ Output:
 `dist/generals_armor.wasm`
 
 `dist/generals_weapon.wasm`
+
+`dist/generals_thing.wasm`
 
 ## Smoke Test
 
@@ -80,6 +85,7 @@ npm run test:real-big
 npm run test:real-ini
 npm run test:real-armor
 npm run test:real-weapon
+npm run test:real-thing
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.

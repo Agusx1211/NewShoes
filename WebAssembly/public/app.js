@@ -7,6 +7,7 @@ let bigRuntime = null;
 let iniRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
+let thingRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -27,11 +28,17 @@ const elements = {
   weaponTemplates: document.querySelector("[data-weapon-templates]"),
   weaponFields: document.querySelector("[data-weapon-fields]"),
   weaponFirst: document.querySelector("[data-weapon-first]"),
+  thingFiles: document.querySelector("[data-thing-files]"),
+  thingTemplates: document.querySelector("[data-thing-templates]"),
+  thingArmorLinks: document.querySelector("[data-thing-armor-links]"),
+  thingWeaponLinks: document.querySelector("[data-thing-weapon-links]"),
+  thingFirst: document.querySelector("[data-thing-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
+  thingListing: document.querySelector("[data-thing-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -330,6 +337,15 @@ function renderWeaponParse(entry, result) {
     .join("\n");
 }
 
+function renderThingEmpty(reason) {
+  elements.thingFiles.textContent = "0 files";
+  elements.thingTemplates.textContent = "0 objects";
+  elements.thingArmorLinks.textContent = "0 links";
+  elements.thingWeaponLinks.textContent = "0 links";
+  elements.thingFirst.textContent = reason;
+  elements.thingListing.textContent = reason;
+}
+
 function entryBytes(entry, memory) {
   return memory.slice(entry.dataPtr, entry.dataPtr + entry.dataSize);
 }
@@ -338,12 +354,162 @@ function findEntry(entries, name) {
   return entries.find((candidate) => candidate.name === name);
 }
 
+function isObjectEntry(entry) {
+  return entry.name === "data/ini/default/object.ini" || entry.name.startsWith("data/ini/object/");
+}
+
+function readThingString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readThingTemplateString(exports, memory, prefix, index) {
+  return readThingString(
+    exports,
+    memory,
+    `generals_thing_template_${prefix}_ptr`,
+    `generals_thing_template_${prefix}_size`,
+    index
+  );
+}
+
+function readThingWeaponSetString(exports, memory, prefix, index) {
+  return readThingString(
+    exports,
+    memory,
+    `generals_thing_weapon_set_${prefix}_ptr`,
+    `generals_thing_weapon_set_${prefix}_size`,
+    index
+  );
+}
+
+function readThingArmorSetString(exports, memory, prefix, index) {
+  return readThingString(
+    exports,
+    memory,
+    `generals_thing_armor_set_${prefix}_ptr`,
+    `generals_thing_armor_set_${prefix}_size`,
+    index
+  );
+}
+
+function parseThingEntries(entries, archiveMemory) {
+  const objectEntries = entries.filter(isObjectEntry);
+  if (objectEntries.length === 0) {
+    return null;
+  }
+
+  const { exports, memory } = thingRuntime;
+  const inputOffset = exports.generals_thing_input_ptr();
+  const capacity = exports.generals_thing_input_capacity();
+  const preview = [];
+  let featured = null;
+  let templateCount = 0;
+  let armorSetCount = 0;
+  let weaponSetCount = 0;
+
+  for (const entry of objectEntries) {
+    const bytes = entryBytes(entry, archiveMemory);
+    if (bytes.length > capacity) {
+      throw new Error(`${entry.name} exceeds ${capacity} byte thing wasm buffer`);
+    }
+
+    memory.set(bytes, inputOffset);
+    const parsedCount = exports.generals_thing_parse(bytes.length);
+
+    if (parsedCount < 0 || exports.generals_thing_error_count() !== 0) {
+      throw new Error(`Thing parse failed for ${entry.name} with ${exports.generals_thing_error_count()} errors`);
+    }
+
+    templateCount += parsedCount;
+    armorSetCount += exports.generals_thing_armor_set_count();
+    weaponSetCount += exports.generals_thing_weapon_set_count();
+
+    if (parsedCount > 0 && preview.length < 10) {
+      const firstName = readThingTemplateString(exports, memory, "name", 0);
+      preview.push({
+        file: entry.name,
+        firstName,
+        templates: parsedCount,
+        armorSets: exports.generals_thing_armor_set_count(),
+        weaponSets: exports.generals_thing_weapon_set_count(),
+      });
+    }
+
+    for (let index = 0; index < parsedCount; ++index) {
+      const name = readThingTemplateString(exports, memory, "name", index);
+      if (name === "AmericaVehicleHumvee") {
+        const firstWeaponSet = exports.generals_thing_template_first_weapon_set(index);
+        const firstArmorSet = exports.generals_thing_template_first_armor_set(index);
+        featured = {
+          file: entry.name,
+          name,
+          displayName: readThingTemplateString(exports, memory, "display_name", index),
+          side: readThingTemplateString(exports, memory, "side", index),
+          buildCost: exports.generals_thing_template_build_cost(index),
+          buildTime: exports.generals_thing_template_build_time_x100(index),
+          visionRange: exports.generals_thing_template_vision_range_x100(index),
+          commandSet: readThingTemplateString(exports, memory, "command_set", index),
+          primaryWeapon: readThingWeaponSetString(exports, memory, "primary", firstWeaponSet),
+          secondaryWeapon: readThingWeaponSetString(exports, memory, "secondary", firstWeaponSet + 1),
+          armor: readThingArmorSetString(exports, memory, "armor", firstArmorSet),
+        };
+      }
+    }
+  }
+
+  return {
+    fileCount: objectEntries.length,
+    templateCount,
+    armorSetCount,
+    weaponSetCount,
+    preview,
+    featured,
+  };
+}
+
+function renderThingParse(result) {
+  if (!result) {
+    renderThingEmpty("no object data");
+    return;
+  }
+
+  elements.thingFiles.textContent = `${result.fileCount} files`;
+  elements.thingTemplates.textContent = `${result.templateCount} objects`;
+  elements.thingArmorLinks.textContent = `${result.armorSetCount} links`;
+  elements.thingWeaponLinks.textContent = `${result.weaponSetCount} links`;
+
+  if (result.featured) {
+    elements.thingFirst.textContent = `${result.featured.file}: ${result.featured.name} -> ${result.featured.primaryWeapon} / ${result.featured.armor}`;
+  } else {
+    const first = result.preview[0];
+    elements.thingFirst.textContent = first ? `${first.file}: ${first.firstName}` : "no object data";
+  }
+
+  const featuredLines = result.featured ? [
+    `${result.featured.name}: ${result.featured.displayName}, side ${result.featured.side}`,
+    `cost ${result.featured.buildCost}, build ${formatRealX100(result.featured.buildTime)}s, vision ${formatRealX100(result.featured.visionRange)}`,
+    `command ${result.featured.commandSet}`,
+    `weapons ${result.featured.primaryWeapon}${result.featured.secondaryWeapon ? ` / ${result.featured.secondaryWeapon}` : ""}, armor ${result.featured.armor}`,
+    "",
+  ] : [];
+
+  elements.thingListing.textContent = [
+    ...featuredLines,
+    ...result.preview.map((entry) => {
+      return `${entry.file}: ${entry.templates} objects, ${entry.weaponSets} weapon sets, ${entry.armorSets} armor sets`;
+    }),
+  ].join("\n");
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
     renderIniParse({ name: "no ini" }, { blockCount: 0, propertyCount: 0, blocks: [] });
     renderArmorEmpty("no armor data");
     renderWeaponEmpty("no weapon data");
+    renderThingEmpty("no object data");
     return;
   }
 
@@ -364,6 +530,8 @@ function parseArchiveIni(entries, memory) {
   } else {
     renderWeaponEmpty("no weapon data");
   }
+
+  renderThingParse(parseThingEntries(entries, memory));
 }
 
 async function boot() {
@@ -409,6 +577,11 @@ async function boot() {
     exports: weaponModule.instance.exports,
     memory: new Uint8Array(weaponModule.instance.exports.memory.buffer),
   };
+  const thingModule = await loadWasm("../dist/generals_thing.wasm");
+  thingRuntime = {
+    exports: thingModule.instance.exports,
+    memory: new Uint8Array(thingModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -429,7 +602,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime) {
     return;
   }
 
