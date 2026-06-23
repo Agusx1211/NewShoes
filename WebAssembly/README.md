@@ -18,6 +18,8 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp`
 - Zero Hour locomotor template parsing based on movement fields from
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Locomotor.cpp`
+- Zero Hour FX list parsing based on audiovisual effect nuggets from
+  `GeneralsMD/Code/GameEngine/Source/GameClient/FXList.cpp`
 - Zero Hour object creation list parsing based on action nuggets from
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp`
 - Zero Hour object/thing template parsing based on direct fields plus
@@ -32,13 +34,13 @@ The first checked-in targets are small, real game-data modules:
 - Zero Hour player/faction template parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp`
 
-RefPack, BIG, INI, global game data, armor, weapon, locomotor, object creation
-list, object template, command UI, progression, and player/faction support are
-needed before browser-side loading of original combat configuration can work.
-These targets build with Emscripten when available and fall back to raw Clang
-wasm builds for dependency-free smoke testing where possible. Later targets can
-add more typed gameplay object factories, filesystem, browser loop, and
-SDL/WebGL integration.
+RefPack, BIG, INI, global game data, armor, weapon, locomotor, FX list, object
+creation list, object template, command UI, progression, and player/faction
+support are needed before browser-side loading of original combat configuration
+can work. These targets build with Emscripten when available and fall back to raw
+Clang wasm builds for dependency-free smoke testing where possible. Later
+targets can add more typed gameplay object factories, filesystem, browser loop,
+and SDL/WebGL integration.
 
 ## Build
 
@@ -61,6 +63,8 @@ Output:
 `dist/generals_weapon.wasm`
 
 `dist/generals_locomotor.wasm`
+
+`dist/generals_fxlist.wasm`
 
 `dist/generals_ocl.wasm`
 
@@ -115,6 +119,7 @@ npm run test:real-gamedata
 npm run test:real-armor
 npm run test:real-weapon
 npm run test:real-locomotor
+npm run test:real-fxlist
 npm run test:real-ocl
 npm run test:real-thing
 npm run test:real-command
