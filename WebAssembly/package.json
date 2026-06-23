@@ -1,0 +1,13 @@
+{
+  "name": "cnc-generals-wasm",
+  "private": true,
+  "scripts": {
+    "build:wasm": "bash tools/build_refpack_wasm.sh",
+    "test:wasm": "node tools/test_refpack_module.mjs",
+    "validate": "npm run build:wasm && npm run test:wasm && npm run validate:web",
+    "validate:web": "node tools/validate_browser.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
+  }
+}

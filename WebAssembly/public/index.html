@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>C&C Generals WebAssembly Harness</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">Command &amp; Conquer Generals</p>
+          <h1>WebAssembly Port Harness</h1>
+        </div>
+        <output data-status data-state="loading">loading</output>
+      </header>
+
+      <section class="panel metrics" aria-label="RefPack module metrics">
+        <div>
+          <span>Module memory</span>
+          <strong data-module>pending</strong>
+        </div>
+        <div>
+          <span>Compressed</span>
+          <strong data-compressed>pending</strong>
+        </div>
+        <div>
+          <span>Decoded</span>
+          <strong data-decoded>pending</strong>
+        </div>
+        <div>
+          <span>Consumed</span>
+          <strong data-consumed>pending</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="panel">
+          <h2>RefPack Sample</h2>
+          <canvas width="720" height="220" aria-label="Compressed byte bars"></canvas>
+          <code data-bytes>pending</code>
+        </div>
+        <div class="panel result">
+          <h2>Decoded Output</h2>
+          <pre data-output>pending</pre>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
