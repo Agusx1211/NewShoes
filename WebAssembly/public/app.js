@@ -8,6 +8,7 @@ let iniRuntime = null;
 let gameDataRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
+let locomotorRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
 let progressionRuntime = null;
@@ -37,6 +38,11 @@ const elements = {
   weaponTemplates: document.querySelector("[data-weapon-templates]"),
   weaponFields: document.querySelector("[data-weapon-fields]"),
   weaponFirst: document.querySelector("[data-weapon-first]"),
+  locomotorTemplates: document.querySelector("[data-locomotor-templates]"),
+  locomotorFields: document.querySelector("[data-locomotor-fields]"),
+  locomotorGround: document.querySelector("[data-locomotor-ground]"),
+  locomotorAir: document.querySelector("[data-locomotor-air]"),
+  locomotorFirst: document.querySelector("[data-locomotor-first]"),
   thingFiles: document.querySelector("[data-thing-files]"),
   thingTemplates: document.querySelector("[data-thing-templates]"),
   thingArmorLinks: document.querySelector("[data-thing-armor-links]"),
@@ -67,6 +73,7 @@ const elements = {
   gameDataListing: document.querySelector("[data-gamedata-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
+  locomotorListing: document.querySelector("[data-locomotor-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
   progressionListing: document.querySelector("[data-progression-listing]"),
@@ -367,6 +374,166 @@ function renderWeaponParse(entry, result) {
       return `${template.name} (${template.fields} fields, line ${template.line}) damage ${formatRealX100(template.primaryDamage)}, range ${formatRealX100(template.attackRange)}, ${template.damageType}${projectile}`;
     })
     .join("\n");
+}
+
+function renderLocomotorEmpty(reason) {
+  elements.locomotorTemplates.textContent = "0 templates";
+  elements.locomotorFields.textContent = "0 fields";
+  elements.locomotorGround.textContent = "0 ground";
+  elements.locomotorAir.textContent = "0 air";
+  elements.locomotorFirst.textContent = reason;
+  elements.locomotorListing.textContent = reason;
+}
+
+function readLocomotorString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readLocomotorTemplateString(exports, memory, prefix, index) {
+  return readLocomotorString(
+    exports,
+    memory,
+    `generals_locomotor_template_${prefix}_ptr`,
+    `generals_locomotor_template_${prefix}_size`,
+    index
+  );
+}
+
+function readLocomotorEnumString(exports, memory, kind, index) {
+  return readLocomotorString(
+    exports,
+    memory,
+    `generals_locomotor_${kind}_name_ptr`,
+    `generals_locomotor_${kind}_name_size`,
+    index
+  );
+}
+
+function parseLocomotorPayload(bytes) {
+  const { exports, memory } = locomotorRuntime;
+  const inputOffset = exports.generals_locomotor_input_ptr();
+
+  if (bytes.length > exports.generals_locomotor_input_capacity()) {
+    throw new Error(`Locomotor payload exceeds ${exports.generals_locomotor_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_locomotor_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_locomotor_error_count() !== 0) {
+    throw new Error(`Locomotor parse failed with ${exports.generals_locomotor_error_count()} errors`);
+  }
+
+  return templateCount;
+}
+
+function parseLocomotorEntries(entries, archiveMemory) {
+  const locomotorEntry = findEntry(entries, "data/ini/locomotor.ini");
+  if (!locomotorEntry) {
+    return null;
+  }
+
+  const { exports, memory } = locomotorRuntime;
+  const templateCount = parseLocomotorPayload(entryBytes(locomotorEntry, archiveMemory));
+  const preview = [];
+  let basicHuman = null;
+  let rocketBuggy = null;
+  let comanche = null;
+  let aurora = null;
+
+  for (let index = 0; index < templateCount; ++index) {
+    const appearance = exports.generals_locomotor_template_appearance(index);
+    const behaviorZ = exports.generals_locomotor_template_behavior_z(index);
+    const priority = exports.generals_locomotor_template_move_priority(index);
+    const template = {
+      name: readLocomotorTemplateString(exports, memory, "name", index),
+      surfaces: readLocomotorTemplateString(exports, memory, "surfaces", index),
+      fields: exports.generals_locomotor_template_field_count(index),
+      line: exports.generals_locomotor_template_line(index),
+      speed: exports.generals_locomotor_template_speed_x100(index),
+      speedDamaged: exports.generals_locomotor_template_speed_damaged_x100(index),
+      minSpeed: exports.generals_locomotor_template_min_speed_x100(index),
+      acceleration: exports.generals_locomotor_template_acceleration_x100(index),
+      braking: exports.generals_locomotor_template_braking_x100(index),
+      preferredHeight: exports.generals_locomotor_template_preferred_height_x100(index),
+      appearance: readLocomotorEnumString(exports, memory, "appearance", appearance),
+      behaviorZ: readLocomotorEnumString(exports, memory, "behavior_z", behaviorZ),
+      priority: readLocomotorEnumString(exports, memory, "priority", priority),
+      canMoveBackwards: exports.generals_locomotor_template_can_move_backwards(index),
+      allowAirborneMotiveForce: exports.generals_locomotor_template_allow_airborne_motive_force(index),
+    };
+
+    if (preview.length < 12) {
+      preview.push(template);
+    }
+    if (template.name === "BasicHumanLocomotor") {
+      basicHuman = template;
+    } else if (template.name === "RocketBuggyLocomotor") {
+      rocketBuggy = template;
+    } else if (template.name === "ComancheLocomotor") {
+      comanche = template;
+    } else if (template.name === "AuroraJetLocomotor") {
+      aurora = template;
+    }
+  }
+
+  return {
+    file: locomotorEntry.name,
+    templateCount,
+    fieldCount: exports.generals_locomotor_field_count(),
+    groundCount: exports.generals_locomotor_ground_template_count(),
+    airCount: exports.generals_locomotor_air_template_count(),
+    waterCount: exports.generals_locomotor_water_template_count(),
+    cliffCount: exports.generals_locomotor_cliff_template_count(),
+    preview,
+    basicHuman,
+    rocketBuggy,
+    comanche,
+    aurora,
+  };
+}
+
+function renderLocomotorParse(result) {
+  if (!result) {
+    renderLocomotorEmpty("no locomotor data");
+    return;
+  }
+
+  elements.locomotorTemplates.textContent = `${result.templateCount} templates`;
+  elements.locomotorFields.textContent = `${result.fieldCount} fields`;
+  elements.locomotorGround.textContent = `${result.groundCount} ground`;
+  elements.locomotorAir.textContent = `${result.airCount} air`;
+
+  if (result.basicHuman) {
+    elements.locomotorFirst.textContent = `${result.file}: ${result.basicHuman.name} ${result.basicHuman.surfaces}, speed ${formatRealX100(result.basicHuman.speed)}, ${result.basicHuman.appearance}`;
+  } else {
+    const first = result.preview[0];
+    elements.locomotorFirst.textContent = first ? `${result.file}: ${first.name}` : "no locomotor data";
+  }
+
+  const lines = [
+    `${result.templateCount} templates, ${result.fieldCount} fields`,
+    `surfaces ground ${result.groundCount}, air ${result.airCount}, water ${result.waterCount}, cliff ${result.cliffCount}`,
+  ];
+
+  if (result.basicHuman) {
+    lines.push(`${result.basicHuman.name}: ${result.basicHuman.surfaces}, ${result.basicHuman.appearance}, speed ${formatRealX100(result.basicHuman.speed)} / damaged ${formatRealX100(result.basicHuman.speedDamaged)}, accel ${formatRealX100(result.basicHuman.acceleration)}, ${result.basicHuman.priority}`);
+  }
+  if (result.rocketBuggy) {
+    lines.push(`${result.rocketBuggy.name}: ${result.rocketBuggy.surfaces}, speed ${formatRealX100(result.rocketBuggy.speed)}, braking ${formatRealX100(result.rocketBuggy.braking)}, backwards ${result.rocketBuggy.canMoveBackwards ? "yes" : "no"}`);
+  }
+  if (result.comanche) {
+    lines.push(`${result.comanche.name}: ${result.comanche.appearance}, ${result.comanche.behaviorZ}, height ${formatRealX100(result.comanche.preferredHeight)}, airborne force ${result.comanche.allowAirborneMotiveForce ? "yes" : "no"}`);
+  }
+  if (result.aurora) {
+    lines.push(`${result.aurora.name}: ${result.aurora.appearance}, speed ${formatRealX100(result.aurora.speed)}, min ${formatRealX100(result.aurora.minSpeed)}`);
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((template) => `${template.name}: ${template.surfaces}, ${template.appearance}, ${template.fields} fields, line ${template.line}`));
+  elements.locomotorListing.textContent = lines.join("\n");
 }
 
 function renderThingEmpty(reason) {
@@ -1246,6 +1413,7 @@ function parseArchiveIni(entries, memory) {
     renderIniParse({ name: "no ini" }, { blockCount: 0, propertyCount: 0, blocks: [] });
     renderArmorEmpty("no armor data");
     renderWeaponEmpty("no weapon data");
+    renderLocomotorEmpty("no locomotor data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
     renderProgressionEmpty("no progression data");
@@ -1272,6 +1440,7 @@ function parseArchiveIni(entries, memory) {
     renderWeaponEmpty("no weapon data");
   }
 
+  renderLocomotorParse(parseLocomotorEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
   renderProgressionParse(parseProgressionEntries(entries, memory));
@@ -1327,6 +1496,11 @@ async function boot() {
     exports: weaponModule.instance.exports,
     memory: new Uint8Array(weaponModule.instance.exports.memory.buffer),
   };
+  const locomotorModule = await loadWasm("../dist/generals_locomotor.wasm");
+  locomotorRuntime = {
+    exports: locomotorModule.instance.exports,
+    memory: new Uint8Array(locomotorModule.instance.exports.memory.buffer),
+  };
   const thingModule = await loadWasm("../dist/generals_thing.wasm");
   thingRuntime = {
     exports: thingModule.instance.exports,
@@ -1367,7 +1541,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
