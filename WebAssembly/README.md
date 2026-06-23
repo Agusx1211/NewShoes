@@ -27,6 +27,8 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/Common/INI/INIAudioEventInfo.cpp`
 - Zero Hour damage effect table parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/DamageFX.cpp`
+- Zero Hour crate data parsing based on
+  `GeneralsMD/Code/GameEngine/Source/GameLogic/System/CrateSystem.cpp`
 - Zero Hour object creation list parsing based on action nuggets from
   `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/ObjectCreationList.cpp`
 - Zero Hour object/thing template parsing based on direct fields plus
@@ -42,7 +44,7 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp`
 
 RefPack, BIG, INI, global game data, armor, weapon, locomotor, FX list, particle
-system, audio event, damage FX, object creation list, object template, command UI,
+system, audio event, damage FX, crate data, object creation list, object template, command UI,
 progression, and player/faction support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
 when available and fall back to raw Clang wasm builds for dependency-free smoke
@@ -78,6 +80,8 @@ Output:
 `dist/generals_audio.wasm`
 
 `dist/generals_damagefx.wasm`
+
+`dist/generals_crate.wasm`
 
 `dist/generals_ocl.wasm`
 
@@ -136,6 +140,7 @@ npm run test:real-fxlist
 npm run test:real-particle
 npm run test:real-audio
 npm run test:real-damagefx
+npm run test:real-crate
 npm run test:real-ocl
 npm run test:real-thing
 npm run test:real-command
