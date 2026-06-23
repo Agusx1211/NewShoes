@@ -108,6 +108,9 @@ try {
       const expectedAudioFirst = realAsset.endsWith("INIZH.big")
         ? "Audio: GenericTankMoveLoop -> vgenlo2a vgenlo2b vgenlo2c, LOW"
         : "no audio data";
+      const expectedMiscAudioFirst = realAsset.endsWith("INIZH.big")
+        ? "MiscAudio: SabotageShutDownBuilding -> SabotageBuildingPower, 34 hooks"
+        : "no miscellaneous audio data";
       const expectedDamageFxFirst = realAsset.endsWith("INIZH.big")
         ? "DamageFX: TankDamageFX -> FX_DamageTankStruck/FX_DamageTankStruck, amount 2"
         : "no damage FX data";
@@ -130,7 +133,7 @@ try {
         ? "FactionAmerica: America/USA, starts AmericaCommandCenter + AmericaVehicleDozer"
         : "no player data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
@@ -141,6 +144,7 @@ try {
           document.querySelector("[data-fxlist-first]")?.textContent === expectedFxList &&
           document.querySelector("[data-particle-first]")?.textContent === expectedParticle &&
           document.querySelector("[data-audio-first]")?.textContent === expectedAudio &&
+          document.querySelector("[data-miscaudio-first]")?.textContent === expectedMiscAudio &&
           document.querySelector("[data-damagefx-first]")?.textContent === expectedDamageFx &&
           document.querySelector("[data-crate-first]")?.textContent === expectedCrate &&
           document.querySelector("[data-ocl-first]")?.textContent === expectedOcl &&
@@ -148,7 +152,7 @@ try {
           document.querySelector("[data-command-first]")?.textContent === expectedCommand &&
           document.querySelector("[data-progression-first]")?.textContent === expectedProgression &&
           document.querySelector("[data-player-first]")?.textContent === expectedPlayer;
-      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
+      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

@@ -12,6 +12,7 @@ let locomotorRuntime = null;
 let fxlistRuntime = null;
 let particleRuntime = null;
 let audioRuntime = null;
+let miscAudioRuntime = null;
 let damageFxRuntime = null;
 let crateRuntime = null;
 let oclRuntime = null;
@@ -64,6 +65,11 @@ const elements = {
   audioSounds: document.querySelector("[data-audio-sounds]"),
   audioDialog: document.querySelector("[data-audio-dialog]"),
   audioFirst: document.querySelector("[data-audio-first]"),
+  miscAudioSlots: document.querySelector("[data-miscaudio-slots]"),
+  miscAudioEvents: document.querySelector("[data-miscaudio-events]"),
+  miscAudioNoSound: document.querySelector("[data-miscaudio-nosound]"),
+  miscAudioMissing: document.querySelector("[data-miscaudio-missing]"),
+  miscAudioFirst: document.querySelector("[data-miscaudio-first]"),
   damageFxTemplates: document.querySelector("[data-damagefx-templates]"),
   damageFxAssignments: document.querySelector("[data-damagefx-assignments]"),
   damageFxMajor: document.querySelector("[data-damagefx-major]"),
@@ -113,6 +119,7 @@ const elements = {
   fxlistListing: document.querySelector("[data-fxlist-listing]"),
   particleListing: document.querySelector("[data-particle-listing]"),
   audioListing: document.querySelector("[data-audio-listing]"),
+  miscAudioListing: document.querySelector("[data-miscaudio-listing]"),
   damageFxListing: document.querySelector("[data-damagefx-listing]"),
   crateListing: document.querySelector("[data-crate-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
@@ -1235,6 +1242,174 @@ function renderAudioParse(result) {
   lines.push("");
   lines.push(...result.preview.map((event) => `${event.file}: ${event.name}, ${event.category}, ${event.fields} fields, line ${event.line}`));
   elements.audioListing.textContent = lines.join("\n");
+}
+
+function renderMiscAudioEmpty(reason) {
+  elements.miscAudioSlots.textContent = "0 slots";
+  elements.miscAudioEvents.textContent = "0 hooks";
+  elements.miscAudioNoSound.textContent = "0 NoSound";
+  elements.miscAudioMissing.textContent = "0 unset";
+  elements.miscAudioFirst.textContent = reason;
+  elements.miscAudioListing.textContent = reason;
+}
+
+function readMiscAudioString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readMiscAudioSlot(exports, memory, index) {
+  return {
+    index,
+    field: readMiscAudioString(
+      exports,
+      memory,
+      "generals_miscaudio_slot_field_ptr",
+      "generals_miscaudio_slot_field_size",
+      index
+    ),
+    event: readMiscAudioString(
+      exports,
+      memory,
+      "generals_miscaudio_slot_event_ptr",
+      "generals_miscaudio_slot_event_size",
+      index
+    ),
+    line: exports.generals_miscaudio_slot_line(index),
+    assigned: exports.generals_miscaudio_slot_assigned(index),
+    hasEvent: exports.generals_miscaudio_slot_has_event(index),
+    noSound: exports.generals_miscaudio_slot_no_sound(index),
+  };
+}
+
+function parseMiscAudioPayload(bytes) {
+  const { exports, memory } = miscAudioRuntime;
+  const inputOffset = exports.generals_miscaudio_input_ptr();
+
+  if (bytes.length > exports.generals_miscaudio_input_capacity()) {
+    throw new Error(`MiscAudio payload exceeds ${exports.generals_miscaudio_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const eventCount = exports.generals_miscaudio_parse(bytes.length);
+
+  if (eventCount < 0 || exports.generals_miscaudio_error_count() !== 0) {
+    throw new Error(`MiscAudio parse failed with ${exports.generals_miscaudio_error_count()} errors`);
+  }
+
+  return eventCount;
+}
+
+function formatMiscAudioSlot(slot) {
+  if (slot.hasEvent) {
+    return `${slot.field}: ${slot.event}, line ${slot.line}`;
+  }
+  if (slot.noSound) {
+    return `${slot.field}: NoSound, line ${slot.line}`;
+  }
+  return `${slot.field}: unset`;
+}
+
+function parseMiscAudioEntries(entries, archiveMemory) {
+  const entry = findEntry(entries, "data/ini/miscaudio.ini");
+  if (!entry) {
+    return null;
+  }
+
+  const { exports, memory } = miscAudioRuntime;
+  parseMiscAudioPayload(entryBytes(entry, archiveMemory));
+
+  const preview = [];
+  let radarUnitUnderAttack = null;
+  let radarInfiltration = null;
+  let defectorDing = null;
+  let crateSalvage = null;
+  let sabotagePower = null;
+  let sabotageReset = null;
+  let aircraftWheelScreech = null;
+
+  for (let index = 0; index < exports.generals_miscaudio_slot_count(); ++index) {
+    const slot = readMiscAudioSlot(exports, memory, index);
+    preview.push(slot);
+
+    if (slot.field === "RadarNotifyUnitUnderAttackSound") {
+      radarUnitUnderAttack = slot;
+    } else if (slot.field === "RadarNotifyInfiltrationSound") {
+      radarInfiltration = slot;
+    } else if (slot.field === "DefectorTimerDingSound") {
+      defectorDing = slot;
+    } else if (slot.field === "CrateSalvage") {
+      crateSalvage = slot;
+    } else if (slot.field === "SabotageShutDownBuilding") {
+      sabotagePower = slot;
+    } else if (slot.field === "SabotageResetTimeBuilding") {
+      sabotageReset = slot;
+    } else if (slot.field === "AircraftWheelScreech") {
+      aircraftWheelScreech = slot;
+    }
+  }
+
+  return {
+    file: entry.name,
+    slotCount: exports.generals_miscaudio_slot_count(),
+    fieldCount: exports.generals_miscaudio_field_count(),
+    assignedCount: exports.generals_miscaudio_assigned_count(),
+    eventCount: exports.generals_miscaudio_event_count(),
+    noSoundCount: exports.generals_miscaudio_no_sound_count(),
+    missingCount: exports.generals_miscaudio_missing_count(),
+    lineCount: exports.generals_miscaudio_line_count(),
+    preview,
+    radarUnitUnderAttack,
+    radarInfiltration,
+    defectorDing,
+    crateSalvage,
+    sabotagePower,
+    sabotageReset,
+    aircraftWheelScreech,
+  };
+}
+
+function renderMiscAudioParse(result) {
+  if (!result) {
+    renderMiscAudioEmpty("no miscellaneous audio data");
+    return;
+  }
+
+  elements.miscAudioSlots.textContent = `${result.slotCount} slots`;
+  elements.miscAudioEvents.textContent = `${result.eventCount} hooks`;
+  elements.miscAudioNoSound.textContent = `${result.noSoundCount} NoSound`;
+  elements.miscAudioMissing.textContent = `${result.missingCount} unset`;
+
+  if (result.sabotagePower) {
+    elements.miscAudioFirst.textContent = `MiscAudio: ${result.sabotagePower.field} -> ${result.sabotagePower.event}, ${result.eventCount} hooks`;
+  } else {
+    const first = result.preview[0];
+    elements.miscAudioFirst.textContent = first ? `MiscAudio: ${first.field}` : "no miscellaneous audio data";
+  }
+
+  const lines = [
+    `${result.file}: ${result.slotCount} native slots, ${result.assignedCount} assigned, ${result.eventCount} active hooks`,
+    `${result.fieldCount} source fields, ${result.noSoundCount} NoSound, ${result.missingCount} unset-or-muted slots, ${result.lineCount} lines`,
+  ];
+
+  for (const slot of [
+    result.radarUnitUnderAttack,
+    result.radarInfiltration,
+    result.defectorDing,
+    result.crateSalvage,
+    result.sabotagePower,
+    result.sabotageReset,
+    result.aircraftWheelScreech,
+  ]) {
+    if (slot) {
+      lines.push(formatMiscAudioSlot(slot));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.slice(0, 16).map(formatMiscAudioSlot));
+  elements.miscAudioListing.textContent = lines.join("\n");
 }
 
 function renderDamageFxEmpty(reason) {
@@ -2709,6 +2884,7 @@ function parseArchiveIni(entries, memory) {
     renderFxListEmpty("no FX list data");
     renderParticleEmpty("no particle system data");
     renderAudioEmpty("no audio data");
+    renderMiscAudioEmpty("no miscellaneous audio data");
     renderDamageFxEmpty("no damage FX data");
     renderCrateEmpty("no crate data");
     renderOclEmpty("no object creation list data");
@@ -2742,6 +2918,7 @@ function parseArchiveIni(entries, memory) {
   renderFxListParse(parseFxListEntries(entries, memory));
   renderParticleParse(parseParticleEntries(entries, memory));
   renderAudioParse(parseAudioEntries(entries, memory));
+  renderMiscAudioParse(parseMiscAudioEntries(entries, memory));
   renderDamageFxParse(parseDamageFxEntries(entries, memory));
   renderCrateParse(parseCrateEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
@@ -2820,6 +2997,11 @@ async function boot() {
     exports: audioModule.instance.exports,
     memory: new Uint8Array(audioModule.instance.exports.memory.buffer),
   };
+  const miscAudioModule = await loadWasm("../dist/generals_miscaudio.wasm");
+  miscAudioRuntime = {
+    exports: miscAudioModule.instance.exports,
+    memory: new Uint8Array(miscAudioModule.instance.exports.memory.buffer),
+  };
   const damageFxModule = await loadWasm("../dist/generals_damagefx.wasm");
   damageFxRuntime = {
     exports: damageFxModule.instance.exports,
@@ -2875,7 +3057,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
