@@ -9,6 +9,7 @@ let armorRuntime = null;
 let weaponRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
+let progressionRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -39,6 +40,11 @@ const elements = {
   commandSets: document.querySelector("[data-command-sets]"),
   commandSlots: document.querySelector("[data-command-slots]"),
   commandFirst: document.querySelector("[data-command-first]"),
+  progressionUpgrades: document.querySelector("[data-progression-upgrades]"),
+  progressionSpecialPowers: document.querySelector("[data-progression-special-powers]"),
+  progressionSciences: document.querySelector("[data-progression-sciences]"),
+  progressionFields: document.querySelector("[data-progression-fields]"),
+  progressionFirst: document.querySelector("[data-progression-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
@@ -46,6 +52,7 @@ const elements = {
   weaponListing: document.querySelector("[data-weapon-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
+  progressionListing: document.querySelector("[data-progression-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -586,6 +593,7 @@ function readCommandButtons(entry, archiveMemory) {
       object: readCommandButtonString(exports, memory, "object", index),
       upgrade: readCommandButtonString(exports, memory, "upgrade", index),
       specialPower: readCommandButtonString(exports, memory, "special_power", index),
+      science: readCommandButtonString(exports, memory, "science", index),
       options: readCommandButtonString(exports, memory, "options", index),
       textLabel: readCommandButtonString(exports, memory, "text_label", index),
       buttonImage: readCommandButtonString(exports, memory, "button_image", index),
@@ -713,6 +721,184 @@ function renderCommandParse(result) {
   ].join("\n");
 }
 
+function renderProgressionEmpty(reason) {
+  elements.progressionUpgrades.textContent = "0 upgrades";
+  elements.progressionSpecialPowers.textContent = "0 powers";
+  elements.progressionSciences.textContent = "0 sciences";
+  elements.progressionFields.textContent = "0 fields";
+  elements.progressionFirst.textContent = reason;
+  elements.progressionListing.textContent = reason;
+}
+
+function readProgressionString(exports, memory, kind, prefix, index) {
+  const ptr = exports[`generals_progression_${kind}_${prefix}_ptr`](index);
+  const size = exports[`generals_progression_${kind}_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseProgressionPayload(bytes) {
+  const { exports, memory } = progressionRuntime;
+  const inputOffset = exports.generals_progression_input_ptr();
+
+  if (bytes.length > exports.generals_progression_input_capacity()) {
+    throw new Error(`Progression payload exceeds ${exports.generals_progression_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_progression_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_progression_error_count() !== 0) {
+    throw new Error(`Progression parse failed with ${exports.generals_progression_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function readProgressionUpgrades(entry, archiveMemory) {
+  const { exports, memory } = progressionRuntime;
+  parseProgressionPayload(entryBytes(entry, archiveMemory));
+
+  const upgradesByName = new Map();
+  for (let index = 0; index < exports.generals_progression_upgrade_count(); ++index) {
+    const upgrade = {
+      name: readProgressionString(exports, memory, "upgrade", "name", index),
+      displayName: readProgressionString(exports, memory, "upgrade", "display_name", index),
+      type: readProgressionString(exports, memory, "upgrade", "type", index) || "PLAYER",
+      buttonImage: readProgressionString(exports, memory, "upgrade", "button_image", index),
+      academy: readProgressionString(exports, memory, "upgrade", "academy", index),
+      buildTime: exports.generals_progression_upgrade_build_time_x100(index),
+      buildCost: exports.generals_progression_upgrade_build_cost(index),
+      fields: exports.generals_progression_upgrade_field_count_at(index),
+      line: exports.generals_progression_upgrade_line(index),
+    };
+    upgradesByName.set(upgrade.name, upgrade);
+  }
+
+  return {
+    upgradeCount: exports.generals_progression_upgrade_count(),
+    upgradeFieldCount: exports.generals_progression_upgrade_field_count(),
+    upgradesByName,
+  };
+}
+
+function readProgressionSpecialPowers(entry, archiveMemory) {
+  const { exports, memory } = progressionRuntime;
+  parseProgressionPayload(entryBytes(entry, archiveMemory));
+
+  const specialPowersByName = new Map();
+  for (let index = 0; index < exports.generals_progression_special_power_count(); ++index) {
+    const specialPower = {
+      name: readProgressionString(exports, memory, "special_power", "name", index),
+      enumName: readProgressionString(exports, memory, "special_power", "enum", index),
+      requiredScience: readProgressionString(exports, memory, "special_power", "required_science", index),
+      academy: readProgressionString(exports, memory, "special_power", "academy", index),
+      reloadTime: exports.generals_progression_special_power_reload_time_ms(index),
+      radiusCursorRadius: exports.generals_progression_special_power_radius_cursor_radius_x100(index),
+      shortcutPower: exports.generals_progression_special_power_shortcut_power(index),
+      fields: exports.generals_progression_special_power_field_count_at(index),
+      line: exports.generals_progression_special_power_line(index),
+    };
+    specialPowersByName.set(specialPower.name, specialPower);
+  }
+
+  return {
+    specialPowerCount: exports.generals_progression_special_power_count(),
+    specialPowerFieldCount: exports.generals_progression_special_power_field_count(),
+    specialPowersByName,
+  };
+}
+
+function readProgressionSciences(entry, archiveMemory) {
+  const { exports, memory } = progressionRuntime;
+  parseProgressionPayload(entryBytes(entry, archiveMemory));
+
+  const sciencesByName = new Map();
+  for (let index = 0; index < exports.generals_progression_science_count(); ++index) {
+    const science = {
+      name: readProgressionString(exports, memory, "science", "name", index),
+      prerequisites: readProgressionString(exports, memory, "science", "prerequisite_sciences", index),
+      displayName: readProgressionString(exports, memory, "science", "display_name", index),
+      description: readProgressionString(exports, memory, "science", "description", index),
+      cost: exports.generals_progression_science_purchase_point_cost(index),
+      grantable: exports.generals_progression_science_is_grantable(index),
+      fields: exports.generals_progression_science_field_count_at(index),
+      line: exports.generals_progression_science_line(index),
+    };
+    sciencesByName.set(science.name, science);
+  }
+
+  return {
+    scienceCount: exports.generals_progression_science_count(),
+    scienceFieldCount: exports.generals_progression_science_field_count(),
+    sciencesByName,
+  };
+}
+
+function parseProgressionEntries(entries, archiveMemory) {
+  const upgradeEntry = findEntry(entries, "data/ini/upgrade.ini");
+  const specialPowerEntry = findEntry(entries, "data/ini/specialpower.ini");
+  const scienceEntry = findEntry(entries, "data/ini/science.ini");
+
+  if (!upgradeEntry && !specialPowerEntry && !scienceEntry) {
+    return null;
+  }
+
+  const upgradeResult = upgradeEntry
+    ? readProgressionUpgrades(upgradeEntry, archiveMemory)
+    : { upgradeCount: 0, upgradeFieldCount: 0, upgradesByName: new Map() };
+  const specialPowerResult = specialPowerEntry
+    ? readProgressionSpecialPowers(specialPowerEntry, archiveMemory)
+    : { specialPowerCount: 0, specialPowerFieldCount: 0, specialPowersByName: new Map() };
+  const scienceResult = scienceEntry
+    ? readProgressionSciences(scienceEntry, archiveMemory)
+    : { scienceCount: 0, scienceFieldCount: 0, sciencesByName: new Map() };
+
+  return {
+    ...upgradeResult,
+    ...specialPowerResult,
+    ...scienceResult,
+    daisyCutter: specialPowerResult.specialPowersByName.get("SuperweaponDaisyCutter") ?? null,
+    daisyCutterScience: scienceResult.sciencesByName.get("SCIENCE_DaisyCutter") ?? null,
+    americaRadar: upgradeResult.upgradesByName.get("Upgrade_AmericaRadar") ?? null,
+  };
+}
+
+function renderProgressionParse(result) {
+  if (!result) {
+    renderProgressionEmpty("no progression data");
+    return;
+  }
+
+  const fieldCount = result.upgradeFieldCount + result.specialPowerFieldCount + result.scienceFieldCount;
+  elements.progressionUpgrades.textContent = `${result.upgradeCount} upgrades`;
+  elements.progressionSpecialPowers.textContent = `${result.specialPowerCount} powers`;
+  elements.progressionSciences.textContent = `${result.scienceCount} sciences`;
+  elements.progressionFields.textContent = `${fieldCount} fields`;
+
+  if (result.daisyCutter && result.daisyCutterScience) {
+    elements.progressionFirst.textContent = `${result.daisyCutter.name} -> ${result.daisyCutter.requiredScience} (${result.daisyCutterScience.cost} point)`;
+  } else {
+    elements.progressionFirst.textContent = "progression data parsed";
+  }
+
+  const lines = [];
+  if (result.daisyCutter) {
+    lines.push(`${result.daisyCutter.name}: ${result.daisyCutter.enumName}, reload ${result.daisyCutter.reloadTime} ms`);
+    lines.push(`requires ${result.daisyCutter.requiredScience}, radius ${formatRealX100(result.daisyCutter.radiusCursorRadius)}`);
+  }
+  if (result.daisyCutterScience) {
+    lines.push(`${result.daisyCutterScience.name}: cost ${result.daisyCutterScience.cost}, prereqs ${result.daisyCutterScience.prerequisites}`);
+    lines.push(`${result.daisyCutterScience.displayName}, ${result.daisyCutterScience.description}`);
+  }
+  if (result.americaRadar) {
+    lines.push("");
+    lines.push(`${result.americaRadar.name}: ${result.americaRadar.type}, cost ${result.americaRadar.buildCost}, build ${formatRealX100(result.americaRadar.buildTime)}s`);
+    lines.push(`${result.americaRadar.displayName}, image ${result.americaRadar.buttonImage}, ${result.americaRadar.academy}`);
+  }
+
+  elements.progressionListing.textContent = lines.join("\n") || "progression data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -721,6 +907,7 @@ function parseArchiveIni(entries, memory) {
     renderWeaponEmpty("no weapon data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
+    renderProgressionEmpty("no progression data");
     return;
   }
 
@@ -744,6 +931,7 @@ function parseArchiveIni(entries, memory) {
 
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
+  renderProgressionParse(parseProgressionEntries(entries, memory));
 }
 
 async function boot() {
@@ -799,6 +987,11 @@ async function boot() {
     exports: commandModule.instance.exports,
     memory: new Uint8Array(commandModule.instance.exports.memory.buffer),
   };
+  const progressionModule = await loadWasm("../dist/generals_progression.wasm");
+  progressionRuntime = {
+    exports: progressionModule.instance.exports,
+    memory: new Uint8Array(progressionModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -819,7 +1012,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime) {
     return;
   }
 

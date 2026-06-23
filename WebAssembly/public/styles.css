@@ -176,7 +176,8 @@ pre,
 [data-armor-first],
 [data-weapon-first],
 [data-thing-first],
-[data-command-first] {
+[data-command-first],
+[data-progression-first] {
   display: block;
   min-height: 44px;
   overflow-x: auto;

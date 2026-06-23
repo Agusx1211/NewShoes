@@ -19,13 +19,17 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/Common/Thing/ThingTemplate.cpp`
 - Zero Hour command button and command set parsing based on
   `GeneralsMD/Code/GameEngine/Source/GameClient/GUI/ControlBar/ControlBar.cpp`
+- Zero Hour upgrade, special power, and science parsing based on
+  `GeneralsMD/Code/GameEngine/Source/Common/System/Upgrade.cpp`,
+  `GeneralsMD/Code/GameEngine/Source/Common/RTS/SpecialPower.cpp`, and
+  `GeneralsMD/Code/GameEngine/Source/Common/RTS/Science.cpp`
 
-RefPack, BIG, INI, armor, weapon, object template, and command UI support are
-needed before browser-side loading of original combat configuration can work.
-These targets build with Emscripten when available and fall back to raw Clang
-wasm builds for dependency-free smoke testing where possible. Later targets can
-add more typed gameplay object factories, filesystem, browser loop, and SDL/WebGL
-integration.
+RefPack, BIG, INI, armor, weapon, object template, command UI, and progression
+support are needed before browser-side loading of original combat configuration
+can work. These targets build with Emscripten when available and fall back to raw
+Clang wasm builds for dependency-free smoke testing where possible. Later targets
+can add more typed gameplay object factories, filesystem, browser loop, and
+SDL/WebGL integration.
 
 ## Build
 
@@ -48,6 +52,8 @@ Output:
 `dist/generals_thing.wasm`
 
 `dist/generals_command.wasm`
+
+`dist/generals_progression.wasm`
 
 ## Smoke Test
 
@@ -92,6 +98,7 @@ npm run test:real-armor
 npm run test:real-weapon
 npm run test:real-thing
 npm run test:real-command
+npm run test:real-progression
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.
