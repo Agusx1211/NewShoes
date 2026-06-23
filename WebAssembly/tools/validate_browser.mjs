@@ -91,6 +91,9 @@ try {
     if (realAsset) {
       const expectedFirstFile = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini" : "generalsb.sec";
       const expectedIniFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: Armor NoArmor" : "no ini: empty";
+      const expectedGameDataFirst = realAsset.endsWith("INIZH.big")
+        ? "GameData: Maps\\ShellMapMD\\ShellMapMD.map, 30 FPS, cash 10000"
+        : "no game data";
       const expectedArmorFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: NoArmor (5 assignments)" : "no armor data";
       const expectedWeaponFirst = realAsset.endsWith("INIZH.big") ? "data/ini/weapon.ini: MarauderTankGun (ARMOR_PIERCING)" : "no weapon data";
       const expectedThingFirst = realAsset.endsWith("INIZH.big")
@@ -106,17 +109,18 @@ try {
         ? "FactionAmerica: America/USA, starts AmericaCommandCenter + AmericaVehicleDozer"
         : "no player data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedArmor, expectedWeapon, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedArmor, expectedWeapon, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
+          document.querySelector("[data-gamedata-first]")?.textContent === expectedGameData &&
           document.querySelector("[data-armor-first]")?.textContent === expectedArmor &&
           document.querySelector("[data-weapon-first]")?.textContent === expectedWeapon &&
           document.querySelector("[data-thing-first]")?.textContent === expectedThing &&
           document.querySelector("[data-command-first]")?.textContent === expectedCommand &&
           document.querySelector("[data-progression-first]")?.textContent === expectedProgression &&
           document.querySelector("[data-player-first]")?.textContent === expectedPlayer;
-      }, [expectedFirstFile, expectedIniFirst, expectedArmorFirst, expectedWeaponFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
+      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedArmorFirst, expectedWeaponFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

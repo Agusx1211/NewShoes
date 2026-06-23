@@ -5,6 +5,7 @@ const bigArchiveSample = createBigArchiveSample();
 const textDecoder = new TextDecoder();
 let bigRuntime = null;
 let iniRuntime = null;
+let gameDataRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let thingRuntime = null;
@@ -25,6 +26,11 @@ const elements = {
   iniBlocks: document.querySelector("[data-ini-blocks]"),
   iniProps: document.querySelector("[data-ini-props]"),
   iniFirst: document.querySelector("[data-ini-first]"),
+  gameDataFields: document.querySelector("[data-gamedata-fields]"),
+  gameDataCash: document.querySelector("[data-gamedata-cash]"),
+  gameDataBonuses: document.querySelector("[data-gamedata-bonuses]"),
+  gameDataBones: document.querySelector("[data-gamedata-bones]"),
+  gameDataFirst: document.querySelector("[data-gamedata-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -58,6 +64,7 @@ const elements = {
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
+  gameDataListing: document.querySelector("[data-gamedata-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
@@ -955,6 +962,143 @@ function renderProgressionParse(result) {
   elements.progressionListing.textContent = lines.join("\n") || "progression data parsed";
 }
 
+function renderGameDataEmpty(reason) {
+  elements.gameDataFields.textContent = "0 fields";
+  elements.gameDataCash.textContent = "0 cash";
+  elements.gameDataBonuses.textContent = "0 bonuses";
+  elements.gameDataBones.textContent = "0 bones";
+  elements.gameDataFirst.textContent = reason;
+  elements.gameDataListing.textContent = reason;
+}
+
+function readGameDataString(exports, memory, prefix) {
+  const ptr = exports[`generals_gamedata_${prefix}_ptr`]();
+  const size = exports[`generals_gamedata_${prefix}_size`]();
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readGameDataIndexedString(exports, memory, kind, prefix, index) {
+  const ptr = exports[`generals_gamedata_${kind}_${prefix}_ptr`](index);
+  const size = exports[`generals_gamedata_${kind}_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseGameDataPayload(bytes) {
+  const { exports, memory } = gameDataRuntime;
+  const inputOffset = exports.generals_gamedata_input_ptr();
+
+  if (bytes.length > exports.generals_gamedata_input_capacity()) {
+    throw new Error(`GameData payload exceeds ${exports.generals_gamedata_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_gamedata_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_gamedata_error_count() !== 0) {
+    throw new Error(`GameData parse failed with ${exports.generals_gamedata_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseGameDataEntries(entries, archiveMemory) {
+  const gameDataEntry = findEntry(entries, "data/ini/gamedata.ini");
+  if (!gameDataEntry) {
+    return null;
+  }
+
+  const { exports, memory } = gameDataRuntime;
+  parseGameDataPayload(entryBytes(gameDataEntry, archiveMemory));
+
+  if (exports.generals_gamedata_block_count() === 0) {
+    return null;
+  }
+
+  return {
+    fieldCount: exports.generals_gamedata_field_count(),
+    weaponBonusCount: exports.generals_gamedata_weapon_bonus_count(),
+    publicBoneCount: exports.generals_gamedata_standard_public_bone_count(),
+    vertexWaterCount: exports.generals_gamedata_vertex_water_count(),
+    shellMapName: readGameDataString(exports, memory, "shell_map_name"),
+    mapName: readGameDataString(exports, memory, "map_name"),
+    moveHintName: readGameDataString(exports, memory, "move_hint_name"),
+    terrainLOD: readGameDataString(exports, memory, "terrain_lod"),
+    timeOfDay: readGameDataString(exports, memory, "time_of_day"),
+    weather: readGameDataString(exports, memory, "weather"),
+    specialPowerViewObject: readGameDataString(exports, memory, "special_power_view_object"),
+    autoFireSmallPrefix: readGameDataString(exports, memory, "auto_fire_particle_small_prefix"),
+    autoFireSmallSystem: readGameDataString(exports, memory, "auto_fire_particle_small_system"),
+    fpsLimit: exports.generals_gamedata_frames_per_second_limit(),
+    useTrees: exports.generals_gamedata_use_trees(),
+    useWaterPlane: exports.generals_gamedata_use_water_plane(),
+    cameraPitch: exports.generals_gamedata_camera_pitch_x100(),
+    cameraHeight: exports.generals_gamedata_camera_height_x100(),
+    minCameraHeight: exports.generals_gamedata_min_camera_height_x100(),
+    maxCameraHeight: exports.generals_gamedata_max_camera_height_x100(),
+    waterPositionZ: exports.generals_gamedata_water_position_z_x100(),
+    waterExtentX: exports.generals_gamedata_water_extent_x_x100(),
+    waterExtentY: exports.generals_gamedata_water_extent_y_x100(),
+    valuePerSupplyBox: exports.generals_gamedata_value_per_supply_box(),
+    buildSpeed: exports.generals_gamedata_build_speed_x100(),
+    refundPercent: exports.generals_gamedata_refund_percent_x100(),
+    sellPercentage: exports.generals_gamedata_sell_percentage_x100(),
+    maxParticleCount: exports.generals_gamedata_max_particle_count(),
+    defaultStartingCash: exports.generals_gamedata_default_starting_cash(),
+    networkDisconnectTime: exports.generals_gamedata_network_disconnect_time(),
+    firstWeaponBonus: exports.generals_gamedata_weapon_bonus_count() > 0 ? {
+      bonus: readGameDataIndexedString(exports, memory, "weapon_bonus", "bonus", 0),
+      field: readGameDataIndexedString(exports, memory, "weapon_bonus", "field", 0),
+      percent: exports.generals_gamedata_weapon_bonus_percent_x100(0),
+    } : null,
+    firstPublicBone: exports.generals_gamedata_standard_public_bone_count() > 0
+      ? readGameDataIndexedString(exports, memory, "standard_public_bone", "name", 0)
+      : "",
+    firstVertexWater: exports.generals_gamedata_vertex_water_count() > 0 ? {
+      map: readGameDataIndexedString(exports, memory, "vertex_water", "map", 0),
+      angle: exports.generals_gamedata_vertex_water_angle_x100(0),
+      xGridCells: exports.generals_gamedata_vertex_water_x_grid_cells(0),
+      yGridCells: exports.generals_gamedata_vertex_water_y_grid_cells(0),
+      gridSize: exports.generals_gamedata_vertex_water_grid_size_x100(0),
+    } : null,
+  };
+}
+
+function renderGameDataParse(result) {
+  if (!result) {
+    renderGameDataEmpty("no game data");
+    return;
+  }
+
+  elements.gameDataFields.textContent = `${result.fieldCount} fields`;
+  elements.gameDataCash.textContent = `${result.defaultStartingCash} cash`;
+  elements.gameDataBonuses.textContent = `${result.weaponBonusCount} bonuses`;
+  elements.gameDataBones.textContent = `${result.publicBoneCount} bones`;
+  elements.gameDataFirst.textContent = `GameData: ${result.shellMapName}, ${result.fpsLimit} FPS, cash ${result.defaultStartingCash}`;
+
+  const lines = [
+    `shell ${result.shellMapName}`,
+    `default map ${result.mapName}, move hint ${result.moveHintName}`,
+    `render ${result.terrainLOD}, ${result.timeOfDay}/${result.weather}, trees ${result.useTrees ? "yes" : "no"}, water ${result.useWaterPlane ? "yes" : "no"}`,
+    `camera pitch ${formatRealX100(result.cameraPitch)}, height ${formatRealX100(result.cameraHeight)} (${formatRealX100(result.minCameraHeight)}-${formatRealX100(result.maxCameraHeight)})`,
+    `water z ${formatRealX100(result.waterPositionZ)}, extent ${formatRealX100(result.waterExtentX)} x ${formatRealX100(result.waterExtentY)}`,
+    `economy cash ${result.defaultStartingCash}, supply box ${result.valuePerSupplyBox}, build ${formatRealX100(result.buildSpeed)}, refund ${formatPercentX100(result.refundPercent)}, sell ${formatPercentX100(result.sellPercentage)}`,
+    `particles ${result.maxParticleCount}, auto fire ${result.autoFireSmallPrefix}/${result.autoFireSmallSystem}, view object ${result.specialPowerViewObject}`,
+    `network disconnect ${result.networkDisconnectTime} ms`,
+  ];
+
+  if (result.firstWeaponBonus) {
+    lines.push(`weapon bonus ${result.firstWeaponBonus.bonus} ${result.firstWeaponBonus.field} ${formatPercentX100(result.firstWeaponBonus.percent)}`);
+  }
+  if (result.firstPublicBone) {
+    lines.push(`public bones ${result.publicBoneCount}, first ${result.firstPublicBone}`);
+  }
+  if (result.firstVertexWater) {
+    lines.push(`vertex water ${result.vertexWaterCount}, ${result.firstVertexWater.map}, ${result.firstVertexWater.xGridCells}x${result.firstVertexWater.yGridCells} grid ${formatRealX100(result.firstVertexWater.gridSize)}, angle ${formatRealX100(result.firstVertexWater.angle)}`);
+  }
+
+  elements.gameDataListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -1106,6 +1250,7 @@ function parseArchiveIni(entries, memory) {
     renderCommandEmpty("no command data");
     renderProgressionEmpty("no progression data");
     renderPlayerEmpty("no player data");
+    renderGameDataEmpty("no game data");
     return;
   }
 
@@ -1131,6 +1276,7 @@ function parseArchiveIni(entries, memory) {
   renderCommandParse(parseCommandEntries(entries, memory));
   renderProgressionParse(parseProgressionEntries(entries, memory));
   renderPlayerParse(parsePlayerEntries(entries, memory));
+  renderGameDataParse(parseGameDataEntries(entries, memory));
 }
 
 async function boot() {
@@ -1165,6 +1311,11 @@ async function boot() {
   iniRuntime = {
     exports: iniModule.instance.exports,
     memory: new Uint8Array(iniModule.instance.exports.memory.buffer),
+  };
+  const gameDataModule = await loadWasm("../dist/generals_gamedata.wasm");
+  gameDataRuntime = {
+    exports: gameDataModule.instance.exports,
+    memory: new Uint8Array(gameDataModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -1216,7 +1367,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
