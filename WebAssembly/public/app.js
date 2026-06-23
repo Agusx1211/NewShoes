@@ -11,6 +11,7 @@ let mappedImageRuntime = null;
 let environmentRuntime = null;
 let videoRuntime = null;
 let multiplayerRuntime = null;
+let gameLodRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -69,6 +70,11 @@ const elements = {
   multiplayerMoney: document.querySelector("[data-multiplayer-money]"),
   multiplayerChat: document.querySelector("[data-multiplayer-chat]"),
   multiplayerFirst: document.querySelector("[data-multiplayer-first]"),
+  gameLodStatic: document.querySelector("[data-gamelod-static]"),
+  gameLodDynamic: document.querySelector("[data-gamelod-dynamic]"),
+  gameLodFields: document.querySelector("[data-gamelod-fields]"),
+  gameLodParticles: document.querySelector("[data-gamelod-particles]"),
+  gameLodFirst: document.querySelector("[data-gamelod-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -148,6 +154,7 @@ const elements = {
   environmentListing: document.querySelector("[data-environment-listing]"),
   videoListing: document.querySelector("[data-video-listing]"),
   multiplayerListing: document.querySelector("[data-multiplayer-listing]"),
+  gameLodListing: document.querySelector("[data-gamelod-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -3748,6 +3755,222 @@ function renderMultiplayerParse(result) {
   elements.multiplayerListing.textContent = lines.join("\n");
 }
 
+function renderGameLodEmpty(reason) {
+  elements.gameLodStatic.textContent = "0 static";
+  elements.gameLodDynamic.textContent = "0 dynamic";
+  elements.gameLodFields.textContent = "0 fields";
+  elements.gameLodParticles.textContent = "0 max";
+  elements.gameLodFirst.textContent = reason;
+  elements.gameLodListing.textContent = reason;
+}
+
+function readGameLodString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseGameLodPayload(bytes) {
+  const { exports, memory } = gameLodRuntime;
+  const inputOffset = exports.generals_gamelod_input_ptr();
+
+  if (bytes.length > exports.generals_gamelod_input_capacity()) {
+    throw new Error(`GameLOD payload exceeds ${exports.generals_gamelod_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_gamelod_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_gamelod_error_count() !== 0) {
+    throw new Error(`GameLOD parse failed with ${exports.generals_gamelod_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function readStaticGameLod(exports, memory, index) {
+  return {
+    index,
+    name: readGameLodString(exports, memory, "generals_gamelod_static_name_ptr", "generals_gamelod_static_name_size", index),
+    line: exports.generals_gamelod_static_line(index),
+    fields: exports.generals_gamelod_static_field_count_at(index),
+    minimumFps: exports.generals_gamelod_static_minimum_fps(index),
+    minimumProcessorFps: exports.generals_gamelod_static_minimum_processor_fps(index),
+    sampleCount2D: exports.generals_gamelod_static_sample_count_2d(index),
+    sampleCount3D: exports.generals_gamelod_static_sample_count_3d(index),
+    streamCount: exports.generals_gamelod_static_stream_count(index),
+    maxParticleCount: exports.generals_gamelod_static_max_particle_count(index),
+    useShadowVolumes: exports.generals_gamelod_static_use_shadow_volumes(index),
+    useShadowDecals: exports.generals_gamelod_static_use_shadow_decals(index),
+    useCloudMap: exports.generals_gamelod_static_use_cloud_map(index),
+    useLightMap: exports.generals_gamelod_static_use_light_map(index),
+    showSoftWaterEdge: exports.generals_gamelod_static_show_soft_water_edge(index),
+    maxTankTrackEdges: exports.generals_gamelod_static_max_tank_track_edges(index),
+    maxTankTrackOpaqueEdges: exports.generals_gamelod_static_max_tank_track_opaque_edges(index),
+    maxTankTrackFadeDelay: exports.generals_gamelod_static_max_tank_track_fade_delay(index),
+    useBuildupScaffolds: exports.generals_gamelod_static_use_buildup_scaffolds(index),
+    useTreeSway: exports.generals_gamelod_static_use_tree_sway(index),
+    useEmissiveNightMaterials: exports.generals_gamelod_static_use_emissive_night_materials(index),
+    useHeatEffects: exports.generals_gamelod_static_use_heat_effects(index),
+    textureReductionFactor: exports.generals_gamelod_static_texture_reduction_factor(index),
+  };
+}
+
+function readDynamicGameLod(exports, memory, index) {
+  return {
+    index,
+    name: readGameLodString(exports, memory, "generals_gamelod_dynamic_name_ptr", "generals_gamelod_dynamic_name_size", index),
+    line: exports.generals_gamelod_dynamic_line(index),
+    fields: exports.generals_gamelod_dynamic_field_count_at(index),
+    minimumFps: exports.generals_gamelod_dynamic_minimum_fps(index),
+    particleSkipMask: exports.generals_gamelod_dynamic_particle_skip_mask(index),
+    debrisSkipMask: exports.generals_gamelod_dynamic_debris_skip_mask(index),
+    slowDeathScale: exports.generals_gamelod_dynamic_slow_death_scale_x100(index),
+    minParticlePriority: readGameLodString(exports, memory, "generals_gamelod_dynamic_min_particle_priority_ptr", "generals_gamelod_dynamic_min_particle_priority_size", index),
+    minParticleSkipPriority: readGameLodString(exports, memory, "generals_gamelod_dynamic_min_particle_skip_priority_ptr", "generals_gamelod_dynamic_min_particle_skip_priority_size", index),
+  };
+}
+
+function findStaticGameLod(exports, memory, name) {
+  for (let index = 0; index < exports.generals_gamelod_static_count(); ++index) {
+    const lod = readStaticGameLod(exports, memory, index);
+    if (lod.name === name) {
+      return lod;
+    }
+  }
+
+  return null;
+}
+
+function findDynamicGameLod(exports, memory, name) {
+  for (let index = 0; index < exports.generals_gamelod_dynamic_count(); ++index) {
+    const lod = readDynamicGameLod(exports, memory, index);
+    if (lod.name === name) {
+      return lod;
+    }
+  }
+
+  return null;
+}
+
+function formatGameLodSwitch(value) {
+  return value ? "on" : "off";
+}
+
+function formatStaticGameLod(lod) {
+  if (!lod) {
+    return "no static LOD";
+  }
+
+  return `${lod.name}: min ${lod.minimumFps} FPS, processor ${lod.minimumProcessorFps} FPS, samples ${lod.sampleCount2D}/${lod.sampleCount3D}, streams ${lod.streamCount}, particles ${lod.maxParticleCount}, shadows ${formatGameLodSwitch(lod.useShadowVolumes)}/${formatGameLodSwitch(lod.useShadowDecals)}, cloud ${formatGameLodSwitch(lod.useCloudMap)}, light ${formatGameLodSwitch(lod.useLightMap)}, water edge ${formatGameLodSwitch(lod.showSoftWaterEdge)}, tracks ${lod.maxTankTrackOpaqueEdges}/${lod.maxTankTrackEdges}, fade ${lod.maxTankTrackFadeDelay}, texture reduction ${lod.textureReductionFactor}, line ${lod.line}`;
+}
+
+function formatDynamicGameLod(lod) {
+  if (!lod) {
+    return "no dynamic LOD";
+  }
+
+  return `${lod.name}: min ${lod.minimumFps} FPS, particle skip ${lod.particleSkipMask}, debris skip ${lod.debrisSkipMask}, slow death ${formatRealX100(lod.slowDeathScale)}, priorities ${lod.minParticlePriority}/${lod.minParticleSkipPriority}, line ${lod.line}`;
+}
+
+function parseGameLodEntries(entries, archiveMemory) {
+  const gameLodEntry = findEntry(entries, "data/ini/gamelod.ini");
+  if (!gameLodEntry) {
+    return null;
+  }
+
+  const { exports, memory } = gameLodRuntime;
+  const parsedCount = parseGameLodPayload(entryBytes(gameLodEntry, archiveMemory));
+  const staticPreview = [];
+  const dynamicPreview = [];
+  let maxParticles = 0;
+
+  for (let index = 0; index < exports.generals_gamelod_static_count(); ++index) {
+    const lod = readStaticGameLod(exports, memory, index);
+    maxParticles = Math.max(maxParticles, lod.maxParticleCount);
+    if (staticPreview.length < 8) {
+      staticPreview.push(lod);
+    }
+  }
+
+  for (let index = 0; index < exports.generals_gamelod_dynamic_count(); ++index) {
+    const lod = readDynamicGameLod(exports, memory, index);
+    if (dynamicPreview.length < 8) {
+      dynamicPreview.push(lod);
+    }
+  }
+
+  return {
+    file: gameLodEntry.name,
+    sourceBytes: gameLodEntry.dataSize,
+    parsedCount,
+    staticCount: exports.generals_gamelod_static_count(),
+    dynamicCount: exports.generals_gamelod_dynamic_count(),
+    fieldCount: exports.generals_gamelod_field_count(),
+    lineCount: exports.generals_gamelod_line_count(),
+    maxParticles,
+    low: findStaticGameLod(exports, memory, "Low"),
+    medium: findStaticGameLod(exports, memory, "Medium"),
+    high: findStaticGameLod(exports, memory, "High"),
+    veryHighDynamic: findDynamicGameLod(exports, memory, "VeryHigh"),
+    highDynamic: findDynamicGameLod(exports, memory, "High"),
+    mediumDynamic: findDynamicGameLod(exports, memory, "Medium"),
+    lowDynamic: findDynamicGameLod(exports, memory, "Low"),
+    staticPreview,
+    dynamicPreview,
+  };
+}
+
+function renderGameLodParse(result) {
+  if (!result) {
+    renderGameLodEmpty("no game LOD data");
+    return;
+  }
+
+  elements.gameLodStatic.textContent = `${result.staticCount} static`;
+  elements.gameLodDynamic.textContent = `${result.dynamicCount} dynamic`;
+  elements.gameLodFields.textContent = `${result.fieldCount} fields`;
+  elements.gameLodParticles.textContent = `${result.maxParticles} max`;
+
+  if (result.high && result.veryHighDynamic) {
+    elements.gameLodFirst.textContent = `GameLOD: ${result.high.name} static -> ${result.high.maxParticleCount} particles, dynamic ${result.veryHighDynamic.name} at ${result.veryHighDynamic.minimumFps} FPS`;
+  } else {
+    const first = result.staticPreview[0] ?? result.dynamicPreview[0];
+    elements.gameLodFirst.textContent = first ? `GameLOD: ${first.name}` : "no game LOD data";
+  }
+
+  const lines = [
+    `${result.file}: ${formatBytes(result.sourceBytes)}, ${result.parsedCount} blocks, ${result.fieldCount} fields, ${result.lineCount} lines`,
+    `${result.staticCount} static profiles, ${result.dynamicCount} dynamic profiles, max particles ${result.maxParticles}`,
+  ];
+
+  for (const lod of [
+    result.low,
+    result.medium,
+    result.high,
+  ]) {
+    if (lod) {
+      lines.push(formatStaticGameLod(lod));
+    }
+  }
+
+  for (const lod of [
+    result.veryHighDynamic,
+    result.highDynamic,
+    result.mediumDynamic,
+    result.lowDynamic,
+  ]) {
+    if (lod) {
+      lines.push(formatDynamicGameLod(lod));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.staticPreview.map(formatStaticGameLod));
+  lines.push(...result.dynamicPreview.map(formatDynamicGameLod));
+  elements.gameLodListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -3913,6 +4136,7 @@ function parseArchiveIni(entries, memory) {
     renderEnvironmentEmpty("no environment data");
     renderVideoEmpty("no video data");
     renderMultiplayerEmpty("no multiplayer data");
+    renderGameLodEmpty("no game LOD data");
     return;
   }
 
@@ -3952,6 +4176,7 @@ function parseArchiveIni(entries, memory) {
   renderEnvironmentParse(parseEnvironmentEntries(entries, memory));
   renderVideoParse(parseVideoEntries(entries, memory));
   renderMultiplayerParse(parseMultiplayerEntries(entries, memory));
+  renderGameLodParse(parseGameLodEntries(entries, memory));
 }
 
 async function boot() {
@@ -4016,6 +4241,11 @@ async function boot() {
   multiplayerRuntime = {
     exports: multiplayerModule.instance.exports,
     memory: new Uint8Array(multiplayerModule.instance.exports.memory.buffer),
+  };
+  const gameLodModule = await loadWasm("../dist/generals_gamelod.wasm");
+  gameLodRuntime = {
+    exports: gameLodModule.instance.exports,
+    memory: new Uint8Array(gameLodModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -4107,7 +4337,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
