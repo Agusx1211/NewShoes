@@ -12,6 +12,7 @@ const checks = [
   ["tools/test_real_weapon_asset.mjs"],
   ["tools/test_real_locomotor_asset.mjs"],
   ["tools/test_real_fxlist_asset.mjs"],
+  ["tools/test_real_particle_asset.mjs"],
   ["tools/test_real_ocl_asset.mjs"],
   ["tools/test_real_thing_asset.mjs"],
   ["tools/test_real_command_asset.mjs"],
