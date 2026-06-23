@@ -93,7 +93,7 @@ output[data-state="fail"] {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   margin-bottom: 18px;
@@ -172,7 +172,8 @@ canvas {
 code,
 pre,
 [data-big-first],
-[data-ini-first] {
+[data-ini-first],
+[data-armor-first] {
   display: block;
   min-height: 44px;
   overflow-x: auto;

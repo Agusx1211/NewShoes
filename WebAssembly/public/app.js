@@ -5,6 +5,7 @@ const bigArchiveSample = createBigArchiveSample();
 const textDecoder = new TextDecoder();
 let bigRuntime = null;
 let iniRuntime = null;
+let armorRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -19,9 +20,13 @@ const elements = {
   iniBlocks: document.querySelector("[data-ini-blocks]"),
   iniProps: document.querySelector("[data-ini-props]"),
   iniFirst: document.querySelector("[data-ini-first]"),
+  armorTemplates: document.querySelector("[data-armor-templates]"),
+  armorCoeffs: document.querySelector("[data-armor-coeffs]"),
+  armorFirst: document.querySelector("[data-armor-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
+  armorListing: document.querySelector("[data-armor-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -44,6 +49,15 @@ function formatBytes(bytes) {
     return `${(bytes / 1024).toFixed(1)} KiB`;
   }
   return `${bytes} bytes`;
+}
+
+function formatPercentX100(value) {
+  const percent = value / 100;
+  if (Number.isInteger(percent)) {
+    return `${percent}%`;
+  }
+
+  return `${percent.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%`;
 }
 
 function drawByteBars(bytes) {
@@ -172,15 +186,84 @@ function renderIniParse(entry, result) {
     .join("\n");
 }
 
+function renderArmorEmpty(reason) {
+  elements.armorTemplates.textContent = "0 templates";
+  elements.armorCoeffs.textContent = "0 coeffs";
+  elements.armorFirst.textContent = reason;
+  elements.armorListing.textContent = reason;
+}
+
+function parseArmorPayload(bytes) {
+  const { exports, memory } = armorRuntime;
+  const inputOffset = exports.generals_armor_input_ptr();
+
+  if (bytes.length > exports.generals_armor_input_capacity()) {
+    throw new Error(`Armor payload exceeds ${exports.generals_armor_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_armor_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_armor_error_count() !== 0) {
+    throw new Error(`Armor parse failed with ${exports.generals_armor_error_count()} errors`);
+  }
+
+  const templates = [];
+  for (let index = 0; index < templateCount; ++index) {
+    const namePtr = exports.generals_armor_template_name_ptr(index);
+    const nameSize = exports.generals_armor_template_name_size(index);
+    templates.push({
+      name: textDecoder.decode(memory.slice(namePtr, namePtr + nameSize)),
+      assignments: exports.generals_armor_template_assignment_count(index),
+      line: exports.generals_armor_template_line(index),
+      crush: exports.generals_armor_template_damage_percent_x100(index, 1),
+      flame: exports.generals_armor_template_damage_percent_x100(index, 6),
+      microwave: exports.generals_armor_template_damage_percent_x100(index, 35),
+    });
+  }
+
+  return {
+    templateCount,
+    resolvedCoefficientCount: exports.generals_armor_resolved_coefficient_count(),
+    templates,
+  };
+}
+
+function renderArmorParse(entry, result) {
+  elements.armorTemplates.textContent = `${result.templateCount} templates`;
+  elements.armorCoeffs.textContent = `${result.resolvedCoefficientCount} coeffs`;
+  const firstTemplate = result.templates[0];
+  elements.armorFirst.textContent = firstTemplate
+    ? `${entry.name}: ${firstTemplate.name} (${firstTemplate.assignments} assignments)`
+    : `${entry.name}: empty`;
+  elements.armorListing.textContent = result.templates
+    .slice(0, 12)
+    .map((template) => {
+      const crush = formatPercentX100(template.crush);
+      const flame = formatPercentX100(template.flame);
+      const microwave = formatPercentX100(template.microwave);
+      return `${template.name} (${template.assignments} fields, line ${template.line}) CRUSH ${crush}, FLAME ${flame}, MICROWAVE ${microwave}`;
+    })
+    .join("\n");
+}
+
 function parseFirstIniEntry(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
     renderIniParse({ name: "no ini" }, { blockCount: 0, propertyCount: 0, blocks: [] });
+    renderArmorEmpty("no armor data");
     return;
   }
 
   const bytes = memory.slice(entry.dataPtr, entry.dataPtr + entry.dataSize);
-  renderIniParse(entry, parseIniPayload(bytes));
+  const iniResult = parseIniPayload(bytes);
+  renderIniParse(entry, iniResult);
+
+  if (entry.name.endsWith("armor.ini") || iniResult.blocks[0]?.type === "Armor") {
+    renderArmorParse(entry, parseArmorPayload(bytes));
+  } else {
+    renderArmorEmpty("no armor data");
+  }
 }
 
 async function boot() {
@@ -216,6 +299,11 @@ async function boot() {
     exports: iniModule.instance.exports,
     memory: new Uint8Array(iniModule.instance.exports.memory.buffer),
   };
+  const armorModule = await loadWasm("../dist/generals_armor.wasm");
+  armorRuntime = {
+    exports: armorModule.instance.exports,
+    memory: new Uint8Array(armorModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -236,7 +324,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime) {
     return;
   }
 

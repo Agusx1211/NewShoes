@@ -3,12 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:wasm": "bash tools/build_refpack_wasm.sh && bash tools/build_big_wasm.sh && bash tools/build_ini_wasm.sh",
-    "test:wasm": "node tools/test_refpack_module.mjs && node tools/test_big_module.mjs && node tools/test_ini_module.mjs",
+    "build:wasm": "bash tools/build_refpack_wasm.sh && bash tools/build_big_wasm.sh && bash tools/build_ini_wasm.sh && bash tools/build_armor_wasm.sh",
+    "test:wasm": "node tools/test_refpack_module.mjs && node tools/test_big_module.mjs && node tools/test_ini_module.mjs && node tools/test_armor_module.mjs",
     "extract:real-big": "bash tools/extract_zh_big_sample.sh",
     "test:real-big": "node tools/test_real_big_asset.mjs",
     "test:real-ini": "node tools/test_real_ini_asset.mjs",
-    "validate": "npm run build:wasm && npm run test:wasm && npm run validate:web",
+    "test:real-armor": "node tools/test_real_armor_asset.mjs",
+    "validate": "npm run build:wasm && npm run test:wasm && npm run validate:real && npm run validate:web",
+    "validate:real": "node tools/validate_real_assets.mjs",
     "validate:web": "node tools/validate_browser.mjs"
   },
   "devDependencies": {
