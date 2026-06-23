@@ -9,6 +9,7 @@ const checks = [
   ["tools/test_real_ini_asset.mjs"],
   ["tools/test_real_gamedata_asset.mjs"],
   ["tools/test_real_aidata_asset.mjs"],
+  ["tools/test_real_mappedimage_asset.mjs"],
   ["tools/test_real_armor_asset.mjs"],
   ["tools/test_real_weapon_asset.mjs"],
   ["tools/test_real_locomotor_asset.mjs"],
