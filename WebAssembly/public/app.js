@@ -9,6 +9,7 @@ let gameDataRuntime = null;
 let aiDataRuntime = null;
 let mappedImageRuntime = null;
 let environmentRuntime = null;
+let videoRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -57,6 +58,11 @@ const elements = {
   environmentWeather: document.querySelector("[data-environment-weather]"),
   environmentFields: document.querySelector("[data-environment-fields]"),
   environmentFirst: document.querySelector("[data-environment-first]"),
+  videoCount: document.querySelector("[data-video-count]"),
+  videoFields: document.querySelector("[data-video-fields]"),
+  videoLines: document.querySelector("[data-video-lines]"),
+  videoComments: document.querySelector("[data-video-comments]"),
+  videoFirst: document.querySelector("[data-video-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -134,6 +140,7 @@ const elements = {
   aiDataListing: document.querySelector("[data-aidata-listing]"),
   mappedImageListing: document.querySelector("[data-mappedimage-listing]"),
   environmentListing: document.querySelector("[data-environment-listing]"),
+  videoListing: document.querySelector("[data-video-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -3394,6 +3401,147 @@ function renderEnvironmentParse(result) {
   elements.environmentListing.textContent = lines.join("\n");
 }
 
+function renderVideoEmpty(reason) {
+  elements.videoCount.textContent = "0 videos";
+  elements.videoFields.textContent = "0 fields";
+  elements.videoLines.textContent = "0 lines";
+  elements.videoComments.textContent = "0 comments";
+  elements.videoFirst.textContent = reason;
+  elements.videoListing.textContent = reason;
+}
+
+function readVideoString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_video_${prefix}_ptr`](index);
+  const size = exports[`generals_video_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseVideoPayload(bytes) {
+  const { exports, memory } = videoRuntime;
+  const inputOffset = exports.generals_video_input_ptr();
+
+  if (bytes.length > exports.generals_video_input_capacity()) {
+    throw new Error(`Video payload exceeds ${exports.generals_video_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const videoCount = exports.generals_video_parse(bytes.length);
+
+  if (videoCount < 0 || exports.generals_video_error_count() !== 0) {
+    throw new Error(`Video parse failed with ${exports.generals_video_error_count()} errors`);
+  }
+
+  return videoCount;
+}
+
+function readVideo(exports, memory, index) {
+  return {
+    index,
+    name: readVideoString(exports, memory, "name", index),
+    filename: readVideoString(exports, memory, "filename", index),
+    comment: readVideoString(exports, memory, "comment", index),
+    line: exports.generals_video_line(index),
+    fields: exports.generals_video_field_count_at(index),
+  };
+}
+
+function findVideo(exports, memory, name) {
+  for (let index = 0; index < exports.generals_video_count(); ++index) {
+    const video = readVideo(exports, memory, index);
+    if (video.name === name) {
+      return video;
+    }
+  }
+
+  return null;
+}
+
+function formatVideo(video) {
+  if (!video) {
+    return "no video";
+  }
+
+  const comment = video.comment ? `, ${video.comment}` : "";
+  return `${video.name}: ${video.filename}${comment}, line ${video.line}`;
+}
+
+function parseVideoEntries(entries, archiveMemory) {
+  const videoEntry = findEntry(entries, "data/ini/video.ini");
+  if (!videoEntry) {
+    return null;
+  }
+
+  const { exports, memory } = videoRuntime;
+  const sourceBytes = videoEntry.dataSize;
+  const videoCount = parseVideoPayload(entryBytes(videoEntry, archiveMemory));
+  const preview = [];
+  let commentCount = 0;
+
+  for (let index = 0; index < videoCount; ++index) {
+    const video = readVideo(exports, memory, index);
+    if (video.comment) {
+      ++commentCount;
+    }
+    if (preview.length < 12) {
+      preview.push(video);
+    }
+  }
+
+  return {
+    file: videoEntry.name,
+    sourceBytes,
+    videoCount,
+    fieldCount: exports.generals_video_field_count(),
+    lineCount: exports.generals_video_line_count(),
+    commentCount,
+    first: videoCount > 0 ? readVideo(exports, memory, 0) : null,
+    last: videoCount > 0 ? readVideo(exports, memory, videoCount - 1) : null,
+    vsSmall: findVideo(exports, memory, "VSSmall"),
+    thraxLeft: findVideo(exports, memory, "PortraitDrThraxLeft"),
+    usa05: findVideo(exports, memory, "MD_USA05"),
+    preview,
+  };
+}
+
+function renderVideoParse(result) {
+  if (!result) {
+    renderVideoEmpty("no video data");
+    return;
+  }
+
+  elements.videoCount.textContent = `${result.videoCount} videos`;
+  elements.videoFields.textContent = `${result.fieldCount} fields`;
+  elements.videoLines.textContent = `${result.lineCount} lines`;
+  elements.videoComments.textContent = `${result.commentCount} comments`;
+
+  if (result.first) {
+    elements.videoFirst.textContent = `Video: ${result.first.name} -> ${result.first.filename}, ${result.videoCount} videos, ${result.fieldCount} fields`;
+  } else {
+    elements.videoFirst.textContent = "no video data";
+  }
+
+  const lines = [
+    `${result.file}: ${formatBytes(result.sourceBytes)}, ${result.videoCount} videos, ${result.fieldCount} fields, ${result.lineCount} lines`,
+    `${result.commentCount} commented definitions`,
+  ];
+
+  for (const video of [
+    result.first,
+    result.vsSmall,
+    result.thraxLeft,
+    result.usa05,
+    result.last,
+  ]) {
+    if (video) {
+      lines.push(formatVideo(video));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map(formatVideo));
+  elements.videoListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -3557,6 +3705,7 @@ function parseArchiveIni(entries, memory) {
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
     renderEnvironmentEmpty("no environment data");
+    renderVideoEmpty("no video data");
     return;
   }
 
@@ -3594,6 +3743,7 @@ function parseArchiveIni(entries, memory) {
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
   renderEnvironmentParse(parseEnvironmentEntries(entries, memory));
+  renderVideoParse(parseVideoEntries(entries, memory));
 }
 
 async function boot() {
@@ -3648,6 +3798,11 @@ async function boot() {
   environmentRuntime = {
     exports: environmentModule.instance.exports,
     memory: new Uint8Array(environmentModule.instance.exports.memory.buffer),
+  };
+  const videoModule = await loadWasm("../dist/generals_video.wasm");
+  videoRuntime = {
+    exports: videoModule.instance.exports,
+    memory: new Uint8Array(videoModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -3739,7 +3894,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
