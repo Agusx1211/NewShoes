@@ -90,11 +90,13 @@ try {
     await page.waitForSelector('body[data-validation="pass"]', { timeout: 10000 });
     if (realAsset) {
       const expectedFirstFile = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini" : "generalsb.sec";
+      const expectedIniFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: Armor NoArmor" : "no ini: empty";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction((expected) => {
+      await page.waitForFunction(([expectedFile, expectedIni]) => {
         return document.body.dataset.validation === "pass" &&
-          document.querySelector("[data-big-first]")?.textContent === expected;
-      }, expectedFirstFile);
+          document.querySelector("[data-big-first]")?.textContent === expectedFile &&
+          document.querySelector("[data-ini-first]")?.textContent === expectedIni;
+      }, [expectedFirstFile, expectedIniFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();
