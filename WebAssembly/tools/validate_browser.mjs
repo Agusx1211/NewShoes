@@ -94,6 +94,9 @@ try {
       const expectedGameDataFirst = realAsset.endsWith("INIZH.big")
         ? "GameData: Maps\\ShellMapMD\\ShellMapMD.map, 30 FPS, cash 10000"
         : "no game data";
+      const expectedAIDataFirst = realAsset.endsWith("INIZH.big")
+        ? "AIData: America -> AmericaPatriotBattery, 18 structures, 168 sciences"
+        : "no AI data";
       const expectedArmorFirst = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini: NoArmor (5 assignments)" : "no armor data";
       const expectedWeaponFirst = realAsset.endsWith("INIZH.big") ? "data/ini/weapon.ini: MarauderTankGun (ARMOR_PIERCING)" : "no weapon data";
       const expectedLocomotorFirst = realAsset.endsWith("INIZH.big")
@@ -133,11 +136,12 @@ try {
         ? "FactionAmerica: America/USA, starts AmericaCommandCenter + AmericaVehicleDozer"
         : "no player data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedAIData, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
           document.querySelector("[data-gamedata-first]")?.textContent === expectedGameData &&
+          document.querySelector("[data-aidata-first]")?.textContent === expectedAIData &&
           document.querySelector("[data-armor-first]")?.textContent === expectedArmor &&
           document.querySelector("[data-weapon-first]")?.textContent === expectedWeapon &&
           document.querySelector("[data-locomotor-first]")?.textContent === expectedLocomotor &&
@@ -152,7 +156,7 @@ try {
           document.querySelector("[data-command-first]")?.textContent === expectedCommand &&
           document.querySelector("[data-progression-first]")?.textContent === expectedProgression &&
           document.querySelector("[data-player-first]")?.textContent === expectedPlayer;
-      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
+      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedAIDataFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

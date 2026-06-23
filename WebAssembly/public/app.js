@@ -6,6 +6,7 @@ const textDecoder = new TextDecoder();
 let bigRuntime = null;
 let iniRuntime = null;
 let gameDataRuntime = null;
+let aiDataRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -39,6 +40,11 @@ const elements = {
   gameDataBonuses: document.querySelector("[data-gamedata-bonuses]"),
   gameDataBones: document.querySelector("[data-gamedata-bones]"),
   gameDataFirst: document.querySelector("[data-gamedata-first]"),
+  aiDataFields: document.querySelector("[data-aidata-fields]"),
+  aiDataSides: document.querySelector("[data-aidata-sides]"),
+  aiDataBuildLists: document.querySelector("[data-aidata-build-lists]"),
+  aiDataStructures: document.querySelector("[data-aidata-structures]"),
+  aiDataFirst: document.querySelector("[data-aidata-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -113,6 +119,7 @@ const elements = {
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
   gameDataListing: document.querySelector("[data-gamedata-listing]"),
+  aiDataListing: document.querySelector("[data-aidata-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -2733,6 +2740,234 @@ function renderGameDataParse(result) {
   elements.gameDataListing.textContent = lines.join("\n");
 }
 
+function renderAIDataEmpty(reason) {
+  elements.aiDataFields.textContent = "0 scalars";
+  elements.aiDataSides.textContent = "0 sides";
+  elements.aiDataBuildLists.textContent = "0 lists";
+  elements.aiDataStructures.textContent = "0 structures";
+  elements.aiDataFirst.textContent = reason;
+  elements.aiDataListing.textContent = reason;
+}
+
+function readAIDataString(exports, memory, ptrFn, sizeFn, ...args) {
+  const ptr = exports[ptrFn](...args);
+  const size = exports[sizeFn](...args);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseAIDataPayload(bytes) {
+  const { exports, memory } = aiDataRuntime;
+  const inputOffset = exports.generals_aidata_input_ptr();
+
+  if (bytes.length > exports.generals_aidata_input_capacity()) {
+    throw new Error(`AIData payload exceeds ${exports.generals_aidata_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_aidata_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_aidata_error_count() !== 0) {
+    throw new Error(`AIData parse failed with ${exports.generals_aidata_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function readAIDataScalar(exports, memory, index) {
+  return {
+    name: readAIDataString(exports, memory, "generals_aidata_scalar_name_ptr", "generals_aidata_scalar_name_size", index),
+    raw: readAIDataString(exports, memory, "generals_aidata_scalar_raw_ptr", "generals_aidata_scalar_raw_size", index),
+    value: exports.generals_aidata_scalar_value_x100(index),
+    line: exports.generals_aidata_scalar_line(index),
+    assigned: exports.generals_aidata_scalar_assigned(index),
+  };
+}
+
+function findAIDataScalar(exports, memory, name) {
+  for (let index = 0; index < exports.generals_aidata_scalar_field_count(); ++index) {
+    const scalar = readAIDataScalar(exports, memory, index);
+    if (scalar.name === name) {
+      return scalar;
+    }
+  }
+
+  return null;
+}
+
+function readAIDataSide(exports, memory, index) {
+  return {
+    index,
+    name: readAIDataString(exports, memory, "generals_aidata_side_name_ptr", "generals_aidata_side_name_size", index),
+    line: exports.generals_aidata_side_line(index),
+    fields: exports.generals_aidata_side_field_count_at(index),
+    easy: exports.generals_aidata_side_resource_easy(index),
+    normal: exports.generals_aidata_side_resource_normal(index),
+    hard: exports.generals_aidata_side_resource_hard(index),
+    baseDefense: readAIDataString(exports, memory, "generals_aidata_side_base_defense_ptr", "generals_aidata_side_base_defense_size", index),
+    firstSkillSet: exports.generals_aidata_side_first_skill_set(index),
+    skillSets: exports.generals_aidata_side_skill_set_count(index),
+  };
+}
+
+function findAIDataSide(exports, memory, name) {
+  for (let index = 0; index < exports.generals_aidata_side_count(); ++index) {
+    const side = readAIDataSide(exports, memory, index);
+    if (side.name === name) {
+      return side;
+    }
+  }
+
+  return null;
+}
+
+function readAIDataBuildList(exports, memory, index) {
+  return {
+    index,
+    side: readAIDataString(exports, memory, "generals_aidata_build_list_side_ptr", "generals_aidata_build_list_side_size", index),
+    line: exports.generals_aidata_build_list_line(index),
+    firstStructure: exports.generals_aidata_build_list_first_structure(index),
+    structures: exports.generals_aidata_build_list_structure_count(index),
+  };
+}
+
+function findAIDataBuildList(exports, memory, sideName) {
+  for (let index = 0; index < exports.generals_aidata_build_list_count(); ++index) {
+    const buildList = readAIDataBuildList(exports, memory, index);
+    if (buildList.side === sideName) {
+      return buildList;
+    }
+  }
+
+  return null;
+}
+
+function readAIDataStructure(exports, memory, index) {
+  return {
+    index,
+    buildList: exports.generals_aidata_structure_build_list_index(index),
+    template: readAIDataString(exports, memory, "generals_aidata_structure_template_ptr", "generals_aidata_structure_template_size", index),
+    name: readAIDataString(exports, memory, "generals_aidata_structure_name_ptr", "generals_aidata_structure_name_size", index),
+    line: exports.generals_aidata_structure_line(index),
+    fields: exports.generals_aidata_structure_field_count_at(index),
+    x: exports.generals_aidata_structure_x_x100(index),
+    y: exports.generals_aidata_structure_y_x100(index),
+    rebuilds: exports.generals_aidata_structure_rebuilds(index),
+    angle: exports.generals_aidata_structure_angle_x100(index),
+    initiallyBuilt: exports.generals_aidata_structure_initially_built(index),
+    automaticallyBuild: exports.generals_aidata_structure_automatically_build(index),
+  };
+}
+
+function formatAIDataStructure(structure) {
+  if (!structure) {
+    return "no structure";
+  }
+
+  const name = structure.name ? `${structure.template}/${structure.name}` : structure.template;
+  return `${name} @ ${formatRealX100(structure.x)}/${formatRealX100(structure.y)}, angle ${formatRealX100(structure.angle)}, auto ${structure.automaticallyBuild ? "yes" : "no"}`;
+}
+
+function parseAIDataEntries(entries, archiveMemory) {
+  const aiDataEntry = findEntry(entries, "data/ini/default/aidata.ini") ?? findEntry(entries, "data/ini/aidata.ini");
+  if (!aiDataEntry) {
+    return null;
+  }
+
+  const { exports, memory } = aiDataRuntime;
+  const parsedCount = parseAIDataPayload(entryBytes(aiDataEntry, archiveMemory));
+
+  const preview = [];
+  for (let index = 0; index < Math.min(exports.generals_aidata_build_list_count(), 12); ++index) {
+    preview.push(readAIDataBuildList(exports, memory, index));
+  }
+
+  const structureCount = exports.generals_aidata_structure_count();
+  const scienceCount = exports.generals_aidata_science_count();
+
+  return {
+    file: aiDataEntry.name,
+    parsedCount,
+    lineCount: exports.generals_aidata_line_count(),
+    scalarFieldCount: exports.generals_aidata_scalar_field_count(),
+    scalarAssignmentCount: exports.generals_aidata_scalar_assignment_count(),
+    scalarAssignedCount: exports.generals_aidata_scalar_assigned_count(),
+    sideCount: exports.generals_aidata_side_count(),
+    sideFieldCount: exports.generals_aidata_side_field_count(),
+    skillSetCount: exports.generals_aidata_skill_set_count(),
+    scienceCount,
+    buildListCount: exports.generals_aidata_build_list_count(),
+    structureCount,
+    structureFieldCount: exports.generals_aidata_structure_field_count(),
+    autoBuildCount: exports.generals_aidata_auto_build_count(),
+    initiallyBuiltCount: exports.generals_aidata_initially_built_count(),
+    structureSeconds: findAIDataScalar(exports, memory, "StructureSeconds"),
+    teamSeconds: findAIDataScalar(exports, memory, "TeamSeconds"),
+    wealthy: findAIDataScalar(exports, memory, "Wealthy"),
+    attackUsesLineOfSight: findAIDataScalar(exports, memory, "AttackUsesLineOfSight"),
+    america: findAIDataSide(exports, memory, "America"),
+    toxin: findAIDataSide(exports, memory, "GLAToxinGeneral"),
+    americaBuildList: findAIDataBuildList(exports, memory, "America"),
+    toxinBuildList: findAIDataBuildList(exports, memory, "GLAToxinGeneral"),
+    firstScience: scienceCount > 0 ? readAIDataString(exports, memory, "generals_aidata_science_name_ptr", "generals_aidata_science_name_size", 0) : "",
+    lastScience: scienceCount > 0 ? readAIDataString(exports, memory, "generals_aidata_science_name_ptr", "generals_aidata_science_name_size", scienceCount - 1) : "",
+    firstStructure: structureCount > 0 ? readAIDataStructure(exports, memory, 0) : null,
+    lastStructure: structureCount > 0 ? readAIDataStructure(exports, memory, structureCount - 1) : null,
+    preview,
+  };
+}
+
+function renderAIDataParse(result) {
+  if (!result) {
+    renderAIDataEmpty("no AI data");
+    return;
+  }
+
+  elements.aiDataFields.textContent = `${result.scalarAssignedCount}/${result.scalarFieldCount} scalars`;
+  elements.aiDataSides.textContent = `${result.sideCount} sides`;
+  elements.aiDataBuildLists.textContent = `${result.buildListCount} lists`;
+  elements.aiDataStructures.textContent = `${result.structureCount} structures`;
+
+  if (result.america) {
+    const americaStructures = result.americaBuildList?.structures ?? 0;
+    elements.aiDataFirst.textContent = `AIData: ${result.america.name} -> ${result.america.baseDefense}, ${americaStructures} structures, ${result.scienceCount} sciences`;
+  } else {
+    const first = result.preview[0];
+    elements.aiDataFirst.textContent = first ? `AIData: ${first.side}` : "no AI data";
+  }
+
+  const lines = [
+    `${result.file}: ${result.parsedCount} parsed records, ${result.scalarAssignedCount}/${result.scalarFieldCount} scalars, ${result.sideCount} sides, ${result.buildListCount} build lists, ${result.structureCount} structures`,
+    `${result.sideFieldCount} side fields, ${result.skillSetCount} skill sets, ${result.scienceCount} sciences, ${result.structureFieldCount} structure fields`,
+    `auto-build ${result.autoBuildCount}, initially-built ${result.initiallyBuiltCount}, ${result.lineCount} lines`,
+  ];
+
+  if (result.structureSeconds && result.teamSeconds && result.wealthy) {
+    lines.push(`timing structure ${formatRealX100(result.structureSeconds.value)}s, team ${formatRealX100(result.teamSeconds.value)}s, wealthy ${formatRealX100(result.wealthy.value)}`);
+  }
+  if (result.attackUsesLineOfSight) {
+    lines.push(`attack line-of-sight ${result.attackUsesLineOfSight.value ? "yes" : "no"}`);
+  }
+  if (result.america) {
+    lines.push(`${result.america.name}: gatherers ${result.america.easy}/${result.america.normal}/${result.america.hard}, base ${result.america.baseDefense}, ${result.america.skillSets} skill sets, ${result.americaBuildList?.structures ?? 0} structures`);
+  }
+  if (result.toxin) {
+    lines.push(`${result.toxin.name}: gatherers ${result.toxin.easy}/${result.toxin.normal}/${result.toxin.hard}, base ${result.toxin.baseDefense}, ${result.toxinBuildList?.structures ?? 0} structures`);
+  }
+  if (result.firstScience || result.lastScience) {
+    lines.push(`sciences ${result.firstScience} ... ${result.lastScience}`);
+  }
+  if (result.firstStructure) {
+    lines.push(`first ${formatAIDataStructure(result.firstStructure)}`);
+  }
+  if (result.lastStructure) {
+    lines.push(`last ${formatAIDataStructure(result.lastStructure)}`);
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((buildList) => `${buildList.side}: ${buildList.structures} structures, first index ${buildList.firstStructure}, line ${buildList.line}`));
+  elements.aiDataListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -2893,6 +3128,7 @@ function parseArchiveIni(entries, memory) {
     renderProgressionEmpty("no progression data");
     renderPlayerEmpty("no player data");
     renderGameDataEmpty("no game data");
+    renderAIDataEmpty("no AI data");
     return;
   }
 
@@ -2927,6 +3163,7 @@ function parseArchiveIni(entries, memory) {
   renderProgressionParse(parseProgressionEntries(entries, memory));
   renderPlayerParse(parsePlayerEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
+  renderAIDataParse(parseAIDataEntries(entries, memory));
 }
 
 async function boot() {
@@ -2966,6 +3203,11 @@ async function boot() {
   gameDataRuntime = {
     exports: gameDataModule.instance.exports,
     memory: new Uint8Array(gameDataModule.instance.exports.memory.buffer),
+  };
+  const aiDataModule = await loadWasm("../dist/generals_aidata.wasm");
+  aiDataRuntime = {
+    exports: aiDataModule.instance.exports,
+    memory: new Uint8Array(aiDataModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -3057,7 +3299,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
