@@ -8,6 +8,7 @@ let iniRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let thingRuntime = null;
+let commandRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -33,12 +34,18 @@ const elements = {
   thingArmorLinks: document.querySelector("[data-thing-armor-links]"),
   thingWeaponLinks: document.querySelector("[data-thing-weapon-links]"),
   thingFirst: document.querySelector("[data-thing-first]"),
+  commandButtons: document.querySelector("[data-command-buttons]"),
+  commandFields: document.querySelector("[data-command-fields]"),
+  commandSets: document.querySelector("[data-command-sets]"),
+  commandSlots: document.querySelector("[data-command-slots]"),
+  commandFirst: document.querySelector("[data-command-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
+  commandListing: document.querySelector("[data-command-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -503,6 +510,209 @@ function renderThingParse(result) {
   ].join("\n");
 }
 
+function renderCommandEmpty(reason) {
+  elements.commandButtons.textContent = "0 buttons";
+  elements.commandFields.textContent = "0 fields";
+  elements.commandSets.textContent = "0 sets";
+  elements.commandSlots.textContent = "0 slots";
+  elements.commandFirst.textContent = reason;
+  elements.commandListing.textContent = reason;
+}
+
+function readCommandString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readCommandButtonString(exports, memory, prefix, index) {
+  return readCommandString(
+    exports,
+    memory,
+    `generals_command_button_${prefix}_ptr`,
+    `generals_command_button_${prefix}_size`,
+    index
+  );
+}
+
+function readCommandSetName(exports, memory, index) {
+  return readCommandString(
+    exports,
+    memory,
+    "generals_command_set_name_ptr",
+    "generals_command_set_name_size",
+    index
+  );
+}
+
+function readCommandSetEntryButton(exports, memory, index) {
+  return readCommandString(
+    exports,
+    memory,
+    "generals_command_set_entry_button_ptr",
+    "generals_command_set_entry_button_size",
+    index
+  );
+}
+
+function parseCommandPayload(bytes) {
+  const { exports, memory } = commandRuntime;
+  const inputOffset = exports.generals_command_input_ptr();
+
+  if (bytes.length > exports.generals_command_input_capacity()) {
+    throw new Error(`Command payload exceeds ${exports.generals_command_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_command_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_command_error_count() !== 0) {
+    throw new Error(`Command parse failed with ${exports.generals_command_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function readCommandButtons(entry, archiveMemory) {
+  const { exports, memory } = commandRuntime;
+  parseCommandPayload(entryBytes(entry, archiveMemory));
+
+  const buttonsByName = new Map();
+
+  for (let index = 0; index < exports.generals_command_button_count(); ++index) {
+    const button = {
+      name: readCommandButtonString(exports, memory, "name", index),
+      command: readCommandButtonString(exports, memory, "command", index),
+      object: readCommandButtonString(exports, memory, "object", index),
+      upgrade: readCommandButtonString(exports, memory, "upgrade", index),
+      specialPower: readCommandButtonString(exports, memory, "special_power", index),
+      options: readCommandButtonString(exports, memory, "options", index),
+      textLabel: readCommandButtonString(exports, memory, "text_label", index),
+      buttonImage: readCommandButtonString(exports, memory, "button_image", index),
+      border: readCommandButtonString(exports, memory, "button_border_type", index),
+      fields: exports.generals_command_button_field_count_at(index),
+      line: exports.generals_command_button_line(index),
+    };
+    buttonsByName.set(button.name, button);
+  }
+
+  return {
+    buttonCount: exports.generals_command_button_count(),
+    buttonFieldCount: exports.generals_command_button_field_count(),
+    buttonsByName,
+  };
+}
+
+function readCommandSets(entry, archiveMemory, buttonsByName) {
+  const { exports, memory } = commandRuntime;
+  parseCommandPayload(entryBytes(entry, archiveMemory));
+
+  const commandSetPreview = [];
+  let featuredSet = null;
+
+  for (let index = 0; index < exports.generals_command_set_count(); ++index) {
+    const firstEntry = exports.generals_command_set_first_entry(index);
+    const entryCount = exports.generals_command_set_entry_count_at(index);
+    const commandSet = {
+      name: readCommandSetName(exports, memory, index),
+      line: exports.generals_command_set_line(index),
+      entries: [],
+    };
+
+    for (let offset = 0; offset < entryCount; ++offset) {
+      const entryIndex = firstEntry + offset;
+      const buttonName = readCommandSetEntryButton(exports, memory, entryIndex);
+      commandSet.entries.push({
+        slot: exports.generals_command_set_entry_slot(entryIndex),
+        button: buttonName,
+        target: buttonsByName.get(buttonName)?.object ?? "",
+        command: buttonsByName.get(buttonName)?.command ?? "",
+      });
+    }
+
+    if (commandSetPreview.length < 8) {
+      commandSetPreview.push(commandSet);
+    }
+    if (commandSet.name === "AmericaDozerCommandSet") {
+      featuredSet = commandSet;
+    }
+  }
+
+  return {
+    commandSetCount: exports.generals_command_set_count(),
+    commandSetEntryCount: exports.generals_command_set_entry_count(),
+    commandSetPreview,
+    featuredSet,
+  };
+}
+
+function parseCommandEntries(entries, archiveMemory) {
+  const buttonEntry = findEntry(entries, "data/ini/commandbutton.ini");
+  const setEntry = findEntry(entries, "data/ini/commandset.ini");
+
+  if (!buttonEntry && !setEntry) {
+    return null;
+  }
+
+  const buttonResult = buttonEntry
+    ? readCommandButtons(buttonEntry, archiveMemory)
+    : { buttonCount: 0, buttonFieldCount: 0, buttonsByName: new Map() };
+  const setResult = setEntry
+    ? readCommandSets(setEntry, archiveMemory, buttonResult.buttonsByName)
+    : { commandSetCount: 0, commandSetEntryCount: 0, commandSetPreview: [], featuredSet: null };
+
+  return {
+    ...buttonResult,
+    ...setResult,
+  };
+}
+
+function renderCommandParse(result) {
+  if (!result) {
+    renderCommandEmpty("no command data");
+    return;
+  }
+
+  elements.commandButtons.textContent = `${result.buttonCount} buttons`;
+  elements.commandFields.textContent = `${result.buttonFieldCount} fields`;
+  elements.commandSets.textContent = `${result.commandSetCount} sets`;
+  elements.commandSlots.textContent = `${result.commandSetEntryCount} slots`;
+
+  const firstFeaturedEntry = result.featuredSet?.entries[0] ?? null;
+  if (result.featuredSet && firstFeaturedEntry) {
+    const target = firstFeaturedEntry.target ? ` -> ${firstFeaturedEntry.target}` : "";
+    elements.commandFirst.textContent = `${result.featuredSet.name}: ${firstFeaturedEntry.slot} ${firstFeaturedEntry.button}${target}`;
+  } else if (result.featuredSet) {
+    elements.commandFirst.textContent = `${result.featuredSet.name}: empty`;
+  } else {
+    const first = result.commandSetPreview[0];
+    elements.commandFirst.textContent = first ? `${first.name}: ${first.entries.length} slots` : "no command data";
+  }
+
+  const featuredLines = [];
+  if (result.featuredSet) {
+    featuredLines.push(`${result.featuredSet.name} line ${result.featuredSet.line}`);
+    featuredLines.push(...result.featuredSet.entries.map((entry) => {
+      const target = entry.target ? ` -> ${entry.target}` : "";
+      return `${entry.slot}: ${entry.button} (${entry.command || "UNKNOWN"})${target}`;
+    }));
+    featuredLines.push("");
+  }
+  if (result.featured) {
+    const featuredButton = result.buttonsByName.get("Command_ConstructAmericaPowerPlant");
+    if (featuredButton) {
+      featuredLines.push(`${featuredButton.name}: ${featuredButton.command} ${featuredButton.object}`);
+      featuredLines.push(`${featuredButton.textLabel}, image ${featuredButton.buttonImage}, border ${featuredButton.border}`);
+      featuredLines.push("");
+    }
+  }
+
+  elements.commandListing.textContent = [
+    ...featuredLines,
+    ...result.commandSetPreview.map((commandSet) => `${commandSet.name}: ${commandSet.entries.length} slots`),
+  ].join("\n");
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -510,6 +720,7 @@ function parseArchiveIni(entries, memory) {
     renderArmorEmpty("no armor data");
     renderWeaponEmpty("no weapon data");
     renderThingEmpty("no object data");
+    renderCommandEmpty("no command data");
     return;
   }
 
@@ -532,6 +743,7 @@ function parseArchiveIni(entries, memory) {
   }
 
   renderThingParse(parseThingEntries(entries, memory));
+  renderCommandParse(parseCommandEntries(entries, memory));
 }
 
 async function boot() {
@@ -582,6 +794,11 @@ async function boot() {
     exports: thingModule.instance.exports,
     memory: new Uint8Array(thingModule.instance.exports.memory.buffer),
   };
+  const commandModule = await loadWasm("../dist/generals_command.wasm");
+  commandRuntime = {
+    exports: commandModule.instance.exports,
+    memory: new Uint8Array(commandModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -602,7 +819,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime) {
     return;
   }
 
