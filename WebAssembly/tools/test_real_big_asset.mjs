@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const wasmDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const wasmPath = resolve(wasmDir, "dist/generals_big.wasm");
-const realBigPath = resolve(process.argv[2] ?? "artifacts/real-assets/Gensec.big");
+const realBigPath = resolve(process.argv[2] ?? "artifacts/real-assets/INIZH.big");
 const [wasmBytes, archive] = await Promise.all([
   readFile(wasmPath),
   readFile(realBigPath),
@@ -36,9 +36,13 @@ const preview = [];
 for (let index = 0; index < Math.min(parsedCount, 8); ++index) {
   const namePtr = exports.generals_big_entry_name_ptr(index);
   const nameSize = exports.generals_big_entry_name_size(index);
+  const dataPtr = exports.generals_big_entry_data_ptr(index);
   const dataSize = exports.generals_big_entry_data_size(index);
   const name = textDecoder.decode(memory.slice(namePtr, namePtr + nameSize));
-  preview.push({ index, name, size: dataSize });
+  const textPreview = name.endsWith(".ini")
+    ? textDecoder.decode(memory.slice(dataPtr, dataPtr + Math.min(dataSize, 80))).replace(/\s+/g, " ").trim()
+    : "";
+  preview.push({ index, name, size: dataSize, textPreview });
 }
 
 console.log(JSON.stringify({

@@ -1,8 +1,8 @@
 extern "C" {
 
-static const int INPUT_CAPACITY = 4 * 1024 * 1024;
-static const int MAX_ENTRIES = 512;
-static const int NAME_CAPACITY = 1024 * 1024;
+static const int INPUT_CAPACITY = 32 * 1024 * 1024;
+static const int MAX_ENTRIES = 8192;
+static const int NAME_CAPACITY = 4 * 1024 * 1024;
 
 struct BigEntry
 {
@@ -80,6 +80,15 @@ __attribute__((used, visibility("default"))) int generals_big_entry_data_offset(
 	}
 
 	return (int)g_generals_big_entries[index].dataOffset;
+}
+
+__attribute__((used, visibility("default"))) int generals_big_entry_data_ptr(int index)
+{
+	if (index < 0 || index >= g_generals_big_file_count) {
+		return 0;
+	}
+
+	return (int)(g_generals_big_input + g_generals_big_entries[index].dataOffset);
 }
 
 __attribute__((used, visibility("default"))) int generals_big_entry_data_size(int index)

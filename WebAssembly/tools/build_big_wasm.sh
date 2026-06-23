@@ -15,6 +15,7 @@ exports=(
   -Wl,--export=generals_big_entry_name_ptr
   -Wl,--export=generals_big_entry_name_size
   -Wl,--export=generals_big_entry_data_offset
+  -Wl,--export=generals_big_entry_data_ptr
   -Wl,--export=generals_big_entry_data_size
   -Wl,--export=generals_big_is
   -Wl,--export=generals_big_parse
@@ -28,7 +29,7 @@ if command -v em++ >/dev/null 2>&1 && [[ "${GENERALS_WASM_FORCE_RAW_CLANG:-0}" !
     -fno-rtti \
     --no-entry \
     -sSTANDALONE_WASM=1 \
-    -sINITIAL_MEMORY=16777216 \
+    -sINITIAL_MEMORY=67108864 \
     "${exports[@]}" \
     "${wasm_dir}/src/big_archive_module.cpp" \
     -o "${out_file}"
@@ -50,8 +51,8 @@ else
     -Wl,--no-entry \
     -Wl,--export-memory \
     "${exports[@]}" \
-    -Wl,--initial-memory=8388608 \
-    -Wl,--max-memory=8388608 \
+    -Wl,--initial-memory=67108864 \
+    -Wl,--max-memory=67108864 \
     "${wasm_dir}/src/big_archive_module.cpp" \
     -o "${out_file}"
 fi

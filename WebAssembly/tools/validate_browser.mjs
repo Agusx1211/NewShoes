@@ -6,7 +6,10 @@ import { chromium } from "playwright";
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const screenshotsDir = resolve(webRoot, "artifacts/screenshots");
-const realBigPath = resolve(webRoot, "artifacts/real-assets/Gensec.big");
+const realBigPaths = [
+  resolve(webRoot, "artifacts/real-assets/INIZH.big"),
+  resolve(webRoot, "artifacts/real-assets/Gensec.big"),
+];
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -60,8 +63,15 @@ const browser = await chromium.launch();
 let realAsset = null;
 
 try {
-  await access(realBigPath);
-  realAsset = realBigPath;
+  for (const realBigPath of realBigPaths) {
+    try {
+      await access(realBigPath);
+      realAsset = realBigPath;
+      break;
+    } catch {
+      realAsset = null;
+    }
+  }
 } catch {
   realAsset = null;
 }
@@ -79,8 +89,12 @@ try {
     await page.goto(url);
     await page.waitForSelector('body[data-validation="pass"]', { timeout: 10000 });
     if (realAsset) {
+      const expectedFirstFile = realAsset.endsWith("INIZH.big") ? "data/ini/armor.ini" : "generalsb.sec";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(() => document.querySelector("[data-big-first]")?.textContent === "generalsb.sec");
+      await page.waitForFunction((expected) => {
+        return document.body.dataset.validation === "pass" &&
+          document.querySelector("[data-big-first]")?.textContent === expected;
+      }, expectedFirstFile);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

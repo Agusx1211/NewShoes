@@ -55,9 +55,9 @@ Playwright, waits for the wasm decode check to pass, and writes screenshots to:
 
 ## Real Asset Probe
 
-If the Zero Hour Disc 2 BIN image exists under `../assets`, convert the raw
-MODE1/2352 track to an ignored ISO image, extract `Gensec.big`, and parse it
-with the wasm module:
+If the Zero Hour Disc BIN images exist under `../assets`, convert the raw
+MODE1/2352 tracks to ignored ISO images, extract `INIZH.big`, and parse it with
+the wasm module:
 
 ```bash
 npm run extract:real-big

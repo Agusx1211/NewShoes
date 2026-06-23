@@ -30,6 +30,7 @@ for (let index = 0; index < files.length; ++index) {
   const namePtr = exports.generals_big_entry_name_ptr(index);
   const nameSize = exports.generals_big_entry_name_size(index);
   const dataOffset = exports.generals_big_entry_data_offset(index);
+  const dataPtr = exports.generals_big_entry_data_ptr(index);
   const dataSize = exports.generals_big_entry_data_size(index);
   const name = textDecoder.decode(memory.slice(namePtr, namePtr + nameSize));
 
@@ -39,6 +40,11 @@ for (let index = 0; index < files.length; ++index) {
 
   if (dataOffset !== files[index].offset || dataSize !== files[index].size) {
     throw new Error(`entry ${index} data range mismatch`);
+  }
+
+  const data = textDecoder.decode(memory.slice(dataPtr, dataPtr + dataSize));
+  if (data !== files[index].text) {
+    throw new Error(`entry ${index} data payload mismatch`);
   }
 }
 

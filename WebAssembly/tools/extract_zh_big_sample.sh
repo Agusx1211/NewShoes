@@ -7,6 +7,8 @@ repo_root="$(cd "${wasm_dir}/.." && pwd)"
 disc_image="${1:-${repo_root}/assets/Command & Conquer - Generals - Zero Hour (USA) (Disc 2).bin}"
 out_dir="${wasm_dir}/artifacts/real-assets"
 iso_image="${out_dir}/Disc2.iso"
+disc1_image="${repo_root}/assets/Command & Conquer - Generals - Zero Hour (USA) (Disc 1).bin"
+disc1_iso_image="${out_dir}/Disc1.iso"
 
 if ! command -v 7z >/dev/null 2>&1; then
   echo "7z is required to extract the BIG sample from the install image." >&2
@@ -21,6 +23,17 @@ fi
 mkdir -p "${out_dir}"
 if [[ ! -f "${iso_image}" || "${disc_image}" -nt "${iso_image}" ]]; then
   node "${script_dir}/mode1_2352_to_iso.mjs" "${disc_image}" "${iso_image}" >/dev/null
+fi
+
+if [[ -f "${disc1_image}" ]]; then
+  if [[ ! -f "${disc1_iso_image}" || "${disc1_image}" -nt "${disc1_iso_image}" ]]; then
+    node "${script_dir}/mode1_2352_to_iso.mjs" "${disc1_image}" "${disc1_iso_image}" >/dev/null
+  fi
+
+  7z e -y "-o${out_dir}" "${disc1_iso_image}" Data1.cab >/dev/null
+  7z e -y "-o${out_dir}" "${out_dir}/Data1.cab" INIZH.big >/dev/null
+  echo "${out_dir}/INIZH.big"
+  exit 0
 fi
 
 7z e -y "-o${out_dir}" "${iso_image}" Gensec.big >/dev/null
