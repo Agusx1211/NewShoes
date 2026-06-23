@@ -10,6 +10,7 @@ let aiDataRuntime = null;
 let mappedImageRuntime = null;
 let environmentRuntime = null;
 let videoRuntime = null;
+let multiplayerRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
@@ -63,6 +64,11 @@ const elements = {
   videoLines: document.querySelector("[data-video-lines]"),
   videoComments: document.querySelector("[data-video-comments]"),
   videoFirst: document.querySelector("[data-video-first]"),
+  multiplayerSettings: document.querySelector("[data-multiplayer-settings]"),
+  multiplayerColors: document.querySelector("[data-multiplayer-colors]"),
+  multiplayerMoney: document.querySelector("[data-multiplayer-money]"),
+  multiplayerChat: document.querySelector("[data-multiplayer-chat]"),
+  multiplayerFirst: document.querySelector("[data-multiplayer-first]"),
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
@@ -141,6 +147,7 @@ const elements = {
   mappedImageListing: document.querySelector("[data-mappedimage-listing]"),
   environmentListing: document.querySelector("[data-environment-listing]"),
   videoListing: document.querySelector("[data-video-listing]"),
+  multiplayerListing: document.querySelector("[data-multiplayer-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
@@ -3542,6 +3549,205 @@ function renderVideoParse(result) {
   elements.videoListing.textContent = lines.join("\n");
 }
 
+function renderMultiplayerEmpty(reason) {
+  elements.multiplayerSettings.textContent = "0 settings";
+  elements.multiplayerColors.textContent = "0 colors";
+  elements.multiplayerMoney.textContent = "0 choices";
+  elements.multiplayerChat.textContent = "0 chat";
+  elements.multiplayerFirst.textContent = reason;
+  elements.multiplayerListing.textContent = reason;
+}
+
+function readMultiplayerString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseMultiplayerPayload(bytes) {
+  const { exports, memory } = multiplayerRuntime;
+  const inputOffset = exports.generals_multiplayer_input_ptr();
+
+  if (bytes.length > exports.generals_multiplayer_input_capacity()) {
+    throw new Error(`Multiplayer payload exceeds ${exports.generals_multiplayer_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_multiplayer_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_multiplayer_error_count() !== 0) {
+    throw new Error(`Multiplayer parse failed with ${exports.generals_multiplayer_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function readMultiplayerChatColor(exports, memory, index) {
+  return {
+    index,
+    name: readMultiplayerString(exports, memory, "generals_multiplayer_chat_color_name_ptr", "generals_multiplayer_chat_color_name_size", index),
+    color: [
+      exports.generals_multiplayer_chat_color_r(index),
+      exports.generals_multiplayer_chat_color_g(index),
+      exports.generals_multiplayer_chat_color_b(index),
+    ],
+    line: exports.generals_multiplayer_chat_color_line(index),
+  };
+}
+
+function readMultiplayerColor(exports, memory, index) {
+  return {
+    index,
+    name: readMultiplayerString(exports, memory, "generals_multiplayer_color_name_ptr", "generals_multiplayer_color_name_size", index),
+    tooltip: readMultiplayerString(exports, memory, "generals_multiplayer_color_tooltip_ptr", "generals_multiplayer_color_tooltip_size", index),
+    color: [
+      exports.generals_multiplayer_color_r(index),
+      exports.generals_multiplayer_color_g(index),
+      exports.generals_multiplayer_color_b(index),
+    ],
+    nightColor: [
+      exports.generals_multiplayer_color_night_r(index),
+      exports.generals_multiplayer_color_night_g(index),
+      exports.generals_multiplayer_color_night_b(index),
+    ],
+    line: exports.generals_multiplayer_color_line(index),
+    fields: exports.generals_multiplayer_color_field_count_at(index),
+  };
+}
+
+function readMultiplayerMoney(exports, index) {
+  return {
+    index,
+    value: exports.generals_multiplayer_money_value(index),
+    isDefault: exports.generals_multiplayer_money_is_default(index),
+    line: exports.generals_multiplayer_money_line(index),
+    fields: exports.generals_multiplayer_money_field_count_at(index),
+  };
+}
+
+function findMultiplayerChatColor(exports, memory, name) {
+  for (let index = 0; index < exports.generals_multiplayer_chat_color_count(); ++index) {
+    const color = readMultiplayerChatColor(exports, memory, index);
+    if (color.name === name) {
+      return color;
+    }
+  }
+
+  return null;
+}
+
+function findMultiplayerColor(exports, memory, name) {
+  for (let index = 0; index < exports.generals_multiplayer_color_count(); ++index) {
+    const color = readMultiplayerColor(exports, memory, index);
+    if (color.name === name) {
+      return color;
+    }
+  }
+
+  return null;
+}
+
+function formatRgb(color) {
+  return color.join("/");
+}
+
+function formatMultiplayerColor(color) {
+  if (!color) {
+    return "no color";
+  }
+
+  return `${color.name}: ${color.tooltip}, day ${formatRgb(color.color)}, night ${formatRgb(color.nightColor)}, line ${color.line}`;
+}
+
+function formatMoneyChoice(choice) {
+  return `${choice.value}${choice.isDefault ? " default" : ""}`;
+}
+
+function parseMultiplayerEntries(entries, archiveMemory) {
+  const multiplayerEntry = findEntry(entries, "data/ini/multiplayer.ini");
+  if (!multiplayerEntry) {
+    return null;
+  }
+
+  const { exports, memory } = multiplayerRuntime;
+  const parsedCount = parseMultiplayerPayload(entryBytes(multiplayerEntry, archiveMemory));
+  const moneyChoices = [];
+  for (let index = 0; index < exports.generals_multiplayer_money_choice_count(); ++index) {
+    moneyChoices.push(readMultiplayerMoney(exports, index));
+  }
+
+  const preview = [];
+  for (let index = 0; index < Math.min(exports.generals_multiplayer_color_count(), 8); ++index) {
+    preview.push(readMultiplayerColor(exports, memory, index));
+  }
+
+  return {
+    file: multiplayerEntry.name,
+    sourceBytes: multiplayerEntry.dataSize,
+    parsedCount,
+    fieldCount: exports.generals_multiplayer_field_count(),
+    lineCount: exports.generals_multiplayer_line_count(),
+    settingsFieldCount: exports.generals_multiplayer_settings_field_count(),
+    startCountdownTimer: exports.generals_multiplayer_start_countdown_timer(),
+    maxBeaconsPerPlayer: exports.generals_multiplayer_max_beacons_per_player(),
+    useShroud: exports.generals_multiplayer_use_shroud(),
+    showRandomPlayerTemplate: exports.generals_multiplayer_show_random_player_template(),
+    showRandomStartPos: exports.generals_multiplayer_show_random_start_pos(),
+    showRandomColor: exports.generals_multiplayer_show_random_color(),
+    chatColorCount: exports.generals_multiplayer_chat_color_count(),
+    colorCount: exports.generals_multiplayer_color_count(),
+    moneyChoiceCount: exports.generals_multiplayer_money_choice_count(),
+    defaultStartingMoney: exports.generals_multiplayer_default_starting_money(),
+    chatDefault: findMultiplayerChatColor(exports, memory, "Default"),
+    chatSelf: findMultiplayerChatColor(exports, memory, "ChatSelf"),
+    mapSelected: findMultiplayerChatColor(exports, memory, "MapSelected"),
+    gold: findMultiplayerColor(exports, memory, "ColorGold"),
+    purple: findMultiplayerColor(exports, memory, "ColorPurple"),
+    pink: findMultiplayerColor(exports, memory, "ColorPink"),
+    moneyChoices,
+    preview,
+  };
+}
+
+function renderMultiplayerParse(result) {
+  if (!result) {
+    renderMultiplayerEmpty("no multiplayer data");
+    return;
+  }
+
+  elements.multiplayerSettings.textContent = `${result.settingsFieldCount} settings`;
+  elements.multiplayerColors.textContent = `${result.colorCount} colors`;
+  elements.multiplayerMoney.textContent = `${result.moneyChoiceCount} choices`;
+  elements.multiplayerChat.textContent = `${result.chatColorCount} chat`;
+
+  const shroud = result.useShroud ? "shroud on" : "shroud off";
+  elements.multiplayerFirst.textContent = `Multiplayer: ${result.colorCount} colors, default $${result.defaultStartingMoney}, ${shroud}`;
+
+  const lines = [
+    `${result.file}: ${formatBytes(result.sourceBytes)}, ${result.parsedCount} blocks, ${result.fieldCount} fields, ${result.lineCount} lines`,
+    `settings countdown ${result.startCountdownTimer}s, beacons ${result.maxBeaconsPerPlayer}, ${shroud}, random army ${result.showRandomPlayerTemplate ? "yes" : "no"}, random slot ${result.showRandomStartPos ? "yes" : "no"}, random color ${result.showRandomColor ? "yes" : "no"}`,
+    `starting money ${result.moneyChoices.map(formatMoneyChoice).join(", ")}`,
+  ];
+
+  if (result.chatDefault && result.chatSelf && result.mapSelected) {
+    lines.push(`chat colors Default ${formatRgb(result.chatDefault.color)}, ChatSelf ${formatRgb(result.chatSelf.color)}, MapSelected ${formatRgb(result.mapSelected.color)}`);
+  }
+
+  for (const color of [
+    result.gold,
+    result.purple,
+    result.pink,
+  ]) {
+    if (color) {
+      lines.push(formatMultiplayerColor(color));
+    }
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map(formatMultiplayerColor));
+  elements.multiplayerListing.textContent = lines.join("\n");
+}
+
 function renderPlayerEmpty(reason) {
   elements.playerTemplates.textContent = "0 templates";
   elements.playerPlayable.textContent = "0 playable";
@@ -3706,6 +3912,7 @@ function parseArchiveIni(entries, memory) {
     renderMappedImageEmpty("no mapped image data");
     renderEnvironmentEmpty("no environment data");
     renderVideoEmpty("no video data");
+    renderMultiplayerEmpty("no multiplayer data");
     return;
   }
 
@@ -3744,6 +3951,7 @@ function parseArchiveIni(entries, memory) {
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
   renderEnvironmentParse(parseEnvironmentEntries(entries, memory));
   renderVideoParse(parseVideoEntries(entries, memory));
+  renderMultiplayerParse(parseMultiplayerEntries(entries, memory));
 }
 
 async function boot() {
@@ -3803,6 +4011,11 @@ async function boot() {
   videoRuntime = {
     exports: videoModule.instance.exports,
     memory: new Uint8Array(videoModule.instance.exports.memory.buffer),
+  };
+  const multiplayerModule = await loadWasm("../dist/generals_multiplayer.wasm");
+  multiplayerRuntime = {
+    exports: multiplayerModule.instance.exports,
+    memory: new Uint8Array(multiplayerModule.instance.exports.memory.buffer),
   };
   const armorModule = await loadWasm("../dist/generals_armor.wasm");
   armorRuntime = {
@@ -3894,7 +4107,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
