@@ -8,6 +8,7 @@ const realArchive = resolve(wasmDir, "artifacts/real-assets/INIZH.big");
 const checks = [
   ["tools/test_real_ini_asset.mjs"],
   ["tools/test_real_armor_asset.mjs"],
+  ["tools/test_real_weapon_asset.mjs"],
 ];
 
 try {

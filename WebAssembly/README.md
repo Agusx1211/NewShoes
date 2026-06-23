@@ -10,17 +10,21 @@ The first checked-in targets are small, real game-data modules:
   `Generals/Code/GameEngineDevice/Source/Win32Device/Common/Win32BIGFileSystem.cpp`
 - INI block/property indexing based on the block style and type table in
   `Generals/Code/GameEngine/Source/Common/INI/INI.cpp`
+- Zero Hour armor template parsing based on
+  `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Armor.cpp`
+- Zero Hour weapon template parsing based on the core combat fields in
+  `GeneralsMD/Code/GameEngine/Source/GameLogic/Object/Weapon.cpp`
 
-RefPack, BIG, and INI support are needed before browser-side loading of original
-game configuration can work. These targets build with Emscripten when available
-and fall back to raw Clang wasm builds for dependency-free smoke testing where
-possible. Later targets can add typed gameplay object factories, filesystem,
-browser loop, and SDL/WebGL integration.
+RefPack, BIG, INI, armor, and weapon support are needed before browser-side
+loading of original combat configuration can work. These targets build with
+Emscripten when available and fall back to raw Clang wasm builds for
+dependency-free smoke testing where possible. Later targets can add more typed
+gameplay object factories, filesystem, browser loop, and SDL/WebGL integration.
 
 ## Build
 
 ```bash
-bash tools/build_refpack_wasm.sh
+npm run build:wasm
 ```
 
 Output:
@@ -31,10 +35,14 @@ Output:
 
 `dist/generals_ini.wasm`
 
+`dist/generals_armor.wasm`
+
+`dist/generals_weapon.wasm`
+
 ## Smoke Test
 
 ```bash
-node tools/test_refpack_module.mjs
+npm run test:wasm
 ```
 
 ## Browser Validation
@@ -48,11 +56,13 @@ npm install
 Then run:
 
 ```bash
-node tools/validate_browser.mjs
+npm run validate
 ```
 
-This starts a local static server, opens the harness in Chromium through
-Playwright, waits for the wasm decode check to pass, and writes screenshots to:
+This builds the wasm targets, runs synthetic module tests, runs real asset tests
+when `artifacts/real-assets/INIZH.big` exists, starts a local static server,
+opens the harness in Chromium through Playwright, waits for the wasm decode and
+real data checks to pass, and writes screenshots to:
 
 `artifacts/screenshots/refpack-harness-desktop.png`
 
@@ -68,6 +78,8 @@ the wasm module:
 npm run extract:real-big
 npm run test:real-big
 npm run test:real-ini
+npm run test:real-armor
+npm run test:real-weapon
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.

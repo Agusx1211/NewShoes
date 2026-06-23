@@ -6,6 +6,7 @@ const textDecoder = new TextDecoder();
 let bigRuntime = null;
 let iniRuntime = null;
 let armorRuntime = null;
+let weaponRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -23,10 +24,14 @@ const elements = {
   armorTemplates: document.querySelector("[data-armor-templates]"),
   armorCoeffs: document.querySelector("[data-armor-coeffs]"),
   armorFirst: document.querySelector("[data-armor-first]"),
+  weaponTemplates: document.querySelector("[data-weapon-templates]"),
+  weaponFields: document.querySelector("[data-weapon-fields]"),
+  weaponFirst: document.querySelector("[data-weapon-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
   armorListing: document.querySelector("[data-armor-listing]"),
+  weaponListing: document.querySelector("[data-weapon-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -58,6 +63,15 @@ function formatPercentX100(value) {
   }
 
   return `${percent.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%`;
+}
+
+function formatRealX100(value) {
+  const real = value / 100;
+  if (Number.isInteger(real)) {
+    return `${real}`;
+  }
+
+  return real.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function drawByteBars(bytes) {
@@ -247,22 +261,108 @@ function renderArmorParse(entry, result) {
     .join("\n");
 }
 
-function parseFirstIniEntry(entries, memory) {
+function renderWeaponEmpty(reason) {
+  elements.weaponTemplates.textContent = "0 templates";
+  elements.weaponFields.textContent = "0 fields";
+  elements.weaponFirst.textContent = reason;
+  elements.weaponListing.textContent = reason;
+}
+
+function readWeaponDamageTypeName(exports, memory, index) {
+  const namePtr = exports.generals_weapon_damage_type_name_ptr(index);
+  const nameSize = exports.generals_weapon_damage_type_name_size(index);
+  return namePtr ? textDecoder.decode(memory.slice(namePtr, namePtr + nameSize)) : "UNKNOWN";
+}
+
+function parseWeaponPayload(bytes) {
+  const { exports, memory } = weaponRuntime;
+  const inputOffset = exports.generals_weapon_input_ptr();
+
+  if (bytes.length > exports.generals_weapon_input_capacity()) {
+    throw new Error(`Weapon payload exceeds ${exports.generals_weapon_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_weapon_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_weapon_error_count() !== 0) {
+    throw new Error(`Weapon parse failed with ${exports.generals_weapon_error_count()} errors`);
+  }
+
+  const templates = [];
+  for (let index = 0; index < templateCount; ++index) {
+    const namePtr = exports.generals_weapon_template_name_ptr(index);
+    const nameSize = exports.generals_weapon_template_name_size(index);
+    const projectilePtr = exports.generals_weapon_template_projectile_name_ptr(index);
+    const projectileSize = exports.generals_weapon_template_projectile_name_size(index);
+    const damageType = exports.generals_weapon_template_damage_type(index);
+    templates.push({
+      name: textDecoder.decode(memory.slice(namePtr, namePtr + nameSize)),
+      fields: exports.generals_weapon_template_field_count(index),
+      line: exports.generals_weapon_template_line(index),
+      primaryDamage: exports.generals_weapon_template_primary_damage_x100(index),
+      attackRange: exports.generals_weapon_template_attack_range_x100(index),
+      damageType: readWeaponDamageTypeName(exports, memory, damageType),
+      projectile: projectilePtr ? textDecoder.decode(memory.slice(projectilePtr, projectilePtr + projectileSize)) : "",
+    });
+  }
+
+  return {
+    templateCount,
+    fieldCount: exports.generals_weapon_field_count(),
+    templates,
+  };
+}
+
+function renderWeaponParse(entry, result) {
+  elements.weaponTemplates.textContent = `${result.templateCount} templates`;
+  elements.weaponFields.textContent = `${result.fieldCount} fields`;
+  const firstTemplate = result.templates[0];
+  elements.weaponFirst.textContent = firstTemplate
+    ? `${entry.name}: ${firstTemplate.name} (${firstTemplate.damageType})`
+    : `${entry.name}: empty`;
+  elements.weaponListing.textContent = result.templates
+    .slice(0, 12)
+    .map((template) => {
+      const projectile = template.projectile ? `, projectile ${template.projectile}` : "";
+      return `${template.name} (${template.fields} fields, line ${template.line}) damage ${formatRealX100(template.primaryDamage)}, range ${formatRealX100(template.attackRange)}, ${template.damageType}${projectile}`;
+    })
+    .join("\n");
+}
+
+function entryBytes(entry, memory) {
+  return memory.slice(entry.dataPtr, entry.dataPtr + entry.dataSize);
+}
+
+function findEntry(entries, name) {
+  return entries.find((candidate) => candidate.name === name);
+}
+
+function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
     renderIniParse({ name: "no ini" }, { blockCount: 0, propertyCount: 0, blocks: [] });
     renderArmorEmpty("no armor data");
+    renderWeaponEmpty("no weapon data");
     return;
   }
 
-  const bytes = memory.slice(entry.dataPtr, entry.dataPtr + entry.dataSize);
+  const bytes = entryBytes(entry, memory);
   const iniResult = parseIniPayload(bytes);
   renderIniParse(entry, iniResult);
 
-  if (entry.name.endsWith("armor.ini") || iniResult.blocks[0]?.type === "Armor") {
-    renderArmorParse(entry, parseArmorPayload(bytes));
+  const armorEntry = findEntry(entries, "data/ini/armor.ini") ?? (iniResult.blocks[0]?.type === "Armor" ? entry : null);
+  if (armorEntry) {
+    renderArmorParse(armorEntry, parseArmorPayload(entryBytes(armorEntry, memory)));
   } else {
     renderArmorEmpty("no armor data");
+  }
+
+  const weaponEntry = findEntry(entries, "data/ini/weapon.ini") ?? (iniResult.blocks[0]?.type === "Weapon" ? entry : null);
+  if (weaponEntry) {
+    renderWeaponParse(weaponEntry, parseWeaponPayload(entryBytes(weaponEntry, memory)));
+  } else {
+    renderWeaponEmpty("no weapon data");
   }
 }
 
@@ -304,6 +404,11 @@ async function boot() {
     exports: armorModule.instance.exports,
     memory: new Uint8Array(armorModule.instance.exports.memory.buffer),
   };
+  const weaponModule = await loadWasm("../dist/generals_weapon.wasm");
+  weaponRuntime = {
+    exports: weaponModule.instance.exports,
+    memory: new Uint8Array(weaponModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -317,14 +422,14 @@ async function boot() {
   elements.bytes.textContent = hex(compressedLiteralSample);
   elements.output.textContent = decodedText;
   renderBigArchive(bigArchiveSample.archive, bigEntries);
-  parseFirstIniEntry(bigEntries, bigRuntime.memory);
+  parseArchiveIni(bigEntries, bigRuntime.memory);
   drawByteBars(compressedLiteralSample);
   setStatus("pass", "pass");
 }
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime) {
     return;
   }
 
@@ -333,7 +438,7 @@ elements.bigFile.addEventListener("change", async (event) => {
     const archive = new Uint8Array(await file.arrayBuffer());
     const entries = parseBigArchive(archive);
     renderBigArchive(archive, entries);
-    parseFirstIniEntry(entries, bigRuntime.memory);
+    parseArchiveIni(entries, bigRuntime.memory);
     setStatus("pass", "pass");
   } catch (error) {
     console.error(error);
