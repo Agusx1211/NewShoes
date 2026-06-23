@@ -9,6 +9,7 @@ let gameDataRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
+let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
 let progressionRuntime = null;
@@ -43,6 +44,11 @@ const elements = {
   locomotorGround: document.querySelector("[data-locomotor-ground]"),
   locomotorAir: document.querySelector("[data-locomotor-air]"),
   locomotorFirst: document.querySelector("[data-locomotor-first]"),
+  oclLists: document.querySelector("[data-ocl-lists]"),
+  oclNuggets: document.querySelector("[data-ocl-nuggets]"),
+  oclDebris: document.querySelector("[data-ocl-debris]"),
+  oclPayloads: document.querySelector("[data-ocl-payloads]"),
+  oclFirst: document.querySelector("[data-ocl-first]"),
   thingFiles: document.querySelector("[data-thing-files]"),
   thingTemplates: document.querySelector("[data-thing-templates]"),
   thingArmorLinks: document.querySelector("[data-thing-armor-links]"),
@@ -74,6 +80,7 @@ const elements = {
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
+  oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
   progressionListing: document.querySelector("[data-progression-listing]"),
@@ -534,6 +541,210 @@ function renderLocomotorParse(result) {
   lines.push("");
   lines.push(...result.preview.map((template) => `${template.name}: ${template.surfaces}, ${template.appearance}, ${template.fields} fields, line ${template.line}`));
   elements.locomotorListing.textContent = lines.join("\n");
+}
+
+function renderOclEmpty(reason) {
+  elements.oclLists.textContent = "0 lists";
+  elements.oclNuggets.textContent = "0 nuggets";
+  elements.oclDebris.textContent = "0 debris";
+  elements.oclPayloads.textContent = "0 payloads";
+  elements.oclFirst.textContent = reason;
+  elements.oclListing.textContent = reason;
+}
+
+function readOclString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readOclListName(exports, memory, index) {
+  return readOclString(
+    exports,
+    memory,
+    "generals_ocl_list_name_ptr",
+    "generals_ocl_list_name_size",
+    index
+  );
+}
+
+function readOclTypeName(exports, memory, type) {
+  return readOclString(
+    exports,
+    memory,
+    "generals_ocl_type_name_ptr",
+    "generals_ocl_type_name_size",
+    type
+  );
+}
+
+function readOclNuggetString(exports, memory, prefix, index) {
+  return readOclString(
+    exports,
+    memory,
+    `generals_ocl_nugget_${prefix}_ptr`,
+    `generals_ocl_nugget_${prefix}_size`,
+    index
+  );
+}
+
+function parseOclPayload(bytes) {
+  const { exports, memory } = oclRuntime;
+  const inputOffset = exports.generals_ocl_input_ptr();
+
+  if (bytes.length > exports.generals_ocl_input_capacity()) {
+    throw new Error(`OCL payload exceeds ${exports.generals_ocl_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const listCount = exports.generals_ocl_parse(bytes.length);
+
+  if (listCount < 0 || exports.generals_ocl_error_count() !== 0) {
+    throw new Error(`OCL parse failed with ${exports.generals_ocl_error_count()} errors`);
+  }
+
+  return listCount;
+}
+
+function readOclNugget(exports, memory, index) {
+  if (index < 0) {
+    return null;
+  }
+
+  const type = exports.generals_ocl_nugget_type(index);
+  return {
+    type: readOclTypeName(exports, memory, type),
+    line: exports.generals_ocl_nugget_line(index),
+    fields: exports.generals_ocl_nugget_field_count(index),
+    target: readOclNuggetString(exports, memory, "target", index),
+    secondary: readOclNuggetString(exports, memory, "secondary", index),
+    disposition: readOclNuggetString(exports, memory, "disposition", index),
+    particleSystem: readOclNuggetString(exports, memory, "particle_system", index),
+    count: exports.generals_ocl_nugget_count_value(index),
+    mass: exports.generals_ocl_nugget_mass_x100(index),
+  };
+}
+
+function formatOclNugget(nugget) {
+  if (!nugget) {
+    return "empty";
+  }
+
+  const target = nugget.target ? ` ${nugget.target}` : "";
+  const secondary = nugget.secondary ? ` -> ${nugget.secondary}` : "";
+  const count = nugget.count !== 1 ? ` x${nugget.count}` : "";
+  return `${nugget.type}${target}${secondary}${count}`;
+}
+
+function parseOclEntries(entries, archiveMemory) {
+  const oclEntry = findEntry(entries, "data/ini/objectcreationlist.ini");
+  if (!oclEntry) {
+    return null;
+  }
+
+  const { exports, memory } = oclRuntime;
+  const listCount = parseOclPayload(entryBytes(oclEntry, archiveMemory));
+  const preview = [];
+  let damagedBarrel = null;
+  let fireWall = null;
+  let genericCar = null;
+  let daisyCutter = null;
+  let neutronMissile = null;
+  let scudStorm = null;
+
+  for (let index = 0; index < listCount; ++index) {
+    const firstNugget = exports.generals_ocl_list_first_nugget(index);
+    const list = {
+      name: readOclListName(exports, memory, index),
+      line: exports.generals_ocl_list_line(index),
+      nuggets: exports.generals_ocl_list_nugget_count(index),
+      first: readOclNugget(exports, memory, firstNugget),
+    };
+
+    if (preview.length < 12) {
+      preview.push(list);
+    }
+    if (list.name === "OCL_CreateDamagedBarrel") {
+      damagedBarrel = list;
+    } else if (list.name === "OCL_FireWallSegment") {
+      fireWall = list;
+    } else if (list.name === "OCL_GenericCarExplode") {
+      genericCar = list;
+    } else if (list.name === "SUPERWEAPON_DaisyCutter") {
+      daisyCutter = list;
+    } else if (list.name === "SUPERWEAPON_NeutronMissile") {
+      neutronMissile = list;
+    } else if (list.name === "SUPERWEAPON_ScudStorm") {
+      scudStorm = list;
+    }
+  }
+
+  return {
+    file: oclEntry.name,
+    listCount,
+    nuggetCount: exports.generals_ocl_nugget_count(),
+    fieldCount: exports.generals_ocl_field_count(),
+    createObjectCount: exports.generals_ocl_type_count(0),
+    createDebrisCount: exports.generals_ocl_type_count(1),
+    applyRandomForceCount: exports.generals_ocl_type_count(2),
+    deliverPayloadCount: exports.generals_ocl_type_count(3),
+    fireWeaponCount: exports.generals_ocl_type_count(4),
+    attackCount: exports.generals_ocl_type_count(5),
+    preview,
+    damagedBarrel,
+    fireWall,
+    genericCar,
+    daisyCutter,
+    neutronMissile,
+    scudStorm,
+  };
+}
+
+function renderOclParse(result) {
+  if (!result) {
+    renderOclEmpty("no object creation list data");
+    return;
+  }
+
+  elements.oclLists.textContent = `${result.listCount} lists`;
+  elements.oclNuggets.textContent = `${result.nuggetCount} nuggets`;
+  elements.oclDebris.textContent = `${result.createDebrisCount} debris`;
+  elements.oclPayloads.textContent = `${result.deliverPayloadCount} payloads`;
+
+  if (result.damagedBarrel) {
+    elements.oclFirst.textContent = `${result.file}: ${result.damagedBarrel.name} -> ${formatOclNugget(result.damagedBarrel.first)}`;
+  } else {
+    const first = result.preview[0];
+    elements.oclFirst.textContent = first ? `${result.file}: ${first.name}` : "no object creation list data";
+  }
+
+  const lines = [
+    `${result.listCount} lists, ${result.nuggetCount} nuggets, ${result.fieldCount} fields`,
+    `types object ${result.createObjectCount}, debris ${result.createDebrisCount}, force ${result.applyRandomForceCount}, payload ${result.deliverPayloadCount}, weapon ${result.fireWeaponCount}, attack ${result.attackCount}`,
+  ];
+
+  if (result.damagedBarrel) {
+    lines.push(`${result.damagedBarrel.name}: ${formatOclNugget(result.damagedBarrel.first)}, ${result.damagedBarrel.first.disposition}, particle ${result.damagedBarrel.first.particleSystem}`);
+  }
+  if (result.fireWall) {
+    lines.push(`${result.fireWall.name}: ${formatOclNugget(result.fireWall.first)}, ${result.fireWall.first.disposition}`);
+  }
+  if (result.genericCar) {
+    lines.push(`${result.genericCar.name}: ${result.genericCar.nuggets} nuggets, first ${formatOclNugget(result.genericCar.first)}, mass ${formatRealX100(result.genericCar.first.mass)}`);
+  }
+  if (result.daisyCutter) {
+    lines.push(`${result.daisyCutter.name}: ${formatOclNugget(result.daisyCutter.first)}`);
+  }
+  if (result.neutronMissile) {
+    lines.push(`${result.neutronMissile.name}: ${formatOclNugget(result.neutronMissile.first)}`);
+  }
+  if (result.scudStorm) {
+    lines.push(`${result.scudStorm.name}: ${formatOclNugget(result.scudStorm.first)}`);
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((list) => `${list.name}: ${list.nuggets} nuggets, ${formatOclNugget(list.first)}, line ${list.line}`));
+  elements.oclListing.textContent = lines.join("\n");
 }
 
 function renderThingEmpty(reason) {
@@ -1414,6 +1625,7 @@ function parseArchiveIni(entries, memory) {
     renderArmorEmpty("no armor data");
     renderWeaponEmpty("no weapon data");
     renderLocomotorEmpty("no locomotor data");
+    renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
     renderProgressionEmpty("no progression data");
@@ -1441,6 +1653,7 @@ function parseArchiveIni(entries, memory) {
   }
 
   renderLocomotorParse(parseLocomotorEntries(entries, memory));
+  renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
   renderProgressionParse(parseProgressionEntries(entries, memory));
@@ -1501,6 +1714,11 @@ async function boot() {
     exports: locomotorModule.instance.exports,
     memory: new Uint8Array(locomotorModule.instance.exports.memory.buffer),
   };
+  const oclModule = await loadWasm("../dist/generals_ocl.wasm");
+  oclRuntime = {
+    exports: oclModule.instance.exports,
+    memory: new Uint8Array(oclModule.instance.exports.memory.buffer),
+  };
   const thingModule = await loadWasm("../dist/generals_thing.wasm");
   thingRuntime = {
     exports: thingModule.instance.exports,
@@ -1541,7 +1759,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
