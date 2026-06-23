@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:wasm": "bash tools/build_refpack_wasm.sh && bash tools/build_big_wasm.sh && bash tools/build_ini_wasm.sh && bash tools/build_gamedata_wasm.sh && bash tools/build_armor_wasm.sh && bash tools/build_weapon_wasm.sh && bash tools/build_locomotor_wasm.sh && bash tools/build_thing_wasm.sh && bash tools/build_command_wasm.sh && bash tools/build_progression_wasm.sh && bash tools/build_player_wasm.sh",
-    "test:wasm": "node tools/test_refpack_module.mjs && node tools/test_big_module.mjs && node tools/test_ini_module.mjs && node tools/test_gamedata_module.mjs && node tools/test_armor_module.mjs && node tools/test_weapon_module.mjs && node tools/test_locomotor_module.mjs && node tools/test_thing_module.mjs && node tools/test_command_module.mjs && node tools/test_progression_module.mjs && node tools/test_player_module.mjs",
+    "build:wasm": "bash tools/build_refpack_wasm.sh && bash tools/build_big_wasm.sh && bash tools/build_ini_wasm.sh && bash tools/build_gamedata_wasm.sh && bash tools/build_armor_wasm.sh && bash tools/build_weapon_wasm.sh && bash tools/build_locomotor_wasm.sh && bash tools/build_ocl_wasm.sh && bash tools/build_thing_wasm.sh && bash tools/build_command_wasm.sh && bash tools/build_progression_wasm.sh && bash tools/build_player_wasm.sh",
+    "test:wasm": "node tools/test_refpack_module.mjs && node tools/test_big_module.mjs && node tools/test_ini_module.mjs && node tools/test_gamedata_module.mjs && node tools/test_armor_module.mjs && node tools/test_weapon_module.mjs && node tools/test_locomotor_module.mjs && node tools/test_ocl_module.mjs && node tools/test_thing_module.mjs && node tools/test_command_module.mjs && node tools/test_progression_module.mjs && node tools/test_player_module.mjs",
     "extract:real-big": "bash tools/extract_zh_big_sample.sh",
     "test:real-big": "node tools/test_real_big_asset.mjs",
     "test:real-ini": "node tools/test_real_ini_asset.mjs",
@@ -12,6 +12,7 @@
     "test:real-armor": "node tools/test_real_armor_asset.mjs",
     "test:real-weapon": "node tools/test_real_weapon_asset.mjs",
     "test:real-locomotor": "node tools/test_real_locomotor_asset.mjs",
+    "test:real-ocl": "node tools/test_real_ocl_asset.mjs",
     "test:real-thing": "node tools/test_real_thing_asset.mjs",
     "test:real-command": "node tools/test_real_command_asset.mjs",
     "test:real-progression": "node tools/test_real_progression_asset.mjs",

@@ -11,6 +11,7 @@ const checks = [
   ["tools/test_real_armor_asset.mjs"],
   ["tools/test_real_weapon_asset.mjs"],
   ["tools/test_real_locomotor_asset.mjs"],
+  ["tools/test_real_ocl_asset.mjs"],
   ["tools/test_real_thing_asset.mjs"],
   ["tools/test_real_command_asset.mjs"],
   ["tools/test_real_progression_asset.mjs"],
