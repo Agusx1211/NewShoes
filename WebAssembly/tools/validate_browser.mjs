@@ -102,8 +102,11 @@ try {
       const expectedProgressionFirst = realAsset.endsWith("INIZH.big")
         ? "SuperweaponDaisyCutter -> SCIENCE_DaisyCutter (1 point)"
         : "no progression data";
+      const expectedPlayerFirst = realAsset.endsWith("INIZH.big")
+        ? "FactionAmerica: America/USA, starts AmericaCommandCenter + AmericaVehicleDozer"
+        : "no player data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedArmor, expectedWeapon, expectedThing, expectedCommand, expectedProgression]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedArmor, expectedWeapon, expectedThing, expectedCommand, expectedProgression, expectedPlayer]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
@@ -111,8 +114,9 @@ try {
           document.querySelector("[data-weapon-first]")?.textContent === expectedWeapon &&
           document.querySelector("[data-thing-first]")?.textContent === expectedThing &&
           document.querySelector("[data-command-first]")?.textContent === expectedCommand &&
-          document.querySelector("[data-progression-first]")?.textContent === expectedProgression;
-      }, [expectedFirstFile, expectedIniFirst, expectedArmorFirst, expectedWeaponFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst]);
+          document.querySelector("[data-progression-first]")?.textContent === expectedProgression &&
+          document.querySelector("[data-player-first]")?.textContent === expectedPlayer;
+      }, [expectedFirstFile, expectedIniFirst, expectedArmorFirst, expectedWeaponFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();

@@ -10,6 +10,7 @@ let weaponRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
 let progressionRuntime = null;
+let playerRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -49,6 +50,11 @@ const elements = {
   progressionSciences: document.querySelector("[data-progression-sciences]"),
   progressionFields: document.querySelector("[data-progression-fields]"),
   progressionFirst: document.querySelector("[data-progression-first]"),
+  playerTemplates: document.querySelector("[data-player-templates]"),
+  playerPlayable: document.querySelector("[data-player-playable]"),
+  playerSciences: document.querySelector("[data-player-sciences]"),
+  playerCommandSets: document.querySelector("[data-player-command-sets]"),
+  playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
   iniListing: document.querySelector("[data-ini-listing]"),
@@ -57,6 +63,7 @@ const elements = {
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
   progressionListing: document.querySelector("[data-progression-listing]"),
+  playerListing: document.querySelector("[data-player-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -948,6 +955,147 @@ function renderProgressionParse(result) {
   elements.progressionListing.textContent = lines.join("\n") || "progression data parsed";
 }
 
+function renderPlayerEmpty(reason) {
+  elements.playerTemplates.textContent = "0 templates";
+  elements.playerPlayable.textContent = "0 playable";
+  elements.playerSciences.textContent = "0 sciences";
+  elements.playerCommandSets.textContent = "0 sets";
+  elements.playerFirst.textContent = reason;
+  elements.playerListing.textContent = reason;
+}
+
+function readPlayerString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_player_template_${prefix}_ptr`](index);
+  const size = exports[`generals_player_template_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readPlayerStartingUnit(exports, memory, index, slot) {
+  const ptr = exports.generals_player_template_starting_unit_ptr(index, slot);
+  const size = exports.generals_player_template_starting_unit_size(index, slot);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parsePlayerPayload(bytes) {
+  const { exports, memory } = playerRuntime;
+  const inputOffset = exports.generals_player_input_ptr();
+
+  if (bytes.length > exports.generals_player_input_capacity()) {
+    throw new Error(`Player payload exceeds ${exports.generals_player_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_player_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_player_error_count() !== 0) {
+    throw new Error(`Player parse failed with ${exports.generals_player_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parsePlayerEntries(entries, archiveMemory) {
+  const playerEntry = findEntry(entries, "data/ini/playertemplate.ini");
+  if (!playerEntry) {
+    return null;
+  }
+
+  const { exports, memory } = playerRuntime;
+  parsePlayerPayload(entryBytes(playerEntry, archiveMemory));
+
+  const preview = [];
+  let america = null;
+  let observer = null;
+  let boss = null;
+
+  for (let index = 0; index < exports.generals_player_template_count(); ++index) {
+    const template = {
+      name: readPlayerString(exports, memory, "name", index),
+      side: readPlayerString(exports, memory, "side", index),
+      baseSide: readPlayerString(exports, memory, "base_side", index),
+      displayName: readPlayerString(exports, memory, "display_name", index),
+      intrinsicSciences: readPlayerString(exports, memory, "intrinsic_sciences", index),
+      rank1: readPlayerString(exports, memory, "purchase_science_command_set_rank1", index),
+      rank3: readPlayerString(exports, memory, "purchase_science_command_set_rank3", index),
+      rank8: readPlayerString(exports, memory, "purchase_science_command_set_rank8", index),
+      shortcutCommandSet: readPlayerString(exports, memory, "special_power_shortcut_command_set", index),
+      startingBuilding: readPlayerString(exports, memory, "starting_building", index),
+      startingUnit0: readPlayerStartingUnit(exports, memory, index, 0),
+      sideIconImage: readPlayerString(exports, memory, "side_icon_image", index),
+      observer: exports.generals_player_template_observer(index),
+      oldFaction: exports.generals_player_template_old_faction(index),
+      fields: exports.generals_player_template_field_count_at(index),
+      purchaseCommandSets: exports.generals_player_template_purchase_science_command_set_count(index),
+      shortcutButtons: exports.generals_player_template_special_power_shortcut_button_count(index),
+      color: [
+        exports.generals_player_template_preferred_color_r(index),
+        exports.generals_player_template_preferred_color_g(index),
+        exports.generals_player_template_preferred_color_b(index),
+      ],
+    };
+
+    if (preview.length < 8) {
+      preview.push(template);
+    }
+    if (template.name === "FactionAmerica") {
+      america = template;
+    } else if (template.name === "FactionObserver") {
+      observer = template;
+    } else if (template.name === "FactionBossGeneral") {
+      boss = template;
+    }
+  }
+
+  return {
+    templateCount: exports.generals_player_template_count(),
+    playableCount: exports.generals_player_playable_count(),
+    intrinsicScienceCount: exports.generals_player_intrinsic_science_count(),
+    purchaseScienceCommandSetCount: exports.generals_player_purchase_science_command_set_count(),
+    preview,
+    america,
+    observer,
+    boss,
+  };
+}
+
+function renderPlayerParse(result) {
+  if (!result) {
+    renderPlayerEmpty("no player data");
+    return;
+  }
+
+  elements.playerTemplates.textContent = `${result.templateCount} templates`;
+  elements.playerPlayable.textContent = `${result.playableCount} playable`;
+  elements.playerSciences.textContent = `${result.intrinsicScienceCount} sciences`;
+  elements.playerCommandSets.textContent = `${result.purchaseScienceCommandSetCount} sets`;
+
+  if (result.america) {
+    elements.playerFirst.textContent = `${result.america.name}: ${result.america.side}/${result.america.baseSide}, starts ${result.america.startingBuilding} + ${result.america.startingUnit0}`;
+  } else {
+    const first = result.preview[0];
+    elements.playerFirst.textContent = first ? `${first.name}: ${first.side}` : "no player data";
+  }
+
+  const lines = [];
+  if (result.america) {
+    lines.push(`${result.america.name}: ${result.america.displayName}, color ${result.america.color.join("/")}`);
+    lines.push(`sciences ${result.america.intrinsicSciences}; ranks ${result.america.rank1}, ${result.america.rank3}, ${result.america.rank8}`);
+    lines.push(`starts ${result.america.startingBuilding} + ${result.america.startingUnit0}; shortcut ${result.america.shortcutCommandSet} (${result.america.shortcutButtons})`);
+    lines.push(`icon ${result.america.sideIconImage}; old faction ${result.america.oldFaction ? "yes" : "no"}`);
+    lines.push("");
+  }
+  if (result.observer) {
+    lines.push(`${result.observer.name}: observer ${result.observer.observer ? "yes" : "no"}, icon ${result.observer.sideIconImage}`);
+  }
+  if (result.boss) {
+    lines.push(`${result.boss.name}: ${result.boss.intrinsicSciences}, ${result.boss.purchaseCommandSets} science sets`);
+    lines.push("");
+  }
+  lines.push(...result.preview.map((template) => `${template.name}: ${template.side}, ${template.fields} fields`));
+
+  elements.playerListing.textContent = lines.join("\n") || "player data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -957,6 +1105,7 @@ function parseArchiveIni(entries, memory) {
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
     renderProgressionEmpty("no progression data");
+    renderPlayerEmpty("no player data");
     return;
   }
 
@@ -981,6 +1130,7 @@ function parseArchiveIni(entries, memory) {
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
   renderProgressionParse(parseProgressionEntries(entries, memory));
+  renderPlayerParse(parsePlayerEntries(entries, memory));
 }
 
 async function boot() {
@@ -1041,6 +1191,11 @@ async function boot() {
     exports: progressionModule.instance.exports,
     memory: new Uint8Array(progressionModule.instance.exports.memory.buffer),
   };
+  const playerModule = await loadWasm("../dist/generals_player.wasm");
+  playerRuntime = {
+    exports: playerModule.instance.exports,
+    memory: new Uint8Array(playerModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -1061,7 +1216,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !armorRuntime || !weaponRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 

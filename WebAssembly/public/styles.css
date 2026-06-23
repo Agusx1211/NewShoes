@@ -177,7 +177,8 @@ pre,
 [data-weapon-first],
 [data-thing-first],
 [data-command-first],
-[data-progression-first] {
+[data-progression-first],
+[data-player-first] {
   display: block;
   min-height: 44px;
   overflow-x: auto;
