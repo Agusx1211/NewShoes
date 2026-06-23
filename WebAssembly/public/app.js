@@ -10,6 +10,7 @@ let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
 let fxlistRuntime = null;
+let particleRuntime = null;
 let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
@@ -50,6 +51,11 @@ const elements = {
   fxlistParticles: document.querySelector("[data-fxlist-particles]"),
   fxlistSounds: document.querySelector("[data-fxlist-sounds]"),
   fxlistFirst: document.querySelector("[data-fxlist-first]"),
+  particleTemplates: document.querySelector("[data-particle-templates]"),
+  particleFields: document.querySelector("[data-particle-fields]"),
+  particleTextures: document.querySelector("[data-particle-textures]"),
+  particleCritical: document.querySelector("[data-particle-critical]"),
+  particleFirst: document.querySelector("[data-particle-first]"),
   oclLists: document.querySelector("[data-ocl-lists]"),
   oclNuggets: document.querySelector("[data-ocl-nuggets]"),
   oclDebris: document.querySelector("[data-ocl-debris]"),
@@ -87,6 +93,7 @@ const elements = {
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
   fxlistListing: document.querySelector("[data-fxlist-listing]"),
+  particleListing: document.querySelector("[data-particle-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
@@ -747,6 +754,226 @@ function renderFxListParse(result) {
   lines.push("");
   lines.push(...result.preview.map((list) => `${list.name}: ${list.nuggets} nuggets, ${formatFxListNugget(list.first)}, line ${list.line}`));
   elements.fxlistListing.textContent = lines.join("\n");
+}
+
+function renderParticleEmpty(reason) {
+  elements.particleTemplates.textContent = "0 systems";
+  elements.particleFields.textContent = "0 fields";
+  elements.particleTextures.textContent = "0 sprites";
+  elements.particleCritical.textContent = "0 critical";
+  elements.particleFirst.textContent = reason;
+  elements.particleListing.textContent = reason;
+}
+
+function readParticleString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readParticleTemplateString(exports, memory, prefix, index) {
+  return readParticleString(
+    exports,
+    memory,
+    `generals_particle_template_${prefix}_ptr`,
+    `generals_particle_template_${prefix}_size`,
+    index
+  );
+}
+
+function readParticleEnumString(exports, memory, kind, index) {
+  return readParticleString(
+    exports,
+    memory,
+    `generals_particle_${kind}_name_ptr`,
+    `generals_particle_${kind}_name_size`,
+    index
+  );
+}
+
+function parseParticlePayload(bytes) {
+  const { exports, memory } = particleRuntime;
+  const inputOffset = exports.generals_particle_input_ptr();
+
+  if (bytes.length > exports.generals_particle_input_capacity()) {
+    throw new Error(`ParticleSystem payload exceeds ${exports.generals_particle_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const templateCount = exports.generals_particle_parse(bytes.length);
+
+  if (templateCount < 0 || exports.generals_particle_error_count() !== 0) {
+    throw new Error(`ParticleSystem parse failed with ${exports.generals_particle_error_count()} errors`);
+  }
+
+  return templateCount;
+}
+
+function readParticleTemplate(exports, memory, index) {
+  const priority = exports.generals_particle_template_priority(index);
+  const shader = exports.generals_particle_template_shader(index);
+  const type = exports.generals_particle_template_type(index);
+  const velocity = exports.generals_particle_template_velocity_type(index);
+  const volume = exports.generals_particle_template_volume_type(index);
+  return {
+    name: readParticleTemplateString(exports, memory, "name", index),
+    particleName: readParticleTemplateString(exports, memory, "particle_name", index),
+    slaveSystem: readParticleTemplateString(exports, memory, "slave_system", index),
+    attachedSystem: readParticleTemplateString(exports, memory, "attached_system", index),
+    line: exports.generals_particle_template_line(index),
+    fields: exports.generals_particle_template_field_count_at(index),
+    priority: readParticleEnumString(exports, memory, "priority", priority),
+    shader: readParticleEnumString(exports, memory, "shader", shader),
+    type: readParticleEnumString(exports, memory, "type", type),
+    velocity: readParticleEnumString(exports, memory, "velocity", velocity),
+    volume: readParticleEnumString(exports, memory, "volume", volume),
+    lifetimeLow: exports.generals_particle_template_lifetime_low_x100(index),
+    lifetimeHigh: exports.generals_particle_template_lifetime_high_x100(index),
+    sizeLow: exports.generals_particle_template_size_low_x100(index),
+    sizeHigh: exports.generals_particle_template_size_high_x100(index),
+    burstDelayLow: exports.generals_particle_template_burst_delay_low_x100(index),
+    burstDelayHigh: exports.generals_particle_template_burst_delay_high_x100(index),
+    burstCountLow: exports.generals_particle_template_burst_count_low_x100(index),
+    burstCountHigh: exports.generals_particle_template_burst_count_high_x100(index),
+    volumeRadius: exports.generals_particle_template_volume_radius_x100(index),
+    volumeLength: exports.generals_particle_template_volume_length_x100(index),
+    isHollow: exports.generals_particle_template_is_hollow(index),
+    isEmitAboveGroundOnly: exports.generals_particle_template_is_emit_above_ground_only(index),
+  };
+}
+
+function formatRangeX100(low, high) {
+  return low === high ? formatRealX100(low) : `${formatRealX100(low)}-${formatRealX100(high)}`;
+}
+
+function formatParticleTemplate(template) {
+  const texture = template.particleName ? ` -> ${template.particleName}` : "";
+  const slave = template.slaveSystem ? `, slave ${template.slaveSystem}` : "";
+  const attached = template.attachedSystem ? `, attached ${template.attachedSystem}` : "";
+  const radius = template.volumeRadius ? ` radius ${formatRealX100(template.volumeRadius)}` : "";
+  const length = template.volumeLength ? ` length ${formatRealX100(template.volumeLength)}` : "";
+  const flags = [
+    template.isHollow ? "hollow" : "",
+    template.isEmitAboveGroundOnly ? "above ground" : "",
+  ].filter(Boolean).join(", ");
+  const flagText = flags ? `, ${flags}` : "";
+  const burst = `, burst ${formatRangeX100(template.burstCountLow, template.burstCountHigh)} every ${formatRangeX100(template.burstDelayLow, template.burstDelayHigh)}`;
+  return `${template.name}${texture}, ${template.shader}/${template.type}, ${template.priority}, life ${formatRangeX100(template.lifetimeLow, template.lifetimeHigh)}, size ${formatRangeX100(template.sizeLow, template.sizeHigh)}, ${template.velocity}/${template.volume}${radius}${length}${burst}${slave}${attached}${flagText}`;
+}
+
+function parseParticleEntries(entries, archiveMemory) {
+  const particleEntry = findEntry(entries, "data/ini/particlesystem.ini");
+  if (!particleEntry) {
+    return null;
+  }
+
+  const { exports, memory } = particleRuntime;
+  const templateCount = parseParticlePayload(entryBytes(particleEntry, archiveMemory));
+  const preview = [];
+  const textureNames = new Set();
+  let first = null;
+  let jetContrailThin = null;
+  let smallTankStruckSmoke = null;
+  let nukeMushroomExplosion = null;
+  let toxicShellExplosion = null;
+
+  for (let index = 0; index < templateCount; ++index) {
+    const template = readParticleTemplate(exports, memory, index);
+    if (template.particleName) {
+      textureNames.add(template.particleName);
+    }
+    if (index === 0) {
+      first = template;
+    }
+    if (preview.length < 12) {
+      preview.push(template);
+    }
+    if (template.name === "JetContrailThin") {
+      jetContrailThin = template;
+    } else if (template.name === "SmallTankStruckSmoke") {
+      smallTankStruckSmoke = template;
+    } else if (template.name === "NukeMushroomExplosion") {
+      nukeMushroomExplosion = template;
+    } else if (template.name === "ToxicShellExplosion") {
+      toxicShellExplosion = template;
+    }
+  }
+
+  return {
+    file: particleEntry.name,
+    templateCount,
+    fieldCount: exports.generals_particle_field_count(),
+    shaderAdditiveCount: exports.generals_particle_shader_count(1),
+    shaderAlphaCount: exports.generals_particle_shader_count(2),
+    shaderAlphaTestCount: exports.generals_particle_shader_count(3),
+    shaderMultiplyCount: exports.generals_particle_shader_count(4),
+    typeParticleCount: exports.generals_particle_type_count(1),
+    typeDrawableCount: exports.generals_particle_type_count(2),
+    typeStreakCount: exports.generals_particle_type_count(3),
+    typeVolumeParticleCount: exports.generals_particle_type_count(4),
+    velocityOutwardCount: exports.generals_particle_velocity_count(5),
+    volumePointCount: exports.generals_particle_volume_count(1),
+    volumeLineCount: exports.generals_particle_volume_count(2),
+    volumeBoxCount: exports.generals_particle_volume_count(3),
+    volumeSphereCount: exports.generals_particle_volume_count(4),
+    volumeCylinderCount: exports.generals_particle_volume_count(5),
+    priorityWeaponExplosionCount: exports.generals_particle_priority_count(1),
+    priorityWeaponTrailCount: exports.generals_particle_priority_count(10),
+    priorityCriticalCount: exports.generals_particle_priority_count(12),
+    textureCount: textureNames.size,
+    preview,
+    first,
+    jetContrailThin,
+    smallTankStruckSmoke,
+    nukeMushroomExplosion,
+    toxicShellExplosion,
+  };
+}
+
+function renderParticleParse(result) {
+  if (!result) {
+    renderParticleEmpty("no particle system data");
+    return;
+  }
+
+  elements.particleTemplates.textContent = `${result.templateCount} systems`;
+  elements.particleFields.textContent = `${result.fieldCount} fields`;
+  elements.particleTextures.textContent = `${result.textureCount} sprites`;
+  elements.particleCritical.textContent = `${result.priorityCriticalCount} critical`;
+
+  if (result.first) {
+    elements.particleFirst.textContent = `${result.file}: ${result.first.name} -> ${result.first.particleName}, ${result.first.shader}/${result.first.type}`;
+  } else {
+    elements.particleFirst.textContent = "no particle system data";
+  }
+
+  const lines = [
+    `${result.templateCount} systems, ${result.fieldCount} fields, ${result.textureCount} referenced sprites`,
+    `shader additive ${result.shaderAdditiveCount}, alpha ${result.shaderAlphaCount}, alpha test ${result.shaderAlphaTestCount}, multiply ${result.shaderMultiplyCount}`,
+    `types particle ${result.typeParticleCount}, streak ${result.typeStreakCount}, volume ${result.typeVolumeParticleCount}, drawable ${result.typeDrawableCount}`,
+    `velocity outward ${result.velocityOutwardCount}; volumes point ${result.volumePointCount}, line ${result.volumeLineCount}, box ${result.volumeBoxCount}, sphere ${result.volumeSphereCount}, cylinder ${result.volumeCylinderCount}`,
+    `priority weapon explosion ${result.priorityWeaponExplosionCount}, weapon trail ${result.priorityWeaponTrailCount}, critical ${result.priorityCriticalCount}`,
+  ];
+
+  if (result.first) {
+    lines.push(formatParticleTemplate(result.first));
+  }
+  if (result.jetContrailThin) {
+    lines.push(formatParticleTemplate(result.jetContrailThin));
+  }
+  if (result.smallTankStruckSmoke) {
+    lines.push(formatParticleTemplate(result.smallTankStruckSmoke));
+  }
+  if (result.nukeMushroomExplosion) {
+    lines.push(formatParticleTemplate(result.nukeMushroomExplosion));
+  }
+  if (result.toxicShellExplosion) {
+    lines.push(formatParticleTemplate(result.toxicShellExplosion));
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((template) => `${template.name}: ${template.particleName || "no sprite"}, ${template.shader}/${template.type}, ${template.fields} fields, line ${template.line}`));
+  elements.particleListing.textContent = lines.join("\n");
 }
 
 function renderOclEmpty(reason) {
@@ -1832,6 +2059,7 @@ function parseArchiveIni(entries, memory) {
     renderWeaponEmpty("no weapon data");
     renderLocomotorEmpty("no locomotor data");
     renderFxListEmpty("no FX list data");
+    renderParticleEmpty("no particle system data");
     renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
@@ -1861,6 +2089,7 @@ function parseArchiveIni(entries, memory) {
 
   renderLocomotorParse(parseLocomotorEntries(entries, memory));
   renderFxListParse(parseFxListEntries(entries, memory));
+  renderParticleParse(parseParticleEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
@@ -1927,6 +2156,11 @@ async function boot() {
     exports: fxlistModule.instance.exports,
     memory: new Uint8Array(fxlistModule.instance.exports.memory.buffer),
   };
+  const particleModule = await loadWasm("../dist/generals_particle.wasm");
+  particleRuntime = {
+    exports: particleModule.instance.exports,
+    memory: new Uint8Array(particleModule.instance.exports.memory.buffer),
+  };
   const oclModule = await loadWasm("../dist/generals_ocl.wasm");
   oclRuntime = {
     exports: oclModule.instance.exports,
@@ -1972,7 +2206,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
