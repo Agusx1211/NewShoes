@@ -9,6 +9,7 @@ let gameDataRuntime = null;
 let armorRuntime = null;
 let weaponRuntime = null;
 let locomotorRuntime = null;
+let fxlistRuntime = null;
 let oclRuntime = null;
 let thingRuntime = null;
 let commandRuntime = null;
@@ -44,6 +45,11 @@ const elements = {
   locomotorGround: document.querySelector("[data-locomotor-ground]"),
   locomotorAir: document.querySelector("[data-locomotor-air]"),
   locomotorFirst: document.querySelector("[data-locomotor-first]"),
+  fxlistLists: document.querySelector("[data-fxlist-lists]"),
+  fxlistNuggets: document.querySelector("[data-fxlist-nuggets]"),
+  fxlistParticles: document.querySelector("[data-fxlist-particles]"),
+  fxlistSounds: document.querySelector("[data-fxlist-sounds]"),
+  fxlistFirst: document.querySelector("[data-fxlist-first]"),
   oclLists: document.querySelector("[data-ocl-lists]"),
   oclNuggets: document.querySelector("[data-ocl-nuggets]"),
   oclDebris: document.querySelector("[data-ocl-debris]"),
@@ -80,6 +86,7 @@ const elements = {
   armorListing: document.querySelector("[data-armor-listing]"),
   weaponListing: document.querySelector("[data-weapon-listing]"),
   locomotorListing: document.querySelector("[data-locomotor-listing]"),
+  fxlistListing: document.querySelector("[data-fxlist-listing]"),
   oclListing: document.querySelector("[data-ocl-listing]"),
   thingListing: document.querySelector("[data-thing-listing]"),
   commandListing: document.querySelector("[data-command-listing]"),
@@ -541,6 +548,205 @@ function renderLocomotorParse(result) {
   lines.push("");
   lines.push(...result.preview.map((template) => `${template.name}: ${template.surfaces}, ${template.appearance}, ${template.fields} fields, line ${template.line}`));
   elements.locomotorListing.textContent = lines.join("\n");
+}
+
+function renderFxListEmpty(reason) {
+  elements.fxlistLists.textContent = "0 lists";
+  elements.fxlistNuggets.textContent = "0 nuggets";
+  elements.fxlistParticles.textContent = "0 particles";
+  elements.fxlistSounds.textContent = "0 sounds";
+  elements.fxlistFirst.textContent = reason;
+  elements.fxlistListing.textContent = reason;
+}
+
+function readFxListString(exports, memory, ptrFn, sizeFn, index) {
+  const ptr = exports[ptrFn](index);
+  const size = exports[sizeFn](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readFxListName(exports, memory, index) {
+  return readFxListString(
+    exports,
+    memory,
+    "generals_fxlist_list_name_ptr",
+    "generals_fxlist_list_name_size",
+    index
+  );
+}
+
+function readFxListTypeName(exports, memory, type) {
+  return readFxListString(
+    exports,
+    memory,
+    "generals_fxlist_type_name_ptr",
+    "generals_fxlist_type_name_size",
+    type
+  );
+}
+
+function readFxListNuggetString(exports, memory, prefix, index) {
+  return readFxListString(
+    exports,
+    memory,
+    `generals_fxlist_nugget_${prefix}_ptr`,
+    `generals_fxlist_nugget_${prefix}_size`,
+    index
+  );
+}
+
+function parseFxListPayload(bytes) {
+  const { exports, memory } = fxlistRuntime;
+  const inputOffset = exports.generals_fxlist_input_ptr();
+
+  if (bytes.length > exports.generals_fxlist_input_capacity()) {
+    throw new Error(`FXList payload exceeds ${exports.generals_fxlist_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const listCount = exports.generals_fxlist_parse(bytes.length);
+
+  if (listCount < 0 || exports.generals_fxlist_error_count() !== 0) {
+    throw new Error(`FXList parse failed with ${exports.generals_fxlist_error_count()} errors`);
+  }
+
+  return listCount;
+}
+
+function readFxListNugget(exports, memory, index) {
+  if (index < 0) {
+    return null;
+  }
+
+  const type = exports.generals_fxlist_nugget_type(index);
+  return {
+    type: readFxListTypeName(exports, memory, type),
+    line: exports.generals_fxlist_nugget_line(index),
+    fields: exports.generals_fxlist_nugget_field_count(index),
+    target: readFxListNuggetString(exports, memory, "target", index),
+    secondary: readFxListNuggetString(exports, memory, "secondary", index),
+    count: exports.generals_fxlist_nugget_count_value(index),
+    radius: exports.generals_fxlist_nugget_radius_x100(index),
+  };
+}
+
+function formatFxListNugget(nugget) {
+  if (!nugget) {
+    return "empty";
+  }
+
+  const target = nugget.target ? ` ${nugget.target}` : "";
+  const secondary = nugget.secondary ? ` @ ${nugget.secondary}` : "";
+  const count = nugget.count !== 1 ? ` x${nugget.count}` : "";
+  const radius = nugget.radius ? ` radius ${formatRealX100(nugget.radius)}` : "";
+  return `${nugget.type}${target}${secondary}${count}${radius}`;
+}
+
+function parseFxListEntries(entries, archiveMemory) {
+  const fxlistEntry = findEntry(entries, "data/ini/fxlist.ini");
+  if (!fxlistEntry) {
+    return null;
+  }
+
+  const { exports, memory } = fxlistRuntime;
+  const listCount = parseFxListPayload(entryBytes(fxlistEntry, archiveMemory));
+  const preview = [];
+  let toxinShell = null;
+  let crushedCar = null;
+  let emptyDie = null;
+  let tankExplosion = null;
+  let nuke = null;
+
+  for (let index = 0; index < listCount; ++index) {
+    const firstNugget = exports.generals_fxlist_list_first_nugget(index);
+    const nuggetCount = exports.generals_fxlist_list_nugget_count(index);
+    const list = {
+      name: readFxListName(exports, memory, index),
+      line: exports.generals_fxlist_list_line(index),
+      nuggets: nuggetCount,
+      first: nuggetCount > 0 ? readFxListNugget(exports, memory, firstNugget) : null,
+    };
+
+    if (preview.length < 12) {
+      preview.push(list);
+    }
+    if (list.name === "WeaponFX_ToxinShellWeapon") {
+      toxinShell = list;
+    } else if (list.name === "FX_CarOverlappedByCrusher") {
+      crushedCar = list;
+    } else if (list.name === "FX_GIDie") {
+      emptyDie = list;
+    } else if (list.name === "FX_GenericTankDeathExplosion") {
+      tankExplosion = list;
+    } else if (list.name === "FX_Nuke") {
+      nuke = list;
+    }
+  }
+
+  return {
+    file: fxlistEntry.name,
+    listCount,
+    nuggetCount: exports.generals_fxlist_nugget_count(),
+    fieldCount: exports.generals_fxlist_field_count(),
+    soundCount: exports.generals_fxlist_type_count(0),
+    rayEffectCount: exports.generals_fxlist_type_count(1),
+    tracerCount: exports.generals_fxlist_type_count(2),
+    lightPulseCount: exports.generals_fxlist_type_count(3),
+    viewShakeCount: exports.generals_fxlist_type_count(4),
+    terrainScorchCount: exports.generals_fxlist_type_count(5),
+    particleSystemCount: exports.generals_fxlist_type_count(6),
+    atBoneCount: exports.generals_fxlist_type_count(7),
+    preview,
+    toxinShell,
+    crushedCar,
+    emptyDie,
+    tankExplosion,
+    nuke,
+  };
+}
+
+function renderFxListParse(result) {
+  if (!result) {
+    renderFxListEmpty("no FX list data");
+    return;
+  }
+
+  elements.fxlistLists.textContent = `${result.listCount} lists`;
+  elements.fxlistNuggets.textContent = `${result.nuggetCount} nuggets`;
+  elements.fxlistParticles.textContent = `${result.particleSystemCount} particles`;
+  elements.fxlistSounds.textContent = `${result.soundCount} sounds`;
+
+  if (result.toxinShell) {
+    elements.fxlistFirst.textContent = `${result.file}: ${result.toxinShell.name} -> ${formatFxListNugget(result.toxinShell.first)}`;
+  } else {
+    const first = result.preview[0];
+    elements.fxlistFirst.textContent = first ? `${result.file}: ${first.name}` : "no FX list data";
+  }
+
+  const lines = [
+    `${result.listCount} lists, ${result.nuggetCount} nuggets, ${result.fieldCount} fields`,
+    `types sound ${result.soundCount}, tracer ${result.tracerCount}, light ${result.lightPulseCount}, shake ${result.viewShakeCount}, scorch ${result.terrainScorchCount}, particle ${result.particleSystemCount}, bone ${result.atBoneCount}`,
+  ];
+
+  if (result.toxinShell) {
+    lines.push(`${result.toxinShell.name}: ${formatFxListNugget(result.toxinShell.first)}`);
+  }
+  if (result.crushedCar) {
+    lines.push(`${result.crushedCar.name}: ${formatFxListNugget(result.crushedCar.first)}`);
+  }
+  if (result.emptyDie) {
+    lines.push(`${result.emptyDie.name}: ${result.emptyDie.nuggets} nuggets`);
+  }
+  if (result.tankExplosion) {
+    lines.push(`${result.tankExplosion.name}: ${result.tankExplosion.nuggets} nuggets, first ${formatFxListNugget(result.tankExplosion.first)}`);
+  }
+  if (result.nuke) {
+    lines.push(`${result.nuke.name}: ${result.nuke.nuggets} nuggets, first ${formatFxListNugget(result.nuke.first)}`);
+  }
+
+  lines.push("");
+  lines.push(...result.preview.map((list) => `${list.name}: ${list.nuggets} nuggets, ${formatFxListNugget(list.first)}, line ${list.line}`));
+  elements.fxlistListing.textContent = lines.join("\n");
 }
 
 function renderOclEmpty(reason) {
@@ -1625,6 +1831,7 @@ function parseArchiveIni(entries, memory) {
     renderArmorEmpty("no armor data");
     renderWeaponEmpty("no weapon data");
     renderLocomotorEmpty("no locomotor data");
+    renderFxListEmpty("no FX list data");
     renderOclEmpty("no object creation list data");
     renderThingEmpty("no object data");
     renderCommandEmpty("no command data");
@@ -1653,6 +1860,7 @@ function parseArchiveIni(entries, memory) {
   }
 
   renderLocomotorParse(parseLocomotorEntries(entries, memory));
+  renderFxListParse(parseFxListEntries(entries, memory));
   renderOclParse(parseOclEntries(entries, memory));
   renderThingParse(parseThingEntries(entries, memory));
   renderCommandParse(parseCommandEntries(entries, memory));
@@ -1714,6 +1922,11 @@ async function boot() {
     exports: locomotorModule.instance.exports,
     memory: new Uint8Array(locomotorModule.instance.exports.memory.buffer),
   };
+  const fxlistModule = await loadWasm("../dist/generals_fxlist.wasm");
+  fxlistRuntime = {
+    exports: fxlistModule.instance.exports,
+    memory: new Uint8Array(fxlistModule.instance.exports.memory.buffer),
+  };
   const oclModule = await loadWasm("../dist/generals_ocl.wasm");
   oclRuntime = {
     exports: oclModule.instance.exports,
@@ -1759,7 +1972,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
     return;
   }
 
