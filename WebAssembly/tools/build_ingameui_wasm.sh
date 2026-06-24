@@ -39,6 +39,10 @@ exports=(
   -Wl,--export=generals_ingameui_military_color_b
   -Wl,--export=generals_ingameui_military_color_g
   -Wl,--export=generals_ingameui_military_color_r
+  -Wl,--export=generals_ingameui_named_timer_normal_font_ptr
+  -Wl,--export=generals_ingameui_named_timer_normal_font_size
+  -Wl,--export=generals_ingameui_named_timer_pos_x1000
+  -Wl,--export=generals_ingameui_named_timer_pos_y1000
   -Wl,--export=generals_ingameui_parse
   -Wl,--export=generals_ingameui_radius_cursor_count
   -Wl,--export=generals_ingameui_radius_cursor_name_ptr
@@ -48,6 +52,11 @@ exports=(
   -Wl,--export=generals_ingameui_radius_cursor_texture_ptr
   -Wl,--export=generals_ingameui_radius_cursor_texture_size
   -Wl,--export=generals_ingameui_stored_radius_cursor_count
+  -Wl,--export=generals_ingameui_superweapon_normal_font_ptr
+  -Wl,--export=generals_ingameui_superweapon_normal_font_size
+  -Wl,--export=generals_ingameui_superweapon_pos_x1000
+  -Wl,--export=generals_ingameui_superweapon_pos_y1000
+  -Wl,--export=generals_ingameui_superweapon_ready_bold
 )
 
 if command -v em++ >/dev/null 2>&1 && [[ "${GENERALS_WASM_FORCE_RAW_CLANG:-0}" != "1" ]]; then

@@ -94,6 +94,10 @@ const summary = {
     ingameUiExports.generals_ingameui_military_color_a(),
   ],
   floatingTextTimeOut: ingameUiExports.generals_ingameui_floating_text_time_out(),
+  superweaponPos: [ingameUiExports.generals_ingameui_superweapon_pos_x1000(), ingameUiExports.generals_ingameui_superweapon_pos_y1000()],
+  superweaponFont: readIngameUiString(ingameUiExports.generals_ingameui_superweapon_normal_font_ptr(), ingameUiExports.generals_ingameui_superweapon_normal_font_size()),
+  superweaponReadyBold: ingameUiExports.generals_ingameui_superweapon_ready_bold(),
+  namedTimerPos: [ingameUiExports.generals_ingameui_named_timer_pos_x1000(), ingameUiExports.generals_ingameui_named_timer_pos_y1000()],
   storedRadiusCursorCount: ingameUiExports.generals_ingameui_stored_radius_cursor_count(),
   firstCursor: {
     name: readIngameUiString(ingameUiExports.generals_ingameui_radius_cursor_name_ptr(0), ingameUiExports.generals_ingameui_radius_cursor_name_size(0)),
@@ -116,6 +120,14 @@ if (summary.firstCursor.name !== "SpyDroneRadiusCursor" ||
     summary.firstCursor.texture !== "SccSpyDrone_USA" ||
     summary.firstCursor.style !== "SHADOW_ALPHA_DECAL") {
   throw new Error(`unexpected first radius cursor: ${JSON.stringify(summary.firstCursor)}`);
+}
+
+// Fractional HUD positions are captured as thousandths (X:0.90 -> 900).
+if (summary.superweaponPos.join("/") !== "900/10" ||
+    summary.superweaponFont !== "Arial" ||
+    summary.superweaponReadyBold !== 1 ||
+    summary.namedTimerPos.join("/") !== "900/666") {
+  throw new Error(`unexpected countdown HUD settings: ${JSON.stringify(summary)}`);
 }
 
 if (summary.maxSelectionSize !== 0 ||

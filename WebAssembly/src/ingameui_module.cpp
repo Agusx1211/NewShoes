@@ -145,6 +145,14 @@ static StringField g_drawable_caption_font;
 static int g_drawable_caption_point_size = 0;
 static int g_drawable_caption_bold = 0;
 
+// Superweapon / named-timer countdown HUD layout (positions are fractional, so
+// stored as thousandths).
+static int g_superweapon_pos_x1000 = 0, g_superweapon_pos_y1000 = 0;
+static StringField g_superweapon_normal_font;
+static int g_superweapon_ready_bold = 0;
+static int g_named_timer_pos_x1000 = 0, g_named_timer_pos_y1000 = 0;
+static StringField g_named_timer_normal_font;
+
 static bool is_space(char value)
 {
 	return value == ' ' || value == '\t' || value == '\r' || value == '\n';
@@ -412,6 +420,62 @@ static void parse_coord2d(const char *data, int start, int end, int *x, int *y)
 	}
 }
 
+// Reads a fractional labeled number (e.g. "0.90") as thousandths.
+static int parse_labeled_x1000(const char *data, int *cursor, int end)
+{
+	while (*cursor < end && (is_space(data[*cursor]) || data[*cursor] == ':')) {
+		++(*cursor);
+	}
+
+	bool negative = false;
+	if (*cursor < end && data[*cursor] == '-') {
+		negative = true;
+		++(*cursor);
+	}
+
+	int whole = 0;
+	while (*cursor < end && data[*cursor] >= '0' && data[*cursor] <= '9') {
+		whole = whole * 10 + (data[*cursor] - '0');
+		++(*cursor);
+	}
+
+	int fraction = 0;
+	int digits = 0;
+	if (*cursor < end && data[*cursor] == '.') {
+		++(*cursor);
+		while (*cursor < end && data[*cursor] >= '0' && data[*cursor] <= '9') {
+			if (digits < 3) {
+				fraction = fraction * 10 + (data[*cursor] - '0');
+				++digits;
+			}
+			++(*cursor);
+		}
+	}
+	while (digits < 3) {
+		fraction *= 10;
+		++digits;
+	}
+
+	const int value = whole * 1000 + fraction;
+	return negative ? -value : value;
+}
+
+static void parse_coord2d_x1000(const char *data, int start, int end, int *x, int *y)
+{
+	for (int cursor = start; cursor < end; ++cursor) {
+		const char label = lower_ascii(data[cursor]);
+		if ((label == 'x' || label == 'y') && cursor + 1 < end && data[cursor + 1] == ':') {
+			++cursor;
+			const int value = parse_labeled_x1000(data, &cursor, end);
+			if (label == 'x') {
+				*x = value;
+			} else {
+				*y = value;
+			}
+		}
+	}
+}
+
 static void reset_state()
 {
 	g_has_block = 0;
@@ -437,6 +501,11 @@ static void reset_state()
 	clear_string(&g_drawable_caption_font);
 	g_drawable_caption_point_size = 0;
 	g_drawable_caption_bold = 0;
+	g_superweapon_pos_x1000 = 0; g_superweapon_pos_y1000 = 0;
+	clear_string(&g_superweapon_normal_font);
+	g_superweapon_ready_bold = 0;
+	g_named_timer_pos_x1000 = 0; g_named_timer_pos_y1000 = 0;
+	clear_string(&g_named_timer_normal_font);
 }
 
 static void parse_field(const char *data, TokenRange field, int valueStart, int valueEnd)
@@ -499,6 +568,16 @@ static void parse_field(const char *data, TokenRange field, int valueStart, int 
 		parse_int_token(data, valueStart, valueEnd, &g_drawable_caption_point_size);
 	} else if (token_equals(data, field, "DrawableCaptionBold")) {
 		g_drawable_caption_bold = parse_bool_token(data, valueStart, valueEnd);
+	} else if (token_equals(data, field, "SuperweaponCountdownPosition")) {
+		parse_coord2d_x1000(data, valueStart, valueEnd, &g_superweapon_pos_x1000, &g_superweapon_pos_y1000);
+	} else if (token_equals(data, field, "SuperweaponCountdownNormalFont")) {
+		assign_token_string(&g_superweapon_normal_font, data, valueStart, valueEnd);
+	} else if (token_equals(data, field, "SuperweaponCountdownReadyBold")) {
+		g_superweapon_ready_bold = parse_bool_token(data, valueStart, valueEnd);
+	} else if (token_equals(data, field, "NamedTimerCountdownPosition")) {
+		parse_coord2d_x1000(data, valueStart, valueEnd, &g_named_timer_pos_x1000, &g_named_timer_pos_y1000);
+	} else if (token_equals(data, field, "NamedTimerCountdownNormalFont")) {
+		assign_token_string(&g_named_timer_normal_font, data, valueStart, valueEnd);
 	}
 
 	++g_field_count;
@@ -631,6 +710,15 @@ __attribute__((used, visibility("default"))) int generals_ingameui_drawable_capt
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_font_size() { return g_drawable_caption_font.size; }
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_point_size() { return g_drawable_caption_point_size; }
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_bold() { return g_drawable_caption_bold; }
+__attribute__((used, visibility("default"))) int generals_ingameui_superweapon_pos_x1000() { return g_superweapon_pos_x1000; }
+__attribute__((used, visibility("default"))) int generals_ingameui_superweapon_pos_y1000() { return g_superweapon_pos_y1000; }
+__attribute__((used, visibility("default"))) int generals_ingameui_superweapon_normal_font_ptr() { return string_field_ptr(g_superweapon_normal_font); }
+__attribute__((used, visibility("default"))) int generals_ingameui_superweapon_normal_font_size() { return g_superweapon_normal_font.size; }
+__attribute__((used, visibility("default"))) int generals_ingameui_superweapon_ready_bold() { return g_superweapon_ready_bold; }
+__attribute__((used, visibility("default"))) int generals_ingameui_named_timer_pos_x1000() { return g_named_timer_pos_x1000; }
+__attribute__((used, visibility("default"))) int generals_ingameui_named_timer_pos_y1000() { return g_named_timer_pos_y1000; }
+__attribute__((used, visibility("default"))) int generals_ingameui_named_timer_normal_font_ptr() { return string_field_ptr(g_named_timer_normal_font); }
+__attribute__((used, visibility("default"))) int generals_ingameui_named_timer_normal_font_size() { return g_named_timer_normal_font.size; }
 
 // Stored RadiusCursor records (capped at MAX_RADIUS_CURSORS); the tally in
 // generals_ingameui_radius_cursor_count may exceed the number stored.
