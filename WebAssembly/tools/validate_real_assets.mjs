@@ -39,6 +39,7 @@ const checks = [
   ["tools/test_real_credits_asset.mjs"],
   ["tools/test_real_commandmap_asset.mjs"],
   ["tools/test_real_ingameui_asset.mjs"],
+  ["tools/test_real_commandmap_demo_asset.mjs"],
 ];
 
 try {

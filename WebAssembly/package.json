@@ -40,6 +40,7 @@
     "test:real-credits": "node tools/test_real_credits_asset.mjs",
     "test:real-commandmap": "node tools/test_real_commandmap_asset.mjs",
     "test:real-ingameui": "node tools/test_real_ingameui_asset.mjs",
+    "test:real-commandmap-demo": "node tools/test_real_commandmap_demo_asset.mjs",
     "validate": "npm run build:wasm && npm run test:wasm && npm run validate:real && npm run validate:web",
     "validate:real": "node tools/validate_real_assets.mjs",
     "validate:web": "node tools/validate_browser.mjs"
