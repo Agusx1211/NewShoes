@@ -555,7 +555,36 @@ function render() {
     drawUnit(unit);
   }
   drawSelectionBox();
+  drawOutcomeOverlay();
   updateHud();
+}
+
+function drawOutcomeOverlay() {
+  if (state.winner === null) {
+    return;
+  }
+  ctx.fillStyle = "rgba(8,11,16,0.62)";
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  let title;
+  let tint;
+  if (state.winner === 0) {
+    title = "VICTORY";
+    tint = "#93c5fd";
+  } else if (state.winner === 1) {
+    title = "DEFEAT";
+    tint = "#fca5a5";
+  } else {
+    title = "STALEMATE";
+    tint = "#fde047";
+  }
+  ctx.textAlign = "center";
+  ctx.fillStyle = tint;
+  ctx.font = "700 64px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText(title, WORLD_W / 2, WORLD_H / 2 - 8);
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "400 20px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText("Press “New battle” to play again", WORLD_W / 2, WORLD_H / 2 + 34);
+  ctx.textAlign = "start";
 }
 
 function counts() {
