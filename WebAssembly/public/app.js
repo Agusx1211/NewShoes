@@ -36,6 +36,7 @@ let challengeRuntime = null;
 let transitionRuntime = null;
 let creditsRuntime = null;
 let commandMapRuntime = null;
+let ingameUiRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -183,6 +184,8 @@ const elements = {
   creditsFields: document.querySelector("[data-credits-fields]"),
   commandMapCount: document.querySelector("[data-commandmap-count]"),
   commandMapFields: document.querySelector("[data-commandmap-fields]"),
+  ingameUiFields: document.querySelector("[data-ingameui-fields]"),
+  ingameUiCursors: document.querySelector("[data-ingameui-cursors]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -228,6 +231,8 @@ const elements = {
   creditsListing: document.querySelector("[data-credits-listing]"),
   commandMapFirst: document.querySelector("[data-commandmap-first]"),
   commandMapListing: document.querySelector("[data-commandmap-listing]"),
+  ingameUiFirst: document.querySelector("[data-ingameui-first]"),
+  ingameUiListing: document.querySelector("[data-ingameui-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -5174,6 +5179,82 @@ function renderCommandMapParse(result) {
   }).join("\n") || "command map data parsed";
 }
 
+function renderIngameUiEmpty(reason) {
+  elements.ingameUiFields.textContent = "0 fields";
+  elements.ingameUiCursors.textContent = "0 cursors";
+  elements.ingameUiFirst.textContent = reason;
+  elements.ingameUiListing.textContent = reason;
+}
+
+function parseIngameUiPayload(bytes) {
+  const { exports, memory } = ingameUiRuntime;
+  const inputOffset = exports.generals_ingameui_input_ptr();
+
+  if (bytes.length > exports.generals_ingameui_input_capacity()) {
+    throw new Error(`InGameUI payload exceeds ${exports.generals_ingameui_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedFields = exports.generals_ingameui_parse(bytes.length);
+
+  if (parsedFields < 0 || exports.generals_ingameui_error_count() !== 0) {
+    throw new Error(`InGameUI parse failed with ${exports.generals_ingameui_error_count()} errors`);
+  }
+
+  return parsedFields;
+}
+
+function parseIngameUiEntries(entries, archiveMemory) {
+  const ingameUiEntry = findEntry(entries, "data/ini/ingameui.ini");
+  if (!ingameUiEntry) {
+    return null;
+  }
+
+  const { exports, memory } = ingameUiRuntime;
+  parseIngameUiPayload(entryBytes(ingameUiEntry, archiveMemory));
+
+  const fontPtr = exports.generals_ingameui_message_font_ptr();
+  const fontSize = exports.generals_ingameui_message_font_size();
+
+  return {
+    fieldCount: exports.generals_ingameui_field_count(),
+    knownFieldCount: exports.generals_ingameui_known_field_count(),
+    radiusCursorCount: exports.generals_ingameui_radius_cursor_count(),
+    maxSelectionSize: exports.generals_ingameui_max_selection_size(),
+    messageFont: fontPtr ? textDecoder.decode(memory.slice(fontPtr, fontPtr + fontSize)) : "",
+    messagePointSize: exports.generals_ingameui_message_point_size(),
+    messageBold: exports.generals_ingameui_message_bold(),
+    messageDelayMs: exports.generals_ingameui_message_delay_ms(),
+    messageColor1: [
+      exports.generals_ingameui_message_color1_r(),
+      exports.generals_ingameui_message_color1_g(),
+      exports.generals_ingameui_message_color1_b(),
+    ],
+    floatingTextTimeOut: exports.generals_ingameui_floating_text_time_out(),
+  };
+}
+
+function renderIngameUiParse(result) {
+  if (!result) {
+    renderIngameUiEmpty("no in-game UI data");
+    return;
+  }
+
+  elements.ingameUiFields.textContent = `${result.fieldCount} fields`;
+  elements.ingameUiCursors.textContent = `${result.radiusCursorCount} cursors`;
+
+  elements.ingameUiFirst.textContent = `message ${result.messageFont} ${result.messagePointSize}pt${result.messageBold ? " bold" : ""}, delay ${result.messageDelayMs}ms`;
+
+  const lines = [
+    `message color ${result.messageColor1.join("/")}, font ${result.messageFont} ${result.messagePointSize}pt`,
+    `message delay ${result.messageDelayMs}ms, floating text ${result.floatingTextTimeOut}ms`,
+    `max selection ${result.maxSelectionSize || "unlimited"}`,
+    `${result.radiusCursorCount} special-power radius cursors, ${result.fieldCount}/${result.knownFieldCount} known fields set`,
+  ];
+
+  elements.ingameUiListing.textContent = lines.join("\n");
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -5202,6 +5283,7 @@ function parseArchiveIni(entries, memory) {
     renderTransitionEmpty("no transition data");
     renderCreditsEmpty("no credits data");
     renderCommandMapEmpty("no command map data");
+    renderIngameUiEmpty("no in-game UI data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -5252,6 +5334,7 @@ function parseArchiveIni(entries, memory) {
   renderTransitionParse(parseTransitionEntries(entries, memory));
   renderCreditsParse(parseCreditsEntries(entries, memory));
   renderCommandMapParse(parseCommandMapEntries(entries, memory));
+  renderIngameUiParse(parseIngameUiEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -5449,6 +5532,11 @@ async function boot() {
     exports: commandMapModule.instance.exports,
     memory: new Uint8Array(commandMapModule.instance.exports.memory.buffer),
   };
+  const ingameUiModule = await loadWasm("../dist/generals_ingameui.wasm");
+  ingameUiRuntime = {
+    exports: ingameUiModule.instance.exports,
+    memory: new Uint8Array(ingameUiModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -5469,7 +5557,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime || !creditsRuntime || !commandMapRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime || !creditsRuntime || !commandMapRuntime || !ingameUiRuntime) {
     return;
   }
 
