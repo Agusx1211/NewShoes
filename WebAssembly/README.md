@@ -60,10 +60,14 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/Science.cpp`
 - Zero Hour player/faction template parsing based on
   `GeneralsMD/Code/GameEngine/Source/Common/RTS/PlayerTemplate.cpp`
+- Zero Hour terrain type parsing (texture, blend edges, terrain class, and
+  construction restriction) based on
+  `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrain.cpp` and
+  `GeneralsMD/Code/GameEngine/Source/Common/TerrainTypes.cpp`
 
 RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, control bar scheme, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
-progression, and player/faction support are needed before browser-side loading
+progression, player/faction, and terrain type support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
 when available and fall back to raw Clang wasm builds for dependency-free smoke
 testing where possible. Later targets can add more typed gameplay object
@@ -127,6 +131,8 @@ Output:
 
 `dist/generals_player.wasm`
 
+`dist/generals_terrain.wasm`
+
 ## Smoke Test
 
 ```bash
@@ -188,6 +194,7 @@ npm run test:real-thing
 npm run test:real-command
 npm run test:real-progression
 npm run test:real-player
+npm run test:real-terrain
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.
