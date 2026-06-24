@@ -69,10 +69,13 @@ The first checked-in targets are small, real game-data modules:
   `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrainRoad.cpp`,
   `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrainBridge.cpp`, and
   `GeneralsMD/Code/GameEngine/Source/GameClient/Terrain/TerrainRoads.cpp`
+- Zero Hour mouse cursor parsing (global tooltip/drag settings plus per-cursor
+  image, texture, hotspot, animation, and text color) based on
+  `GeneralsMD/Code/GameEngine/Source/GameClient/Input/Mouse.cpp`
 
 RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, control bar scheme, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
-progression, player/faction, terrain type, and road/bridge support are needed before browser-side loading
+progression, player/faction, terrain type, road/bridge, and mouse cursor support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
 when available and fall back to raw Clang wasm builds for dependency-free smoke
 testing where possible. Later targets can add more typed gameplay object
@@ -140,6 +143,8 @@ Output:
 
 `dist/generals_roads.wasm`
 
+`dist/generals_mouse.wasm`
+
 ## Smoke Test
 
 ```bash
@@ -203,6 +208,7 @@ npm run test:real-progression
 npm run test:real-player
 npm run test:real-terrain
 npm run test:real-roads
+npm run test:real-mouse
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.

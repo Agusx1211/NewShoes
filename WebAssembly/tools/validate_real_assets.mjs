@@ -31,6 +31,7 @@ const checks = [
   ["tools/test_real_player_asset.mjs"],
   ["tools/test_real_terrain_asset.mjs"],
   ["tools/test_real_roads_asset.mjs"],
+  ["tools/test_real_mouse_asset.mjs"],
 ];
 
 try {
