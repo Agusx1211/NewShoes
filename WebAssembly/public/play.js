@@ -485,6 +485,25 @@ function boot() {
     unitCount() {
       return state.units.length;
     },
+    listUnits() {
+      return state.units.map((u) => ({
+        id: u.id,
+        team: u.team,
+        kind: u.kind,
+        x: u.x,
+        y: u.y,
+        hp: u.hp,
+        order: u.order ? u.order.type : null,
+      }));
+    },
+    unit(id) {
+      const u = unitById(id);
+      return u ? { id: u.id, team: u.team, x: u.x, y: u.y, hp: u.hp, order: u.order ? u.order.type : null } : null;
+    },
+    selectionSize() {
+      return selection.size;
+    },
+    world: { w: WORLD_W, h: WORLD_H },
   };
 }
 
