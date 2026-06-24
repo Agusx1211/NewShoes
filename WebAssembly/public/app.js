@@ -30,6 +30,7 @@ let terrainRuntime = null;
 let controlBarRuntime = null;
 let roadsRuntime = null;
 let mouseRuntime = null;
+let evaRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -160,6 +161,9 @@ const elements = {
   mouseCursors: document.querySelector("[data-mouse-cursors]"),
   mouseSettings: document.querySelector("[data-mouse-settings]"),
   mouseFields: document.querySelector("[data-mouse-fields]"),
+  evaEvents: document.querySelector("[data-eva-events]"),
+  evaSideSounds: document.querySelector("[data-eva-sidesounds]"),
+  evaFields: document.querySelector("[data-eva-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -193,6 +197,8 @@ const elements = {
   roadsListing: document.querySelector("[data-roads-listing]"),
   mouseFirst: document.querySelector("[data-mouse-first]"),
   mouseListing: document.querySelector("[data-mouse-listing]"),
+  evaFirst: document.querySelector("[data-eva-first]"),
+  evaListing: document.querySelector("[data-eva-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4571,6 +4577,107 @@ function renderMouseParse(result) {
   elements.mouseListing.textContent = lines.join("\n") || "mouse data parsed";
 }
 
+function renderEvaEmpty(reason) {
+  elements.evaEvents.textContent = "0 events";
+  elements.evaSideSounds.textContent = "0 groups";
+  elements.evaFields.textContent = "0 fields";
+  elements.evaFirst.textContent = reason;
+  elements.evaListing.textContent = reason;
+}
+
+function readEvaName(exports, memory, index) {
+  const ptr = exports.generals_eva_name_ptr(index);
+  const size = exports.generals_eva_name_size(index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readEvaSideSound(exports, memory, sideSoundIndex) {
+  const sidePtr = exports.generals_eva_side_sound_side_ptr(sideSoundIndex);
+  const sideSize = exports.generals_eva_side_sound_side_size(sideSoundIndex);
+  const soundPtr = exports.generals_eva_side_sound_first_sound_ptr(sideSoundIndex);
+  const soundSize = exports.generals_eva_side_sound_first_sound_size(sideSoundIndex);
+  return {
+    side: sidePtr ? textDecoder.decode(memory.slice(sidePtr, sidePtr + sideSize)) : "",
+    sound: soundPtr ? textDecoder.decode(memory.slice(soundPtr, soundPtr + soundSize)) : "",
+  };
+}
+
+function parseEvaPayload(bytes) {
+  const { exports, memory } = evaRuntime;
+  const inputOffset = exports.generals_eva_input_ptr();
+
+  if (bytes.length > exports.generals_eva_input_capacity()) {
+    throw new Error(`Eva payload exceeds ${exports.generals_eva_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_eva_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_eva_error_count() !== 0) {
+    throw new Error(`Eva parse failed with ${exports.generals_eva_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseEvaEntries(entries, archiveMemory) {
+  const evaEntry = findEntry(entries, "data/ini/eva.ini");
+  if (!evaEntry) {
+    return null;
+  }
+
+  const { exports, memory } = evaRuntime;
+  parseEvaPayload(entryBytes(evaEntry, archiveMemory));
+
+  const count = exports.generals_eva_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    const firstSound = exports.generals_eva_first_side_sound(index);
+    const sound = firstSound >= 0 ? readEvaSideSound(exports, memory, firstSound) : { side: "", sound: "" };
+    preview.push({
+      name: readEvaName(exports, memory, index),
+      priority: exports.generals_eva_priority(index),
+      timeBetweenChecksMs: exports.generals_eva_time_between_checks_ms(index),
+      expirationTimeMs: exports.generals_eva_expiration_time_ms(index),
+      sideSoundsCount: exports.generals_eva_side_sounds_count(index),
+      firstSide: sound.side,
+      firstSound: sound.sound,
+    });
+  }
+
+  return {
+    count,
+    sideSoundsTotal: exports.generals_eva_side_sounds_total(),
+    fieldCount: exports.generals_eva_field_count(),
+    lineCount: exports.generals_eva_line_count(),
+    preview,
+  };
+}
+
+function renderEvaParse(result) {
+  if (!result) {
+    renderEvaEmpty("no EVA data");
+    return;
+  }
+
+  elements.evaEvents.textContent = `${result.count} events`;
+  elements.evaSideSounds.textContent = `${result.sideSoundsTotal} groups`;
+  elements.evaFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.evaFirst.textContent = `${first.name}: priority ${first.priority}, ${first.sideSoundsCount} sides, ${first.firstSound}`;
+  } else {
+    elements.evaFirst.textContent = "no EVA data";
+  }
+
+  elements.evaListing.textContent = result.preview.map((event) => {
+    const timing = event.timeBetweenChecksMs > 0 ? `, every ${event.timeBetweenChecksMs}ms` : "";
+    return `${event.name}: priority ${event.priority}, ${event.sideSoundsCount} sides${timing}, ${event.firstSide}/${event.firstSound}`;
+  }).join("\n") || "EVA data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4593,6 +4700,7 @@ function parseArchiveIni(entries, memory) {
     renderControlBarEmpty("no control bar data");
     renderRoadsEmpty("no roads data");
     renderMouseEmpty("no mouse data");
+    renderEvaEmpty("no EVA data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4637,6 +4745,7 @@ function parseArchiveIni(entries, memory) {
   renderControlBarParse(parseControlBarEntries(entries, memory));
   renderRoadsParse(parseRoadsEntries(entries, memory));
   renderMouseParse(parseMouseEntries(entries, memory));
+  renderEvaParse(parseEvaEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4804,6 +4913,11 @@ async function boot() {
     exports: mouseModule.instance.exports,
     memory: new Uint8Array(mouseModule.instance.exports.memory.buffer),
   };
+  const evaModule = await loadWasm("../dist/generals_eva.wasm");
+  evaRuntime = {
+    exports: evaModule.instance.exports,
+    memory: new Uint8Array(evaModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4824,7 +4938,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime) {
     return;
   }
 
