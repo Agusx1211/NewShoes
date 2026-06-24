@@ -677,6 +677,36 @@ function finalizeSelection(a, b) {
   }
 }
 
+// Select every mobile player unit (army-wide selection).
+function selectAllPlayer() {
+  selection.clear();
+  for (const u of state.units) {
+    if (u.team === 0 && u.kind !== "Base") {
+      selection.add(u.id);
+    }
+  }
+  return selection.size;
+}
+
+// Order the player's units (selected, or the whole army) to assault the enemy
+// command center.
+function rallyAll() {
+  const base = state.units.find((u) => u.team === 1 && u.kind === "Base");
+  const ids = selection.size ? [...selection] : state.units.filter((u) => u.team === 0 && u.kind !== "Base").map((u) => u.id);
+  let ordered = 0;
+  for (const id of ids) {
+    const u = unitById(id);
+    if (!u || u.kind === "Base") continue;
+    if (base) {
+      u.order = { type: "attack", targetId: base.id };
+    } else {
+      u.order = { type: "move", x: WORLD_W - 80, y: WORLD_H / 2 };
+    }
+    ordered++;
+  }
+  return ordered;
+}
+
 function issueOrder(pt) {
   const target = unitAt(pt);
   const ids = [...selection];
@@ -727,6 +757,14 @@ function boot() {
       spawnReinforcement(0, "Humvee");
     });
   }
+  const selectAllBtn = document.querySelector("[data-play-selectall]");
+  if (selectAllBtn) selectAllBtn.addEventListener("click", selectAllPlayer);
+  const rallyBtn = document.querySelector("[data-play-rally]");
+  if (rallyBtn) rallyBtn.addEventListener("click", rallyAll);
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "e" || ev.key === "E") selectAllPlayer();
+    else if (ev.key === "a" || ev.key === "A") rallyAll();
+  });
 
   requestAnimationFrame(frame);
 
@@ -786,6 +824,12 @@ function boot() {
     },
     reinforcementsLeft(team = 0) {
       return state.reinforcements[team];
+    },
+    selectAll() {
+      return selectAllPlayer();
+    },
+    rallyAll() {
+      return rallyAll();
     },
     loadStatsFromWasm,
     kindStats() {
