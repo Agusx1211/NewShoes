@@ -29,6 +29,7 @@ let playerRuntime = null;
 let terrainRuntime = null;
 let controlBarRuntime = null;
 let roadsRuntime = null;
+let mouseRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -156,6 +157,9 @@ const elements = {
   roadsRoads: document.querySelector("[data-roads-roads]"),
   roadsBridges: document.querySelector("[data-roads-bridges]"),
   roadsFields: document.querySelector("[data-roads-fields]"),
+  mouseCursors: document.querySelector("[data-mouse-cursors]"),
+  mouseSettings: document.querySelector("[data-mouse-settings]"),
+  mouseFields: document.querySelector("[data-mouse-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -187,6 +191,8 @@ const elements = {
   controlBarListing: document.querySelector("[data-controlbar-listing]"),
   roadsFirst: document.querySelector("[data-roads-first]"),
   roadsListing: document.querySelector("[data-roads-listing]"),
+  mouseFirst: document.querySelector("[data-mouse-first]"),
+  mouseListing: document.querySelector("[data-mouse-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4463,6 +4469,108 @@ function renderRoadsParse(result) {
   elements.roadsListing.textContent = lines.join("\n") || "roads data parsed";
 }
 
+function renderMouseEmpty(reason) {
+  elements.mouseCursors.textContent = "0 cursors";
+  elements.mouseSettings.textContent = "0 fields";
+  elements.mouseFields.textContent = "0 fields";
+  elements.mouseFirst.textContent = reason;
+  elements.mouseListing.textContent = reason;
+}
+
+function readMouseString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_mouse_cursor_${prefix}_ptr`](index);
+  const size = exports[`generals_mouse_cursor_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseMousePayload(bytes) {
+  const { exports, memory } = mouseRuntime;
+  const inputOffset = exports.generals_mouse_input_ptr();
+
+  if (bytes.length > exports.generals_mouse_input_capacity()) {
+    throw new Error(`Mouse payload exceeds ${exports.generals_mouse_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_mouse_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_mouse_error_count() !== 0) {
+    throw new Error(`Mouse parse failed with ${exports.generals_mouse_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseMouseEntries(entries, archiveMemory) {
+  const mouseEntry = findEntry(entries, "data/ini/mouse.ini");
+  if (!mouseEntry) {
+    return null;
+  }
+
+  const { exports, memory } = mouseRuntime;
+  parseMousePayload(entryBytes(mouseEntry, archiveMemory));
+
+  const count = exports.generals_mouse_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    preview.push({
+      name: readMouseString(exports, memory, "name", index),
+      image: readMouseString(exports, memory, "image", index),
+      texture: readMouseString(exports, memory, "texture", index),
+      directions: exports.generals_mouse_cursor_directions(index),
+      frames: exports.generals_mouse_cursor_frames(index),
+      fields: exports.generals_mouse_cursor_field_count_at(index),
+    });
+  }
+
+  return {
+    count,
+    hasSettings: exports.generals_mouse_has_settings(),
+    settingsFieldCount: exports.generals_mouse_settings_field_count(),
+    fieldCount: exports.generals_mouse_field_count(),
+    fontName: (() => {
+      const ptr = exports.generals_mouse_tooltip_font_name_ptr();
+      const size = exports.generals_mouse_tooltip_font_name_size();
+      return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+    })(),
+    fontSize: exports.generals_mouse_tooltip_font_size(),
+    dragTolerance: exports.generals_mouse_drag_tolerance(),
+    orthoCamera: exports.generals_mouse_ortho_camera(),
+    preview,
+  };
+}
+
+function renderMouseParse(result) {
+  if (!result) {
+    renderMouseEmpty("no mouse data");
+    return;
+  }
+
+  elements.mouseCursors.textContent = `${result.count} cursors`;
+  elements.mouseSettings.textContent = `${result.settingsFieldCount} fields`;
+  elements.mouseFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.mouseFirst.textContent = `${first.name}: ${first.image} / ${first.texture}`;
+  } else {
+    elements.mouseFirst.textContent = "no mouse data";
+  }
+
+  const lines = [];
+  if (result.hasSettings) {
+    lines.push(`settings: tooltip ${result.fontName} ${result.fontSize}px, drag ${result.dragTolerance}px, ortho ${result.orthoCamera ? "yes" : "no"}`);
+    lines.push("");
+  }
+  lines.push(...result.preview.map((cursor) => {
+    const anim = cursor.directions > 0 ? `, ${cursor.directions} dirs` : cursor.frames > 0 ? `, ${cursor.frames} frames` : "";
+    return `${cursor.name}: ${cursor.image} / ${cursor.texture}${anim}, ${cursor.fields} fields`;
+  }));
+
+  elements.mouseListing.textContent = lines.join("\n") || "mouse data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4484,6 +4592,7 @@ function parseArchiveIni(entries, memory) {
     renderTerrainEmpty("no terrain data");
     renderControlBarEmpty("no control bar data");
     renderRoadsEmpty("no roads data");
+    renderMouseEmpty("no mouse data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4527,6 +4636,7 @@ function parseArchiveIni(entries, memory) {
   renderTerrainParse(parseTerrainEntries(entries, memory));
   renderControlBarParse(parseControlBarEntries(entries, memory));
   renderRoadsParse(parseRoadsEntries(entries, memory));
+  renderMouseParse(parseMouseEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4689,6 +4799,11 @@ async function boot() {
     exports: roadsModule.instance.exports,
     memory: new Uint8Array(roadsModule.instance.exports.memory.buffer),
   };
+  const mouseModule = await loadWasm("../dist/generals_mouse.wasm");
+  mouseRuntime = {
+    exports: mouseModule.instance.exports,
+    memory: new Uint8Array(mouseModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4709,7 +4824,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime) {
     return;
   }
 
