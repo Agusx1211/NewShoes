@@ -27,6 +27,7 @@ let commandRuntime = null;
 let progressionRuntime = null;
 let playerRuntime = null;
 let terrainRuntime = null;
+let controlBarRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -148,6 +149,9 @@ const elements = {
   terrainCount: document.querySelector("[data-terrain-count]"),
   terrainClasses: document.querySelector("[data-terrain-classes]"),
   terrainFields: document.querySelector("[data-terrain-fields]"),
+  controlBarSchemes: document.querySelector("[data-controlbar-schemes]"),
+  controlBarImages: document.querySelector("[data-controlbar-images]"),
+  controlBarFields: document.querySelector("[data-controlbar-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -175,6 +179,8 @@ const elements = {
   playerListing: document.querySelector("[data-player-listing]"),
   terrainFirst: document.querySelector("[data-terrain-first]"),
   terrainListing: document.querySelector("[data-terrain-listing]"),
+  controlBarFirst: document.querySelector("[data-controlbar-first]"),
+  controlBarListing: document.querySelector("[data-controlbar-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4240,6 +4246,102 @@ function renderTerrainParse(result) {
   elements.terrainListing.textContent = lines.join("\n") || "terrain data parsed";
 }
 
+function renderControlBarEmpty(reason) {
+  elements.controlBarSchemes.textContent = "0 schemes";
+  elements.controlBarImages.textContent = "0 images";
+  elements.controlBarFields.textContent = "0 fields";
+  elements.controlBarFirst.textContent = reason;
+  elements.controlBarListing.textContent = reason;
+}
+
+function readControlBarString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_controlbar_scheme_${prefix}_ptr`](index);
+  const size = exports[`generals_controlbar_scheme_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseControlBarPayload(bytes) {
+  const { exports, memory } = controlBarRuntime;
+  const inputOffset = exports.generals_controlbar_input_ptr();
+
+  if (bytes.length > exports.generals_controlbar_input_capacity()) {
+    throw new Error(`ControlBar payload exceeds ${exports.generals_controlbar_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_controlbar_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_controlbar_error_count() !== 0) {
+    throw new Error(`ControlBar parse failed with ${exports.generals_controlbar_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseControlBarEntries(entries, archiveMemory) {
+  const controlBarEntry = findEntry(entries, "data/ini/controlbarscheme.ini");
+  if (!controlBarEntry) {
+    return null;
+  }
+
+  const { exports, memory } = controlBarRuntime;
+  parseControlBarPayload(entryBytes(controlBarEntry, archiveMemory));
+
+  const count = exports.generals_controlbar_scheme_count();
+  const preview = [];
+
+  for (let index = 0; index < count; ++index) {
+    const scheme = {
+      name: readControlBarString(exports, memory, "name", index),
+      side: readControlBarString(exports, memory, "side", index),
+      rightHud: readControlBarString(exports, memory, "right_hud_image", index),
+      resX: exports.generals_controlbar_scheme_screen_creation_res_x(index),
+      resY: exports.generals_controlbar_scheme_screen_creation_res_y(index),
+      imageCount: exports.generals_controlbar_scheme_image_count_at(index),
+      animationCount: exports.generals_controlbar_scheme_animation_count_at(index),
+      fields: exports.generals_controlbar_scheme_field_count_at(index),
+    };
+
+    if (preview.length < 8) {
+      preview.push(scheme);
+    }
+  }
+
+  return {
+    count,
+    imagePartCount: exports.generals_controlbar_image_part_count(),
+    animationCount: exports.generals_controlbar_animation_count(),
+    fieldCount: exports.generals_controlbar_field_count(),
+    lineCount: exports.generals_controlbar_line_count(),
+    preview,
+  };
+}
+
+function renderControlBarParse(result) {
+  if (!result) {
+    renderControlBarEmpty("no control bar data");
+    return;
+  }
+
+  elements.controlBarSchemes.textContent = `${result.count} schemes`;
+  elements.controlBarImages.textContent = `${result.imagePartCount} images`;
+  elements.controlBarFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.controlBarFirst.textContent = `${first.name}: ${first.side}, ${first.resX}x${first.resY}, hud ${first.rightHud}`;
+  } else {
+    elements.controlBarFirst.textContent = "no control bar data";
+  }
+
+  const lines = result.preview.map((scheme) => {
+    const animSuffix = scheme.animationCount > 0 ? `, ${scheme.animationCount} anim` : "";
+    return `${scheme.name}: ${scheme.side}, ${scheme.resX}x${scheme.resY}, ${scheme.imageCount} img${animSuffix}, ${scheme.fields} fields`;
+  });
+
+  elements.controlBarListing.textContent = lines.join("\n") || "control bar data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4259,6 +4361,7 @@ function parseArchiveIni(entries, memory) {
     renderProgressionEmpty("no progression data");
     renderPlayerEmpty("no player data");
     renderTerrainEmpty("no terrain data");
+    renderControlBarEmpty("no control bar data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4300,6 +4403,7 @@ function parseArchiveIni(entries, memory) {
   renderProgressionParse(parseProgressionEntries(entries, memory));
   renderPlayerParse(parsePlayerEntries(entries, memory));
   renderTerrainParse(parseTerrainEntries(entries, memory));
+  renderControlBarParse(parseControlBarEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4452,6 +4556,11 @@ async function boot() {
     exports: terrainModule.instance.exports,
     memory: new Uint8Array(terrainModule.instance.exports.memory.buffer),
   };
+  const controlBarModule = await loadWasm("../dist/generals_controlbar.wasm");
+  controlBarRuntime = {
+    exports: controlBarModule.instance.exports,
+    memory: new Uint8Array(controlBarModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4472,7 +4581,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime) {
     return;
   }
 
