@@ -102,6 +102,24 @@ when available and fall back to raw Clang wasm builds for dependency-free smoke
 testing where possible. Later targets can add more typed gameplay object
 factories, filesystem, browser loop, and SDL/WebGL integration.
 
+## Playable Battle
+
+`public/play.html` is an interactive real-time-strategy micro-battle that runs
+entirely in the browser: a canvas render loop, a fixed-timestep simulation with
+movement and combat, mouse selection / move / attack orders, enemy AI, and a
+decisive win condition. Unit archetypes (Ranger / Humvee / Crusader) carry
+speed, weapon range, damage, health, and armor values shaped after the data the
+wasm modules parse (Locomotor, Weapon, Body, Armor). Open `play.html` from the
+static server, or drive it headlessly:
+
+```bash
+npm run test:play
+```
+
+The headless test fast-forwards the deterministic battle to completion and
+asserts that the simulation advances, combat removes units, and exactly one
+side remains, writing `artifacts/screenshots/playable-battle.png`.
+
 ## Build
 
 ```bash
