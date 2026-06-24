@@ -444,6 +444,8 @@ static void create_cursor(const char *data, int nameStart, int nameEnd, int line
 {
 	if (g_cursor_count >= MAX_CURSORS) {
 		++g_error_count;
+		g_current_cursor = -1;
+		g_in_settings = 0;
 		return;
 	}
 

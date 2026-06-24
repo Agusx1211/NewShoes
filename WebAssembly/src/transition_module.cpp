@@ -285,6 +285,8 @@ static void create_group(const char *data, int nameStart, int nameEnd, int line)
 {
 	if (g_group_count >= MAX_GROUPS) {
 		++g_error_count;
+		g_current_group = -1;
+		g_current_window = -1;
 		return;
 	}
 
@@ -307,6 +309,7 @@ static void create_window(int line)
 	}
 	if (g_window_count >= MAX_WINDOWS) {
 		++g_error_count;
+		g_current_window = -1;
 		return;
 	}
 

@@ -332,6 +332,9 @@ static int parse_labeled_component(const char *data, int *cursor, int end)
 
 static void parse_rgb(const char *data, int start, int end, int *r, int *g, int *b)
 {
+	*r = 0;
+	*g = 0;
+	*b = 0;
 	for (int cursor = start; cursor < end; ++cursor) {
 		const char label = lower_ascii(data[cursor]);
 		if ((label == 'r' || label == 'g' || label == 'b') && cursor + 1 < end && data[cursor + 1] == ':') {
@@ -385,6 +388,7 @@ static void create_road(const char *data, int nameStart, int nameEnd, int line, 
 {
 	if (g_road_count >= MAX_ROADS) {
 		++g_error_count;
+		g_current_road = -1;
 		return;
 	}
 

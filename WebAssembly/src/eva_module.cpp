@@ -259,6 +259,8 @@ static void create_event(const char *data, int nameStart, int nameEnd, int line)
 {
 	if (g_event_count >= MAX_EVENTS) {
 		++g_error_count;
+		g_current_event = -1;
+		g_current_side_sound = -1;
 		return;
 	}
 
@@ -283,6 +285,7 @@ static void create_side_sound(int line)
 	}
 	if (g_side_sound_count >= MAX_SIDE_SOUNDS) {
 		++g_error_count;
+		g_current_side_sound = -1;
 		return;
 	}
 

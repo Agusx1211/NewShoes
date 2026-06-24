@@ -215,6 +215,7 @@ static void create_command(const char *data, int nameStart, int nameEnd, int lin
 {
 	if (g_command_count >= MAX_COMMANDS) {
 		++g_error_count;
+		g_current_command = -1;
 		return;
 	}
 

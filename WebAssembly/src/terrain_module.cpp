@@ -296,6 +296,7 @@ static void create_terrain(const char *data, int nameStart, int nameEnd, int lin
 {
 	if (g_terrain_count >= MAX_TERRAINS) {
 		++g_error_count;
+		g_current_terrain = -1;
 		return;
 	}
 

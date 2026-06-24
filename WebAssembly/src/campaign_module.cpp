@@ -271,6 +271,8 @@ static void create_campaign(const char *data, int nameStart, int nameEnd, int li
 {
 	if (g_campaign_count >= MAX_CAMPAIGNS) {
 		++g_error_count;
+		g_current_campaign = -1;
+		g_current_mission = -1;
 		return;
 	}
 
@@ -297,6 +299,7 @@ static void create_mission(const char *data, int nameStart, int nameEnd, int lin
 	}
 	if (g_mission_count >= MAX_MISSIONS) {
 		++g_error_count;
+		g_current_mission = -1;
 		return;
 	}
 

@@ -249,6 +249,7 @@ static void create_persona(int position, int line)
 {
 	if (g_persona_count >= MAX_PERSONAS) {
 		++g_error_count;
+		g_current_persona = -1;
 		return;
 	}
 
