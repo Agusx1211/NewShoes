@@ -32,6 +32,7 @@ let roadsRuntime = null;
 let mouseRuntime = null;
 let evaRuntime = null;
 let campaignRuntime = null;
+let challengeRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -168,6 +169,9 @@ const elements = {
   campaignCount: document.querySelector("[data-campaign-count]"),
   campaignMissions: document.querySelector("[data-campaign-missions]"),
   campaignFields: document.querySelector("[data-campaign-fields]"),
+  challengeCount: document.querySelector("[data-challenge-count]"),
+  challengeEnabled: document.querySelector("[data-challenge-enabled]"),
+  challengeFields: document.querySelector("[data-challenge-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -205,6 +209,8 @@ const elements = {
   evaListing: document.querySelector("[data-eva-listing]"),
   campaignFirst: document.querySelector("[data-campaign-first]"),
   campaignListing: document.querySelector("[data-campaign-listing]"),
+  challengeFirst: document.querySelector("[data-challenge-first]"),
+  challengeListing: document.querySelector("[data-challenge-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4779,6 +4785,93 @@ function renderCampaignParse(result) {
   }).join("\n") || "campaign data parsed";
 }
 
+function renderChallengeEmpty(reason) {
+  elements.challengeCount.textContent = "0 generals";
+  elements.challengeEnabled.textContent = "0 enabled";
+  elements.challengeFields.textContent = "0 fields";
+  elements.challengeFirst.textContent = reason;
+  elements.challengeListing.textContent = reason;
+}
+
+function readChallengeString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_challenge_${prefix}_ptr`](index);
+  const size = exports[`generals_challenge_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseChallengePayload(bytes) {
+  const { exports, memory } = challengeRuntime;
+  const inputOffset = exports.generals_challenge_input_ptr();
+
+  if (bytes.length > exports.generals_challenge_input_capacity()) {
+    throw new Error(`Challenge payload exceeds ${exports.generals_challenge_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_challenge_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_challenge_error_count() !== 0) {
+    throw new Error(`Challenge parse failed with ${exports.generals_challenge_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseChallengeEntries(entries, archiveMemory) {
+  const challengeEntry = findEntry(entries, "data/ini/challengemode.ini");
+  if (!challengeEntry) {
+    return null;
+  }
+
+  const { exports, memory } = challengeRuntime;
+  parseChallengePayload(entryBytes(challengeEntry, archiveMemory));
+
+  const count = exports.generals_challenge_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    preview.push({
+      position: exports.generals_challenge_position(index),
+      startsEnabled: exports.generals_challenge_starts_enabled(index),
+      playerTemplate: readChallengeString(exports, memory, "player_template", index),
+      campaign: readChallengeString(exports, memory, "campaign", index),
+      portraitLarge: readChallengeString(exports, memory, "portrait_large", index),
+    });
+  }
+
+  return {
+    count,
+    hasBlock: exports.generals_challenge_has_block(),
+    enabledCount: exports.generals_challenge_enabled_count(),
+    fieldCount: exports.generals_challenge_field_count(),
+    lineCount: exports.generals_challenge_line_count(),
+    preview,
+  };
+}
+
+function renderChallengeParse(result) {
+  if (!result) {
+    renderChallengeEmpty("no challenge data");
+    return;
+  }
+
+  elements.challengeCount.textContent = `${result.count} generals`;
+  elements.challengeEnabled.textContent = `${result.enabledCount} enabled`;
+  elements.challengeFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.challengeFirst.textContent = `${first.position}: ${first.playerTemplate}, ${first.campaign}, ${first.startsEnabled ? "enabled" : "disabled"}`;
+  } else {
+    elements.challengeFirst.textContent = "no challenge data";
+  }
+
+  elements.challengeListing.textContent = result.preview.map((persona) => {
+    const state = persona.startsEnabled ? "enabled" : "disabled";
+    return `${persona.position}: ${persona.playerTemplate || "(none)"} -> ${persona.campaign || "(none)"}, ${state}`;
+  }).join("\n") || "challenge data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4803,6 +4896,7 @@ function parseArchiveIni(entries, memory) {
     renderMouseEmpty("no mouse data");
     renderEvaEmpty("no EVA data");
     renderCampaignEmpty("no campaign data");
+    renderChallengeEmpty("no challenge data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4849,6 +4943,7 @@ function parseArchiveIni(entries, memory) {
   renderMouseParse(parseMouseEntries(entries, memory));
   renderEvaParse(parseEvaEntries(entries, memory));
   renderCampaignParse(parseCampaignEntries(entries, memory));
+  renderChallengeParse(parseChallengeEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -5026,6 +5121,11 @@ async function boot() {
     exports: campaignModule.instance.exports,
     memory: new Uint8Array(campaignModule.instance.exports.memory.buffer),
   };
+  const challengeModule = await loadWasm("../dist/generals_challenge.wasm");
+  challengeRuntime = {
+    exports: challengeModule.instance.exports,
+    memory: new Uint8Array(challengeModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -5046,7 +5146,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime) {
     return;
   }
 
