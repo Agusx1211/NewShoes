@@ -34,6 +34,7 @@ let evaRuntime = null;
 let campaignRuntime = null;
 let challengeRuntime = null;
 let transitionRuntime = null;
+let creditsRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -176,6 +177,9 @@ const elements = {
   transitionCount: document.querySelector("[data-transition-count]"),
   transitionWindows: document.querySelector("[data-transition-windows]"),
   transitionFields: document.querySelector("[data-transition-fields]"),
+  creditsText: document.querySelector("[data-credits-text]"),
+  creditsBlank: document.querySelector("[data-credits-blank]"),
+  creditsFields: document.querySelector("[data-credits-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -217,6 +221,8 @@ const elements = {
   challengeListing: document.querySelector("[data-challenge-listing]"),
   transitionFirst: document.querySelector("[data-transition-first]"),
   transitionListing: document.querySelector("[data-transition-listing]"),
+  creditsFirst: document.querySelector("[data-credits-first]"),
+  creditsListing: document.querySelector("[data-credits-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4977,6 +4983,106 @@ function renderTransitionParse(result) {
   }).join("\n") || "transition data parsed";
 }
 
+function renderCreditsEmpty(reason) {
+  elements.creditsText.textContent = "0 lines";
+  elements.creditsBlank.textContent = "0 lines";
+  elements.creditsFields.textContent = "0 fields";
+  elements.creditsFirst.textContent = reason;
+  elements.creditsListing.textContent = reason;
+}
+
+function readCreditsLineText(exports, memory, index) {
+  const ptr = exports.generals_credits_line_text_ptr(index);
+  const size = exports.generals_credits_line_text_size(index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readCreditsLineStyle(exports, memory, index) {
+  const ptr = exports.generals_credits_line_style_name_ptr(index);
+  const size = exports.generals_credits_line_style_name_size(index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseCreditsPayload(bytes) {
+  const { exports, memory } = creditsRuntime;
+  const inputOffset = exports.generals_credits_input_ptr();
+
+  if (bytes.length > exports.generals_credits_input_capacity()) {
+    throw new Error(`Credits payload exceeds ${exports.generals_credits_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_credits_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_credits_error_count() !== 0) {
+    throw new Error(`Credits parse failed with ${exports.generals_credits_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseCreditsEntries(entries, archiveMemory) {
+  const creditsEntry = findEntry(entries, "data/ini/credits.ini");
+  if (!creditsEntry) {
+    return null;
+  }
+
+  const { exports, memory } = creditsRuntime;
+  parseCreditsPayload(entryBytes(creditsEntry, archiveMemory));
+
+  const lineTotal = exports.generals_credits_line_total();
+  const preview = [];
+
+  for (let index = 0; index < lineTotal && preview.length < 8; ++index) {
+    if (exports.generals_credits_line_type(index) !== 0) {
+      continue;
+    }
+    preview.push({
+      style: readCreditsLineStyle(exports, memory, index),
+      text: readCreditsLineText(exports, memory, index),
+    });
+  }
+
+  return {
+    textCount: exports.generals_credits_text_count(),
+    blankCount: exports.generals_credits_blank_count(),
+    fieldCount: exports.generals_credits_field_count(),
+    scrollRate: exports.generals_credits_scroll_rate(),
+    scrollDown: exports.generals_credits_scroll_down(),
+    titleColor: [
+      exports.generals_credits_title_color_r(),
+      exports.generals_credits_title_color_g(),
+      exports.generals_credits_title_color_b(),
+    ],
+    preview,
+  };
+}
+
+function renderCreditsParse(result) {
+  if (!result) {
+    renderCreditsEmpty("no credits data");
+    return;
+  }
+
+  elements.creditsText.textContent = `${result.textCount} lines`;
+  elements.creditsBlank.textContent = `${result.blankCount} lines`;
+  elements.creditsFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.creditsFirst.textContent = `${first.text} (${first.style})`;
+  } else {
+    elements.creditsFirst.textContent = "no credits data";
+  }
+
+  const lines = [];
+  lines.push(`scroll ${result.scrollRate}px ${result.scrollDown ? "down" : "up"}, title color ${result.titleColor.join("/")}`);
+  lines.push("");
+  lines.push(...result.preview.map((line) => `[${line.style}] ${line.text}`));
+
+  elements.creditsListing.textContent = lines.join("\n") || "credits data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -5003,6 +5109,7 @@ function parseArchiveIni(entries, memory) {
     renderCampaignEmpty("no campaign data");
     renderChallengeEmpty("no challenge data");
     renderTransitionEmpty("no transition data");
+    renderCreditsEmpty("no credits data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -5051,6 +5158,7 @@ function parseArchiveIni(entries, memory) {
   renderCampaignParse(parseCampaignEntries(entries, memory));
   renderChallengeParse(parseChallengeEntries(entries, memory));
   renderTransitionParse(parseTransitionEntries(entries, memory));
+  renderCreditsParse(parseCreditsEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -5238,6 +5346,11 @@ async function boot() {
     exports: transitionModule.instance.exports,
     memory: new Uint8Array(transitionModule.instance.exports.memory.buffer),
   };
+  const creditsModule = await loadWasm("../dist/generals_credits.wasm");
+  creditsRuntime = {
+    exports: creditsModule.instance.exports,
+    memory: new Uint8Array(creditsModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -5258,7 +5371,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime || !creditsRuntime) {
     return;
   }
 
