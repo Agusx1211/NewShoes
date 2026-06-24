@@ -64,10 +64,15 @@ The first checked-in targets are small, real game-data modules:
   construction restriction) based on
   `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrain.cpp` and
   `GeneralsMD/Code/GameEngine/Source/Common/TerrainTypes.cpp`
+- Zero Hour road and bridge parsing (road width, bridge scale, radar color,
+  bridge models, scaffold and tower objects) based on
+  `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrainRoad.cpp`,
+  `GeneralsMD/Code/GameEngine/Source/Common/INI/INITerrainBridge.cpp`, and
+  `GeneralsMD/Code/GameEngine/Source/GameClient/Terrain/TerrainRoads.cpp`
 
 RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, control bar scheme, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
-progression, player/faction, and terrain type support are needed before browser-side loading
+progression, player/faction, terrain type, and road/bridge support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
 when available and fall back to raw Clang wasm builds for dependency-free smoke
 testing where possible. Later targets can add more typed gameplay object
@@ -133,6 +138,8 @@ Output:
 
 `dist/generals_terrain.wasm`
 
+`dist/generals_roads.wasm`
+
 ## Smoke Test
 
 ```bash
@@ -195,6 +202,7 @@ npm run test:real-command
 npm run test:real-progression
 npm run test:real-player
 npm run test:real-terrain
+npm run test:real-roads
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.
