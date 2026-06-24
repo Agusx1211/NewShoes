@@ -31,6 +31,7 @@ let controlBarRuntime = null;
 let roadsRuntime = null;
 let mouseRuntime = null;
 let evaRuntime = null;
+let campaignRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -164,6 +165,9 @@ const elements = {
   evaEvents: document.querySelector("[data-eva-events]"),
   evaSideSounds: document.querySelector("[data-eva-sidesounds]"),
   evaFields: document.querySelector("[data-eva-fields]"),
+  campaignCount: document.querySelector("[data-campaign-count]"),
+  campaignMissions: document.querySelector("[data-campaign-missions]"),
+  campaignFields: document.querySelector("[data-campaign-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -199,6 +203,8 @@ const elements = {
   mouseListing: document.querySelector("[data-mouse-listing]"),
   evaFirst: document.querySelector("[data-eva-first]"),
   evaListing: document.querySelector("[data-eva-listing]"),
+  campaignFirst: document.querySelector("[data-campaign-first]"),
+  campaignListing: document.querySelector("[data-campaign-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4678,6 +4684,101 @@ function renderEvaParse(result) {
   }).join("\n") || "EVA data parsed";
 }
 
+function renderCampaignEmpty(reason) {
+  elements.campaignCount.textContent = "0 campaigns";
+  elements.campaignMissions.textContent = "0 missions";
+  elements.campaignFields.textContent = "0 fields";
+  elements.campaignFirst.textContent = reason;
+  elements.campaignListing.textContent = reason;
+}
+
+function readCampaignString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_campaign_${prefix}_ptr`](index);
+  const size = exports[`generals_campaign_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseCampaignPayload(bytes) {
+  const { exports, memory } = campaignRuntime;
+  const inputOffset = exports.generals_campaign_input_ptr();
+
+  if (bytes.length > exports.generals_campaign_input_capacity()) {
+    throw new Error(`Campaign payload exceeds ${exports.generals_campaign_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_campaign_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_campaign_error_count() !== 0) {
+    throw new Error(`Campaign parse failed with ${exports.generals_campaign_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseCampaignEntries(entries, archiveMemory) {
+  const campaignEntry = findEntry(entries, "data/ini/campaign.ini");
+  if (!campaignEntry) {
+    return null;
+  }
+
+  const { exports, memory } = campaignRuntime;
+  parseCampaignPayload(entryBytes(campaignEntry, archiveMemory));
+
+  const count = exports.generals_campaign_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    preview.push({
+      name: readCampaignString(exports, memory, "name", index),
+      nameLabel: readCampaignString(exports, memory, "name_label", index),
+      firstMission: readCampaignString(exports, memory, "first_mission", index),
+      playerFaction: readCampaignString(exports, memory, "player_faction", index),
+      isChallenge: exports.generals_campaign_is_challenge(index),
+      missionCount: exports.generals_campaign_mission_count(index),
+    });
+  }
+
+  return {
+    count,
+    missionTotal: exports.generals_campaign_mission_total(),
+    fieldCount: exports.generals_campaign_field_count(),
+    lineCount: exports.generals_campaign_line_count(),
+    preview,
+  };
+}
+
+function renderCampaignParse(result) {
+  if (!result) {
+    renderCampaignEmpty("no campaign data");
+    return;
+  }
+
+  elements.campaignCount.textContent = `${result.count} campaigns`;
+  elements.campaignMissions.textContent = `${result.missionTotal} missions`;
+  elements.campaignFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    const missionWord = first.missionCount === 1 ? "mission" : "missions";
+    elements.campaignFirst.textContent = `${first.name}: ${first.nameLabel}, ${first.missionCount} ${missionWord}, first ${first.firstMission}`;
+  } else {
+    elements.campaignFirst.textContent = "no campaign data";
+  }
+
+  elements.campaignListing.textContent = result.preview.map((campaign) => {
+    const tags = [];
+    if (campaign.isChallenge) {
+      tags.push("challenge");
+    }
+    if (campaign.playerFaction) {
+      tags.push(campaign.playerFaction);
+    }
+    const suffix = tags.length ? ` [${tags.join(", ")}]` : "";
+    return `${campaign.name}: ${campaign.missionCount} missions, first ${campaign.firstMission}${suffix}`;
+  }).join("\n") || "campaign data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4701,6 +4802,7 @@ function parseArchiveIni(entries, memory) {
     renderRoadsEmpty("no roads data");
     renderMouseEmpty("no mouse data");
     renderEvaEmpty("no EVA data");
+    renderCampaignEmpty("no campaign data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4746,6 +4848,7 @@ function parseArchiveIni(entries, memory) {
   renderRoadsParse(parseRoadsEntries(entries, memory));
   renderMouseParse(parseMouseEntries(entries, memory));
   renderEvaParse(parseEvaEntries(entries, memory));
+  renderCampaignParse(parseCampaignEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4918,6 +5021,11 @@ async function boot() {
     exports: evaModule.instance.exports,
     memory: new Uint8Array(evaModule.instance.exports.memory.buffer),
   };
+  const campaignModule = await loadWasm("../dist/generals_campaign.wasm");
+  campaignRuntime = {
+    exports: campaignModule.instance.exports,
+    memory: new Uint8Array(campaignModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4938,7 +5046,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime) {
     return;
   }
 

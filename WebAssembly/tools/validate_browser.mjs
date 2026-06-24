@@ -165,8 +165,11 @@ try {
       const expectedEvaFirst = realAsset.endsWith("INIZH.big")
         ? "LowPower: priority 2, 13 sides, EvaUSA_LowPower"
         : "no EVA data";
+      const expectedCampaignFirst = realAsset.endsWith("INIZH.big")
+        ? "TRAINING: CAMPAIGN:TRAINING, 1 mission, first Mission01"
+        : "no campaign data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedAIData, expectedMappedImage, expectedEnvironment, expectedVideo, expectedMultiplayer, expectedGameLod, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer, expectedTerrain, expectedControlBar, expectedRoads, expectedMouse, expectedEva]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedAIData, expectedMappedImage, expectedEnvironment, expectedVideo, expectedMultiplayer, expectedGameLod, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer, expectedTerrain, expectedControlBar, expectedRoads, expectedMouse, expectedEva, expectedCampaign]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
@@ -195,8 +198,9 @@ try {
           document.querySelector("[data-controlbar-first]")?.textContent === expectedControlBar &&
           document.querySelector("[data-roads-first]")?.textContent === expectedRoads &&
           document.querySelector("[data-mouse-first]")?.textContent === expectedMouse &&
-          document.querySelector("[data-eva-first]")?.textContent === expectedEva;
-      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedAIDataFirst, expectedMappedImageFirst, expectedEnvironmentFirst, expectedVideoFirst, expectedMultiplayerFirst, expectedGameLodFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst, expectedTerrainFirst, expectedControlBarFirst, expectedRoadsFirst, expectedMouseFirst, expectedEvaFirst]);
+          document.querySelector("[data-eva-first]")?.textContent === expectedEva &&
+          document.querySelector("[data-campaign-first]")?.textContent === expectedCampaign;
+      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedAIDataFirst, expectedMappedImageFirst, expectedEnvironmentFirst, expectedVideoFirst, expectedMultiplayerFirst, expectedGameLodFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst, expectedTerrainFirst, expectedControlBarFirst, expectedRoadsFirst, expectedMouseFirst, expectedEvaFirst, expectedCampaignFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();
