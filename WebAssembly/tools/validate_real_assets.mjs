@@ -34,6 +34,7 @@ const checks = [
   ["tools/test_real_mouse_asset.mjs"],
   ["tools/test_real_eva_asset.mjs"],
   ["tools/test_real_campaign_asset.mjs"],
+  ["tools/test_real_challenge_asset.mjs"],
 ];
 
 try {
