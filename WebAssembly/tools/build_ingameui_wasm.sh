@@ -41,6 +41,13 @@ exports=(
   -Wl,--export=generals_ingameui_military_color_r
   -Wl,--export=generals_ingameui_parse
   -Wl,--export=generals_ingameui_radius_cursor_count
+  -Wl,--export=generals_ingameui_radius_cursor_name_ptr
+  -Wl,--export=generals_ingameui_radius_cursor_name_size
+  -Wl,--export=generals_ingameui_radius_cursor_style_ptr
+  -Wl,--export=generals_ingameui_radius_cursor_style_size
+  -Wl,--export=generals_ingameui_radius_cursor_texture_ptr
+  -Wl,--export=generals_ingameui_radius_cursor_texture_size
+  -Wl,--export=generals_ingameui_stored_radius_cursor_count
 )
 
 if command -v em++ >/dev/null 2>&1 && [[ "${GENERALS_WASM_FORCE_RAW_CLANG:-0}" != "1" ]]; then

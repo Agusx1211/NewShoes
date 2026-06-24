@@ -9,7 +9,8 @@ extern "C" {
 // faithful to the source definition. RadiusCursor fields are also tallied.
 
 static const int INPUT_CAPACITY = 64 * 1024;
-static const int NAME_CAPACITY = 16 * 1024;
+static const int NAME_CAPACITY = 32 * 1024;
+static const int MAX_RADIUS_CURSORS = 64;
 
 // Every recognized InGameUI field name. Names not in the curated setter list
 // are still counted (and *RadiusCursor names additionally tallied).
@@ -106,8 +107,20 @@ struct StringField
 	int size;
 };
 
+// One special-power targeting decal (a RadiusCursor sub-block of InGameUI).
+struct RadiusCursorRecord
+{
+	StringField name;
+	StringField texture;
+	StringField style;
+	int line;
+};
+
 __attribute__((used, visibility("default"))) unsigned char g_generals_ingameui_input[INPUT_CAPACITY];
 __attribute__((used, visibility("default"))) char g_generals_ingameui_names[NAME_CAPACITY];
+
+static RadiusCursorRecord g_radius_cursors[MAX_RADIUS_CURSORS];
+static int g_current_radius_cursor = -1;
 
 static int g_has_block = 0;
 static int g_in_block = 0;
@@ -404,6 +417,7 @@ static void reset_state()
 	g_has_block = 0;
 	g_in_block = 0;
 	g_in_radius_cursor = 0;
+	g_current_radius_cursor = -1;
 	g_field_count = 0;
 	g_radius_cursor_count = 0;
 	g_line_count = 0;
@@ -439,6 +453,21 @@ static void parse_field(const char *data, TokenRange field, int valueStart, int 
 		++g_radius_cursor_count;
 		++g_field_count;
 		g_in_radius_cursor = 1;
+		g_current_radius_cursor = -1;
+		if (g_radius_cursor_count - 1 < MAX_RADIUS_CURSORS) {
+			RadiusCursorRecord *cursor = &g_radius_cursors[g_radius_cursor_count - 1];
+			clear_string(&cursor->name);
+			clear_string(&cursor->texture);
+			clear_string(&cursor->style);
+			const int size = field.end - field.start;
+			const int offset = store_string(data + field.start, size);
+			if (offset >= 0) {
+				cursor->name.offset = offset;
+				cursor->name.size = size;
+			}
+			cursor->line = -1;
+			g_current_radius_cursor = g_radius_cursor_count - 1;
+		}
 		return;
 	}
 
@@ -501,8 +530,21 @@ static void parse_line(const char *data, int start, int end)
 		return;
 	}
 
-	// Ignore fields inside a RadiusCursor sub-block (Texture, Style, etc.).
-	if (g_in_block && !g_in_radius_cursor) {
+	if (g_in_radius_cursor) {
+		// Capture the most useful cursor fields; the rest are intentionally
+		// skipped and not counted toward the InGameUI field total.
+		if (g_current_radius_cursor >= 0) {
+			RadiusCursorRecord *cursor = &g_radius_cursors[g_current_radius_cursor];
+			if (token_equals(data, first, "Texture")) {
+				assign_token_string(&cursor->texture, data, valueStart, end);
+			} else if (token_equals(data, first, "Style")) {
+				assign_token_string(&cursor->style, data, valueStart, end);
+			}
+		}
+		return;
+	}
+
+	if (g_in_block) {
 		parse_field(data, first, valueStart, end);
 	}
 }
@@ -589,5 +631,44 @@ __attribute__((used, visibility("default"))) int generals_ingameui_drawable_capt
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_font_size() { return g_drawable_caption_font.size; }
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_point_size() { return g_drawable_caption_point_size; }
 __attribute__((used, visibility("default"))) int generals_ingameui_drawable_caption_bold() { return g_drawable_caption_bold; }
+
+// Stored RadiusCursor records (capped at MAX_RADIUS_CURSORS); the tally in
+// generals_ingameui_radius_cursor_count may exceed the number stored.
+__attribute__((used, visibility("default"))) int generals_ingameui_stored_radius_cursor_count()
+{
+	return g_radius_cursor_count < MAX_RADIUS_CURSORS ? g_radius_cursor_count : MAX_RADIUS_CURSORS;
+}
+
+#define RC_GUARD(expr, fallback) (index >= 0 && index < g_radius_cursor_count && index < MAX_RADIUS_CURSORS ? (expr) : (fallback))
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_name_ptr(int index)
+{
+	return RC_GUARD(string_field_ptr(g_radius_cursors[index].name), 0);
+}
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_name_size(int index)
+{
+	return RC_GUARD(g_radius_cursors[index].name.size, -1);
+}
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_texture_ptr(int index)
+{
+	return RC_GUARD(string_field_ptr(g_radius_cursors[index].texture), 0);
+}
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_texture_size(int index)
+{
+	return RC_GUARD(g_radius_cursors[index].texture.size, -1);
+}
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_style_ptr(int index)
+{
+	return RC_GUARD(string_field_ptr(g_radius_cursors[index].style), 0);
+}
+
+__attribute__((used, visibility("default"))) int generals_ingameui_radius_cursor_style_size(int index)
+{
+	return RC_GUARD(g_radius_cursors[index].style.size, -1);
+}
 
 }

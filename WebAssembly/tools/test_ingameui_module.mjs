@@ -90,6 +90,23 @@ if (readString(exports.generals_ingameui_drawable_caption_font_ptr(), exports.ge
   throw new Error("unexpected InGameUI drawable caption settings (block nesting may be wrong)");
 }
 
+function cursorString(prefix, index) {
+  return readString(
+    exports[`generals_ingameui_radius_cursor_${prefix}_ptr`](index),
+    exports[`generals_ingameui_radius_cursor_${prefix}_size`](index)
+  );
+}
+
+// The two RadiusCursor sub-blocks must be captured with their texture and style.
+if (exports.generals_ingameui_stored_radius_cursor_count() !== 2 ||
+    cursorString("name", 0) !== "SpyDroneRadiusCursor" ||
+    cursorString("texture", 0) !== "SccSpyDrone_USA" ||
+    cursorString("style", 0) !== "SHADOW_ALPHA_DECAL" ||
+    cursorString("name", 1) !== "AttackDamageAreaRadiusCursor" ||
+    cursorString("texture", 1) !== "SccAttackDamage") {
+  throw new Error("unexpected InGameUI radius cursor capture");
+}
+
 console.log(JSON.stringify({
   module: wasmPath,
   fields: exports.generals_ingameui_field_count(),

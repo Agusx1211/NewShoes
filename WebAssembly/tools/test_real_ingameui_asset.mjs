@@ -94,6 +94,12 @@ const summary = {
     ingameUiExports.generals_ingameui_military_color_a(),
   ],
   floatingTextTimeOut: ingameUiExports.generals_ingameui_floating_text_time_out(),
+  storedRadiusCursorCount: ingameUiExports.generals_ingameui_stored_radius_cursor_count(),
+  firstCursor: {
+    name: readIngameUiString(ingameUiExports.generals_ingameui_radius_cursor_name_ptr(0), ingameUiExports.generals_ingameui_radius_cursor_name_size(0)),
+    texture: readIngameUiString(ingameUiExports.generals_ingameui_radius_cursor_texture_ptr(0), ingameUiExports.generals_ingameui_radius_cursor_texture_size(0)),
+    style: readIngameUiString(ingameUiExports.generals_ingameui_radius_cursor_style_ptr(0), ingameUiExports.generals_ingameui_radius_cursor_style_size(0)),
+  },
 };
 
 if (summary.ingameUiBytes !== 10908 ||
@@ -101,8 +107,15 @@ if (summary.ingameUiBytes !== 10908 ||
     summary.fieldCount !== 72 ||
     summary.knownFieldCount !== 77 ||
     summary.radiusCursorCount !== 29 ||
+    summary.storedRadiusCursorCount !== 29 ||
     summary.lineCount !== 365) {
   throw new Error(`unexpected InGameUI aggregate parse: ${JSON.stringify(summary, null, 2)}`);
+}
+
+if (summary.firstCursor.name !== "SpyDroneRadiusCursor" ||
+    summary.firstCursor.texture !== "SccSpyDrone_USA" ||
+    summary.firstCursor.style !== "SHADOW_ALPHA_DECAL") {
+  throw new Error(`unexpected first radius cursor: ${JSON.stringify(summary.firstCursor)}`);
 }
 
 if (summary.maxSelectionSize !== 0 ||

@@ -5216,7 +5216,23 @@ function parseIngameUiEntries(entries, archiveMemory) {
   const fontPtr = exports.generals_ingameui_message_font_ptr();
   const fontSize = exports.generals_ingameui_message_font_size();
 
+  const readCursor = (prefix, index) => {
+    const ptr = exports[`generals_ingameui_radius_cursor_${prefix}_ptr`](index);
+    const size = exports[`generals_ingameui_radius_cursor_${prefix}_size`](index);
+    return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+  };
+  const storedCursors = exports.generals_ingameui_stored_radius_cursor_count();
+  const cursorPreview = [];
+  for (let index = 0; index < storedCursors && cursorPreview.length < 4; ++index) {
+    cursorPreview.push({
+      name: readCursor("name", index),
+      texture: readCursor("texture", index),
+      style: readCursor("style", index),
+    });
+  }
+
   return {
+    cursorPreview,
     fieldCount: exports.generals_ingameui_field_count(),
     knownFieldCount: exports.generals_ingameui_known_field_count(),
     radiusCursorCount: exports.generals_ingameui_radius_cursor_count(),
@@ -5251,6 +5267,10 @@ function renderIngameUiParse(result) {
     `max selection ${result.maxSelectionSize || "unlimited"}`,
     `${result.radiusCursorCount} special-power radius cursors, ${result.fieldCount}/${result.knownFieldCount} known fields set`,
   ];
+  if (result.cursorPreview && result.cursorPreview.length) {
+    lines.push("");
+    lines.push(...result.cursorPreview.map((cursor) => `${cursor.name}: ${cursor.texture} [${cursor.style}]`));
+  }
 
   elements.ingameUiListing.textContent = lines.join("\n");
 }
