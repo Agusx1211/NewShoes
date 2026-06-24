@@ -35,6 +35,7 @@ let campaignRuntime = null;
 let challengeRuntime = null;
 let transitionRuntime = null;
 let creditsRuntime = null;
+let commandMapRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -180,6 +181,8 @@ const elements = {
   creditsText: document.querySelector("[data-credits-text]"),
   creditsBlank: document.querySelector("[data-credits-blank]"),
   creditsFields: document.querySelector("[data-credits-fields]"),
+  commandMapCount: document.querySelector("[data-commandmap-count]"),
+  commandMapFields: document.querySelector("[data-commandmap-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -223,6 +226,8 @@ const elements = {
   transitionListing: document.querySelector("[data-transition-listing]"),
   creditsFirst: document.querySelector("[data-credits-first]"),
   creditsListing: document.querySelector("[data-credits-listing]"),
+  commandMapFirst: document.querySelector("[data-commandmap-first]"),
+  commandMapListing: document.querySelector("[data-commandmap-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -5083,6 +5088,92 @@ function renderCreditsParse(result) {
   elements.creditsListing.textContent = lines.join("\n") || "credits data parsed";
 }
 
+function renderCommandMapEmpty(reason) {
+  elements.commandMapCount.textContent = "0 bindings";
+  elements.commandMapFields.textContent = "0 fields";
+  elements.commandMapFirst.textContent = reason;
+  elements.commandMapListing.textContent = reason;
+}
+
+function readCommandMapString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_commandmap_${prefix}_ptr`](index);
+  const size = exports[`generals_commandmap_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseCommandMapPayload(bytes) {
+  const { exports, memory } = commandMapRuntime;
+  const inputOffset = exports.generals_commandmap_input_ptr();
+
+  if (bytes.length > exports.generals_commandmap_input_capacity()) {
+    throw new Error(`CommandMap payload exceeds ${exports.generals_commandmap_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_commandmap_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_commandmap_error_count() !== 0) {
+    throw new Error(`CommandMap parse failed with ${exports.generals_commandmap_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseCommandMapEntries(entries, archiveMemory) {
+  const commandMapEntry = findEntry(entries, "data/ini/commandmapdebug.ini")
+    ?? findEntry(entries, "data/ini/commandmap.ini")
+    ?? findEntry(entries, "data/ini/commandmapdemo.ini");
+  if (!commandMapEntry) {
+    return null;
+  }
+
+  const { exports, memory } = commandMapRuntime;
+  parseCommandMapPayload(entryBytes(commandMapEntry, archiveMemory));
+
+  const count = exports.generals_commandmap_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    preview.push({
+      name: readCommandMapString(exports, memory, "name", index),
+      key: readCommandMapString(exports, memory, "key", index),
+      modifiers: readCommandMapString(exports, memory, "modifiers", index),
+      useableIn: readCommandMapString(exports, memory, "useable_in", index),
+    });
+  }
+
+  return {
+    entryName: commandMapEntry.name,
+    count,
+    fieldCount: exports.generals_commandmap_field_count(),
+    lineCount: exports.generals_commandmap_line_count(),
+    preview,
+  };
+}
+
+function renderCommandMapParse(result) {
+  if (!result) {
+    renderCommandMapEmpty("no command map data");
+    return;
+  }
+
+  elements.commandMapCount.textContent = `${result.count} bindings`;
+  elements.commandMapFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    const mods = first.modifiers && first.modifiers !== "None" ? ` (${first.modifiers})` : "";
+    elements.commandMapFirst.textContent = `${first.name}: ${first.key}${mods}, ${first.useableIn}`;
+  } else {
+    elements.commandMapFirst.textContent = "no command map data";
+  }
+
+  elements.commandMapListing.textContent = result.preview.map((command) => {
+    const mods = command.modifiers && command.modifiers !== "None" ? `+${command.modifiers}` : "";
+    return `${command.name}: ${command.key}${mods} [${command.useableIn}]`;
+  }).join("\n") || "command map data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -5110,6 +5201,7 @@ function parseArchiveIni(entries, memory) {
     renderChallengeEmpty("no challenge data");
     renderTransitionEmpty("no transition data");
     renderCreditsEmpty("no credits data");
+    renderCommandMapEmpty("no command map data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -5159,6 +5251,7 @@ function parseArchiveIni(entries, memory) {
   renderChallengeParse(parseChallengeEntries(entries, memory));
   renderTransitionParse(parseTransitionEntries(entries, memory));
   renderCreditsParse(parseCreditsEntries(entries, memory));
+  renderCommandMapParse(parseCommandMapEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -5351,6 +5444,11 @@ async function boot() {
     exports: creditsModule.instance.exports,
     memory: new Uint8Array(creditsModule.instance.exports.memory.buffer),
   };
+  const commandMapModule = await loadWasm("../dist/generals_commandmap.wasm");
+  commandMapRuntime = {
+    exports: commandMapModule.instance.exports,
+    memory: new Uint8Array(commandMapModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -5371,7 +5469,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime || !creditsRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime || !creditsRuntime || !commandMapRuntime) {
     return;
   }
 
