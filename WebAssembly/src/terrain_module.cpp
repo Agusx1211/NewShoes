@@ -348,6 +348,11 @@ static void parse_assignment(const char *data, int fieldStart, int fieldEnd, int
 			if (classIndex < 0) {
 				++g_error_count;
 			}
+		} else {
+			// A "Class" field with no value is malformed; flag it rather than
+			// silently leaving the default NONE class.
+			terrain->terrainClass = -1;
+			++g_error_count;
 		}
 	} else if (string_equals(data, fieldStart, fieldEnd, "RestrictConstruction")) {
 		terrain->restrictConstruction = parse_bool(data, valueStart, valueEnd);
