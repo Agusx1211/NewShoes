@@ -144,7 +144,16 @@ function createState(seed) {
   spawnArmy(0, 160, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
   spawnArmy(1, WORLD_W - 160, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
 
-  return { units, tick: 0, winner: null, events: [] };
+  // Impassable terrain blobs (rock/cliff — the kind of terrain the Terrain
+  // module marks with RestrictConstruction) placed down the centre, forcing
+  // units to manoeuvre around them.
+  const obstacles = [
+    { x: WORLD_W / 2, y: 150, r: 54 },
+    { x: WORLD_W / 2 - 70, y: WORLD_H / 2, r: 70 },
+    { x: WORLD_W / 2 + 80, y: WORLD_H - 170, r: 60 },
+  ];
+
+  return { units, obstacles, tick: 0, winner: null, events: [] };
 }
 
 function unitById(id) {
@@ -210,6 +219,29 @@ function applySeparation(dt) {
   }
 }
 
+function resolveObstacles() {
+  // Push any unit overlapping an impassable blob back out to its edge; the
+  // removed inward component leaves tangential motion, so units slide around.
+  for (const unit of state.units) {
+    if (unit.hp <= 0) continue;
+    const ur = UNIT_KINDS[unit.kind].radius;
+    for (const o of state.obstacles) {
+      const dx = unit.x - o.x;
+      const dy = unit.y - o.y;
+      const min = o.r + ur;
+      const d = Math.hypot(dx, dy);
+      if (d > 0 && d < min) {
+        unit.x = o.x + (dx / d) * min;
+        unit.y = o.y + (dy / d) * min;
+      } else if (d === 0) {
+        unit.x = o.x + min;
+      }
+    }
+    unit.x = Math.max(8, Math.min(WORLD_W - 8, unit.x));
+    unit.y = Math.max(8, Math.min(WORLD_H - 8, unit.y));
+  }
+}
+
 function stepOnce() {
   if (state.winner) {
     return;
@@ -272,6 +304,7 @@ function stepOnce() {
   }
 
   applySeparation(dt);
+  resolveObstacles();
 
   // Remove the dead and drop them from any selection.
   for (const unit of state.units) {
@@ -314,6 +347,15 @@ function drawTerrain() {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(WORLD_W, y);
+    ctx.stroke();
+  }
+  for (const o of state.obstacles) {
+    ctx.fillStyle = "#3a3327";
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,100,70,0.6)";
+    ctx.lineWidth = 2;
     ctx.stroke();
   }
 }
@@ -580,6 +622,12 @@ function boot() {
     },
     statsSource() {
       return statsSource;
+    },
+    obstacles() {
+      return state.obstacles.map((o) => ({ x: o.x, y: o.y, r: o.r }));
+    },
+    unitRadius(kind) {
+      return UNIT_KINDS[kind] ? UNIT_KINDS[kind].radius : 0;
     },
     loadStatsFromWasm,
     kindStats() {
