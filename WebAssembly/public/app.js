@@ -33,6 +33,7 @@ let mouseRuntime = null;
 let evaRuntime = null;
 let campaignRuntime = null;
 let challengeRuntime = null;
+let transitionRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -172,6 +173,9 @@ const elements = {
   challengeCount: document.querySelector("[data-challenge-count]"),
   challengeEnabled: document.querySelector("[data-challenge-enabled]"),
   challengeFields: document.querySelector("[data-challenge-fields]"),
+  transitionCount: document.querySelector("[data-transition-count]"),
+  transitionWindows: document.querySelector("[data-transition-windows]"),
+  transitionFields: document.querySelector("[data-transition-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -211,6 +215,8 @@ const elements = {
   campaignListing: document.querySelector("[data-campaign-listing]"),
   challengeFirst: document.querySelector("[data-challenge-first]"),
   challengeListing: document.querySelector("[data-challenge-listing]"),
+  transitionFirst: document.querySelector("[data-transition-first]"),
+  transitionListing: document.querySelector("[data-transition-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4872,6 +4878,105 @@ function renderChallengeParse(result) {
   }).join("\n") || "challenge data parsed";
 }
 
+function renderTransitionEmpty(reason) {
+  elements.transitionCount.textContent = "0 groups";
+  elements.transitionWindows.textContent = "0 windows";
+  elements.transitionFields.textContent = "0 fields";
+  elements.transitionFirst.textContent = reason;
+  elements.transitionListing.textContent = reason;
+}
+
+function readTransitionGroupName(exports, memory, index) {
+  const ptr = exports.generals_transition_name_ptr(index);
+  const size = exports.generals_transition_name_size(index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readTransitionWindow(exports, memory, windowIndex) {
+  const namePtr = exports.generals_transition_window_name_ptr(windowIndex);
+  const nameSize = exports.generals_transition_window_name_size(windowIndex);
+  const stylePtr = exports.generals_transition_window_style_name_ptr(windowIndex);
+  const styleSize = exports.generals_transition_window_style_name_size(windowIndex);
+  return {
+    winName: namePtr ? textDecoder.decode(memory.slice(namePtr, namePtr + nameSize)) : "",
+    style: stylePtr ? textDecoder.decode(memory.slice(stylePtr, stylePtr + styleSize)) : "",
+  };
+}
+
+function parseTransitionPayload(bytes) {
+  const { exports, memory } = transitionRuntime;
+  const inputOffset = exports.generals_transition_input_ptr();
+
+  if (bytes.length > exports.generals_transition_input_capacity()) {
+    throw new Error(`Transition payload exceeds ${exports.generals_transition_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_transition_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_transition_error_count() !== 0) {
+    throw new Error(`Transition parse failed with ${exports.generals_transition_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseTransitionEntries(entries, archiveMemory) {
+  const transitionEntry = findEntry(entries, "data/ini/windowtransitions.ini");
+  if (!transitionEntry) {
+    return null;
+  }
+
+  const { exports, memory } = transitionRuntime;
+  parseTransitionPayload(entryBytes(transitionEntry, archiveMemory));
+
+  const count = exports.generals_transition_count();
+  const preview = [];
+
+  for (let index = 0; index < count && preview.length < 8; ++index) {
+    const firstWindow = exports.generals_transition_first_window(index);
+    const window = firstWindow >= 0 ? readTransitionWindow(exports, memory, firstWindow) : { winName: "", style: "" };
+    preview.push({
+      name: readTransitionGroupName(exports, memory, index),
+      fireOnce: exports.generals_transition_fire_once(index),
+      windowCount: exports.generals_transition_window_count(index),
+      firstWinName: window.winName,
+      firstStyle: window.style,
+    });
+  }
+
+  return {
+    count,
+    windowTotal: exports.generals_transition_window_total(),
+    fieldCount: exports.generals_transition_field_count(),
+    lineCount: exports.generals_transition_line_count(),
+    preview,
+  };
+}
+
+function renderTransitionParse(result) {
+  if (!result) {
+    renderTransitionEmpty("no transition data");
+    return;
+  }
+
+  elements.transitionCount.textContent = `${result.count} groups`;
+  elements.transitionWindows.textContent = `${result.windowTotal} windows`;
+  elements.transitionFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    const windowWord = first.windowCount === 1 ? "window" : "windows";
+    elements.transitionFirst.textContent = `${first.name}: ${first.windowCount} ${windowWord}, ${first.fireOnce ? "fire once" : "repeat"}, ${first.firstWinName}/${first.firstStyle}`;
+  } else {
+    elements.transitionFirst.textContent = "no transition data";
+  }
+
+  elements.transitionListing.textContent = result.preview.map((group) => {
+    return `${group.name}: ${group.windowCount} windows, ${group.fireOnce ? "fire once" : "repeat"}, first ${group.firstStyle}`;
+  }).join("\n") || "transition data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4897,6 +5002,7 @@ function parseArchiveIni(entries, memory) {
     renderEvaEmpty("no EVA data");
     renderCampaignEmpty("no campaign data");
     renderChallengeEmpty("no challenge data");
+    renderTransitionEmpty("no transition data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4944,6 +5050,7 @@ function parseArchiveIni(entries, memory) {
   renderEvaParse(parseEvaEntries(entries, memory));
   renderCampaignParse(parseCampaignEntries(entries, memory));
   renderChallengeParse(parseChallengeEntries(entries, memory));
+  renderTransitionParse(parseTransitionEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -5126,6 +5233,11 @@ async function boot() {
     exports: challengeModule.instance.exports,
     memory: new Uint8Array(challengeModule.instance.exports.memory.buffer),
   };
+  const transitionModule = await loadWasm("../dist/generals_transition.wasm");
+  transitionRuntime = {
+    exports: transitionModule.instance.exports,
+    memory: new Uint8Array(transitionModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -5146,7 +5258,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime || !mouseRuntime || !evaRuntime || !campaignRuntime || !challengeRuntime || !transitionRuntime) {
     return;
   }
 

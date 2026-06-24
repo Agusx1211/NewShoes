@@ -171,8 +171,11 @@ try {
       const expectedChallengeFirst = realAsset.endsWith("INIZH.big")
         ? "0: FactionAmericaAirForceGeneral, CHALLENGE_0, enabled"
         : "no challenge data";
+      const expectedTransitionFirst = realAsset.endsWith("INIZH.big")
+        ? "MainMenuFade: 1 window, fire once, MainMenu.wnd:MainMenuRuler/WINFADE"
+        : "no transition data";
       await page.setInputFiles("[data-big-file]", realAsset);
-      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedAIData, expectedMappedImage, expectedEnvironment, expectedVideo, expectedMultiplayer, expectedGameLod, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer, expectedTerrain, expectedControlBar, expectedRoads, expectedMouse, expectedEva, expectedCampaign, expectedChallenge]) => {
+      await page.waitForFunction(([expectedFile, expectedIni, expectedGameData, expectedAIData, expectedMappedImage, expectedEnvironment, expectedVideo, expectedMultiplayer, expectedGameLod, expectedArmor, expectedWeapon, expectedLocomotor, expectedFxList, expectedParticle, expectedAudio, expectedMiscAudio, expectedDamageFx, expectedCrate, expectedOcl, expectedThing, expectedCommand, expectedProgression, expectedPlayer, expectedTerrain, expectedControlBar, expectedRoads, expectedMouse, expectedEva, expectedCampaign, expectedChallenge, expectedTransition]) => {
         return document.body.dataset.validation === "pass" &&
           document.querySelector("[data-big-first]")?.textContent === expectedFile &&
           document.querySelector("[data-ini-first]")?.textContent === expectedIni &&
@@ -203,8 +206,9 @@ try {
           document.querySelector("[data-mouse-first]")?.textContent === expectedMouse &&
           document.querySelector("[data-eva-first]")?.textContent === expectedEva &&
           document.querySelector("[data-campaign-first]")?.textContent === expectedCampaign &&
-          document.querySelector("[data-challenge-first]")?.textContent === expectedChallenge;
-      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedAIDataFirst, expectedMappedImageFirst, expectedEnvironmentFirst, expectedVideoFirst, expectedMultiplayerFirst, expectedGameLodFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst, expectedTerrainFirst, expectedControlBarFirst, expectedRoadsFirst, expectedMouseFirst, expectedEvaFirst, expectedCampaignFirst, expectedChallengeFirst]);
+          document.querySelector("[data-challenge-first]")?.textContent === expectedChallenge &&
+          document.querySelector("[data-transition-first]")?.textContent === expectedTransition;
+      }, [expectedFirstFile, expectedIniFirst, expectedGameDataFirst, expectedAIDataFirst, expectedMappedImageFirst, expectedEnvironmentFirst, expectedVideoFirst, expectedMultiplayerFirst, expectedGameLodFirst, expectedArmorFirst, expectedWeaponFirst, expectedLocomotorFirst, expectedFxListFirst, expectedParticleFirst, expectedAudioFirst, expectedMiscAudioFirst, expectedDamageFxFirst, expectedCrateFirst, expectedOclFirst, expectedThingFirst, expectedCommandFirst, expectedProgressionFirst, expectedPlayerFirst, expectedTerrainFirst, expectedControlBarFirst, expectedRoadsFirst, expectedMouseFirst, expectedEvaFirst, expectedCampaignFirst, expectedChallengeFirst, expectedTransitionFirst]);
     }
     const viewportScreenshotPath = resolve(screenshotsDir, `refpack-harness-${viewport.name}.png`);
     const status = await page.locator("[data-status]").textContent();
