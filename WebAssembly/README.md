@@ -84,10 +84,13 @@ The first checked-in targets are small, real game-data modules:
 - Zero Hour window transition parsing (per-group fire-once flag plus nested
   window name, transition style, and frame delay) based on
   `GeneralsMD/Code/GameEngine/Source/GameClient/GUI/GameWindowTransitions.cpp`
+- Zero Hour credits parsing (scroll settings, RGBA colors, style mode switches,
+  and quoted-string-aware text and blank line entries) based on
+  `GeneralsMD/Code/GameEngine/Source/GameClient/Credits.cpp`
 
 RefPack, BIG, INI, global game data, AI data, mapped images, environment settings, video definitions, multiplayer settings, game LOD, control bar scheme, armor, weapon, locomotor, FX list, particle
 system, audio event, miscellaneous audio hooks, damage FX, crate data, object creation list, object template, command UI,
-progression, player/faction, terrain type, road/bridge, mouse cursor, EVA event, campaign, Generals' Challenge, and window transition support are needed before browser-side loading
+progression, player/faction, terrain type, road/bridge, mouse cursor, EVA event, campaign, Generals' Challenge, window transition, and credits support are needed before browser-side loading
 of original combat configuration can work. These targets build with Emscripten
 when available and fall back to raw Clang wasm builds for dependency-free smoke
 testing where possible. Later targets can add more typed gameplay object
@@ -165,6 +168,8 @@ Output:
 
 `dist/generals_transition.wasm`
 
+`dist/generals_credits.wasm`
+
 ## Smoke Test
 
 ```bash
@@ -233,6 +238,7 @@ npm run test:real-eva
 npm run test:real-campaign
 npm run test:real-challenge
 npm run test:real-transition
+npm run test:real-credits
 ```
 
 The extracted archive stays under ignored `artifacts/real-assets/`.

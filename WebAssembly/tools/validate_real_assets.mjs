@@ -36,6 +36,7 @@ const checks = [
   ["tools/test_real_campaign_asset.mjs"],
   ["tools/test_real_challenge_asset.mjs"],
   ["tools/test_real_transition_asset.mjs"],
+  ["tools/test_real_credits_asset.mjs"],
 ];
 
 try {
