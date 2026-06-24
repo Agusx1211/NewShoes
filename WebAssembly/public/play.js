@@ -153,7 +153,44 @@ function createState(seed) {
     { x: WORLD_W / 2 + 80, y: WORLD_H - 170, r: 60 },
   ];
 
-  return { units, obstacles, tick: 0, winner: null, events: [] };
+  return {
+    units,
+    obstacles,
+    nextId,
+    reinforcements: { 0: 5, 1: 5 },
+    enemyReinforceTick: 0,
+    tick: 0,
+    winner: null,
+    events: [],
+  };
+}
+
+// Spawn one reinforcement unit for a team at its back edge. Bounded by the
+// per-team reinforcement pool, so the battle still terminates.
+function spawnReinforcement(team, kind = "Humvee") {
+  if (state.winner || state.reinforcements[team] <= 0) {
+    return false;
+  }
+  if (!state.units.some((u) => u.team === team)) {
+    return false; // a wiped-out team cannot reinforce
+  }
+  const k = UNIT_KINDS[kind];
+  const baseX = team === 0 ? 70 : WORLD_W - 70;
+  const offset = (state.reinforcements[team] % 5) * 36;
+  state.units.push({
+    id: state.nextId++,
+    team,
+    kind,
+    x: baseX,
+    y: WORLD_H / 2 - 72 + offset,
+    hp: k.hp,
+    maxHp: k.hp,
+    cooldownRemaining: 0,
+    order: null,
+    flash: 0,
+  });
+  state.reinforcements[team] -= 1;
+  return true;
 }
 
 function unitById(id) {
@@ -316,6 +353,20 @@ function stepOnce() {
 
   state.tick++;
 
+  // The enemy commits a reinforcement when it falls behind (deterministic).
+  if (state.tick - state.enemyReinforceTick >= 120 && !state.winner) {
+    let t0 = 0;
+    let t1 = 0;
+    for (const u of state.units) {
+      if (u.team === 0) t0++;
+      else t1++;
+    }
+    if (t1 > 0 && t1 < t0 && state.reinforcements[1] > 0) {
+      spawnReinforcement(1, "Humvee");
+      state.enemyReinforceTick = state.tick;
+    }
+  }
+
   const alive0 = state.units.some((u) => u.team === 0);
   const alive1 = state.units.some((u) => u.team === 1);
   if (!alive0 || !alive1) {
@@ -445,6 +496,12 @@ function updateHud() {
   const enemyEl = document.querySelector("[data-play-enemy]");
   const tickEl = document.querySelector("[data-play-tick]");
   const statusEl = document.querySelector("[data-play-status]");
+  const reinforceBtn = document.querySelector("[data-play-reinforce]");
+  if (reinforceBtn) {
+    const left = state.reinforcements[0];
+    reinforceBtn.textContent = `Reinforce (${left})`;
+    reinforceBtn.disabled = left <= 0 || state.winner !== null;
+  }
   const sourceEl = document.querySelector("[data-play-source]");
   if (sourceEl) {
     sourceEl.textContent = statsSource === "wasm" ? "balance: wasm-parsed (Locomotor + Weapon)" : "balance: defaults";
@@ -584,6 +641,12 @@ function boot() {
       pauseBtn.textContent = paused ? "Resume" : "Pause";
     });
   }
+  const reinforceBtn = document.querySelector("[data-play-reinforce]");
+  if (reinforceBtn) {
+    reinforceBtn.addEventListener("click", () => {
+      spawnReinforcement(0, "Humvee");
+    });
+  }
 
   requestAnimationFrame(frame);
 
@@ -628,6 +691,12 @@ function boot() {
     },
     unitRadius(kind) {
       return UNIT_KINDS[kind] ? UNIT_KINDS[kind].radius : 0;
+    },
+    reinforce(team = 0, kind = "Humvee") {
+      return spawnReinforcement(team, kind);
+    },
+    reinforcementsLeft(team = 0) {
+      return state.reinforcements[team];
     },
     loadStatsFromWasm,
     kindStats() {
