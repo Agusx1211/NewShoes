@@ -28,6 +28,7 @@ let progressionRuntime = null;
 let playerRuntime = null;
 let terrainRuntime = null;
 let controlBarRuntime = null;
+let roadsRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -152,6 +153,9 @@ const elements = {
   controlBarSchemes: document.querySelector("[data-controlbar-schemes]"),
   controlBarImages: document.querySelector("[data-controlbar-images]"),
   controlBarFields: document.querySelector("[data-controlbar-fields]"),
+  roadsRoads: document.querySelector("[data-roads-roads]"),
+  roadsBridges: document.querySelector("[data-roads-bridges]"),
+  roadsFields: document.querySelector("[data-roads-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -181,6 +185,8 @@ const elements = {
   terrainListing: document.querySelector("[data-terrain-listing]"),
   controlBarFirst: document.querySelector("[data-controlbar-first]"),
   controlBarListing: document.querySelector("[data-controlbar-listing]"),
+  roadsFirst: document.querySelector("[data-roads-first]"),
+  roadsListing: document.querySelector("[data-roads-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4342,6 +4348,121 @@ function renderControlBarParse(result) {
   elements.controlBarListing.textContent = lines.join("\n") || "control bar data parsed";
 }
 
+function renderRoadsEmpty(reason) {
+  elements.roadsRoads.textContent = "0 roads";
+  elements.roadsBridges.textContent = "0 bridges";
+  elements.roadsFields.textContent = "0 fields";
+  elements.roadsFirst.textContent = reason;
+  elements.roadsListing.textContent = reason;
+}
+
+function readRoadsString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_roads_${prefix}_ptr`](index);
+  const size = exports[`generals_roads_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function formatX100(value) {
+  return (value / 100).toFixed(2).replace(/\.?0+$/, "");
+}
+
+function parseRoadsPayload(bytes) {
+  const { exports, memory } = roadsRuntime;
+  const inputOffset = exports.generals_roads_input_ptr();
+
+  if (bytes.length > exports.generals_roads_input_capacity()) {
+    throw new Error(`Roads payload exceeds ${exports.generals_roads_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_roads_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_roads_error_count() !== 0) {
+    throw new Error(`Roads parse failed with ${exports.generals_roads_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseRoadsEntries(entries, archiveMemory) {
+  const roadsEntry = findEntry(entries, "data/ini/roads.ini");
+  if (!roadsEntry) {
+    return null;
+  }
+
+  const { exports, memory } = roadsRuntime;
+  parseRoadsPayload(entryBytes(roadsEntry, archiveMemory));
+
+  const count = exports.generals_roads_count();
+  const preview = [];
+  let firstBridge = null;
+
+  for (let index = 0; index < count; ++index) {
+    const isBridge = exports.generals_roads_is_bridge(index);
+    const record = {
+      name: readRoadsString(exports, memory, "name", index),
+      isBridge,
+      texture: readRoadsString(exports, memory, "texture", index),
+      roadWidthX100: exports.generals_roads_road_width_x100(index),
+      bridgeScaleX100: exports.generals_roads_bridge_scale_x100(index),
+      bridgeModelName: readRoadsString(exports, memory, "bridge_model_name", index),
+      radarColor: [
+        exports.generals_roads_radar_color_r(index),
+        exports.generals_roads_radar_color_g(index),
+        exports.generals_roads_radar_color_b(index),
+      ],
+      fields: exports.generals_roads_field_count_at(index),
+    };
+
+    if (preview.length < 8) {
+      preview.push(record);
+    }
+    if (isBridge && !firstBridge) {
+      firstBridge = record;
+    }
+  }
+
+  return {
+    count,
+    roadCount: exports.generals_roads_road_count(),
+    bridgeCount: exports.generals_roads_bridge_count(),
+    fieldCount: exports.generals_roads_field_count(),
+    lineCount: exports.generals_roads_line_count(),
+    preview,
+    firstBridge,
+  };
+}
+
+function renderRoadsParse(result) {
+  if (!result) {
+    renderRoadsEmpty("no roads data");
+    return;
+  }
+
+  elements.roadsRoads.textContent = `${result.roadCount} roads`;
+  elements.roadsBridges.textContent = `${result.bridgeCount} bridges`;
+  elements.roadsFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.preview[0];
+  if (first) {
+    elements.roadsFirst.textContent = `${first.name}: ${first.isBridge ? "bridge" : "road"}, ${first.texture}, width ${formatX100(first.roadWidthX100)}`;
+  } else {
+    elements.roadsFirst.textContent = "no roads data";
+  }
+
+  const lines = result.preview.map((record) => {
+    if (record.isBridge) {
+      return `${record.name}: bridge, model ${record.bridgeModelName}, scale ${formatX100(record.bridgeScaleX100)}, radar ${record.radarColor.join("/")}, ${record.fields} fields`;
+    }
+    return `${record.name}: road, ${record.texture}, width ${formatX100(record.roadWidthX100)}, ${record.fields} fields`;
+  });
+  if (result.firstBridge && !result.preview.some((record) => record.isBridge)) {
+    lines.push(`first bridge ${result.firstBridge.name}: model ${result.firstBridge.bridgeModelName}`);
+  }
+
+  elements.roadsListing.textContent = lines.join("\n") || "roads data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4362,6 +4483,7 @@ function parseArchiveIni(entries, memory) {
     renderPlayerEmpty("no player data");
     renderTerrainEmpty("no terrain data");
     renderControlBarEmpty("no control bar data");
+    renderRoadsEmpty("no roads data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4404,6 +4526,7 @@ function parseArchiveIni(entries, memory) {
   renderPlayerParse(parsePlayerEntries(entries, memory));
   renderTerrainParse(parseTerrainEntries(entries, memory));
   renderControlBarParse(parseControlBarEntries(entries, memory));
+  renderRoadsParse(parseRoadsEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4561,6 +4684,11 @@ async function boot() {
     exports: controlBarModule.instance.exports,
     memory: new Uint8Array(controlBarModule.instance.exports.memory.buffer),
   };
+  const roadsModule = await loadWasm("../dist/generals_roads.wasm");
+  roadsRuntime = {
+    exports: roadsModule.instance.exports,
+    memory: new Uint8Array(roadsModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4581,7 +4709,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime || !controlBarRuntime || !roadsRuntime) {
     return;
   }
 
