@@ -28,6 +28,9 @@ const UNIT_KINDS = {
   Ranger: { label: "Ranger", hp: 90, speed: 46, range: 90, damage: 9, cooldown: 0.5, armor: 1.0, radius: 8, color: "infantry" },
   Humvee: { label: "Humvee", hp: 240, speed: 95, range: 130, damage: 14, cooldown: 0.4, armor: 0.8, radius: 12, color: "vehicle" },
   Crusader: { label: "Crusader", hp: 520, speed: 56, range: 160, damage: 46, cooldown: 1.2, armor: 0.55, radius: 15, color: "tank" },
+  // A stationary command center: high health, cannot move or fire, but is a
+  // valid target. Destroying it wins the battle outright.
+  Base: { label: "Command Center", hp: 2200, speed: 0, range: 0, damage: 0, cooldown: 1, armor: 0.5, radius: 26, color: "base" },
 };
 
 const TEAM_COLORS = [
@@ -141,8 +144,26 @@ function createState(seed) {
     }
   }
 
-  spawnArmy(0, 160, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
-  spawnArmy(1, WORLD_W - 160, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
+  function spawnBase(team, x) {
+    const k = UNIT_KINDS.Base;
+    units.push({
+      id: nextId++,
+      team,
+      kind: "Base",
+      x,
+      y: WORLD_H / 2,
+      hp: k.hp,
+      maxHp: k.hp,
+      cooldownRemaining: 0,
+      order: null,
+      flash: 0,
+    });
+  }
+
+  spawnBase(0, 56);
+  spawnBase(1, WORLD_W - 56);
+  spawnArmy(0, 200, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
+  spawnArmy(1, WORLD_W - 200, [["Crusader", 2], ["Humvee", 3], ["Ranger", 5]]);
 
   // Impassable terrain blobs (rock/cliff — the kind of terrain the Terrain
   // module marks with RestrictConstruction) placed down the centre, forcing
@@ -367,10 +388,30 @@ function stepOnce() {
     }
   }
 
-  const alive0 = state.units.some((u) => u.team === 0);
-  const alive1 = state.units.some((u) => u.team === 1);
-  if (!alive0 || !alive1) {
-    state.winner = !alive0 && !alive1 ? "draw" : alive0 ? 0 : 1;
+  // Objective victory: destroy the enemy command center, or — if both sides run
+  // out of mobile units while bases stand — a stalemate draw (keeps it finite).
+  let base0 = false;
+  let base1 = false;
+  let mobile0 = false;
+  let mobile1 = false;
+  for (const u of state.units) {
+    const isBase = u.kind === "Base";
+    if (u.team === 0) {
+      if (isBase) base0 = true;
+      else mobile0 = true;
+    } else {
+      if (isBase) base1 = true;
+      else mobile1 = true;
+    }
+  }
+  if (!base0 && !base1) {
+    state.winner = "draw";
+  } else if (!base0) {
+    state.winner = 1;
+  } else if (!base1) {
+    state.winner = 0;
+  } else if (!mobile0 && !mobile1 && state.reinforcements[0] <= 0 && state.reinforcements[1] <= 0) {
+    state.winner = "draw";
   }
 }
 
@@ -422,7 +463,14 @@ function drawUnit(unit) {
     ctx.stroke();
   }
   ctx.fillStyle = unit.flash > 0 ? team.light : team.base;
-  if (k.color === "tank") {
+  if (k.color === "base") {
+    ctx.fillRect(unit.x - k.radius, unit.y - k.radius, k.radius * 2, k.radius * 2);
+    ctx.strokeStyle = team.light;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(unit.x - k.radius, unit.y - k.radius, k.radius * 2, k.radius * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.5)";
+    ctx.fillRect(unit.x - 6, unit.y - 6, 12, 12);
+  } else if (k.color === "tank") {
     ctx.fillRect(unit.x - k.radius, unit.y - k.radius * 0.7, k.radius * 2, k.radius * 1.4);
   } else if (k.color === "vehicle") {
     ctx.beginPath();
@@ -481,9 +529,11 @@ function render() {
 }
 
 function counts() {
+  // Mobile units only — the command centers are reported via their HP bars.
   let p = 0;
   let e = 0;
   for (const u of state.units) {
+    if (u.kind === "Base") continue;
     if (u.team === 0) p++;
     else e++;
   }
@@ -663,7 +713,7 @@ function boot() {
     step,
     stepOnce,
     unitCount() {
-      return state.units.length;
+      return state.units.filter((u) => u.kind !== "Base").length;
     },
     listUnits() {
       return state.units.map((u) => ({

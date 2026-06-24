@@ -60,9 +60,9 @@ try {
   });
 
   // Pick a player unit and a far destination corner away from it.
-  const unit = await page.evaluate(() => window.__game.listUnits().find((u) => u.team === 0));
+  const unit = await page.evaluate(() => window.__game.listUnits().find((u) => u.team === 0 && u.kind !== "Base"));
   if (!unit) {
-    throw new Error("no player unit to control");
+    throw new Error("no mobile player unit to control");
   }
   const dest = { x: box.w - 80, y: box.h - 80 };
   const distBefore = Math.hypot(dest.x - unit.x, dest.y - unit.y);
