@@ -26,6 +26,7 @@ let thingRuntime = null;
 let commandRuntime = null;
 let progressionRuntime = null;
 let playerRuntime = null;
+let terrainRuntime = null;
 
 const elements = {
   status: document.querySelector("[data-status]"),
@@ -144,6 +145,9 @@ const elements = {
   playerPlayable: document.querySelector("[data-player-playable]"),
   playerSciences: document.querySelector("[data-player-sciences]"),
   playerCommandSets: document.querySelector("[data-player-command-sets]"),
+  terrainCount: document.querySelector("[data-terrain-count]"),
+  terrainClasses: document.querySelector("[data-terrain-classes]"),
+  terrainFields: document.querySelector("[data-terrain-fields]"),
   playerFirst: document.querySelector("[data-player-first]"),
   bytes: document.querySelector("[data-bytes]"),
   bigListing: document.querySelector("[data-big-listing]"),
@@ -169,6 +173,8 @@ const elements = {
   commandListing: document.querySelector("[data-command-listing]"),
   progressionListing: document.querySelector("[data-progression-listing]"),
   playerListing: document.querySelector("[data-player-listing]"),
+  terrainFirst: document.querySelector("[data-terrain-first]"),
+  terrainListing: document.querySelector("[data-terrain-listing]"),
   output: document.querySelector("[data-output]"),
   canvas: document.querySelector("canvas"),
 };
@@ -4112,6 +4118,128 @@ function renderPlayerParse(result) {
   elements.playerListing.textContent = lines.join("\n") || "player data parsed";
 }
 
+function renderTerrainEmpty(reason) {
+  elements.terrainCount.textContent = "0 types";
+  elements.terrainClasses.textContent = "0 classes";
+  elements.terrainFields.textContent = "0 fields";
+  elements.terrainFirst.textContent = reason;
+  elements.terrainListing.textContent = reason;
+}
+
+function readTerrainString(exports, memory, prefix, index) {
+  const ptr = exports[`generals_terrain_${prefix}_ptr`](index);
+  const size = exports[`generals_terrain_${prefix}_size`](index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function readTerrainClassName(exports, memory, index) {
+  const ptr = exports.generals_terrain_class_name_for_ptr(index);
+  const size = exports.generals_terrain_class_name_for_size(index);
+  return ptr ? textDecoder.decode(memory.slice(ptr, ptr + size)) : "";
+}
+
+function parseTerrainPayload(bytes) {
+  const { exports, memory } = terrainRuntime;
+  const inputOffset = exports.generals_terrain_input_ptr();
+
+  if (bytes.length > exports.generals_terrain_input_capacity()) {
+    throw new Error(`Terrain payload exceeds ${exports.generals_terrain_input_capacity()} byte wasm buffer`);
+  }
+
+  memory.set(bytes, inputOffset);
+  const parsedCount = exports.generals_terrain_parse(bytes.length);
+
+  if (parsedCount < 0 || exports.generals_terrain_error_count() !== 0) {
+    throw new Error(`Terrain parse failed with ${exports.generals_terrain_error_count()} errors`);
+  }
+
+  return parsedCount;
+}
+
+function parseTerrainEntries(entries, archiveMemory) {
+  const terrainEntry = findEntry(entries, "data/ini/terrain.ini");
+  if (!terrainEntry) {
+    return null;
+  }
+
+  const { exports, memory } = terrainRuntime;
+  parseTerrainPayload(entryBytes(terrainEntry, archiveMemory));
+
+  const count = exports.generals_terrain_count();
+  const preview = [];
+  const classHistogram = new Map();
+  let asphalt = null;
+
+  for (let index = 0; index < count; ++index) {
+    const className = readTerrainClassName(exports, memory, index) || "<unknown>";
+    classHistogram.set(className, (classHistogram.get(className) ?? 0) + 1);
+
+    const terrain = {
+      name: readTerrainString(exports, memory, "name", index),
+      texture: readTerrainString(exports, memory, "texture", index),
+      className,
+      classIndex: exports.generals_terrain_class(index),
+      blendEdges: exports.generals_terrain_blend_edges(index),
+      restrictConstruction: exports.generals_terrain_restrict_construction(index),
+      fields: exports.generals_terrain_field_count_at(index),
+    };
+
+    if (preview.length < 8) {
+      preview.push(terrain);
+    }
+    if (terrain.name === "AsphaltType1") {
+      asphalt = terrain;
+    }
+  }
+
+  return {
+    count,
+    fieldCount: exports.generals_terrain_field_count(),
+    lineCount: exports.generals_terrain_line_count(),
+    classCount: exports.generals_terrain_class_count(),
+    usedClassCount: classHistogram.size,
+    classHistogram,
+    preview,
+    asphalt,
+  };
+}
+
+function renderTerrainParse(result) {
+  if (!result) {
+    renderTerrainEmpty("no terrain data");
+    return;
+  }
+
+  elements.terrainCount.textContent = `${result.count} types`;
+  elements.terrainClasses.textContent = `${result.usedClassCount} classes`;
+  elements.terrainFields.textContent = `${result.fieldCount} fields`;
+
+  const first = result.asphalt ?? result.preview[0];
+  if (first) {
+    elements.terrainFirst.textContent = `${first.name}: ${first.className}, ${first.texture}`;
+  } else {
+    elements.terrainFirst.textContent = "no terrain data";
+  }
+
+  const lines = [];
+  const topClasses = [...result.classHistogram.entries()].sort((a, b) => b[1] - a[1]);
+  lines.push(`classes: ${topClasses.map(([name, n]) => `${name} ${n}`).join(", ")}`);
+  lines.push("");
+  lines.push(...result.preview.map((terrain) => {
+    const flags = [];
+    if (terrain.blendEdges) {
+      flags.push("blend");
+    }
+    if (terrain.restrictConstruction) {
+      flags.push("no-build");
+    }
+    const suffix = flags.length ? ` [${flags.join(", ")}]` : "";
+    return `${terrain.name}: ${terrain.className}, ${terrain.texture}${suffix}`;
+  }));
+
+  elements.terrainListing.textContent = lines.join("\n") || "terrain data parsed";
+}
+
 function parseArchiveIni(entries, memory) {
   const entry = entries.find((candidate) => candidate.name.endsWith(".ini"));
   if (!entry) {
@@ -4130,6 +4258,7 @@ function parseArchiveIni(entries, memory) {
     renderCommandEmpty("no command data");
     renderProgressionEmpty("no progression data");
     renderPlayerEmpty("no player data");
+    renderTerrainEmpty("no terrain data");
     renderGameDataEmpty("no game data");
     renderAIDataEmpty("no AI data");
     renderMappedImageEmpty("no mapped image data");
@@ -4170,6 +4299,7 @@ function parseArchiveIni(entries, memory) {
   renderCommandParse(parseCommandEntries(entries, memory));
   renderProgressionParse(parseProgressionEntries(entries, memory));
   renderPlayerParse(parsePlayerEntries(entries, memory));
+  renderTerrainParse(parseTerrainEntries(entries, memory));
   renderGameDataParse(parseGameDataEntries(entries, memory));
   renderAIDataParse(parseAIDataEntries(entries, memory));
   renderMappedImageParse(parseMappedImageEntries(entries, memory));
@@ -4317,6 +4447,11 @@ async function boot() {
     exports: playerModule.instance.exports,
     memory: new Uint8Array(playerModule.instance.exports.memory.buffer),
   };
+  const terrainModule = await loadWasm("../dist/generals_terrain.wasm");
+  terrainRuntime = {
+    exports: terrainModule.instance.exports,
+    memory: new Uint8Array(terrainModule.instance.exports.memory.buffer),
+  };
   const bigEntries = parseBigArchive(bigArchiveSample.archive, bigArchiveSample.files.length);
 
   if (bigEntries[0]?.name !== "data/ini/gamedata.ini" || bigEntries[0]?.dataSize !== 15) {
@@ -4337,7 +4472,7 @@ async function boot() {
 
 elements.bigFile.addEventListener("change", async (event) => {
   const [file] = event.target.files;
-  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime) {
+  if (!file || !bigRuntime || !iniRuntime || !gameDataRuntime || !aiDataRuntime || !mappedImageRuntime || !environmentRuntime || !videoRuntime || !multiplayerRuntime || !gameLodRuntime || !armorRuntime || !weaponRuntime || !locomotorRuntime || !fxlistRuntime || !particleRuntime || !audioRuntime || !miscAudioRuntime || !damageFxRuntime || !crateRuntime || !oclRuntime || !thingRuntime || !commandRuntime || !progressionRuntime || !playerRuntime || !terrainRuntime) {
     return;
   }
 
