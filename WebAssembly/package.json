@@ -41,14 +41,15 @@
     "test:real-commandmap": "node tools/test_real_commandmap_asset.mjs",
     "test:real-ingameui": "node tools/test_real_ingameui_asset.mjs",
     "test:real-commandmap-demo": "node tools/test_real_commandmap_demo_asset.mjs",
-    "validate": "npm run build:wasm && npm run test:wasm && npm run validate:real && npm run validate:web && npm run validate:play && npm run test:play-control && npm run test:play-terrain && npm run test:play-reinforce",
+    "validate": "npm run build:wasm && npm run test:wasm && npm run validate:real && npm run validate:web && npm run validate:play && npm run test:play-control && npm run test:play-terrain && npm run test:play-reinforce && npm run test:play-veterancy",
     "validate:real": "node tools/validate_real_assets.mjs",
     "validate:web": "node tools/validate_browser.mjs",
     "validate:play": "node tools/test_play_sim.mjs",
     "test:play": "node tools/test_play_sim.mjs",
     "test:play-control": "node tools/test_play_control.mjs",
     "test:play-terrain": "node tools/test_play_terrain.mjs",
-    "test:play-reinforce": "node tools/test_play_reinforce.mjs"
+    "test:play-reinforce": "node tools/test_play_reinforce.mjs",
+    "test:play-veterancy": "node tools/test_play_veterancy.mjs"
   },
   "devDependencies": {
     "playwright": "^1.61.0"

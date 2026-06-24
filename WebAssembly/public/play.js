@@ -33,6 +33,11 @@ const UNIT_KINDS = {
   Base: { label: "Command Center", hp: 2200, speed: 0, range: 0, damage: 0, cooldown: 1, armor: 0.5, radius: 26, color: "base" },
 };
 
+// Veterancy ranks (green / veteran / elite), echoing the game's Rank system:
+// scoring kills promotes a unit and multiplies its damage.
+const VET_DAMAGE = [1.0, 1.25, 1.6];
+const VET_KILLS = [0, 2, 4];
+
 const TEAM_COLORS = [
   { base: "#3b82f6", light: "#93c5fd", name: "USA" },
   { base: "#ef4444", light: "#fca5a5", name: "GLA" },
@@ -138,6 +143,8 @@ function createState(seed) {
           cooldownRemaining: 0,
           order: null, // {type:'move'|'attack', x, y, targetId}
           flash: 0,
+          kills: 0,
+          veterancy: 0,
         });
       }
       row++;
@@ -157,6 +164,8 @@ function createState(seed) {
       cooldownRemaining: 0,
       order: null,
       flash: 0,
+      kills: 0,
+      veterancy: 0,
     });
   }
 
@@ -347,10 +356,17 @@ function stepOnce() {
     if (dist <= k.range) {
       if (unit.cooldownRemaining <= 0) {
         const armor = UNIT_KINDS[target.kind].armor;
-        target.hp -= k.damage * armor;
+        const before = target.hp;
+        target.hp -= k.damage * armor * VET_DAMAGE[unit.veterancy];
         unit.cooldownRemaining = k.cooldown;
         unit.flash = 0.12;
         state.events.push({ ax: unit.x, ay: unit.y, bx: target.x, by: target.y, team: unit.team });
+        // Promote the attacker if this shot scored a (non-base) kill.
+        if (before > 0 && target.hp <= 0 && target.kind !== "Base") {
+          unit.kills += 1;
+          if (unit.kills >= VET_KILLS[2]) unit.veterancy = 2;
+          else if (unit.kills >= VET_KILLS[1]) unit.veterancy = 1;
+        }
       }
     } else {
       // Close to just within weapon range.
@@ -491,6 +507,20 @@ function drawUnit(unit) {
   ctx.fillRect(unit.x - k.radius, unit.y - k.radius - 8, w, 4);
   ctx.fillStyle = frac > 0.5 ? "#22c55e" : frac > 0.25 ? "#eab308" : "#ef4444";
   ctx.fillRect(unit.x - k.radius, unit.y - k.radius - 8, w * frac, 4);
+  // Veterancy chevrons (1 = veteran, 2 = elite).
+  if (unit.veterancy > 0) {
+    ctx.strokeStyle = "#fde047";
+    ctx.lineWidth = 1.5;
+    for (let c = 0; c < unit.veterancy; ++c) {
+      const cx = unit.x - 4 + c * 5;
+      const cy = unit.y + k.radius + 5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + 2, cy + 3);
+      ctx.lineTo(cx + 4, cy);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawEvents() {
@@ -723,8 +753,17 @@ function boot() {
         x: u.x,
         y: u.y,
         hp: u.hp,
+        kills: u.kills,
+        veterancy: u.veterancy,
         order: u.order ? u.order.type : null,
       }));
+    },
+    maxVeterancy(team) {
+      let best = 0;
+      for (const u of state.units) {
+        if ((team === undefined || u.team === team) && u.veterancy > best) best = u.veterancy;
+      }
+      return best;
     },
     unit(id) {
       const u = unitById(id);
