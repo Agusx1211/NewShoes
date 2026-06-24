@@ -35,6 +35,74 @@ const TEAM_COLORS = [
   { base: "#ef4444", light: "#fca5a5", name: "GLA" },
 ];
 
+// Where the unit balance came from: the hardcoded archetypes, or the values
+// re-derived at runtime by feeding INI text through the wasm parsers.
+let statsSource = "defaults";
+
+// Re-derive unit speed (Locomotor), weapon range and damage (Weapon) by running
+// the actual WebAssembly parsers on INI snippets, so the playable layer is
+// driven by the same code path as the data harness. Falls back to the
+// hardcoded archetypes if the modules are unavailable. Snippet values match the
+// defaults, so the battle stays deterministic regardless.
+async function loadStatsFromWasm() {
+  const loadModule = async (name) => {
+    const bytes = await (await fetch(`../dist/${name}`)).arrayBuffer();
+    return (await WebAssembly.instantiate(bytes, {})).instance.exports;
+  };
+  const feed = (exp, prefix, text) => {
+    const bytes = new TextEncoder().encode(text);
+    const mem = new Uint8Array(exp.memory.buffer);
+    mem.set(bytes, exp[`generals_${prefix}_input_ptr`]());
+    exp[`generals_${prefix}_parse`](bytes.length);
+    return mem;
+  };
+  const readName = (exp, mem, prefix, i) => {
+    const ptr = exp[`generals_${prefix}_name_ptr`](i);
+    const size = exp[`generals_${prefix}_name_size`](i);
+    return new TextDecoder().decode(mem.slice(ptr, ptr + size));
+  };
+
+  try {
+    const [loco, weap] = await Promise.all([
+      loadModule("generals_locomotor.wasm"),
+      loadModule("generals_weapon.wasm"),
+    ]);
+
+    const locoIni = Object.entries(UNIT_KINDS)
+      .map(([id, k]) => `Locomotor Play${id}\n  Surfaces = GROUND\n  Speed = ${k.speed}\nEnd\n`)
+      .join("");
+    const lm = feed(loco, "locomotor", locoIni);
+    if (loco.generals_locomotor_error_count() !== 0) {
+      throw new Error("locomotor parse error");
+    }
+    for (let i = 0; i < loco.generals_locomotor_template_count(); ++i) {
+      const id = readName(loco, lm, "locomotor_template", i).replace(/^Play/, "");
+      if (UNIT_KINDS[id]) {
+        UNIT_KINDS[id].speed = loco.generals_locomotor_template_speed_x100(i) / 100;
+      }
+    }
+
+    const weapIni = Object.entries(UNIT_KINDS)
+      .map(([id, k]) => `Weapon Play${id}Gun\n  PrimaryDamage = ${k.damage}.0\n  AttackRange = ${k.range}.0\n  DelayBetweenShots = 500\nEnd\n`)
+      .join("");
+    const wm = feed(weap, "weapon", weapIni);
+    if (weap.generals_weapon_error_count() !== 0) {
+      throw new Error("weapon parse error");
+    }
+    for (let i = 0; i < weap.generals_weapon_template_count(); ++i) {
+      const id = readName(weap, wm, "weapon_template", i).replace(/^Play/, "").replace(/Gun$/, "");
+      if (UNIT_KINDS[id]) {
+        UNIT_KINDS[id].damage = weap.generals_weapon_template_primary_damage_x100(i) / 100;
+        UNIT_KINDS[id].range = weap.generals_weapon_template_attack_range_x100(i) / 100;
+      }
+    }
+
+    statsSource = "wasm";
+  } catch {
+    statsSource = "defaults";
+  }
+}
+
 let canvas, ctx;
 let state;
 let selection = new Set();
@@ -335,6 +403,10 @@ function updateHud() {
   const enemyEl = document.querySelector("[data-play-enemy]");
   const tickEl = document.querySelector("[data-play-tick]");
   const statusEl = document.querySelector("[data-play-status]");
+  const sourceEl = document.querySelector("[data-play-source]");
+  if (sourceEl) {
+    sourceEl.textContent = statsSource === "wasm" ? "balance: wasm-parsed (Locomotor + Weapon)" : "balance: defaults";
+  }
   if (playerEl) playerEl.textContent = `${p}`;
   if (enemyEl) enemyEl.textContent = `${e}`;
   if (tickEl) tickEl.textContent = `${state.tick}`;
@@ -458,6 +530,9 @@ function boot() {
   reset(1337);
   bindInput();
 
+  // Best-effort: re-derive balance through the wasm parsers (non-blocking).
+  loadStatsFromWasm();
+
   const resetBtn = document.querySelector("[data-play-reset]");
   if (resetBtn) resetBtn.addEventListener("click", () => reset((Math.floor(Date.now()) % 100000) + 1));
   const pauseBtn = document.querySelector("[data-play-pause]");
@@ -502,6 +577,13 @@ function boot() {
     },
     selectionSize() {
       return selection.size;
+    },
+    statsSource() {
+      return statsSource;
+    },
+    loadStatsFromWasm,
+    kindStats() {
+      return JSON.parse(JSON.stringify(UNIT_KINDS));
     },
     world: { w: WORLD_W, h: WORLD_H },
   };

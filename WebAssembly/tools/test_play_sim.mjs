@@ -48,6 +48,14 @@ try {
   await page.goto(url);
   await page.waitForFunction(() => typeof window.__game !== "undefined");
 
+  // The playable layer re-derives unit balance through the wasm Locomotor and
+  // Weapon parsers; confirm that runtime path actually ran.
+  await page.waitForFunction(() => window.__game.statsSource() === "wasm", { timeout: 8000 });
+  const stats = await page.evaluate(() => window.__game.kindStats());
+  if (stats.Ranger.speed !== 46 || stats.Crusader.range !== 160 || stats.Humvee.damage !== 14) {
+    throw new Error(`wasm-derived unit stats look wrong: ${JSON.stringify(stats)}`);
+  }
+
   // Take control of time so the battle is deterministic in the test.
   await page.evaluate(() => window.__game.setPaused(true));
   const start = await page.evaluate(() => window.__game.snapshot());
