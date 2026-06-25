@@ -99,8 +99,15 @@ Run the wasm-backed smoke test:
 npm run test:wasm
 ```
 
-Run all current wasm checks, including the original EAC compression codec smoke:
+Run all current wasm checks, including the original EAC compression codec and
+WWDebug core smokes:
 
 ```sh
 npm run test:all
+```
+
+Run only the original WWDebug core smoke:
+
+```sh
+npm run test:wwdebug-core
 ```

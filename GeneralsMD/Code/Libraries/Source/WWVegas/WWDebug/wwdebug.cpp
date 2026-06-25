@@ -310,10 +310,14 @@ void WWDebug_Assert_Fail(const char * expr,const char * file, int line)
       if (code == IDABORT) {
       	raise(SIGABRT);
       	_exit(3);
-      }
+		}
 
 		if (code == IDRETRY) {
+#if defined(__EMSCRIPTEN__) || defined(__GNUC__) || defined(__clang__)
+			__builtin_trap();
+#else
 			_asm int 3;
+#endif
       	return;
 		}
    }

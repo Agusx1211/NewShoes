@@ -46,8 +46,12 @@ shares structure and follows behind.
 ### Compatibility shims
 - [ ] DirectX 8 / DX90SDK header shim so engine code that includes it compiles.
 - [ ] Win32 type/macro shim (`HWND`, `DWORD`, `__cdecl`, `LARGE_INTEGER`, etc.).
+- [x] Targeted Win32/exception shim for `WWVegas/WWDebug/wwdebug.cpp` core
+      message/assert plumbing under wasm.
 - [ ] STLport → libc++ migration pass (apply/replace `stlport.diff` as needed).
 - [ ] Replace/neutralize MSVC-specific pragmas, `__forceinline`, SEH, inline asm.
+- [x] Replace the `WWDebug` x86 breakpoint path with an Emscripten/clang trap
+      fallback while preserving the original MSVC path.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
@@ -58,7 +62,10 @@ shares structure and follows behind.
       unit-checked against real BIG data.
 - [ ] `WWVegas/WWMath` compiles; spot-check vector/matrix results.
 - [ ] `WWVegas/WWLib` (containers, string, ini, file abstractions) compiles.
-- [ ] `WWVegas/WWDebug` compiles (route asserts/logs to console).
+- [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
+      assert, trigger, and profile handlers under wasm.
+- [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and
+      routes asserts/logs to the browser console/harness.
 - [ ] `WWVegas/WWSaveLoad` compiles.
 - [ ] `WWVegas/Wwutil` compiles.
 - [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.

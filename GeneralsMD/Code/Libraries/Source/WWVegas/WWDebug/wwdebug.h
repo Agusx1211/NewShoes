@@ -105,7 +105,11 @@ void					WWDebug_DBWin32_Message_Handler( const char * message);
 ** WWDEBUG_SAY(("dir = %f\n",dir));
 */
 
+#if defined(__EMSCRIPTEN__) || defined(__GNUC__) || defined(__clang__)
+#include "../../../../GameEngine/Include/Common/Debug.h"
+#else
 #include "..\..\..\..\gameengine\include\common\debug.h"
+#endif
 
 #ifdef DEBUG_LOGGING
 #define WWDEBUG_SAY(x)							DEBUG_LOG(x)
@@ -117,7 +121,9 @@ void					WWDebug_DBWin32_Message_Handler( const char * message);
 
 // WW3d is compiled at warning level 4, causes DEBUG_ASSERTCRASH to generate 
 // the 4127 warning (constant conditional expression)
+#if defined(_MSC_VER)
 #pragma warning(disable:4127)
+#endif
 #define WWRELEASE_SAY(x)						WWDebug_Printf x
 #define WWRELEASE_WARNING(x)					WWDebug_Printf_Warning x
 #define WWRELEASE_ERROR(x)						WWDebug_Printf_Error x
@@ -141,8 +147,8 @@ void					WWDebug_DBWin32_Message_Handler( const char * message);
 ** The WWDEBUG_BREAK macro will cause the application to break into
 ** the debugger...
 */
-#ifdef WWDEBUG
-#define WWDEBUG_BREAK							_asm int 0x03
+#if defined(__EMSCRIPTEN__) || defined(__GNUC__) || defined(__clang__)
+#define WWDEBUG_BREAK							__builtin_trap()
 #else
 #define WWDEBUG_BREAK							_asm int 0x03
 #endif

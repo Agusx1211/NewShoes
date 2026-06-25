@@ -16,7 +16,7 @@ target and should be compiled or re-targeted for wasm.
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Not started | Core math/collision. Depends on `always.h`, `osdep.h`, `WWDebug`, save/load headers, D3DX types, and contains x86 inline assembly in some files. |
 | `WWVegas/WWLib` | Not started | Runtime utility/container/string/file support used broadly by engine and W3D. |
-| `WWVegas/WWDebug` | Not started | Runtime assert/log/debug plumbing; should route to browser console and harness. |
+| `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
@@ -51,17 +51,23 @@ The wasm CMake skeleton currently builds:
 - `cnc-port`: a minimal browser module boundary used by the harness.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
+- `zh_wwdebug_core`: original `WWVegas/WWDebug/wwdebug.cpp` compiled into a
+  wasm static library with targeted Win32/exception shims.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
+- `wwdebug-core-smoke`: a Node-executed wasm smoke test that verifies original
+  WWDebug message, assert, trigger, and profile handlers.
 
 ## Next Compile Order
 
 1. Finish the full `CompressionManager` path by replacing missing zlib/LZH
    dependencies with toolchain/browser-compatible shims.
-2. Bring up `WWDebug` and minimal `always.h`/`osdep.h` compatibility so `WWMath`
-   can compile without changing math logic.
+2. Add minimal `always.h`/`osdep.h` compatibility so `WWMath` can use the
+   compiled WWDebug core without changing math logic.
 3. Compile `WWMath` in slices, excluding or replacing x86 assembly paths such as
    `vp.cpp` and assembly blocks in `matrix3d.cpp` with portable original-code
    fallbacks where available.
-4. Move to `WWLib`, `WWSaveLoad`, and `Wwutil`, then begin `GameEngine/Common`.
+4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` string,
+   file, timer, allocator, and container dependencies are available.
+5. Move to `WWLib`, `WWSaveLoad`, and `Wwutil`, then begin `GameEngine/Common`.

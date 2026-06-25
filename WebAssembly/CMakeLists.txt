@@ -14,6 +14,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist")
 set(ZH_CODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../GeneralsMD/Code")
 set(COMPRESSION_EAC_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression/EAC")
 set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac_port.h")
+set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
+set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
@@ -38,6 +40,29 @@ target_compile_options(zh_compression_eac PRIVATE
   -Wpedantic
   -Wno-misleading-indentation
   -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+add_library(zh_wwdebug_core STATIC
+  "${WWDEBUG_DIR}/wwdebug.cpp"
+)
+
+target_include_directories(zh_wwdebug_core PUBLIC
+  "${WWDEBUG_DIR}"
+)
+
+target_include_directories(zh_wwdebug_core PRIVATE
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_definitions(zh_wwdebug_core PUBLIC
+  WWDEBUG=1
+)
+
+target_compile_options(zh_wwdebug_core PRIVATE
+  -Wall
+  -Wextra
+  -Wno-unknown-pragmas
   -Wno-unused-parameter
 )
 
@@ -91,6 +116,30 @@ target_compile_options(compression-eac-smoke PRIVATE
 )
 
 target_link_options(compression-eac-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwdebug-core-smoke
+  tests/wwdebug_core_smoke.cpp
+)
+
+set_target_properties(wwdebug-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwdebug-core-smoke PRIVATE
+  zh_wwdebug_core
+)
+
+target_compile_options(wwdebug-core-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(wwdebug-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
