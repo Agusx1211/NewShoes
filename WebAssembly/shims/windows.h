@@ -24,6 +24,7 @@ using HGLOBAL = HANDLE;
 using HKEY = void *;
 using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
+using HACCEL = void *;
 using HRSRC = void *;
 using HWND = void *;
 using LONG = long;
@@ -34,6 +35,8 @@ using LPDWORD = DWORD *;
 using LPSTR = char *;
 using LPVOID = void *;
 using UINT = unsigned int;
+using WPARAM = std::uintptr_t;
+using LPARAM = std::intptr_t;
 using WCHAR = wchar_t;
 using WORD = unsigned short;
 
@@ -45,6 +48,22 @@ struct CRITICAL_SECTION
 struct LARGE_INTEGER
 {
 	long long QuadPart;
+};
+
+struct POINT
+{
+	long x;
+	long y;
+};
+
+struct MSG
+{
+	HWND hwnd;
+	UINT message;
+	WPARAM wParam;
+	LPARAM lParam;
+	DWORD time;
+	POINT pt;
 };
 
 #ifndef FALSE
@@ -120,6 +139,8 @@ struct LARGE_INTEGER
 #define REG_DWORD 4
 #define HKEY_CURRENT_USER reinterpret_cast<HKEY>(0x80000001UL)
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
+#define PM_NOREMOVE 0x0000
+#define PM_REMOVE 0x0001
 
 struct FILETIME
 {
@@ -280,6 +301,36 @@ static inline void Sleep(DWORD milliseconds)
 		return;
 	}
 	usleep(static_cast<useconds_t>(milliseconds) * 1000U);
+}
+
+static inline BOOL PeekMessage(MSG *, HWND, UINT, UINT, UINT)
+{
+	return FALSE;
+}
+
+static inline BOOL GetMessage(MSG *, HWND, UINT, UINT)
+{
+	return FALSE;
+}
+
+static inline BOOL TranslateAccelerator(HWND, HACCEL, MSG *)
+{
+	return FALSE;
+}
+
+static inline BOOL IsDialogMessage(HWND, MSG *)
+{
+	return FALSE;
+}
+
+static inline BOOL TranslateMessage(const MSG *)
+{
+	return TRUE;
+}
+
+static inline LONG DispatchMessage(const MSG *)
+{
+	return 0;
 }
 
 static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)

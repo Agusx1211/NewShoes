@@ -118,6 +118,9 @@ shares structure and follows behind.
 - [x] Add browser/compiler shims for original MSVC `<process.h>` and Win32
       `Sleep` users needed by WWLib `ThreadClass` under the current `_UNIX`
       wasm build.
+- [x] Add lowercase include wrappers for original WWLib mono debug-output
+      headers and Win32 message-loop compatibility types/functions needed by
+      WWLib `msgloop.cpp` under the current empty browser queue.
 - [x] Add a minimal `D3DX8Math.h` vector/matrix shim for original
       `GameEngine/Common` Bezier helpers under Emscripten.
 - [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
@@ -262,6 +265,16 @@ shares structure and follows behind.
       browser pthread/Web Worker contract before enabling GameSpy, audio, or
       file worker threads; the current `_UNIX` wasm build intentionally keeps
       native thread start idle.
+- [x] `WWVegas/WWLib` legacy mono debug-output and message-loop helpers
+      (`mono.cpp`, `_mono.cpp`, `msgloop.cpp`) compile under wasm and
+      smoke-test mono enable/disable/no-op output plus modeless-dialog,
+      accelerator, and empty message-pump bookkeeping.
+- [ ] Replace the current empty Win32 message queue compatibility shim with the
+      browser DOM/input event bridge before compiling original WWLib
+      `keyboard.cpp` or the Win32 engine message loop against it.
+- [ ] Decide whether original WWLib mono debug output should remain dormant in
+      browser builds or route through the harness/browser console before
+      relying on it for runtime diagnostics.
 - [x] `WWVegas/WWLib` guarded legacy translation units (`Except.cpp`,
       `point.cpp`) compile under their original source guards; this is compile
       coverage only, not a browser exception dialog or enabled Point body.

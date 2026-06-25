@@ -589,6 +589,51 @@ target_compile_options(zh_wwlib_thread PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_mono STATIC
+  "${WWLIB_DIR}/mono.cpp"
+  "${WWLIB_DIR}/_mono.cpp"
+)
+
+target_include_directories(zh_wwlib_mono PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_mono PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_mono PUBLIC
+  zh_wwlib_platform_compat
+)
+
+add_library(zh_wwlib_msgloop STATIC
+  "${WWLIB_DIR}/msgloop.cpp"
+)
+
+target_include_directories(zh_wwlib_msgloop PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_msgloop PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_guarded_legacy STATIC
   "${WWLIB_DIR}/Except.cpp"
   "${WWLIB_DIR}/point.cpp"
@@ -1722,6 +1767,36 @@ target_compile_options(wwlib-thread-smoke PRIVATE
 )
 
 target_link_options(wwlib-thread-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-legacy-platform-smoke
+  tests/wwlib_legacy_platform_smoke.cpp
+)
+
+set_target_properties(wwlib-legacy-platform-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-legacy-platform-smoke PRIVATE
+  zh_wwlib_mono
+  zh_wwlib_msgloop
+)
+
+target_compile_options(wwlib-legacy-platform-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-legacy-platform-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
