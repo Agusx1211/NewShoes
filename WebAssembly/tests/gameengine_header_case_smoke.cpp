@@ -1,6 +1,7 @@
 #include "PreRTS.h"
 
 #include "Common/OVERRIDE.h"
+#include "GameLogic/Module/Diemodule.h"
 #include "Lib/Basetype.h"
 #include "WW3D2/ColType.h"
 #include "WWMath/Matrix3D.h"

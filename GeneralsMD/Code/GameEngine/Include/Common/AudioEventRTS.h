@@ -55,7 +55,7 @@ enum PortionToPlay
 	PP_Done
 };
 
-enum AudioPriority;
+enum AudioPriority : int;
 
 // This is called AudioEventRTS because AudioEvent is a typedef in ww3d
 // You might want this to be memory pooled (I personally do), but it can't
@@ -214,4 +214,3 @@ public:
 EMPTY_DTOR(DynamicAudioEventRTS)
 
 #endif /* _H_AUDIOEVENTRTS_ */
-

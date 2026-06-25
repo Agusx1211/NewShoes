@@ -63,7 +63,7 @@ typedef VecObjectID::iterator VecObjectIDIt;
 typedef std::list<Object *> ListObjectPtr;
 typedef ListObjectPtr::iterator ListObjectPtrIt;
 
-enum AIDebugOptions
+enum AIDebugOptions : int
 {
 	AI_DEBUG_NONE = 0, 
 	AI_DEBUG_PATHS,

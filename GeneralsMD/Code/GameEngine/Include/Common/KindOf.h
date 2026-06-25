@@ -41,7 +41,7 @@
 /** Kind of flags for determining groups of things that belong together
 	* NOTE: You *MUST* keep this in the same order as the KindOfNames[] below */
 //-------------------------------------------------------------------------------------------------
-enum KindOfType
+enum KindOfType : int
 {
 	KINDOF_INVALID = -1,
 	KINDOF_FIRST = 0,
@@ -221,4 +221,3 @@ extern KindOfMaskType KINDOFMASK_FS;		// Initializes all FS types for faction st
 void initKindOfMasks();
 
 #endif	// __KINDOF_H_
-

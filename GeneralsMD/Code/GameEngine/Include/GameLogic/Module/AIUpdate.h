@@ -60,7 +60,7 @@ class AssaultTransportAIInterface;
 class JetAIUpdate;
 
 enum AIStateType;
-enum ObjectID;
+enum ObjectID : int;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -803,4 +803,3 @@ private:
 //
 
 #endif // _AI_UPDATE_H_
-

@@ -38,14 +38,14 @@
 #define DEFAULT_WORLD_HEIGHT	64
 
 /// A unique, generic "identifier" used to access Objects.
-enum ObjectID
+enum ObjectID : int
 {
 	INVALID_ID = 0,
 	FORCE_OBJECTID_TO_LONG_SIZE = 0x7ffffff
 };
 
 /// A unique, generic "identifier" used to access Drawables.
-enum DrawableID
+enum DrawableID : int
 {
 	INVALID_DRAWABLE_ID = 0,
 	FORCE_DRAWABLEID_TO_LONG_SIZE = 0x7ffffff
@@ -65,7 +65,7 @@ class INI;
 //-------------------------------------------------------------------------------------------------
 /** The time of day enumeration, keep in sync with TimeOfDayNames[] */
 //-------------------------------------------------------------------------------------------------
-enum TimeOfDay
+enum TimeOfDay : int
 {
 	TIME_OF_DAY_INVALID = 0,
 	TIME_OF_DAY_FIRST = 1,
@@ -193,4 +193,3 @@ enum PathfindLayerEnum {LAYER_INVALID = 0, LAYER_GROUND = 1, LAYER_WALL = 15, LA
 //-------------------------------------------------------------------------------------------------
 
 #endif // _GAME_TYPE_H_
-

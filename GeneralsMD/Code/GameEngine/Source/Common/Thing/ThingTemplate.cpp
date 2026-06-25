@@ -1322,7 +1322,8 @@ void ThingTemplate::initForLTA(const AsciiString& name)
 
 	char buffer[1024];
 	strncpy(buffer, name.str(), sizeof(buffer));
-	for (int i=0; buffer[i]; i++) {
+	int i;
+	for (i = 0; buffer[i]; i++) {
 		if (buffer[i] == '/') {
 			i++;
 			break;
@@ -1610,4 +1611,3 @@ ModuleData* ModuleInfo::friend_getNthData(Int i)
 	}
 	return NULL;
 }
-

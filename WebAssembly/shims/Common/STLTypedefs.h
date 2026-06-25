@@ -6,13 +6,13 @@
 #include <algorithm>
 #include <bitset>
 #include <functional>
+#include <hash_map>
 #include <list>
 #include <map>
 #include <queue>
 #include <set>
 #include <stack>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "Common/AsciiString.h"
@@ -20,11 +20,6 @@
 #include "Common/UnicodeString.h"
 
 enum NameKeyType : int;
-
-namespace std {
-template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<Key>>
-using hash_map = std::unordered_map<Key, Value, Hash, Equal>;
-}
 
 namespace rts {
 template <typename T> struct hash

@@ -68,7 +68,7 @@ enum CommandSourceType : int;
 enum ProductionType : int;
 enum GadgetGameMessage : int;
 enum ScienceType : int;
-enum TimeOfDay;
+enum TimeOfDay : int;
 enum RadiusCursorType : int;
 
 //-------------------------------------------------------------------------------------------------

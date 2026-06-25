@@ -47,6 +47,7 @@
 #include "GameClient/GameClient.h"
 #include "GameClient/Drawable.h"
 #include "Common/INI.h"
+#include "GameLogic/LogicRandomValue.h"
 
 #ifdef _INTERNAL
 // for occasional debugging...

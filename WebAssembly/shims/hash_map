@@ -1,0 +1,21 @@
+#pragma once
+
+#include <functional>
+#include <unordered_map>
+
+namespace std {
+template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<Key>>
+class hash_map : public std::unordered_map<Key, Value, Hash, Equal>
+{
+private:
+	using Base = std::unordered_map<Key, Value, Hash, Equal>;
+
+public:
+	using Base::Base;
+
+	void resize(typename Base::size_type count)
+	{
+		Base::reserve(count);
+	}
+};
+}

@@ -52,7 +52,7 @@
 
 
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
-enum ObjectID;
+enum ObjectID : int;
 
 // ------------------------------------------------------------------------------------------------
 /** This class is used to track objects as they exit our area of influence */

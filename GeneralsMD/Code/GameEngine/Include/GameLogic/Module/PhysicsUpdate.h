@@ -37,7 +37,7 @@
 #include "GameLogic/Module/UpdateModule.h"
 #include "GameLogic/Module/CollideModule.h"
 
-enum ObjectID;
+enum ObjectID : int;
 
 enum PhysicsTurningType
 {
@@ -309,4 +309,3 @@ inline ObjectID PhysicsBehavior::getLastCollidee() const
 }
 
 #endif // _PHYSICSUPDATE_H_
-

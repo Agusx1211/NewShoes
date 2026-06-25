@@ -197,6 +197,12 @@ shares structure and follows behind.
 - [x] Route original `Common/PerfTimer` precision-timer reads through the
       existing browser `QueryPerformanceCounter` shim under Emscripten, while
       preserving the x86 `RDTSC` path for non-wasm builds.
+- [x] Add fixed underlying types for the original enum forwards needed by the
+      real `Common/INI.cpp` and initial `Common/Thing` compile frontier
+      (`ObjectID`, `DrawableID`, `KindOfType`, audio enums, `TimeOfDay`,
+      terrain LOD/decal, AI debug), preserving original enumerator values.
+- [x] Add STLport `<hash_map>` compatibility, including the legacy
+      `hash_map::resize` reserve-style call used by original Thing templates.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -626,10 +632,14 @@ shares structure and follows behind.
       `Common/SkirmishBattleHonors.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, player/game-difficulty declarations, and related
       GameLogic headers are available.
-- [ ] Compile original `Common/Thing/ThingFactory.cpp` and
-      `ThingTemplate.cpp` after the real INI parse helpers, libc++ hash-map
-      compatibility, `PartitionManager` loop-scope fixes, and original
-      `GameLogic` object-creation/draw-icon APIs are available.
+- [x] Compile original `Common/Thing/ThingFactory.cpp` and
+      `ThingTemplate.cpp` in the real-header compile frontier after adding the
+      real INI parser, libc++ hash-map compatibility, `SparseMatchFinder`
+      standard-library compatibility, and narrow loop-scope/header fixes.
+- [ ] Compile original `Common/Thing/ModuleFactory.cpp` after
+      `RiderChangeContain`'s `ObjectStatusType` / `LocomotorSetType`
+      declarations, remaining case-variant `GameLogic` include wrappers, and
+      broader behavior-module header dependencies are portable.
 - [ ] Compile original `Common/GameLOD.cpp` after the particle-priority,
       TerrainVisual/GameClient, and W3D collision include dependencies are
       available.
@@ -644,7 +654,8 @@ shares structure and follows behind.
       `BezierSegment` array-constructor bound mismatch and
       `BezFwdIterator` conservative pointer-initialization diagnostics.
 - [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
-- [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
+- [x] `Common/INI` parser compiles as original source in the real-header
+      compile frontier (reuse original — do NOT rewrite).
 - [ ] Compile original `Common/INI/INIWebpageURL.cpp` after the WOL browser /
       ATL dependency (`atlbase.h`) has a browser URL integration contract.
 - [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without

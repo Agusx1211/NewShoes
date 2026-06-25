@@ -94,7 +94,7 @@ private:
 
 	//-------------------------------------------------------------------------------------------------
 	//typedef std::hash_map< BITSET, const MATCHABLE*, HashMapHelper, HashMapHelper > HashMatchMap;
-	typedef std::map< const BITSET, const MATCHABLE*, MapHelper> MatchMap;
+	typedef std::map< BITSET, const MATCHABLE*, MapHelper> MatchMap;
 
 	//-------------------------------------------------------------------------------------------------
 	// MEMBER VARS

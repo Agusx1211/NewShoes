@@ -61,7 +61,7 @@ class Anim2DTemplate;
 class Anim2D;
 class Shadow;
 enum LegalBuildCode : int;
-enum KindOfType;
+enum KindOfType : int;
 enum ShadowType : int;
 enum CanAttackResult : int;
 

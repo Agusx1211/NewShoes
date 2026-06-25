@@ -37,7 +37,7 @@ class GameWindow;
 class	Team;
 class View;
 
-enum AudioAffect;
+enum AudioAffect : int;
 
 //-----------------------------------------------------------------------------
 // ScriptActionsInterface
@@ -394,5 +394,4 @@ protected:
 
 
 #endif  // end __SCRIPTACTIONS_H_
-
 
