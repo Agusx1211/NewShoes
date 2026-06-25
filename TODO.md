@@ -549,11 +549,12 @@ shares structure and follows behind.
       bridge with original scalar, color, bit-string, sub-token, quoted-string,
       and definition declarations needed by those sources; smoke-test image,
       water, and header-template runtime basics.
-- [ ] Compile original `GameClient/System/Anim2D.cpp` after the target-local
-      `Common/INI.h` and `Common/Xfer.h` shims are replaced by the original
-      parser/transfer surfaces (`parseMappedImage`, duration parsers, and
-      unsigned-short xfer) and after the display/W3D include boundary provides
-      the `Anim2DCollection`, view, and coltype contracts under Emscripten.
+- [x] Compile original `GameClient/System/Anim2D.cpp` after extending the
+      target-local `Common/INI.h` and `Common/Xfer.h` shims with the original
+      index-list, duration parser, mapped-image, and unsigned-short transfer
+      surface, plus the missing `Anim2DCollection` forward declaration; smoke
+      test animation template parse fields, frame allocation, and collection
+      lookup/linking.
 - [x] Compile original `GameClient/Credits.cpp` and
       `GUI/Shell/ShellMenuScheme.cpp` after the display/view header contract
       provides `FilterModes`, `FilterTypes`, `StaticGameLODLevel`,
@@ -576,10 +577,20 @@ shares structure and follows behind.
       `MultiIniFieldParse`, `StaticGameLODLevel`, `PlayerMaskType`,
       `VeterancyLevel`, and the related Module/BodyModule/GameLogic contracts
       come in through original headers.
-- [ ] Compile original `GameClient/View.cpp` and `GraphDraw.cpp` after the
-      real display/view header contract provides `FilterModes`, `FilterTypes`,
+- [x] Compile original `GameClient/GraphDraw.cpp` in the GameClient utility
+      target; it is currently compile-only because the active wasm build does
+      not define `PERF_TIMERS`.
+- [ ] Compile original `GameClient/View.cpp` after the real display/view
+      header contract provides `FilterModes`, `FilterTypes`,
       `StaticGameLODLevel`, `CellShroudStatus`, and the browser display device
       layer.
+- [x] Compile original `GameClient/GUI/AnimateWindowManager.cpp` and
+      `GUI/ProcessAnimateWindow.cpp` in the GameClient utility target after
+      resolving the existing `AnimTypes` forward-declaration contract.
+- [ ] Link and smoke-test original window animation behavior through real or
+      shimmed `GameWindow` instances once `GameClient/GUI/GameWindow.cpp`
+      compiles; current coverage is compile-only for the manager/processor
+      sources because their update paths call non-inline `GameWindow` methods.
 - [ ] Exercise/link original `GameClient/Display.cpp` display methods against
       the browser display device layer; the current utility target has compile
       coverage only and no rendering is considered complete without harness

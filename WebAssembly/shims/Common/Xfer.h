@@ -33,6 +33,7 @@ public:
 	virtual void xferUnsignedByte(UnsignedByte *) {}
 	virtual void xferInt(Int *) {}
 	virtual void xferUnsignedInt(UnsignedInt *) {}
+	virtual void xferUnsignedShort(UnsignedShort *) {}
 	virtual void xferAsciiString(AsciiString *) {}
 	virtual void xferUser(void *, Int) {}
 	virtual void xferBool(Bool *) {}

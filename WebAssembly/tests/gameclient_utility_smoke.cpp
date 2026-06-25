@@ -18,6 +18,7 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Color.h"
+#include "GameClient/Anim2D.h"
 #include "GameClient/Credits.h"
 #include "GameClient/DebugDisplay.h"
 #include "GameClient/DisplayString.h"
@@ -39,8 +40,10 @@
 #include "GameClient/Water.h"
 #include "GameClient/WinInstanceData.h"
 
+class GameLogic;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GlobalData *TheGlobalData = nullptr;
+GameLogic *TheGameLogic = nullptr;
 HWND ApplicationHWnd = NULL;
 class Display;
 Display *TheDisplay = nullptr;
@@ -523,12 +526,76 @@ bool exercise_ini_compat()
 	std::strtok(icoord_line, ini.getSeps());
 	INI::parseICoord2D(&ini, nullptr, &icoord, nullptr);
 
+	Int index_value = -1;
+	char index_line[] = "Mode = LOOP_BACKWARDS";
+	std::strtok(index_line, ini.getSeps());
+	static const char *modes[] = { "NONE", "ONCE", "LOOP", "LOOP_BACKWARDS", nullptr };
+	INI::parseIndexList(&ini, nullptr, &index_value, modes);
+
+	UnsignedShort duration_short = 0;
+	char duration_short_line[] = "Delay = 67";
+	std::strtok(duration_short_line, ini.getSeps());
+	INI::parseDurationUnsignedShort(&ini, nullptr, &duration_short, nullptr);
+
+	UnsignedInt duration_int = 0;
+	char duration_int_line[] = "Delay = 100";
+	std::strtok(duration_int_line, ini.getSeps());
+	INI::parseDurationUnsignedInt(&ini, nullptr, &duration_int, nullptr);
+
+	Real duration_real = 0.0f;
+	char duration_real_line[] = "Delay = 50";
+	std::strtok(duration_real_line, ini.getSeps());
+	INI::parseDurationReal(&ini, nullptr, &duration_real, nullptr);
+
 	return expect(INI::scanLookupList("Alpha", names) == 7 && lookup_value == 11,
 			"INI lookup-list parsing failed") &&
 		expect(near(coord.x, 12.5f) && near(coord.y, -3.25f),
 			"INI Coord2D parsing failed") &&
 		expect(icoord.x == 5 && icoord.y == 9,
-			"INI ICoord2D parsing failed");
+			"INI ICoord2D parsing failed") &&
+		expect(index_value == 3, "INI index-list parsing failed") &&
+		expect(duration_short == 3 && duration_int == 3 && near(duration_real, 1.5f),
+			"INI duration parsing failed");
+}
+
+bool exercise_anim2d()
+{
+	Anim2DTemplate *direct_template = newInstance(Anim2DTemplate)(AsciiString("BrowserAnim"));
+	const FieldParse *fields = direct_template->getFieldParse();
+	const bool fields_ok =
+		expect(find_field_parse(fields, "NumberImages") != nullptr &&
+				find_field_parse(fields, "Image") != nullptr &&
+				find_field_parse(fields, "ImageSequence") != nullptr &&
+				find_field_parse(fields, "AnimationMode") != nullptr &&
+				find_field_parse(fields, "AnimationDelay") != nullptr,
+			"Anim2DTemplate parse table missing fields");
+
+	direct_template->allocateImages(2);
+	const bool template_ok =
+		expect(direct_template->getName() == AsciiString("BrowserAnim") &&
+				direct_template->getNumFrames() == 2 &&
+				direct_template->getNumFramesBetweenUpdates() == 0 &&
+				direct_template->getAnimMode() == ANIM_2D_LOOP &&
+				direct_template->isRandomizedStartFrame() == FALSE &&
+				direct_template->getFrame(0) == nullptr &&
+				direct_template->getFrame(1) == nullptr,
+			"Anim2DTemplate defaults/allocation failed");
+	direct_template->deleteInstance();
+
+	Anim2DCollection collection;
+	Anim2DTemplate *first = collection.newTemplate(AsciiString("FirstAnim"));
+	Anim2DTemplate *second = collection.newTemplate(AsciiString("SecondAnim"));
+	const bool collection_ok =
+		expect(first != nullptr && second != nullptr &&
+				collection.findTemplate(AsciiString("FirstAnim")) == first &&
+				collection.findTemplate(AsciiString("SecondAnim")) == second &&
+				collection.findTemplate(AsciiString("MissingAnim")) == nullptr &&
+				collection.getTemplateHead() == second &&
+				collection.getNextTemplate(second) == first &&
+				collection.getNextTemplate(first) == nullptr,
+			"Anim2DCollection lookup/linking failed");
+
+	return fields_ok && template_ok && collection_ok;
 }
 
 bool exercise_credits()
@@ -1280,6 +1347,7 @@ int main()
 
 	const bool ok = exercise_color() &&
 		exercise_ini_compat() &&
+		exercise_anim2d() &&
 		exercise_credits() &&
 		exercise_shell_menu_scheme() &&
 		exercise_line2d() &&
@@ -1301,7 +1369,7 @@ int main()
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Color,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
+		"\"compiled\":\"Anim2D,AnimateWindowManager,Color,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,GraphDraw,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ProcessAnimateWindow,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

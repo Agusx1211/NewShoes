@@ -6,9 +6,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <strings.h>
 
 #include "Common/AsciiString.h"
+#include "Common/GameCommon.h"
 #include "GameClient/Color.h"
 
 class INI;
@@ -209,6 +211,41 @@ public:
 	{
 		if (store != nullptr) {
 			*static_cast<UnsignedInt *>(store) = scanUnsignedInt(ini != nullptr ? ini->getNextToken() : nullptr);
+		}
+	}
+
+	static void parseIndexList(INI *ini, void *, void *store, const void *userData)
+	{
+		if (store != nullptr) {
+			*static_cast<Int *>(store) = scanIndexList(
+				ini != nullptr ? ini->getNextToken() : nullptr,
+				static_cast<ConstCharPtrArray>(userData));
+		}
+	}
+
+	static void parseDurationReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			const Real milliseconds = scanReal(ini != nullptr ? ini->getNextToken() : nullptr);
+			*static_cast<Real *>(store) = ConvertDurationFromMsecsToFrames(milliseconds);
+		}
+	}
+
+	static void parseDurationUnsignedInt(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			const UnsignedInt milliseconds = scanUnsignedInt(ini != nullptr ? ini->getNextToken() : nullptr);
+			*static_cast<UnsignedInt *>(store) =
+				static_cast<UnsignedInt>(std::ceil(ConvertDurationFromMsecsToFrames(static_cast<Real>(milliseconds))));
+		}
+	}
+
+	static void parseDurationUnsignedShort(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			const UnsignedInt milliseconds = scanUnsignedInt(ini != nullptr ? ini->getNextToken() : nullptr);
+			*static_cast<UnsignedShort *>(store) =
+				static_cast<UnsignedShort>(std::ceil(ConvertDurationFromMsecsToFrames(static_cast<Real>(milliseconds))));
 		}
 	}
 
