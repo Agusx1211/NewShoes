@@ -19,7 +19,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
-| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, `SubsystemInterface.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, name keys, deterministic RNG/CRC, trig helpers, game constants, linked-list/circle helpers, Bezier evaluation/splitting, and partition solving. The full INI, Xfer, GlobalData, GameLogic, file-system, BIG archive, RTS, Thing, and Audio interfaces remain open. |
+| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, legacy `System/String.cpp`, `SubsystemInterface.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `System/encrypt.cpp`, `Language.cpp`, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, legacy WSYS strings, language state, name keys, Dict copy-on-write/typed lookups, deterministic RNG/CRC, trig helpers, game constants, linked-list/circle helpers, Bezier evaluation/splitting, encryption vectors, and partition solving. The full INI, Xfer, GlobalData, GameLogic, file-system, BIG archive, RTS, Thing, and Audio interfaces remain open. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -128,10 +128,11 @@ The wasm CMake skeleton currently builds:
 - `zh_gameengine_common_core`: original `GameEngine/Common` core slice
   compiled into a wasm static library, covering the memory allocator and
   original pool sizing, critical-section wrapper, `AsciiString`,
-  `UnicodeString`, `SubsystemInterface`, game-type/common tables,
-  trig/quick-trig helpers, legacy `LList`, discrete circle scanlines, Bezier
-  helpers, partition solving, `NameKeyGenerator`, `RandomValue`, and engine
-  CRC.
+  `UnicodeString`, legacy `WSYS_String`, `SubsystemInterface`,
+  game-type/common tables, trig/quick-trig helpers, legacy `LList`, `Dict`,
+  discrete circle scanlines, Bezier helpers, language state, password
+  obfuscation, partition solving, `NameKeyGenerator`, `RandomValue`, and
+  engine CRC.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -203,9 +204,11 @@ The wasm CMake skeleton currently builds:
 - `gameengine-common-core-smoke`: a Node-executed wasm smoke test that verifies
   the original `GameEngine/Common` core slice, including memory-manager
   initialization with original DMA/pool sizing, engine string
-  mutation/translation, pooled name-key buckets, deterministic RNG/CRC
-  behavior, trig/quick-trig helpers, game common tables, list/circle helpers,
-  Bezier evaluation/splitting, and partition solving.
+  mutation/translation, legacy WSYS string formatting/casing, language state,
+  password-obfuscation vectors, pooled name-key buckets, Dict copy-on-write and
+  typed lookups, deterministic RNG/CRC behavior, trig/quick-trig helpers, game
+  common tables, list/circle helpers, Bezier evaluation/splitting, and
+  partition solving.
 
 ## Next Compile Order
 

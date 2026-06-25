@@ -7,17 +7,21 @@
 #include "Common/AsciiString.h"
 #include "Common/BezierSegment.h"
 #include "Common/CRC.h"
+#include "Common/Dict.h"
 #include "Common/DiscreteCircle.h"
 #include "Common/GameCommon.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
+#include "Common/Language.h"
 #include "Common/List.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/PartitionSolver.h"
 #include "Common/QuickTrig.h"
 #include "Common/RandomValue.h"
+#include "Common/string.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
+#include "Common/encrypt.h"
 #include "GameClient/ClientRandomValue.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "Lib/Trig.h"
@@ -86,7 +90,36 @@ bool exercise_strings()
 
 	AsciiString round_trip;
 	round_trip.translate(wide);
-	return expect(std::strcmp(round_trip.str(), text.str()) == 0, "AsciiString translate failed");
+	if (!expect(std::strcmp(round_trip.str(), text.str()) == 0, "AsciiString translate failed")) {
+		return false;
+	}
+
+	WSYS_String wsys("zero");
+	wsys += " hour";
+	wsys.makeUpperCase();
+	if (!expect(std::strcmp(wsys.get(), "ZERO HOUR") == 0, "WSYS_String append/upper failed")) {
+		return false;
+	}
+
+	wsys.format("%s-%d", "GLA", 3);
+	wsys.makeLowerCase();
+	return expect(std::strcmp(wsys.get(), "gla-3") == 0, "WSYS_String format/lower failed");
+}
+
+bool exercise_language_and_encrypt()
+{
+	OurLanguage = LANGUAGE_ID_GERMAN;
+	if (!expect(OurLanguage == LANGUAGE_ID_GERMAN, "Language global state failed")) {
+		return false;
+	}
+	OurLanguage = LANGUAGE_ID_US;
+
+	return expect(std::strcmp(EncryptString("China007"), "aFqEaEzO") == 0,
+			"EncryptString China007 vector failed") &&
+		expect(std::strcmp(EncryptString("ZeroHour"), "AchoaoIx") == 0,
+			"EncryptString ZeroHour vector failed") &&
+		expect(std::strlen(EncryptString("abcdefghi")) == MAX_ENCRYPTED_STRING,
+			"EncryptString length clamp failed");
 }
 
 bool exercise_name_keys()
@@ -243,6 +276,50 @@ bool exercise_partition_solver()
 		expect(solution[2].first == static_cast<ObjectID>(13) &&
 			solution[2].second == static_cast<ObjectID>(22), "PartitionSolver residual assignment failed");
 }
+
+bool exercise_dict()
+{
+	const NameKeyType bool_key = static_cast<NameKeyType>(10);
+	const NameKeyType int_key = static_cast<NameKeyType>(20);
+	const NameKeyType real_key = static_cast<NameKeyType>(30);
+	const NameKeyType ascii_key = static_cast<NameKeyType>(40);
+	const NameKeyType unicode_key = static_cast<NameKeyType>(50);
+
+	Dict dict;
+	dict.setBool(bool_key, true);
+	dict.setInt(int_key, 42);
+	dict.setReal(real_key, 3.5f);
+	dict.setAsciiString(ascii_key, AsciiString("supply"));
+
+	UnicodeString wide;
+	wide.translate(AsciiString("command"));
+	dict.setUnicodeString(unicode_key, wide);
+
+	Bool exists = false;
+	const bool typed_ok =
+		expect(dict.getPairCount() == 5, "Dict pair count failed") &&
+		expect(dict.getBool(bool_key, &exists) == true && exists, "Dict bool lookup failed") &&
+		expect(dict.getInt(int_key, &exists) == 42 && exists, "Dict int lookup failed") &&
+		expect(near(dict.getReal(real_key, &exists), 3.5f, 0.0001f) && exists,
+			"Dict real lookup failed") &&
+		expect(std::strcmp(dict.getAsciiString(ascii_key, &exists).str(), "supply") == 0 && exists,
+			"Dict AsciiString lookup failed") &&
+		expect(dict.getUnicodeString(unicode_key, &exists).getLength() == wide.getLength() && exists,
+			"Dict UnicodeString lookup failed");
+	if (!typed_ok) {
+		return false;
+	}
+
+	Dict shared = dict;
+	shared.setInt(int_key, 7);
+	shared.remove(bool_key);
+
+	return expect(dict.getInt(int_key, &exists) == 42 && exists, "Dict copy-on-write source changed") &&
+		expect(shared.getInt(int_key, &exists) == 7 && exists, "Dict copy-on-write update failed") &&
+		expect(shared.getBool(bool_key, &exists) == false && !exists, "Dict remove failed") &&
+		expect(shared.getNthKey(0) == int_key, "Dict sorted key order failed") &&
+		expect(shared.getNthType(0) == Dict::DICT_INT, "Dict nth type failed");
+}
 }
 
 int main()
@@ -252,7 +329,9 @@ int main()
 	const bool ok = exercise_memory_init() &&
 		exercise_strings() &&
 		exercise_name_keys() &&
+		exercise_language_and_encrypt() &&
 		exercise_random_and_crc() &&
+		exercise_dict() &&
 		exercise_trig() &&
 		exercise_game_common() &&
 		exercise_list_and_circle() &&
@@ -267,9 +346,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"SubsystemInterface,GameType,GameCommon,Trig,QuickTrig,List,"
-		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,"
-		"PartitionSolver,NameKeyGenerator,RandomValue,crc\","
+		"WSYS_String,SubsystemInterface,GameType,GameCommon,Trig,QuickTrig,List,"
+		"Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

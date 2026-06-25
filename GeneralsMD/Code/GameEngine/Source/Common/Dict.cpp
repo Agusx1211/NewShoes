@@ -60,6 +60,8 @@ void Dict::DictPair::copyFrom(DictPair* that)
 
 	switch(newType)
 	{
+		case DICT_NONE:
+			break;
 		case DICT_BOOL:
 		case DICT_INT:
 		case DICT_REAL:
@@ -81,6 +83,8 @@ void Dict::DictPair::clear()
 {
 	switch (getType())
 	{
+		case DICT_NONE:
+			break;
 		case DICT_BOOL:
 		case DICT_INT:
 		case DICT_REAL:

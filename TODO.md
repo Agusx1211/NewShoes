@@ -234,6 +234,7 @@ shares structure and follows behind.
       `RandomValue`, and engine `crc`, with wasm smoke coverage.
 - [x] Expanded `GameEngine/Common` core slice compiles from original sources:
       `MemoryInit.cpp`, `GameCommon.cpp`, `List.cpp`, `DiscreteCircle.cpp`,
+      `Dict.cpp`, `Language.cpp`, `System/String.cpp`, `System/encrypt.cpp`,
       Bezier helpers, and `PartitionSolver.cpp`, with wasm smoke coverage.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
