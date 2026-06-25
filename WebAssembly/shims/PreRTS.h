@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <vector>
+#include <cwctype>
 
 #include "windows.h"
 #include "mmsystem.h"
@@ -46,6 +47,11 @@
 #ifndef _isnan
 #define _isnan std::isnan
 #endif
+
+inline int iswascii(wint_t c)
+{
+	return c >= 0 && c <= 0x7f;
+}
 
 #include "Lib/BaseType.h"
 #include "Common/GameType.h"

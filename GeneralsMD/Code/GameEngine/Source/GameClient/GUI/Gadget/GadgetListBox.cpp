@@ -716,7 +716,8 @@ WindowMsgHandledType GadgetListBoxInput( GameWindow *window, UnsignedInt msg,
 								
 								ListEntryCell *cell = NULL;
 								// go through the columns until we find a column with text
-								for(Int j = 0; j < list->columns; ++j)
+								Int j = 0;
+								for(; j < list->columns; ++j)
 								{
 									cell = &list->listData[position].cell[j];
 									if(cell && cell->cellType == LISTBOX_TEXT && cell->data)
@@ -1290,7 +1291,7 @@ WindowMsgHandledType GadgetListBoxSystem( GameWindow *window, UnsignedInt msg,
 			if(pos->x >= list->columns || pos->y >= list->listLength || 
 					list->listData[pos->y].cell[pos->x].cellType != LISTBOX_TEXT)
 			{
-				tAndC->string = UnicodeString.TheEmptyString;
+				tAndC->string = UnicodeString::TheEmptyString;
 				tAndC->color = 0;				
 			}
 			else
@@ -1633,7 +1634,8 @@ WindowMsgHandledType GadgetListBoxSystem( GameWindow *window, UnsignedInt msg,
 			if( list->multiSelect )
 			{
 				// forced selections override the entire selection list.
-				for (Int i=0; i<selectCount && i<list->endPos; ++i)
+				Int i = 0;
+				for (; i<selectCount && i<list->endPos; ++i)
 				{
 					// don't select off the end
 					if (list->listLength <= selectList[i])
@@ -1750,7 +1752,7 @@ WindowMsgHandledType GadgetListBoxSystem( GameWindow *window, UnsignedInt msg,
 			//
 			// remove the display or links to images after the shift
 			//
-			for(i = 0; i < (Int)mData1; i ++)
+			for(Int i = 0; i < (Int)mData1; i ++)
 			{
 				list->listData[list->endPos + i].cell = NULL;
 			}
@@ -2822,4 +2824,3 @@ Int GadgetListBoxGetColumnWidth( GameWindow *listbox, Int column )
 
 	return listboxData->columnWidth[column];
 }  // end GadgetListBoxGetNumColumns
-

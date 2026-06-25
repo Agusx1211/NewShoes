@@ -1369,7 +1369,7 @@ int main()
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Anim2D,AnimateWindowManager,Color,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,GraphDraw,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ProcessAnimateWindow,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
+		"\"compiled\":\"Anim2D,AnimateWindowManager,Color,ControlBarPrintPositions,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GameWindowGlobal,GameWindowManager,GlobalLanguage,GameText,GraphDraw,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ProcessAnimateWindow,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData,WindowLayout,WindowVideoManager,GadgetCheckBox,GadgetComboBox,GadgetHorizontalSlider,GadgetListBox,GadgetProgressBar,GadgetRadioButton,GadgetStaticText,GadgetTabControl,GadgetTextEntry,GadgetVerticalSlider\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

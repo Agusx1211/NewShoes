@@ -130,6 +130,7 @@ struct MSG
 #define ERROR_ALREADY_EXISTS 183
 #define ERROR_NO_MORE_ITEMS 259
 #define CP_ACP 0
+#define VK_RETURN 0x0D
 #define FILE_ATTRIBUTE_READONLY 0x00000001
 #define FILE_ATTRIBUTE_DIRECTORY 0x00000010
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
@@ -770,6 +771,11 @@ static inline DWORD WaitForSingleObject(HANDLE, DWORD)
 static inline BOOL SetEvent(HANDLE)
 {
 	return TRUE;
+}
+
+static inline UINT GetDoubleClickTime()
+{
+	return 500;
 }
 
 static inline constexpr std::size_t GlobalAllocHeaderSize()

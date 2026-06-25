@@ -136,6 +136,13 @@ shares structure and follows behind.
 - [x] Add case-variant include wrappers for original GameClient utility sources
       (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector3.h`, and
       `WWMATH/Vector4.h`) under the case-sensitive wasm build.
+- [x] Add a minimal DirectInput keyboard scan-code shim for original
+      `GameClient/KeyDefs.h` users under the browser build, preserving the
+      engine's existing key values for the later DOM keyboard-event bridge.
+- [x] Add case-variant include wrappers for the next original GUI compile
+      batch (`Windows.h`, `common/GameType.h`, `Gamelogic/GameLogic.h`,
+      `Gameclient/WindowLayout.h`, `Gameclient/GameWindowManager.h`, and
+      `GameClient/Controlbar.h`) under the case-sensitive wasm build.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
@@ -587,6 +594,31 @@ shares structure and follows behind.
 - [x] Compile original `GameClient/GUI/AnimateWindowManager.cpp` and
       `GUI/ProcessAnimateWindow.cpp` in the GameClient utility target after
       resolving the existing `AnimTypes` forward-declaration contract.
+- [x] Compile original GUI/window utility sources
+      (`GUI/WindowLayout.cpp`, `GUI/GameWindowManager.cpp`,
+      `GUI/GameWindowGlobal.cpp`, `GUI/WindowVideoManager.cpp`, and
+      `GUI/ControlBar/ControlBarPrintPositions.cpp`) plus the core gadget
+      implementations (`GadgetStaticText.cpp`, `GadgetCheckBox.cpp`,
+      `GadgetRadioButton.cpp`, `GadgetProgressBar.cpp`,
+      `GadgetHorizontalSlider.cpp`, `GadgetVerticalSlider.cpp`,
+      `GadgetTabControl.cpp`, `GadgetTextEntry.cpp`, `GadgetComboBox.cpp`,
+      and `GadgetListBox.cpp`) in the GameClient utility target after adding
+      DirectInput key constants, Win32 double-click/return-key fallbacks, and
+      small clang/MSVC-scope compatibility fixes; this is compile coverage
+      only until `GameWindow.cpp` links.
+- [ ] Compile original `GameClient/GUI/GameWindow.cpp` after the deeper
+      `InGameUI`, `RadiusDecal`, `SelectionXlat`, and related enum/header
+      contracts are available through original headers instead of target-local
+      stubs.
+- [ ] Compile original `GameClient/GUI/Gadget/GadgetPushButton.cpp` after
+      the `InGameUI`/`RadiusDecal` enum contracts are available.
+- [ ] Compile original `GameClient/Input/Keyboard.cpp` after the browser
+      keyboard layout/IME translation surface replaces Win32 `HKL`,
+      `GetKeyboardLayout`, legacy invalid character literals, and empty wide
+      character constants.
+- [ ] Compile original `GameClient/Input/Mouse.cpp` after the real
+      `InGameUI`/`CommandXlat`/`Drawable` contracts, mouse INI parse
+      declarations, and `GlobalData` cursor/debug fields are available.
 - [ ] Link and smoke-test original window animation behavior through real or
       shimmed `GameWindow` instances once `GameClient/GUI/GameWindow.cpp`
       compiles; current coverage is compile-only for the manager/processor
