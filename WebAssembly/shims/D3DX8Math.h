@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 struct D3DXVECTOR4
 {
 	float x;
@@ -63,4 +65,78 @@ static inline float D3DXVec4Dot(const D3DXVECTOR4 *left, const D3DXVECTOR4 *righ
 		left->y * right->y +
 		left->z * right->z +
 		left->w * right->w;
+}
+
+static inline D3DXMATRIX *D3DXMatrixInverse(
+	D3DXMATRIX *out,
+	float *determinant,
+	const D3DXMATRIX *matrix)
+{
+	if (out == nullptr || matrix == nullptr) {
+		return nullptr;
+	}
+
+	float augmented[4][8] = {};
+	for (int row = 0; row < 4; ++row) {
+		for (int column = 0; column < 4; ++column) {
+			augmented[row][column] = matrix->m[row][column];
+		}
+		augmented[row][4 + row] = 1.0f;
+	}
+
+	float det = 1.0f;
+	float sign = 1.0f;
+	for (int column = 0; column < 4; ++column) {
+		int pivot_row = column;
+		float pivot_abs = std::fabs(augmented[column][column]);
+		for (int row = column + 1; row < 4; ++row) {
+			const float candidate_abs = std::fabs(augmented[row][column]);
+			if (candidate_abs > pivot_abs) {
+				pivot_abs = candidate_abs;
+				pivot_row = row;
+			}
+		}
+
+		if (pivot_abs <= 0.00000001f) {
+			if (determinant != nullptr) {
+				*determinant = 0.0f;
+			}
+			return nullptr;
+		}
+
+		if (pivot_row != column) {
+			for (int index = 0; index < 8; ++index) {
+				const float temp = augmented[column][index];
+				augmented[column][index] = augmented[pivot_row][index];
+				augmented[pivot_row][index] = temp;
+			}
+			sign = -sign;
+		}
+
+		const float pivot = augmented[column][column];
+		det *= pivot;
+		for (int index = 0; index < 8; ++index) {
+			augmented[column][index] /= pivot;
+		}
+
+		for (int row = 0; row < 4; ++row) {
+			if (row == column) {
+				continue;
+			}
+			const float factor = augmented[row][column];
+			for (int index = 0; index < 8; ++index) {
+				augmented[row][index] -= factor * augmented[column][index];
+			}
+		}
+	}
+
+	if (determinant != nullptr) {
+		*determinant = det * sign;
+	}
+	for (int row = 0; row < 4; ++row) {
+		for (int column = 0; column < 4; ++column) {
+			out->m[row][column] = augmented[row][4 + column];
+		}
+	}
+	return out;
 }

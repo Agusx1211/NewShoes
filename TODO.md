@@ -164,14 +164,15 @@ shares structure and follows behind.
       (`lookuptable.cpp`, `wwmath.cpp`) compiles and smoke-tests default table
       sampling, fast trig table initialization, shutdown, and debug refcount
       cleanup under wasm.
-- [ ] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
-- [ ] Add D3DX8/matrix compatibility needed by original `WWMath/matrix3d.cpp`
+- [x] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
+- [x] Add D3DX8/matrix compatibility needed by original `WWMath/matrix3d.cpp`
       without replacing the original matrix logic.
 - [x] Qualify original `WWLib/simplevec.h` dependent-base accesses needed by
       `WWMath/lookuptable.cpp`, `wwmath.cpp`, and spline sources under
       standard clang/Emscripten lookup rules.
-- [ ] Port the `WWMath/vp.cpp` CPU detection / mutex assembly dependencies to
-      portable browser-safe helpers.
+- [x] Compile original `WWMath/vp.cpp` against the browser-safe scalar vector
+      processor fallback, keeping the Intel SSE/CPU-detection assembly paths
+      behind their original non-Emscripten compiler guards.
 - [x] `WWVegas/WWLib` random generator (`random.cpp`) compiles and smoke-tests
       through the WWMath vector randomizers under wasm.
 - [x] `WWVegas/WWLib` SHA hashing (`sha.cpp`) compiles and smoke-tests known
@@ -236,6 +237,10 @@ shares structure and follows behind.
       assert, trigger, and profile handlers under wasm.
 - [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and
       routes asserts/logs to the browser console/harness.
+- [ ] Port original `WWVegas/WWDebug/wwprofile.cpp` for wasm or restore its
+      missing `fastallocator.h` dependency; the current wasm `wwprofile.h`
+      shim disables `WWPROFILE` scope timers so culling can compile without
+      pulling unresolved profiling manager state.
 - [x] `WWVegas/WWSaveLoad` core persistence plumbing (`persistfactory.cpp`,
       `saveload.cpp`, `saveloadsubsystem.cpp`, `pointerremap.cpp`,
       `saveloadstatus.cpp`) compiles as a wasm static library for WWMath curve

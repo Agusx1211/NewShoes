@@ -2,9 +2,12 @@
 #include <iostream>
 
 #include "aabox.h"
+#include "aabtreecull.h"
 #include "colmath.h"
+#include "gridcull.h"
 #include "lineseg.h"
 #include "matrix3.h"
+#include "matrix3d.h"
 #include "matrix4.h"
 #include "obbox.h"
 #include "ode.h"
@@ -16,6 +19,7 @@
 #include "v3_rnd.h"
 #include "vector2.h"
 #include "vector3.h"
+#include "vp.h"
 
 namespace {
 bool near(float actual, float expected, float epsilon = 0.0001f)
@@ -66,6 +70,27 @@ public:
 
 	float Value;
 };
+
+class SmokeCullable final : public CullableClass
+{
+public:
+	explicit SmokeCullable(const AABoxClass &box)
+	{
+		Set_Cull_Box(box, true);
+	}
+};
+
+template <typename CullSystem>
+int collected_count(CullSystem &system)
+{
+	int count = 0;
+	for (SmokeCullable *object = system.Get_First_Collected_Object();
+			object != nullptr;
+			object = system.Get_Next_Collected_Object(object)) {
+		++count;
+	}
+	return count;
+}
 }
 
 int main()
@@ -113,11 +138,59 @@ int main()
 		return 1;
 	}
 
+	Matrix3D transform(Matrix3D::RotateZ90);
+	transform.Set_Translation(Vector3(3.0f, -2.0f, 5.0f));
+	Vector3 transformed3;
+	Matrix3D::Transform_Vector(transform, Vector3(1.0f, 2.0f, 3.0f), &transformed3);
+	if (!expect(near(transformed3.X, 1.0f) && near(transformed3.Y, -1.0f) &&
+			near(transformed3.Z, 8.0f), "Matrix3D transform mismatch")) {
+		return 1;
+	}
+
+	Matrix3D inverse;
+	transform.Get_Inverse(inverse);
+	Vector3 roundtrip3;
+	Matrix3D::Transform_Vector(inverse, transformed3, &roundtrip3);
+	if (!expect(near(roundtrip3.X, 1.0f) && near(roundtrip3.Y, 2.0f) &&
+			near(roundtrip3.Z, 3.0f), "Matrix3D inverse roundtrip mismatch")) {
+		return 1;
+	}
+
 	Matrix4x4 identity4(true);
 	Vector4 transformed4 = identity4 * Vector4(1.0f, 2.0f, 3.0f, 1.0f);
 	if (!expect(near(transformed4.X, 1.0f) && near(transformed4.Y, 2.0f) &&
 			near(transformed4.Z, 3.0f) && near(transformed4.W, 1.0f),
 			"Matrix4x4 identity transform mismatch")) {
+		return 1;
+	}
+
+	Vector3 processor_src[2] = {
+		Vector3(1.0f, 2.0f, 3.0f),
+		Vector3(-2.0f, 5.0f, 1.0f),
+	};
+	Vector3 processor_dst[2];
+	VectorProcessorClass::Transform(processor_dst, processor_src, transform, 2);
+	if (!expect(near(processor_dst[0].X, transformed3.X) &&
+			near(processor_dst[0].Y, transformed3.Y) &&
+			near(processor_dst[0].Z, transformed3.Z),
+			"VectorProcessorClass transform mismatch")) {
+		return 1;
+	}
+
+	Vector3 min_vector;
+	Vector3 max_vector;
+	VectorProcessorClass::MinMax(processor_src, min_vector, max_vector, 2);
+	if (!expect(near(min_vector.X, -2.0f) && near(min_vector.Y, 2.0f) &&
+			near(min_vector.Z, 1.0f) && near(max_vector.X, 1.0f) &&
+			near(max_vector.Y, 5.0f) && near(max_vector.Z, 3.0f),
+			"VectorProcessorClass MinMax mismatch")) {
+		return 1;
+	}
+
+	VectorProcessorClass::Clear(processor_dst, 2);
+	if (!expect(near(processor_dst[0].Length2(), 0.0f) &&
+			near(processor_dst[1].Length2(), 0.0f),
+			"VectorProcessorClass Clear mismatch")) {
 		return 1;
 	}
 
@@ -176,6 +249,55 @@ int main()
 		return 1;
 	}
 
+	TypedGridCullSystemClass<SmokeCullable> grid_cull;
+	grid_cull.Re_Partition(Vector3(-10.0f, -10.0f, -10.0f),
+		Vector3(10.0f, 10.0f, 10.0f), 2.0f);
+	SmokeCullable *grid_near = new SmokeCullable(
+		AABoxClass(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.5f, 0.5f, 0.5f)));
+	SmokeCullable *grid_far = new SmokeCullable(
+		AABoxClass(Vector3(8.0f, 8.0f, 8.0f), Vector3(0.5f, 0.5f, 0.5f)));
+	grid_cull.Add_Object(grid_near);
+	grid_cull.Add_Object(grid_far);
+	grid_cull.Reset_Collection();
+	grid_cull.Collect_Objects(AABoxClass(Vector3(0.0f, 0.0f, 0.0f),
+		Vector3(2.0f, 2.0f, 2.0f)));
+	if (!expect(collected_count(grid_cull) == 1, "GridCull collection count mismatch")) {
+		return 1;
+	}
+	grid_near->Set_Cull_Box(
+		AABoxClass(Vector3(8.0f, 8.0f, 8.0f), Vector3(0.5f, 0.5f, 0.5f)));
+	grid_cull.Reset_Collection();
+	grid_cull.Collect_Objects(AABoxClass(Vector3(0.0f, 0.0f, 0.0f),
+		Vector3(2.0f, 2.0f, 2.0f)));
+	if (!expect(collected_count(grid_cull) == 0, "GridCull update did not move object")) {
+		return 1;
+	}
+	grid_cull.Remove_Object(grid_near);
+	grid_cull.Remove_Object(grid_far);
+	grid_near->Release_Ref();
+	grid_far->Release_Ref();
+
+	TypedAABTreeCullSystemClass<SmokeCullable> tree_cull;
+	SmokeCullable *tree_near = new SmokeCullable(
+		AABoxClass(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.5f, 0.5f, 0.5f)));
+	SmokeCullable *tree_far = new SmokeCullable(
+		AABoxClass(Vector3(8.0f, 8.0f, 8.0f), Vector3(0.5f, 0.5f, 0.5f)));
+	tree_cull.Add_Object(tree_near);
+	tree_cull.Add_Object(tree_far);
+	if (!expect(tree_cull.Object_Count() == 2, "AABTree object count mismatch")) {
+		return 1;
+	}
+	tree_cull.Reset_Collection();
+	tree_cull.Collect_Objects(AABoxClass(Vector3(0.0f, 0.0f, 0.0f),
+		Vector3(2.0f, 2.0f, 2.0f)));
+	if (!expect(collected_count(tree_cull) == 1, "AABTree collection count mismatch")) {
+		return 1;
+	}
+	tree_cull.Remove_Object(tree_near);
+	tree_cull.Remove_Object(tree_far);
+	tree_near->Release_Ref();
+	tree_far->Release_Ref();
+
 	ConstantDerivativeSystem ode_system(1.0f);
 	IntegrationSystem::Euler_Integrate(&ode_system, 0.5f);
 	if (!expect(near(ode_system.Value, 2.0f), "ODE Euler integration mismatch")) {
@@ -222,7 +344,7 @@ int main()
 	}
 
 	std::cout << "{\"ok\":true,\"library\":\"WWMath\","
-		"\"compiled\":\"core geometry, collision, quaternion, ODE, randomizers\","
+		"\"compiled\":\"core geometry, collision, Matrix3D, vector processor, culling, ODE, randomizers\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

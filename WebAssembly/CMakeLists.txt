@@ -565,6 +565,7 @@ target_compile_options(zh_wwlib_sha PRIVATE
 
 add_library(zh_wwmath_core STATIC
   "${WWMATH_DIR}/aabox.cpp"
+  "${WWMATH_DIR}/aabtreecull.cpp"
   "${WWMATH_DIR}/colmath.cpp"
   "${WWMATH_DIR}/colmathaabox.cpp"
   "${WWMATH_DIR}/colmathaabtri.cpp"
@@ -575,10 +576,13 @@ add_library(zh_wwmath_core STATIC
   "${WWMATH_DIR}/colmathobbtri.cpp"
   "${WWMATH_DIR}/colmathplane.cpp"
   "${WWMATH_DIR}/colmathsphere.cpp"
+  "${WWMATH_DIR}/cullsys.cpp"
   "${WWMATH_DIR}/euler.cpp"
   "${WWMATH_DIR}/frustum.cpp"
+  "${WWMATH_DIR}/gridcull.cpp"
   "${WWMATH_DIR}/lineseg.cpp"
   "${WWMATH_DIR}/matrix3.cpp"
+  "${WWMATH_DIR}/matrix3d.cpp"
   "${WWMATH_DIR}/matrix4.cpp"
   "${WWMATH_DIR}/obbox.cpp"
   "${WWMATH_DIR}/ode.cpp"
@@ -586,6 +590,7 @@ add_library(zh_wwmath_core STATIC
   "${WWMATH_DIR}/quat.cpp"
   "${WWMATH_DIR}/tri.cpp"
   "${WWMATH_DIR}/v3_rnd.cpp"
+  "${WWMATH_DIR}/vp.cpp"
 )
 
 target_include_directories(zh_wwmath_core PUBLIC
@@ -596,7 +601,9 @@ target_include_directories(zh_wwmath_core PUBLIC
 )
 
 target_link_libraries(zh_wwmath_core PUBLIC
+  zh_wwlib_file_ini
   zh_wwlib_random
+  zh_wwlib_refcount
 )
 
 target_compile_options(zh_wwmath_core PRIVATE
@@ -661,6 +668,7 @@ add_library(zh_wwmath_curves STATIC
   "${WWMATH_DIR}/curve.cpp"
   "${WWMATH_DIR}/hermitespline.cpp"
   "${WWMATH_DIR}/tcbspline.cpp"
+  "${WWMATH_DIR}/vehiclecurve.cpp"
 )
 
 target_include_directories(zh_wwmath_curves PUBLIC

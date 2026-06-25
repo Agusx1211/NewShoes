@@ -14,9 +14,9 @@ target and should be compiled or re-targeted for wasm.
 | Component | Current port status | Notes |
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
-| `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, `v3_rnd.cpp`, matrix/quaternion/ODE, bounding-volume, collision-math, curve/spline, lookup-table, and `WWMath::Init` slices now compile to wasm, with smokes covering power-of-two helpers, vector math, matrix/quaternion transforms, triangle containment, AABox/line/sphere/OBBox collision paths, ODE integration, vector randomizers, 1D/3D interpolation, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. Remaining blockers include `matrix3d.cpp`'s D3DX8 dependency and `vp.cpp` CPU/mutex assembly. |
+| `WWVegas/WWMath` | Complete | All original `WWMath/*.cpp` sources now compile to wasm across `zh_wwmath_core`, `zh_wwmath_curves`, and `zh_wwmath_lookup`. Smokes cover power-of-two helpers, vector math, `Matrix3D` transform/inverse paths, vector processor fallback transforms/min-max/clear, triangle containment, AABox/line/sphere/OBBox collision paths, grid and AAB-tree culling insertion/update/collection/removal, ODE integration, vector randomizers, 1D/3D interpolation, vehicle curves, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. |
 | `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`, and `verchk.cpp` PE-header helpers now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
-| `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
+| `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwprofile.h` is currently shimmed for wasm so `WWPROFILE` scope macros are no-ops; original `wwprofile.cpp` still needs its missing `fastallocator.h` dependency restored or replaced before the full profile tree can compile. `wwmemlog.cpp` also remains open. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
 | `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `File.cpp`, `LocalFile.cpp`, `LocalFileSystem.cpp`, `FileSystem.cpp`, `RAMFile.cpp`, `StreamingArchiveFile.cpp`, `ArchiveFile.cpp`, `ArchiveFileSystem.cpp`, `Directory.cpp`, `StackDump.cpp`, `Snapshot.cpp`, `Geometry.cpp`, `Compression.cpp`, `DataChunk.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, legacy `System/String.cpp`, `SubsystemInterface.cpp`, `CDManager.cpp`, `registry.cpp`, `version.cpp`, `AudioRequest.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `DisabledTypes.cpp`, `KindOf.cpp`, `ObjectStatusTypes.cpp`, `BitFlags.cpp`, `MiniLog.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `System/encrypt.cpp`, `Language.cpp`, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`, plus original `Win32LocalFile.cpp`/`Win32LocalFileSystem.cpp` and `Win32BIGFile.cpp`/`Win32BIGFileSystem.cpp` for the current file/BIG bridge. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, legacy WSYS strings, original file and RAM file access/read/scan behavior, original Win32 local-file writes/existence/file-info/listing/dispatch/RAM conversion/whole-file reads, smoke-built BIG archive indexing and archive fallback reads, streaming archive reads, compressed cached-file reads through the original compression manager, `DataChunkInput` table/chunk parsing, local file-system singleton plumbing, CD manager drive bookkeeping, browser registry defaults, version packing and GameText-backed Unicode formatting, `AudioRequest` memory-pool allocation/release, language state, name keys, Dict copy-on-write/typed lookups, deterministic RNG/CRC, trig helpers, game constants, type-mask and bit-name table initialization, geometry bounds/footprint calculations, linked-list/circle helpers, Bezier evaluation/splitting, encryption vectors, and partition solving. The full INI, Xfer, GlobalData, GameLogic, real asset-backed browser archive mounting, RTS, Thing, and Audio implementations remain open. |
@@ -28,7 +28,7 @@ target and should be compiled or re-targeted for wasm.
 | `GameSpy` | Not started | Runtime online/networking dependency; browser target is WebSocket/WebRTC relay paths. |
 | `WWVegas/WWDownload` | Not started | Runtime/profile network patch/download support referenced by GameSpy/profile builds; likely stubbed or redirected for browser. |
 | `EABrowserDispatch` | Not started | Original runtime/browser-dispatch integration referenced by workspace dependencies; needs audit before browser replacement. |
-| `DX90SDK` | Partial | Minimal target-local `D3DX8Math.h` shim covers vector4/matrix operations used by original `GameEngine/Common` Bezier helpers. Broader DirectX 8/D3DX compatibility for `WWMath`, WW3D, and W3D device code remains open; browser port should provide shims rather than native DirectX. |
+| `DX90SDK` | Partial | Target-local `D3DX8Math.h` shim covers vector4/matrix operations used by original `GameEngine/Common` Bezier helpers and the `D3DXMatrixInverse` path used by original `WWMath/matrix3d.cpp`; a lowercase `D3dx8math.h` wrapper handles the original include spelling on case-sensitive filesystems. Broader DirectX 8/D3DX compatibility for WW3D and W3D device code remains open; browser port should provide shims rather than native DirectX. |
 | `STLport-4.5.3` | Not started | Historical STL dependency; target is libc++ compatibility, not compiling STLport itself. |
 
 ## Tooling Or Editor Targets
@@ -113,12 +113,12 @@ The wasm CMake skeleton currently builds:
   WWSaveLoad entry sources compiled into a wasm static library with WWLib and
   WWMath dependencies.
 - `zh_wwmath_core`: original `WWVegas/WWMath` power-of-two, triangle, vector
-  randomizer, matrix/quaternion, ODE, bounding-volume, and collision-math
-  slices compiled into a wasm static library with minimal WWVegas compiler
-  shims.
+  randomizer, matrix/quaternion/`Matrix3D`, vector processor, grid and
+  AAB-tree culling, ODE, bounding-volume, and collision-math sources compiled
+  into a wasm static library with minimal WWVegas compiler shims.
 - `zh_wwmath_curves`: original `WWVegas/WWMath` curve and Hermite/Cardinal/
-  Catmull-Rom/TCB spline sources compiled into a wasm static library with
-  WWSaveLoad factory dependencies.
+  Catmull-Rom/TCB spline sources plus `vehiclecurve.cpp` compiled into a wasm
+  static library with WWSaveLoad factory dependencies.
 - `zh_wwmath_lookup`: original `WWVegas/WWMath/lookuptable.cpp` and
   `wwmath.cpp` compiled into a wasm static library with lookup-table manager,
   fast trig initialization, and debug refcount dependencies.
@@ -194,10 +194,13 @@ The wasm CMake skeleton currently builds:
   normalization, and RandomString selection behavior.
 - `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWMath power-of-two helpers, vector operations, matrix/quaternion
-  transforms, triangle containment, AABox/line/sphere/OBBox collision paths,
-  ODE integration, vector randomizers, and the original WWLib random generator.
+  transforms, `Matrix3D` inverse round trips, vector processor fallback paths,
+  triangle containment, AABox/line/sphere/OBBox collision paths, grid and
+  AAB-tree culling, ODE integration, vector randomizers, and the original
+  WWLib random generator.
 - `wwmath-curves-smoke`: a Node-executed wasm smoke test that verifies original
-  WWMath curve/spline interpolation and WWSaveLoad factory registration.
+  WWMath curve/spline interpolation, vehicle-curve evaluation, and WWSaveLoad
+  factory registration.
 - `wwmath-lookup-smoke`: a Node-executed wasm smoke test that verifies original
   WWMath lookup-table manager initialization, default table sampling, fast trig
   tables, shutdown, and debug refcount cleanup.
@@ -229,15 +232,14 @@ The wasm CMake skeleton currently builds:
    `Compression/LZHCompress/CompLibSource` bodies so the existing
    `CompressionManager` zlib and Nox LZH branches can be enabled and checked
    against real BIG data.
-2. Unblock the remaining `WWMath` sources by extending D3DX8/matrix
-   compatibility beyond the current Bezier-only shim for `matrix3d.cpp` and
-   porting the `vp.cpp` CPU/mutex assembly dependencies.
+2. Finish the remaining `WWDebug` memory/profile sources; `wwprofile.cpp`
+   currently depends on a missing `fastallocator.h`, so wasm builds use a
+   narrow `wwprofile.h` macro shim until that original profile dependency is
+   restored or replaced.
 3. Finish the remaining `WWLib` gaps needed by runtime libraries: LCW
    compression, remaining allocator/mempool helpers, remaining containers, the
    final browser timing/threading contract, and platform utilities.
-4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
-   allocator, and container dependencies are available.
-5. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
+4. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
    GameLogic compile shims with original sources, then expand into
    `Common/System` archive/BIG streams, the real INI parser, and the
    DataChunkOutput write path once browser user-data persistence exists.

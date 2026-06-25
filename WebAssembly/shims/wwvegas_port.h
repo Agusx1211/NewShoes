@@ -8,6 +8,8 @@
 #include <string.h>
 #include <strings.h>
 
+typedef signed long long sint64;
+
 #ifndef __cdecl
 #define __cdecl
 #endif

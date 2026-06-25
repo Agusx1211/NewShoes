@@ -8,6 +8,7 @@
 #include "persistfactory.h"
 #include "saveload.h"
 #include "tcbspline.h"
+#include "vehiclecurve.h"
 #include "vector3.h"
 
 namespace {
@@ -94,8 +95,32 @@ int main()
 		return 1;
 	}
 
+	VehicleCurveClass vehicle_curve(2.0f);
+	vehicle_curve.Add_Key(Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	vehicle_curve.Add_Key(Vector3(10.0f, 0.0f, 0.0f), 1.0f);
+	vehicle_curve.Add_Key(Vector3(10.0f, 10.0f, 5.0f), 2.0f);
+	vehicle_curve.Evaluate(1.5f, &vector);
+	if (!expect(std::isfinite(vector.X) && std::isfinite(vector.Y) &&
+			std::isfinite(vector.Z) && vector.Z >= 0.0f && vector.Z <= 5.0f,
+			"VehicleCurveClass evaluation produced invalid point")) {
+		return 1;
+	}
+
+	Vector3 sharpness_position;
+	const float sharpness = vehicle_curve.Get_Current_Sharpness(&sharpness_position);
+	if (!expect(std::isfinite(sharpness) && sharpness >= 0.0f && sharpness <= 1.0f,
+			"VehicleCurveClass sharpness outside expected range")) {
+		return 1;
+	}
+
+	const PersistFactoryClass &vehicle_factory = vehicle_curve.Get_Factory();
+	if (!expect(SaveLoadSystemClass::Find_Persist_Factory(vehicle_factory.Chunk_ID()) ==
+			&vehicle_factory, "VehicleCurveClass factory not registered")) {
+		return 1;
+	}
+
 	std::cout << "{\"ok\":true,\"library\":\"WWMath\","
-		"\"compiled\":\"curves, hermite/cardinal/catmull-rom/TCB splines, WWSaveLoad factories\","
+		"\"compiled\":\"curves, hermite/cardinal/catmull-rom/TCB splines, vehicle curves, WWSaveLoad factories\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
