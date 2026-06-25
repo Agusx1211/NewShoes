@@ -159,6 +159,12 @@ shares structure and follows behind.
       `RadiusCursorType`, `StealthLookType`, `EvaMessage`,
       `CanAttackResult`, and `LegalBuildCode`) so the existing headers compile
       under standard clang/Emscripten without changing enumerator values.
+- [x] Add fixed underlying types for the next original GameLogic/GameClient
+      enum-forward batch (`HackerAttackMode`, `WeaponBonusConditionType`,
+      `WeaponSetType`, `ArmorSetType`, `WeaponStatus`, `RadarPriorityType`,
+      `EditorSortingType`, `AttitudeType`, and `BattlePlanStatus`) so the
+      current headers compile under standard clang/Emscripten without changing
+      enumerator values.
 - [x] Add a target-local `Common/GameAudio.h` include-order shim so original
       `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
       declarations compile under clang/Emscripten.
@@ -503,9 +509,10 @@ shares structure and follows behind.
       browser-safe launch/playback behavior.
 - [ ] Compile original RTS accounting/player-adjacent sources
       (`MissionStats.cpp`, `Money.cpp`, `Handicap.cpp`, `Science.cpp`, etc.)
-      after `Player`/`Thing`/`Object` module headers, `MultiIniFieldParse`,
-      `StaticGameLODLevel`, `EvaMessage`, and related GameLogic/GameClient enum
-      dependencies are available.
+      after `Player`/`Thing`/`Object` module headers, the `Team` DLINK /
+      `OVERRIDE` include contract, production map typedef dependencies,
+      `MultiIniFieldParse`, `StaticGameLODLevel`, `EvaMessage`, and related
+      GameLogic/GameClient enum dependencies are available.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -555,12 +562,13 @@ shares structure and follows behind.
       `Color.cpp`, `Credits.cpp`, `Display.cpp`, `System/DebugDisplay.cpp`,
       `DisplayString.cpp`,
       `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
+      `GUI/GameWindow.cpp`,
       `GUI/GameFont.cpp`, `GUI/HeaderTemplate.cpp`,
       `GUI/Shell/ShellMenuScheme.cpp`,
       `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`, `GameText.cpp`,
       `System/Image.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
       `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`,
-      `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`, with wasm smoke
+      `View.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`, with wasm smoke
       coverage for packed colors,
       debug-display formatting/cursor state, display-string text/font/list
       management, window instance text/tooltip allocation, draw-group defaults,
@@ -620,9 +628,10 @@ shares structure and follows behind.
       `common/GameType.h` compatibility, and the real GameClient singleton
       surface are available without target-local stubs.
 - [ ] Compile original `GameClient/MapUtil.cpp` and `RadiusDecal.cpp` after
-      the Win32 `SYSTEMTIME` compatibility and the deeper
-      `MultiIniFieldParse`/Module/Object/GameLogic contracts are available
-      through original headers instead of ad hoc shims.
+      the Win32 `SYSTEMTIME` compatibility, `GlobalData::m_buildMapCache`,
+      `Xfer::xferColor`, `GameLogic::getDrawIconUI`, and the deeper
+      Player/Team/Module/Object/GameLogic contracts are available through
+      original headers instead of ad hoc shims.
 - [ ] Compile original `GameClient/Terrain/TerrainRoads.cpp` after
       `MultiIniFieldParse`, `StaticGameLODLevel`, `PlayerMaskType`,
       `VeterancyLevel`, and the related Module/BodyModule/GameLogic contracts
@@ -630,10 +639,11 @@ shares structure and follows behind.
 - [x] Compile original `GameClient/GraphDraw.cpp` in the GameClient utility
       target; it is currently compile-only because the active wasm build does
       not define `PERF_TIMERS`.
-- [ ] Compile original `GameClient/View.cpp` after the real display/view
-      header contract provides `FilterModes`, `FilterTypes`,
-      `StaticGameLODLevel`, `CellShroudStatus`, and the browser display device
-      layer.
+- [x] Compile original `GameClient/View.cpp` in the GameClient utility target
+      after extending the temporary `Common/GlobalData.h` shim with the
+      original camera-height fields/defaults; this is compile coverage only
+      until the browser display device layer can be exercised through the
+      harness.
 - [x] Compile original `GameClient/GUI/AnimateWindowManager.cpp` and
       `GUI/ProcessAnimateWindow.cpp` in the GameClient utility target after
       resolving the existing `AnimTypes` forward-declaration contract.
@@ -648,7 +658,8 @@ shares structure and follows behind.
       and `GadgetListBox.cpp`) in the GameClient utility target after adding
       DirectInput key constants, Win32 double-click/return-key fallbacks, and
       small clang/MSVC-scope compatibility fixes; this is compile coverage
-      only until `GameWindow.cpp` links.
+      only until real window instances are driven through the browser input /
+      render path.
 - [x] Compile original `GameClient/GUI/ChallengeGenerals.cpp`,
       `GUI/GameWindowManagerScript.cpp`, `GUI/GameWindowTransitions.cpp`, and
       GUI callback utility sources (`GUICallbacks/ExtendedMessageBox.cpp`,
@@ -672,10 +683,10 @@ shares structure and follows behind.
       resolving their enum-forward, `OVERRIDE`, `MIN`, and temporary INI bridge
       declarations; this is compile coverage only until `GameWindow`,
       `ControlBar`, `InGameUI`, and `RadiusDecal` link.
-- [ ] Compile original `GameClient/GUI/GameWindow.cpp` after the deeper
-      `InGameUI`, `RadiusDecal`, `SelectionXlat`, and related enum/header
-      contracts are available through original headers instead of target-local
-      stubs.
+- [x] Compile original `GameClient/GUI/GameWindow.cpp` in the GameClient
+      utility target after resolving the related enum/header contracts; this is
+      compile coverage only until `ControlBar`, `InGameUI`, `RadiusDecal`, and
+      the browser input/render path are available and harness-driven.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
@@ -689,9 +700,9 @@ shares structure and follows behind.
       `InGameUI`/`CommandXlat`/`Drawable` contracts, mouse INI parse
       declarations, and `GlobalData` cursor/debug fields are available.
 - [ ] Link and smoke-test original window animation behavior through real or
-      shimmed `GameWindow` instances once `GameClient/GUI/GameWindow.cpp`
-      compiles; current coverage is compile-only for the manager/processor
-      sources because their update paths call non-inline `GameWindow` methods.
+      shimmed `GameWindow` instances once the browser input/render path can
+      drive and observe them; current coverage is compile-only for the window,
+      manager, transition, and processor sources.
 - [ ] Exercise/link original `GameClient/Display.cpp` display methods against
       the browser display device layer; the current utility target has compile
       coverage only and no rendering is considered complete without harness

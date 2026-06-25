@@ -126,7 +126,7 @@ protected:
 //-------------------------------------------------------------------------------------------------
 /** Radar priorities.  Keep this in sync with the priority names list below */
 //-------------------------------------------------------------------------------------------------
-enum RadarPriorityType
+enum RadarPriorityType : int
 {
 	RADAR_PRIORITY_INVALID,					// a priority that has not been set (in general it won't show up on the radar)
 	RADAR_PRIORITY_NOT_ON_RADAR,		// object specifically forbidden from being on the radar
@@ -294,6 +294,5 @@ protected:
 extern Radar *TheRadar;  ///< the radar singleton extern
 
 #endif  // __RADAR_H_
-
 
 

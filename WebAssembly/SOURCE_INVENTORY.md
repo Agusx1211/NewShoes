@@ -20,7 +20,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
 | `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm across memory, strings, file/BIG archive, compression/data-chunk, language, type masks, geometry, terrain, multiplayer settings, timing, audio request/music/dynamic audio metadata, and the first INI leaf parser sources (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, `INIMultiplayer.cpp`). Node smoke coverage exercises the linked non-rendering Common behavior, real BIG reads, and terrain/type/string/file paths. The audio/INI parser additions are compile coverage only until the real `Common/INI.cpp` reader, full audio manager, Xfer, GlobalData, RTS, Thing, and GameLogic surfaces replace the current target-local shims. |
-| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source including display-string/font/text/image/animation/weather/water/video utilities, window/layout/transition managers, core gadgets, selected GUI callbacks/menus, leaf ControlBar helpers, and GameClient-facing INI leaf parser sources (`INIAnimation.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, `INIWater.cpp`). Node smoke coverage verifies the currently linked non-rendering utility behavior; newer GUI/style/gadget/parser files are compile coverage only until `GameWindow`, `ControlBar`, `InGameUI`, drawable/display, terrain, input, and the browser render/video layers link. |
+| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source including display-string/font/text/image/animation/weather/water/video utilities, original view/camera state, window/layout/transition managers, `GUI/GameWindow.cpp`, core gadgets, selected GUI callbacks/menus, leaf ControlBar helpers, and GameClient-facing INI leaf parser sources (`INIAnimation.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, `INIWater.cpp`). Node smoke coverage verifies the currently linked non-rendering utility behavior; view/window/GUI/style/gadget/parser files are compile coverage only until `ControlBar`, `InGameUI`, drawable/display, terrain, input, and the browser render/video layers link and are harness-driven. |
 | `GameEngine/GameNetwork` | Partial | Core command/frame slice now compiles to wasm from original source: `Connection.cpp`, `FileTransfer.cpp`, `FrameData.cpp`, `FrameDataManager.cpp`, `FrameMetrics.cpp`, `GameMessageParser.cpp`, `NetCommandList.cpp`, `NetCommandRef.cpp`, `NetCommandWrapperList.cpp`, `NetMessageStream.cpp`, `NetworkUtil.cpp`, and `User.cpp`. Node smoke coverage verifies command-id generation, command type policy/name lookups, empty frame readiness through `FrameData`/`FrameDataManager`, and pooled `User` value behavior. `Connection.cpp`, `FileTransfer.cpp`, `FrameMetrics.cpp`, and the commented legacy `NetMessageStream.cpp` are compile coverage only until `NetPacket.cpp`, `NetCommandMsg.cpp`, `MessageStream.cpp`, browser transport, `GameInfo`, `Shell`, `LoadScreen`, `Display`, and real `GlobalData` dependencies are available. WinSock transport, GameSpy/WWDownload/NAT, LAN UI, and full packet serialization remain open. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
@@ -192,12 +192,13 @@ The wasm CMake skeleton currently builds:
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
   `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
   `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
-  `GUI/GameFont.cpp`, `GUI/HeaderTemplate.cpp`, `GUI/WinInstanceData.cpp`,
+  `GUI/GameFont.cpp`, `GUI/GameWindow.cpp`, `GUI/HeaderTemplate.cpp`,
+  `GUI/WinInstanceData.cpp`,
   GUI/window manager and selected gadget/callback/control-bar/transition
   sources, `GlobalLanguage.cpp`, `GameText.cpp`, `System/Image.cpp`,
   the first GameClient-facing original INI leaf parser definitions,
   `LanguageFilter.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, `Snow.cpp`,
-  `Statistics.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`
+  `Statistics.cpp`, `View.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`
   compiled into a wasm static library, linked against the
   current original `GameEngine/Common` core slice.
 - `zh_gamenetwork_core`: original `GameEngine/GameNetwork` command/frame and
@@ -338,7 +339,9 @@ The wasm CMake skeleton currently builds:
   UTF-16 word loading/filtering, debug-display formatting/cursor state, 2D
   line/area/rect helpers, parabolic easing, snow/weather defaults, statistics
   normalization/mu-law helpers, video-buffer rect scaling, and video-list
-  bookkeeping.
+  bookkeeping. `GUI/GameWindow.cpp` and `View.cpp` currently add compile/link
+  coverage only; their rendering/input behavior remains gated on browser
+  display/input device work and harness screenshots/state checks.
 - `gameengine-real-big-smoke`: an opt-in Node-executed wasm smoke test
   (`npm run test:real-big`) that depends on user-supplied extracted assets and
   verifies the original `Win32BIGFileSystem` indexes `INIZH.big`, finds real
@@ -379,7 +382,6 @@ The wasm CMake skeleton currently builds:
    wire the real INI parser plus the DataChunkOutput write path once browser
    user-data persistence exists.
 5. Continue `GameEngine/GameClient` upward from the current utility slice into
-   image/water/2D animation parsing after original INI/Xfer surfaces are
-   available, then GUI/display/drawable surfaces, input, shell/menu, and real
-   video playback only as the corresponding browser device contracts are
-   available.
+   `MapUtil`/`RadiusDecal`, terrain, input, shell/menu, drawable/display
+   surfaces, and real video playback only as the corresponding original
+   INI/Xfer/GlobalData/GameLogic and browser device contracts are available.

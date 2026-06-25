@@ -37,7 +37,7 @@
 
 #define MAX_RIDERS 8 //***NOTE: If you change this, make sure you update the parsing section!
 
-enum WeaponSetType;
+enum WeaponSetType : int;
 enum ObjectStatusType;
 enum LocomotorSetType;
 
@@ -118,4 +118,3 @@ private:
 };
 
 #endif // __RIDER_CHANGE_CONTAIN_H
-

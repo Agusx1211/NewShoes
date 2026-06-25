@@ -9,6 +9,8 @@ public:
 	GlobalData() :
 		m_xResolution(800),
 		m_yResolution(600),
+		m_maxCameraHeight(300.0f),
+		m_minCameraHeight(100.0f),
 		m_networkFPSHistoryLength(30),
 		m_networkLatencyHistoryLength(200),
 		m_networkCushionHistoryLength(10),
@@ -21,6 +23,8 @@ public:
 
 	Int m_xResolution;
 	Int m_yResolution;
+	Real m_maxCameraHeight;
+	Real m_minCameraHeight;
 	UnsignedInt m_networkFPSHistoryLength;
 	UnsignedInt m_networkLatencyHistoryLength;
 	UnsignedInt m_networkCushionHistoryLength;

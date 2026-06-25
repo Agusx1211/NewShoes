@@ -169,7 +169,7 @@ static const char *TheWeaponCollideMaskNames[] =
 // Note: these values are saved in save files, so you MUST NOT REMOVE OR CHANGE
 // existing values!
 //
-enum WeaponBonusConditionType
+enum WeaponBonusConditionType : int
 {
 	// The access and use of this enum has the bit shifting built in, so this is a 0,1,2,3,4,5 enum
 	WEAPONBONUSCONDITION_INVALID = -1,
@@ -886,4 +886,3 @@ private:
 extern WeaponStore *TheWeaponStore;
 
 #endif // __WEAPON_H_
-
