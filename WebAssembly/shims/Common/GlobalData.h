@@ -13,7 +13,9 @@ public:
 		m_maxCameraHeight(300.0f),
 		m_minCameraHeight(100.0f),
 		m_framesPerSecondLimit(0),
+		m_useFpsLimit(FALSE),
 		m_windowed(FALSE),
+		m_defaultIP(0),
 		m_useAlternateMouse(FALSE),
 		m_doubleClickAttackMove(FALSE),
 		m_rightMouseAlwaysScrolls(FALSE),
@@ -49,7 +51,9 @@ public:
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
 	Int m_framesPerSecondLimit;
+	Bool m_useFpsLimit;
 	Bool m_windowed;
+	UnsignedInt m_defaultIP;
 	Bool m_useAlternateMouse;
 	Bool m_doubleClickAttackMove;
 	Bool m_rightMouseAlwaysScrolls;
@@ -74,6 +78,8 @@ public:
 	UnsignedInt m_networkPlayerTimeoutTime;
 	UnsignedInt m_networkDisconnectScreenNotifyTime;
 	Money m_defaultStartingCash;
+	AsciiString m_mapName;
+	AsciiString m_pendingFile;
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
 

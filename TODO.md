@@ -136,6 +136,10 @@ shares structure and follows behind.
 - [x] Add case-variant include wrappers for original GameClient utility sources
       (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector3.h`, and
       `WWMATH/Vector4.h`) under the case-sensitive wasm build.
+- [x] Add case-variant include wrappers for additional original GameClient
+      menu/control sources (`GameClient/GadgetCheckbox.h`,
+      `GameClient/Hotkey.h`, and `GameClient/mouse.h`) under the
+      case-sensitive wasm build.
 - [x] Add a minimal DirectInput keyboard scan-code shim for original
       `GameClient/KeyDefs.h` users under the browser build, preserving the
       engine's existing key values for the later DOM keyboard-event bridge.
@@ -892,16 +896,31 @@ shares structure and follows behind.
       matching temporary `Common/INI.h`, `Common/GlobalData.h`, and
       `GameLogic/GameLogic.h` bridge declarations for the original parser,
       camera/input, replay, and menu fields they reference.
+- [x] Compile additional original GameClient dispatch/control-bar/menu leaves
+      in the utility target (`GameClientDispatch.cpp`,
+      `GUI/ControlBar/ControlBarBeacon.cpp`,
+      `ControlBarMultiSelect.cpp`, `ControlBarOCLTimer.cpp`,
+      `ControlBarObserver.cpp`, `ControlBarStructureInventory.cpp`,
+      `ControlBarUnderConstruction.cpp`,
+      `GUI/GUICallbacks/GeneralsExpPoints.cpp`, and menu callbacks for
+      disconnect, connection establishment, LAN map/options/lobby, and
+      skirmish game options) after adding narrow case wrappers, original
+      `GlobalData`/`GameLogic` bridge fields, and localized clang loop-scope /
+      callback-cast compatibility fixes.
 - [ ] Link and smoke-test the original GameClient message translators,
-      selection info, EVA/FX list, control-bar scheme, in-game chat, and
-      keyboard/skirmish-map menu behavior after real `GameLogic`, `InGameUI`,
-      `MessageStream`, input, FX/display, GameInfo, and original INI/GlobalData
-      runtime paths replace the current target-local compile bridges.
+      selection info, EVA/FX list, control-bar scheme, control-bar leaves,
+      in-game chat, keyboard/skirmish/LAN menu behavior, and GameClient
+      dispatch after real `GameLogic`, `InGameUI`, `MessageStream`, input,
+      FX/display, GameInfo/LAN, and original INI/GlobalData runtime paths
+      replace the current target-local compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
       original headers; probes currently fail on those deeper contracts rather
       than isolated browser shims.
+- [ ] Compile original `GameClient/GUI/GUICallbacks/Menus/PopupPlayerInfo.cpp`
+      after the vendored GameSpy Peer headers are restored or the peer/profile
+      surface is mapped to the browser networking contract.
 - [ ] Compile original `GameClient/Input/Keyboard.cpp` after the browser
       keyboard layout/IME translation surface replaces Win32 `HKL`,
       `GetKeyboardLayout`, legacy invalid character literals, and empty wide
@@ -964,6 +983,9 @@ shares structure and follows behind.
       the wasm core archive after adding original `GlobalData` timing/default
       cash and `Xfer::xferMapName` shim surface plus narrow clang loop-scope
       fixes.
+- [x] Compile original `GameNetwork/LANAPICallbacks.cpp` into the wasm core
+      archive after adding current `GlobalData` map/FPS bridge fields and the
+      original `GameLogic` game-mode / clear-data compile surface.
 - [ ] Link and smoke-test the broader GameNetwork command-message slice after
       the real player/message, packet serialization, and browser transport
       dependencies are available beyond the current compile-only coverage.
@@ -975,9 +997,9 @@ shares structure and follows behind.
 - [ ] Compile original `GameNetwork/LANAPI.cpp` after the browser local-user /
       player-identity contract replaces Win32 `UNLEN` / username lookup and the
       LAN transport surface is ready.
-- [ ] Compile original `GameNetwork/LANAPICallbacks.cpp` after the real
-      `GameLogic::isInGame`, LAN UI, game setup, and transport callback
-      surfaces are available.
+- [ ] Link and smoke-test original `GameNetwork/LANAPICallbacks.cpp` after the
+      real `GameLogic::isInGame`, LAN UI, game setup, and transport callback
+      surfaces are available; current coverage is compile-only.
 - [ ] Restore or re-target the vendored GameSpy Peer dependency before
       compiling original `GameNetwork/GameSpy/PeerDefs.cpp` and
       `LadderDefs.cpp`.
