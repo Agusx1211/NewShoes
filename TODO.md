@@ -111,9 +111,18 @@ shares structure and follows behind.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
+- [x] Add a target-local `Common/GameAudio.h` include-order shim so original
+      `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
+      declarations compile under clang/Emscripten.
 - [x] Qualify original GameEngine `BitFlags` static name-list specializations
       in `KindOf.cpp`, `DisabledTypes.cpp`, and `ObjectStatusTypes.cpp` so
       they compile under standard clang/Emscripten template rules.
+- [x] Qualify original GameEngine `SparseMatchFinder` dependent iterator types
+      so armor/model-condition matching templates compile under standard
+      clang/Emscripten lookup rules.
+- [x] Qualify original GameEngine `BitFlags.cpp` static name-list
+      specializations for `ModelConditionFlags` and `ArmorSetFlags` under
+      standard clang/Emscripten template rules.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -253,18 +262,35 @@ shares structure and follows behind.
       `DisabledTypes.cpp`, `KindOf.cpp`, and `ObjectStatusTypes.cpp`, with
       wasm smoke coverage for RAM file reads/scans, CD drive bookkeeping,
       browser registry defaults, and type-mask initialization.
+- [x] Expanded `GameEngine/Common` facade/geometry slice compiles from original
+      sources: `FileSystem.cpp`, `Snapshot.cpp`, `Geometry.cpp`,
+      `BitFlags.cpp`, and `MiniLog.cpp`, with wasm smoke coverage for the
+      original file-system local dispatch path, model-condition and armor-set
+      bit-name tables, and geometry bounds/footprint calculations.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
 - [ ] Unblock original `Common/Xfer` by bringing up original `Common/INI`,
       `Common/BitFlagsIO`, `Common/GameState`, and `Common/Upgrade` dependencies
       instead of expanding the temporary `Common/Xfer.h` shim.
-- [ ] Unblock original `Common/FileSystem.cpp` by bringing up
-      `ArchiveFileSystem`, `CDManager`, `GameAudio`, and `GlobalData`
-      dependencies after the base `File` / `LocalFileSystem` interfaces.
-- [ ] Remove the `gameengine-common-core-smoke` local `FileSystem::openFile`
-      link shim once original `Common/System/FileSystem.cpp` and its archive /
-      audio / global-data dependencies compile.
+- [ ] Exercise original `Common/System/FileSystem.cpp` archive lookup,
+      `doesFileExist`, directory listing, file-info, and music-CD paths after a
+      concrete browser `ArchiveFileSystem` / audio layer replaces the current
+      smoke globals.
+- [x] Remove the `gameengine-common-core-smoke` local `FileSystem::openFile`
+      link shim after original `Common/System/FileSystem.cpp` compiles into the
+      smoke target with target-local archive/audio singleton globals.
+- [ ] Add the `Libraries/Source/Compression` include path needed by original
+      `Common/System/Compression.cpp` and `DataChunk.cpp`, then compile their
+      GameEngine compression/data-chunk facade paths against the existing
+      compression manager slice.
+- [ ] Compile original `Common/version.cpp` after adding a lowercase
+      `Common/Version.h` wrapper and bringing up the `GameClient/GameText`
+      interface used by its Unicode formatting path.
+- [ ] Compile original `Common/CRCDebug.cpp` after the `GameClient/InGameUI`
+      and W3D collision/render include dependencies are available.
+- [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
+      or harness once the real `GameLogic` frame counter is available.
 - [ ] Decide the browser copy-protection / launcher contract before compiling
       original `Common/System/CopyProtection.cpp`; it currently depends on
       Win32 mutex, message-queue, event, and shared-memory APIs.

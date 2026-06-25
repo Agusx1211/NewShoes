@@ -5,6 +5,7 @@
 #include "PreRTS.h"
 
 #include "Common/AsciiString.h"
+#include "Common/ArchiveFileSystem.h"
 #include "Common/BezierSegment.h"
 #include "Common/CDManager.h"
 #include "Common/CRC.h"
@@ -14,12 +15,14 @@
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameCommon.h"
+#include "Common/Geometry.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
 #include "Common/KindOf.h"
 #include "Common/Language.h"
 #include "Common/List.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/ModelState.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/ObjectStatusTypes.h"
 #include "Common/PartitionSolver.h"
@@ -32,18 +35,16 @@
 #include "Common/UnicodeString.h"
 #include "Common/encrypt.h"
 #include "GameClient/ClientRandomValue.h"
+#include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "Lib/Trig.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-FileSystem *TheFileSystem = nullptr;
+ArchiveFileSystem *TheArchiveFileSystem = nullptr;
 GameLogic *TheGameLogic = nullptr;
-
-File* FileSystem::openFile(const Char *, Int)
-{
-	return nullptr;
-}
+class AudioManager;
+AudioManager *TheAudio = nullptr;
 
 namespace {
 class SmokeCDManager : public CDManager
@@ -136,11 +137,27 @@ public:
 	void init() override { LocalFileSystem::init(); }
 	void reset() override { LocalFileSystem::reset(); }
 	void update() override { LocalFileSystem::update(); }
-	File *openFile(const Char *, Int = 0) override { return nullptr; }
-	Bool doesFileExist(const Char *) const override { return FALSE; }
+	File *openFile(const Char *filename, Int access = 0) override
+	{
+		if (std::strcmp(filename, "local-smoke.txt") != 0) {
+			return nullptr;
+		}
+		m_file.close();
+		if (!m_file.open(filename, access)) {
+			return nullptr;
+		}
+		return &m_file;
+	}
+	Bool doesFileExist(const Char *filename) const override
+	{
+		return std::strcmp(filename, "local-smoke.txt") == 0;
+	}
 	void getFileListInDirectory(const AsciiString&, const AsciiString&, const AsciiString&, FilenameList&, Bool) const override {}
 	Bool getFileInfo(const AsciiString&, FileInfo *) const override { return FALSE; }
 	Bool createDirectory(AsciiString) override { return FALSE; }
+
+private:
+	SmokeFile m_file;
 };
 
 struct Scanline
@@ -315,6 +332,32 @@ bool exercise_file_interfaces()
 	return global_ok;
 }
 
+bool exercise_file_system_dispatch()
+{
+	SmokeLocalFileSystem local_file_system;
+	FileSystem file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheFileSystem = &file_system;
+	TheArchiveFileSystem = nullptr;
+
+	File *opened = file_system.openFile("local-smoke.txt", File::READ | File::BINARY);
+	const bool open_ok =
+		expect(opened != nullptr, "FileSystem local open dispatch failed") &&
+		expect((opened->getAccess() & File::READ) != 0, "FileSystem local file access missing") &&
+		expect(std::strcmp(opened->getName(), "local-smoke.txt") == 0,
+			"FileSystem local file name tracking failed");
+	if (opened != nullptr) {
+		opened->close();
+	}
+
+	const bool missing_ok = expect(file_system.openFile("missing.txt", File::READ) == nullptr,
+		"FileSystem missing local/archive file should fail");
+
+	TheFileSystem = nullptr;
+	TheLocalFileSystem = nullptr;
+	return open_ok && missing_ok;
+}
+
 bool exercise_ram_file()
 {
 	SmokeFile source;
@@ -454,6 +497,87 @@ bool exercise_type_masks()
 			"ObjectStatus mask set/test failed") &&
 		expect(!TEST_OBJECT_STATUS_MASK(OBJECT_STATUS_MASK_NONE, OBJECT_STATUS_STEALTHED),
 			"ObjectStatus none mask failed");
+}
+
+bool exercise_bit_flags()
+{
+	ModelConditionFlags model_flags;
+	model_flags.set(MODELCONDITION_DAMAGED);
+	model_flags.set(MODELCONDITION_MOVING);
+
+	AsciiString description;
+	model_flags.buildDescription(&description);
+
+	ArmorSetFlags armor_flags;
+	armor_flags.set(ARMORSET_VETERAN);
+	const bool armor_name_ok = armor_flags.setBitByName("CRATE_UPGRADE_TWO");
+
+	return expect(model_flags.count() == 2, "ModelConditionFlags count failed") &&
+		expect(std::strcmp(ModelConditionFlags::getNameFromSingleBit(MODELCONDITION_DAMAGED), "DAMAGED") == 0,
+			"ModelConditionFlags name table failed") &&
+		expect(ModelConditionFlags::getSingleBitFromName("moving") == MODELCONDITION_MOVING,
+			"ModelConditionFlags case-insensitive lookup failed") &&
+		expect(std::strstr(description.str(), "DAMAGED") != nullptr &&
+			std::strstr(description.str(), "MOVING") != nullptr,
+			"ModelConditionFlags description failed") &&
+		expect(armor_name_ok && armor_flags.test(ARMORSET_CRATE_UPGRADE_TWO),
+			"ArmorSetFlags name lookup failed") &&
+		expect(std::strcmp(ArmorSetFlags::getNameFromSingleBit(ARMORSET_VETERAN), "VETERAN") == 0,
+			"ArmorSetFlags name table failed");
+}
+
+bool exercise_geometry()
+{
+	GeometryInfo sphere(GEOMETRY_SPHERE, TRUE, 0.0f, 5.0f, 0.0f);
+	if (!expect(near(sphere.getBoundingCircleRadius(), 5.0f, 0.0001f) &&
+			near(sphere.getBoundingSphereRadius(), 5.0f, 0.0001f),
+			"GeometryInfo sphere bounds failed")) {
+		return false;
+	}
+	if (!expect(near(sphere.getFootprintArea(), PI * 25.0f, 0.001f),
+			"GeometryInfo sphere area failed")) {
+		return false;
+	}
+
+	GeometryInfo box(GEOMETRY_BOX, FALSE, 6.0f, 3.0f, 2.0f);
+	const Coord3D origin = { 0.0f, 0.0f, 0.0f };
+	Region2D bounds = {};
+	box.get2DBounds(origin, 0.0f, bounds);
+	if (!expect(near(bounds.lo.x, -3.0f, 0.0001f) && near(bounds.lo.y, -2.0f, 0.0001f) &&
+			near(bounds.hi.x, 3.0f, 0.0001f) && near(bounds.hi.y, 2.0f, 0.0001f),
+			"GeometryInfo box 2D bounds failed")) {
+		return false;
+	}
+
+	Coord3D center = {};
+	box.getCenterPosition(origin, center);
+	Coord3D point = { 10.0f, -10.0f, 0.0f };
+	box.clipPointToFootprint(origin, point);
+
+	const bool box_ok =
+		expect(near(box.getBoundingCircleRadius(), std::sqrt(13.0f), 0.0001f),
+			"GeometryInfo box bounding circle failed") &&
+		expect(near(box.getBoundingSphereRadius(), std::sqrt(22.0f), 0.0001f),
+			"GeometryInfo box bounding sphere failed") &&
+		expect(near(box.getFootprintArea(), 24.0f, 0.0001f), "GeometryInfo box area failed") &&
+		expect(near(box.getMaxHeightAbovePosition(), 6.0f, 0.0001f) &&
+			near(box.getMaxHeightBelowPosition(), 0.0f, 0.0001f) &&
+			near(center.z, 3.0f, 0.0001f), "GeometryInfo box height/center failed") &&
+		expect(near(point.x, 3.0f, 0.0001f) && near(point.y, -2.0f, 0.0001f),
+			"GeometryInfo box footprint clipping failed") &&
+		expect(box.isPointInFootprint(origin, Coord3D{ 2.5f, 1.5f, 0.0f }),
+			"GeometryInfo box footprint inclusion failed") &&
+		expect(!box.isPointInFootprint(origin, Coord3D{ 3.5f, 1.5f, 0.0f }),
+			"GeometryInfo box footprint exclusion failed");
+	if (!box_ok) {
+		return false;
+	}
+
+	box.expandFootprint(1.0f);
+	return expect(near(box.getMajorRadius(), 4.0f, 0.0001f) &&
+			near(box.getMinorRadius(), 3.0f, 0.0001f) &&
+			near(box.getFootprintArea(), 48.0f, 0.0001f),
+			"GeometryInfo footprint expansion failed");
 }
 
 bool exercise_name_keys()
@@ -663,10 +787,13 @@ int main()
 	const bool ok = exercise_memory_init() &&
 		exercise_strings() &&
 		exercise_file_interfaces() &&
+		exercise_file_system_dispatch() &&
 		exercise_ram_file() &&
 		exercise_registry_defaults() &&
 		exercise_cd_manager() &&
 		exercise_type_masks() &&
+		exercise_bit_flags() &&
+		exercise_geometry() &&
 		exercise_name_keys() &&
 		exercise_language_and_encrypt() &&
 		exercise_random_and_crc() &&
@@ -685,9 +812,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"WSYS_String,File,LocalFileSystem,RAMFile,SubsystemInterface,CDManager,Registry,"
+		"WSYS_String,File,LocalFileSystem,FileSystem,RAMFile,SubsystemInterface,CDManager,Registry,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
-		"Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"BitFlags,Snapshot,Geometry,MiniLog,Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
