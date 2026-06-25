@@ -504,17 +504,21 @@ shares structure and follows behind.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
       `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
       `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
-      `GUI/GameFont.cpp`, `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`,
-      `GameText.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
-      `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`,
-      and `VideoStream.cpp`, with wasm smoke coverage for packed colors,
+      `GUI/GameFont.cpp`, `GUI/HeaderTemplate.cpp`,
+      `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`, `GameText.cpp`,
+      `System/Image.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
+      `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`,
+      `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`, with wasm smoke
+      coverage for packed colors,
       debug-display formatting/cursor state, display-string text/font/list
       management, window instance text/tooltip allocation, draw-group defaults,
       `GlobalLanguage` constructor/font defaults and resolution font-size
       adjustment, original string-file loading/fetch/prefix/map string
-      handling, encrypted language-filter word loading and filtering, 2D
-      clip/intersection/area helpers, easing, snow/weather defaults,
-      normalization, mu-law helpers, and video-list bookkeeping.
+      handling, header-template creation/lookup/iteration, mapped-image
+      defaults and mutators, encrypted language-filter word loading and
+      filtering, 2D clip/intersection/area helpers, easing,
+      snow/weather/water defaults, normalization, mu-law helpers, and
+      video-list bookkeeping.
 - [ ] `GameClient` (Display, Drawable, GUI, Input, InGameUI, Terrain) compiles.
 - [x] Add lowercase `Common/Filesystem.h` compatibility, `PreRTS.h`
       include-contract parity for `Common/INI.h`/`Common/GlobalData.h`, and
@@ -536,11 +540,29 @@ shares structure and follows behind.
       test original font reuse/reset, display-string text mutation and manager
       linking, and `WinInstanceData` text/tooltip allocation through
       `TheDisplayStringManager`.
-- [ ] Compile original `GameClient/System/Image.cpp`, `Water.cpp`, and
-      `System/Anim2D.cpp` after the target-local `Common/INI.h` and
-      `Common/Xfer.h` shims are replaced by the original parser/transfer
-      surfaces (`parseMappedImage`, color parsers, sub-token reads, duration
-      parsers, and unsigned-short xfer).
+- [x] Compile original `GameClient/System/Image.cpp`, `Water.cpp`, and
+      `GUI/HeaderTemplate.cpp` after extending the temporary `Common/INI.h`
+      bridge with original scalar, color, bit-string, sub-token, quoted-string,
+      and definition declarations needed by those sources; smoke-test image,
+      water, and header-template runtime basics.
+- [ ] Compile original `GameClient/System/Anim2D.cpp` after the target-local
+      `Common/INI.h` and `Common/Xfer.h` shims are replaced by the original
+      parser/transfer surfaces (`parseMappedImage`, duration parsers, and
+      unsigned-short xfer) and after the display/W3D include boundary provides
+      the `Anim2DCollection`, view, and coltype contracts under Emscripten.
+- [ ] Compile original `GameClient/Credits.cpp` and
+      `GUI/Shell/ShellMenuScheme.cpp` after the display/view header contract
+      provides `FilterModes`, `FilterTypes`, `StaticGameLODLevel`,
+      `CellShroudStatus`, `AnimTypes`, and after original INI lookup/image/
+      coordinate parse helpers replace the remaining temporary declarations.
+- [ ] Compile original `GameClient/System/CampaignManager.cpp` and
+      `GUI/ChallengeGenerals.cpp` after `GameDifficulty`, lowercase
+      `common/GameType.h` compatibility, and the real GameClient singleton
+      surface are available without target-local stubs.
+- [ ] Compile original `GameClient/Terrain/TerrainRoads.cpp` after
+      `MultiIniFieldParse`, `StaticGameLODLevel`, `PlayerMaskType`,
+      `VeterancyLevel`, and the related Module/BodyModule/GameLogic contracts
+      come in through original headers.
 - [ ] Compile original `GameClient/Display.cpp`, `View.cpp`, and
       `GraphDraw.cpp` after the real display/view header contract provides
       `FilterModes`, `FilterTypes`, `StaticGameLODLevel`, `CellShroudStatus`,

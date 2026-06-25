@@ -189,9 +189,10 @@ The wasm CMake skeleton currently builds:
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
   `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
   `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
-  `GUI/GameFont.cpp`, `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`,
-  `GameText.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`,
-  `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`, and `VideoStream.cpp`
+  `GUI/GameFont.cpp`, `GUI/HeaderTemplate.cpp`, `GUI/WinInstanceData.cpp`,
+  `GlobalLanguage.cpp`, `GameText.cpp`, `System/Image.cpp`,
+  `LanguageFilter.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, `Snow.cpp`,
+  `Statistics.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`
   compiled into a wasm static library, linked against the
   current original `GameEngine/Common` core slice.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data

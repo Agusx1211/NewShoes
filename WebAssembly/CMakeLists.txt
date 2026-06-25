@@ -1210,6 +1210,7 @@ add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawableManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WinInstanceData.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GlobalLanguage.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GameText.cpp"
@@ -1218,8 +1219,10 @@ add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/ParabolicEase.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Statistics.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/Image.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoPlayer.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Water.cpp"
 )
 
 set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp" PROPERTIES

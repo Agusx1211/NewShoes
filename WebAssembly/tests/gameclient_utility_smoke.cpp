@@ -25,12 +25,15 @@
 #include "GameClient/GameWindow.h"
 #include "GameClient/GlobalLanguage.h"
 #include "GameClient/GameText.h"
+#include "GameClient/HeaderTemplate.h"
+#include "GameClient/Image.h"
 #include "GameClient/LanguageFilter.h"
 #include "GameClient/Line2D.h"
 #include "GameClient/ParabolicEase.h"
 #include "GameClient/Snow.h"
 #include "GameClient/Statistics.h"
 #include "GameClient/VideoPlayer.h"
+#include "GameClient/Water.h"
 #include "GameClient/WinInstanceData.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
@@ -1029,6 +1032,112 @@ bool exercise_video_player()
 
 	return buffer_ok && rect_ok && free_ok && list_ok && remove_ok;
 }
+
+bool exercise_image_and_water()
+{
+	Image *image = newInstance(Image);
+	image->setName(AsciiString("CommandButton"));
+	image->setFilename(AsciiString("button_atlas.tga"));
+	image->setTextureWidth(512);
+	image->setTextureHeight(256);
+
+	INI ini;
+	char coords_line[] = "Coords = Left:64 Top:64 Right:192 Bottom:128";
+	std::strtok(coords_line, ini.getSeps());
+	Region2D parsed_uv;
+	Image::parseImageCoords(&ini, image, &parsed_uv, nullptr);
+
+	char status_line[] = "Status = RAW_TEXTURE";
+	std::strtok(status_line, ini.getSeps());
+	UnsignedInt parsed_status = IMAGE_STATUS_NONE;
+	Image::parseImageStatus(&ini, image, &parsed_status, nullptr);
+
+	const UnsignedInt previous_status = image->setStatus(IMAGE_STATUS_RAW_TEXTURE);
+	const bool image_ok =
+		expect(previous_status == IMAGE_STATUS_NONE && image->getStatus() == IMAGE_STATUS_RAW_TEXTURE,
+			"Image status set failed") &&
+		expect(parsed_status == IMAGE_STATUS_RAW_TEXTURE, "Image status parser failed") &&
+		expect(image->getName() == AsciiString("CommandButton") &&
+				image->getFilename() == AsciiString("button_atlas.tga"),
+			"Image name/filename failed") &&
+		expect(image->getTextureSize()->x == 512 && image->getTextureSize()->y == 256 &&
+				image->getImageWidth() == 128 && image->getImageHeight() == 64,
+			"Image dimensions failed") &&
+		expect(near(image->getUV()->lo.x, 0.125f) && near(image->getUV()->lo.y, 0.25f) &&
+				near(image->getUV()->hi.x, 0.375f) && near(image->getUV()->hi.y, 0.5f),
+			"Image UV failed");
+	image->clearStatus(IMAGE_STATUS_RAW_TEXTURE);
+	const bool image_clear_ok = expect(image->getStatus() == IMAGE_STATUS_NONE, "Image status clear failed");
+	image->deleteInstance();
+
+	WaterSetting water;
+	char water_color_line[] = "Vertex00Color = R:12 G:34 B:56 A:78";
+	std::strtok(water_color_line, ini.getSeps());
+	INI::parseRGBAColorInt(&ini, nullptr, &water.m_vertex00Diffuse, nullptr);
+
+	const bool water_ok =
+		expect(water.m_skyTextureFile.isEmpty() && water.m_waterTextureFile.isEmpty() &&
+				water.m_waterRepeatCount == 0 && near(water.m_skyTexelsPerUnit, 0.0f),
+			"WaterSetting defaults failed") &&
+		expect(water.m_vertex00Diffuse.red == 12 && water.m_vertex00Diffuse.green == 34 &&
+				water.m_vertex00Diffuse.blue == 56 && water.m_vertex00Diffuse.alpha == 78 &&
+				near(water.m_uScrollPerMs, 0.0f) && near(water.m_vScrollPerMs, 0.0f),
+			"WaterSetting color parser/defaults failed");
+
+	WaterTransparencySetting *transparency = newInstance(WaterTransparencySetting);
+	char standing_color_line[] = "StandingWaterColor = R:64 G:128 B:255";
+	std::strtok(standing_color_line, ini.getSeps());
+	INI::parseRGBColor(&ini, nullptr, &transparency->m_standingWaterColor, nullptr);
+
+	const bool transparency_ok =
+		expect(near(transparency->m_transparentWaterDepth, 3.0f) &&
+				near(transparency->m_minWaterOpacity, 1.0f) &&
+				near(transparency->m_standingWaterColor.red, 64.0f / 255.0f) &&
+				near(transparency->m_standingWaterColor.green, 128.0f / 255.0f) &&
+				near(transparency->m_standingWaterColor.blue, 1.0f) &&
+				transparency->m_standingWaterTexture == AsciiString("TWWater01.tga") &&
+				transparency->m_additiveBlend == FALSE,
+			"WaterTransparencySetting color parser/defaults failed") &&
+		expect(transparency->m_skyboxTextureN == AsciiString("TSMorningN.tga") &&
+				transparency->m_skyboxTextureT == AsciiString("TSMorningT.tga"),
+			"WaterTransparencySetting skybox defaults failed");
+	transparency->deleteInstance();
+
+	return image_ok && image_clear_ok && water_ok && transparency_ok;
+}
+
+bool exercise_header_templates()
+{
+	HeaderTemplateManager manager;
+	HeaderTemplateManager *old_header_manager = TheHeaderTemplateManager;
+	TheHeaderTemplateManager = &manager;
+
+	HeaderTemplate *small = manager.newHeaderTemplate(AsciiString("SmallHeader"));
+	HeaderTemplate *large = manager.newHeaderTemplate(AsciiString("LargeHeader"));
+	small->m_fontName = "Arial";
+	small->m_point = 10;
+	small->m_bold = FALSE;
+	large->m_fontName = "Arial";
+	large->m_point = 18;
+	large->m_bold = TRUE;
+
+	const bool lookup_ok =
+		expect(manager.findHeaderTemplate(AsciiString("SmallHeader")) == small &&
+				manager.findHeaderTemplate(AsciiString("LargeHeader")) == large &&
+				manager.findHeaderTemplate(AsciiString("MissingHeader")) == nullptr,
+			"HeaderTemplate lookup failed");
+	const bool iteration_ok =
+		expect(manager.getFirstHeader() == large && manager.getNextHeader(large) == small &&
+				manager.getNextHeader(small) == nullptr,
+			"HeaderTemplate iteration failed");
+	const bool font_default_ok =
+		expect(manager.getFontFromTemplate(AsciiString("SmallHeader")) == nullptr &&
+				manager.getFontFromTemplate(AsciiString("MissingHeader")) == nullptr,
+			"HeaderTemplate font default failed");
+
+	TheHeaderTemplateManager = old_header_manager;
+	return lookup_ok && iteration_ok && font_default_ok;
+}
 }
 
 int main()
@@ -1046,14 +1155,16 @@ int main()
 		exercise_snow() &&
 		exercise_debug_display() &&
 		exercise_display_strings() &&
-		exercise_video_player();
+		exercise_video_player() &&
+		exercise_image_and_water() &&
+		exercise_header_templates();
 
 	if (!ok) {
 		return 1;
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Color,DebugDisplay,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,LanguageFilter,Line2D,ParabolicEase,Snow,Statistics,VideoPlayer,VideoStream,WinInstanceData\","
+		"\"compiled\":\"Color,DebugDisplay,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
