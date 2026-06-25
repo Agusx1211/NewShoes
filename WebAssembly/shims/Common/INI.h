@@ -8,8 +8,10 @@
 
 #include "Common/AsciiString.h"
 
+class INI;
 class Xfer;
 
+typedef void (*INIFieldParseProc)(INI *ini, void *instance, void *store, const void *userData);
 typedef const char* ConstCharPtr;
 typedef const ConstCharPtr* ConstCharPtrArray;
 
@@ -26,13 +28,34 @@ enum
 	INI_INVALID_NAME_LIST = 1,
 };
 
+struct FieldParse
+{
+	const char *token;
+	INIFieldParseProc parse;
+	const void *userData;
+	Int offset;
+
+	inline void set(const char *t, INIFieldParseProc p, const void *u, Int o)
+	{
+		token = t;
+		parse = p;
+		userData = u;
+		offset = o;
+	}
+};
+
 class INI
 {
 public:
 	void load(AsciiString, INILoadType, Xfer *) {}
 	void loadDirectory(AsciiString, Bool, INILoadType, Xfer *) {}
+	void initFromINI(void *, const FieldParse *) {}
 	const char *getNextToken() { return ""; }
 	const char *getNextTokenOrNull(const char * = nullptr) { return nullptr; }
+	AsciiString getNextAsciiString() { return AsciiString(getNextToken()); }
+	AsciiString getNextQuotedAsciiString() { return AsciiString(getNextToken()); }
+
+	static void parseLanguageDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{
@@ -47,6 +70,11 @@ public:
 		throw INI_INVALID_NAME_LIST;
 	}
 
+	static Int scanInt(const char *token)
+	{
+		return token != nullptr ? std::atoi(token) : 0;
+	}
+
 	static Bool scanBool(const char *token)
 	{
 		return token != nullptr &&
@@ -56,6 +84,34 @@ public:
 	static Real scanReal(const char *token)
 	{
 		return token != nullptr ? static_cast<Real>(std::atof(token)) : 0.0f;
+	}
+
+	static void parseAsciiString(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<AsciiString *>(store) = ini != nullptr ? ini->getNextAsciiString() : AsciiString("");
+		}
+	}
+
+	static void parseInt(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Int *>(store) = scanInt(ini != nullptr ? ini->getNextToken() : nullptr);
+		}
+	}
+
+	static void parseBool(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Bool *>(store) = scanBool(ini != nullptr ? ini->getNextToken() : nullptr);
+		}
+	}
+
+	static void parseReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Real *>(store) = scanReal(ini != nullptr ? ini->getNextToken() : nullptr);
+		}
 	}
 };
 

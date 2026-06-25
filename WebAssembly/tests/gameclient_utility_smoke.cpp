@@ -1,12 +1,20 @@
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "PreRTS.h"
 
+#include "Common/GlobalData.h"
+#include "Common/SubsystemInterface.h"
 #include "GameClient/Color.h"
+#include "GameClient/DrawGroupInfo.h"
+#include "GameClient/GlobalLanguage.h"
 #include "GameClient/Line2D.h"
 #include "GameClient/ParabolicEase.h"
 #include "GameClient/Statistics.h"
+
+SubsystemInterfaceList *TheSubsystemList = nullptr;
+GlobalData *TheGlobalData = nullptr;
 
 namespace {
 bool expect(bool condition, const char *message)
@@ -20,6 +28,16 @@ bool expect(bool condition, const char *message)
 bool near(Real actual, Real expected, Real epsilon = 0.0001f)
 {
 	return std::fabs(actual - expected) <= epsilon;
+}
+
+bool expect_font_desc(
+	const FontDesc &font,
+	const char *name,
+	Int size,
+	Bool bold,
+	const char *message)
+{
+	return expect(std::strcmp(font.name.str(), name) == 0 && font.size == size && font.bold == bold, message);
 }
 
 bool exercise_color()
@@ -136,6 +154,69 @@ bool exercise_statistics()
 				near(MuLaw(0.0f, 10.0f, 255.0f), -1.0f),
 			"MuLaw failed");
 }
+
+bool exercise_draw_group_info()
+{
+	DrawGroupInfo info;
+	UnsignedByte text_red = 0;
+	UnsignedByte text_green = 0;
+	UnsignedByte text_blue = 0;
+	UnsignedByte text_alpha = 0;
+	GameGetColorComponents(info.m_colorForText, &text_red, &text_green, &text_blue, &text_alpha);
+
+	UnsignedByte shadow_red = 0;
+	UnsignedByte shadow_green = 0;
+	UnsignedByte shadow_blue = 0;
+	UnsignedByte shadow_alpha = 0;
+	GameGetColorComponents(
+		info.m_colorForTextDropShadow,
+		&shadow_red,
+		&shadow_green,
+		&shadow_blue,
+		&shadow_alpha);
+
+	return expect(std::strcmp(info.m_fontName.str(), "Arial") == 0 && info.m_fontSize == 10 &&
+				info.m_fontIsBold == FALSE,
+			"DrawGroupInfo font defaults failed") &&
+		expect(info.m_usePlayerColor == TRUE &&
+				text_red == 255 && text_green == 255 && text_blue == 255 && text_alpha == 255 &&
+				shadow_red == 0 && shadow_green == 0 && shadow_blue == 0 && shadow_alpha == 255,
+			"DrawGroupInfo color defaults failed") &&
+		expect(info.m_dropShadowOffsetX == -1 && info.m_dropShadowOffsetY == -1,
+			"DrawGroupInfo shadow offsets failed") &&
+		expect(info.m_usingPixelOffsetX == FALSE && near(info.m_percentOffsetX, -0.05f) &&
+				info.m_usingPixelOffsetY == TRUE && info.m_pixelOffsetY == -10,
+			"DrawGroupInfo position offsets failed");
+}
+
+bool exercise_global_language()
+{
+	GlobalData global_data;
+	TheGlobalData = &global_data;
+
+	GlobalLanguage language;
+	const bool defaults_ok = expect(language.m_unicodeFontName.isEmpty(), "GlobalLanguage unicode font default failed") &&
+		expect(language.m_unicodeFontFileName.isEmpty(), "GlobalLanguage unicode font filename default failed") &&
+		expect(language.m_militaryCaptionSpeed == 0 && language.m_militaryCaptionDelayMS == 750 &&
+				language.m_useHardWrap == FALSE && near(language.m_resolutionFontSizeAdjustment, 0.7f),
+			"GlobalLanguage scalar defaults failed") &&
+		expect_font_desc(language.m_messageFont, "Arial Unicode MS", 12, FALSE,
+			"GlobalLanguage FontDesc defaults failed");
+
+	global_data.m_xResolution = 800;
+	const bool base_ok = expect(language.adjustFontSize(10) == 10, "GlobalLanguage base font scaling failed");
+	global_data.m_xResolution = 1600;
+	const bool high_ok = expect(language.adjustFontSize(10) == 17, "GlobalLanguage high font scaling failed");
+	global_data.m_xResolution = 3200;
+	const bool clamp_high_ok = expect(language.adjustFontSize(10) == 20,
+		"GlobalLanguage high font scaling clamp failed");
+	global_data.m_xResolution = 400;
+	const bool clamp_low_ok = expect(language.adjustFontSize(10) == 10,
+		"GlobalLanguage low font scaling clamp failed");
+
+	TheGlobalData = nullptr;
+	return defaults_ok && base_ok && high_ok && clamp_high_ok && clamp_low_ok;
+}
 }
 
 int main()
@@ -143,14 +224,16 @@ int main()
 	const bool ok = exercise_color() &&
 		exercise_line2d() &&
 		exercise_parabolic_ease() &&
-		exercise_statistics();
+		exercise_statistics() &&
+		exercise_draw_group_info() &&
+		exercise_global_language();
 
 	if (!ok) {
 		return 1;
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Color,Line2D,ParabolicEase,Statistics\","
+		"\"compiled\":\"Color,DrawGroupInfo,GlobalLanguage,Line2D,ParabolicEase,Statistics\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

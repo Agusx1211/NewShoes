@@ -56,6 +56,8 @@
 #include "Common/UnicodeString.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameMemory.h"
+#include "Common/GlobalData.h"
+#include "Common/INI.h"
 #include "Common/NameKeyGenerator.h"
 #include "GameClient/ClientRandomValue.h"
 #include "GameLogic/LogicRandomValue.h"

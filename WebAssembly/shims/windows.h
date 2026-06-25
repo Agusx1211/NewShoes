@@ -137,6 +137,9 @@ struct MSG
 #define REG_SZ 1
 #define REG_BINARY 3
 #define REG_DWORD 4
+#define VER_PLATFORM_WIN32s 0
+#define VER_PLATFORM_WIN32_WINDOWS 1
+#define VER_PLATFORM_WIN32_NT 2
 #define HKEY_CURRENT_USER reinterpret_cast<HKEY>(0x80000001UL)
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
 #define PM_NOREMOVE 0x0000
@@ -146,6 +149,16 @@ struct FILETIME
 {
 	DWORD dwLowDateTime;
 	DWORD dwHighDateTime;
+};
+
+struct OSVERSIONINFO
+{
+	DWORD dwOSVersionInfoSize;
+	DWORD dwMajorVersion;
+	DWORD dwMinorVersion;
+	DWORD dwBuildNumber;
+	DWORD dwPlatformId;
+	char szCSDVersion[128];
 };
 
 struct VS_FIXEDFILEINFO
@@ -293,6 +306,30 @@ static inline long InterlockedDecrement(long *value)
 static inline DWORD GetCurrentThreadId()
 {
 	return 1;
+}
+
+static inline BOOL GetVersionEx(OSVERSIONINFO *info)
+{
+	if (info == nullptr) {
+		return FALSE;
+	}
+
+	info->dwMajorVersion = 10;
+	info->dwMinorVersion = 0;
+	info->dwBuildNumber = 0;
+	info->dwPlatformId = VER_PLATFORM_WIN32_NT;
+	info->szCSDVersion[0] = '\0';
+	return TRUE;
+}
+
+static inline int AddFontResource(LPCSTR)
+{
+	return 1;
+}
+
+static inline BOOL RemoveFontResource(LPCSTR)
+{
+	return TRUE;
 }
 
 static inline void Sleep(DWORD milliseconds)

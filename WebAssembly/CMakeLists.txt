@@ -1204,6 +1204,8 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
 
 add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GlobalLanguage.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Line2D.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/ParabolicEase.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Statistics.cpp"
@@ -1229,6 +1231,10 @@ target_compile_options(zh_gameclient_utility PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+)
+
+target_link_libraries(zh_gameclient_utility PUBLIC
+  zh_gameengine_common_core
 )
 
 add_executable(cnc-port

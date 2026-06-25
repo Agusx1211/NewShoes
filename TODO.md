@@ -492,14 +492,22 @@ shares structure and follows behind.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
-- [x] Initial `GameClient` utility slice compiles from original sources:
-      `Color.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, and `Statistics.cpp`,
-      with wasm smoke coverage for packed colors, 2D clip/intersection/area
+- [x] Expanded `GameClient` utility slice compiles from original sources:
+      `Color.cpp`, `DrawGroupInfo.cpp`, `GlobalLanguage.cpp`, `Line2D.cpp`,
+      `ParabolicEase.cpp`, and `Statistics.cpp`, with wasm smoke coverage for
+      packed colors, draw-group defaults, `GlobalLanguage` constructor/font
+      defaults and resolution font-size adjustment, 2D clip/intersection/area
       helpers, easing, normalization, and mu-law helpers.
 - [ ] `GameClient` (Display, Drawable, GUI, Input, InGameUI, Terrain) compiles.
-- [ ] Add lowercase `Common/Filesystem.h` compatibility and compile original
-      `GameClient/GlobalLanguage.cpp` after verifying the CSF/string-file path
-      against real fetched assets.
+- [x] Add lowercase `Common/Filesystem.h` compatibility, `PreRTS.h`
+      include-contract parity for `Common/INI.h`/`Common/GlobalData.h`, and
+      browser Win32 version/font-resource fallbacks needed to compile original
+      `GameClient/GlobalLanguage.cpp` against the current temporary INI and
+      GlobalData surfaces.
+- [ ] Verify `GlobalLanguage::init`, the CSF/string-file path, and local-font
+      loading against real fetched assets after original `Common/INI` and
+      browser `FontFace`/fetch loading replace the current compatibility
+      no-ops.
 - [ ] Compile original `GameClient/LanguageFilter.cpp` after resolving its
       16-bit word-list buffer contract under wasm `WideChar`/`wchar_t`.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
