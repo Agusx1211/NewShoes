@@ -114,7 +114,19 @@ shares structure and follows behind.
 - [x] `WWVegas/WWMath` core `pot.cpp`/`tri.cpp`/`v3_rnd.cpp` compiles and
       smoke-tests power-of-two helpers, vector math, triangle containment, and
       vector randomizers under wasm.
+- [x] `WWVegas/WWMath` geometry/collision slice (`aabox.cpp`, `lineseg.cpp`,
+      `matrix3.cpp`, `matrix4.cpp`, `quat.cpp`, `ode.cpp`, `obbox.cpp`,
+      `colmath*.cpp`, etc.) compiles and smoke-tests matrix/quaternion
+      transforms, AABox/line/sphere/OBBox collision paths, and ODE integration
+      under wasm.
 - [ ] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
+- [ ] Add D3DX8/matrix compatibility needed by original `WWMath/matrix3d.cpp`
+      without replacing the original matrix logic.
+- [ ] Qualify original `WWLib/simplevec.h` dependent-base accesses needed by
+      `WWMath/lookuptable.cpp`, `wwmath.cpp`, and spline sources under
+      standard clang/Emscripten lookup rules.
+- [ ] Port the `WWMath/vp.cpp` CPU detection / mutex assembly dependencies to
+      portable browser-safe helpers.
 - [x] `WWVegas/WWLib` random generator (`random.cpp`) compiles and smoke-tests
       through the WWMath vector randomizers under wasm.
 - [x] `WWVegas/WWLib` SHA hashing (`sha.cpp`) compiles and smoke-tests known

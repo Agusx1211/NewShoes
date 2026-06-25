@@ -467,7 +467,26 @@ target_compile_options(zh_wwlib_sha PRIVATE
 )
 
 add_library(zh_wwmath_core STATIC
+  "${WWMATH_DIR}/aabox.cpp"
+  "${WWMATH_DIR}/colmath.cpp"
+  "${WWMATH_DIR}/colmathaabox.cpp"
+  "${WWMATH_DIR}/colmathaabtri.cpp"
+  "${WWMATH_DIR}/colmathfrustum.cpp"
+  "${WWMATH_DIR}/colmathline.cpp"
+  "${WWMATH_DIR}/colmathobbobb.cpp"
+  "${WWMATH_DIR}/colmathobbox.cpp"
+  "${WWMATH_DIR}/colmathobbtri.cpp"
+  "${WWMATH_DIR}/colmathplane.cpp"
+  "${WWMATH_DIR}/colmathsphere.cpp"
+  "${WWMATH_DIR}/euler.cpp"
+  "${WWMATH_DIR}/frustum.cpp"
+  "${WWMATH_DIR}/lineseg.cpp"
+  "${WWMATH_DIR}/matrix3.cpp"
+  "${WWMATH_DIR}/matrix4.cpp"
+  "${WWMATH_DIR}/obbox.cpp"
+  "${WWMATH_DIR}/ode.cpp"
   "${WWMATH_DIR}/pot.cpp"
+  "${WWMATH_DIR}/quat.cpp"
   "${WWMATH_DIR}/tri.cpp"
   "${WWMATH_DIR}/v3_rnd.cpp"
 )
@@ -476,6 +495,7 @@ target_include_directories(zh_wwmath_core PUBLIC
   "${WASM_SHIMS_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
 )
 
 target_link_libraries(zh_wwmath_core PUBLIC
@@ -487,8 +507,13 @@ target_compile_options(zh_wwmath_core PRIVATE
   -fms-extensions
   -Wall
   -Wextra
+  "-Wno-#pragma-messages"
+  -Wno-deprecated-copy-with-user-provided-copy
   -Wno-logical-not-parentheses
+  -Wno-logical-op-parentheses
   -Wno-microsoft-extra-qualification
+  -Wno-overloaded-virtual
+  -Wno-reorder-ctor
   -Wno-unknown-pragmas
   -Wno-unused-function
   -Wno-unused-parameter
@@ -1003,9 +1028,14 @@ target_compile_options(wwmath-core-smoke PRIVATE
   -fms-extensions
   -Wall
   -Wextra
+  "-Wno-#pragma-messages"
+  -Wno-deprecated-copy-with-user-provided-copy
   -Wno-logical-not-parentheses
+  -Wno-logical-op-parentheses
   -Wno-microsoft-extra-qualification
+  -Wno-overloaded-virtual
   -Wno-unknown-pragmas
+  -Wno-unused-parameter
   -Wno-unused-value
 )
 
