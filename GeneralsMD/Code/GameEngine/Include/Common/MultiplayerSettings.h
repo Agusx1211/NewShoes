@@ -32,8 +32,9 @@
 #ifndef _MULTIPLAYERSETTINGS_H_
 #define _MULTIPLAYERSETTINGS_H_
 
-#include "GameClient/Color.h"
 #include "Common/Money.h"
+#include "Common/SubsystemInterface.h"
+#include "GameClient/Color.h"
 
 // FORWARD DECLARATIONS ///////////////////////////////////////////////////////////////////////////
 struct FieldParse;

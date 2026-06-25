@@ -657,6 +657,12 @@ shares structure and follows behind.
 - [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [x] `Common/INI` parser compiles as original source in the real-header
       compile frontier (reuse original — do NOT rewrite).
+- [x] Compile currently browser-buildable original `Common/INI` leaf/parser
+      sources in the real-header compile frontier against real `Common/INI.h`
+      (`INIAiData`, animation/audio/command/control-bar/crate/DamageFX,
+      draw-group, game-data, map-cache/map-data/mapped-image, misc-audio,
+      model, multiplayer, object, particle, special-power, terrain,
+      terrain-bridge/road, upgrade, video, water, and weapon parsers).
 - [ ] Compile original `Common/INI/INIWebpageURL.cpp` after the WOL browser /
       ATL dependency (`atlbase.h`) has a browser URL integration contract.
 - [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without
