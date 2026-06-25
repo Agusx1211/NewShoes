@@ -19,6 +19,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
+| `GameEngine/Common` | Partial | Initial original-source core slice now compiles to wasm: `GameMemory.cpp`, `CriticalSection.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, `SubsystemInterface.cpp`, `GameType.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`. Node smoke coverage initializes the original memory manager, exercises engine strings, name keys, deterministic RNG/CRC, and trig helpers. The full INI, Xfer, GlobalData, GameLogic, file-system, BIG archive, RTS, Thing, and Audio interfaces remain open. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -124,6 +125,11 @@ The wasm CMake skeleton currently builds:
 - `zh_wwutil`: original `WWVegas/Wwutil/mathutil.cpp` and `miscutil.cpp`
   compiled into a wasm static library with WWLib version/file helpers and
   WWMath dependencies.
+- `zh_gameengine_common_core`: initial original `GameEngine/Common` core slice
+  compiled into a wasm static library, covering the memory allocator,
+  critical-section wrapper, `AsciiString`, `UnicodeString`,
+  `SubsystemInterface`, game-type tables, trig/quick-trig helpers,
+  `NameKeyGenerator`, `RandomValue`, and engine CRC.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -192,6 +198,10 @@ The wasm CMake skeleton currently builds:
 - `wwutil-smoke`: a Node-executed wasm smoke test that verifies original Wwutil
   math helpers, string and character helpers, file existence/removal,
   read-only attribute mapping, and PE-header file-id timestamp formatting.
+- `gameengine-common-core-smoke`: a Node-executed wasm smoke test that verifies
+  the initial original `GameEngine/Common` core slice, including memory-manager
+  initialization, engine string mutation/translation, pooled name-key buckets,
+  deterministic RNG/CRC behavior, and trig/quick-trig helpers.
 
 ## Next Compile Order
 
@@ -206,5 +216,6 @@ The wasm CMake skeleton currently builds:
    final browser timing/threading contract, and platform utilities.
 4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
    allocator, and container dependencies are available.
-5. Move to `GameEngine/Common` now that Wwutil is compiled and covered by a
-   behavior smoke.
+5. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
+   GameLogic compile shims with original sources, then expand into
+   `Common/System` file/BIG/archive streams and the real INI parser.

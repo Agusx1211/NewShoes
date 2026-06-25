@@ -21,6 +21,9 @@ set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
+set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
+set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
+set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -812,6 +815,41 @@ target_link_libraries(zh_wwutil PUBLIC
   zh_wwmath_lookup
 )
 
+add_library(zh_gameengine_common_core STATIC
+  "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/AsciiString.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/UnicodeString.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/SubsystemInterface.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/GameType.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Trig.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/QuickTrig.cpp"
+  "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
+  "${GAMEENGINE_COMMON_DIR}/crc.cpp"
+)
+
+target_include_directories(zh_gameengine_common_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${ZH_LIB_INCLUDE_DIR}"
+)
+
+target_compile_options(zh_gameengine_common_core PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_executable(cnc-port
   src/wasm_port_entry.cpp
 )
@@ -1505,6 +1543,33 @@ target_compile_options(wwutil-smoke PRIVATE
 )
 
 target_link_options(wwutil-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(gameengine-common-core-smoke
+  tests/gameengine_common_core_smoke.cpp
+)
+
+set_target_properties(gameengine-common-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gameengine-common-core-smoke PRIVATE
+  zh_gameengine_common_core
+)
+
+target_compile_options(gameengine-common-core-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

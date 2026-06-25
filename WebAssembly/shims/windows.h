@@ -6,7 +6,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <cwchar>
+#include <mutex>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -24,6 +26,16 @@ using LPVOID = void *;
 using UINT = unsigned int;
 using WCHAR = wchar_t;
 using WORD = unsigned short;
+
+struct CRITICAL_SECTION
+{
+	std::recursive_mutex mutex;
+};
+
+struct LARGE_INTEGER
+{
+	long long QuadPart;
+};
 
 #ifndef FALSE
 #define FALSE 0
@@ -44,6 +56,7 @@ using WORD = unsigned short;
 #define FORMAT_MESSAGE_FROM_SYSTEM 0x00001000
 
 #define GMEM_MOVEABLE 0x0002
+#define GMEM_FIXED 0x0000
 
 #define MB_ABORTRETRYIGNORE 0x00000002
 #define MB_ICONHAND 0x00000010
@@ -168,6 +181,56 @@ static inline void DebugBreak()
 	__builtin_trap();
 }
 
+static inline void InitializeCriticalSection(CRITICAL_SECTION *)
+{
+}
+
+static inline void DeleteCriticalSection(CRITICAL_SECTION *)
+{
+}
+
+static inline void EnterCriticalSection(CRITICAL_SECTION *section)
+{
+	if (section != nullptr) {
+		section->mutex.lock();
+	}
+}
+
+static inline void LeaveCriticalSection(CRITICAL_SECTION *section)
+{
+	if (section != nullptr) {
+		section->mutex.unlock();
+	}
+}
+
+static inline long InterlockedIncrement(long *value)
+{
+	return __atomic_add_fetch(value, 1L, __ATOMIC_SEQ_CST);
+}
+
+static inline long InterlockedDecrement(long *value)
+{
+	return __atomic_sub_fetch(value, 1L, __ATOMIC_SEQ_CST);
+}
+
+static inline DWORD GetCurrentThreadId()
+{
+	return 1;
+}
+
+static inline DWORD GetTickCount()
+{
+	return static_cast<DWORD>(std::time(nullptr) * 1000);
+}
+
+static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *counter)
+{
+	if (counter != nullptr) {
+		counter->QuadPart = static_cast<long long>(GetTickCount());
+	}
+	return TRUE;
+}
+
 static inline DWORD GetFileAttributes(LPCSTR filename)
 {
 	if (filename == nullptr) {
@@ -221,9 +284,21 @@ static inline BOOL SetEvent(HANDLE)
 	return TRUE;
 }
 
+static inline constexpr std::size_t GlobalAllocHeaderSize()
+{
+	return (sizeof(std::size_t) + alignof(std::max_align_t) - 1) &
+		~(alignof(std::max_align_t) - 1);
+}
+
 static inline HANDLE GlobalAlloc(UINT, std::size_t bytes)
 {
-	return std::malloc(bytes);
+	const std::size_t total_size = GlobalAllocHeaderSize() + bytes;
+	auto *base = static_cast<unsigned char *>(std::malloc(total_size));
+	if (base == nullptr) {
+		return nullptr;
+	}
+	*reinterpret_cast<std::size_t *>(base) = bytes;
+	return base + GlobalAllocHeaderSize();
 }
 
 static inline LPVOID GlobalLock(HANDLE handle)
@@ -238,8 +313,20 @@ static inline BOOL GlobalUnlock(HANDLE)
 
 static inline HANDLE GlobalFree(HANDLE handle)
 {
-	std::free(handle);
+	if (handle != nullptr) {
+		auto *base = static_cast<unsigned char *>(handle) - GlobalAllocHeaderSize();
+		std::free(base);
+	}
 	return nullptr;
+}
+
+static inline std::size_t GlobalSize(HANDLE handle)
+{
+	if (handle == nullptr) {
+		return 0;
+	}
+	const auto *base = static_cast<const unsigned char *>(handle) - GlobalAllocHeaderSize();
+	return *reinterpret_cast<const std::size_t *>(base);
 }
 
 static inline DWORD GetFileVersionInfoSize(LPCSTR, LPDWORD handle)

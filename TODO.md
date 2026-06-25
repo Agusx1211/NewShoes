@@ -223,6 +223,15 @@ shares structure and follows behind.
 - [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.
 
 ### GameEngine — Common
+- [x] Initial `GameEngine/Common` core slice compiles from original sources:
+      memory allocator, critical-section wrapper, `AsciiString`, `UnicodeString`,
+      `SubsystemInterface`, `GameType`, trig tables, `NameKeyGenerator`,
+      `RandomValue`, and engine `crc`, with wasm smoke coverage.
+- [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
+      `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
+      original headers/sources as each real subsystem comes online.
+- [ ] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
+      engine path instead of relying on smoke-local memory hook defaults.
 - [ ] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
 - [ ] `Common/RTS`, `Thing`, `Audio` (interfaces) compile.

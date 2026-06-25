@@ -85,6 +85,24 @@ public:
     }
     */
 
+#if defined(__EMSCRIPTEN__)
+	  for (UnsignedByte *uintPtr=(UnsignedByte *)buf;len>0;len--,uintPtr++)
+    {
+	    int hibit;
+	    if (crc & 0x80000000)
+      {
+		    hibit = 1;
+	    }
+      else
+      {
+		    hibit = 0;
+	    }
+
+	    crc <<= 1;
+	    crc += *uintPtr;
+	    crc += hibit;
+    }
+#else
     // ASM version, verified by comparing resulting data with C++ version data
     unsigned *crcPtr=&crc;
     _asm
@@ -104,6 +122,7 @@ public:
       jns lp
       mov dword ptr [edi],ebx
     };
+#endif
   }
 
   /// Clears the CRC to 0
