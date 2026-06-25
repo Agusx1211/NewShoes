@@ -743,6 +743,22 @@ shares structure and follows behind.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
+- [x] Compile the first broad original `GameLogic` real-header batch in the
+      compile frontier: `Map/SidesList.cpp`, `System/CaveSystem.cpp`,
+      `System/CrateSystem.cpp`, `System/RankInfo.cpp`, `Object/Armor.cpp`,
+      core body/create/die/collide/helper/special-power/upgrade module bases,
+      crate collide leaves except `SalvageCrateCollide.cpp`, and the currently
+      browser-buildable object create/die/helper/special-power/upgrade leaves.
+      This is compile coverage only until the full `Object`, `Player`,
+      `GameLogic`, `AIPathfind`, and command/runtime surfaces link.
+- [ ] Compile the remaining probed `GameLogic` module leaves after resolving
+      the current clustered blockers: `AIPathfind.h`'s `PathfindCell` forward
+      declaration order, original `GameLogicRandomValue*` declarations for
+      random-dependent body/die/building code, self-contained
+      `KindOfMaskType` / `ObjectStatusTypes` includes, `Damage.cpp`'s standard
+      clang template-specialization requirement, `PolygonTrigger.cpp`'s
+      `TheGlobalData` include and legacy loop-scope issue, and the lowercase
+      `Common/player.h` include in `CostModifierUpgrade.cpp`.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
       `Color.cpp`, `Credits.cpp`, `Display.cpp`, `System/DebugDisplay.cpp`,
       `DisplayString.cpp`,

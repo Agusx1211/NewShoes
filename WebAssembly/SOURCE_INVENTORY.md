@@ -212,9 +212,16 @@ The wasm CMake skeleton currently builds:
   `ScoreKeeper.cpp`, `Team.cpp`), `SkirmishBattleHonors.cpp`, save/load and
   system compile leaves (`GameState.cpp`, `GameStateMap.cpp`, `Radar.cpp`,
   `Upgrade.cpp`, `Xfer.cpp`, `XferCRC.cpp`, `XferLoad.cpp`, `XferSave.cpp`),
-  and initial Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
-  `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`)
-  without linking them into the current shim-based smoke runtime yet.
+  initial Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
+  `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`),
+  and the first broad original `GameLogic` module batch: map/system leaves
+  (`SidesList.cpp`, `CaveSystem.cpp`, `CrateSystem.cpp`, `RankInfo.cpp`),
+  `Object/Armor.cpp`, body/create/die/collide/helper/special-power/upgrade
+  module bases, crate collide leaves except `SalvageCrateCollide.cpp`, and
+  currently browser-buildable object create/die/helper/special-power/upgrade
+  leaves. The GameLogic additions are compile coverage only until full object,
+  player, AI pathfinding, command, and runtime singleton surfaces link without
+  target-local bridges.
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
   `Color.cpp`, `System/DebugDisplay.cpp`,
   `System/Debug Displayers/AudioDebugDisplay.cpp`, `DisplayString.cpp`,
