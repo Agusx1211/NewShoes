@@ -6,32 +6,52 @@
 
 #include "Common/AsciiString.h"
 #include "Common/BezierSegment.h"
+#include "Common/CDManager.h"
 #include "Common/CRC.h"
 #include "Common/Dict.h"
+#include "Common/DisabledTypes.h"
 #include "Common/DiscreteCircle.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameCommon.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
+#include "Common/KindOf.h"
 #include "Common/Language.h"
 #include "Common/List.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/ObjectStatusTypes.h"
 #include "Common/PartitionSolver.h"
 #include "Common/QuickTrig.h"
+#include "Common/RAMFile.h"
 #include "Common/RandomValue.h"
+#include "Common/Registry.h"
 #include "Common/string.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
 #include "Common/encrypt.h"
 #include "GameClient/ClientRandomValue.h"
+#include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "Lib/Trig.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
+FileSystem *TheFileSystem = nullptr;
+GameLogic *TheGameLogic = nullptr;
+
+File* FileSystem::openFile(const Char *, Int)
+{
+	return nullptr;
+}
 
 namespace {
+class SmokeCDManager : public CDManager
+{
+protected:
+	CDDriveInterface* createDrive(void) override { return NEW CDDrive; }
+};
+
 class SmokeFile : public File
 {
 public:
@@ -295,6 +315,147 @@ bool exercise_file_interfaces()
 	return global_ok;
 }
 
+bool exercise_ram_file()
+{
+	SmokeFile source;
+	if (!expect(source.open("ram-source.txt", File::READWRITE | File::TEXT | File::CREATE),
+			"RAMFile source open failed")) {
+		return false;
+	}
+	if (!expect(source.write("17 3.25 USA\nnext", 16) == 16, "RAMFile source write failed")) {
+		return false;
+	}
+	source.seek(0, File::START);
+
+	RAMFile *ram = newInstance(RAMFile);
+	if (!expect(ram != nullptr, "RAMFile allocation failed")) {
+		return false;
+	}
+	if (!expect(ram->open(&source), "RAMFile open from File failed")) {
+		ram->deleteInstance();
+		return false;
+	}
+	if (!expect(ram->size() == 16 && ram->position() == 0, "RAMFile size/position failed")) {
+		ram->deleteInstance();
+		return false;
+	}
+
+	Int integer = 0;
+	Real real = 0.0f;
+	AsciiString token;
+	char line[16] = {};
+	const bool scan_ok =
+		expect(ram->scanInt(integer) && integer == 17, "RAMFile scanInt failed") &&
+		expect(ram->scanReal(real) && near(real, 3.25f, 0.0001f), "RAMFile scanReal failed") &&
+		expect(ram->scanString(token) && std::strcmp(token.str(), "USA") == 0,
+			"RAMFile scanString failed");
+	if (!scan_ok) {
+		ram->deleteInstance();
+		return false;
+	}
+	ram->seek(0, File::START);
+	ram->nextLine(line, sizeof(line));
+	if (!expect(std::strcmp(line, "17 3.25 USA\n") == 0, "RAMFile nextLine failed")) {
+		ram->deleteInstance();
+		return false;
+	}
+
+	ram->seek(0, File::START);
+	char buffer[4] = {};
+	if (!expect(ram->read(buffer, 3) == 3 && std::strncmp(buffer, "17 ", 3) == 0,
+			"RAMFile read failed")) {
+		ram->deleteInstance();
+		return false;
+	}
+	if (!expect(ram->write("x", 1) == -1, "RAMFile write should be read-only")) {
+		ram->deleteInstance();
+		return false;
+	}
+
+	char *entire = ram->readEntireAndClose();
+	const bool entire_ok = expect(entire != nullptr && std::strncmp(entire, "17 3.25 USA", 11) == 0,
+		"RAMFile readEntireAndClose failed");
+	delete[] entire;
+	ram->deleteInstance();
+	return entire_ok;
+}
+
+bool exercise_registry_defaults()
+{
+	AsciiString value("unchanged");
+	UnsignedInt version = 7;
+
+	return expect(!GetStringFromRegistry("", "Language", value), "browser registry string query should miss") &&
+		expect(std::strcmp(value.str(), "unchanged") == 0, "registry miss should not mutate string value") &&
+		expect(!GetUnsignedIntFromRegistry("", "Version", version), "browser registry integer query should miss") &&
+		expect(version == 7, "registry miss should not mutate integer value") &&
+		expect(std::strcmp(GetRegistryLanguage().str(), "english") == 0, "registry language default failed") &&
+		expect(std::strcmp(GetRegistryGameName().str(), "GeneralsMPTest") == 0, "registry SKU default failed") &&
+		expect(GetRegistryVersion() == 65536, "registry version default failed") &&
+		expect(GetRegistryMapPackVersion() == 65536, "registry map pack default failed");
+}
+
+bool exercise_cd_manager()
+{
+	GameLogic logic;
+	TheGameLogic = &logic;
+
+	SmokeCDManager manager;
+	TheCDManager = &manager;
+	manager.init();
+	if (!expect(manager.driveCount() == 0, "CDManager initial drive count failed")) {
+		TheCDManager = nullptr;
+		TheGameLogic = nullptr;
+		return false;
+	}
+
+	CDDriveInterface *drive = manager.newDrive("D:\\");
+	const bool drive_ok =
+		expect(drive != nullptr, "CDManager newDrive failed") &&
+		expect(manager.driveCount() == 1, "CDManager drive count failed") &&
+		expect(manager.getDrive(0) == drive, "CDManager getDrive failed") &&
+		expect(std::strcmp(drive->getPath().str(), "D:\\") == 0, "CDDrive path failed") &&
+		expect(drive->getDisk() == CD::UNKNOWN_DISK, "CDDrive default disk failed");
+	if (!drive_ok) {
+		TheCDManager = nullptr;
+		TheGameLogic = nullptr;
+		return false;
+	}
+
+	manager.refreshDrives();
+	manager.update();
+	manager.reset();
+	manager.destroyAllDrives();
+	const bool destroyed_ok = expect(manager.driveCount() == 0, "CDManager destroyAllDrives failed");
+	TheCDManager = nullptr;
+	TheGameLogic = nullptr;
+	return destroyed_ok;
+}
+
+bool exercise_type_masks()
+{
+	initDisabledMasks();
+	initKindOfMasks();
+
+	ObjectStatusMaskType status = MAKE_OBJECT_STATUS_MASK(OBJECT_STATUS_STEALTHED);
+	status.set(OBJECT_STATUS_DETECTED);
+
+	return expect(TEST_DISABLEDMASK(DISABLEDMASK_ALL, DISABLED_EMP),
+			"Disabled mask all initialization failed") &&
+		expect(!TEST_DISABLEDMASK(DISABLEDMASK_NONE, DISABLED_EMP),
+			"Disabled mask none initialization failed") &&
+		expect(TEST_KINDOFMASK(KINDOFMASK_FS, KINDOF_FS_FACTORY) &&
+			TEST_KINDOFMASK(KINDOFMASK_FS, KINDOF_FS_SUPERWEAPON),
+			"KindOf faction-structure mask initialization failed") &&
+		expect(!TEST_KINDOFMASK(KINDOFMASK_FS, KINDOF_INFANTRY),
+			"KindOf faction-structure mask rejected infantry failed") &&
+		expect(TEST_OBJECT_STATUS_MASK(status, OBJECT_STATUS_STEALTHED) &&
+			TEST_OBJECT_STATUS_MASK(status, OBJECT_STATUS_DETECTED),
+			"ObjectStatus mask set/test failed") &&
+		expect(!TEST_OBJECT_STATUS_MASK(OBJECT_STATUS_MASK_NONE, OBJECT_STATUS_STEALTHED),
+			"ObjectStatus none mask failed");
+}
+
 bool exercise_name_keys()
 {
 	NameKeyGenerator generator;
@@ -502,6 +663,10 @@ int main()
 	const bool ok = exercise_memory_init() &&
 		exercise_strings() &&
 		exercise_file_interfaces() &&
+		exercise_ram_file() &&
+		exercise_registry_defaults() &&
+		exercise_cd_manager() &&
+		exercise_type_masks() &&
 		exercise_name_keys() &&
 		exercise_language_and_encrypt() &&
 		exercise_random_and_crc() &&
@@ -520,8 +685,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"WSYS_String,File,LocalFileSystem,SubsystemInterface,GameType,GameCommon,"
-		"Trig,QuickTrig,List,Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"WSYS_String,File,LocalFileSystem,RAMFile,SubsystemInterface,CDManager,Registry,"
+		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
+		"Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;

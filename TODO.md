@@ -108,6 +108,12 @@ shares structure and follows behind.
       `GameEngine/Common` Bezier helpers under Emscripten.
 - [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
       and `lib/basetype.h` users under the case-sensitive wasm build.
+- [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
+      and a lowercase `Common/SubSystemInterface.h` wrapper for additional
+      original `GameEngine/Common` sources under Emscripten.
+- [x] Qualify original GameEngine `BitFlags` static name-list specializations
+      in `KindOf.cpp`, `DisabledTypes.cpp`, and `ObjectStatusTypes.cpp` so
+      they compile under standard clang/Emscripten template rules.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -115,6 +121,9 @@ shares structure and follows behind.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
+- [ ] Compile original `Common/System/QuotedPrintable.cpp` after the
+      browser-port `WCHAR`/UTF-16 contract is defined; its Unicode path assumes
+      original 16-bit wide storage.
 - [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
       libc++/wasm before relying on it for asset and file buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
@@ -239,6 +248,11 @@ shares structure and follows behind.
       `Dict.cpp`, `Language.cpp`, `System/String.cpp`, `System/encrypt.cpp`,
       `File.cpp`, `LocalFileSystem.cpp`, Bezier helpers, and
       `PartitionSolver.cpp`, with wasm smoke coverage.
+- [x] Expanded `GameEngine/Common` startup/type slice compiles from original
+      sources: `RAMFile.cpp`, `CDManager.cpp`, `registry.cpp`,
+      `DisabledTypes.cpp`, `KindOf.cpp`, and `ObjectStatusTypes.cpp`, with
+      wasm smoke coverage for RAM file reads/scans, CD drive bookkeeping,
+      browser registry defaults, and type-mask initialization.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
@@ -248,6 +262,12 @@ shares structure and follows behind.
 - [ ] Unblock original `Common/FileSystem.cpp` by bringing up
       `ArchiveFileSystem`, `CDManager`, `GameAudio`, and `GlobalData`
       dependencies after the base `File` / `LocalFileSystem` interfaces.
+- [ ] Remove the `gameengine-common-core-smoke` local `FileSystem::openFile`
+      link shim once original `Common/System/FileSystem.cpp` and its archive /
+      audio / global-data dependencies compile.
+- [ ] Decide the browser copy-protection / launcher contract before compiling
+      original `Common/System/CopyProtection.cpp`; it currently depends on
+      Win32 mutex, message-queue, event, and shared-memory APIs.
 - [x] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
       engine path instead of relying on smoke-local memory hook defaults.
 - [x] Audit original Bezier helper warnings under clang/Emscripten:

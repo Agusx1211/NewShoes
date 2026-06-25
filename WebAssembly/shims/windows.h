@@ -16,8 +16,10 @@ using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
 using HANDLE = void *;
+using HKEY = void *;
 using HINSTANCE = void *;
 using HWND = void *;
+using LONG = long;
 using LPCSTR = const char *;
 using LPCVOID = const void *;
 using LPDWORD = DWORD *;
@@ -73,13 +75,23 @@ struct LARGE_INTEGER
 #define IDIGNORE 5
 
 #define EVENT_MODIFY_STATE 0x0002
+#define KEY_READ 0x20019
+#define KEY_WRITE 0x20006
 #define PAGE_READWRITE 0x04
 #define FILE_MAP_WRITE 0x0002
 #define WAIT_OBJECT_0 0x00000000
 #define INFINITE 0xffffffff
+#define ERROR_SUCCESS 0
+#define ERROR_FILE_NOT_FOUND 2
+#define ERROR_ALREADY_EXISTS 183
 #define CP_ACP 0
 #define FILE_ATTRIBUTE_READONLY 0x00000001
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
+#define REG_OPTION_NON_VOLATILE 0x00000000
+#define REG_SZ 1
+#define REG_DWORD 4
+#define HKEY_CURRENT_USER reinterpret_cast<HKEY>(0x80000001UL)
+#define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
 
 struct FILETIME
 {
@@ -296,6 +308,40 @@ static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
 static inline BOOL CloseHandle(HANDLE)
 {
 	return TRUE;
+}
+
+static inline LONG RegOpenKeyEx(HKEY, LPCSTR, DWORD, DWORD, HKEY *result)
+{
+	if (result != nullptr) {
+		*result = nullptr;
+	}
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegQueryValueEx(HKEY, LPCSTR, LPDWORD, LPDWORD, unsigned char *, LPDWORD)
+{
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegCloseKey(HKEY)
+{
+	return ERROR_SUCCESS;
+}
+
+static inline LONG RegCreateKeyEx(HKEY, LPCSTR, DWORD, LPCSTR, DWORD, DWORD, void *, HKEY *result, LPDWORD disposition)
+{
+	if (result != nullptr) {
+		*result = nullptr;
+	}
+	if (disposition != nullptr) {
+		*disposition = 0;
+	}
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegSetValueEx(HKEY, LPCSTR, DWORD, DWORD, const unsigned char *, DWORD)
+{
+	return ERROR_FILE_NOT_FOUND;
 }
 
 static inline HANDLE CreateFileMapping(HANDLE, void *, DWORD, DWORD, DWORD, const char *)
