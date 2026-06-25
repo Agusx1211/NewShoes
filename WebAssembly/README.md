@@ -37,6 +37,17 @@ This requires the user-supplied Zero Hour disc images in `../assets` and `7z`.
 Set `VERIFY_ASSETS_FORCE_CONVERT=1` to force both `.bin` images through
 `mode1_2352_to_iso.mjs` instead of accepting up-to-date ISO outputs.
 
+Run the opt-in real BIG archive smoke:
+
+```sh
+npm run test:real-big
+```
+
+This also requires the user-supplied disc images. It builds the current wasm
+targets, verifies/extracts `INIZH.big`, then uses the original
+`Win32BIGFileSystem` and `FileSystem` path to index and read real INI files from
+the extracted archive under Node.
+
 ## Toolchain
 
 The pinned Emscripten version is recorded in `emscripten-version.txt`; this

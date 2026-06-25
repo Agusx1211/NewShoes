@@ -367,9 +367,14 @@ shares structure and follows behind.
       `Win32LocalFile` / `Win32LocalFileSystem` bridge into the wasm core;
       smoke-test local writes, existence, file-info, directory listing,
       `FileSystem` dispatch, RAM conversion, and whole-file reads.
+- [x] Add an opt-in real-asset smoke (`npm run test:real-big`) that verifies
+      the original `Win32BIGFileSystem` indexes extracted `INIZH.big`, finds
+      real INI entries, and reads `Armor.ini`, `CommandButton.ini`, and
+      `Weapon.ini` through the original `FileSystem` archive fallback path
+      under Node raw filesystem access.
 - [ ] Validate the original BIG reader against extracted real archives
-      (`INIZH.big` first) once browser asset fetch/MEMFS mounting is wired into
-      the harness.
+      (`INIZH.big` first) through browser asset fetch/MEMFS mounting in the
+      harness.
 - [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.

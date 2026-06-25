@@ -1946,3 +1946,35 @@ target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
+
+add_executable(gameengine-real-big-smoke
+  tests/gameengine_real_big_smoke.cpp
+)
+
+set_target_properties(gameengine-real-big-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gameengine-real-big-smoke PRIVATE
+  zh_gameengine_common_core
+)
+
+target_compile_options(gameengine-real-big-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gameengine-real-big-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sNODERAWFS=1"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
+)
