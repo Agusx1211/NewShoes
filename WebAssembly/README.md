@@ -97,3 +97,9 @@ Run the wasm-backed smoke test:
 ```sh
 npm run test:wasm
 ```
+
+Run all current wasm checks, including the original RefPack codec smoke:
+
+```sh
+npm run test:all
+```

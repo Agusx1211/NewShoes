@@ -52,7 +52,10 @@ shares structure and follows behind.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
-- [ ] `Compression` (refpack/zlib/etc.) compiles + unit-checked against real BIG.
+- [x] `Compression/EAC` RefPack codec compiles from original source and
+      round-trip smoke runs under wasm.
+- [ ] Full `Compression` manager (RefPack/zlib/LZH/etc.) compiles and is
+      unit-checked against real BIG data.
 - [ ] `WWVegas/WWMath` compiles; spot-check vector/matrix results.
 - [ ] `WWVegas/WWLib` (containers, string, ini, file abstractions) compiles.
 - [ ] `WWVegas/WWDebug` compiles (route asserts/logs to console).

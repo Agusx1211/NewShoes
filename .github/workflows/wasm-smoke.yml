@@ -48,4 +48,4 @@ jobs:
           "${RUNNER_TEMP}/emsdk/emsdk" activate "${emscripten_version}"
           source "${RUNNER_TEMP}/emsdk/emsdk_env.sh"
           cd WebAssembly
-          npm run test:wasm
+          npm run test:all
