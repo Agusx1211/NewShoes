@@ -59,7 +59,8 @@ npm run build:wasm
 ```
 
 The build uses `emcmake cmake` and writes generated files to ignored `dist/`.
-It currently builds only the port boundary skeleton, not the original engine.
+It currently builds the port boundary skeleton plus focused original library
+slices, not the full original engine.
 The selected baseline flags are:
 
 - ES module output with `MODULARIZE=1` / `EXPORT_ES6=1`.
@@ -100,12 +101,24 @@ npm run test:wasm
 ```
 
 Run all current wasm checks, including the original EAC compression codec,
-WWDebug core, WWLib Base64/CRC/file-core/file-INI/fixed/hash/LZO/MD5/
-public-key/RAMFile/SHA/stream-core/StringClass/utility-core, and WWMath core
-smokes:
+CompressionManager EAC-backed routes, WWDebug core, WWLib
+Base64/CRC/file-core/file-INI/fixed/hash/LZO/MD5/public-key/RAMFile/SHA/
+stream-core/StringClass/utility-core, and WWMath core smokes:
 
 ```sh
 npm run test:all
+```
+
+Run only the original EAC compression smoke:
+
+```sh
+npm run test:compression-eac
+```
+
+Run only the original CompressionManager smoke:
+
+```sh
+npm run test:compression-manager
 ```
 
 Run only the original WWDebug core smoke:

@@ -52,6 +52,8 @@ shares structure and follows behind.
 - [ ] Replace/neutralize MSVC-specific pragmas, `__forceinline`, SEH, inline asm.
 - [x] Replace the `WWDebug` x86 breakpoint path with an Emscripten/clang trap
       fallback while preserving the original MSVC path.
+- [x] Add Emscripten fallbacks for original `BaseType.h` float
+      rounding/truncation helpers where MSVC inline assembly cannot compile.
 - [x] Add a minimal WWVegas compiler shim for `__cdecl`/global new guards used
       by `always.h` under clang/Emscripten.
 - [x] Add target-local MSVC compatibility flags needed by original
@@ -101,8 +103,14 @@ shares structure and follows behind.
 ### Libraries (compile as-is where possible)
 - [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
       source and round-trip smoke runs under wasm.
+- [x] Original `CompressionManager` compiles for RefPack/BTree/Huff manager
+      routes and smoke-tests header detection, uncompressed-size metadata, and
+      round trips over the original EAC codecs under wasm.
 - [ ] Full `Compression` manager (RefPack/zlib/LZH/etc.) compiles and is
       unit-checked against real BIG data.
+- [ ] Restore or port the missing bundled `Compression/ZLib` and
+      `Compression/LZHCompress/CompLibSource` bodies so the existing
+      `CompressionManager` zlib and Nox LZH branches can be enabled under wasm.
 - [x] `WWVegas/WWMath` core `pot.cpp`/`tri.cpp`/`v3_rnd.cpp` compiles and
       smoke-tests power-of-two helpers, vector math, triangle containment, and
       vector randomizers under wasm.

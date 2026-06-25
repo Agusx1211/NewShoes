@@ -13,7 +13,7 @@ target and should be compiled or re-targeted for wasm.
 
 | Component | Current port status | Notes |
 |---|---|---|
-| `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
+| `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
 | `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, and file/INI helper sources now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
@@ -51,6 +51,9 @@ The wasm CMake skeleton currently builds:
 - `cnc-port`: a minimal browser module boundary used by the harness.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
+- `zh_compression_manager`: original `CompressionManager.cpp` compiled into a
+  wasm static library for the EAC-backed RefPack/BTree/Huff routes, with the
+  absent bundled zlib and Nox LZH codec bodies feature-gated until restored.
 - `zh_wwdebug_core`: original `WWVegas/WWDebug/wwdebug.cpp` compiled into a
   wasm static library with targeted Win32/exception shims.
 - `zh_wwlib_random`: original `WWVegas/WWLib/random.cpp` compiled into a wasm
@@ -96,6 +99,10 @@ The wasm CMake skeleton currently builds:
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
+- `compression-manager-smoke`: a Node-executed wasm smoke test that verifies
+  original `CompressionManager` header detection, preferred compression,
+  uncompressed-size metadata, EAC-backed BTree/Huff/RefPack round trips, and
+  explicit disabled behavior for the missing zlib/Nox LZH codec bodies.
 - `wwdebug-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWDebug message, assert, trigger, and profile handlers.
 - `wwlib-base64-smoke`: a Node-executed wasm smoke test that verifies original
@@ -144,8 +151,10 @@ The wasm CMake skeleton currently builds:
 
 ## Next Compile Order
 
-1. Finish the full `CompressionManager` path by replacing missing zlib/LZH
-   dependencies with toolchain/browser-compatible shims.
+1. Restore or port the missing bundled `Compression/ZLib` and
+   `Compression/LZHCompress/CompLibSource` bodies so the existing
+   `CompressionManager` zlib and Nox LZH branches can be enabled and checked
+   against real BIG data.
 2. Add minimal `always.h`/`osdep.h` compatibility so `WWMath` can use the
    compiled WWDebug core without changing math logic.
 3. Compile `WWMath` in slices, excluding or replacing x86 assembly paths such as

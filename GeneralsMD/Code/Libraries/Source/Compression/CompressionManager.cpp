@@ -22,10 +22,18 @@
 //////////////////////////////////////////////////////////////////////////////
 
 #include "Compression.h"
+// The wasm build only enables codec bodies that are present in this source tree.
+// Native/original builds keep the historical bundled zlib and Nox LZH includes.
+#if !defined(__EMSCRIPTEN__) || defined(CNC_WASM_HAS_NOXLZH)
+#define CNC_COMPRESSION_HAS_NOXLZH 1
 #include "LZHCompress/NoxCompress.h"
+#endif
+#if !defined(__EMSCRIPTEN__) || defined(CNC_WASM_HAS_ZLIB)
+#define CNC_COMPRESSION_HAS_ZLIB 1
 extern "C" {
 #include "ZLib/zlib.h"
 }
+#endif
 #include "EAC/codex.h"
 #include "EAC/btreecodex.h"
 #include "EAC/huffcodex.h"
@@ -141,7 +149,11 @@ Int CompressionManager::getMaxCompressedSize( Int uncompressedLen, CompressionTy
 	switch (compType)
 	{
 		case COMPRESSION_NOXLZH:
+#ifdef CNC_COMPRESSION_HAS_NOXLZH
 			return CalcNewSize(uncompressedLen) + 8;
+#else
+			return 0;
+#endif
 
 		case COMPRESSION_BTREE:   // guessing here
 		case COMPRESSION_HUFF:    // guessing here
@@ -157,7 +169,11 @@ Int CompressionManager::getMaxCompressedSize( Int uncompressedLen, CompressionTy
 		case COMPRESSION_ZLIB7:
 		case COMPRESSION_ZLIB8:
 		case COMPRESSION_ZLIB9:
+#ifdef CNC_COMPRESSION_HAS_ZLIB
 			return (Int)(ceil(uncompressedLen * 1.1 + 12 + 8));
+#else
+			return 0;
+#endif
 	}
 
 	return 0;
@@ -242,6 +258,7 @@ Int CompressionManager::compressData( CompressionType compType, void *srcVoid, I
 
 	if (compType == COMPRESSION_NOXLZH)
 	{
+#ifdef CNC_COMPRESSION_HAS_NOXLZH
 		memcpy(dest, "NOX\0", 4);
 		*(Int *)(dest+4) = 0;
 		Bool ret = CompressMemory(src, srcLen, dest+8, destLen);
@@ -252,10 +269,14 @@ Int CompressionManager::compressData( CompressionType compType, void *srcVoid, I
 		}
 		else
 			return 0;
+#else
+		return 0;
+#endif
 	}
 
 	if (compType >= COMPRESSION_ZLIB1 && compType <= COMPRESSION_ZLIB9)
 	{
+#ifdef CNC_COMPRESSION_HAS_ZLIB
 		Int level = compType - COMPRESSION_ZLIB1 + 1; // 1-9
 		memcpy(dest, "ZL0\0", 4);
 		dest[2] = '0' + level;
@@ -274,6 +295,9 @@ Int CompressionManager::compressData( CompressionType compType, void *srcVoid, I
 			DEBUG_LOG(("ZLib compression error (level is %d, src len is %d) %d\n", level, srcLen, err));
 			return 0;
 		}
+#else
+		return 0;
+#endif
 	}
 
 	return 0;
@@ -319,15 +343,20 @@ Int CompressionManager::decompressData( void *srcVoid, Int srcLen, void *destVoi
 
 	if (compType == COMPRESSION_NOXLZH)
 	{
+#ifdef CNC_COMPRESSION_HAS_NOXLZH
 		Bool ret = DecompressMemory(src+8, srcLen-8, dest, destLen);
 		if (ret)
 			return destLen;
 		else
 			return 0;
+#else
+		return 0;
+#endif
 	}
 
 	if (compType >= COMPRESSION_ZLIB1 && compType <= COMPRESSION_ZLIB9)
 	{
+#ifdef CNC_COMPRESSION_HAS_ZLIB
 #ifdef DEBUG_LOGGING
 		Int level = compType - COMPRESSION_ZLIB1 + 1; // 1-9
 #endif
@@ -343,6 +372,9 @@ Int CompressionManager::decompressData( void *srcVoid, Int srcLen, void *destVoi
 			DEBUG_LOG(("ZLib decompression error (src is level %d, %d bytes long) %d\n", level, srcLen, err));
 			return 0;
 		}
+#else
+		return 0;
+#endif
 	}
 
 	return 0;

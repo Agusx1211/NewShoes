@@ -12,7 +12,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist")
 
 set(ZH_CODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../GeneralsMD/Code")
-set(COMPRESSION_EAC_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression/EAC")
+set(ZH_LIB_INCLUDE_DIR "${ZH_CODE_DIR}/Libraries/Include")
+set(COMPRESSION_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression")
+set(COMPRESSION_EAC_DIR "${COMPRESSION_DIR}/EAC")
 set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac_port.h")
 set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
 set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
@@ -47,6 +49,31 @@ target_compile_options(zh_compression_eac PRIVATE
   -Wno-misleading-indentation
   -Wno-unused-but-set-variable
   -Wno-unused-parameter
+)
+
+add_library(zh_compression_manager STATIC
+  "${COMPRESSION_DIR}/CompressionManager.cpp"
+)
+
+target_include_directories(zh_compression_manager PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(zh_compression_manager PRIVATE
+  -include "${COMPRESSION_EAC_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-switch
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_compression_manager PUBLIC
+  zh_compression_eac
 )
 
 add_library(zh_wwdebug_core STATIC
@@ -518,6 +545,34 @@ target_compile_options(compression-eac-smoke PRIVATE
 )
 
 target_link_options(compression-eac-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(compression-manager-smoke
+  tests/compression_manager_smoke.cpp
+)
+
+set_target_properties(compression-manager-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(compression-manager-smoke PRIVATE
+  zh_compression_manager
+)
+
+target_compile_options(compression-manager-smoke PRIVATE
+  -include "${COMPRESSION_EAC_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-language-extension-token
+  -Wno-unknown-pragmas
+)
+
+target_link_options(compression-manager-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

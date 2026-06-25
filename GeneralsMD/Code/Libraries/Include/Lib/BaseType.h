@@ -181,6 +181,9 @@ inline Real deg2rad(Real rad) { return rad * (PI/180); }
 // code, so use this function with caution -- it might not round in the way you want.
 __forceinline long fast_float2long_round(float f)
 {
+#if defined(__EMSCRIPTEN__)
+	return lrintf(f);
+#else
 	long i;
 
 	__asm {
@@ -189,12 +192,16 @@ __forceinline long fast_float2long_round(float f)
 	}
 
 	return i;
+#endif
 }
 
 // super fast float trunc routine, works always (independent of any FPU modes)
 // code courtesy of Martin Hoffesommer (grin)
 __forceinline float fast_float_trunc(float f)
 {
+#if defined(__EMSCRIPTEN__)
+  return truncf(f);
+#else
   _asm
   {
     mov ecx,[f]
@@ -207,6 +214,7 @@ __forceinline float fast_float_trunc(float f)
     and [f],eax
   }
   return f;
+#endif
 }
 
 // same here, fast floor function
