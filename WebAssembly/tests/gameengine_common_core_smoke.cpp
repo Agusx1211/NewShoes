@@ -31,6 +31,7 @@
 #include "Common/ObjectStatusTypes.h"
 #include "Common/PartitionSolver.h"
 #include "Common/QuickTrig.h"
+#include "Common/QuotedPrintable.h"
 #include "Common/RAMFile.h"
 #include "Common/RandomValue.h"
 #include "Common/Registry.h"
@@ -465,6 +466,48 @@ bool exercise_strings()
 	wsys.format("%s-%d", "GLA", 3);
 	wsys.makeLowerCase();
 	return expect(std::strcmp(wsys.get(), "gla-3") == 0, "WSYS_String format/lower failed");
+}
+
+bool exercise_quoted_printable()
+{
+	AsciiString ascii("Maps/Zero Hour #1.ini");
+	AsciiString encoded_ascii = AsciiStringToQuotedPrintable(ascii);
+	if (!expect(std::strcmp(encoded_ascii.str(), "Maps_2FZero_20Hour_20_231_2Eini") == 0,
+			"Ascii quoted-printable encode failed")) {
+		return false;
+	}
+
+	AsciiString decoded_ascii = QuotedPrintableToAsciiString(encoded_ascii);
+	if (!expect(std::strcmp(decoded_ascii.str(), ascii.str()) == 0,
+			"Ascii quoted-printable decode failed")) {
+		return false;
+	}
+
+	UnicodeString unicode;
+	unicode.translate(AsciiString("A z"));
+	AsciiString encoded_unicode = UnicodeStringToQuotedPrintable(unicode);
+	if (!expect(std::strcmp(encoded_unicode.str(), "A_00_20_00z_00") == 0,
+			"Unicode quoted-printable UTF-16LE encode failed")) {
+		return false;
+	}
+
+	UnicodeString decoded_unicode = QuotedPrintableToUnicodeString(encoded_unicode);
+	if (!expect(decoded_unicode.getLength() == 3 &&
+			decoded_unicode.getCharAt(0) == L'A' &&
+			decoded_unicode.getCharAt(1) == L' ' &&
+			decoded_unicode.getCharAt(2) == L'z',
+			"Unicode quoted-printable UTF-16LE decode failed")) {
+		return false;
+	}
+
+	WideChar accent_buffer[] = { (WideChar)0x00e9, 0 };
+	UnicodeString accent(accent_buffer);
+	AsciiString encoded_accent = UnicodeStringToQuotedPrintable(accent);
+	UnicodeString decoded_accent = QuotedPrintableToUnicodeString(encoded_accent);
+	return expect(std::strcmp(encoded_accent.str(), "_E9_00") == 0,
+			"Unicode quoted-printable BMP encode failed") &&
+		expect(decoded_accent.getLength() == 1 && decoded_accent.getCharAt(0) == (WideChar)0x00e9,
+			"Unicode quoted-printable BMP decode failed");
 }
 
 bool exercise_language_and_encrypt()
@@ -1356,6 +1399,7 @@ int main()
 
 	const bool ok = exercise_memory_init() &&
 		exercise_strings() &&
+		exercise_quoted_printable() &&
 		exercise_file_interfaces() &&
 		exercise_file_system_dispatch() &&
 		exercise_win32_local_file_system() &&
@@ -1395,7 +1439,7 @@ int main()
 		"Version,AudioRequest,Directory,StackDump,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
-		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;

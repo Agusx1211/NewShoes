@@ -1145,6 +1145,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/Trig.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/QuickTrig.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/List.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/QuotedPrintable.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/DisabledTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/encrypt.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/KindOf.cpp"

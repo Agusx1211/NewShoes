@@ -158,9 +158,10 @@ shares structure and follows behind.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
-- [ ] Compile original `Common/System/QuotedPrintable.cpp` after the
-      browser-port `WCHAR`/UTF-16 contract is defined; its Unicode path assumes
-      original 16-bit wide storage.
+- [x] Compile original `Common/System/QuotedPrintable.cpp` after making its
+      original UTF-16LE quoted-printable wire format explicit for the wasm
+      `WideChar`/`wchar_t` width, with ASCII, Unicode ASCII, and BMP
+      round-trip smoke coverage.
 - [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
       libc++/wasm before relying on it for asset and file buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
@@ -379,6 +380,10 @@ shares structure and follows behind.
       the existing original `CompressionManager` slice, with wasm smoke
       coverage for compressed cached-file reads and `DataChunkInput` table /
       chunk parsing.
+- [x] Expanded `GameEngine/Common` string/network utility slice compiles from
+      original source: `QuotedPrintable.cpp`, with wasm smoke coverage for
+      ASCII quoted-printable and the original UTF-16LE Unicode wire format used
+      by LAN/GameSpy/user-preference paths.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.

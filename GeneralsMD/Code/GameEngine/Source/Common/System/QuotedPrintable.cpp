@@ -31,6 +31,7 @@
 #include "Common/QuotedPrintable.h"
 
 #define MAGIC_CHAR '_'
+#define MAX_QUOTED_PRINTABLE_CHARS 1024
 
 // takes an integer and returns an ASCII representation
 static char intToHexDigit(int num)
@@ -52,35 +53,69 @@ static int hexDigitToInt(char c)
 	return 0;
 }
 
+static Bool appendByteToQuotedPrintable(unsigned char value, char *dest, int *index)
+{
+	if (isalnum(value))
+	{
+		if (*index >= MAX_QUOTED_PRINTABLE_CHARS - 1)
+			return FALSE;
+		dest[(*index)++] = value;
+	}
+	else
+	{
+		if (*index >= MAX_QUOTED_PRINTABLE_CHARS - 3)
+			return FALSE;
+		dest[(*index)++] = MAGIC_CHAR;
+		dest[(*index)++] = intToHexDigit(value >> 4);
+		dest[(*index)++] = intToHexDigit(value & 0xf);
+	}
+
+	return TRUE;
+}
+
+static Bool readByteFromQuotedPrintable(const unsigned char *&src, unsigned char *value)
+{
+	if (*src == '\0')
+		return FALSE;
+
+	if (*src == MAGIC_CHAR)
+	{
+		if (src[1] == '\0')
+			return FALSE;
+
+		*value = hexDigitToInt(src[1]);
+		src++;
+		if (src[1] != '\0')
+		{
+			*value = *value << 4;
+			*value = *value | hexDigitToInt(src[1]);
+			src++;
+		}
+	}
+	else
+	{
+		*value = *src;
+	}
+
+	src++;
+	return TRUE;
+}
+
 // Convert unicode strings into ascii quoted-printable strings
 AsciiString UnicodeStringToQuotedPrintable(UnicodeString original)
 {
-	static char dest[1024];
-	const char *src = (const char *)original.str();
+	static char dest[MAX_QUOTED_PRINTABLE_CHARS];
+	const WideChar *src = original.str();
 	int i=0;
-	while ( !(src[0]=='\0' && src[1]=='\0') && i<1021 )
+	// Preserve the original network/preferences wire format: UTF-16LE bytes.
+	while ( *src && i<MAX_QUOTED_PRINTABLE_CHARS-1 )
 	{
-		if (!isalnum(*src))
-		{
-			dest[i++] = MAGIC_CHAR;
-			dest[i++] = intToHexDigit((*src)>>4);
-			dest[i++] = intToHexDigit((*src)&0xf);
-		} else
-		{
-			dest[i++] = *src;
-		}
-		src ++;
-		if (!isalnum(*src))
-		{
-			dest[i++] = MAGIC_CHAR;
-			dest[i++] = intToHexDigit((*src)>>4);
-			dest[i++] = intToHexDigit((*src)&0xf);
-		}
-		else
-		{
-			dest[i++] = *src;
-		}
-		src ++;
+		UnsignedInt codeUnit = ((UnsignedInt)*src) & 0xffff;
+		if (!appendByteToQuotedPrintable((unsigned char)(codeUnit & 0xff), dest, &i))
+			break;
+		if (!appendByteToQuotedPrintable((unsigned char)((codeUnit >> 8) & 0xff), dest, &i))
+			break;
+		src++;
 	}
 	dest[i] = '\0';
 
@@ -90,21 +125,14 @@ AsciiString UnicodeStringToQuotedPrintable(UnicodeString original)
 // Convert ascii strings into ascii quoted-printable strings
 AsciiString AsciiStringToQuotedPrintable(AsciiString original)
 {
-	static char dest[1024];
-	const char *src = (const char *)original.str();
+	static char dest[MAX_QUOTED_PRINTABLE_CHARS];
+	const unsigned char *src = (const unsigned char *)original.str();
 	int i=0;
-	while ( src[0]!='\0' && i<1021 )
+	while ( src[0]!='\0' && i<MAX_QUOTED_PRINTABLE_CHARS-1 )
 	{
-		if (!isalnum(*src))
-		{
-			dest[i++] = MAGIC_CHAR;
-			dest[i++] = intToHexDigit((*src)>>4);
-			dest[i++] = intToHexDigit((*src)&0xf);
-		} else
-		{
-			dest[i++] = *src;
-		}
-		src ++;
+		if (!appendByteToQuotedPrintable(*src, dest, &i))
+			break;
+		src++;
 	}
 	dest[i] = '\0';
 
@@ -114,50 +142,24 @@ AsciiString AsciiStringToQuotedPrintable(AsciiString original)
 // Convert ascii quoted-printable strings into unicode strings
 UnicodeString QuotedPrintableToUnicodeString(AsciiString original)
 {
-	static unsigned short dest[1024];
+	static WideChar dest[MAX_QUOTED_PRINTABLE_CHARS];
 	int i=0;
 
-	unsigned char *c = (unsigned char *)dest;
 	const unsigned char *src = (const unsigned char *)original.str();
 
-	while (*src && i<1023)
+	// Decode the original UTF-16LE byte stream into the host WideChar width.
+	while (*src && i<MAX_QUOTED_PRINTABLE_CHARS-1)
 	{
-		if (*src == MAGIC_CHAR)
-		{
-			if (src[1] == '\0')
-			{
-				// string ends with MAGIC_CHAR
-				break;
-			}
-			*c = hexDigitToInt(src[1]);
-			src++;
-			if (src[1] != '\0')
-			{
-				*c = *c<<4;
-				*c = *c | hexDigitToInt(src[1]);
-				src++;
-			}
-		}
-		else
-		{
-			*c = *src;
-		}
-		src++;
-		c++;
+		unsigned char low = 0;
+		unsigned char high = 0;
+		if (!readByteFromQuotedPrintable(src, &low))
+			break;
+		if (*src && !readByteFromQuotedPrintable(src, &high))
+			break;
+		dest[i++] = (WideChar)(low | (high << 8));
 	}
 
-	// Fixup odd-length strings
-	if ((c-(unsigned char *)dest)%2)
-	{
-		// OK
-	}
-	else
-	{
-		*c = '\0';
-		c++;
-	}
-
-	*c = 0;
+	dest[i] = 0;
 
 	UnicodeString out(dest);
 	return out;
@@ -166,40 +168,21 @@ UnicodeString QuotedPrintableToUnicodeString(AsciiString original)
 // Convert ascii quoted-printable strings into ascii strings
 AsciiString QuotedPrintableToAsciiString(AsciiString original)
 {
-	static unsigned char dest[1024];
+	static unsigned char dest[MAX_QUOTED_PRINTABLE_CHARS];
 	int i=0;
 
 	unsigned char *c = (unsigned char *)dest;
 	const unsigned char *src = (const unsigned char *)original.str();
 
-	while (*src && i<1023)
+	while (*src && i<MAX_QUOTED_PRINTABLE_CHARS-1)
 	{
-		if (*src == MAGIC_CHAR)
-		{
-			if (src[1] == '\0')
-			{
-				// string ends with MAGIC_CHAR
-				break;
-			}
-			*c = hexDigitToInt(src[1]);
-			src++;
-			if (src[1] != '\0')
-			{
-				*c = *c<<4;
-				*c = *c | hexDigitToInt(src[1]);
-				src++;
-			}
-		}
-		else
-		{
-			*c = *src;
-		}
-		src++;
+		if (!readByteFromQuotedPrintable(src, c))
+			break;
 		c++;
+		i++;
 	}
 
 	*c = 0;
 
 	return AsciiString((const char *)dest);
 }
-
