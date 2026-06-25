@@ -23,6 +23,16 @@ Asset tooling for obtaining real game data to test the port against:
 
 Extracted archives land under ignored `artifacts/real-assets/`.
 
+Verify the local real-asset sample pipeline:
+
+```sh
+npm run verify:assets
+```
+
+This requires the user-supplied Zero Hour disc images in `../assets` and `7z`.
+Set `VERIFY_ASSETS_FORCE_CONVERT=1` to force both `.bin` images through
+`mode1_2352_to_iso.mjs` instead of accepting up-to-date ISO outputs.
+
 ## Toolchain
 
 The pinned Emscripten version is recorded in `emscripten-version.txt`; this

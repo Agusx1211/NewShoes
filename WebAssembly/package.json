@@ -6,6 +6,7 @@
     "build:wasm": "bash tools/build_wasm.sh",
     "clean:wasm": "bash tools/clean_wasm.sh",
     "extract:real-big": "bash tools/extract_zh_big_sample.sh",
+    "verify:assets": "node tools/verify_real_assets.mjs",
     "serve:harness": "node harness/serve.mjs",
     "test:harness": "node harness/smoke.mjs",
     "test:wasm": "npm run build:wasm && EXPECT_WASM=1 node harness/smoke.mjs"
