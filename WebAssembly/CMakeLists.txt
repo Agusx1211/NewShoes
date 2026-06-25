@@ -825,6 +825,8 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/RAMFile.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Geometry.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Compression.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/DataChunk.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/AsciiString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/UnicodeString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/String.cpp"
@@ -872,6 +874,10 @@ target_compile_options(zh_gameengine_common_core PRIVATE
   -Wno-unknown-pragmas
   -Wno-unused-parameter
   -Wno-writable-strings
+)
+
+target_link_libraries(zh_gameengine_common_core PUBLIC
+  zh_compression_manager
 )
 
 add_executable(cnc-port

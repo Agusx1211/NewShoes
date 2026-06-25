@@ -267,6 +267,11 @@ shares structure and follows behind.
       `BitFlags.cpp`, and `MiniLog.cpp`, with wasm smoke coverage for the
       original file-system local dispatch path, model-condition and armor-set
       bit-name tables, and geometry bounds/footprint calculations.
+- [x] Expanded `GameEngine/Common` compression/data-chunk slice compiles from
+      original sources: `Compression.cpp` and `DataChunk.cpp`, linked against
+      the existing original `CompressionManager` slice, with wasm smoke
+      coverage for compressed cached-file reads and `DataChunkInput` table /
+      chunk parsing.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
@@ -280,15 +285,28 @@ shares structure and follows behind.
 - [x] Remove the `gameengine-common-core-smoke` local `FileSystem::openFile`
       link shim after original `Common/System/FileSystem.cpp` compiles into the
       smoke target with target-local archive/audio singleton globals.
-- [ ] Add the `Libraries/Source/Compression` include path needed by original
+- [x] Add the `Libraries/Source/Compression` include path needed by original
       `Common/System/Compression.cpp` and `DataChunk.cpp`, then compile their
       GameEngine compression/data-chunk facade paths against the existing
       compression manager slice.
+- [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
+      `GlobalData` user-data directory and browser persistence layer replace
+      the current target-local `Common/GlobalData.h` shim.
 - [ ] Compile original `Common/version.cpp` after adding a lowercase
       `Common/Version.h` wrapper and bringing up the `GameClient/GameText`
       interface used by its Unicode formatting path.
 - [ ] Compile original `Common/CRCDebug.cpp` after the `GameClient/InGameUI`
       and W3D collision/render include dependencies are available.
+- [ ] Compile original `Common/MultiplayerSettings.cpp` and
+      `Common/TerrainTypes.cpp` after the real `Common/INI` `FieldParse` table
+      and scalar/color parse helpers replace the temporary INI shim.
+- [ ] Compile original `Common/UserPreferences.cpp` and
+      `Common/SkirmishBattleHonors.cpp` after `Common/Thing` /
+      `Common/OVERRIDE.h`, player/game-difficulty declarations, and related
+      GameLogic headers are available.
+- [ ] Compile original `Common/GameLOD.cpp` after the particle-priority,
+      TerrainVisual/GameClient, and W3D collision include dependencies are
+      available.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
 - [ ] Decide the browser copy-protection / launcher contract before compiling

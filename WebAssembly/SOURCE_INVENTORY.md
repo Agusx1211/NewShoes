@@ -19,7 +19,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
-| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `File.cpp`, `LocalFileSystem.cpp`, `FileSystem.cpp`, `RAMFile.cpp`, `Snapshot.cpp`, `Geometry.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, legacy `System/String.cpp`, `SubsystemInterface.cpp`, `CDManager.cpp`, `registry.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `DisabledTypes.cpp`, `KindOf.cpp`, `ObjectStatusTypes.cpp`, `BitFlags.cpp`, `MiniLog.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `System/encrypt.cpp`, `Language.cpp`, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, legacy WSYS strings, original file and RAM file access/read/scan behavior, original file-system local dispatch, local file-system singleton plumbing, CD manager drive bookkeeping, browser registry defaults, language state, name keys, Dict copy-on-write/typed lookups, deterministic RNG/CRC, trig helpers, game constants, type-mask and bit-name table initialization, geometry bounds/footprint calculations, linked-list/circle helpers, Bezier evaluation/splitting, encryption vectors, and partition solving. The full INI, Xfer, GlobalData, GameLogic, concrete archive/BIG file-system, RTS, Thing, and Audio implementations remain open. |
+| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `File.cpp`, `LocalFileSystem.cpp`, `FileSystem.cpp`, `RAMFile.cpp`, `Snapshot.cpp`, `Geometry.cpp`, `Compression.cpp`, `DataChunk.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, legacy `System/String.cpp`, `SubsystemInterface.cpp`, `CDManager.cpp`, `registry.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `DisabledTypes.cpp`, `KindOf.cpp`, `ObjectStatusTypes.cpp`, `BitFlags.cpp`, `MiniLog.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `System/encrypt.cpp`, `Language.cpp`, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, legacy WSYS strings, original file and RAM file access/read/scan behavior, original file-system local dispatch, compressed cached-file reads through the original compression manager, `DataChunkInput` table/chunk parsing, local file-system singleton plumbing, CD manager drive bookkeeping, browser registry defaults, language state, name keys, Dict copy-on-write/typed lookups, deterministic RNG/CRC, trig helpers, game constants, type-mask and bit-name table initialization, geometry bounds/footprint calculations, linked-list/circle helpers, Bezier evaluation/splitting, encryption vectors, and partition solving. The full INI, Xfer, GlobalData, GameLogic, concrete archive/BIG file-system, RTS, Thing, and Audio implementations remain open. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -133,10 +133,11 @@ The wasm CMake skeleton currently builds:
   `SubsystemInterface`, CD manager interface, browser registry defaults,
   game-type/common tables, trig/quick-trig helpers, legacy `LList`,
   disabled/kind/object-status/model-condition/armor-set bit masks, snapshot
-  base construction, geometry extents, `Dict`, discrete circle scanlines,
-  Bezier helpers, disabled `MiniLog` compile coverage, language state, password
-  obfuscation, partition solving, `NameKeyGenerator`, `RandomValue`, and
-  engine CRC.
+  base construction, geometry extents, GameEngine compression/data-chunk
+  facades backed by the original compression manager, `Dict`, discrete circle
+  scanlines, Bezier helpers, disabled `MiniLog` compile coverage, language
+  state, password obfuscation, partition solving, `NameKeyGenerator`,
+  `RandomValue`, and engine CRC.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -214,10 +215,10 @@ The wasm CMake skeleton currently builds:
   plumbing, CD manager drive bookkeeping, browser registry defaults, language
   state, password-obfuscation vectors, pooled name-key buckets,
   disabled/kind/object-status/model-condition/armor-set type masks and name
-  tables, geometry bounds/footprint calculations, Dict copy-on-write and typed
-  lookups, deterministic RNG/CRC behavior, trig/quick-trig helpers, game common
-  tables, list/circle helpers, Bezier evaluation/splitting, and partition
-  solving.
+  tables, geometry bounds/footprint calculations, compressed cached-file reads,
+  `DataChunkInput` table/chunk parsing, Dict copy-on-write and typed lookups,
+  deterministic RNG/CRC behavior, trig/quick-trig helpers, game common tables,
+  list/circle helpers, Bezier evaluation/splitting, and partition solving.
 
 ## Next Compile Order
 
@@ -234,6 +235,6 @@ The wasm CMake skeleton currently builds:
 4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
    allocator, and container dependencies are available.
 5. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
-   GameLogic compile shims with original sources, add the Compression include
-   path needed by `Common/System/Compression.cpp` and `DataChunk.cpp`, then
-   expand into `Common/System` archive/BIG streams and the real INI parser.
+   GameLogic compile shims with original sources, then expand into
+   `Common/System` archive/BIG streams, the real INI parser, and the
+   DataChunkOutput write path once browser user-data persistence exists.

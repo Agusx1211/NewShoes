@@ -34,6 +34,7 @@
 #include "Common/DataChunk.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
+#include "Common/GlobalData.h"
 
 // If verbose, lots of debug logging.
 #define not_VERBOSE

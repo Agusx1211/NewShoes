@@ -4,11 +4,13 @@
 
 #include "PreRTS.h"
 
+#include "Compression.h"
 #include "Common/AsciiString.h"
 #include "Common/ArchiveFileSystem.h"
 #include "Common/BezierSegment.h"
 #include "Common/CDManager.h"
 #include "Common/CRC.h"
+#include "Common/DataChunk.h"
 #include "Common/Dict.h"
 #include "Common/DisabledTypes.h"
 #include "Common/DiscreteCircle.h"
@@ -16,6 +18,7 @@
 #include "Common/FileSystem.h"
 #include "Common/GameCommon.h"
 #include "Common/Geometry.h"
+#include "Common/GlobalData.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
 #include "Common/KindOf.h"
@@ -43,20 +46,93 @@
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 ArchiveFileSystem *TheArchiveFileSystem = nullptr;
 GameLogic *TheGameLogic = nullptr;
+GlobalData *TheGlobalData = nullptr;
 class AudioManager;
 AudioManager *TheAudio = nullptr;
 
 namespace {
+template<typename T>
+void append_value(std::vector<char> &buffer, const T &value)
+{
+	const auto *bytes = reinterpret_cast<const char *>(&value);
+	buffer.insert(buffer.end(), bytes, bytes + sizeof(T));
+}
+
 class SmokeCDManager : public CDManager
 {
 protected:
 	CDDriveInterface* createDrive(void) override { return NEW CDDrive; }
 };
 
+class SmokeOutputStream : public OutputStream
+{
+public:
+	Int write(const void *pData, Int numBytes) override
+	{
+		if (pData == nullptr || numBytes <= 0) {
+			return 0;
+		}
+		const auto *source = static_cast<const char *>(pData);
+		m_data.insert(m_data.end(), source, source + numBytes);
+		return numBytes;
+	}
+
+	const std::vector<char> &data() const { return m_data; }
+
+private:
+	std::vector<char> m_data;
+};
+
+class SmokeChunkInputStream : public ChunkInputStream
+{
+public:
+	explicit SmokeChunkInputStream(const std::vector<char> &data) : m_data(data), m_position(0) {}
+
+	Int read(void *pData, Int numBytes) override
+	{
+		if (pData == nullptr || numBytes <= 0 || eof()) {
+			return 0;
+		}
+		const UnsignedInt remaining = static_cast<UnsignedInt>(m_data.size()) - m_position;
+		const UnsignedInt bytes_to_read = static_cast<UnsignedInt>(numBytes) < remaining ?
+			static_cast<UnsignedInt>(numBytes) : remaining;
+		std::memcpy(pData, m_data.data() + m_position, bytes_to_read);
+		m_position += bytes_to_read;
+		return static_cast<Int>(bytes_to_read);
+	}
+
+	UnsignedInt tell(void) override { return m_position; }
+
+	Bool absoluteSeek(UnsignedInt pos) override
+	{
+		const UnsignedInt size = static_cast<UnsignedInt>(m_data.size());
+		m_position = pos > size ? size : pos;
+		return TRUE;
+	}
+
+	Bool eof(void) override { return m_position >= m_data.size(); }
+
+private:
+	const std::vector<char> &m_data;
+	UnsignedInt m_position;
+};
+
 class SmokeFile : public File
 {
 public:
 	SmokeFile() : m_position(0) {}
+
+	void setData(const void *buffer, Int bytes)
+	{
+		if (buffer == nullptr || bytes <= 0) {
+			m_data.clear();
+			m_position = 0;
+			return;
+		}
+		const auto *source = static_cast<const char *>(buffer);
+		m_data.assign(source, source + bytes);
+		m_position = 0;
+	}
 
 	Int read(void *buffer, Int bytes) override
 	{
@@ -134,23 +210,37 @@ private:
 class SmokeLocalFileSystem : public LocalFileSystem
 {
 public:
+	SmokeLocalFileSystem() : m_payload_name("local-smoke.txt") {}
+
+	void setPayload(const Char *filename, const void *data, Int bytes)
+	{
+		m_payload_name = filename;
+		if (data == nullptr || bytes <= 0) {
+			m_payload.clear();
+			return;
+		}
+		const auto *source = static_cast<const char *>(data);
+		m_payload.assign(source, source + bytes);
+	}
+
 	void init() override { LocalFileSystem::init(); }
 	void reset() override { LocalFileSystem::reset(); }
 	void update() override { LocalFileSystem::update(); }
 	File *openFile(const Char *filename, Int access = 0) override
 	{
-		if (std::strcmp(filename, "local-smoke.txt") != 0) {
+		if (std::strcmp(filename, m_payload_name.str()) != 0) {
 			return nullptr;
 		}
 		m_file.close();
 		if (!m_file.open(filename, access)) {
 			return nullptr;
 		}
+		m_file.setData(m_payload.data(), static_cast<Int>(m_payload.size()));
 		return &m_file;
 	}
 	Bool doesFileExist(const Char *filename) const override
 	{
-		return std::strcmp(filename, "local-smoke.txt") == 0;
+		return std::strcmp(filename, m_payload_name.str()) == 0;
 	}
 	void getFileListInDirectory(const AsciiString&, const AsciiString&, const AsciiString&, FilenameList&, Bool) const override {}
 	Bool getFileInfo(const AsciiString&, FileInfo *) const override { return FALSE; }
@@ -158,6 +248,18 @@ public:
 
 private:
 	SmokeFile m_file;
+	AsciiString m_payload_name;
+	std::vector<char> m_payload;
+};
+
+struct DataChunkParseResult
+{
+	Bool called;
+	DataChunkVersionType version;
+	Int data_size;
+	Int integer;
+	Byte byte;
+	AsciiString text;
 };
 
 struct Scanline
@@ -185,6 +287,18 @@ void collect_scanline(Int x_start, Int x_end, Int y, void *context)
 bool near(Real actual, Real expected, Real epsilon = 0.015f)
 {
 	return std::fabs(actual - expected) <= epsilon;
+}
+
+Bool parse_smoke_data_chunk(DataChunkInput &input, DataChunkInfo *info, void *user_data)
+{
+	auto *result = static_cast<DataChunkParseResult *>(user_data);
+	result->called = TRUE;
+	result->version = info->version;
+	result->data_size = info->dataSize;
+	result->integer = input.readInt();
+	result->byte = input.readByte();
+	result->text = input.readAsciiString();
+	return TRUE;
 }
 
 bool exercise_memory_init()
@@ -356,6 +470,114 @@ bool exercise_file_system_dispatch()
 	TheFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
 	return open_ok && missing_ok;
+}
+
+bool exercise_cached_file_input_stream()
+{
+	const char payload[] = "DataChunk cached input decompresses through the original manager.";
+	const Int payload_size = static_cast<Int>(std::strlen(payload));
+	const Int max_compressed_size = CompressionManager::getMaxCompressedSize(payload_size, COMPRESSION_REFPACK);
+	if (!expect(max_compressed_size > payload_size, "CompressionManager max compressed size failed")) {
+		return false;
+	}
+
+	std::vector<unsigned char> compressed(static_cast<std::size_t>(max_compressed_size));
+	const Int compressed_size = CompressionManager::compressData(
+		COMPRESSION_REFPACK,
+		const_cast<char *>(payload),
+		payload_size,
+		compressed.data(),
+		max_compressed_size);
+	if (!expect(compressed_size > 0, "CompressionManager RefPack compression failed")) {
+		return false;
+	}
+
+	SmokeLocalFileSystem local_file_system;
+	local_file_system.setPayload("compressed-chunk.bin", compressed.data(), compressed_size);
+
+	FileSystem file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheFileSystem = &file_system;
+	TheArchiveFileSystem = nullptr;
+
+	CachedFileInputStream input;
+	if (!expect(input.open(AsciiString("compressed-chunk.bin")), "CachedFileInputStream open failed")) {
+		TheFileSystem = nullptr;
+		TheLocalFileSystem = nullptr;
+		return false;
+	}
+
+	char readback[sizeof(payload)] = {};
+	const Int bytes_read = input.read(readback, payload_size);
+	const bool read_ok =
+		expect(bytes_read == payload_size, "CachedFileInputStream read size failed") &&
+		expect(std::memcmp(readback, payload, payload_size) == 0,
+			"CachedFileInputStream decompressed payload mismatch") &&
+		expect(input.eof(), "CachedFileInputStream eof failed") &&
+		expect(input.absoluteSeek(0) && input.tell() == 0, "CachedFileInputStream seek/tell failed");
+
+	input.close();
+	TheFileSystem = nullptr;
+	TheLocalFileSystem = nullptr;
+	return read_ok;
+}
+
+bool exercise_data_chunks()
+{
+	DataChunkTableOfContents contents;
+	const UnsignedInt root_id = contents.allocateID(AsciiString("ROOT"));
+
+	SmokeOutputStream output;
+	contents.write(output);
+
+	std::vector<char> chunk_file = output.data();
+	std::vector<char> payload;
+	const Int integer = 41;
+	const Byte byte = 9;
+	const char text[] = "supply";
+	const UnsignedShort text_length = static_cast<UnsignedShort>(std::strlen(text));
+	append_value(payload, integer);
+	append_value(payload, byte);
+	append_value(payload, text_length);
+	payload.insert(payload.end(), text, text + text_length);
+
+	append_value(chunk_file, root_id);
+	const DataChunkVersionType version = 3;
+	append_value(chunk_file, version);
+	const Int payload_size = static_cast<Int>(payload.size());
+	append_value(chunk_file, payload_size);
+	chunk_file.insert(chunk_file.end(), payload.begin(), payload.end());
+
+	SmokeChunkInputStream stream(chunk_file);
+	DataChunkInput input(&stream);
+	if (!expect(input.isValidFileType(), "DataChunkInput did not recognize table of contents")) {
+		return false;
+	}
+
+	DataChunkParseResult result = {};
+	input.registerParser(AsciiString("ROOT"), AsciiString(""), parse_smoke_data_chunk, &result);
+	const bool parse_ok =
+		expect(input.parse(&result), "DataChunkInput parse failed") &&
+		expect(result.called, "DataChunk parser was not invoked") &&
+		expect(result.version == version, "DataChunk parser version failed") &&
+		expect(result.data_size == payload_size, "DataChunk parser data size failed") &&
+		expect(result.integer == integer && result.byte == byte,
+			"DataChunk parser primitive reads failed") &&
+		expect(std::strcmp(result.text.str(), text) == 0, "DataChunk parser AsciiString read failed");
+	if (!parse_ok) {
+		return false;
+	}
+
+	input.reset();
+	DataChunkVersionType reopened_version = 0;
+	const AsciiString reopened_label = input.openDataChunk(&reopened_version);
+	const bool reopen_ok =
+		expect(std::strcmp(reopened_label.str(), "ROOT") == 0, "DataChunkInput reset/open label failed") &&
+		expect(reopened_version == version, "DataChunkInput reset/open version failed") &&
+		expect(input.getChunkDataSize() == static_cast<UnsignedInt>(payload_size),
+			"DataChunkInput reset/open size failed");
+	input.closeDataChunk();
+	return reopen_ok;
 }
 
 bool exercise_ram_file()
@@ -788,6 +1010,8 @@ int main()
 		exercise_strings() &&
 		exercise_file_interfaces() &&
 		exercise_file_system_dispatch() &&
+		exercise_cached_file_input_stream() &&
+		exercise_data_chunks() &&
 		exercise_ram_file() &&
 		exercise_registry_defaults() &&
 		exercise_cd_manager() &&
@@ -814,7 +1038,8 @@ int main()
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
 		"WSYS_String,File,LocalFileSystem,FileSystem,RAMFile,SubsystemInterface,CDManager,Registry,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
-		"BitFlags,Snapshot,Geometry,MiniLog,Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
+		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
