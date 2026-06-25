@@ -98,6 +98,8 @@ public:
 	static void parseHeaderTemplateDefinition(INI *ini);
 	static void parseCredits(INI *ini);
 	static void parseShellMenuSchemeDefinition(INI *ini);
+	static void parseChallengeModeDefinition(INI *ini);
+	static void parseWindowTransitions(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{

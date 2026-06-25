@@ -143,6 +143,9 @@ shares structure and follows behind.
       batch (`Windows.h`, `common/GameType.h`, `Gamelogic/GameLogic.h`,
       `Gameclient/WindowLayout.h`, `Gameclient/GameWindowManager.h`, and
       `GameClient/Controlbar.h`) under the case-sensitive wasm build.
+- [x] Add the missing original `ChallengeGenerals` `Image` pointer forward
+      declaration plus temporary `Common/INI.h` bridge declarations for
+      `parseChallengeModeDefinition` and `parseWindowTransitions`.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
@@ -606,12 +609,27 @@ shares structure and follows behind.
       DirectInput key constants, Win32 double-click/return-key fallbacks, and
       small clang/MSVC-scope compatibility fixes; this is compile coverage
       only until `GameWindow.cpp` links.
+- [x] Compile original `GameClient/GUI/ChallengeGenerals.cpp`,
+      `GUI/GameWindowManagerScript.cpp`, `GUI/GameWindowTransitions.cpp`, and
+      GUI callback utility sources (`GUICallbacks/ExtendedMessageBox.cpp`,
+      `GUICallbacks/IMECandidate.cpp`, and `GUICallbacks/MessageBox.cpp`) in
+      the GameClient utility target; smoke-test the non-rendering
+      `ChallengeGenerals` parse table and state accessors.
 - [ ] Compile original `GameClient/GUI/GameWindow.cpp` after the deeper
       `InGameUI`, `RadiusDecal`, `SelectionXlat`, and related enum/header
       contracts are available through original headers instead of target-local
       stubs.
+- [ ] Compile original `GameClient/GUI/GameWindowTransitionsStyles.cpp` and
+      `GUI/ControlBar/ControlBarResizer.cpp` after the real `ControlBar`
+      enum/`OVERRIDE` contracts are available and the remaining transition
+      style `MIN` compatibility is resolved without masking original behavior.
 - [ ] Compile original `GameClient/GUI/Gadget/GadgetPushButton.cpp` after
       the `InGameUI`/`RadiusDecal` enum contracts are available.
+- [ ] Compile the remaining original GUI callbacks and shell/menu sources
+      after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
+      `GameNetwork`, and `MessageStream` contracts are available through
+      original headers; probes currently fail on those deeper contracts rather
+      than isolated browser shims.
 - [ ] Compile original `GameClient/Input/Keyboard.cpp` after the browser
       keyboard layout/IME translation surface replaces Win32 `HKL`,
       `GetKeyboardLayout`, legacy invalid character literals, and empty wide

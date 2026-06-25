@@ -19,6 +19,7 @@
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Color.h"
 #include "GameClient/Anim2D.h"
+#include "GameClient/ChallengeGenerals.h"
 #include "GameClient/Credits.h"
 #include "GameClient/DebugDisplay.h"
 #include "GameClient/DisplayString.h"
@@ -678,6 +679,31 @@ bool exercise_shell_menu_scheme()
 	manager.draw();
 
 	return line_ok && image_ok && fields_ok && scheme_ok;
+}
+
+bool exercise_challenge_generals()
+{
+	ChallengeGenerals manager;
+	const FieldParse *fields = manager.getFieldParse();
+	const bool fields_ok =
+		expect(find_field_parse(fields, "GeneralPersona0") != nullptr &&
+				find_field_parse(fields, "GeneralPersona11") != nullptr,
+			"ChallengeGenerals parse table missing fields");
+
+	manager.setCurrentPlayerTemplateNum(7);
+	manager.setCurrentDifficulty(DIFFICULTY_HARD);
+	const bool state_ok =
+		expect(manager.getCurrentPlayerTemplateNum() == 7 &&
+				manager.getCurrentDifficulty() == DIFFICULTY_HARD,
+			"ChallengeGenerals state accessors failed");
+
+	const GeneralPersona *generals = manager.getChallengeGenerals();
+	return fields_ok && state_ok &&
+		expect(generals != nullptr &&
+				manager.getGeneralByGeneralName(AsciiString("")) == &generals[0] &&
+				manager.getGeneralByTemplateName(AsciiString("")) == &generals[0] &&
+				manager.getPlayerGeneralByCampaignName(AsciiString("")) == &generals[0],
+			"ChallengeGenerals default lookup failed");
 }
 
 bool exercise_color()
@@ -1350,6 +1376,7 @@ int main()
 		exercise_anim2d() &&
 		exercise_credits() &&
 		exercise_shell_menu_scheme() &&
+		exercise_challenge_generals() &&
 		exercise_line2d() &&
 		exercise_parabolic_ease() &&
 		exercise_statistics() &&
@@ -1369,7 +1396,7 @@ int main()
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Anim2D,AnimateWindowManager,Color,ControlBarPrintPositions,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GameWindowGlobal,GameWindowManager,GlobalLanguage,GameText,GraphDraw,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ProcessAnimateWindow,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData,WindowLayout,WindowVideoManager,GadgetCheckBox,GadgetComboBox,GadgetHorizontalSlider,GadgetListBox,GadgetProgressBar,GadgetRadioButton,GadgetStaticText,GadgetTabControl,GadgetTextEntry,GadgetVerticalSlider\","
+		"\"compiled\":\"Anim2D,AnimateWindowManager,ChallengeGenerals,Color,ControlBarPrintPositions,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,ExtendedMessageBox,GameFont,GameWindowGlobal,GameWindowManager,GameWindowManagerScript,GameWindowTransitions,GlobalLanguage,GameText,GraphDraw,HeaderTemplate,IMECandidate,Image,LanguageFilter,Line2D,MessageBox,ParabolicEase,ProcessAnimateWindow,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData,WindowLayout,WindowVideoManager,GadgetCheckBox,GadgetComboBox,GadgetHorizontalSlider,GadgetListBox,GadgetProgressBar,GadgetRadioButton,GadgetStaticText,GadgetTabControl,GadgetTextEntry,GadgetVerticalSlider\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
