@@ -19,8 +19,8 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. Original `FastAllocator.cpp`, `wwmemlog.cpp`, and `wwprofile.cpp` also compile as `zh_wwdebug_profile`, with smoke coverage for profile tree recording, allocator accounting, and memory-log allocation/free counters. The generic wasm `wwprofile.h` shim still disables scope macros for consumers that do not link the full profile manager, and the `_UNIX` memory-log path keeps category tracking disabled until the browser threading/memory-log contract is decided. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
-| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm across memory, strings, file/BIG archive, compression/data-chunk, language, type masks, geometry, terrain, multiplayer settings, timing, RTS accounting (`Handicap.cpp`, `MissionStats.cpp`, `Money.cpp`, `Science.cpp`), message streams, audio request/music/event/manager metadata (`AudioEventRTS.cpp`, `GameAudio.cpp`, `GameMusic.cpp`, `GameSounds.cpp`, dynamic audio), and the first INI leaf parser sources (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, `INIMultiplayer.cpp`). Node smoke coverage exercises the linked non-rendering Common behavior, real BIG reads, and terrain/type/string/file paths. The audio/INI/RTS/message additions are compile coverage only until the real `Common/INI.cpp` reader, full audio manager, Xfer, GlobalData, Thing, Player, and GameLogic surfaces replace the current target-local shims; `parseScienceVector` and translated-label parsing are temporary bridge helpers. |
-| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source including display-string/font/text/image/animation/weather/water/video utilities, original view/camera state, map/terrain utility compile coverage (`MapUtil.cpp`, `RadiusDecal.cpp`, `TerrainRoads.cpp`), campaign manager compile coverage, window/layout/transition managers, `GUI/GameWindow.cpp`, core gadgets, selected GUI callbacks/menus, leaf ControlBar helpers, and GameClient-facing INI leaf parser sources (`INIAnimation.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, `INIWater.cpp`). Node smoke coverage verifies the currently linked non-rendering utility behavior; campaign/view/window/GUI/style/gadget/parser/map/terrain/radius-decal files are compile coverage only until `ControlBar`, `InGameUI`, drawable/display, terrain, input, real Xfer/INI/GameLogic, and the browser render/video layers link and are harness-driven. |
+| `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm across memory, strings, file/BIG archive, compression/data-chunk, language, type masks, geometry, terrain, multiplayer settings, timing, RTS accounting (`Energy.cpp`, `Handicap.cpp`, `MissionStats.cpp`, `Money.cpp`, `ProductionPrerequisite.cpp`, `Science.cpp`), message streams, audio request/music/event/manager metadata (`AudioEventRTS.cpp`, `GameAudio.cpp`, `GameMusic.cpp`, `GameSounds.cpp`, dynamic audio), and the first INI leaf/parser wrapper sources (`INIAudioEventInfo.cpp`, `INICommandSet.cpp`, `INIControlBarScheme.cpp`, `INIDamageFX.cpp`, `INIMapData.cpp`, `INIModel.cpp`, `INIMiscAudio.cpp`, `INIMultiplayer.cpp`). Node smoke coverage exercises the linked non-rendering Common behavior, real BIG reads, and terrain/type/string/file paths. The audio/INI/RTS/message additions are compile coverage only until the real `Common/INI.cpp` reader, full audio manager, Xfer, GlobalData, Thing, Player, ControlBar/DamageFX managers, and GameLogic surfaces replace the current target-local shims; `parseScienceVector` and translated-label parsing are temporary bridge helpers. |
+| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source including display-string/font/text/image/animation/weather/water/video utilities, original view/camera state, map/terrain utility compile coverage (`MapUtil.cpp`, `RadiusDecal.cpp`, `TerrainRoads.cpp`), campaign manager compile coverage, hint/ray-effect compile coverage (`HintSpy.cpp`, `RayEffect.cpp`), window/layout/transition managers, `GUI/GameWindow.cpp`, core gadgets, selected GUI callbacks/menus, leaf ControlBar helpers, and GameClient-facing INI leaf parser sources (`INIAnimation.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, `INIWater.cpp`). Node smoke coverage verifies the currently linked non-rendering utility behavior; campaign/view/window/GUI/style/gadget/parser/map/terrain/radius-decal/hint/ray-effect files are compile coverage only until `ControlBar`, `InGameUI`, drawable/display, terrain, input, real Xfer/INI/GameLogic, and the browser render/video layers link and are harness-driven. |
 | `GameEngine/GameNetwork` | Partial | Core command/frame slice now compiles to wasm from original source: `Connection.cpp`, `FileTransfer.cpp`, `FirewallHelper.cpp`, `FrameData.cpp`, `FrameDataManager.cpp`, `FrameMetrics.cpp`, `GameMessageParser.cpp`, `NetCommandList.cpp`, `NetCommandMsg.cpp`, `NetCommandRef.cpp`, `NetCommandWrapperList.cpp`, `NetMessageStream.cpp`, `NetPacket.cpp`, `NetworkUtil.cpp`, and `User.cpp`, plus original `Common/MessageStream.cpp` in the Common archive. Node smoke coverage verifies command-id generation, command type policy/name lookups, empty frame readiness through `FrameData`/`FrameDataManager`, and pooled `User` value behavior. `Connection.cpp`, `FileTransfer.cpp`, `FirewallHelper.cpp`, `FrameMetrics.cpp`, `NetCommandMsg.cpp`, `NetMessageStream.cpp`, and `NetPacket.cpp` are compile coverage only until browser transport, `GameInfo`, `Shell`, `LoadScreen`, `Display`, real `GlobalData`, player/message dependencies, and full packet serialization smokes are available. WinSock transport, GameSpy/WWDownload/NAT, LAN UI, and runtime packet flow remain open. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
@@ -185,12 +185,13 @@ The wasm CMake skeleton currently builds:
   base construction, geometry extents, GameEngine compression/data-chunk
   facades backed by the original compression manager, `Dict`, discrete circle
   scanlines, Bezier helpers, disabled `MiniLog` compile coverage, language
-  state, original message-stream compile coverage, the first original INI leaf
-  parser definitions for audio/misc-audio and multiplayer settings, password
-  obfuscation, terrain type tables, partition solving,
+  state, original message-stream compile coverage, original INI leaf/parser
+  wrapper definitions for audio, command-set/control-bar scheme, DamageFX,
+  map-data/model, misc-audio, and multiplayer settings, password obfuscation,
+  terrain type tables, partition solving,
   `PerfTimer` compile coverage through the browser high-resolution timer shim,
-  RTS accounting compile coverage (`Handicap`, `MissionStats`, `Money`,
-  `Science`),
+  RTS accounting/prerequisite compile coverage (`Energy`, `Handicap`,
+  `MissionStats`, `Money`, `ProductionPrerequisite`, `Science`),
   `NameKeyGenerator`, `RandomValue`, and engine CRC.
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
   `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
@@ -199,9 +200,10 @@ The wasm CMake skeleton currently builds:
   `GUI/WinInstanceData.cpp`,
   GUI/window manager and selected gadget/callback/control-bar/transition
   sources, `GlobalLanguage.cpp`, `GameText.cpp`, `System/Image.cpp`,
-  `System/CampaignManager.cpp`, the first GameClient-facing original INI leaf
-  parser definitions, `LanguageFilter.cpp`, `Line2D.cpp`, `MapUtil.cpp`,
-  `ParabolicEase.cpp`, `RadiusDecal.cpp`, `Snow.cpp`, `Statistics.cpp`,
+  `System/CampaignManager.cpp`, `MessageStream/HintSpy.cpp`, the first
+  GameClient-facing original INI leaf parser definitions, `LanguageFilter.cpp`,
+  `Line2D.cpp`, `MapUtil.cpp`, `ParabolicEase.cpp`, `RadiusDecal.cpp`,
+  `System/RayEffect.cpp`, `Snow.cpp`, `Statistics.cpp`,
   `Terrain/TerrainRoads.cpp`, `View.cpp`, `VideoPlayer.cpp`,
   `VideoStream.cpp`, and `Water.cpp`
   compiled into a wasm static library, linked against the
@@ -330,8 +332,8 @@ The wasm CMake skeleton currently builds:
   quoted-printable ASCII and UTF-16LE Unicode wire-format helpers,
   list/circle helpers, Bezier evaluation/splitting, partition solving, terrain
   type basics, and compile coverage for the current dormant `PerfTimer`,
-  `AudioEventRTS`, `GameAudio`, `GameSounds`, `MessageStream`, and `Science`
-  paths.
+  `AudioEventRTS`, `GameAudio`, `GameSounds`, `Energy`, `MessageStream`,
+  `ProductionPrerequisite`, `Science`, and additional INI wrapper paths.
 - `gamenetwork-core-smoke`: a Node-executed wasm smoke test that verifies
   original GameNetwork command-id generation, command type policy/name lookups,
   empty frame readiness through `FrameData`/`FrameDataManager`, and pooled
@@ -349,10 +351,10 @@ The wasm CMake skeleton currently builds:
   line/area/rect helpers, parabolic easing, snow/weather defaults, statistics
   normalization/mu-law helpers, video-buffer rect scaling, and video-list
   bookkeeping. `System/CampaignManager.cpp`, `RadiusDecal.cpp`,
-  `GUI/GameWindow.cpp`, and `View.cpp` currently add compile/link coverage
-  only; their runtime behavior remains gated on browser display/input device
-  work, real INI/Xfer/GameLogic surfaces, and harness screenshots/state
-  checks.
+  `MessageStream/HintSpy.cpp`, `System/RayEffect.cpp`, `GUI/GameWindow.cpp`,
+  and `View.cpp` currently add compile/link coverage only; their runtime
+  behavior remains gated on browser display/input device work, real
+  INI/Xfer/GameLogic surfaces, and harness screenshots/state checks.
 - `gameengine-real-big-smoke`: an opt-in Node-executed wasm smoke test
   (`npm run test:real-big`) that depends on user-supplied extracted assets and
   verifies the original `Win32BIGFileSystem` indexes `INIZH.big`, finds real

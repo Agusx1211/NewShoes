@@ -509,9 +509,18 @@ shares structure and follows behind.
       data (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, and
       `INIMultiplayer.cpp`) after extending the temporary `Common/INI.h`
       bridge with the matching original entry-point declarations.
+- [x] Compile additional original INI wrapper sources
+      (`INICommandSet.cpp`, `INIControlBarScheme.cpp`, `INIDamageFX.cpp`,
+      `INIMapData.cpp`, and `INIModel.cpp`) after extending the temporary
+      `Common/INI.h` bridge with the matching original entry-point
+      declarations.
 - [ ] Link and smoke-test the original audio and multiplayer INI parser routes
       after the real `Common/INI.cpp` reader, audio manager, and full runtime
       singleton surface are available without target-local parser stubs.
+- [ ] Link and smoke-test the original command-set, control-bar scheme,
+      DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
+      reader and their destination managers/singletons are available without
+      target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
@@ -521,6 +530,13 @@ shares structure and follows behind.
       `MissionStats.cpp`, and `Money.cpp` after fixing the original
       `Team` DLINK clang contract and adding the production map typedefs
       needed by `Player`/`Thing` headers.
+- [x] Compile original `Common/RTS/Energy.cpp` and
+      `Common/RTS/ProductionPrerequisite.cpp` into the wasm Common core as
+      compile coverage for player power accounting and build prerequisite
+      logic.
+- [ ] Link and smoke-test original energy and production-prerequisite runtime
+      behavior after real `Player`, `ThingFactory`, `ThingTemplate`, object,
+      and science ownership paths link without target-local shims.
 - [x] Compile original `Common/RTS/Science.cpp` against the current temporary
       `Common/INI.h` parser bridge for science definitions and translated
       labels.
@@ -593,7 +609,8 @@ shares structure and follows behind.
       `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`, `GameText.cpp`,
       `System/Image.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
       `ParabolicEase.cpp`, `System/CampaignManager.cpp`, `RadiusDecal.cpp`,
-      `Snow.cpp`, `Statistics.cpp`,
+      `System/RayEffect.cpp`, `MessageStream/HintSpy.cpp`, `Snow.cpp`,
+      `Statistics.cpp`,
       `View.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`, with wasm smoke
       coverage for packed colors,
       debug-display formatting/cursor state, display-string text/font/list
@@ -664,6 +681,12 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original radius-decal behavior after the deeper
       Player/Team/Module/Object/GameLogic contracts are available through
       original headers and rendering can be harness-driven.
+- [x] Compile original `GameClient/MessageStream/HintSpy.cpp` and
+      `GameClient/System/RayEffect.cpp` in the GameClient utility target as
+      compile coverage for UI hint translation and client ray-effect state.
+- [ ] Link and smoke-test original hint/ray-effect behavior after the real
+      InGameUI, GameClient, drawable/display, object, and browser render/input
+      paths are available and harness-driven.
 - [x] Compile original `GameClient/Terrain/TerrainRoads.cpp` in the GameClient
       utility target; current coverage is compile-only until terrain and
       rendering can be harness-driven.

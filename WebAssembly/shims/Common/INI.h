@@ -154,6 +154,10 @@ public:
 	static void parseAudioSettingsDefinition(INI *ini);
 	static void parseScienceDefinition(INI *ini);
 	static void parseCampaignDefinition(INI *ini);
+	static void parseCommandSetDefinition(INI *ini);
+	static void parseControlBarSchemeDefinition(INI *ini);
+	static void parseDamageFXDefinition(INI *ini);
+	static void parseMapDataDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{
