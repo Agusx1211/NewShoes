@@ -17,5 +17,26 @@ Asset tooling for obtaining real game data to test the port against:
 - `tools/mode1_2352_to_iso.mjs` — convert raw MODE1/2352 disc images to ISO.
 - `tools/extract_zh_big_sample.sh` — extract `INIZH.big` from the disc images in
   `../assets` (`npm run extract:real-big`). Needs `7z`.
+- `harness/` — a minimal browser harness with a black canvas and JS RPC stub for
+  boot/log/state/screenshot commands. This is port infrastructure only; it does
+  not implement or simulate game behavior.
 
 Extracted archives land under ignored `artifacts/real-assets/`.
+
+## Harness
+
+Run the local harness server:
+
+```sh
+npm run serve:harness
+```
+
+Run the headless smoke test:
+
+```sh
+npm run test:harness
+```
+
+The smoke test starts a local static server, boots the browser harness through
+`window.CnCPort.rpc("boot")`, verifies the canvas/RPC state, and writes
+screenshots to `artifacts/screenshots/`.

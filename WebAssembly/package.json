@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "extract:real-big": "bash tools/extract_zh_big_sample.sh"
+    "extract:real-big": "bash tools/extract_zh_big_sample.sh",
+    "serve:harness": "node harness/serve.mjs",
+    "test:harness": "node harness/smoke.mjs"
   }
 }

@@ -103,3 +103,4 @@ and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
   listed — new tasks, tests, edge cases, risks, follow-ups.
 - Tick items off (`[ ]` → `[x]`) as you complete them, and remember: nothing
   rendering-related is done until the harness proves it (see above).
+- Commit your work using short but descriptive commits. Sign it with your provider + model name as author.

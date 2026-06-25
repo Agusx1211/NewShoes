@@ -30,10 +30,12 @@ shares structure and follows behind.
 - [ ] Document the legal stance: code is open; game data is the user's own.
 
 ### Harness (bootstrap)
-- [ ] Stand up Playwright/Puppeteer headless harness that loads the page.
-- [ ] Screenshot capture utility writing to `artifacts/screenshots/`.
-- [ ] A JS↔engine RPC/command channel stub (`boot`, `log`, `screenshot`).
-- [ ] Harness smoke test runnable locally and in CI.
+- [x] Stand up Playwright/Puppeteer headless harness that loads the page.
+- [x] Screenshot capture utility writing to `artifacts/screenshots/`.
+- [x] A JS↔engine RPC/command channel stub (`boot`, `log`, `state`,
+      `screenshot`).
+- [x] Harness smoke test runnable locally (`npm run test:harness`).
+- [ ] Wire the harness smoke test into CI.
 
 ---
 
@@ -73,6 +75,8 @@ shares structure and follows behind.
 
 ## M2 — Boot to a black window
 
+- [ ] Replace the JS harness boot stub with Emscripten module initialization once
+      the wasm target exists.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
