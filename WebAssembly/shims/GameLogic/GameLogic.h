@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/GameCommon.h"
 #include "Common/GameType.h"
 
 class Object;
@@ -41,8 +42,14 @@ public:
 	void prepareNewGame(Int, GameDifficulty, Int) {}
 	void timeOutGameStart() {}
 	void clearGameData(Bool showScoreScreen = TRUE) {}
+	void closeWindows() {}
 	void bindObjectAndDrawable(Object *, Drawable *) {}
+	void destroyObject(Object *) {}
 	Object *findObjectByID(ObjectID) { return nullptr; }
+	Object *getFirstObject() { return nullptr; }
+	Int getHulkMaxLifetimeOverride() const { return 0; }
+	UnsignedInt getFrameObjectsChangedTriggerAreas() { return 0; }
+	void deselectObject(Object *, PlayerMaskType, Bool affectClient = FALSE) {}
 	Bool findControlBarOverride(const AsciiString &, Int, ConstCommandButtonPtr &) const { return FALSE; }
 };
 

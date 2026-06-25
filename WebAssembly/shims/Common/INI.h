@@ -4,10 +4,12 @@
 #define __INI_H_
 
 #include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <strings.h>
+#include <vector>
 
 #include "Common/AsciiString.h"
 #include "Common/GameCommon.h"
@@ -279,7 +281,29 @@ public:
 		}
 	}
 
-	static void parseAsciiStringVectorAppend(INI *, void *, void *, const void *) {}
+	static void parseAsciiStringVector(INI *ini, void *, void *store, const void *)
+	{
+		std::vector<AsciiString> *strings = static_cast<std::vector<AsciiString> *>(store);
+		if (ini == nullptr || strings == nullptr) {
+			return;
+		}
+		strings->clear();
+		for (const char *token = ini->getNextTokenOrNull(); token != nullptr; token = ini->getNextTokenOrNull()) {
+			strings->push_back(token);
+		}
+	}
+
+	static void parseAsciiStringVectorAppend(INI *ini, void *, void *store, const void *)
+	{
+		std::vector<AsciiString> *strings = static_cast<std::vector<AsciiString> *>(store);
+		if (ini == nullptr || strings == nullptr) {
+			return;
+		}
+		for (const char *token = ini->getNextTokenOrNull(); token != nullptr; token = ini->getNextTokenOrNull()) {
+			strings->push_back(token);
+		}
+	}
+
 	static void parseDamageTypeFlags(INI *, void *, void *, const void *) {}
 	static void parseThingTemplate(INI *, void *, void *, const void *) {}
 	static void parseUpgradeTemplate(INI *, void *, void *, const void *) {}
@@ -354,6 +378,33 @@ public:
 		if (store != nullptr) {
 			*static_cast<Real *>(store) =
 				ConvertVelocityInSecsToFrames(scanReal(ini != nullptr ? ini->getNextToken() : nullptr));
+		}
+	}
+
+	static void parseAccelerationReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Real *>(store) =
+				ConvertAccelerationInSecsToFrames(scanReal(ini != nullptr ? ini->getNextToken() : nullptr));
+		}
+	}
+
+	static void parseAngularVelocityReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Real *>(store) =
+				ConvertAngularVelocityInDegreesPerSecToRadsPerFrame(scanReal(ini != nullptr ? ini->getNextToken() : nullptr));
+		}
+	}
+
+	static void parsePositiveNonZeroReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			Real value = scanReal(ini != nullptr ? ini->getNextToken() : nullptr);
+			if (value <= 0.0f) {
+				throw INI_INVALID_DATA;
+			}
+			*static_cast<Real *>(store) = value;
 		}
 	}
 
@@ -476,6 +527,19 @@ public:
 		}
 		if (store != nullptr) {
 			*static_cast<Byte *>(store) = static_cast<Byte>(bits);
+		}
+	}
+
+	static void parseBitInInt32(INI *ini, void *, void *store, const void *userData)
+	{
+		if (store != nullptr) {
+			UnsignedInt *bits = static_cast<UnsignedInt *>(store);
+			UnsignedInt mask = static_cast<UnsignedInt>(reinterpret_cast<uintptr_t>(userData));
+			if (scanBool(ini != nullptr ? ini->getNextToken() : nullptr)) {
+				*bits |= mask;
+			} else {
+				*bits &= ~mask;
+			}
 		}
 	}
 

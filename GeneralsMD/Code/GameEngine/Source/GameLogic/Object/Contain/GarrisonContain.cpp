@@ -2013,7 +2013,8 @@ void GarrisonContain::loadStationGarrisonPoints( void )
 
 
     Coord3D tempBuffer[MAX_GARRISON_POINTS];
-  	for( int t = 0; t < MAX_GARRISON_POINTS; ++t )
+		int t;
+		for( t = 0; t < MAX_GARRISON_POINTS; ++t )
 		  tempBuffer[ t ] = *(structure->getPosition());
 
 		count = structure->getMultiLogicalBonePosition("STATION", modData->m_containMax, tempBuffer, NULL);
@@ -2048,8 +2049,6 @@ void GarrisonContain::loadStationGarrisonPoints( void )
 	}
 
 }  // end loadStationGarrisonPoints
-
-
 
 
 

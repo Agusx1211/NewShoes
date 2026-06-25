@@ -91,7 +91,7 @@ namespace rts
 		T sum(std::vector<T>& vecOfValues )
 	{
 		T retVal = 0;
-		std::vector<T>::iterator it;
+		typename std::vector<T>::iterator it;
 		for (it = vecOfValues.begin(); it != vecOfValues.end(); ++it) {
 			retVal += (*it);
 		}
@@ -2988,5 +2988,4 @@ Bool ScriptConditions::evaluateCondition( Condition *pCondition )
 		
 	}
 }
-
 

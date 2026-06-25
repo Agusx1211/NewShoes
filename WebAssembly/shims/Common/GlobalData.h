@@ -1,9 +1,16 @@
 #pragma once
 
+#ifndef _GLOBALDATA_H_
+#define _GLOBALDATA_H_
+
 #include "Common/AsciiString.h"
 #include "Common/GameType.h"
 #include "Common/Money.h"
 #include "GameClient/Color.h"
+
+enum AIDebugOptions : int;
+enum BodyDamageType : int;
+class WeaponBonusSet;
 
 class GlobalData
 {
@@ -20,6 +27,7 @@ public:
 		m_containerPipWorldOffset(),
 		m_ammoPipScreenOffset(),
 		m_containerPipScreenOffset(),
+		m_scriptOverrideInfantryLightScale(-1.0f),
 		m_defaultIP(0),
 		m_useAlternateMouse(FALSE),
 		m_doubleClickAttackMove(FALSE),
@@ -27,9 +35,26 @@ public:
 		m_allowExitOutOfMovies(FALSE),
 		m_animateWindows(TRUE),
 		m_preloadEverything(FALSE),
+		m_preloadAssets(FALSE),
 		m_timeOfDay(TIME_OF_DAY_AFTERNOON),
+		m_weather(WEATHER_NORMAL),
+		m_forceModelsToFollowTimeOfDay(TRUE),
+		m_forceModelsToFollowWeather(TRUE),
 		m_downwindAngle(-0.785f),
+		m_groundStiffness(0.5f),
+		m_structureStiffness(0.5f),
+		m_gravity(-1.0f),
+		m_partitionCellSize(0.0f),
+		m_historicDamageLimit(0),
+		m_levelGainAnimationDisplayTimeInSeconds(0.0f),
+		m_levelGainAnimationZRisePerSecond(0.0f),
+		m_getHealedAnimationDisplayTimeInSeconds(0.0f),
+		m_getHealedAnimationZRisePerSecond(0.0f),
 		m_scriptDebug(FALSE),
+		m_debugAI(static_cast<AIDebugOptions>(0)),
+		m_debugSupplyCenterPlacement(FALSE),
+		m_debugAIObstacles(FALSE),
+		m_particleEdit(FALSE),
 		m_winCursors(TRUE),
 		m_useTreeSway(TRUE),
 		m_useDrawModuleLOD(FALSE),
@@ -45,7 +70,14 @@ public:
 		m_maxParticleCount(5000),
 		m_maxFieldParticleCount(100),
 		m_baseValuePerSupplyBox(75),
+		m_defaultStructureRubbleHeight(1.0f),
+		m_movementPenaltyDamageState(static_cast<BodyDamageType>(2)),
+		m_standardMinefieldDensity(0.01f),
+		m_standardMinefieldDistance(40.0f),
 		m_maxLineBuildObjects(50),
+		m_groupMoveClickToGatherFactor(1.0f),
+		m_shroudAlpha(0),
+		m_clearAlpha(255),
 		m_playIntro(TRUE),
 		m_playSizzle(TRUE),
 		m_afterIntro(FALSE),
@@ -70,6 +102,7 @@ public:
 		m_networkDisconnectTime(5000),
 		m_networkPlayerTimeoutTime(60000),
 		m_networkDisconnectScreenNotifyTime(15000),
+		m_weaponBonusSet(nullptr),
 		m_userDataDir("./")
 	{
 	}
@@ -88,6 +121,7 @@ public:
 	Coord3D m_containerPipWorldOffset;
 	Coord2D m_ammoPipScreenOffset;
 	Coord2D m_containerPipScreenOffset;
+	Real m_scriptOverrideInfantryLightScale;
 	UnsignedInt m_defaultIP;
 	Bool m_useAlternateMouse;
 	Bool m_doubleClickAttackMove;
@@ -95,9 +129,28 @@ public:
 	Bool m_allowExitOutOfMovies;
 	Bool m_animateWindows;
 	Bool m_preloadEverything;
+	Bool m_preloadAssets;
 	TimeOfDay m_timeOfDay;
+	Weather m_weather;
+	Bool m_forceModelsToFollowTimeOfDay;
+	Bool m_forceModelsToFollowWeather;
 	Real m_downwindAngle;
+	Real m_groundStiffness;
+	Real m_structureStiffness;
+	Real m_gravity;
+	Real m_partitionCellSize;
+	UnsignedInt m_historicDamageLimit;
+	AsciiString m_levelGainAnimationName;
+	Real m_levelGainAnimationDisplayTimeInSeconds;
+	Real m_levelGainAnimationZRisePerSecond;
+	AsciiString m_getHealedAnimationName;
+	Real m_getHealedAnimationDisplayTimeInSeconds;
+	Real m_getHealedAnimationZRisePerSecond;
 	Bool m_scriptDebug;
+	AIDebugOptions m_debugAI;
+	Bool m_debugSupplyCenterPlacement;
+	Bool m_debugAIObstacles;
+	Bool m_particleEdit;
 	Bool m_winCursors;
 	Bool m_useTreeSway;
 	Bool m_useDrawModuleLOD;
@@ -113,7 +166,14 @@ public:
 	Int m_maxParticleCount;
 	Int m_maxFieldParticleCount;
 	Int m_baseValuePerSupplyBox;
+	Real m_defaultStructureRubbleHeight;
+	BodyDamageType m_movementPenaltyDamageState;
+	Real m_standardMinefieldDensity;
+	Real m_standardMinefieldDistance;
 	Int m_maxLineBuildObjects;
+	Real m_groupMoveClickToGatherFactor;
+	UnsignedByte m_shroudAlpha;
+	UnsignedByte m_clearAlpha;
 	Bool m_playIntro;
 	Bool m_playSizzle;
 	Bool m_afterIntro;
@@ -143,6 +203,7 @@ public:
 	AsciiString m_pendingFile;
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
+	WeaponBonusSet *m_weaponBonusSet;
 
 private:
 	AsciiString m_userDataDir;
@@ -150,3 +211,5 @@ private:
 
 extern GlobalData *TheGlobalData;
 #define TheWritableGlobalData TheGlobalData
+
+#endif

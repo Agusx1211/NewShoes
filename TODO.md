@@ -786,18 +786,26 @@ shares structure and follows behind.
       `Object/Update/StealthUpdate.cpp`, and
       `Object/Update/TensileFormationUpdate.cpp`. The frontier now covers 197
       of 259 original `GameLogic` translation units.
-- [ ] Compile the remaining 62 original `GameLogic` sources after resolving
-      the clustered blockers found by the broad probe: missing direct
-      `GlobalData` / `LogicRandomValue` / `GameClientRandomValue` includes
-      or temporary bridge fields, missing `GameLogic` compile-surface methods,
-      missing temporary INI parse helpers,
+- [x] Compile the 45-source `PreRTS` original `GameLogic` batch opened by the
+      easy shared blockers: AI group/player/state/turret files, heal/bridge/
+      countermeasure/minefield/tech behavior leaves, garrison/open/parachute
+      contain leaves, `Object.cpp`, `Locomotor.cpp`, `ObjectCreationList.cpp`,
+      22 update leaves, `Weapon.cpp`, `WeaponSet.cpp`, and
+      `ScriptActions.cpp` / `ScriptConditions.cpp` / `Scripts.cpp`. This adds
       case-sensitive wrappers (`PreRTS.H`, `Common/XFerCRC.h`,
-      `common/mapobject.h`, `GameLogic/Weaponset.h`,
-      `GameLogic\\Weaponset.h`, `WWMath/Vector3.h`), enum forward declarations
-      for missile/laser/neutron/ghost object headers, self-contained
-      `KindOfMaskType` / `ObjectID` headers, clang template specialization
-      fixes, standard-library iterator conversions, and legacy MSVC for-scope
-      variables.
+      `common/DataChunk.h`, `GameLogic/Weaponset.h`,
+      `GameLogic\\Weaponset.h`, `WWMath/Vector3.h`), temporary
+      `GlobalData` / `INI` / `Xfer` / `GameLogic` compile-surface expansion,
+      and localized clang/MSVC compatibility fixes. The frontier now covers 242
+      of 259 original `GameLogic` translation units.
+- [ ] Compile the remaining 17 original `GameLogic` sources after resolving the
+      clustered blockers found by the latest source-specific probe:
+      `AIPathfind.cpp` legacy bool/null path returns and static declaration,
+      missile/laser/neutron/ghost enum and particle-system completeness,
+      `KindOfMaskType` self-containment, remaining standard-library iterator
+      conversions, `FlightDeckBehavior` / `SlowDeathBehavior` STL portability,
+      `ScriptEngine.cpp` attack-priority / Win32 DLL bridge issues, and
+      `System/GameLogic.cpp` GameSpy GP include mapping.
 - [ ] Compile original `GameLogic/System/GameLogic.cpp` after the missing
       GameSpy GP SDK include path (`GameSpy/GP/GP.h`) is restored or mapped to
       the browser networking contract.

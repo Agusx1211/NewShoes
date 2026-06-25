@@ -216,16 +216,22 @@ The wasm CMake skeleton currently builds:
   `XferLoad.cpp`, `XferSave.cpp`),
   initial Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
   `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`),
-  and 197 of 259 original `GameLogic` translation units: map/system leaves
+  and 242 of 259 original `GameLogic` translation units: map/system leaves
   (`PolygonTrigger.cpp`, `SidesList.cpp`, `TerrainLogic.cpp`,
   `CaveSystem.cpp`, `CrateSystem.cpp`, `Damage.cpp`,
   `GameLogicDispatch.cpp`, `RankInfo.cpp`), `AI/AI.cpp`, `AI/AIDock.cpp`,
-  `AI/AIGuardRetaliate.cpp`, `AI/AITNGuard.cpp`, `AI/Squad.cpp`,
+  `AI/AIGroup.cpp`, `AI/AIGuard.cpp`, `AI/AIGuardRetaliate.cpp`,
+  `AI/AIPlayer.cpp`, `AI/AISkirmishPlayer.cpp`, `AI/AIStates.cpp`,
+  `AI/AITNGuard.cpp`, `AI/Squad.cpp`, `AI/TurretAI.cpp`,
   `Object/Armor.cpp`, body/create/die/collide/contain/damage/destroy/helper/
   behavior/special-power/upgrade module bases and leaves including
+  bridge/countermeasure/minefield/tech/auto-heal behavior leaves and
   `Object/Damage/TransitionDamageFX.cpp`, object utility leaves
-  (`ExperienceTracker.cpp`, `FiringTracker.cpp`, `SimpleObjectIterator.cpp`),
-  58 currently browser-buildable update leaves, and
+  (`ExperienceTracker.cpp`, `FiringTracker.cpp`, `Locomotor.cpp`,
+  `Object.cpp`, `ObjectCreationList.cpp`, `SimpleObjectIterator.cpp`),
+  80 currently browser-buildable update leaves, `Weapon.cpp`,
+  `WeaponSet.cpp`, and script leaves through `ScriptActions.cpp`,
+  `ScriptConditions.cpp`, `Scripts.cpp`, and
   `ScriptEngine/VictoryConditions.cpp`. The GameLogic additions are compile
   coverage only until full object, player, AI pathfinding, command, and runtime
   singleton surfaces link without target-local bridges.
