@@ -87,6 +87,25 @@ target_compile_options(zh_wwlib_random PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_sha STATIC
+  "${WWLIB_DIR}/sha.cpp"
+)
+
+target_include_directories(zh_wwlib_sha PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_sha PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-macro-redefined
+  -Wno-sign-compare
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwmath_core STATIC
   "${WWMATH_DIR}/pot.cpp"
   "${WWMATH_DIR}/tri.cpp"
@@ -190,6 +209,32 @@ target_compile_options(wwdebug-core-smoke PRIVATE
 )
 
 target_link_options(wwdebug-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-sha-smoke
+  tests/wwlib_sha_smoke.cpp
+)
+
+set_target_properties(wwlib-sha-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-sha-smoke PRIVATE
+  zh_wwlib_sha
+)
+
+target_compile_options(wwlib-sha-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-sha-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
