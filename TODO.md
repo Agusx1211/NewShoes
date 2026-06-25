@@ -62,7 +62,12 @@ shares structure and follows behind.
       WWLib CRC sources under clang/Emscripten.
 - [x] Add portable `stricmp` compatibility for original WWLib/WW3D
       case-insensitive lookup paths under clang/Emscripten.
+- [x] Add browser/compiler shims for original WWLib narrow `TCHAR` strings,
+      Windows wide-to-narrow conversion, and critical sections under
+      clang/Emscripten.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
+- [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
+      before compiling wide-string serialization and save/load paths.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
@@ -90,6 +95,9 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` fixed-point utility (`fixed.cpp`) compiles and
       smoke-tests parsing, formatting, constants, arithmetic, conversion, and
       saturation behavior under wasm.
+- [x] `WWVegas/WWLib` StringClass (`wwstring.cpp` plus `trim.cpp`) compiles and
+      smoke-tests construction, mutation, formatting, comparison, trimming,
+      buffer growth, copy, temporary-buffer, and wide-copy behavior under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

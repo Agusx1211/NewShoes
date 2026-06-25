@@ -19,6 +19,7 @@ set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
+set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
 
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
@@ -137,6 +138,30 @@ target_compile_options(zh_wwlib_fixed PRIVATE
   -Wextra
   -Wno-ignored-qualifiers
   -Wno-unknown-pragmas
+)
+
+add_library(zh_wwlib_string STATIC
+  "${WWLIB_DIR}/trim.cpp"
+  "${WWLIB_DIR}/wwstring.cpp"
+)
+
+target_include_directories(zh_wwlib_string PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_string PRIVATE
+  -include "${WWSTRING_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-pointer-to-int-cast
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_string PUBLIC
+  zh_wwdebug_core
 )
 
 add_library(zh_wwlib_hash STATIC
@@ -379,6 +404,32 @@ target_compile_options(wwlib-fixed-smoke PRIVATE
 )
 
 target_link_options(wwlib-fixed-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-string-smoke
+  tests/wwlib_string_smoke.cpp
+)
+
+set_target_properties(wwlib-string-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-string-smoke PRIVATE
+  zh_wwlib_string
+)
+
+target_compile_options(wwlib-string-smoke PRIVATE
+  -include "${WWSTRING_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-string-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

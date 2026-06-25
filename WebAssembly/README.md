@@ -100,7 +100,8 @@ npm run test:wasm
 ```
 
 Run all current wasm checks, including the original EAC compression codec,
-WWDebug core, WWLib Base64/CRC/fixed/hash/MD5/SHA, and WWMath core smokes:
+WWDebug core, WWLib Base64/CRC/fixed/hash/MD5/SHA/StringClass, and WWMath core
+smokes:
 
 ```sh
 npm run test:all
@@ -146,6 +147,12 @@ Run only the original WWLib SHA smoke:
 
 ```sh
 npm run test:wwlib-sha
+```
+
+Run only the original WWLib StringClass smoke:
+
+```sh
+npm run test:wwlib-string
 ```
 
 Run only the original WWMath core smoke:

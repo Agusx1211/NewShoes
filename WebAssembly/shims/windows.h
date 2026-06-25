@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <unistd.h>
 
 using BOOL = int;
@@ -15,6 +16,7 @@ using LPCVOID = const void *;
 using LPDWORD = DWORD *;
 using LPSTR = char *;
 using LPVOID = void *;
+using WCHAR = wchar_t;
 
 #ifndef FALSE
 #define FALSE 0
@@ -44,6 +46,7 @@ using LPVOID = void *;
 #define FILE_MAP_WRITE 0x0002
 #define WAIT_OBJECT_0 0x00000000
 #define INFINITE 0xffffffff
+#define CP_ACP 0
 
 static inline DWORD GetLastError()
 {
@@ -119,4 +122,59 @@ static inline int wsprintf(char *buffer, const char *format, ...)
 	const int result = std::vsprintf(buffer, format, args);
 	va_end(args);
 	return result;
+}
+
+static inline int WideCharToMultiByte(
+	unsigned int,
+	DWORD,
+	const WCHAR *source,
+	int source_len,
+	LPSTR dest,
+	int dest_len,
+	const char *,
+	BOOL *used_default_char)
+{
+	if (source == nullptr) {
+		return 0;
+	}
+
+	const bool include_null = source_len == -1;
+	const int input_len = include_null ? static_cast<int>(std::wcslen(source)) + 1 : source_len;
+	if (input_len < 0) {
+		return 0;
+	}
+
+	BOOL unmapped = FALSE;
+	for (int index = 0; index < input_len; ++index) {
+		if (static_cast<unsigned long>(source[index]) > 0x7fUL) {
+			unmapped = TRUE;
+			break;
+		}
+	}
+
+	if (dest == nullptr || dest_len == 0) {
+		if (used_default_char != nullptr) {
+			*used_default_char = unmapped;
+		}
+		return input_len;
+	}
+
+	int written = 0;
+	for (; written < input_len && written < dest_len; ++written) {
+		const WCHAR ch = source[written];
+		if (static_cast<unsigned long>(ch) <= 0x7fUL) {
+			dest[written] = static_cast<char>(ch);
+		} else {
+			dest[written] = '?';
+		}
+		if (include_null && ch == 0) {
+			++written;
+			break;
+		}
+	}
+
+	if (used_default_char != nullptr) {
+		*used_default_char = unmapped;
+	}
+	return written;
 }

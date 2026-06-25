@@ -1,10 +1,15 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdio.h>
 #include <strings.h>
 
 #ifndef __cdecl
 #define __cdecl
+#endif
+
+#ifndef _cdecl
+#define _cdecl
 #endif
 
 #ifndef _OPERATOR_NEW_DEFINED_
@@ -17,6 +22,10 @@
 
 #ifndef stricmp
 #define stricmp strcasecmp
+#endif
+
+#ifndef _vsnprintf
+#define _vsnprintf vsnprintf
 #endif
 
 #if !defined(_MSC_VER)
