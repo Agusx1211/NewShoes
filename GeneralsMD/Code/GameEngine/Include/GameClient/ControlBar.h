@@ -67,7 +67,7 @@ enum ProductionID : int;
 enum CommandSourceType : int;
 enum ProductionType : int;
 enum GadgetGameMessage : int;
-enum ScienceType;
+enum ScienceType : int;
 enum TimeOfDay;
 enum RadiusCursorType : int;
 

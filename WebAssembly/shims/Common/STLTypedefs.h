@@ -77,6 +77,9 @@ template <> struct hash<AsciiString>
 
 typedef std::vector<Coord3D> VecCoord3D;
 typedef VecCoord3D::iterator VecCoord3DIt;
+typedef std::list<AsciiString> AsciiStringList;
+typedef AsciiStringList::iterator AsciiStringListIterator;
+typedef AsciiStringList::const_iterator AsciiStringListConstIterator;
 typedef std::map<NameKeyType, Real, std::less<NameKeyType>> ProductionChangeMap;
 typedef std::map<NameKeyType, VeterancyLevel, std::less<NameKeyType>> ProductionVeterancyMap;
 

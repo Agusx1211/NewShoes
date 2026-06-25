@@ -15,6 +15,7 @@
 
 class INI;
 class Xfer;
+enum ScienceType : int;
 
 typedef void (*INIFieldParseProc)(INI *ini, void *instance, void *store, const void *userData);
 typedef const char* ConstCharPtr;
@@ -153,6 +154,9 @@ public:
 	static void parseWindowTransitions(INI *ini);
 	static void parseAudioSettingsDefinition(INI *ini);
 	static void parseScienceDefinition(INI *ini);
+	static void parseSpecialPowerDefinition(INI *ini);
+	static void parsePlayerTemplateDefinition(INI *ini);
+	static void parseCommandButtonDefinition(INI *ini);
 	static void parseCampaignDefinition(INI *ini);
 	static void parseCommandSetDefinition(INI *ini);
 	static void parseControlBarSchemeDefinition(INI *ini);
@@ -366,6 +370,8 @@ public:
 		}
 	}
 
+	static ScienceType scanScience(const char *token);
+	static void parseScience(INI *ini, void *, void *store, const void *);
 	static void parseScienceVector(INI *, void *, void *, const void *) {}
 	static void parseMappedImage(INI *ini, void *instance, void *store, const void *userData);
 	static void parseAnim2DTemplate(INI *ini, void *instance, void *store, const void *userData);

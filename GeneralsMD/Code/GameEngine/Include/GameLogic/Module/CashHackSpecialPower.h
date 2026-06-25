@@ -39,7 +39,7 @@
 class Object;
 class SpecialPowerTemplate;
 struct FieldParse;
-enum ScienceType;
+enum ScienceType : int;
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -87,4 +87,3 @@ protected:
 };
 
 #endif  // end __CASHHACKSPECIALPOWER_H_
-

@@ -1528,9 +1528,10 @@ int main()
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc,"
 		"TerrainTypes,MultiplayerSettings,PerfTimer,AudioEventRTS,GameAudio,GameMusic,GameSounds,"
-		"Energy,Handicap,MessageStream,MissionStats,Money,ProductionPrerequisite,Science,"
+		"Energy,Handicap,MessageStream,MissionStats,Money,PlayerTemplate,ProductionPrerequisite,"
+		"Science,SpecialPower,"
 		"INIAudioEventInfo,INICommandSet,INIControlBarScheme,INIDamageFX,INIMapData,INIModel,"
-		"INIMiscAudio,INIMultiplayer\","
+		"INIMiscAudio,INIMultiplayer,INISpecialPower\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

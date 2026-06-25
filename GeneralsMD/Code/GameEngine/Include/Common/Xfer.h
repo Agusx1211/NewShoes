@@ -46,7 +46,7 @@ typedef Int Color;
 enum ObjectID;
 enum DrawableID;
 enum KindOfType;
-enum ScienceType;
+enum ScienceType : int;
 class Matrix3D;
 
 // ------------------------------------------------------------------------------------------------
@@ -187,4 +187,3 @@ protected:
 };
 
 #endif // __XFER_H_
-

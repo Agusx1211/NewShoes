@@ -45,7 +45,7 @@
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
 class ObjectCreationList;
 class Object;
-enum ScienceType;
+enum ScienceType : int;
 struct FieldParse;
 enum AcademyClassificationType : int;
 

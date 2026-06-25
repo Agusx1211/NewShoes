@@ -40,7 +40,7 @@
 class Player;
 
 //-------------------------------------------------------------------------------------------------
-enum ScienceType
+enum ScienceType : int
 {
 	SCIENCE_INVALID = -1
 };
@@ -137,4 +137,3 @@ extern ScienceStore* TheScienceStore;
 
 
 #endif // __SCIENCE_H_
-

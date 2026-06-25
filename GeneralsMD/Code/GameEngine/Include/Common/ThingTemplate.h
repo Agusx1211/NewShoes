@@ -61,7 +61,7 @@ struct FieldParse;
 class Player;
 class INI;
 enum RadarPriorityType : int;
-enum ScienceType;
+enum ScienceType : int;
 enum EditorSortingType : int;
 enum ShadowType : int;
 class WeaponTemplateSet;

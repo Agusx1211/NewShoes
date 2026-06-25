@@ -1121,6 +1121,7 @@ target_link_libraries(zh_wwutil PUBLIC
 )
 
 add_library(zh_gameengine_common_core STATIC
+  "${WASM_SHIMS_DIR}/INICommonCompat.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/MemoryInit.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
@@ -1169,6 +1170,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIModel.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMiscAudio.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INISpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/Audio/AudioEventRTS.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/MessageStream.cpp"
@@ -1178,8 +1180,10 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/Handicap.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/MissionStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/ProductionPrerequisite.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Science.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/SpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
   "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
@@ -1279,6 +1283,7 @@ add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/MessageStream/HintSpy.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/CampaignManager.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIAnimation.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMappedImage.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIVideo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"

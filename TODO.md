@@ -168,6 +168,11 @@ shares structure and follows behind.
 - [x] Add a fixed underlying type for the original `GUICommandType`
       forward declarations reached by the current ControlBar/AI/command
       translation include graph under standard clang/Emscripten.
+- [x] Add a fixed underlying type for the original `ScienceType` forward
+      declarations reached by the current science/special-power/player-template
+      include graph under standard clang/Emscripten.
+- [x] Extend the target-local `Common/STLTypedefs.h` shim with original
+      `AsciiStringList` aliases needed by `PlayerTemplate` side-list helpers.
 - [x] Add a target-local `Common/GameAudio.h` include-order shim so original
       `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
       declarations compile under clang/Emscripten.
@@ -514,6 +519,16 @@ shares structure and follows behind.
       `INIMapData.cpp`, and `INIModel.cpp`) after extending the temporary
       `Common/INI.h` bridge with the matching original entry-point
       declarations.
+- [x] Compile original `Common/INI/INISpecialPower.cpp` and
+      `Common/RTS/SpecialPower.cpp` after fixing the `ScienceType` enum-forward
+      contract, adding a temporary linkable `INI::parseScience` bridge, and
+      qualifying the original special-power bit-name table for clang.
+- [x] Compile original `Common/RTS/PlayerTemplate.cpp` after restoring the
+      `AsciiStringList` typedef surface and adding the matching temporary
+      `INI::parsePlayerTemplateDefinition` bridge declaration.
+- [x] Compile original `Common/INI/INICommandButton.cpp` into the GameClient
+      utility slice as compile coverage for command-button parsing against the
+      current ControlBar/SpecialPower declarations.
 - [ ] Link and smoke-test the original audio and multiplayer INI parser routes
       after the real `Common/INI.cpp` reader, audio manager, and full runtime
       singleton surface are available without target-local parser stubs.
@@ -521,11 +536,19 @@ shares structure and follows behind.
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
       target-local parser stubs.
+- [ ] Link and smoke-test original player-template, special-power, and
+      command-button INI parser routes after the real `Common/INI.cpp` reader,
+      ScienceStore validation, ControlBar, PlayerTemplateStore, and
+      SpecialPowerStore singleton surfaces are available without target-local
+      parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
       the bodies still require `wmsdk.h`, `HRESULT`/wide Win32 shell types, and
       browser-safe launch/playback behavior.
+- [ ] Compile original `Common/Audio/GameSpeech.cpp` after the WPAudio
+      attribute header/backend dependency is replaced with the browser audio
+      contract.
 - [x] Compile original RTS accounting sources `Common/RTS/Handicap.cpp`,
       `MissionStats.cpp`, and `Money.cpp` after fixing the original
       `Team` DLINK clang contract and adding the production map typedefs
@@ -540,9 +563,10 @@ shares structure and follows behind.
 - [x] Compile original `Common/RTS/Science.cpp` against the current temporary
       `Common/INI.h` parser bridge for science definitions and translated
       labels.
-- [ ] Replace the temporary `parseScienceVector` and `parseAndTranslateLabel`
-      bridge helpers with the real `Common/INI.cpp` / `GameText` parse path,
-      then smoke-test science-definition parsing against real INI data.
+- [ ] Replace the temporary `parseScience`, `parseScienceVector`, and
+      `parseAndTranslateLabel` bridge helpers with the real `Common/INI.cpp` /
+      `GameText` parse path, then smoke-test science-definition and
+      special-power parsing against real INI data.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -554,6 +578,12 @@ shares structure and follows behind.
 - [ ] Link and smoke-test `MultiplayerSettings` and `Money` runtime behavior
       after the deeper `Player`/`Thing`/`StealthUpdate` economy path can link
       without target-local GameLogic singleton shims.
+- [ ] Compile original `Common/RTS/AcademyStats.cpp` after the real
+      `GlobalData::m_useAlternateMouse` contract and deeper player/template
+      dependencies are available without expanding temporary shims.
+- [ ] Compile original `Common/RTS/ScoreKeeper.cpp` after the real
+      `GameLogic::isScoringEnabled` scoring surface and related
+      ThingFactory/ThingTemplate dependencies are available.
 - [ ] Compile original `Common/DamageFX.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, `GameClient/FXList` / `InGameUI`, and
       `GameLogic/Damage` / `Object` dependencies are available.
@@ -561,11 +591,19 @@ shares structure and follows behind.
       `PartitionManager` header loop-scope issue, `AIPathfind.h`
       `PathfindCell` contract, and `GlobalData::m_maxLineBuildObjects`
       dependency are resolved through original headers.
+- [ ] Compile original `Common/CommandLine.cpp` after the real `GlobalData`
+      startup/display/audio/map/benchmark fields and terrain visual map-path
+      conversion dependencies are available.
+- [ ] Compile original `Common/StateMachine.cpp` after the real save/load
+      `Xfer::xferObjectID` and `Xfer::xferCoord3D` routes are available.
 - [x] Compile original `Common/MessageStream.cpp` after resolving its clang
       loop-scope issue while preserving the original argument traversal logic.
 - [ ] Link and smoke-test original message-stream behavior after the real
       `Thing`, player/list, recorder, InGameUI, GameLogic, and network command
       dependencies replace the current compile-only surface.
+- [ ] Compile original `Common/StatsCollector.cpp` after the real
+      `GameLogic` object-iteration surface and `GlobalData` play-stats/map
+      fields are available.
 - [ ] Compile original `Common/GlobalData.cpp` after GameLogic AI command,
       science, weapon, guard-mode, damage/player-mask, and related enum/header
       dependencies are available.
@@ -592,6 +630,8 @@ shares structure and follows behind.
       `BezFwdIterator` conservative pointer-initialization diagnostics.
 - [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
+- [ ] Compile original `Common/INI/INIWebpageURL.cpp` after the WOL browser /
+      ATL dependency (`atlbase.h`) has a browser URL integration contract.
 - [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without
       target-local parser/Xfer/GameLogic shims.
 - [ ] `GameEngine.cpp`, `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`,
