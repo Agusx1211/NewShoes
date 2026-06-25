@@ -46,6 +46,11 @@ Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
 
 ## Hard rules
 
+- **Reuse the original source.** Big rule of thumb: if code already exists in
+  the original source, **use it** — compile and port it. Only write new
+  machinery when something genuinely cannot work in the browser without it
+  (i.e. a platform/device dependency that must be re-targeted to a browser API).
+  Don't re-write engine/data logic that already exists and is platform-independent.
 - **Do not write a new game.** Do not reimplement gameplay, rendering, or AI
   "from scratch" or as an approximation. Compile and port the real code.
 - **Do not invent data or behavior.** Behavior must come from the original
@@ -54,11 +59,11 @@ Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
   dependency**, not to stub out or fake the feature.
 - Map missing platform APIs to browser equivalents; preserve original logic.
 
-## Status / caution
+## Status
 
-`WebAssembly/` contains early exploration: standalone re-parsers of the game's
-INI files and a small demo battle (`public/play.html`). The demo battle is an
-**off-goal homage, not the port** — do not extend it as if it were the game.
-Useful pieces there: the BIG-archive reader, and validating parsed output
-against real assets extracted from the disc images in `assets/`. The real work
-is compiling `GeneralsMD/Code` to wasm and re-targeting its device layer.
+`WebAssembly/` is the port work area. An earlier iteration there hand-wrote
+standalone INI parsers and a demo battle game; both duplicated/ignored existing
+source and have been removed. What remains is asset-extraction tooling (pull
+`INIZH.big` from the disc images in `assets/`) for testing the port against real
+data. The real work starts now: compile `GeneralsMD/Code` with Emscripten and
+re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.

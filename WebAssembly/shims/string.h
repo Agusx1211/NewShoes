@@ -1,4 +1,0 @@
-#ifndef GENERALS_WASM_SHIM_STRING_H
-#define GENERALS_WASM_SHIM_STRING_H
-
-#endif
