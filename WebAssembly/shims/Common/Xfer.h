@@ -4,6 +4,7 @@
 #define __XFER_H_
 
 #include "Common/AsciiString.h"
+#include "Common/GameType.h"
 #include "Common/UnicodeString.h"
 #include "GameClient/Color.h"
 

@@ -767,9 +767,30 @@ shares structure and follows behind.
       `FiringTracker`, `SimpleObjectIterator`, 43 update leaves, and
       `ScriptEngine/VictoryConditions.cpp`. The frontier now covers 176 of
       259 original `GameLogic` translation units.
-- [ ] Compile the remaining 83 original `GameLogic` sources after resolving
+- [x] Compile the next source-specific `PreRTS` original `GameLogic` batch in
+      the real-header compile frontier: `AI/AIGuardRetaliate.cpp`,
+      `AI/AITNGuard.cpp`, `AI/Squad.cpp`, `Object/Contain/CaveContain.cpp`,
+      `Object/Contain/TunnelContain.cpp`,
+      `Object/Damage/TransitionDamageFX.cpp`,
+      `Object/Update/AIUpdate/HackInternetAIUpdate.cpp`,
+      `Object/Update/AIUpdate/WanderAIUpdate.cpp`,
+      `Object/Update/AutoDepositUpdate.cpp`,
+      `Object/Update/CheckpointUpdate.cpp`,
+      `Object/Update/CleanupHazardUpdate.cpp`, `Object/Update/EMPUpdate.cpp`,
+      `Object/Update/EnemyNearUpdate.cpp`, `Object/Update/FireSpreadUpdate.cpp`,
+      `Object/Update/MobMemberSlavedUpdate.cpp`,
+      `Object/Update/OCLUpdate.cpp`,
+      `Object/Update/PointDefenseLaserUpdate.cpp`,
+      `Object/Update/SlavedUpdate.cpp`,
+      `Object/Update/StealthDetectorUpdate.cpp`,
+      `Object/Update/StealthUpdate.cpp`, and
+      `Object/Update/TensileFormationUpdate.cpp`. The frontier now covers 197
+      of 259 original `GameLogic` translation units.
+- [ ] Compile the remaining 62 original `GameLogic` sources after resolving
       the clustered blockers found by the broad probe: missing direct
-      `GlobalData` / `LogicRandomValue` / `GameClientRandomValue` includes,
+      `GlobalData` / `LogicRandomValue` / `GameClientRandomValue` includes
+      or temporary bridge fields, missing `GameLogic` compile-surface methods,
+      missing temporary INI parse helpers,
       case-sensitive wrappers (`PreRTS.H`, `Common/XFerCRC.h`,
       `common/mapobject.h`, `GameLogic/Weaponset.h`,
       `GameLogic\\Weaponset.h`, `WWMath/Vector3.h`), enum forward declarations

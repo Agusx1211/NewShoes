@@ -11,6 +11,8 @@
 
 #include "Common/AsciiString.h"
 #include "Common/GameCommon.h"
+#include "Common/GameType.h"
+#include "Common/UnicodeString.h"
 #include "GameClient/Color.h"
 
 class INI;

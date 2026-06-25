@@ -17,6 +17,7 @@
 
 #include "Common/AsciiString.h"
 #include "Common/GameCommon.h"
+#include "Common/GameType.h"
 #include "Common/UnicodeString.h"
 
 enum NameKeyType : int;
@@ -73,6 +74,8 @@ template <> struct hash<AsciiString>
 
 typedef std::vector<Coord3D> VecCoord3D;
 typedef VecCoord3D::iterator VecCoord3DIt;
+typedef std::list<Object *> ObjectPointerList;
+typedef ObjectPointerList::iterator ObjectPointerListIterator;
 typedef std::vector<ObjectID> ObjectIDVector;
 typedef ObjectIDVector::iterator ObjectIDVectorIterator;
 typedef std::list<AsciiString> AsciiStringList;
