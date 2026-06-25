@@ -122,6 +122,22 @@ target_compile_options(zh_wwlib_crc PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_md5 STATIC
+  "${WWLIB_DIR}/md5.cpp"
+)
+
+target_include_directories(zh_wwlib_md5 PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_md5 PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwlib_sha STATIC
   "${WWLIB_DIR}/sha.cpp"
 )
@@ -296,6 +312,32 @@ target_compile_options(wwlib-crc-smoke PRIVATE
 )
 
 target_link_options(wwlib-crc-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-md5-smoke
+  tests/wwlib_md5_smoke.cpp
+)
+
+set_target_properties(wwlib-md5-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-md5-smoke PRIVATE
+  zh_wwlib_md5
+)
+
+target_compile_options(wwlib-md5-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-md5-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

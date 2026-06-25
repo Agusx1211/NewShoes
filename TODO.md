@@ -81,6 +81,8 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` Base64 helpers (`base64.cpp`) compile and smoke-test
       known encodings, padding, ignored whitespace, and binary round trips
       under wasm.
+- [x] `WWVegas/WWLib` MD5 hashing (`md5.cpp`) compiles and smoke-tests standard
+      digest vectors plus split updates under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
