@@ -303,14 +303,34 @@ shares structure and follows behind.
 - [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.
-- [ ] Compile original `Common/version.cpp` after adding a lowercase
+- [x] Compile original `Common/version.cpp` after adding a lowercase
       `Common/Version.h` wrapper and bringing up the `GameClient/GameText`
       interface used by its Unicode formatting path.
+- [x] Compile original `Common/System/Directory.cpp`,
+      `Common/System/StackDump.cpp`, and `Common/Audio/AudioRequest.cpp` into
+      the wasm Common core; smoke-test `AudioRequest` memory-pool
+      allocation/release.
 - [ ] Compile original `Common/CRCDebug.cpp` after the `GameClient/InGameUI`
       and W3D collision/render include dependencies are available.
+- [ ] Compile original `Common/System/Debug.cpp` and
+      `Common/System/FunctionLexicon.cpp` after the browser input layer
+      replaces the DirectInput (`dinput.h`) dependency pulled through
+      `GameClient/KeyDefs.h`.
+- [ ] Compile original `Common/Audio/DynamicAudioEventInfo.cpp` after the real
+      `Common/Xfer` path replaces the temporary shim; it needs the original
+      unsigned-byte xfer route.
 - [ ] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` after the real `Common/INI` `FieldParse` table
       and scalar/color parse helpers replace the temporary INI shim.
+- [ ] Compile original `Common/DamageFX.cpp` after `Common/Thing` /
+      `Common/OVERRIDE.h`, `GameClient/FXList` / `InGameUI`, and
+      `GameLogic/Damage` / `Object` dependencies are available.
+- [ ] Compile original `Common/MessageStream.cpp` after `Common/Thing` /
+      `Common/OVERRIDE.h`, player/list, recorder, InGameUI, and GameLogic
+      dependencies are available.
+- [ ] Compile original `Common/GlobalData.cpp` after GameLogic AI command,
+      science, weapon, guard-mode, damage/player-mask, and related enum/header
+      dependencies are available.
 - [ ] Compile original `Common/UserPreferences.cpp` and
       `Common/SkirmishBattleHonors.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, player/game-difficulty declarations, and related

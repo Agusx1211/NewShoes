@@ -5,6 +5,7 @@
 #include "PreRTS.h"
 
 #include "Compression.h"
+#include "Common/AudioRequest.h"
 #include "Common/AsciiString.h"
 #include "Common/ArchiveFileSystem.h"
 #include "Common/BezierSegment.h"
@@ -36,8 +37,10 @@
 #include "Common/string.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
+#include "Common/Version.h"
 #include "Common/encrypt.h"
 #include "GameClient/ClientRandomValue.h"
+#include "GameClient/GameText.h"
 #include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
@@ -48,6 +51,7 @@
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GameLogic *TheGameLogic = nullptr;
 GlobalData *TheGlobalData = nullptr;
+GameTextInterface *TheGameText = nullptr;
 class AudioManager;
 AudioManager *TheAudio = nullptr;
 
@@ -71,6 +75,55 @@ class SmokeCDManager : public CDManager
 {
 protected:
 	CDDriveInterface* createDrive(void) override { return NEW CDDrive; }
+};
+
+class SmokeGameText : public GameTextInterface
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+	UnicodeString fetch(const Char *label, Bool *exists = nullptr) override
+	{
+		return fetch(AsciiString(label), exists);
+	}
+
+	UnicodeString fetch(AsciiString label, Bool *exists = nullptr) override
+	{
+		if (exists != nullptr) {
+			*exists = TRUE;
+		}
+		if (std::strcmp(label.str(), "Version:Format2") == 0) {
+			return UnicodeString(L"Version %d.%d");
+		}
+		if (std::strcmp(label.str(), "Version:Format3") == 0) {
+			return UnicodeString(L"Version %d.%d.%d");
+		}
+		if (std::strcmp(label.str(), "Version:Format4") == 0) {
+			return UnicodeString(L"Version %d.%d.%d.%d%c%c");
+		}
+		if (std::strcmp(label.str(), "Version:BuildTime") == 0) {
+			return UnicodeString(L"Built %ls %ls");
+		}
+		if (std::strcmp(label.str(), "Version:BuildMachine") == 0) {
+			return UnicodeString(L"Machine %ls");
+		}
+		if (std::strcmp(label.str(), "Version:BuildUser") == 0) {
+			return UnicodeString(L"User %ls");
+		}
+
+		if (exists != nullptr) {
+			*exists = FALSE;
+		}
+		return UnicodeString::TheEmptyString;
+	}
+
+	AsciiStringVec& getStringsWithLabelPrefix(AsciiString) override { return m_empty; }
+	void initMapStringFile(const AsciiString&) override {}
+
+private:
+	AsciiStringVec m_empty;
 };
 
 class SmokeOutputStream : public OutputStream
@@ -870,6 +923,91 @@ bool exercise_registry_defaults()
 		expect(GetRegistryMapPackVersion() == 65536, "registry map pack default failed");
 }
 
+bool exercise_version()
+{
+	SmokeGameText game_text;
+	TheGameText = &game_text;
+
+	Version version;
+	version.setVersion(
+		1,
+		4,
+		382,
+		7,
+		AsciiString("codex"),
+		AsciiString("browser"),
+		AsciiString("12:34"),
+		AsciiString("Jun 25 2026"));
+
+#if defined _DEBUG || defined _INTERNAL
+	const char ascii_expected[] = "1.4.382.7co";
+	const char unicode_expected[] = "Version 1.4.382.7co";
+#else
+	const char ascii_expected[] = "1.4";
+	const char unicode_expected[] = "Version 1.4";
+#endif
+
+	AsciiString unicode_version;
+	AsciiString full_version;
+	AsciiString build_time;
+	AsciiString build_location;
+	AsciiString build_user;
+	unicode_version.translate(version.getUnicodeVersion());
+	full_version.translate(version.getFullUnicodeVersion());
+	build_time.translate(version.getUnicodeBuildTime());
+	build_location.translate(version.getUnicodeBuildLocation());
+	build_user.translate(version.getUnicodeBuildUser());
+
+	const bool ok =
+		expect(version.getVersionNumber() == 0x00010004U, "Version number packing failed") &&
+		expect(std::strcmp(version.getAsciiVersion().str(), ascii_expected) == 0,
+			"Version ASCII formatting failed") &&
+		expect(std::strcmp(unicode_version.str(), unicode_expected) == 0,
+			"Version Unicode formatting failed") &&
+		expect(std::strcmp(full_version.str(), "Version 1.4.382.7co") == 0,
+			"Version full Unicode formatting failed") &&
+		expect(std::strcmp(version.getAsciiBuildTime().str(), "Jun 25 2026 12:34") == 0,
+			"Version ASCII build time failed") &&
+		expect(std::strcmp(build_time.str(), "Built Jun 25 2026 12:34") == 0,
+			"Version Unicode build time failed") &&
+		expect(std::strcmp(version.getAsciiBuildLocation().str(), "browser") == 0,
+			"Version ASCII build location failed") &&
+		expect(std::strcmp(build_location.str(), "Machine browser") == 0,
+			"Version Unicode build location failed") &&
+		expect(std::strcmp(version.getAsciiBuildUser().str(), "codex") == 0,
+			"Version ASCII build user failed") &&
+		expect(std::strcmp(build_user.str(), "User codex") == 0,
+			"Version Unicode build user failed");
+
+	TheGameText = nullptr;
+	return ok;
+}
+
+bool exercise_audio_request()
+{
+	AudioRequest *request = newInstance(AudioRequest);
+	if (!expect(request != nullptr, "AudioRequest allocation failed")) {
+		return false;
+	}
+
+	request->m_request = AR_Stop;
+	request->m_handleToInteractOn = static_cast<AudioHandle>(0x1234U);
+	request->m_usePendingEvent = FALSE;
+	request->m_requiresCheckForSample = TRUE;
+
+	const bool ok =
+		expect(request->m_request == AR_Stop, "AudioRequest request tracking failed") &&
+		expect(request->m_handleToInteractOn == static_cast<AudioHandle>(0x1234U),
+			"AudioRequest handle tracking failed") &&
+		expect(!request->m_usePendingEvent, "AudioRequest pending-event flag failed") &&
+		expect(request->m_requiresCheckForSample, "AudioRequest sample-check flag failed") &&
+		expect(TheMemoryPoolFactory->findMemoryPool("AudioRequest") != nullptr,
+			"AudioRequest memory pool missing");
+
+	request->deleteInstance();
+	return ok;
+}
+
 bool exercise_cd_manager()
 {
 	GameLogic logic;
@@ -1226,6 +1364,8 @@ int main()
 		exercise_data_chunks() &&
 		exercise_ram_file() &&
 		exercise_registry_defaults() &&
+		exercise_version() &&
+		exercise_audio_request() &&
 		exercise_cd_manager() &&
 		exercise_type_masks() &&
 		exercise_bit_flags() &&
@@ -1252,6 +1392,7 @@ int main()
 		"FileSystem,RAMFile,StreamingArchiveFile,ArchiveFile,ArchiveFileSystem,"
 		"Win32BIGFile,Win32BIGFileSystem,"
 		"SubsystemInterface,CDManager,Registry,"
+		"Version,AudioRequest,Directory,StackDump,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
