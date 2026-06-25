@@ -69,24 +69,51 @@ target_compile_options(zh_wwdebug_core PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_random STATIC
+  "${WWLIB_DIR}/random.cpp"
+)
+
+target_include_directories(zh_wwlib_random PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_random PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-shift-negative-value
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwmath_core STATIC
   "${WWMATH_DIR}/pot.cpp"
   "${WWMATH_DIR}/tri.cpp"
+  "${WWMATH_DIR}/v3_rnd.cpp"
 )
 
 target_include_directories(zh_wwmath_core PUBLIC
+  "${WASM_SHIMS_DIR}"
   "${WWMATH_DIR}"
   "${WWLIB_DIR}"
 )
 
+target_link_libraries(zh_wwmath_core PUBLIC
+  zh_wwlib_random
+)
+
 target_compile_options(zh_wwmath_core PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
   -Wall
   -Wextra
   -Wno-logical-not-parentheses
+  -Wno-microsoft-extra-qualification
   -Wno-unknown-pragmas
   -Wno-unused-function
   -Wno-unused-parameter
+  -Wno-unused-value
 )
 
 add_executable(cnc-port
@@ -182,10 +209,13 @@ target_link_libraries(wwmath-core-smoke PRIVATE
 
 target_compile_options(wwmath-core-smoke PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
   -Wall
   -Wextra
   -Wno-logical-not-parentheses
+  -Wno-microsoft-extra-qualification
   -Wno-unknown-pragmas
+  -Wno-unused-value
 )
 
 target_link_options(wwmath-core-smoke PRIVATE

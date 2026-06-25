@@ -14,8 +14,8 @@ target and should be compiled or re-targeted for wasm.
 | Component | Current port status | Notes |
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
-| `WWVegas/WWMath` | Partial | Original `pot.cpp` and `tri.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, and triangle containment. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Not started | Runtime utility/container/string/file support used broadly by engine and W3D. |
+| `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers. Containers, strings, file abstractions, threading, and platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -53,15 +53,19 @@ The wasm CMake skeleton currently builds:
   wasm static library.
 - `zh_wwdebug_core`: original `WWVegas/WWDebug/wwdebug.cpp` compiled into a
   wasm static library with targeted Win32/exception shims.
-- `zh_wwmath_core`: original `WWVegas/WWMath/pot.cpp` and `tri.cpp` compiled
-  into a wasm static library with minimal WWVegas compiler shims.
+- `zh_wwlib_random`: original `WWVegas/WWLib/random.cpp` compiled into a wasm
+  static library.
+- `zh_wwmath_core`: original `WWVegas/WWMath/pot.cpp`, `tri.cpp`, and
+  `v3_rnd.cpp` compiled into a wasm static library with minimal WWVegas
+  compiler shims.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
 - `wwdebug-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWDebug message, assert, trigger, and profile handlers.
 - `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
-  WWMath power-of-two helpers, vector operations, and triangle containment.
+  WWMath power-of-two helpers, vector operations, triangle containment, vector
+  randomizers, and the original WWLib random generator.
 
 ## Next Compile Order
 

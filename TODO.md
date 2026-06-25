@@ -54,6 +54,8 @@ shares structure and follows behind.
       fallback while preserving the original MSVC path.
 - [x] Add a minimal WWVegas compiler shim for `__cdecl`/global new guards used
       by `always.h` under clang/Emscripten.
+- [x] Add target-local MSVC compatibility flags needed by original
+      `WWLib/random.cpp` and `WWMath/v3_rnd.h` under clang/Emscripten.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
@@ -62,10 +64,14 @@ shares structure and follows behind.
       source and round-trip smoke runs under wasm.
 - [ ] Full `Compression` manager (RefPack/zlib/LZH/etc.) compiles and is
       unit-checked against real BIG data.
-- [x] `WWVegas/WWMath` core `pot.cpp`/`tri.cpp` compiles and smoke-tests
-      power-of-two helpers, vector math, and triangle containment under wasm.
+- [x] `WWVegas/WWMath` core `pot.cpp`/`tri.cpp`/`v3_rnd.cpp` compiles and
+      smoke-tests power-of-two helpers, vector math, triangle containment, and
+      vector randomizers under wasm.
 - [ ] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
-- [ ] `WWVegas/WWLib` (containers, string, ini, file abstractions) compiles.
+- [x] `WWVegas/WWLib` random generator (`random.cpp`) compiles and smoke-tests
+      through the WWMath vector randomizers under wasm.
+- [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
+      compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
       assert, trigger, and profile handlers under wasm.
 - [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and

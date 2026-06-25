@@ -2,7 +2,9 @@
 #include <iostream>
 
 #include "pot.h"
+#include "random.h"
 #include "tri.h"
+#include "v3_rnd.h"
 #include "vector2.h"
 #include "vector3.h"
 
@@ -19,6 +21,11 @@ bool expect(bool condition, const char *message)
 		return false;
 	}
 	return true;
+}
+
+bool inside_sphere(const Vector3 &vector, float radius)
+{
+	return vector.Length2() <= radius * radius + 0.0001f;
 }
 }
 
@@ -79,8 +86,47 @@ int main()
 		return 1;
 	}
 
+	RandomClass random(1234);
+	const int ranged_random = random(3, 9);
+	if (!expect(ranged_random >= 3 && ranged_random <= 9,
+			"RandomClass ranged value outside bounds")) {
+		return 1;
+	}
+
+	Vector3 vector;
+	Vector3SolidBoxRandomizer box(Vector3(2.0f, 3.0f, 4.0f));
+	box.Get_Vector(vector);
+	if (!expect(std::fabs(vector.X) <= 2.0f && std::fabs(vector.Y) <= 3.0f &&
+			std::fabs(vector.Z) <= 4.0f,
+			"Vector3SolidBoxRandomizer produced value outside extents")) {
+		return 1;
+	}
+	if (!expect(near(box.Get_Maximum_Extent(), 4.0f), "box maximum extent mismatch")) {
+		return 1;
+	}
+
+	Vector3SolidSphereRandomizer solid_sphere(5.0f);
+	solid_sphere.Get_Vector(vector);
+	if (!expect(inside_sphere(vector, 5.0f), "solid sphere randomizer outside radius")) {
+		return 1;
+	}
+
+	Vector3HollowSphereRandomizer hollow_sphere(6.0f);
+	hollow_sphere.Get_Vector(vector);
+	if (!expect(near(vector.Length(), 6.0f, 0.001f), "hollow sphere randomizer not on radius")) {
+		return 1;
+	}
+
+	Vector3SolidCylinderRandomizer cylinder(7.0f, 2.0f);
+	cylinder.Get_Vector(vector);
+	if (!expect(std::fabs(vector.X) <= 7.0f &&
+			(vector.Y * vector.Y + vector.Z * vector.Z) <= 4.0001f,
+			"solid cylinder randomizer outside bounds")) {
+		return 1;
+	}
+
 	std::cout << "{\"ok\":true,\"library\":\"WWMath\","
-		"\"compiled\":[\"pot.cpp\",\"tri.cpp\"],"
+		"\"compiled\":[\"pot.cpp\",\"tri.cpp\",\"v3_rnd.cpp\",\"WWLib/random.cpp\"],"
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
