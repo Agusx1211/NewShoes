@@ -13,7 +13,7 @@ target and should be compiled or re-targeted for wasm.
 
 | Component | Current port status | Notes |
 |---|---|---|
-| `Compression` | Partial | `EAC` RefPack compiles and has a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
+| `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Not started | Core math/collision. Depends on `always.h`, `osdep.h`, `WWDebug`, save/load headers, D3DX types, and contains x86 inline assembly in some files. |
 | `WWVegas/WWLib` | Not started | Runtime utility/container/string/file support used broadly by engine and W3D. |
 | `WWVegas/WWDebug` | Not started | Runtime assert/log/debug plumbing; should route to browser console and harness. |
@@ -49,10 +49,11 @@ dependency is proven.
 The wasm CMake skeleton currently builds:
 
 - `cnc-port`: a minimal browser module boundary used by the harness.
-- `zh_eac_refpack`: original `Compression/EAC` RefPack source compiled into a
+- `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
-- `refpack-smoke`: a Node-executed wasm smoke test that round-trips data through
-  original `REF_encode`/`REF_decode`.
+- `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
+  through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
+  and `REF_encode`/`REF_decode`.
 
 ## Next Compile Order
 

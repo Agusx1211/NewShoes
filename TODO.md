@@ -52,8 +52,8 @@ shares structure and follows behind.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
-- [x] `Compression/EAC` RefPack codec compiles from original source and
-      round-trip smoke runs under wasm.
+- [x] `Compression/EAC` BTree, Huff, and RefPack codecs compile from original
+      source and round-trip smoke runs under wasm.
 - [ ] Full `Compression` manager (RefPack/zlib/LZH/etc.) compiles and is
       unit-checked against real BIG data.
 - [ ] `WWVegas/WWMath` compiles; spot-check vector/matrix results.

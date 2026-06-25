@@ -15,17 +15,23 @@ set(ZH_CODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../GeneralsMD/Code")
 set(COMPRESSION_EAC_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression/EAC")
 set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac_port.h")
 
-add_library(zh_eac_refpack STATIC
+add_library(zh_compression_eac STATIC
+  "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
+  "${COMPRESSION_EAC_DIR}/btreedecode.cpp"
+  "${COMPRESSION_EAC_DIR}/btreeencode.cpp"
+  "${COMPRESSION_EAC_DIR}/huffabout.cpp"
+  "${COMPRESSION_EAC_DIR}/huffdecode.cpp"
+  "${COMPRESSION_EAC_DIR}/huffencode.cpp"
   "${COMPRESSION_EAC_DIR}/refabout.cpp"
   "${COMPRESSION_EAC_DIR}/refdecode.cpp"
   "${COMPRESSION_EAC_DIR}/refencode.cpp"
 )
 
-target_include_directories(zh_eac_refpack PUBLIC
+target_include_directories(zh_compression_eac PUBLIC
   "${COMPRESSION_EAC_DIR}"
 )
 
-target_compile_options(zh_eac_refpack PRIVATE
+target_compile_options(zh_compression_eac PRIVATE
   -include "${COMPRESSION_EAC_PORT_SHIM}"
   -Wall
   -Wextra
@@ -65,26 +71,26 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap']"
 )
 
-add_executable(refpack-smoke
-  tests/refpack_smoke.cpp
+add_executable(compression-eac-smoke
+  tests/compression_eac_smoke.cpp
 )
 
-set_target_properties(refpack-smoke PROPERTIES
+set_target_properties(compression-eac-smoke PROPERTIES
   SUFFIX ".cjs"
 )
 
-target_link_libraries(refpack-smoke PRIVATE
-  zh_eac_refpack
+target_link_libraries(compression-eac-smoke PRIVATE
+  zh_compression_eac
 )
 
-target_compile_options(refpack-smoke PRIVATE
+target_compile_options(compression-eac-smoke PRIVATE
   -include "${COMPRESSION_EAC_PORT_SHIM}"
   -Wall
   -Wextra
   -Wpedantic
 )
 
-target_link_options(refpack-smoke PRIVATE
+target_link_options(compression-eac-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

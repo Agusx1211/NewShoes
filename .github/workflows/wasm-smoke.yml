@@ -40,7 +40,7 @@ jobs:
         working-directory: WebAssembly
         run: npx playwright install --with-deps chromium
 
-      - name: Build wasm and run browser smoke
+      - name: Build wasm and run smoke checks
         run: |
           emscripten_version="$(cat WebAssembly/emscripten-version.txt)"
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
