@@ -173,6 +173,9 @@ shares structure and follows behind.
 - [x] Add case-variant include wrappers for original GameNetwork
       `NetworkUtil.h`, `networkdefs.h`, and `transport.h` users under the
       case-sensitive wasm build.
+- [x] Route original `Common/PerfTimer` precision-timer reads through the
+      existing browser `QueryPerformanceCounter` shim under Emscripten, while
+      preserving the x86 `RDTSC` path for non-wasm builds.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -490,6 +493,10 @@ shares structure and follows behind.
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
       and default-terrain copying.
+- [x] Compile original `Common/PerfTimer.cpp` into the wasm Common core after
+      guarding its x86 precision-timer assembly behind the current dormant
+      `NO_PERF_TIMERS` build and an Emscripten `QueryPerformanceCounter`
+      fallback.
 - [ ] Link and smoke-test `MultiplayerSettings` runtime behavior after
       original `Common/RTS/Money.cpp` can compile without the deeper
       `Player`/`Thing`/`StealthUpdate` enum-forward blockers.
@@ -669,18 +676,37 @@ shares structure and follows behind.
       screenshots/state checks.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
 - [x] Compile the first original GameNetwork command/frame slice
-      (`GameMessageParser.cpp`, `NetCommandRef.cpp`,
-      `NetCommandWrapperList.cpp`, `NetworkUtil.cpp`, `NetCommandList.cpp`,
-      `FrameData.cpp`, and `FrameDataManager.cpp`) in a wasm core archive.
+      (`Connection.cpp`, `FileTransfer.cpp`, `FrameData.cpp`,
+      `FrameDataManager.cpp`, `GameMessageParser.cpp`, `NetCommandList.cpp`,
+      `NetCommandRef.cpp`, `NetCommandWrapperList.cpp`,
+      `NetMessageStream.cpp`, `NetworkUtil.cpp`, and `User.cpp`) in a wasm
+      core archive.
 - [x] Link and smoke-test the original GameNetwork utility/frame slice with
       command-id/type policy checks and empty frame readiness through
-      `FrameData`/`FrameDataManager`.
+      `FrameData`/`FrameDataManager`, plus pooled `User` value behavior.
 - [ ] Compile original `GameNetwork/FrameMetrics.cpp` after the real
       `GlobalData` network history fields replace the current temporary
       wasm `Common/GlobalData.h` surface.
+- [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
+      after `NetPacket.cpp` and `NetCommandMsg.cpp` compile; current coverage
+      is compile-only because linking `Connection` pulls packetization and
+      transport send/receive dependencies.
+- [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
+      helper and transfer flow after `GameInfo`, `Shell`, `LoadScreen`, and the
+      browser network/file-transfer path are available; current coverage is
+      compile-only.
 - [ ] Compile original `GameNetwork/NetPacket.cpp` after resolving its
       clang/libc++ strictness issues and the remaining packet/message
       serialization dependencies without changing protocol behavior.
+- [ ] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
+      `udp.cpp` after the WinSock socket API surface is replaced with the
+      browser WebSocket/WebRTC transport contract.
+- [ ] Compile original `GameNetwork/DownloadManager.cpp` and `NAT.cpp` after
+      the WWDownload/GameSpy dependency surface is either restored from the
+      vendored source or re-targeted to the browser networking path.
+- [ ] Compile original `GameNetwork/FirewallHelper.cpp` after resolving its
+      legacy MSVC loop-scope assumptions under clang without changing firewall
+      probing behavior.
 - [ ] Link and smoke-test the broader GameNetwork command-message slice after
       original `Common/MessageStream.cpp`, `NetCommandMsg.cpp`, and
       `NetPacket.cpp` can compile against the real player/message

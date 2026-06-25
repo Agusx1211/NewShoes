@@ -35,21 +35,6 @@
 #include "GameClient/Display.h"
 #include "GameClient/GraphDraw.h"
 
-__forceinline void ProfileGetTime(__int64 &t)
-{
-  _asm
-  {
-    mov ecx,[t]
-    push eax
-    push edx
-    rdtsc
-    mov [ecx],eax
-    mov [ecx+4],edx
-    pop edx
-    pop eax
-  };
-}
-
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -61,6 +46,25 @@ __forceinline void ProfileGetTime(__int64 &t)
 //-------------------------------------------------------------------------------------------------
 
 #if defined(PERF_TIMERS) || defined(DUMP_PERF_STATS)
+
+__forceinline void ProfileGetTime(__int64 &t)
+{
+#ifdef __EMSCRIPTEN__
+	QueryPerformanceCounter((LARGE_INTEGER *)&t);
+#else
+  _asm
+  {
+    mov ecx,[t]
+    push eax
+    push edx
+    rdtsc
+    mov [ecx],eax
+    mov [ecx+4],edx
+    pop edx
+    pop eax
+  };
+#endif
+}
 
 //-------------------------------------------------------------------------------------------------
 static Int64 s_ticksPerSec = 0;
@@ -679,4 +683,3 @@ void StatMetricsDisplay( DebugDisplayInterface *dd, void *, FILE *fp )
 }
 
 #endif	// PERF_TIMERS
-

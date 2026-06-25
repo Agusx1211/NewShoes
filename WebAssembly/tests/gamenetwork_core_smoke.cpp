@@ -7,6 +7,7 @@
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
 #include "GameNetwork/NetworkUtil.h"
+#include "GameNetwork/User.h"
 
 namespace {
 bool expect(bool condition, const char *message)
@@ -75,18 +76,57 @@ bool exerciseFrameData()
 	manager->deleteInstance();
 	return ready_ok;
 }
+
+bool exerciseUser()
+{
+	User *first = newInstance(User)(UnicodeString(L"Commander"), 0x01020304u, 8088);
+	User *second = newInstance(User);
+
+	if (!expect(first != nullptr && second != nullptr, "User allocation failed")) {
+		if (first != nullptr) {
+			first->deleteInstance();
+		}
+		if (second != nullptr) {
+			second->deleteInstance();
+		}
+		return false;
+	}
+
+	second->setName(UnicodeString(L"Commander"));
+	second->SetIPAddr(0x0a000001u);
+	second->SetPort(9000);
+
+	const bool initial_ok =
+		expect(*first == second, "User equality should compare names") &&
+		expect(first->GetIPAddr() == 0x01020304u, "User IP assignment failed") &&
+		expect(first->GetPort() == 8088, "User port assignment failed") &&
+		expect(second->GetIPAddr() == 0x0a000001u, "User IP mutator failed") &&
+		expect(second->GetPort() == 9000, "User port mutator failed");
+	second->setName(UnicodeString(L"Observer"));
+	const bool changed_ok =
+		expect(*first != second, "User inequality should compare names");
+	*second = first;
+	const bool assigned_ok =
+		expect(*first == second, "User pointer assignment failed") &&
+		expect(second->GetIPAddr() == 0x01020304u, "User assignment IP failed") &&
+		expect(second->GetPort() == 8088, "User assignment port failed");
+
+	first->deleteInstance();
+	second->deleteInstance();
+	return initial_ok && changed_ok && assigned_ok;
+}
 }
 
 int main()
 {
 	initMemoryManager();
-	const bool ok = exerciseNetworkUtil() && exerciseFrameData();
+	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"NetworkUtil,NetCommandList,FrameData,FrameDataManager,GameMessageParser,NetCommandRef,NetCommandWrapperList\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,FileTransfer,FrameData,FrameDataManager,GameMessageParser,NetCommandList,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetworkUtil,User\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

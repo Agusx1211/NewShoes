@@ -1527,7 +1527,7 @@ int main()
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc,"
-		"TerrainTypes,MultiplayerSettings,GameMusic\","
+		"TerrainTypes,MultiplayerSettings,PerfTimer,GameMusic\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

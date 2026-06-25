@@ -68,7 +68,7 @@ void GetPrecisionTimerTicksPerSec(Int64* t);
 //-------------------------------------------------------------------------------------------------
 __forceinline void GetPrecisionTimer(Int64* t)
 {
-#ifdef USE_QPF
+#if defined(USE_QPF) || defined(__EMSCRIPTEN__)
 	QueryPerformanceCounter((LARGE_INTEGER*)t);
 #else
 	// CPUID is needed to force serialization of any previous instructions. 

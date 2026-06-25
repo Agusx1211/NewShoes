@@ -1163,6 +1163,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/Language.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/PartitionSolver.cpp"
+  "${GAMEENGINE_COMMON_DIR}/PerfTimer.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
   "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
@@ -1299,13 +1300,17 @@ target_link_libraries(zh_gameclient_utility PUBLIC
 )
 
 add_library(zh_gamenetwork_core STATIC
+  "${GAMEENGINE_GAMENETWORK_DIR}/Connection.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/FileTransfer.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/FrameData.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/FrameDataManager.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameMessageParser.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandList.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandRef.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandWrapperList.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/NetMessageStream.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetworkUtil.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/User.cpp"
 )
 
 target_include_directories(zh_gamenetwork_core PUBLIC
