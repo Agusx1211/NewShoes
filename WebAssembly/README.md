@@ -10,10 +10,6 @@ contains the data layer (INI parsing in `GameEngine/Source/Common/INI/`,
 compression and BIG-archive I/O in `Libraries` / `GameEngineDevice`); reuse it
 rather than re-writing it.
 
-> A previous iteration here hand-wrote standalone INI parsers and a demo game.
-> Both were off-goal duplications of code that already exists in the source and
-> have been removed.
-
 ## What's here
 
 Asset tooling for obtaining real game data to test the port against:

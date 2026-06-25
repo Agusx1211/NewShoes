@@ -61,9 +61,7 @@ Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
 
 ## Status
 
-`WebAssembly/` is the port work area. An earlier iteration there hand-wrote
-standalone INI parsers and a demo battle game; both duplicated/ignored existing
-source and have been removed. What remains is asset-extraction tooling (pull
-`INIZH.big` from the disc images in `assets/`) for testing the port against real
-data. The real work starts now: compile `GeneralsMD/Code` with Emscripten and
-re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
+`WebAssembly/` is the port work area. It currently holds asset-extraction
+tooling (pull `INIZH.big` from the disc images in `assets/`) for testing the
+port against real data. The real work: compile `GeneralsMD/Code` with Emscripten
+and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
