@@ -134,6 +134,19 @@ public:
 	static void parseLanguageDefinition(INI *ini);
 	static void parseWeatherDefinition(INI *ini);
 	static void parseHeaderTemplateDefinition(INI *ini);
+	static void parseAnim2DDefinition(INI *ini);
+	static void parseAudioEventDefinition(INI *ini);
+	static void parseDialogDefinition(INI *ini);
+	static void parseMusicTrackDefinition(INI *ini);
+	static void parseWaterSettingDefinition(INI *ini);
+	static void parseWaterTransparencyDefinition(INI *ini);
+	static void parseMappedImageDefinition(INI *ini);
+	static void parseMultiplayerSettingsDefinition(INI *ini);
+	static void parseMultiplayerColorDefinition(INI *ini);
+	static void parseMultiplayerStartingMoneyChoiceDefinition(INI *ini);
+	static void parseVideoDefinition(INI *ini);
+	static void parseMiscAudio(INI *ini);
+	static void parseControlBarResizerDefinition(INI *ini);
 	static void parseCredits(INI *ini);
 	static void parseShellMenuSchemeDefinition(INI *ini);
 	static void parseChallengeModeDefinition(INI *ini);
@@ -338,6 +351,9 @@ public:
 	}
 
 	static void parseMappedImage(INI *ini, void *instance, void *store, const void *userData);
+	static void parseAnim2DTemplate(INI *ini, void *instance, void *store, const void *userData);
+	static void parseAudioEventRTS(INI *ini, void *instance, void *store, const void *userData);
+	static void parseSoundsList(INI *ini, void *instance, void *store, const void *userData);
 
 	static void parseBitString32(INI *ini, void *, void *store, const void *userData)
 	{

@@ -96,7 +96,7 @@ class ThingTemplate;
 class GhostObject;
 class CommandButton;
 
-enum CommandSourceType;
+enum CommandSourceType : int;
 
 // ----------------------------------------------------------------------------------------------
 enum ValueOrThreat
@@ -1598,4 +1598,3 @@ public:
 extern PartitionManager *ThePartitionManager;  ///< object manager singleton
 
 #endif // __PARTITIONMANAGER_H_
-

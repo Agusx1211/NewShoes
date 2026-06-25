@@ -38,7 +38,7 @@
 //
 
 // shadow bit flags, keep this in sync with TheShadowNames
-enum ShadowType
+enum ShadowType : int
 {
 	SHADOW_NONE											=	0x00000000, 
 	SHADOW_DECAL										=	0x00000001,		//shadow decal applied via modulate blend
@@ -215,4 +215,3 @@ public:
 extern ProjectedShadowManager *TheProjectedShadowManager;
 
 #endif // __SHADOW_H_
-

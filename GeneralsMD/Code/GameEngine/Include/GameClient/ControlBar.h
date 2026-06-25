@@ -36,6 +36,7 @@
 #include "Common/AudioEventRTS.h"
 #include "Common/GameType.h"
 #include "Common/Overridable.h"
+#include "Common/Override.h"
 #include "Common/Science.h"
 #include "GameClient/Color.h"
 
@@ -61,19 +62,19 @@ class ControlBarResizer;
 class GameWindowTransitionsHandler;
 class DisplayString;
 
-enum ProductionID;
+enum ProductionID : int;
 
-enum CommandSourceType;
-enum ProductionType;
-enum GadgetGameMessage;
+enum CommandSourceType : int;
+enum ProductionType : int;
+enum GadgetGameMessage : int;
 enum ScienceType;
 enum TimeOfDay;
-enum RadiusCursorType;
+enum RadiusCursorType : int;
 
 //-------------------------------------------------------------------------------------------------
 /** Command options */
 //-------------------------------------------------------------------------------------------------
-enum CommandOption
+enum CommandOption : int
 {
 	COMMAND_OPTION_NONE					= 0x00000000,
 	NEED_TARGET_ENEMY_OBJECT		= 0x00000001, // command now needs user to select enemy target
@@ -1039,4 +1040,3 @@ private:
 extern ControlBar *TheControlBar;
 
 #endif  // end __CONTROLBAR_H_
-

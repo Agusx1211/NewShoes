@@ -109,7 +109,7 @@ class TempWeaponBonusHelper;
 class ObjectWeaponStatusHelper;
 class ObjectDefectionHelper;
 
-enum CommandSourceType;
+enum CommandSourceType : int;
 enum HackerAttackMode;
 enum NameKeyType;
 enum SpecialPowerType;
@@ -120,7 +120,7 @@ enum WeaponSetType;
 enum ArmorSetType;
 enum WeaponStatus;
 enum RadarPriorityType;
-enum CanAttackResult;
+enum CanAttackResult : int;
 
 // For ObjectStatusTypes
 #include "Common/ObjectStatusTypes.h"

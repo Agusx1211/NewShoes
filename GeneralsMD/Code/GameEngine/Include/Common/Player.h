@@ -87,7 +87,7 @@ class BattlePlanBonuses;
 
 enum BattlePlanStatus;
 enum UpgradeStatusType;
-enum CommandSourceType;
+enum CommandSourceType : int;
 
 enum ScienceAvailabilityType
 {

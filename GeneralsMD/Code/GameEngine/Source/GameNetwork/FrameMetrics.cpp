@@ -76,7 +76,7 @@ void FrameMetrics::init() {
 		m_fpsList[i] = 30.0;
 	}
 	m_fpsListIndex = 0;
-	for (i = 0; i < TheGlobalData->m_networkLatencyHistoryLength; ++i) {
+	for (Int i = 0; i < TheGlobalData->m_networkLatencyHistoryLength; ++i) {
 		m_latencyList[i] = (Real)0.2;
 	}
 	m_cushionIndex = 0;

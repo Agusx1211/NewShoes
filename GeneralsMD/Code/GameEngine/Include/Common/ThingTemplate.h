@@ -63,7 +63,7 @@ class INI;
 enum RadarPriorityType;
 enum ScienceType;
 enum EditorSortingType;
-enum ShadowType;
+enum ShadowType : int;
 class WeaponTemplateSet;
 class ArmorTemplateSet;
 class FXList;
@@ -777,4 +777,3 @@ private:
 //-----------------------------------------------------------------------------
 
 #endif // __THINGTEMPLATE_H_
-

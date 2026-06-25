@@ -56,7 +56,7 @@ class RopeDrawInterface;
 class LaserDrawInterface;
 class FXList;
 enum TerrainDecalType;
-enum ShadowType;
+enum ShadowType : int;
 
 //class ModelConditionFlags;
 
@@ -259,4 +259,3 @@ protected:
 
 
 #endif // __DRAWMODULE_H_
-

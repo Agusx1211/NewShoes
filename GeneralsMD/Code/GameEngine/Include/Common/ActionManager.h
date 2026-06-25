@@ -46,8 +46,8 @@ class Player;
 class SpecialPowerTemplate;
 enum SpecialPowerType;
 enum WeaponSlotType;
-enum CommandSourceType;
-enum CanAttackResult;
+enum CommandSourceType : int;
+enum CanAttackResult : int;
 
 enum CanEnterType
 {

@@ -42,7 +42,7 @@ class Player;
 class UpgradeTemplate;
 enum NameKeyType;
 class Image;
-enum AcademyClassificationType;
+enum AcademyClassificationType : int;
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------

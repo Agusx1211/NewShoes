@@ -43,12 +43,12 @@ class ThingTemplate;
 class UpgradeTemplate;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-enum ProductionID
+enum ProductionID : int
 {
 	PRODUCTIONID_INVALID = 0
 };
 
-enum ProductionType
+enum ProductionType : int
 {
 	PRODUCTION_INVALID = 0,
 	PRODUCTION_UNIT,

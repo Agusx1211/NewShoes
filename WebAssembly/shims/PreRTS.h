@@ -48,6 +48,14 @@
 #define _isnan std::isnan
 #endif
 
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifndef MAX
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
 inline int iswascii(wint_t c)
 {
 	return c >= 0 && c <= 0x7f;

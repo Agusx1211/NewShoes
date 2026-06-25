@@ -60,13 +60,13 @@ class WindowLayout;
 class Anim2DTemplate;
 class Anim2D;
 class Shadow;
-enum LegalBuildCode;
+enum LegalBuildCode : int;
 enum KindOfType;
-enum ShadowType;
-enum CanAttackResult;
+enum ShadowType : int;
+enum CanAttackResult : int;
 
 // ------------------------------------------------------------------------------------------------
-enum RadiusCursorType
+enum RadiusCursorType : int
 {
 	RADIUSCURSOR_NONE = 0,
 	RADIUSCURSOR_ATTACK_DAMAGE_AREA,

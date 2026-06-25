@@ -86,7 +86,7 @@ enum CanMakeType
 //-------------------------------------------------------------------------------------------------
 /** Return codes for queries about legal build locations */
 //-------------------------------------------------------------------------------------------------
-enum LegalBuildCode
+enum LegalBuildCode : int
 {
 	LBC_OK = 0,
 	LBC_RESTRICTED_TERRAIN,
@@ -217,4 +217,3 @@ protected:
 extern BuildAssistant *TheBuildAssistant;
 
 #endif // __BUILDASSISTANT_H_
-

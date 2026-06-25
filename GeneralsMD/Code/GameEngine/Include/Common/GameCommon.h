@@ -222,7 +222,7 @@ extern const char *TheVeterancyNames[];
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
-enum CommandSourceType 
+enum CommandSourceType : int
 { 
 
 	CMD_FROM_PLAYER = 0, 
@@ -507,4 +507,3 @@ enum Relationship
 extern const char *TheRelationshipNames[];
 
 #endif // _GAMECOMMON_H_
-

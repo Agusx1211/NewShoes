@@ -152,6 +152,13 @@ shares structure and follows behind.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
+- [x] Add fixed underlying types for the first broad batch of original
+      MSVC-style enum forward declarations (`AcademyClassificationType`,
+      `WaypointID`, `ShadowType`, `BodyDamageType`, `CommandSourceType`,
+      `CommandOption`, `ProductionID`, `ProductionType`, `GadgetGameMessage`,
+      `RadiusCursorType`, `StealthLookType`, `EvaMessage`,
+      `CanAttackResult`, and `LegalBuildCode`) so the existing headers compile
+      under standard clang/Emscripten without changing enumerator values.
 - [x] Add a target-local `Common/GameAudio.h` include-order shim so original
       `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
       declarations compile under clang/Emscripten.
@@ -180,6 +187,9 @@ shares structure and follows behind.
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
       pthread-aware yield/wait path before enabling shared-memory wasm threads.
+- [ ] Continue the legacy enum-forward audit for the remaining original
+      GameLogic/Object/Team/Thing headers, using fixed underlying types or
+      real definition includes where the original enum contract is known.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
@@ -479,6 +489,13 @@ shares structure and follows behind.
 - [ ] Link and smoke-test `MusicTrack` / `MusicManager` behavior after the
       missing original `MusicTrack` constructor path is resolved and the real
       audio manager request path is available.
+- [x] Compile original INI leaf parser sources for currently covered Common
+      data (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, and
+      `INIMultiplayer.cpp`) after extending the temporary `Common/INI.h`
+      bridge with the matching original entry-point declarations.
+- [ ] Link and smoke-test the original audio and multiplayer INI parser routes
+      after the real `Common/INI.cpp` reader, audio manager, and full runtime
+      singleton surface are available without target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
@@ -638,22 +655,27 @@ shares structure and follows behind.
       `GUICallbacks/IMECandidate.cpp`, and `GUICallbacks/MessageBox.cpp`) in
       the GameClient utility target; smoke-test the non-rendering
       `ChallengeGenerals` parse table and state accessors.
+- [x] Compile original GameClient-facing INI leaf parser sources
+      (`INIAnimation.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, and
+      `INIWater.cpp`) in the GameClient utility target after adding the
+      corresponding temporary `Common/INI.h` declarations and enum-forward
+      compatibility.
 - [x] Compile original leaf shell/menu callbacks (`CreditsMenu.cpp`,
       `SinglePlayerMenu.cpp`, `PopupCommunicator.cpp`,
       `WOLCustomScoreScreen.cpp`, `WOLMessageWindow.cpp`,
       `WOLQMScoreScreen.cpp`, and `WOLStatusMenu.cpp`) in the GameClient
       utility target; this is compile coverage only until `Shell`, `GameWindow`,
       and the real menu flow can link.
+- [x] Compile original `GameClient/GUI/GameWindowTransitionsStyles.cpp`,
+      `GUI/ControlBar/ControlBarResizer.cpp`, and
+      `GUI/Gadget/GadgetPushButton.cpp` in the GameClient utility target after
+      resolving their enum-forward, `OVERRIDE`, `MIN`, and temporary INI bridge
+      declarations; this is compile coverage only until `GameWindow`,
+      `ControlBar`, `InGameUI`, and `RadiusDecal` link.
 - [ ] Compile original `GameClient/GUI/GameWindow.cpp` after the deeper
       `InGameUI`, `RadiusDecal`, `SelectionXlat`, and related enum/header
       contracts are available through original headers instead of target-local
       stubs.
-- [ ] Compile original `GameClient/GUI/GameWindowTransitionsStyles.cpp` and
-      `GUI/ControlBar/ControlBarResizer.cpp` after the real `ControlBar`
-      enum/`OVERRIDE` contracts are available and the remaining transition
-      style `MIN` compatibility is resolved without masking original behavior.
-- [ ] Compile original `GameClient/GUI/Gadget/GadgetPushButton.cpp` after
-      the `InGameUI`/`RadiusDecal` enum contracts are available.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
@@ -684,9 +706,12 @@ shares structure and follows behind.
 - [x] Link and smoke-test the original GameNetwork utility/frame slice with
       command-id/type policy checks and empty frame readiness through
       `FrameData`/`FrameDataManager`, plus pooled `User` value behavior.
-- [ ] Compile original `GameNetwork/FrameMetrics.cpp` after the real
-      `GlobalData` network history fields replace the current temporary
-      wasm `Common/GlobalData.h` surface.
+- [x] Compile original `GameNetwork/FrameMetrics.cpp` after extending the
+      temporary wasm `Common/GlobalData.h` surface with original network
+      history fields/defaults and fixing its legacy MSVC loop-scope assumption.
+- [ ] Link and smoke-test original `GameNetwork/FrameMetrics.cpp` after the
+      browser display/FPS surface and real `GlobalData` singleton are available;
+      current coverage is compile-only.
 - [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
       after `NetPacket.cpp` and `NetCommandMsg.cpp` compile; current coverage
       is compile-only because linking `Connection` pulls packetization and

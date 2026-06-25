@@ -127,6 +127,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,FileTransfer,FrameData,FrameDataManager,GameMessageParser,NetCommandList,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetworkUtil,User\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,FileTransfer,FrameData,FrameDataManager,FrameMetrics,GameMessageParser,NetCommandList,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetworkUtil,User\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

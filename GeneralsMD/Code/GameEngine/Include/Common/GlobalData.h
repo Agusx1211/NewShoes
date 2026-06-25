@@ -48,7 +48,7 @@ typedef enum _TerrainLOD;
 class GlobalData;
 class INI;
 class WeaponBonusSet;
-enum BodyDamageType;
+enum BodyDamageType : int;
 enum AIDebugOptions;
 
 // PUBLIC /////////////////////////////////////////////////////////////////////////////////////////
