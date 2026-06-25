@@ -515,6 +515,7 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
 )
 
 add_library(zh_wwlib_systimer STATIC
+  "${WWLIB_DIR}/_timer.cpp"
   "${WWLIB_DIR}/stimer.cpp"
   "${WWLIB_DIR}/systimer.cpp"
 )
@@ -525,6 +526,26 @@ target_include_directories(zh_wwlib_systimer PUBLIC
 )
 
 target_compile_options(zh_wwlib_systimer PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+add_library(zh_wwlib_guarded_legacy STATIC
+  "${WWLIB_DIR}/Except.cpp"
+  "${WWLIB_DIR}/point.cpp"
+)
+
+target_include_directories(zh_wwlib_guarded_legacy PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_guarded_legacy PRIVATE
   -include "${WWVEGAS_PORT_SHIM}"
   -fms-extensions
   -Wall
@@ -1043,6 +1064,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/crc.cpp"
   "${GAMEENGINE_COMMON_DIR}/version.cpp"
   "${GAMEENGINE_COMMON_DIR}/Audio/AudioRequest.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Audio/DynamicAudioEventInfo.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFile.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFile.cpp"

@@ -5,6 +5,7 @@
 
 #include "argv.h"
 #include "blowfish.h"
+#include "_timer.h"
 #include "gcd_lcm.h"
 #include "hsv.h"
 #include "obscure.h"
@@ -304,12 +305,18 @@ int main()
 				"SystemTimerClass tick failed")) {
 			return 1;
 		}
+		if (!expect(FrameTimer.Value() >= 0 &&
+				static_cast<int>(TickCount) >= 0 &&
+				TickCount.Is_Active(),
+				"WWLib timer globals failed")) {
+			return 1;
+		}
 	}
 
 	std::cout << "{\"ok\":true,\"library\":\"WWLib\","
 		"\"compiled\":\"argv.cpp,blowfish.cpp,gcd_lcm.cpp,hsv.cpp,obscure.cpp,"
 		"palette.cpp,rc4.cpp,rgb.cpp,rndstrng.cpp,rle.cpp,sampler.cpp,srandom.cpp,"
-		"stimer.cpp,strtok_r.cpp\","
+		"_timer.cpp,stimer.cpp,strtok_r.cpp\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

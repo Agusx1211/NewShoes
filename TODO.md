@@ -122,6 +122,12 @@ shares structure and follows behind.
 - [x] Add a target-local `Common/GameAudio.h` include-order shim so original
       `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
       declarations compile under clang/Emscripten.
+- [x] Add a target-local lowercase `Common/Bitflags.h` wrapper for original
+      GameEngine sources that include `Common/BitFlags.h` with alternate
+      casing under the case-sensitive wasm build.
+- [x] Extend the temporary `Common/Xfer.h` shim with unsigned-byte and
+      unsigned-int transfer routes needed by original audio event state
+      serialization users under clang/Emscripten.
 - [x] Qualify original GameEngine `BitFlags` static name-list specializations
       in `KindOf.cpp`, `DisabledTypes.cpp`, and `ObjectStatusTypes.cpp` so
       they compile under standard clang/Emscripten template rules.
@@ -237,9 +243,12 @@ shares structure and follows behind.
       `MultiListClass`, and `PriorityMultiListIterator` behavior under wasm.
 - [x] `WWVegas/WWLib` debug `RefCountClass` tracking (`refcount.cpp`) compiles
       under wasm and is exercised through lookup-table lifetime cleanup.
-- [x] `WWVegas/WWLib` system timer wrappers (`systimer.cpp`, `stimer.cpp`)
-      compile against browser WinMM timing shims for WWSaveLoad and legacy
-      tick users.
+- [x] `WWVegas/WWLib` system timer wrappers (`_timer.cpp`, `systimer.cpp`,
+      `stimer.cpp`) compile against browser WinMM timing shims and
+      smoke-test the legacy `FrameTimer`/`TickCount` globals.
+- [x] `WWVegas/WWLib` guarded legacy translation units (`Except.cpp`,
+      `point.cpp`) compile under their original source guards; this is compile
+      coverage only, not a browser exception dialog or enabled Point body.
 - [x] `WWVegas/WWLib` version/PE-header helper (`verchk.cpp`) compiles and is
       exercised through Wwutil file-id timestamp coverage under wasm.
 - [x] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) after
@@ -377,9 +386,18 @@ shares structure and follows behind.
       `Common/System/FunctionLexicon.cpp` after the browser input layer
       replaces the DirectInput (`dinput.h`) dependency pulled through
       `GameClient/KeyDefs.h`.
-- [ ] Compile original `Common/Audio/DynamicAudioEventInfo.cpp` after the real
-      `Common/Xfer` path replaces the temporary shim; it needs the original
-      unsigned-byte xfer route.
+- [x] Compile original `Common/Audio/DynamicAudioEventInfo.cpp` against the
+      current temporary `Common/Xfer.h` shim, including unsigned-byte and
+      unsigned-int transfer signatures.
+- [ ] Link and smoke-test `DynamicAudioEventInfo` after original
+      `INIAudioEventInfo`/`AudioEventInfo` metadata, the original INI parse
+      surface, and the real audio manager path are available without
+      target-local stubs.
+- [ ] Compile original RTS accounting/player-adjacent sources
+      (`MissionStats.cpp`, `Money.cpp`, `Handicap.cpp`, `Science.cpp`, etc.)
+      after `Player`/`Thing`/`Object` module headers, `MultiIniFieldParse`,
+      `StaticGameLODLevel`, `EvaMessage`, and related GameLogic/GameClient enum
+      dependencies are available.
 - [ ] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` after the real `Common/INI` `FieldParse` table
       and scalar/color parse helpers replace the temporary INI shim.

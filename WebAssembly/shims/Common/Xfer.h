@@ -30,7 +30,9 @@ public:
 
 	virtual XferMode getXferMode() { return m_mode; }
 	virtual void xferVersion(XferVersion *, XferVersion) {}
+	virtual void xferUnsignedByte(UnsignedByte *) {}
 	virtual void xferInt(Int *) {}
+	virtual void xferUnsignedInt(UnsignedInt *) {}
 	virtual void xferAsciiString(AsciiString *) {}
 	virtual void xferUser(void *, Int) {}
 	virtual void xferBool(Bool *) {}
