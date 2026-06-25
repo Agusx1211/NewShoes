@@ -87,6 +87,22 @@ target_compile_options(zh_wwlib_random PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_base64 STATIC
+  "${WWLIB_DIR}/base64.cpp"
+)
+
+target_include_directories(zh_wwlib_base64 PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_base64 PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwlib_crc STATIC
   "${WWLIB_DIR}/crc.cpp"
   "${WWLIB_DIR}/realcrc.cpp"
@@ -228,6 +244,32 @@ target_compile_options(wwdebug-core-smoke PRIVATE
 )
 
 target_link_options(wwdebug-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-base64-smoke
+  tests/wwlib_base64_smoke.cpp
+)
+
+set_target_properties(wwlib-base64-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-base64-smoke PRIVATE
+  zh_wwlib_base64
+)
+
+target_compile_options(wwlib-base64-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-base64-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

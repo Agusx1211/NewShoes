@@ -78,6 +78,9 @@ shares structure and follows behind.
       digest vectors, cached results, reset, and split updates under wasm.
 - [x] `WWVegas/WWLib` CRC helpers (`crc.cpp`, `realcrc.cpp`) compile and
       smoke-test CRC32 vectors plus `CRCEngine` update consistency under wasm.
+- [x] `WWVegas/WWLib` Base64 helpers (`base64.cpp`) compile and smoke-test
+      known encodings, padding, ignored whitespace, and binary round trips
+      under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
