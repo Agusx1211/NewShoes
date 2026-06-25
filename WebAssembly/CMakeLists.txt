@@ -19,6 +19,7 @@ set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
+set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
 set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
 set(RNDSTRNG_PORT_SHIM "${WASM_SHIMS_DIR}/rndstrng_port.h")
 
@@ -273,6 +274,111 @@ target_link_libraries(zh_wwlib_stream_core PUBLIC
   zh_wwlib_file_core
   zh_wwlib_sha
   zh_wwlib_utility_core
+)
+
+add_library(zh_wwlib_lzo STATIC
+  "${WWLIB_DIR}/lzo.cpp"
+  "${WWLIB_DIR}/lzo1x_c.cpp"
+  "${WWLIB_DIR}/lzo1x_d.cpp"
+  "${WWLIB_DIR}/lzopipe.cpp"
+  "${WWLIB_DIR}/lzostraw.cpp"
+)
+
+target_include_directories(zh_wwlib_lzo PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_lzo PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_lzo PUBLIC
+  zh_wwlib_stream_core
+)
+
+add_library(zh_wwlib_public_key STATIC
+  "${WWLIB_DIR}/int.cpp"
+  "${WWLIB_DIR}/mpmath.cpp"
+  "${WWLIB_DIR}/pk.cpp"
+  "${WWLIB_DIR}/pkpipe.cpp"
+  "${WWLIB_DIR}/pkstraw.cpp"
+)
+
+target_include_directories(zh_wwlib_public_key PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_public_key PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-register
+  -Wno-undefined-var-template
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_public_key PUBLIC
+  zh_wwlib_stream_core
+)
+
+add_library(zh_wwlib_file_ini STATIC
+  "${WWLIB_DIR}/bfiofile.cpp"
+  "${WWLIB_DIR}/bufffile.cpp"
+  "${WWLIB_DIR}/chunkio.cpp"
+  "${WWLIB_DIR}/ffactory.cpp"
+  "${WWLIB_DIR}/ini.cpp"
+  "${WWLIB_DIR}/nstrdup.cpp"
+  "${WWLIB_DIR}/rawfile.cpp"
+  "${WWLIB_DIR}/readline.cpp"
+  "${WWLIB_DIR}/textfile.cpp"
+  "${WWLIB_DIR}/widestring.cpp"
+  "${WWLIB_DIR}/xpipe.cpp"
+  "${WWLIB_DIR}/xstraw.cpp"
+)
+
+target_include_directories(zh_wwlib_file_ini PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_file_ini PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_file_ini PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-delete-incomplete
+  -Wno-format
+  -Wno-register
+  -Wno-sign-compare
+  -Wno-unknown-pragmas
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwlib_file_ini PUBLIC
+  zh_wwlib_public_key
+  zh_wwlib_ramfile
+  zh_wwlib_stream_core
 )
 
 add_library(zh_wwlib_hash STATIC
@@ -625,6 +731,97 @@ target_compile_options(wwlib-stream-core-smoke PRIVATE
 )
 
 target_link_options(wwlib-stream-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-lzo-smoke
+  tests/wwlib_lzo_smoke.cpp
+)
+
+set_target_properties(wwlib-lzo-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-lzo-smoke PRIVATE
+  zh_wwlib_lzo
+)
+
+target_compile_options(wwlib-lzo-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-lzo-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-public-key-smoke
+  tests/wwlib_public_key_smoke.cpp
+)
+
+set_target_properties(wwlib-public-key-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-public-key-smoke PRIVATE
+  zh_wwlib_public_key
+)
+
+target_compile_options(wwlib-public-key-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-public-key-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-file-ini-smoke
+  tests/wwlib_file_ini_smoke.cpp
+)
+
+set_target_properties(wwlib-file-ini-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-file-ini-smoke PRIVATE
+  zh_wwlib_file_ini
+)
+
+target_compile_definitions(wwlib-file-ini-smoke PRIVATE
+  _UNIX
+)
+
+target_compile_options(wwlib-file-ini-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-file-ini-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

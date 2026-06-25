@@ -856,17 +856,13 @@ int RawFileClass::Size(void)
 	if (Is_Open()) {
 
       #ifdef _UNIX
-			fpos_t curpos,startpos,endpos;
-			fgetpos(Handle,&curpos);	
-
-			fseek(Handle,0,SEEK_SET);
-			fgetpos(Handle,&startpos);	
-
-			fseek(Handle,0,SEEK_END);
-			fgetpos(Handle,&endpos);	
-
-			size=endpos-startpos;
-			fsetpos(Handle,&curpos);
+			long curpos = ftell(Handle);
+			fseek(Handle, 0, SEEK_SET);
+			long startpos = ftell(Handle);
+			fseek(Handle, 0, SEEK_END);
+			long endpos = ftell(Handle);
+			size = (int)(endpos - startpos);
+			fseek(Handle, curpos, SEEK_SET);
 		#else
 			size = GetFileSize(Handle, NULL);
 		#endif
@@ -1180,7 +1176,11 @@ int RawFileClass::Raw_Seek(int pos, int dir)
 	}
 
    #ifdef _UNIX
-      pos=fseek(Handle, pos, dir);
+		if (fseek(Handle, pos, dir) != 0) {
+			pos = 0xFFFFFFFF;
+		} else {
+			pos = ftell(Handle);
+		}
    #else
 		switch (dir) {
 			case SEEK_SET:
@@ -1262,4 +1262,3 @@ void RawFileClass::Detach (void)
 	Time = 0;
 	Handle = NULL_HANDLE;	
 }
-

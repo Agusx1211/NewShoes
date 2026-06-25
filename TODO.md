@@ -73,10 +73,22 @@ shares structure and follows behind.
       and `rndstraw.h` under the case-sensitive wasm build.
 - [x] Add lowercase include wrapper for original WWLib `vector.h` under the
       case-sensitive wasm build.
+- [x] Add lowercase include wrappers for original WWLib file/INI/public-key
+      headers (`rawfile.h`, `ini.h`, `int.h`, `mpmath.h`, `pk.h`, `index.h`,
+      `listnode.h`, `slist.h`, `slnode.h`, `bsearch.h`, `point.h`, `xpipe.h`,
+      `xstraw.h`) under the case-sensitive wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
       sources under clang/Emscripten.
+- [x] Add portable `_snprintf`, `_wcsicmp`, `MultiByteToWideChar`, and
+      `OutputDebugString` compatibility for original WWLib INI/wide-string
+      sources under clang/Emscripten.
+- [x] Add minimal `direct.h`/`osdep.h` compatibility for original WWLib
+      POSIX-style raw-file and `_UNIX` paths under clang/Emscripten.
 - [x] Qualify original WWLib `Vector.H` dependent base access so container
       templates compile under standard clang/Emscripten lookup rules.
+- [x] Qualify original WWLib `INDEX.H`/`Point.h` template dependent names so
+      INI support containers compile under standard clang/Emscripten lookup
+      rules.
 - [x] Add a target-local RandomString compatibility include so `StringClass` is
       complete before `DynamicVectorClass<StringClass>` is instantiated.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
@@ -130,9 +142,20 @@ shares structure and follows behind.
       `cstraw.cpp`, `vector.cpp`, `jshell.cpp`) compiles and smoke-tests
       in-memory stream chaining, transforms, random, cache, and bit-vector
       behavior under wasm.
-- [ ] Compile the remaining WWLib compression/crypto stream adapters
-      (`lcw*`, `lzo*`, `pk*`) once their original codec and bigint dependencies
-      are available under wasm.
+- [x] `WWVegas/WWLib` LZO codec and stream adapters (`lzo.cpp`,
+      `lzo1x_c.cpp`, `lzo1x_d.cpp`, `lzopipe.cpp`, `lzostraw.cpp`) compile and
+      smoke-test direct, pipe, and straw round trips under wasm.
+- [x] `WWVegas/WWLib` multiprecision public-key crypto (`mpmath.cpp`,
+      `int.cpp`, `pk.cpp`, `pkpipe.cpp`, `pkstraw.cpp`) compiles and
+      smoke-tests deterministic RSA block encryption/decryption under wasm.
+- [x] `WWVegas/WWLib` file helpers and INI parser (`rawfile.cpp`,
+      `ffactory.cpp`, `bfiofile.cpp`, `bufffile.cpp`, `textfile.cpp`,
+      `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`, `xpipe.cpp`,
+      `xstraw.cpp`, `nstrdup.cpp`) compile and smoke-test raw-file I/O,
+      INI load/save, scalar values, points, and rects under wasm.
+- [ ] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) once
+      a portable original-code `LCW_Comp` path replaces the MSVC inline
+      assembly-only compressor.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

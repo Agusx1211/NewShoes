@@ -61,6 +61,7 @@
 #define	_USERENTRY
 #endif
 
+
 /*
 **	This class is used to create and maintain an index. It does this by assigning a unique
 **	identifier number to the type objects that it is indexing. The regular binary sort and search
@@ -695,7 +696,7 @@ template<class INDEX, class T>
 #ifdef __BORLANDC__
 NodeElement const * IndexClass<INDEX, T>::Search_For_Node(INDEX const & id) const
 #else
-IndexClass<INDEX, T>::NodeElement const * IndexClass<INDEX, T>::Search_For_Node(INDEX const & id) const
+typename IndexClass<INDEX, T>::NodeElement const * IndexClass<INDEX, T>::Search_For_Node(INDEX const & id) const
 #endif
 {
 	/*
@@ -726,5 +727,3 @@ IndexClass<INDEX, T>::NodeElement const * IndexClass<INDEX, T>::Search_For_Node(
 
 
 #endif
-
-

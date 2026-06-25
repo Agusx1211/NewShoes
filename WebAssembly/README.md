@@ -100,8 +100,9 @@ npm run test:wasm
 ```
 
 Run all current wasm checks, including the original EAC compression codec,
-WWDebug core, WWLib Base64/CRC/file-core/fixed/hash/MD5/RAMFile/SHA/stream-core/
-StringClass/utility-core, and WWMath core smokes:
+WWDebug core, WWLib Base64/CRC/file-core/file-INI/fixed/hash/LZO/MD5/
+public-key/RAMFile/SHA/stream-core/StringClass/utility-core, and WWMath core
+smokes:
 
 ```sh
 npm run test:all
@@ -131,6 +132,12 @@ Run only the original WWLib FileClass/Buffer smoke:
 npm run test:wwlib-file-core
 ```
 
+Run only the original WWLib file/INI smoke:
+
+```sh
+npm run test:wwlib-file-ini
+```
+
 Run only the original WWLib fixed-point smoke:
 
 ```sh
@@ -143,10 +150,22 @@ Run only the original WWLib hash-table smoke:
 npm run test:wwlib-hash
 ```
 
+Run only the original WWLib LZO codec/stream smoke:
+
+```sh
+npm run test:wwlib-lzo
+```
+
 Run only the original WWLib MD5 smoke:
 
 ```sh
 npm run test:wwlib-md5
+```
+
+Run only the original WWLib multiprecision public-key smoke:
+
+```sh
+npm run test:wwlib-public-key
 ```
 
 Run only the original WWLib RAMFile smoke:

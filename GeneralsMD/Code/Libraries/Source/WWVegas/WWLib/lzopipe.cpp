@@ -176,7 +176,7 @@ int LZOPipe::Put(void const * source, int slen)
 				**	through the pipe.
 				*/
 				if (Counter == BlockHeader.CompCount) {
-					unsigned int length = sizeof (Buffer2);
+					unsigned int length = BlockSize + SafetyMargin;
 					lzo1x_decompress ((unsigned char*)Buffer, BlockHeader.CompCount, (unsigned char*)Buffer2, &length, NULL);
 					total += Pipe::Put(Buffer2, BlockHeader.UncompCount);
 					Counter = 0;
@@ -199,7 +199,7 @@ int LZOPipe::Put(void const * source, int slen)
 			Counter += tocopy;
 
 			if (Counter == BlockSize) {
-				unsigned int len = sizeof (Buffer2);
+				unsigned int len = BlockSize + SafetyMargin;
 				char *dictionary = new char [64*1024];
 				lzo1x_1_compress ((unsigned char*)Buffer, BlockSize, (unsigned char*)Buffer2, &len, dictionary);
 				delete [] dictionary;
@@ -216,7 +216,7 @@ int LZOPipe::Put(void const * source, int slen)
 		**	source data left for a whole data block.
 		*/
 		while (slen >= BlockSize) {
-			unsigned int len = sizeof (Buffer2);
+			unsigned int len = BlockSize + SafetyMargin;
 			char *dictionary = new char [64*1024];
 			lzo1x_1_compress ((unsigned char*)source, BlockSize, (unsigned char*)Buffer2, &len, dictionary);
 			delete [] dictionary;
@@ -303,7 +303,7 @@ int LZOPipe::Flush(void)
 			**	A partial block in the compression process is a normal occurrence. Just
 			**	compress the partial block and output normally.
 			*/
-			unsigned int len = sizeof (Buffer2);
+			unsigned int len = BlockSize + SafetyMargin;
 			char *dictionary = new char [64*1024];
 			lzo1x_1_compress ((unsigned char*)Buffer, Counter, (unsigned char *)Buffer2, &len, dictionary);
 			delete [] dictionary;
@@ -318,4 +318,3 @@ int LZOPipe::Flush(void)
 	total += Pipe::Flush();
 	return(total);
 }
-

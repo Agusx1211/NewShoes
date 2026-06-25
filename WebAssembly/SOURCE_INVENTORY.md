@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `buff.cpp`/`wwfile.cpp` compile to wasm as `zh_wwlib_file_core`, original `fixed.cpp` compiles to wasm as `zh_wwlib_fixed`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, original `ramfile.cpp` compiles to wasm as `zh_wwlib_ramfile`, original `sha.cpp` compiles to wasm as `zh_wwlib_sha`, original `wwstring.cpp`/`trim.cpp` compile to wasm as `zh_wwlib_string`, original `blowfish.cpp`/`gcd_lcm.cpp`/`obscure.cpp`/`rc4.cpp`/`rndstrng.cpp` compile to wasm as `zh_wwlib_utility_core`, and original pipe/straw stream sources compile to wasm as `zh_wwlib_stream_core` with smoke coverage. Concrete disk/browser file backends, threading, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, and file/INI helper sources now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -61,12 +61,22 @@ The wasm CMake skeleton currently builds:
   into a wasm static library with lowercase include and rotate shims.
 - `zh_wwlib_file_core`: original `WWVegas/WWLib/buff.cpp` and `wwfile.cpp`
   compiled into a wasm static library with lowercase include shims.
+- `zh_wwlib_file_ini`: original `WWVegas/WWLib` raw/buffered file helpers,
+  `ffactory.cpp`, `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`,
+  `xpipe.cpp`, `xstraw.cpp`, and `nstrdup.cpp` compiled into a wasm static
+  library with POSIX/Emscripten file compatibility.
 - `zh_wwlib_fixed`: original `WWVegas/WWLib/fixed.cpp` compiled into a wasm
   static library.
 - `zh_wwlib_hash`: original `WWVegas/WWLib/hash.cpp` compiled into a wasm
   static library with WWDebug and CRC dependencies.
+- `zh_wwlib_lzo`: original `WWVegas/WWLib/lzo.cpp`, `lzo1x_c.cpp`,
+  `lzo1x_d.cpp`, `lzopipe.cpp`, and `lzostraw.cpp` compiled into a wasm static
+  library with stream-core dependencies.
 - `zh_wwlib_md5`: original `WWVegas/WWLib/md5.cpp` compiled into a wasm static
   library.
+- `zh_wwlib_public_key`: original `WWVegas/WWLib/mpmath.cpp`, `int.cpp`,
+  `pk.cpp`, `pkpipe.cpp`, and `pkstraw.cpp` compiled into a wasm static library
+  with stream-core dependencies.
 - `zh_wwlib_ramfile`: original `WWVegas/WWLib/ramfile.cpp` compiled into a wasm
   static library with the WWLib file-core dependency.
 - `zh_wwlib_sha`: original `WWVegas/WWLib/sha.cpp` compiled into a wasm static
@@ -97,13 +107,21 @@ The wasm CMake skeleton currently builds:
 - `wwlib-file-core-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib `Buffer` allocation/reference/reset behavior and `FileClass`
   formatted write helpers through a harness-side memory file.
+- `wwlib-file-ini-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib raw-file I/O plus `INIClass` load/save, scalar values, points,
+  and rects.
 - `wwlib-fixed-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib fixed-point parsing, formatting, constants, arithmetic, conversion, and
   saturation behavior.
 - `wwlib-hash-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib hash-table add/find/remove/reset/iteration behavior.
+- `wwlib-lzo-smoke`: a Node-executed wasm smoke test that verifies original
+  WWLib LZO direct compression plus LZO pipe/straw round trips.
 - `wwlib-md5-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib MD5 against standard digest vectors and split-update hashing.
+- `wwlib-public-key-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib multiprecision public-key encryption/decryption and DER key
+  encode/decode behavior.
 - `wwlib-ramfile-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib RAMFile open/close, read, write, seek, implicit access, bias,
   inherited formatted writes, allocated buffers, capacity clamping, and delete
@@ -133,6 +151,9 @@ The wasm CMake skeleton currently builds:
 3. Compile `WWMath` in slices, excluding or replacing x86 assembly paths such as
    `vp.cpp` and assembly blocks in `matrix3d.cpp` with portable original-code
    fallbacks where available.
-4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` string,
-   file, timer, allocator, and container dependencies are available.
-5. Move to `WWLib`, `WWSaveLoad`, and `Wwutil`, then begin `GameEngine/Common`.
+4. Finish the remaining `WWLib` gaps needed by runtime libraries: LCW
+   compression, timers, allocator/mempool helpers, remaining containers, and
+   platform utilities.
+5. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
+   allocator, and container dependencies are available.
+6. Move to `WWSaveLoad` and `Wwutil`, then begin `GameEngine/Common`.

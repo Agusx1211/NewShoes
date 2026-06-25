@@ -293,7 +293,7 @@ FileClass * SimpleFileFactoryClass::Get_File( char const *filename )
 					}
 				}
 			} else {
-				new_name.Format("%s%s",SubDirectory,stripped_name);
+				new_name.Format("%s%s",(const char *)SubDirectory,(const char *)stripped_name);
 			}
 		}
 
@@ -308,4 +308,3 @@ void SimpleFileFactoryClass::Return_File( FileClass *file )
 {
 	delete file;
 }
-
