@@ -26,3 +26,11 @@ harness (headless browser + a command/RPC control surface) that can boot the
 build, click UI, select/move units, start and step a match, query state, and
 **capture screenshots**. Treat any change as unverified until the harness boots
 it and a screenshot or state check proves it works. See `AGENTS.md`.
+
+## Plan & checklist
+
+`PROJECT.md` is the broad outline (architecture, milestones, risks). `TODO.md`
+is the exhaustive checklist of what must be built, tested, and validated.
+**Always** read both before starting work: check what's already done so you
+don't redo it, and pick up from there. **Always** add any new TODO you discover
+to `TODO.md` if it isn't already listed, and tick items off as you finish them.

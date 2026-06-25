@@ -87,3 +87,19 @@ AI, match flow) should be reachable and checkable through it.
 tooling (pull `INIZH.big` from the disc images in `assets/`) for testing the
 port against real data. The real work: compile `GeneralsMD/Code` with Emscripten
 and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
+
+## Plan & checklist
+
+- `PROJECT.md` — broad outline of the whole port: architecture, the
+  device-layer mapping, milestones, and known hard problems.
+- `TODO.md` — exhaustive checklist of everything to be done, tested, and
+  validated, grouped by milestone.
+
+**Every agent must, every time:**
+
+- **Read `PROJECT.md` and `TODO.md` first** and **check the done items** so you
+  build on existing progress instead of redoing it.
+- **Always add any future TODO you encounter to `TODO.md`** if it isn't already
+  listed — new tasks, tests, edge cases, risks, follow-ups.
+- Tick items off (`[ ]` → `[x]`) as you complete them, and remember: nothing
+  rendering-related is done until the harness proves it (see above).
