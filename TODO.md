@@ -85,6 +85,8 @@ shares structure and follows behind.
 - [x] Add lowercase include wrappers for original WWDebug allocator and WWLib
       Targa headers (`fastallocator.h`, `targa.h`) under the case-sensitive
       wasm build.
+- [x] Add lowercase include wrappers for original WWLib surface and PCX headers
+      (`surface.h`, `pcx.h`) under the case-sensitive wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
       sources under clang/Emscripten.
 - [x] Add portable `_snprintf`, `_wcsicmp`, `MultiByteToWideChar`, and
@@ -255,12 +257,16 @@ shares structure and follows behind.
 - [x] Audit and fix original `WWVegas/WWLib/RLEEngine::Compress` zero-run
       handling at the exact end of a source buffer, with a trailing-zero smoke
       vector under wasm.
+- [x] `WWVegas/WWLib` in-memory 2D surface and PCX image helpers (`surface.cpp`,
+      `xsurface.cpp`, `blit.cpp`, `pcx.cpp`) compile and smoke-test BSurface
+      fills, pixels, lines, rectangles, blits, buffer copies, and PCX decode
+      under wasm.
 - [x] `WWVegas/WWLib` Targa image utility and Win32 globals (`TARGA.CPP`,
       `win.cpp`) compile and smoke-test truecolor TGA save/load, image flips,
       and original window/focus global state under wasm.
-- [ ] Compile original WWLib 2D conversion/blit helpers (`convert.cpp`,
-      `blit.cpp`, `surface.cpp`, related lowercase headers) after the browser
-      `Surface`/`DSurface` abstraction is defined, instead of stubbing draw
+- [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
+      (`convert.cpp`, `_convert.cpp`, `dsurface.cpp`) after the browser
+      `DSurface`/pixel-format abstraction is defined, instead of stubbing draw
       behavior.
 - [ ] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline

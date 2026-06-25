@@ -641,6 +641,34 @@ target_link_libraries(zh_wwlib_win_globals PUBLIC
   zh_wwdebug_core
 )
 
+add_library(zh_wwlib_surface_core STATIC
+  "${WWLIB_DIR}/blit.cpp"
+  "${WWLIB_DIR}/pcx.cpp"
+  "${WWLIB_DIR}/surface.cpp"
+  "${WWLIB_DIR}/xsurface.cpp"
+)
+
+target_include_directories(zh_wwlib_surface_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_surface_core PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_surface_core PUBLIC
+  zh_wwlib_file_ini
+  zh_wwlib_utility_core
+)
+
 add_library(zh_wwlib_md5 STATIC
   "${WWLIB_DIR}/md5.cpp"
 )
@@ -1204,6 +1232,35 @@ target_compile_options(wwlib-image-misc-smoke PRIVATE
 )
 
 target_link_options(wwlib-image-misc-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-surface-core-smoke
+  tests/wwlib_surface_core_smoke.cpp
+)
+
+set_target_properties(wwlib-surface-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-surface-core-smoke PRIVATE
+  zh_wwlib_surface_core
+)
+
+target_compile_options(wwlib-surface-core-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-surface-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

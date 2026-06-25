@@ -52,7 +52,7 @@ bool Bit_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surfa
 bool RLE_Blit(Surface & dest, Rect const & dcliprect, Rect const & ddrect, Surface const & source, Rect const & scliprect, Rect const & ssrect, RLEBlitter const & blitter);
 
 
-int Buffer_Size(Surface & surface, int width, int height);
+int Buffer_Size(Surface const & surface, int width, int height);
 bool To_Buffer(Surface const & surface, Rect const & rect, Buffer & buffer);
 bool From_Buffer(Surface & surface, Rect const & rect, Buffer const & buffer);
 
