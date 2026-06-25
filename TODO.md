@@ -92,6 +92,9 @@ shares structure and follows behind.
 - [x] Add portable `_snprintf`, `_wcsicmp`, `MultiByteToWideChar`, and
       `OutputDebugString` compatibility for original WWLib INI/wide-string
       sources under clang/Emscripten.
+- [x] Add MSVC `_vsnwprintf` `%hs` compatibility and browser no-op
+      `SetWindowText` / `SetWindowTextW` fallbacks needed by original
+      `GameClient/GameText.cpp` under clang/Emscripten.
 - [x] Add minimal `direct.h`/`osdep.h` compatibility for original WWLib
       POSIX-style raw-file and `_UNIX` paths under clang/Emscripten.
 - [x] Qualify original WWLib `Vector.H` dependent base access so container
@@ -499,14 +502,18 @@ shares structure and follows behind.
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
-      `Color.cpp`, `System/DebugDisplay.cpp`, `DrawGroupInfo.cpp`,
-      `GlobalLanguage.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
+      `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
+      `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
+      `GUI/GameFont.cpp`, `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`,
+      `GameText.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
       `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`,
       and `VideoStream.cpp`, with wasm smoke coverage for packed colors,
-      debug-display formatting/cursor state, draw-group defaults,
+      debug-display formatting/cursor state, display-string text/font/list
+      management, window instance text/tooltip allocation, draw-group defaults,
       `GlobalLanguage` constructor/font defaults and resolution font-size
-      adjustment, encrypted language-filter word loading and filtering,
-      2D clip/intersection/area helpers, easing, snow/weather defaults,
+      adjustment, original string-file loading/fetch/prefix/map string
+      handling, encrypted language-filter word loading and filtering, 2D
+      clip/intersection/area helpers, easing, snow/weather defaults,
       normalization, mu-law helpers, and video-list bookkeeping.
 - [ ] `GameClient` (Display, Drawable, GUI, Input, InGameUI, Terrain) compiles.
 - [x] Add lowercase `Common/Filesystem.h` compatibility, `PreRTS.h`
@@ -520,6 +527,24 @@ shares structure and follows behind.
       no-ops.
 - [x] Compile original `GameClient/LanguageFilter.cpp` after resolving its
       16-bit word-list buffer contract under wasm `WideChar`/`wchar_t`.
+- [x] Compile original `GameClient/GameText.cpp` and smoke-test the string-file
+      path through the original `GameTextInterface`, including label fetch,
+      escaped text, map string files, prefix lookup, and missing-label fallback.
+- [x] Compile original `GameClient/DisplayString.cpp`,
+      `DisplayStringManager.cpp`, `GUI/GameFont.cpp`,
+      `GUI/WinInstanceData.cpp`, and empty legacy `DrawableManager.cpp`; smoke
+      test original font reuse/reset, display-string text mutation and manager
+      linking, and `WinInstanceData` text/tooltip allocation through
+      `TheDisplayStringManager`.
+- [ ] Compile original `GameClient/System/Image.cpp`, `Water.cpp`, and
+      `System/Anim2D.cpp` after the target-local `Common/INI.h` and
+      `Common/Xfer.h` shims are replaced by the original parser/transfer
+      surfaces (`parseMappedImage`, color parsers, sub-token reads, duration
+      parsers, and unsigned-short xfer).
+- [ ] Compile original `GameClient/Display.cpp`, `View.cpp`, and
+      `GraphDraw.cpp` after the real display/view header contract provides
+      `FilterModes`, `FilterTypes`, `StaticGameLODLevel`, `CellShroudStatus`,
+      and the browser display device layer.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
 - [ ] Compile the first original GameNetwork command-message slice
       (`NetCommandRef.cpp`, `NetCommandWrapperList.cpp`) after

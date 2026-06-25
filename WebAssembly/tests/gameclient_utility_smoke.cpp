@@ -1,4 +1,6 @@
 #include <cmath>
+#include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,24 +12,40 @@
 
 #include "Common/File.h"
 #include "Common/FileSystem.h"
+#include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Color.h"
 #include "GameClient/DebugDisplay.h"
+#include "GameClient/DisplayString.h"
+#include "GameClient/DisplayStringManager.h"
 #include "GameClient/DrawGroupInfo.h"
+#include "GameClient/GameFont.h"
+#include "GameClient/GameWindow.h"
 #include "GameClient/GlobalLanguage.h"
+#include "GameClient/GameText.h"
 #include "GameClient/LanguageFilter.h"
 #include "GameClient/Line2D.h"
 #include "GameClient/ParabolicEase.h"
 #include "GameClient/Snow.h"
 #include "GameClient/Statistics.h"
 #include "GameClient/VideoPlayer.h"
+#include "GameClient/WinInstanceData.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GlobalData *TheGlobalData = nullptr;
+HWND ApplicationHWnd = NULL;
+const Char *g_strFile = "Data\\Generals.str";
+const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
+struct SmokeFileEntry
+{
+	std::string name;
+	std::vector<char> payload;
+};
+
 class SmokeFile : public File
 {
 public:
@@ -102,7 +120,16 @@ private:
 class SmokeLocalFileSystem : public LocalFileSystem
 {
 public:
-	explicit SmokeLocalFileSystem(const std::vector<char> &payload) : m_payload(payload) {}
+	SmokeLocalFileSystem() : m_entries() {}
+	explicit SmokeLocalFileSystem(const std::vector<char> &payload) : m_entries()
+	{
+		addFile(BadWordFileName, payload);
+	}
+
+	void addFile(const char *filename, const std::vector<char> &payload)
+	{
+		m_entries.push_back({ filename != nullptr ? filename : "", payload });
+	}
 
 	void init() override {}
 	void reset() override {}
@@ -110,18 +137,19 @@ public:
 
 	File *openFile(const Char *filename, Int access = 0) override
 	{
-		if (filename == nullptr || std::strcmp(filename, BadWordFileName) != 0) {
+		const SmokeFileEntry *entry = findEntry(filename);
+		if (entry == nullptr) {
 			return nullptr;
 		}
 
 		m_file.close();
-		m_file.setPayload(m_payload);
+		m_file.setPayload(entry->payload);
 		return m_file.open(filename, access) ? &m_file : nullptr;
 	}
 
 	Bool doesFileExist(const Char *filename) const override
 	{
-		return filename != nullptr && std::strcmp(filename, BadWordFileName) == 0;
+		return findEntry(filename) != nullptr;
 	}
 
 	void getFileListInDirectory(
@@ -135,7 +163,20 @@ public:
 	Bool createDirectory(AsciiString) override { return FALSE; }
 
 private:
-	const std::vector<char> &m_payload;
+	const SmokeFileEntry *findEntry(const Char *filename) const
+	{
+		if (filename == nullptr) {
+			return nullptr;
+		}
+		for (const SmokeFileEntry &entry : m_entries) {
+			if (entry.name == filename) {
+				return &entry;
+			}
+		}
+		return nullptr;
+	}
+
+	std::vector<SmokeFileEntry> m_entries;
 	SmokeFile m_file;
 };
 
@@ -188,6 +229,162 @@ protected:
 
 private:
 	std::vector<DrawCall> m_drawCalls;
+};
+
+class SmokeDisplayString : public DisplayString
+{
+public:
+	struct DrawCall
+	{
+		Int x;
+		Int y;
+		Color color;
+		Color dropColor;
+		Int xDrop;
+		Int yDrop;
+	};
+
+	SmokeDisplayString() :
+		m_wordWrap(0),
+		m_wordWrapCentered(FALSE),
+		m_useHotkey(FALSE),
+		m_hotKeyColor(0),
+		m_textChangedCount(0),
+		m_drawCalls()
+	{
+	}
+
+	~SmokeDisplayString() override = default;
+
+	static void *operator new(std::size_t size) { return ::operator new(size); }
+	static void operator delete(void *pointer) { ::operator delete(pointer); }
+
+	void setWordWrap(Int wordWrap) override { m_wordWrap = wordWrap; }
+	void setWordWrapCentered(Bool isCentered) override { m_wordWrapCentered = isCentered; }
+
+	void draw(Int x, Int y, Color color, Color dropColor) override
+	{
+		draw(x, y, color, dropColor, 0, 0);
+	}
+
+	void draw(Int x, Int y, Color color, Color dropColor, Int xDrop, Int yDrop) override
+	{
+		m_drawCalls.push_back({ x, y, color, dropColor, xDrop, yDrop });
+	}
+
+	void getSize(Int *width, Int *height) override
+	{
+		if (width != nullptr) {
+			*width = getWidth();
+		}
+		if (height != nullptr) {
+			*height = m_font != nullptr ? m_font->height : 0;
+		}
+	}
+
+	Int getWidth(Int charPos = -1) override
+	{
+		const Int text_length = getTextLength();
+		const Int chars = charPos >= 0 && charPos < text_length ? charPos : text_length;
+		return chars * 8;
+	}
+
+	void setUseHotkey(Bool useHotkey, Color hotKeyColor) override
+	{
+		m_useHotkey = useHotkey;
+		m_hotKeyColor = hotKeyColor;
+	}
+
+	void notifyTextChanged() override { ++m_textChangedCount; }
+
+	Int wordWrap() const { return m_wordWrap; }
+	Bool wordWrapCentered() const { return m_wordWrapCentered; }
+	Bool useHotkey() const { return m_useHotkey; }
+	Color hotKeyColor() const { return m_hotKeyColor; }
+	Int textChangedCount() const { return m_textChangedCount; }
+	const std::vector<DrawCall> &drawCalls() const { return m_drawCalls; }
+
+private:
+	Int m_wordWrap;
+	Bool m_wordWrapCentered;
+	Bool m_useHotkey;
+	Color m_hotKeyColor;
+	Int m_textChangedCount;
+	std::vector<DrawCall> m_drawCalls;
+};
+
+class SmokeDisplayStringManager : public DisplayStringManager
+{
+public:
+	~SmokeDisplayStringManager() override
+	{
+		while (!m_allocated.empty()) {
+			freeDisplayString(m_allocated.back());
+		}
+	}
+
+	DisplayString *newDisplayString() override
+	{
+		SmokeDisplayString *string = new SmokeDisplayString;
+		link(string);
+		m_allocated.push_back(string);
+		return string;
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		auto it = std::find(m_allocated.begin(), m_allocated.end(), string);
+		if (it == m_allocated.end()) {
+			return;
+		}
+
+		unLink(string);
+		delete static_cast<SmokeDisplayString *>(string);
+		m_allocated.erase(it);
+	}
+
+	DisplayString *getGroupNumeralString(Int numeral) override
+	{
+		DisplayString *string = newDisplayString();
+		UnicodeString text;
+		text.format(L"%d", numeral);
+		string->setText(text);
+		return string;
+	}
+
+	DisplayString *getFormationLetterString() override
+	{
+		DisplayString *string = newDisplayString();
+		string->setText(UnicodeString(L"A"));
+		return string;
+	}
+
+	DisplayString *firstString() const { return m_stringList; }
+	Int allocatedCount() const { return static_cast<Int>(m_allocated.size()); }
+
+private:
+	std::vector<DisplayString *> m_allocated;
+};
+
+class SmokeFontLibrary : public FontLibrary
+{
+protected:
+	Bool loadFontData(GameFont *font) override
+	{
+		if (font == nullptr) {
+			return FALSE;
+		}
+		font->height = font->pointSize + (font->bold ? 2 : 0);
+		font->fontData = font;
+		return TRUE;
+	}
+
+	void releaseFontData(GameFont *font) override
+	{
+		if (font != nullptr) {
+			font->fontData = nullptr;
+		}
+	}
 };
 
 class SmokeVideoBuffer : public VideoBuffer
@@ -268,6 +465,15 @@ void append_language_word(std::vector<char> &buffer, const WideChar *word, Bool 
 		append_u16le(buffer, code_unit);
 	}
 	append_u16le(buffer, static_cast<UnsignedShort>(L' '));
+}
+
+std::vector<char> payload_from_string(const char *text)
+{
+	std::vector<char> payload;
+	if (text != nullptr) {
+		payload.assign(text, text + std::strlen(text));
+	}
+	return payload;
 }
 
 bool exercise_color()
@@ -493,6 +699,77 @@ bool exercise_language_filter()
 		expect(std::wcscmp(line.str(), L"ok ***** pass") == 0, "LanguageFilter filterLine failed");
 }
 
+bool exercise_game_text()
+{
+	SmokeLocalFileSystem local_file_system;
+	local_file_system.addFile(g_strFile, payload_from_string(
+		"GUI:Command&ConquerGenerals\n"
+		"\"Browser Title\"\n"
+		"END\n"
+		"GUI:Hello\n"
+		"\"Hello\\nGeneral\" voice1\n"
+		"END\n"
+		"GUI:PrefixChoice\n"
+		"\"Prefix Value\"\n"
+		"END\n"));
+	local_file_system.addFile("Data\\Maps\\Map.str", payload_from_string(
+		"Map:Briefing\n"
+		"\"Map Briefing\"\n"
+		"END\n"));
+	FileSystem file_system;
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	TheFileSystem = &file_system;
+	TheLocalFileSystem = &local_file_system;
+
+	GameTextInterface *game_text = CreateGameTextInterface();
+	TheGameText = game_text;
+	game_text->init();
+
+	Bool exists = FALSE;
+	UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &exists);
+	const bool title_ok = expect(exists && std::wcscmp(title.str(), L"Browser Title") == 0,
+		"GameText title fetch failed");
+
+	UnicodeString hello = game_text->fetch(AsciiString("GUI:Hello"), &exists);
+	const bool hello_ok = expect(exists && std::wcscmp(hello.str(), L"Hello\nGeneral") == 0,
+		"GameText escaped string fetch failed");
+
+	AsciiStringVec &prefix = game_text->getStringsWithLabelPrefix(AsciiString("GUI:"));
+	bool found_title = false;
+	bool found_hello = false;
+	bool found_choice = false;
+	for (const AsciiString &label : prefix) {
+		found_title = found_title || label == AsciiString("GUI:Command&ConquerGenerals");
+		found_hello = found_hello || label == AsciiString("GUI:Hello");
+		found_choice = found_choice || label == AsciiString("GUI:PrefixChoice");
+	}
+	const bool prefix_ok = expect(prefix.size() == 3 && found_title && found_hello && found_choice,
+		"GameText prefix lookup failed");
+
+	game_text->initMapStringFile(AsciiString("Data\\Maps\\Map.str"));
+	UnicodeString map_text = game_text->fetch("Map:Briefing", &exists);
+	const bool map_ok = expect(exists && std::wcscmp(map_text.str(), L"Map Briefing") == 0,
+		"GameText map string fetch failed");
+
+	UnicodeString missing = game_text->fetch("GUI:Missing", &exists);
+	const bool missing_ok = expect(!exists && std::wcscmp(missing.str(), L"MISSING: 'GUI:Missing'") == 0,
+		"GameText missing-string fallback failed");
+
+	game_text->reset();
+	game_text->fetch("Map:Briefing", &exists);
+	const bool reset_ok = expect(!exists, "GameText reset did not clear map strings");
+
+	TheGameText = old_game_text;
+	delete game_text;
+	TheLocalFileSystem = old_local_file_system;
+	TheFileSystem = old_file_system;
+
+	return title_ok && hello_ok && prefix_ok && map_ok && missing_ok && reset_ok;
+}
+
 bool exercise_snow()
 {
 	WeatherSetting *weather = newInstance(WeatherSetting);
@@ -579,6 +856,116 @@ bool exercise_debug_display()
 			"DebugDisplay cursor advance failed");
 }
 
+bool exercise_display_strings()
+{
+	SmokeFontLibrary font_library;
+	FontLibrary *old_font_library = TheFontLibrary;
+	TheFontLibrary = &font_library;
+	font_library.init();
+
+	GameFont *arial = font_library.getFont(AsciiString("Arial"), 12, FALSE);
+	GameFont *arial_again = font_library.getFont(AsciiString("Arial"), 12, FALSE);
+	GameFont *arial_bold = font_library.getFont(AsciiString("Arial"), 12, TRUE);
+	const bool font_ok =
+		expect(arial != nullptr && arial_again == arial && arial_bold != nullptr && arial_bold != arial,
+			"FontLibrary getFont reuse/allocation failed") &&
+		expect(font_library.getCount() == 2 && font_library.firstFont() == arial_bold &&
+				font_library.nextFont(arial_bold) == arial,
+			"FontLibrary link order failed") &&
+		expect(arial->height == 12 && arial_bold->height == 14,
+			"FontLibrary loadFontData hook failed");
+
+	SmokeDisplayString display_string;
+	display_string.setFont(arial);
+	display_string.setText(UnicodeString(L"Alpha"));
+	display_string.appendChar(L'!');
+	display_string.removeLastChar();
+	display_string.setWordWrap(80);
+	display_string.setWordWrapCentered(TRUE);
+	display_string.setUseHotkey(TRUE, GameMakeColor(10, 20, 30, 255));
+	display_string.draw(3, 4, GameMakeColor(1, 2, 3, 4), GameMakeColor(5, 6, 7, 8), -1, 2);
+	Int width = 0;
+	Int height = 0;
+	display_string.getSize(&width, &height);
+	const bool display_string_ok =
+		expect(display_string.getFont() == arial && display_string.getTextLength() == 5 &&
+				std::wcscmp(display_string.getText().str(), L"Alpha") == 0,
+			"DisplayString text/font failed") &&
+		expect(display_string.textChangedCount() == 3, "DisplayString text change notifications failed") &&
+		expect(display_string.wordWrap() == 80 && display_string.wordWrapCentered() == TRUE &&
+				display_string.useHotkey() == TRUE,
+			"DisplayString display options failed") &&
+		expect(display_string.hotKeyColor() == GameMakeColor(10, 20, 30, 255),
+			"DisplayString hotkey color failed") &&
+		expect(width == 40 && height == 12 && display_string.getWidth(2) == 16,
+			"DisplayString size failed") &&
+		expect(display_string.drawCalls().size() == 1 && display_string.drawCalls()[0].x == 3 &&
+				display_string.drawCalls()[0].y == 4 && display_string.drawCalls()[0].xDrop == -1 &&
+				display_string.drawCalls()[0].yDrop == 2,
+			"DisplayString draw capture failed");
+
+	SmokeDisplayStringManager manager;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	TheDisplayStringManager = &manager;
+	DisplayString *first = manager.newDisplayString();
+	DisplayString *second = manager.newDisplayString();
+	second->setText(UnicodeString(L"Second"));
+	const bool manager_link_ok =
+		expect(manager.allocatedCount() == 2 && manager.firstString() == second &&
+				second->next() == first,
+			"DisplayStringManager link order failed");
+	manager.freeDisplayString(second);
+	const bool manager_unlink_ok =
+		expect(manager.allocatedCount() == 1 && manager.firstString() == first &&
+				first->next() == nullptr,
+			"DisplayStringManager unlink failed");
+
+	{
+		WinInstanceData instance_data;
+		const bool defaults_ok =
+			expect(instance_data.getTextLength() == 0 && instance_data.getTooltipTextLength() == 0 &&
+					instance_data.getStatus() == WIN_STATUS_NONE && instance_data.getOwner() == nullptr &&
+					instance_data.getTextDisplayString() == nullptr &&
+					instance_data.getTooltipDisplayString() == nullptr,
+				"WinInstanceData defaults failed");
+		instance_data.setText(UnicodeString(L"Window"));
+		instance_data.setTooltipText(UnicodeString(L"Tooltip"));
+		const bool text_ok =
+			expect(instance_data.getTextLength() == 6 && instance_data.getTooltipTextLength() == 7 &&
+					std::wcscmp(instance_data.getText().str(), L"Window") == 0 &&
+					std::wcscmp(instance_data.getTooltipText().str(), L"Tooltip") == 0,
+				"WinInstanceData text allocation failed") &&
+			expect(manager.allocatedCount() == 3, "WinInstanceData manager allocation count failed");
+		instance_data.init();
+		const bool reset_ok =
+			expect(instance_data.getTextDisplayString() == nullptr &&
+					instance_data.getTooltipDisplayString() == nullptr &&
+					instance_data.getTextLength() == 0 && instance_data.getTooltipTextLength() == 0 &&
+					manager.allocatedCount() == 1,
+				"WinInstanceData init reset failed");
+		if (!(defaults_ok && text_ok && reset_ok)) {
+			TheDisplayStringManager = old_display_string_manager;
+			TheFontLibrary = old_font_library;
+			return false;
+		}
+	}
+
+	manager.freeDisplayString(first);
+	const bool manager_cleanup_ok =
+		expect(manager.allocatedCount() == 0 && manager.firstString() == nullptr,
+			"DisplayStringManager cleanup failed");
+
+	font_library.reset();
+	const bool font_reset_ok = expect(font_library.getCount() == 0 && font_library.firstFont() == nullptr,
+		"FontLibrary reset failed");
+
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+
+	return font_ok && display_string_ok && manager_link_ok && manager_unlink_ok &&
+		manager_cleanup_ok && font_reset_ok;
+}
+
 bool exercise_video_player()
 {
 	SmokeVideoBuffer buffer(VideoBuffer::TYPE_X8R8G8B8);
@@ -646,6 +1033,8 @@ bool exercise_video_player()
 
 int main()
 {
+	initMemoryManager();
+
 	const bool ok = exercise_color() &&
 		exercise_line2d() &&
 		exercise_parabolic_ease() &&
@@ -653,8 +1042,10 @@ int main()
 		exercise_draw_group_info() &&
 		exercise_global_language() &&
 		exercise_language_filter() &&
+		exercise_game_text() &&
 		exercise_snow() &&
 		exercise_debug_display() &&
+		exercise_display_strings() &&
 		exercise_video_player();
 
 	if (!ok) {
@@ -662,7 +1053,7 @@ int main()
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Color,DebugDisplay,DrawGroupInfo,GlobalLanguage,LanguageFilter,Line2D,ParabolicEase,Snow,Statistics,VideoPlayer,VideoStream\","
+		"\"compiled\":\"Color,DebugDisplay,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,LanguageFilter,Line2D,ParabolicEase,Snow,Statistics,VideoPlayer,VideoStream,WinInstanceData\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

@@ -261,6 +261,16 @@ static inline int MessageBoxA(void *, const char *text, const char *caption, uns
 	return IDIGNORE;
 }
 
+static inline BOOL SetWindowText(HWND, const char *)
+{
+	return TRUE;
+}
+
+static inline BOOL SetWindowTextW(HWND, const wchar_t *)
+{
+	return TRUE;
+}
+
 static inline void ExitProcess(unsigned int code)
 {
 	std::exit(static_cast<int>(code));

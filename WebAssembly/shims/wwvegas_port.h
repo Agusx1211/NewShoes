@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <string>
 
 typedef signed long long sint64;
 
@@ -47,7 +48,55 @@ typedef signed long long sint64;
 #endif
 
 #ifndef _vsnwprintf
-#define _vsnwprintf vswprintf
+static inline int wwlib_vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format, va_list args)
+{
+	if (format == nullptr) {
+		return -1;
+	}
+
+	std::wstring converted;
+	bool needs_conversion = false;
+	for (size_t index = 0; format[index] != L'\0'; ++index) {
+		if (format[index] != L'%') {
+			converted.push_back(format[index]);
+			continue;
+		}
+
+		converted.push_back(format[index]);
+		++index;
+		if (format[index] == L'\0') {
+			break;
+		}
+		if (format[index] == L'%') {
+			converted.push_back(format[index]);
+			continue;
+		}
+
+		while (format[index] != L'\0' && wcschr(L"-+ #0", format[index]) != nullptr) {
+			converted.push_back(format[index++]);
+		}
+		while (format[index] != L'\0' && (iswdigit(format[index]) || format[index] == L'*')) {
+			converted.push_back(format[index++]);
+		}
+		if (format[index] == L'.') {
+			converted.push_back(format[index++]);
+			while (format[index] != L'\0' && (iswdigit(format[index]) || format[index] == L'*')) {
+				converted.push_back(format[index++]);
+			}
+		}
+
+		if (format[index] == L'h' && format[index + 1] == L's') {
+			converted.push_back(L's');
+			++index;
+			needs_conversion = true;
+		} else {
+			converted.push_back(format[index]);
+		}
+	}
+
+	return vswprintf(buffer, count, needs_conversion ? converted.c_str() : format, args);
+}
+#define _vsnwprintf wwlib_vsnwprintf
 #endif
 
 #ifndef _snprintf
