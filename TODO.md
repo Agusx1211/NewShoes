@@ -881,6 +881,22 @@ shares structure and follows behind.
       compile coverage only until `ControlBar`, `InGameUI`, real decal/display
       behavior, and the browser input/render path are available and
       harness-driven.
+- [x] Compile additional original GameClient message/UI/FX leaves in the
+      utility target (`Eva.cpp`, `FXList.cpp`, `SelectionInfo.cpp`,
+      `MessageStream/GUICommandTranslator.cpp`, `HotKey.cpp`, `LookAtXlat.cpp`,
+      `MetaEvent.cpp`, `PlaceEventTranslator.cpp`, `SelectionXlat.cpp`,
+      `WindowXlat.cpp`, `GUI/ControlBar/ControlBarScheme.cpp`,
+      `GUI/GUICallbacks/InGameChat.cpp`,
+      `GUI/GUICallbacks/Menus/KeyboardOptionsMenu.cpp`, and
+      `SkirmishMapSelectMenu.cpp`) after adding case-variant wrappers and
+      matching temporary `Common/INI.h`, `Common/GlobalData.h`, and
+      `GameLogic/GameLogic.h` bridge declarations for the original parser,
+      camera/input, replay, and menu fields they reference.
+- [ ] Link and smoke-test the original GameClient message translators,
+      selection info, EVA/FX list, control-bar scheme, in-game chat, and
+      keyboard/skirmish-map menu behavior after real `GameLogic`, `InGameUI`,
+      `MessageStream`, input, FX/display, GameInfo, and original INI/GlobalData
+      runtime paths replace the current target-local compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through

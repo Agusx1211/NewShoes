@@ -142,6 +142,7 @@ public:
 	static void parseMusicTrackDefinition(INI *ini);
 	static void parseWaterSettingDefinition(INI *ini);
 	static void parseWaterTransparencyDefinition(INI *ini);
+	static void parseFXListDefinition(INI *ini);
 	static void parseMappedImageDefinition(INI *ini);
 	static void parseMultiplayerSettingsDefinition(INI *ini);
 	static void parseMultiplayerColorDefinition(INI *ini);
@@ -153,6 +154,8 @@ public:
 	static void parseShellMenuSchemeDefinition(INI *ini);
 	static void parseChallengeModeDefinition(INI *ini);
 	static void parseWindowTransitions(INI *ini);
+	static void parseMetaMapDefinition(INI *ini);
+	static void parseEvaEvent(INI *ini);
 	static void parseAudioSettingsDefinition(INI *ini);
 	static void parseScienceDefinition(INI *ini);
 	static void parseSpecialPowerDefinition(INI *ini);
@@ -334,6 +337,14 @@ public:
 		}
 	}
 
+	static void parseVelocityReal(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			*static_cast<Real *>(store) =
+				ConvertVelocityInSecsToFrames(scanReal(ini != nullptr ? ini->getNextToken() : nullptr));
+		}
+	}
+
 	static void parsePercentToReal(INI *ini, void *, void *store, const void *)
 	{
 		if (store != nullptr) {
@@ -347,6 +358,16 @@ public:
 			Coord2D *coord = static_cast<Coord2D *>(store);
 			coord->x = scanReal(ini != nullptr ? ini->getNextSubToken("X") : nullptr);
 			coord->y = scanReal(ini != nullptr ? ini->getNextSubToken("Y") : nullptr);
+		}
+	}
+
+	static void parseCoord3D(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			Coord3D *coord = static_cast<Coord3D *>(store);
+			coord->x = scanReal(ini != nullptr ? ini->getNextSubToken("X") : nullptr);
+			coord->y = scanReal(ini != nullptr ? ini->getNextSubToken("Y") : nullptr);
+			coord->z = scanReal(ini != nullptr ? ini->getNextSubToken("Z") : nullptr);
 		}
 	}
 
@@ -380,6 +401,11 @@ public:
 	static ScienceType scanScience(const char *token);
 	static void parseScience(INI *ini, void *, void *store, const void *);
 	static void parseScienceVector(INI *, void *, void *, const void *) {}
+	static void parseAngleReal(INI *ini, void *, void *store, const void *);
+	static void parseFXList(INI *ini, void *, void *store, const void *);
+	static void parseGameClientRandomVariable(INI *ini, void *, void *store, const void *);
+	static void parseParticleSystemTemplate(INI *ini, void *instance, void *store, const void *userData);
+	static void parseObjectCreationList(INI *ini, void *, void *store, const void *);
 	static void parseMappedImage(INI *ini, void *instance, void *store, const void *userData);
 	static void parseAnim2DTemplate(INI *ini, void *instance, void *store, const void *userData);
 	static void parseAudioEventRTS(INI *ini, void *instance, void *store, const void *userData);
