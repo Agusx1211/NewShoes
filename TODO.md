@@ -93,6 +93,15 @@ shares structure and follows behind.
       rules.
 - [x] Add a target-local RandomString compatibility include so `StringClass` is
       complete before `DynamicVectorClass<StringClass>` is instantiated.
+- [x] Add clang-compatible explicit static allocator definitions for original
+      WWLib `AutoPoolClass` users (`multilist.cpp`, `slnode.cpp`, and later
+      W3D pooled nodes) under Emscripten.
+- [x] Add browser/compiler shims for original WinMM `mmsystem.h` timing calls
+      used by `SysTimeClass` and WWSaveLoad under Emscripten.
+- [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
+      engine timing layer before replacing `Main/WinMain.cpp`.
+- [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
+      pthread-aware yield/wait path before enabling shared-memory wasm threads.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
@@ -119,10 +128,18 @@ shares structure and follows behind.
       `colmath*.cpp`, etc.) compiles and smoke-tests matrix/quaternion
       transforms, AABox/line/sphere/OBBox collision paths, and ODE integration
       under wasm.
+- [x] `WWVegas/WWMath` curve and spline slice (`curve.cpp`,
+      `hermitespline.cpp`, `cardinalspline.cpp`, `catmullromspline.cpp`,
+      `tcbspline.cpp`) compiles and smoke-tests 1D/3D interpolation plus
+      WWSaveLoad factory registration under wasm.
+- [x] `WWVegas/WWMath` lookup table and `WWMath::Init` slice
+      (`lookuptable.cpp`, `wwmath.cpp`) compiles and smoke-tests default table
+      sampling, fast trig table initialization, shutdown, and debug refcount
+      cleanup under wasm.
 - [ ] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
 - [ ] Add D3DX8/matrix compatibility needed by original `WWMath/matrix3d.cpp`
       without replacing the original matrix logic.
-- [ ] Qualify original `WWLib/simplevec.h` dependent-base accesses needed by
+- [x] Qualify original `WWLib/simplevec.h` dependent-base accesses needed by
       `WWMath/lookuptable.cpp`, `wwmath.cpp`, and spline sources under
       standard clang/Emscripten lookup rules.
 - [ ] Port the `WWMath/vp.cpp` CPU detection / mutex assembly dependencies to
@@ -173,6 +190,13 @@ shares structure and follows behind.
       `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`, `xpipe.cpp`,
       `xstraw.cpp`, `nstrdup.cpp`) compile and smoke-test raw-file I/O,
       INI load/save, scalar values, points, and rects under wasm.
+- [x] `WWVegas/WWLib` pooled container helpers (`slnode.cpp`,
+      `multilist.cpp`) compile and smoke-test `SimpleDynVecClass`, `SList`,
+      `MultiListClass`, and `PriorityMultiListIterator` behavior under wasm.
+- [x] `WWVegas/WWLib` debug `RefCountClass` tracking (`refcount.cpp`) compiles
+      under wasm and is exercised through lookup-table lifetime cleanup.
+- [x] `WWVegas/WWLib` system timer wrapper (`systimer.cpp`) compiles against
+      browser WinMM timing shims for WWSaveLoad users.
 - [ ] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) once
       a portable original-code `LCW_Comp` path replaces the MSVC inline
       assembly-only compressor.
@@ -182,7 +206,12 @@ shares structure and follows behind.
       assert, trigger, and profile handlers under wasm.
 - [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and
       routes asserts/logs to the browser console/harness.
-- [ ] `WWVegas/WWSaveLoad` compiles.
+- [x] `WWVegas/WWSaveLoad` core persistence plumbing (`persistfactory.cpp`,
+      `saveload.cpp`, `saveloadsubsystem.cpp`, `pointerremap.cpp`,
+      `saveloadstatus.cpp`) compiles as a wasm static library for WWMath curve
+      and lookup-table users.
+- [ ] Full `WWVegas/WWSaveLoad` compiles, including definitions, parameters,
+      twiddlers, and save/load round-trip coverage.
 - [ ] `WWVegas/Wwutil` compiles.
 - [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.
 

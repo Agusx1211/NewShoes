@@ -131,6 +131,10 @@ public:
 		{
 		  unsigned& nFlag=cs.Flag;
 
+#if defined(__EMSCRIPTEN__)
+		  while (__atomic_exchange_n(&nFlag, 1U, __ATOMIC_ACQUIRE) != 0U) {
+		  }
+#else
 		  #define ts_lock _emit 0xF0
 		  assert(((unsigned)&nFlag % 4) == 0);
 
@@ -159,11 +163,16 @@ public:
 
       BitSet:
         ;
+#endif
 		}
 
 		~LockClass()
 		{
+#if defined(__EMSCRIPTEN__)
+      __atomic_store_n(&cs.Flag, 0U, __ATOMIC_RELEASE);
+#else
       cs.Flag=0;
+#endif
 		}
     
 	private:

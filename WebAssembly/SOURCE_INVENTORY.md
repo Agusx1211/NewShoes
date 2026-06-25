@@ -14,10 +14,10 @@ target and should be compiled or re-targeted for wasm.
 | Component | Current port status | Notes |
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
-| `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, `v3_rnd.cpp`, matrix/quaternion/ODE, bounding-volume, and collision-math slices now compile to wasm, with a smoke covering power-of-two helpers, vector math, matrix/quaternion transforms, triangle containment, AABox/line/sphere/OBBox collision paths, ODE integration, and vector randomizers. Remaining blockers include `matrix3d.cpp`'s D3DX8 dependency, `simplevec.h` dependent-base lookup for lookup-table/spline sources, and `vp.cpp` CPU/mutex assembly. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, and file/INI helper sources now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
+| `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, `v3_rnd.cpp`, matrix/quaternion/ODE, bounding-volume, collision-math, curve/spline, lookup-table, and `WWMath::Init` slices now compile to wasm, with smokes covering power-of-two helpers, vector math, matrix/quaternion transforms, triangle containment, AABox/line/sphere/OBBox collision paths, ODE integration, vector randomizers, 1D/3D interpolation, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. Remaining blockers include `matrix3d.cpp`'s D3DX8 dependency and `vp.cpp` CPU/mutex assembly. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, and `SysTimeClass` now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
-| `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
+| `WWVegas/WWSaveLoad` | Partial | Core persistence factory, save/load system, pointer remap, and status plumbing now compile to wasm for WWMath curve/lookup-table users. Full definition/parameter/twiddler coverage and save/load round trips remain open. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
@@ -68,6 +68,9 @@ The wasm CMake skeleton currently builds:
   `ffactory.cpp`, `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`,
   `xpipe.cpp`, `xstraw.cpp`, and `nstrdup.cpp` compiled into a wasm static
   library with POSIX/Emscripten file compatibility.
+- `zh_wwlib_containers`: original `WWVegas/WWLib/multilist.cpp` and
+  `slnode.cpp` compiled into a wasm static library with pooled-node allocator
+  compatibility.
 - `zh_wwlib_fixed`: original `WWVegas/WWLib/fixed.cpp` compiled into a wasm
   static library.
 - `zh_wwlib_hash`: original `WWVegas/WWLib/hash.cpp` compiled into a wasm
@@ -82,6 +85,9 @@ The wasm CMake skeleton currently builds:
   with stream-core dependencies.
 - `zh_wwlib_ramfile`: original `WWVegas/WWLib/ramfile.cpp` compiled into a wasm
   static library with the WWLib file-core dependency.
+- `zh_wwlib_refcount`: original `WWVegas/WWLib/refcount.cpp` compiled into a
+  wasm static library with debug refcount tracking and browser `DebugBreak`
+  compatibility.
 - `zh_wwlib_sha`: original `WWVegas/WWLib/sha.cpp` compiled into a wasm static
   library with legacy header compatibility shims.
 - `zh_wwlib_string`: original `WWVegas/WWLib/wwstring.cpp` and `trim.cpp`
@@ -90,13 +96,24 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_stream_core`: original `WWVegas/WWLib` pipe/straw stream sources
   for Base64, Blowfish, CRC, SHA, random, cache, and bit-vector support compiled
   into a wasm static library.
+- `zh_wwlib_systimer`: original `WWVegas/WWLib/systimer.cpp` compiled into a
+  wasm static library against the browser WinMM timing shim.
 - `zh_wwlib_utility_core`: original `WWVegas/WWLib/blowfish.cpp`,
   `gcd_lcm.cpp`, `obscure.cpp`, `rc4.cpp`, and `rndstrng.cpp` compiled into a
   wasm static library with CRC, random, and StringClass dependencies.
+- `zh_wwsaveload_core`: original `WWVegas/WWSaveLoad` persistence factory,
+  save/load system, pointer remap, status, and subsystem sources compiled into
+  a wasm static library for current runtime library users.
 - `zh_wwmath_core`: original `WWVegas/WWMath` power-of-two, triangle, vector
   randomizer, matrix/quaternion, ODE, bounding-volume, and collision-math
   slices compiled into a wasm static library with minimal WWVegas compiler
   shims.
+- `zh_wwmath_curves`: original `WWVegas/WWMath` curve and Hermite/Cardinal/
+  Catmull-Rom/TCB spline sources compiled into a wasm static library with
+  WWSaveLoad factory dependencies.
+- `zh_wwmath_lookup`: original `WWVegas/WWMath/lookuptable.cpp` and
+  `wwmath.cpp` compiled into a wasm static library with lookup-table manager,
+  fast trig initialization, and debug refcount dependencies.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -118,6 +135,9 @@ The wasm CMake skeleton currently builds:
 - `wwlib-file-ini-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib raw-file I/O plus `INIClass` load/save, scalar values, points,
   and rects.
+- `wwlib-containers-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib `SimpleDynVecClass`, pooled `SList`, pooled `MultiListClass`,
+  and `PriorityMultiListIterator` behavior.
 - `wwlib-fixed-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib fixed-point parsing, formatting, constants, arithmetic, conversion, and
   saturation behavior.
@@ -150,6 +170,11 @@ The wasm CMake skeleton currently builds:
   WWMath power-of-two helpers, vector operations, matrix/quaternion
   transforms, triangle containment, AABox/line/sphere/OBBox collision paths,
   ODE integration, vector randomizers, and the original WWLib random generator.
+- `wwmath-curves-smoke`: a Node-executed wasm smoke test that verifies original
+  WWMath curve/spline interpolation and WWSaveLoad factory registration.
+- `wwmath-lookup-smoke`: a Node-executed wasm smoke test that verifies original
+  WWMath lookup-table manager initialization, default table sampling, fast trig
+  tables, shutdown, and debug refcount cleanup.
 
 ## Next Compile Order
 
@@ -158,12 +183,12 @@ The wasm CMake skeleton currently builds:
    `CompressionManager` zlib and Nox LZH branches can be enabled and checked
    against real BIG data.
 2. Unblock the remaining `WWMath` sources by adding D3DX8/matrix compatibility
-   for `matrix3d.cpp`, qualifying `simplevec.h` dependent-base accesses for
-   lookup-table/spline sources, and porting the `vp.cpp` CPU/mutex assembly
-   dependencies.
+   for `matrix3d.cpp` and porting the `vp.cpp` CPU/mutex assembly dependencies.
 3. Finish the remaining `WWLib` gaps needed by runtime libraries: LCW
-   compression, timers, allocator/mempool helpers, remaining containers, and
-   platform utilities.
+   compression, remaining allocator/mempool helpers, remaining containers, the
+   final browser timing/threading contract, and platform utilities.
 4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
    allocator, and container dependencies are available.
-5. Move to `WWSaveLoad` and `Wwutil`, then begin `GameEngine/Common`.
+5. Finish the remaining `WWSaveLoad` definition/parameter/twiddler sources and
+   add save/load round-trip coverage, then move to `Wwutil` and
+   `GameEngine/Common`.

@@ -19,6 +19,7 @@ set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac
 set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
 set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
+set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -408,6 +409,68 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_stream_core
 )
 
+add_library(zh_wwlib_containers STATIC
+  "${WWLIB_DIR}/multilist.cpp"
+  "${WWLIB_DIR}/slnode.cpp"
+)
+
+target_include_directories(zh_wwlib_containers PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_containers PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+add_library(zh_wwlib_systimer STATIC
+  "${WWLIB_DIR}/systimer.cpp"
+)
+
+target_include_directories(zh_wwlib_systimer PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_systimer PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+add_library(zh_wwlib_refcount STATIC
+  "${WWLIB_DIR}/refcount.cpp"
+)
+
+target_include_directories(zh_wwlib_refcount PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_refcount PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_hash STATIC
   "${WWLIB_DIR}/hash.cpp"
 )
@@ -518,6 +581,118 @@ target_compile_options(zh_wwmath_core PRIVATE
   -Wno-unused-function
   -Wno-unused-parameter
   -Wno-unused-value
+)
+
+add_library(zh_wwsaveload_core STATIC
+  "${WWSAVELOAD_DIR}/persistfactory.cpp"
+  "${WWSAVELOAD_DIR}/pointerremap.cpp"
+  "${WWSAVELOAD_DIR}/saveload.cpp"
+  "${WWSAVELOAD_DIR}/saveloadstatus.cpp"
+  "${WWSAVELOAD_DIR}/saveloadsubsystem.cpp"
+)
+
+target_include_directories(zh_wwsaveload_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_wwsaveload_core PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-unused-variable
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwsaveload_core PUBLIC
+  zh_wwlib_containers
+  zh_wwlib_file_ini
+  zh_wwlib_string
+  zh_wwlib_systimer
+)
+
+add_library(zh_wwmath_curves STATIC
+  "${WWMATH_DIR}/cardinalspline.cpp"
+  "${WWMATH_DIR}/catmullromspline.cpp"
+  "${WWMATH_DIR}/curve.cpp"
+  "${WWMATH_DIR}/hermitespline.cpp"
+  "${WWMATH_DIR}/tcbspline.cpp"
+)
+
+target_include_directories(zh_wwmath_curves PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_wwmath_curves PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  "-Wno-#pragma-messages"
+  -Wno-c++11-narrowing
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-overloaded-virtual
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwmath_curves PUBLIC
+  zh_wwsaveload_core
+)
+
+add_library(zh_wwmath_lookup STATIC
+  "${WWMATH_DIR}/lookuptable.cpp"
+  "${WWMATH_DIR}/wwmath.cpp"
+)
+
+target_include_directories(zh_wwmath_lookup PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_wwmath_lookup PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  "-Wno-#pragma-messages"
+  -Wno-c++11-narrowing
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-overloaded-virtual
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-unused-variable
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwmath_lookup PUBLIC
+  zh_wwlib_refcount
+  zh_wwmath_curves
 )
 
 add_executable(cnc-port
@@ -907,6 +1082,39 @@ target_link_options(wwlib-file-ini-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
 )
 
+add_executable(wwlib-containers-smoke
+  tests/wwlib_containers_smoke.cpp
+)
+
+set_target_properties(wwlib-containers-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-containers-smoke PRIVATE
+  zh_wwlib_containers
+)
+
+target_compile_options(wwlib-containers-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-reorder-ctor
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-containers-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
 add_executable(wwlib-string-smoke
   tests/wwlib_string_smoke.cpp
 )
@@ -1040,6 +1248,76 @@ target_compile_options(wwmath-core-smoke PRIVATE
 )
 
 target_link_options(wwmath-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwmath-curves-smoke
+  tests/wwmath_curves_smoke.cpp
+)
+
+set_target_properties(wwmath-curves-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwmath-curves-smoke PRIVATE
+  zh_wwmath_curves
+)
+
+target_compile_options(wwmath-curves-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  "-Wno-#pragma-messages"
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-overloaded-virtual
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+target_link_options(wwmath-curves-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwmath-lookup-smoke
+  tests/wwmath_lookup_smoke.cpp
+)
+
+set_target_properties(wwmath-lookup-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwmath-lookup-smoke PRIVATE
+  zh_wwmath_lookup
+)
+
+target_compile_options(wwmath-lookup-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  "-Wno-#pragma-messages"
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-overloaded-virtual
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+target_link_options(wwmath-lookup-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

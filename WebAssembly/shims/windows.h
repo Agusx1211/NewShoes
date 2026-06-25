@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 using BOOL = int;
-using DWORD = std::uint32_t;
+using DWORD = unsigned long;
 using HANDLE = void *;
 using LPCVOID = const void *;
 using LPDWORD = DWORD *;
@@ -83,6 +83,11 @@ static inline int MessageBoxA(void *, const char *text, const char *caption, uns
 static inline void ExitProcess(unsigned int code)
 {
 	std::exit(static_cast<int>(code));
+}
+
+static inline void DebugBreak()
+{
+	__builtin_trap();
 }
 
 static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
