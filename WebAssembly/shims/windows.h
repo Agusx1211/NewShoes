@@ -56,6 +56,7 @@ using HIMC = void *;
 using HKL = void *;
 using HWND = void *;
 using LONG = long;
+using HRESULT = LONG;
 using WCHAR = wchar_t;
 using LPCSTR = const char *;
 using LPCWSTR = const WCHAR *;
@@ -69,6 +70,29 @@ using VOID = void;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
+
+#ifndef S_OK
+#define S_OK static_cast<HRESULT>(0)
+#endif
+
+#ifndef S_FALSE
+#define S_FALSE static_cast<HRESULT>(1)
+#endif
+
+#ifndef SEVERITY_ERROR
+#define SEVERITY_ERROR 1
+#endif
+
+#ifndef FACILITY_ITF
+#define FACILITY_ITF 4
+#endif
+
+#ifndef MAKE_HRESULT
+#define MAKE_HRESULT(severity, facility, code) \
+	static_cast<HRESULT>(((static_cast<unsigned long>(severity) & 0x1UL) << 31) | \
+		((static_cast<unsigned long>(facility) & 0x7ffUL) << 16) | \
+		(static_cast<unsigned long>(code) & 0xffffUL))
+#endif
 
 struct CRITICAL_SECTION
 {

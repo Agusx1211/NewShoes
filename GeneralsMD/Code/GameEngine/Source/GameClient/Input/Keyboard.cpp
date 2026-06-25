@@ -448,7 +448,7 @@ void Keyboard::initKeyNames( void )
 			_set_keyname_(L'1',				L'!',				L'\0',	KEY_1  );
 			_set_keyname_(L'2',				L'\"',			L'\0',	KEY_2  );
 			_set_keyname_(L'3',				0x00A3,			L'\0',	KEY_3  );	//£
-			_set_keyname_(L'4',				L'$',				L'€',		KEY_4  );
+			_set_keyname_(L'4',				L'$',				0x20AC,		KEY_4  );
 			_set_keyname_(L'5',				L'%',				L'\0',	KEY_5  );
 			_set_keyname_(L'6',				L'^',				L'\0',	KEY_6  );
 			_set_keyname_(L'7',				L'&',				L'\0',	KEY_7  );
@@ -976,7 +976,7 @@ Bool Keyboard::isAlt()
 WideChar Keyboard::getPrintableKey( UnsignedByte key,  Int state )
 {
 	if((key < 0 || key >=KEY_NAMES_COUNT) || ( state < 0 || state >= MAX_KEY_STATES))
-		return L'';
+		return L'\0';
 	if(state == 0)
 		return m_keyNames[key].stdKey;
 	else if(state == 1)

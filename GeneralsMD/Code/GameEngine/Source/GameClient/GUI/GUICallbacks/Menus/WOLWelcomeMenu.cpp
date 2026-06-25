@@ -317,7 +317,7 @@ static float s_totalWinPercent = 0;
 
 static const char* FindNextNumber( const char* pStart )
 {
-	char* pNum = strchr( pStart, '\n' );  //go to next line
+	const char* pNum = strchr( pStart, '\n' );  //go to next line
 	if( !pNum )
 		return pStart;  //error
 

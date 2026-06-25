@@ -59,14 +59,26 @@ public:
 		m_useTrees(TRUE),
 		m_useTreeSway(TRUE),
 		m_useDrawModuleLOD(FALSE),
+		m_useHeatEffects(TRUE),
 		m_useCloudMap(FALSE),
 		m_useLightMap(FALSE),
+		m_enableDynamicLOD(TRUE),
+		m_clientRetaliationModeEnabled(TRUE),
 		m_useShadowVolumes(FALSE),
+		m_useShadowDecals(FALSE),
+		m_textureReductionFactor(-1),
+		m_enableBehindBuildingMarkers(TRUE),
+		m_showSoftWaterEdge(TRUE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
 		m_keyboardScrollFactor(1.0f),
+		m_keyboardDefaultScrollFactor(0.5f),
 		m_keyboardCameraRotateSpeed(1.0f),
+		m_musicVolumeFactor(0.5f),
+		m_SFXVolumeFactor(0.5f),
+		m_voiceVolumeFactor(0.5f),
 		m_saveCameraInReplay(FALSE),
+		m_useCameraInReplay(FALSE),
 		m_TiVOFastMode(FALSE),
 		m_useFX(TRUE),
 		m_stealthFriendlyOpacity(0.5f),
@@ -97,6 +109,8 @@ public:
 		m_showObjectHealth(FALSE),
 		m_selectionFlashSaturationFactor(0.5f),
 		m_selectionFlashHouseColor(FALSE),
+		m_languageFilterPref(TRUE),
+		m_displayGamma(1.0f),
 		m_firewallBehavior(0),
 		m_firewallSendDelay(FALSE),
 		m_firewallPortOverride(0),
@@ -111,6 +125,7 @@ public:
 		m_networkDisconnectScreenNotifyTime(15000),
 		m_shellMapName("Maps\\ShellMap1\\ShellMap1.map"),
 		m_shellMapOn(TRUE),
+		m_antiAliasBoxValue(0),
 		m_weaponBonusSet(nullptr),
 		m_userDataDir("./")
 	{
@@ -164,14 +179,26 @@ public:
 	Bool m_useTrees;
 	Bool m_useTreeSway;
 	Bool m_useDrawModuleLOD;
+	Bool m_useHeatEffects;
 	Bool m_useCloudMap;
 	Bool m_useLightMap;
+	Bool m_enableDynamicLOD;
+	Bool m_clientRetaliationModeEnabled;
 	Bool m_useShadowVolumes;
+	Bool m_useShadowDecals;
+	Int m_textureReductionFactor;
+	Bool m_enableBehindBuildingMarkers;
+	Bool m_showSoftWaterEdge;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
 	Real m_keyboardScrollFactor;
+	Real m_keyboardDefaultScrollFactor;
 	Real m_keyboardCameraRotateSpeed;
+	Real m_musicVolumeFactor;
+	Real m_SFXVolumeFactor;
+	Real m_voiceVolumeFactor;
 	Bool m_saveCameraInReplay;
+	Bool m_useCameraInReplay;
 	Bool m_TiVOFastMode;
 	Bool m_useFX;
 	Real m_stealthFriendlyOpacity;
@@ -202,6 +229,8 @@ public:
 	Bool m_showObjectHealth;
 	Real m_selectionFlashSaturationFactor;
 	Bool m_selectionFlashHouseColor;
+	Bool m_languageFilterPref;
+	Real m_displayGamma;
 	UnsignedInt m_firewallBehavior;
 	Bool m_firewallSendDelay;
 	UnsignedInt m_firewallPortOverride;
@@ -222,6 +251,7 @@ public:
 	Bool m_shellMapOn;
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
+	Int m_antiAliasBoxValue;
 	WeaponBonusSet *m_weaponBonusSet;
 
 private:

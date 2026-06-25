@@ -47,6 +47,7 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include "Common/GameEngine.h"
+#include "Common/MessageStream.h"
 #include "Common/NameKeyGenerator.h"
 #include "GameClient/GUICallbacks.h"
 #include "GameClient/GameWindowManager.h"

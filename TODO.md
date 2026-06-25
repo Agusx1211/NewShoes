@@ -1028,6 +1028,14 @@ shares structure and follows behind.
       adding GameSpy include-case wrappers, a compile-only `ghttp` surface,
       original `GlobalData` / `GameLogic` shim parity, `_wtoi`
       compatibility, and localized MSVC loop-scope fixes.
+- [x] Compile the final original GameClient source batch in the utility target
+      (`DownloadMenu.cpp`, `MainMenu.cpp`, `OptionsMenu.cpp`,
+      `WOLGameSetupMenu.cpp`, `WOLLadderScreen.cpp`, `WOLLoginMenu.cpp`,
+      `WOLWelcomeMenu.cpp`, and `Input/Keyboard.cpp`) after adding
+      WWDownload include-case wrappers, a compile-only WOL browser bridge,
+      original options/audio/display `GlobalData` shim parity, `HRESULT` /
+      `_spawnl` compatibility, and localized MSVC loop-scope, implicit-int,
+      const-correctness, variadic string, and wide-character literal fixes.
 - [ ] Link and smoke-test the original GameClient message translators,
       selection info, EVA/FX list, control-bar scheme/core/commands/leaves,
       in-game chat, `GameClient`/`InGameUI`/mouse/IME entry points,
@@ -1037,17 +1045,16 @@ shares structure and follows behind.
       `MessageStream`, input, FX/display, GameInfo/LAN, and original
       INI/GlobalData/Xfer runtime paths replace the current target-local
       compile bridges.
-- [ ] Compile the remaining eight original GameClient sources
-      (`DownloadMenu.cpp`, `MainMenu.cpp`, `OptionsMenu.cpp`,
-      `WOLGameSetupMenu.cpp`, `WOLLadderScreen.cpp`, `WOLLoginMenu.cpp`,
-      `WOLWelcomeMenu.cpp`, and `Input/Keyboard.cpp`) after their remaining
-      blockers are resolved: WWDownload, ATL/WOL browser integration, full
-      options `GlobalData` surface, WOL setup/menu STL and loop-scope
-      portability, and browser keyboard layout/IME behavior.
-- [ ] Compile original `GameClient/Input/Keyboard.cpp` after the browser
-      keyboard layout/IME translation surface replaces Win32 `HKL`,
-      `GetKeyboardLayout`, legacy invalid character literals, and empty wide
-      character constants.
+- [ ] Replace the compile-only `GameNetwork/WOLBrowser/WebBrowser.h` bridge
+      with a browser DOM/iframe or external-link contract before running the
+      original WOL ladder/login/welcome browser panes.
+- [ ] Replace the compile-only `_spawnl` no-spawn process fallback with an
+      explicit browser policy for the Main Menu WorldBuilder button before
+      driving that menu at runtime.
+- [ ] Replace the current keyboard `GetKeyboardLayout` fallback and static
+      layout table assumptions with a browser `KeyboardEvent.code` /
+      locale-aware translation surface before considering keyboard behavior
+      runtime-complete.
 - [x] Compile original `GameClient/Input/Mouse.cpp` after adding temporary
       `InGameUI`, mouse INI parse, `GlobalData` cursor/debug, and object lookup
       compile bridges; runtime pointer behavior still waits for the browser
