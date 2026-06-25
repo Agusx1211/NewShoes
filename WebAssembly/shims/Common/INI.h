@@ -57,6 +57,35 @@ struct FieldParse
 	}
 };
 
+class MultiIniFieldParse
+{
+private:
+	enum { MAX_MULTI_FIELDS = 16 };
+
+	const FieldParse *m_fieldParse[MAX_MULTI_FIELDS];
+	UnsignedInt m_extraOffset[MAX_MULTI_FIELDS];
+	Int m_count;
+
+public:
+	MultiIniFieldParse() : m_fieldParse(), m_extraOffset(), m_count(0) {}
+
+	void add(const FieldParse *fieldParse, UnsignedInt extraOffset = 0)
+	{
+		if (m_count >= MAX_MULTI_FIELDS) {
+			throw INI_INVALID_DATA;
+		}
+		m_fieldParse[m_count] = fieldParse;
+		m_extraOffset[m_count] = extraOffset;
+		++m_count;
+	}
+
+	Int getCount() const { return m_count; }
+	const FieldParse *getNthFieldParse(Int index) const { return m_fieldParse[index]; }
+	UnsignedInt getNthExtraOffset(Int index) const { return m_extraOffset[index]; }
+};
+
+typedef void (*BuildMultiIniFieldProc)(MultiIniFieldParse &parse);
+
 class INI
 {
 public:
@@ -65,6 +94,15 @@ public:
 	void load(AsciiString, INILoadType loadType, Xfer *) { m_loadType = loadType; }
 	void loadDirectory(AsciiString, Bool, INILoadType loadType, Xfer *) { m_loadType = loadType; }
 	void initFromINI(void *, const FieldParse *) {}
+	void initFromINIMulti(void *, const MultiIniFieldParse &) {}
+	void initFromINIMultiProc(void *what, BuildMultiIniFieldProc proc)
+	{
+		MultiIniFieldParse parse;
+		if (proc != nullptr) {
+			proc(parse);
+		}
+		initFromINIMulti(what, parse);
+	}
 	AsciiString getFilename() const { return AsciiString(""); }
 	INILoadType getLoadType() const { return m_loadType; }
 	UnsignedInt getLineNum() const { return 0; }

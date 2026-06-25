@@ -22,6 +22,7 @@
 #include "Common/GlobalData.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
+#include "Common/INI.h"
 #include "Common/KindOf.h"
 #include "Common/Language.h"
 #include "Common/List.h"
@@ -37,6 +38,7 @@
 #include "Common/Registry.h"
 #include "Common/string.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/TerrainTypes.h"
 #include "Common/UnicodeString.h"
 #include "Common/Version.h"
 #include "Common/encrypt.h"
@@ -375,6 +377,19 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+const FieldParse kSmokeIniFieldParse[] = {
+	{ "Token", INI::parseInt, nullptr, 0 },
+	{ nullptr, nullptr, nullptr, 0 },
+};
+
+bool g_multi_ini_builder_called = false;
+
+void build_multi_ini_smoke(MultiIniFieldParse &parse)
+{
+	g_multi_ini_builder_called = true;
+	parse.add(kSmokeIniFieldParse, 8);
+}
+
 void collect_scanline(Int x_start, Int x_end, Int y, void *context)
 {
 	auto *lines = static_cast<std::vector<Scanline> *>(context);
@@ -524,6 +539,23 @@ bool exercise_language_and_encrypt()
 			"EncryptString ZeroHour vector failed") &&
 		expect(std::strlen(EncryptString("abcdefghi")) == MAX_ENCRYPTED_STRING,
 			"EncryptString length clamp failed");
+}
+
+bool exercise_ini_multi_field_bridge()
+{
+	MultiIniFieldParse parse;
+	parse.add(kSmokeIniFieldParse, 12);
+	if (!expect(parse.getCount() == 1, "MultiIniFieldParse count failed") ||
+			!expect(parse.getNthFieldParse(0) == kSmokeIniFieldParse,
+				"MultiIniFieldParse field pointer failed") ||
+			!expect(parse.getNthExtraOffset(0) == 12, "MultiIniFieldParse extra offset failed")) {
+		return false;
+	}
+
+	g_multi_ini_builder_called = false;
+	INI ini;
+	ini.initFromINIMultiProc(nullptr, build_multi_ini_smoke);
+	return expect(g_multi_ini_builder_called, "INI initFromINIMultiProc builder was not called");
 }
 
 bool exercise_file_interfaces()
@@ -1348,6 +1380,58 @@ bool exercise_partition_solver()
 			solution[2].second == static_cast<ObjectID>(22), "PartitionSolver residual assignment failed");
 }
 
+bool exercise_terrain_types()
+{
+	TerrainType *standalone = newInstance(TerrainType);
+	if (!expect(standalone != nullptr, "TerrainType standalone allocation failed")) {
+		return false;
+	}
+
+	const bool standalone_ok =
+		expect(std::strcmp(standalone->getName().str(), "") == 0, "TerrainType default name failed") &&
+		expect(std::strcmp(standalone->getTexture().str(), "") == 0, "TerrainType default texture failed") &&
+		expect(!standalone->isBlendEdge(), "TerrainType default blend flag failed") &&
+		expect(standalone->getClass() == TERRAIN_NONE, "TerrainType default class failed") &&
+		expect(!standalone->getRestrictConstruction(), "TerrainType default restrict flag failed") &&
+		expect(standalone->getFieldParse() != nullptr &&
+				std::strcmp(standalone->getFieldParse()[0].token, "Texture") == 0,
+				"TerrainType parse table missing");
+	standalone->deleteInstance();
+	if (!standalone_ok) {
+		return false;
+	}
+
+	TerrainTypeCollection collection;
+	TerrainType *default_terrain = collection.newTerrain(AsciiString("DefaultTerrain"));
+	if (!expect(default_terrain != nullptr, "TerrainTypeCollection default allocation failed")) {
+		return false;
+	}
+
+	default_terrain->friend_setTexture(AsciiString("Data/Terrain/default.tga"));
+	default_terrain->friend_setClass(TERRAIN_ASPHALT);
+	default_terrain->friend_setBlendEdge(TRUE);
+	default_terrain->friend_setRestrictConstruction(TRUE);
+
+	TerrainType *road = collection.newTerrain(AsciiString("RoadTerrain"));
+	if (!expect(road != nullptr, "TerrainTypeCollection road allocation failed")) {
+		return false;
+	}
+
+	return expect(collection.firstTerrain() == road, "TerrainTypeCollection head insert failed") &&
+		expect(collection.nextTerrain(road) == default_terrain, "TerrainTypeCollection next pointer failed") &&
+		expect(collection.findTerrain(AsciiString("DefaultTerrain")) == default_terrain,
+			"TerrainTypeCollection find default failed") &&
+		expect(collection.findTerrain(AsciiString("RoadTerrain")) == road,
+			"TerrainTypeCollection find road failed") &&
+		expect(std::strcmp(road->getName().str(), "RoadTerrain") == 0,
+			"TerrainTypeCollection assigned name failed") &&
+		expect(std::strcmp(road->getTexture().str(), "Data/Terrain/default.tga") == 0,
+			"TerrainType default texture copy failed") &&
+		expect(road->getClass() == TERRAIN_ASPHALT, "TerrainType default class copy failed") &&
+		expect(road->isBlendEdge(), "TerrainType default blend copy failed") &&
+		expect(road->getRestrictConstruction(), "TerrainType default restrict copy failed");
+}
+
 bool exercise_dict()
 {
 	const NameKeyType bool_key = static_cast<NameKeyType>(10);
@@ -1401,6 +1485,7 @@ int main()
 		exercise_strings() &&
 		exercise_quoted_printable() &&
 		exercise_file_interfaces() &&
+		exercise_ini_multi_field_bridge() &&
 		exercise_file_system_dispatch() &&
 		exercise_win32_local_file_system() &&
 		exercise_archive_big_files() &&
@@ -1422,7 +1507,8 @@ int main()
 		exercise_game_common() &&
 		exercise_list_and_circle() &&
 		exercise_bezier() &&
-		exercise_partition_solver();
+		exercise_partition_solver() &&
+		exercise_terrain_types();
 
 	shutdownMemoryManager();
 
@@ -1440,7 +1526,8 @@ int main()
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
-		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
+		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc,"
+		"TerrainTypes,MultiplayerSettings,GameMusic\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

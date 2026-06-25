@@ -146,6 +146,9 @@ shares structure and follows behind.
 - [x] Add the missing original `ChallengeGenerals` `Image` pointer forward
       declaration plus temporary `Common/INI.h` bridge declarations for
       `parseChallengeModeDefinition` and `parseWindowTransitions`.
+- [x] Add temporary `Common/INI.h` `MultiIniFieldParse` and
+      `initFromINIMultiProc` bridge declarations so original multi-table INI
+      users can compile while the real INI implementation is still offline.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
@@ -464,6 +467,12 @@ shares structure and follows behind.
       `INIAudioEventInfo`/`AudioEventInfo` metadata, the original INI parse
       surface, and the real audio manager path are available without
       target-local stubs.
+- [x] Compile original `Common/Audio/GameMusic.cpp` into the wasm Common core
+      as compile coverage for music-track parse metadata and music-manager
+      request plumbing.
+- [ ] Link and smoke-test `MusicTrack` / `MusicManager` behavior after the
+      missing original `MusicTrack` constructor path is resolved and the real
+      audio manager request path is available.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
@@ -474,9 +483,13 @@ shares structure and follows behind.
       after `Player`/`Thing`/`Object` module headers, `MultiIniFieldParse`,
       `StaticGameLODLevel`, `EvaMessage`, and related GameLogic/GameClient enum
       dependencies are available.
-- [ ] Compile original `Common/MultiplayerSettings.cpp` and
-      `Common/TerrainTypes.cpp` after the real `Common/INI` `FieldParse` table
-      and scalar/color parse helpers replace the temporary INI shim.
+- [x] Compile original `Common/MultiplayerSettings.cpp` and
+      `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
+      bridge, with wasm smoke coverage for terrain defaults, list insertion,
+      and default-terrain copying.
+- [ ] Link and smoke-test `MultiplayerSettings` runtime behavior after
+      original `Common/RTS/Money.cpp` can compile without the deeper
+      `Player`/`Thing`/`StealthUpdate` enum-forward blockers.
 - [ ] Compile original `Common/DamageFX.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, `GameClient/FXList` / `InGameUI`, and
       `GameLogic/Damage` / `Object` dependencies are available.
