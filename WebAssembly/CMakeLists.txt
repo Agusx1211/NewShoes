@@ -240,6 +240,7 @@ target_link_libraries(zh_wwlib_string PUBLIC
 )
 
 add_library(zh_wwlib_utility_core STATIC
+  "${WWLIB_DIR}/argv.cpp"
   "${WWLIB_DIR}/blowfish.cpp"
   "${WWLIB_DIR}/gcd_lcm.cpp"
   "${WWLIB_DIR}/hsv.cpp"
@@ -249,6 +250,7 @@ add_library(zh_wwlib_utility_core STATIC
   "${WWLIB_DIR}/rgb.cpp"
   "${WWLIB_DIR}/rndstrng.cpp"
   "${WWLIB_DIR}/rle.cpp"
+  "${WWLIB_DIR}/sampler.cpp"
   "${WWLIB_DIR}/srandom.cpp"
   "${WWLIB_DIR}/strtok_r.cpp"
 )

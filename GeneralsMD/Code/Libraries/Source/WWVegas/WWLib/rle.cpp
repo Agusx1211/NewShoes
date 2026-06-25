@@ -84,7 +84,7 @@ int RLEEngine::Compress(void const * source, void * dest, int length) const
 			**	Count the number of transparent pixels in this run.
 			*/
 			int runcount = 0;
-			while (sptr[runcount] == '\0' && runcount <= length) {
+			while (runcount < length && sptr[runcount] == '\0') {
 				runcount++;
 			}
 
@@ -259,4 +259,3 @@ int RLEEngine::Line_Decompress(void const * source, void * dest) const
 	*/
 	return(Decompress(sptr, dest, datalen - sizeof(short)));
 }
-

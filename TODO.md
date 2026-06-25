@@ -202,11 +202,12 @@ shares structure and follows behind.
       open/close, read/write, seek, implicit access, bias, inherited formatted
       writes, allocated buffers, capacity clamping, and delete behavior under
       wasm.
-- [x] `WWVegas/WWLib` utility core (`blowfish.cpp`, `gcd_lcm.cpp`,
-      `hsv.cpp`, `obscure.cpp`, `palette.cpp`, `rc4.cpp`, `rgb.cpp`,
-      `rndstrng.cpp`, `rle.cpp`, `srandom.cpp`, `strtok_r.cpp`) compiles and
-      smoke-tests crypto known vectors, GCD/LCM helpers, color conversion,
-      palette lookup, RLE round trips, browser-backed secure seed generation,
+- [x] `WWVegas/WWLib` utility core (`argv.cpp`, `blowfish.cpp`,
+      `gcd_lcm.cpp`, `hsv.cpp`, `obscure.cpp`, `palette.cpp`, `rc4.cpp`,
+      `rgb.cpp`, `rndstrng.cpp`, `rle.cpp`, `sampler.cpp`, `srandom.cpp`,
+      `strtok_r.cpp`) compiles and smoke-tests command-line parsing, crypto
+      known vectors, GCD/LCM helpers, color conversion, palette lookup, RLE
+      round trips, browser-backed secure seed generation, sampling sequences,
       tokenization, Obfuscate normalization, and RandomString selection
       behavior under wasm.
 - [x] `WWVegas/WWLib` pipe/straw stream core (`pipe.cpp`, `straw.cpp`,
@@ -248,9 +249,9 @@ shares structure and follows behind.
 - [x] Port original `WWVegas/WWLib/srandom.cpp` to browser entropy through
       Emscripten `getentropy`; keep the original UNIX and Windows seed paths
       intact for non-wasm builds.
-- [ ] Audit original `WWVegas/WWLib/RLEEngine::Compress` zero-run handling at
-      the exact end of a source buffer before relying on it for untrusted
-      sprite/image data under wasm.
+- [x] Audit and fix original `WWVegas/WWLib/RLEEngine::Compress` zero-run
+      handling at the exact end of a source buffer, with a trailing-zero smoke
+      vector under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

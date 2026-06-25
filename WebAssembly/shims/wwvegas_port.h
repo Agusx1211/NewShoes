@@ -34,6 +34,14 @@ typedef signed long long sint64;
 #define strcmpi strcasecmp
 #endif
 
+#ifndef strnicmp
+#define strnicmp strncasecmp
+#endif
+
+#ifndef _strnicmp
+#define _strnicmp strncasecmp
+#endif
+
 #ifndef _vsnprintf
 #define _vsnprintf vsnprintf
 #endif

@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 
+#include "argv.h"
 #include "blowfish.h"
 #include "gcd_lcm.h"
 #include "hsv.h"
@@ -12,6 +13,7 @@
 #include "rgb.h"
 #include "rndstrng.h"
 #include "rle.h"
+#include "sampler.h"
 #include "srandom.h"
 #include "stimer.h"
 #include "strtok_r.h"
@@ -134,6 +136,46 @@ int main()
 	}
 
 	{
+		char command_line[] = "-Mode skirmish -Player China \"loose argument\" -Flag";
+		if (!expect(ArgvClass::Init(command_line, nullptr) == 6,
+				"ArgvClass Init count failed")) {
+			return 1;
+		}
+
+		ArgvClass args(false, false);
+		bool value_in_next = false;
+		const char *mode_value = args.Find_Value("-mode");
+		if (!expect(mode_value != nullptr && std::strcmp(mode_value, "skirmish") == 0,
+				"ArgvClass case-insensitive value lookup failed")) {
+			ArgvClass::Free();
+			return 1;
+		}
+		const char *player = args.Find("-player");
+		const char *player_value = args.Get_Cur_Value(7, &value_in_next);
+		if (!expect(player != nullptr &&
+				player_value != nullptr &&
+				std::strcmp(player_value, "China") == 0 &&
+				value_in_next,
+				"ArgvClass next-argument value extraction failed")) {
+			ArgvClass::Free();
+			return 1;
+		}
+		args.Update_Value("-Player", "GLA");
+		if (!expect(std::strcmp(args.Find_Value("-player"), "GLA") == 0,
+				"ArgvClass Update_Value failed")) {
+			ArgvClass::Free();
+			return 1;
+		}
+		args.Add_Value("-RemoveMe", "1");
+		if (!expect(args.Remove_Value("-removeme") && args.Find("-removeme") == nullptr,
+				"ArgvClass Remove_Value failed")) {
+			ArgvClass::Free();
+			return 1;
+		}
+		ArgvClass::Free();
+	}
+
+	{
 		SecureRandomClass secure;
 		unsigned char extra_seed[] = {
 			0x43, 0x6e, 0x43, 0x5f, 0x5a, 0x48, 0x5f, 0x77,
@@ -154,7 +196,7 @@ int main()
 
 	{
 		const std::array<unsigned char, 10> source = {
-			1, 0, 0, 0, 2, 3, 0, 4, 0, 5
+			1, 0, 0, 0, 2, 3, 0, 4, 0, 0
 		};
 		RLEEngine rle;
 		std::array<unsigned char, 32> compressed = {};
@@ -208,6 +250,40 @@ int main()
 	}
 
 	{
+		RegularSamplingClass regular(2, 3);
+		std::array<float, 2> sample = {};
+		regular.Sample(sample.data());
+		if (!expect(sample[0] == 0.0f && sample[1] == 0.0f,
+				"RegularSampling first sample failed")) {
+			return 1;
+		}
+		regular.Sample(sample.data());
+		if (!expect(sample[0] == 0.5f && sample[1] == 0.0f,
+				"RegularSampling second sample failed")) {
+			return 1;
+		}
+
+		QMCSamplingClass qmc(2);
+		qmc.Set_Offset(1);
+		qmc.Sample(sample.data());
+		if (!expect(sample[0] > 0.49f && sample[0] < 0.51f &&
+				sample[1] > 0.32f && sample[1] < 0.34f,
+				"QMCSampling Halton sample failed")) {
+			return 1;
+		}
+
+		RandomSamplingClass random(3);
+		std::array<float, 3> random_sample = {};
+		random.Sample(random_sample.data());
+		if (!expect(random_sample[0] >= 0.0f && random_sample[0] <= 1.0f &&
+				random_sample[1] >= 0.0f && random_sample[1] <= 1.0f &&
+				random_sample[2] >= 0.0f && random_sample[2] <= 1.0f,
+				"RandomSampling bounds failed")) {
+			return 1;
+		}
+	}
+
+	{
 		char tokens[] = "USA,,GLA;China";
 		char *cursor = nullptr;
 		const char *first = strtok_r(tokens, ",;", &cursor);
@@ -231,8 +307,9 @@ int main()
 	}
 
 	std::cout << "{\"ok\":true,\"library\":\"WWLib\","
-		"\"compiled\":\"blowfish.cpp,gcd_lcm.cpp,hsv.cpp,obscure.cpp,palette.cpp,"
-		"rc4.cpp,rgb.cpp,rndstrng.cpp,rle.cpp,srandom.cpp,stimer.cpp,strtok_r.cpp\","
+		"\"compiled\":\"argv.cpp,blowfish.cpp,gcd_lcm.cpp,hsv.cpp,obscure.cpp,"
+		"palette.cpp,rc4.cpp,rgb.cpp,rndstrng.cpp,rle.cpp,sampler.cpp,srandom.cpp,"
+		"stimer.cpp,strtok_r.cpp\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
