@@ -42,7 +42,7 @@ class ParticleSystem;
 class FXList;
 class AudioEventRTS;
 enum  MaxHealthChangeType;
-enum  CommandOption;
+enum  CommandOption : int;
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------

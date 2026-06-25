@@ -34,6 +34,7 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
 #include "Common/GameLOD.h"
+#include "Common/GlobalData.h"
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/GameClient.h"
 #include "Common/UserPreferences.h"

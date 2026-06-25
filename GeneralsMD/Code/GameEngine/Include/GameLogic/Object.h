@@ -112,7 +112,7 @@ class ObjectDefectionHelper;
 enum CommandSourceType : int;
 enum HackerAttackMode : int;
 enum NameKeyType : int;
-enum SpecialPowerType;
+enum SpecialPowerType : int;
 enum WeaponBonusConditionType : int;
 enum WeaponChoiceCriteria;
 enum WeaponSetConditionType;

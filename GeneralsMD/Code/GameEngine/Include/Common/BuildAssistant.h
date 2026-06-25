@@ -72,7 +72,7 @@ typedef ObjectSellList::iterator ObjectSellListIterator;
 //-------------------------------------------------------------------------------------------------
 /** Return codes for queries about being able to build */
 //-------------------------------------------------------------------------------------------------
-enum CanMakeType
+enum CanMakeType : int
 {
 	CANMAKE_OK,
 	CANMAKE_NO_PREREQ,

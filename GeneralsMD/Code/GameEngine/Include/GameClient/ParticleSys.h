@@ -82,7 +82,7 @@ struct RGBColorKeyframe
 	UnsignedInt frame;
 };
 
-enum ParticlePriorityType
+enum ParticlePriorityType : int
 {
 	INVALID_PRIORITY = 0, 
 	PARTICLE_PRIORITY_LOWEST = 1,

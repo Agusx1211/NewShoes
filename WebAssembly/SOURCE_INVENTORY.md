@@ -196,8 +196,10 @@ The wasm CMake skeleton currently builds:
   `NameKeyGenerator`, `RandomValue`, and engine CRC.
 - `zh_gameengine_real_compile_frontier`: compile-only original
   `GameEngine/Common` frontier with real headers first, covering the real
-  `Common/INI/INI.cpp` reader and initial Thing/model-definition sources
-  (`DrawModule.cpp`, `Module.cpp`, `Thing.cpp`, `ThingFactory.cpp`,
+  `Common/GameLOD.cpp`, `Common/INI/INI.cpp` reader, skirmish battle honors,
+  and initial
+  Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
+  `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`,
   `ThingTemplate.cpp`) without linking them into the current shim-based smoke
   runtime yet.
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources

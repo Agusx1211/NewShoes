@@ -66,7 +66,7 @@ class WindowLayout;
 class TerrainLogic;
 class GhostObjectManager;
 class CommandButton;
-enum BuildableStatus;
+enum BuildableStatus : int;
 
 
 typedef const CommandButton* ConstCommandButtonPtr;
@@ -429,4 +429,3 @@ inline Object* GameLogic::findObjectByID( ObjectID id )
 extern GameLogic *TheGameLogic;
 
 #endif // _GAME_LOGIC_H_
-

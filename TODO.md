@@ -628,19 +628,20 @@ shares structure and follows behind.
 - [ ] Compile original `Common/GlobalData.cpp` after GameLogic AI command,
       science, weapon, guard-mode, damage/player-mask, and related enum/header
       dependencies are available.
-- [ ] Compile original `Common/UserPreferences.cpp` and
-      `Common/SkirmishBattleHonors.cpp` after `Common/Thing` /
-      `Common/OVERRIDE.h`, player/game-difficulty declarations, and related
-      GameLogic headers are available.
+- [ ] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
+      SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
+      mapped to browser-safe networking interfaces.
+- [x] Compile original `Common/SkirmishBattleHonors.cpp` in the real-header
+      compile frontier.
 - [x] Compile original `Common/Thing/ThingFactory.cpp` and
       `ThingTemplate.cpp` in the real-header compile frontier after adding the
       real INI parser, libc++ hash-map compatibility, `SparseMatchFinder`
       standard-library compatibility, and narrow loop-scope/header fixes.
-- [ ] Compile original `Common/Thing/ModuleFactory.cpp` after
+- [x] Compile original `Common/Thing/ModuleFactory.cpp` after
       `RiderChangeContain`'s `ObjectStatusType` / `LocomotorSetType`
       declarations, remaining case-variant `GameLogic` include wrappers, and
       broader behavior-module header dependencies are portable.
-- [ ] Compile original `Common/GameLOD.cpp` after the particle-priority,
+- [x] Compile original `Common/GameLOD.cpp` after the particle-priority,
       TerrainVisual/GameClient, and W3D collision include dependencies are
       available.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log

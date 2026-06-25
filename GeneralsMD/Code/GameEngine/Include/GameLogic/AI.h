@@ -54,8 +54,8 @@ class WeaponTemplate;
 enum GUICommandType : int;
 enum HackerAttackMode : int;
 enum WeaponSetType : int;
-enum WeaponLockType;
-enum SpecialPowerType;
+enum WeaponLockType : int;
+enum SpecialPowerType : int;
 
 typedef std::vector<ObjectID> VecObjectID;
 typedef VecObjectID::iterator VecObjectIDIt;

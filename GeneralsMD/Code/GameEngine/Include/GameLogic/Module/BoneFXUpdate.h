@@ -34,6 +34,7 @@
 
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "GameClient/ParticleSys.h"
+#include "GameLogic/LogicRandomValue.h"
 #include "GameLogic/Module/UpdateModule.h"
 
 //#include "GameLogic/Module/DamageModule.h" -- Yikes... not necessary to include this! (KM)

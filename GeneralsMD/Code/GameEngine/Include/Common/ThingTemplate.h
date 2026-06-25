@@ -214,7 +214,7 @@ static const char *BuildCompletionNames[] =
 };
 #endif  // end DEFINE_BUILD_COMPLETION_NAMES
 
-enum BuildableStatus
+enum BuildableStatus : int
 {
 	// saved into savegames... do not change or remove values!
 	BSTATUS_YES = 0,

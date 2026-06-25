@@ -1237,9 +1237,12 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
 )
 
 add_library(zh_gameengine_real_compile_frontier STATIC
+  "${GAMEENGINE_COMMON_DIR}/GameLOD.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/DrawModule.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/Module.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Thing/ModuleFactory.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/Thing.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/ThingFactory.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/ThingTemplate.cpp"

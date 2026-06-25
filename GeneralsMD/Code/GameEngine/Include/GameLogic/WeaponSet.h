@@ -177,7 +177,7 @@ enum WeaponChoiceCriteria
 };
 
 //-------------------------------------------------------------------------------------------------
-enum WeaponLockType
+enum WeaponLockType : int
 {
 	NOT_LOCKED,							///< Weapon is not locked
 	LOCKED_TEMPORARILY,			///< Weapon is locked until clip is empty, or current "attack" state exits

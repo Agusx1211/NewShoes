@@ -40,7 +40,7 @@
 //-------------------------------------------------------------------------------------------------
 /** Object status types */
 //-------------------------------------------------------------------------------------------------
-enum ObjectStatusTypes
+enum ObjectStatusTypes : int
 {
 	//These are saved. Do not insert or remove any!
 
@@ -94,6 +94,8 @@ enum ObjectStatusTypes
 	OBJECT_STATUS_COUNT
 
 };
+
+typedef ObjectStatusTypes ObjectStatusType;
 
 typedef BitFlags<OBJECT_STATUS_COUNT>	ObjectStatusMaskType;
 

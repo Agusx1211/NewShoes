@@ -44,7 +44,7 @@
 class Object;
 class Player;
 class SpecialPowerTemplate;
-enum SpecialPowerType;
+enum SpecialPowerType : int;
 enum WeaponSlotType;
 enum CommandSourceType : int;
 enum CanAttackResult : int;
