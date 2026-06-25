@@ -73,6 +73,32 @@ bool contains_text(const std::vector<char> &data, const char *needle)
 		needle,
 		needle + std::strlen(needle)) != data.end();
 }
+
+bool read_first_indexed_archive_file(
+	ArchiveFileSystem &archive_file_system,
+	FileSystem &file_system,
+	std::vector<char> &data,
+	std::size_t &indexed_file_count)
+{
+	FilenameList files;
+	archive_file_system.getFileListInDirectory(
+		AsciiString(""), AsciiString(""), AsciiString("*"), files, TRUE);
+	indexed_file_count = files.size();
+
+	for (FilenameListIter it = files.begin(); it != files.end(); ++it) {
+		FileInfo info = {};
+		if (!archive_file_system.getFileInfo(*it, &info) ||
+				info.sizeHigh != 0 || info.sizeLow <= 0) {
+			continue;
+		}
+
+		if (read_archive_file(file_system, it->str(), data)) {
+			return true;
+		}
+	}
+
+	return false;
+}
 }
 
 int run_real_big_smoke_impl(const char *archive_path)
@@ -154,6 +180,57 @@ int run_real_big_smoke_impl(const char *archive_path)
 extern "C" int run_real_big_smoke(const char *archive_path)
 {
 	return run_real_big_smoke_impl(archive_path);
+}
+
+int run_real_big_index_smoke_impl(const char *archive_path)
+{
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (!expect(archive_mask.isNotEmpty(), "archive file mask is empty")) {
+		return 1;
+	}
+
+	initMemoryManager();
+
+	bool ok = true;
+	std::size_t indexed_file_count = 0;
+	std::vector<char> sample_data;
+	{
+		Win32LocalFileSystem local_file_system;
+		FileSystem file_system;
+		Win32BIGFileSystem archive_file_system;
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
+			"Win32BIGFileSystem did not load the BIG archive") && ok;
+		ok = expect(read_first_indexed_archive_file(
+				archive_file_system, file_system, sample_data, indexed_file_count),
+			"BIG archive did not expose any readable indexed files") && ok;
+
+		TheFileSystem = nullptr;
+		TheArchiveFileSystem = nullptr;
+		TheLocalFileSystem = nullptr;
+	}
+
+	shutdownMemoryManager();
+
+	if (!ok) {
+		return 1;
+	}
+
+	std::printf("{\"ok\":true,\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
+		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
+		"\"source\":\"GeneralsMD original\"}\n",
+		archive_path, indexed_file_count, sample_data.size());
+	return 0;
+}
+
+extern "C" int run_real_big_index_smoke(const char *archive_path)
+{
+	return run_real_big_index_smoke_impl(archive_path);
 }
 
 #ifndef REAL_BIG_SMOKE_NO_MAIN

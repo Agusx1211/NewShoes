@@ -407,6 +407,9 @@ shares structure and follows behind.
 - [x] Validate the original BIG reader against extracted real archives
       (`INIZH.big` first) through browser asset fetch/MEMFS mounting in the
       harness.
+- [x] Validate the browser asset fetch/MEMFS path against every inventoried
+      extracted runtime BIG archive with the original `Win32BIGFileSystem`
+      indexing and reading at least one file from each archive.
 - [ ] Extend the browser MEMFS real-asset smoke from `INIZH.big` to the exact
       minimum boot archive set once engine startup uses fetched archives.
 - [ ] Exercise original `DataChunkOutput` write/temp-file path after the real

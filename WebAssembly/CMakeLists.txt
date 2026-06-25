@@ -2170,7 +2170,7 @@ target_link_options(gameengine-real-big-smoke PRIVATE
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
 
@@ -2207,6 +2207,6 @@ target_link_options(gameengine-real-big-browser-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )

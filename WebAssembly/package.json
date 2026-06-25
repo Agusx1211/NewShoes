@@ -44,6 +44,7 @@
     "test:gameengine-common-core": "npm run build:wasm && node dist/gameengine-common-core-smoke.cjs",
     "test:real-big": "npm run build:wasm && npm run verify:assets && node tools/run_real_big_smoke.mjs artifacts/real-assets/INIZH.big",
     "test:real-big-browser": "npm run build:wasm && npm run verify:assets && node harness/real_big_smoke.mjs artifacts/real-assets/INIZH.big",
+    "test:runtime-archives-browser": "npm run build:wasm && npm run extract:runtime-archives && node harness/runtime_archives_smoke.mjs artifacts/real-assets",
     "test:harness": "node harness/smoke.mjs",
     "test:wasm": "npm run build:wasm && EXPECT_WASM=1 node harness/smoke.mjs"
   },

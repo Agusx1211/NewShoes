@@ -41,12 +41,17 @@ Run the opt-in real BIG archive smoke:
 
 ```sh
 npm run test:real-big
+npm run test:real-big-browser
+npm run test:runtime-archives-browser
 ```
 
 This also requires the user-supplied disc images. It builds the current wasm
 targets, verifies/extracts `INIZH.big`, then uses the original
 `Win32BIGFileSystem` and `FileSystem` path to index and read real INI files from
-the extracted archive under Node.
+the extracted archive under Node or the browser harness. The runtime-archives
+variant extracts the inventoried local BIG set, then fetches each archive into
+browser MEMFS and verifies that the original BIG reader can index and read from
+every archive.
 
 ## Toolchain
 

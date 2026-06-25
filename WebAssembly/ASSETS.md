@@ -46,6 +46,9 @@ npm run extract:runtime-archives
 
 The script extracts these archives into ignored `artifacts/real-assets/` and
 checks that every output has a nonempty `BIGF` archive header.
+After extraction, `npm run test:runtime-archives-browser` verifies the browser
+fetch/MEMFS delivery path by loading each archive through the Playwright harness
+and reading it with the original `Win32BIGFileSystem`.
 
 | Archive | Source | Role |
 |---|---|---|
