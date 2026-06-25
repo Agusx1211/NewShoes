@@ -122,6 +122,23 @@ target_compile_options(zh_wwlib_crc PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_fixed STATIC
+  "${WWLIB_DIR}/fixed.cpp"
+)
+
+target_include_directories(zh_wwlib_fixed PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_fixed PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-ignored-qualifiers
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwlib_hash STATIC
   "${WWLIB_DIR}/hash.cpp"
 )
@@ -335,6 +352,33 @@ target_compile_options(wwlib-crc-smoke PRIVATE
 )
 
 target_link_options(wwlib-crc-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-fixed-smoke
+  tests/wwlib_fixed_smoke.cpp
+)
+
+set_target_properties(wwlib-fixed-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-fixed-smoke PRIVATE
+  zh_wwlib_fixed
+)
+
+target_compile_options(wwlib-fixed-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-ignored-qualifiers
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-fixed-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

@@ -87,6 +87,9 @@ shares structure and follows behind.
       digest vectors plus split updates under wasm.
 - [x] `WWVegas/WWLib` hash table (`hash.cpp`) compiles and smoke-tests
       add/find/remove/reset/iteration behavior under wasm.
+- [x] `WWVegas/WWLib` fixed-point utility (`fixed.cpp`) compiles and
+      smoke-tests parsing, formatting, constants, arithmetic, conversion, and
+      saturation behavior under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
