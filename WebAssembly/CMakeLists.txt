@@ -1237,6 +1237,8 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
 )
 
 add_library(zh_gameengine_real_compile_frontier STATIC
+  "${GAMEENGINE_COMMON_DIR}/CRCDebug.cpp"
+  "${GAMEENGINE_COMMON_DIR}/DamageFX.cpp"
   "${GAMEENGINE_COMMON_DIR}/GameLOD.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIAiData.cpp"
@@ -1265,7 +1267,17 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIVideo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWeapon.cpp"
+  "${GAMEENGINE_COMMON_DIR}/MiniLog.cpp"
+  "${GAMEENGINE_COMMON_DIR}/PerfTimer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ActionManager.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
   "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
+  "${GAMEENGINE_COMMON_DIR}/StateMachine.cpp"
+  "${GAMEENGINE_COMMON_DIR}/StatsCollector.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Radar.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/DrawModule.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/Module.cpp"
   "${GAMEENGINE_COMMON_DIR}/Thing/ModuleFactory.cpp"

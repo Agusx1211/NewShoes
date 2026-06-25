@@ -32,6 +32,8 @@
 #ifndef COPYPROTECTION_H
 #define COPYPROTECTION_H
 
+#include "Lib/BaseType.h"
+
 // Comment out the following line to disable copy protection checks
 #define DO_COPY_PROTECTION
 

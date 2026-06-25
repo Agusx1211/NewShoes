@@ -47,6 +47,7 @@
 
 #include "Common/AcademyStats.h"
 #include "Common/Energy.h"
+#include "Common/GlobalData.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
 #include "Common/PlayerTemplate.h"
@@ -55,6 +56,7 @@
 #include "Common/Xfer.h"
 
 #include "GameClient/ControlBar.h"
+#include "GameClient/ClientRandomValue.h"
 #include "GameClient/GameText.h"
 
 #include "GameLogic/GameLogic.h"
