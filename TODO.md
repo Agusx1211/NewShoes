@@ -646,9 +646,9 @@ shares structure and follows behind.
 - [x] Compile original `Common/RTS/ResourceGatheringManager.cpp` in the
       real-header compile frontier after making its header self-contained for
       memory-pool and STL list dependencies.
-- [ ] Compile original `Common/RTS/Player.cpp` and `TunnelTracker.cpp` after
-      the `AIPathfind.h` `PathfindCell` contract and remaining clang
-      loop-scope issues are resolved through original headers.
+- [x] Compile original `Common/RTS/Player.cpp` and `TunnelTracker.cpp` in the
+      real-header compile frontier after fixing the `AIPathfind.h`
+      `PathfindCell` contract and clang loop-scope issues.
 - [ ] Link and smoke-test original RTS action/team/score/academy behavior after
       the full `Player`, `Thing`, object, `GameLogic`, control-bar, and UI
       surfaces replace the current compile-only frontier.
@@ -656,10 +656,9 @@ shares structure and follows behind.
       frontier after `Common/Thing` / `Common/OVERRIDE.h`, `GameClient/FXList`
       / `InGameUI`, and `GameLogic/Damage` / `Object` dependencies are
       reachable.
-- [ ] Compile original `Common/System/BuildAssistant.cpp` after the
-      `PartitionManager` header loop-scope issue, `AIPathfind.h`
-      `PathfindCell` contract, and `GlobalData::m_maxLineBuildObjects`
-      dependency are resolved through original headers.
+- [x] Compile original `Common/System/BuildAssistant.cpp` in the real-header
+      compile frontier after the `AIPathfind.h` `PathfindCell` contract and
+      logic random helper dependency are reachable through original headers.
 - [x] Compile original `Common/CommandLine.cpp` in the real-header compile
       frontier after making the real `GlobalData` include explicit and adding
       the POSIX-backed `_stat` compatibility aliases.
@@ -747,18 +746,24 @@ shares structure and follows behind.
       compile frontier: `Map/SidesList.cpp`, `System/CaveSystem.cpp`,
       `System/CrateSystem.cpp`, `System/RankInfo.cpp`, `Object/Armor.cpp`,
       core body/create/die/collide/helper/special-power/upgrade module bases,
-      crate collide leaves except `SalvageCrateCollide.cpp`, and the currently
-      browser-buildable object create/die/helper/special-power/upgrade leaves.
-      This is compile coverage only until the full `Object`, `Player`,
-      `GameLogic`, `AIPathfind`, and command/runtime surfaces link.
-- [ ] Compile the remaining probed `GameLogic` module leaves after resolving
-      the current clustered blockers: `AIPathfind.h`'s `PathfindCell` forward
-      declaration order, original `GameLogicRandomValue*` declarations for
-      random-dependent body/die/building code, self-contained
-      `KindOfMaskType` / `ObjectStatusTypes` includes, `Damage.cpp`'s standard
-      clang template-specialization requirement, `PolygonTrigger.cpp`'s
-      `TheGlobalData` include and legacy loop-scope issue, and the lowercase
-      `Common/player.h` include in `CostModifierUpgrade.cpp`.
+      crate collide leaves, and the currently browser-buildable object
+      create/die/helper/special-power/upgrade leaves. This is compile coverage
+      only until the full `Object`, `Player`, `GameLogic`, `AIPathfind`, and
+      command/runtime surfaces link.
+- [x] Compile the next probed `GameLogic` module leaves in the real-header
+      compile frontier after resolving the current clustered blockers:
+      `Map/PolygonTrigger.cpp`, `Map/TerrainLogic.cpp`,
+      `Object/Body/ActiveBody.cpp`, `Object/Body/UndeadBody.cpp`,
+      `Object/Collide/CrateCollide/SalvageCrateCollide.cpp`,
+      `Object/Die/CreateCrateDie.cpp`, `Object/Die/CrushDie.cpp`,
+      `Object/Die/RebuildHoleExposeDie.cpp`,
+      `Object/Helper/StatusDamageHelper.cpp`,
+      `Object/Upgrade/CostModifierUpgrade.cpp`,
+      `Object/Upgrade/ReplaceObjectUpgrade.cpp`, `System/Damage.cpp`, and
+      `System/GameLogicDispatch.cpp`.
+- [ ] Compile original `GameLogic/System/GameLogic.cpp` after the missing
+      GameSpy GP SDK include path (`GameSpy/GP/GP.h`) is restored or mapped to
+      the browser networking contract.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
       `Color.cpp`, `Credits.cpp`, `Display.cpp`, `System/DebugDisplay.cpp`,
       `DisplayString.cpp`,

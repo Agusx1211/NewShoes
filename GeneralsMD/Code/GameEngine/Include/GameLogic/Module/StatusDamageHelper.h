@@ -33,6 +33,7 @@
 #define __StatusDamageHelper_H_
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
+#include "Common/ObjectStatusTypes.h"
 #include "GameLogic/Module/ObjectHelper.h"
 
 // ------------------------------------------------------------------------------------------------

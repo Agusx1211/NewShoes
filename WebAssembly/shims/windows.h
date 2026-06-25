@@ -118,6 +118,14 @@ using LPITEMIDLIST = ITEMIDLIST *;
 #define _isnan std::isnan
 #endif
 
+#ifndef __min
+#define __min(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#ifndef __max
+#define __max(a, b) (((a) > (b)) ? (a) : (b))
+#endif
+
 #ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE reinterpret_cast<HANDLE>(-1)
 #endif

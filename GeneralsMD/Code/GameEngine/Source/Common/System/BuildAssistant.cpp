@@ -46,6 +46,7 @@
 #include "GameClient/TerrainVisual.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/PartitionManager.h"
+#include "GameLogic/LogicRandomValue.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -1601,4 +1602,3 @@ void BuildAssistant::sellObject( Object *obj )
 	}
 
 }  // end sellObject
-

@@ -48,6 +48,7 @@
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/Armor.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/LogicRandomValue.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/Damage.h"
 #include "GameLogic/PartitionManager.h"

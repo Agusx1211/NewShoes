@@ -29,6 +29,7 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include "Common/DataChunk.h"
+#include "Common/GlobalData.h"
 #include "Common/MapObject.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/Xfer.h"
@@ -310,7 +311,8 @@ void PolygonTrigger::addPolygonTrigger(PolygonTrigger *pTrigger)
 void PolygonTrigger::removePolygonTrigger(PolygonTrigger *pTrigger)
 {	
 	PolygonTrigger *pPrev = NULL;
-	for (PolygonTrigger *pTrig=getFirstPolygonTrigger(); pTrig; pTrig = pTrig->getNext()) {
+	PolygonTrigger *pTrig = getFirstPolygonTrigger();
+	for (; pTrig; pTrig = pTrig->getNext()) {
 		if (pTrig==pTrigger) break;
 		pPrev = pTrig;
 	}

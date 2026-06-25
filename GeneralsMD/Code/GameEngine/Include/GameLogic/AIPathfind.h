@@ -204,6 +204,8 @@ protected:
 // Fits in 4 bits for now
 enum {MAX_WALL_PIECES = 128};
 
+class PathfindCell;
+
 class PathfindCellInfo
 {
 	friend class PathfindCell;

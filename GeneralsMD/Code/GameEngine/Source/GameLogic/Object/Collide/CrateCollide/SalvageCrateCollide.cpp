@@ -42,6 +42,7 @@
 #include "GameClient/GameText.h"
 #include "GameClient/InGameUI.h"
 #include "GameLogic/ExperienceTracker.h"
+#include "GameLogic/LogicRandomValue.h"
 #include "GameLogic/Object.h"
 
 //-------------------------------------------------------------------------------------------------

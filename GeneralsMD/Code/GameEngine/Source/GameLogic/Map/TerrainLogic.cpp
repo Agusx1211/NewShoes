@@ -32,6 +32,7 @@
 
 #include "Common/DataChunk.h"
 #include "Common/GameState.h"
+#include "Common/GlobalData.h"
 #include "Common/MapObject.h"
 #include "Common/Radar.h"
 #include "Common/ThingFactory.h"
@@ -1185,7 +1186,7 @@ void TerrainLogic::enableWaterGrid( Bool enable )
 			//
 			AsciiString strippedMapNameOnly;
 			AsciiString strippedCompareMapNameOnly;
-			char *c;
+			const char *c;
 
 			// create stripped map name
 			c = strrchr( TheGlobalData->m_mapName.str(), '\\' );
@@ -3031,4 +3032,3 @@ void TerrainLogic::loadPostProcess( void )
 	}
 
 }  // end loadPostProcess
-
