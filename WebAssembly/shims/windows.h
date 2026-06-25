@@ -25,6 +25,7 @@ using HGLOBAL = HANDLE;
 using HKEY = void *;
 using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
+using FARPROC = void (*)();
 using HACCEL = void *;
 using HRSRC = void *;
 using HIMC = void *;
@@ -117,6 +118,29 @@ using LPITEMIDLIST = ITEMIDLIST *;
 #ifndef _isnan
 #define _isnan std::isnan
 #endif
+
+#ifndef _MCW_RC
+#define _MCW_RC 0x00000300
+#endif
+
+#ifndef _RC_NEAR
+#define _RC_NEAR 0x00000000
+#endif
+
+#ifndef _MCW_PC
+#define _MCW_PC 0x00030000
+#endif
+
+#ifndef _PC_24
+#define _PC_24 0x00020000
+#endif
+
+static inline void _fpreset(void) {}
+static inline unsigned int _statusfp(void) { return 0; }
+static inline unsigned int _controlfp(unsigned int new_value, unsigned int mask)
+{
+	return new_value & mask;
+}
 
 #ifndef __min
 #define __min(a, b) (((a) < (b)) ? (a) : (b))
@@ -717,6 +741,25 @@ static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)
 
 #ifndef GetModuleFileName
 #define GetModuleFileName GetModuleFileNameA
+#endif
+
+static inline HMODULE LoadLibraryA(LPCSTR)
+{
+	return nullptr;
+}
+
+static inline BOOL FreeLibrary(HMODULE)
+{
+	return TRUE;
+}
+
+static inline FARPROC GetProcAddress(HMODULE, LPCSTR)
+{
+	return nullptr;
+}
+
+#ifndef LoadLibrary
+#define LoadLibrary LoadLibraryA
 #endif
 
 static inline DWORD GetTickCount()

@@ -34,6 +34,7 @@
 
 #include "Common/AsciiString.h"
 #include "Common/Snapshot.h"
+#include "Common/ThingTemplate.h"
 
 class Player;
 

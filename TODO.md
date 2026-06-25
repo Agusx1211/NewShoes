@@ -798,17 +798,22 @@ shares structure and follows behind.
       `GlobalData` / `INI` / `Xfer` / `GameLogic` compile-surface expansion,
       and localized clang/MSVC compatibility fixes. The frontier now covers 242
       of 259 original `GameLogic` translation units.
-- [ ] Compile the remaining 17 original `GameLogic` sources after resolving the
+- [x] Compile the remaining 17 original `GameLogic` sources after resolving the
       clustered blockers found by the latest source-specific probe:
       `AIPathfind.cpp` legacy bool/null path returns and static declaration,
       missile/laser/neutron/ghost enum and particle-system completeness,
       `KindOfMaskType` self-containment, remaining standard-library iterator
       conversions, `FlightDeckBehavior` / `SlowDeathBehavior` STL portability,
       `ScriptEngine.cpp` attack-priority / Win32 DLL bridge issues, and
-      `System/GameLogic.cpp` GameSpy GP include mapping.
-- [ ] Compile original `GameLogic/System/GameLogic.cpp` after the missing
+      `System/GameLogic.cpp` GameSpy GP include mapping. The maintained
+      `zh_gameengine_real_compile_frontier` target now compiles all 259 of 259
+      original `GameLogic` translation units.
+- [x] Compile original `GameLogic/System/GameLogic.cpp` after the missing
       GameSpy GP SDK include path (`GameSpy/GP/GP.h`) is restored or mapped to
       the browser networking contract.
+- [ ] Replace the declarative wasm GameSpy GP / Peer / gpersist compile-surface
+      headers with real browser networking bindings when enabling runtime
+      GameSpy matchmaking, chat, presence, and persistent stats.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
       `Color.cpp`, `Credits.cpp`, `Display.cpp`, `System/DebugDisplay.cpp`,
       `DisplayString.cpp`,

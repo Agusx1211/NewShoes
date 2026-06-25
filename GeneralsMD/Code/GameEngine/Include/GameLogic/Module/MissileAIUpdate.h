@@ -35,6 +35,7 @@
 #include "Common/GlobalData.h"
 #include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/WeaponBonusConditionFlags.h"
+#include "GameClient/ParticleSys.h"
 #include "Common/INI.h"
 #include "WWMath/Matrix3D.h"
 
@@ -149,4 +150,3 @@ private:
 };
 
 #endif // _MISSILE_AI_UPDATE_H_
-

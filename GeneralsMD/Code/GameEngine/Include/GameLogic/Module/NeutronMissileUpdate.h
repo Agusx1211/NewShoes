@@ -34,6 +34,7 @@
 #include "GameClient/RadiusDecal.h"
 #include "Common/GameType.h"
 #include "Common/GlobalData.h"
+#include "GameClient/ParticleSys.h"
 #include "GameLogic/Module/UpdateModule.h"
 #include "GameLogic/Module/DieModule.h"
 #include "Common/INI.h"
@@ -142,4 +143,3 @@ private:
 };
 
 #endif // _MISSILE_UPDATE_H_
-

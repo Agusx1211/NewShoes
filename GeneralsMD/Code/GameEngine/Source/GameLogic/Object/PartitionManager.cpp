@@ -106,6 +106,15 @@ extern void addIcon(const Coord3D *pos, Real width, Int numFramesDuration, RGBCo
 
 const Real HUGE_DIST_SQR = (HUGE_DIST*HUGE_DIST);
 
+static void hLineAddLooker(Int x1, Int x2, Int y, void *playerIndexVoid);
+static void hLineRemoveLooker(Int x1, Int x2, Int y, void *playerIndexVoid);
+static void hLineAddShrouder(Int x1, Int x2, Int y, void *playerIndexVoid);
+static void hLineRemoveShrouder(Int x1, Int x2, Int y, void *playerIndexVoid);
+static void hLineAddThreat(Int x1, Int x2, Int y, void *threatValueParms);
+static void hLineRemoveThreat(Int x1, Int x2, Int y, void *threatValueParms);
+static void hLineAddValue(Int x1, Int x2, Int y, void *threatValueParms);
+static void hLineRemoveValue(Int x1, Int x2, Int y, void *threatValueParms);
+
 #define DISABLE_INVALID_PREVENTION	//Steven, I had to turn this off because it was causing problem with map border resizing (USA04). -MW
 
 //------------------------------------------------------------------------------ Performance Timers 
@@ -5850,4 +5859,3 @@ SightingInfo::~SightingInfo()
 {
 
 }  // end loadPostProcess
-

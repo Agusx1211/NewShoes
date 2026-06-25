@@ -56,8 +56,10 @@ public:
 		m_debugAIObstacles(FALSE),
 		m_particleEdit(FALSE),
 		m_winCursors(TRUE),
+		m_useTrees(TRUE),
 		m_useTreeSway(TRUE),
 		m_useDrawModuleLOD(FALSE),
+		m_useShadowVolumes(FALSE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
 		m_keyboardScrollFactor(1.0f),
@@ -78,6 +80,7 @@ public:
 		m_groupMoveClickToGatherFactor(1.0f),
 		m_shroudAlpha(0),
 		m_clearAlpha(255),
+		m_unlookPersistDuration(30),
 		m_playIntro(TRUE),
 		m_playSizzle(TRUE),
 		m_afterIntro(FALSE),
@@ -86,6 +89,8 @@ public:
 		m_exeCRC(0),
 		m_iniCRC(0),
 		m_buildMapCache(FALSE),
+		m_loadScreenRender(FALSE),
+		m_playStats(-1),
 		m_showClientPhysics(TRUE),
 		m_showObjectHealth(FALSE),
 		m_selectionFlashSaturationFactor(0.5f),
@@ -152,8 +157,10 @@ public:
 	Bool m_debugAIObstacles;
 	Bool m_particleEdit;
 	Bool m_winCursors;
+	Bool m_useTrees;
 	Bool m_useTreeSway;
 	Bool m_useDrawModuleLOD;
+	Bool m_useShadowVolumes;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
 	Real m_keyboardScrollFactor;
@@ -174,6 +181,7 @@ public:
 	Real m_groupMoveClickToGatherFactor;
 	UnsignedByte m_shroudAlpha;
 	UnsignedByte m_clearAlpha;
+	UnsignedInt m_unlookPersistDuration;
 	Bool m_playIntro;
 	Bool m_playSizzle;
 	Bool m_afterIntro;
@@ -182,6 +190,8 @@ public:
 	UnsignedInt m_exeCRC;
 	UnsignedInt m_iniCRC;
 	Bool m_buildMapCache;
+	Bool m_loadScreenRender;
+	Int m_playStats;
 	Bool m_showClientPhysics;
 	Bool m_showObjectHealth;
 	Real m_selectionFlashSaturationFactor;
