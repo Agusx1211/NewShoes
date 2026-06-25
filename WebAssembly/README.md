@@ -102,9 +102,9 @@ npm run test:wasm
 
 Run all current wasm checks, including the original EAC compression codec,
 CompressionManager EAC-backed routes, WWDebug core/profile, WWLib
-Base64/CRC/file-core/file-INI/fixed/hash/image-misc/LZO/MD5/public-key/
-RAMFile/SHA/stream-core/StringClass/surface-core/utility-core, and WWMath
-core geometry/collision smokes:
+Base64/CRC/file-core/file-INI/fixed/hash/image-misc/LZO/MD5/
+platform-compat/public-key/RAMFile/SHA/stream-core/StringClass/surface-core/
+utility-core, and WWMath core geometry/collision smokes:
 
 ```sh
 npm run test:all
@@ -186,6 +186,12 @@ Run only the original WWLib MD5 smoke:
 
 ```sh
 npm run test:wwlib-md5
+```
+
+Run only the original WWLib platform compatibility smoke:
+
+```sh
+npm run test:wwlib-platform-compat
 ```
 
 Run only the original WWLib multiprecision public-key smoke:

@@ -20,12 +20,16 @@ using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
 using HANDLE = void *;
+using HGLOBAL = HANDLE;
 using HKEY = void *;
 using HINSTANCE = void *;
+using HMODULE = HINSTANCE;
+using HRSRC = void *;
 using HWND = void *;
 using LONG = long;
 using LPCSTR = const char *;
 using LPCVOID = const void *;
+using LPBYTE = BYTE *;
 using LPDWORD = DWORD *;
 using LPSTR = char *;
 using LPVOID = void *;
@@ -85,6 +89,7 @@ struct LARGE_INTEGER
 #define EVENT_MODIFY_STATE 0x0002
 #define KEY_READ 0x20019
 #define KEY_WRITE 0x20006
+#define KEY_ALL_ACCESS 0xf003f
 #define PAGE_READWRITE 0x04
 #define FILE_MAP_WRITE 0x0002
 #define WAIT_OBJECT_0 0x00000000
@@ -92,12 +97,14 @@ struct LARGE_INTEGER
 #define ERROR_SUCCESS 0
 #define ERROR_FILE_NOT_FOUND 2
 #define ERROR_ALREADY_EXISTS 183
+#define ERROR_NO_MORE_ITEMS 259
 #define CP_ACP 0
 #define FILE_ATTRIBUTE_READONLY 0x00000001
 #define FILE_ATTRIBUTE_DIRECTORY 0x00000010
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
 #define REG_OPTION_NON_VOLATILE 0x00000000
 #define REG_SZ 1
+#define REG_BINARY 3
 #define REG_DWORD 4
 #define HKEY_CURRENT_USER reinterpret_cast<HKEY>(0x80000001UL)
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
@@ -448,6 +455,31 @@ static inline BOOL DeleteFile(LPCSTR filename)
 	return filename != nullptr && remove(filename) == 0 ? TRUE : FALSE;
 }
 
+static inline int LoadString(HINSTANCE, UINT, LPSTR, int)
+{
+	return 0;
+}
+
+static inline HRSRC FindResource(HMODULE, LPCSTR, LPCSTR)
+{
+	return nullptr;
+}
+
+static inline HGLOBAL LoadResource(HMODULE, HRSRC)
+{
+	return nullptr;
+}
+
+static inline LPVOID LockResource(HGLOBAL)
+{
+	return nullptr;
+}
+
+static inline DWORD SizeofResource(HMODULE, HRSRC)
+{
+	return 0;
+}
+
 static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
 {
 	return nullptr;
@@ -488,6 +520,75 @@ static inline LONG RegCreateKeyEx(HKEY, LPCSTR, DWORD, LPCSTR, DWORD, DWORD, voi
 }
 
 static inline LONG RegSetValueEx(HKEY, LPCSTR, DWORD, DWORD, const unsigned char *, DWORD)
+{
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegQueryValueExW(HKEY, const WCHAR *, LPDWORD, LPDWORD, unsigned char *, LPDWORD)
+{
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegSetValueExW(HKEY, const WCHAR *, DWORD, DWORD, const unsigned char *, DWORD)
+{
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegEnumValue(
+	HKEY,
+	DWORD,
+	LPSTR,
+	LPDWORD,
+	LPDWORD,
+	LPDWORD,
+	unsigned char *,
+	LPDWORD)
+{
+	return ERROR_NO_MORE_ITEMS;
+}
+
+static inline LONG RegDeleteValue(HKEY, LPCSTR)
+{
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegEnumKeyEx(
+	HKEY,
+	DWORD,
+	LPSTR,
+	LPDWORD,
+	LPDWORD,
+	LPSTR,
+	LPDWORD,
+	FILETIME *)
+{
+	return ERROR_NO_MORE_ITEMS;
+}
+
+static inline LONG RegQueryInfoKey(
+	HKEY,
+	LPSTR,
+	LPDWORD,
+	LPDWORD,
+	LPDWORD sub_keys,
+	LPDWORD,
+	LPDWORD,
+	LPDWORD values,
+	LPDWORD,
+	LPDWORD,
+	LPDWORD,
+	FILETIME *)
+{
+	if (sub_keys != nullptr) {
+		*sub_keys = 0;
+	}
+	if (values != nullptr) {
+		*values = 0;
+	}
+	return ERROR_FILE_NOT_FOUND;
+}
+
+static inline LONG RegDeleteKey(HKEY, LPCSTR)
 {
 	return ERROR_FILE_NOT_FOUND;
 }

@@ -428,6 +428,37 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_stream_core
 )
 
+add_library(zh_wwlib_platform_compat STATIC
+  "${WWLIB_DIR}/data.cpp"
+  "${WWLIB_DIR}/rcfile.cpp"
+  "${WWLIB_DIR}/registry.cpp"
+)
+
+target_include_directories(zh_wwlib_platform_compat PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_platform_compat PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_platform_compat PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_platform_compat PUBLIC
+  zh_wwlib_file_ini
+  zh_wwlib_stream_core
+)
+
 add_library(zh_wwlib_version STATIC
   "${WWLIB_DIR}/verchk.cpp"
 )
@@ -1232,6 +1263,39 @@ target_compile_options(wwlib-image-misc-smoke PRIVATE
 )
 
 target_link_options(wwlib-image-misc-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-platform-compat-smoke
+  tests/wwlib_platform_compat_smoke.cpp
+)
+
+set_target_properties(wwlib-platform-compat-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-platform-compat-smoke PRIVATE
+  zh_wwlib_platform_compat
+)
+
+target_compile_definitions(wwlib-platform-compat-smoke PRIVATE
+  _UNIX
+)
+
+target_compile_options(wwlib-platform-compat-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-platform-compat-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

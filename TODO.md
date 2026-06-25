@@ -264,6 +264,13 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` Targa image utility and Win32 globals (`TARGA.CPP`,
       `win.cpp`) compile and smoke-test truecolor TGA save/load, image flips,
       and original window/focus global state under wasm.
+- [x] `WWVegas/WWLib` platform compatibility helpers (`data.cpp`,
+      `rcfile.cpp`, `registry.cpp`) compile and smoke-test legacy data loading,
+      raw CPS-style uncompression, and current browser no-resource/no-registry
+      fallbacks under wasm.
+- [ ] Replace the current browser no-resource/no-registry WWLib fallbacks with
+      a real resource lookup and persistence contract before relying on
+      `ResourceFileClass` or `RegistryClass` for runtime settings/data.
 - [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
       (`convert.cpp`, `_convert.cpp`, `dsurface.cpp`) after the browser
       `DSurface`/pixel-format abstraction is defined, instead of stubbing draw
