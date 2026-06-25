@@ -109,6 +109,9 @@ shares structure and follows behind.
 - [x] Add browser/compiler shims for original Win32 file attributes, file
       deletion, PE image headers, and version-resource fallbacks used by
       WWLib `verchk.cpp` and Wwutil under Emscripten.
+- [x] Add browser/compiler shims for original Win32 `_MAX_DRIVE`,
+      `_MAX_FNAME`, `_MAX_EXT`, `_splitpath`, and `MoveFile` users needed by
+      WWLib MIX archive creation and rewrite paths under Emscripten.
 - [x] Add browser/compiler shims for original Win32 `_MAX_PATH` and
       `GetModuleFileName` users needed by `GameEngine/Common` memory-pool
       initialization under Emscripten.
@@ -238,6 +241,9 @@ shares structure and follows behind.
       `xstraw.cpp`, `nstrdup.cpp`, `tagblock.cpp`) compile and smoke-test
       raw-file I/O, read/write preservation, INI load/save, scalar values,
       points, rects, and tag-block persistence under wasm.
+- [x] `WWVegas/WWLib` MIX archive helpers (`mixfile.cpp`) compile and
+      smoke-test archive creation, filename listing, offset-ordered listing,
+      biased subfile reads, and missing-file lookups under wasm.
 - [x] `WWVegas/WWLib` pooled container helpers (`slnode.cpp`,
       `multilist.cpp`) compile and smoke-test `SimpleDynVecClass`, `SList`,
       `MultiListClass`, and `PriorityMultiListIterator` behavior under wasm.
@@ -287,6 +293,9 @@ shares structure and follows behind.
 - [ ] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline
       assembly.
+- [ ] Restore or replace the missing WWLib GNU regex dependency before
+      compiling original `regexpr.cpp`; do not stub `RegularExpressionClass`
+      users.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

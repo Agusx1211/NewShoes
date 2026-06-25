@@ -428,6 +428,36 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_stream_core
 )
 
+add_library(zh_wwlib_mixfile STATIC
+  "${WWLIB_DIR}/mixfile.cpp"
+)
+
+target_include_directories(zh_wwlib_mixfile PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_mixfile PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_mixfile PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwlib_mixfile PUBLIC
+  zh_wwlib_file_ini
+)
+
 add_library(zh_wwlib_platform_compat STATIC
   "${WWLIB_DIR}/data.cpp"
   "${WWLIB_DIR}/rcfile.cpp"
@@ -1602,6 +1632,39 @@ target_compile_options(wwlib-file-ini-smoke PRIVATE
 )
 
 target_link_options(wwlib-file-ini-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-mixfile-smoke
+  tests/wwlib_mixfile_smoke.cpp
+)
+
+set_target_properties(wwlib-mixfile-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-mixfile-smoke PRIVATE
+  zh_wwlib_mixfile
+)
+
+target_compile_definitions(wwlib-mixfile-smoke PRIVATE
+  _UNIX
+)
+
+target_compile_options(wwlib-mixfile-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-mixfile-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

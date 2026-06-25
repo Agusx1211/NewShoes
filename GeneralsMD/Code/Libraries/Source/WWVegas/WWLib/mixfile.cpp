@@ -334,7 +334,8 @@ MixFileFactoryClass::Flush_Changes (void)
 		//
 		//	Add all the remaining files from our file set
 		//
-		for (int index = 0; index < FilenameList.Count (); index ++) {
+		int index;
+		for (index = 0; index < FilenameList.Count (); index ++) {
 			StringClass &filename = FilenameList[index];
 
 			//
@@ -454,7 +455,7 @@ bool	MixFileFactoryClass::Build_Ordered_Filename_List (DynamicVectorClass<String
 	// add names to output parameter
 	list.Clear();
 	list.Resize( name_list.Count());
-	for (i = 0; i < local_file_info.Count(); ++i) {
+	for (int i = 0; i < local_file_info.Count(); ++i) {
 		list.Add(local_file_info[i].Filename);
 	}
 
@@ -675,7 +676,7 @@ void	Add_Files( const char * dir, MixFileCreator & mix )
 			StringClass name;
 			name.Format( "%s%s", dir, find_info.cFileName );
 			StringClass	source;
-			source.Format( "makemix\\%s", name );
+			source.Format( "makemix\\%s", (const char *)name );
 			mix.Add_File( source, name );
 //			WWDEBUG_SAY(( "Adding file from %s %s\n", source, name ));
 		}

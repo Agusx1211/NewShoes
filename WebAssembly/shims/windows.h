@@ -73,8 +73,20 @@ struct LARGE_INTEGER
 #define _MAX_PATH 260
 #endif
 
+#ifndef _MAX_DRIVE
+#define _MAX_DRIVE 3
+#endif
+
 #ifndef _MAX_DIR
 #define _MAX_DIR 256
+#endif
+
+#ifndef _MAX_FNAME
+#define _MAX_FNAME 256
+#endif
+
+#ifndef _MAX_EXT
+#define _MAX_EXT 256
 #endif
 
 #define MB_ABORTRETRYIGNORE 0x00000002
@@ -453,6 +465,47 @@ static inline BOOL CreateDirectory(LPCSTR path, void *)
 static inline BOOL DeleteFile(LPCSTR filename)
 {
 	return filename != nullptr && remove(filename) == 0 ? TRUE : FALSE;
+}
+
+static inline BOOL MoveFile(LPCSTR existing_filename, LPCSTR new_filename)
+{
+	return existing_filename != nullptr &&
+		new_filename != nullptr &&
+		rename(existing_filename, new_filename) == 0 ? TRUE : FALSE;
+}
+
+static inline void _splitpath(
+	const char *path,
+	char *drive,
+	char *dir,
+	char *fname,
+	char *ext)
+{
+	if (drive != nullptr) {
+		drive[0] = '\0';
+	}
+
+	const std::string normalized = WasmNormalizePath(path);
+	const std::size_t slash = normalized.find_last_of('/');
+	const std::string directory = slash == std::string::npos ?
+		std::string() :
+		normalized.substr(0, slash + 1);
+	const std::string leaf = slash == std::string::npos ?
+		normalized :
+		normalized.substr(slash + 1);
+	const std::size_t dot = leaf.find_last_of('.');
+
+	if (dir != nullptr) {
+		std::snprintf(dir, _MAX_DIR, "%s", directory.c_str());
+	}
+	if (fname != nullptr) {
+		const std::string stem = dot == std::string::npos ? leaf : leaf.substr(0, dot);
+		std::snprintf(fname, _MAX_FNAME, "%s", stem.c_str());
+	}
+	if (ext != nullptr) {
+		const std::string suffix = dot == std::string::npos ? std::string() : leaf.substr(dot);
+		std::snprintf(ext, _MAX_EXT, "%s", suffix.c_str());
+	}
 }
 
 static inline int LoadString(HINSTANCE, UINT, LPSTR, int)
