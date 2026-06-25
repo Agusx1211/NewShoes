@@ -197,7 +197,7 @@ SeismicSimulationFilterBase::SeismicSimStatusCode DomeStyleSeismicFilter::filter
     }
 
     // stuff the values from the workspace into the heightmap's velocities
-    for (x = 0; x < workspaceWidth; ++x)
+    for (Int x = 0; x < workspaceWidth; ++x)
       for (Int y = 0; y < workspaceWidth; ++y)
     		heightMap->setSeismicZVelocity( centerX - radius + x, centerY - radius + y,  MIN( 9.0f, workspace[  x + workspaceWidth * y ])  );
 

@@ -31,6 +31,7 @@ public:
 
 	virtual XferMode getXferMode() { return m_mode; }
 	virtual void xferVersion(XferVersion *, XferVersion) {}
+	virtual void xferByte(Byte *) {}
 	virtual void xferUnsignedByte(UnsignedByte *) {}
 	virtual void xferInt(Int *) {}
 	virtual void xferUnsignedInt(UnsignedInt *) {}
@@ -40,7 +41,14 @@ public:
 	virtual void xferUser(void *, Int) {}
 	virtual void xferBool(Bool *) {}
 	virtual void xferReal(Real *) {}
+	virtual void xferShort(Short *) {}
 	virtual void xferUnicodeString(UnicodeString *) {}
+	virtual void xferCoord3D(Coord3D *) {}
+	virtual void xferRGBColor(RGBColor *) {}
+	virtual void xferRGBAColorReal(RGBAColorReal *) {}
+	virtual void xferRGBAColorInt(RGBAColorInt *) {}
+	virtual void xferObjectID(ObjectID *) {}
+	virtual void xferDrawableID(DrawableID *) {}
 	virtual void xferSnapshot(class Snapshot *) {}
 	virtual void xferColor(Color *color)
 	{

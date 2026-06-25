@@ -20,6 +20,7 @@
 #include "Common/UnicodeString.h"
 
 enum NameKeyType : int;
+class Object;
 
 namespace rts {
 template <typename T> struct hash
@@ -72,9 +73,16 @@ template <> struct hash<AsciiString>
 
 typedef std::vector<Coord3D> VecCoord3D;
 typedef VecCoord3D::iterator VecCoord3DIt;
+typedef std::vector<ObjectID> ObjectIDVector;
+typedef ObjectIDVector::iterator ObjectIDVectorIterator;
 typedef std::list<AsciiString> AsciiStringList;
 typedef AsciiStringList::iterator AsciiStringListIterator;
 typedef AsciiStringList::const_iterator AsciiStringListConstIterator;
+typedef std::pair<AsciiString, Object *> NamedRequest;
+typedef std::vector<NamedRequest> VecNamedRequests;
+typedef VecNamedRequests::iterator VecNamedRequestsIt;
+typedef std::vector<Bool> BoolVector;
+typedef BoolVector::iterator BoolVectorIterator;
 typedef std::map<NameKeyType, Real, std::less<NameKeyType>> ProductionChangeMap;
 typedef std::map<NameKeyType, VeterancyLevel, std::less<NameKeyType>> ProductionVeterancyMap;
 

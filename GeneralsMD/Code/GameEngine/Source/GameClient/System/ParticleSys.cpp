@@ -299,7 +299,7 @@ Particle::Particle( ParticleSystem *system, const ParticleInfo *info )
 	computeAlphaRate();
 
 	// set up colors
-	for( i=0; i<MAX_KEYFRAMES; i++ )
+	for( int i=0; i<MAX_KEYFRAMES; i++ )
 		m_colorKey[i] = info->m_colorKey[i];
 
 	m_color = m_colorKey[0].color;
@@ -1090,7 +1090,7 @@ ParticleSystem::ParticleSystem( const ParticleSystemTemplate *sysTemplate,
 	for( int i=0; i<MAX_KEYFRAMES; i++ )
 		m_alphaKey[i] = sysTemplate->m_alphaKey[i];
 
-	for( i=0; i<MAX_KEYFRAMES; i++ )
+	for( int i=0; i<MAX_KEYFRAMES; i++ )
 		m_colorKey[i] = sysTemplate->m_colorKey[i];
 
 	/// @todo It is confusing to do this conversion here...
@@ -2327,7 +2327,7 @@ ParticleInfo ParticleSystem::mergeRelatedParticleSystems( ParticleSystem *master
 	for( int i=0; i<MAX_KEYFRAMES; i++ )
 		mergeInfo.m_alphaKey[i] = info->m_alphaKey[i];
 
-	for( i=0; i<MAX_KEYFRAMES; i++ )
+	for( int i=0; i<MAX_KEYFRAMES; i++ )
 		mergeInfo.m_colorKey[i] = info->m_colorKey[i];
 
 	mergeInfo.m_colorScale = info->m_colorScale;
@@ -3439,4 +3439,3 @@ static Real angleBetween(const Coord2D *vecA, const Coord2D *vecB)
 	
 	return -theta;
 }
-

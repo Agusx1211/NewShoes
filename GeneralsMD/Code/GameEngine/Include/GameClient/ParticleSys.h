@@ -50,6 +50,7 @@ class Particle;
 class ParticleSystem;
 class ParticleSystemManager;
 class Drawable;
+class File;
 class Object;
 struct FieldParse;
 class INI;

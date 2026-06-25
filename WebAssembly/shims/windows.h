@@ -125,6 +125,14 @@ struct MSG
 #define _MAX_EXT 256
 #endif
 
+#ifndef UNLEN
+#define UNLEN 256
+#endif
+
+#ifndef MAX_COMPUTERNAME_LENGTH
+#define MAX_COMPUTERNAME_LENGTH 15
+#endif
+
 #define MB_ABORTRETRYIGNORE 0x00000002
 #define MB_ICONHAND 0x00000010
 #define MB_SETFOREGROUND 0x00010000
@@ -382,6 +390,47 @@ static inline BOOL SHGetSpecialFolderPath(HWND, LPSTR path, int, BOOL)
 	std::snprintf(path, _MAX_PATH, "%s", home);
 	return TRUE;
 }
+
+static inline BOOL WasmCopyWin32Identity(const char *value, LPSTR buffer, unsigned long *buffer_len)
+{
+	if (buffer == nullptr || buffer_len == nullptr || value == nullptr || *value == '\0') {
+		return FALSE;
+	}
+
+	const std::size_t length = std::strlen(value);
+	const unsigned long required = static_cast<unsigned long>(length + 1);
+	if (*buffer_len < required) {
+		*buffer_len = required;
+		return FALSE;
+	}
+
+	std::memcpy(buffer, value, length + 1);
+	*buffer_len = required;
+	return TRUE;
+}
+
+static inline BOOL GetUserNameA(LPSTR buffer, unsigned long *buffer_len)
+{
+	const char *user = std::getenv("USER");
+	if (user == nullptr || *user == '\0') {
+		user = std::getenv("LOGNAME");
+	}
+	return WasmCopyWin32Identity(user, buffer, buffer_len);
+}
+
+static inline BOOL GetComputerNameA(LPSTR buffer, unsigned long *buffer_len)
+{
+	const char *host = std::getenv("HOSTNAME");
+	return WasmCopyWin32Identity(host, buffer, buffer_len);
+}
+
+#ifndef GetUserName
+#define GetUserName GetUserNameA
+#endif
+
+#ifndef GetComputerName
+#define GetComputerName GetComputerNameA
+#endif
 
 static inline BOOL RemoveFontResource(LPCSTR)
 {

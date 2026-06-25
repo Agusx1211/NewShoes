@@ -907,11 +907,24 @@ shares structure and follows behind.
       skirmish game options) after adding narrow case wrappers, original
       `GlobalData`/`GameLogic` bridge fields, and localized clang loop-scope /
       callback-cast compatibility fixes.
+- [x] Compile the next original GameClient GUI, particle, terrain, and
+      drawable-update batch in the utility target
+      (`GUI/DisconnectMenu/DisconnectMenu.cpp`,
+      `GUI/EstablishConnectionsMenu/EstablishConnectionsMenu.cpp`,
+      `GUI/GUICallbacks/ControlBarCallback.cpp`,
+      `ControlBarPopupDescription.cpp`, `InGamePopupMessage.cpp`,
+      `Menus/GameInfoWindow.cpp`, `Menus/MapSelectMenu.cpp`,
+      `Menus/QuitMenu.cpp`, `System/ParticleSys.cpp`,
+      `Terrain/TerrainVisual.cpp`, `Drawable/Update/BeaconClientUpdate.cpp`,
+      and `Drawable/Update/SwayClientUpdate.cpp`) after restoring original
+      `STLTypedefs` aliases and extending the temporary `Xfer`,
+      `GlobalData`, and `GameLogic` compile bridges.
 - [ ] Link and smoke-test the original GameClient message translators,
       selection info, EVA/FX list, control-bar scheme, control-bar leaves,
-      in-game chat, keyboard/skirmish/LAN menu behavior, and GameClient
+      in-game chat, keyboard/skirmish/LAN/game-info/map/quit/popup menu
+      behavior, particle/terrain/drawable update behavior, and GameClient
       dispatch after real `GameLogic`, `InGameUI`, `MessageStream`, input,
-      FX/display, GameInfo/LAN, and original INI/GlobalData runtime paths
+      FX/display, GameInfo/LAN, and original INI/GlobalData/Xfer runtime paths
       replace the current target-local compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
@@ -986,17 +999,20 @@ shares structure and follows behind.
 - [x] Compile original `GameNetwork/LANAPICallbacks.cpp` into the wasm core
       archive after adding current `GlobalData` map/FPS bridge fields and the
       original `GameLogic` game-mode / clear-data compile surface.
-- [ ] Link and smoke-test the broader GameNetwork command-message slice after
-      the real player/message, packet serialization, and browser transport
-      dependencies are available beyond the current compile-only coverage.
+- [x] Compile original `GameNetwork/LANAPI.cpp` and
+      `GameNetwork/ConnectionManager.cpp` into the wasm core archive after
+      adding browser-safe Win32 user/computer-name fallbacks, original network
+      run-ahead `GlobalData` bridge fields, original `GameLogic` progress
+      hooks, and narrow clang loop-scope fixes.
+- [ ] Link and smoke-test the broader GameNetwork command-message and
+      connection-manager slice after the real player/message, packet
+      serialization, game-start progress, and browser transport dependencies
+      are available beyond the current compile-only coverage.
 - [ ] Link and smoke-test original GameNetwork setup/LAN/config behavior after
       the real `GlobalData`, `MapCache`, `MultiplayerSettings`,
       `PlayerTemplateStore`, `GameText`, `LANAPI`, `NetworkInterface`,
       disconnect UI, and GameLogic frame state surfaces replace the current
       compile-only singleton surface.
-- [ ] Compile original `GameNetwork/LANAPI.cpp` after the browser local-user /
-      player-identity contract replaces Win32 `UNLEN` / username lookup and the
-      LAN transport surface is ready.
 - [ ] Link and smoke-test original `GameNetwork/LANAPICallbacks.cpp` after the
       real `GameLogic::isInGame`, LAN UI, game setup, and transport callback
       surfaces are available; current coverage is compile-only.

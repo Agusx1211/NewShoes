@@ -20,11 +20,19 @@ public:
 		m_doubleClickAttackMove(FALSE),
 		m_rightMouseAlwaysScrolls(FALSE),
 		m_allowExitOutOfMovies(FALSE),
+		m_animateWindows(TRUE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
 		m_keyboardScrollFactor(1.0f),
+		m_keyboardCameraRotateSpeed(1.0f),
 		m_saveCameraInReplay(FALSE),
 		m_TiVOFastMode(FALSE),
+		m_useFX(TRUE),
+		m_particleScale(1.0f),
+		m_maxParticleCount(5000),
+		m_maxFieldParticleCount(100),
+		m_baseValuePerSupplyBox(75),
+		m_maxLineBuildObjects(50),
 		m_netMinPlayers(1),
 		m_exeCRC(0),
 		m_iniCRC(0),
@@ -36,6 +44,8 @@ public:
 		m_networkFPSHistoryLength(30),
 		m_networkLatencyHistoryLength(200),
 		m_networkCushionHistoryLength(10),
+		m_networkRunAheadMetricsTime(2000),
+		m_networkRunAheadSlack(10),
 		m_networkDisconnectTime(5000),
 		m_networkPlayerTimeoutTime(60000),
 		m_networkDisconnectScreenNotifyTime(15000),
@@ -58,11 +68,19 @@ public:
 	Bool m_doubleClickAttackMove;
 	Bool m_rightMouseAlwaysScrolls;
 	Bool m_allowExitOutOfMovies;
+	Bool m_animateWindows;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
 	Real m_keyboardScrollFactor;
+	Real m_keyboardCameraRotateSpeed;
 	Bool m_saveCameraInReplay;
 	Bool m_TiVOFastMode;
+	Bool m_useFX;
+	Real m_particleScale;
+	Int m_maxParticleCount;
+	Int m_maxFieldParticleCount;
+	Int m_baseValuePerSupplyBox;
+	Int m_maxLineBuildObjects;
 	Int m_netMinPlayers;
 	UnsignedInt m_exeCRC;
 	UnsignedInt m_iniCRC;
@@ -74,6 +92,8 @@ public:
 	UnsignedInt m_networkFPSHistoryLength;
 	UnsignedInt m_networkLatencyHistoryLength;
 	UnsignedInt m_networkCushionHistoryLength;
+	UnsignedInt m_networkRunAheadMetricsTime;
+	UnsignedInt m_networkRunAheadSlack;
 	UnsignedInt m_networkDisconnectTime;
 	UnsignedInt m_networkPlayerTimeoutTime;
 	UnsignedInt m_networkDisconnectScreenNotifyTime;
