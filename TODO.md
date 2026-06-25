@@ -23,8 +23,10 @@ shares structure and follows behind.
 ### Asset pipeline
 - [x] Verify `tools/mode1_2352_to_iso.mjs` converts both disc `.bin` images.
 - [x] Verify `tools/extract_zh_big_sample.sh` extracts INIZH.big (needs `7z`).
-- [ ] Extract the full set of needed BIGs (INIZH, W3DZH, AudioZH, TexturesZH,
-      Maps, Speech, etc.) and document which are required to boot.
+- [x] Extract the inventoried Zero Hour runtime BIG set (INIZH, W3DZH, AudioZH,
+      TexturesZH, MapsZH, SpeechZH, language archives, etc.) and document it.
+- [ ] Prove the exact minimum archive set required to boot through the original
+      engine startup path.
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.

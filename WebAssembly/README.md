@@ -17,6 +17,8 @@ Asset tooling for obtaining real game data to test the port against:
 - `tools/mode1_2352_to_iso.mjs` — convert raw MODE1/2352 disc images to ISO.
 - `tools/extract_zh_big_sample.sh` — extract `INIZH.big` from the disc images in
   `../assets` (`npm run extract:real-big`). Needs `7z`.
+- `tools/extract_zh_runtime_archives.sh` — extract the current runtime BIG
+  inventory from the local disc images (`npm run extract:runtime-archives`).
 - `harness/` — a minimal browser harness with a black canvas and JS RPC stub for
   boot/log/state/screenshot commands. This is port infrastructure only; it does
   not implement or simulate game behavior.

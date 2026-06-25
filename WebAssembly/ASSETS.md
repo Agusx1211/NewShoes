@@ -37,11 +37,36 @@ server. Do not ship default replacement data.
 
 ## Required Archives
 
-The current verified sample is `INIZH.big`, extracted from the user's local disc
-image by `npm run verify:assets`.
+The current runtime BIG inventory can be extracted from the user's local disc
+images with:
 
-Before the port can boot the real game, inventory and extract the full Zero Hour
-runtime archive set from the user's discs. Expected groups include INI/data,
-language/text, W3D models, textures, maps, audio, speech, and video. Keep the
-exact required archive list in this file as it is proven by the original engine
-startup path.
+```sh
+npm run extract:runtime-archives
+```
+
+The script extracts these archives into ignored `artifacts/real-assets/` and
+checks that every output has a nonempty `BIGF` archive header.
+
+| Archive | Source | Role |
+|---|---|---|
+| `INIZH.big` | `Data1.cab` | Zero Hour INI/data definitions |
+| `W3DZH.big` | `Data1.cab` | Zero Hour W3D models |
+| `W3DEnglishZH.big` | `Language.cab` | English-localized W3D/UI assets |
+| `TexturesZH.big` | `Data1.cab` | Zero Hour textures |
+| `TerrainZH.big` | `Data1.cab` | Terrain assets |
+| `WindowZH.big` | `Data1.cab` | Shell/control bar/window assets |
+| `ShadersZH.big` | `Data1.cab` | Shader package |
+| `MapsZH.big` | `Data1.cab` | Zero Hour maps |
+| `AudioZH.big` | `Data1.cab` | Shared Zero Hour audio |
+| `AudioEnglishZH.big` | `Language.cab` | English localized audio |
+| `SpeechZH.big` | `Data1.cab` | Shared speech data |
+| `SpeechEnglishZH.big` | `Language.cab` | English localized speech |
+| `MusicZH.big` | `Data1.cab` | Zero Hour music |
+| `Music.big` | `Data1.cab` | Base shared music |
+| `EnglishZH.big` | `Language.cab` | English text/localization data |
+| `GensecZH.big` | Disc 1 / `Data1.cab` | Zero Hour security/archive data |
+| `Gensec.big` | Disc 2 | Base security/archive data |
+
+This is the current runtime archive set from the installer media, not yet the
+minimum boot set. The exact boot-minimum list must be proven after the original
+engine startup and file-system paths are linked into wasm.
