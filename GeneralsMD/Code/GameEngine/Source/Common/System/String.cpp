@@ -51,6 +51,7 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "Common/GameMemory.h"
 #include "Common/string.h"
 
 // 'assignment within condition expression'.

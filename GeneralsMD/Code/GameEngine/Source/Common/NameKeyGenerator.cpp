@@ -30,6 +30,9 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "Common/INI.h"
+#include "Common/NameKeyGenerator.h"
+
 // Public Data ////////////////////////////////////////////////////////////////////////////////////
 NameKeyGenerator *TheNameKeyGenerator = NULL;  ///< name key gen. singleton
 

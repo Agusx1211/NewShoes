@@ -445,13 +445,29 @@ shares structure and follows behind.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
-- [ ] Unblock original `Common/Xfer` by bringing up original `Common/INI`,
-      `Common/BitFlagsIO`, `Common/GameState`, and `Common/Upgrade` dependencies
-      instead of expanding the temporary `Common/Xfer.h` shim.
-- [ ] Compile original save-game `Common/System/SaveGame/GameState.cpp` and
-      `GameStateMap.cpp` after the original `Common/Xfer` /
-      `Common/BitFlagsIO` include cycle is resolved and the real save/load
-      source bodies link.
+- [x] Compile original `Common/System/Xfer.cpp`, `XferCRC.cpp`,
+      `XferLoad.cpp`, and `XferSave.cpp` in the real-header compile frontier
+      after resolving the original `Common/Xfer` / `Common/BitFlagsIO` include
+      cycle and adding the direct `KindOf` / WWMath matrix dependencies.
+- [x] Promote the easy original low-level Common sources into the real-header
+      compile frontier after replacing precompiled-header assumptions with
+      direct includes: `BitFlags.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`,
+      `Language.cpp`, `MessageStream.cpp`, `MultiplayerSettings.cpp`,
+      `NameKeyGenerator.cpp`, `PartitionSolver.cpp`, `RandomValue.cpp`,
+      `TerrainTypes.cpp`, `crc.cpp`, `version.cpp`, and the browser-buildable
+      `System` leaves for strings, compression/data chunks, core game/type
+      tables, geometry, masks, lists, trig, quoted printable, subsystem
+      interface, and encryption.
+- [x] Compile original save-game `Common/System/SaveGame/GameState.cpp` and
+      `GameStateMap.cpp` in the real-header compile frontier after adding the
+      browser Win32 date/time/current-directory compatibility surface.
+- [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
+      `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
+      the full snapshot subsystem can link into the runtime.
+- [ ] Promote the remaining non-device `Common` core sources from
+      `zh_gameengine_common_core` into the real-header compile frontier after
+      replacing target-local archive/audio/persistence singleton glue with the
+      real browser runtime contracts.
 - [ ] Exercise original `Common/System/FileSystem.cpp` archive lookup,
       `doesFileExist`, directory listing, file-info, and music-CD paths after a
       concrete browser `ArchiveFileSystem` / audio layer replaces the current
@@ -615,10 +631,12 @@ shares structure and follows behind.
       `GlobalData` header dependencies.
 - [x] Compile original `Common/RTS/ScoreKeeper.cpp` in the real-header compile
       frontier after related `GameLogic`/Thing declarations are reachable.
-- [ ] Compile original `Common/RTS/Player.cpp`, `TunnelTracker.cpp`, and
-      `ResourceGatheringManager.cpp` after the `AIPathfind.h` `PathfindCell`
-      contract, remaining clang loop-scope issues, and resource-manager memory
-      pool/STL dependencies are resolved through original headers.
+- [x] Compile original `Common/RTS/ResourceGatheringManager.cpp` in the
+      real-header compile frontier after making its header self-contained for
+      memory-pool and STL list dependencies.
+- [ ] Compile original `Common/RTS/Player.cpp` and `TunnelTracker.cpp` after
+      the `AIPathfind.h` `PathfindCell` contract and remaining clang
+      loop-scope issues are resolved through original headers.
 - [ ] Link and smoke-test original RTS action/team/score/academy behavior after
       the full `Player`, `Thing`, object, `GameLogic`, control-bar, and UI
       surfaces replace the current compile-only frontier.
@@ -630,26 +648,30 @@ shares structure and follows behind.
       `PartitionManager` header loop-scope issue, `AIPathfind.h`
       `PathfindCell` contract, and `GlobalData::m_maxLineBuildObjects`
       dependency are resolved through original headers.
-- [ ] Compile original `Common/CommandLine.cpp` after the real `GlobalData`
-      startup/display/audio/map/benchmark fields and terrain visual map-path
-      conversion dependencies are available.
+- [x] Compile original `Common/CommandLine.cpp` in the real-header compile
+      frontier after making the real `GlobalData` include explicit and adding
+      the POSIX-backed `_stat` compatibility aliases.
 - [x] Compile original `Common/StateMachine.cpp` in the real-header compile
       frontier once the real `Xfer::xferObjectID` and `Xfer::xferCoord3D`
       declarations are reachable.
 - [ ] Link and smoke-test original `Common/StateMachine.cpp` save/load behavior
-      after the original `Common/Xfer` source bodies compile and `ObjectID` /
-      `Coord3D` xfer routes are verified.
-- [x] Compile original `Common/MessageStream.cpp` after resolving its clang
-      loop-scope issue while preserving the original argument traversal logic.
+      after `ObjectID` / `Coord3D` xfer routes are verified in the linked
+      runtime.
+- [x] Compile original `Common/MessageStream.cpp` in the real-header compile
+      frontier after resolving its clang loop-scope issue while preserving the
+      original argument traversal logic.
 - [ ] Link and smoke-test original message-stream behavior after the real
       `Thing`, player/list, recorder, InGameUI, GameLogic, and network command
       dependencies replace the current compile-only surface.
 - [x] Compile original `Common/StatsCollector.cpp` in the real-header compile
       frontier after making `StatsCollector.h` self-contained for
       `AsciiString` and engine basic types.
-- [ ] Compile original `Common/GlobalData.cpp` after GameLogic AI command,
-      science, weapon, guard-mode, damage/player-mask, and related enum/header
-      dependencies are available.
+- [x] Compile original `Common/GlobalData.cpp` in the real-header compile
+      frontier after making the real `GlobalData` include explicit and mapping
+      the user-data folder lookup to the browser/POSIX platform shim.
+- [ ] Link and smoke-test original `GlobalData` defaults, user-data path setup,
+      and command-line mutation after the linked runtime replaces the
+      target-local `Common/GlobalData.h` shim.
 - [ ] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
       SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
       mapped to browser-safe networking interfaces.
@@ -669,6 +691,11 @@ shares structure and follows behind.
 - [x] Compile original `Common/GameLOD.cpp` after the particle-priority,
       TerrainVisual/GameClient, and W3D collision include dependencies are
       available.
+- [x] Compile original `Common/GameMain.cpp` in the real-header compile
+      frontier.
+- [ ] Compile original `Common/GameEngine.cpp` after the WOL browser / ATL
+      dependency (`atlbase.h` through `GameNetwork/WOLBrowser/WebBrowser.h`)
+      has a browser integration contract.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
 - [x] Compile original `Common/System/Radar.cpp` in the real-header compile
@@ -697,8 +724,10 @@ shares structure and follows behind.
       ATL dependency (`atlbase.h`) has a browser URL integration contract.
 - [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without
       target-local parser/Xfer/GameLogic shims.
-- [ ] `GameEngine.cpp`, `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`,
-      `RandomValue`, and `crc` compile as part of a broader engine archive.
+- [x] `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`, `RandomValue`, and
+      `crc` compile as part of the real-header compile frontier.
+- [ ] `GameEngine.cpp` compiles as part of a broader engine archive after its
+      WOL browser / ATL dependency is replaced or re-targeted.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.

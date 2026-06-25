@@ -28,6 +28,7 @@
 #include "Common/ArchiveFileSystem.h"
 #include "Common/CommandLine.h"
 #include "Common/CRCDebug.h"
+#include "Common/GlobalData.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/Version.h"
 #include "GameClient/TerrainVisual.h" // for TERRAIN_LOD_MIN definition
@@ -1293,5 +1294,4 @@ void parseCommandLine(int argc, char *argv[])
 
 	TheArchiveFileSystem->loadMods();
 }
-
 

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <ctime>
 #include <cwchar>
+#include <cmath>
 #include <dirent.h>
 #include <fnmatch.h>
 #include <mutex>
@@ -91,6 +92,10 @@ struct MSG
 #endif
 #define NULL 0
 
+#ifndef _isnan
+#define _isnan std::isnan
+#endif
+
 #ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE reinterpret_cast<HANDLE>(-1)
 #endif
@@ -143,6 +148,12 @@ struct MSG
 #define ERROR_NO_MORE_ITEMS 259
 #define CP_ACP 0
 #define VK_RETURN 0x0D
+#define LOCALE_SYSTEM_DEFAULT 0x0800
+#define DATE_SHORTDATE 0x00000001
+#define TIME_NOSECONDS 0x00000002
+#define TIME_NOTIMEMARKER 0x00000004
+#define TIME_FORCE24HOURFORMAT 0x00000008
+#define CSIDL_PERSONAL 0x0005
 #define FILE_ATTRIBUTE_READONLY 0x00000001
 #define FILE_ATTRIBUTE_DIRECTORY 0x00000010
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
@@ -157,6 +168,14 @@ struct MSG
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
 #define PM_NOREMOVE 0x0000
 #define PM_REMOVE 0x0001
+
+#ifndef _stat
+#define _stat stat
+#endif
+
+#ifndef _S_IFDIR
+#define _S_IFDIR S_IFDIR
+#endif
 
 struct FILETIME
 {
@@ -350,6 +369,20 @@ static inline int AddFontResource(LPCSTR)
 	return 1;
 }
 
+static inline BOOL SHGetSpecialFolderPath(HWND, LPSTR path, int, BOOL)
+{
+	if (path == nullptr) {
+		return FALSE;
+	}
+
+	const char *home = std::getenv("HOME");
+	if (home == nullptr || *home == '\0') {
+		home = ".";
+	}
+	std::snprintf(path, _MAX_PATH, "%s", home);
+	return TRUE;
+}
+
 static inline BOOL RemoveFontResource(LPCSTR)
 {
 	return TRUE;
@@ -427,6 +460,31 @@ static inline DWORD GetTickCount()
 	return static_cast<DWORD>(std::time(nullptr) * 1000);
 }
 
+static inline void GetLocalTime(SYSTEMTIME *system_time)
+{
+	if (system_time == nullptr) {
+		return;
+	}
+
+	const std::time_t now = std::time(nullptr);
+	std::tm local = {};
+#if defined(__EMSCRIPTEN__) || defined(__unix__) || defined(__APPLE__)
+	localtime_r(&now, &local);
+#else
+	if (std::tm *tmp = std::localtime(&now)) {
+		local = *tmp;
+	}
+#endif
+	system_time->wYear = static_cast<WORD>(local.tm_year + 1900);
+	system_time->wMonth = static_cast<WORD>(local.tm_mon + 1);
+	system_time->wDayOfWeek = static_cast<WORD>(local.tm_wday);
+	system_time->wDay = static_cast<WORD>(local.tm_mday);
+	system_time->wHour = static_cast<WORD>(local.tm_hour);
+	system_time->wMinute = static_cast<WORD>(local.tm_min);
+	system_time->wSecond = static_cast<WORD>(local.tm_sec);
+	system_time->wMilliseconds = 0;
+}
+
 static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *counter)
 {
 	if (counter != nullptr) {
@@ -472,6 +530,129 @@ static inline std::string WasmNormalizePath(const char *path)
 		}
 	}
 	return normalized;
+}
+
+static inline DWORD GetCurrentDirectory(DWORD buffer_len, LPSTR buffer)
+{
+	if (buffer == nullptr || buffer_len == 0) {
+		return 0;
+	}
+
+	char current[_MAX_PATH];
+	if (getcwd(current, sizeof(current)) == nullptr) {
+		return 0;
+	}
+
+	const std::size_t length = std::strlen(current);
+	if (length + 1 > static_cast<std::size_t>(buffer_len)) {
+		return static_cast<DWORD>(length + 1);
+	}
+
+	std::snprintf(buffer, static_cast<std::size_t>(buffer_len), "%s", current);
+	return static_cast<DWORD>(length);
+}
+
+static inline BOOL SetCurrentDirectory(LPCSTR path)
+{
+	if (path == nullptr) {
+		return FALSE;
+	}
+
+	const std::string normalized = WasmNormalizePath(path);
+	return chdir(normalized.c_str()) == 0 ? TRUE : FALSE;
+}
+
+static inline int WasmFormatSystemDate(const SYSTEMTIME *time, char *buffer, int buffer_len)
+{
+	if (time == nullptr || buffer_len <= 0) {
+		return 0;
+	}
+	return std::snprintf(
+		buffer,
+		static_cast<std::size_t>(buffer_len),
+		"%04u-%02u-%02u",
+		static_cast<unsigned>(time->wYear),
+		static_cast<unsigned>(time->wMonth),
+		static_cast<unsigned>(time->wDay));
+}
+
+static inline int WasmFormatSystemTime(const SYSTEMTIME *time, char *buffer, int buffer_len)
+{
+	if (time == nullptr || buffer_len <= 0) {
+		return 0;
+	}
+	return std::snprintf(
+		buffer,
+		static_cast<std::size_t>(buffer_len),
+		"%02u:%02u",
+		static_cast<unsigned>(time->wHour),
+		static_cast<unsigned>(time->wMinute));
+}
+
+static inline int GetDateFormat(
+	DWORD,
+	DWORD,
+	const SYSTEMTIME *time,
+	LPCSTR,
+	LPSTR buffer,
+	int buffer_len)
+{
+	return WasmFormatSystemDate(time, buffer, buffer_len);
+}
+
+static inline int GetTimeFormat(
+	DWORD,
+	DWORD,
+	const SYSTEMTIME *time,
+	LPCSTR,
+	LPSTR buffer,
+	int buffer_len)
+{
+	return WasmFormatSystemTime(time, buffer, buffer_len);
+}
+
+static inline int GetDateFormatW(
+	DWORD,
+	DWORD,
+	const SYSTEMTIME *time,
+	const WCHAR *,
+	WCHAR *buffer,
+	int buffer_len)
+{
+	char ascii[32];
+	const int written = WasmFormatSystemDate(time, ascii, sizeof(ascii));
+	if (written <= 0 || buffer == nullptr || buffer_len <= 0) {
+		return written;
+	}
+
+	const int count = written < buffer_len ? written : buffer_len - 1;
+	for (int index = 0; index < count; ++index) {
+		buffer[index] = static_cast<WCHAR>(ascii[index]);
+	}
+	buffer[count] = 0;
+	return count;
+}
+
+static inline int GetTimeFormatW(
+	DWORD,
+	DWORD,
+	const SYSTEMTIME *time,
+	const WCHAR *,
+	WCHAR *buffer,
+	int buffer_len)
+{
+	char ascii[32];
+	const int written = WasmFormatSystemTime(time, ascii, sizeof(ascii));
+	if (written <= 0 || buffer == nullptr || buffer_len <= 0) {
+		return written;
+	}
+
+	const int count = written < buffer_len ? written : buffer_len - 1;
+	for (int index = 0; index < count; ++index) {
+		buffer[index] = static_cast<WCHAR>(ascii[index]);
+	}
+	buffer[count] = 0;
+	return count;
 }
 
 static inline void WasmSplitFindPattern(const char *search, std::string &directory, std::string &pattern)

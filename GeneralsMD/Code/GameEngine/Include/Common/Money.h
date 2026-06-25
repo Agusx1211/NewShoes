@@ -51,6 +51,8 @@
 #include "Common/Debug.h"
 #include "Common/Snapshot.h"
 
+class INI;
+
 // ----------------------------------------------------------------------------------------------
 /**
 	How much "money" (Tiberium, Gems, Magic Resource Boxes, whatever) the Player has.
@@ -103,4 +105,3 @@ private:
 };
 
 #endif // _MONEY_H_
-

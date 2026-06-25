@@ -36,7 +36,6 @@
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "Common/STLTypedefs.h"
-#include "Common/ModelState.h"
 #include "Common/Science.h"
 #include "Common/Upgrade.h"
 
@@ -185,5 +184,7 @@ protected:
 	AsciiString m_identifier;				///< the string identifier
 			
 };
+
+#include "Common/ModelState.h"
 
 #endif // __XFER_H_

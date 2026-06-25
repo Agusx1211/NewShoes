@@ -33,8 +33,10 @@
 #ifndef RESOURCE_GATHER_MANAGER_H
 #define RESOURCE_GATHER_MANAGER_H
 
+#include "Common/GameMemory.h"
 #include "Common/GameType.h"
 #include "Common/Snapshot.h"
+#include "Common/STLTypedefs.h"
 
 class Object;
 

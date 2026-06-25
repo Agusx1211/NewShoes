@@ -32,6 +32,10 @@
 #ifndef __DISCRETECIRCLE_H__
 #define __DISCRETECIRCLE_H__
 
+#include "Lib/BaseType.h"
+
+#include <vector>
+
 //-------------------------------------------------------------------------------------------------
 /**
 	One horizontal line of the circle we are going to generate, the points drawn should be from 
@@ -76,4 +80,3 @@ class DiscreteCircle
 };
 
 #endif /* __DISCRETECIRCLE_H__ */
-

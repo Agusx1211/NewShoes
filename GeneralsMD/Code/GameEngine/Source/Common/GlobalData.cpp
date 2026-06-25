@@ -42,6 +42,7 @@
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameAudio.h"
+#include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/registry.h"
 #include "Common/UserPreferences.h"
@@ -1253,4 +1254,3 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	TheWritableGlobalData->m_xResolution = xres;
 	TheWritableGlobalData->m_yResolution = yres;
 }
-

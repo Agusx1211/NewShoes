@@ -44,7 +44,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "Common/AsciiString.h"
 #include "Common/CriticalSection.h"
+#include "Common/GameMemory.h"
+#include "Common/UnicodeString.h"
 
 
 // -----------------------------------------------------

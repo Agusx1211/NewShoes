@@ -28,6 +28,7 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "Common/Debug.h"
 #include "Common/GameCommon.h"
 
 const char *TheVeterancyNames[] = 
@@ -63,4 +64,3 @@ Real normalizeAngle(Real angle)
 
 	return angle;
 }
-

@@ -47,6 +47,7 @@
 
 #include "PreRTS.h"
 
+#include "Common/GameMemory.h"
 #include "Common/List.h"
 
 // 'assignment within condition expression'.

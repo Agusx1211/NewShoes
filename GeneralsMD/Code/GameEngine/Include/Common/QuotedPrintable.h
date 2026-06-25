@@ -32,6 +32,9 @@
 #ifndef __QUOTEDPRINTABLE_H__
 #define __QUOTEDPRINTABLE_H__
 
+#include "Common/AsciiString.h"
+#include "Common/UnicodeString.h"
+
 UnicodeString QuotedPrintableToUnicodeString(AsciiString original);
 AsciiString UnicodeStringToQuotedPrintable(UnicodeString original);
 

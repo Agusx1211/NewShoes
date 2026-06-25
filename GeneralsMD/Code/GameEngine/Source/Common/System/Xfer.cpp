@@ -33,8 +33,10 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 #include "Common/Upgrade.h"
 #include "Common/GameState.h"
+#include "Common/KindOf.h"
 #include "Common/Xfer.h"
 #include "Common/BitFlagsIO.h"
+#include "WWMath/Matrix3D.h"
 
 #ifdef _INTERNAL
 // for occasional debugging...
@@ -865,5 +867,3 @@ void Xfer::xferMatrix3D( Matrix3D* mtx )
 	xferReal(&tmp2.Z);
 	xferReal(&tmp2.W);
 }
-
-

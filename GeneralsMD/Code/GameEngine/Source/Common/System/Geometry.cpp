@@ -35,6 +35,7 @@
 #include "Common/INI.h"
 #include "Common/RandomValue.h"
 #include "Common/Xfer.h"
+#include "GameLogic/LogicRandomValue.h"
 
 #ifdef _INTERNAL
 // for occasional debugging...
