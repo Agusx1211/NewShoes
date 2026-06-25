@@ -9,10 +9,11 @@
     "extract:runtime-archives": "bash tools/extract_zh_runtime_archives.sh",
     "verify:assets": "node tools/verify_real_assets.mjs",
     "serve:harness": "node harness/serve.mjs",
-    "test:all": "npm run build:wasm && node dist/compression-eac-smoke.cjs && node dist/wwdebug-core-smoke.cjs && EXPECT_WASM=1 node harness/smoke.mjs",
+    "test:all": "npm run build:wasm && node dist/compression-eac-smoke.cjs && node dist/wwdebug-core-smoke.cjs && node dist/wwmath-core-smoke.cjs && EXPECT_WASM=1 node harness/smoke.mjs",
     "test:compression-eac": "npm run build:wasm && node dist/compression-eac-smoke.cjs",
     "test:refpack": "npm run test:compression-eac",
     "test:wwdebug-core": "npm run build:wasm && node dist/wwdebug-core-smoke.cjs",
+    "test:wwmath-core": "npm run build:wasm && node dist/wwmath-core-smoke.cjs",
     "test:harness": "node harness/smoke.mjs",
     "test:wasm": "npm run build:wasm && EXPECT_WASM=1 node harness/smoke.mjs"
   },

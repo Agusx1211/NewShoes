@@ -14,7 +14,7 @@ target and should be compiled or re-targeted for wasm.
 | Component | Current port status | Notes |
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
-| `WWVegas/WWMath` | Not started | Core math/collision. Depends on `always.h`, `osdep.h`, `WWDebug`, save/load headers, D3DX types, and contains x86 inline assembly in some files. |
+| `WWVegas/WWMath` | Partial | Original `pot.cpp` and `tri.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, and triangle containment. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
 | `WWVegas/WWLib` | Not started | Runtime utility/container/string/file support used broadly by engine and W3D. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
@@ -53,11 +53,15 @@ The wasm CMake skeleton currently builds:
   wasm static library.
 - `zh_wwdebug_core`: original `WWVegas/WWDebug/wwdebug.cpp` compiled into a
   wasm static library with targeted Win32/exception shims.
+- `zh_wwmath_core`: original `WWVegas/WWMath/pot.cpp` and `tri.cpp` compiled
+  into a wasm static library with minimal WWVegas compiler shims.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
 - `wwdebug-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWDebug message, assert, trigger, and profile handlers.
+- `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
+  WWMath power-of-two helpers, vector operations, and triangle containment.
 
 ## Next Compile Order
 

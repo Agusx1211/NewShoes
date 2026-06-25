@@ -52,6 +52,8 @@ shares structure and follows behind.
 - [ ] Replace/neutralize MSVC-specific pragmas, `__forceinline`, SEH, inline asm.
 - [x] Replace the `WWDebug` x86 breakpoint path with an Emscripten/clang trap
       fallback while preserving the original MSVC path.
+- [x] Add a minimal WWVegas compiler shim for `__cdecl`/global new guards used
+      by `always.h` under clang/Emscripten.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
@@ -60,7 +62,9 @@ shares structure and follows behind.
       source and round-trip smoke runs under wasm.
 - [ ] Full `Compression` manager (RefPack/zlib/LZH/etc.) compiles and is
       unit-checked against real BIG data.
-- [ ] `WWVegas/WWMath` compiles; spot-check vector/matrix results.
+- [x] `WWVegas/WWMath` core `pot.cpp`/`tri.cpp` compiles and smoke-tests
+      power-of-two helpers, vector math, and triangle containment under wasm.
+- [ ] Full `WWVegas/WWMath` compiles; spot-check vector/matrix results.
 - [ ] `WWVegas/WWLib` (containers, string, ini, file abstractions) compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
       assert, trigger, and profile handlers under wasm.

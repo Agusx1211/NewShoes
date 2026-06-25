@@ -15,7 +15,10 @@ set(ZH_CODE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../GeneralsMD/Code")
 set(COMPRESSION_EAC_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression/EAC")
 set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac_port.h")
 set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
+set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
+set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
+set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
@@ -63,6 +66,26 @@ target_compile_options(zh_wwdebug_core PRIVATE
   -Wall
   -Wextra
   -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+add_library(zh_wwmath_core STATIC
+  "${WWMATH_DIR}/pot.cpp"
+  "${WWMATH_DIR}/tri.cpp"
+)
+
+target_include_directories(zh_wwmath_core PUBLIC
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwmath_core PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-logical-not-parentheses
+  -Wno-unknown-pragmas
+  -Wno-unused-function
   -Wno-unused-parameter
 )
 
@@ -140,6 +163,32 @@ target_compile_options(wwdebug-core-smoke PRIVATE
 )
 
 target_link_options(wwdebug-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwmath-core-smoke
+  tests/wwmath_core_smoke.cpp
+)
+
+set_target_properties(wwmath-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwmath-core-smoke PRIVATE
+  zh_wwmath_core
+)
+
+target_compile_options(wwmath-core-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-logical-not-parentheses
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwmath-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
