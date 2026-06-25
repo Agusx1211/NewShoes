@@ -817,13 +817,20 @@ target_link_libraries(zh_wwutil PUBLIC
 
 add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/MemoryInit.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/AsciiString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/UnicodeString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SubsystemInterface.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/GameType.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/GameCommon.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Trig.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/QuickTrig.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/List.cpp"
+  "${GAMEENGINE_COMMON_DIR}/DiscreteCircle.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Bezier/BezierSegment.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Bezier/BezFwdIterator.cpp"
+  "${GAMEENGINE_COMMON_DIR}/PartitionSolver.cpp"
   "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
   "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
   "${GAMEENGINE_COMMON_DIR}/crc.cpp"
@@ -1573,4 +1580,6 @@ target_link_options(gameengine-common-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
 )

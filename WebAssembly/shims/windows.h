@@ -58,6 +58,10 @@ struct LARGE_INTEGER
 #define GMEM_MOVEABLE 0x0002
 #define GMEM_FIXED 0x0000
 
+#ifndef _MAX_PATH
+#define _MAX_PATH 260
+#endif
+
 #define MB_ABORTRETRYIGNORE 0x00000002
 #define MB_ICONHAND 0x00000010
 #define MB_SETFOREGROUND 0x00010000
@@ -217,6 +221,35 @@ static inline DWORD GetCurrentThreadId()
 {
 	return 1;
 }
+
+static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)
+{
+	if (buffer == nullptr || size == 0) {
+		return 0;
+	}
+
+	const char fallback[] = "cnc-port.exe";
+	const char *path = fallback;
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
+	char resolved[_MAX_PATH];
+	const ssize_t length = readlink("/proc/self/exe", resolved, sizeof(resolved) - 1);
+	if (length > 0) {
+		resolved[length] = '\0';
+		path = resolved;
+	}
+#endif
+	const std::size_t path_length = std::strlen(path);
+	const std::size_t copy_length = path_length < static_cast<std::size_t>(size - 1) ?
+		path_length :
+		static_cast<std::size_t>(size - 1);
+	std::memcpy(buffer, path, copy_length);
+	buffer[copy_length] = '\0';
+	return static_cast<DWORD>(copy_length);
+}
+
+#ifndef GetModuleFileName
+#define GetModuleFileName GetModuleFileNameA
+#endif
 
 static inline DWORD GetTickCount()
 {

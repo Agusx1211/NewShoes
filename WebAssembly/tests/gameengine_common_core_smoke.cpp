@@ -5,10 +5,15 @@
 #include "PreRTS.h"
 
 #include "Common/AsciiString.h"
+#include "Common/BezierSegment.h"
 #include "Common/CRC.h"
+#include "Common/DiscreteCircle.h"
+#include "Common/GameCommon.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
+#include "Common/List.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/PartitionSolver.h"
 #include "Common/QuickTrig.h"
 #include "Common/RandomValue.h"
 #include "Common/SubsystemInterface.h"
@@ -19,27 +24,14 @@
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 
-void userMemoryManagerGetDmaParms(Int *numSubPools, const PoolInitRec **pParms)
-{
-	*numSubPools = 0;
-	*pParms = nullptr;
-}
-
-void userMemoryManagerInitPools()
-{
-}
-
-void userMemoryAdjustPoolSize(const char *, Int &initialAllocationCount, Int &overflowAllocationCount)
-{
-	if (initialAllocationCount <= 0) {
-		initialAllocationCount = 64;
-	}
-	if (overflowAllocationCount < 0) {
-		overflowAllocationCount = 64;
-	}
-}
-
 namespace {
+struct Scanline
+{
+	Int x_start;
+	Int x_end;
+	Int y;
+};
+
 bool expect(bool condition, const char *message)
 {
 	if (!condition) {
@@ -49,9 +41,24 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+void collect_scanline(Int x_start, Int x_end, Int y, void *context)
+{
+	auto *lines = static_cast<std::vector<Scanline> *>(context);
+	lines->push_back({ x_start, x_end, y });
+}
+
 bool near(Real actual, Real expected, Real epsilon = 0.015f)
 {
 	return std::fabs(actual - expected) <= epsilon;
+}
+
+bool exercise_memory_init()
+{
+	return expect(TheDynamicMemoryAllocator != nullptr, "dynamic memory allocator missing") &&
+		expect(TheDynamicMemoryAllocator->getDmaMemoryPoolCount() == 7,
+			"original MemoryInit DMA pool table was not linked") &&
+		expect(TheDynamicMemoryAllocator->getNthDmaMemoryPool(0)->getAllocationSize() == 16,
+			"original MemoryInit first DMA pool size changed");
 }
 
 bool exercise_strings()
@@ -93,11 +100,14 @@ bool exercise_name_keys()
 	const NameKeyType barracks = generator.nameToKey("Barracks");
 	const NameKeyType lowercase = generator.nameToLowercaseKey("warfactory");
 	const NameKeyType lowercase_again = generator.nameToLowercaseKey("WarFactory");
+	MemoryPool *bucket_pool = TheMemoryPoolFactory->findMemoryPool("NameKeyBucketPool");
 
 	const bool ok =
 		expect(command_center == command_center_again, "NameKeyGenerator stable lookup failed") &&
 		expect(command_center != barracks, "NameKeyGenerator unique key allocation failed") &&
 		expect(lowercase == lowercase_again, "NameKeyGenerator lowercase lookup failed") &&
+		expect(bucket_pool != nullptr, "NameKeyGenerator memory pool missing") &&
+		expect(bucket_pool->getInitialBlockCount() == 9000, "original MemoryInit NameKey pool sizing was not applied") &&
 		expect(std::strcmp(generator.keyToName(barracks).str(), "Barracks") == 0,
 			"NameKeyGenerator reverse lookup failed");
 
@@ -139,16 +149,115 @@ bool exercise_trig()
 		expect(near(QSin(PI / 4.0f), std::sinf(PI / 4.0f), 0.01f), "QSin lookup failed") &&
 		expect(near(QMag(3.0f, 4.0f, 0.0f), 4.75f, 0.001f), "QMag estimate failed");
 }
+
+bool exercise_game_common()
+{
+	return expect(std::strcmp(TheVeterancyNames[LEVEL_HEROIC], "HEROIC") == 0,
+			"GameCommon veterancy names failed") &&
+		expect(std::strcmp(TheRelationshipNames[ALLIES], "ALLIES") == 0,
+			"GameCommon relationship names failed") &&
+		expect(near(normalizeAngle(3.0f * PI), PI, 0.0001f), "normalizeAngle positive wrap failed") &&
+		expect(near(std::fabs(normalizeAngle(-3.0f * PI)), PI, 0.0001f),
+			"normalizeAngle negative wrap failed");
+}
+
+bool exercise_list_and_circle()
+{
+	Int first = 1;
+	Int second = 2;
+	LList list;
+	list.addItemToHead(&first);
+	list.addItemToTail(&second);
+	const bool list_ok =
+		expect(list.nodeCount() == 2, "LList node count failed") &&
+		expect(list.firstNode()->item() == &first, "LList head insertion failed") &&
+		expect(list.lastNode()->item() == &second, "LList tail insertion failed") &&
+		expect(list.hasItem(&second), "LList item lookup failed");
+	list.clear();
+	if (!list_ok) {
+		return false;
+	}
+
+	DiscreteCircle circle(0, 0, 2);
+	std::vector<Scanline> lines;
+	circle.drawCircle(collect_scanline, &lines);
+	return expect(circle.getEdgeCount() == 3, "DiscreteCircle edge generation failed") &&
+		expect(lines.size() == 5, "DiscreteCircle mirrored scanline draw failed") &&
+		expect(lines.front().y == 2 && lines.front().x_start == -1 && lines.front().x_end == 1,
+			"DiscreteCircle top scanline changed") &&
+		expect(lines.back().y == 0 && lines.back().x_start == -2 && lines.back().x_end == 2,
+			"DiscreteCircle center scanline changed");
+}
+
+bool exercise_bezier()
+{
+	BezierSegment segment(
+		0.0f, 0.0f, 0.0f,
+		1.0f, 0.0f, 0.0f,
+		2.0f, 0.0f, 0.0f,
+		3.0f, 0.0f, 0.0f);
+
+	Coord3D midpoint;
+	segment.evaluateBezSegmentAtT(0.5f, &midpoint);
+
+	VecCoord3D points;
+	segment.getSegmentPoints(4, &points);
+
+	BezierSegment left;
+	BezierSegment right;
+	segment.splitSegmentAtT(0.5f, left, right);
+	Coord3D split_left_end;
+	Coord3D split_right_start;
+	left.evaluateBezSegmentAtT(1.0f, &split_left_end);
+	right.evaluateBezSegmentAtT(0.0f, &split_right_start);
+
+	return expect(near(midpoint.x, 1.5f, 0.0001f) && near(midpoint.y, 0.0f, 0.0001f),
+			"BezierSegment midpoint evaluation failed") &&
+		expect(points.size() == 4 && near(points[0].x, 0.0f, 0.0001f) &&
+			near(points[3].x, 3.0f, 0.0001f), "BezFwdIterator point generation failed") &&
+		expect(near(segment.getApproximateLength(0.001f), 3.0f, 0.0001f),
+			"BezierSegment approximate length failed") &&
+		expect(near(split_left_end.x, split_right_start.x, 0.0001f) &&
+			near(split_left_end.x, midpoint.x, 0.0001f), "BezierSegment split failed");
+}
+
+bool exercise_partition_solver()
+{
+	EntriesVec entries;
+	entries.push_back(std::make_pair(static_cast<ObjectID>(11), 7U));
+	entries.push_back(std::make_pair(static_cast<ObjectID>(12), 4U));
+	entries.push_back(std::make_pair(static_cast<ObjectID>(13), 2U));
+
+	SpacesVec spaces;
+	spaces.push_back(std::make_pair(static_cast<ObjectID>(21), 8U));
+	spaces.push_back(std::make_pair(static_cast<ObjectID>(22), 6U));
+
+	PartitionSolver solver(entries, spaces, PREFER_FAST_SOLUTION);
+	solver.solve();
+	const SolutionVec &solution = solver.getSolution();
+	return expect(solution.size() == 3, "PartitionSolver solution size failed") &&
+		expect(solution[0].first == static_cast<ObjectID>(11) &&
+			solution[0].second == static_cast<ObjectID>(21), "PartitionSolver first assignment failed") &&
+		expect(solution[1].first == static_cast<ObjectID>(12) &&
+			solution[1].second == static_cast<ObjectID>(22), "PartitionSolver second assignment failed") &&
+		expect(solution[2].first == static_cast<ObjectID>(13) &&
+			solution[2].second == static_cast<ObjectID>(22), "PartitionSolver residual assignment failed");
+}
 }
 
 int main()
 {
 	initMemoryManager();
 
-	const bool ok = exercise_strings() &&
+	const bool ok = exercise_memory_init() &&
+		exercise_strings() &&
 		exercise_name_keys() &&
 		exercise_random_and_crc() &&
-		exercise_trig();
+		exercise_trig() &&
+		exercise_game_common() &&
+		exercise_list_and_circle() &&
+		exercise_bezier() &&
+		exercise_partition_solver();
 
 	shutdownMemoryManager();
 
@@ -158,7 +267,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"SubsystemInterface,GameType,Trig,QuickTrig,NameKeyGenerator,RandomValue,crc\","
+		"SubsystemInterface,GameType,GameCommon,Trig,QuickTrig,List,"
+		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,"
+		"PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

@@ -19,4 +19,7 @@ template <typename Key, typename Value, typename Hash = std::hash<Key>, typename
 using hash_map = std::unordered_map<Key, Value, Hash, Equal>;
 }
 
+typedef std::vector<Coord3D> VecCoord3D;
+typedef VecCoord3D::iterator VecCoord3DIt;
+
 #endif

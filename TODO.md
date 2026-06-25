@@ -101,6 +101,11 @@ shares structure and follows behind.
 - [x] Add browser/compiler shims for original Win32 file attributes, file
       deletion, PE image headers, and version-resource fallbacks used by
       WWLib `verchk.cpp` and Wwutil under Emscripten.
+- [x] Add browser/compiler shims for original Win32 `_MAX_PATH` and
+      `GetModuleFileName` users needed by `GameEngine/Common` memory-pool
+      initialization under Emscripten.
+- [x] Add a minimal `D3DX8Math.h` vector/matrix shim for original
+      `GameEngine/Common` Bezier helpers under Emscripten.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -227,11 +232,17 @@ shares structure and follows behind.
       memory allocator, critical-section wrapper, `AsciiString`, `UnicodeString`,
       `SubsystemInterface`, `GameType`, trig tables, `NameKeyGenerator`,
       `RandomValue`, and engine `crc`, with wasm smoke coverage.
+- [x] Expanded `GameEngine/Common` core slice compiles from original sources:
+      `MemoryInit.cpp`, `GameCommon.cpp`, `List.cpp`, `DiscreteCircle.cpp`,
+      Bezier helpers, and `PartitionSolver.cpp`, with wasm smoke coverage.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
-- [ ] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
+- [x] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
       engine path instead of relying on smoke-local memory hook defaults.
+- [ ] Audit original Bezier helper warnings under clang/Emscripten:
+      `BezierSegment` array-constructor bound mismatch and
+      `BezFwdIterator` conservative pointer-initialization diagnostics.
 - [ ] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
 - [ ] `Common/RTS`, `Thing`, `Audio` (interfaces) compile.

@@ -43,7 +43,12 @@
 #define _vsnprintf vsnprintf
 #endif
 
+#ifndef _isnan
+#define _isnan std::isnan
+#endif
+
 #include "Lib/BaseType.h"
+#include "Common/GameType.h"
 #include "Common/STLTypedefs.h"
 #include "Common/Errors.h"
 #include "Common/Debug.h"
