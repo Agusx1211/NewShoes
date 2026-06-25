@@ -615,6 +615,12 @@ shares structure and follows behind.
       `GUICallbacks/IMECandidate.cpp`, and `GUICallbacks/MessageBox.cpp`) in
       the GameClient utility target; smoke-test the non-rendering
       `ChallengeGenerals` parse table and state accessors.
+- [x] Compile original leaf shell/menu callbacks (`CreditsMenu.cpp`,
+      `SinglePlayerMenu.cpp`, `PopupCommunicator.cpp`,
+      `WOLCustomScoreScreen.cpp`, `WOLMessageWindow.cpp`,
+      `WOLQMScoreScreen.cpp`, and `WOLStatusMenu.cpp`) in the GameClient
+      utility target; this is compile coverage only until `Shell`, `GameWindow`,
+      and the real menu flow can link.
 - [ ] Compile original `GameClient/GUI/GameWindow.cpp` after the deeper
       `InGameUI`, `RadiusDecal`, `SelectionXlat`, and related enum/header
       contracts are available through original headers instead of target-local
@@ -646,9 +652,12 @@ shares structure and follows behind.
       coverage only and no rendering is considered complete without harness
       screenshots/state checks.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
-- [ ] Compile the first original GameNetwork command-message slice
-      (`NetCommandRef.cpp`, `NetCommandWrapperList.cpp`) after
-      `NetCommandMsg.cpp`, `NetCommandList.cpp`, and `NetworkUtil` can link
+- [x] Compile the first original GameNetwork command-message slice
+      (`GameMessageParser.cpp`, `NetCommandRef.cpp`, and
+      `NetCommandWrapperList.cpp`) in a wasm core archive.
+- [ ] Link and smoke-test the first GameNetwork command-message slice after
+      original `Common/MessageStream.cpp`, `NetCommandMsg.cpp`,
+      `NetCommandList.cpp`, `NetPacket.cpp`, and `NetworkUtil.cpp` can compile
       against the real player/message dependencies.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 

@@ -26,6 +26,7 @@ set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
 set(GAMEENGINE_GAMECLIENT_DIR "${GAMEENGINE_DIR}/Source/GameClient")
+set(GAMEENGINE_GAMENETWORK_DIR "${GAMEENGINE_DIR}/Source/GameNetwork")
 set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
@@ -1228,6 +1229,13 @@ add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Gadget/GadgetVerticalSlider.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/ExtendedMessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/IMECandidate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/CreditsMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/PopupCommunicator.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SinglePlayerMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLCustomScoreScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLMessageWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLQMScoreScreen.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/WOLStatusMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowGlobal.cpp"
@@ -1284,6 +1292,41 @@ target_compile_options(zh_gameclient_utility PRIVATE
 )
 
 target_link_libraries(zh_gameclient_utility PUBLIC
+  zh_gameengine_common_core
+)
+
+add_library(zh_gamenetwork_core STATIC
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameMessageParser.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandRef.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandWrapperList.cpp"
+)
+
+target_include_directories(zh_gamenetwork_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_gamenetwork_core PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_gamenetwork_core PUBLIC
   zh_gameengine_common_core
 )
 
