@@ -26,6 +26,10 @@
 // Bryan Cleveland, August 2002
 ////////////////////////////////////////////////////////////
 
+#ifndef _MSC_VER
+#include "PreRTS.h"
+#endif
+
 #include <windows.h>
 #include "Common/AsciiString.h"
 #include "Common/GameMemory.h"

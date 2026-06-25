@@ -3,6 +3,12 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef __cplusplus
+#define WASM_POSIX_SCOPE ::
+#else
+#define WASM_POSIX_SCOPE
+#endif
+
 #ifndef _O_RDONLY
 #define _O_RDONLY O_RDONLY
 #endif
@@ -44,21 +50,25 @@
 #endif
 
 #ifndef _open
-#define _open open
+#define _open WASM_POSIX_SCOPE open
 #endif
 
 #ifndef _close
-#define _close close
+#define _close WASM_POSIX_SCOPE close
 #endif
 
 #ifndef _read
-#define _read read
+#define _read WASM_POSIX_SCOPE read
 #endif
 
 #ifndef _write
-#define _write write
+#define _write WASM_POSIX_SCOPE write
 #endif
 
 #ifndef _lseek
-#define _lseek lseek
+#define _lseek WASM_POSIX_SCOPE lseek
+#endif
+
+#ifndef _access
+#define _access WASM_POSIX_SCOPE access
 #endif

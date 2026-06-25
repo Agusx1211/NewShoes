@@ -293,6 +293,10 @@ shares structure and follows behind.
       `ArchiveFileSystem.cpp`, `StreamingArchiveFile.cpp`, and the original
       Win32 BIG reader/system into the wasm core; smoke-test BIG indexing,
       file-info, directory listing, archive fallback reads, and streaming reads.
+- [x] Compile original `Common/System/LocalFile.cpp` plus the original
+      `Win32LocalFile` / `Win32LocalFileSystem` bridge into the wasm core;
+      smoke-test local writes, existence, file-info, directory listing,
+      `FileSystem` dispatch, RAM conversion, and whole-file reads.
 - [ ] Validate the original BIG reader against extracted real archives
       (`INIZH.big` first) once browser asset fetch/MEMFS mounting is wired into
       the harness.
@@ -324,7 +328,7 @@ shares structure and follows behind.
 - [x] Audit original Bezier helper warnings under clang/Emscripten:
       `BezierSegment` array-constructor bound mismatch and
       `BezFwdIterator` conservative pointer-initialization diagnostics.
-- [ ] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
+- [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
 - [ ] `Common/RTS`, `Thing`, `Audio` (interfaces) compile.
 - [ ] `GameEngine.cpp`, `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`,

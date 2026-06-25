@@ -43,6 +43,7 @@
 #include "GameLogic/LogicRandomValue.h"
 #include "Lib/Trig.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GameLogic *TheGameLogic = nullptr;
@@ -532,6 +533,87 @@ bool exercise_file_system_dispatch()
 	TheFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
 	return open_ok && missing_ok;
+}
+
+bool exercise_win32_local_file_system()
+{
+	const char directory[] = "local-smoke-dir";
+	const char path[] = "local-smoke-dir/local-file.txt";
+	const char payload[] = "23 4.5 USA\nline2";
+	const Int payload_size = static_cast<Int>(std::strlen(payload));
+	::remove(path);
+
+	Win32LocalFileSystem local_file_system;
+	FileSystem file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = nullptr;
+	TheFileSystem = &file_system;
+
+	bool ok = expect(local_file_system.createDirectory(directory), "Win32LocalFileSystem createDirectory failed");
+
+	File *written = local_file_system.openFile(path, File::WRITE | File::TEXT | File::CREATE);
+	ok = expect(written != nullptr, "Win32LocalFileSystem write open failed") && ok;
+	if (written != nullptr) {
+		ok = expect(written->write(payload, payload_size) == payload_size,
+			"Win32LocalFile write failed") && ok;
+		written->close();
+	}
+
+	ok = expect(local_file_system.doesFileExist(path), "Win32LocalFileSystem doesFileExist failed") && ok;
+
+	FileInfo info = {};
+	ok = expect(local_file_system.getFileInfo(AsciiString(path), &info) &&
+			info.sizeHigh == 0 && info.sizeLow == payload_size,
+		"Win32LocalFileSystem getFileInfo failed") && ok;
+
+	FilenameList filenames;
+	local_file_system.getFileListInDirectory(
+		AsciiString(""), AsciiString("local-smoke-dir/"), AsciiString("*.txt"), filenames, FALSE);
+	ok = expect(filenames.find(AsciiString(path)) != filenames.end(),
+		"Win32LocalFileSystem directory listing failed") && ok;
+
+	File *opened = local_file_system.openFile(path, File::READ | File::TEXT);
+	char buffer[sizeof(payload)] = {};
+	ok = expect(opened != nullptr, "Win32LocalFileSystem read open failed") && ok;
+	if (opened != nullptr) {
+		ok = expect(opened->read(buffer, payload_size) == payload_size &&
+				std::memcmp(buffer, payload, payload_size) == 0,
+			"Win32LocalFile read failed") && ok;
+		opened->close();
+	}
+
+	File *via_file_system = file_system.openFile(path, File::READ | File::BINARY);
+	char dispatch_buffer[sizeof(payload)] = {};
+	ok = expect(via_file_system != nullptr, "FileSystem Win32 local dispatch failed") && ok;
+	if (via_file_system != nullptr) {
+		ok = expect(via_file_system->read(dispatch_buffer, payload_size) == payload_size &&
+				std::memcmp(dispatch_buffer, payload, payload_size) == 0,
+			"FileSystem Win32 local dispatch read failed") && ok;
+		via_file_system->close();
+	}
+
+	File *to_convert = local_file_system.openFile(path, File::READ | File::BINARY);
+	File *ram_file = to_convert != nullptr ? to_convert->convertToRAMFile() : nullptr;
+	char ram_buffer[sizeof(payload)] = {};
+	ok = expect(ram_file != nullptr, "Win32LocalFile convertToRAMFile failed") && ok;
+	if (ram_file != nullptr) {
+		ok = expect(ram_file->read(ram_buffer, payload_size) == payload_size &&
+				std::memcmp(ram_buffer, payload, payload_size) == 0,
+			"Win32LocalFile converted RAMFile read failed") && ok;
+		ram_file->close();
+	}
+
+	File *entire_file = local_file_system.openFile(path, File::READ | File::BINARY);
+	char *entire = entire_file != nullptr ? entire_file->readEntireAndClose() : nullptr;
+	ok = expect(entire != nullptr && std::memcmp(entire, payload, payload_size) == 0,
+		"Win32LocalFile readEntireAndClose failed") && ok;
+	delete[] entire;
+
+	::remove(path);
+	TheFileSystem = nullptr;
+	TheArchiveFileSystem = nullptr;
+	TheLocalFileSystem = nullptr;
+	return ok;
 }
 
 bool exercise_archive_big_files()
@@ -1138,6 +1220,7 @@ int main()
 		exercise_strings() &&
 		exercise_file_interfaces() &&
 		exercise_file_system_dispatch() &&
+		exercise_win32_local_file_system() &&
 		exercise_archive_big_files() &&
 		exercise_cached_file_input_stream() &&
 		exercise_data_chunks() &&
@@ -1165,8 +1248,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"WSYS_String,File,LocalFileSystem,FileSystem,RAMFile,StreamingArchiveFile,"
-		"ArchiveFile,ArchiveFileSystem,Win32BIGFile,Win32BIGFileSystem,"
+		"WSYS_String,File,LocalFile,LocalFileSystem,Win32LocalFile,Win32LocalFileSystem,"
+		"FileSystem,RAMFile,StreamingArchiveFile,ArchiveFile,ArchiveFileSystem,"
+		"Win32BIGFile,Win32BIGFileSystem,"
 		"SubsystemInterface,CDManager,Registry,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"

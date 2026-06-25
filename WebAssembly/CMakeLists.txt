@@ -823,6 +823,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/File.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/LocalFileSystem.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/LocalFile.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FileSystem.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/RAMFile.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/StreamingArchiveFile.cpp"
@@ -858,6 +859,8 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
   "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
   "${GAMEENGINE_COMMON_DIR}/crc.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFile.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFile.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFileSystem.cpp"
 )

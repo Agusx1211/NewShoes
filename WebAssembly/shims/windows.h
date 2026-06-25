@@ -8,8 +8,12 @@
 #include <cstring>
 #include <ctime>
 #include <cwchar>
+#include <dirent.h>
+#include <fnmatch.h>
 #include <mutex>
+#include <string>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 using BYTE = unsigned char;
@@ -65,6 +69,10 @@ struct LARGE_INTEGER
 #define _MAX_PATH 260
 #endif
 
+#ifndef _MAX_DIR
+#define _MAX_DIR 256
+#endif
+
 #define MB_ABORTRETRYIGNORE 0x00000002
 #define MB_ICONHAND 0x00000010
 #define MB_SETFOREGROUND 0x00010000
@@ -86,6 +94,7 @@ struct LARGE_INTEGER
 #define ERROR_ALREADY_EXISTS 183
 #define CP_ACP 0
 #define FILE_ATTRIBUTE_READONLY 0x00000001
+#define FILE_ATTRIBUTE_DIRECTORY 0x00000010
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
 #define REG_OPTION_NON_VOLATILE 0x00000000
 #define REG_SZ 1
@@ -114,6 +123,17 @@ struct VS_FIXEDFILEINFO
 	DWORD dwFileSubtype;
 	DWORD dwFileDateMS;
 	DWORD dwFileDateLS;
+};
+
+struct WIN32_FIND_DATA
+{
+	DWORD dwFileAttributes;
+	FILETIME ftCreationTime;
+	FILETIME ftLastAccessTime;
+	FILETIME ftLastWriteTime;
+	DWORD nFileSizeHigh;
+	DWORD nFileSizeLow;
+	char cFileName[_MAX_PATH];
 };
 
 struct IMAGE_DOS_HEADER
@@ -292,7 +312,135 @@ static inline DWORD GetFileAttributes(LPCSTR filename)
 	if ((attributes.st_mode & S_IWUSR) == 0) {
 		flags |= FILE_ATTRIBUTE_READONLY;
 	}
+	if (S_ISDIR(attributes.st_mode)) {
+		flags |= FILE_ATTRIBUTE_DIRECTORY;
+	}
 	return flags;
+}
+
+struct WasmFindHandle
+{
+	DIR *directory;
+	std::string directory_name;
+	std::string pattern;
+};
+
+static inline std::string WasmNormalizePath(const char *path)
+{
+	std::string normalized = path != nullptr ? path : "";
+	for (char &ch : normalized) {
+		if (ch == '\\') {
+			ch = '/';
+		}
+	}
+	return normalized;
+}
+
+static inline void WasmSplitFindPattern(const char *search, std::string &directory, std::string &pattern)
+{
+	const std::string normalized = WasmNormalizePath(search);
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash == std::string::npos) {
+		directory = ".";
+		pattern = normalized;
+	} else {
+		directory = slash == 0 ? "/" : normalized.substr(0, slash);
+		pattern = normalized.substr(slash + 1);
+	}
+
+	if (pattern.empty() || pattern == "*.") {
+		pattern = "*";
+	}
+}
+
+static inline BOOL WasmPopulateFindData(WasmFindHandle *handle, WIN32_FIND_DATA *data)
+{
+	if (handle == nullptr || handle->directory == nullptr || data == nullptr) {
+		return FALSE;
+	}
+
+	while (dirent *entry = readdir(handle->directory)) {
+		if (fnmatch(handle->pattern.c_str(), entry->d_name, 0) != 0) {
+			continue;
+		}
+
+		const std::string path = handle->directory_name == "." ?
+			std::string(entry->d_name) :
+			handle->directory_name + "/" + entry->d_name;
+		struct stat attributes;
+		if (stat(path.c_str(), &attributes) != 0) {
+			continue;
+		}
+
+		std::memset(data, 0, sizeof(*data));
+		if (S_ISDIR(attributes.st_mode)) {
+			data->dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
+		}
+		if ((attributes.st_mode & S_IWUSR) == 0) {
+			data->dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
+		}
+		const unsigned long long size = static_cast<unsigned long long>(attributes.st_size);
+		data->nFileSizeHigh = static_cast<DWORD>(size >> 32);
+		data->nFileSizeLow = static_cast<DWORD>(size & 0xffffffffUL);
+		data->ftLastWriteTime.dwLowDateTime = static_cast<DWORD>(attributes.st_mtime);
+		std::snprintf(data->cFileName, sizeof(data->cFileName), "%s", entry->d_name);
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static inline HANDLE FindFirstFile(LPCSTR search, WIN32_FIND_DATA *data)
+{
+	std::string directory;
+	std::string pattern;
+	WasmSplitFindPattern(search, directory, pattern);
+
+	DIR *dir = opendir(directory.c_str());
+	if (dir == nullptr) {
+		return INVALID_HANDLE_VALUE;
+	}
+
+	WasmFindHandle *handle = new WasmFindHandle{ dir, directory, pattern };
+	if (!WasmPopulateFindData(handle, data)) {
+		closedir(dir);
+		delete handle;
+		return INVALID_HANDLE_VALUE;
+	}
+	return static_cast<HANDLE>(handle);
+}
+
+static inline BOOL FindNextFile(HANDLE find_handle, WIN32_FIND_DATA *data)
+{
+	return WasmPopulateFindData(static_cast<WasmFindHandle *>(find_handle), data);
+}
+
+static inline BOOL FindClose(HANDLE find_handle)
+{
+	if (find_handle == nullptr || find_handle == INVALID_HANDLE_VALUE) {
+		return FALSE;
+	}
+	WasmFindHandle *handle = static_cast<WasmFindHandle *>(find_handle);
+	if (handle->directory != nullptr) {
+		closedir(handle->directory);
+	}
+	delete handle;
+	return TRUE;
+}
+
+static inline BOOL CreateDirectory(LPCSTR path, void *)
+{
+	if (path == nullptr || *path == '\0') {
+		return FALSE;
+	}
+
+	const std::string normalized = WasmNormalizePath(path);
+	if (mkdir(normalized.c_str(), 0777) == 0) {
+		return TRUE;
+	}
+
+	struct stat attributes;
+	return stat(normalized.c_str(), &attributes) == 0 && S_ISDIR(attributes.st_mode) ? TRUE : FALSE;
 }
 
 static inline BOOL DeleteFile(LPCSTR filename)

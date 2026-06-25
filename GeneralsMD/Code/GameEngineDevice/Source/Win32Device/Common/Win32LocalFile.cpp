@@ -26,6 +26,10 @@
 // Bryan Cleveland, August 2002
 ///////////////////////////////////////////////////////
 
+#ifndef _MSC_VER
+#include "PreRTS.h"
+#endif
+
 #include "Win32Device/Common/Win32LocalFile.h"
 
 Win32LocalFile::Win32LocalFile() : LocalFile() {
