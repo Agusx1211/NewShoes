@@ -23,6 +23,22 @@ using HOSTENT = struct hostent;
 #define INVALID_SOCKET (-1)
 #endif
 
+#ifndef WSAEWOULDBLOCK
+#define WSAEWOULDBLOCK EWOULDBLOCK
+#endif
+
+#ifndef WSAEINVAL
+#define WSAEINVAL EINVAL
+#endif
+
+#ifndef WSAEALREADY
+#define WSAEALREADY EALREADY
+#endif
+
+#ifndef WSAEISCONN
+#define WSAEISCONN EISCONN
+#endif
+
 #ifndef MAKEWORD
 #define MAKEWORD(low, high) static_cast<WORD>((static_cast<BYTE>(low)) | (static_cast<WORD>(static_cast<BYTE>(high)) << 8))
 #endif

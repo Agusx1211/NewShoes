@@ -29,6 +29,18 @@
 #define OPTIONAL
 #endif
 
+#ifndef FAR
+#define FAR
+#endif
+
+#ifndef WINAPI
+#define WINAPI
+#endif
+
+#ifndef __stdcall
+#define __stdcall
+#endif
+
 using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
@@ -115,6 +127,13 @@ struct _EXCEPTION_POINTERS
 };
 
 using EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
+
+using _se_translator_function = void (*)(unsigned int, EXCEPTION_POINTERS *);
+
+static inline _se_translator_function _set_se_translator(_se_translator_function translator)
+{
+	return translator;
+}
 
 struct ITEMIDLIST
 {

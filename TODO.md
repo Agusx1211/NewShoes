@@ -1129,11 +1129,15 @@ shares structure and follows behind.
       `LadderDefs.cpp`, `Chat.cpp`, `StagingRoomGameInfo.cpp`,
       `Thread/ThreadUtils.cpp`, and `GameSpyOverlay.cpp` in the real-header
       compile frontier.
-- [ ] Compile original GameSpy thread sources (`BuddyThread.cpp`,
+- [x] Compile original GameSpy thread sources (`BuddyThread.cpp`,
       `PeerThread.cpp`, `PingThread.cpp`, `PersistentStorageThread.cpp`, and
-      `GameResultsThread.cpp`) after the SEH translator hook and remaining
-      GameSpy Peer/Stats reserved-key APIs are mapped to the browser networking
-      contract.
+      `GameResultsThread.cpp`) after adding the SEH translator shim,
+      declarative GameSpy GP/Peer/QR2/Stats compile surface, explicit
+      WinSock/WinMM includes, and narrow clang/POSIX socket compatibility fixes.
+- [ ] Link and smoke-test original GameSpy thread queue behavior after browser
+      Worker/pthread scheduling, GP/Peer/QR2/Stats runtime bindings,
+      ICMP/socket fallbacks, and harness state probes are available; current
+      coverage is compile-only.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

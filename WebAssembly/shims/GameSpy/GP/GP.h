@@ -155,7 +155,113 @@ struct GPGetInfoResponseArg
 
 struct GPBuddyStatus
 {
+	GPProfile profile;
 	GPEnum status;
 	char statusString[GP_STATUS_STRING_LEN];
 	char locationString[GP_LOCATION_STRING_LEN];
 };
+
+static inline GPResult gpInitialize(GPConnection *, int)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpSetCallback(GPConnection *, GPEnum, GPCallback, void *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpConnect(GPConnection *, const char *, const char *, const char *, GPEnum, GPEnum, GPCallback, void *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpConnectNewUser(GPConnection *, const char *, const char *, const char *, GPEnum, GPEnum, GPCallback, void *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpDeleteProfile(GPConnection *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpDisconnect(GPConnection *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpSendBuddyMessage(GPConnection *, GPProfile, const char *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpSendBuddyRequest(GPConnection *, GPProfile, const char *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpDeleteBuddy(GPConnection *, GPProfile)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpAuthBuddyRequest(GPConnection *, GPProfile)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpDenyBuddyRequest(GPConnection *, GPProfile)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpSetStatus(GPConnection *, GPEnum, const char *, const char *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpIsConnected(GPConnection *, GPEnum *connected)
+{
+	if (connected != nullptr) {
+		*connected = GP_DISCONNECTED;
+	}
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpProcess(GPConnection *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpDestroy(GPConnection *)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpGetInfo(GPConnection *, GPProfile profile, GPEnum, GPEnum, GPCallback callback, void *param)
+{
+	if (callback != nullptr) {
+		GPGetInfoResponseArg arg = {};
+		arg.result = GP_NO_ERROR;
+		arg.profile = profile;
+		callback(nullptr, &arg, param);
+	}
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpSetInfoMask(GPConnection *, GPEnum)
+{
+	return GP_NO_ERROR;
+}
+
+static inline GPResult gpGetBuddyStatus(GPConnection *, int, GPBuddyStatus *status)
+{
+	if (status != nullptr) {
+		status->profile = 0;
+		status->status = GP_OFFLINE;
+		status->statusString[0] = '\0';
+		status->locationString[0] = '\0';
+	}
+	return GP_NO_ERROR;
+}

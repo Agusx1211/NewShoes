@@ -31,6 +31,8 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "mmsystem.h"
+#include "winsock2.h"
 #include "Common/Registry.h"
 #include "Common/StackDump.h"
 #include "Common/UserPreferences.h"
@@ -1140,7 +1142,7 @@ void checkQR2Queries( PEER peer, SOCKET sock )
 {
 	static char indata[INBUF_LEN];
 	struct sockaddr_in saddr;
-	int saddrlen = sizeof(struct sockaddr_in);
+	socklen_t saddrlen = sizeof(struct sockaddr_in);
 	fd_set set;
 	struct timeval timeout = {0,0};
 	int error;
@@ -1831,7 +1833,8 @@ void PeerThreadClass::handleQMMatch(PEER peer, Int mapIndex, Int seed,
 		m_qmStatus = QM_MATCHED;
 		peerLeaveRoom(peer, GroupRoom, "");
 
-		for (Int i=0; i<MAX_SLOTS; ++i)
+		Int i;
+		for (i=0; i<MAX_SLOTS; ++i)
 		{
 			if (playerName[i] && stricmp(playerName[i], m_loginName.c_str()))
 			{
@@ -2982,4 +2985,3 @@ static void listingGamesCallback(PEER peer, PEERBool success, const char * name,
 }
 
 //-------------------------------------------------------------------------
-
