@@ -31,6 +31,14 @@ target and should be compiled or re-targeted for wasm.
 | `DX90SDK` | Partial | Target-local `D3DX8Math.h` shim covers vector4/matrix operations used by original `GameEngine/Common` Bezier helpers and the `D3DXMatrixInverse` path used by original `WWMath/matrix3d.cpp`; a lowercase `D3dx8math.h` wrapper handles the original include spelling on case-sensitive filesystems. Broader DirectX 8/D3DX compatibility for WW3D and W3D device code remains open; browser port should provide shims rather than native DirectX. |
 | `STLport-4.5.3` | Not started | Historical STL dependency; target is libc++ compatibility, not compiling STLport itself. |
 
+Case-variant wrappers now cover the original headers reached by broader
+Common/GameClient probes (`Common/OVERRIDE.h`, `Common/SimplePlayer.h`,
+`Common/URLLaunch.h`, `Lib/Basetype.h`, `WW3D2/ColType.h`, and
+`WWMath/Matrix3D.h`). The `gameengine-header-case-smoke` target compile-checks
+the currently browser-usable wrappers against original OVERRIDE, BaseType, W3D
+collision type, and Matrix3D inline behavior; Windows Media / shell URL bodies
+still need a real browser-device contract before they can compile.
+
 ## Tooling Or Editor Targets
 
 These are not part of the browser runtime target. They can be useful references,
@@ -271,6 +279,10 @@ The wasm CMake skeleton currently builds:
 - `wwutil-smoke`: a Node-executed wasm smoke test that verifies original Wwutil
   math helpers, string and character helpers, file existence/removal,
   read-only attribute mapping, and PE-header file-id timestamp formatting.
+- `gameengine-header-case-smoke`: a Node-executed wasm smoke test that verifies
+  case-variant wrappers for original GameEngine/WWVegas headers compile under
+  the case-sensitive wasm build and resolve to original OVERRIDE, BaseType,
+  W3D collision type, and Matrix3D inline behavior.
 - `gameengine-common-core-smoke`: a Node-executed wasm smoke test that verifies
   the original `GameEngine/Common` core slice, including memory-manager
   initialization with original DMA/pool sizing, engine string

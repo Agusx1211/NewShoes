@@ -120,7 +120,8 @@ Run all current wasm checks, including the original EAC compression codec,
 CompressionManager EAC-backed routes, WWDebug core/profile, WWLib
 Base64/CRC/file-core/file-INI/fixed/hash/image-misc/LZO/MD5/
 platform-compat/public-key/RAMFile/SHA/stream-core/StringClass/surface-core/
-utility-core, and WWMath core geometry/collision smokes:
+utility-core, WWMath core geometry/collision, and GameEngine Common/header
+compatibility smokes:
 
 ```sh
 npm run test:all
@@ -256,4 +257,16 @@ Run only the original WWMath core geometry/collision smoke:
 
 ```sh
 npm run test:wwmath-core
+```
+
+Run only the GameEngine case-variant header smoke:
+
+```sh
+npm run test:gameengine-header-case
+```
+
+Run only the original GameEngine Common core smoke:
+
+```sh
+npm run test:gameengine-common-core
 ```

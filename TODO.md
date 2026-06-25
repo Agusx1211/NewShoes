@@ -125,6 +125,11 @@ shares structure and follows behind.
       `GameEngine/Common` Bezier helpers under Emscripten.
 - [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
       and `lib/basetype.h` users under the case-sensitive wasm build.
+- [x] Add case-variant include wrappers for original GameEngine/WWVegas headers
+      reached by the next broad Common/GameClient probes (`Common/OVERRIDE.h`,
+      `Common/SimplePlayer.h`, `Common/URLLaunch.h`, `Lib/Basetype.h`,
+      `WW3D2/ColType.h`, and `WWMath/Matrix3D.h`), with wasm compile smoke
+      coverage for the currently browser-usable wrappers.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
@@ -435,6 +440,11 @@ shares structure and follows behind.
       `INIAudioEventInfo`/`AudioEventInfo` metadata, the original INI parse
       surface, and the real audio manager path are available without
       target-local stubs.
+- [ ] Decide the browser replacement contract for original Windows Media /
+      shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
+      `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
+      the bodies still require `wmsdk.h`, `HRESULT`/wide Win32 shell types, and
+      browser-safe launch/playback behavior.
 - [ ] Compile original RTS accounting/player-adjacent sources
       (`MissionStats.cpp`, `Money.cpp`, `Handicap.cpp`, `Science.cpp`, etc.)
       after `Player`/`Thing`/`Object` module headers, `MultiIniFieldParse`,

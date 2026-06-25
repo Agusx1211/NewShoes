@@ -17,6 +17,7 @@ set(COMPRESSION_DIR "${ZH_CODE_DIR}/Libraries/Source/Compression")
 set(COMPRESSION_EAC_DIR "${COMPRESSION_DIR}/EAC")
 set(COMPRESSION_EAC_PORT_SHIM "${CMAKE_CURRENT_SOURCE_DIR}/shims/compression_eac_port.h")
 set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
+set(WWVEGAS_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas")
 set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
@@ -1176,6 +1177,9 @@ target_include_directories(zh_gameengine_common_core PUBLIC
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
 )
 
 target_compile_options(zh_gameengine_common_core PRIVATE
@@ -2111,6 +2115,45 @@ target_link_options(wwutil-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(gameengine-header-case-smoke
+  tests/gameengine_header_case_smoke.cpp
+)
+
+set_target_properties(gameengine-header-case-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_include_directories(gameengine-header-case-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+)
+
+target_compile_options(gameengine-header-case-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(gameengine-header-case-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sEXIT_RUNTIME=1"
 )
 
 add_executable(gameengine-common-core-smoke
