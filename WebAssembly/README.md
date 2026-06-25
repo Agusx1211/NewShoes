@@ -101,10 +101,10 @@ npm run test:wasm
 ```
 
 Run all current wasm checks, including the original EAC compression codec,
-CompressionManager EAC-backed routes, WWDebug core, WWLib
-Base64/CRC/file-core/file-INI/fixed/hash/LZO/MD5/public-key/RAMFile/SHA/
-stream-core/StringClass/utility-core, and WWMath core geometry/collision
-smokes:
+CompressionManager EAC-backed routes, WWDebug core/profile, WWLib
+Base64/CRC/file-core/file-INI/fixed/hash/image-misc/LZO/MD5/public-key/
+RAMFile/SHA/stream-core/StringClass/utility-core, and WWMath core
+geometry/collision smokes:
 
 ```sh
 npm run test:all
@@ -126,6 +126,12 @@ Run only the original WWDebug core smoke:
 
 ```sh
 npm run test:wwdebug-core
+```
+
+Run only the original WWDebug profile/memory smoke:
+
+```sh
+npm run test:wwdebug-profile
 ```
 
 Run only the original WWLib Base64 smoke:
@@ -162,6 +168,12 @@ Run only the original WWLib hash-table smoke:
 
 ```sh
 npm run test:wwlib-hash
+```
+
+Run only the original WWLib Targa/window globals smoke:
+
+```sh
+npm run test:wwlib-image-misc
 ```
 
 Run only the original WWLib LZO codec/stream smoke:

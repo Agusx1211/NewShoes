@@ -546,6 +546,101 @@ target_link_libraries(zh_wwlib_hash PUBLIC
   zh_wwdebug_core
 )
 
+add_library(zh_wwdebug_profile STATIC
+  "${WWLIB_DIR}/FastAllocator.cpp"
+  "${WWDEBUG_DIR}/wwmemlog.cpp"
+  "${WWDEBUG_DIR}/wwprofile.cpp"
+)
+
+target_include_directories(zh_wwdebug_profile PUBLIC
+  "${WWDEBUG_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_definitions(zh_wwdebug_profile PUBLIC
+  _UNIX
+  WWDEBUG=1
+)
+
+target_compile_options(zh_wwdebug_profile PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-duplicate-decl-specifier
+  -Wno-missing-declarations
+  -Wno-return-type
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwdebug_profile PUBLIC
+  zh_wwdebug_core
+  zh_wwlib_file_ini
+  zh_wwlib_hash
+  zh_wwlib_string
+  zh_wwlib_systimer
+)
+
+add_library(zh_wwlib_targa STATIC
+  "${WWLIB_DIR}/TARGA.CPP"
+)
+
+target_include_directories(zh_wwlib_targa PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_targa PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_targa PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwlib_targa PUBLIC
+  zh_wwlib_file_ini
+)
+
+add_library(zh_wwlib_win_globals STATIC
+  "${WWLIB_DIR}/win.cpp"
+)
+
+target_include_directories(zh_wwlib_win_globals PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_win_globals PUBLIC
+  _WINDOWS
+)
+
+target_compile_options(zh_wwlib_win_globals PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_win_globals PUBLIC
+  zh_wwdebug_core
+)
+
 add_library(zh_wwlib_md5 STATIC
   "${WWLIB_DIR}/md5.cpp"
 )
@@ -1028,6 +1123,36 @@ target_link_options(wwdebug-core-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
 )
 
+add_executable(wwdebug-profile-smoke
+  tests/wwdebug_profile_smoke.cpp
+)
+
+set_target_properties(wwdebug-profile-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwdebug-profile-smoke PRIVATE
+  zh_wwdebug_profile
+)
+
+target_compile_options(wwdebug-profile-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-duplicate-decl-specifier
+  -Wno-keyword-macro
+  -Wno-missing-declarations
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwdebug-profile-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
 add_executable(wwlib-base64-smoke
   tests/wwlib_base64_smoke.cpp
 )
@@ -1049,6 +1174,36 @@ target_compile_options(wwlib-base64-smoke PRIVATE
 )
 
 target_link_options(wwlib-base64-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-image-misc-smoke
+  tests/wwlib_image_misc_smoke.cpp
+)
+
+set_target_properties(wwlib-image-misc-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-image-misc-smoke PRIVATE
+  zh_wwlib_targa
+  zh_wwlib_win_globals
+)
+
+target_compile_options(wwlib-image-misc-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-image-misc-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

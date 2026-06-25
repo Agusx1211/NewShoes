@@ -589,7 +589,6 @@ long Targa::Save(const char* name, long flags, bool addextension)
 	long depth;
 	char *palette;
 	char *temppal;
-	char *ptr;
 	//long i,n;
 	//char c;
 	long error = 0;
@@ -644,7 +643,6 @@ long Targa::Save(const char* name, long flags, bool addextension)
 			if ((temppal = (char *)malloc(size)) != NULL)
 				{
 				memcpy(temppal, palette, size);
-				ptr = temppal;
 
 				#if(0)
 				/* Swap the byte ordering of the palette entries. */
@@ -827,6 +825,7 @@ void Targa::XFlip(void)
 
 static __forceinline void _swapBytes(char *p1, char *p2, unsigned count)
 {
+#if defined(_MSC_VER) && !defined(__clang__)
   _asm
   {
     mov esi,[p1]
@@ -865,6 +864,13 @@ static __forceinline void _swapBytes(char *p1, char *p2, unsigned count)
     jmp lpLessThan16
   done:
   }
+#else
+	for (unsigned index = 0; index < count; ++index) {
+		char value = p1[index];
+		p1[index] = p2[index];
+		p2[index] = value;
+	}
+#endif
 }
 
 void Targa::YFlip(void)

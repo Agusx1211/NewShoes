@@ -82,6 +82,9 @@ shares structure and follows behind.
 - [x] Add lowercase include wrappers for original WWLib palette/RLE/tag-block
       headers (`palette.h`, `rgb.h`, `rle.h`, `tagblock.h`) under the
       case-sensitive wasm build.
+- [x] Add lowercase include wrappers for original WWDebug allocator and WWLib
+      Targa headers (`fastallocator.h`, `targa.h`) under the case-sensitive
+      wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
       sources under clang/Emscripten.
 - [x] Add portable `_snprintf`, `_wcsicmp`, `MultiByteToWideChar`, and
@@ -252,16 +255,35 @@ shares structure and follows behind.
 - [x] Audit and fix original `WWVegas/WWLib/RLEEngine::Compress` zero-run
       handling at the exact end of a source buffer, with a trailing-zero smoke
       vector under wasm.
+- [x] `WWVegas/WWLib` Targa image utility and Win32 globals (`TARGA.CPP`,
+      `win.cpp`) compile and smoke-test truecolor TGA save/load, image flips,
+      and original window/focus global state under wasm.
+- [ ] Compile original WWLib 2D conversion/blit helpers (`convert.cpp`,
+      `blit.cpp`, `surface.cpp`, related lowercase headers) after the browser
+      `Surface`/`DSurface` abstraction is defined, instead of stubbing draw
+      behavior.
+- [ ] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
+      browser timing/CPU-detection contract without preserving x86 inline
+      assembly.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
       assert, trigger, and profile handlers under wasm.
+- [x] `WWVegas/WWDebug` profile/memory slice (`FastAllocator.cpp`,
+      `wwmemlog.cpp`, `wwprofile.cpp`) compiles and smoke-tests profile tree
+      recording, allocator accounting, and memory-log allocation/free counters
+      under wasm.
 - [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and
       routes asserts/logs to the browser console/harness.
-- [ ] Port original `WWVegas/WWDebug/wwprofile.cpp` for wasm or restore its
+- [x] Port original `WWVegas/WWDebug/wwprofile.cpp` for wasm or restore its
       missing `fastallocator.h` dependency; the current wasm `wwprofile.h`
       shim disables `WWPROFILE` scope timers so culling can compile without
       pulling unresolved profiling manager state.
+- [ ] Retire or narrow the current generic `wwprofile.h` no-op macro shim once
+      all profile consumers link the original profiling manager target.
+- [ ] Decide whether the browser `_UNIX` build should keep original
+      `wwmemlog.cpp` category tracking disabled or introduce a wasm-safe
+      thread-local memory-log mode.
 - [x] `WWVegas/WWSaveLoad` core persistence plumbing (`persistfactory.cpp`,
       `saveload.cpp`, `saveloadsubsystem.cpp`, `pointerremap.cpp`,
       `saveloadstatus.cpp`) compiles as a wasm static library for WWMath curve
