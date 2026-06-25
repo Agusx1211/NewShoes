@@ -1299,9 +1299,13 @@ target_link_libraries(zh_gameclient_utility PUBLIC
 )
 
 add_library(zh_gamenetwork_core STATIC
+  "${GAMEENGINE_GAMENETWORK_DIR}/FrameData.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/FrameDataManager.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameMessageParser.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandList.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandRef.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetCommandWrapperList.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/NetworkUtil.cpp"
 )
 
 target_include_directories(zh_gamenetwork_core PUBLIC
@@ -2340,6 +2344,35 @@ target_compile_options(gameengine-common-core-smoke PRIVATE
 )
 
 target_link_options(gameengine-common-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(gamenetwork-core-smoke
+  tests/gamenetwork_core_smoke.cpp
+)
+
+set_target_properties(gamenetwork-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gamenetwork-core-smoke PRIVATE
+  zh_gamenetwork_core
+)
+
+target_compile_options(gamenetwork-core-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gamenetwork-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

@@ -170,6 +170,9 @@ shares structure and follows behind.
 - [x] Qualify original GameEngine `BitFlags.cpp` static name-list
       specializations for `ModelConditionFlags` and `ArmorSetFlags` under
       standard clang/Emscripten template rules.
+- [x] Add case-variant include wrappers for original GameNetwork
+      `NetworkUtil.h`, `networkdefs.h`, and `transport.h` users under the
+      case-sensitive wasm build.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -665,13 +668,23 @@ shares structure and follows behind.
       coverage only and no rendering is considered complete without harness
       screenshots/state checks.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
-- [x] Compile the first original GameNetwork command-message slice
-      (`GameMessageParser.cpp`, `NetCommandRef.cpp`, and
-      `NetCommandWrapperList.cpp`) in a wasm core archive.
-- [ ] Link and smoke-test the first GameNetwork command-message slice after
-      original `Common/MessageStream.cpp`, `NetCommandMsg.cpp`,
-      `NetCommandList.cpp`, `NetPacket.cpp`, and `NetworkUtil.cpp` can compile
-      against the real player/message dependencies.
+- [x] Compile the first original GameNetwork command/frame slice
+      (`GameMessageParser.cpp`, `NetCommandRef.cpp`,
+      `NetCommandWrapperList.cpp`, `NetworkUtil.cpp`, `NetCommandList.cpp`,
+      `FrameData.cpp`, and `FrameDataManager.cpp`) in a wasm core archive.
+- [x] Link and smoke-test the original GameNetwork utility/frame slice with
+      command-id/type policy checks and empty frame readiness through
+      `FrameData`/`FrameDataManager`.
+- [ ] Compile original `GameNetwork/FrameMetrics.cpp` after the real
+      `GlobalData` network history fields replace the current temporary
+      wasm `Common/GlobalData.h` surface.
+- [ ] Compile original `GameNetwork/NetPacket.cpp` after resolving its
+      clang/libc++ strictness issues and the remaining packet/message
+      serialization dependencies without changing protocol behavior.
+- [ ] Link and smoke-test the broader GameNetwork command-message slice after
+      original `Common/MessageStream.cpp`, `NetCommandMsg.cpp`, and
+      `NetPacket.cpp` can compile against the real player/message
+      dependencies.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---
