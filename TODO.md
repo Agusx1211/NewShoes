@@ -523,9 +523,16 @@ shares structure and follows behind.
       `Common/RTS/SpecialPower.cpp` after fixing the `ScienceType` enum-forward
       contract, adding a temporary linkable `INI::parseScience` bridge, and
       qualifying the original special-power bit-name table for clang.
+- [x] Compile additional original Common INI leaf parser sources
+      (`INICrate.cpp`, `INIDrawGroupInfo.cpp`, `INITerrain.cpp`,
+      `INITerrainBridge.cpp`, `INITerrainRoad.cpp`, and `INIUpgrade.cpp`) after
+      adding the matching temporary `Common/INI.h` declarations and fixing
+      direct header dependencies for `CrateSystem` / `Upgrade`.
 - [x] Compile original `Common/RTS/PlayerTemplate.cpp` after restoring the
       `AsciiStringList` typedef surface and adding the matching temporary
       `INI::parsePlayerTemplateDefinition` bridge declaration.
+- [x] Compile original `Common/RTS/PlayerList.cpp` in the wasm Common core as
+      compile coverage for player-list lifecycle and lookup plumbing.
 - [x] Compile original `Common/INI/INICommandButton.cpp` into the GameClient
       utility slice as compile coverage for command-button parsing against the
       current ControlBar/SpecialPower declarations.
@@ -540,6 +547,11 @@ shares structure and follows behind.
       command-button INI parser routes after the real `Common/INI.cpp` reader,
       ScienceStore validation, ControlBar, PlayerTemplateStore, and
       SpecialPowerStore singleton surfaces are available without target-local
+      parser stubs.
+- [ ] Link and smoke-test original crate, draw-group, terrain, terrain-road /
+      bridge, and upgrade INI parser routes after the real `Common/INI.cpp`
+      reader, `CrateSystem`, `DrawGroupInfo`, `TerrainTypes`, `TerrainRoads`,
+      and `UpgradeCenter` singleton surfaces are available without target-local
       parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
@@ -578,6 +590,9 @@ shares structure and follows behind.
 - [ ] Link and smoke-test `MultiplayerSettings` and `Money` runtime behavior
       after the deeper `Player`/`Thing`/`StealthUpdate` economy path can link
       without target-local GameLogic singleton shims.
+- [ ] Link and smoke-test original `PlayerList` behavior after real `Player`,
+      `Team`, `TunnelTracker`, control-bar, and GameLogic player ownership
+      dependencies replace the current compile-only surface.
 - [ ] Compile original `Common/RTS/AcademyStats.cpp` after the real
       `GlobalData::m_useAlternateMouse` contract and deeper player/template
       dependencies are available without expanding temporary shims.
@@ -771,6 +786,9 @@ shares structure and follows behind.
       `WOLQMScoreScreen.cpp`, and `WOLStatusMenu.cpp`) in the GameClient
       utility target; this is compile coverage only until `Shell`, `GameWindow`,
       and the real menu flow can link.
+- [x] Compile original `GameClient/GUI/GUICallbacks/ReplayControls.cpp` in the
+      GameClient utility target; this is compile coverage only until replay
+      state and shell/window flow can link.
 - [x] Compile original `GameClient/GUI/GameWindowTransitionsStyles.cpp`,
       `GUI/ControlBar/ControlBarResizer.cpp`, and
       `GUI/Gadget/GadgetPushButton.cpp` in the GameClient utility target after
@@ -844,9 +862,29 @@ shares structure and follows behind.
       original firewall fields/defaults to the temporary `GlobalData` shim,
       portable `itoa` compatibility, and explicit loop variables for legacy
       MSVC loop-scope assumptions without changing firewall probing behavior.
+- [x] Compile additional original GameNetwork setup/LAN/config sources
+      (`DisconnectManager.cpp`, `GameInfo.cpp`, `GUIUtil.cpp`,
+      `LANAPIhandlers.cpp`, `LANGameInfo.cpp`, and `GameSpy/GSConfig.cpp`) in
+      the wasm core archive after adding original `GlobalData` timing/default
+      cash and `Xfer::xferMapName` shim surface plus narrow clang loop-scope
+      fixes.
 - [ ] Link and smoke-test the broader GameNetwork command-message slice after
       the real player/message, packet serialization, and browser transport
       dependencies are available beyond the current compile-only coverage.
+- [ ] Link and smoke-test original GameNetwork setup/LAN/config behavior after
+      the real `GlobalData`, `MapCache`, `MultiplayerSettings`,
+      `PlayerTemplateStore`, `GameText`, `LANAPI`, `NetworkInterface`,
+      disconnect UI, and GameLogic frame state surfaces replace the current
+      compile-only singleton surface.
+- [ ] Compile original `GameNetwork/LANAPI.cpp` after the browser local-user /
+      player-identity contract replaces Win32 `UNLEN` / username lookup and the
+      LAN transport surface is ready.
+- [ ] Compile original `GameNetwork/LANAPICallbacks.cpp` after the real
+      `GameLogic::isInGame`, LAN UI, game setup, and transport callback
+      surfaces are available.
+- [ ] Restore or re-target the vendored GameSpy Peer dependency before
+      compiling original `GameNetwork/GameSpy/PeerDefs.cpp` and
+      `LadderDefs.cpp`.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

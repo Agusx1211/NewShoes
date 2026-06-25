@@ -40,6 +40,7 @@ enum
 {
 	INI_INVALID_NAME_LIST = 1,
 	INI_INVALID_DATA,
+	INI_UNKNOWN_ERROR,
 };
 
 struct FieldParse
@@ -161,7 +162,13 @@ public:
 	static void parseCommandSetDefinition(INI *ini);
 	static void parseControlBarSchemeDefinition(INI *ini);
 	static void parseDamageFXDefinition(INI *ini);
+	static void parseDrawGroupNumberDefinition(INI *ini);
 	static void parseMapDataDefinition(INI *ini);
+	static void parseCrateTemplateDefinition(INI *ini);
+	static void parseTerrainDefinition(INI *ini);
+	static void parseTerrainBridgeDefinition(INI *ini);
+	static void parseTerrainRoadDefinition(INI *ini);
+	static void parseUpgradeDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{

@@ -34,6 +34,7 @@
 
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "Common/AudioEventRTS.h"
+#include "Common/BitFlags.h"
 #include "Common/INI.h"
 #include "Common/Snapshot.h"
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/AsciiString.h"
+#include "Common/Money.h"
 #include "GameClient/Color.h"
 
 class GlobalData
@@ -19,6 +20,9 @@ public:
 		m_networkFPSHistoryLength(30),
 		m_networkLatencyHistoryLength(200),
 		m_networkCushionHistoryLength(10),
+		m_networkDisconnectTime(5000),
+		m_networkPlayerTimeoutTime(60000),
+		m_networkDisconnectScreenNotifyTime(15000),
 		m_userDataDir("./")
 	{
 	}
@@ -38,6 +42,10 @@ public:
 	UnsignedInt m_networkFPSHistoryLength;
 	UnsignedInt m_networkLatencyHistoryLength;
 	UnsignedInt m_networkCushionHistoryLength;
+	UnsignedInt m_networkDisconnectTime;
+	UnsignedInt m_networkPlayerTimeoutTime;
+	UnsignedInt m_networkDisconnectScreenNotifyTime;
+	Money m_defaultStartingCash;
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
 

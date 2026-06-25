@@ -782,6 +782,7 @@ void GameInfo::adjustSlotsForMap()
 		// now go through and close the appropriate number of slots.
 		// note that no players are kicked in this process, we leave
 		// that up to the user.
+		Int i;
 		for (i = 0; i < MAX_SLOTS; ++i)
 		{
 			// we have room for more players, if this slot is unoccupied, set it to open.
@@ -1617,5 +1618,4 @@ void SkirmishGameInfo::xfer( Xfer *xfer )
 void SkirmishGameInfo::loadPostProcess( void )
 {
 }  // end loadPostProcess
-
 

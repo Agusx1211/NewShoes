@@ -89,6 +89,7 @@ void DisconnectManager::init() {
 		}
 	}
 
+	Int i;
 	for (i = 0; i < MAX_SLOTS; ++i) {
 		m_disconnectFrames[i] = 0;
 		m_disconnectFramesReceived[i] = FALSE;
