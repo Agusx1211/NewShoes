@@ -61,7 +61,7 @@ shares structure and follows behind.
 - [ ] `WWVegas/WWDebug` compiles (route asserts/logs to console).
 - [ ] `WWVegas/WWSaveLoad` compiles.
 - [ ] `WWVegas/Wwutil` compiles.
-- [ ] Identify which `Libraries/Source` deps are runtime-required vs tools-only.
+- [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.
 
 ### GameEngine — Common
 - [ ] `Common/System` (file system iface, BIG archive, streams, memory) compiles.

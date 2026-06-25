@@ -1,0 +1,66 @@
+# Source Inventory
+
+This tracks the current understanding of which `GeneralsMD/Code/Libraries`
+components are runtime port targets, compatibility dependencies, or tools-only
+inputs. It is based on the checked-in source layout and the original Visual
+Studio workspace/project files, especially `GeneralsMD/Code/RTS.dsp` and
+`GeneralsMD/Code/RTS.dsw`.
+
+## Runtime Targets
+
+These are part of the real game runtime or are linked by the original `RTS`
+target and should be compiled or re-targeted for wasm.
+
+| Component | Current port status | Notes |
+|---|---|---|
+| `Compression` | Partial | `EAC` RefPack compiles and has a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
+| `WWVegas/WWMath` | Not started | Core math/collision. Depends on `always.h`, `osdep.h`, `WWDebug`, save/load headers, D3DX types, and contains x86 inline assembly in some files. |
+| `WWVegas/WWLib` | Not started | Runtime utility/container/string/file support used broadly by engine and W3D. |
+| `WWVegas/WWDebug` | Not started | Runtime assert/log/debug plumbing; should route to browser console and harness. |
+| `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
+| `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
+| `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
+| `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
+| `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
+| `WWVegas/Miles6` | Not started | Miles-facing dependency; browser target is Web Audio, not the native Miles backend. |
+| `WPAudio` | Not started | Audio helper/backend code; browser target is Web Audio. |
+| `GameSpy` | Not started | Runtime online/networking dependency; browser target is WebSocket/WebRTC relay paths. |
+| `WWVegas/WWDownload` | Not started | Runtime/profile network patch/download support referenced by GameSpy/profile builds; likely stubbed or redirected for browser. |
+| `EABrowserDispatch` | Not started | Original runtime/browser-dispatch integration referenced by workspace dependencies; needs audit before browser replacement. |
+| `DX90SDK` | Not started | Header/API compatibility source for DirectX types; browser port should provide shims rather than native DirectX. |
+| `STLport-4.5.3` | Not started | Historical STL dependency; target is libc++ compatibility, not compiling STLport itself. |
+
+## Tooling Or Editor Targets
+
+These are not part of the browser runtime target. They can be useful references,
+but should not drive the initial wasm runtime build unless a specific runtime
+dependency is proven.
+
+| Component | Notes |
+|---|---|
+| `max4sdk` | 3ds Max/exporter SDK inputs for tools. |
+| `Benchmark` | Benchmark support linked by some original configs; not required for first runtime boot unless profiling config needs it. |
+| `debug/` test projects | Local debug/test utilities, including test and netserv samples. |
+| `profile/` test projects | Profiling support and sample/test programs. |
+| `GeneralsMD/Code/Tools/**` | Editors/build utilities such as WorldBuilder, GUIEdit, ImagePacker, MapCacheBuilder, asset culling, patch tools, and launchers. They are out of scope for the browser runtime. |
+
+## Current Build Targets
+
+The wasm CMake skeleton currently builds:
+
+- `cnc-port`: a minimal browser module boundary used by the harness.
+- `zh_eac_refpack`: original `Compression/EAC` RefPack source compiled into a
+  wasm static library.
+- `refpack-smoke`: a Node-executed wasm smoke test that round-trips data through
+  original `REF_encode`/`REF_decode`.
+
+## Next Compile Order
+
+1. Finish the full `CompressionManager` path by replacing missing zlib/LZH
+   dependencies with toolchain/browser-compatible shims.
+2. Bring up `WWDebug` and minimal `always.h`/`osdep.h` compatibility so `WWMath`
+   can compile without changing math logic.
+3. Compile `WWMath` in slices, excluding or replacing x86 assembly paths such as
+   `vp.cpp` and assembly blocks in `matrix3d.cpp` with portable original-code
+   fallbacks where available.
+4. Move to `WWLib`, `WWSaveLoad`, and `Wwutil`, then begin `GameEngine/Common`.

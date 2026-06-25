@@ -25,6 +25,7 @@ Asset tooling for obtaining real game data to test the port against:
 
 Extracted archives land under ignored `artifacts/real-assets/`.
 See `ASSETS.md` for the asset ownership rules and browser delivery plan.
+See `SOURCE_INVENTORY.md` for the current runtime-vs-tools library inventory.
 
 Verify the local real-asset sample pipeline:
 
