@@ -10,5 +10,8 @@
     "serve:harness": "node harness/serve.mjs",
     "test:harness": "node harness/smoke.mjs",
     "test:wasm": "npm run build:wasm && EXPECT_WASM=1 node harness/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.61.0"
   }
 }

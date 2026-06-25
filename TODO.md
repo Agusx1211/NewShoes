@@ -18,7 +18,7 @@ shares structure and follows behind.
 - [x] Decide wasm target flags (memory growth, `MAXIMUM_MEMORY`, `TOTAL_STACK`,
       `STANDALONE_WASM` vs browser, exceptions, `-O` levels, `-g`/source maps).
 - [x] Reproducible build script (`npm run build:wasm`) + clean target.
-- [ ] CI job that builds the wasm and runs the harness smoke test.
+- [x] CI job that builds the wasm and runs the harness smoke test.
 
 ### Asset pipeline
 - [x] Verify `tools/mode1_2352_to_iso.mjs` converts both disc `.bin` images.
@@ -35,7 +35,7 @@ shares structure and follows behind.
 - [x] A JS↔engine RPC/command channel stub (`boot`, `log`, `state`,
       `screenshot`).
 - [x] Harness smoke test runnable locally (`npm run test:harness`).
-- [ ] Wire the harness smoke test into CI.
+- [x] Wire the harness smoke test into CI.
 
 ---
 

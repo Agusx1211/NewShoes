@@ -1,0 +1,51 @@
+name: WebAssembly Smoke
+
+on:
+  push:
+    paths:
+      - ".github/workflows/wasm-smoke.yml"
+      - "TODO.md"
+      - "WebAssembly/**"
+  pull_request:
+    paths:
+      - ".github/workflows/wasm-smoke.yml"
+      - "TODO.md"
+      - "WebAssembly/**"
+
+jobs:
+  wasm-smoke:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: WebAssembly/package-lock.json
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build python3
+
+      - name: Install Node dependencies
+        working-directory: WebAssembly
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        working-directory: WebAssembly
+        run: npx playwright install --with-deps chromium
+
+      - name: Build wasm and run browser smoke
+        run: |
+          emscripten_version="$(cat WebAssembly/emscripten-version.txt)"
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/emsdk"
+          "${RUNNER_TEMP}/emsdk/emsdk" install "${emscripten_version}"
+          "${RUNNER_TEMP}/emsdk/emsdk" activate "${emscripten_version}"
+          source "${RUNNER_TEMP}/emsdk/emsdk_env.sh"
+          cd WebAssembly
+          npm run test:wasm
