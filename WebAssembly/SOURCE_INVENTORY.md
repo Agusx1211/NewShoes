@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
 | `WWVegas/WWMath` | Complete | All original `WWMath/*.cpp` sources now compile to wasm across `zh_wwmath_core`, `zh_wwmath_curves`, and `zh_wwmath_lookup`. Smokes cover power-of-two helpers, vector math, `Matrix3D` transform/inverse paths, vector processor fallback transforms/min-max/clear, triangle containment, AABox/line/sphere/OBBox collision paths, grid and AAB-tree culling insertion/update/collection/removal, ODE integration, vector randomizers, 1D/3D interpolation, vehicle curves, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, command-line parsing, sampling helpers, secure random, palette/RGB/HSV, RLE, tag-block files, pipe/straw stream core, LCW and LZO codec/adapters, `load.cpp` IFF-style uncompression helper, `data.cpp` legacy data helpers, `rcfile.cpp` resource-file wrapper, `registry.cpp` registry wrapper, multiprecision public-key crypto, file/INI helper sources, MIX archive helpers, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`/legacy timer wrappers including `_timer.cpp` globals, guarded legacy `Except.cpp`/`point.cpp` translation units, `verchk.cpp` PE-header helpers, in-memory 2D surfaces/blits, PCX image loading, Targa image I/O, and original `win.cpp` globals now compile to wasm as focused `zh_wwlib_*` libraries. Active runtime behavior has Node smoke coverage; the guarded legacy units are compile coverage only. The non-MSVC LCW compressor currently emits valid literal packets rather than the original x86 optimizer's back-reference search. Current resource/registry shims report unavailable until a browser persistence/resource contract exists. Concrete browser file backends, threading, DirectDraw-backed `DSurface`/conversion helpers, GNU regex support for `regexpr.cpp`, MPU/RDTSC timing, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, command-line parsing, sampling helpers, secure random, palette/RGB/HSV, RLE, tag-block files, pipe/straw stream core, LCW and LZO codec/adapters, `load.cpp` IFF-style uncompression helper, `data.cpp` legacy data helpers, `rcfile.cpp` resource-file wrapper, `registry.cpp` registry wrapper, multiprecision public-key crypto, file/INI helper sources, MIX archive helpers, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`/legacy timer wrappers including `_timer.cpp` globals, `ThreadClass`, guarded legacy `Except.cpp`/`point.cpp` translation units, `verchk.cpp` PE-header helpers, in-memory 2D surfaces/blits, PCX image loading, Targa image I/O, and original `win.cpp` globals now compile to wasm as focused `zh_wwlib_*` libraries. Active runtime behavior has Node smoke coverage; the guarded legacy units are compile coverage only, and `ThreadClass` currently covers the original `_UNIX` idle-start contract only. The non-MSVC LCW compressor currently emits valid literal packets rather than the original x86 optimizer's back-reference search. Current resource/registry shims report unavailable until a browser persistence/resource contract exists. Concrete browser file backends, browser-backed thread start/stop, DirectDraw-backed `DSurface`/conversion helpers, GNU regex support for `regexpr.cpp`, MPU/RDTSC timing, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. Original `FastAllocator.cpp`, `wwmemlog.cpp`, and `wwprofile.cpp` also compile as `zh_wwdebug_profile`, with smoke coverage for profile tree recording, allocator accounting, and memory-log allocation/free counters. The generic wasm `wwprofile.h` shim still disables scope macros for consumers that do not link the full profile manager, and the `_UNIX` memory-log path keeps category tracking disabled until the browser threading/memory-log contract is decided. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
@@ -119,6 +119,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_systimer`: original `WWVegas/WWLib/_timer.cpp`,
   `systimer.cpp`, and `stimer.cpp` compiled into a wasm static library against
   the browser WinMM timing shim.
+- `zh_wwlib_thread`: original `WWVegas/WWLib/thread.cpp` compiled into a wasm
+  static library against the current `_UNIX` idle-thread fallback and Win32
+  sleep/process compatibility shims.
 - `zh_wwlib_guarded_legacy`: original `WWVegas/WWLib/Except.cpp` and
   `point.cpp` compiled into a wasm static library under their original source
   guards for compile coverage only.
@@ -193,6 +196,9 @@ The wasm CMake skeleton currently builds:
 - `wwlib-mixfile-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib MIX archive creation, filename listing, offset-ordered
   listing, biased subfile reads, and missing-file lookups.
+- `wwlib-thread-smoke`: a Node-executed wasm smoke test that verifies original
+  WWLib `ThreadClass` construction and the current `_UNIX` idle `Execute` /
+  `Stop` / yield / thread-id behavior.
 - `wwlib-containers-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib `SimpleDynVecClass`, pooled `SList`, pooled `MultiListClass`,
   and `PriorityMultiListIterator` behavior.
@@ -291,9 +297,9 @@ The wasm CMake skeleton currently builds:
    optimized LCW back-reference compression if output-size parity matters,
    remaining allocator/mempool helpers, remaining containers,
    DirectDraw-backed `DSurface`/2D conversion helpers, GNU regex support for
-   `regexpr.cpp`, MPU/RDTSC timing, full browser resource/registry persistence
-   beyond the current unavailable fallbacks, and the final browser
-   timing/threading contract.
+   `regexpr.cpp`, browser-backed `ThreadClass` start/stop, MPU/RDTSC timing,
+   full browser resource/registry persistence beyond the current unavailable
+   fallbacks, and the final browser timing/threading contract.
 4. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
    GameLogic compile shims with original sources, then wire browser asset
    fetch/MEMFS mounting, the real INI parser, and the DataChunkOutput write

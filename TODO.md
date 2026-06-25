@@ -115,6 +115,9 @@ shares structure and follows behind.
 - [x] Add browser/compiler shims for original Win32 `_MAX_PATH` and
       `GetModuleFileName` users needed by `GameEngine/Common` memory-pool
       initialization under Emscripten.
+- [x] Add browser/compiler shims for original MSVC `<process.h>` and Win32
+      `Sleep` users needed by WWLib `ThreadClass` under the current `_UNIX`
+      wasm build.
 - [x] Add a minimal `D3DX8Math.h` vector/matrix shim for original
       `GameEngine/Common` Bezier helpers under Emscripten.
 - [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
@@ -252,6 +255,13 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` system timer wrappers (`_timer.cpp`, `systimer.cpp`,
       `stimer.cpp`) compile against browser WinMM timing shims and
       smoke-test the legacy `FrameTimer`/`TickCount` globals.
+- [x] `WWVegas/WWLib` thread wrapper (`thread.cpp`) compiles under wasm and
+      smoke-tests the current original `_UNIX` fallback contract for
+      construction, idle `Execute`/`Stop`, yielding, and thread-id queries.
+- [ ] Re-target original WWLib `ThreadClass::Execute`/`Stop` to the final
+      browser pthread/Web Worker contract before enabling GameSpy, audio, or
+      file worker threads; the current `_UNIX` wasm build intentionally keeps
+      native thread start idle.
 - [x] `WWVegas/WWLib` guarded legacy translation units (`Except.cpp`,
       `point.cpp`) compile under their original source guards; this is compile
       coverage only, not a browser exception dialog or enabled Point body.

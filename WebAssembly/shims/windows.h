@@ -274,6 +274,14 @@ static inline DWORD GetCurrentThreadId()
 	return 1;
 }
 
+static inline void Sleep(DWORD milliseconds)
+{
+	if (milliseconds == 0) {
+		return;
+	}
+	usleep(static_cast<useconds_t>(milliseconds) * 1000U);
+}
+
 static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)
 {
 	if (buffer == nullptr || size == 0) {

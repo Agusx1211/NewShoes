@@ -565,6 +565,30 @@ target_compile_options(zh_wwlib_systimer PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_thread STATIC
+  "${WWLIB_DIR}/thread.cpp"
+)
+
+target_include_directories(zh_wwlib_thread PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_thread PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_thread PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_guarded_legacy STATIC
   "${WWLIB_DIR}/Except.cpp"
   "${WWLIB_DIR}/point.cpp"
@@ -1665,6 +1689,39 @@ target_compile_options(wwlib-mixfile-smoke PRIVATE
 )
 
 target_link_options(wwlib-mixfile-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-thread-smoke
+  tests/wwlib_thread_smoke.cpp
+)
+
+set_target_properties(wwlib-thread-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-thread-smoke PRIVATE
+  zh_wwlib_thread
+)
+
+target_compile_definitions(wwlib-thread-smoke PRIVATE
+  _UNIX
+)
+
+target_compile_options(wwlib-thread-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-thread-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
