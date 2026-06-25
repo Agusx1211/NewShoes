@@ -502,9 +502,11 @@ shares structure and follows behind.
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
-      `Color.cpp`, `System/DebugDisplay.cpp`, `DisplayString.cpp`,
+      `Color.cpp`, `Credits.cpp`, `Display.cpp`, `System/DebugDisplay.cpp`,
+      `DisplayString.cpp`,
       `DisplayStringManager.cpp`, `DrawGroupInfo.cpp`, `DrawableManager.cpp`,
       `GUI/GameFont.cpp`, `GUI/HeaderTemplate.cpp`,
+      `GUI/Shell/ShellMenuScheme.cpp`,
       `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`, `GameText.cpp`,
       `System/Image.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
       `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`,
@@ -515,7 +517,9 @@ shares structure and follows behind.
       `GlobalLanguage` constructor/font defaults and resolution font-size
       adjustment, original string-file loading/fetch/prefix/map string
       handling, header-template creation/lookup/iteration, mapped-image
-      defaults and mutators, encrypted language-filter word loading and
+      defaults/mutators and lookup-shim coverage, credits defaults/parse
+      table/style parsing, shell menu scheme defaults/manager lookup,
+      encrypted language-filter word loading and
       filtering, 2D clip/intersection/area helpers, easing,
       snow/weather/water defaults, normalization, mu-law helpers, and
       video-list bookkeeping.
@@ -550,23 +554,36 @@ shares structure and follows behind.
       parser/transfer surfaces (`parseMappedImage`, duration parsers, and
       unsigned-short xfer) and after the display/W3D include boundary provides
       the `Anim2DCollection`, view, and coltype contracts under Emscripten.
-- [ ] Compile original `GameClient/Credits.cpp` and
+- [x] Compile original `GameClient/Credits.cpp` and
       `GUI/Shell/ShellMenuScheme.cpp` after the display/view header contract
       provides `FilterModes`, `FilterTypes`, `StaticGameLODLevel`,
       `CellShroudStatus`, `AnimTypes`, and after original INI lookup/image/
-      coordinate parse helpers replace the remaining temporary declarations.
+      coordinate parse helpers are available through the current temporary
+      bridge; smoke-test their non-rendering defaults and parse tables.
+- [ ] Replace the current temporary `Common/INI.h` GameClient bridge helpers
+      (`LookupListRec`, lookup-list parsing, coordinate parsing,
+      `parseMappedImage`, credits and shell scheme declarations) with the
+      original INI parser surface once `Common/INI` can compile and link.
 - [ ] Compile original `GameClient/System/CampaignManager.cpp` and
       `GUI/ChallengeGenerals.cpp` after `GameDifficulty`, lowercase
       `common/GameType.h` compatibility, and the real GameClient singleton
       surface are available without target-local stubs.
+- [ ] Compile original `GameClient/MapUtil.cpp` and `RadiusDecal.cpp` after
+      the Win32 `SYSTEMTIME` compatibility and the deeper
+      `MultiIniFieldParse`/Module/Object/GameLogic contracts are available
+      through original headers instead of ad hoc shims.
 - [ ] Compile original `GameClient/Terrain/TerrainRoads.cpp` after
       `MultiIniFieldParse`, `StaticGameLODLevel`, `PlayerMaskType`,
       `VeterancyLevel`, and the related Module/BodyModule/GameLogic contracts
       come in through original headers.
-- [ ] Compile original `GameClient/Display.cpp`, `View.cpp`, and
-      `GraphDraw.cpp` after the real display/view header contract provides
-      `FilterModes`, `FilterTypes`, `StaticGameLODLevel`, `CellShroudStatus`,
-      and the browser display device layer.
+- [ ] Compile original `GameClient/View.cpp` and `GraphDraw.cpp` after the
+      real display/view header contract provides `FilterModes`, `FilterTypes`,
+      `StaticGameLODLevel`, `CellShroudStatus`, and the browser display device
+      layer.
+- [ ] Exercise/link original `GameClient/Display.cpp` display methods against
+      the browser display device layer; the current utility target has compile
+      coverage only and no rendering is considered complete without harness
+      screenshots/state checks.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
 - [ ] Compile the first original GameNetwork command-message slice
       (`NetCommandRef.cpp`, `NetCommandWrapperList.cpp`) after

@@ -1203,7 +1203,10 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
 )
 
 add_library(zh_gameclient_utility STATIC
+  "${WASM_SHIMS_DIR}/INICompat.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Credits.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/DebugDisplay.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayString.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
@@ -1211,6 +1214,7 @@ add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawableManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/WinInstanceData.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GlobalLanguage.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GameText.cpp"
@@ -1235,7 +1239,9 @@ target_include_directories(zh_gameclient_utility PUBLIC
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
   "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
 )
 
 target_compile_options(zh_gameclient_utility PRIVATE

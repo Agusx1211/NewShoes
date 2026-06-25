@@ -18,6 +18,13 @@ typedef void (*INIFieldParseProc)(INI *ini, void *instance, void *store, const v
 typedef const char* ConstCharPtr;
 typedef const ConstCharPtr* ConstCharPtrArray;
 
+struct LookupListRec
+{
+	const char *name;
+	Int value;
+};
+typedef const LookupListRec *ConstLookupListRecArray;
+
 enum INILoadType
 {
 	INI_LOAD_INVALID,
@@ -87,6 +94,8 @@ public:
 	static void parseLanguageDefinition(INI *ini);
 	static void parseWeatherDefinition(INI *ini);
 	static void parseHeaderTemplateDefinition(INI *ini);
+	static void parseCredits(INI *ini);
+	static void parseShellMenuSchemeDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{
@@ -96,6 +105,19 @@ public:
 		for (Int index = 0; nameList[index] != nullptr; ++index) {
 			if (strcasecmp(token, nameList[index]) == 0) {
 				return index;
+			}
+		}
+		throw INI_INVALID_DATA;
+	}
+
+	static Int scanLookupList(const char *token, ConstLookupListRecArray lookupList)
+	{
+		if (token == nullptr || lookupList == nullptr || lookupList[0].name == nullptr) {
+			throw INI_INVALID_NAME_LIST;
+		}
+		for (const LookupListRec *lookup = &lookupList[0]; lookup->name != nullptr; ++lookup) {
+			if (strcasecmp(token, lookup->name) == 0) {
+				return lookup->value;
 			}
 		}
 		throw INI_INVALID_DATA;
@@ -210,6 +232,35 @@ public:
 			*static_cast<Real *>(store) = scanPercentToReal(ini != nullptr ? ini->getNextToken() : nullptr);
 		}
 	}
+
+	static void parseCoord2D(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			Coord2D *coord = static_cast<Coord2D *>(store);
+			coord->x = scanReal(ini != nullptr ? ini->getNextSubToken("X") : nullptr);
+			coord->y = scanReal(ini != nullptr ? ini->getNextSubToken("Y") : nullptr);
+		}
+	}
+
+	static void parseICoord2D(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			ICoord2D *coord = static_cast<ICoord2D *>(store);
+			coord->x = scanInt(ini != nullptr ? ini->getNextSubToken("X") : nullptr);
+			coord->y = scanInt(ini != nullptr ? ini->getNextSubToken("Y") : nullptr);
+		}
+	}
+
+	static void parseLookupList(INI *ini, void *, void *store, const void *userData)
+	{
+		if (store != nullptr) {
+			*static_cast<Int *>(store) = scanLookupList(
+				ini != nullptr ? ini->getNextToken() : nullptr,
+				static_cast<ConstLookupListRecArray>(userData));
+		}
+	}
+
+	static void parseMappedImage(INI *ini, void *instance, void *store, const void *userData);
 
 	static void parseBitString32(INI *ini, void *, void *store, const void *userData)
 	{

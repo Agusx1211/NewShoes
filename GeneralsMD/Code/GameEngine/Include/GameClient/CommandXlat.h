@@ -71,7 +71,8 @@ private:
 	virtual GameMessageDisposition translateGameMessage(const GameMessage *msg);
 };
 
-
+#ifndef GAMECLIENT_VIEW_FILTER_ENUMS_DEFINED
+#define GAMECLIENT_VIEW_FILTER_ENUMS_DEFINED
 enum FilterTypes
 {
 	FT_NULL_FILTER=0,
@@ -112,6 +113,7 @@ enum FilterModes
 	FM_VIEW_MB_PAN_ALPHA, // Moton blur on screen pan (for camera tracks object mode)
 
 };
+#endif
 
 class PickAndPlayInfo
 {

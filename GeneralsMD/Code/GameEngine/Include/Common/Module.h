@@ -42,7 +42,7 @@
 
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
 enum TimeOfDay;
-enum StaticGameLODLevel;
+enum StaticGameLODLevel : int;
 class Drawable;
 class Object;
 class Player;
@@ -321,4 +321,3 @@ private:
 
 
 #endif // __MODULE_H_
-

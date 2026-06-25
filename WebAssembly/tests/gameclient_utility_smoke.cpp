@@ -14,9 +14,11 @@
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Color.h"
+#include "GameClient/Credits.h"
 #include "GameClient/DebugDisplay.h"
 #include "GameClient/DisplayString.h"
 #include "GameClient/DisplayStringManager.h"
@@ -30,6 +32,7 @@
 #include "GameClient/LanguageFilter.h"
 #include "GameClient/Line2D.h"
 #include "GameClient/ParabolicEase.h"
+#include "GameClient/ShellMenuScheme.h"
 #include "GameClient/Snow.h"
 #include "GameClient/Statistics.h"
 #include "GameClient/VideoPlayer.h"
@@ -39,6 +42,10 @@
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GlobalData *TheGlobalData = nullptr;
 HWND ApplicationHWnd = NULL;
+class Display;
+Display *TheDisplay = nullptr;
+class Shell;
+Shell *TheShell = nullptr;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
@@ -452,6 +459,19 @@ bool expect_font_desc(
 	return expect(std::strcmp(font.name.str(), name) == 0 && font.size == size && font.bold == bold, message);
 }
 
+const FieldParse *find_field_parse(const FieldParse *fields, const char *token)
+{
+	if (fields == nullptr || token == nullptr) {
+		return nullptr;
+	}
+	for (const FieldParse *field = fields; field->token != nullptr; ++field) {
+		if (std::strcmp(field->token, token) == 0) {
+			return field;
+		}
+	}
+	return nullptr;
+}
+
 void append_u16le(std::vector<char> &buffer, UnsignedShort value)
 {
 	buffer.push_back(static_cast<char>(value & 0xff));
@@ -477,6 +497,120 @@ std::vector<char> payload_from_string(const char *text)
 		payload.assign(text, text + std::strlen(text));
 	}
 	return payload;
+}
+
+bool exercise_ini_compat()
+{
+	INI ini;
+	static const LookupListRec names[] = {
+		{ "Alpha", 7 },
+		{ "Bravo", 11 },
+		{ nullptr, 0 },
+	};
+
+	Int lookup_value = 0;
+	char lookup_line[] = "Mode = Bravo";
+	std::strtok(lookup_line, ini.getSeps());
+	INI::parseLookupList(&ini, nullptr, &lookup_value, names);
+
+	Coord2D coord = { 0.0f, 0.0f };
+	char coord_line[] = "Offset = X:12.5 Y:-3.25";
+	std::strtok(coord_line, ini.getSeps());
+	INI::parseCoord2D(&ini, nullptr, &coord, nullptr);
+
+	ICoord2D icoord = { 0, 0 };
+	char icoord_line[] = "Cell = X:5 Y:9";
+	std::strtok(icoord_line, ini.getSeps());
+	INI::parseICoord2D(&ini, nullptr, &icoord, nullptr);
+
+	return expect(INI::scanLookupList("Alpha", names) == 7 && lookup_value == 11,
+			"INI lookup-list parsing failed") &&
+		expect(near(coord.x, 12.5f) && near(coord.y, -3.25f),
+			"INI Coord2D parsing failed") &&
+		expect(icoord.x == 5 && icoord.y == 9,
+			"INI ICoord2D parsing failed");
+}
+
+bool exercise_credits()
+{
+	CreditsLine line;
+	const bool line_ok =
+		expect(line.m_style == CREDIT_STYLE_BLANK && line.m_displayString == nullptr &&
+				line.m_secondDisplayString == nullptr && line.m_useSecond == FALSE && line.m_done == FALSE,
+			"CreditsLine defaults failed");
+
+	CreditsManager manager;
+	CreditsManager *old_credits = TheCredits;
+	TheCredits = &manager;
+	const FieldParse *fields = manager.getFieldParse();
+	const FieldParse *style_field = find_field_parse(fields, "Style");
+	const FieldParse *blank_field = find_field_parse(fields, "Blank");
+	const FieldParse *text_field = find_field_parse(fields, "Text");
+	const bool fields_ok =
+		expect(style_field != nullptr && blank_field != nullptr && text_field != nullptr,
+			"CreditsManager parse table missing fields") &&
+		expect(INI::scanLookupList("TITLE", CreditStyleNames) == CREDIT_STYLE_TITLE &&
+				INI::scanLookupList("COLUMN", CreditStyleNames) == CREDIT_STYLE_COLUMN,
+			"Credits style lookup failed") &&
+		expect(manager.isFinished() == FALSE, "CreditsManager finished default failed");
+
+	INI ini;
+	if (style_field != nullptr) {
+		char style_line[] = "Style = TITLE";
+		std::strtok(style_line, ini.getSeps());
+		style_field->parse(
+			&ini,
+			&manager,
+			reinterpret_cast<char *>(&manager) + style_field->offset,
+			style_field->userData);
+	}
+	if (text_field != nullptr) {
+		char text_line[] = "Text = BrowserCredits";
+		std::strtok(text_line, ini.getSeps());
+		text_field->parse(&ini, &manager, nullptr, nullptr);
+	}
+	if (blank_field != nullptr) {
+		blank_field->parse(&ini, &manager, nullptr, nullptr);
+	}
+
+	INI::parseCredits(&ini);
+	manager.reset();
+	const bool state_ok = expect(manager.isFinished() == FALSE, "CreditsManager reset state failed");
+	TheCredits = old_credits;
+
+	return line_ok && fields_ok && state_ok;
+}
+
+bool exercise_shell_menu_scheme()
+{
+	ShellMenuSchemeLine line;
+	const bool line_ok =
+		expect(line.m_startPos.x == 0 && line.m_startPos.y == 0 &&
+				line.m_endPos.x == 0 && line.m_endPos.y == 0 &&
+				line.m_color == GAME_COLOR_UNDEFINED && line.m_width == 1,
+			"ShellMenuSchemeLine defaults failed");
+
+	ShellMenuSchemeImage image;
+	const bool image_ok =
+		expect(image.m_name.isEmpty() && image.m_position.x == 0 && image.m_position.y == 0 &&
+				image.m_size.x == 0 && image.m_image == nullptr,
+			"ShellMenuSchemeImage defaults failed");
+
+	ShellMenuSchemeManager manager;
+	const FieldParse *fields = manager.getFieldParse();
+	const bool fields_ok =
+		expect(find_field_parse(fields, "ImagePart") != nullptr &&
+				find_field_parse(fields, "LinePart") != nullptr,
+			"ShellMenuSchemeManager parse table missing fields");
+
+	ShellMenuScheme *scheme = manager.newShellMenuScheme(AsciiString("MainMenu"));
+	const bool scheme_ok =
+		expect(scheme != nullptr && scheme->m_name == AsciiString("mainmenu"),
+			"ShellMenuSchemeManager new scheme failed");
+	manager.setShellMenuScheme(AsciiString("MainMenu"));
+	manager.draw();
+
+	return line_ok && image_ok && fields_ok && scheme_ok;
 }
 
 bool exercise_color()
@@ -1145,6 +1279,9 @@ int main()
 	initMemoryManager();
 
 	const bool ok = exercise_color() &&
+		exercise_ini_compat() &&
+		exercise_credits() &&
+		exercise_shell_menu_scheme() &&
 		exercise_line2d() &&
 		exercise_parabolic_ease() &&
 		exercise_statistics() &&
@@ -1164,7 +1301,7 @@ int main()
 	}
 
 	std::printf("{\"ok\":true,\"library\":\"GameClient/utility\","
-		"\"compiled\":\"Color,DebugDisplay,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
+		"\"compiled\":\"Color,Credits,DebugDisplay,Display,DisplayString,DisplayStringManager,DrawGroupInfo,DrawableManager,GameFont,GlobalLanguage,GameText,HeaderTemplate,Image,LanguageFilter,Line2D,ParabolicEase,ShellMenuScheme,Snow,Statistics,VideoPlayer,VideoStream,Water,WinInstanceData\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
