@@ -1204,11 +1204,20 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
 
 add_library(zh_gameclient_utility STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/DebugDisplay.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GlobalLanguage.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/LanguageFilter.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Line2D.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/ParabolicEase.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Statistics.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/VideoPlayer.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp"
+)
+
+set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include;${WASM_SHIMS_DIR}/PreRTS.h"
 )
 
 target_include_directories(zh_gameclient_utility PUBLIC
@@ -1217,6 +1226,7 @@ target_include_directories(zh_gameclient_utility PUBLIC
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+  "${WWMATH_DIR}"
 )
 
 target_compile_options(zh_gameclient_utility PRIVATE
@@ -2218,6 +2228,8 @@ target_link_options(gameclient-utility-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
 add_executable(gameengine-common-core-smoke

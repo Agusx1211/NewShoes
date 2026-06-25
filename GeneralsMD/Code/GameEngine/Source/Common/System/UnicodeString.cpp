@@ -347,7 +347,7 @@ Bool UnicodeString::nextToken(UnicodeString* tok, UnicodeString delimiters)
 	{
 		Int len = end - start;
 		WideChar* tmp = tok->getBufferForRead(len + 1);
-		memcpy(tmp, start, len*2);
+		memcpy(tmp, start, len*sizeof(WideChar));
 		tmp[len] = 0;
 
 		this->set(end);

@@ -26,6 +26,7 @@ enum INILoadType
 enum
 {
 	INI_INVALID_NAME_LIST = 1,
+	INI_INVALID_DATA,
 };
 
 struct FieldParse
@@ -47,15 +48,19 @@ struct FieldParse
 class INI
 {
 public:
-	void load(AsciiString, INILoadType, Xfer *) {}
-	void loadDirectory(AsciiString, Bool, INILoadType, Xfer *) {}
+	INI() : m_loadType(INI_LOAD_OVERWRITE) {}
+
+	void load(AsciiString, INILoadType loadType, Xfer *) { m_loadType = loadType; }
+	void loadDirectory(AsciiString, Bool, INILoadType loadType, Xfer *) { m_loadType = loadType; }
 	void initFromINI(void *, const FieldParse *) {}
+	INILoadType getLoadType() const { return m_loadType; }
 	const char *getNextToken() { return ""; }
 	const char *getNextTokenOrNull(const char * = nullptr) { return nullptr; }
 	AsciiString getNextAsciiString() { return AsciiString(getNextToken()); }
 	AsciiString getNextQuotedAsciiString() { return AsciiString(getNextToken()); }
 
 	static void parseLanguageDefinition(INI *ini);
+	static void parseWeatherDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{
@@ -113,6 +118,9 @@ public:
 			*static_cast<Real *>(store) = scanReal(ini != nullptr ? ini->getNextToken() : nullptr);
 		}
 	}
+
+private:
+	INILoadType m_loadType;
 };
 
 #endif

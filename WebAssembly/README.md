@@ -271,3 +271,9 @@ Run only the original GameEngine Common core smoke:
 ```sh
 npm run test:gameengine-common-core
 ```
+
+Run only the expanded original GameClient utility smoke:
+
+```sh
+npm run test:gameclient-utility
+```

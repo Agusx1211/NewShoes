@@ -38,6 +38,28 @@
 
 LanguageFilter *TheLanguageFilter = NULL;
 
+static Int getLanguageWordLength(const UnsignedShort *word)
+{
+	Int length = 0;
+	while (word[length] != 0) {
+		++length;
+	}
+	return length;
+}
+
+static void decodeLanguageWord(const UnsignedShort *encodedWord, WideChar *decodedWord, Int maxChars)
+{
+	if (maxChars <= 0) {
+		return;
+	}
+
+	Int index = 0;
+	for (; index < maxChars - 1 && encodedWord[index] != 0; ++index) {
+		decodedWord[index] = (WideChar)(encodedWord[index] ^ LANGUAGE_XOR_KEY);
+	}
+	decodedWord[index] = 0;
+}
+
 LanguageFilter::LanguageFilter() 
 {
 	//Modified by Saad
@@ -58,15 +80,14 @@ void LanguageFilter::init() {
 		return;
 	}
 
-	wchar_t word[128];
-	while (readWord(file1, word)) {
-		Int wordLen = wcslen(word);
+	UnsignedShort encodedWord[128];
+	WideChar word[128];
+	while (readWord(file1, encodedWord, ELEMENTS_OF(encodedWord))) {
+		Int wordLen = getLanguageWordLength(encodedWord);
 		if (wordLen == 0) {
 			continue;
 		}
-		for (Int i = 0; i < wordLen; ++i) {
-			word[i] = word[i] ^ LANGUAGE_XOR_KEY;
-		}
+		decodeLanguageWord(encodedWord, word, ELEMENTS_OF(word));
 		UnicodeString uniword(word);
 		unHaxor(uniword);
 		//DEBUG_LOG(("Just read %ls from the bad word file.  Entered as %ls\n", word, uniword.str()));
@@ -159,36 +180,34 @@ void LanguageFilter::unHaxor(UnicodeString &word) {
 }
 
 // returning true means that there are more words in the file.
-Bool LanguageFilter::readWord(File *file1, UnsignedShort *buf) {
+Bool LanguageFilter::readWord(File *file1, UnsignedShort *buf, Int maxChars) {
 	Int index = 0;
 	Bool retval = TRUE;
 	Int val = 0;
 
 	UnsignedShort c;
 
+	if ((file1 == NULL) || (buf == NULL) || (maxChars <= 0)) {
+		return FALSE;
+	}
+
 	val = file1->read(&c, sizeof(UnsignedShort));
-	if ((val == -1) || (val == 0)) {
+	if (val != sizeof(UnsignedShort)) {
 		buf[index] = 0;
 		return FALSE;
 	}
-	buf[index] = c;
 
-	while (buf[index] != L' ') {
-		++index;
-		val = file1->read(&c, sizeof(UnsignedShort));
-		if ((val == -1) || (val == 0)) {
-			c = WEOF;
+	while (c != (UnsignedShort)L' ') {
+		if (index < maxChars - 1) {
+			buf[index++] = c;
 		}
-
-		if ((c == WEOF) || (c == L' ')) {
-			buf[index] = 0;
-			if (c == WEOF) {
-				retval = FALSE;
-			}
+		val = file1->read(&c, sizeof(UnsignedShort));
+		if (val != sizeof(UnsignedShort)) {
+			retval = FALSE;
 			break;
 		}
-		buf[index] = c;
 	}
+	buf[index] = 0;
 	return retval;
 }
 

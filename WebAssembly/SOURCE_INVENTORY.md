@@ -20,7 +20,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
 | `GameEngine/Common` | Partial | Original-source core slice now compiles to wasm: `GameMemory.cpp`, `MemoryInit.cpp`, `CriticalSection.cpp`, `File.cpp`, `LocalFile.cpp`, `LocalFileSystem.cpp`, `FileSystem.cpp`, `RAMFile.cpp`, `StreamingArchiveFile.cpp`, `ArchiveFile.cpp`, `ArchiveFileSystem.cpp`, `Directory.cpp`, `StackDump.cpp`, `Snapshot.cpp`, `Geometry.cpp`, `Compression.cpp`, `DataChunk.cpp`, `AsciiString.cpp`, `UnicodeString.cpp`, legacy `System/String.cpp`, `QuotedPrintable.cpp`, `SubsystemInterface.cpp`, `CDManager.cpp`, `registry.cpp`, `version.cpp`, `AudioRequest.cpp`, `Audio/DynamicAudioEventInfo.cpp`, `GameType.cpp`, `GameCommon.cpp`, `Trig.cpp`, `QuickTrig.cpp`, `List.cpp`, `DisabledTypes.cpp`, `KindOf.cpp`, `ObjectStatusTypes.cpp`, `BitFlags.cpp`, `MiniLog.cpp`, `Dict.cpp`, `DiscreteCircle.cpp`, Bezier helpers, `System/encrypt.cpp`, `Language.cpp`, `PartitionSolver.cpp`, `NameKeyGenerator.cpp`, `RandomValue.cpp`, and engine `crc.cpp`, plus original `Win32LocalFile.cpp`/`Win32LocalFileSystem.cpp` and `Win32BIGFile.cpp`/`Win32BIGFileSystem.cpp` for the current file/BIG bridge. Node smoke coverage initializes the original memory manager with real DMA/pool sizing, exercises engine strings, legacy WSYS strings, original quoted-printable ASCII paths plus the UTF-16LE Unicode wire format used by LAN/GameSpy/user-preference code, original file and RAM file access/read/scan behavior, original Win32 local-file writes/existence/file-info/listing/dispatch/RAM conversion/whole-file reads, smoke-built BIG archive indexing and archive fallback reads, streaming archive reads, compressed cached-file reads through the original compression manager, `DataChunkInput` table/chunk parsing, local file-system singleton plumbing, CD manager drive bookkeeping, browser registry defaults, version packing and GameText-backed Unicode formatting, `AudioRequest` memory-pool allocation/release, language state, name keys, Dict copy-on-write/typed lookups, deterministic RNG/CRC, trig helpers, game constants, type-mask and bit-name table initialization, geometry bounds/footprint calculations, linked-list/circle helpers, Bezier evaluation/splitting, encryption vectors, and partition solving. Opt-in real-asset smokes now verify the original `Win32BIGFileSystem` against extracted `INIZH.big` under both Node raw filesystem access and browser fetch into Emscripten MEMFS, reading real `Armor.ini`, `CommandButton.ini`, and `Weapon.ini` through the original archive fallback path; a broader opt-in browser smoke fetches each inventoried runtime BIG into MEMFS sequentially and verifies original BIG indexing plus a sample read from every archive. `DynamicAudioEventInfo` is compile-only until original `INIAudioEventInfo`/`AudioEventInfo` metadata, INI parsing, and audio manager paths are available without target-local stubs. The full INI, Xfer, GlobalData, GameLogic, minimum boot archive set mounting, RTS, Thing, and Audio implementations remain open. |
-| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source: `Color.cpp`, `DrawGroupInfo.cpp`, `GlobalLanguage.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, and `Statistics.cpp`. Node smoke coverage verifies packed color conversion/darkening, draw-group defaults, `GlobalLanguage` constructor/font defaults and resolution font-size adjustment, 2D clipping/intersection/area/rect helpers, parabolic easing, and normalization/mu-law helpers. `GlobalLanguage::init` and the CSF/string/font loading path remain blocked on the original `Common/INI` parser plus a real browser `FontFace`/fetch font-loading path; the current Win32 font-resource shim is a compatibility no-op. Rendering, display strings/fonts, GUI, drawable, input, terrain, video, and shell/menu implementations remain open until the device/render/input layers are available. |
+| `GameEngine/GameClient` | Partial | Utility slice compiles to wasm from original source: `Color.cpp`, `System/DebugDisplay.cpp`, `DrawGroupInfo.cpp`, `GlobalLanguage.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`, and the empty `VideoStream.cpp` translation unit under its original precompiled-header contract. Node smoke coverage verifies packed color conversion/darkening, debug-display formatting/cursor state, draw-group defaults, `GlobalLanguage` constructor/font defaults and resolution font-size adjustment, encrypted `LanguageFilter` UTF-16 word loading/filtering under wasm `WideChar`, 2D clipping/intersection/area/rect helpers, parabolic easing, weather/snow defaults, normalization/mu-law helpers, video-buffer rect scaling, and video-list bookkeeping. `GlobalLanguage::init` and the CSF/string/font loading path remain blocked on the original `Common/INI` parser plus a real browser `FontFace`/fetch font-loading path; the current Win32 font-resource shim is a compatibility no-op. Rendering, display strings/fonts, GUI, drawable, input, terrain, real video playback, and shell/menu implementations remain open until the device/render/input/video layers are available. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -34,11 +34,13 @@ target and should be compiled or re-targeted for wasm.
 
 Case-variant wrappers now cover the original headers reached by broader
 Common/GameClient probes (`Common/OVERRIDE.h`, `Common/SimplePlayer.h`,
-`Common/URLLaunch.h`, `Lib/Basetype.h`, `WW3D2/ColType.h`, and
-`WWMath/Matrix3D.h`). The `gameengine-header-case-smoke` target compile-checks
-the currently browser-usable wrappers against original OVERRIDE, BaseType, W3D
-collision type, and Matrix3D inline behavior; Windows Media / shell URL bodies
-still need a real browser-device contract before they can compile.
+`Common/URLLaunch.h`, `GameClient/view.h`, `Lib/Basetype.h`,
+`lib/BaseType.h`, `WW3D2/ColType.h`, `WWMath/Matrix3D.h`,
+`WWMATH/Vector3.h`, and `WWMATH/Vector4.h`). The
+`gameengine-header-case-smoke` target compile-checks the currently
+browser-usable wrappers against original OVERRIDE, BaseType, W3D collision
+type, and Matrix3D inline behavior; Windows Media / shell URL bodies still need
+a real browser-device contract before they can compile.
 
 ## Tooling Or Editor Targets
 
@@ -185,9 +187,11 @@ The wasm CMake skeleton currently builds:
   state, password obfuscation, partition solving, `NameKeyGenerator`,
   `RandomValue`, and engine CRC.
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
-  `Color.cpp`, `DrawGroupInfo.cpp`, `GlobalLanguage.cpp`, `Line2D.cpp`,
-  `ParabolicEase.cpp`, and `Statistics.cpp` compiled into a wasm static
-  library, linked against the current original `GameEngine/Common` core slice.
+  `Color.cpp`, `System/DebugDisplay.cpp`, `DrawGroupInfo.cpp`,
+  `GlobalLanguage.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
+  `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`, and
+  `VideoStream.cpp` compiled into a wasm static library, linked against the
+  current original `GameEngine/Common` core slice.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -307,8 +311,10 @@ The wasm CMake skeleton currently builds:
 - `gameclient-utility-smoke`: a Node-executed wasm smoke test that verifies
   original GameClient color packing/darkening, draw-group defaults,
   `GlobalLanguage` constructor/font defaults and resolution font-size scaling,
-  2D line/area/rect helpers, parabolic easing, and statistics
-  normalization/mu-law helpers.
+  encrypted `LanguageFilter` UTF-16 word loading/filtering, debug-display
+  formatting/cursor state, 2D line/area/rect helpers, parabolic easing,
+  snow/weather defaults, statistics normalization/mu-law helpers, video-buffer
+  rect scaling, and video-list bookkeeping.
 - `gameengine-real-big-smoke`: an opt-in Node-executed wasm smoke test
   (`npm run test:real-big`) that depends on user-supplied extracted assets and
   verifies the original `Win32BIGFileSystem` indexes `INIZH.big`, finds real
@@ -348,3 +354,7 @@ The wasm CMake skeleton currently builds:
    runtime-archive smoke as the base for proving the exact boot archive set and
    wire the real INI parser plus the DataChunkOutput write path once browser
    user-data persistence exists.
+5. Continue `GameEngine/GameClient` upward from the current utility slice into
+   display strings/fonts, GUI/display/drawable surfaces, input, shell/menu, and
+   real video playback only as the corresponding browser device contracts are
+   available.

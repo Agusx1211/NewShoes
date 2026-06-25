@@ -130,6 +130,9 @@ shares structure and follows behind.
       `Common/SimplePlayer.h`, `Common/URLLaunch.h`, `Lib/Basetype.h`,
       `WW3D2/ColType.h`, and `WWMath/Matrix3D.h`), with wasm compile smoke
       coverage for the currently browser-usable wrappers.
+- [x] Add case-variant include wrappers for original GameClient utility sources
+      (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector3.h`, and
+      `WWMATH/Vector4.h`) under the case-sensitive wasm build.
 - [x] Add browser registry API fallbacks, a legacy `<io.h>` POSIX alias shim,
       and a lowercase `Common/SubSystemInterface.h` wrapper for additional
       original `GameEngine/Common` sources under Emscripten.
@@ -162,6 +165,9 @@ shares structure and follows behind.
       original UTF-16LE quoted-printable wire format explicit for the wasm
       `WideChar`/`wchar_t` width, with ASCII, Unicode ASCII, and BMP
       round-trip smoke coverage.
+- [x] Make original `UnicodeString::nextToken` copy token bytes using
+      `sizeof(WideChar)` so tokenization remains valid under wasm's non-MSVC
+      wide-character width.
 - [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
       libc++/wasm before relying on it for asset and file buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
@@ -493,11 +499,15 @@ shares structure and follows behind.
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
 - [x] Expanded `GameClient` utility slice compiles from original sources:
-      `Color.cpp`, `DrawGroupInfo.cpp`, `GlobalLanguage.cpp`, `Line2D.cpp`,
-      `ParabolicEase.cpp`, and `Statistics.cpp`, with wasm smoke coverage for
-      packed colors, draw-group defaults, `GlobalLanguage` constructor/font
-      defaults and resolution font-size adjustment, 2D clip/intersection/area
-      helpers, easing, normalization, and mu-law helpers.
+      `Color.cpp`, `System/DebugDisplay.cpp`, `DrawGroupInfo.cpp`,
+      `GlobalLanguage.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
+      `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`, `VideoPlayer.cpp`,
+      and `VideoStream.cpp`, with wasm smoke coverage for packed colors,
+      debug-display formatting/cursor state, draw-group defaults,
+      `GlobalLanguage` constructor/font defaults and resolution font-size
+      adjustment, encrypted language-filter word loading and filtering,
+      2D clip/intersection/area helpers, easing, snow/weather defaults,
+      normalization, mu-law helpers, and video-list bookkeeping.
 - [ ] `GameClient` (Display, Drawable, GUI, Input, InGameUI, Terrain) compiles.
 - [x] Add lowercase `Common/Filesystem.h` compatibility, `PreRTS.h`
       include-contract parity for `Common/INI.h`/`Common/GlobalData.h`, and
@@ -508,7 +518,7 @@ shares structure and follows behind.
       loading against real fetched assets after original `Common/INI` and
       browser `FontFace`/fetch loading replace the current compatibility
       no-ops.
-- [ ] Compile original `GameClient/LanguageFilter.cpp` after resolving its
+- [x] Compile original `GameClient/LanguageFilter.cpp` after resolving its
       16-bit word-list buffer contract under wasm `WideChar`/`wchar_t`.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
 - [ ] Compile the first original GameNetwork command-message slice
