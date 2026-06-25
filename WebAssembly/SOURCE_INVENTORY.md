@@ -216,19 +216,17 @@ The wasm CMake skeleton currently builds:
   `XferLoad.cpp`, `XferSave.cpp`),
   initial Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
   `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`),
-  and the first broad original `GameLogic` module batch: map/system leaves
+  and 176 of 259 original `GameLogic` translation units: map/system leaves
   (`PolygonTrigger.cpp`, `SidesList.cpp`, `TerrainLogic.cpp`,
   `CaveSystem.cpp`, `CrateSystem.cpp`, `Damage.cpp`,
-  `GameLogicDispatch.cpp`, `RankInfo.cpp`),
-  `Object/Armor.cpp`, body/create/die/collide/helper/special-power/upgrade
-  module bases, crate collide leaves including `SalvageCrateCollide.cpp`, and
-  currently browser-buildable object create/die/helper/special-power/upgrade
-  leaves including `ActiveBody.cpp`, `UndeadBody.cpp`, `CreateCrateDie.cpp`,
-  `CrushDie.cpp`, `RebuildHoleExposeDie.cpp`, `StatusDamageHelper.cpp`,
-  `CostModifierUpgrade.cpp`, and `ReplaceObjectUpgrade.cpp`. The GameLogic
-  additions are compile coverage only until full object, player, AI
-  pathfinding, command, and runtime singleton surfaces link without
-  target-local bridges.
+  `GameLogicDispatch.cpp`, `RankInfo.cpp`), `AI/AI.cpp`, `AI/AIDock.cpp`,
+  `Object/Armor.cpp`, body/create/die/collide/contain/damage/destroy/helper/
+  behavior/special-power/upgrade module bases and leaves, object utility leaves
+  (`ExperienceTracker.cpp`, `FiringTracker.cpp`, `SimpleObjectIterator.cpp`),
+  43 currently browser-buildable update leaves, and
+  `ScriptEngine/VictoryConditions.cpp`. The GameLogic additions are compile
+  coverage only until full object, player, AI pathfinding, command, and runtime
+  singleton surfaces link without target-local bridges.
 - `zh_gameclient_utility`: original `GameEngine/GameClient` utility sources
   `Color.cpp`, `System/DebugDisplay.cpp`,
   `System/Debug Displayers/AudioDebugDisplay.cpp`, `DisplayString.cpp`,

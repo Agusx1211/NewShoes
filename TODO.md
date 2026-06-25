@@ -761,6 +761,22 @@ shares structure and follows behind.
       `Object/Upgrade/CostModifierUpgrade.cpp`,
       `Object/Upgrade/ReplaceObjectUpgrade.cpp`, `System/Damage.cpp`, and
       `System/GameLogicDispatch.cpp`.
+- [x] Compile the next broad original `GameLogic` clean-probe batch in the
+      real-header compile frontier: `AI/AI.cpp`, `AI/AIDock.cpp`, 20 behavior
+      leaves, 7 contain leaves, damage/destroy leaves, `ExperienceTracker`,
+      `FiringTracker`, `SimpleObjectIterator`, 43 update leaves, and
+      `ScriptEngine/VictoryConditions.cpp`. The frontier now covers 176 of
+      259 original `GameLogic` translation units.
+- [ ] Compile the remaining 83 original `GameLogic` sources after resolving
+      the clustered blockers found by the broad probe: missing direct
+      `GlobalData` / `LogicRandomValue` / `GameClientRandomValue` includes,
+      case-sensitive wrappers (`PreRTS.H`, `Common/XFerCRC.h`,
+      `common/mapobject.h`, `GameLogic/Weaponset.h`,
+      `GameLogic\\Weaponset.h`, `WWMath/Vector3.h`), enum forward declarations
+      for missile/laser/neutron/ghost object headers, self-contained
+      `KindOfMaskType` / `ObjectID` headers, clang template specialization
+      fixes, standard-library iterator conversions, and legacy MSVC for-scope
+      variables.
 - [ ] Compile original `GameLogic/System/GameLogic.cpp` after the missing
       GameSpy GP SDK include path (`GameSpy/GP/GP.h`) is restored or mapped to
       the browser networking contract.
