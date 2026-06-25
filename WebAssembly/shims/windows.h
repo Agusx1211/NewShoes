@@ -182,6 +182,11 @@ static inline unsigned int _controlfp(unsigned int new_value, unsigned int mask)
 	return new_value & mask;
 }
 
+static inline int _wtoi(const wchar_t *value)
+{
+	return value ? static_cast<int>(std::wcstol(value, nullptr, 10)) : 0;
+}
+
 #ifndef __min
 #define __min(a, b) (((a) < (b)) ? (a) : (b))
 #endif

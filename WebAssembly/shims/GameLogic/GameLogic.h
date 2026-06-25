@@ -29,9 +29,11 @@ public:
 	Bool isInGame() const { return FALSE; }
 	Bool isInSinglePlayerGame() const { return FALSE; }
 	Bool isInMultiplayerGame() const { return FALSE; }
+	Bool isInLanGame() const { return FALSE; }
 	Bool isInSkirmishGame() const { return FALSE; }
 	Bool isInReplayGame() const { return FALSE; }
 	Bool isInShellGame() const { return FALSE; }
+	Bool isInInternetGame() const { return FALSE; }
 	Bool isLoadingMap() const { return FALSE; }
 	Bool isIntroMoviePlaying() const { return FALSE; }
 	Bool isGamePaused() const { return FALSE; }
@@ -41,6 +43,7 @@ public:
 	void processProgressComplete(Int) {}
 	void prepareNewGame(Int, GameDifficulty, Int) {}
 	void timeOutGameStart() {}
+	void initTimeOutValues() {}
 	void clearGameData(Bool showScoreScreen = TRUE) {}
 	void closeWindows() {}
 	void bindObjectAndDrawable(Object *, Drawable *) {}
@@ -50,6 +53,8 @@ public:
 	Int getHulkMaxLifetimeOverride() const { return 0; }
 	UnsignedInt getFrameObjectsChangedTriggerAreas() { return 0; }
 	void deselectObject(Object *, PlayerMaskType, Bool affectClient = FALSE) {}
+	void setShowBehindBuildingMarkers(Bool) {}
+	Bool getShowBehindBuildingMarkers() const { return FALSE; }
 	Bool findControlBarOverride(const AsciiString &, Int, ConstCommandButtonPtr &) const { return FALSE; }
 };
 

@@ -59,6 +59,8 @@ public:
 		m_useTrees(TRUE),
 		m_useTreeSway(TRUE),
 		m_useDrawModuleLOD(FALSE),
+		m_useCloudMap(FALSE),
+		m_useLightMap(FALSE),
 		m_useShadowVolumes(FALSE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
@@ -107,6 +109,8 @@ public:
 		m_networkDisconnectTime(5000),
 		m_networkPlayerTimeoutTime(60000),
 		m_networkDisconnectScreenNotifyTime(15000),
+		m_shellMapName("Maps\\ShellMap1\\ShellMap1.map"),
+		m_shellMapOn(TRUE),
 		m_weaponBonusSet(nullptr),
 		m_userDataDir("./")
 	{
@@ -160,6 +164,8 @@ public:
 	Bool m_useTrees;
 	Bool m_useTreeSway;
 	Bool m_useDrawModuleLOD;
+	Bool m_useCloudMap;
+	Bool m_useLightMap;
 	Bool m_useShadowVolumes;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
@@ -211,6 +217,9 @@ public:
 	Money m_defaultStartingCash;
 	AsciiString m_mapName;
 	AsciiString m_pendingFile;
+	AsciiString m_initialFile;
+	AsciiString m_shellMapName;
+	Bool m_shellMapOn;
 	AsciiString m_modBIG;
 	AsciiString m_modDir;
 	WeaponBonusSet *m_weaponBonusSet;

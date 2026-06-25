@@ -1018,23 +1018,32 @@ shares structure and follows behind.
       `GlobalData::m_downwindAngle` field/default, fixed-underlying
       `MaxHealthChangeType` enum declarations for standard clang, and a
       localized legacy for-scope fix.
+- [x] Compile the next original GameClient shell/network menu batch in the
+      utility target (`GUI/LoadScreen.cpp`, `GUI/Shell/Shell.cpp`,
+      `GUI/GUICallbacks/Diplomacy.cpp`, `NetworkDirectConnect.cpp`,
+      `PopupHostGame.cpp`, `PopupJoinGame.cpp`, `PopupLadderSelect.cpp`,
+      `PopupPlayerInfo.cpp`, `ScoreScreen.cpp`, `WOLBuddyOverlay.cpp`,
+      `WOLLobbyMenu.cpp`, `WOLLocaleSelectPopup.cpp`, `WOLMapSelectMenu.cpp`,
+      `WOLQuickMatchMenu.cpp`, and `MessageStream/CommandXlat.cpp`) after
+      adding GameSpy include-case wrappers, a compile-only `ghttp` surface,
+      original `GlobalData` / `GameLogic` shim parity, `_wtoi`
+      compatibility, and localized MSVC loop-scope fixes.
 - [ ] Link and smoke-test the original GameClient message translators,
       selection info, EVA/FX list, control-bar scheme/core/commands/leaves,
       in-game chat, `GameClient`/`InGameUI`/mouse/IME entry points,
-      keyboard/skirmish/LAN/game-info/map/quit/popup/replay menu behavior,
-      particle/terrain/drawable/update/smudge behavior, audio debug display
-      behavior, and GameClient dispatch after real `GameLogic`,
+      load/shell/keyboard/skirmish/LAN/game-info/map/quit/popup/replay/WOL
+      menu behavior, particle/terrain/drawable/update/smudge behavior, audio
+      debug display behavior, and GameClient dispatch after real `GameLogic`,
       `MessageStream`, input, FX/display, GameInfo/LAN, and original
       INI/GlobalData/Xfer runtime paths replace the current target-local
       compile bridges.
-- [ ] Compile the remaining original GUI callbacks and shell/menu sources
-      after the real `Player`/`Object`/`Module`, `Shell`, `InGameUI`,
-      `GameNetwork`, and `MessageStream` contracts are available through
-      original headers; probes currently fail on those deeper contracts rather
-      than isolated browser shims.
-- [ ] Compile original `GameClient/GUI/GUICallbacks/Menus/PopupPlayerInfo.cpp`
-      after the vendored GameSpy Peer headers are restored or the peer/profile
-      surface is mapped to the browser networking contract.
+- [ ] Compile the remaining eight original GameClient sources
+      (`DownloadMenu.cpp`, `MainMenu.cpp`, `OptionsMenu.cpp`,
+      `WOLGameSetupMenu.cpp`, `WOLLadderScreen.cpp`, `WOLLoginMenu.cpp`,
+      `WOLWelcomeMenu.cpp`, and `Input/Keyboard.cpp`) after their remaining
+      blockers are resolved: WWDownload, ATL/WOL browser integration, full
+      options `GlobalData` surface, WOL setup/menu STL and loop-scope
+      portability, and browser keyboard layout/IME behavior.
 - [ ] Compile original `GameClient/Input/Keyboard.cpp` after the browser
       keyboard layout/IME translation surface replaces Win32 `HKL`,
       `GetKeyboardLayout`, legacy invalid character literals, and empty wide
@@ -1138,6 +1147,9 @@ shares structure and follows behind.
       Worker/pthread scheduling, GP/Peer/QR2/Stats runtime bindings,
       ICMP/socket fallbacks, and harness state probes are available; current
       coverage is compile-only.
+- [ ] Replace the temporary no-op GameSpy `ghttp` compile shim with a browser
+      fetch/proxy/update-check contract before running original Main Menu or
+      Options Menu online/update flows.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

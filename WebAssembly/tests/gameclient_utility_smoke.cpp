@@ -49,7 +49,7 @@ HWND ApplicationHWnd = NULL;
 class Display;
 Display *TheDisplay = nullptr;
 class Shell;
-Shell *TheShell = nullptr;
+extern Shell *TheShell;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
