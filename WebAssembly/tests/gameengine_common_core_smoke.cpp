@@ -1527,7 +1527,8 @@ int main()
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc,"
-		"TerrainTypes,MultiplayerSettings,PerfTimer,Handicap,MissionStats,Money,GameMusic,"
+		"TerrainTypes,MultiplayerSettings,PerfTimer,AudioEventRTS,GameAudio,GameMusic,GameSounds,"
+		"Handicap,MessageStream,MissionStats,Money,Science,"
 		"INIAudioEventInfo,INIMiscAudio,INIMultiplayer\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;

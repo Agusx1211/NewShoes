@@ -167,7 +167,7 @@ const UnsignedInt COMMAND_OPTION_NEED_OBJECT_TARGET =
 	* IMPORTANT: Make sure the GUICommandType enum and the TheGuiCommandNames[] have the same
 	*						 entries in the same order */
 //-------------------------------------------------------------------------------------------------
-enum GUICommandType
+enum GUICommandType : int
 {
 	GUI_COMMAND_NONE = 0,									///< invalid command
 	GUI_COMMAND_DOZER_CONSTRUCT,					///< dozer construct

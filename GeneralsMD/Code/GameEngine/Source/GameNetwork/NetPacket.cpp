@@ -158,7 +158,7 @@ NetPacketList NetPacket::ConstructBigCommandPacketList(NetCommandRef *ref) {
 
 	if (!DoesCommandRequireACommandID(msg->getNetCommandType())) {
 		DEBUG_CRASH(("Trying to wrap a command that doesn't have a unique command ID"));
-		return NULL;
+		return NetPacketList();
 	}
 
 	UnsignedInt bufferSize = GetBufferSizeNeededForCommand(msg);  // need to implement.  I have a drinking problem.
@@ -5239,7 +5239,7 @@ NetCommandMsg * NetPacket::readGameMessage(UnsignedByte *data, Int &i)
 		lasttype = parserArgType->getType();
 		argsLeftForType = parserArgType->getArgCount();
 	}
-	for (j = 0; j < totalArgCount; ++j) {
+	for (Int j = 0; j < totalArgCount; ++j) {
 		readGameMessageArgumentFromPacket(lasttype, msg, data, i);
 
 		--argsLeftForType;
@@ -5568,8 +5568,13 @@ NetCommandMsg * NetPacket::readDisconnectChatMessage(UnsignedByte *data, Int &i)
 	i += length * sizeof(UnsignedShort);
 	text[length] = 0;
 
+	WideChar wideText[256];
+	for (Int textIndex = 0; textIndex <= length; ++textIndex) {
+		wideText[textIndex] = static_cast<WideChar>(text[textIndex]);
+	}
+
 	UnicodeString unitext;
-	unitext.set(text);
+	unitext.set(wideText);
 
 	//DEBUG_LOG(("NetPacket::readDisconnectChatMessage - read message, message is %ls\n", unitext.str()));
 
@@ -5595,8 +5600,13 @@ NetCommandMsg * NetPacket::readChatMessage(UnsignedByte *data, Int &i) {
 	i += sizeof(Int);
 
 
+	WideChar wideText[256];
+	for (Int textIndex = 0; textIndex <= length; ++textIndex) {
+		wideText[textIndex] = static_cast<WideChar>(text[textIndex]);
+	}
+
 	UnicodeString unitext;
-	unitext.set(text);
+	unitext.set(wideText);
 
 	//DEBUG_LOG(("NetPacket::readChatMessage - read message, message is %ls\n", unitext.str()));
 

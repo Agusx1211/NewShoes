@@ -520,7 +520,7 @@ public:
 		for (Int i=0; i<MAX_PLAYER_COUNT; i++)
 			if (m_everSeenByPlayer[i] && m_shroudedness[i] == OBJECTSHROUD_FOGGED)
 				return i;
-		return i;
+		return MAX_PLAYER_COUNT;
 	}
 
 

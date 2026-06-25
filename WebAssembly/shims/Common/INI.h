@@ -151,6 +151,9 @@ public:
 	static void parseShellMenuSchemeDefinition(INI *ini);
 	static void parseChallengeModeDefinition(INI *ini);
 	static void parseWindowTransitions(INI *ini);
+	static void parseAudioSettingsDefinition(INI *ini);
+	static void parseScienceDefinition(INI *ini);
+	static void parseCampaignDefinition(INI *ini);
 
 	static Int scanIndexList(const char *token, ConstCharPtrArray nameList)
 	{
@@ -350,6 +353,16 @@ public:
 		}
 	}
 
+	static void parseAndTranslateLabel(INI *ini, void *, void *store, const void *)
+	{
+		if (store != nullptr) {
+			UnicodeString translated;
+			translated.translate(ini != nullptr ? ini->getNextAsciiString() : AsciiString::TheEmptyString);
+			*static_cast<UnicodeString *>(store) = translated;
+		}
+	}
+
+	static void parseScienceVector(INI *, void *, void *, const void *) {}
 	static void parseMappedImage(INI *ini, void *instance, void *store, const void *userData);
 	static void parseAnim2DTemplate(INI *ini, void *instance, void *store, const void *userData);
 	static void parseAudioEventRTS(INI *ini, void *instance, void *store, const void *userData);

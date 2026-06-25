@@ -165,6 +165,9 @@ shares structure and follows behind.
       `EditorSortingType`, `AttitudeType`, and `BattlePlanStatus`) so the
       current headers compile under standard clang/Emscripten without changing
       enumerator values.
+- [x] Add a fixed underlying type for the original `GUICommandType`
+      forward declarations reached by the current ControlBar/AI/command
+      translation include graph under standard clang/Emscripten.
 - [x] Add a target-local `Common/GameAudio.h` include-order shim so original
       `GameAudio.h`'s MSVC-style enum redeclarations and `FieldParse` pointer
       declarations compile under clang/Emscripten.
@@ -495,6 +498,13 @@ shares structure and follows behind.
 - [ ] Link and smoke-test `MusicTrack` / `MusicManager` behavior after the
       missing original `MusicTrack` constructor path is resolved and the real
       audio manager request path is available.
+- [x] Compile original `Common/Audio/AudioEventRTS.cpp`,
+      `Common/Audio/GameAudio.cpp`, and `Common/Audio/GameSounds.cpp` into the
+      wasm Common core with the current audio, INI, Xfer, GameLogic, and
+      object-lookup compatibility surface.
+- [ ] Link and smoke-test the original `GameAudio` / `GameSounds` manager
+      paths after the real audio manager, object lookup, INI reader, Xfer, and
+      GameLogic singleton surfaces replace the current target-local shims.
 - [x] Compile original INI leaf parser sources for currently covered Common
       data (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, and
       `INIMultiplayer.cpp`) after extending the temporary `Common/INI.h`
@@ -511,10 +521,12 @@ shares structure and follows behind.
       `MissionStats.cpp`, and `Money.cpp` after fixing the original
       `Team` DLINK clang contract and adding the production map typedefs
       needed by `Player`/`Thing` headers.
-- [ ] Compile original `Common/RTS/Science.cpp` after the real INI parser
-      surface exposes the original science parse entry points
-      (`parseScienceVector`, `parseAndTranslateLabel`, and
-      `parseScienceDefinition`) without target-local declarations.
+- [x] Compile original `Common/RTS/Science.cpp` against the current temporary
+      `Common/INI.h` parser bridge for science definitions and translated
+      labels.
+- [ ] Replace the temporary `parseScienceVector` and `parseAndTranslateLabel`
+      bridge helpers with the real `Common/INI.cpp` / `GameText` parse path,
+      then smoke-test science-definition parsing against real INI data.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -533,9 +545,11 @@ shares structure and follows behind.
       `PartitionManager` header loop-scope issue, `AIPathfind.h`
       `PathfindCell` contract, and `GlobalData::m_maxLineBuildObjects`
       dependency are resolved through original headers.
-- [ ] Compile original `Common/MessageStream.cpp` after `Common/Thing` /
-      `Common/OVERRIDE.h`, player/list, recorder, InGameUI, and GameLogic
-      dependencies are available.
+- [x] Compile original `Common/MessageStream.cpp` after resolving its clang
+      loop-scope issue while preserving the original argument traversal logic.
+- [ ] Link and smoke-test original message-stream behavior after the real
+      `Thing`, player/list, recorder, InGameUI, GameLogic, and network command
+      dependencies replace the current compile-only surface.
 - [ ] Compile original `Common/GlobalData.cpp` after GameLogic AI command,
       science, weapon, guard-mode, damage/player-mask, and related enum/header
       dependencies are available.
@@ -562,9 +576,10 @@ shares structure and follows behind.
       `BezFwdIterator` conservative pointer-initialization diagnostics.
 - [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [ ] `Common/INI` parser compiles (reuse original — do NOT rewrite).
-- [ ] `Common/RTS`, `Thing`, `Audio` (interfaces) compile.
+- [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without
+      target-local parser/Xfer/GameLogic shims.
 - [ ] `GameEngine.cpp`, `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`,
-      `RandomValue`, `crc`, `MessageStream` compile.
+      `RandomValue`, and `crc` compile as part of a broader engine archive.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
@@ -577,7 +592,8 @@ shares structure and follows behind.
       `GUI/Shell/ShellMenuScheme.cpp`,
       `GUI/WinInstanceData.cpp`, `GlobalLanguage.cpp`, `GameText.cpp`,
       `System/Image.cpp`, `LanguageFilter.cpp`, `Line2D.cpp`,
-      `ParabolicEase.cpp`, `Snow.cpp`, `Statistics.cpp`,
+      `ParabolicEase.cpp`, `System/CampaignManager.cpp`, `RadiusDecal.cpp`,
+      `Snow.cpp`, `Statistics.cpp`,
       `View.cpp`, `VideoPlayer.cpp`, `VideoStream.cpp`, and `Water.cpp`, with wasm smoke
       coverage for packed colors,
       debug-display formatting/cursor state, display-string text/font/list
@@ -633,16 +649,21 @@ shares structure and follows behind.
       (`LookupListRec`, lookup-list parsing, coordinate parsing,
       `parseMappedImage`, credits and shell scheme declarations) with the
       original INI parser surface once `Common/INI` can compile and link.
-- [ ] Compile original `GameClient/System/CampaignManager.cpp` after the real
-      campaign INI parse entry point, `Xfer::xferSnapshot`, and the full
+- [x] Compile original `GameClient/System/CampaignManager.cpp` after extending
+      the temporary INI/Xfer/GameClient-facing bridge with the campaign parse
+      entry point and snapshot transfer surface.
+- [ ] Link and smoke-test original campaign progression/save-load behavior
+      after the real campaign INI reader, `Xfer::xferSnapshot`, and full
       GameClient singleton surface are available without target-local stubs.
 - [x] Compile original `GameClient/MapUtil.cpp` after adding Win32
       `SYSTEMTIME` compatibility and the original `GlobalData::m_buildMapCache`
       field/default to the temporary wasm shim.
-- [ ] Compile original `GameClient/RadiusDecal.cpp` after `Xfer::xferColor`,
-      `GameLogic::getDrawIconUI`, and the deeper
+- [x] Compile original `GameClient/RadiusDecal.cpp` after adding the current
+      `Xfer::xferColor`, `GameLogic::getDrawIconUI`, and object-lookup compile
+      bridge needed by the original source.
+- [ ] Link and smoke-test original radius-decal behavior after the deeper
       Player/Team/Module/Object/GameLogic contracts are available through
-      original headers instead of ad hoc shims.
+      original headers and rendering can be harness-driven.
 - [x] Compile original `GameClient/Terrain/TerrainRoads.cpp` in the GameClient
       utility target; current coverage is compile-only until terrain and
       rendering can be harness-driven.
@@ -692,11 +713,13 @@ shares structure and follows behind.
       `GUI/Gadget/GadgetPushButton.cpp` in the GameClient utility target after
       resolving their enum-forward, `OVERRIDE`, `MIN`, and temporary INI bridge
       declarations; this is compile coverage only until `GameWindow`,
-      `ControlBar`, `InGameUI`, and `RadiusDecal` link.
+      `ControlBar`, `InGameUI`, and real radius-decal/render behavior can be
+      driven.
 - [x] Compile original `GameClient/GUI/GameWindow.cpp` in the GameClient
       utility target after resolving the related enum/header contracts; this is
-      compile coverage only until `ControlBar`, `InGameUI`, `RadiusDecal`, and
-      the browser input/render path are available and harness-driven.
+      compile coverage only until `ControlBar`, `InGameUI`, real decal/display
+      behavior, and the browser input/render path are available and
+      harness-driven.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
@@ -717,7 +740,8 @@ shares structure and follows behind.
       the browser display device layer; the current utility target has compile
       coverage only and no rendering is considered complete without harness
       screenshots/state checks.
-- [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
+- [x] `GameNetwork` core (Connection, FrameData, NetPacket, protocol helpers)
+      compiles into the wasm archive.
 - [x] Compile the first original GameNetwork command/frame slice
       (`Connection.cpp`, `FileTransfer.cpp`, `FrameData.cpp`,
       `FrameDataManager.cpp`, `GameMessageParser.cpp`, `NetCommandList.cpp`,
@@ -734,18 +758,17 @@ shares structure and follows behind.
       browser display/FPS surface and real `GlobalData` singleton are available;
       current coverage is compile-only.
 - [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
-      after `NetPacket.cpp` compiles and links; current coverage
-      is compile-only because linking `Connection` pulls packetization and
-      transport send/receive dependencies.
+      after real packetization, message, and browser transport send/receive
+      dependencies are available; current coverage is compile-only.
 - [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
       helper and transfer flow after `GameInfo`, `Shell`, `LoadScreen`, and the
       browser network/file-transfer path are available; current coverage is
       compile-only.
-- [ ] Compile original `GameNetwork/NetPacket.cpp` after resolving its
+- [x] Compile original `GameNetwork/NetPacket.cpp` after resolving its
       clang/libc++ strictness issues (`NetPacketList` null return,
       legacy loop-scope variable use, and `BitFlags::set` enum conversion)
-      plus the remaining packet/message serialization dependencies without
-      changing protocol behavior.
+      plus the wasm `WideChar` packet text conversion without changing protocol
+      bytes.
 - [x] Compile original `GameNetwork/NetCommandMsg.cpp` after adding the
       `SYSTEMTIME` shim and fixing the original `Team` DLINK clang contract.
 - [ ] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
@@ -759,8 +782,8 @@ shares structure and follows behind.
       portable `itoa` compatibility, and explicit loop variables for legacy
       MSVC loop-scope assumptions without changing firewall probing behavior.
 - [ ] Link and smoke-test the broader GameNetwork command-message slice after
-      original `Common/MessageStream.cpp` and `NetPacket.cpp` can compile and
-      link against the real player/message dependencies.
+      the real player/message, packet serialization, and browser transport
+      dependencies are available beyond the current compile-only coverage.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

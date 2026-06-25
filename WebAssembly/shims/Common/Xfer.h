@@ -5,6 +5,7 @@
 
 #include "Common/AsciiString.h"
 #include "Common/UnicodeString.h"
+#include "GameClient/Color.h"
 
 typedef UnsignedByte XferVersion;
 
@@ -39,6 +40,15 @@ public:
 	virtual void xferBool(Bool *) {}
 	virtual void xferReal(Real *) {}
 	virtual void xferUnicodeString(UnicodeString *) {}
+	virtual void xferSnapshot(class Snapshot *) {}
+	virtual void xferColor(Color *color)
+	{
+		if (color != nullptr) {
+			UnsignedInt colorValue = static_cast<UnsignedInt>(*color);
+			xferUnsignedInt(&colorValue);
+			*color = static_cast<Color>(colorValue);
+		}
+	}
 
 protected:
 	XferMode m_mode;

@@ -51,7 +51,7 @@ class PolygonTrigger;
 class UpgradeTemplate;
 class WeaponTemplate;
 
-enum GUICommandType;
+enum GUICommandType : int;
 enum HackerAttackMode : int;
 enum WeaponSetType : int;
 enum WeaponLockType;
