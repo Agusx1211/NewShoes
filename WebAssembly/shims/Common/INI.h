@@ -279,6 +279,7 @@ public:
 
 	static void parseAsciiStringVectorAppend(INI *, void *, void *, const void *) {}
 	static void parseDamageTypeFlags(INI *, void *, void *, const void *) {}
+	static void parseWeaponTemplate(INI *, void *, void *, const void *) {}
 
 	static void parseInt(INI *ini, void *, void *store, const void *)
 	{

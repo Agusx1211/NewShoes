@@ -16,6 +16,10 @@ public:
 		m_framesPerSecondLimit(0),
 		m_useFpsLimit(FALSE),
 		m_windowed(FALSE),
+		m_ammoPipWorldOffset(),
+		m_containerPipWorldOffset(),
+		m_ammoPipScreenOffset(),
+		m_containerPipScreenOffset(),
 		m_defaultIP(0),
 		m_useAlternateMouse(FALSE),
 		m_doubleClickAttackMove(FALSE),
@@ -26,6 +30,8 @@ public:
 		m_timeOfDay(TIME_OF_DAY_AFTERNOON),
 		m_scriptDebug(FALSE),
 		m_winCursors(TRUE),
+		m_useTreeSway(TRUE),
+		m_useDrawModuleLOD(FALSE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
 		m_keyboardScrollFactor(1.0f),
@@ -33,6 +39,7 @@ public:
 		m_saveCameraInReplay(FALSE),
 		m_TiVOFastMode(FALSE),
 		m_useFX(TRUE),
+		m_stealthFriendlyOpacity(0.5f),
 		m_particleScale(1.0f),
 		m_maxParticleCount(5000),
 		m_maxFieldParticleCount(100),
@@ -46,6 +53,10 @@ public:
 		m_exeCRC(0),
 		m_iniCRC(0),
 		m_buildMapCache(FALSE),
+		m_showClientPhysics(TRUE),
+		m_showObjectHealth(FALSE),
+		m_selectionFlashSaturationFactor(0.5f),
+		m_selectionFlashHouseColor(FALSE),
 		m_firewallBehavior(0),
 		m_firewallSendDelay(FALSE),
 		m_firewallPortOverride(0),
@@ -72,6 +83,10 @@ public:
 	Int m_framesPerSecondLimit;
 	Bool m_useFpsLimit;
 	Bool m_windowed;
+	Coord3D m_ammoPipWorldOffset;
+	Coord3D m_containerPipWorldOffset;
+	Coord2D m_ammoPipScreenOffset;
+	Coord2D m_containerPipScreenOffset;
 	UnsignedInt m_defaultIP;
 	Bool m_useAlternateMouse;
 	Bool m_doubleClickAttackMove;
@@ -82,6 +97,8 @@ public:
 	TimeOfDay m_timeOfDay;
 	Bool m_scriptDebug;
 	Bool m_winCursors;
+	Bool m_useTreeSway;
+	Bool m_useDrawModuleLOD;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
 	Real m_keyboardScrollFactor;
@@ -89,6 +106,7 @@ public:
 	Bool m_saveCameraInReplay;
 	Bool m_TiVOFastMode;
 	Bool m_useFX;
+	Real m_stealthFriendlyOpacity;
 	Real m_particleScale;
 	Int m_maxParticleCount;
 	Int m_maxFieldParticleCount;
@@ -102,6 +120,10 @@ public:
 	UnsignedInt m_exeCRC;
 	UnsignedInt m_iniCRC;
 	Bool m_buildMapCache;
+	Bool m_showClientPhysics;
+	Bool m_showObjectHealth;
+	Real m_selectionFlashSaturationFactor;
+	Bool m_selectionFlashHouseColor;
 	UnsignedInt m_firewallBehavior;
 	Bool m_firewallSendDelay;
 	UnsignedInt m_firewallPortOverride;

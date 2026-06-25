@@ -47,6 +47,7 @@ public:
 	virtual void xferShort(Short *) {}
 	virtual void xferUnicodeString(UnicodeString *) {}
 	virtual void xferCoord3D(Coord3D *) {}
+	virtual void xferMatrix3D(class Matrix3D *) {}
 	virtual void xferRGBColor(RGBColor *) {}
 	virtual void xferRGBAColorReal(RGBAColorReal *) {}
 	virtual void xferRGBAColorInt(RGBAColorInt *) {}

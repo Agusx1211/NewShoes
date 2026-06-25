@@ -134,8 +134,9 @@ shares structure and follows behind.
       `WW3D2/ColType.h`, and `WWMath/Matrix3D.h`), with wasm compile smoke
       coverage for the currently browser-usable wrappers.
 - [x] Add case-variant include wrappers for original GameClient utility sources
-      (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector3.h`, and
-      `WWMATH/Vector4.h`) under the case-sensitive wasm build.
+      (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector2.h`,
+      `WWMATH/Vector3.h`, and `WWMATH/Vector4.h`) under the case-sensitive
+      wasm build.
 - [x] Add case-variant include wrappers for additional original GameClient
       menu/control sources (`GameClient/GadgetCheckbox.h`,
       `GameClient/Hotkey.h`, and `GameClient/mouse.h`) under the
@@ -931,14 +932,22 @@ shares structure and follows behind.
       extending the temporary `GlobalData`, `INI`, `Xfer`, `GameLogic`, Win32,
       and IMM compile bridges and making the original `GameClient.cpp`
       preload loop explicit for clang's standard for-scope rules.
+- [x] Compile additional original GameClient drawable/debug leaves in the
+      utility target (`Drawable.cpp`, `Drawable/DrawableManager.cpp`,
+      `System/Smudge.cpp`, and `System/Debug Displayers/AudioDebugDisplay.cpp`)
+      after adding original `GlobalData` drawable/debug fields, the
+      `INI::parseWeaponTemplate` and `Xfer::xferMatrix3D` bridge surface, a
+      `WWMATH/Vector2.h` case wrapper, and standard clang fixes for original
+      `WW3D2/dllist.h` include/dependent-base assumptions.
 - [ ] Link and smoke-test the original GameClient message translators,
       selection info, EVA/FX list, control-bar scheme, control-bar leaves,
       in-game chat, `GameClient`/`InGameUI`/mouse/IME entry points,
       keyboard/skirmish/LAN/game-info/map/quit/popup/replay menu behavior,
-      particle/terrain/drawable update behavior, and GameClient dispatch after
-      real `GameLogic`, `MessageStream`, input, FX/display, GameInfo/LAN, and
-      original INI/GlobalData/Xfer runtime paths replace the current
-      target-local compile bridges.
+      particle/terrain/drawable/update/smudge behavior, audio debug display
+      behavior, and GameClient dispatch after real `GameLogic`,
+      `MessageStream`, input, FX/display, GameInfo/LAN, and original
+      INI/GlobalData/Xfer runtime paths replace the current target-local
+      compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
