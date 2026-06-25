@@ -238,9 +238,12 @@ shares structure and follows behind.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
+- [ ] Unblock original `Common/Xfer` by bringing up original `Common/INI`,
+      `Common/BitFlagsIO`, `Common/GameState`, and `Common/Upgrade` dependencies
+      instead of expanding the temporary `Common/Xfer.h` shim.
 - [x] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
       engine path instead of relying on smoke-local memory hook defaults.
-- [ ] Audit original Bezier helper warnings under clang/Emscripten:
+- [x] Audit original Bezier helper warnings under clang/Emscripten:
       `BezierSegment` array-constructor bound mismatch and
       `BezFwdIterator` conservative pointer-initialization diagnostics.
 - [ ] `Common/System` (file system iface, BIG archive, streams, memory) compiles.

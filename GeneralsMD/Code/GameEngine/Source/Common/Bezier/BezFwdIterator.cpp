@@ -78,7 +78,9 @@ void BezFwdIterator::start(void)
 		float b = cVec[i].y;
 		float c = cVec[i].z;
 
-		float *pD, *pDD, *pDDD;
+		float *pD;
+		float *pDD;
+		float *pDDD;
 
 		if (i == 2) {
 			pD = &mDq.z;
@@ -88,7 +90,7 @@ void BezFwdIterator::start(void)
 			pD = &mDq.y;
 			pDD = &mDDq.y;
 			pDDD = &mDDDq.y;
-		} else if (i == 0) {
+		} else {
 			pD = &mDq.x;
 			pDD = &mDDq.x;
 			pDDD = &mDDDq.x;
@@ -121,4 +123,3 @@ void BezFwdIterator::next(void)
 
 	++mStep;
 }
-
