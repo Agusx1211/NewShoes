@@ -70,7 +70,7 @@ LCWPipe::LCWPipe(CompControl control, int blocksize) :
 		Buffer2(NULL),
 		BlockSize(blocksize)
 {
-	SafetyMargin = BlockSize/128+1;
+	SafetyMargin = BlockSize / 63 + 2;
 	Buffer = new char[BlockSize+SafetyMargin];
 	Buffer2 = new char[BlockSize+SafetyMargin];
 	BlockHeader.CompCount = 0xFFFF;
@@ -310,4 +310,3 @@ int LCWPipe::Flush(void)
 	total += Pipe::Flush();
 	return(total);
 }
-

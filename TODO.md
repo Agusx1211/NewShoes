@@ -228,9 +228,18 @@ shares structure and follows behind.
       browser WinMM timing shims for WWSaveLoad users.
 - [x] `WWVegas/WWLib` version/PE-header helper (`verchk.cpp`) compiles and is
       exercised through Wwutil file-id timestamp coverage under wasm.
-- [ ] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) once
-      a portable original-code `LCW_Comp` path replaces the MSVC inline
-      assembly-only compressor.
+- [x] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) after
+      adding a portable LCW literal-packet `LCW_Comp` path for non-MSVC builds,
+      and smoke-test direct LCW plus `LCWPipe` round trips under wasm.
+- [ ] Port the full optimizing original LCW back-reference compressor if
+      compressed-output size parity becomes required; the current non-MSVC
+      fallback emits valid LCW literal packets accepted by the original
+      decompressor.
+- [x] Compile original `WWVegas/WWLib/load.cpp` and smoke-test
+      `Uncompress_Data` with raw and LCW IFF-style block headers under wasm.
+- [ ] Port original `WWVegas/WWLib/srandom.cpp` to browser entropy
+      (`crypto.getRandomValues` / Emscripten equivalent); the current UNIX path
+      pulls Linux kernel headers that are unavailable in the wasm sysroot.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

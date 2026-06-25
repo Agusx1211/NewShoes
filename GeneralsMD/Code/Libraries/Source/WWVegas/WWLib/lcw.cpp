@@ -38,6 +38,7 @@
 
 #include	"always.h"
 #include	"lcw.h"
+#include	<string.h>
 
 /***************************************************************************
  * LCW_Uncomp -- Decompress an LCW encoded data block.                     *
@@ -439,6 +440,33 @@ outofhere:
 #endif
 	return(retval);
 }
+#else
+/*
+** Portable fallback for non-MSVC builds. This emits legal LCW literal packets
+** that the original decompressor consumes; the optimizing x86 back-reference
+** search above remains the MSVC path.
+*/
+extern "C" int __cdecl LCW_Comp(void const * source, void * dest, int datasize)
+{
+	if (dest == NULL) {
+		return 0;
+	}
+
+	unsigned char const * source_ptr = static_cast<unsigned char const *>(source);
+	unsigned char * dest_ptr = static_cast<unsigned char *>(dest);
+
+	if (source_ptr != NULL && datasize > 0) {
+		while (datasize > 0) {
+			const int count = datasize < 63 ? datasize : 63;
+			*dest_ptr++ = static_cast<unsigned char>(0x80 | count);
+			memcpy(dest_ptr, source_ptr, count);
+			dest_ptr += count;
+			source_ptr += count;
+			datasize -= count;
+		}
+	}
+
+	*dest_ptr++ = 0x80;
+	return static_cast<int>(dest_ptr - static_cast<unsigned char *>(dest));
+}
 #endif
-
-

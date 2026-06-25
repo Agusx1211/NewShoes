@@ -12,6 +12,9 @@
 #include "crcpipe.h"
 #include "crcstraw.h"
 #include "cstraw.h"
+#include "iff.h"
+#include "lcw.h"
+#include "lcwpipe.h"
 #include "pipe.h"
 #include "rndstraw.h"
 #include "shapipe.h"
@@ -286,6 +289,90 @@ int main()
 	}
 
 	{
+		const std::string lcw_plain =
+			"Literal LCW data with enough length to cross packet boundaries.";
+		std::vector<unsigned char> compressed(lcw_plain.size() + lcw_plain.size() / 63 + 3);
+		const int compressed_size = LCW_Comp(
+			lcw_plain.data(), compressed.data(), static_cast<int>(lcw_plain.size()));
+		if (!expect(compressed_size > 0 &&
+				compressed_size <= static_cast<int>(compressed.size()),
+				"LCW_Comp size failed")) {
+			return 1;
+		}
+
+		std::vector<unsigned char> decompressed(lcw_plain.size());
+		const int decompressed_size = LCW_Uncomp(
+			compressed.data(), decompressed.data(), static_cast<unsigned long>(decompressed.size()));
+		if (!expect(decompressed_size == static_cast<int>(lcw_plain.size()) &&
+				std::memcmp(decompressed.data(), lcw_plain.data(), lcw_plain.size()) == 0,
+				"LCW direct round trip failed")) {
+			return 1;
+		}
+	}
+
+	{
+		const char lcw_pipe_plain[] =
+			"LCWPipe round trip across multiple small blocks and partial flush.";
+		constexpr size_t lcw_pipe_length = sizeof(lcw_pipe_plain) - 1;
+		LCWPipe compressor(LCWPipe::COMPRESS, 16);
+		MemoryPipe compressed;
+		compressor.Put_To(compressed);
+		compressor.Put(lcw_pipe_plain, 11);
+		compressor.Put(lcw_pipe_plain + 11, static_cast<int>(lcw_pipe_length - 11));
+		compressor.Flush();
+
+		LCWPipe decompressor(LCWPipe::DECOMPRESS, 16);
+		MemoryPipe decompressed;
+		decompressor.Put_To(decompressed);
+		decompressor.Put(compressed.Data.data(), 3);
+		decompressor.Put(compressed.Data.data() + 3,
+			static_cast<int>(compressed.Data.size() - 3));
+		decompressor.Flush();
+		if (!expect(equals_bytes(decompressed.Data, lcw_pipe_plain, lcw_pipe_length),
+				"LCWPipe round trip failed")) {
+			return 1;
+		}
+	}
+
+	{
+		const char raw_plain[] = "Uncompress_Data raw block";
+		constexpr size_t raw_length = sizeof(raw_plain) - 1;
+		std::vector<unsigned char> raw_block(sizeof(CompHeaderType) + raw_length);
+		auto *raw_header = reinterpret_cast<CompHeaderType *>(raw_block.data());
+		raw_header->Method = NOCOMPRESS;
+		raw_header->pad = 0;
+		raw_header->Size = raw_length;
+		raw_header->Skip = 0;
+		std::memcpy(raw_block.data() + sizeof(CompHeaderType), raw_plain, raw_length);
+		std::array<unsigned char, raw_length> raw_output{};
+		if (!expect(Uncompress_Data(raw_block.data(), raw_output.data()) == raw_length &&
+				std::memcmp(raw_output.data(), raw_plain, raw_length) == 0,
+				"Uncompress_Data raw block failed")) {
+			return 1;
+		}
+
+		const char lcw_block_plain[] = "Uncompress_Data LCW block";
+		constexpr size_t lcw_block_length = sizeof(lcw_block_plain) - 1;
+		std::vector<unsigned char> lcw_payload(lcw_block_length + lcw_block_length / 63 + 3);
+		const int lcw_payload_size = LCW_Comp(
+			lcw_block_plain, lcw_payload.data(), static_cast<int>(lcw_block_length));
+		std::vector<unsigned char> lcw_block(sizeof(CompHeaderType) + lcw_payload_size);
+		auto *lcw_header = reinterpret_cast<CompHeaderType *>(lcw_block.data());
+		lcw_header->Method = LCW;
+		lcw_header->pad = 0;
+		lcw_header->Size = lcw_block_length;
+		lcw_header->Skip = 0;
+		std::memcpy(lcw_block.data() + sizeof(CompHeaderType),
+			lcw_payload.data(), static_cast<size_t>(lcw_payload_size));
+		std::array<unsigned char, lcw_block_length> lcw_output{};
+		if (!expect(Uncompress_Data(lcw_block.data(), lcw_output.data()) == lcw_block_length &&
+				std::memcmp(lcw_output.data(), lcw_block_plain, lcw_block_length) == 0,
+				"Uncompress_Data LCW block failed")) {
+			return 1;
+		}
+	}
+
+	{
 		MemoryStraw source(plain, plain_length);
 		CacheStraw cache(5);
 		cache.Get_From(source);
@@ -326,6 +413,7 @@ int main()
 	}
 
 	std::cout << "{\"ok\":true,\"library\":\"WWLib\","
-		"\"compiled\":\"pipe/straw stream core\",\"source\":\"GeneralsMD original\"}\n";
+		"\"compiled\":\"pipe/straw stream core plus LCW adapters and load helpers\","
+		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
