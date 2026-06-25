@@ -65,9 +65,13 @@ shares structure and follows behind.
 - [x] Add browser/compiler shims for original WWLib narrow `TCHAR` strings,
       Windows wide-to-narrow conversion, and critical sections under
       clang/Emscripten.
+- [x] Add lowercase include wrappers for original WWLib `wwfile.h` and `buff.h`
+      under the case-sensitive wasm build.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
+- [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
+      libc++/wasm before relying on it for asset and file buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
@@ -98,6 +102,9 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` StringClass (`wwstring.cpp` plus `trim.cpp`) compiles and
       smoke-tests construction, mutation, formatting, comparison, trimming,
       buffer growth, copy, temporary-buffer, and wide-copy behavior under wasm.
+- [x] `WWVegas/WWLib` file core (`wwfile.cpp` plus `buff.cpp`) compiles and
+      smoke-tests FileClass formatted writes plus Buffer allocation, reference,
+      assignment, and reset behavior under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
