@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `buff.cpp`/`wwfile.cpp` compile to wasm as `zh_wwlib_file_core`, original `fixed.cpp` compiles to wasm as `zh_wwlib_fixed`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, original `ramfile.cpp` compiles to wasm as `zh_wwlib_ramfile`, original `sha.cpp` compiles to wasm as `zh_wwlib_sha`, original `wwstring.cpp`/`trim.cpp` compile to wasm as `zh_wwlib_string`, and original `blowfish.cpp`/`gcd_lcm.cpp`/`obscure.cpp`/`rc4.cpp`/`rndstrng.cpp` compile to wasm as `zh_wwlib_utility_core` with smoke coverage. Concrete disk/browser file backends, threading, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `buff.cpp`/`wwfile.cpp` compile to wasm as `zh_wwlib_file_core`, original `fixed.cpp` compiles to wasm as `zh_wwlib_fixed`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, original `ramfile.cpp` compiles to wasm as `zh_wwlib_ramfile`, original `sha.cpp` compiles to wasm as `zh_wwlib_sha`, original `wwstring.cpp`/`trim.cpp` compile to wasm as `zh_wwlib_string`, original `blowfish.cpp`/`gcd_lcm.cpp`/`obscure.cpp`/`rc4.cpp`/`rndstrng.cpp` compile to wasm as `zh_wwlib_utility_core`, and original pipe/straw stream sources compile to wasm as `zh_wwlib_stream_core` with smoke coverage. Concrete disk/browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -74,6 +74,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_string`: original `WWVegas/WWLib/wwstring.cpp` and `trim.cpp`
   compiled into a wasm static library with TCHAR, Windows conversion, and
   critical-section shims.
+- `zh_wwlib_stream_core`: original `WWVegas/WWLib` pipe/straw stream sources
+  for Base64, Blowfish, CRC, SHA, random, cache, and bit-vector support compiled
+  into a wasm static library.
 - `zh_wwlib_utility_core`: original `WWVegas/WWLib/blowfish.cpp`,
   `gcd_lcm.cpp`, `obscure.cpp`, `rc4.cpp`, and `rndstrng.cpp` compiled into a
   wasm static library with CRC, random, and StringClass dependencies.
@@ -107,6 +110,10 @@ The wasm CMake skeleton currently builds:
   behavior.
 - `wwlib-sha-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib SHA against known digest vectors and split-update hashing.
+- `wwlib-stream-core-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib Pipe/Straw chaining, Base64/CRC/SHA/Blowfish pipe and straw
+  adapters, CacheStraw, RandomStraw deterministic seeding, and BooleanVector
+  behavior.
 - `wwlib-string-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib StringClass construction, mutation, formatting, comparison, trimming,
   buffer growth, copy, temporary-buffer, and wide-copy behavior.

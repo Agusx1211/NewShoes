@@ -234,6 +234,47 @@ target_link_libraries(zh_wwlib_utility_core PUBLIC
   zh_wwlib_string
 )
 
+add_library(zh_wwlib_stream_core STATIC
+  "${WWLIB_DIR}/b64pipe.cpp"
+  "${WWLIB_DIR}/b64straw.cpp"
+  "${WWLIB_DIR}/blowpipe.cpp"
+  "${WWLIB_DIR}/blwstraw.cpp"
+  "${WWLIB_DIR}/crcpipe.cpp"
+  "${WWLIB_DIR}/crcstraw.cpp"
+  "${WWLIB_DIR}/cstraw.cpp"
+  "${WWLIB_DIR}/jshell.cpp"
+  "${WWLIB_DIR}/pipe.cpp"
+  "${WWLIB_DIR}/rndstraw.cpp"
+  "${WWLIB_DIR}/shapipe.cpp"
+  "${WWLIB_DIR}/shastraw.cpp"
+  "${WWLIB_DIR}/straw.cpp"
+  "${WWLIB_DIR}/vector.cpp"
+)
+
+target_include_directories(zh_wwlib_stream_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_stream_core PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-sign-compare
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_stream_core PUBLIC
+  zh_wwlib_base64
+  zh_wwlib_crc
+  zh_wwlib_file_core
+  zh_wwlib_sha
+  zh_wwlib_utility_core
+)
+
 add_library(zh_wwlib_hash STATIC
   "${WWLIB_DIR}/hash.cpp"
 )
@@ -555,6 +596,35 @@ target_compile_options(wwlib-utility-core-smoke PRIVATE
 )
 
 target_link_options(wwlib-utility-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-stream-core-smoke
+  tests/wwlib_stream_core_smoke.cpp
+)
+
+set_target_properties(wwlib-stream-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-stream-core-smoke PRIVATE
+  zh_wwlib_stream_core
+)
+
+target_compile_options(wwlib-stream-core-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-stream-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

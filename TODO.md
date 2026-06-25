@@ -69,6 +69,8 @@ shares structure and follows behind.
       under the case-sensitive wasm build.
 - [x] Add lowercase include wrapper for original WWLib `ramfile.h` under the
       case-sensitive wasm build.
+- [x] Add lowercase include wrappers for original WWLib `pipe.h`, `straw.h`,
+      and `rndstraw.h` under the case-sensitive wasm build.
 - [x] Add lowercase include wrapper for original WWLib `vector.h` under the
       case-sensitive wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
@@ -123,6 +125,14 @@ shares structure and follows behind.
       `obscure.cpp`, `rc4.cpp`, `rndstrng.cpp`) compiles and smoke-tests
       crypto known vectors, GCD/LCM helpers, Obfuscate normalization, and
       RandomString selection behavior under wasm.
+- [x] `WWVegas/WWLib` pipe/straw stream core (`pipe.cpp`, `straw.cpp`,
+      Base64/Blowfish/CRC/SHA pipe and straw adapters, `rndstraw.cpp`,
+      `cstraw.cpp`, `vector.cpp`, `jshell.cpp`) compiles and smoke-tests
+      in-memory stream chaining, transforms, random, cache, and bit-vector
+      behavior under wasm.
+- [ ] Compile the remaining WWLib compression/crypto stream adapters
+      (`lcw*`, `lzo*`, `pk*`) once their original codec and bigint dependencies
+      are available under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,
