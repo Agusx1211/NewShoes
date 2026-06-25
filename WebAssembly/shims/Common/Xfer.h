@@ -30,6 +30,9 @@ public:
 	virtual ~Xfer() {}
 
 	virtual XferMode getXferMode() { return m_mode; }
+	virtual Int beginBlock() { return 0; }
+	virtual void endBlock() {}
+	virtual void skip(Int) {}
 	virtual void xferVersion(XferVersion *, XferVersion) {}
 	virtual void xferByte(Byte *) {}
 	virtual void xferUnsignedByte(UnsignedByte *) {}

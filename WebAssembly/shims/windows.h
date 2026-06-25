@@ -27,9 +27,13 @@ using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
 using HACCEL = void *;
 using HRSRC = void *;
+using HIMC = void *;
+using HKL = void *;
 using HWND = void *;
 using LONG = long;
+using WCHAR = wchar_t;
 using LPCSTR = const char *;
+using LPCWSTR = const WCHAR *;
 using LPCVOID = const void *;
 using LPBYTE = BYTE *;
 using LPDWORD = DWORD *;
@@ -38,7 +42,6 @@ using LPVOID = void *;
 using UINT = unsigned int;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
-using WCHAR = wchar_t;
 using WORD = unsigned short;
 
 struct CRITICAL_SECTION
@@ -63,6 +66,18 @@ struct SYSTEMTIME
 	WORD wMilliseconds;
 };
 
+struct MEMORYSTATUS
+{
+	DWORD dwLength;
+	DWORD dwMemoryLoad;
+	DWORD dwTotalPhys;
+	DWORD dwAvailPhys;
+	DWORD dwTotalPageFile;
+	DWORD dwAvailPageFile;
+	DWORD dwTotalVirtual;
+	DWORD dwAvailVirtual;
+};
+
 struct POINT
 {
 	long x;
@@ -78,6 +93,13 @@ struct MSG
 	DWORD time;
 	POINT pt;
 };
+
+struct ITEMIDLIST
+{
+	int unused;
+};
+
+using LPITEMIDLIST = ITEMIDLIST *;
 
 #ifndef FALSE
 #define FALSE 0
@@ -162,6 +184,7 @@ struct MSG
 #define TIME_NOTIMEMARKER 0x00000004
 #define TIME_FORCE24HOURFORMAT 0x00000008
 #define CSIDL_PERSONAL 0x0005
+#define CSIDL_DESKTOPDIRECTORY 0x0010
 #define FILE_ATTRIBUTE_READONLY 0x00000001
 #define FILE_ATTRIBUTE_DIRECTORY 0x00000010
 #define INVALID_FILE_ATTRIBUTES 0xffffffff
@@ -176,6 +199,45 @@ struct MSG
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
 #define PM_NOREMOVE 0x0000
 #define PM_REMOVE 0x0001
+#define WM_CHAR 0x0102
+#define WM_IME_SETCONTEXT 0x0281
+#define WM_IME_NOTIFY 0x0282
+#define WM_IME_CONTROL 0x0283
+#define WM_IME_COMPOSITIONFULL 0x0284
+#define WM_IME_SELECT 0x0285
+#define WM_IME_CHAR 0x0286
+#define WM_IME_REQUEST 0x0288
+#define WM_IME_KEYDOWN 0x0290
+#define WM_IME_KEYUP 0x0291
+#define WM_IME_STARTCOMPOSITION 0x010D
+#define WM_IME_ENDCOMPOSITION 0x010E
+#define WM_IME_COMPOSITION 0x010F
+#define WM_IME_KEYLAST 0x010F
+#define IMN_CHANGECANDIDATE 0x0003
+#define IMN_CLOSECANDIDATE 0x0004
+#define IMN_OPENCANDIDATE 0x0005
+#define IMN_SETCONVERSIONMODE 0x0006
+#define IMN_SETSENTENCEMODE 0x0007
+#define IMN_SETCANDIDATEPOS 0x0009
+#define IMN_GUIDELINE 0x000D
+#define IMC_GETCANDIDATEPOS 0x0007
+#define IMC_SETCANDIDATEPOS 0x0008
+#define IMR_CANDIDATEWINDOW 0x0001
+#define ISC_SHOWUICANDIDATEWINDOW 0x00000001
+#define GCS_COMPSTR 0x0008
+#define GCS_CURSORPOS 0x0080
+#define GCS_RESULTSTR 0x0800
+#define CS_INSERTCHAR 0x2000
+#define CS_NOMOVECARET 0x4000
+#define IGP_PROPERTY 0x00000004
+#define IME_CAND_UNKNOWN 0x0000
+#define IME_CAND_READ 0x0001
+#define IME_CAND_CODE 0x0002
+#define IME_CAND_MEANING 0x0003
+#define IME_CAND_RADICAL 0x0004
+#define IME_CAND_STROKE 0x0005
+#define IME_PROP_CANDLIST_START_FROM_1 0x00000004
+#define IME_PROP_UNICODE 0x00080000
 
 #ifndef _stat
 #define _stat stat
@@ -229,6 +291,17 @@ struct WIN32_FIND_DATA
 	char cFileName[_MAX_PATH];
 };
 
+struct CANDIDATELIST
+{
+	DWORD dwSize;
+	DWORD dwStyle;
+	DWORD dwCount;
+	DWORD dwSelection;
+	DWORD dwPageStart;
+	DWORD dwPageSize;
+	DWORD dwOffset[1];
+};
+
 struct IMAGE_DOS_HEADER
 {
 	WORD e_magic;
@@ -274,6 +347,16 @@ static inline DWORD GetLastError()
 	return 0;
 }
 
+static inline void GlobalMemoryStatus(MEMORYSTATUS *status)
+{
+	if (status == nullptr) {
+		return;
+	}
+
+	std::memset(status, 0, sizeof(*status));
+	status->dwLength = sizeof(*status);
+}
+
 static inline DWORD FormatMessage(
 	DWORD,
 	LPCVOID,
@@ -293,6 +376,29 @@ static inline DWORD FormatMessage(
 		"wasm platform error %u",
 		static_cast<unsigned>(id));
 	return written > 0 ? static_cast<DWORD>(written) : 0;
+}
+
+static inline DWORD FormatMessageW(
+	DWORD flags,
+	LPCVOID source,
+	DWORD id,
+	DWORD language,
+	WCHAR *buffer,
+	DWORD buffer_len,
+	void *arguments)
+{
+	if (buffer == nullptr || buffer_len == 0) {
+		return 0;
+	}
+
+	char narrow[256];
+	const DWORD written = FormatMessage(flags, source, id, language, narrow, sizeof(narrow), arguments);
+	const DWORD count = written < buffer_len ? written : buffer_len - 1;
+	for (DWORD index = 0; index < count; ++index) {
+		buffer[index] = static_cast<WCHAR>(narrow[index]);
+	}
+	buffer[count] = 0;
+	return count;
 }
 
 static inline int MessageBoxA(void *, const char *text, const char *caption, unsigned int)
@@ -391,6 +497,20 @@ static inline BOOL SHGetSpecialFolderPath(HWND, LPSTR path, int, BOOL)
 	return TRUE;
 }
 
+static inline BOOL SHGetSpecialFolderLocation(HWND, int, LPITEMIDLIST *pidl)
+{
+	if (pidl != nullptr) {
+		static ITEMIDLIST desktop;
+		*pidl = &desktop;
+	}
+	return TRUE;
+}
+
+static inline BOOL SHGetPathFromIDList(LPITEMIDLIST, LPSTR path)
+{
+	return SHGetSpecialFolderPath(nullptr, path, CSIDL_DESKTOPDIRECTORY, FALSE);
+}
+
 static inline BOOL WasmCopyWin32Identity(const char *value, LPSTR buffer, unsigned long *buffer_len)
 {
 	if (buffer == nullptr || buffer_len == nullptr || value == nullptr || *value == '\0') {
@@ -463,6 +583,93 @@ static inline BOOL TranslateAccelerator(HWND, HACCEL, MSG *)
 static inline BOOL IsDialogMessage(HWND, MSG *)
 {
 	return FALSE;
+}
+
+static inline HKL GetKeyboardLayout(DWORD)
+{
+	return nullptr;
+}
+
+static inline HIMC ImmCreateContext()
+{
+	return nullptr;
+}
+
+static inline BOOL ImmDestroyContext(HIMC)
+{
+	return TRUE;
+}
+
+static inline HIMC ImmGetContext(HWND)
+{
+	return nullptr;
+}
+
+static inline BOOL ImmReleaseContext(HWND, HIMC)
+{
+	return TRUE;
+}
+
+static inline HIMC ImmAssociateContext(HWND, HIMC context)
+{
+	return context;
+}
+
+static inline BOOL ImmGetConversionStatus(HIMC, DWORD *conversion, DWORD *sentence)
+{
+	if (conversion != nullptr) {
+		*conversion = 0;
+	}
+	if (sentence != nullptr) {
+		*sentence = 0;
+	}
+	return TRUE;
+}
+
+static inline LONG ImmGetCompositionStringW(HIMC, DWORD, LPVOID, DWORD)
+{
+	return -1;
+}
+
+static inline LONG ImmGetCompositionStringA(HIMC, DWORD, LPVOID, DWORD)
+{
+	return -1;
+}
+
+static inline LONG ImmGetCompositionString(HIMC context, DWORD index, LPVOID buffer, DWORD buffer_len)
+{
+	return ImmGetCompositionStringA(context, index, buffer, buffer_len);
+}
+
+static inline DWORD ImmGetCandidateListCountW(HIMC, DWORD *list_count)
+{
+	if (list_count != nullptr) {
+		*list_count = 0;
+	}
+	return 0;
+}
+
+static inline DWORD ImmGetCandidateListCountA(HIMC, DWORD *list_count)
+{
+	if (list_count != nullptr) {
+		*list_count = 0;
+	}
+	return 0;
+}
+
+static inline DWORD ImmGetCandidateListW(HIMC, DWORD, CANDIDATELIST *, DWORD)
+{
+	return 0;
+}
+
+static inline DWORD ImmGetCandidateListA(HIMC, DWORD, CANDIDATELIST *, DWORD)
+{
+	return 0;
+}
+
+static inline DWORD ImmGetProperty(HKL, DWORD)
+{
+	return 0;
 }
 
 static inline BOOL TranslateMessage(const MSG *)
@@ -814,6 +1021,52 @@ static inline BOOL CreateDirectory(LPCSTR path, void *)
 static inline BOOL DeleteFile(LPCSTR filename)
 {
 	return filename != nullptr && remove(filename) == 0 ? TRUE : FALSE;
+}
+
+static inline BOOL CopyFile(LPCSTR existing_filename, LPCSTR new_filename, BOOL fail_if_exists)
+{
+	if (existing_filename == nullptr || new_filename == nullptr) {
+		return FALSE;
+	}
+
+	const std::string existing = WasmNormalizePath(existing_filename);
+	const std::string replacement = WasmNormalizePath(new_filename);
+	if (fail_if_exists) {
+		struct stat attributes;
+		if (stat(replacement.c_str(), &attributes) == 0) {
+			return FALSE;
+		}
+	}
+
+	FILE *source = std::fopen(existing.c_str(), "rb");
+	if (source == nullptr) {
+		return FALSE;
+	}
+
+	FILE *target = std::fopen(replacement.c_str(), "wb");
+	if (target == nullptr) {
+		std::fclose(source);
+		return FALSE;
+	}
+
+	char buffer[8192];
+	BOOL ok = TRUE;
+	while (const std::size_t read = std::fread(buffer, 1, sizeof(buffer), source)) {
+		if (std::fwrite(buffer, 1, read, target) != read) {
+			ok = FALSE;
+			break;
+		}
+	}
+	if (std::ferror(source)) {
+		ok = FALSE;
+	}
+
+	std::fclose(target);
+	std::fclose(source);
+	if (!ok) {
+		std::remove(replacement.c_str());
+	}
+	return ok;
 }
 
 static inline BOOL MoveFile(LPCSTR existing_filename, LPCSTR new_filename)

@@ -3,6 +3,7 @@
 #include "Common/GameType.h"
 
 class Object;
+class Drawable;
 
 enum
 {
@@ -34,8 +35,10 @@ public:
 	Int getRankPointsToAddAtGameStart() const { return 0; }
 	void processProgress(Int, Int) {}
 	void processProgressComplete(Int) {}
+	void prepareNewGame(Int, GameDifficulty, Int) {}
 	void timeOutGameStart() {}
 	void clearGameData(Bool showScoreScreen = TRUE) {}
+	void bindObjectAndDrawable(Object *, Drawable *) {}
 	Object *findObjectByID(ObjectID) { return nullptr; }
 };
 

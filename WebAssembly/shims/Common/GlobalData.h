@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/AsciiString.h"
+#include "Common/GameType.h"
 #include "Common/Money.h"
 #include "GameClient/Color.h"
 
@@ -21,6 +22,10 @@ public:
 		m_rightMouseAlwaysScrolls(FALSE),
 		m_allowExitOutOfMovies(FALSE),
 		m_animateWindows(TRUE),
+		m_preloadEverything(FALSE),
+		m_timeOfDay(TIME_OF_DAY_AFTERNOON),
+		m_scriptDebug(FALSE),
+		m_winCursors(TRUE),
 		m_horizontalScrollSpeedFactor(1.0f),
 		m_verticalScrollSpeedFactor(1.0f),
 		m_keyboardScrollFactor(1.0f),
@@ -33,6 +38,10 @@ public:
 		m_maxFieldParticleCount(100),
 		m_baseValuePerSupplyBox(75),
 		m_maxLineBuildObjects(50),
+		m_playIntro(TRUE),
+		m_playSizzle(TRUE),
+		m_afterIntro(FALSE),
+		m_breakTheMovie(FALSE),
 		m_netMinPlayers(1),
 		m_exeCRC(0),
 		m_iniCRC(0),
@@ -69,6 +78,10 @@ public:
 	Bool m_rightMouseAlwaysScrolls;
 	Bool m_allowExitOutOfMovies;
 	Bool m_animateWindows;
+	Bool m_preloadEverything;
+	TimeOfDay m_timeOfDay;
+	Bool m_scriptDebug;
+	Bool m_winCursors;
 	Real m_horizontalScrollSpeedFactor;
 	Real m_verticalScrollSpeedFactor;
 	Real m_keyboardScrollFactor;
@@ -81,6 +94,10 @@ public:
 	Int m_maxFieldParticleCount;
 	Int m_baseValuePerSupplyBox;
 	Int m_maxLineBuildObjects;
+	Bool m_playIntro;
+	Bool m_playSizzle;
+	Bool m_afterIntro;
+	Bool m_breakTheMovie;
 	Int m_netMinPlayers;
 	UnsignedInt m_exeCRC;
 	UnsignedInt m_iniCRC;

@@ -166,7 +166,10 @@ public:
 	static void parseControlBarSchemeDefinition(INI *ini);
 	static void parseDamageFXDefinition(INI *ini);
 	static void parseDrawGroupNumberDefinition(INI *ini);
+	static void parseInGameUIDefinition(INI *ini);
 	static void parseMapDataDefinition(INI *ini);
+	static void parseMouseCursorDefinition(INI *ini);
+	static void parseMouseDefinition(INI *ini);
 	static void parseCrateTemplateDefinition(INI *ini);
 	static void parseTerrainDefinition(INI *ini);
 	static void parseTerrainBridgeDefinition(INI *ini);
@@ -273,6 +276,9 @@ public:
 			*static_cast<AsciiString *>(store) = ini != nullptr ? ini->getNextQuotedAsciiString() : AsciiString("");
 		}
 	}
+
+	static void parseAsciiStringVectorAppend(INI *, void *, void *, const void *) {}
+	static void parseDamageTypeFlags(INI *, void *, void *, const void *) {}
 
 	static void parseInt(INI *ini, void *, void *store, const void *)
 	{

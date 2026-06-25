@@ -143,6 +143,10 @@ shares structure and follows behind.
 - [x] Add a minimal DirectInput keyboard scan-code shim for original
       `GameClient/KeyDefs.h` users under the browser build, preserving the
       engine's existing key values for the later DOM keyboard-event bridge.
+- [x] Add browser/compiler shims for original GameClient IME and replay-menu
+      compile coverage (`mbstring.h`, Win32 IMM handles/constants,
+      `GlobalMemoryStatus`, `FormatMessageW`, `CopyFile`, and shell desktop
+      folder helpers) under clang/Emscripten.
 - [x] Add case-variant include wrappers for the next original GUI compile
       batch (`Windows.h`, `common/GameType.h`, `Gamelogic/GameLogic.h`,
       `Gameclient/WindowLayout.h`, `Gameclient/GameWindowManager.h`, and
@@ -919,13 +923,22 @@ shares structure and follows behind.
       and `Drawable/Update/SwayClientUpdate.cpp`) after restoring original
       `STLTypedefs` aliases and extending the temporary `Xfer`,
       `GlobalData`, and `GameLogic` compile bridges.
+- [x] Compile the next vertical original GameClient batch in the utility target
+      (`GameClient.cpp`, `InGameUI.cpp`, `Input/Mouse.cpp`,
+      `GUI/IMEManager.cpp`, menu callbacks for challenge, difficulty,
+      replay, save/load, and replay list/export flow, plus
+      `Drawable/Update/AnimatedParticleSysBoneClientUpdate.cpp`) after
+      extending the temporary `GlobalData`, `INI`, `Xfer`, `GameLogic`, Win32,
+      and IMM compile bridges and making the original `GameClient.cpp`
+      preload loop explicit for clang's standard for-scope rules.
 - [ ] Link and smoke-test the original GameClient message translators,
       selection info, EVA/FX list, control-bar scheme, control-bar leaves,
-      in-game chat, keyboard/skirmish/LAN/game-info/map/quit/popup menu
-      behavior, particle/terrain/drawable update behavior, and GameClient
-      dispatch after real `GameLogic`, `InGameUI`, `MessageStream`, input,
-      FX/display, GameInfo/LAN, and original INI/GlobalData/Xfer runtime paths
-      replace the current target-local compile bridges.
+      in-game chat, `GameClient`/`InGameUI`/mouse/IME entry points,
+      keyboard/skirmish/LAN/game-info/map/quit/popup/replay menu behavior,
+      particle/terrain/drawable update behavior, and GameClient dispatch after
+      real `GameLogic`, `MessageStream`, input, FX/display, GameInfo/LAN, and
+      original INI/GlobalData/Xfer runtime paths replace the current
+      target-local compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
       after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
@@ -938,9 +951,13 @@ shares structure and follows behind.
       keyboard layout/IME translation surface replaces Win32 `HKL`,
       `GetKeyboardLayout`, legacy invalid character literals, and empty wide
       character constants.
-- [ ] Compile original `GameClient/Input/Mouse.cpp` after the real
-      `InGameUI`/`CommandXlat`/`Drawable` contracts, mouse INI parse
-      declarations, and `GlobalData` cursor/debug fields are available.
+- [x] Compile original `GameClient/Input/Mouse.cpp` after adding temporary
+      `InGameUI`, mouse INI parse, `GlobalData` cursor/debug, and object lookup
+      compile bridges; runtime pointer behavior still waits for the browser
+      input/device layer and harness checks.
+- [ ] Replace the current compile-only Win32 IMM/replay file-copy shims with
+      browser DOM composition events and browser save/export flows before
+      considering IME or replay export behavior runtime-complete.
 - [ ] Link and smoke-test original window animation behavior through real or
       shimmed `GameWindow` instances once the browser input/render path can
       drive and observe them; current coverage is compile-only for the window,
