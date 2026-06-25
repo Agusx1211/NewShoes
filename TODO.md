@@ -60,6 +60,8 @@ shares structure and follows behind.
       C++ `bool` compatibility under clang/Emscripten.
 - [x] Add lowercase `crc.h` and portable `_lrotl` compatibility for original
       WWLib CRC sources under clang/Emscripten.
+- [x] Add portable `stricmp` compatibility for original WWLib/WW3D
+      case-insensitive lookup paths under clang/Emscripten.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
@@ -83,6 +85,8 @@ shares structure and follows behind.
       under wasm.
 - [x] `WWVegas/WWLib` MD5 hashing (`md5.cpp`) compiles and smoke-tests standard
       digest vectors plus split updates under wasm.
+- [x] `WWVegas/WWLib` hash table (`hash.cpp`) compiles and smoke-tests
+      add/find/remove/reset/iteration behavior under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

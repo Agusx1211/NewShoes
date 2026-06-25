@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, and original `sha.cpp` compiles to wasm as `zh_wwlib_sha` with known-answer digest coverage. Containers, strings, file abstractions, threading, and platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, and original `sha.cpp` compiles to wasm as `zh_wwlib_sha` with known-answer digest coverage. Strings, file abstractions, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -59,6 +59,8 @@ The wasm CMake skeleton currently builds:
   static library.
 - `zh_wwlib_crc`: original `WWVegas/WWLib/crc.cpp` and `realcrc.cpp` compiled
   into a wasm static library with lowercase include and rotate shims.
+- `zh_wwlib_hash`: original `WWVegas/WWLib/hash.cpp` compiled into a wasm
+  static library with WWDebug and CRC dependencies.
 - `zh_wwlib_md5`: original `WWVegas/WWLib/md5.cpp` compiled into a wasm static
   library.
 - `zh_wwlib_sha`: original `WWVegas/WWLib/sha.cpp` compiled into a wasm static
@@ -77,6 +79,8 @@ The wasm CMake skeleton currently builds:
 - `wwlib-crc-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib CRC32 helpers against the standard vector and checks `CRCEngine` update
   consistency.
+- `wwlib-hash-smoke`: a Node-executed wasm smoke test that verifies original
+  WWLib hash-table add/find/remove/reset/iteration behavior.
 - `wwlib-md5-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib MD5 against standard digest vectors and split-update hashing.
 - `wwlib-sha-smoke`: a Node-executed wasm smoke test that verifies original

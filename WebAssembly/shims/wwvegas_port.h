@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <strings.h>
 
 #ifndef __cdecl
 #define __cdecl
@@ -12,6 +13,10 @@
 
 #ifndef TRUE_FALSE_DEFINED
 #define TRUE_FALSE_DEFINED 1
+#endif
+
+#ifndef stricmp
+#define stricmp strcasecmp
 #endif
 
 #if !defined(_MSC_VER)
