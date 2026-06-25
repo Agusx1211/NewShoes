@@ -210,7 +210,7 @@ shares structure and follows behind.
       `saveload.cpp`, `saveloadsubsystem.cpp`, `pointerremap.cpp`,
       `saveloadstatus.cpp`) compiles as a wasm static library for WWMath curve
       and lookup-table users.
-- [ ] Full `WWVegas/WWSaveLoad` compiles, including definitions, parameters,
+- [x] Full `WWVegas/WWSaveLoad` compiles, including definitions, parameters,
       twiddlers, and save/load round-trip coverage.
 - [ ] `WWVegas/Wwutil` compiles.
 - [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.

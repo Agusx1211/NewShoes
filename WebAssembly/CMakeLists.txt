@@ -695,6 +695,55 @@ target_link_libraries(zh_wwmath_lookup PUBLIC
   zh_wwmath_curves
 )
 
+add_library(zh_wwsaveload_full STATIC
+  "${WWSAVELOAD_DIR}/definition.cpp"
+  "${WWSAVELOAD_DIR}/definitionfactory.cpp"
+  "${WWSAVELOAD_DIR}/definitionfactorymgr.cpp"
+  "${WWSAVELOAD_DIR}/definitionmgr.cpp"
+  "${WWSAVELOAD_DIR}/parameter.cpp"
+  "${WWSAVELOAD_DIR}/twiddler.cpp"
+  "${WWSAVELOAD_DIR}/wwsaveload.cpp"
+)
+
+target_include_directories(zh_wwsaveload_full PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${WWMATH_DIR}"
+)
+
+target_compile_options(zh_wwsaveload_full PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-deprecated-copy-with-user-provided-copy
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-logical-op-parentheses
+  -Wno-overloaded-virtual
+  -Wno-reorder-ctor
+  -Wno-switch
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-unused-variable
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwsaveload_full PUBLIC
+  zh_wwsaveload_core
+  zh_wwlib_hash
+  zh_wwlib_random
+  zh_wwlib_refcount
+  zh_wwlib_systimer
+  zh_wwmath_core
+)
+
 add_executable(cnc-port
   src/wasm_port_entry.cpp
 )
@@ -1318,6 +1367,44 @@ target_compile_options(wwmath-lookup-smoke PRIVATE
 )
 
 target_link_options(wwmath-lookup-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwsaveload-full-smoke
+  tests/wwsaveload_full_smoke.cpp
+)
+
+set_target_properties(wwsaveload-full-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwsaveload-full-smoke PRIVATE
+  zh_wwsaveload_full
+)
+
+target_compile_options(wwsaveload-full-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-deprecated-copy-with-user-provided-copy
+  -Wno-extra-semi
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-logical-op-parentheses
+  -Wno-overloaded-virtual
+  -Wno-reorder-ctor
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+)
+
+target_link_options(wwsaveload-full-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

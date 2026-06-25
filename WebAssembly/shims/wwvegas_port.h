@@ -118,6 +118,17 @@ static inline char *wwlib_strupr(char *text)
 	return text;
 }
 
+static inline char *wwlib_strlwr(char *text)
+{
+	if (text == NULL) {
+		return NULL;
+	}
+	for (char *cursor = text; *cursor != '\0'; ++cursor) {
+		*cursor = static_cast<char>(tolower(static_cast<unsigned char>(*cursor)));
+	}
+	return text;
+}
+
 static inline char *wwlib_strrev(char *text)
 {
 	if (text == NULL) {
@@ -139,6 +150,14 @@ static inline char *wwlib_strrev(char *text)
 
 #ifndef strupr
 #define strupr wwlib_strupr
+#endif
+
+#ifndef strlwr
+#define strlwr wwlib_strlwr
+#endif
+
+#ifndef _strlwr
+#define _strlwr wwlib_strlwr
 #endif
 
 #ifndef strrev

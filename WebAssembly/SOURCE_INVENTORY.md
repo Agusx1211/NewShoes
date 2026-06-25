@@ -17,7 +17,7 @@ target and should be compiled or re-targeted for wasm.
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, `v3_rnd.cpp`, matrix/quaternion/ODE, bounding-volume, collision-math, curve/spline, lookup-table, and `WWMath::Init` slices now compile to wasm, with smokes covering power-of-two helpers, vector math, matrix/quaternion transforms, triangle containment, AABox/line/sphere/OBBox collision paths, ODE integration, vector randomizers, 1D/3D interpolation, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. Remaining blockers include `matrix3d.cpp`'s D3DX8 dependency and `vp.cpp` CPU/mutex assembly. |
 | `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, and `SysTimeClass` now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
-| `WWVegas/WWSaveLoad` | Partial | Core persistence factory, save/load system, pointer remap, and status plumbing now compile to wasm for WWMath curve/lookup-table users. Full definition/parameter/twiddler coverage and save/load round trips remain open. |
+| `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
@@ -104,6 +104,10 @@ The wasm CMake skeleton currently builds:
 - `zh_wwsaveload_core`: original `WWVegas/WWSaveLoad` persistence factory,
   save/load system, pointer remap, status, and subsystem sources compiled into
   a wasm static library for current runtime library users.
+- `zh_wwsaveload_full`: remaining original `WWVegas/WWSaveLoad` definition,
+  definition-factory, definition-manager, parameter, twiddler, and
+  WWSaveLoad entry sources compiled into a wasm static library with WWLib and
+  WWMath dependencies.
 - `zh_wwmath_core`: original `WWVegas/WWMath` power-of-two, triangle, vector
   randomizer, matrix/quaternion, ODE, bounding-volume, and collision-math
   slices compiled into a wasm static library with minimal WWVegas compiler
@@ -175,6 +179,10 @@ The wasm CMake skeleton currently builds:
 - `wwmath-lookup-smoke`: a Node-executed wasm smoke test that verifies original
   WWMath lookup-table manager initialization, default table sampling, fast trig
   tables, shutdown, and debug refcount cleanup.
+- `wwsaveload-full-smoke`: a Node-executed wasm smoke test that verifies
+  original WWSaveLoad definition factories, persist factory registration,
+  parameter construction/mutation, definition manager lookup, and chunk-file
+  save/load round-trip behavior.
 
 ## Next Compile Order
 
@@ -189,6 +197,5 @@ The wasm CMake skeleton currently builds:
    final browser timing/threading contract, and platform utilities.
 4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
    allocator, and container dependencies are available.
-5. Finish the remaining `WWSaveLoad` definition/parameter/twiddler sources and
-   add save/load round-trip coverage, then move to `Wwutil` and
-   `GameEngine/Common`.
+5. Move to `Wwutil` and `GameEngine/Common` now that the focused WWSaveLoad
+   source directory is compiled and covered by a save/load round-trip smoke.
