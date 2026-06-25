@@ -464,10 +464,13 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
       `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
       the full snapshot subsystem can link into the runtime.
-- [ ] Promote the remaining non-device `Common` core sources from
-      `zh_gameengine_common_core` into the real-header compile frontier after
-      replacing target-local archive/audio/persistence singleton glue with the
-      real browser runtime contracts.
+- [x] Promote the remaining browser-buildable non-device `Common` core sources
+      from `zh_gameengine_common_core` into the real-header compile frontier,
+      including original memory/file/archive/system leaves, Bezier helpers,
+      audio metadata/request leaves, and RTS accounting/prerequisite leaves.
+- [ ] Link and smoke-test the real-header memory/file/archive/system leaves
+      after the browser archive/audio/persistence singleton contracts replace
+      the current target-local smoke globals.
 - [ ] Exercise original `Common/System/FileSystem.cpp` archive lookup,
       `doesFileExist`, directory listing, file-info, and music-CD paths after a
       concrete browser `ArchiveFileSystem` / audio layer replaces the current

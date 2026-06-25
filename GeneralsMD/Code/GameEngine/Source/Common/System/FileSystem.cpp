@@ -53,6 +53,7 @@
 #include "Common/CDManager.h"
 #include "Common/GameAudio.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/PerfTimer.h"
 
 
