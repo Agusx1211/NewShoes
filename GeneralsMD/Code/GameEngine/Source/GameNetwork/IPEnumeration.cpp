@@ -24,6 +24,7 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "winsock2.h"
 #include "GameNetwork/IPEnumeration.h"
 
 IPEnumeration::IPEnumeration( void )
@@ -181,5 +182,4 @@ AsciiString IPEnumeration::getMachineName( void )
 
 	return AsciiString(hostname);
 }
-
 

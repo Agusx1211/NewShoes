@@ -17,6 +17,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifndef IN
+#define IN
+#endif
+
+#ifndef OUT
+#define OUT
+#endif
+
+#ifndef OPTIONAL
+#define OPTIONAL
+#endif
+
 using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
@@ -41,6 +53,7 @@ using LPDWORD = DWORD *;
 using LPSTR = char *;
 using LPVOID = void *;
 using UINT = unsigned int;
+using VOID = void;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
@@ -94,6 +107,14 @@ struct MSG
 	DWORD time;
 	POINT pt;
 };
+
+struct _EXCEPTION_POINTERS
+{
+	void *ExceptionRecord;
+	void *ContextRecord;
+};
+
+using EXCEPTION_POINTERS = _EXCEPTION_POINTERS;
 
 struct ITEMIDLIST
 {
@@ -209,7 +230,9 @@ static inline unsigned int _controlfp(unsigned int new_value, unsigned int mask)
 #define ERROR_ALREADY_EXISTS 183
 #define ERROR_NO_MORE_ITEMS 259
 #define CP_ACP 0
+#define CP_UTF8 65001
 #define VK_RETURN 0x0D
+#define WM_USER 0x0400
 #define LOCALE_SYSTEM_DEFAULT 0x0800
 #define DATE_SHORTDATE 0x00000001
 #define TIME_NOSECONDS 0x00000002
@@ -767,6 +790,11 @@ static inline DWORD GetTickCount()
 	return static_cast<DWORD>(std::time(nullptr) * 1000);
 }
 
+static inline DWORD GetCurrentTime()
+{
+	return GetTickCount();
+}
+
 static inline void GetLocalTime(SYSTEMTIME *system_time)
 {
 	if (system_time == nullptr) {
@@ -796,6 +824,14 @@ static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *counter)
 {
 	if (counter != nullptr) {
 		counter->QuadPart = static_cast<long long>(GetTickCount());
+	}
+	return TRUE;
+}
+
+static inline BOOL QueryPerformanceFrequency(LARGE_INTEGER *frequency)
+{
+	if (frequency != nullptr) {
+		frequency->QuadPart = 1000;
 	}
 	return TRUE;
 }

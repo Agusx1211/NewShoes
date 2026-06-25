@@ -31,6 +31,8 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "mmsystem.h"
+#include "Common/GlobalData.h"
 #include "GameNetwork/NAT.h"
 #include "GameNetwork/Transport.h"
 #include "GameNetwork/NetworkDefs.h"
@@ -501,6 +503,7 @@ void NAT::establishConnectionPaths() {
 	m_connectionPairIndex = m_numNodes - 2;
 	Bool connectionAssigned[MAX_SLOTS];
 
+	Int i;
 	for (i = 0; i < MAX_SLOTS; ++i) {
 		m_connectionNodes[i].m_slotIndex = -1;
 		connectionAssigned[i] = FALSE;
@@ -659,7 +662,8 @@ void NAT::doThisConnectionRound() {
 	// clear out the states from the last round.
 	m_targetNodeNumber = -1;
 
-	for (Int i = 0; i < MAX_SLOTS; ++i) {
+	Int i;
+	for (i = 0; i < MAX_SLOTS; ++i) {
 		setConnectionState(i, NATCONNECTIONSTATE_NOSTATE);
 	}
 
@@ -1305,7 +1309,8 @@ void NAT::setConnectionState(Int nodeNumber, NATConnectionState state) {
 	// find the menu slot of the target node.
 	Int slotIndex = m_connectionNodes[m_targetNodeNumber].m_slotIndex;
 	Int slot = 0;
-	for (Int i = 0; i < MAX_SLOTS; ++i) {
+	Int i;
+	for (i = 0; i < MAX_SLOTS; ++i) {
 		if (m_slotList[i] != NULL) {
 			if (m_slotList[i]->isHuman()) {
 				if (i != m_connectionNodes[m_localNodeNumber].m_slotIndex) {

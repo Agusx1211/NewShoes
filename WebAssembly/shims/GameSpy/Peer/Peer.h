@@ -39,7 +39,8 @@ enum PEERJoinResult
 
 enum
 {
-	PEER_STOP_REPORTING = 0
+	PEER_STOP_REPORTING = 0,
+	PEER_FLAG_OP = 0x01
 };
 
 typedef void (*peerDisconnectedCallback)(PEER, const char *, void *);

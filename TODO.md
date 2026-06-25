@@ -683,10 +683,10 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `GlobalData` defaults, user-data path setup,
       and command-line mutation after the linked runtime replaces the
       target-local `Common/GlobalData.h` shim.
-- [ ] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
+- [x] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
       SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
       mapped to browser-safe networking interfaces.
-- [ ] Compile original `Common/Recorder.cpp` after the GameSpy Peer headers
+- [x] Compile original `Common/Recorder.cpp` after the GameSpy Peer headers
       used by `GameNetwork/GameSpy/PeerDefs.h` are restored or mapped onto the
       browser networking contract.
 - [x] Compile original `Common/SkirmishBattleHonors.cpp` in the real-header
@@ -1085,12 +1085,15 @@ shares structure and follows behind.
       bytes.
 - [x] Compile original `GameNetwork/NetCommandMsg.cpp` after adding the
       `SYSTEMTIME` shim and fixing the original `Team` DLINK clang contract.
-- [ ] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
-      `udp.cpp` after the WinSock socket API surface is replaced with the
-      browser WebSocket/WebRTC transport contract.
-- [ ] Compile original `GameNetwork/DownloadManager.cpp` and `NAT.cpp` after
-      the WWDownload/GameSpy dependency surface is either restored from the
-      vendored source or re-targeted to the browser networking path.
+- [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
+      `udp.cpp` after adding the browser-safe WinSock compile surface and
+      preserving the original UDP/transport logic for the later WebSocket/WebRTC
+      re-target.
+- [x] Compile original `GameNetwork/NAT.cpp` after the GameSpy Peer headers,
+      WinMM timing shim, and original `GlobalData` firewall fields are reachable.
+- [ ] Compile original `GameNetwork/DownloadManager.cpp` after the WWDownload
+      dependency surface is either restored from the vendored source or
+      re-targeted to the browser networking path.
 - [x] Compile original `GameNetwork/FirewallHelper.cpp` after adding the
       original firewall fields/defaults to the temporary `GlobalData` shim,
       portable `itoa` compatibility, and explicit loop variables for legacy
@@ -1121,9 +1124,16 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `GameNetwork/LANAPICallbacks.cpp` after the
       real `GameLogic::isInGame`, LAN UI, game setup, and transport callback
       surfaces are available; current coverage is compile-only.
-- [ ] Restore or re-target the vendored GameSpy Peer dependency before
-      compiling original `GameNetwork/GameSpy/PeerDefs.cpp` and
-      `LadderDefs.cpp`.
+- [x] Restore enough declarative GameSpy Peer/GP/persistent-storage/SNMP
+      compile surface to compile original `GameNetwork/GameSpy/PeerDefs.cpp`,
+      `LadderDefs.cpp`, `Chat.cpp`, `StagingRoomGameInfo.cpp`,
+      `Thread/ThreadUtils.cpp`, and `GameSpyOverlay.cpp` in the real-header
+      compile frontier.
+- [ ] Compile original GameSpy thread sources (`BuddyThread.cpp`,
+      `PeerThread.cpp`, `PingThread.cpp`, `PersistentStorageThread.cpp`, and
+      `GameResultsThread.cpp`) after the SEH translator hook and remaining
+      GameSpy Peer/Stats reserved-key APIs are mapped to the browser networking
+      contract.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

@@ -31,6 +31,10 @@
 #ifndef __GAMESPY_THREADUTILS_H__
 #define __GAMESPY_THREADUTILS_H__
 
+#include <string>
+
+#include "Lib/BaseType.h"
+
 std::wstring MultiByteToWideCharSingleLine( const char *orig );
 std::string WideCharStringToMultiByte( const WideChar *orig );
 

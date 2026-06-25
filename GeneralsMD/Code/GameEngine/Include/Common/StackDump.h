@@ -27,6 +27,8 @@
 #ifndef __STACKDUMP_H_
 #define __STACKDUMP_H_
 
+#include "Common/AsciiString.h"
+
 #ifndef IG_DEGBUG_STACKTRACE
 #define IG_DEBUG_STACKTRACE	1
 #endif // Unsure about this one -ML 3/25/03

@@ -28,6 +28,9 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "Common/GameMemory.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
+
 //-------------------------------------------------------------------------
 
 std::wstring MultiByteToWideCharSingleLine( const char *orig )
@@ -78,4 +81,3 @@ std::string WideCharStringToMultiByte( const WideChar *orig )
 }
 
 //-------------------------------------------------------------------------
-

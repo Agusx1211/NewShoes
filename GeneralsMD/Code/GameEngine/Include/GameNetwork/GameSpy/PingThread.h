@@ -32,6 +32,11 @@
 #ifndef __PINGTHREAD_H__
 #define __PINGTHREAD_H__
 
+#include <string>
+
+#include "Common/AsciiString.h"
+#include "Lib/BaseType.h"
+
 // this class encapsulates a request for the thread
 class PingRequest
 {

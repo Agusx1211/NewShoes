@@ -30,6 +30,8 @@
 // SYSTEM INCLUDES ////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "winsock2.h"
+
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/GameEngine.h"
 //#include "GameNetwork/NetworkInterface.h"
@@ -185,7 +187,7 @@ Int UDP::Bind(UnsignedInt IP,UnsignedShort Port)
     return(status);
   }
 
-  int namelen=sizeof(addr);
+  socklen_t namelen=sizeof(addr);
   getsockname(fd, (struct sockaddr *)&addr, &namelen); 
 
   myIP=ntohl(addr.sin_addr.s_addr);
@@ -270,7 +272,7 @@ Int UDP::Write(const unsigned char *msg,UnsignedInt len,UnsignedInt IP,UnsignedS
 Int UDP::Read(unsigned char *msg,UnsignedInt len,sockaddr_in *from)
 {
   Int retval;
-  int    alen=sizeof(sockaddr_in);
+  socklen_t alen=sizeof(sockaddr_in);
 
   if (from!=NULL)
   {
@@ -484,7 +486,8 @@ Int UDP::SetOutputBuffer(UnsignedInt bytes)
 
 int UDP::GetInputBuffer(void)
 {
-   int retval,arg=0,len=sizeof(int);
+   int retval,arg=0;
+   socklen_t len=sizeof(int);
 
    retval=getsockopt(fd,SOL_SOCKET,SO_RCVBUF,
      (char *)&arg,&len);
@@ -494,7 +497,8 @@ int UDP::GetInputBuffer(void)
 
 int UDP::GetOutputBuffer(void)
 {
-   int retval,arg=0,len=sizeof(int);
+   int retval,arg=0;
+   socklen_t len=sizeof(int);
 
    retval=getsockopt(fd,SOL_SOCKET,SO_SNDBUF,
      (char *)&arg,&len);

@@ -26,6 +26,9 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include "Common/CRC.h"
+#include "Common/GlobalData.h"
+#include "mmsystem.h"
+#include "winsock2.h"
 #include "GameNetwork/Transport.h"
 #include "GameNetwork/NetworkInterface.h"
 
@@ -139,7 +142,7 @@ Bool Transport::init( UnsignedInt ip, UnsignedShort port )
 		m_delayedInBuffer[i].message.length = 0;
 #endif
 	}
-	for (i=0; i<MAX_TRANSPORT_STATISTICS_SECONDS; ++i)
+	for (int i=0; i<MAX_TRANSPORT_STATISTICS_SECONDS; ++i)
 	{
 		m_incomingBytes[i] = 0;
 		m_outgoingBytes[i] = 0;
@@ -343,7 +346,7 @@ Bool Transport::doRecv()
 						(Int)(TheGlobalData->m_latencyAmplitude * sin(now * TheGlobalData->m_latencyPeriod)) +
 						GameClientRandomValue(-TheGlobalData->m_latencyNoise, TheGlobalData->m_latencyNoise);
 					m_delayedInBuffer[i].message.length = incomingMessage.length;
-					m_delayedInBuffer[i].message.addr = ntohl(from.sin_addr.S_un.S_addr);
+					m_delayedInBuffer[i].message.addr = ntohl(from.sin_addr.s_addr);
 					m_delayedInBuffer[i].message.port = ntohs(from.sin_port);
 					memcpy(&m_delayedInBuffer[i].message, buf, len);
 					break;
@@ -356,7 +359,7 @@ Bool Transport::doRecv()
 				{
 					// Empty slot; use it
 					m_inBuffer[i].length = incomingMessage.length;
-					m_inBuffer[i].addr = ntohl(from.sin_addr.S_un.S_addr);
+					m_inBuffer[i].addr = ntohl(from.sin_addr.s_addr);
 					m_inBuffer[i].port = ntohs(from.sin_port);
 					memcpy(&m_inBuffer[i], buf, len);
 					break;
@@ -503,6 +506,3 @@ Real Transport::getUnknownPacketsPerSecond( void )
 	}
 	return val / (MAX_TRANSPORT_STATISTICS_SECONDS-1);
 }
-
-
-

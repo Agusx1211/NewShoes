@@ -32,6 +32,7 @@
 #include "GameNetwork/GameSpy/LadderDefs.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
 #include "GameNetwork/GameSpy/GSConfig.h"
+#include "Common/GlobalData.h"
 #include "Common/GameState.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"

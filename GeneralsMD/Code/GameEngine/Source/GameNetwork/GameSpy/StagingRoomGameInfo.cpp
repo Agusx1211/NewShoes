@@ -28,6 +28,9 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
+#include "snmp.h"
+#include "winsock2.h"
+#include "Common/GlobalData.h"
 #include "Common/GameState.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
