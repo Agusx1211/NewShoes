@@ -103,6 +103,38 @@ static inline int wwlib_vsnwprintf(wchar_t *buffer, size_t count, const wchar_t 
 #define _snprintf snprintf
 #endif
 
+#ifndef itoa
+static inline char *wwlib_itoa(int value, char *buffer, int radix)
+{
+	if (buffer == nullptr || radix < 2 || radix > 36) {
+		return buffer;
+	}
+
+	if (radix == 10) {
+		snprintf(buffer, 34, "%d", value);
+		return buffer;
+	}
+
+	char digits[34];
+	unsigned int input = static_cast<unsigned int>(value);
+	int index = 0;
+	do {
+		const unsigned int digit = input % static_cast<unsigned int>(radix);
+		digits[index++] = static_cast<char>(digit < 10 ? '0' + digit : 'a' + digit - 10);
+		input /= static_cast<unsigned int>(radix);
+	} while (input != 0 && index < static_cast<int>(sizeof(digits)));
+
+	int out = 0;
+	while (index > 0) {
+		buffer[out++] = digits[--index];
+	}
+	buffer[out] = '\0';
+	return buffer;
+}
+#define itoa wwlib_itoa
+#define _itoa wwlib_itoa
+#endif
+
 static inline int wwlib_wcsicmp(const wchar_t *left, const wchar_t *right)
 {
 	if (left == nullptr && right == nullptr) {

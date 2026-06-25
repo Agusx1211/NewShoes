@@ -109,7 +109,7 @@ FirewallHelperClass::FirewallHelperClass(void)
 		m_sparePorts[i] = 0;
 	}
 
-	for (i = 0; i < MAX_NUM_MANGLERS; i++)
+	for (Int i = 0; i < MAX_NUM_MANGLERS; i++)
 	{
 		m_manglers[i] = 0;
 	}
@@ -480,7 +480,7 @@ UnsignedShort FirewallHelperClass::getManglerResponse(UnsignedShort packetID, In
 
 	// See if we have already received it and saved it.
 	if (msg == NULL) {
-		for (i = 0; i < MAX_SPARE_SOCKETS; ++i) {
+		for (Int i = 0; i < MAX_SPARE_SOCKETS; ++i) {
 			if ((m_messages[i].length != 0) && (m_messages[i].data.PacketID == packetID)) {
 				msg = &(m_messages[i]);
 				msg->length = 0;
@@ -937,7 +937,7 @@ Bool FirewallHelperClass::detectionTest3Update() {
 		m_timeoutLength = 12000;
 
 		DEBUG_LOG(("FirewallHelperClass::detectionTest3Update - Sending to %d manglers\n", NUM_TEST_PORTS));
-		for (i=0 ; i<NUM_TEST_PORTS ; i++) {
+		for (Int i=0 ; i<NUM_TEST_PORTS ; i++) {
 			if (m_mangledPorts[i] == 0) {
 				sendToManglerFromPort(m_manglers[0], m_sparePorts[i], m_packetID+i);
 			}
@@ -970,7 +970,7 @@ Bool FirewallHelperClass::detectionTest3WaitForResponsesUpdate() {
 			/*
 			** Close down those sockets - we are finished with them.
 			*/
-			for (Int j=0 ; j<i ; j++) {
+			for (Int j=0 ; j<NUM_TEST_PORTS ; j++) {
 				if (m_spareSockets[j].port != 0) {
 					closeSpareSocket(m_spareSockets[j].port);
 				}
@@ -985,7 +985,7 @@ Bool FirewallHelperClass::detectionTest3WaitForResponsesUpdate() {
 	/*
 	** Close down those sockets - we are finished with them.
 	*/
-	for (Int j=0 ; j<i ; j++) {
+	for (Int j=0 ; j<NUM_TEST_PORTS ; j++) {
 		if (m_spareSockets[j].port != 0) {
 			closeSpareSocket(m_spareSockets[j].port);
 		}
@@ -1525,7 +1525,8 @@ Int FirewallHelperClass::getFirewallRetries(FirewallBehaviorType behavior)
  *  returns TRUE if successful, FALSE otherwise.
  */
 Bool FirewallHelperClass::openSpareSocket(UnsignedShort port) {
-	for (Int i = 0; i < MAX_SPARE_SOCKETS; ++i) {
+	Int i = 0;
+	for (; i < MAX_SPARE_SOCKETS; ++i) {
 		if (m_spareSockets[i].port == 0) {
 			break;
 		}

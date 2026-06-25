@@ -507,12 +507,14 @@ shares structure and follows behind.
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
       the bodies still require `wmsdk.h`, `HRESULT`/wide Win32 shell types, and
       browser-safe launch/playback behavior.
-- [ ] Compile original RTS accounting/player-adjacent sources
-      (`MissionStats.cpp`, `Money.cpp`, `Handicap.cpp`, `Science.cpp`, etc.)
-      after `Player`/`Thing`/`Object` module headers, the `Team` DLINK /
-      `OVERRIDE` include contract, production map typedef dependencies,
-      `MultiIniFieldParse`, `StaticGameLODLevel`, `EvaMessage`, and related
-      GameLogic/GameClient enum dependencies are available.
+- [x] Compile original RTS accounting sources `Common/RTS/Handicap.cpp`,
+      `MissionStats.cpp`, and `Money.cpp` after fixing the original
+      `Team` DLINK clang contract and adding the production map typedefs
+      needed by `Player`/`Thing` headers.
+- [ ] Compile original `Common/RTS/Science.cpp` after the real INI parser
+      surface exposes the original science parse entry points
+      (`parseScienceVector`, `parseAndTranslateLabel`, and
+      `parseScienceDefinition`) without target-local declarations.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -521,12 +523,16 @@ shares structure and follows behind.
       guarding its x86 precision-timer assembly behind the current dormant
       `NO_PERF_TIMERS` build and an Emscripten `QueryPerformanceCounter`
       fallback.
-- [ ] Link and smoke-test `MultiplayerSettings` runtime behavior after
-      original `Common/RTS/Money.cpp` can compile without the deeper
-      `Player`/`Thing`/`StealthUpdate` enum-forward blockers.
+- [ ] Link and smoke-test `MultiplayerSettings` and `Money` runtime behavior
+      after the deeper `Player`/`Thing`/`StealthUpdate` economy path can link
+      without target-local GameLogic singleton shims.
 - [ ] Compile original `Common/DamageFX.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, `GameClient/FXList` / `InGameUI`, and
       `GameLogic/Damage` / `Object` dependencies are available.
+- [ ] Compile original `Common/System/BuildAssistant.cpp` after the
+      `PartitionManager` header loop-scope issue, `AIPathfind.h`
+      `PathfindCell` contract, and `GlobalData::m_maxLineBuildObjects`
+      dependency are resolved through original headers.
 - [ ] Compile original `Common/MessageStream.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, player/list, recorder, InGameUI, and GameLogic
       dependencies are available.
@@ -537,6 +543,10 @@ shares structure and follows behind.
       `Common/SkirmishBattleHonors.cpp` after `Common/Thing` /
       `Common/OVERRIDE.h`, player/game-difficulty declarations, and related
       GameLogic headers are available.
+- [ ] Compile original `Common/Thing/ThingFactory.cpp` and
+      `ThingTemplate.cpp` after the real INI parse helpers, libc++ hash-map
+      compatibility, `PartitionManager` loop-scope fixes, and original
+      `GameLogic` object-creation/draw-icon APIs are available.
 - [ ] Compile original `Common/GameLOD.cpp` after the particle-priority,
       TerrainVisual/GameClient, and W3D collision include dependencies are
       available.
@@ -623,19 +633,19 @@ shares structure and follows behind.
       (`LookupListRec`, lookup-list parsing, coordinate parsing,
       `parseMappedImage`, credits and shell scheme declarations) with the
       original INI parser surface once `Common/INI` can compile and link.
-- [ ] Compile original `GameClient/System/CampaignManager.cpp` and
-      `GUI/ChallengeGenerals.cpp` after `GameDifficulty`, lowercase
-      `common/GameType.h` compatibility, and the real GameClient singleton
-      surface are available without target-local stubs.
-- [ ] Compile original `GameClient/MapUtil.cpp` and `RadiusDecal.cpp` after
-      the Win32 `SYSTEMTIME` compatibility, `GlobalData::m_buildMapCache`,
-      `Xfer::xferColor`, `GameLogic::getDrawIconUI`, and the deeper
+- [ ] Compile original `GameClient/System/CampaignManager.cpp` after the real
+      campaign INI parse entry point, `Xfer::xferSnapshot`, and the full
+      GameClient singleton surface are available without target-local stubs.
+- [x] Compile original `GameClient/MapUtil.cpp` after adding Win32
+      `SYSTEMTIME` compatibility and the original `GlobalData::m_buildMapCache`
+      field/default to the temporary wasm shim.
+- [ ] Compile original `GameClient/RadiusDecal.cpp` after `Xfer::xferColor`,
+      `GameLogic::getDrawIconUI`, and the deeper
       Player/Team/Module/Object/GameLogic contracts are available through
       original headers instead of ad hoc shims.
-- [ ] Compile original `GameClient/Terrain/TerrainRoads.cpp` after
-      `MultiIniFieldParse`, `StaticGameLODLevel`, `PlayerMaskType`,
-      `VeterancyLevel`, and the related Module/BodyModule/GameLogic contracts
-      come in through original headers.
+- [x] Compile original `GameClient/Terrain/TerrainRoads.cpp` in the GameClient
+      utility target; current coverage is compile-only until terrain and
+      rendering can be harness-driven.
 - [x] Compile original `GameClient/GraphDraw.cpp` in the GameClient utility
       target; it is currently compile-only because the active wasm build does
       not define `PERF_TIMERS`.
@@ -724,7 +734,7 @@ shares structure and follows behind.
       browser display/FPS surface and real `GlobalData` singleton are available;
       current coverage is compile-only.
 - [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
-      after `NetPacket.cpp` and `NetCommandMsg.cpp` compile; current coverage
+      after `NetPacket.cpp` compiles and links; current coverage
       is compile-only because linking `Connection` pulls packetization and
       transport send/receive dependencies.
 - [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
@@ -732,21 +742,25 @@ shares structure and follows behind.
       browser network/file-transfer path are available; current coverage is
       compile-only.
 - [ ] Compile original `GameNetwork/NetPacket.cpp` after resolving its
-      clang/libc++ strictness issues and the remaining packet/message
-      serialization dependencies without changing protocol behavior.
+      clang/libc++ strictness issues (`NetPacketList` null return,
+      legacy loop-scope variable use, and `BitFlags::set` enum conversion)
+      plus the remaining packet/message serialization dependencies without
+      changing protocol behavior.
+- [x] Compile original `GameNetwork/NetCommandMsg.cpp` after adding the
+      `SYSTEMTIME` shim and fixing the original `Team` DLINK clang contract.
 - [ ] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after the WinSock socket API surface is replaced with the
       browser WebSocket/WebRTC transport contract.
 - [ ] Compile original `GameNetwork/DownloadManager.cpp` and `NAT.cpp` after
       the WWDownload/GameSpy dependency surface is either restored from the
       vendored source or re-targeted to the browser networking path.
-- [ ] Compile original `GameNetwork/FirewallHelper.cpp` after resolving its
-      legacy MSVC loop-scope assumptions under clang without changing firewall
-      probing behavior.
+- [x] Compile original `GameNetwork/FirewallHelper.cpp` after adding the
+      original firewall fields/defaults to the temporary `GlobalData` shim,
+      portable `itoa` compatibility, and explicit loop variables for legacy
+      MSVC loop-scope assumptions without changing firewall probing behavior.
 - [ ] Link and smoke-test the broader GameNetwork command-message slice after
-      original `Common/MessageStream.cpp`, `NetCommandMsg.cpp`, and
-      `NetPacket.cpp` can compile against the real player/message
-      dependencies.
+      original `Common/MessageStream.cpp` and `NetPacket.cpp` can compile and
+      link against the real player/message dependencies.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

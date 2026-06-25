@@ -16,7 +16,10 @@
 #include <vector>
 
 #include "Common/AsciiString.h"
+#include "Common/GameCommon.h"
 #include "Common/UnicodeString.h"
+
+enum NameKeyType : int;
 
 namespace std {
 template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<Key>>
@@ -74,5 +77,7 @@ template <> struct hash<AsciiString>
 
 typedef std::vector<Coord3D> VecCoord3D;
 typedef VecCoord3D::iterator VecCoord3DIt;
+typedef std::map<NameKeyType, Real, std::less<NameKeyType>> ProductionChangeMap;
+typedef std::map<NameKeyType, VeterancyLevel, std::less<NameKeyType>> ProductionVeterancyMap;
 
 #endif

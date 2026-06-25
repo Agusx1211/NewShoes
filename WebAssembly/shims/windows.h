@@ -50,6 +50,18 @@ struct LARGE_INTEGER
 	long long QuadPart;
 };
 
+struct SYSTEMTIME
+{
+	WORD wYear;
+	WORD wMonth;
+	WORD wDayOfWeek;
+	WORD wDay;
+	WORD wHour;
+	WORD wMinute;
+	WORD wSecond;
+	WORD wMilliseconds;
+};
+
 struct POINT
 {
 	long x;

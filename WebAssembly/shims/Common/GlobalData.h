@@ -11,6 +11,11 @@ public:
 		m_yResolution(600),
 		m_maxCameraHeight(300.0f),
 		m_minCameraHeight(100.0f),
+		m_buildMapCache(FALSE),
+		m_firewallBehavior(0),
+		m_firewallSendDelay(FALSE),
+		m_firewallPortOverride(0),
+		m_firewallPortAllocationDelta(0),
 		m_networkFPSHistoryLength(30),
 		m_networkLatencyHistoryLength(200),
 		m_networkCushionHistoryLength(10),
@@ -25,6 +30,11 @@ public:
 	Int m_yResolution;
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
+	Bool m_buildMapCache;
+	UnsignedInt m_firewallBehavior;
+	Bool m_firewallSendDelay;
+	UnsignedInt m_firewallPortOverride;
+	Short m_firewallPortAllocationDelta;
 	UnsignedInt m_networkFPSHistoryLength;
 	UnsignedInt m_networkLatencyHistoryLength;
 	UnsignedInt m_networkCushionHistoryLength;
@@ -36,3 +46,4 @@ private:
 };
 
 extern GlobalData *TheGlobalData;
+#define TheWritableGlobalData TheGlobalData

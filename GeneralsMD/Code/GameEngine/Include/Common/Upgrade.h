@@ -40,7 +40,7 @@
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
 class Player;
 class UpgradeTemplate;
-enum NameKeyType;
+enum NameKeyType : int;
 class Image;
 enum AcademyClassificationType : int;
 
