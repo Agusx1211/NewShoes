@@ -58,6 +58,8 @@ shares structure and follows behind.
       `WWLib/random.cpp` and `WWMath/v3_rnd.h` under clang/Emscripten.
 - [x] Add legacy WWLib header shims for `<new.h>`, `<iostream.h>`, and native
       C++ `bool` compatibility under clang/Emscripten.
+- [x] Add lowercase `crc.h` and portable `_lrotl` compatibility for original
+      WWLib CRC sources under clang/Emscripten.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
@@ -74,6 +76,8 @@ shares structure and follows behind.
       through the WWMath vector randomizers under wasm.
 - [x] `WWVegas/WWLib` SHA hashing (`sha.cpp`) compiles and smoke-tests known
       digest vectors, cached results, reset, and split updates under wasm.
+- [x] `WWVegas/WWLib` CRC helpers (`crc.cpp`, `realcrc.cpp`) compile and
+      smoke-test CRC32 vectors plus `CRCEngine` update consistency under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

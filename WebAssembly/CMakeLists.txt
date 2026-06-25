@@ -87,6 +87,25 @@ target_compile_options(zh_wwlib_random PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_crc STATIC
+  "${WWLIB_DIR}/crc.cpp"
+  "${WWLIB_DIR}/realcrc.cpp"
+)
+
+target_include_directories(zh_wwlib_crc PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_crc PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-sign-compare
+  -Wno-unknown-pragmas
+)
+
 add_library(zh_wwlib_sha STATIC
   "${WWLIB_DIR}/sha.cpp"
 )
@@ -209,6 +228,32 @@ target_compile_options(wwdebug-core-smoke PRIVATE
 )
 
 target_link_options(wwdebug-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-crc-smoke
+  tests/wwlib_crc_smoke.cpp
+)
+
+set_target_properties(wwlib-crc-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-crc-smoke PRIVATE
+  zh_wwlib_crc
+)
+
+target_compile_options(wwlib-crc-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-crc-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

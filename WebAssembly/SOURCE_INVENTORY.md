@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, and original `sha.cpp` compiles to wasm as `zh_wwlib_sha` with known-answer digest coverage. Containers, strings, file abstractions, threading, and platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, and original `sha.cpp` compiles to wasm as `zh_wwlib_sha` with known-answer digest coverage. Containers, strings, file abstractions, threading, and platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -55,6 +55,8 @@ The wasm CMake skeleton currently builds:
   wasm static library with targeted Win32/exception shims.
 - `zh_wwlib_random`: original `WWVegas/WWLib/random.cpp` compiled into a wasm
   static library.
+- `zh_wwlib_crc`: original `WWVegas/WWLib/crc.cpp` and `realcrc.cpp` compiled
+  into a wasm static library with lowercase include and rotate shims.
 - `zh_wwlib_sha`: original `WWVegas/WWLib/sha.cpp` compiled into a wasm static
   library with legacy header compatibility shims.
 - `zh_wwmath_core`: original `WWVegas/WWMath/pot.cpp`, `tri.cpp`, and
@@ -65,6 +67,9 @@ The wasm CMake skeleton currently builds:
   and `REF_encode`/`REF_decode`.
 - `wwdebug-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWDebug message, assert, trigger, and profile handlers.
+- `wwlib-crc-smoke`: a Node-executed wasm smoke test that verifies original
+  WWLib CRC32 helpers against the standard vector and checks `CRCEngine` update
+  consistency.
 - `wwlib-sha-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib SHA against known digest vectors and split-update hashing.
 - `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
