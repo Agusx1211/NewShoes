@@ -404,9 +404,11 @@ shares structure and follows behind.
       real INI entries, and reads `Armor.ini`, `CommandButton.ini`, and
       `Weapon.ini` through the original `FileSystem` archive fallback path
       under Node raw filesystem access.
-- [ ] Validate the original BIG reader against extracted real archives
+- [x] Validate the original BIG reader against extracted real archives
       (`INIZH.big` first) through browser asset fetch/MEMFS mounting in the
       harness.
+- [ ] Extend the browser MEMFS real-asset smoke from `INIZH.big` to the exact
+      minimum boot archive set once engine startup uses fetched archives.
 - [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.

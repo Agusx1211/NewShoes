@@ -156,6 +156,7 @@ extern "C" int run_real_big_smoke(const char *archive_path)
 	return run_real_big_smoke_impl(archive_path);
 }
 
+#ifndef REAL_BIG_SMOKE_NO_MAIN
 int main(int argc, char **argv)
 {
 	if (argc != 2) {
@@ -165,3 +166,4 @@ int main(int argc, char **argv)
 
 	return run_real_big_smoke_impl(argv[1]);
 }
+#endif

@@ -2173,3 +2173,40 @@ target_link_options(gameengine-real-big-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
+
+add_executable(gameengine-real-big-browser-smoke
+  tests/gameengine_real_big_smoke.cpp
+)
+
+set_target_properties(gameengine-real-big-browser-smoke PROPERTIES
+  SUFFIX ".js"
+)
+
+target_link_libraries(gameengine-real-big-browser-smoke PRIVATE
+  zh_gameengine_common_core
+)
+
+target_compile_definitions(gameengine-real-big-browser-smoke PRIVATE
+  REAL_BIG_SMOKE_NO_MAIN
+)
+
+target_compile_options(gameengine-real-big-browser-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gameengine-real-big-browser-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=web,worker"
+  "SHELL:-sMODULARIZE=1"
+  "SHELL:-sEXPORT_ES6=1"
+  "SHELL:-sEXPORT_NAME=createGameEngineRealBigBrowserSmokeModule"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
+)
