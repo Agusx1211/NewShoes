@@ -18,3 +18,11 @@ Only write new machinery when something genuinely cannot work in the browser
 without it — i.e. a platform/device dependency that must be re-targeted to a
 browser API. Don't re-implement engine or data logic that already exists and is
 platform-independent (e.g. the INI parsing in `GameEngine/Source/Common/INI/`).
+
+## Don't work blind
+
+A wasm/browser build is graphical — you can't see it. Always keep a scriptable
+harness (headless browser + a command/RPC control surface) that can boot the
+build, click UI, select/move units, start and step a match, query state, and
+**capture screenshots**. Treat any change as unverified until the harness boots
+it and a screenshot or state check proves it works. See `AGENTS.md`.

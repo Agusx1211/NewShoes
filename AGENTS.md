@@ -59,6 +59,28 @@ Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
   dependency**, not to stub out or fake the feature.
 - Map missing platform APIs to browser equivalents; preserve original logic.
 
+## Don't work blind: keep a driveable harness
+
+A browser/wasm build is graphical and interactive, so an agent can't "see" it.
+**Always build and maintain a scriptable harness** that lets an agent (and CI)
+drive and observe the running build with no human in the loop:
+
+- Run the build in a **headless browser** (e.g. Playwright/Puppeteer): boot it,
+  load to a known state, and **capture canvas screenshots** to confirm what
+  actually rendered. An agent cannot verify rendering any other way — screenshot
+  liberally.
+- Expose a **command / RPC control surface** (from the JS bridge or the engine
+  itself) so the harness can issue real inputs and queries: boot, load or skip
+  to a menu/map, click named UI buttons, select and move units, issue orders,
+  start and step a match, and read back game state and logs.
+- Prefer driving through the engine's **own input/command path** over blind
+  pixel-clicking, then verify the result with a screenshot and/or a state query.
+- Treat any change as **unverified until the harness boots the build and a
+  screenshot or state check proves it works**.
+
+Grow this harness with the port: every new subsystem (rendering, input, audio,
+AI, match flow) should be reachable and checkable through it.
+
 ## Status
 
 `WebAssembly/` is the port work area. It currently holds asset-extraction
