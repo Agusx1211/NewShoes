@@ -120,8 +120,9 @@ Run all current wasm checks, including the original EAC compression codec,
 CompressionManager EAC-backed routes, WWDebug core/profile, WWLib
 Base64/CRC/file-core/file-INI/fixed/hash/image-misc/LZO/MD5/
 platform-compat/public-key/RAMFile/SHA/stream-core/StringClass/surface-core/
-utility-core, WWMath core geometry/collision, and GameEngine Common
-string/file/data/header compatibility smokes:
+utility-core, WWMath core geometry/collision, GameEngine Common
+string/file/data/header compatibility smokes, and the initial GameClient
+utility smoke:
 
 ```sh
 npm run test:all

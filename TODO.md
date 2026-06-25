@@ -492,8 +492,21 @@ shares structure and follows behind.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
+- [x] Initial `GameClient` utility slice compiles from original sources:
+      `Color.cpp`, `Line2D.cpp`, `ParabolicEase.cpp`, and `Statistics.cpp`,
+      with wasm smoke coverage for packed colors, 2D clip/intersection/area
+      helpers, easing, normalization, and mu-law helpers.
 - [ ] `GameClient` (Display, Drawable, GUI, Input, InGameUI, Terrain) compiles.
+- [ ] Add lowercase `Common/Filesystem.h` compatibility and compile original
+      `GameClient/GlobalLanguage.cpp` after verifying the CSF/string-file path
+      against real fetched assets.
+- [ ] Compile original `GameClient/LanguageFilter.cpp` after resolving its
+      16-bit word-list buffer contract under wasm `WideChar`/`wchar_t`.
 - [ ] `GameNetwork` core (Connection, FrameData, NetPacket, protocol) compiles.
+- [ ] Compile the first original GameNetwork command-message slice
+      (`NetCommandRef.cpp`, `NetCommandWrapperList.cpp`) after
+      `NetCommandMsg.cpp`, `NetCommandList.cpp`, and `NetworkUtil` can link
+      against the real player/message dependencies.
 - [ ] Resolve link order; produce a wasm archive of the core (no devices yet).
 
 ---

@@ -25,6 +25,7 @@ set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
+set(GAMEENGINE_GAMECLIENT_DIR "${GAMEENGINE_DIR}/Source/GameClient")
 set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
@@ -1201,6 +1202,35 @@ target_link_libraries(zh_gameengine_common_core PUBLIC
   zh_compression_manager
 )
 
+add_library(zh_gameclient_utility STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Line2D.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/ParabolicEase.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Statistics.cpp"
+)
+
+target_include_directories(zh_gameclient_utility PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+)
+
+target_compile_options(zh_gameclient_utility PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_executable(cnc-port
   src/wasm_port_entry.cpp
 )
@@ -2155,6 +2185,33 @@ target_link_options(gameengine-header-case-smoke PRIVATE
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(gameclient-utility-smoke
+  tests/gameclient_utility_smoke.cpp
+)
+
+set_target_properties(gameclient-utility-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gameclient-utility-smoke PRIVATE
+  zh_gameclient_utility
+)
+
+target_compile_options(gameclient-utility-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gameclient-utility-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
 )
 
 add_executable(gameengine-common-core-smoke
