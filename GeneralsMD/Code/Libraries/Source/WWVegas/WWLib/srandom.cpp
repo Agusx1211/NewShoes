@@ -25,7 +25,11 @@
 #include "srandom.h"
 #include <stdlib.h>
 #include <stdio.h>
-#ifdef _UNIX
+#include <string.h>
+#ifdef __EMSCRIPTEN__
+#include "win.h"
+#include <unistd.h>
+#elif defined(_UNIX)
 #include "osdep.h"
 #include <linux/kernel.h>
 #include <linux/sys.h>
@@ -145,7 +149,16 @@ void SecureRandomClass::Generate_Seed(void)
 	unsigned int *int_seeds=(unsigned int *)Seeds;
 	int int_seed_length=SeedLength/sizeof(unsigned int);
 
-#ifdef _USE_DEV_RANDOM
+#ifdef __EMSCRIPTEN__
+	unsigned char entropy[SeedLength];
+	if (getentropy(entropy, sizeof(entropy)) == 0) {
+		for (i=0; i<SeedLength; i++)
+			Seeds[i]^=entropy[i];
+		memset(entropy, 0, sizeof(entropy));
+	} else {
+		assert(0);
+	}
+#elif defined(_USE_DEV_RANDOM)
 	//
 	// On UNIX we've already got a great random number souce.
 	// This should be used only for a seed since it's slow.

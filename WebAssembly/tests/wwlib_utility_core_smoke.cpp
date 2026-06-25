@@ -5,9 +5,16 @@
 
 #include "blowfish.h"
 #include "gcd_lcm.h"
+#include "hsv.h"
 #include "obscure.h"
+#include "palette.h"
 #include "rc4.h"
+#include "rgb.h"
 #include "rndstrng.h"
+#include "rle.h"
+#include "srandom.h"
+#include "stimer.h"
+#include "strtok_r.h"
 
 namespace {
 bool expect(bool condition, const char *message)
@@ -126,8 +133,106 @@ int main()
 		}
 	}
 
+	{
+		SecureRandomClass secure;
+		unsigned char extra_seed[] = {
+			0x43, 0x6e, 0x43, 0x5f, 0x5a, 0x48, 0x5f, 0x77,
+			0x61, 0x73, 0x6d, 0x5f, 0x73, 0x65, 0x65, 0x64
+		};
+		secure.Add_Seeds(extra_seed, sizeof(extra_seed));
+
+		std::array<unsigned long, 8> values = {};
+		bool any_difference = false;
+		for (size_t index = 0; index < values.size(); ++index) {
+			values[index] = secure.Randval();
+			any_difference = any_difference || values[index] != values[0];
+		}
+		if (!expect(any_difference, "SecureRandom output did not vary")) {
+			return 1;
+		}
+	}
+
+	{
+		const std::array<unsigned char, 10> source = {
+			1, 0, 0, 0, 2, 3, 0, 4, 0, 5
+		};
+		RLEEngine rle;
+		std::array<unsigned char, 32> compressed = {};
+		std::array<unsigned char, source.size()> decompressed = {};
+		const int compressed_length =
+			rle.Compress(source.data(), compressed.data(), static_cast<int>(source.size()));
+		if (!expect(compressed_length > 0 &&
+				rle.Decompress(compressed.data(), decompressed.data(), compressed_length) ==
+					static_cast<int>(source.size()) &&
+				decompressed == source,
+				"RLE round-trip failed")) {
+			return 1;
+		}
+
+		std::array<unsigned char, 40> line_compressed = {};
+		decompressed.fill(0xff);
+		const int line_length =
+			rle.Line_Compress(source.data(), line_compressed.data(), static_cast<int>(source.size()));
+		if (!expect(line_length == compressed_length + static_cast<int>(sizeof(unsigned short)) &&
+				rle.Line_Decompress(line_compressed.data(), decompressed.data()) ==
+					static_cast<int>(source.size()) &&
+				decompressed == source,
+				"RLE line round-trip failed")) {
+			return 1;
+		}
+	}
+
+	{
+		RGBClass color(10, 20, 30);
+		color.Adjust(128, RGBClass(255, 255, 255));
+		if (!expect(color.Get_Red() == 132 &&
+				color.Get_Green() == 137 &&
+				color.Get_Blue() == 142,
+				"RGB adjustment failed")) {
+			return 1;
+		}
+
+		const RGBClass red(255, 0, 0);
+		const HSVClass red_hsv = red;
+		const RGBClass red_round_trip = red_hsv;
+		if (!expect(red_round_trip.Difference(red) == 0, "HSV/RGB round-trip failed")) {
+			return 1;
+		}
+
+		PaletteClass palette(RGBClass(0, 0, 0));
+		palette[7] = RGBClass(130, 140, 150);
+		if (!expect(palette.Closest_Color(RGBClass(128, 139, 151)) == 7,
+				"Palette closest color failed")) {
+			return 1;
+		}
+	}
+
+	{
+		char tokens[] = "USA,,GLA;China";
+		char *cursor = nullptr;
+		const char *first = strtok_r(tokens, ",;", &cursor);
+		const char *second = strtok_r(nullptr, ",;", &cursor);
+		const char *third = strtok_r(nullptr, ",;", &cursor);
+		if (!expect(first != nullptr && std::strcmp(first, "USA") == 0 &&
+				second != nullptr && std::strcmp(second, "GLA") == 0 &&
+				third != nullptr && std::strcmp(third, "China") == 0 &&
+				strtok_r(nullptr, ",;", &cursor) == nullptr,
+				"strtok_r tokenization failed")) {
+			return 1;
+		}
+	}
+
+	{
+		SystemTimerClass timer;
+		if (!expect(timer() >= 0 && static_cast<long>(timer) >= 0,
+				"SystemTimerClass tick failed")) {
+			return 1;
+		}
+	}
+
 	std::cout << "{\"ok\":true,\"library\":\"WWLib\","
-		"\"compiled\":\"blowfish.cpp,gcd_lcm.cpp,obscure.cpp,rc4.cpp,rndstrng.cpp\","
+		"\"compiled\":\"blowfish.cpp,gcd_lcm.cpp,hsv.cpp,obscure.cpp,palette.cpp,"
+		"rc4.cpp,rgb.cpp,rndstrng.cpp,rle.cpp,srandom.cpp,stimer.cpp,strtok_r.cpp\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

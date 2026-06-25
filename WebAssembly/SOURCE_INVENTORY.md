@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
 | `WWVegas/WWMath` | Complete | All original `WWMath/*.cpp` sources now compile to wasm across `zh_wwmath_core`, `zh_wwmath_curves`, and `zh_wwmath_lookup`. Smokes cover power-of-two helpers, vector math, `Matrix3D` transform/inverse paths, vector processor fallback transforms/min-max/clear, triangle containment, AABox/line/sphere/OBBox collision paths, grid and AAB-tree culling insertion/update/collection/removal, ODE integration, vector randomizers, 1D/3D interpolation, vehicle curves, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LCW and LZO codec/adapters, `load.cpp` IFF-style uncompression helper, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`, and `verchk.cpp` PE-header helpers now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. The non-MSVC LCW compressor currently emits valid literal packets rather than the original x86 optimizer's back-reference search. Concrete browser file backends, secure random entropy, threading, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, secure random, palette/RGB/HSV, RLE, tag-block files, pipe/straw stream core, LCW and LZO codec/adapters, `load.cpp` IFF-style uncompression helper, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`/legacy timer wrappers, and `verchk.cpp` PE-header helpers now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. The non-MSVC LCW compressor currently emits valid literal packets rather than the original x86 optimizer's back-reference search. Concrete browser file backends, threading, registry/resources, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwprofile.h` is currently shimmed for wasm so `WWPROFILE` scope macros are no-ops; original `wwprofile.cpp` still needs its missing `fastallocator.h` dependency restored or replaced before the full profile tree can compile. `wwmemlog.cpp` also remains open. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
 | `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
@@ -66,9 +66,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_file_core`: original `WWVegas/WWLib/buff.cpp` and `wwfile.cpp`
   compiled into a wasm static library with lowercase include shims.
 - `zh_wwlib_file_ini`: original `WWVegas/WWLib` raw/buffered file helpers,
-  `ffactory.cpp`, `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`,
-  `xpipe.cpp`, `xstraw.cpp`, and `nstrdup.cpp` compiled into a wasm static
-  library with POSIX/Emscripten file compatibility.
+  `ffactory.cpp`, `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `tagblock.cpp`,
+  `widestring.cpp`, `xpipe.cpp`, `xstraw.cpp`, and `nstrdup.cpp` compiled into
+  a wasm static library with POSIX/Emscripten file compatibility.
 - `zh_wwlib_containers`: original `WWVegas/WWLib/multilist.cpp` and
   `slnode.cpp` compiled into a wasm static library with pooled-node allocator
   compatibility.
@@ -97,11 +97,13 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_stream_core`: original `WWVegas/WWLib` pipe/straw stream sources
   for Base64, Blowfish, CRC, SHA, random, cache, LCW, IFF-style
   uncompression, and bit-vector support compiled into a wasm static library.
-- `zh_wwlib_systimer`: original `WWVegas/WWLib/systimer.cpp` compiled into a
-  wasm static library against the browser WinMM timing shim.
+- `zh_wwlib_systimer`: original `WWVegas/WWLib/systimer.cpp` and `stimer.cpp`
+  compiled into a wasm static library against the browser WinMM timing shim.
 - `zh_wwlib_utility_core`: original `WWVegas/WWLib/blowfish.cpp`,
-  `gcd_lcm.cpp`, `obscure.cpp`, `rc4.cpp`, and `rndstrng.cpp` compiled into a
-  wasm static library with CRC, random, and StringClass dependencies.
+  `gcd_lcm.cpp`, `hsv.cpp`, `obscure.cpp`, `palette.cpp`, `rc4.cpp`,
+  `rgb.cpp`, `rndstrng.cpp`, `rle.cpp`, `srandom.cpp`, and `strtok_r.cpp`
+  compiled into a wasm static library with CRC, random, SHA, and StringClass
+  dependencies.
 - `zh_wwlib_version`: original `WWVegas/WWLib/verchk.cpp` compiled into a wasm
   static library for PE image-header timestamp reads, with browser fallbacks for
   unavailable Windows version-resource APIs.
@@ -160,7 +162,7 @@ The wasm CMake skeleton currently builds:
   formatted write helpers through a harness-side memory file.
 - `wwlib-file-ini-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib raw-file I/O plus `INIClass` load/save, scalar values, points,
-  and rects.
+  rects, and `TagBlockFile` persistence.
 - `wwlib-containers-smoke`: a Node-executed wasm smoke test that verifies
   original WWLib `SimpleDynVecClass`, pooled `SList`, pooled `MultiListClass`,
   and `PriorityMultiListIterator` behavior.
@@ -191,8 +193,10 @@ The wasm CMake skeleton currently builds:
   WWLib StringClass construction, mutation, formatting, comparison, trimming,
   buffer growth, copy, temporary-buffer, and wide-copy behavior.
 - `wwlib-utility-core-smoke`: a Node-executed wasm smoke test that verifies
-  original WWLib Blowfish and RC4 known vectors, GCD/LCM helpers, Obfuscate case
-  normalization, and RandomString selection behavior.
+  original WWLib Blowfish and RC4 known vectors, GCD/LCM helpers, secure random
+  generation, RGB/HSV conversion, palette lookup, RLE round trips, reentrant
+  tokenization, legacy timer ticks, Obfuscate case normalization, and
+  RandomString selection behavior.
 - `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWMath power-of-two helpers, vector operations, matrix/quaternion
   transforms, `Matrix3D` inverse round trips, vector processor fallback paths,
@@ -237,10 +241,11 @@ The wasm CMake skeleton currently builds:
    currently depends on a missing `fastallocator.h`, so wasm builds use a
    narrow `wwprofile.h` macro shim until that original profile dependency is
    restored or replaced.
-3. Finish the remaining `WWLib` gaps needed by runtime libraries: secure random
-   browser entropy, full optimized LCW back-reference compression if output-size
-   parity matters, remaining allocator/mempool helpers, remaining containers,
-   the final browser timing/threading contract, and platform utilities.
+3. Finish the remaining `WWLib` gaps needed by runtime libraries: full
+   optimized LCW back-reference compression if output-size parity matters, the
+   RLE zero-run end-of-buffer audit, remaining allocator/mempool helpers,
+   remaining containers, resource/registry platform utilities, and the final
+   browser timing/threading contract.
 4. Continue `GameEngine/Common`: replace the target-local INI/Xfer/GlobalData/
    GameLogic compile shims with original sources, then expand into
    `Common/System` archive/BIG streams, the real INI parser, and the

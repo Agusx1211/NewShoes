@@ -242,9 +242,15 @@ target_link_libraries(zh_wwlib_string PUBLIC
 add_library(zh_wwlib_utility_core STATIC
   "${WWLIB_DIR}/blowfish.cpp"
   "${WWLIB_DIR}/gcd_lcm.cpp"
+  "${WWLIB_DIR}/hsv.cpp"
   "${WWLIB_DIR}/obscure.cpp"
+  "${WWLIB_DIR}/palette.cpp"
   "${WWLIB_DIR}/rc4.cpp"
+  "${WWLIB_DIR}/rgb.cpp"
   "${WWLIB_DIR}/rndstrng.cpp"
+  "${WWLIB_DIR}/rle.cpp"
+  "${WWLIB_DIR}/srandom.cpp"
+  "${WWLIB_DIR}/strtok_r.cpp"
 )
 
 target_include_directories(zh_wwlib_utility_core PUBLIC
@@ -266,6 +272,7 @@ target_compile_options(zh_wwlib_utility_core PRIVATE
 target_link_libraries(zh_wwlib_utility_core PUBLIC
   zh_wwlib_crc
   zh_wwlib_random
+  zh_wwlib_sha
   zh_wwlib_string
 )
 
@@ -380,6 +387,7 @@ add_library(zh_wwlib_file_ini STATIC
   "${WWLIB_DIR}/nstrdup.cpp"
   "${WWLIB_DIR}/rawfile.cpp"
   "${WWLIB_DIR}/readline.cpp"
+  "${WWLIB_DIR}/tagblock.cpp"
   "${WWLIB_DIR}/textfile.cpp"
   "${WWLIB_DIR}/widestring.cpp"
   "${WWLIB_DIR}/xpipe.cpp"
@@ -469,7 +477,12 @@ target_compile_options(zh_wwlib_containers PRIVATE
   -Wno-unused-parameter
 )
 
+target_link_libraries(zh_wwlib_file_ini PUBLIC
+  zh_wwlib_containers
+)
+
 add_library(zh_wwlib_systimer STATIC
+  "${WWLIB_DIR}/stimer.cpp"
   "${WWLIB_DIR}/systimer.cpp"
 )
 
@@ -1154,6 +1167,7 @@ set_target_properties(wwlib-utility-core-smoke PROPERTIES
 
 target_link_libraries(wwlib-utility-core-smoke PRIVATE
   zh_wwlib_utility_core
+  zh_wwlib_systimer
 )
 
 target_compile_options(wwlib-utility-core-smoke PRIVATE

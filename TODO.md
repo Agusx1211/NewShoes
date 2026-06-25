@@ -79,6 +79,9 @@ shares structure and follows behind.
       headers (`rawfile.h`, `ini.h`, `int.h`, `mpmath.h`, `pk.h`, `index.h`,
       `listnode.h`, `slist.h`, `slnode.h`, `bsearch.h`, `point.h`, `xpipe.h`,
       `xstraw.h`) under the case-sensitive wasm build.
+- [x] Add lowercase include wrappers for original WWLib palette/RLE/tag-block
+      headers (`palette.h`, `rgb.h`, `rle.h`, `tagblock.h`) under the
+      case-sensitive wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
       sources under clang/Emscripten.
 - [x] Add portable `_snprintf`, `_wcsicmp`, `MultiByteToWideChar`, and
@@ -200,9 +203,12 @@ shares structure and follows behind.
       writes, allocated buffers, capacity clamping, and delete behavior under
       wasm.
 - [x] `WWVegas/WWLib` utility core (`blowfish.cpp`, `gcd_lcm.cpp`,
-      `obscure.cpp`, `rc4.cpp`, `rndstrng.cpp`) compiles and smoke-tests
-      crypto known vectors, GCD/LCM helpers, Obfuscate normalization, and
-      RandomString selection behavior under wasm.
+      `hsv.cpp`, `obscure.cpp`, `palette.cpp`, `rc4.cpp`, `rgb.cpp`,
+      `rndstrng.cpp`, `rle.cpp`, `srandom.cpp`, `strtok_r.cpp`) compiles and
+      smoke-tests crypto known vectors, GCD/LCM helpers, color conversion,
+      palette lookup, RLE round trips, browser-backed secure seed generation,
+      tokenization, Obfuscate normalization, and RandomString selection
+      behavior under wasm.
 - [x] `WWVegas/WWLib` pipe/straw stream core (`pipe.cpp`, `straw.cpp`,
       Base64/Blowfish/CRC/SHA pipe and straw adapters, `rndstraw.cpp`,
       `cstraw.cpp`, `vector.cpp`, `jshell.cpp`) compiles and smoke-tests
@@ -217,15 +223,17 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` file helpers and INI parser (`rawfile.cpp`,
       `ffactory.cpp`, `bfiofile.cpp`, `bufffile.cpp`, `textfile.cpp`,
       `readline.cpp`, `chunkio.cpp`, `ini.cpp`, `widestring.cpp`, `xpipe.cpp`,
-      `xstraw.cpp`, `nstrdup.cpp`) compile and smoke-test raw-file I/O,
-      INI load/save, scalar values, points, and rects under wasm.
+      `xstraw.cpp`, `nstrdup.cpp`, `tagblock.cpp`) compile and smoke-test
+      raw-file I/O, read/write preservation, INI load/save, scalar values,
+      points, rects, and tag-block persistence under wasm.
 - [x] `WWVegas/WWLib` pooled container helpers (`slnode.cpp`,
       `multilist.cpp`) compile and smoke-test `SimpleDynVecClass`, `SList`,
       `MultiListClass`, and `PriorityMultiListIterator` behavior under wasm.
 - [x] `WWVegas/WWLib` debug `RefCountClass` tracking (`refcount.cpp`) compiles
       under wasm and is exercised through lookup-table lifetime cleanup.
-- [x] `WWVegas/WWLib` system timer wrapper (`systimer.cpp`) compiles against
-      browser WinMM timing shims for WWSaveLoad users.
+- [x] `WWVegas/WWLib` system timer wrappers (`systimer.cpp`, `stimer.cpp`)
+      compile against browser WinMM timing shims for WWSaveLoad and legacy
+      tick users.
 - [x] `WWVegas/WWLib` version/PE-header helper (`verchk.cpp`) compiles and is
       exercised through Wwutil file-id timestamp coverage under wasm.
 - [x] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) after
@@ -237,9 +245,12 @@ shares structure and follows behind.
       decompressor.
 - [x] Compile original `WWVegas/WWLib/load.cpp` and smoke-test
       `Uncompress_Data` with raw and LCW IFF-style block headers under wasm.
-- [ ] Port original `WWVegas/WWLib/srandom.cpp` to browser entropy
-      (`crypto.getRandomValues` / Emscripten equivalent); the current UNIX path
-      pulls Linux kernel headers that are unavailable in the wasm sysroot.
+- [x] Port original `WWVegas/WWLib/srandom.cpp` to browser entropy through
+      Emscripten `getentropy`; keep the original UNIX and Windows seed paths
+      intact for non-wasm builds.
+- [ ] Audit original `WWVegas/WWLib/RLEEngine::Compress` zero-run handling at
+      the exact end of a source buffer before relying on it for untrusted
+      sprite/image data under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

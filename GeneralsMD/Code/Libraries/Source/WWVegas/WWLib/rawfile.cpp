@@ -434,7 +434,10 @@ int RawFileClass::Open(int rights)
 
 			case READ|WRITE:
 				#ifdef _UNIX
-					Handle = fopen(Filename, "w");
+					Handle = fopen(Filename, "r+");
+					if (Handle == NULL) {
+						Handle = fopen(Filename, "w+");
+					}
 				#else
 					// SKB 5/13/99 use OPEN_ALWAYS instead of CREATE_ALWAYS so that files
 					//					does not get destroyed.

@@ -9,6 +9,7 @@
 #include "point.h"
 #include "rawfile.h"
 #include "straw.h"
+#include "tagblock.h"
 #include "trect.h"
 
 namespace {
@@ -172,8 +173,58 @@ int main()
 		return 1;
 	}
 
+	const char tag_path[] = "wwlib_tagblock_smoke.tmp";
+	const char tag_payload[] = "strategy-center";
+	{
+		RawFileClass cleanup(tag_path);
+		cleanup.Delete();
+	}
+	{
+		TagBlockFile tags(tag_path);
+		TagBlockHandle *writer = tags.Create_Tag("GeneralPower");
+		if (!expect(writer != nullptr, "TagBlock Create_Tag failed")) {
+			return 1;
+		}
+		const int written = writer->Write(tag_payload, sizeof(tag_payload));
+		const bool ended_write = writer->End_Write_Access() != 0;
+		const bool found_case_insensitive = tags.Does_Tag_Exist("generalpower") != 0;
+		tags.Close_Tag(writer);
+		if (!expect(written == static_cast<int>(sizeof(tag_payload)), "TagBlock write failed")) {
+			return 1;
+		}
+		if (!expect(ended_write, "TagBlock End_Write_Access failed")) {
+			return 1;
+		}
+		if (!expect(found_case_insensitive, "TagBlock case-insensitive lookup failed")) {
+			return 1;
+		}
+	}
+	{
+		TagBlockFile tags(tag_path);
+		TagBlockHandle *reader = tags.Open_Tag("GENERALPOWER");
+		if (!expect(reader != nullptr, "TagBlock Open_Tag after reopen failed")) {
+			return 1;
+		}
+		char payload[sizeof(tag_payload)] = {};
+		const int data_size = reader->Get_Data_Size();
+		const int read_size = reader->Read(payload, sizeof(payload));
+		tags.Close_Tag(reader);
+		if (!expect(data_size == static_cast<int>(sizeof(tag_payload)) &&
+				read_size == static_cast<int>(sizeof(payload)) &&
+				std::memcmp(payload, tag_payload, sizeof(tag_payload)) == 0,
+				"TagBlock persisted read failed")) {
+			return 1;
+		}
+	}
+	{
+		RawFileClass cleanup(tag_path);
+		if (!expect(cleanup.Delete(), "TagBlock cleanup delete failed")) {
+			return 1;
+		}
+	}
+
 	std::cout << "{\"ok\":true,\"library\":\"WWLib\","
-		"\"compiled\":\"file helpers and INI parser\","
+		"\"compiled\":\"file helpers, INI parser, and tagblock.cpp\","
 		"\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
