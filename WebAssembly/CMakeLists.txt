@@ -20,6 +20,7 @@ set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
+set(RNDSTRNG_PORT_SHIM "${WASM_SHIMS_DIR}/rndstrng_port.h")
 
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
@@ -158,6 +159,27 @@ target_compile_options(zh_wwlib_file_core PRIVATE
   -Wno-unknown-pragmas
 )
 
+add_library(zh_wwlib_ramfile STATIC
+  "${WWLIB_DIR}/ramfile.cpp"
+)
+
+target_include_directories(zh_wwlib_ramfile PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_ramfile PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_ramfile PUBLIC
+  zh_wwlib_file_core
+)
+
 add_library(zh_wwlib_string STATIC
   "${WWLIB_DIR}/trim.cpp"
   "${WWLIB_DIR}/wwstring.cpp"
@@ -180,6 +202,36 @@ target_compile_options(zh_wwlib_string PRIVATE
 
 target_link_libraries(zh_wwlib_string PUBLIC
   zh_wwdebug_core
+)
+
+add_library(zh_wwlib_utility_core STATIC
+  "${WWLIB_DIR}/blowfish.cpp"
+  "${WWLIB_DIR}/gcd_lcm.cpp"
+  "${WWLIB_DIR}/obscure.cpp"
+  "${WWLIB_DIR}/rc4.cpp"
+  "${WWLIB_DIR}/rndstrng.cpp"
+)
+
+target_include_directories(zh_wwlib_utility_core PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_utility_core PRIVATE
+  -include "${RNDSTRNG_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_utility_core PUBLIC
+  zh_wwlib_crc
+  zh_wwlib_random
+  zh_wwlib_string
 )
 
 add_library(zh_wwlib_hash STATIC
@@ -448,6 +500,61 @@ target_compile_options(wwlib-file-core-smoke PRIVATE
 )
 
 target_link_options(wwlib-file-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-ramfile-smoke
+  tests/wwlib_ramfile_smoke.cpp
+)
+
+set_target_properties(wwlib-ramfile-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-ramfile-smoke PRIVATE
+  zh_wwlib_ramfile
+)
+
+target_compile_options(wwlib-ramfile-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-ramfile-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-utility-core-smoke
+  tests/wwlib_utility_core_smoke.cpp
+)
+
+set_target_properties(wwlib-utility-core-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-utility-core-smoke PRIVATE
+  zh_wwlib_utility_core
+)
+
+target_compile_options(wwlib-utility-core-smoke PRIVATE
+  -include "${RNDSTRNG_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-utility-core-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

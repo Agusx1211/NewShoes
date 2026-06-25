@@ -67,6 +67,16 @@ shares structure and follows behind.
       clang/Emscripten.
 - [x] Add lowercase include wrappers for original WWLib `wwfile.h` and `buff.h`
       under the case-sensitive wasm build.
+- [x] Add lowercase include wrapper for original WWLib `ramfile.h` under the
+      case-sensitive wasm build.
+- [x] Add lowercase include wrapper for original WWLib `vector.h` under the
+      case-sensitive wasm build.
+- [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
+      sources under clang/Emscripten.
+- [x] Qualify original WWLib `Vector.H` dependent base access so container
+      templates compile under standard clang/Emscripten lookup rules.
+- [x] Add a target-local RandomString compatibility include so `StringClass` is
+      complete before `DynamicVectorClass<StringClass>` is instantiated.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths.
@@ -105,6 +115,14 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` file core (`wwfile.cpp` plus `buff.cpp`) compiles and
       smoke-tests FileClass formatted writes plus Buffer allocation, reference,
       assignment, and reset behavior under wasm.
+- [x] `WWVegas/WWLib` RAMFile (`ramfile.cpp`) compiles and smoke-tests
+      open/close, read/write, seek, implicit access, bias, inherited formatted
+      writes, allocated buffers, capacity clamping, and delete behavior under
+      wasm.
+- [x] `WWVegas/WWLib` utility core (`blowfish.cpp`, `gcd_lcm.cpp`,
+      `obscure.cpp`, `rc4.cpp`, `rndstrng.cpp`) compiles and smoke-tests
+      crypto known vectors, GCD/LCM helpers, Obfuscate normalization, and
+      RandomString selection behavior under wasm.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)
       compiles.
 - [x] `WWVegas/WWDebug` core `wwdebug.cpp` compiles and smoke-tests message,

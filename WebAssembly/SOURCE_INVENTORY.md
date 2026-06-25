@@ -15,7 +15,7 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have a wasm round-trip smoke. Full `CompressionManager` still needs zlib and LZH dependency shims. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, and `v3_rnd.cpp` compile to wasm, with a smoke covering power-of-two helpers, vector math from original headers, triangle containment, and vector randomizers. Broader math still needs `always.h`/`osdep.h`, save/load, D3DX, and x86 assembly portability work. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `buff.cpp`/`wwfile.cpp` compile to wasm as `zh_wwlib_file_core`, original `fixed.cpp` compiles to wasm as `zh_wwlib_fixed`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, original `sha.cpp` compiles to wasm as `zh_wwlib_sha`, and original `wwstring.cpp`/`trim.cpp` compile to wasm as `zh_wwlib_string` with known-answer coverage. Concrete file backends, threading, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp` compiles to wasm as `zh_wwlib_random` for WWMath vector randomizers, original `base64.cpp` compiles to wasm as `zh_wwlib_base64`, original `crc.cpp`/`realcrc.cpp` compile to wasm as `zh_wwlib_crc`, original `buff.cpp`/`wwfile.cpp` compile to wasm as `zh_wwlib_file_core`, original `fixed.cpp` compiles to wasm as `zh_wwlib_fixed`, original `hash.cpp` compiles to wasm as `zh_wwlib_hash`, original `md5.cpp` compiles to wasm as `zh_wwlib_md5`, original `ramfile.cpp` compiles to wasm as `zh_wwlib_ramfile`, original `sha.cpp` compiles to wasm as `zh_wwlib_sha`, original `wwstring.cpp`/`trim.cpp` compile to wasm as `zh_wwlib_string`, and original `blowfish.cpp`/`gcd_lcm.cpp`/`obscure.cpp`/`rc4.cpp`/`rndstrng.cpp` compile to wasm as `zh_wwlib_utility_core` with smoke coverage. Concrete disk/browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Not started | Runtime save/load serialization support. |
 | `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
@@ -67,11 +67,16 @@ The wasm CMake skeleton currently builds:
   static library with WWDebug and CRC dependencies.
 - `zh_wwlib_md5`: original `WWVegas/WWLib/md5.cpp` compiled into a wasm static
   library.
+- `zh_wwlib_ramfile`: original `WWVegas/WWLib/ramfile.cpp` compiled into a wasm
+  static library with the WWLib file-core dependency.
 - `zh_wwlib_sha`: original `WWVegas/WWLib/sha.cpp` compiled into a wasm static
   library with legacy header compatibility shims.
 - `zh_wwlib_string`: original `WWVegas/WWLib/wwstring.cpp` and `trim.cpp`
   compiled into a wasm static library with TCHAR, Windows conversion, and
   critical-section shims.
+- `zh_wwlib_utility_core`: original `WWVegas/WWLib/blowfish.cpp`,
+  `gcd_lcm.cpp`, `obscure.cpp`, `rc4.cpp`, and `rndstrng.cpp` compiled into a
+  wasm static library with CRC, random, and StringClass dependencies.
 - `zh_wwmath_core`: original `WWVegas/WWMath/pot.cpp`, `tri.cpp`, and
   `v3_rnd.cpp` compiled into a wasm static library with minimal WWVegas
   compiler shims.
@@ -96,11 +101,18 @@ The wasm CMake skeleton currently builds:
   WWLib hash-table add/find/remove/reset/iteration behavior.
 - `wwlib-md5-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib MD5 against standard digest vectors and split-update hashing.
+- `wwlib-ramfile-smoke`: a Node-executed wasm smoke test that verifies original
+  WWLib RAMFile open/close, read, write, seek, implicit access, bias,
+  inherited formatted writes, allocated buffers, capacity clamping, and delete
+  behavior.
 - `wwlib-sha-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib SHA against known digest vectors and split-update hashing.
 - `wwlib-string-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib StringClass construction, mutation, formatting, comparison, trimming,
   buffer growth, copy, temporary-buffer, and wide-copy behavior.
+- `wwlib-utility-core-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib Blowfish and RC4 known vectors, GCD/LCM helpers, Obfuscate case
+  normalization, and RandomString selection behavior.
 - `wwmath-core-smoke`: a Node-executed wasm smoke test that verifies original
   WWMath power-of-two helpers, vector operations, triangle containment, vector
   randomizers, and the original WWLib random generator.
