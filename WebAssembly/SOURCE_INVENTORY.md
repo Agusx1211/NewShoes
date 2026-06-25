@@ -15,10 +15,10 @@ target and should be compiled or re-targeted for wasm.
 |---|---|---|
 | `Compression` | Partial | `EAC` BTree, Huff, and RefPack codecs compile and have wasm round-trip smokes. Original `CompressionManager` now compiles and smoke-tests the EAC-backed manager routes; zlib and Nox LZH remain disabled until the missing bundled source bodies are restored or ported. |
 | `WWVegas/WWMath` | Partial | Original `pot.cpp`, `tri.cpp`, `v3_rnd.cpp`, matrix/quaternion/ODE, bounding-volume, collision-math, curve/spline, lookup-table, and `WWMath::Init` slices now compile to wasm, with smokes covering power-of-two helpers, vector math, matrix/quaternion transforms, triangle containment, AABox/line/sphere/OBBox collision paths, ODE integration, vector randomizers, 1D/3D interpolation, WWSaveLoad factory registration, default lookup-table sampling, fast trig table initialization, and debug refcount cleanup. Remaining blockers include `matrix3d.cpp`'s D3DX8 dependency and `vp.cpp` CPU/mutex assembly. |
-| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, and `SysTimeClass` now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
+| `WWVegas/WWLib` | Partial | Original `random.cpp`, Base64, CRC, fixed, hash, MD5, SHA, `StringClass`, file core, RAMFile, utility crypto, pipe/straw stream core, LZO codec/adapters, multiprecision public-key crypto, file/INI helper sources, pooled `SList`/`MultiList` containers, debug `RefCountClass`, `SysTimeClass`, and `verchk.cpp` PE-header helpers now compile to wasm as focused `zh_wwlib_*` libraries with Node smoke coverage. LCW compression still needs a portable original-code compressor path; concrete browser file backends, threading, and broader platform utilities remain open. |
 | `WWVegas/WWDebug` | Partial | Original `wwdebug.cpp` core message/assert/trigger/profile handler plumbing compiles to wasm and has a Node smoke. `wwmemlog.cpp`/`wwprofile.cpp` still need broader `WWLib` support and browser routing. |
 | `WWVegas/WWSaveLoad` | Complete | Core persistence factory, save/load system, pointer remap, status plumbing, definitions, definition factories/manager, parameters, twiddlers, and WWSaveLoad init/shutdown now compile to wasm. Node smoke coverage verifies factory registration, parameter construction, definition manager lookup, and a chunk-file save/load round trip. |
-| `WWVegas/Wwutil` | Not started | Utility library linked by the original runtime. |
+| `WWVegas/Wwutil` | Complete | Original `mathutil.cpp` and `miscutil.cpp` compile to wasm with WWLib/WWMath dependencies. Node smoke coverage verifies angle/vector math, distance/round/rotation helpers, probability helper bounds, string classification/comparison, file existence/removal, read-only attributes, and PE-header file-id timestamp formatting. |
 | `WWVegas/WW3D2` | Not started | Runtime renderer; must be re-targeted from DirectX 8/W3D to WebGL2/WebGPU. |
 | `WWVegas/wwshade` | Not started | Shader/material support; needed with WW3D2 renderer port. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -101,6 +101,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_utility_core`: original `WWVegas/WWLib/blowfish.cpp`,
   `gcd_lcm.cpp`, `obscure.cpp`, `rc4.cpp`, and `rndstrng.cpp` compiled into a
   wasm static library with CRC, random, and StringClass dependencies.
+- `zh_wwlib_version`: original `WWVegas/WWLib/verchk.cpp` compiled into a wasm
+  static library for PE image-header timestamp reads, with browser fallbacks for
+  unavailable Windows version-resource APIs.
 - `zh_wwsaveload_core`: original `WWVegas/WWSaveLoad` persistence factory,
   save/load system, pointer remap, status, and subsystem sources compiled into
   a wasm static library for current runtime library users.
@@ -118,6 +121,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwmath_lookup`: original `WWVegas/WWMath/lookuptable.cpp` and
   `wwmath.cpp` compiled into a wasm static library with lookup-table manager,
   fast trig initialization, and debug refcount dependencies.
+- `zh_wwutil`: original `WWVegas/Wwutil/mathutil.cpp` and `miscutil.cpp`
+  compiled into a wasm static library with WWLib version/file helpers and
+  WWMath dependencies.
 - `compression-eac-smoke`: a Node-executed wasm smoke test that round-trips data
   through original `BTREE_encode`/`BTREE_decode`, `HUFF_encode`/`HUFF_decode`,
   and `REF_encode`/`REF_decode`.
@@ -183,6 +189,9 @@ The wasm CMake skeleton currently builds:
   original WWSaveLoad definition factories, persist factory registration,
   parameter construction/mutation, definition manager lookup, and chunk-file
   save/load round-trip behavior.
+- `wwutil-smoke`: a Node-executed wasm smoke test that verifies original Wwutil
+  math helpers, string and character helpers, file existence/removal,
+  read-only attribute mapping, and PE-header file-id timestamp formatting.
 
 ## Next Compile Order
 
@@ -197,5 +206,5 @@ The wasm CMake skeleton currently builds:
    final browser timing/threading contract, and platform utilities.
 4. Finish the remaining `WWDebug` memory/profile sources once `WWLib` timer,
    allocator, and container dependencies are available.
-5. Move to `Wwutil` and `GameEngine/Common` now that the focused WWSaveLoad
-   source directory is compiled and covered by a save/load round-trip smoke.
+5. Move to `GameEngine/Common` now that Wwutil is compiled and covered by a
+   behavior smoke.

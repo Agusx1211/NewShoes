@@ -20,6 +20,7 @@ set(WWDEBUG_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDebug")
 set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
+set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -409,6 +410,34 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_stream_core
 )
 
+add_library(zh_wwlib_version STATIC
+  "${WWLIB_DIR}/verchk.cpp"
+)
+
+target_include_directories(zh_wwlib_version PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_version PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwlib_version PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-missing-field-initializers
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_version PUBLIC
+  zh_wwlib_file_ini
+)
+
 add_library(zh_wwlib_containers STATIC
   "${WWLIB_DIR}/multilist.cpp"
   "${WWLIB_DIR}/slnode.cpp"
@@ -742,6 +771,45 @@ target_link_libraries(zh_wwsaveload_full PUBLIC
   zh_wwlib_refcount
   zh_wwlib_systimer
   zh_wwmath_core
+)
+
+add_library(zh_wwutil STATIC
+  "${WWUTIL_DIR}/mathutil.cpp"
+  "${WWUTIL_DIR}/miscutil.cpp"
+)
+
+target_include_directories(zh_wwutil PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWUTIL_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWMATH_DIR}"
+)
+
+target_compile_definitions(zh_wwutil PRIVATE
+  _UNIX
+)
+
+target_compile_options(zh_wwutil PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-c++11-narrowing
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-missing-field-initializers
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-but-set-variable
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_wwutil PUBLIC
+  zh_wwlib_version
+  zh_wwmath_lookup
 )
 
 add_executable(cnc-port
@@ -1405,6 +1473,38 @@ target_compile_options(wwsaveload-full-smoke PRIVATE
 )
 
 target_link_options(wwsaveload-full-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwutil-smoke
+  tests/wwutil_smoke.cpp
+)
+
+set_target_properties(wwutil-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwutil-smoke PRIVATE
+  zh_wwutil
+)
+
+target_compile_options(wwutil-smoke PRIVATE
+  -include "${WWVEGAS_MUTEX_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-logical-not-parentheses
+  -Wno-unknown-pragmas
+  -Wno-undefined-var-template
+  -Wno-unused-parameter
+)
+
+target_link_options(wwutil-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

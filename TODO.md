@@ -98,6 +98,9 @@ shares structure and follows behind.
       W3D pooled nodes) under Emscripten.
 - [x] Add browser/compiler shims for original WinMM `mmsystem.h` timing calls
       used by `SysTimeClass` and WWSaveLoad under Emscripten.
+- [x] Add browser/compiler shims for original Win32 file attributes, file
+      deletion, PE image headers, and version-resource fallbacks used by
+      WWLib `verchk.cpp` and Wwutil under Emscripten.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -197,6 +200,8 @@ shares structure and follows behind.
       under wasm and is exercised through lookup-table lifetime cleanup.
 - [x] `WWVegas/WWLib` system timer wrapper (`systimer.cpp`) compiles against
       browser WinMM timing shims for WWSaveLoad users.
+- [x] `WWVegas/WWLib` version/PE-header helper (`verchk.cpp`) compiles and is
+      exercised through Wwutil file-id timestamp coverage under wasm.
 - [ ] Compile LCW compression stream adapters (`lcw.cpp`, `lcwpipe.cpp`) once
       a portable original-code `LCW_Comp` path replaces the MSVC inline
       assembly-only compressor.
@@ -212,7 +217,9 @@ shares structure and follows behind.
       and lookup-table users.
 - [x] Full `WWVegas/WWSaveLoad` compiles, including definitions, parameters,
       twiddlers, and save/load round-trip coverage.
-- [ ] `WWVegas/Wwutil` compiles.
+- [x] `WWVegas/Wwutil` compiles and smoke-tests math helpers, string/file
+      utilities, read-only attributes, PE-header file-id strings, and removal
+      under wasm.
 - [x] Identify which `Libraries/Source` deps are runtime-required vs tools-only.
 
 ### GameEngine — Common
