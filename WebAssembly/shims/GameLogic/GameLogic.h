@@ -4,6 +4,9 @@
 
 class Object;
 class Drawable;
+class CommandButton;
+
+typedef const CommandButton *ConstCommandButtonPtr;
 
 enum
 {
@@ -40,6 +43,7 @@ public:
 	void clearGameData(Bool showScoreScreen = TRUE) {}
 	void bindObjectAndDrawable(Object *, Drawable *) {}
 	Object *findObjectByID(ObjectID) { return nullptr; }
+	Bool findControlBarOverride(const AsciiString &, Int, ConstCommandButtonPtr &) const { return FALSE; }
 };
 
 extern GameLogic *TheGameLogic;

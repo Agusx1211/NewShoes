@@ -28,6 +28,7 @@ public:
 		m_animateWindows(TRUE),
 		m_preloadEverything(FALSE),
 		m_timeOfDay(TIME_OF_DAY_AFTERNOON),
+		m_downwindAngle(-0.785f),
 		m_scriptDebug(FALSE),
 		m_winCursors(TRUE),
 		m_useTreeSway(TRUE),
@@ -95,6 +96,7 @@ public:
 	Bool m_animateWindows;
 	Bool m_preloadEverything;
 	TimeOfDay m_timeOfDay;
+	Real m_downwindAngle;
 	Bool m_scriptDebug;
 	Bool m_winCursors;
 	Bool m_useTreeSway;

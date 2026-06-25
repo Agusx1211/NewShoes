@@ -939,8 +939,16 @@ shares structure and follows behind.
       `INI::parseWeaponTemplate` and `Xfer::xferMatrix3D` bridge surface, a
       `WWMATH/Vector2.h` case wrapper, and standard clang fixes for original
       `WW3D2/dllist.h` include/dependent-base assumptions.
+- [x] Compile original ControlBar core/command sources in the GameClient
+      utility target (`GUI/ControlBar/ControlBar.cpp`,
+      `ControlBarCommand.cpp`, and `ControlBarCommandProcessing.cpp`) after
+      adding temporary original INI parser entry declarations, the
+      `GameLogic::findControlBarOverride` compile bridge, the original
+      `GlobalData::m_downwindAngle` field/default, fixed-underlying
+      `MaxHealthChangeType` enum declarations for standard clang, and a
+      localized legacy for-scope fix.
 - [ ] Link and smoke-test the original GameClient message translators,
-      selection info, EVA/FX list, control-bar scheme, control-bar leaves,
+      selection info, EVA/FX list, control-bar scheme/core/commands/leaves,
       in-game chat, `GameClient`/`InGameUI`/mouse/IME entry points,
       keyboard/skirmish/LAN/game-info/map/quit/popup/replay menu behavior,
       particle/terrain/drawable/update/smudge behavior, audio debug display
@@ -949,7 +957,7 @@ shares structure and follows behind.
       INI/GlobalData/Xfer runtime paths replace the current target-local
       compile bridges.
 - [ ] Compile the remaining original GUI callbacks and shell/menu sources
-      after the real `Player`/`Object`/`Module`, `ControlBar`, `InGameUI`,
+      after the real `Player`/`Object`/`Module`, `Shell`, `InGameUI`,
       `GameNetwork`, and `MessageStream` contracts are available through
       original headers; probes currently fail on those deeper contracts rather
       than isolated browser shims.
