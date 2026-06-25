@@ -24,6 +24,8 @@ set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
+set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
+set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -823,6 +825,9 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/LocalFileSystem.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/FileSystem.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/RAMFile.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/StreamingArchiveFile.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/ArchiveFile.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/ArchiveFileSystem.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Snapshot.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Geometry.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Compression.cpp"
@@ -853,12 +858,15 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/NameKeyGenerator.cpp"
   "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
   "${GAMEENGINE_COMMON_DIR}/crc.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFile.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFileSystem.cpp"
 )
 
 target_include_directories(zh_gameengine_common_core PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
 )
 

@@ -49,6 +49,7 @@
 #include "Common/ArchiveFile.h"
 #include "Common/ArchiveFileSystem.h"
 #include "Common/AsciiString.h"
+#include "Common/GlobalData.h"
 #include "Common/PerfTimer.h"
 
 #ifdef _INTERNAL

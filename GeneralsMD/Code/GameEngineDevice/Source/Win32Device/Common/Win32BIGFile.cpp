@@ -26,6 +26,10 @@
 // Bryan Cleveland, August 2002
 /////////////////////////////////////////////////////
 
+#ifndef _MSC_VER
+#include "PreRTS.h"
+#endif
+
 #include "Common/LocalFile.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/RAMFile.h"
@@ -162,4 +166,3 @@ Bool Win32BIGFile::getFileInfo(const AsciiString& filename, FileInfo *fileInfo) 
 
 	return TRUE;
 }
-

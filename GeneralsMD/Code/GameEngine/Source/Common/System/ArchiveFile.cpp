@@ -89,7 +89,7 @@ ArchiveFile::~ArchiveFile()
 	}
 }
 
-ArchiveFile::ArchiveFile() 
+ArchiveFile::ArchiveFile() : m_file(NULL)
 {
 	m_rootDirectory.clear();
 }

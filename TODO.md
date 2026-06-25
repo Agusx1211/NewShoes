@@ -289,6 +289,13 @@ shares structure and follows behind.
       `Common/System/Compression.cpp` and `DataChunk.cpp`, then compile their
       GameEngine compression/data-chunk facade paths against the existing
       compression manager slice.
+- [x] Compile original `Common/System/ArchiveFile.cpp`,
+      `ArchiveFileSystem.cpp`, `StreamingArchiveFile.cpp`, and the original
+      Win32 BIG reader/system into the wasm core; smoke-test BIG indexing,
+      file-info, directory listing, archive fallback reads, and streaming reads.
+- [ ] Validate the original BIG reader against extracted real archives
+      (`INIZH.big` first) once browser asset fetch/MEMFS mounting is wired into
+      the harness.
 - [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.

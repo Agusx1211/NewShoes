@@ -42,9 +42,9 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "Lib/Trig.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
 
 SubsystemInterfaceList *TheSubsystemList = nullptr;
-ArchiveFileSystem *TheArchiveFileSystem = nullptr;
 GameLogic *TheGameLogic = nullptr;
 GlobalData *TheGlobalData = nullptr;
 class AudioManager;
@@ -56,6 +56,14 @@ void append_value(std::vector<char> &buffer, const T &value)
 {
 	const auto *bytes = reinterpret_cast<const char *>(&value);
 	buffer.insert(buffer.end(), bytes, bytes + sizeof(T));
+}
+
+void append_be32(std::vector<char> &buffer, UnsignedInt value)
+{
+	buffer.push_back(static_cast<char>((value >> 24) & 0xff));
+	buffer.push_back(static_cast<char>((value >> 16) & 0xff));
+	buffer.push_back(static_cast<char>((value >> 8) & 0xff));
+	buffer.push_back(static_cast<char>(value & 0xff));
 }
 
 class SmokeCDManager : public CDManager
@@ -210,17 +218,24 @@ private:
 class SmokeLocalFileSystem : public LocalFileSystem
 {
 public:
-	SmokeLocalFileSystem() : m_payload_name("local-smoke.txt") {}
+	SmokeLocalFileSystem()
+	{
+		setPayload("local-smoke.txt", nullptr, 0);
+	}
 
 	void setPayload(const Char *filename, const void *data, Int bytes)
 	{
-		m_payload_name = filename;
+		if (filename == nullptr) {
+			return;
+		}
+
+		std::vector<char> &payload = m_payloads[filename];
+		payload.clear();
 		if (data == nullptr || bytes <= 0) {
-			m_payload.clear();
 			return;
 		}
 		const auto *source = static_cast<const char *>(data);
-		m_payload.assign(source, source + bytes);
+		payload.assign(source, source + bytes);
 	}
 
 	void init() override { LocalFileSystem::init(); }
@@ -228,28 +243,55 @@ public:
 	void update() override { LocalFileSystem::update(); }
 	File *openFile(const Char *filename, Int access = 0) override
 	{
-		if (std::strcmp(filename, m_payload_name.str()) != 0) {
+		const auto it = m_payloads.find(filename == nullptr ? "" : filename);
+		if (it == m_payloads.end()) {
 			return nullptr;
 		}
 		m_file.close();
 		if (!m_file.open(filename, access)) {
 			return nullptr;
 		}
-		m_file.setData(m_payload.data(), static_cast<Int>(m_payload.size()));
+		m_file.setData(it->second.data(), static_cast<Int>(it->second.size()));
 		return &m_file;
 	}
 	Bool doesFileExist(const Char *filename) const override
 	{
-		return std::strcmp(filename, m_payload_name.str()) == 0;
+		return m_payloads.find(filename == nullptr ? "" : filename) != m_payloads.end();
 	}
-	void getFileListInDirectory(const AsciiString&, const AsciiString&, const AsciiString&, FilenameList&, Bool) const override {}
-	Bool getFileInfo(const AsciiString&, FileInfo *) const override { return FALSE; }
+	void getFileListInDirectory(const AsciiString&, const AsciiString&, const AsciiString& searchName,
+		FilenameList &filenames, Bool) const override
+	{
+		AsciiString lower_mask = searchName;
+		lower_mask.toLower();
+		for (const auto &entry : m_payloads) {
+			AsciiString lower_name(entry.first.c_str());
+			lower_name.toLower();
+			if (std::strcmp(lower_mask.str(), "*") == 0 ||
+					(std::strcmp(lower_mask.str(), "*.big") == 0 && lower_name.endsWith(".big"))) {
+				filenames.insert(AsciiString(entry.first.c_str()));
+			}
+		}
+	}
+	Bool getFileInfo(const AsciiString& filename, FileInfo *fileInfo) const override
+	{
+		if (fileInfo == nullptr) {
+			return FALSE;
+		}
+		const auto it = m_payloads.find(filename.str());
+		if (it == m_payloads.end()) {
+			return FALSE;
+		}
+		fileInfo->sizeHigh = 0;
+		fileInfo->sizeLow = static_cast<Int>(it->second.size());
+		fileInfo->timestampHigh = 0;
+		fileInfo->timestampLow = 0;
+		return TRUE;
+	}
 	Bool createDirectory(AsciiString) override { return FALSE; }
 
 private:
 	SmokeFile m_file;
-	AsciiString m_payload_name;
-	std::vector<char> m_payload;
+	std::map<std::string, std::vector<char>> m_payloads;
 };
 
 struct DataChunkParseResult
@@ -299,6 +341,26 @@ Bool parse_smoke_data_chunk(DataChunkInput &input, DataChunkInfo *info, void *us
 	result->byte = input.readByte();
 	result->text = input.readAsciiString();
 	return TRUE;
+}
+
+std::vector<char> make_smoke_big_archive(const Char *archived_path, const Char *payload, Int payload_size)
+{
+	const UnsignedInt path_bytes = static_cast<UnsignedInt>(std::strlen(archived_path) + 1);
+	const UnsignedInt directory_offset = 0x10;
+	const UnsignedInt file_offset = directory_offset + 8 + path_bytes;
+	const UnsignedInt archive_size = file_offset + static_cast<UnsignedInt>(payload_size);
+
+	std::vector<char> archive;
+	archive.reserve(archive_size);
+	archive.insert(archive.end(), { 'B', 'I', 'G', 'F' });
+	append_be32(archive, archive_size);
+	append_be32(archive, 1);
+	append_be32(archive, 0);
+	append_be32(archive, file_offset);
+	append_be32(archive, static_cast<UnsignedInt>(payload_size));
+	archive.insert(archive.end(), archived_path, archived_path + path_bytes);
+	archive.insert(archive.end(), payload, payload + payload_size);
+	return archive;
 }
 
 bool exercise_memory_init()
@@ -470,6 +532,72 @@ bool exercise_file_system_dispatch()
 	TheFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
 	return open_ok && missing_ok;
+}
+
+bool exercise_archive_big_files()
+{
+	const char archived_path[] = "Data\\INI\\Worker.ini";
+	const char payload[] = "WorkerObject = AmericaInfantryRanger";
+	const Int payload_size = static_cast<Int>(std::strlen(payload));
+	const std::vector<char> big_archive = make_smoke_big_archive(archived_path, payload, payload_size);
+
+	SmokeLocalFileSystem local_file_system;
+	local_file_system.setPayload("Smoke.big", big_archive.data(), static_cast<Int>(big_archive.size()));
+
+	FileSystem file_system;
+	Win32BIGFileSystem archive_file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+
+	bool ok = expect(archive_file_system.loadBigFilesFromDirectory("", "*.big"),
+		"Win32BIGFileSystem loadBigFilesFromDirectory failed");
+	ok = expect(archive_file_system.doesFileExist(archived_path),
+		"ArchiveFileSystem indexed BIG file path failed") && ok;
+	ok = expect(std::strcmp(archive_file_system.getArchiveFilenameForFile(archived_path).str(), "Smoke.big") == 0,
+		"ArchiveFileSystem archive owner lookup failed") && ok;
+
+	FileInfo file_info = {};
+	ok = expect(archive_file_system.getFileInfo(AsciiString(archived_path), &file_info) &&
+			file_info.sizeHigh == 0 && file_info.sizeLow == payload_size,
+		"Win32BIGFile file info failed") && ok;
+
+	FilenameList filenames;
+	archive_file_system.getFileListInDirectory(
+		AsciiString(""), AsciiString(""), AsciiString("*.ini"), filenames, TRUE);
+	ok = expect(filenames.find(AsciiString("data\\ini\\worker.ini")) != filenames.end(),
+		"ArchiveFile file list failed") && ok;
+
+	File *opened = file_system.openFile(archived_path, File::READ | File::BINARY);
+	char readback[sizeof(payload)] = {};
+	const Int bytes_read = opened != nullptr ? opened->read(readback, payload_size) : 0;
+	ok = expect(opened != nullptr && bytes_read == payload_size &&
+			std::memcmp(readback, payload, payload_size) == 0,
+		"FileSystem archive fallback read failed") && ok;
+	if (opened != nullptr) {
+		opened->close();
+	}
+
+	File *streaming = archive_file_system.openFile(archived_path, File::READ | File::BINARY | File::STREAMING);
+	char streaming_readback[sizeof(payload)] = {};
+	const Int streaming_bytes = streaming != nullptr ? streaming->read(streaming_readback, payload_size) : 0;
+	ok = expect(streaming != nullptr && streaming_bytes == payload_size &&
+			std::memcmp(streaming_readback, payload, payload_size) == 0,
+		"StreamingArchiveFile archive read failed") && ok;
+	if (streaming != nullptr) {
+		const Int tail_pos = streaming->seek(-6, File::END);
+		char tail[7] = {};
+		const Int tail_bytes = streaming->read(tail, 6);
+		ok = expect(tail_pos == payload_size - 6 && tail_bytes == 6 &&
+				std::strcmp(tail, "Ranger") == 0,
+			"StreamingArchiveFile tail seek/read failed") && ok;
+		streaming->close();
+	}
+
+	TheFileSystem = nullptr;
+	TheArchiveFileSystem = nullptr;
+	TheLocalFileSystem = nullptr;
+	return ok;
 }
 
 bool exercise_cached_file_input_stream()
@@ -1010,6 +1138,7 @@ int main()
 		exercise_strings() &&
 		exercise_file_interfaces() &&
 		exercise_file_system_dispatch() &&
+		exercise_archive_big_files() &&
 		exercise_cached_file_input_stream() &&
 		exercise_data_chunks() &&
 		exercise_ram_file() &&
@@ -1036,7 +1165,9 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"WSYS_String,File,LocalFileSystem,FileSystem,RAMFile,SubsystemInterface,CDManager,Registry,"
+		"WSYS_String,File,LocalFileSystem,FileSystem,RAMFile,StreamingArchiveFile,"
+		"ArchiveFile,ArchiveFileSystem,Win32BIGFile,Win32BIGFileSystem,"
+		"SubsystemInterface,CDManager,Registry,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"

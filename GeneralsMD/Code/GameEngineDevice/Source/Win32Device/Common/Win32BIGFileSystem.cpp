@@ -26,6 +26,10 @@
 // Bryan Cleveland, August 2002
 /////////////////////////////////////////////////////////////
 
+#ifndef _MSC_VER
+#include "PreRTS.h"
+#endif
+
 #include <winsock2.h>
 #include "Common/AudioAffect.h"
 #include "Common/ArchiveFile.h"
