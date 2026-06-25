@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <functional>
 #include <list>
 #include <map>
 #include <queue>
@@ -14,9 +15,61 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Common/AsciiString.h"
+#include "Common/UnicodeString.h"
+
 namespace std {
 template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<Key>>
 using hash_map = std::unordered_map<Key, Value, Hash, Equal>;
+}
+
+namespace rts {
+template <typename T> struct hash
+{
+	size_t operator()(const T& value) const { return std::hash<T>()(value); }
+};
+
+template <typename T> struct equal_to
+{
+	bool operator()(const T& lhs, const T& rhs) const { return lhs == rhs; }
+};
+
+template <typename T> struct less_than_nocase
+{
+	bool operator()(const T& lhs, const T& rhs) const { return lhs < rhs; }
+};
+
+template <> struct less_than_nocase<AsciiString>
+{
+	bool operator()(const AsciiString& lhs, const AsciiString& rhs) const
+	{
+		return lhs.compareNoCase(rhs) < 0;
+	}
+};
+
+template <> struct less_than_nocase<UnicodeString>
+{
+	bool operator()(const UnicodeString& lhs, const UnicodeString& rhs) const
+	{
+		return lhs.compareNoCase(rhs) < 0;
+	}
+};
+
+template <> struct equal_to<AsciiString>
+{
+	bool operator()(const AsciiString& lhs, const AsciiString& rhs) const
+	{
+		return lhs == rhs;
+	}
+};
+
+template <> struct hash<AsciiString>
+{
+	size_t operator()(const AsciiString& value) const
+	{
+		return std::hash<std::string>()(value.str());
+	}
+};
 }
 
 typedef std::vector<Coord3D> VecCoord3D;

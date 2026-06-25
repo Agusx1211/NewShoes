@@ -45,9 +45,10 @@ struct LARGE_INTEGER
 #define TRUE 1
 #endif
 
-#ifndef NULL
-#define NULL 0
+#ifdef NULL
+#undef NULL
 #endif
+#define NULL 0
 
 #ifndef INVALID_HANDLE_VALUE
 #define INVALID_HANDLE_VALUE reinterpret_cast<HANDLE>(-1)

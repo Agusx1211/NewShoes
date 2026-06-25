@@ -9,11 +9,14 @@
 #include "Common/CRC.h"
 #include "Common/Dict.h"
 #include "Common/DiscreteCircle.h"
+#include "Common/File.h"
+#include "Common/FileSystem.h"
 #include "Common/GameCommon.h"
 #include "Common/GameMemory.h"
 #include "Common/GameType.h"
 #include "Common/Language.h"
 #include "Common/List.h"
+#include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/PartitionSolver.h"
 #include "Common/QuickTrig.h"
@@ -29,6 +32,97 @@
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 
 namespace {
+class SmokeFile : public File
+{
+public:
+	SmokeFile() : m_position(0) {}
+
+	Int read(void *buffer, Int bytes) override
+	{
+		if (buffer == nullptr || bytes <= 0) {
+			return 0;
+		}
+		const Int remaining = static_cast<Int>(m_data.size()) - m_position;
+		const Int bytes_to_read = remaining <= 0 ? 0 : (bytes < remaining ? bytes : remaining);
+		if (bytes_to_read > 0) {
+			std::memcpy(buffer, m_data.data() + m_position, static_cast<std::size_t>(bytes_to_read));
+			m_position += bytes_to_read;
+		}
+		return bytes_to_read;
+	}
+
+	Int write(const void *buffer, Int bytes) override
+	{
+		if (buffer == nullptr || bytes <= 0) {
+			return 0;
+		}
+		const auto *source = static_cast<const char *>(buffer);
+		const Int required_size = m_position + bytes;
+		if (required_size > static_cast<Int>(m_data.size())) {
+			m_data.resize(static_cast<std::size_t>(required_size));
+		}
+		std::memcpy(m_data.data() + m_position, source, static_cast<std::size_t>(bytes));
+		m_position += bytes;
+		return bytes;
+	}
+
+	Int seek(Int bytes, seekMode mode = CURRENT) override
+	{
+		Int base = 0;
+		if (mode == CURRENT) {
+			base = m_position;
+		} else if (mode == END) {
+			base = static_cast<Int>(m_data.size());
+		}
+
+		const Int limit = static_cast<Int>(m_data.size());
+		const Int next = base + bytes;
+		m_position = next < 0 ? 0 : (next > limit ? limit : next);
+		return m_position;
+	}
+
+	void nextLine(Char *buf = nullptr, Int bufSize = 0) override
+	{
+		if (buf != nullptr && bufSize > 0) {
+			buf[0] = 0;
+		}
+	}
+
+	Bool scanInt(Int &) override { return FALSE; }
+	Bool scanReal(Real &) override { return FALSE; }
+	Bool scanString(AsciiString &) override { return FALSE; }
+
+	char* readEntireAndClose() override
+	{
+		char *buffer = NEW char[m_data.size() + 1];
+		if (buffer != nullptr) {
+			std::memcpy(buffer, m_data.data(), m_data.size());
+			buffer[m_data.size()] = 0;
+		}
+		close();
+		return buffer;
+	}
+
+	File* convertToRAMFile() override { return this; }
+
+private:
+	std::vector<char> m_data;
+	Int m_position;
+};
+
+class SmokeLocalFileSystem : public LocalFileSystem
+{
+public:
+	void init() override { LocalFileSystem::init(); }
+	void reset() override { LocalFileSystem::reset(); }
+	void update() override { LocalFileSystem::update(); }
+	File *openFile(const Char *, Int = 0) override { return nullptr; }
+	Bool doesFileExist(const Char *) const override { return FALSE; }
+	void getFileListInDirectory(const AsciiString&, const AsciiString&, const AsciiString&, FilenameList&, Bool) const override {}
+	Bool getFileInfo(const AsciiString&, FileInfo *) const override { return FALSE; }
+	Bool createDirectory(AsciiString) override { return FALSE; }
+};
+
 struct Scanline
 {
 	Int x_start;
@@ -120,6 +214,85 @@ bool exercise_language_and_encrypt()
 			"EncryptString ZeroHour vector failed") &&
 		expect(std::strlen(EncryptString("abcdefghi")) == MAX_ENCRYPTED_STRING,
 			"EncryptString length clamp failed");
+}
+
+bool exercise_file_interfaces()
+{
+	SmokeFile invalid;
+	if (!expect(!invalid.open("bad.dat", File::STREAMING | File::WRITE),
+			"File rejected streaming writes failed")) {
+		return false;
+	}
+
+	SmokeFile file;
+	if (!expect(file.open("smoke.txt", File::TEXT | File::WRITE),
+			"File open failed")) {
+		return false;
+	}
+
+	const bool access_ok =
+		expect((file.getAccess() & File::WRITE) != 0, "File write access missing") &&
+		expect((file.getAccess() & File::TRUNCATE) != 0, "File truncate default missing") &&
+		expect((file.getAccess() & File::TEXT) != 0, "File text access missing") &&
+		expect(std::strcmp(file.getName(), "smoke.txt") == 0, "File name tracking failed");
+	if (!access_ok) {
+		return false;
+	}
+
+	if (!expect(file.print("%s-%d", "ZH", 5), "File print failed")) {
+		return false;
+	}
+	if (!expect(file.size() == 4 && file.position() == 4, "File size/position failed")) {
+		return false;
+	}
+
+	char buffer[5] = {};
+	file.seek(0, File::START);
+	const Int read = file.read(buffer, 4);
+	if (!expect(read == 4 && std::strcmp(buffer, "ZH-5") == 0, "File readback failed")) {
+		return false;
+	}
+
+	char *entire = file.readEntireAndClose();
+	const bool entire_ok = expect(entire != nullptr && std::strcmp(entire, "ZH-5") == 0,
+		"File readEntireAndClose failed");
+	delete[] entire;
+	if (!entire_ok) {
+		return false;
+	}
+
+	SmokeFile default_read;
+	if (!expect(default_read.open("read.bin"),
+			"File default open failed")) {
+		return false;
+	}
+	if (!expect((default_read.getAccess() & File::READ) != 0 &&
+			(default_read.getAccess() & File::BINARY) != 0,
+			"File read/binary defaults failed")) {
+		return false;
+	}
+
+	FilenameList filenames;
+	filenames.insert(AsciiString("zeta.ini"));
+	filenames.insert(AsciiString("Alpha.ini"));
+	filenames.insert(AsciiString("alpha.ini"));
+	if (!expect(filenames.size() == 2, "FilenameList no-case uniqueness failed")) {
+		return false;
+	}
+	if (!expect(std::strcmp(filenames.begin()->str(), "Alpha.ini") == 0,
+			"FilenameList no-case ordering failed")) {
+		return false;
+	}
+
+	SmokeLocalFileSystem local_file_system;
+	TheLocalFileSystem = &local_file_system;
+	local_file_system.init();
+	local_file_system.update();
+	local_file_system.reset();
+	const bool global_ok = expect(TheLocalFileSystem == &local_file_system,
+		"LocalFileSystem global pointer failed");
+	TheLocalFileSystem = nullptr;
+	return global_ok;
 }
 
 bool exercise_name_keys()
@@ -328,6 +501,7 @@ int main()
 
 	const bool ok = exercise_memory_init() &&
 		exercise_strings() &&
+		exercise_file_interfaces() &&
 		exercise_name_keys() &&
 		exercise_language_and_encrypt() &&
 		exercise_random_and_crc() &&
@@ -346,8 +520,8 @@ int main()
 
 	std::printf("{\"ok\":true,\"library\":\"GameEngine/Common\","
 		"\"compiled\":\"GameMemory,CriticalSection,AsciiString,UnicodeString,"
-		"WSYS_String,SubsystemInterface,GameType,GameCommon,Trig,QuickTrig,List,"
-		"Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
+		"WSYS_String,File,LocalFileSystem,SubsystemInterface,GameType,GameCommon,"
+		"Trig,QuickTrig,List,Dict,DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc\","
 		"\"source\":\"GeneralsMD original\"}\n");
 	return 0;

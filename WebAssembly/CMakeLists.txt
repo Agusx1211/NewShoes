@@ -819,6 +819,8 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/MemoryInit.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CriticalSection.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/File.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/LocalFileSystem.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/AsciiString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/UnicodeString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/String.cpp"

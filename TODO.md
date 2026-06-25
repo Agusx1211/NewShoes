@@ -106,6 +106,8 @@ shares structure and follows behind.
       initialization under Emscripten.
 - [x] Add a minimal `D3DX8Math.h` vector/matrix shim for original
       `GameEngine/Common` Bezier helpers under Emscripten.
+- [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
+      and `lib/basetype.h` users under the case-sensitive wasm build.
 - [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
       engine timing layer before replacing `Main/WinMain.cpp`.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
@@ -235,13 +237,17 @@ shares structure and follows behind.
 - [x] Expanded `GameEngine/Common` core slice compiles from original sources:
       `MemoryInit.cpp`, `GameCommon.cpp`, `List.cpp`, `DiscreteCircle.cpp`,
       `Dict.cpp`, `Language.cpp`, `System/String.cpp`, `System/encrypt.cpp`,
-      Bezier helpers, and `PartitionSolver.cpp`, with wasm smoke coverage.
+      `File.cpp`, `LocalFileSystem.cpp`, Bezier helpers, and
+      `PartitionSolver.cpp`, with wasm smoke coverage.
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
       original headers/sources as each real subsystem comes online.
 - [ ] Unblock original `Common/Xfer` by bringing up original `Common/INI`,
       `Common/BitFlagsIO`, `Common/GameState`, and `Common/Upgrade` dependencies
       instead of expanding the temporary `Common/Xfer.h` shim.
+- [ ] Unblock original `Common/FileSystem.cpp` by bringing up
+      `ArchiveFileSystem`, `CDManager`, `GameAudio`, and `GlobalData`
+      dependencies after the base `File` / `LocalFileSystem` interfaces.
 - [x] Compile original `Common/System/MemoryInit.cpp` pool sizing for the wasm
       engine path instead of relying on smoke-local memory hook defaults.
 - [x] Audit original Bezier helper warnings under clang/Emscripten:
