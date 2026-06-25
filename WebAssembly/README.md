@@ -23,6 +23,44 @@ Asset tooling for obtaining real game data to test the port against:
 
 Extracted archives land under ignored `artifacts/real-assets/`.
 
+## Toolchain
+
+The pinned Emscripten version is recorded in `emscripten-version.txt`; this
+workspace currently targets Emscripten `3.1.6`.
+
+Install and activate that version with `emsdk`:
+
+```sh
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install "$(cat /path/to/CnC_Generals_Zero_Hour/WebAssembly/emscripten-version.txt)"
+./emsdk activate "$(cat /path/to/CnC_Generals_Zero_Hour/WebAssembly/emscripten-version.txt)"
+source ./emsdk_env.sh
+```
+
+Build the current wasm skeleton:
+
+```sh
+npm run build:wasm
+```
+
+The build uses `emcmake cmake` and writes generated files to ignored `dist/`.
+It currently builds only the port boundary skeleton, not the original engine.
+The selected baseline flags are:
+
+- ES module output with `MODULARIZE=1` / `EXPORT_ES6=1`.
+- Browser/worker environment.
+- Memory growth enabled, 64 MiB initial memory, 2 GiB maximum memory.
+- 1 MiB stack via `TOTAL_STACK=1048576`.
+- Debug assertions enabled for the bootstrap build.
+- Exported C symbols: `cnc_port_boot`, `cnc_port_frame`, `cnc_port_state`.
+
+Clean generated wasm files:
+
+```sh
+npm run clean:wasm
+```
+
 ## Harness
 
 Run the local harness server:
@@ -40,3 +78,9 @@ npm run test:harness
 The smoke test starts a local static server, boots the browser harness through
 `window.CnCPort.rpc("boot")`, verifies the canvas/RPC state, and writes
 screenshots to `artifacts/screenshots/`.
+
+Run the wasm-backed smoke test:
+
+```sh
+npm run test:wasm
+```

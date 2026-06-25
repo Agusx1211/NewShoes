@@ -6,8 +6,12 @@ const framesNode = document.querySelector("#frames");
 const harnessState = {
   booted: false,
   frame: 0,
+  runtime: "js-stub",
+  wasm: null,
   logs: [],
 };
+
+const wasmModulePromise = loadWasmModule();
 
 function paintBlackWindow() {
   context.fillStyle = "#000";
@@ -32,13 +36,53 @@ function recordLog(message, data = null) {
 }
 
 async function boot(payload = {}) {
-  harnessState.booted = true;
-  harnessState.frame += 1;
+  const wasmModule = await wasmModulePromise;
+  if (wasmModule) {
+    applyModuleState(parseModuleState(wasmModule.boot()));
+    harnessState.wasm = "loaded";
+  } else {
+    harnessState.booted = true;
+    harnessState.frame += 1;
+    harnessState.wasm = "missing";
+  }
+
   paintBlackWindow();
-  syncStatus("booted");
+  syncStatus(`booted (${harnessState.runtime})`);
   recordLog("boot", payload);
 
   return snapshotState();
+}
+
+function applyModuleState(moduleState) {
+  harnessState.booted = Boolean(moduleState.booted);
+  harnessState.frame = Number(moduleState.frame ?? harnessState.frame);
+  harnessState.runtime = moduleState.module ?? "wasm";
+}
+
+async function loadWasmModule() {
+  try {
+    const moduleExports = await import("../dist/cnc-port.js");
+    const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
+    const module = await createModule({
+      locateFile: (path) => path.endsWith(".wasm") ? `../dist/${path}` : path,
+    });
+
+    return {
+      boot: module.cwrap("cnc_port_boot", "string", []),
+      state: module.cwrap("cnc_port_state", "string", []),
+    };
+  } catch (error) {
+    console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
+    return null;
+  }
+}
+
+function parseModuleState(stateJson) {
+  try {
+    return JSON.parse(stateJson);
+  } catch {
+    throw new Error(`Invalid wasm state JSON: ${stateJson}`);
+  }
 }
 
 function snapshotCanvas() {
@@ -55,6 +99,8 @@ function snapshotState() {
   return {
     booted: harnessState.booted,
     frame: harnessState.frame,
+    runtime: harnessState.runtime,
+    wasm: harnessState.wasm,
     logCount: harnessState.logs.length,
     canvas: {
       width: canvas.width,
@@ -72,6 +118,13 @@ async function rpc(command, payload = {}) {
     case "screenshot":
       return { ok: true, command, screenshot: snapshotCanvas() };
     case "state":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (wasmModule) {
+          applyModuleState(parseModuleState(wasmModule.state()));
+          harnessState.wasm = "loaded";
+        }
+      }
       return { ok: true, command, state: snapshotState(), logs: [...harnessState.logs] };
     default:
       return { ok: false, command, error: `Unknown harness command: ${command}` };

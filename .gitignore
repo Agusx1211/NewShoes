@@ -1,5 +1,6 @@
 # WebAssembly/browser port generated files
 /WebAssembly/artifacts/
+/WebAssembly/build/
 /WebAssembly/dist/
 /node_modules/
 /WebAssembly/node_modules/

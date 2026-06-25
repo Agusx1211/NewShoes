@@ -13,11 +13,11 @@ shares structure and follows behind.
 ## M0 — Build skeleton & asset pipeline
 
 ### Toolchain
-- [ ] Pin an Emscripten SDK version; document install/activate in `WebAssembly/`.
-- [ ] Add a CMake (or Make) build under `WebAssembly/` that drives `em++`.
-- [ ] Decide wasm target flags (memory growth, `MAXIMUM_MEMORY`, `STACK_SIZE`,
+- [x] Pin an Emscripten SDK version; document install/activate in `WebAssembly/`.
+- [x] Add a CMake (or Make) build under `WebAssembly/` that drives `em++`.
+- [x] Decide wasm target flags (memory growth, `MAXIMUM_MEMORY`, `TOTAL_STACK`,
       `STANDALONE_WASM` vs browser, exceptions, `-O` levels, `-g`/source maps).
-- [ ] Reproducible build script (`npm run build:wasm`) + clean target.
+- [x] Reproducible build script (`npm run build:wasm`) + clean target.
 - [ ] CI job that builds the wasm and runs the harness smoke test.
 
 ### Asset pipeline
@@ -75,8 +75,8 @@ shares structure and follows behind.
 
 ## M2 — Boot to a black window
 
-- [ ] Replace the JS harness boot stub with Emscripten module initialization once
-      the wasm target exists.
+- [ ] Replace the skeleton wasm boot module with original engine Emscripten
+      initialization.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
