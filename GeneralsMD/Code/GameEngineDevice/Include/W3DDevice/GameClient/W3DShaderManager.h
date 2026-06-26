@@ -36,13 +36,17 @@
 #ifndef __W3DSHADERMANAGER_H_
 #define __W3DSHADERMANAGER_H_
 
+#include "Common/GameLOD.h"
+#include "GameClient/View.h"
+#include "W3DDevice/GameClient/W3DCustomScene.h"
 #include "WW3D2/Texture.h"
-enum FilterTypes;
-enum CustomScenePassModes;
-enum StaticGameLODLevel : int;
-enum ChipsetType;
-enum CpuType;
-enum GraphicsVenderID;
+
+enum GraphicsVenderID
+{
+	DC_NVIDIA_VENDOR_ID	= 0x10DE,
+	DC_3DFX_VENDOR_ID	= 0x121A,
+	DC_ATI_VENDOR_ID	= 0x1002
+};
 
 class TextureClass;	///forward reference
 /** System for managing complex rendering settings which are either not handled by
@@ -82,7 +86,7 @@ public:
 	static void shutdown(void);	///<release resources used by shaders
 	static ChipsetType getChipset(void);	///<return current device chipset.
 	static GraphicsVenderID getCurrentVendor(void) {return m_currentVendor;}	///<return current card vendor.
-	static getCurrentDriverVersion(void) {return m_driverVersion; }	///<return current driver version.
+	static __int64 getCurrentDriverVersion(void) {return m_driverVersion; }	///<return current driver version.
 	static Int getShaderPasses(ShaderTypes shader);	///<rendering passes required for shader
 	static Int setShader(ShaderTypes shader, Int pass);	///<enable specific shader pass.
 	static Int setShroudTex(Int stage);	///<Set shroud in a texture stage.

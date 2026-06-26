@@ -43,13 +43,13 @@
 #include "WW3D2/RInfo.h"
 #include "WW3D2/Coltest.h"
 #include "WW3D2/lightenvironment.h"
+#include "W3DDevice/GameClient/W3DCustomScene.h"
 ///////////////////////////////////////////////////////////////////////////////
 // PROTOTYPES /////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 class W3DDynamicLight;
 class LightClass;
 class Drawable;
-enum CustomScenePassModes;
 class MaterialPassClass;
 class W3DShroudMaterialPassClass;
 class W3DMaskMaterialPassClass;

@@ -13,7 +13,11 @@ using D3DMATERIALCOLORSOURCE = DWORD;
 using D3DTEXTUREADDRESS = DWORD;
 using D3DTEXTUREFILTERTYPE = DWORD;
 using D3DTEXTUREOP = DWORD;
+using LPDIRECT3DDEVICE8 = struct IDirect3DDevice8 *;
+using LPDIRECT3DINDEXBUFFER8 = struct IDirect3DIndexBuffer8 *;
 using LPDIRECT3DSURFACE8 = struct IDirect3DSurface8 *;
+using LPDIRECT3DTEXTURE8 = struct IDirect3DTexture8 *;
+using LPDIRECT3DVERTEXBUFFER8 = struct IDirect3DVertexBuffer8 *;
 
 #ifndef MAKEFOURCC
 #define MAKEFOURCC(ch0, ch1, ch2, ch3) \

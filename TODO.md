@@ -784,6 +784,17 @@ shares structure and follows behind.
       callback storage, and fixed-underlying enum forwards for the reached W3D
       module headers. This is compile coverage only until browser display,
       input, and renderer paths are harness-driven.
+- [x] Compile the original W3D height-map/terrain-support batch in the
+      real-header compile frontier: `W3DRadar.cpp`, `BaseHeightMap.cpp`,
+      `FlatHeightMap.cpp`, `HeightMap.cpp`, `TerrainTex.cpp`,
+      `WorldHeightMap.cpp`, `W3DDebugIcons.cpp`, `W3DDisplayString.cpp`,
+      `W3DDisplayStringManager.cpp`, `W3DStatusCircle.cpp`,
+      `camerashakesystem.cpp`, `W3DGhostObject.cpp`, and
+      `W3DTerrainLogic.cpp`, after adding the reached D3DX/Common/W3D/WWMath
+      case bridges and localized standard-clang compatibility fixes for
+      original shader-manager, status-circle, camera-shake, and height-map
+      code. This is compile coverage only until terrain/render/water paths are
+      browser-rendered and harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -873,10 +884,10 @@ shares structure and follows behind.
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
       contract.
-- [ ] Compile the next original W3D renderer-adjacent leaves, including
-      height maps, display, scene, terrain renderer, drawable modules, shader,
-      water, and shadow sources, after the remaining WW3D2/Direct3D browser
-      compatibility surface is available as part of the renderer port.
+- [ ] Compile the remaining original W3D renderer-adjacent leaves, including
+      display, scene, terrain renderer, drawable modules, shader, water, and
+      shadow sources, after the remaining WW3D2/Direct3D browser compatibility
+      surface is available as part of the renderer port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
       source blocker: the legacy BrowserEngine DLL import in
       `dx8webbrowser.cpp`. Runtime browser ports are still needed for the

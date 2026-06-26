@@ -73,7 +73,7 @@ public:
 	bool		IsCameraShaking(void);
 	void		Update_Camera_Shaker(Vector3 camera_position, Vector3 * shaker_angles);
 
-protected:
+public:
 
 	/**
 	** CameraShakerClass 
@@ -102,6 +102,7 @@ protected:
 		Vector3				Phi;
 	};
 
+protected:
 	MultiListClass<CameraShakerClass>	CameraShakerList;
 
 };
@@ -110,4 +111,3 @@ extern CameraShakeSystemClass CameraShakerSystem; //WST 11/12/2002 This is the n
 
 
 #endif //CAMERASHAKESYSTEM_H
-

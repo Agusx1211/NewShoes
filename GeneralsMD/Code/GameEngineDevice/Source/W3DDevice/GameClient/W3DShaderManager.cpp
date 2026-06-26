@@ -2904,13 +2904,6 @@ IDirect3DTexture8 *W3DShaderManager::getRenderTexture(void)
 	return m_renderTexture;
 }
 
-enum GraphicsVenderID
-{
-	DC_NVIDIA_VENDOR_ID	= 0x10DE,
-	DC_3DFX_VENDOR_ID	= 0x121A,
-	DC_ATI_VENDOR_ID	= 0x1002
-};
-
 // W3DShaderManager::ChipsetType =======================================================
 /** Returns the chipset used by the currently active rendering device.  Can be useful
 	for coding around specific driver bugs.
@@ -3729,7 +3722,6 @@ void FlatTerrainShaderPixelShader::reset(void)
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }
-
 
 
 
