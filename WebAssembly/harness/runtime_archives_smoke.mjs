@@ -1143,6 +1143,132 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
   }
 }
 
+function assertDataSummary(state, context, expectedStartupReady) {
+  const summary = state.dataSummary;
+  const assetProbe = state.assetProbe;
+  if (!summary?.ok
+      || summary.startupReady !== expectedStartupReady
+      || summary.source !== "assetProbe"
+      || summary.archives?.indexedFiles !== assetProbe?.indexedFiles
+      || summary.archives?.sampleBytes !== assetProbe?.sampleBytes) {
+    throw new Error(`${context} data summary header mismatch: ${JSON.stringify(summary)}`);
+  }
+
+  for (const parser of [
+    "armor",
+    "damageFX",
+    "fxList",
+    "objectCreationList",
+    "weapon",
+    "aiData",
+    "locomotor",
+    "science",
+    "upgrade",
+    "commandButton",
+    "commandSet",
+    "controlBarScheme",
+    "crate",
+    "mappedImages",
+    "specialPower",
+    "playerTemplate",
+    "multiplayer",
+    "terrain",
+    "terrainRoads",
+    "gameData",
+    "water",
+    "weather",
+    "video",
+    "gameText",
+    "mapCache",
+  ]) {
+    if (summary.parsers?.[parser] !== true) {
+      throw new Error(`${context} data summary parser ${parser} not ready: ${JSON.stringify(summary.parsers)}`);
+    }
+  }
+
+  if (summary.parsers.drawGroupInfo !== false) {
+    throw new Error(`${context} should report absent shipped DrawGroupInfo.ini: ${JSON.stringify(summary.parsers)}`);
+  }
+
+  const expectedParsedFields = {
+    armor: 11,
+    damageFX: 10,
+    fxList: 11,
+    objectCreationList: 12,
+    weapon: 37,
+    aiData: 50,
+    locomotor: 48,
+    science: 10,
+    upgrade: 34,
+    commandButton: 34,
+    commandSet: 23,
+    controlBarScheme: 34,
+    crate: 34,
+    drawGroupInfo: 0,
+    mappedImages: 18,
+    specialPower: 38,
+    playerTemplate: 50,
+    multiplayer: 22,
+    terrain: 18,
+    terrainRoads: 30,
+    gameData: 8,
+    water: 18,
+    weather: 13,
+    video: 5,
+  };
+  for (const [field, expected] of Object.entries(expectedParsedFields)) {
+    if (summary.parsedFields?.[field] !== expected) {
+      throw new Error(`${context} data summary parsed field ${field} mismatch: ${JSON.stringify(summary.parsedFields)}`);
+    }
+  }
+
+  const expectedTemplateCounts = {
+    fxLists: 428,
+    objectCreationLists: 281,
+    objectCreationNuggets: 704,
+    particleSystems: 1084,
+    locomotors: 182,
+    sciences: 95,
+    upgrades: 83,
+    focusedCommandButtons: 3,
+    focusedCommandSets: 1,
+    commandSetButtons: 6,
+    controlBarImages: 1186,
+    mappedImageFiles: 14,
+    mappedImages: 1186,
+    crates: 7,
+    specialPowers: 79,
+    playerTemplates: 15,
+    playerSides: 15,
+    multiplayerColors: 8,
+    terrains: 247,
+    roads: 63,
+    bridges: 27,
+    waterSets: 4,
+    videos: 41,
+  };
+  for (const [field, expected] of Object.entries(expectedTemplateCounts)) {
+    if (summary.templates?.[field] !== expected) {
+      throw new Error(`${context} data summary template count ${field} mismatch: ${JSON.stringify(summary.templates)}`);
+    }
+  }
+
+  const expectedMapCounts = {
+    mapCacheEntries: 103,
+    multiplayer: 47,
+    official: 103,
+  };
+  for (const [field, expected] of Object.entries(expectedMapCounts)) {
+    if (summary.maps?.[field] !== expected) {
+      throw new Error(`${context} data summary map count ${field} mismatch: ${JSON.stringify(summary.maps)}`);
+    }
+  }
+
+  if (!summary.strings?.generalsCsf || summary.strings.controlBarLabels !== 754) {
+    throw new Error(`${context} data summary string coverage mismatch: ${JSON.stringify(summary.strings)}`);
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -1256,6 +1382,7 @@ try {
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
   assertVideoProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
+  assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
@@ -1328,6 +1455,7 @@ try {
   assertVideoProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
+  assertDataSummary(bootResult.state, "runtime archive boot", true);
 
   console.log(JSON.stringify({
     ok: true,
@@ -1340,6 +1468,7 @@ try {
     archiveMount,
     bootArchiveMount,
     startupAssets: bootResult.state.startupAssets,
+    dataSummary: bootResult.state.dataSummary,
     bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",

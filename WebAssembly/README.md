@@ -78,9 +78,11 @@ settings. It also checks `assetProbe.weather` by loading real
 snow/weather settings. It also checks `assetProbe.mapCache` by loading the real
 `Maps\MapCache.ini` through original `Common/INI.cpp::load` and
 `Common/INI/INIMapCache.cpp`, verifying shipped map counts plus known ShellMapMD
-and Tournament Desert entries. The bootstrap also reports `startupAssets`, which
-stays
-`missing_runtime_archives` without a registered runtime archive set, moves to
+and Tournament Desert entries. The bootstrap also reports `dataSummary`, a
+compact harness state object that rolls the real archive, parser, template,
+map, and string counts into one startup-readiness view. It also reports
+`startupAssets`, which stays `missing_runtime_archives` without a registered
+runtime archive set, moves to
 `pending_boot_probe` after preload registration, and only becomes `ready` after
 the boot-time archive/GameData/Water/Weather/GameText/MapCache probes pass.
 This is still a bootstrap preflight; full original all-block INI loading, startup CRC
@@ -176,7 +178,8 @@ through original `Common/INI.cpp::load` over real `GameData.ini`, asserts
 `assetProbe.water` through original `INIWater.cpp` / `GameClient/Water.cpp`
 over real `Water.ini`, asserts `assetProbe.weather` through original
 `GameClient/Snow.cpp` over real `Weather.ini`, asserts `assetProbe.mapCache`
-through original `INIMapCache.cpp` over real `Maps\MapCache.ini`, and checks
+through original `INIMapCache.cpp` over real `Maps\MapCache.ini`, asserts
+`dataSummary` for aggregate parser/template/map/string counts, and checks
 `startupAssets` for the missing, pending, and ready archive states. Full
 original engine startup, all-block INI parsing, language initialization, font
 loading, water/weather rendering, and live map-cache rebuilds remain open.

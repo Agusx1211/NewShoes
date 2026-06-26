@@ -468,12 +468,9 @@ bool startup_map_cache_ready()
 		g_archive_probe.map_cache_ok;
 }
 
-bool startup_assets_ready()
+bool startup_data_probes_ready()
 {
-	return g_archive_mount.registered &&
-		g_archive_mount.boot_probe_attempted &&
-		g_archive_mount.boot_probe_ok &&
-		g_archive_probe.ok &&
+	return g_archive_probe.ok &&
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
 		startup_armor_ready() &&
@@ -500,6 +497,14 @@ bool startup_assets_ready()
 		startup_video_ready() &&
 		startup_game_text_ready() &&
 		startup_map_cache_ready();
+}
+
+bool startup_assets_ready()
+{
+	return g_archive_mount.registered &&
+		g_archive_mount.boot_probe_attempted &&
+		g_archive_mount.boot_probe_ok &&
+		startup_data_probes_ready();
 }
 
 const char *startup_asset_status()
@@ -721,6 +726,129 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return escaped;
+}
+
+std::string build_data_summary_json()
+{
+	char buffer[7600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"ok\":%s,\"startupReady\":%s,\"source\":\"assetProbe\","
+		"\"archives\":{\"indexedFiles\":%zu,\"sampleBytes\":%zu},"
+		"\"parsers\":{\"armor\":%s,\"damageFX\":%s,\"fxList\":%s,"
+		"\"objectCreationList\":%s,\"weapon\":%s,\"aiData\":%s,"
+		"\"locomotor\":%s,\"science\":%s,\"upgrade\":%s,"
+		"\"commandButton\":%s,\"commandSet\":%s,\"controlBarScheme\":%s,"
+		"\"crate\":%s,\"drawGroupInfo\":%s,\"mappedImages\":%s,"
+		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
+		"\"terrain\":%s,\"terrainRoads\":%s,\"gameData\":%s,"
+		"\"water\":%s,\"weather\":%s,\"video\":%s,\"gameText\":%s,"
+		"\"mapCache\":%s},"
+		"\"parsedFields\":{\"armor\":%zu,\"damageFX\":%zu,\"fxList\":%zu,"
+		"\"objectCreationList\":%zu,\"weapon\":%zu,\"aiData\":%zu,"
+		"\"locomotor\":%zu,\"science\":%zu,\"upgrade\":%zu,"
+		"\"commandButton\":%zu,\"commandSet\":%zu,\"controlBarScheme\":%zu,"
+		"\"crate\":%zu,\"drawGroupInfo\":%zu,\"mappedImages\":%zu,"
+		"\"specialPower\":%zu,\"playerTemplate\":%zu,\"multiplayer\":%zu,"
+		"\"terrain\":%zu,\"terrainRoads\":%zu,\"gameData\":%zu,"
+		"\"water\":%zu,\"weather\":%zu,\"video\":%zu},"
+		"\"templates\":{\"fxLists\":%zu,\"objectCreationLists\":%zu,"
+		"\"objectCreationNuggets\":%zu,\"particleSystems\":%zu,"
+		"\"locomotors\":%zu,\"sciences\":%zu,\"upgrades\":%zu,"
+		"\"focusedCommandButtons\":%zu,\"focusedCommandSets\":%zu,"
+		"\"commandSetButtons\":%zu,\"controlBarImages\":%zu,"
+		"\"mappedImageFiles\":%zu,\"mappedImages\":%zu,\"crates\":%zu,"
+		"\"specialPowers\":%zu,\"playerTemplates\":%zu,\"playerSides\":%zu,"
+		"\"multiplayerColors\":%zu,\"terrains\":%zu,\"roads\":%zu,"
+		"\"bridges\":%zu,\"waterSets\":%zu,\"videos\":%zu},"
+		"\"maps\":{\"mapCacheEntries\":%zu,\"multiplayer\":%zu,"
+		"\"official\":%zu},"
+		"\"strings\":{\"generalsCsf\":%s,\"controlBarLabels\":%zu}}",
+		startup_data_probes_ready() ? "true" : "false",
+		startup_assets_ready() ? "true" : "false",
+		g_archive_probe.indexed_file_count,
+		g_archive_probe.sample_bytes,
+		startup_armor_ready() ? "true" : "false",
+		startup_damage_fx_ready() ? "true" : "false",
+		startup_fx_list_ready() ? "true" : "false",
+		startup_object_creation_list_ready() ? "true" : "false",
+		startup_weapon_ready() ? "true" : "false",
+		startup_ai_data_ready() ? "true" : "false",
+		startup_locomotor_ready() ? "true" : "false",
+		startup_science_ready() ? "true" : "false",
+		startup_upgrade_ready() ? "true" : "false",
+		startup_command_button_ready() ? "true" : "false",
+		startup_command_set_ready() ? "true" : "false",
+		startup_control_bar_scheme_ready() ? "true" : "false",
+		startup_crate_ready() ? "true" : "false",
+		g_archive_probe.draw_group_info_attempted &&
+			g_archive_probe.draw_group_info_ok ? "true" : "false",
+		g_archive_probe.mapped_image_attempted &&
+			g_archive_probe.mapped_image_ok ? "true" : "false",
+		startup_special_power_ready() ? "true" : "false",
+		startup_player_template_ready() ? "true" : "false",
+		startup_multiplayer_ready() ? "true" : "false",
+		startup_terrain_ready() ? "true" : "false",
+		startup_terrain_roads_ready() ? "true" : "false",
+		startup_game_data_ready() ? "true" : "false",
+		startup_water_ready() ? "true" : "false",
+		startup_weather_ready() ? "true" : "false",
+		startup_video_ready() ? "true" : "false",
+		startup_game_text_ready() ? "true" : "false",
+		startup_map_cache_ready() ? "true" : "false",
+		g_archive_probe.armor_parsed_fields,
+		g_archive_probe.damage_fx_parsed_fields,
+		g_archive_probe.fx_list_parsed_fields,
+		g_archive_probe.object_creation_list_parsed_fields,
+		g_archive_probe.weapon_parsed_fields,
+		g_archive_probe.ai_data_parsed_fields,
+		g_archive_probe.locomotor_parsed_fields,
+		g_archive_probe.science_parsed_fields,
+		g_archive_probe.upgrade_parsed_fields,
+		g_archive_probe.command_button_parsed_fields,
+		g_archive_probe.command_set_parsed_fields,
+		g_archive_probe.control_bar_scheme_parsed_fields,
+		g_archive_probe.crate_parsed_fields,
+		g_archive_probe.draw_group_info_parsed_fields,
+		g_archive_probe.mapped_image_parsed_fields,
+		g_archive_probe.special_power_parsed_fields,
+		g_archive_probe.player_template_parsed_fields,
+		g_archive_probe.multiplayer_parsed_fields,
+		g_archive_probe.terrain_parsed_fields,
+		g_archive_probe.terrain_roads_parsed_fields,
+		g_archive_probe.game_data_parsed_fields,
+		g_archive_probe.water_parsed_fields,
+		g_archive_probe.weather_parsed_fields,
+		g_archive_probe.video_parsed_fields,
+		g_archive_probe.fx_list_count,
+		g_archive_probe.object_creation_list_count,
+		g_archive_probe.object_creation_list_nugget_count,
+		g_archive_probe.weapon_particle_template_count,
+		g_archive_probe.locomotor_template_count,
+		g_archive_probe.science_count,
+		g_archive_probe.upgrade_count,
+		g_archive_probe.command_button_count,
+		g_archive_probe.command_set_count,
+		g_archive_probe.command_set_command_button_count,
+		g_archive_probe.control_bar_scheme_mapped_image_count,
+		g_archive_probe.mapped_image_file_count,
+		g_archive_probe.mapped_image_count,
+		g_archive_probe.crate_template_count,
+		g_archive_probe.special_power_count,
+		g_archive_probe.player_template_count,
+		g_archive_probe.player_template_side_count,
+		g_archive_probe.multiplayer_color_count,
+		g_archive_probe.terrain_count,
+		g_archive_probe.terrain_roads_road_count,
+		g_archive_probe.terrain_roads_bridge_count,
+		g_archive_probe.water_set_count,
+		g_archive_probe.video_count,
+		g_archive_probe.map_cache_maps,
+		g_archive_probe.map_cache_multiplayer_maps,
+		g_archive_probe.map_cache_official_maps,
+		g_archive_probe.has_generals_csf ? "true" : "false",
+		g_archive_probe.game_text_control_bar_label_count);
+
+	return buffer;
 }
 
 std::string build_damage_fx_probe_json()
@@ -1978,6 +2106,7 @@ const char *write_state_json()
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
+	const std::string data_summary_json = build_data_summary_json();
 	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
 	const std::string global_data_user_data_path_json =
 		json_escape(g_global_data_probe.user_data_path);
@@ -2204,6 +2333,7 @@ const char *write_state_json()
 		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
+		"\"dataSummary\":%s,"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
@@ -2689,6 +2819,7 @@ const char *write_state_json()
 		startup_video_ready() ? "true" : "false",
 		startup_game_text_ready() ? "true" : "false",
 		startup_map_cache_ready() ? "true" : "false",
+		data_summary_json.c_str(),
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,

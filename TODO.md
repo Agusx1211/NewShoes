@@ -2040,7 +2040,8 @@ shares structure and follows behind.
 - [ ] Map cache rebuilds/scans live system and user map directories through
       original `MapCache::updateCache`, including `.map` parsing, CRC/file-info
       checks, user-data persistence, and browser MEMFS/IDBFS behavior.
-- [ ] Harness state query: dump counts of parsed templates to prove data loaded.
+- [x] Harness state query: dump parser/template/map/string counts via
+      `dataSummary` state to prove data loaded.
 
 ---
 
