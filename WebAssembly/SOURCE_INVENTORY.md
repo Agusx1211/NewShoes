@@ -435,7 +435,8 @@ The wasm CMake skeleton currently builds:
 - `gamenetwork-core-smoke`: a Node-executed wasm smoke test that verifies
   original GameNetwork command-id generation, command type policy/name lookups,
   empty frame readiness through `FrameData`/`FrameDataManager`, `NetCommandList`
-  sorting/deduplication, `NetPacket` ACK-both/stage1/stage2,
+  sorting/deduplication, `NetPacket` ACK-both raw/default parser behavior plus
+  stage1/stage2,
   frame/run-ahead/chat/progress/file-progress plus
   control/disconnect/router/wrapper/file-announce/frame-resend packet
   round-trips, `NetCommandWrapperList` incomplete/duplicate chunk handling and

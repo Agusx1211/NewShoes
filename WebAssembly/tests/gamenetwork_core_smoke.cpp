@@ -358,26 +358,20 @@ bool exerciseNetPacketAckRoundTrip()
 	ack_both->setPlayerID(2);
 	ack_both->setCommandID(901);
 	ack_both->setOriginalPlayerID(7);
-	NetPacket *ack_both_packet = newInstance(NetPacket);
-	NetCommandRef *ack_both_ref = NEW_NETCOMMANDREF(ack_both);
-	const Bool ack_both_added = ack_both_packet->addCommand(ack_both_ref);
-	ack_both_ref->deleteInstance();
-	ack_both->detach();
-	NetCommandList *ack_both_list = ack_both_packet->getCommandList();
-	NetCommandRef *parsed_ack_both_ref = ack_both_list->getFirstMessage();
-	NetAckBothCommandMsg *parsed_ack_both = parsed_ack_both_ref == nullptr ? nullptr :
-		static_cast<NetAckBothCommandMsg *>(parsed_ack_both_ref->getCommand());
+	NetCommandRef *ack_both_ref =
+		roundTripCommand(ack_both, 0x00, "NetPacket did not add ack-both command");
+	if (ack_both_ref == nullptr) {
+		return false;
+	}
+	NetAckBothCommandMsg *parsed_ack_both =
+		static_cast<NetAckBothCommandMsg *>(ack_both_ref->getCommand());
 	const bool ack_both_ok =
-		expect(ack_both_added, "NetPacket did not add ack-both command") &&
-		expect(ack_both_list->length() == 1, "Ack-both packet-list round trip length changed") &&
-		expect(parsed_ack_both != nullptr, "Ack-both packet-list command missing") &&
 		expect(parsed_ack_both->getNetCommandType() == NETCOMMANDTYPE_ACKBOTH,
 			"Ack-both command type changed") &&
 		expect(parsed_ack_both->getPlayerID() == 2, "Ack-both player id changed") &&
 		expect(parsed_ack_both->getCommandID() == 901, "Ack-both command id changed") &&
 		expect(parsed_ack_both->getOriginalPlayerID() == 7, "Ack-both original player changed");
-	ack_both_list->deleteInstance();
-	ack_both_packet->deleteInstance();
+	ack_both_ref->deleteInstance();
 
 	NetAckStage1CommandMsg *ack_stage1 = newInstance(NetAckStage1CommandMsg);
 	ack_stage1->setPlayerID(3);

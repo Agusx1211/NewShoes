@@ -50,8 +50,10 @@ static void WriteUnicodeString16ToPacket(UnsignedByte *dest, const UnicodeString
 // This function assumes that all of the fields are either of default value or are
 // present in the raw data.
 NetCommandRef * NetPacket::ConstructNetCommandMsgFromRawData(UnsignedByte *data, UnsignedShort dataLength) {
-	NetCommandType commandType = NETCOMMANDTYPE_GAMECOMMAND;
-	UnsignedShort commandID = 0;
+	// Match NetPacket::getCommandList defaults so a first ACKBOTH command can
+	// omit repeated state markers.
+	NetCommandType commandType = NETCOMMANDTYPE_ACKBOTH;
+	UnsignedShort commandID = 1;
 	UnsignedInt frame = 0;
 	UnsignedByte playerID = 0;
 	UnsignedByte relay = 0;
