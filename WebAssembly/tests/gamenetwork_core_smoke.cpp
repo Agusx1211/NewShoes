@@ -7,6 +7,7 @@
 
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "GameNetwork/Connection.h"
 #include "GameNetwork/FileTransfer.h"
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
@@ -16,7 +17,9 @@
 #include "GameNetwork/NetCommandRef.h"
 #include "GameNetwork/NetPacket.h"
 #include "GameNetwork/NetworkUtil.h"
+#include "GameNetwork/Transport.h"
 #include "GameNetwork/User.h"
+#include "winsock2.h"
 
 class Display;
 Display *TheDisplay = nullptr;
@@ -35,6 +38,23 @@ bool expect(bool condition, const char *message)
 bool expectAscii(const AsciiString &actual, const char *expected, const char *message)
 {
 	return expect(std::strcmp(actual.str(), expected) == 0, message);
+}
+
+void decryptTransportMessage(TransportMessage &message)
+{
+	UnsignedInt mask = 0x0000fade;
+	UnsignedByte *bytes = reinterpret_cast<UnsignedByte *>(&message);
+	const Int encrypted_length = message.length + sizeof(TransportMessageHeader);
+
+	for (Int offset = 0; offset + static_cast<Int>(sizeof(UnsignedInt)) <= encrypted_length;
+		 offset += sizeof(UnsignedInt)) {
+		UnsignedInt word = 0;
+		std::memcpy(&word, bytes + offset, sizeof(word));
+		word = htonl(word);
+		word ^= mask;
+		std::memcpy(bytes + offset, &word, sizeof(word));
+		mask += 0x00000321;
+	}
 }
 
 NetCommandRef *roundTripCommand(NetCommandMsg *msg, UnsignedByte relay, const char *context)
@@ -600,6 +620,93 @@ bool exerciseNetPacketControlRoundTrip()
 		file_announce_ok && disconnect_frame_ok && screen_off_ok && resend_ok;
 }
 
+NetCommandRef *parseQueuedTransportCommand(const Transport &transport, Int slot, UnsignedInt expected_addr,
+	UnsignedShort expected_port)
+{
+	if (!expect(slot >= 0 && slot < MAX_MESSAGES, "Transport slot index out of range")) {
+		return nullptr;
+	}
+	if (!expect(transport.m_outBuffer[slot].length > 0, "Transport queue slot is empty") ||
+		!expect(transport.m_outBuffer[slot].addr == expected_addr, "Transport queued address changed") ||
+		!expect(transport.m_outBuffer[slot].port == expected_port, "Transport queued port changed")) {
+		return nullptr;
+	}
+
+	TransportMessage decoded = transport.m_outBuffer[slot];
+	decryptTransportMessage(decoded);
+	return NetPacket::ConstructNetCommandMsgFromRawData(decoded.data,
+		static_cast<UnsignedShort>(decoded.length));
+}
+
+bool exerciseConnectionQueue()
+{
+	Transport transport;
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+
+	Connection *connection = newInstance(Connection);
+	connection->init();
+	connection->setFrameGrouping(0);
+	connection->attachTransport(&transport);
+	connection->setUser(newInstance(User)(UnicodeString(L"Peer"), 0x0a010203u, 4321));
+
+	NetFrameCommandMsg *frame = newInstance(NetFrameCommandMsg);
+	frame->setExecutionFrame(4321);
+	frame->setPlayerID(2);
+	frame->setID(610);
+	frame->setCommandCount(9);
+	connection->sendNetCommandMsg(frame, 0x3a);
+	frame->detach();
+
+	const bool queued_ok =
+		expect(!connection->isQueueEmpty(), "Connection did not queue ack-required command") &&
+		expect(connection->doSend() == 1, "Connection did not packetize queued command");
+
+	NetCommandRef *queued = parseQueuedTransportCommand(transport, 0, 0x0a010203u, 4321);
+	const bool packet_ok =
+		expect(queued != nullptr, "Connection queued packet did not parse") &&
+		expect(queued->getRelay() == 0x3a, "Connection queued packet did not preserve relay") &&
+		expect(queued->getCommand()->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO,
+			"Connection queued packet command type changed") &&
+		expect(queued->getCommand()->getID() == 610, "Connection queued packet command id changed") &&
+		expect(queued->getCommand()->getPlayerID() == 2, "Connection queued packet player id changed");
+	if (queued != nullptr) {
+		queued->deleteInstance();
+	}
+
+	NetCommandRef *acked = connection->processAck(610, 2);
+	const bool ack_ok =
+		expect(acked != nullptr, "Connection did not remove acked command") &&
+		expect(connection->isQueueEmpty(), "Connection retained command after ack");
+	if (acked != nullptr) {
+		acked->deleteInstance();
+	}
+
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+	NetKeepAliveCommandMsg *keep_alive = newInstance(NetKeepAliveCommandMsg);
+	keep_alive->setPlayerID(5);
+	connection->sendNetCommandMsg(keep_alive, 0x11);
+	keep_alive->detach();
+
+	const bool keepalive_send_ok =
+		expect(!connection->isQueueEmpty(), "Connection did not queue keepalive command") &&
+		expect(connection->doSend() == 1, "Connection did not send keepalive command") &&
+		expect(connection->isQueueEmpty(), "Connection retained non-ack command after send");
+	NetCommandRef *keepalive_ref = parseQueuedTransportCommand(transport, 0, 0x0a010203u, 4321);
+	const bool keepalive_packet_ok =
+		expect(keepalive_ref != nullptr, "Connection keepalive packet did not parse") &&
+		expect(keepalive_ref->getRelay() == 0x11, "Connection keepalive packet did not preserve relay") &&
+		expect(keepalive_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_KEEPALIVE,
+			"Connection keepalive packet command type changed") &&
+		expect(keepalive_ref->getCommand()->getPlayerID() == 5,
+			"Connection keepalive packet player id changed");
+	if (keepalive_ref != nullptr) {
+		keepalive_ref->deleteInstance();
+	}
+
+	connection->deleteInstance();
+	return queued_ok && packet_ok && ack_ok && keepalive_send_ok && keepalive_packet_ok;
+}
+
 bool exerciseFileTransferPathHelpers()
 {
 	const AsciiString map("Maps\\UserMaps\\Tournament Desert\\Tournament Desert.map");
@@ -719,13 +826,14 @@ int main()
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() &&
-		exerciseFileTransferPathHelpers() && exerciseFrameMetrics() && exerciseUser();
+		exerciseConnectionQueue() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
+		exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,User\",\"covered\":\"command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

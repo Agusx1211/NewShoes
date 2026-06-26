@@ -1115,9 +1115,11 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `GameNetwork/FrameMetrics.cpp` FPS sampling
       and latency response after the browser display/FPS surface and real
       `GlobalData` singleton are available.
-- [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
-      after real packetization, message, and browser transport send/receive
-      dependencies are available; current coverage is compile-only.
+- [x] Link and smoke-test original `GameNetwork/Connection.cpp` send/ack queue
+      behavior through original packetization and `Transport::queueSend`
+      buffering without binding UDP sockets.
+- [ ] Link and smoke-test original `GameNetwork/Connection.cpp` receive/retry
+      behavior after browser transport send/receive dependencies are available.
 - [x] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
       helper behavior.
 - [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` transfer flow
@@ -1138,6 +1140,9 @@ shares structure and follows behind.
       file-announce, disconnect-frame/screen-off, and frame-resend request
       commands, including explicit 16-bit chat-text wire serialization under
       wasm `WideChar`.
+- [x] Link original `GameNetwork/Transport.cpp` and `udp.cpp` into the
+      GameNetwork core archive and smoke-test connection packet buffering before
+      raw UDP flushing.
 - [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after adding the browser-safe WinSock compile surface and
       preserving the original UDP/transport logic for the later WebSocket/WebRTC

@@ -2054,6 +2054,8 @@ add_library(zh_gamenetwork_core STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/NetMessageStream.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetPacket.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NetworkUtil.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/Transport.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/udp.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/User.cpp"
 )
 
