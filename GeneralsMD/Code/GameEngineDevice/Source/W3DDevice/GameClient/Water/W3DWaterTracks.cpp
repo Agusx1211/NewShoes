@@ -80,7 +80,7 @@ WaterTracksRenderSystem *TheWaterTracksRenderSystem=NULL;	///< singleton for tra
 
 static Bool pauseWaves=FALSE;
 
-enum waveType
+enum waveType : Int
 {
 	WaveTypeFirst,
 	WaveTypePond=WaveTypeFirst,
@@ -1210,7 +1210,7 @@ static void TestWaterUpdate(void)
 							midPoint = startPoint + (midPoint)*0.5f;
 							Vector2 dirMidPoint = midPoint + m_perpDir;
 
-							track->init(waveTypeInfo[currentWaveType].m_finalHeight,waveTypeInfo[currentWaveType].m_finalWidth,Vector2(midPoint.X,midPoint.Y),Vector2(dirMidPoint.X,dirMidPoint.Y),waveTypeInfo[currentWaveType].m_textureName,0);
+							track->init(waveTypeInfo[currentWaveType].m_finalHeight,waveTypeInfo[currentWaveType].m_finalWidth,midPoint,dirMidPoint,waveTypeInfo[currentWaveType].m_textureName,0);
 
 							if (waveTypeInfo[currentWaveType].m_secondWaveTimeOffset)
 							{
@@ -1218,7 +1218,7 @@ static void TestWaterUpdate(void)
 								track2=TheWaterTracksRenderSystem->bindTrack(currentWaveType);
 								if (track2)
 								{
-									track2->init(waveTypeInfo[currentWaveType].m_finalHeight,waveTypeInfo[currentWaveType].m_finalWidth,Vector2(midPoint.X,midPoint.Y),Vector2(dirMidPoint.X,dirMidPoint.Y),waveTypeInfo[currentWaveType].m_textureName,waveTypeInfo[currentWaveType].m_secondWaveTimeOffset);
+									track2->init(waveTypeInfo[currentWaveType].m_finalHeight,waveTypeInfo[currentWaveType].m_finalWidth,midPoint,dirMidPoint,waveTypeInfo[currentWaveType].m_textureName,waveTypeInfo[currentWaveType].m_secondWaveTimeOffset);
 								}
 							}
 

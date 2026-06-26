@@ -50,6 +50,7 @@ using BOOL = int;
 using DWORD = unsigned long;
 using FLOAT = float;
 using ULONG = unsigned long;
+using SHORT = short;
 using HANDLE = void *;
 using HGLOBAL = HANDLE;
 using HKEY = void *;
@@ -378,6 +379,12 @@ static inline int _wtoi(const wchar_t *value)
 #define CP_ACP 0
 #define CP_UTF8 65001
 #define VK_RETURN 0x0D
+#define VK_INSERT 0x2D
+#define VK_DELETE 0x2E
+#define VK_F5 0x74
+#define VK_F6 0x75
+#define VK_F7 0x76
+#define VK_F8 0x77
 #define WM_USER 0x0400
 #define LOCALE_SYSTEM_DEFAULT 0x0800
 #define DATE_SHORTDATE 0x00000001
@@ -766,6 +773,11 @@ static inline BOOL SetCursorPos(int, int)
 static inline BOOL ScreenToClient(HWND, POINT *)
 {
 	return TRUE;
+}
+
+static inline SHORT GetAsyncKeyState(int)
+{
+	return 0;
 }
 
 static inline BOOL GetWindowRect(HWND, RECT *rect)

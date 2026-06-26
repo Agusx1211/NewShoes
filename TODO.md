@@ -851,6 +851,13 @@ shares structure and follows behind.
       mismatch with the checked-in original `W3DVideobuffer.h`. This is compile
       coverage only until W3D texture/surface locking and video playback paths
       are backed by the browser renderer/video device and harness-verified.
+- [x] Compile original `W3DDevice/GameClient/Water/W3DWaterTracks.cpp` in the
+      real-header compile frontier after fixing the MSVC-style `waveType`
+      enum forward, adding browser no-op virtual-key state compatibility, and
+      replacing reached MSVC-only temporary-to-non-const-reference editor calls
+      with equivalent lvalue `Vector2` inputs. This is compile coverage only
+      until water-track rendering, file I/O, editor input, and water-scene
+      integration are browser-backed and harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -941,22 +948,22 @@ shares structure and follows behind.
       dependencies, and browser asset/texture bindings have a real port
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      `W3DDisplay.cpp` and `Water/W3DWater*.cpp`, after the remaining
+      `W3DDisplay.cpp` and `Water/W3DWater.cpp`, after the remaining
       WW3D2/Direct3D/browser device compatibility surface is available as part
       of the renderer port.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
-      (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading)
-      with browser pointer/cursor state before relying on original
-      `W3DMouse.cpp` runtime cursor behavior.
+      (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading) and
+      key-state helper (`GetAsyncKeyState`) with browser pointer/cursor/keyboard
+      state before relying on original `W3DMouse.cpp` runtime cursor behavior
+      or the original water-track editor path.
 - [x] Resolve the `W3DVideoBuffer.cpp` header gap as a case-sensitive include
       mismatch: the source includes `W3DDevice/GameClient/W3DVideoBuffer.h`,
       while the checked-in original header is `W3DVideobuffer.h`; add the wasm
       include bridge and compile the original source without replacing the
       video-buffer interface.
-- [ ] Compile original `Water/W3DWater.cpp` and `Water/W3DWaterTracks.cpp`
-      after resolving the reached water-track enum forward, D3DX shader-buffer
-      include, WinMM timing, Win32 cursor/key helpers, and water-track editor
-      initialization access issues without replacing water behavior.
+- [ ] Compile original `Water/W3DWater.cpp` after resolving the reached D3DX
+      shader-buffer assembly declarations and remaining water renderer
+      dependencies without replacing water behavior.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
       source blocker: the legacy BrowserEngine DLL import in
       `dx8webbrowser.cpp`. Runtime browser ports are still needed for the
