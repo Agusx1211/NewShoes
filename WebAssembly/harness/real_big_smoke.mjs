@@ -14,6 +14,10 @@ function assertGameDataProbe(assetProbe, context) {
   if (!assetProbe?.inizh?.gameDataIni
       || !gameData?.attempted
       || !gameData.ok
+      || gameData.source !== "GameEngine/Common/INI.cpp::load"
+      || !gameData.loadedArchives
+      || !gameData.fileExists
+      || !gameData.originalIniLoad
       || gameData.parsedFields !== 8
       || gameData.shellMapName !== "Maps\\ShellMapMD\\ShellMapMD.map"
       || gameData.useFpsLimit !== true

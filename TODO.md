@@ -612,6 +612,11 @@ shares structure and follows behind.
 - [ ] Link and smoke-test the original audio and multiplayer INI parser routes
       after the real `Common/INI.cpp` reader, audio manager, and full runtime
       singleton surface are available without target-local parser stubs.
+- [ ] Replace the focused browser `GameData.ini` runtime's weak fail-fast
+      unused INI block parser definitions with the real parser destinations as
+      each owning singleton comes online; they exist only to keep the
+      `GameData` preflight on original `INI.cpp::load` without pulling unrelated
+      UI/terrain/object managers into `cnc-port`.
 - [ ] Link and smoke-test the original command-set, control-bar scheme,
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
@@ -745,6 +750,11 @@ shares structure and follows behind.
 - [ ] Replace the focused command-line runtime's local
       `DX8Wrapper_PreserveFPU` compatibility definition with the original W3D
       DX8 wrapper state once the W3D runtime links into `cnc-port`.
+- [ ] Replace the focused browser-default `UserPreferences` /
+      `OptionPreferences` compatibility definitions used by the original
+      `GameData.ini` preflight with the real Options menu/user-preference
+      persistence path once browser settings storage and menu ownership are
+      linked.
 - [x] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
       SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
       mapped to browser-safe networking interfaces.
@@ -1635,11 +1645,11 @@ shares structure and follows behind.
       open.
 - [x] Extend the wasm bootstrap archive preflight to read real
       `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
-      `FileSystem` archive path, expose shipped `GameData` scalar values as
+      `FileSystem` archive path and original `Common/INI.cpp::load`, expose
+      shipped `GameData` values from original `GlobalData.cpp` as
       `assetProbe.gameData`, and cover the single-archive and registered
-      runtime-archive boot paths in Playwright. This is a scalar INI preflight
-      through the current INI-compatible parser bridge only; full original
-      `Common/INI.cpp::load` parsing remains open.
+      runtime-archive boot paths in Playwright. This is a focused `GameData`
+      preflight only; full all-block original INI loading remains open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
@@ -1654,7 +1664,7 @@ shares structure and follows behind.
 ### Data load with original code
 - [ ] Load real `INIZH.big`; original INI parser reads it (objects, weapons,
       locomotors, armor, FX, command sets/buttons, control bars, science, etc.).
-- [ ] Replace `assetProbe.gameData`'s scalar preflight with full original
+- [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the
       target-local `Common/INI.h` compatibility bridge.

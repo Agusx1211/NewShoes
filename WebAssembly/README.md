@@ -64,15 +64,17 @@ registered archive set by probing the aggregate path through the original
 The same smoke verifies `assetProbe.gameText` by loading the real English
 `Generals.csf` through original `GameText.cpp` and checking known
 title/control-bar labels plus `CONTROLBAR:` prefix enumeration. It also checks
-`assetProbe.gameData` by reading the real `Data\INI\GameData.ini` through the
-same archive path and verifying shipped scalar values such as the shell map,
-FPS limit, cloud-map flag, rubble height, group-select volume, and particle
-limit. The bootstrap also reports `startupAssets`, which stays
+`assetProbe.gameData` by loading the real `Data\INI\GameData.ini` through the
+original `Common/INI.cpp::load` path into original `GlobalData.cpp`, then
+verifying shipped values such as the shell map, FPS limit, cloud-map flag,
+rubble height, group-select volume, and particle limit. The bootstrap reports
+this as `gameData.source = "GameEngine/Common/INI.cpp::load"`. The bootstrap
+also reports `startupAssets`, which stays
 `missing_runtime_archives` without a registered runtime archive set, moves to
 `pending_boot_probe` after preload registration, and only becomes `ready` after
 the boot-time archive/GameData/GameText probes pass. This is still a bootstrap
-preflight; full original `Common/INI.cpp` loading remains part of engine
-startup work.
+preflight; full original all-block INI loading remains part of engine startup
+work.
 
 ## Toolchain
 
@@ -157,9 +159,11 @@ in its C++ state under `archiveMount`. `mountArchives` is valid before `boot`;
 the runtime archive smoke uses that ordering to match the eventual engine
 startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
 It also asserts the C++ `assetProbe.gameText` result from original
-`GameText.cpp` over the fetched English CSF, and checks `startupAssets` for the
-missing, pending, and ready archive states. Full original engine startup, INI
-parsing, language initialization, and font loading remain open.
+`GameText.cpp` over the fetched English CSF, asserts `assetProbe.gameData`
+through original `Common/INI.cpp::load` over real `GameData.ini`, and checks
+`startupAssets` for the missing, pending, and ready archive states. Full
+original engine startup, all-block INI parsing, language initialization, and
+font loading remain open.
 
 Run the wasm-backed smoke test:
 

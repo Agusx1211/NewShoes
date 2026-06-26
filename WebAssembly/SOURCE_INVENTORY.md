@@ -144,16 +144,20 @@ The wasm CMake skeleton currently builds:
   through the original `Win32BIGFileSystem` and reports the result in
   `archiveMount.bootProbe`; it also links the focused original text archive and
   reports `assetProbe.gameText` after loading real English CSF labels through
-  `GameText.cpp`. The same archive preflight now reads real
+  `GameText.cpp`. The same archive preflight now loads real
   `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
-  `FileSystem` path and reports `assetProbe.gameData` with harness-verified
-  shipped scalar values. The bootstrap also reports `startupAssets` so the
+  `FileSystem` path and original `Common/INI.cpp::load` into original
+  `GlobalData.cpp`, then reports `assetProbe.gameData` with harness-verified
+  shipped scalar values. The focused runtime includes browser-default
+  `UserPreferences` / `OptionPreferences` compatibility and weak fail-fast
+  unused INI block parser definitions only to keep this `GameData` probe narrow;
+  full all-block INI destinations remain tracked in `TODO.md`. The bootstrap
+  also reports `startupAssets` so the
   harness can distinguish missing runtime archives, registered-but-unprobed
   runtime archives, and a boot-probe-verified archive set with required INI,
-  GameData, and GameText coverage. This still uses the linked INI-compatible
-  bridge for scalar extraction; original engine startup still needs to consume
-  the mounted runtime archive set through full `Common/INI.cpp::load` beyond
-  this preflight. The bootstrap also links original
+  GameData, and GameText coverage. Original engine startup still needs to
+  consume the mounted runtime archive set through full all-block INI loading
+  beyond this preflight. The bootstrap also links original
   `Win32Device/Common/Win32CDManager.cpp` and reports `cdManagerProbe` after
   initializing the original manager through browser drive shims; the verified
   startup state has zero CD drives and no blocking physical-media probe.
@@ -729,8 +733,9 @@ The wasm CMake skeleton currently builds:
   produced by consuming the registered aggregate archive path. It also asserts
   `assetProbe.gameText` from original `GameText.cpp` by checking the English CSF
   file, known title/control-bar labels, and `CONTROLBAR:` prefix enumeration,
-  plus `assetProbe.gameData` by checking real `GameData.ini` scalar values from
-  `INIZH.big` through the same archive path. The same smoke checks
+  plus `assetProbe.gameData` by checking real `GameData.ini` values loaded via
+  original `Common/INI.cpp::load` from `INIZH.big` through the same archive
+  path. The same smoke checks
   `startupAssets` for the pre-boot `pending_boot_probe` state and the post-boot
   `ready` state.
 

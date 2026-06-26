@@ -14,6 +14,9 @@ struct ArchiveProbeResult
 	bool has_weapon_ini = false;
 	bool game_data_attempted = false;
 	bool game_data_ok = false;
+	bool game_data_loaded_archives = false;
+	bool game_data_file_exists = false;
+	bool game_data_original_ini_load = false;
 	bool has_generals_csf = false;
 	bool game_text_attempted = false;
 	bool game_text_ok = false;
@@ -32,6 +35,7 @@ struct ArchiveProbeResult
 	int game_data_max_particle_count = 0;
 	float game_data_default_structure_rubble_height = 0.0f;
 	float game_data_group_select_volume_base = 0.0f;
+	std::string game_data_source;
 	std::string archive_path;
 };
 

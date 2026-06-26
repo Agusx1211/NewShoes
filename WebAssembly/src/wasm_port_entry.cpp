@@ -437,6 +437,7 @@ const char *write_state_json()
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
+	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
@@ -468,7 +469,8 @@ const char *write_state_json()
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"gameDataIni\":%s,\"weaponIni\":%s},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
-		"\"parsedFields\":%zu,\"shellMapName\":\"%s\","
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
 		"\"useFpsLimit\":%s,\"framesPerSecondLimit\":%d,"
 		"\"maxShellScreens\":%d,\"useCloudMap\":%s,"
 		"\"defaultStructureRubbleHeight\":%.3f,"
@@ -538,6 +540,10 @@ const char *write_state_json()
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
+		game_data_source_json.c_str(),
+		g_archive_probe.game_data_loaded_archives ? "true" : "false",
+		g_archive_probe.game_data_file_exists ? "true" : "false",
+		g_archive_probe.game_data_original_ini_load ? "true" : "false",
 		g_archive_probe.game_data_parsed_fields,
 		game_data_shell_map_name_json.c_str(),
 		g_archive_probe.game_data_use_fps_limit ? "true" : "false",

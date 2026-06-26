@@ -66,12 +66,13 @@ state includes `archiveMount.bootProbe`, proving the bootstrap used the
 registered aggregate path during boot. The same smoke asserts
 `assetProbe.gameText` by loading the real English `Generals.csf` through
 original `GameText.cpp` from the fetched archive set and checking known labels.
-It also asserts `assetProbe.gameData` by reading real
-`Data\INI\GameData.ini` from `INIZH.big` through the same original archive path
-and verifying shipped scalar values. The smoke also checks `startupAssets`:
+It also asserts `assetProbe.gameData` by loading real
+`Data\INI\GameData.ini` from `INIZH.big` through original
+`Common/INI.cpp::load` into original `GlobalData.cpp`, then verifying shipped
+values. The smoke also checks `startupAssets`:
 `pending_boot_probe` before boot and `ready` after the registered archive set
-passes the boot-time archive/GameData/GameText probes. Full original INI loading
-is still tracked separately from this bootstrap preflight.
+passes the boot-time archive/GameData/GameText probes. Full all-block original
+INI loading is still tracked separately from this bootstrap preflight.
 
 | Archive | Source | Role |
 |---|---|---|
