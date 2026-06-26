@@ -691,6 +691,11 @@ shares structure and follows behind.
       `DrawGroupInfo.cpp`; archive/browser harness state now exposes the
       optional probe and verifies the current shipped runtime archives do not
       contain `Data\INI\DrawGroupInfo.ini`.
+- [x] Link and smoke-test the original mapped-image parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::loadDirectory`,
+      `INIMappedImage.cpp`, and `GameClient/Image.cpp` over shipped
+      `Data\INI\MappedImages` data for packed UVs, texture sizes, and rotated
+      image status.
 - [ ] Locate or source the original `Run\Data\INI\DrawGroupInfo.ini` asset
       referenced by the project files but absent from the current extracted
       runtime BIG set, then enable the optional draw-group probe as a
@@ -1747,6 +1752,14 @@ shares structure and follows behind.
       shipped player-template preflight only; default-file layering,
       mapped-image resolution, command-button/control-bar ownership, and full
       match setup remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\MappedImages` directories from `INIZH.big` through original
+      `Common/INI.cpp::loadDirectory`, `Common/INI/INIMappedImage.cpp`, and
+      `GameClient/Image.cpp`, expose parsed shipped image metadata as
+      `assetProbe.mappedImages`, and cover 14 mapped-image INI files, 1,186
+      image definitions, packed UVs, and rotated image status in Playwright.
+      This is a mapped-image metadata preflight only; texture upload and UI
+      rendering still need the browser renderer.
 - [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\multiplayer.ini` from `INIZH.big` through original
       `Common/INI.cpp::load`, `Common/INI/INIMultiplayer.cpp`,

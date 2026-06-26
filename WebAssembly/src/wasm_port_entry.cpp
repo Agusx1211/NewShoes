@@ -1037,6 +1037,58 @@ std::string build_draw_group_info_probe_json()
 	return buffer;
 }
 
+std::string build_mapped_image_probe_json()
+{
+	char buffer[5000];
+	const std::string source_json = json_escape(g_archive_probe.mapped_image_source);
+	const std::string sa_chinook_texture_json =
+		json_escape(g_archive_probe.mapped_image_sa_chinook_texture);
+	const std::string watermark_china_texture_json =
+		json_escape(g_archive_probe.mapped_image_watermark_china_texture);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"files\":%zu,\"images\":%zu,"
+		"\"saChinook\":{\"found\":%s,\"texture\":\"%s\","
+		"\"textureWidth\":%d,\"textureHeight\":%d,"
+		"\"width\":%d,\"height\":%d,\"status\":%u,"
+		"\"uv\":{\"loX\":%.6f,\"loY\":%.6f,\"hiX\":%.6f,\"hiY\":%.6f}},"
+		"\"watermarkChina\":{\"found\":%s,\"texture\":\"%s\","
+		"\"width\":%d,\"height\":%d,\"status\":%u,\"rotated\":%s}}",
+		g_archive_probe.mapped_image_attempted ? "true" : "false",
+		g_archive_probe.mapped_image_ok ? "true" : "false",
+		g_archive_probe.mapped_image_bytes,
+		source_json.c_str(),
+		g_archive_probe.mapped_image_loaded_archives ? "true" : "false",
+		g_archive_probe.mapped_image_file_exists ? "true" : "false",
+		g_archive_probe.mapped_image_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.mapped_image_original_ini_load ? "true" : "false",
+		g_archive_probe.mapped_image_parsed_fields,
+		g_archive_probe.mapped_image_file_count,
+		g_archive_probe.mapped_image_count,
+		g_archive_probe.mapped_image_sa_chinook_found ? "true" : "false",
+		sa_chinook_texture_json.c_str(),
+		g_archive_probe.mapped_image_sa_chinook_texture_width,
+		g_archive_probe.mapped_image_sa_chinook_texture_height,
+		g_archive_probe.mapped_image_sa_chinook_width,
+		g_archive_probe.mapped_image_sa_chinook_height,
+		g_archive_probe.mapped_image_sa_chinook_status,
+		g_archive_probe.mapped_image_sa_chinook_uv_lo_x,
+		g_archive_probe.mapped_image_sa_chinook_uv_lo_y,
+		g_archive_probe.mapped_image_sa_chinook_uv_hi_x,
+		g_archive_probe.mapped_image_sa_chinook_uv_hi_y,
+		g_archive_probe.mapped_image_watermark_china_found ? "true" : "false",
+		watermark_china_texture_json.c_str(),
+		g_archive_probe.mapped_image_watermark_china_width,
+		g_archive_probe.mapped_image_watermark_china_height,
+		g_archive_probe.mapped_image_watermark_china_status,
+		g_archive_probe.mapped_image_watermark_china_rotated ? "true" : "false");
+
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -1073,7 +1125,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[108000];
+	char buffer[112000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
@@ -1082,6 +1134,7 @@ const char *write_state_json()
 	const std::string command_set_probe_json = build_command_set_probe_json();
 	const std::string crate_probe_json = build_crate_probe_json();
 	const std::string draw_group_info_probe_json = build_draw_group_info_probe_json();
+	const std::string mapped_image_probe_json = build_mapped_image_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -1271,6 +1324,7 @@ const char *write_state_json()
 		"\"commandSet\":%s,"
 		"\"crate\":%s,"
 		"\"drawGroupInfo\":%s,"
+		"\"mappedImages\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -1540,6 +1594,7 @@ const char *write_state_json()
 		command_set_probe_json.c_str(),
 		crate_probe_json.c_str(),
 		draw_group_info_probe_json.c_str(),
+		mapped_image_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,

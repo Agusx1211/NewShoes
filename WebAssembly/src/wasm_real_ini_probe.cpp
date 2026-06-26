@@ -28,6 +28,7 @@
 #include "GameClient/ControlBar.h"
 #include "GameClient/DrawGroupInfo.h"
 #include "GameClient/GameText.h"
+#include "GameClient/Image.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
 #include "GameClient/TerrainRoads.h"
@@ -59,6 +60,9 @@ constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
 constexpr const char DRAW_GROUP_INFO_INI_PATH[] = "Data\\INI\\DrawGroupInfo.ini";
+constexpr const char MAPPED_IMAGES_DIR[] = "Data\\INI\\MappedImages";
+constexpr const char MAPPED_IMAGES_SAMPLE_INI_PATH[] =
+	"Data\\INI\\MappedImages\\TextureSize_512\\SAUserInterface512.INI";
 constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
@@ -615,6 +619,29 @@ std::size_t count_verified_fields(const RealDrawGroupInfoIniProbeResult &result)
 		(result.pixel_offset_y == -10 ? 1U : 0U);
 }
 
+std::size_t count_verified_fields(const RealMappedImageIniProbeResult &result)
+{
+	return
+		(result.file_count == 14 ? 1U : 0U) +
+		(result.image_count == 1186 ? 1U : 0U) +
+		(result.sa_chinook_found ? 1U : 0U) +
+		(result.sa_chinook_texture == "SAUserInterface512_001.tga" ? 1U : 0U) +
+		(result.sa_chinook_texture_width == 512 ? 1U : 0U) +
+		(result.sa_chinook_texture_height == 512 ? 1U : 0U) +
+		(result.sa_chinook_width == 120 ? 1U : 0U) +
+		(result.sa_chinook_height == 96 ? 1U : 0U) +
+		(result.sa_chinook_status == IMAGE_STATUS_NONE ? 1U : 0U) +
+		(std::fabs(result.sa_chinook_uv_lo_x - (367.0f / 512.0f)) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.sa_chinook_uv_lo_y - (393.0f / 512.0f)) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.sa_chinook_uv_hi_x - (487.0f / 512.0f)) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.sa_chinook_uv_hi_y - (489.0f / 512.0f)) < 0.0001f ? 1U : 0U) +
+		(result.watermark_china_found ? 1U : 0U) +
+		(result.watermark_china_texture == "SCShellUserInterface512_001.tga" ? 1U : 0U) +
+		(result.watermark_china_width == 160 ? 1U : 0U) +
+		(result.watermark_china_height == 96 ? 1U : 0U) +
+		(result.watermark_china_rotated ? 1U : 0U);
+}
+
 std::size_t count_verified_fields(const RealCrateIniProbeResult &result)
 {
 	return
@@ -855,6 +882,97 @@ void inspect_terrain_road_entry(
 	texture = road->getTexture().str();
 	width = road->getRoadWidth();
 	width_in_texture = road->getRoadWidthInTexture();
+}
+
+std::size_t count_mapped_images(ImageCollection &images)
+{
+	std::size_t count = 0;
+	while (images.Enum(static_cast<unsigned>(count)) != nullptr) {
+		++count;
+	}
+	return count;
+}
+
+std::size_t count_mapped_image_files(FileSystem &file_system, std::size_t &bytes)
+{
+	FilenameList files;
+	AsciiString mapped_images_dir(MAPPED_IMAGES_DIR);
+	mapped_images_dir.concat('\\');
+	file_system.getFileListInDirectory(
+		mapped_images_dir, AsciiString("*.ini"), files, TRUE);
+
+	bytes = 0;
+	for (FilenameListIter it = files.begin(); it != files.end(); ++it) {
+		FileInfo file_info = {};
+		if (file_system.getFileInfo(*it, &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0) {
+			bytes += static_cast<std::size_t>(file_info.sizeLow);
+		}
+	}
+
+	return files.size();
+}
+
+void inspect_mapped_image(
+	ImageCollection &images,
+	const char *name,
+	bool &found,
+	std::string &texture,
+	int &texture_width,
+	int &texture_height,
+	int &image_width,
+	int &image_height,
+	unsigned int &status,
+	float *uv_lo_x = nullptr,
+	float *uv_lo_y = nullptr,
+	float *uv_hi_x = nullptr,
+	float *uv_hi_y = nullptr)
+{
+	const Image *image = images.findImageByName(AsciiString(name));
+	found = image != nullptr;
+	if (image == nullptr) {
+		texture.clear();
+		texture_width = 0;
+		texture_height = 0;
+		image_width = 0;
+		image_height = 0;
+		status = 0;
+		if (uv_lo_x != nullptr) {
+			*uv_lo_x = 0.0f;
+		}
+		if (uv_lo_y != nullptr) {
+			*uv_lo_y = 0.0f;
+		}
+		if (uv_hi_x != nullptr) {
+			*uv_hi_x = 0.0f;
+		}
+		if (uv_hi_y != nullptr) {
+			*uv_hi_y = 0.0f;
+		}
+		return;
+	}
+
+	const ICoord2D *texture_size = image->getTextureSize();
+	const Region2D *uv = image->getUV();
+	texture = image->getFilename().str();
+	texture_width = texture_size->x;
+	texture_height = texture_size->y;
+	image_width = image->getImageWidth();
+	image_height = image->getImageHeight();
+	status = image->getStatus();
+	if (uv_lo_x != nullptr) {
+		*uv_lo_x = uv->lo.x;
+	}
+	if (uv_lo_y != nullptr) {
+		*uv_lo_y = uv->lo.y;
+	}
+	if (uv_hi_x != nullptr) {
+		*uv_hi_x = uv->hi.x;
+	}
+	if (uv_hi_y != nullptr) {
+		*uv_hi_y = uv->hi.y;
+	}
 }
 
 std::size_t count_upgrade_templates(UpgradeCenter &upgrade_center)
@@ -2529,6 +2647,125 @@ RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const ch
 
 	if (draw_group_info != nullptr) {
 		delete draw_group_info;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *archive_path)
+{
+	RealMappedImageIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::loadDirectory + INIMappedImage.cpp + GameClient/Image.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	GlobalData *old_global_data = TheWritableGlobalData;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ImageCollection *mapped_image_collection = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheWritableGlobalData = nullptr;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo sample_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(MAPPED_IMAGES_SAMPLE_INI_PATH), &sample_info) &&
+				sample_info.sizeHigh == 0 &&
+				sample_info.sizeLow > 0;
+			result.file_count = count_mapped_image_files(file_system, result.bytes);
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				mapped_image_collection = NEW ImageCollection;
+				TheMappedImageCollection = mapped_image_collection;
+				mapped_image_collection->load(512);
+				result.original_ini_load = true;
+				result.image_count = count_mapped_images(*mapped_image_collection);
+
+				inspect_mapped_image(
+					*mapped_image_collection,
+					"SAChinook_L",
+					result.sa_chinook_found,
+					result.sa_chinook_texture,
+					result.sa_chinook_texture_width,
+					result.sa_chinook_texture_height,
+					result.sa_chinook_width,
+					result.sa_chinook_height,
+					result.sa_chinook_status,
+					&result.sa_chinook_uv_lo_x,
+					&result.sa_chinook_uv_lo_y,
+					&result.sa_chinook_uv_hi_x,
+					&result.sa_chinook_uv_hi_y);
+
+				int watermark_texture_width = 0;
+				int watermark_texture_height = 0;
+				inspect_mapped_image(
+					*mapped_image_collection,
+					"WatermarkChina",
+					result.watermark_china_found,
+					result.watermark_china_texture,
+					watermark_texture_width,
+					watermark_texture_height,
+					result.watermark_china_width,
+					result.watermark_china_height,
+					result.watermark_china_status);
+				result.watermark_china_rotated =
+					(result.watermark_china_status & IMAGE_STATUS_ROTATED_90_CLOCKWISE) != 0;
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100000 &&
+					result.file_count == 14 &&
+					result.name_key_generator_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 18;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheWritableGlobalData = old_global_data;
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (mapped_image_collection != nullptr) {
+		delete mapped_image_collection;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
 	}
 
 	shutdownMemoryManager();

@@ -312,6 +312,39 @@ struct RealDrawGroupInfoIniProbeResult
 	float percent_offset_y = 0.0f;
 };
 
+struct RealMappedImageIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t file_count = 0;
+	std::size_t image_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool sa_chinook_found = false;
+	std::string sa_chinook_texture;
+	int sa_chinook_texture_width = 0;
+	int sa_chinook_texture_height = 0;
+	int sa_chinook_width = 0;
+	int sa_chinook_height = 0;
+	unsigned int sa_chinook_status = 0;
+	float sa_chinook_uv_lo_x = 0.0f;
+	float sa_chinook_uv_lo_y = 0.0f;
+	float sa_chinook_uv_hi_x = 0.0f;
+	float sa_chinook_uv_hi_y = 0.0f;
+	bool watermark_china_found = false;
+	std::string watermark_china_texture;
+	int watermark_china_width = 0;
+	int watermark_china_height = 0;
+	unsigned int watermark_china_status = 0;
+	bool watermark_china_rotated = false;
+};
+
 struct RealCrateIniProbeResult
 {
 	bool attempted = false;
@@ -657,6 +690,7 @@ RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *ar
 RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
 RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path);
+RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *archive_path);
 RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);

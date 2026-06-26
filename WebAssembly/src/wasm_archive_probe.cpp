@@ -813,6 +813,38 @@ void copy_map_cache_probe(const RealMapCacheIniProbeResult &map_cache, ArchivePr
 	result.map_cache_tournament_desert_players = map_cache.tournament_desert_players;
 }
 
+void copy_mapped_image_probe(const RealMappedImageIniProbeResult &mapped_image, ArchiveProbeResult &result)
+{
+	result.mapped_image_attempted = mapped_image.attempted;
+	result.mapped_image_ok = mapped_image.ok;
+	result.mapped_image_loaded_archives = mapped_image.loaded_archives;
+	result.mapped_image_file_exists = mapped_image.file_exists;
+	result.mapped_image_name_key_generator_loaded = mapped_image.name_key_generator_loaded;
+	result.mapped_image_original_ini_load = mapped_image.original_ini_load;
+	result.mapped_image_bytes = mapped_image.bytes;
+	result.mapped_image_parsed_fields = mapped_image.parsed_fields;
+	result.mapped_image_file_count = mapped_image.file_count;
+	result.mapped_image_count = mapped_image.image_count;
+	result.mapped_image_source = mapped_image.source;
+	result.mapped_image_sa_chinook_found = mapped_image.sa_chinook_found;
+	result.mapped_image_sa_chinook_texture = mapped_image.sa_chinook_texture;
+	result.mapped_image_sa_chinook_texture_width = mapped_image.sa_chinook_texture_width;
+	result.mapped_image_sa_chinook_texture_height = mapped_image.sa_chinook_texture_height;
+	result.mapped_image_sa_chinook_width = mapped_image.sa_chinook_width;
+	result.mapped_image_sa_chinook_height = mapped_image.sa_chinook_height;
+	result.mapped_image_sa_chinook_status = mapped_image.sa_chinook_status;
+	result.mapped_image_sa_chinook_uv_lo_x = mapped_image.sa_chinook_uv_lo_x;
+	result.mapped_image_sa_chinook_uv_lo_y = mapped_image.sa_chinook_uv_lo_y;
+	result.mapped_image_sa_chinook_uv_hi_x = mapped_image.sa_chinook_uv_hi_x;
+	result.mapped_image_sa_chinook_uv_hi_y = mapped_image.sa_chinook_uv_hi_y;
+	result.mapped_image_watermark_china_found = mapped_image.watermark_china_found;
+	result.mapped_image_watermark_china_texture = mapped_image.watermark_china_texture;
+	result.mapped_image_watermark_china_width = mapped_image.watermark_china_width;
+	result.mapped_image_watermark_china_height = mapped_image.watermark_china_height;
+	result.mapped_image_watermark_china_status = mapped_image.watermark_china_status;
+	result.mapped_image_watermark_china_rotated = mapped_image.watermark_china_rotated;
+}
+
 void probe_original_game_text(ArchiveProbeResult &result)
 {
 	result.game_text_attempted = true;
@@ -954,6 +986,14 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_draw_group_info_ini) {
 		copy_draw_group_info_probe(probe_original_draw_group_info_ini_load(archive_path), result);
 		result.ok = result.ok && result.draw_group_info_ok;
+	}
+	if (result.loaded) {
+		const RealMappedImageIniProbeResult mapped_image =
+			probe_original_mapped_image_ini_load(archive_path);
+		copy_mapped_image_probe(mapped_image, result);
+		if (mapped_image.file_exists) {
+			result.ok = result.ok && result.mapped_image_ok;
+		}
 	}
 	if (result.loaded && result.has_crate_ini) {
 		copy_crate_probe(probe_original_crate_ini_load(archive_path), result);

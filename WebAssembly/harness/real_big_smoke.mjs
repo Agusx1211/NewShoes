@@ -295,6 +295,41 @@ function assertDrawGroupInfoProbeAbsent(assetProbe, context) {
   }
 }
 
+function assertMappedImageProbe(assetProbe, context) {
+  const mappedImages = assetProbe?.mappedImages;
+  const saChinook = mappedImages?.saChinook;
+  const watermarkChina = mappedImages?.watermarkChina;
+  if (!mappedImages?.attempted
+      || !mappedImages.ok
+      || mappedImages.source !== "GameEngine/Common/INI.cpp::loadDirectory + INIMappedImage.cpp + GameClient/Image.cpp"
+      || !mappedImages.loadedArchives
+      || !mappedImages.fileExists
+      || !mappedImages.nameKeyGeneratorLoaded
+      || !mappedImages.originalIniLoad
+      || mappedImages.parsedFields !== 18
+      || mappedImages.files !== 14
+      || mappedImages.images !== 1186
+      || !saChinook?.found
+      || saChinook.texture !== "SAUserInterface512_001.tga"
+      || saChinook.textureWidth !== 512
+      || saChinook.textureHeight !== 512
+      || saChinook.width !== 120
+      || saChinook.height !== 96
+      || saChinook.status !== 0
+      || Math.abs(saChinook.uv.loX - (367 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.loY - (393 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.hiX - (487 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.hiY - (489 / 512)) > 0.0001
+      || !watermarkChina?.found
+      || watermarkChina.texture !== "SCShellUserInterface512_001.tga"
+      || watermarkChina.width !== 160
+      || watermarkChina.height !== 96
+      || watermarkChina.status !== 1
+      || watermarkChina.rotated !== true) {
+    throw new Error(`${context} did not parse expected mapped-image metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -560,6 +595,7 @@ try {
   assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");
   assertCrateProbe(assetProbe, "cnc-port INIZH probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "cnc-port INIZH probe");
+  assertMappedImageProbe(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");

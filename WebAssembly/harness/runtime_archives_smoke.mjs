@@ -497,6 +497,41 @@ function assertPlayerTemplateProbe(assetProbe, context) {
   }
 }
 
+function assertMappedImageProbe(assetProbe, context) {
+  const mappedImages = assetProbe?.mappedImages;
+  const saChinook = mappedImages?.saChinook;
+  const watermarkChina = mappedImages?.watermarkChina;
+  if (!mappedImages?.attempted
+      || !mappedImages.ok
+      || mappedImages.source !== "GameEngine/Common/INI.cpp::loadDirectory + INIMappedImage.cpp + GameClient/Image.cpp"
+      || !mappedImages.loadedArchives
+      || !mappedImages.fileExists
+      || !mappedImages.nameKeyGeneratorLoaded
+      || !mappedImages.originalIniLoad
+      || mappedImages.parsedFields !== 18
+      || mappedImages.files !== 14
+      || mappedImages.images !== 1186
+      || !saChinook?.found
+      || saChinook.texture !== "SAUserInterface512_001.tga"
+      || saChinook.textureWidth !== 512
+      || saChinook.textureHeight !== 512
+      || saChinook.width !== 120
+      || saChinook.height !== 96
+      || saChinook.status !== 0
+      || Math.abs(saChinook.uv.loX - (367 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.loY - (393 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.hiX - (487 / 512)) > 0.0001
+      || Math.abs(saChinook.uv.hiY - (489 / 512)) > 0.0001
+      || !watermarkChina?.found
+      || watermarkChina.texture !== "SCShellUserInterface512_001.tga"
+      || watermarkChina.width !== 160
+      || watermarkChina.height !== 96
+      || watermarkChina.status !== 1
+      || watermarkChina.rotated !== true) {
+    throw new Error(`${context} did not parse expected mapped-image metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -830,6 +865,7 @@ try {
   assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
   assertCrateProbe(assetProbe, "aggregate runtime archive probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
+  assertMappedImageProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -893,6 +929,7 @@ try {
   assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCrateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
+  assertMappedImageProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");

@@ -2613,6 +2613,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INICrate.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIDrawGroupInfo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIMappedImage.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INISpecialPower.cpp"
