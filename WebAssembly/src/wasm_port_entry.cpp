@@ -305,6 +305,13 @@ bool startup_science_ready()
 		g_archive_probe.science_ok;
 }
 
+bool startup_special_power_ready()
+{
+	return g_archive_probe.has_special_power_ini &&
+		g_archive_probe.special_power_attempted &&
+		g_archive_probe.special_power_ok;
+}
+
 bool startup_multiplayer_ready()
 {
 	return g_archive_probe.has_multiplayer_ini &&
@@ -371,6 +378,7 @@ bool startup_assets_ready()
 		startup_boot_ini_present() &&
 		startup_armor_ready() &&
 		startup_science_ready() &&
+		startup_special_power_ready() &&
 		startup_multiplayer_ready() &&
 		startup_terrain_ready() &&
 		startup_terrain_roads_ready() &&
@@ -401,6 +409,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_science_ready()) {
 		return "science_probe_failed";
+	}
+	if (!startup_special_power_ready()) {
+		return "special_power_probe_failed";
 	}
 	if (!startup_multiplayer_ready()) {
 		return "multiplayer_probe_failed";
@@ -454,6 +465,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_science_ready()) {
 		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
+	}
+	if (!startup_special_power_ready()) {
+		return "Runtime BIG archive set did not pass the SpecialPower.ini startup probe.";
 	}
 	if (!startup_multiplayer_ready()) {
 		return "Runtime BIG archive set did not pass the Multiplayer.ini startup probe.";
@@ -561,10 +575,20 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[56000];
+	char buffer[72000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
+	const std::string special_power_source_json =
+		json_escape(g_archive_probe.special_power_source);
+	const std::string special_power_daisy_cutter_required_science_json =
+		json_escape(g_archive_probe.special_power_daisy_cutter_required_science);
+	const std::string special_power_crate_drop_required_science_json =
+		json_escape(g_archive_probe.special_power_crate_drop_required_science);
+	const std::string special_power_neutron_sound_json =
+		json_escape(g_archive_probe.special_power_neutron_missile_initiate_at_location_sound);
+	const std::string special_power_scud_sound_json =
+		json_escape(g_archive_probe.special_power_scud_storm_initiate_sound);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
@@ -661,7 +685,8 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"gameDataIni\":%s,\"scienceIni\":%s,\"multiplayerIni\":%s,"
+		"\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
+		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
@@ -683,6 +708,31 @@ const char *write_state_json()
 		"\"paladinNameLoaded\":%s,\"paladinDescriptionLoaded\":%s,"
 		"\"americaPurchaseCost\":%d,\"paladinPurchaseCost\":%d,"
 		"\"americaGrantable\":%s,\"paladinGrantable\":%s},"
+		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
+		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"audioManagerLoaded\":%s,"
+		"\"scienceOriginalIniLoad\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"powers\":%zu,"
+		"\"daisyCutter\":{\"found\":%s,\"enum\":%d,\"reloadFrames\":%d,"
+		"\"requiredScienceValid\":%s,\"requiredScience\":\"%s\","
+		"\"publicTimer\":%s,\"sharedSyncedTimer\":%s,"
+		"\"viewObjectDurationFrames\":%d,\"viewObjectRange\":%.3f,"
+		"\"radiusCursorRadius\":%.3f,\"shortcutPower\":%s,"
+		"\"academyClassification\":%d},"
+		"\"carpetBomb\":{\"found\":%s,\"enum\":%d,\"reloadFrames\":%d,"
+		"\"publicTimer\":%s,\"sharedSyncedTimer\":%s,"
+		"\"viewObjectDurationFrames\":%d,\"viewObjectRange\":%.3f,"
+		"\"radiusCursorRadius\":%.3f,\"shortcutPower\":%s,"
+		"\"academyClassification\":%d},"
+		"\"crateDrop\":{\"found\":%s,\"enum\":%d,\"reloadFrames\":%d,"
+		"\"requiredScienceValid\":%s,\"requiredScience\":\"%s\","
+		"\"publicTimer\":%s,\"sharedSyncedTimer\":%s,"
+		"\"viewObjectDurationFrames\":%d,\"viewObjectRange\":%.3f,"
+		"\"radiusCursorRadius\":%.3f,\"shortcutPower\":%s},"
+		"\"neutronMissile\":{\"found\":%s,"
+		"\"initiateAtLocationSound\":\"%s\"},"
+		"\"scudStorm\":{\"found\":%s,\"initiateSound\":\"%s\"}},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
@@ -781,7 +831,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
+		"\"specialPower\":%s,\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
@@ -838,6 +888,7 @@ const char *write_state_json()
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
+		g_archive_probe.has_special_power_ini ? "true" : "false",
 		g_archive_probe.has_multiplayer_ini ? "true" : "false",
 		g_archive_probe.has_terrain_ini ? "true" : "false",
 		g_archive_probe.has_roads_ini ? "true" : "false",
@@ -887,6 +938,58 @@ const char *write_state_json()
 		g_archive_probe.science_paladin_purchase_cost,
 		g_archive_probe.science_america_grantable ? "true" : "false",
 		g_archive_probe.science_paladin_grantable ? "true" : "false",
+		g_archive_probe.special_power_attempted ? "true" : "false",
+		g_archive_probe.special_power_ok ? "true" : "false",
+		g_archive_probe.special_power_bytes,
+		g_archive_probe.special_power_science_bytes,
+		special_power_source_json.c_str(),
+		g_archive_probe.special_power_loaded_archives ? "true" : "false",
+		g_archive_probe.special_power_file_exists ? "true" : "false",
+		g_archive_probe.special_power_science_file_exists ? "true" : "false",
+		g_archive_probe.special_power_game_text_loaded ? "true" : "false",
+		g_archive_probe.special_power_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.special_power_audio_manager_loaded ? "true" : "false",
+		g_archive_probe.special_power_science_original_ini_load ? "true" : "false",
+		g_archive_probe.special_power_original_ini_load ? "true" : "false",
+		g_archive_probe.special_power_parsed_fields,
+		g_archive_probe.special_power_count,
+		g_archive_probe.special_power_daisy_cutter_found ? "true" : "false",
+		g_archive_probe.special_power_daisy_cutter_enum,
+		g_archive_probe.special_power_daisy_cutter_reload_frames,
+		g_archive_probe.special_power_daisy_cutter_required_science_valid ? "true" : "false",
+		special_power_daisy_cutter_required_science_json.c_str(),
+		g_archive_probe.special_power_daisy_cutter_public_timer ? "true" : "false",
+		g_archive_probe.special_power_daisy_cutter_shared_synced_timer ? "true" : "false",
+		g_archive_probe.special_power_daisy_cutter_view_object_duration_frames,
+		g_archive_probe.special_power_daisy_cutter_view_object_range,
+		g_archive_probe.special_power_daisy_cutter_radius_cursor_radius,
+		g_archive_probe.special_power_daisy_cutter_shortcut_power ? "true" : "false",
+		g_archive_probe.special_power_daisy_cutter_academy_classification,
+		g_archive_probe.special_power_carpet_bomb_found ? "true" : "false",
+		g_archive_probe.special_power_carpet_bomb_enum,
+		g_archive_probe.special_power_carpet_bomb_reload_frames,
+		g_archive_probe.special_power_carpet_bomb_public_timer ? "true" : "false",
+		g_archive_probe.special_power_carpet_bomb_shared_synced_timer ? "true" : "false",
+		g_archive_probe.special_power_carpet_bomb_view_object_duration_frames,
+		g_archive_probe.special_power_carpet_bomb_view_object_range,
+		g_archive_probe.special_power_carpet_bomb_radius_cursor_radius,
+		g_archive_probe.special_power_carpet_bomb_shortcut_power ? "true" : "false",
+		g_archive_probe.special_power_carpet_bomb_academy_classification,
+		g_archive_probe.special_power_crate_drop_found ? "true" : "false",
+		g_archive_probe.special_power_crate_drop_enum,
+		g_archive_probe.special_power_crate_drop_reload_frames,
+		g_archive_probe.special_power_crate_drop_required_science_valid ? "true" : "false",
+		special_power_crate_drop_required_science_json.c_str(),
+		g_archive_probe.special_power_crate_drop_public_timer ? "true" : "false",
+		g_archive_probe.special_power_crate_drop_shared_synced_timer ? "true" : "false",
+		g_archive_probe.special_power_crate_drop_view_object_duration_frames,
+		g_archive_probe.special_power_crate_drop_view_object_range,
+		g_archive_probe.special_power_crate_drop_radius_cursor_radius,
+		g_archive_probe.special_power_crate_drop_shortcut_power ? "true" : "false",
+		g_archive_probe.special_power_neutron_missile_found ? "true" : "false",
+		special_power_neutron_sound_json.c_str(),
+		g_archive_probe.special_power_scud_storm_found ? "true" : "false",
+		special_power_scud_sound_json.c_str(),
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
@@ -1102,6 +1205,7 @@ const char *write_state_json()
 		startup_boot_ini_present() ? "true" : "false",
 		startup_armor_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
+		startup_special_power_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
 		startup_terrain_ready() ? "true" : "false",
 		startup_terrain_roads_ready() ? "true" : "false",

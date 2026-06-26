@@ -11,6 +11,12 @@
 
 #include <cstdlib>
 
+class AudioManager;
+class ControlBar;
+
+AudioManager *TheAudio __attribute__((weak)) = nullptr;
+ControlBar *TheControlBar __attribute__((weak)) = nullptr;
+
 #define UNUSED_INI_BLOCK_PARSER(name) \
 	void __attribute__((weak)) INI::name(INI *) \
 	{ \
@@ -413,7 +419,6 @@ UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
 UNUSED_INI_BLOCK_PARSER(parseParticleSystemDefinition)
 UNUSED_INI_BLOCK_PARSER(parsePlayerTemplateDefinition)
 UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
-UNUSED_INI_BLOCK_PARSER(parseSpecialPowerDefinition)
 UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseUpgradeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseWeaponTemplateDefinition)

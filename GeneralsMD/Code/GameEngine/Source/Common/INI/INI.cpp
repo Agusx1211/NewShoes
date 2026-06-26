@@ -1161,8 +1161,16 @@ void INI::parseDynamicAudioEventRTS( INI *ini, void * /*instance*/, void *store,
 		(*theSound)->m_event.setEventName(AsciiString(token));
 	}
 	
+#ifdef __EMSCRIPTEN__
+	if (*theSound)
+	{
+		if (TheAudio != NULL)
+			TheAudio->getInfoForAudioEvent(&(*theSound)->m_event);
+	}
+#else
 	if (*theSound)
 		TheAudio->getInfoForAudioEvent(&(*theSound)->m_event);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1179,7 +1187,12 @@ void INI::parseAudioEventRTS( INI *ini, void * /*instance*/, void *store, const 
 		theSound->setEventName(AsciiString(token));
 	}
 
+#ifdef __EMSCRIPTEN__
+	if (TheAudio != NULL)
+		TheAudio->getInfoForAudioEvent(theSound);
+#else
 	TheAudio->getInfoForAudioEvent(theSound);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------

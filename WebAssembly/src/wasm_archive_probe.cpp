@@ -30,6 +30,7 @@ namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
+constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -145,6 +146,82 @@ void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeRe
 	result.science_paladin_purchase_cost = science.paladin_purchase_cost;
 	result.science_america_grantable = science.america_grantable;
 	result.science_paladin_grantable = science.paladin_grantable;
+}
+
+void copy_special_power_probe(const RealSpecialPowerIniProbeResult &special_power, ArchiveProbeResult &result)
+{
+	result.special_power_attempted = special_power.attempted;
+	result.special_power_ok = special_power.ok;
+	result.special_power_loaded_archives = special_power.loaded_archives;
+	result.special_power_file_exists = special_power.file_exists;
+	result.special_power_science_file_exists = special_power.science_file_exists;
+	result.special_power_game_text_loaded = special_power.game_text_loaded;
+	result.special_power_name_key_generator_loaded = special_power.name_key_generator_loaded;
+	result.special_power_audio_manager_loaded = special_power.audio_manager_loaded;
+	result.special_power_science_original_ini_load = special_power.science_original_ini_load;
+	result.special_power_original_ini_load = special_power.original_ini_load;
+	result.special_power_bytes = special_power.bytes;
+	result.special_power_science_bytes = special_power.science_bytes;
+	result.special_power_parsed_fields = special_power.parsed_fields;
+	result.special_power_count = special_power.special_power_count;
+	result.special_power_source = special_power.source;
+	result.special_power_daisy_cutter_found = special_power.daisy_cutter_found;
+	result.special_power_carpet_bomb_found = special_power.carpet_bomb_found;
+	result.special_power_crate_drop_found = special_power.crate_drop_found;
+	result.special_power_neutron_missile_found = special_power.neutron_missile_found;
+	result.special_power_scud_storm_found = special_power.scud_storm_found;
+	result.special_power_daisy_cutter_enum = special_power.daisy_cutter_enum;
+	result.special_power_carpet_bomb_enum = special_power.carpet_bomb_enum;
+	result.special_power_crate_drop_enum = special_power.crate_drop_enum;
+	result.special_power_daisy_cutter_reload_frames = special_power.daisy_cutter_reload_frames;
+	result.special_power_carpet_bomb_reload_frames = special_power.carpet_bomb_reload_frames;
+	result.special_power_crate_drop_reload_frames = special_power.crate_drop_reload_frames;
+	result.special_power_daisy_cutter_required_science_valid =
+		special_power.daisy_cutter_required_science_valid;
+	result.special_power_crate_drop_required_science_valid =
+		special_power.crate_drop_required_science_valid;
+	result.special_power_daisy_cutter_public_timer = special_power.daisy_cutter_public_timer;
+	result.special_power_carpet_bomb_public_timer = special_power.carpet_bomb_public_timer;
+	result.special_power_crate_drop_public_timer = special_power.crate_drop_public_timer;
+	result.special_power_daisy_cutter_shared_synced_timer =
+		special_power.daisy_cutter_shared_synced_timer;
+	result.special_power_carpet_bomb_shared_synced_timer =
+		special_power.carpet_bomb_shared_synced_timer;
+	result.special_power_crate_drop_shared_synced_timer =
+		special_power.crate_drop_shared_synced_timer;
+	result.special_power_daisy_cutter_view_object_duration_frames =
+		special_power.daisy_cutter_view_object_duration_frames;
+	result.special_power_carpet_bomb_view_object_duration_frames =
+		special_power.carpet_bomb_view_object_duration_frames;
+	result.special_power_crate_drop_view_object_duration_frames =
+		special_power.crate_drop_view_object_duration_frames;
+	result.special_power_daisy_cutter_view_object_range =
+		special_power.daisy_cutter_view_object_range;
+	result.special_power_carpet_bomb_view_object_range =
+		special_power.carpet_bomb_view_object_range;
+	result.special_power_crate_drop_view_object_range =
+		special_power.crate_drop_view_object_range;
+	result.special_power_daisy_cutter_radius_cursor_radius =
+		special_power.daisy_cutter_radius_cursor_radius;
+	result.special_power_carpet_bomb_radius_cursor_radius =
+		special_power.carpet_bomb_radius_cursor_radius;
+	result.special_power_crate_drop_radius_cursor_radius =
+		special_power.crate_drop_radius_cursor_radius;
+	result.special_power_daisy_cutter_shortcut_power = special_power.daisy_cutter_shortcut_power;
+	result.special_power_carpet_bomb_shortcut_power = special_power.carpet_bomb_shortcut_power;
+	result.special_power_crate_drop_shortcut_power = special_power.crate_drop_shortcut_power;
+	result.special_power_daisy_cutter_academy_classification =
+		special_power.daisy_cutter_academy_classification;
+	result.special_power_carpet_bomb_academy_classification =
+		special_power.carpet_bomb_academy_classification;
+	result.special_power_daisy_cutter_required_science =
+		special_power.daisy_cutter_required_science;
+	result.special_power_crate_drop_required_science =
+		special_power.crate_drop_required_science;
+	result.special_power_neutron_missile_initiate_at_location_sound =
+		special_power.neutron_missile_initiate_at_location_sound;
+	result.special_power_scud_storm_initiate_sound =
+		special_power.scud_storm_initiate_sound;
 }
 
 void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchiveProbeResult &result)
@@ -444,6 +521,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
+			result.has_special_power_ini = archive_file_system.doesFileExist(SPECIAL_POWER_INI_PATH);
 			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
 			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
@@ -487,6 +565,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);
 		result.ok = result.ok && result.science_ok;
+	}
+	if (result.loaded && result.has_special_power_ini && result.has_science_ini && result.has_generals_csf) {
+		copy_special_power_probe(probe_original_special_power_ini_load(archive_path), result);
+		result.ok = result.ok && result.special_power_ok;
 	}
 	if (result.loaded && result.has_multiplayer_ini) {
 		copy_multiplayer_probe(probe_original_multiplayer_ini_load(archive_path), result);

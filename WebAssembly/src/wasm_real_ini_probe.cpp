@@ -7,6 +7,7 @@
 #include "PreRTS.h"
 
 #include "Common/ArchiveFileSystem.h"
+#include "Common/AcademyStats.h"
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
@@ -15,6 +16,7 @@
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Science.h"
+#include "Common/SpecialPower.h"
 #include "Common/TerrainTypes.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/GameText.h"
@@ -39,6 +41,7 @@ namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
+constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -109,6 +112,49 @@ std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
 		(result.paladin_grantable ? 1U : 0U) +
 		(result.paladin_name_loaded ? 1U : 0U) +
 		(result.paladin_description_loaded ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealSpecialPowerIniProbeResult &result)
+{
+	return
+		(result.special_power_count == 79 ? 1U : 0U) +
+		(result.daisy_cutter_found ? 1U : 0U) +
+		(result.carpet_bomb_found ? 1U : 0U) +
+		(result.crate_drop_found ? 1U : 0U) +
+		(result.neutron_missile_found ? 1U : 0U) +
+		(result.scud_storm_found ? 1U : 0U) +
+		(result.daisy_cutter_enum == SPECIAL_DAISY_CUTTER ? 1U : 0U) +
+		(result.carpet_bomb_enum == SPECIAL_CARPET_BOMB ? 1U : 0U) +
+		(result.crate_drop_enum == SPECIAL_CRATE_DROP ? 1U : 0U) +
+		(result.daisy_cutter_reload_frames == 10800 ? 1U : 0U) +
+		(result.carpet_bomb_reload_frames == 4500 ? 1U : 0U) +
+		(result.crate_drop_reload_frames == 18000 ? 1U : 0U) +
+		(result.daisy_cutter_required_science_valid ? 1U : 0U) +
+		(result.crate_drop_required_science_valid ? 1U : 0U) +
+		(!result.daisy_cutter_public_timer ? 1U : 0U) +
+		(result.carpet_bomb_public_timer ? 1U : 0U) +
+		(result.crate_drop_public_timer ? 1U : 0U) +
+		(result.daisy_cutter_shared_synced_timer ? 1U : 0U) +
+		(result.carpet_bomb_shared_synced_timer ? 1U : 0U) +
+		(!result.crate_drop_shared_synced_timer ? 1U : 0U) +
+		(result.daisy_cutter_view_object_duration_frames == 900 ? 1U : 0U) +
+		(result.carpet_bomb_view_object_duration_frames == 1200 ? 1U : 0U) +
+		(result.crate_drop_view_object_duration_frames == 900 ? 1U : 0U) +
+		(std::fabs(result.daisy_cutter_view_object_range - 250.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.carpet_bomb_view_object_range - 250.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.crate_drop_view_object_range - 250.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.daisy_cutter_radius_cursor_radius - 170.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.carpet_bomb_radius_cursor_radius - 100.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.crate_drop_radius_cursor_radius - 100.0f) < 0.001f ? 1U : 0U) +
+		(result.daisy_cutter_shortcut_power ? 1U : 0U) +
+		(result.carpet_bomb_shortcut_power ? 1U : 0U) +
+		(result.crate_drop_shortcut_power ? 1U : 0U) +
+		(result.daisy_cutter_academy_classification == ACT_SUPERPOWER ? 1U : 0U) +
+		(result.carpet_bomb_academy_classification == ACT_SUPERPOWER ? 1U : 0U) +
+		(result.daisy_cutter_required_science == "SCIENCE_DaisyCutter" ? 1U : 0U) +
+		(result.crate_drop_required_science == "SCIENCE_CrateDrop" ? 1U : 0U) +
+		(result.neutron_missile_initiate_at_location_sound == "AirRaidSiren" ? 1U : 0U) +
+		(result.scud_storm_initiate_sound == "ScudStormInitiated" ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
@@ -682,6 +728,209 @@ RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_pa
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
+	if (science_store != nullptr) {
+		delete science_store;
+	}
+	if (game_text != nullptr) {
+		delete game_text;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path)
+{
+	RealSpecialPowerIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INISpecialPower.cpp + SpecialPower.cpp + AcademyStats.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ScienceStore *old_science_store = TheScienceStore;
+	SpecialPowerStore *old_special_power_store = TheSpecialPowerStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ScienceStore *science_store = nullptr;
+	SpecialPowerStore *special_power_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo science_file_info = {};
+			result.science_file_exists =
+				archive_file_system.getFileInfo(AsciiString(SCIENCE_INI_PATH), &science_file_info) &&
+				science_file_info.sizeHigh == 0 &&
+				science_file_info.sizeLow > 0;
+			result.science_bytes = result.science_file_exists ?
+				static_cast<std::size_t>(science_file_info.sizeLow) : 0U;
+
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(SPECIAL_POWER_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.science_file_exists && result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+					Bool title_exists = FALSE;
+					const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+					result.game_text_loaded = title_exists && unicode_not_empty(title);
+				}
+
+				science_store = NEW ScienceStore;
+				TheScienceStore = science_store;
+				science_store->init();
+
+				INI science_ini;
+				science_ini.load(AsciiString(SCIENCE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.science_original_ini_load = true;
+
+				special_power_store = NEW SpecialPowerStore;
+				TheSpecialPowerStore = special_power_store;
+				special_power_store->init();
+
+				INI ini;
+				ini.load(AsciiString(SPECIAL_POWER_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.special_power_count =
+					static_cast<std::size_t>(special_power_store->getNumSpecialPowers());
+
+				const SpecialPowerTemplate *daisy =
+					special_power_store->findSpecialPowerTemplate(AsciiString("SuperweaponDaisyCutter"));
+				const SpecialPowerTemplate *carpet =
+					special_power_store->findSpecialPowerTemplate(AsciiString("SuperweaponCarpetBomb"));
+				const SpecialPowerTemplate *crate =
+					special_power_store->findSpecialPowerTemplate(AsciiString("SuperweaponCrateDrop"));
+				const SpecialPowerTemplate *neutron =
+					special_power_store->findSpecialPowerTemplate(AsciiString("SuperweaponNeutronMissile"));
+				const SpecialPowerTemplate *scud =
+					special_power_store->findSpecialPowerTemplate(AsciiString("SuperweaponScudStorm"));
+
+				result.daisy_cutter_found = daisy != nullptr;
+				result.carpet_bomb_found = carpet != nullptr;
+				result.crate_drop_found = crate != nullptr;
+				result.neutron_missile_found = neutron != nullptr;
+				result.scud_storm_found = scud != nullptr;
+
+				if (daisy != nullptr) {
+					const ScienceType required_science = daisy->getRequiredScience();
+					result.daisy_cutter_enum = static_cast<int>(daisy->getSpecialPowerType());
+					result.daisy_cutter_reload_frames = static_cast<int>(daisy->getReloadTime());
+					result.daisy_cutter_required_science_valid =
+						science_store->isValidScience(required_science);
+					result.daisy_cutter_required_science =
+						science_store->getInternalNameForScience(required_science).str();
+					result.daisy_cutter_public_timer = daisy->hasPublicTimer();
+					result.daisy_cutter_shared_synced_timer = daisy->isSharedNSync();
+					result.daisy_cutter_view_object_duration_frames =
+						static_cast<int>(daisy->getViewObjectDuration());
+					result.daisy_cutter_view_object_range = daisy->getViewObjectRange();
+					result.daisy_cutter_radius_cursor_radius = daisy->getRadiusCursorRadius();
+					result.daisy_cutter_shortcut_power = daisy->isShortcutPower();
+					result.daisy_cutter_academy_classification =
+						static_cast<int>(daisy->getAcademyClassificationType());
+				}
+				if (carpet != nullptr) {
+					result.carpet_bomb_enum = static_cast<int>(carpet->getSpecialPowerType());
+					result.carpet_bomb_reload_frames = static_cast<int>(carpet->getReloadTime());
+					result.carpet_bomb_public_timer = carpet->hasPublicTimer();
+					result.carpet_bomb_shared_synced_timer = carpet->isSharedNSync();
+					result.carpet_bomb_view_object_duration_frames =
+						static_cast<int>(carpet->getViewObjectDuration());
+					result.carpet_bomb_view_object_range = carpet->getViewObjectRange();
+					result.carpet_bomb_radius_cursor_radius = carpet->getRadiusCursorRadius();
+					result.carpet_bomb_shortcut_power = carpet->isShortcutPower();
+					result.carpet_bomb_academy_classification =
+						static_cast<int>(carpet->getAcademyClassificationType());
+				}
+				if (crate != nullptr) {
+					const ScienceType required_science = crate->getRequiredScience();
+					result.crate_drop_enum = static_cast<int>(crate->getSpecialPowerType());
+					result.crate_drop_reload_frames = static_cast<int>(crate->getReloadTime());
+					result.crate_drop_required_science_valid =
+						science_store->isValidScience(required_science);
+					result.crate_drop_required_science =
+						science_store->getInternalNameForScience(required_science).str();
+					result.crate_drop_public_timer = crate->hasPublicTimer();
+					result.crate_drop_shared_synced_timer = crate->isSharedNSync();
+					result.crate_drop_view_object_duration_frames =
+						static_cast<int>(crate->getViewObjectDuration());
+					result.crate_drop_view_object_range = crate->getViewObjectRange();
+					result.crate_drop_radius_cursor_radius = crate->getRadiusCursorRadius();
+					result.crate_drop_shortcut_power = crate->isShortcutPower();
+				}
+				if (neutron != nullptr) {
+					result.neutron_missile_initiate_at_location_sound =
+						neutron->getInitiateAtTargetSound()->getEventName().str();
+				}
+				if (scud != nullptr) {
+					result.scud_storm_initiate_sound =
+						scud->getInitiateSound()->getEventName().str();
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 30000 &&
+					result.science_bytes > 20000 &&
+					result.game_text_loaded &&
+					result.name_key_generator_loaded &&
+					result.science_original_ini_load &&
+					result.original_ini_load &&
+					result.parsed_fields == 38;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheSpecialPowerStore = old_special_power_store;
+	TheScienceStore = old_science_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (special_power_store != nullptr) {
+		delete special_power_store;
+	}
 	if (science_store != nullptr) {
 		delete science_store;
 	}

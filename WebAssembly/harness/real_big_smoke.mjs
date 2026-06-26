@@ -305,6 +305,7 @@ try {
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
+      || !assetProbe.inizh?.specialPowerIni
       || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.weaponIni) {

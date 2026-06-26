@@ -120,6 +120,70 @@ function assertScienceProbe(assetProbe, context) {
   }
 }
 
+function assertSpecialPowerProbe(assetProbe, context) {
+  const specialPower = assetProbe?.specialPower;
+  const daisyCutter = specialPower?.daisyCutter;
+  const carpetBomb = specialPower?.carpetBomb;
+  const crateDrop = specialPower?.crateDrop;
+  const neutronMissile = specialPower?.neutronMissile;
+  const scudStorm = specialPower?.scudStorm;
+  if (!assetProbe?.inizh?.specialPowerIni
+      || !specialPower?.attempted
+      || !specialPower.ok
+      || specialPower.source !== "GameEngine/Common/INI.cpp::load + INISpecialPower.cpp + SpecialPower.cpp + AcademyStats.cpp"
+      || !specialPower.loadedArchives
+      || !specialPower.fileExists
+      || !specialPower.scienceFileExists
+      || !specialPower.gameTextLoaded
+      || !specialPower.nameKeyGeneratorLoaded
+      || specialPower.audioManagerLoaded !== false
+      || !specialPower.scienceOriginalIniLoad
+      || !specialPower.originalIniLoad
+      || specialPower.bytes <= 30000
+      || specialPower.scienceBytes <= 20000
+      || specialPower.parsedFields !== 38
+      || specialPower.powers !== 79
+      || !daisyCutter?.found
+      || daisyCutter.enum !== 1
+      || daisyCutter.reloadFrames !== 10800
+      || !daisyCutter.requiredScienceValid
+      || daisyCutter.requiredScience !== "SCIENCE_DaisyCutter"
+      || daisyCutter.publicTimer !== false
+      || daisyCutter.sharedSyncedTimer !== true
+      || daisyCutter.viewObjectDurationFrames !== 900
+      || Math.abs(daisyCutter.viewObjectRange - 250.0) > 0.001
+      || Math.abs(daisyCutter.radiusCursorRadius - 170.0) > 0.001
+      || daisyCutter.shortcutPower !== true
+      || daisyCutter.academyClassification !== 2
+      || !carpetBomb?.found
+      || carpetBomb.enum !== 3
+      || carpetBomb.reloadFrames !== 4500
+      || carpetBomb.publicTimer !== true
+      || carpetBomb.sharedSyncedTimer !== true
+      || carpetBomb.viewObjectDurationFrames !== 1200
+      || Math.abs(carpetBomb.viewObjectRange - 250.0) > 0.001
+      || Math.abs(carpetBomb.radiusCursorRadius - 100.0) > 0.001
+      || carpetBomb.shortcutPower !== true
+      || carpetBomb.academyClassification !== 2
+      || !crateDrop?.found
+      || crateDrop.enum !== 17
+      || crateDrop.reloadFrames !== 18000
+      || !crateDrop.requiredScienceValid
+      || crateDrop.requiredScience !== "SCIENCE_CrateDrop"
+      || crateDrop.publicTimer !== true
+      || crateDrop.sharedSyncedTimer !== false
+      || crateDrop.viewObjectDurationFrames !== 900
+      || Math.abs(crateDrop.viewObjectRange - 250.0) > 0.001
+      || Math.abs(crateDrop.radiusCursorRadius - 100.0) > 0.001
+      || crateDrop.shortcutPower !== true
+      || !neutronMissile?.found
+      || neutronMissile.initiateAtLocationSound !== "AirRaidSiren"
+      || !scudStorm?.found
+      || scudStorm.initiateSound !== "ScudStormInitiated") {
+    throw new Error(`${context} did not parse expected SpecialPower.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -347,6 +411,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.inizh
         || !startupAssets.required?.armor
         || !startupAssets.required?.science
+        || !startupAssets.required?.specialPower
         || !startupAssets.required?.multiplayer
         || !startupAssets.required?.terrain
         || !startupAssets.required?.terrainRoads
@@ -429,6 +494,7 @@ try {
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
+      || !assetProbe.inizh?.specialPowerIni
       || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.weaponIni) {
@@ -437,6 +503,7 @@ try {
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
+  assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
   assertTerrainProbe(assetProbe, "aggregate runtime archive probe");
   assertTerrainRoadsProbe(assetProbe, "aggregate runtime archive probe");
@@ -493,6 +560,7 @@ try {
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertTerrainProbe(bootResult.state.assetProbe, "boot asset probe");
   assertTerrainRoadsProbe(bootResult.state.assetProbe, "boot asset probe");

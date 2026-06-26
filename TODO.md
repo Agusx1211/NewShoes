@@ -614,15 +614,29 @@ shares structure and follows behind.
       `INIMultiplayer.cpp`, `MultiplayerSettings.cpp`, `Money.cpp`, and
       `GameNetwork/GameSpy/Chat.cpp` for shipped settings, color, starting
       money, and online chat-color data.
+- [x] Link and smoke-test the original special-power INI parser route through
+      the focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `INISpecialPower.cpp`, `SpecialPower.cpp`, `Science.cpp`, and
+      `AcademyStats.cpp` for shipped superweapon metadata, required sciences,
+      timer/radius fields, academy classifications, and preserved audio event
+      names.
 - [ ] Link and smoke-test the original audio INI parser routes after the real
       `Common/INI.cpp` reader, audio manager, and full runtime singleton
       surface are available without target-local parser stubs.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
-      `GameData`, `Science`, `Multiplayer`, `Water`, `Weather`, `Video`, and
-      shipped map-cache preflights on original `INI.cpp::load`
+      `GameData`, `Science`, `SpecialPower`, `Multiplayer`, `Water`, `Weather`,
+      `Video`, and shipped map-cache preflights on original `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
+- [ ] Replace the focused shipped special-power runtime's weak `TheAudio`
+      compatibility singleton and Emscripten-only null audio-info guard with the
+      real browser audio manager once audio event metadata and playback are
+      linked; the current preflight preserves event names but does not populate
+      `AudioEventInfo`.
+- [ ] Replace the focused shipped special-power runtime's weak `TheControlBar`
+      compatibility singleton with original ControlBar/UI ownership once the
+      control-bar runtime can link without compile-only UI dependencies.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
       `MapUtil.cpp` / `WorldHeightMap.cpp` ownership once those runtime surfaces
@@ -635,11 +649,10 @@ shares structure and follows behind.
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
       target-local parser stubs.
-- [ ] Link and smoke-test original player-template, special-power, and
-      command-button INI parser routes after the real `Common/INI.cpp` reader,
-      ScienceStore validation, ControlBar, PlayerTemplateStore, and
-      SpecialPowerStore singleton surfaces are available without target-local
-      parser stubs.
+- [ ] Link and smoke-test original player-template and command-button INI
+      parser routes after the real `Common/INI.cpp` reader, ControlBar,
+      PlayerTemplateStore, and SpecialPowerStore singleton surfaces are
+      available without target-local parser stubs.
 - [ ] Link and smoke-test original crate, draw-group, and upgrade INI parser
       routes after the real `Common/INI.cpp` reader, `CrateSystem`,
       `DrawGroupInfo`, and `UpgradeCenter` singleton surfaces are available
@@ -677,13 +690,13 @@ shares structure and follows behind.
       internal-name round trips, WorldBuilder name enumeration, default purchase
       cost, grantability, and empty translated name/description storage without
       invoking player-owned prerequisite checks.
-- [ ] Replace the temporary `parseScience`, `parseScienceVector`, and
+- [x] Replace the temporary `parseScience`, `parseScienceVector`, and
       `parseAndTranslateLabel` bridge helpers with the real `Common/INI.cpp` /
       `GameText` parse path, then smoke-test science-definition and
-      special-power parsing against real INI data. Special-power runtime
-      parsing also needs the original academy classification table from
-      `AcademyStats.cpp` to link in the runtime smoke instead of remaining
-      compile-only.
+      shipped special-power parsing against real INI data, with the original
+      academy classification table from `AcademyStats.cpp` linked into the
+      runtime smoke. Full player-owned prerequisite checks and full
+      default+shipped engine startup remain open.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -1670,6 +1683,15 @@ shares structure and follows behind.
       metadata preflight only; player-owned purchase/prerequisite checks remain
       open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\SpecialPower.ini` from the mounted runtime BIG set through
+      original `Common/INI.cpp::load`, `Common/INI/INISpecialPower.cpp`,
+      `Common/RTS/SpecialPower.cpp`, `Common/RTS/Science.cpp`, and
+      `Common/RTS/AcademyStats.cpp`, expose parsed shipped special-power
+      metadata as `assetProbe.specialPower`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped special-power
+      preflight only; default-file layering, audio metadata lookup/playback,
+      control-bar ownership, and actual power execution remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\multiplayer.ini` from `INIZH.big` through original
       `Common/INI.cpp::load`, `Common/INI/INIMultiplayer.cpp`,
       `Common/MultiplayerSettings.cpp`, `Common/RTS/Money.cpp`, and
@@ -1759,6 +1781,16 @@ shares structure and follows behind.
       runtime-archive harness state proving 95 science definitions, base/rank
       science lookup, Paladin purchase/grantable metadata, and translated
       display/description labels.
+- [x] Shipped special-power templates load from real
+      `Data\INI\SpecialPower.ini` through original `Common/INI.cpp::load`,
+      `Common/INI/INISpecialPower.cpp`, `Common/RTS/SpecialPower.cpp`,
+      `Common/RTS/Science.cpp`, and `Common/RTS/AcademyStats.cpp`, with full
+      runtime-archive harness state proving 79 powers plus Daisy Cutter,
+      Carpet Bomb, Crate Drop, Neutron Missile, and Scud Storm fields.
+- [ ] Locate and include the archive source for
+      `Data\INI\Default\SpecialPower.ini`, then load the original default +
+      shipped special-power sequence through `SpecialPowerStore::init` / full
+      `GameEngine.cpp` startup once the minimum boot archive set is defined.
 - [x] Shipped multiplayer settings load from real
       `Data\INI\multiplayer.ini` through original `Common/INI.cpp::load`,
       `Common/INI/INIMultiplayer.cpp`, `Common/MultiplayerSettings.cpp`,
