@@ -813,6 +813,12 @@ shares structure and follows behind.
       MSVC loop-scope assumptions without changing scene traversal or render
       queue behavior. This is compile coverage only until the browser
       renderer can drive scene/camera output through harness screenshots.
+- [x] Compile original `W3DDevice/GameClient/W3DMouse.cpp` in the
+      real-header compile frontier after adding the reached Win32 cursor,
+      WinMM timing, and Direct3D cursor-update declaration surface plus a
+      localized MSVC loop-scope compatibility fix. This is compile coverage
+      only until browser pointer events and cursor rendering are wired through
+      the real input/display path and harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -904,10 +910,14 @@ shares structure and follows behind.
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
       `W3DDisplay.cpp`, `W3DGameClient.cpp`, `W3DInGameUI.cpp`,
-      `W3DMouse.cpp`, `W3DTerrainVisual.cpp`, `W3DView.cpp`,
-      `W3DWebBrowser.cpp`, `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`,
-      after the remaining WW3D2/Direct3D/browser device compatibility surface
-      is available as part of the renderer port.
+      `W3DTerrainVisual.cpp`, `W3DView.cpp`, `W3DWebBrowser.cpp`,
+      `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`, after the remaining
+      WW3D2/Direct3D/browser device compatibility surface is available as
+      part of the renderer port.
+- [ ] Replace the current no-op Win32 cursor compatibility helpers
+      (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading)
+      with browser pointer/cursor state before relying on original
+      `W3DMouse.cpp` runtime cursor behavior.
 - [ ] Resolve the `W3DVideoBuffer.cpp` header gap: the source includes
       `W3DDevice/GameClient/W3DVideoBuffer.h`, but no matching checked-in
       header is currently present in `GeneralsMD/Code`; either restore the

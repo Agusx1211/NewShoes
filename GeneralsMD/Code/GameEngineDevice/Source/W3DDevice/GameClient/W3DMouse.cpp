@@ -248,7 +248,7 @@ void W3DMouse::freeD3DAssets(void)
 		REF_PTR_RELEASE(m_currentD3DSurface[i]);
 
 	//free textures.
-	for (i=0; i<NUM_MOUSE_CURSORS; i++)
+	for (Int i=0; i<NUM_MOUSE_CURSORS; i++)
 	{
 		for (Int j=0; j<MAX_2D_CURSOR_ANIM_FRAMES; j++)
 			REF_PTR_RELEASE(cursorTextures[i][j]);

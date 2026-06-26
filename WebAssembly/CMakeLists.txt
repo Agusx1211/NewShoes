@@ -1462,6 +1462,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPropBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DRoadBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DMouse.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DScene.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShroud.cpp"
@@ -1876,6 +1877,7 @@ target_compile_definitions(zh_gameengine_real_compile_frontier PRIVATE
 
 target_compile_options(zh_gameengine_real_compile_frontier PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"

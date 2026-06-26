@@ -57,6 +57,7 @@ using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
 using HBITMAP = void *;
 using HDC = void *;
+using HCURSOR = void *;
 using HFONT = void *;
 using HGDIOBJ = void *;
 using FARPROC = void (*)();
@@ -726,6 +727,42 @@ static inline BOOL SetWindowText(HWND, const char *)
 }
 
 static inline BOOL SetWindowTextW(HWND, const wchar_t *)
+{
+	return TRUE;
+}
+
+static inline HCURSOR LoadCursor(HINSTANCE, LPCSTR)
+{
+	return nullptr;
+}
+
+static inline HCURSOR LoadCursorFromFile(LPCSTR)
+{
+	return nullptr;
+}
+
+static inline HCURSOR SetCursor(HCURSOR cursor)
+{
+	return cursor;
+}
+
+static inline BOOL GetCursorPos(POINT *point)
+{
+	if (point == nullptr) {
+		return FALSE;
+	}
+
+	point->x = 0;
+	point->y = 0;
+	return FALSE;
+}
+
+static inline BOOL SetCursorPos(int, int)
+{
+	return TRUE;
+}
+
+static inline BOOL ScreenToClient(HWND, POINT *)
 {
 	return TRUE;
 }
