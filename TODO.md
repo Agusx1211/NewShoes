@@ -824,6 +824,11 @@ shares structure and follows behind.
       include directory into the wasm target. This is compile coverage only
       until the browser renderer can drive scene/camera output through harness
       screenshots and state queries.
+- [x] Compile original `W3DDevice/GameClient/W3DGameClient.cpp` in the
+      real-header compile frontier after the reached display, terrain, shadow,
+      water, LOD, input, video, and device-factory headers became available.
+      This is compile coverage only until the W3D display/input/terrain/video
+      device stack links and is harness-driven.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -914,9 +919,9 @@ shares structure and follows behind.
       dependencies, and browser asset/texture bindings have a real port
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      `W3DDisplay.cpp`, `W3DGameClient.cpp`, `W3DInGameUI.cpp`,
-      `W3DTerrainVisual.cpp`, `W3DWebBrowser.cpp`, `W3DVideoBuffer.cpp`, and
-      `Water/W3DWater*.cpp`, after the remaining WW3D2/Direct3D/browser
+      `W3DDisplay.cpp`, `W3DInGameUI.cpp`, `W3DTerrainVisual.cpp`,
+      `W3DWebBrowser.cpp`, `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`,
+      after the remaining WW3D2/Direct3D/browser
       device compatibility surface is available as part of the renderer port.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
       (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading)
