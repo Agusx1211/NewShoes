@@ -310,6 +310,13 @@ bool startup_weather_ready()
 		g_archive_probe.weather_ok;
 }
 
+bool startup_video_ready()
+{
+	return g_archive_probe.has_video_ini &&
+		g_archive_probe.video_attempted &&
+		g_archive_probe.video_ok;
+}
+
 bool startup_map_cache_ready()
 {
 	return g_archive_probe.has_map_cache_ini &&
@@ -328,6 +335,7 @@ bool startup_assets_ready()
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
+		startup_video_ready() &&
 		startup_game_text_ready() &&
 		startup_map_cache_ready();
 }
@@ -354,6 +362,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_weather_ready()) {
 		return "weather_probe_failed";
+	}
+	if (!startup_video_ready()) {
+		return "video_probe_failed";
 	}
 	if (!startup_game_text_ready()) {
 		return "game_text_probe_failed";
@@ -389,6 +400,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_weather_ready()) {
 		return "Runtime BIG archive set did not pass the Weather.ini startup probe.";
+	}
+	if (!startup_video_ready()) {
+		return "Runtime BIG archive set did not pass the Video.ini startup probe.";
 	}
 	if (!startup_game_text_ready()) {
 		return "Runtime BIG archive set did not pass the GameText CSF startup probe.";
@@ -475,7 +489,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[27000];
+	char buffer[30000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
@@ -494,6 +508,15 @@ const char *write_state_json()
 	const std::string weather_source_json = json_escape(g_archive_probe.weather_source);
 	const std::string weather_snow_texture_json =
 		json_escape(g_archive_probe.weather_snow_texture);
+	const std::string video_source_json = json_escape(g_archive_probe.video_source);
+	const std::string video_first_internal_name_json =
+		json_escape(g_archive_probe.video_first_internal_name);
+	const std::string video_first_filename_json =
+		json_escape(g_archive_probe.video_first_filename);
+	const std::string video_sample_internal_name_json =
+		json_escape(g_archive_probe.video_sample_internal_name);
+	const std::string video_sample_filename_json =
+		json_escape(g_archive_probe.video_sample_filename);
 	const std::string map_cache_source_json = json_escape(g_archive_probe.map_cache_source);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
@@ -525,6 +548,7 @@ const char *write_state_json()
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"gameDataIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
@@ -555,6 +579,13 @@ const char *write_state_json()
 		"\"snowAmplitude\":%.3f,\"snowVelocity\":%.3f,"
 		"\"snowPointSize\":%.3f,\"snowQuadSize\":%.3f,"
 		"\"snowMaxPointSize\":%.3f,\"snowMinPointSize\":%.3f},"
+		"\"video\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"defaultBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
+		"\"fileExists\":%s,\"defaultFileExists\":%s,"
+		"\"originalIniLoad\":%s,\"defaultOriginalIniLoad\":%s,"
+		"\"shippedOriginalIniLoad\":%s,\"parsedFields\":%zu,"
+		"\"videos\":%zu,\"firstInternalName\":\"%s\",\"firstFilename\":\"%s\","
+		"\"sampleInternalName\":\"%s\",\"sampleFilename\":\"%s\"},"
 		"\"mapCache\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
@@ -570,7 +601,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"water\":%s,\"weather\":%s,"
-		"\"gameText\":%s,\"mapCache\":%s}},"
+		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
@@ -626,6 +657,8 @@ const char *write_state_json()
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
+		g_archive_probe.has_video_ini ? "true" : "false",
+		g_archive_probe.has_default_video_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
 		g_archive_probe.game_data_attempted ? "true" : "false",
@@ -691,6 +724,23 @@ const char *write_state_json()
 		g_archive_probe.weather_snow_quad_size,
 		g_archive_probe.weather_snow_max_point_size,
 		g_archive_probe.weather_snow_min_point_size,
+		g_archive_probe.video_attempted ? "true" : "false",
+		g_archive_probe.video_ok ? "true" : "false",
+		g_archive_probe.video_bytes,
+		g_archive_probe.video_default_bytes,
+		video_source_json.c_str(),
+		g_archive_probe.video_loaded_archives ? "true" : "false",
+		g_archive_probe.video_file_exists ? "true" : "false",
+		g_archive_probe.video_default_file_exists ? "true" : "false",
+		g_archive_probe.video_original_ini_load ? "true" : "false",
+		g_archive_probe.video_default_original_ini_load ? "true" : "false",
+		g_archive_probe.video_shipped_original_ini_load ? "true" : "false",
+		g_archive_probe.video_parsed_fields,
+		g_archive_probe.video_count,
+		video_first_internal_name_json.c_str(),
+		video_first_filename_json.c_str(),
+		video_sample_internal_name_json.c_str(),
+		video_sample_filename_json.c_str(),
 		g_archive_probe.map_cache_attempted ? "true" : "false",
 		g_archive_probe.map_cache_ok ? "true" : "false",
 		g_archive_probe.map_cache_bytes,
@@ -733,6 +783,7 @@ const char *write_state_json()
 		startup_game_data_ready() ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",
+		startup_video_ready() ? "true" : "false",
 		startup_game_text_ready() ? "true" : "false",
 		startup_map_cache_ready() ? "true" : "false",
 		ORIGINAL_CORE_PROBE_SEED,

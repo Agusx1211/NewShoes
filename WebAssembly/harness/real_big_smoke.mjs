@@ -90,6 +90,29 @@ function assertWeatherProbe(assetProbe, context) {
   }
 }
 
+function assertVideoProbe(assetProbe, context) {
+  const video = assetProbe?.video;
+  if (!assetProbe?.inizh?.videoIni
+      || assetProbe.inizh.defaultVideoIni !== false
+      || !video?.attempted
+      || !video.ok
+      || video.source !== "GameEngine/Common/INI.cpp::load + INIVideo.cpp + GameClient/VideoPlayer.cpp"
+      || !video.loadedArchives
+      || !video.fileExists
+      || video.defaultFileExists !== false
+      || !video.originalIniLoad
+      || video.defaultOriginalIniLoad !== false
+      || !video.shippedOriginalIniLoad
+      || video.parsedFields !== 5
+      || video.videos !== 41
+      || video.firstInternalName !== "Sizzle"
+      || video.firstFilename !== "sizzle_review"
+      || video.sampleInternalName !== "Sizzle"
+      || video.sampleFilename !== "sizzle_review") {
+    throw new Error(`${context} did not parse expected Video.ini registry metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertStartupAssetsMissing(state, context) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== false || startupAssets.status !== "missing_runtime_archives") {
@@ -150,6 +173,7 @@ try {
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
+  assertVideoProbe(assetProbe, "cnc-port INIZH probe");
   assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {

@@ -17,6 +17,7 @@
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
+#include "GameClient/VideoPlayer.h"
 #include "GameClient/Water.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
@@ -30,6 +31,8 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
+constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
 constexpr const char WATER_INI_PATH[] = "Data\\INI\\Water.ini";
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 constexpr const char EXPECTED_SHELL_MAP_NAME[] = "Maps\\ShellMapMD\\ShellMapMD.map";
@@ -104,6 +107,16 @@ std::size_t count_verified_fields(const RealWaterIniProbeResult &result)
 		(std::fabs(result.transparent_water_depth - 3.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.transparent_water_min_opacity - 1.0f) < 0.001f ? 1U : 0U) +
 		(!result.additive_blending ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealVideoIniProbeResult &result)
+{
+	return
+		(result.video_count > 0 ? 1U : 0U) +
+		(!result.first_internal_name.empty() ? 1U : 0U) +
+		(!result.first_filename.empty() ? 1U : 0U) +
+		(!result.sample_internal_name.empty() ? 1U : 0U) +
+		(!result.sample_filename.empty() ? 1U : 0U);
 }
 
 void reset_water_settings()
@@ -353,6 +366,111 @@ RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path)
 		water_transparency_to_delete->deleteInstance();
 	}
 	restore_water_settings(old_water_settings);
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path)
+{
+	RealVideoIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INIVideo.cpp + GameClient/VideoPlayer.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	VideoPlayerInterface *old_video_player = TheVideoPlayer;
+
+	{
+		Win32LocalFileSystem local_file_system;
+		Win32BIGFileSystem archive_file_system;
+		FileSystem file_system;
+		VideoPlayer video_player;
+
+		try {
+			TheLocalFileSystem = &local_file_system;
+			TheArchiveFileSystem = &archive_file_system;
+			TheFileSystem = &file_system;
+			TheVideoPlayer = &video_player;
+
+			result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+			if (result.loaded_archives) {
+				FileInfo default_file_info = {};
+				result.default_file_exists =
+					archive_file_system.getFileInfo(AsciiString(DEFAULT_VIDEO_INI_PATH), &default_file_info) &&
+					default_file_info.sizeHigh == 0 &&
+					default_file_info.sizeLow > 0;
+				result.default_bytes = result.default_file_exists ?
+					static_cast<std::size_t>(default_file_info.sizeLow) : 0U;
+
+				FileInfo file_info = {};
+				result.file_exists =
+					archive_file_system.getFileInfo(AsciiString(VIDEO_INI_PATH), &file_info) &&
+					file_info.sizeHigh == 0 &&
+					file_info.sizeLow > 0;
+				result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+				INI ini;
+				if (result.default_file_exists) {
+					ini.load(AsciiString(DEFAULT_VIDEO_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+					result.default_original_ini_load = true;
+				}
+				if (result.file_exists) {
+					ini.load(AsciiString(VIDEO_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+					result.shipped_original_ini_load = true;
+				}
+				result.original_ini_load =
+					result.default_original_ini_load ||
+					result.shipped_original_ini_load;
+
+				result.video_count = static_cast<std::size_t>(video_player.getNumVideos());
+				const Video *first_video = video_player.getVideo(0);
+				if (first_video != nullptr) {
+					result.first_internal_name = first_video->m_internalName.str();
+					result.first_filename = first_video->m_filename.str();
+				}
+				const Video *sample_video = nullptr;
+				for (Int index = 0; index < video_player.getNumVideos(); ++index) {
+					const Video *video = video_player.getVideo(index);
+					if (video != nullptr &&
+						!video->m_internalName.isEmpty() &&
+						!video->m_filename.isEmpty()) {
+						sample_video = video;
+						break;
+					}
+				}
+				if (sample_video != nullptr) {
+					result.sample_internal_name = sample_video->m_internalName.str();
+					result.sample_filename = sample_video->m_filename.str();
+				}
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 0 &&
+					result.shipped_original_ini_load &&
+					result.video_count > 0 &&
+					result.parsed_fields == 5;
+			}
+		} catch (...) {
+			result.ok = false;
+		}
+
+		TheVideoPlayer = old_video_player;
+		TheFileSystem = old_file_system;
+		TheArchiveFileSystem = old_archive_file_system;
+		TheLocalFileSystem = old_local_file_system;
+	}
 
 	shutdownMemoryManager();
 

@@ -104,7 +104,30 @@ struct RealWaterIniProbeResult
 	bool additive_blending = false;
 };
 
+struct RealVideoIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool default_file_exists = false;
+	bool original_ini_load = false;
+	bool default_original_ini_load = false;
+	bool shipped_original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t default_bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t video_count = 0;
+	std::string source;
+	std::string archive_path;
+	std::string first_internal_name;
+	std::string first_filename;
+	std::string sample_internal_name;
+	std::string sample_filename;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);
 RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);
+RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);

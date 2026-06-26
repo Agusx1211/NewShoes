@@ -15,6 +15,8 @@ struct ArchiveProbeResult
 	bool has_map_cache_ini = false;
 	bool has_water_ini = false;
 	bool has_weather_ini = false;
+	bool has_video_ini = false;
+	bool has_default_video_ini = false;
 	bool game_data_attempted = false;
 	bool game_data_ok = false;
 	bool game_data_loaded_archives = false;
@@ -31,6 +33,14 @@ struct ArchiveProbeResult
 	bool weather_loaded_archives = false;
 	bool weather_file_exists = false;
 	bool weather_original_ini_load = false;
+	bool video_attempted = false;
+	bool video_ok = false;
+	bool video_loaded_archives = false;
+	bool video_file_exists = false;
+	bool video_default_file_exists = false;
+	bool video_original_ini_load = false;
+	bool video_default_original_ini_load = false;
+	bool video_shipped_original_ini_load = false;
 	bool map_cache_attempted = false;
 	bool map_cache_ok = false;
 	bool map_cache_loaded_archives = false;
@@ -52,6 +62,10 @@ struct ArchiveProbeResult
 	std::size_t water_set_count = 0;
 	std::size_t weather_bytes = 0;
 	std::size_t weather_parsed_fields = 0;
+	std::size_t video_bytes = 0;
+	std::size_t video_default_bytes = 0;
+	std::size_t video_parsed_fields = 0;
+	std::size_t video_count = 0;
 	std::size_t map_cache_bytes = 0;
 	std::size_t map_cache_maps = 0;
 	std::size_t map_cache_multiplayer_maps = 0;
@@ -97,6 +111,11 @@ struct ArchiveProbeResult
 	float weather_snow_quad_size = 0.0f;
 	float weather_snow_max_point_size = 0.0f;
 	float weather_snow_min_point_size = 0.0f;
+	std::string video_source;
+	std::string video_first_internal_name;
+	std::string video_first_filename;
+	std::string video_sample_internal_name;
+	std::string video_sample_filename;
 	std::string map_cache_source;
 	bool map_cache_has_shell_map_md = false;
 	bool map_cache_has_tournament_desert = false;

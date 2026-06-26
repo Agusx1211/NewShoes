@@ -1612,7 +1612,7 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/GameData/Water/Weather/GameText/MapCache
+      `ready` after the boot-time archive/GameData/Water/Weather/Video/GameText/MapCache
       probes pass. This is bootstrap preflight only; full engine-init missing-asset
       handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
@@ -1678,6 +1678,14 @@ shares structure and follows behind.
       preflight only; full startup CRC coverage, map overrides, and snow
       rendering remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Video.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INIVideo.cpp`, and
+      `GameClient/VideoPlayer.cpp`, expose parsed shipped video registry
+      metadata as `assetProbe.video`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped video-registry
+      preflight only; `Data\INI\Default\Video.ini`, Bink/WebCodecs playback,
+      audio sync, and video-to-texture rendering remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Maps\MapCache.ini` from the registered runtime archive set through the
       original `Common/INI.cpp::load` and `Common/INI/INIMapCache.cpp`, expose
       shipped map-cache counts and known map entries as `assetProbe.mapCache`,
@@ -1720,6 +1728,14 @@ shares structure and follows behind.
       (`Data\INI\Default\Weather.ini` then `Data\INI\Weather.ini`) through the
       full `GameEngine.cpp` startup path with xfer CRC once engine init consumes
       the mounted archive set.
+- [x] Shipped video registry loads from real `Data\INI\Video.ini` through
+      original `Common/INI.cpp::load`, `Common/INI/INIVideo.cpp`, and
+      `GameClient/VideoPlayer.cpp`, with harness state proving 41 registered
+      videos and the shipped `Sizzle` / `sizzle_review` entry.
+- [ ] Locate and include the archive source for
+      `Data\INI\Default\Video.ini`, then load the original default + shipped
+      video sequence through `VideoPlayer::init` / full `GameEngine.cpp`
+      startup once the minimum boot archive set is defined.
 - [x] Shipped map cache loads from real `MapsZH.big` through original
       `Common/INI.cpp::load` and `INIMapCache.cpp`, with harness state proving
       parsed map counts plus known ShellMapMD and Tournament Desert entries.

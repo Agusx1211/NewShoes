@@ -127,6 +127,29 @@ function assertWeatherProbe(assetProbe, context) {
   }
 }
 
+function assertVideoProbe(assetProbe, context) {
+  const video = assetProbe?.video;
+  if (!assetProbe?.inizh?.videoIni
+      || assetProbe.inizh.defaultVideoIni !== false
+      || !video?.attempted
+      || !video.ok
+      || video.source !== "GameEngine/Common/INI.cpp::load + INIVideo.cpp + GameClient/VideoPlayer.cpp"
+      || !video.loadedArchives
+      || !video.fileExists
+      || video.defaultFileExists !== false
+      || !video.originalIniLoad
+      || video.defaultOriginalIniLoad !== false
+      || !video.shippedOriginalIniLoad
+      || video.parsedFields !== 5
+      || video.videos !== 41
+      || video.firstInternalName !== "Sizzle"
+      || video.firstFilename !== "sizzle_review"
+      || video.sampleInternalName !== "Sizzle"
+      || video.sampleFilename !== "sizzle_review") {
+    throw new Error(`${context} did not parse expected Video.ini registry metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertMapCacheProbe(assetProbe, context) {
   const mapCache = assetProbe?.mapCache;
   if (!assetProbe?.maps?.mapCacheIni
@@ -163,6 +186,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.gameData
         || !startupAssets.required?.water
         || !startupAssets.required?.weather
+        || !startupAssets.required?.video
         || !startupAssets.required?.gameText
         || !startupAssets.required?.mapCache)) {
     throw new Error(`${context} startup asset requirements incomplete: ${JSON.stringify(startupAssets)}`);
@@ -243,6 +267,7 @@ try {
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
   assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
+  assertVideoProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
@@ -293,6 +318,7 @@ try {
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertVideoProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
 

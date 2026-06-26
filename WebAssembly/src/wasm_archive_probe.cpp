@@ -29,6 +29,8 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
+constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
 constexpr const char WATER_INI_PATH[] = "Data\\INI\\Water.ini";
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 
@@ -167,6 +169,27 @@ void copy_weather_probe(const RealWeatherIniProbeResult &weather, ArchiveProbeRe
 	result.weather_snow_min_point_size = weather.snow_min_point_size;
 }
 
+void copy_video_probe(const RealVideoIniProbeResult &video, ArchiveProbeResult &result)
+{
+	result.video_attempted = video.attempted;
+	result.video_ok = video.ok;
+	result.video_loaded_archives = video.loaded_archives;
+	result.video_file_exists = video.file_exists;
+	result.video_default_file_exists = video.default_file_exists;
+	result.video_original_ini_load = video.original_ini_load;
+	result.video_default_original_ini_load = video.default_original_ini_load;
+	result.video_shipped_original_ini_load = video.shipped_original_ini_load;
+	result.video_bytes = video.bytes;
+	result.video_default_bytes = video.default_bytes;
+	result.video_parsed_fields = video.parsed_fields;
+	result.video_count = video.video_count;
+	result.video_source = video.source;
+	result.video_first_internal_name = video.first_internal_name;
+	result.video_first_filename = video.first_filename;
+	result.video_sample_internal_name = video.sample_internal_name;
+	result.video_sample_filename = video.sample_filename;
+}
+
 void copy_map_cache_probe(const RealMapCacheIniProbeResult &map_cache, ArchiveProbeResult &result)
 {
 	result.map_cache_attempted = map_cache.attempted;
@@ -257,6 +280,8 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
+			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
+			result.has_video_ini = archive_file_system.doesFileExist(VIDEO_INI_PATH);
 			result.has_water_ini = archive_file_system.doesFileExist(WATER_INI_PATH);
 			result.has_weather_ini = archive_file_system.doesFileExist(WEATHER_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
@@ -294,6 +319,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_weather_ini) {
 		copy_weather_probe(probe_original_weather_ini_load(archive_path), result);
 		result.ok = result.ok && result.weather_ok;
+	}
+	if (result.loaded && result.has_video_ini) {
+		copy_video_probe(probe_original_video_ini_load(archive_path), result);
+		result.ok = result.ok && result.video_ok;
 	}
 	if (result.loaded && result.has_map_cache_ini && result.has_generals_csf) {
 		copy_map_cache_probe(probe_original_map_cache_ini_load(archive_path), result);
