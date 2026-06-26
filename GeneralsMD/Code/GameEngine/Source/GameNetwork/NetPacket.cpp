@@ -38,6 +38,15 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+static void WriteUnicodeString16ToPacket(UnsignedByte *dest, const UnicodeString &text, UnsignedByte length)
+{
+	const WideChar *chars = text.str();
+	for (UnsignedByte i = 0; i < length; ++i) {
+		const UnsignedShort wire_char = static_cast<UnsignedShort>(chars[i]);
+		memcpy(dest + (i * sizeof(UnsignedShort)), &wire_char, sizeof(wire_char));
+	}
+}
+
 // This function assumes that all of the fields are either of default value or are
 // present in the raw data.
 NetCommandRef * NetPacket::ConstructNetCommandMsgFromRawData(UnsignedByte *data, UnsignedShort dataLength) {
@@ -1437,7 +1446,7 @@ void NetPacket::FillBufferWithDisconnectChatCommand(UnsignedByte *buffer, NetCom
 	memcpy(buffer + offset, &length, sizeof(UnsignedByte));
 	offset += sizeof(UnsignedByte);
 
-	memcpy(buffer + offset, unitext.str(), length * sizeof(UnsignedShort));
+	WriteUnicodeString16ToPacket(buffer + offset, unitext, length);
 	offset += length * sizeof(UnsignedShort);
 }
 
@@ -1539,7 +1548,7 @@ void NetPacket::FillBufferWithChatCommand(UnsignedByte *buffer, NetCommandRef *m
 	memcpy(buffer + offset, &length, sizeof(UnsignedByte));
 	offset += sizeof(UnsignedByte);
 
-	memcpy(buffer + offset, unitext.str(), length * sizeof(UnsignedShort));
+	WriteUnicodeString16ToPacket(buffer + offset, unitext, length);
 	offset += length * sizeof(UnsignedShort);
 
 	memcpy(buffer + offset, &playerMask, sizeof(Int));
@@ -3268,7 +3277,7 @@ Bool NetPacket::addDisconnectChatCommand(NetCommandRef *msg) {
 		memcpy(m_packet + m_packetLen, &length, sizeof(UnsignedByte));
 		m_packetLen += sizeof(UnsignedByte);
 
-		memcpy(m_packet + m_packetLen, unitext.str(), length * sizeof(UnsignedShort));
+		WriteUnicodeString16ToPacket(m_packet + m_packetLen, unitext, length);
 		m_packetLen += length * sizeof(UnsignedShort);
 
 //		DEBUG_LOG(("NetPacket - added disconnect chat command\n"));
@@ -3382,7 +3391,7 @@ Bool NetPacket::addChatCommand(NetCommandRef *msg) {
 		memcpy(m_packet + m_packetLen, &length, sizeof(UnsignedByte));
 		m_packetLen += sizeof(UnsignedByte);
 
-		memcpy(m_packet + m_packetLen, unitext.str(), length * sizeof(UnsignedShort));
+		WriteUnicodeString16ToPacket(m_packet + m_packetLen, unitext, length);
 		m_packetLen += length * sizeof(UnsignedShort);
 
 		memcpy(m_packet + m_packetLen, &playerMask, sizeof(Int));

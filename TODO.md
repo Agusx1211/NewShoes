@@ -1101,6 +1101,11 @@ shares structure and follows behind.
       bytes.
 - [x] Compile original `GameNetwork/NetCommandMsg.cpp` after adding the
       `SYSTEMTIME` shim and fixing the original `Team` DLINK clang contract.
+- [x] Link and smoke-test original `GameNetwork/NetCommandList.cpp`,
+      `NetCommandMsg.cpp`, `NetCommandRef.cpp`, and `NetPacket.cpp` sorting,
+      attach/detach ownership, and non-game command packet round-trips,
+      including explicit 16-bit chat-text wire serialization under wasm
+      `WideChar`.
 - [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after adding the browser-safe WinSock compile surface and
       preserving the original UDP/transport logic for the later WebSocket/WebRTC
@@ -1111,12 +1116,16 @@ shares structure and follows behind.
       current WWDownload dependency surface from the vendored source.
 - [x] Link and smoke-test original `WWDownload` idle state and registry URL
       defaults without starting the raw FTP socket path.
+- [x] Link and smoke-test original `GameNetwork/DownloadManager.cpp` queue,
+      status, error, and last-local-file behavior against original
+      `GameText.cpp`/`LanguageFilter.cpp` and `WWDownload`, without starting
+      the raw FTP socket path.
 - [ ] Replace original WWDownload raw FTP/WinSock transport with a browser
       fetch/proxy/update-download contract before patch/download runtime flows
       are considered functional.
-- [ ] Link and smoke-test original `GameNetwork/DownloadManager.cpp` queue and
-      status behavior after the real `GameText` singleton, browser download
-      transport, and update UI callback surfaces are available.
+- [ ] Harness-test original `GameNetwork/DownloadManager.cpp` through the
+      browser download transport and update UI callback surfaces once the
+      fetch/proxy/update-download contract exists.
 - [x] Compile original `GameNetwork/FirewallHelper.cpp` after adding the
       original firewall fields/defaults to the temporary `GlobalData` shim,
       portable `itoa` compatibility, and explicit loop variables for legacy

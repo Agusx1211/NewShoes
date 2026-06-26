@@ -1807,6 +1807,39 @@ target_include_directories(zh_gameengine_real_compile_frontier PRIVATE
   "${COMPRESSION_EAC_DIR}"
 )
 
+add_library(zh_gameclient_text STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/GameText.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/LanguageFilter.cpp"
+)
+
+target_include_directories(zh_gameclient_text PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_gameclient_text PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_gameclient_text PUBLIC
+  zh_gameengine_common_core
+)
+
 add_library(zh_gameclient_utility STATIC
   "${WASM_SHIMS_DIR}/INICompat.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
@@ -3120,6 +3153,36 @@ target_compile_options(gamenetwork-core-smoke PRIVATE
 )
 
 target_link_options(gamenetwork-core-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(gamenetwork-download-manager-smoke
+  tests/gamenetwork_download_manager_smoke.cpp
+)
+
+set_target_properties(gamenetwork-download-manager-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gamenetwork-download-manager-smoke PRIVATE
+  zh_gamenetwork_core
+  zh_gameclient_text
+)
+
+target_compile_options(gamenetwork-download-manager-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(gamenetwork-download-manager-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
