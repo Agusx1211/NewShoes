@@ -13,3 +13,16 @@ template <typename T>
 class CComObject : public T
 {
 };
+
+template <typename T>
+class CComQIPtr
+{
+public:
+	explicit CComQIPtr(void *ptr = nullptr) : m_ptr(static_cast<T *>(ptr)) {}
+
+	operator T *() const { return m_ptr; }
+	T *operator->() const { return m_ptr; }
+
+private:
+	T *m_ptr;
+};

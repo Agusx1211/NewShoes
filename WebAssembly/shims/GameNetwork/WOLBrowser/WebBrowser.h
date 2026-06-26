@@ -37,6 +37,8 @@ public:
 
 	WebBrowserURL *makeNewURL(AsciiString) { return nullptr; }
 	WebBrowserURL *findURL(AsciiString) { return nullptr; }
+
+	void *m_dispatch = nullptr;
 };
 
 extern WebBrowser *TheWebBrowser;

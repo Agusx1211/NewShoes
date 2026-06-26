@@ -1475,6 +1475,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainTracks.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DView.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/WorldHeightMap.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/camerashakesystem.cpp"
@@ -1872,6 +1873,10 @@ set_source_files_properties("${GAMEENGINE_COMMON_DIR}/GameEngine.cpp" PROPERTIES
 
 set_source_files_properties("${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp" PROPERTIES
   COMPILE_OPTIONS "${WOL_BROWSER_COMPILE_BRIDGE}"
+)
+
+set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;${WOL_BROWSER_COMPILE_BRIDGE}"
 )
 
 target_compile_definitions(zh_gameengine_real_compile_frontier PRIVATE
