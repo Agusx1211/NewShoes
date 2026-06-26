@@ -858,6 +858,12 @@ shares structure and follows behind.
       with equivalent lvalue `Vector2` inputs. This is compile coverage only
       until water-track rendering, file I/O, editor input, and water-scene
       integration are browser-backed and harness-verified.
+- [x] Compile original `W3DDevice/GameClient/Water/W3DWater.cpp` in the
+      real-header compile frontier after adding the explicit D3DX core include
+      needed by its inline shader assembly path. This is compile coverage only
+      until D3DX shader assembly/creation, reflection render targets, grid and
+      river water rendering, water-track integration, and terrain/water scene
+      state are mapped to browser renderer APIs and harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -947,10 +953,9 @@ shares structure and follows behind.
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
       contract.
-- [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      `W3DDisplay.cpp` and `Water/W3DWater.cpp`, after the remaining
-      WW3D2/Direct3D/browser device compatibility surface is available as part
-      of the renderer port.
+- [ ] Compile the remaining original W3D renderer-adjacent leaf,
+      `W3DDisplay.cpp`, after the remaining WW3D2/Direct3D/browser device
+      compatibility surface is available as part of the renderer port.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
       (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading) and
       key-state helper (`GetAsyncKeyState`) with browser pointer/cursor/keyboard
@@ -961,9 +966,10 @@ shares structure and follows behind.
       while the checked-in original header is `W3DVideobuffer.h`; add the wasm
       include bridge and compile the original source without replacing the
       video-buffer interface.
-- [ ] Compile original `Water/W3DWater.cpp` after resolving the reached D3DX
-      shader-buffer assembly declarations and remaining water renderer
-      dependencies without replacing water behavior.
+- [ ] Replace the compile-only `Water/W3DWater.cpp` D3DX/Direct3D shader,
+      render-target, reflection, grid, river-water, and water-track integration
+      paths with real WebGL2/WebGPU-backed behavior, then verify the original
+      water renderer through harness screenshots.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
       source blocker: the legacy BrowserEngine DLL import in
       `dx8webbrowser.cpp`. Runtime browser ports are still needed for the

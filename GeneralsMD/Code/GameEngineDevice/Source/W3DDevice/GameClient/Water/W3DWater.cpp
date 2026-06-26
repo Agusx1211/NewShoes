@@ -44,6 +44,7 @@
 #include "scene.h"
 #include "dx8wrapper.h"
 #include "light.h"
+#include "D3dx8core.h"
 #include "D3dx8math.h"
 #include "simplevec.h"
 #include "mesh.h"
@@ -3510,5 +3511,4 @@ void WaterRenderObjClass::loadPostProcess( void )
 {
 
 }  // end loadPostProcess
-
 

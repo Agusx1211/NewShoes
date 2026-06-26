@@ -1483,6 +1483,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/WorldHeightMap.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/camerashakesystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3dWaypointBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWaterTracks.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGhostObject.cpp"
