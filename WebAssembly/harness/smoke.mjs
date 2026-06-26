@@ -61,6 +61,17 @@ function assertWasmTiming(state, label) {
   }
 }
 
+async function assertHarnessLog(page, message, textSubstring) {
+  const result = await page.evaluate(() => window.CnCPort.rpc("state"));
+  const found = result.logs.some((entry) => (
+    entry.message === message
+    && String(entry.data?.text ?? "").includes(textSubstring)
+  ));
+  if (!found) {
+    throw new Error(`Harness log missing ${message}/${textSubstring}: ${JSON.stringify(result.logs)}`);
+  }
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
@@ -93,6 +104,7 @@ try {
   }
   if (expectWasm) {
     assertWasmTiming(bootResult.state, "boot");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
     throw new Error(`Expected browser harness to initialize WebGL2: ${JSON.stringify(bootResult.state.graphics)}`);

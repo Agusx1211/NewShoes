@@ -171,6 +171,8 @@ async function loadWasmModule() {
     const createModule = moduleExports.default ?? moduleExports.createCncPortModule;
     const module = await createModule({
       locateFile: (path) => path.endsWith(".wasm") ? `../dist/${path}` : path,
+      print: (text) => recordLog("wasm stdout", { text: String(text) }),
+      printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
     });
 
     return {

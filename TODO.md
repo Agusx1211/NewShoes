@@ -1513,6 +1513,9 @@ shares structure and follows behind.
       resize assertions. This is the browser bridge surface only; original W3D
       display/device binding remains open.
 - [ ] Logging/`DEBUG_LOG`/assert routed to browser console + harness.
+- [x] Capture Emscripten module stdout/stderr through the browser harness log
+      RPC and smoke-test the wasm bootstrap boot line. Original `DEBUG_LOG` and
+      assert routing still need the real debug subsystem integration.
 - [ ] Engine `init()` runs to completion without crashing.
 - [ ] Graceful handling of missing assets (clear error, not a hang).
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).

@@ -60,6 +60,14 @@ void run_original_core_probe()
 	g_original_core_probe_ok = true;
 }
 
+void log_boot_state()
+{
+	std::printf("cnc-port: boot frame=%u timingSource=emscripten_get_now rng=%d crc=%u\n",
+		g_frame,
+		g_original_logic_random_value,
+		g_original_logic_seed_crc);
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -67,6 +75,7 @@ void ensure_booted()
 		++g_frame;
 		record_tick_time();
 		run_original_core_probe();
+		log_boot_state();
 	}
 }
 
