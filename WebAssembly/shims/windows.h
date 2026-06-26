@@ -1251,6 +1251,60 @@ static inline DWORD GetCurrentDirectory(DWORD buffer_len, LPSTR buffer)
 	return static_cast<DWORD>(length);
 }
 
+static inline DWORD GetTempPath(DWORD buffer_len, LPSTR buffer)
+{
+	if (buffer == nullptr || buffer_len == 0) {
+		return 0;
+	}
+
+	const char *temp = std::getenv("TMPDIR");
+	if (temp == nullptr || temp[0] == '\0') {
+		temp = "/tmp";
+	}
+
+	const std::size_t temp_len = std::strlen(temp);
+	const bool needs_slash = temp_len == 0 || temp[temp_len - 1] != '/';
+	const std::size_t required = temp_len + (needs_slash ? 1 : 0);
+	if (required + 1 > static_cast<std::size_t>(buffer_len)) {
+		return static_cast<DWORD>(required + 1);
+	}
+
+	std::snprintf(
+		buffer,
+		static_cast<std::size_t>(buffer_len),
+		needs_slash ? "%s/" : "%s",
+		temp);
+	return static_cast<DWORD>(required);
+}
+
+static inline UINT GetTempFileName(LPCSTR path, LPCSTR prefix, UINT unique, LPSTR buffer)
+{
+	if (buffer == nullptr) {
+		return 0;
+	}
+
+	char temp_path[_MAX_PATH];
+	if (path == nullptr || path[0] == '\0') {
+		if (GetTempPath(sizeof(temp_path), temp_path) == 0) {
+			return 0;
+		}
+		path = temp_path;
+	}
+
+	const char *name_prefix = prefix != nullptr ? prefix : "tmp";
+	const UINT suffix = unique != 0 ? unique : static_cast<UINT>(getpid());
+	const std::size_t path_len = std::strlen(path);
+	const bool has_separator = path_len > 0 && (path[path_len - 1] == '/' || path[path_len - 1] == '\\');
+	const int written = std::snprintf(
+		buffer,
+		_MAX_PATH,
+		has_separator ? "%s%s%u.tmp" : "%s/%s%u.tmp",
+		path,
+		name_prefix,
+		suffix);
+	return written > 0 && written < _MAX_PATH ? suffix : 0;
+}
+
 static inline BOOL SetCurrentDirectory(LPCSTR path)
 {
 	if (path == nullptr) {

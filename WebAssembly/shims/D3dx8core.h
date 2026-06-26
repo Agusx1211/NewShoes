@@ -10,6 +10,16 @@
 #define D3DX_FILTER_TRIANGLE 4
 #define D3DX_FILTER_BOX 5
 
+struct ID3DXBuffer
+{
+	virtual LPVOID GetBufferPointer() = 0;
+	virtual DWORD GetBufferSize() = 0;
+	virtual ULONG AddRef() = 0;
+	virtual ULONG Release() = 0;
+};
+
+using LPD3DXBUFFER = ID3DXBuffer *;
+
 static inline HRESULT D3DXGetErrorStringA(HRESULT result, LPSTR buffer, UINT buffer_len)
 {
 	if (buffer == nullptr || buffer_len == 0) {
@@ -118,3 +128,18 @@ HRESULT D3DXCreateVolumeTexture(
 	D3DFORMAT format,
 	D3DPOOL pool,
 	IDirect3DVolumeTexture8 **texture);
+
+HRESULT D3DXAssembleShaderFromFile(
+	LPCSTR src_file,
+	const void *defines,
+	LPD3DXBUFFER *constants,
+	LPD3DXBUFFER *shader_code,
+	LPD3DXBUFFER *errors);
+
+HRESULT D3DXAssembleShader(
+	const void *src_data,
+	UINT src_data_len,
+	DWORD flags,
+	LPD3DXBUFFER *constants,
+	LPD3DXBUFFER *shader_code,
+	LPD3DXBUFFER *errors);

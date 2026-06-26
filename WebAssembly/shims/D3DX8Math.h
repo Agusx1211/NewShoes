@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "d3d8.h"
+
 #ifndef D3DX_PI
 #define D3DX_PI 3.14159265358979323846f
 #endif
@@ -15,6 +17,10 @@ struct D3DXVECTOR3
 	D3DXVECTOR3() : x(0.0f), y(0.0f), z(0.0f) {}
 	D3DXVECTOR3(float x_in, float y_in, float z_in) :
 		x(x_in), y(y_in), z(z_in)
+	{
+	}
+	D3DXVECTOR3(const D3DVECTOR &vector) :
+		x(vector.x), y(vector.y), z(vector.z)
 	{
 	}
 };

@@ -835,6 +835,17 @@ shares structure and follows behind.
       This is compile coverage only: WWAudio/Miles still needs a Web Audio
       runtime port, and the Direct3D wrapper still needs real WebGL2/WebGPU
       backend behavior before any rendering claim is done.
+- [x] Expand `zh_ww3d2_compile_frontier` to 114 original WW3D2 sources by
+      adding `sr_util.cpp` after introducing a compile-only Surrender
+      math/object declaration surface. This covers the original Surrender
+      conversion utility translation unit, not the runtime Surrender renderer
+      or object model.
+- [x] Start `zh_wwshade_compile_frontier` with 17 original `WWVegas/wwshade`
+      sources that do not require generated shader blob headers: shader
+      definitions/factories/managers, interfaces, loaders, mesh/submesh,
+      renderer, simple/gloss/cubemap/legacy W3D paths, and hardware-shader
+      helper declarations. This is compile coverage only until the Direct3D
+      shader runtime is mapped to a browser renderer.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -854,13 +865,19 @@ shares structure and follows behind.
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
-      clustered blockers from the current probe: the legacy BrowserEngine DLL
-      import in `dx8webbrowser.cpp`, missing Surrender `sr*` utility headers
-      (`sr_util.cpp`), and runtime browser ports for the compiled Direct3D
-      wrapper, WWAudio/Miles playback, GDI text rasterization,
-      Video-for-Windows frame grabbing, MPU/timing reads, and `ww3d.cpp`
+      source blocker: the legacy BrowserEngine DLL import in
+      `dx8webbrowser.cpp`. Runtime browser ports are still needed for the
+      compiled Direct3D wrapper, WWAudio/Miles playback, GDI text
+      rasterization, Video-for-Windows frame grabbing, MPU/timing reads,
+      Surrender renderer/object behavior, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer
       behavior.
+- [ ] Continue the original `WWVegas/wwshade` compile frontier by restoring or
+      regenerating the checked-in shader blob headers required by the six
+      DX6/DX7/DX8 bump variants (`shd6bumpdiff.cpp`, `shd6bumpspec.cpp`,
+      `shd7bumpdiff.cpp`, `shd7bumpspec.cpp`, `shd8bumpdiff.cpp`, and
+      `shd8bumpspec.cpp`), then mapping D3DX shader assembly and shader
+      creation to the browser renderer pipeline without inventing shader data.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

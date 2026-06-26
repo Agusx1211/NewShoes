@@ -23,6 +23,7 @@ set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(WWDOWNLOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDownload")
+set(WWSHADE_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/wwshade")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
@@ -1998,6 +1999,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/sortingrenderer.cpp"
   "${WWVEGAS_DIR}/WW3D2/soundrobj.cpp"
   "${WWVEGAS_DIR}/WW3D2/sphereobj.cpp"
+  "${WWVEGAS_DIR}/WW3D2/sr_util.cpp"
   "${WWVEGAS_DIR}/WW3D2/static_sort_list.cpp"
   "${WWVEGAS_DIR}/WW3D2/statistics.cpp"
   "${WWVEGAS_DIR}/WW3D2/streak.cpp"
@@ -2045,6 +2047,67 @@ target_compile_options(zh_ww3d2_compile_frontier PRIVATE
   "-iquote${WWVEGAS_DIR}"
   "-iquote${WWVEGAS_DIR}/WW3D2"
   "-iquote${WWVEGAS_DIR}/WWAudio"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+add_library(zh_wwshade_compile_frontier STATIC
+  "${WWSHADE_DIR}/shdbumpdiff.cpp"
+  "${WWSHADE_DIR}/shdbumpspec.cpp"
+  "${WWSHADE_DIR}/shdcubemap.cpp"
+  "${WWSHADE_DIR}/shddef.cpp"
+  "${WWSHADE_DIR}/shddeffactory.cpp"
+  "${WWSHADE_DIR}/shddefmanager.cpp"
+  "${WWSHADE_DIR}/shdforcelinks.cpp"
+  "${WWSHADE_DIR}/shdglossmask.cpp"
+  "${WWSHADE_DIR}/shdhwshader.cpp"
+  "${WWSHADE_DIR}/shdinterface.cpp"
+  "${WWSHADE_DIR}/shdlegacyw3d.cpp"
+  "${WWSHADE_DIR}/shdlib.cpp"
+  "${WWSHADE_DIR}/shdloader.cpp"
+  "${WWSHADE_DIR}/shdmesh.cpp"
+  "${WWSHADE_DIR}/shdrenderer.cpp"
+  "${WWSHADE_DIR}/shdsimple.cpp"
+  "${WWSHADE_DIR}/shdsubmesh.cpp"
+)
+
+target_include_directories(zh_wwshade_compile_frontier PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWVEGAS_DIR}/WWAudio"
+  "${WWSHADE_DIR}"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_wwshade_compile_frontier PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWVEGAS_DIR}/WWAudio"
+  "-iquote${WWSHADE_DIR}"
   "-iquote${WWDEBUG_DIR}"
   "-iquote${WWLIB_DIR}"
   "-iquote${WWMATH_DIR}"
