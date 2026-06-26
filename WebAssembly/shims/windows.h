@@ -515,6 +515,17 @@ static inline int MessageBoxA(void *, const char *text, const char *caption, uns
 	return IDIGNORE;
 }
 
+static inline int MessageBoxW(void *, const wchar_t *text, const wchar_t *caption, unsigned int)
+{
+	std::fwprintf(stderr, L"%ls: %ls\n", caption ? caption : L"MessageBoxW", text ? text : L"");
+	return IDIGNORE;
+}
+
+static inline int MessageBox(void *window, const char *text, const char *caption, unsigned int flags)
+{
+	return MessageBoxA(window, text, caption, flags);
+}
+
 static inline BOOL SetWindowText(HWND, const char *)
 {
 	return TRUE;

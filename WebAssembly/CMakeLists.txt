@@ -1282,6 +1282,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/DamageFX.cpp"
   "${GAMEENGINE_COMMON_DIR}/Dict.cpp"
   "${GAMEENGINE_COMMON_DIR}/DiscreteCircle.cpp"
+  "${GAMEENGINE_COMMON_DIR}/GameEngine.cpp"
   "${GAMEENGINE_COMMON_DIR}/GameMain.cpp"
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
   "${GAMEENGINE_COMMON_DIR}/GameLOD.cpp"
@@ -1311,6 +1312,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIUpgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIVideo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWeapon.cpp"
   "${GAMEENGINE_COMMON_DIR}/Language.cpp"
   "${GAMEENGINE_COMMON_DIR}/MessageStream.cpp"
@@ -1759,6 +1761,16 @@ set(ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES
 
 set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
+)
+
+set(WOL_BROWSER_COMPILE_BRIDGE "-include${WASM_SHIMS_DIR}/GameNetwork/WOLBrowser/WebBrowser.h")
+
+set_source_files_properties("${GAMEENGINE_COMMON_DIR}/GameEngine.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/atlbase.h;-include${WASM_SHIMS_DIR}/mmsystem.h;${WOL_BROWSER_COMPILE_BRIDGE}"
+)
+
+set_source_files_properties("${GAMEENGINE_COMMON_DIR}/INI/INIWebpageURL.cpp" PROPERTIES
+  COMPILE_OPTIONS "${WOL_BROWSER_COMPILE_BRIDGE}"
 )
 
 target_compile_definitions(zh_gameengine_real_compile_frontier PRIVATE

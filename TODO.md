@@ -729,9 +729,9 @@ shares structure and follows behind.
       available.
 - [x] Compile original `Common/GameMain.cpp` in the real-header compile
       frontier.
-- [ ] Compile original `Common/GameEngine.cpp` after the WOL browser / ATL
+- [x] Compile original `Common/GameEngine.cpp` after the WOL browser / ATL
       dependency (`atlbase.h` through `GameNetwork/WOLBrowser/WebBrowser.h`)
-      has a browser integration contract.
+      has a browser compile bridge.
 - [ ] Enable and route `MiniLog.cpp`'s `DEBUG_LOGGING` body to the browser log
       or harness once the real `GameLogic` frame counter is available.
 - [x] Compile original `Common/System/Radar.cpp` in the real-header compile
@@ -756,14 +756,14 @@ shares structure and follows behind.
       draw-group, game-data, map-cache/map-data/mapped-image, misc-audio,
       model, multiplayer, object, particle, special-power, terrain,
       terrain-bridge/road, upgrade, video, water, and weapon parsers).
-- [ ] Compile original `Common/INI/INIWebpageURL.cpp` after the WOL browser /
-      ATL dependency (`atlbase.h`) has a browser URL integration contract.
+- [x] Compile original `Common/INI/INIWebpageURL.cpp` after the WOL browser /
+      ATL dependency (`atlbase.h`) has a browser URL compile bridge.
 - [ ] Remaining `Common/RTS`, `Thing`, and `Audio` interfaces compile without
       target-local parser/Xfer/GameLogic shims.
 - [x] `GameMain.cpp`, `GlobalData.cpp`, `NameKeyGenerator`, `RandomValue`, and
       `crc` compile as part of the real-header compile frontier.
-- [ ] `GameEngine.cpp` compiles as part of a broader engine archive after its
-      WOL browser / ATL dependency is replaced or re-targeted.
+- [x] `GameEngine.cpp` compiles as part of a broader engine archive after its
+      WOL browser / ATL dependency is replaced with a browser compile bridge.
 
 ### GameEngine — GameClient / GameLogic / GameNetwork (headers + logic)
 - [ ] `GameLogic` (AI, Object, ScriptEngine, Map, System) compiles.
@@ -1072,7 +1072,8 @@ shares structure and follows behind.
       compile bridges.
 - [ ] Replace the compile-only `GameNetwork/WOLBrowser/WebBrowser.h` bridge
       with a browser DOM/iframe or external-link contract before running the
-      original WOL ladder/login/welcome browser panes.
+      original WOL ladder/login/welcome browser panes or URL definitions at
+      runtime.
 - [ ] Replace the compile-only `_spawnl` no-spawn process fallback with an
       explicit browser policy for the Main Menu WorldBuilder button before
       driving that menu at runtime.

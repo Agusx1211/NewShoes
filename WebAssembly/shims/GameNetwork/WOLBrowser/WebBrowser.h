@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef __WEBBROWSER_H__
+#define __WEBBROWSER_H__
+
 #include "Common/SubsystemInterface.h"
 #include "Common/GameMemory.h"
 #include "Common/AsciiString.h"
@@ -37,3 +40,5 @@ public:
 };
 
 extern WebBrowser *TheWebBrowser;
+
+#endif // __WEBBROWSER_H__
