@@ -2000,6 +2000,70 @@ target_link_libraries(zh_w3d_device_utility PUBLIC
   zh_wwmath_core
 )
 
+add_library(zh_miles_audio_device_compile_frontier STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/MilesAudioDevice/MilesAudioManager.cpp"
+)
+
+target_include_directories(zh_miles_audio_device_compile_frontier PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/Miles6/include"
+  "${WWAUDIO_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_definitions(zh_miles_audio_device_compile_frontier PRIVATE
+  __PRERTS_H__
+)
+
+target_compile_options(zh_miles_audio_device_compile_frontier PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/Miles6/include"
+  "-iquote${WWAUDIO_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_wwaudio_compile_frontier STATIC
   "${WWAUDIO_DIR}/AudibleSound.cpp"
   "${WWAUDIO_DIR}/AudioSaveLoad.cpp"

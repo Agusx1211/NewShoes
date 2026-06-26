@@ -962,6 +962,12 @@ shares structure and follows behind.
       clang/MSVC compatibility fixes. This is compile coverage only; the
       current Miles declarations are inert and do not provide Web Audio
       playback.
+- [x] Start `zh_miles_audio_device_compile_frontier` with original
+      `GameEngineDevice/Source/MilesAudioDevice/MilesAudioManager.cpp` after
+      adding the reached `MSS/MSS.h`, DirectSound speaker-config/Bink-handle,
+      Miles, and Win32 mutex declaration surface. This is compile coverage only;
+      the current declarations are inert and do not provide Web Audio playback,
+      sample/stream ownership, decoding, or 3D positioning.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -1653,6 +1659,12 @@ shares structure and follows behind.
 ## M7 — Audio (Miles → Web Audio)
 
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
+- [ ] Replace compile-only `Mss.H`/`dsound.h` paths used by
+      `MilesAudioManager.cpp` with a browser-backed audio device that owns real
+      sample, stream, provider, listener, and Bink-sharing handles.
+- [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
+      assert observable playback state, mixer volume changes, completion
+      callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists.
 - [ ] Decode original audio formats (WAV/MP3/Miles streams) via WebAudio/WebCodecs.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world.

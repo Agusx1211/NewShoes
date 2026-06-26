@@ -1780,6 +1780,16 @@ static inline HANDLE CreateEvent(void *, BOOL, BOOL, const char *)
 	return reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
 }
 
+static inline HANDLE CreateMutex(void *, BOOL, const char *)
+{
+	return reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
+}
+
+static inline BOOL ReleaseMutex(HANDLE)
+{
+	return TRUE;
+}
+
 static inline BOOL CloseHandle(HANDLE)
 {
 	return TRUE;
