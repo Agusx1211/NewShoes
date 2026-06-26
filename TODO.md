@@ -548,11 +548,15 @@ shares structure and follows behind.
 - [x] Compile original `Common/CRCDebug.cpp` in the real-header compile
       frontier after making `CRCDebug.h` self-contained for the engine typedefs
       it exposes outside `DEBUG_CRC`.
-- [ ] Compile original `Common/System/Debug.cpp` and
-      `Common/System/FunctionLexicon.cpp` after the browser input layer
-      replaces the DirectInput (`dinput.h`) dependency pulled through
-      `GameClient/KeyDefs.h` and the legacy function-pointer table has a typed
-      browser-safe representation instead of `void *` function casts.
+- [x] Compile original `Common/System/Debug.cpp` and
+      `Common/System/FunctionLexicon.cpp` in the real-header compile frontier
+      after the DirectInput declaration shim, typed callback-table wrapper,
+      explicit `Debug.cpp` `GlobalData`/`StackDump` includes, and Win32
+      message/window constants made their original dependencies reachable.
+- [ ] Link and smoke-test original debug logging/release-crash reporting and
+      function-lexicon callback lookup after browser console/assert/dialog
+      routing, `GameWindowManager`, and the real GUI callback runtime are
+      linked without compile-only prompt/window shims.
 - [x] Compile original `Common/Audio/DynamicAudioEventInfo.cpp` against the
       current temporary `Common/Xfer.h` shim, including unsigned-byte and
       unsigned-int transfer signatures.
@@ -624,6 +628,12 @@ shares structure and follows behind.
 - [ ] Compile original `Common/Audio/GameSpeech.cpp` after the WPAudio
       attribute header/backend dependency is replaced with the browser audio
       contract.
+- [ ] Restore or locate the original WPAudio public headers and dependent WSys
+      / ASIMP3 decoder headers referenced by the checked-in WPAudio project and
+      sources (`wpaudio/*.h`, `wsys/File.h`, `asimp3/mss.h`,
+      `asimp3/mp3dec.h`) before compiling original WPAudio or the
+      WPAudio-backed `GameSpeech` path; do not synthesize replacement structs
+      solely for compile coverage.
 - [x] Compile original RTS accounting sources `Common/RTS/Handicap.cpp`,
       `MissionStats.cpp`, and `Money.cpp` after fixing the original
       `Team` DLINK clang contract and adding the production map typedefs

@@ -343,11 +343,14 @@ static inline int _wtoi(const wchar_t *value)
 #define MB_OK 0x00000000
 #define MB_OKCANCEL 0x00000001
 #define MB_ABORTRETRYIGNORE 0x00000002
+#define MB_YESNO 0x00000004
 #define MB_ICONHAND 0x00000010
 #define MB_ICONSTOP MB_ICONHAND
 #define MB_ICONERROR MB_ICONHAND
+#define MB_ICONWARNING 0x00000030
 #define MB_ICONEXCLAMATION 0x00000030
 #define MB_ICONINFORMATION 0x00000040
+#define MB_DEFBUTTON3 0x00000200
 #define MB_APPLMODAL 0x00000000
 #define MB_SYSTEMMODAL 0x00001000
 #define MB_TASKMODAL 0x00002000
@@ -358,12 +361,16 @@ static inline int _wtoi(const wchar_t *value)
 #define IDABORT 3
 #define IDRETRY 4
 #define IDIGNORE 5
+#define IDYES 6
+#define IDNO 7
 
 #define HWND_NOTOPMOST reinterpret_cast<HWND>(-2)
 #define HWND_TOPMOST reinterpret_cast<HWND>(-1)
 #define SWP_NOSIZE 0x0001
 #define SWP_NOMOVE 0x0002
 #define SWP_NOZORDER 0x0004
+#define SW_HIDE 0
+#define SW_SHOW 5
 #define GWL_STYLE (-16)
 
 #define DRIVE_UNKNOWN 0
@@ -750,6 +757,11 @@ static inline int MessageBox(void *window, const char *text, const char *caption
 }
 
 static inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT)
+{
+	return TRUE;
+}
+
+static inline BOOL ShowWindow(HWND, int)
 {
 	return TRUE;
 }
