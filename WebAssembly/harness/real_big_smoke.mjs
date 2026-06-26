@@ -9,6 +9,24 @@ const wasmRoot = resolve(harnessRoot, "..");
 const defaultArchivePath = resolve(wasmRoot, "artifacts/real-assets/INIZH.big");
 const archivePath = resolve(wasmRoot, process.argv[2] ?? defaultArchivePath);
 
+function assertGameDataProbe(assetProbe, context) {
+  const gameData = assetProbe?.gameData;
+  if (!assetProbe?.inizh?.gameDataIni
+      || !gameData?.attempted
+      || !gameData.ok
+      || gameData.parsedFields !== 8
+      || gameData.shellMapName !== "Maps\\ShellMapMD\\ShellMapMD.map"
+      || gameData.useFpsLimit !== true
+      || gameData.framesPerSecondLimit !== 30
+      || gameData.maxShellScreens !== 8
+      || gameData.useCloudMap !== true
+      || Math.abs(gameData.defaultStructureRubbleHeight - 10.0) > 0.001
+      || Math.abs(gameData.groupSelectVolumeBase - 0.5) > 0.001
+      || gameData.maxParticleCount !== 2500) {
+    throw new Error(`${context} did not parse expected GameData.ini scalars: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function isInside(parent, child) {
   const path = relative(parent, child);
   return path === "" || (!path.startsWith("..") && !path.startsWith(sep));
@@ -58,6 +76,7 @@ try {
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
+  assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {
     const moduleExports = await import(moduleUrl);

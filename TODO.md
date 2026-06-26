@@ -1627,6 +1627,13 @@ shares structure and follows behind.
       `CONTROLBAR:` label enumeration. This is a GameText asset preflight only;
       full original GameText startup and language/font initialization remain
       open.
+- [x] Extend the wasm bootstrap archive preflight to read real
+      `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
+      `FileSystem` archive path, expose shipped `GameData` scalar values as
+      `assetProbe.gameData`, and cover the single-archive and registered
+      runtime-archive boot paths in Playwright. This is a scalar INI preflight
+      through the current INI-compatible parser bridge only; full original
+      `Common/INI.cpp::load` parsing remains open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
@@ -1635,6 +1642,10 @@ shares structure and follows behind.
 ### Data load with original code
 - [ ] Load real `INIZH.big`; original INI parser reads it (objects, weapons,
       locomotors, armor, FX, command sets/buttons, control bars, science, etc.).
+- [ ] Replace `assetProbe.gameData`'s scalar preflight with full original
+      `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
+      can use the real INI reader and singleton surfaces instead of the
+      target-local `Common/INI.h` compatibility bridge.
 - [ ] `GameText`/string tables load (CSF/GameText) for the chosen language.
 - [ ] Map cache builds / loads.
 - [ ] Harness state query: dump counts of parsed templates to prove data loaded.

@@ -329,8 +329,10 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[11000];
+	char buffer[14000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
+	const std::string game_data_shell_map_name_json =
+		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
@@ -356,7 +358,14 @@ const char *write_state_json()
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
-		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,\"weaponIni\":%s},"
+		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
+		"\"gameDataIni\":%s,\"weaponIni\":%s},"
+		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"parsedFields\":%zu,\"shellMapName\":\"%s\","
+		"\"useFpsLimit\":%s,\"framesPerSecondLimit\":%d,"
+		"\"maxShellScreens\":%d,\"useCloudMap\":%s,"
+		"\"defaultStructureRubbleHeight\":%.3f,"
+		"\"groupSelectVolumeBase\":%.3f,\"maxParticleCount\":%d},"
 		"\"gameText\":{\"attempted\":%s,\"ok\":%s,\"generalsCsf\":%s,"
 		"\"titleLabel\":%s,\"controlBarLabel\":%s,\"controlBarLabels\":%zu}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
@@ -411,7 +420,20 @@ const char *write_state_json()
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
+		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_probe.game_data_attempted ? "true" : "false",
+		g_archive_probe.game_data_ok ? "true" : "false",
+		g_archive_probe.game_data_bytes,
+		g_archive_probe.game_data_parsed_fields,
+		game_data_shell_map_name_json.c_str(),
+		g_archive_probe.game_data_use_fps_limit ? "true" : "false",
+		g_archive_probe.game_data_frames_per_second_limit,
+		g_archive_probe.game_data_max_shell_screens,
+		g_archive_probe.game_data_use_cloud_map ? "true" : "false",
+		g_archive_probe.game_data_default_structure_rubble_height,
+		g_archive_probe.game_data_group_select_volume_base,
+		g_archive_probe.game_data_max_particle_count,
 		g_archive_probe.game_text_attempted ? "true" : "false",
 		g_archive_probe.game_text_ok ? "true" : "false",
 		g_archive_probe.has_generals_csf ? "true" : "false",

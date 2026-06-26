@@ -63,7 +63,12 @@ registered archive set by probing the aggregate path through the original
 `Win32BIGFileSystem`; the result is reported as `archiveMount.bootProbe`.
 The same smoke verifies `assetProbe.gameText` by loading the real English
 `Generals.csf` through original `GameText.cpp` and checking known
-title/control-bar labels plus `CONTROLBAR:` prefix enumeration.
+title/control-bar labels plus `CONTROLBAR:` prefix enumeration. It also checks
+`assetProbe.gameData` by reading the real `Data\INI\GameData.ini` through the
+same archive path and verifying shipped scalar values such as the shell map,
+FPS limit, cloud-map flag, rubble height, group-select volume, and particle
+limit. This is still a bootstrap preflight; full original `Common/INI.cpp`
+loading remains part of engine startup work.
 
 ## Toolchain
 

@@ -46,6 +46,24 @@ function assertGameTextProbe(assetProbe, context) {
   }
 }
 
+function assertGameDataProbe(assetProbe, context) {
+  const gameData = assetProbe?.gameData;
+  if (!assetProbe?.inizh?.gameDataIni
+      || !gameData?.attempted
+      || !gameData.ok
+      || gameData.parsedFields !== 8
+      || gameData.shellMapName !== "Maps\\ShellMapMD\\ShellMapMD.map"
+      || gameData.useFpsLimit !== true
+      || gameData.framesPerSecondLimit !== 30
+      || gameData.maxShellScreens !== 8
+      || gameData.useCloudMap !== true
+      || Math.abs(gameData.defaultStructureRubbleHeight - 10.0) > 0.001
+      || Math.abs(gameData.groupSelectVolumeBase - 0.5) > 0.001
+      || gameData.maxParticleCount !== 2500) {
+    throw new Error(`${context} did not parse expected GameData.ini scalars: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -117,6 +135,7 @@ try {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
+  assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
@@ -162,6 +181,7 @@ try {
     throw new Error(`boot asset probe mismatch: ${JSON.stringify(bootResult.state.assetProbe)}`);
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
 
   console.log(JSON.stringify({
     ok: true,
