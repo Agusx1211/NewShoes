@@ -2538,6 +2538,69 @@ target_link_libraries(zh_gameengine_debug_runtime PUBLIC
   zh_gameengine_common_core
 )
 
+add_library(zh_gameengine_globaldata_runtime STATIC
+  src/wasm_globaldata_probe.cpp
+  "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
+)
+
+target_compile_definitions(zh_gameengine_globaldata_runtime PRIVATE
+  __PRERTS_H__
+  ALLOW_DEBUG_UTILS=1
+  DEBUG_LOGGING=1
+  DISABLE_DEBUG_CRASHING=1
+  DISABLE_DEBUG_STACKTRACE=1
+  DISABLE_DEBUG_PROFILE=1
+)
+
+target_include_directories(zh_gameengine_globaldata_runtime PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(zh_gameengine_globaldata_runtime PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-invalid-offsetof
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_gameclient_utility STATIC
   "${WASM_SHIMS_DIR}/INICompat.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Color.cpp"
@@ -2823,6 +2886,7 @@ target_include_directories(cnc-port PRIVATE
 )
 
 target_link_libraries(cnc-port PRIVATE
+  zh_gameengine_globaldata_runtime
   zh_gameengine_common_core
   zh_gameclient_text
   zh_gameengine_debug_runtime

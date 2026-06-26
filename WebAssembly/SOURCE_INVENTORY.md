@@ -126,7 +126,13 @@ The wasm CMake skeleton currently builds:
   captured wasm stdout. It also links original `Common/System/Debug.cpp` with
   `DEBUG_LOGGING` enabled and reports `commonDebugLog` after routing
   `DebugLog` output through the captured wasm stderr hook; release-crash routing
-  is still outside this bootstrap path. The archive probe
+  is still outside this bootstrap path. A focused original
+  `Common/GlobalData.cpp` runtime target now constructs the real
+  `TheWritableGlobalData` object against browser file/user-directory shims and
+  reports harness-verified constructor defaults, user-data path setup, and
+  `setTimeOfDay` mutation through `globalDataProbe`; command-line mutation and
+  full replacement of the target-local `Common/GlobalData.h` shim are still
+  open. The archive probe
   proves fetched MEMFS archive availability and the archive-set registration
   records the verified aggregate archive directory/mask in C++ bootstrap state.
   When present at `boot`, the bootstrap probes that registered aggregate path
@@ -328,6 +334,12 @@ The wasm CMake skeleton currently builds:
   scene/object/handle/cache/update code at compile time only; Web Audio
   playback, decoding, scheduling, and delayed-release threading still need a
   real browser runtime contract.
+- `zh_gameengine_globaldata_runtime`: focused linked-runtime target for original
+  `GameEngine/Source/Common/GlobalData.cpp` plus the wasm bridge that constructs
+  the real `TheWritableGlobalData` singleton during bootstrap, using browser
+  Win32/file-system shims. Browser smoke coverage verifies constructor defaults,
+  user-data path setup, and `setTimeOfDay`; command-line mutation and replacing
+  the remaining target-local `Common/GlobalData.h` shim are still open.
 - `zh_gameengine_real_compile_frontier`: compile-only original
   GameEngine/GameEngineDevice frontier with real headers first, covering the real
   browser-buildable non-device sources from the current

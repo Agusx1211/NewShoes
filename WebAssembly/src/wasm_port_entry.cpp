@@ -4,6 +4,7 @@
 #include <string>
 
 #include "wasm_archive_probe.h"
+#include "wasm_globaldata_probe.h"
 
 #include "Common/Debug.h"
 #include "Common/RandomValue.h"
@@ -56,6 +57,7 @@ bool g_original_core_probe_ok = false;
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
+GlobalDataProbeResult g_global_data_probe;
 std::string g_state_json;
 
 struct ArchiveMountState
@@ -218,6 +220,14 @@ void run_original_debug_log_probe()
 		g_common_debug_log_count > 0;
 }
 
+void run_original_global_data_probe()
+{
+	g_global_data_probe = probe_original_global_data();
+	std::printf("cnc-port: globaldata probe ok=%d userData=%s\n",
+		g_global_data_probe.ok ? 1 : 0,
+		g_global_data_probe.user_data_path.c_str());
+}
+
 void probe_registered_archive_set_for_boot()
 {
 	g_archive_mount.boot_probe_attempted = g_archive_mount.registered;
@@ -283,6 +293,7 @@ void ensure_booted()
 		run_original_core_probe();
 		run_original_debug_probe();
 		run_original_debug_log_probe();
+		run_original_global_data_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -307,10 +318,15 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[7000];
+	char buffer[9000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
+	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
+	const std::string global_data_user_data_path_json =
+		json_escape(g_global_data_probe.user_data_path);
+	const std::string global_data_shell_map_name_json =
+		json_escape(g_global_data_probe.shell_map_name);
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -337,6 +353,15 @@ const char *write_state_json()
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
+		"\"globalDataProbe\":{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
+		"\"resolution\":{\"x\":%d,\"y\":%d},\"fpsLimit\":{\"enabled\":%s,\"frames\":%d},"
+		"\"windowed\":%s,\"userDataPath\":\"%s\","
+		"\"shellMap\":{\"enabled\":%s,\"name\":\"%s\"},"
+		"\"defaults\":{\"useTrees\":%s,\"useTreeSway\":%s,\"useHeatEffects\":%s,"
+		"\"maxParticleCount\":%d,\"maxFieldParticleCount\":%d,"
+		"\"networkDisconnectTime\":%u,\"networkPlayerTimeoutTime\":%u,"
+		"\"doubleClickTimeMs\":%u,\"exeCrc\":%u},"
+		"\"setTimeOfDay\":{\"ok\":%s,\"value\":%d}},"
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
 		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
@@ -388,6 +413,28 @@ const char *write_state_json()
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,
 		g_original_core_probe_ok ? "true" : "false",
+		global_data_source_json.c_str(),
+		g_global_data_probe.attempted ? "true" : "false",
+		g_global_data_probe.ok ? "true" : "false",
+		g_global_data_probe.x_resolution,
+		g_global_data_probe.y_resolution,
+		g_global_data_probe.use_fps_limit ? "true" : "false",
+		g_global_data_probe.frames_per_second_limit,
+		g_global_data_probe.windowed ? "true" : "false",
+		global_data_user_data_path_json.c_str(),
+		g_global_data_probe.shell_map_on ? "true" : "false",
+		global_data_shell_map_name_json.c_str(),
+		g_global_data_probe.use_trees ? "true" : "false",
+		g_global_data_probe.use_tree_sway ? "true" : "false",
+		g_global_data_probe.use_heat_effects ? "true" : "false",
+		g_global_data_probe.max_particle_count,
+		g_global_data_probe.max_field_particle_count,
+		g_global_data_probe.network_disconnect_time,
+		g_global_data_probe.network_player_timeout_time,
+		g_global_data_probe.double_click_time_ms,
+		g_global_data_probe.exe_crc,
+		g_global_data_probe.set_time_of_day_ok ? "true" : "false",
+		g_global_data_probe.time_of_day,
 		g_debug_handlers_installed ? "true" : "false",
 		g_debug_probe_ok ? "true" : "false",
 		g_debug_message_count,

@@ -731,9 +731,12 @@ shares structure and follows behind.
 - [x] Compile original `Common/GlobalData.cpp` in the real-header compile
       frontier after making the real `GlobalData` include explicit and mapping
       the user-data folder lookup to the browser/POSIX platform shim.
-- [ ] Link and smoke-test original `GlobalData` defaults, user-data path setup,
-      and command-line mutation after the linked runtime replaces the
-      target-local `Common/GlobalData.h` shim.
+- [x] Link and smoke-test original `GlobalData` constructor defaults and
+      browser user-data path setup in the wasm bootstrap via
+      `globalDataProbe`.
+- [ ] Link original `GlobalData` command-line mutation and replace the remaining
+      target-local `Common/GlobalData.h` singleton shim in the broader linked
+      runtime.
 - [x] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
       SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
       mapped to browser-safe networking interfaces.

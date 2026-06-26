@@ -119,6 +119,26 @@ function assertCommonDebugLog(state, label) {
   }
 }
 
+function assertGlobalDataProbe(state, label) {
+  const probe = state.globalDataProbe;
+  if (!probe?.ok || probe.source !== "GameEngine/Common/GlobalData.cpp") {
+    throw new Error(`${label} GlobalData probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (probe.resolution?.x !== 800 || probe.resolution?.y !== 600) {
+    throw new Error(`${label} GlobalData resolution defaults changed: ${JSON.stringify(probe)}`);
+  }
+
+  if (probe.defaults?.networkDisconnectTime !== 5000
+      || probe.defaults?.networkPlayerTimeoutTime !== 60000
+      || probe.defaults?.doubleClickTimeMs !== 500
+      || probe.shellMap?.name !== "Maps\\ShellMap1\\ShellMap1.map"
+      || !String(probe.userDataPath ?? "").includes("Command and Conquer Generals Zero Hour Data")
+      || !probe.setTimeOfDay?.ok) {
+    throw new Error(`${label} GlobalData defaults incomplete: ${JSON.stringify(probe)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -168,9 +188,11 @@ try {
     assertWin32Timing(bootResult.state, "boot");
     assertWwDebugProbe(bootResult.state, "boot");
     assertCommonDebugLog(bootResult.state, "boot");
+    assertGlobalDataProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: globaldata probe ok=1");
     await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
