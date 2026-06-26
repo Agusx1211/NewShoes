@@ -35,11 +35,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_boot()
 	return write_state_json();
 }
 
-EMSCRIPTEN_KEEPALIVE void cnc_port_frame()
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_frame()
 {
 	if (g_booted) {
 		++g_frame;
 	}
+	return write_state_json();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()

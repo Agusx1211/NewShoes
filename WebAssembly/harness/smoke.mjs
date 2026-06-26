@@ -35,6 +35,17 @@ try {
     throw new Error(`Expected wasm module to load: ${JSON.stringify(bootResult.state)}`);
   }
 
+  const initialFrame = bootResult.state.frame;
+  const frameResult = await page.evaluate(() => window.CnCPort.rpc("frame", {
+    count: 3,
+  }));
+  if (!frameResult.ok) {
+    throw new Error(`Frame RPC failed: ${JSON.stringify(frameResult)}`);
+  }
+  if (frameResult.state.frame !== initialFrame + 3) {
+    throw new Error(`Frame RPC did not advance deterministically: ${JSON.stringify(frameResult.state)}`);
+  }
+
   const logResult = await page.evaluate(() => window.CnCPort.rpc("log", {
     message: "smoke test reached browser harness",
   }));

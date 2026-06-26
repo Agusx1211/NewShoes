@@ -36,6 +36,9 @@ shares structure and follows behind.
 - [x] Screenshot capture utility writing to `artifacts/screenshots/`.
 - [x] A JS↔engine RPC/command channel stub (`boot`, `log`, `state`,
       `screenshot`).
+- [x] Add a bounded harness `frame` RPC that drives the exported wasm
+      `cnc_port_frame` path and smoke-tests deterministic frame advancement,
+      so future engine ticks can be driven through the same command surface.
 - [x] Harness smoke test runnable locally (`npm run test:harness`).
 - [x] Wire the harness smoke test into CI.
 

@@ -53,6 +53,27 @@ async function boot(payload = {}) {
   return snapshotState();
 }
 
+async function stepFrames(payload = {}) {
+  const wasmModule = await wasmModulePromise;
+  const requestedCount = Number(payload.count ?? 1);
+  const count = Number.isFinite(requestedCount)
+    ? Math.max(0, Math.min(600, Math.trunc(requestedCount)))
+    : 1;
+
+  for (let i = 0; i < count; ++i) {
+    if (wasmModule) {
+      applyModuleState(parseModuleState(wasmModule.frame()));
+      harnessState.wasm = "loaded";
+    } else if (harnessState.booted) {
+      harnessState.frame += 1;
+      harnessState.wasm = "missing";
+    }
+  }
+
+  syncStatus(harnessState.booted ? `booted (${harnessState.runtime})` : "idle");
+  return snapshotState();
+}
+
 function applyModuleState(moduleState) {
   harnessState.booted = Boolean(moduleState.booted);
   harnessState.frame = Number(moduleState.frame ?? harnessState.frame);
@@ -69,6 +90,7 @@ async function loadWasmModule() {
 
     return {
       boot: module.cwrap("cnc_port_boot", "string", []),
+      frame: module.cwrap("cnc_port_frame", "string", []),
       state: module.cwrap("cnc_port_state", "string", []),
     };
   } catch (error) {
@@ -113,6 +135,8 @@ async function rpc(command, payload = {}) {
   switch (command) {
     case "boot":
       return { ok: true, command, state: await boot(payload) };
+    case "frame":
+      return { ok: true, command, state: await stepFrames(payload) };
     case "log":
       return { ok: true, command, entry: recordLog(payload.message ?? "", payload.data ?? null) };
     case "screenshot":
