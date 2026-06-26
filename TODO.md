@@ -763,6 +763,18 @@ shares structure and follows behind.
       `W3DGameLogic.cpp`, and `TileData.cpp`, after fixing
       `WorldHeightMap.h` self-containment and the `WWLib/RefCount.h`
       case-sensitive include path.
+- [x] Link and smoke-test lightweight original W3D utility behavior under
+      wasm: `TileData.cpp` terrain-tile mip generation and `W3DPoly.cpp`
+      polygon clipping, with the original sources also present in the
+      real-header compile frontier.
+- [x] Compile original `W3DDevice/GameClient/W3DFileSystem.cpp` in the
+      real-header compile frontier after adding the `WWLIB/ffactory.h`
+      case-sensitive include bridge needed by the original W3D file factory
+      header.
+- [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
+      after the final browser asset `FileSystem`, `GlobalData` user-data path,
+      and WWLib file-factory singleton contract are available without
+      compile-only globals.
 - [ ] Compile original W3D renderer-adjacent factories and lexicon
       (`W3DModuleFactory.cpp`, `W3DFunctionLexicon.cpp`, height-map leaves)
       after the WW3D2/Direct3D include surface, GDI font handle compatibility,

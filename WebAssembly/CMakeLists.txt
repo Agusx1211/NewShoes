@@ -1396,6 +1396,8 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/version.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/W3DConvert.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/Thing/W3DThingFactory.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
@@ -1805,8 +1807,10 @@ target_compile_options(zh_gameengine_real_compile_frontier PRIVATE
   "-iquote${ZH_CODE_DIR}/Libraries/Source"
   "-iquote${WWVEGAS_DIR}"
   "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
   "-iquote${WWLIB_DIR}"
   "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
   "-iquote${COMPRESSION_DIR}"
   "-iquote${COMPRESSION_EAC_DIR}"
   -fms-extensions
@@ -1832,10 +1836,71 @@ target_include_directories(zh_gameengine_real_compile_frontier PRIVATE
   "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
   "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWLIB_DIR}"
   "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
   "${COMPRESSION_DIR}"
   "${COMPRESSION_EAC_DIR}"
+)
+
+add_library(zh_w3d_device_utility STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
+)
+
+target_include_directories(zh_w3d_device_utility PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(zh_w3d_device_utility PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_w3d_device_utility PUBLIC
+  zh_wwdebug_core
+  zh_wwlib_refcount
+  zh_wwmath_core
 )
 
 add_library(zh_gameclient_text STATIC
@@ -3133,6 +3198,34 @@ target_link_options(gameclient-utility-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(w3d-device-utility-smoke
+  tests/w3d_device_utility_smoke.cpp
+)
+
+set_target_properties(w3d-device-utility-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(w3d-device-utility-smoke PRIVATE
+  zh_w3d_device_utility
+)
+
+target_compile_options(w3d-device-utility-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(w3d-device-utility-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sEXIT_RUNTIME=1"
 )
 
 add_executable(gameengine-common-core-smoke
