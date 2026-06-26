@@ -108,6 +108,17 @@ function assertWwDebugProbe(state, label) {
   }
 }
 
+function assertCommonDebugLog(state, label) {
+  const probe = state.commonDebugLog;
+  if (!probe?.ok || probe.source !== "GameEngine/Common/System/Debug.cpp") {
+    throw new Error(`${label} Common DebugLog probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.console || probe.logCount < 1 || !String(probe.lastMessage ?? "").includes("cnc-port debuglog")) {
+    throw new Error(`${label} Common DebugLog values incomplete: ${JSON.stringify(probe)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -156,9 +167,11 @@ try {
     assertWasmTiming(bootResult.state, "boot");
     assertWin32Timing(bootResult.state, "boot");
     assertWwDebugProbe(bootResult.state, "boot");
+    assertCommonDebugLog(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
+    await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
     throw new Error(`Expected browser harness to initialize WebGL2: ${JSON.stringify(bootResult.state.graphics)}`);

@@ -39,6 +39,7 @@ const harnessState = {
   originalEngineLinked: false,
   originalCoreProbe: null,
   debugProbe: null,
+  commonDebugLog: null,
   assetProbe: null,
   archiveMount: null,
   mountedArchives: [],
@@ -170,6 +171,7 @@ function applyModuleState(moduleState) {
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.debugProbe = moduleState.debugProbe ?? null;
+  harnessState.commonDebugLog = moduleState.commonDebugLog ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
 }
@@ -243,6 +245,7 @@ function snapshotState() {
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     debugProbe: harnessState.debugProbe,
+    commonDebugLog: harnessState.commonDebugLog,
     assetProbe: harnessState.assetProbe,
     archiveMount: harnessState.archiveMount,
     mountedArchives: harnessState.mountedArchives,

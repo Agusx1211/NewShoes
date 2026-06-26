@@ -554,10 +554,13 @@ shares structure and follows behind.
       after the DirectInput declaration shim, typed callback-table wrapper,
       explicit `Debug.cpp` `GlobalData`/`StackDump` includes, and Win32
       message/window constants made their original dependencies reachable.
-- [ ] Link and smoke-test original debug logging/release-crash reporting and
-      function-lexicon callback lookup after browser console/assert/dialog
-      routing, `GameWindowManager`, and the real GUI callback runtime are
-      linked without compile-only prompt/window shims.
+- [x] Link original `Common/System/Debug.cpp` into the browser bootstrap with
+      `DEBUG_LOGGING` console output routed through the Emscripten stderr hook,
+      with harness state/log coverage for the original `DebugLog` path.
+- [ ] Link and smoke-test original release-crash reporting and function-lexicon
+      callback lookup after browser assert/dialog routing, `GameWindowManager`,
+      and the real GUI callback runtime are linked without compile-only
+      prompt/window shims.
 - [x] Compile original `Common/Audio/DynamicAudioEventInfo.cpp` against the
       current temporary `Common/Xfer.h` shim, including unsigned-byte and
       unsigned-int transfer signatures.
@@ -1562,15 +1565,15 @@ shares structure and follows behind.
       resize-synchronized viewport/backing state, black clear, and smoke-tested
       resize assertions. This is the browser bridge surface only; original W3D
       display/device binding remains open.
-- [ ] Logging/`DEBUG_LOG`/assert routed to browser console + harness.
+- [x] Logging/`DEBUG_LOG`/assert routed to browser console + harness.
 - [x] Capture Emscripten module stdout/stderr through the browser harness log
-      RPC and smoke-test the wasm bootstrap boot line. Original `DEBUG_LOG` and
-      assert routing still need the real debug subsystem integration.
+      RPC and smoke-test the wasm bootstrap boot line.
 - [x] Install original `WWDebug` message/assert handlers in the browser
       bootstrap and harness-test info/warning/error/assert routing through the
       captured wasm stdout stream. This proves the original `WWDebug` handler
-      bridge only; full `Common/System/Debug.cpp` `DEBUG_LOG` and release-crash
-      routing remain open.
+      bridge only; full release-crash routing remains open.
+- [x] Link original `Common/System/Debug.cpp` into the browser bootstrap and
+      harness-test `DEBUG_LOG` console output through captured wasm stderr.
 - [ ] Engine `init()` runs to completion without crashing.
 - [ ] Graceful handling of missing assets (clear error, not a hang).
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).

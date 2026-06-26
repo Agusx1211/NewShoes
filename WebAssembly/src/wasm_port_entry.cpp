@@ -5,6 +5,7 @@
 
 #include "wasm_archive_probe.h"
 
+#include "Common/Debug.h"
 #include "Common/RandomValue.h"
 #include "GameLogic/LogicRandomValue.h"
 #include "mmsystem.h"
@@ -47,6 +48,10 @@ int g_debug_assert_count = 0;
 std::string g_debug_last_type;
 std::string g_debug_last_message;
 std::string g_debug_last_assert;
+bool g_common_debug_log_probe_ok = false;
+int g_common_debug_log_count = 0;
+int g_common_debug_log_flags = 0;
+std::string g_common_debug_log_last_message;
 bool g_original_core_probe_ok = false;
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
@@ -192,6 +197,27 @@ void run_original_debug_probe()
 		g_debug_assert_count >= starting_asserts + 1;
 }
 
+void run_original_debug_log_probe()
+{
+	int flags = DebugGetFlags();
+	if (flags == 0) {
+		DebugInit(DEBUG_FLAG_LOG_TO_CONSOLE);
+	} else if ((flags & DEBUG_FLAG_LOG_TO_CONSOLE) == 0) {
+		DebugSetFlags(flags | DEBUG_FLAG_LOG_TO_CONSOLE);
+	}
+
+	char message[128];
+	std::snprintf(message, sizeof(message), "cnc-port debuglog frame=%u", g_frame);
+	DEBUG_LOG(("%s\n", message));
+
+	g_common_debug_log_flags = DebugGetFlags();
+	g_common_debug_log_last_message = message;
+	++g_common_debug_log_count;
+	g_common_debug_log_probe_ok =
+		(g_common_debug_log_flags & DEBUG_FLAG_LOG_TO_CONSOLE) != 0 &&
+		g_common_debug_log_count > 0;
+}
+
 void probe_registered_archive_set_for_boot()
 {
 	g_archive_mount.boot_probe_attempted = g_archive_mount.registered;
@@ -256,6 +282,7 @@ void ensure_booted()
 		record_tick_time();
 		run_original_core_probe();
 		run_original_debug_probe();
+		run_original_debug_log_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -280,13 +307,15 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[6000];
+	char buffer[7000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
+	const std::string common_debug_log_last_message_json =
+		json_escape(g_common_debug_log_last_message);
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"booted\":%s,\"frame\":%u,\"module\":\"wasm-port-bootstrap\","
 		"\"mainLoop\":{\"running\":%s,\"fps\":%d,\"ticks\":%u},"
@@ -311,7 +340,10 @@ const char *write_state_json()
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
 		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
-		"\"lastType\":\"%s\",\"lastMessage\":\"%s\",\"lastAssert\":\"%s\"}}",
+		"\"lastType\":\"%s\",\"lastMessage\":\"%s\",\"lastAssert\":\"%s\"},"
+		"\"commonDebugLog\":{\"source\":\"GameEngine/Common/System/Debug.cpp\","
+		"\"ok\":%s,\"logCount\":%d,\"flags\":%d,\"console\":%s,"
+		"\"lastMessage\":\"%s\"}}",
 		g_booted ? "true" : "false",
 		g_frame,
 		g_main_loop_running ? "true" : "false",
@@ -365,7 +397,12 @@ const char *write_state_json()
 		g_debug_assert_count,
 		debug_last_type_json.c_str(),
 		debug_last_message_json.c_str(),
-		debug_last_assert_json.c_str());
+		debug_last_assert_json.c_str(),
+		g_common_debug_log_probe_ok ? "true" : "false",
+		g_common_debug_log_count,
+		g_common_debug_log_flags,
+		(g_common_debug_log_flags & DEBUG_FLAG_LOG_TO_CONSOLE) != 0 ? "true" : "false",
+		common_debug_log_last_message_json.c_str());
 	g_state_json = buffer;
 	return g_state_json.c_str();
 }
