@@ -110,8 +110,9 @@ npm run test:harness
 
 The smoke test starts a local static server, boots the browser harness through
 `window.CnCPort.rpc("boot")`, advances deterministic frames through
-`window.CnCPort.rpc("frame", { count })`, verifies the WebGL2 canvas/RPC state,
-exercises resize handling, and writes screenshots to `artifacts/screenshots/`.
+`window.CnCPort.rpc("frame", { count })`, verifies the wasm-scheduled
+Emscripten main-loop tick bridge, checks the WebGL2 canvas/RPC state, exercises
+resize handling, and writes screenshots to `artifacts/screenshots/`.
 
 Run the wasm-backed smoke test:
 

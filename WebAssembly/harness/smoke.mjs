@@ -26,6 +26,24 @@ async function waitForCanvasSize(page, width, height) {
   return result.state;
 }
 
+async function waitForMainLoopTicks(page, startingFrame, startingTicks, tickCount) {
+  const deadline = Date.now() + 2000;
+  let result = await page.evaluate(() => window.CnCPort.rpc("state"));
+
+  while (Date.now() < deadline) {
+    if (result.state.mainLoop.running
+        && result.state.frame >= startingFrame + tickCount
+        && result.state.mainLoop.ticks >= startingTicks + tickCount) {
+      return result.state;
+    }
+
+    await page.waitForTimeout(20);
+    result = await page.evaluate(() => window.CnCPort.rpc("state"));
+  }
+
+  throw new Error(`Main loop did not advance ${tickCount} ticks: ${JSON.stringify(result.state)}`);
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
@@ -73,6 +91,38 @@ try {
   }
   if (frameResult.state.frame !== initialFrame + 3) {
     throw new Error(`Frame RPC did not advance deterministically: ${JSON.stringify(frameResult.state)}`);
+  }
+
+  if (expectWasm) {
+    const loopStartResult = await page.evaluate(() => window.CnCPort.rpc("startMainLoop"));
+    if (!loopStartResult.ok || !loopStartResult.state.mainLoop.running) {
+      throw new Error(`Main loop start RPC failed: ${JSON.stringify(loopStartResult)}`);
+    }
+    if (loopStartResult.state.mainLoop.fps !== 60) {
+      throw new Error(`Unexpected main loop FPS: ${JSON.stringify(loopStartResult.state.mainLoop)}`);
+    }
+
+    const loopState = await waitForMainLoopTicks(
+      page,
+      loopStartResult.state.frame,
+      loopStartResult.state.mainLoop.ticks,
+      2,
+    );
+    if (!loopState.mainLoop.running) {
+      throw new Error(`Main loop stopped before ticking: ${JSON.stringify(loopState)}`);
+    }
+
+    const loopStopResult = await page.evaluate(() => window.CnCPort.rpc("stopMainLoop"));
+    if (!loopStopResult.ok || loopStopResult.state.mainLoop.running) {
+      throw new Error(`Main loop stop RPC failed: ${JSON.stringify(loopStopResult)}`);
+    }
+
+    const stoppedFrame = loopStopResult.state.frame;
+    await page.waitForTimeout(80);
+    const afterStopResult = await page.evaluate(() => window.CnCPort.rpc("state"));
+    if (afterStopResult.state.frame !== stoppedFrame || afterStopResult.state.mainLoop.running) {
+      throw new Error(`Main loop advanced after stop: ${JSON.stringify(afterStopResult.state)}`);
+    }
   }
 
   const logResult = await page.evaluate(() => window.CnCPort.rpc("log", {

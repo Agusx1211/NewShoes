@@ -1497,6 +1497,10 @@ shares structure and follows behind.
       Common-core link probe, not full engine initialization.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
+- [x] Expose a harness-verified `emscripten_set_main_loop` start/stop bridge
+      that advances the current wasm bootstrap tick at 60 Hz. This proves the
+      browser scheduling surface only; the real engine tick still needs to
+      replace the bootstrap counter.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.
 - [x] Initialize the browser harness canvas with a real WebGL2 drawing buffer,

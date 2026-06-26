@@ -15,6 +15,11 @@ const harnessState = {
   frame: 0,
   runtime: "js-stub",
   wasm: null,
+  mainLoop: {
+    running: false,
+    fps: 0,
+    ticks: 0,
+  },
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -153,6 +158,7 @@ function applyModuleState(moduleState) {
   harnessState.booted = Boolean(moduleState.booted);
   harnessState.frame = Number(moduleState.frame ?? harnessState.frame);
   harnessState.runtime = moduleState.module ?? "wasm";
+  harnessState.mainLoop = moduleState.mainLoop ?? harnessState.mainLoop;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
 }
@@ -168,6 +174,8 @@ async function loadWasmModule() {
     return {
       boot: module.cwrap("cnc_port_boot", "string", []),
       frame: module.cwrap("cnc_port_frame", "string", []),
+      startMainLoop: module.cwrap("cnc_port_start_main_loop", "string", []),
+      stopMainLoop: module.cwrap("cnc_port_stop_main_loop", "string", []),
       state: module.cwrap("cnc_port_state", "string", []),
     };
   } catch (error) {
@@ -207,6 +215,7 @@ function snapshotState() {
     frame: harnessState.frame,
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
+    mainLoop: harnessState.mainLoop,
     canvas: harnessState.canvas,
     graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,
@@ -221,6 +230,28 @@ async function rpc(command, payload = {}) {
       return { ok: true, command, state: await boot(payload) };
     case "frame":
       return { ok: true, command, state: await stepFrames(payload) };
+    case "startMainLoop":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; Emscripten main loop cannot start" };
+        }
+        applyModuleState(parseModuleState(wasmModule.startMainLoop()));
+        harnessState.wasm = "loaded";
+        syncStatus(`booted (${harnessState.runtime})`);
+        return { ok: true, command, state: snapshotState() };
+      }
+    case "stopMainLoop":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; Emscripten main loop cannot stop" };
+        }
+        applyModuleState(parseModuleState(wasmModule.stopMainLoop()));
+        harnessState.wasm = "loaded";
+        syncStatus(`booted (${harnessState.runtime})`);
+        return { ok: true, command, state: snapshotState() };
+      }
     case "log":
       return { ok: true, command, entry: recordLog(payload.message ?? "", payload.data ?? null) };
     case "screenshot":
@@ -231,6 +262,7 @@ async function rpc(command, payload = {}) {
         if (wasmModule) {
           applyModuleState(parseModuleState(wasmModule.state()));
           harnessState.wasm = "loaded";
+          syncStatus(harnessState.booted ? `booted (${harnessState.runtime})` : "idle");
         }
       }
       return { ok: true, command, state: snapshotState(), logs: [...harnessState.logs] };

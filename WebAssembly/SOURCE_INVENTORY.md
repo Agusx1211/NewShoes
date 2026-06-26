@@ -108,7 +108,10 @@ The wasm CMake skeleton currently builds:
 - `cnc-port`: a browser module boundary used by the harness. It still uses a
   bootstrap entry instead of the original engine startup path, but now compiles
   and executes original `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on
-  boot as a harness-verified Common-core link probe.
+  boot as a harness-verified Common-core link probe. It also exposes a
+  harness-verified `emscripten_set_main_loop` start/stop bridge that currently
+  drives the bootstrap frame counter; the callback is the browser scheduling
+  surface that the real engine tick still needs to replace.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, and exposes the graphics state through RPC snapshots.
