@@ -64,6 +64,23 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertStartupAssets(state, context, expectedStatus, expectedOk) {
+  const startupAssets = state.startupAssets;
+  if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
+    throw new Error(`${context} startup asset state mismatch: ${JSON.stringify(startupAssets)}`);
+  }
+
+  if (expectedStatus === "ready"
+      && (!startupAssets.archiveSetRegistered
+        || !startupAssets.bootProbeAttempted
+        || !startupAssets.bootProbeOk
+        || !startupAssets.required?.inizh
+        || !startupAssets.required?.gameData
+        || !startupAssets.required?.gameText)) {
+    throw new Error(`${context} startup asset requirements incomplete: ${JSON.stringify(startupAssets)}`);
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -152,6 +169,7 @@ try {
   if (archiveMount.bootProbe?.attempted || archiveMount.bootProbe?.ok) {
     throw new Error(`boot archive probe should not run before boot: ${JSON.stringify(archiveMount.bootProbe)}`);
   }
+  assertStartupAssets(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
     source: "runtime archive browser smoke after archive preload",
@@ -182,6 +200,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
 
   console.log(JSON.stringify({
     ok: true,
@@ -193,6 +212,7 @@ try {
     aggregateProbe: assetProbe,
     archiveMount,
     bootArchiveMount,
+    startupAssets: bootResult.state.startupAssets,
     bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",

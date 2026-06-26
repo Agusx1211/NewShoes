@@ -159,6 +159,13 @@ function assertCommandLineProbe(state, label) {
   }
 }
 
+function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
+  const startupAssets = state.startupAssets;
+  if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
+    throw new Error(`${label} startup asset state mismatch: ${JSON.stringify(startupAssets)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -204,6 +211,7 @@ try {
     throw new Error(`Archive set should not be registered before asset mount: ${JSON.stringify(bootResult.state.archiveMount)}`);
   }
   if (expectWasm) {
+    assertStartupAssets(bootResult.state, "boot", "missing_runtime_archives");
     assertWasmTiming(bootResult.state, "boot");
     assertWin32Timing(bootResult.state, "boot");
     assertWwDebugProbe(bootResult.state, "boot");

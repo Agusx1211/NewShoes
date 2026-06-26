@@ -27,6 +27,13 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertStartupAssetsMissing(state, context) {
+  const startupAssets = state.startupAssets;
+  if (startupAssets?.ok !== false || startupAssets.status !== "missing_runtime_archives") {
+    throw new Error(`${context} should report missing runtime archives: ${JSON.stringify(startupAssets)}`);
+  }
+}
+
 function isInside(parent, child) {
   const path = relative(parent, child);
   return path === "" || (!path.startsWith("..") && !path.startsWith(sep));
@@ -62,6 +69,7 @@ try {
   if (!bootResult.ok || bootResult.state.wasm !== "loaded") {
     throw new Error(`cnc-port boot failed before archive mount: ${JSON.stringify(bootResult)}`);
   }
+  assertStartupAssetsMissing(bootResult.state, "cnc-port boot before archive mount");
 
   const mountResult = await page.evaluate((archiveUrl) => window.CnCPort.rpc("mountArchive", {
     url: archiveUrl,
@@ -77,6 +85,7 @@ try {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
+  assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {
     const moduleExports = await import(moduleUrl);
@@ -120,6 +129,7 @@ try {
     archive: archiveRelativePath,
     bytes: result.bytes,
     cncPortAssetProbe: assetProbe,
+    startupAssets: mountResult.state.startupAssets,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
   }, null, 2));

@@ -257,6 +257,99 @@ void probe_registered_archive_set_for_boot()
 		g_archive_probe.indexed_file_count);
 }
 
+bool startup_boot_ini_present()
+{
+	return g_archive_probe.has_armor_ini &&
+		g_archive_probe.has_command_button_ini &&
+		g_archive_probe.has_game_data_ini &&
+		g_archive_probe.has_weapon_ini;
+}
+
+bool startup_archive_probe_loaded()
+{
+	return g_archive_probe.loaded &&
+		g_archive_probe.indexed_file_count > 0 &&
+		g_archive_probe.sample_bytes > 0;
+}
+
+bool startup_game_data_ready()
+{
+	return g_archive_probe.has_game_data_ini &&
+		g_archive_probe.game_data_attempted &&
+		g_archive_probe.game_data_ok;
+}
+
+bool startup_game_text_ready()
+{
+	return g_archive_probe.has_generals_csf &&
+		g_archive_probe.game_text_attempted &&
+		g_archive_probe.game_text_ok;
+}
+
+bool startup_assets_ready()
+{
+	return g_archive_mount.registered &&
+		g_archive_mount.boot_probe_attempted &&
+		g_archive_mount.boot_probe_ok &&
+		g_archive_probe.ok &&
+		startup_archive_probe_loaded() &&
+		startup_boot_ini_present() &&
+		startup_game_data_ready() &&
+		startup_game_text_ready();
+}
+
+const char *startup_asset_status()
+{
+	if (!g_archive_mount.registered) {
+		return "missing_runtime_archives";
+	}
+	if (!g_archive_mount.boot_probe_attempted) {
+		return "pending_boot_probe";
+	}
+	if (!startup_archive_probe_loaded()) {
+		return "archive_probe_failed";
+	}
+	if (!startup_boot_ini_present()) {
+		return "missing_boot_ini";
+	}
+	if (!startup_game_data_ready()) {
+		return "game_data_probe_failed";
+	}
+	if (!startup_game_text_ready()) {
+		return "game_text_probe_failed";
+	}
+	if (!g_archive_mount.boot_probe_ok || !g_archive_probe.ok) {
+		return "archive_probe_failed";
+	}
+	return "ready";
+}
+
+const char *startup_asset_message()
+{
+	if (!g_archive_mount.registered) {
+		return "Register the Zero Hour runtime BIG archive set before engine startup.";
+	}
+	if (!g_archive_mount.boot_probe_attempted) {
+		return "Runtime BIG archive set is registered; boot probe has not run yet.";
+	}
+	if (!startup_archive_probe_loaded()) {
+		return "Runtime BIG archive boot probe failed.";
+	}
+	if (!startup_boot_ini_present()) {
+		return "Runtime BIG archive set is missing required boot INI files.";
+	}
+	if (!startup_game_data_ready()) {
+		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
+	}
+	if (!startup_game_text_ready()) {
+		return "Runtime BIG archive set did not pass the GameText CSF startup probe.";
+	}
+	if (!g_archive_mount.boot_probe_ok || !g_archive_probe.ok) {
+		return "Runtime BIG archive boot probe failed.";
+	}
+	return "Runtime BIG archive set is ready for original engine startup.";
+}
+
 void log_boot_state()
 {
 	std::printf("cnc-port: boot frame=%u timingSource=emscripten_get_now rng=%d crc=%u\n",
@@ -329,12 +422,14 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[14000];
+	char buffer[16000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
+	const std::string startup_asset_status_json = json_escape(startup_asset_status());
+	const std::string startup_asset_message_json = json_escape(startup_asset_message());
 	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
 	const std::string global_data_user_data_path_json =
 		json_escape(g_global_data_probe.user_data_path);
@@ -371,6 +466,9 @@ const char *write_state_json()
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
 		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
+		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
+		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
+		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"gameText\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
@@ -448,6 +546,15 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_attempted ? "true" : "false",
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		g_archive_mount.boot_probe_indexed_file_count,
+		startup_assets_ready() ? "true" : "false",
+		startup_asset_status_json.c_str(),
+		startup_asset_message_json.c_str(),
+		g_archive_mount.registered ? "true" : "false",
+		g_archive_mount.boot_probe_attempted ? "true" : "false",
+		g_archive_mount.boot_probe_ok ? "true" : "false",
+		startup_boot_ini_present() ? "true" : "false",
+		startup_game_data_ready() ? "true" : "false",
+		startup_game_text_ready() ? "true" : "false",
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,

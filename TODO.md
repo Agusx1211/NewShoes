@@ -1587,6 +1587,12 @@ shares structure and follows behind.
       harness-test `DEBUG_LOG` console output through captured wasm stderr.
 - [ ] Engine `init()` runs to completion without crashing.
 - [ ] Graceful handling of missing assets (clear error, not a hang).
+- [x] Expose a harness-verified bootstrap `startupAssets` state that reports
+      missing runtime archives as `missing_runtime_archives`, reports registered
+      archive sets as `pending_boot_probe` before boot, and only reports
+      `ready` after the boot-time archive/GameData/GameText probes pass. This is
+      bootstrap preflight only; full engine-init missing-asset handling remains
+      open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---

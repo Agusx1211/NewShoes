@@ -44,6 +44,7 @@ const harnessState = {
   commonDebugLog: null,
   assetProbe: null,
   archiveMount: null,
+  startupAssets: null,
   mountedArchives: [],
   logs: [],
 };
@@ -178,6 +179,7 @@ function applyModuleState(moduleState) {
   harnessState.commonDebugLog = moduleState.commonDebugLog ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
+  harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
 }
 
 async function loadWasmModule() {
@@ -254,6 +256,7 @@ function snapshotState() {
     commonDebugLog: harnessState.commonDebugLog,
     assetProbe: harnessState.assetProbe,
     archiveMount: harnessState.archiveMount,
+    startupAssets: harnessState.startupAssets,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };

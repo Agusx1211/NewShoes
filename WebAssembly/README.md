@@ -67,8 +67,12 @@ title/control-bar labels plus `CONTROLBAR:` prefix enumeration. It also checks
 `assetProbe.gameData` by reading the real `Data\INI\GameData.ini` through the
 same archive path and verifying shipped scalar values such as the shell map,
 FPS limit, cloud-map flag, rubble height, group-select volume, and particle
-limit. This is still a bootstrap preflight; full original `Common/INI.cpp`
-loading remains part of engine startup work.
+limit. The bootstrap also reports `startupAssets`, which stays
+`missing_runtime_archives` without a registered runtime archive set, moves to
+`pending_boot_probe` after preload registration, and only becomes `ready` after
+the boot-time archive/GameData/GameText probes pass. This is still a bootstrap
+preflight; full original `Common/INI.cpp` loading remains part of engine
+startup work.
 
 ## Toolchain
 
@@ -148,8 +152,9 @@ in its C++ state under `archiveMount`. `mountArchives` is valid before `boot`;
 the runtime archive smoke uses that ordering to match the eventual engine
 startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
 It also asserts the C++ `assetProbe.gameText` result from original
-`GameText.cpp` over the fetched English CSF. Full original engine startup,
-INI parsing, language initialization, and font loading remain open.
+`GameText.cpp` over the fetched English CSF, and checks `startupAssets` for the
+missing, pending, and ready archive states. Full original engine startup, INI
+parsing, language initialization, and font loading remain open.
 
 Run the wasm-backed smoke test:
 

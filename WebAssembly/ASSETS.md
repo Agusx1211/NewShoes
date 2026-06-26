@@ -32,7 +32,10 @@ The initial development path is same-origin fetch from ignored local artifacts:
 4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
 5. The wasm bootstrap consumes the registered archive set during `boot` by
    probing the aggregate path with the original `Win32BIGFileSystem`.
-6. The original engine BIG/file/INI code reads the mounted bytes during startup.
+6. The bootstrap reports `startupAssets` so the harness can distinguish
+   missing runtime archives, registered-but-unprobed archives, and a
+   probe-verified runtime archive set before original engine startup.
+7. The original engine BIG/file/INI code reads the mounted bytes during startup.
 
 This keeps the browser-specific boundary at file delivery. BIG parsing, INI
 parsing, object templates, UI data, audio events, maps, and gameplay behavior
@@ -65,8 +68,10 @@ registered aggregate path during boot. The same smoke asserts
 original `GameText.cpp` from the fetched archive set and checking known labels.
 It also asserts `assetProbe.gameData` by reading real
 `Data\INI\GameData.ini` from `INIZH.big` through the same original archive path
-and verifying shipped scalar values. Full original INI loading is still tracked
-separately from this bootstrap preflight.
+and verifying shipped scalar values. The smoke also checks `startupAssets`:
+`pending_boot_probe` before boot and `ready` after the registered archive set
+passes the boot-time archive/GameData/GameText probes. Full original INI loading
+is still tracked separately from this bootstrap preflight.
 
 | Archive | Source | Role |
 |---|---|---|

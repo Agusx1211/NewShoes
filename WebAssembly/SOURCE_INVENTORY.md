@@ -147,9 +147,13 @@ The wasm CMake skeleton currently builds:
   `GameText.cpp`. The same archive preflight now reads real
   `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
   `FileSystem` path and reports `assetProbe.gameData` with harness-verified
-  shipped scalar values. This still uses the linked INI-compatible bridge for
-  scalar extraction; original engine startup still needs to consume the mounted
-  runtime archive set through full `Common/INI.cpp::load` beyond this preflight.
+  shipped scalar values. The bootstrap also reports `startupAssets` so the
+  harness can distinguish missing runtime archives, registered-but-unprobed
+  runtime archives, and a boot-probe-verified archive set with required INI,
+  GameData, and GameText coverage. This still uses the linked INI-compatible
+  bridge for scalar extraction; original engine startup still needs to consume
+  the mounted runtime archive set through full `Common/INI.cpp::load` beyond
+  this preflight.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, captures Emscripten module stdout/stderr into the
@@ -723,7 +727,9 @@ The wasm CMake skeleton currently builds:
   `assetProbe.gameText` from original `GameText.cpp` by checking the English CSF
   file, known title/control-bar labels, and `CONTROLBAR:` prefix enumeration,
   plus `assetProbe.gameData` by checking real `GameData.ini` scalar values from
-  `INIZH.big` through the same archive path.
+  `INIZH.big` through the same archive path. The same smoke checks
+  `startupAssets` for the pre-boot `pending_boot_probe` state and the post-boot
+  `ready` state.
 
 ## Next Compile Order
 
