@@ -16,6 +16,7 @@
 #include "GameNetwork/NetCommandList.h"
 #include "GameNetwork/NetCommandMsg.h"
 #include "GameNetwork/NetCommandRef.h"
+#include "GameNetwork/NetCommandWrapperList.h"
 #include "GameNetwork/NetPacket.h"
 #include "GameNetwork/NetworkUtil.h"
 #include "GameNetwork/Transport.h"
@@ -96,11 +97,59 @@ NetCommandRef *roundTripCommand(NetCommandMsg *msg, UnsignedByte relay, const ch
 	return parsed;
 }
 
+bool buildPacketPayload(NetCommandMsg *msg, UnsignedByte relay, UnsignedByte *payload, Int &payload_length,
+	const char *context)
+{
+	NetPacket *packet = newInstance(NetPacket);
+	NetCommandRef *ref = NEW_NETCOMMANDREF(msg);
+	ref->setRelay(relay);
+	const Bool added = packet->addCommand(ref);
+	ref->deleteInstance();
+	msg->detach();
+
+	if (!expect(added, context) ||
+		!expect(packet->getNumCommands() == 1, "NetPacket did not count payload command") ||
+		!expect(packet->getLength() > 0 && packet->getLength() <= MAX_PACKET_SIZE,
+			"NetPacket payload length out of range")) {
+		packet->deleteInstance();
+		return false;
+	}
+
+	payload_length = packet->getLength();
+	std::memcpy(payload, packet->getData(), payload_length);
+	packet->deleteInstance();
+	return true;
+}
+
 NetCommandRef *addAndRelease(NetCommandList &list, NetCommandMsg *msg)
 {
 	NetCommandRef *ref = list.addMessage(msg);
 	msg->detach();
 	return ref;
+}
+
+NetWrapperCommandMsg *makeWrapperChunk(UnsignedShort id, UnsignedShort wrapped_id, UnsignedByte player_id,
+	UnsignedInt chunk_number, UnsignedInt num_chunks, UnsignedByte *payload, UnsignedInt payload_length,
+	UnsignedInt data_offset, UnsignedInt total_length)
+{
+	NetWrapperCommandMsg *wrapper = newInstance(NetWrapperCommandMsg);
+	wrapper->setPlayerID(player_id);
+	wrapper->setID(id);
+	wrapper->setWrappedCommandID(wrapped_id);
+	wrapper->setChunkNumber(chunk_number);
+	wrapper->setNumChunks(num_chunks);
+	wrapper->setDataOffset(data_offset);
+	wrapper->setTotalDataLength(total_length);
+	wrapper->setData(payload + data_offset, payload_length);
+	return wrapper;
+}
+
+void processAndReleaseWrapper(NetCommandWrapperList &list, NetWrapperCommandMsg *wrapper)
+{
+	NetCommandRef *ref = NEW_NETCOMMANDREF(wrapper);
+	list.processWrapper(ref);
+	ref->deleteInstance();
+	wrapper->detach();
 }
 
 bool exerciseNetworkUtil()
@@ -301,6 +350,74 @@ bool exerciseNetPacketRoundTrip()
 	file_ref->deleteInstance();
 
 	return frame_ok && run_ok && chat_ok && progress_ok && file_ok;
+}
+
+bool exerciseNetPacketAckRoundTrip()
+{
+	NetAckBothCommandMsg *ack_both = newInstance(NetAckBothCommandMsg);
+	ack_both->setPlayerID(2);
+	ack_both->setCommandID(901);
+	ack_both->setOriginalPlayerID(7);
+	NetPacket *ack_both_packet = newInstance(NetPacket);
+	NetCommandRef *ack_both_ref = NEW_NETCOMMANDREF(ack_both);
+	const Bool ack_both_added = ack_both_packet->addCommand(ack_both_ref);
+	ack_both_ref->deleteInstance();
+	ack_both->detach();
+	NetCommandList *ack_both_list = ack_both_packet->getCommandList();
+	NetCommandRef *parsed_ack_both_ref = ack_both_list->getFirstMessage();
+	NetAckBothCommandMsg *parsed_ack_both = parsed_ack_both_ref == nullptr ? nullptr :
+		static_cast<NetAckBothCommandMsg *>(parsed_ack_both_ref->getCommand());
+	const bool ack_both_ok =
+		expect(ack_both_added, "NetPacket did not add ack-both command") &&
+		expect(ack_both_list->length() == 1, "Ack-both packet-list round trip length changed") &&
+		expect(parsed_ack_both != nullptr, "Ack-both packet-list command missing") &&
+		expect(parsed_ack_both->getNetCommandType() == NETCOMMANDTYPE_ACKBOTH,
+			"Ack-both command type changed") &&
+		expect(parsed_ack_both->getPlayerID() == 2, "Ack-both player id changed") &&
+		expect(parsed_ack_both->getCommandID() == 901, "Ack-both command id changed") &&
+		expect(parsed_ack_both->getOriginalPlayerID() == 7, "Ack-both original player changed");
+	ack_both_list->deleteInstance();
+	ack_both_packet->deleteInstance();
+
+	NetAckStage1CommandMsg *ack_stage1 = newInstance(NetAckStage1CommandMsg);
+	ack_stage1->setPlayerID(3);
+	ack_stage1->setCommandID(902);
+	ack_stage1->setOriginalPlayerID(8);
+	NetCommandRef *ack_stage1_ref =
+		roundTripCommand(ack_stage1, 0x00, "NetPacket did not add ack-stage1 command");
+	if (ack_stage1_ref == nullptr) {
+		return false;
+	}
+	NetAckStage1CommandMsg *parsed_ack_stage1 =
+		static_cast<NetAckStage1CommandMsg *>(ack_stage1_ref->getCommand());
+	const bool ack_stage1_ok =
+		expect(parsed_ack_stage1->getNetCommandType() == NETCOMMANDTYPE_ACKSTAGE1,
+			"Ack-stage1 command type changed") &&
+		expect(parsed_ack_stage1->getPlayerID() == 3, "Ack-stage1 player id changed") &&
+		expect(parsed_ack_stage1->getCommandID() == 902, "Ack-stage1 command id changed") &&
+		expect(parsed_ack_stage1->getOriginalPlayerID() == 8, "Ack-stage1 original player changed");
+	ack_stage1_ref->deleteInstance();
+
+	NetAckStage2CommandMsg *ack_stage2 = newInstance(NetAckStage2CommandMsg);
+	ack_stage2->setPlayerID(4);
+	ack_stage2->setCommandID(903);
+	ack_stage2->setOriginalPlayerID(9);
+	NetCommandRef *ack_stage2_ref =
+		roundTripCommand(ack_stage2, 0x00, "NetPacket did not add ack-stage2 command");
+	if (ack_stage2_ref == nullptr) {
+		return false;
+	}
+	NetAckStage2CommandMsg *parsed_ack_stage2 =
+		static_cast<NetAckStage2CommandMsg *>(ack_stage2_ref->getCommand());
+	const bool ack_stage2_ok =
+		expect(parsed_ack_stage2->getNetCommandType() == NETCOMMANDTYPE_ACKSTAGE2,
+			"Ack-stage2 command type changed") &&
+		expect(parsed_ack_stage2->getPlayerID() == 4, "Ack-stage2 player id changed") &&
+		expect(parsed_ack_stage2->getCommandID() == 903, "Ack-stage2 command id changed") &&
+		expect(parsed_ack_stage2->getOriginalPlayerID() == 9, "Ack-stage2 original player changed");
+	ack_stage2_ref->deleteInstance();
+
+	return ack_both_ok && ack_stage1_ok && ack_stage2_ok;
 }
 
 bool exerciseNetPacketControlRoundTrip()
@@ -629,6 +746,77 @@ bool exerciseNetPacketControlRoundTrip()
 		file_announce_ok && disconnect_frame_ok && screen_off_ok && resend_ok;
 }
 
+bool exerciseNetCommandWrapperList()
+{
+	UnsignedByte payload[MAX_PACKET_SIZE] = {};
+	Int payload_length = 0;
+
+	NetFrameCommandMsg *frame = newInstance(NetFrameCommandMsg);
+	frame->setExecutionFrame(4120);
+	frame->setPlayerID(6);
+	frame->setID(904);
+	frame->setCommandCount(12);
+	if (!buildPacketPayload(frame, 0x2a, payload, payload_length,
+			"NetPacket did not build wrapper-list payload")) {
+		return false;
+	}
+
+	NetCommandWrapperList *wrappers = newInstance(NetCommandWrapperList);
+	wrappers->init();
+
+	const UnsignedInt first_length = static_cast<UnsignedInt>(payload_length / 2);
+	const UnsignedInt second_offset = first_length;
+	const UnsignedInt second_length = static_cast<UnsignedInt>(payload_length) - second_offset;
+	const UnsignedShort wrapped_id = 904;
+	if (!expect(first_length > 0 && second_length > 0, "Wrapper list payload split failed")) {
+		wrappers->deleteInstance();
+		return false;
+	}
+
+	processAndReleaseWrapper(*wrappers, makeWrapperChunk(1001, wrapped_id, 6, 0, 2, payload,
+		first_length, 0, static_cast<UnsignedInt>(payload_length)));
+	NetCommandList *not_ready = wrappers->getReadyCommands();
+	const bool first_chunk_ok =
+		expect(wrappers->getPercentComplete(wrapped_id) == 50,
+			"Wrapper list first chunk percent changed") &&
+		expect(not_ready->length() == 0, "Wrapper list emitted incomplete command");
+	not_ready->deleteInstance();
+
+	processAndReleaseWrapper(*wrappers, makeWrapperChunk(1002, wrapped_id, 6, 0, 2, payload,
+		first_length, 0, static_cast<UnsignedInt>(payload_length)));
+	NetCommandList *duplicate_ready = wrappers->getReadyCommands();
+	const bool duplicate_ok =
+		expect(wrappers->getPercentComplete(wrapped_id) == 50,
+			"Wrapper list duplicate chunk changed progress") &&
+		expect(duplicate_ready->length() == 0, "Wrapper list emitted duplicate incomplete command");
+	duplicate_ready->deleteInstance();
+
+	processAndReleaseWrapper(*wrappers, makeWrapperChunk(1003, wrapped_id, 6, 1, 2, payload,
+		second_length, second_offset, static_cast<UnsignedInt>(payload_length)));
+	const bool complete_before_drain_ok = expect(wrappers->getPercentComplete(wrapped_id) == 100,
+		"Wrapper list complete percent changed");
+	NetCommandList *ready = wrappers->getReadyCommands();
+	NetCommandRef *ready_ref = ready->getFirstMessage();
+	const bool ready_ok =
+		expect(ready->length() == 1, "Wrapper list did not emit one ready command") &&
+		expect(ready_ref != nullptr, "Wrapper list ready command missing") &&
+		expect(ready_ref->getRelay() == 0x2a, "Wrapper list did not preserve relay") &&
+		expect(ready_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO,
+			"Wrapper list command type changed") &&
+		expect(ready_ref->getCommand()->getID() == wrapped_id, "Wrapper list command id changed") &&
+		expect(ready_ref->getCommand()->getPlayerID() == 6, "Wrapper list player id changed") &&
+		expect(static_cast<NetFrameCommandMsg *>(ready_ref->getCommand())->getExecutionFrame() == 4120,
+			"Wrapper list execution frame changed") &&
+		expect(static_cast<NetFrameCommandMsg *>(ready_ref->getCommand())->getCommandCount() == 12,
+			"Wrapper list command count changed");
+	ready->deleteInstance();
+
+	const bool drained_ok = expect(wrappers->getPercentComplete(wrapped_id) == 0,
+		"Wrapper list did not remove drained command");
+	wrappers->deleteInstance();
+	return first_chunk_ok && duplicate_ok && complete_before_drain_ok && ready_ok && drained_ok;
+}
+
 bool exerciseTransportQueue()
 {
 	Transport transport;
@@ -872,15 +1060,16 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
-		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() &&
-		exerciseTransportQueue() && exerciseConnectionQueue() && exerciseFileTransferPathHelpers() &&
-		exerciseFrameMetrics() && exerciseUser();
+		exerciseNetPacketRoundTrip() && exerciseNetPacketAckRoundTrip() &&
+		exerciseNetPacketControlRoundTrip() && exerciseNetCommandWrapperList() && exerciseTransportQueue() &&
+		exerciseConnectionQueue() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
+		exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, transport packet buffering, command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, transport packet buffering, command lists, packet round-trips, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

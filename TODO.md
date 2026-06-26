@@ -1135,11 +1135,19 @@ shares structure and follows behind.
 - [x] Link and smoke-test original `GameNetwork/NetCommandList.cpp`,
       `NetCommandMsg.cpp`, `NetCommandRef.cpp`, and `NetPacket.cpp` sorting,
       attach/detach ownership, and non-game command packet round-trips across
-      frame/run-ahead/chat/progress/file-progress, player-leave, run-ahead
-      metrics, destroy-player, keepalive, disconnect, packet-router, wrapper,
-      file-announce, disconnect-frame/screen-off, and frame-resend request
-      commands, including explicit 16-bit chat-text wire serialization under
-      wasm `WideChar`.
+      ack-both/stage1/stage2, frame/run-ahead/chat/progress/file-progress,
+      player-leave, run-ahead metrics, destroy-player, keepalive, disconnect,
+      packet-router, wrapper, file-announce, disconnect-frame/screen-off, and
+      frame-resend request commands, including explicit 16-bit chat-text wire
+      serialization under wasm `WideChar`.
+- [x] Link and smoke-test original `GameNetwork/NetCommandWrapperList.cpp`
+      chunk reassembly into parsed commands, including incomplete-list
+      draining, duplicate chunk handling, relay preservation, and ready-list
+      removal after reconstruction.
+- [ ] Audit `NetPacket::ConstructNetCommandMsgFromRawData` first-command
+      `NETCOMMANDTYPE_ACKBOTH` default-state behavior before using that raw
+      helper for ACK-both transport parsing; `NetPacket::getCommandList`
+      currently carries the original ACK-both default.
 - [x] Link original `GameNetwork/Transport.cpp` and `udp.cpp` into the
       GameNetwork core archive and smoke-test direct transport queue rejection,
       encrypted packet header/payload/CRC preservation, full-queue behavior, and
