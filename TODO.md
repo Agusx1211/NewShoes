@@ -640,10 +640,10 @@ shares structure and follows behind.
       ScienceStore validation, ControlBar, PlayerTemplateStore, and
       SpecialPowerStore singleton surfaces are available without target-local
       parser stubs.
-- [ ] Link and smoke-test original crate, draw-group, terrain, terrain-road /
+- [ ] Link and smoke-test original crate, draw-group, terrain-road /
       bridge, and upgrade INI parser routes after the real `Common/INI.cpp`
-      reader, `CrateSystem`, `DrawGroupInfo`, `TerrainTypes`, `TerrainRoads`,
-      and `UpgradeCenter` singleton surfaces are available without target-local
+      reader, `CrateSystem`, `DrawGroupInfo`, `TerrainRoads`, and
+      `UpgradeCenter` singleton surfaces are available without target-local
       parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
@@ -1618,8 +1618,8 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/Armor/Science/Multiplayer/GameData/
-      Water/Weather/Video/GameText/MapCache probes pass. This is bootstrap
+      `ready` after the boot-time archive/Armor/Science/Multiplayer/Terrain/
+      GameData/Water/Weather/Video/GameText/MapCache probes pass. This is bootstrap
       preflight only; full engine-init missing-asset handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
@@ -1678,6 +1678,14 @@ shares structure and follows behind.
       `startupAssets.ready` state. This is a focused shipped multiplayer
       settings preflight only; LAN/GameSpy lobby flow, player templates, and
       network setup remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Terrain.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INITerrain.cpp`, and
+      `Common/TerrainTypes.cpp`, expose parsed shipped terrain metadata as
+      `assetProbe.terrain`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped terrain-type
+      preflight only; terrain-road/bridge parsing, map terrain loading, and W3D
+      terrain rendering remain open.
 - [x] Extend the wasm bootstrap archive preflight to load the real English
       CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
       with Playwright coverage for the CSF file, known labels, and
@@ -1750,6 +1758,11 @@ shares structure and follows behind.
       `Common/RTS/Money.cpp`, and `GameNetwork/GameSpy/Chat.cpp`, with harness
       state proving countdown/beacon/shroud flags, 8 multiplayer colors, 4
       starting-money choices/default, and selected online chat colors.
+- [x] Shipped terrain types load from real `Data\INI\Terrain.ini` through
+      original `Common/INI.cpp::load`, `Common/INI/INITerrain.cpp`, and
+      `Common/TerrainTypes.cpp`, with harness state proving 247 terrain
+      collection entries plus selected transition/asphalt/desert/beach/snow
+      classes and textures.
 - [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the

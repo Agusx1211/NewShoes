@@ -15,6 +15,7 @@
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Science.h"
+#include "Common/TerrainTypes.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
@@ -38,6 +39,7 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
+constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -185,6 +187,29 @@ std::size_t count_verified_fields(const RealMultiplayerIniProbeResult &result)
 		(result.chat_map_selected_color == 0xFFFFFF00U ? 1U : 0U);
 }
 
+std::size_t count_verified_fields(const RealTerrainIniProbeResult &result)
+{
+	return
+		(result.terrain_count == 247 ? 1U : 0U) +
+		(result.transition_found ? 1U : 0U) +
+		(result.transition_texture == "TTGrasRock01a.tga" ? 1U : 0U) +
+		(result.transition_class == TERRAIN_TRANSITION ? 1U : 0U) +
+		(result.asphalt_found ? 1U : 0U) +
+		(result.asphalt_texture == "TXAsph01a.tga" ? 1U : 0U) +
+		(result.asphalt_class == TERRAIN_ASPHALT ? 1U : 0U) +
+		(!result.asphalt_blend_edges ? 1U : 0U) +
+		(!result.asphalt_restrict_construction ? 1U : 0U) +
+		(result.desert_dry_found ? 1U : 0U) +
+		(result.desert_dry_texture == "TMDirt07e.tga" ? 1U : 0U) +
+		(result.desert_dry_class == TERRAIN_DRY_DESERT ? 1U : 0U) +
+		(result.beach_tropical_found ? 1U : 0U) +
+		(result.beach_tropical_texture == "TMSand13h.tga" ? 1U : 0U) +
+		(result.beach_tropical_class == TERRAIN_TROPICAL_BEACH ? 1U : 0U) +
+		(result.snow_flat_found ? 1U : 0U) +
+		(result.snow_flat_texture == "TXSnow01a.tga" ? 1U : 0U) +
+		(result.snow_flat_class == TERRAIN_FLAT_SNOW ? 1U : 0U);
+}
+
 void reset_water_settings()
 {
 	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
@@ -239,6 +264,35 @@ void inspect_map_cache_entry(
 
 	has_display_name = unicode_not_empty(it->second.m_displayName);
 	player_count = it->second.m_numPlayers;
+}
+
+std::size_t count_terrain_collection(TerrainTypeCollection &terrain_types)
+{
+	std::size_t count = 0;
+	for (TerrainType *terrain = terrain_types.firstTerrain(); terrain != nullptr;
+			terrain = terrain_types.nextTerrain(terrain)) {
+		++count;
+	}
+	return count;
+}
+
+void inspect_terrain_entry(
+	TerrainTypeCollection &terrain_types,
+	const char *name,
+	bool &found,
+	std::string &texture,
+	int &terrain_class)
+{
+	TerrainType *terrain = terrain_types.findTerrain(AsciiString(name));
+	found = terrain != nullptr;
+	if (!found) {
+		texture.clear();
+		terrain_class = TERRAIN_NONE;
+		return;
+	}
+
+	texture = terrain->getTexture().str();
+	terrain_class = terrain->getClass();
 }
 }
 
@@ -919,6 +973,117 @@ RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *ar
 	if (multiplayer_settings_to_delete != nullptr &&
 		multiplayer_settings_to_delete != old_multiplayer_settings) {
 		delete multiplayer_settings_to_delete;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path)
+{
+	RealTerrainIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INITerrain.cpp + TerrainTypes.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	TerrainTypeCollection *old_terrain_types = TheTerrainTypes;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	TerrainTypeCollection *terrain_types = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(TERRAIN_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				terrain_types = NEW TerrainTypeCollection;
+				TheTerrainTypes = terrain_types;
+
+				INI ini;
+				ini.load(AsciiString(TERRAIN_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.terrain_count = count_terrain_collection(*terrain_types);
+				inspect_terrain_entry(
+					*terrain_types,
+					"GrassRockTransitionType1",
+					result.transition_found,
+					result.transition_texture,
+					result.transition_class);
+				inspect_terrain_entry(
+					*terrain_types,
+					"AsphaltType1",
+					result.asphalt_found,
+					result.asphalt_texture,
+					result.asphalt_class);
+				inspect_terrain_entry(
+					*terrain_types,
+					"SandMediumType5c",
+					result.desert_dry_found,
+					result.desert_dry_texture,
+					result.desert_dry_class);
+				inspect_terrain_entry(
+					*terrain_types,
+					"SandMediumType13grassy4",
+					result.beach_tropical_found,
+					result.beach_tropical_texture,
+					result.beach_tropical_class);
+				inspect_terrain_entry(
+					*terrain_types,
+					"SnowType1",
+					result.snow_flat_found,
+					result.snow_flat_texture,
+					result.snow_flat_class);
+
+				TerrainType *asphalt = terrain_types->findTerrain(AsciiString("AsphaltType1"));
+				if (asphalt != nullptr) {
+					result.asphalt_blend_edges = asphalt->isBlendEdge();
+					result.asphalt_restrict_construction = asphalt->getRestrictConstruction();
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 20000 &&
+					result.original_ini_load &&
+					result.parsed_fields == 18;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheTerrainTypes = old_terrain_types;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (terrain_types != nullptr) {
+		delete terrain_types;
 	}
 
 	shutdownMemoryManager();

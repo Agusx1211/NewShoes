@@ -172,6 +172,38 @@ function assertMultiplayerProbe(assetProbe, context) {
   }
 }
 
+function assertTerrainProbe(assetProbe, context) {
+  const terrain = assetProbe?.terrain;
+  if (!assetProbe?.inizh?.terrainIni
+      || !terrain?.attempted
+      || !terrain.ok
+      || terrain.source !== "GameEngine/Common/INI.cpp::load + INITerrain.cpp + TerrainTypes.cpp"
+      || !terrain.loadedArchives
+      || !terrain.fileExists
+      || !terrain.originalIniLoad
+      || terrain.parsedFields !== 18
+      || terrain.terrains !== 247
+      || !terrain.transition
+      || !terrain.asphalt
+      || !terrain.desertDry
+      || !terrain.beachTropical
+      || !terrain.snowFlat
+      || terrain.transitionTexture !== "TTGrasRock01a.tga"
+      || terrain.asphaltTexture !== "TXAsph01a.tga"
+      || terrain.desertDryTexture !== "TMDirt07e.tga"
+      || terrain.beachTropicalTexture !== "TMSand13h.tga"
+      || terrain.snowFlatTexture !== "TXSnow01a.tga"
+      || terrain.transitionClass !== 15
+      || terrain.asphaltClass !== 33
+      || terrain.desertDryClass !== 22
+      || terrain.beachTropicalClass !== 24
+      || terrain.snowFlatClass !== 31
+      || terrain.asphaltBlendEdges !== false
+      || terrain.asphaltRestrictConstruction !== false) {
+    throw new Error(`${context} did not parse expected Terrain.ini entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertStartupAssetsMissing(state, context) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== false || startupAssets.status !== "missing_runtime_archives") {
@@ -228,6 +260,7 @@ try {
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
+      || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
@@ -237,6 +270,7 @@ try {
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");
   assertMultiplayerProbe(assetProbe, "cnc-port INIZH probe");
+  assertTerrainProbe(assetProbe, "cnc-port INIZH probe");
   assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {

@@ -211,6 +211,37 @@ struct RealMultiplayerIniProbeResult
 	int default_starting_money = 0;
 };
 
+struct RealTerrainIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t terrain_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool transition_found = false;
+	bool asphalt_found = false;
+	bool desert_dry_found = false;
+	bool beach_tropical_found = false;
+	bool snow_flat_found = false;
+	std::string transition_texture;
+	std::string asphalt_texture;
+	std::string desert_dry_texture;
+	std::string beach_tropical_texture;
+	std::string snow_flat_texture;
+	int transition_class = 0;
+	int asphalt_class = 0;
+	int desert_dry_class = 0;
+	int beach_tropical_class = 0;
+	int snow_flat_class = 0;
+	bool asphalt_blend_edges = false;
+	bool asphalt_restrict_construction = false;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
@@ -219,3 +250,4 @@ RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_pa
 RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);
 RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);
 RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path);
+RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);

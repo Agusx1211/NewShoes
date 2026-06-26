@@ -272,6 +272,7 @@ bool startup_boot_ini_present()
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_game_data_ini &&
+		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_weapon_ini;
 }
 
@@ -308,6 +309,13 @@ bool startup_multiplayer_ready()
 	return g_archive_probe.has_multiplayer_ini &&
 		g_archive_probe.multiplayer_attempted &&
 		g_archive_probe.multiplayer_ok;
+}
+
+bool startup_terrain_ready()
+{
+	return g_archive_probe.has_terrain_ini &&
+		g_archive_probe.terrain_attempted &&
+		g_archive_probe.terrain_ok;
 }
 
 bool startup_game_text_ready()
@@ -356,6 +364,7 @@ bool startup_assets_ready()
 		startup_armor_ready() &&
 		startup_science_ready() &&
 		startup_multiplayer_ready() &&
+		startup_terrain_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -386,6 +395,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_multiplayer_ready()) {
 		return "multiplayer_probe_failed";
+	}
+	if (!startup_terrain_ready()) {
+		return "terrain_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -433,6 +445,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_multiplayer_ready()) {
 		return "Runtime BIG archive set did not pass the Multiplayer.ini startup probe.";
+	}
+	if (!startup_terrain_ready()) {
+		return "Runtime BIG archive set did not pass the Terrain.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -531,7 +546,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[44000];
+	char buffer[48000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
@@ -539,6 +554,17 @@ const char *write_state_json()
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
 	const std::string multiplayer_source_json = json_escape(g_archive_probe.multiplayer_source);
+	const std::string terrain_source_json = json_escape(g_archive_probe.terrain_source);
+	const std::string terrain_transition_texture_json =
+		json_escape(g_archive_probe.terrain_transition_texture);
+	const std::string terrain_asphalt_texture_json =
+		json_escape(g_archive_probe.terrain_asphalt_texture);
+	const std::string terrain_desert_dry_texture_json =
+		json_escape(g_archive_probe.terrain_desert_dry_texture);
+	const std::string terrain_beach_tropical_texture_json =
+		json_escape(g_archive_probe.terrain_beach_tropical_texture);
+	const std::string terrain_snow_flat_texture_json =
+		json_escape(g_archive_probe.terrain_snow_flat_texture);
 	const std::string water_source_json = json_escape(g_archive_probe.water_source);
 	const std::string water_morning_sky_texture_json =
 		json_escape(g_archive_probe.water_morning_sky_texture);
@@ -593,7 +619,7 @@ const char *write_state_json()
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"gameDataIni\":%s,\"scienceIni\":%s,\"multiplayerIni\":%s,"
-		"\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"terrainIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
@@ -633,6 +659,17 @@ const char *write_state_json()
 		"\"chatGameColor\":%u,\"chatPlayerNormalColor\":%u,"
 		"\"chatSelfColor\":%u,\"chatMapSelectedColor\":%u,"
 		"\"startingMoney\":[%d,%d,%d,%d],\"defaultStartingMoney\":%d},"
+		"\"terrain\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"terrains\":%zu,"
+		"\"transition\":%s,\"asphalt\":%s,\"desertDry\":%s,"
+		"\"beachTropical\":%s,\"snowFlat\":%s,"
+		"\"transitionTexture\":\"%s\",\"asphaltTexture\":\"%s\","
+		"\"desertDryTexture\":\"%s\",\"beachTropicalTexture\":\"%s\","
+		"\"snowFlatTexture\":\"%s\",\"transitionClass\":%d,"
+		"\"asphaltClass\":%d,\"desertDryClass\":%d,"
+		"\"beachTropicalClass\":%d,\"snowFlatClass\":%d,"
+		"\"asphaltBlendEdges\":%s,\"asphaltRestrictConstruction\":%s},"
 		"\"water\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"waterSets\":%zu,"
@@ -676,7 +713,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"multiplayer\":%s,"
+		"\"multiplayer\":%s,\"terrain\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
@@ -734,6 +771,7 @@ const char *write_state_json()
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
 		g_archive_probe.has_multiplayer_ini ? "true" : "false",
+		g_archive_probe.has_terrain_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
@@ -826,6 +864,32 @@ const char *write_state_json()
 		g_archive_probe.multiplayer_starting_money_third,
 		g_archive_probe.multiplayer_starting_money_fourth,
 		g_archive_probe.multiplayer_default_starting_money,
+		g_archive_probe.terrain_attempted ? "true" : "false",
+		g_archive_probe.terrain_ok ? "true" : "false",
+		g_archive_probe.terrain_bytes,
+		terrain_source_json.c_str(),
+		g_archive_probe.terrain_loaded_archives ? "true" : "false",
+		g_archive_probe.terrain_file_exists ? "true" : "false",
+		g_archive_probe.terrain_original_ini_load ? "true" : "false",
+		g_archive_probe.terrain_parsed_fields,
+		g_archive_probe.terrain_count,
+		g_archive_probe.terrain_transition_found ? "true" : "false",
+		g_archive_probe.terrain_asphalt_found ? "true" : "false",
+		g_archive_probe.terrain_desert_dry_found ? "true" : "false",
+		g_archive_probe.terrain_beach_tropical_found ? "true" : "false",
+		g_archive_probe.terrain_snow_flat_found ? "true" : "false",
+		terrain_transition_texture_json.c_str(),
+		terrain_asphalt_texture_json.c_str(),
+		terrain_desert_dry_texture_json.c_str(),
+		terrain_beach_tropical_texture_json.c_str(),
+		terrain_snow_flat_texture_json.c_str(),
+		g_archive_probe.terrain_transition_class,
+		g_archive_probe.terrain_asphalt_class,
+		g_archive_probe.terrain_desert_dry_class,
+		g_archive_probe.terrain_beach_tropical_class,
+		g_archive_probe.terrain_snow_flat_class,
+		g_archive_probe.terrain_asphalt_blend_edges ? "true" : "false",
+		g_archive_probe.terrain_asphalt_restrict_construction ? "true" : "false",
 		g_archive_probe.water_attempted ? "true" : "false",
 		g_archive_probe.water_ok ? "true" : "false",
 		g_archive_probe.water_bytes,
@@ -932,6 +996,7 @@ const char *write_state_json()
 		startup_armor_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
+		startup_terrain_ready() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",

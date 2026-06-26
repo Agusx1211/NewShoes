@@ -235,6 +235,38 @@ function assertMultiplayerProbe(assetProbe, context) {
   }
 }
 
+function assertTerrainProbe(assetProbe, context) {
+  const terrain = assetProbe?.terrain;
+  if (!assetProbe?.inizh?.terrainIni
+      || !terrain?.attempted
+      || !terrain.ok
+      || terrain.source !== "GameEngine/Common/INI.cpp::load + INITerrain.cpp + TerrainTypes.cpp"
+      || !terrain.loadedArchives
+      || !terrain.fileExists
+      || !terrain.originalIniLoad
+      || terrain.parsedFields !== 18
+      || terrain.terrains !== 247
+      || !terrain.transition
+      || !terrain.asphalt
+      || !terrain.desertDry
+      || !terrain.beachTropical
+      || !terrain.snowFlat
+      || terrain.transitionTexture !== "TTGrasRock01a.tga"
+      || terrain.asphaltTexture !== "TXAsph01a.tga"
+      || terrain.desertDryTexture !== "TMDirt07e.tga"
+      || terrain.beachTropicalTexture !== "TMSand13h.tga"
+      || terrain.snowFlatTexture !== "TXSnow01a.tga"
+      || terrain.transitionClass !== 15
+      || terrain.asphaltClass !== 33
+      || terrain.desertDryClass !== 22
+      || terrain.beachTropicalClass !== 24
+      || terrain.snowFlatClass !== 31
+      || terrain.asphaltBlendEdges !== false
+      || terrain.asphaltRestrictConstruction !== false) {
+    throw new Error(`${context} did not parse expected Terrain.ini entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertMapCacheProbe(assetProbe, context) {
   const mapCache = assetProbe?.mapCache;
   if (!assetProbe?.maps?.mapCacheIni
@@ -271,6 +303,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.armor
         || !startupAssets.required?.science
         || !startupAssets.required?.multiplayer
+        || !startupAssets.required?.terrain
         || !startupAssets.required?.gameData
         || !startupAssets.required?.water
         || !startupAssets.required?.weather
@@ -350,6 +383,7 @@ try {
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
+      || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
@@ -357,6 +391,7 @@ try {
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
+  assertTerrainProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
   assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
@@ -411,6 +446,7 @@ try {
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertTerrainProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");

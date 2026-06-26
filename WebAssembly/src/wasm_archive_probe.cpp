@@ -31,6 +31,7 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
+constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -199,6 +200,36 @@ void copy_multiplayer_probe(const RealMultiplayerIniProbeResult &multiplayer, Ar
 	result.multiplayer_default_starting_money = multiplayer.default_starting_money;
 }
 
+void copy_terrain_probe(const RealTerrainIniProbeResult &terrain, ArchiveProbeResult &result)
+{
+	result.terrain_attempted = terrain.attempted;
+	result.terrain_ok = terrain.ok;
+	result.terrain_loaded_archives = terrain.loaded_archives;
+	result.terrain_file_exists = terrain.file_exists;
+	result.terrain_original_ini_load = terrain.original_ini_load;
+	result.terrain_bytes = terrain.bytes;
+	result.terrain_parsed_fields = terrain.parsed_fields;
+	result.terrain_count = terrain.terrain_count;
+	result.terrain_source = terrain.source;
+	result.terrain_transition_found = terrain.transition_found;
+	result.terrain_asphalt_found = terrain.asphalt_found;
+	result.terrain_desert_dry_found = terrain.desert_dry_found;
+	result.terrain_beach_tropical_found = terrain.beach_tropical_found;
+	result.terrain_snow_flat_found = terrain.snow_flat_found;
+	result.terrain_transition_texture = terrain.transition_texture;
+	result.terrain_asphalt_texture = terrain.asphalt_texture;
+	result.terrain_desert_dry_texture = terrain.desert_dry_texture;
+	result.terrain_beach_tropical_texture = terrain.beach_tropical_texture;
+	result.terrain_snow_flat_texture = terrain.snow_flat_texture;
+	result.terrain_transition_class = terrain.transition_class;
+	result.terrain_asphalt_class = terrain.asphalt_class;
+	result.terrain_desert_dry_class = terrain.desert_dry_class;
+	result.terrain_beach_tropical_class = terrain.beach_tropical_class;
+	result.terrain_snow_flat_class = terrain.snow_flat_class;
+	result.terrain_asphalt_blend_edges = terrain.asphalt_blend_edges;
+	result.terrain_asphalt_restrict_construction = terrain.asphalt_restrict_construction;
+}
+
 void copy_water_probe(const RealWaterIniProbeResult &water, ArchiveProbeResult &result)
 {
 	result.water_attempted = water.attempted;
@@ -365,6 +396,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
+			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
@@ -410,6 +442,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_multiplayer_ini) {
 		copy_multiplayer_probe(probe_original_multiplayer_ini_load(archive_path), result);
 		result.ok = result.ok && result.multiplayer_ok;
+	}
+	if (result.loaded && result.has_terrain_ini) {
+		copy_terrain_probe(probe_original_terrain_ini_load(archive_path), result);
+		result.ok = result.ok && result.terrain_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);
