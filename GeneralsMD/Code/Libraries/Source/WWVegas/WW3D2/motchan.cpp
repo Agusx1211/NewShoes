@@ -1303,12 +1303,12 @@ return;
 		inv_scale=1.0f/ValueScale;
 	}
 	inv_scale*=65535.0f;
-	for (i=0;i<count;++i) {
+	for (int i=0;i<count;++i) {
 		float value=Data[i];
 		value-=ValueOffset;
 		value*=inv_scale;
 		int ivalue=WWMath::Float_To_Int_Floor(value);
-		CompressedData[i]=unsigned short(ivalue);
+		CompressedData[i]=static_cast<unsigned short>(ivalue);
 
 		float new_scale=ValueScale/65535.0f;
 		float new_value=int(CompressedData[i]);
@@ -1326,4 +1326,3 @@ return;
 
 
 // EOF - motchan.cpp
-

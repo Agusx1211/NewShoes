@@ -119,7 +119,7 @@ Filename_From_Asset_Name (const char *asset_name)
 		//
 		// Do we need to strip off the model's suffix?
 		//
-		char *suffix = ::strchr (filename, '.');
+		char *suffix = ::strchr (filename.Peek_Buffer(), '.');
 		if (suffix != NULL) {
 			suffix[0] = 0;
 		}
@@ -1315,5 +1315,4 @@ bool RenderObjClass::Load (ChunkLoadClass &cload)
 	WWASSERT(0); // this should never hit with the persist factory we're using.
 	return true;
 }
-
 

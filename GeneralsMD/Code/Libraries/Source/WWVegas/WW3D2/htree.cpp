@@ -886,7 +886,7 @@ void HTreeClass::Combo_Update
 
 			pivot->IsVisible = false;
 
-			for ( anim_num = 0; (anim_num < anim->Get_Num_Anims()) && (!pivot->IsVisible); anim_num++ ) {
+			for ( int anim_num = 0; (anim_num < anim->Get_Num_Anims()) && (!pivot->IsVisible); anim_num++ ) {
 				HAnimClass *motion = anim->Get_Motion( anim_num );
 				if ( motion != NULL ) {
 					float frame_num = anim->Get_Frame( anim_num );
@@ -1125,6 +1125,7 @@ HTreeClass * HTreeClass::Alter_Avatar_HTree( const HTreeClass *tree, Vector3 &sc
 	return new_tree;
 }
 
+
 // Morph the bones on the HTree using weights from a number of other HTrees
 HTreeClass * HTreeClass::Create_Morphed(	int num_morph_sources,
 														const float morph_weights[],
@@ -1228,4 +1229,3 @@ HTreeClass * HTreeClass::Create_Interpolated(const HTreeClass * tree_base,
 
 	return new_tree;
 }
-

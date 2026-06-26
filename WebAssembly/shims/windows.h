@@ -64,6 +64,9 @@ using LPCVOID = const void *;
 using LPBYTE = BYTE *;
 using LPDWORD = DWORD *;
 using LPSTR = char *;
+using TCHAR = char;
+using LPCTSTR = const char *;
+using LPTSTR = char *;
 using LPVOID = void *;
 using UINT = unsigned int;
 using VOID = void;
@@ -235,6 +238,10 @@ static inline int _wtoi(const wchar_t *value)
 
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
+#endif
+
+#ifndef MAX_PATH
+#define MAX_PATH _MAX_PATH
 #endif
 
 #ifndef _MAX_DRIVE
@@ -561,6 +568,49 @@ static inline BOOL SetWindowText(HWND, const char *)
 static inline BOOL SetWindowTextW(HWND, const wchar_t *)
 {
 	return TRUE;
+}
+
+static inline char *lstrcpy(char *dest, const char *source)
+{
+	return std::strcpy(dest, source ? source : "");
+}
+
+static inline char *lstrcat(char *dest, const char *source)
+{
+	return std::strcat(dest, source ? source : "");
+}
+
+static inline int lstrlen(const char *text)
+{
+	return text ? static_cast<int>(std::strlen(text)) : 0;
+}
+
+static inline int lstrcmpi(const char *left, const char *right)
+{
+	if (left == nullptr && right == nullptr) {
+		return 0;
+	}
+	if (left == nullptr) {
+		return -1;
+	}
+	if (right == nullptr) {
+		return 1;
+	}
+	return strcasecmp(left, right);
+}
+
+static inline char *lstrcpyn(char *dest, const char *source, int count)
+{
+	if (dest == nullptr || count <= 0) {
+		return dest;
+	}
+	if (source == nullptr) {
+		dest[0] = '\0';
+		return dest;
+	}
+	std::strncpy(dest, source, static_cast<std::size_t>(count));
+	dest[count - 1] = '\0';
+	return dest;
 }
 
 static inline void ExitProcess(unsigned int code)

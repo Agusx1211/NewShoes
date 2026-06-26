@@ -119,7 +119,7 @@ RenderObjClass * DistLODPrototypeClass::Create(void)
 	HLodClass * hlod = NEW_REF(HLodClass , (name,robj,count));
 
 	// Now, release the temporary refs and memory for the name
-	for (i=0; i<count; i++) {
+	for (int i=0; i<count; i++) {
 		robj[i]->Release_Ref();
 	}
 	free(name);
@@ -152,6 +152,7 @@ PrototypeClass *DistLODLoaderClass::Load_W3D( ChunkLoadClass &cload )
 		return pCLODProto;	
 	}
 }
+
 
 
 /***********************************************************************************************
@@ -1161,5 +1162,3 @@ void DistLODClass::Decrement_Lod(void)
 		}
 	}
 }
-
-

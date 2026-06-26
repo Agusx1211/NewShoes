@@ -296,7 +296,8 @@ public:
 		}
 
 		// colors, and material id's must match for all passes
-		for (int pass=0; pass < MeshBuilderClass::MAX_PASSES; pass++) {
+		int pass = 0;
+		for (pass=0; pass < MeshBuilderClass::MAX_PASSES; pass++) {
 
 			if (v0.DiffuseColor[pass] != v1.DiffuseColor[pass]) return 0;
 			if (v0.SpecularColor[pass] != v1.SpecularColor[pass]) return 0;
@@ -1777,6 +1778,7 @@ inline int tex_compare(const void * elem1,const void * elem2,int pass,int stage)
 	return 0;
 }
 
+
 int pass0_stage0_compare(const void *elem1, const void *elem2)
 {
 	return tex_compare(elem1,elem2,0,0);
@@ -1833,5 +1835,3 @@ int vertex_compare(const void *elem1, const void *elem2)
 
 	return 0;
 }
-
-

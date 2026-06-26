@@ -107,6 +107,10 @@ static inline int wwlib_vsnwprintf(wchar_t *buffer, size_t count, const wchar_t 
 #define _snprintf snprintf
 #endif
 
+#ifndef _strdup
+#define _strdup strdup
+#endif
+
 #ifndef itoa
 static inline char *wwlib_itoa(int value, char *buffer, int radix)
 {

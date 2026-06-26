@@ -781,6 +781,12 @@ shares structure and follows behind.
       collision/intersection helpers, light/projector support, asset/cache and
       exclusion helpers, render-info/sound render-object leaves, and small W3D
       utility/metadata translation units.
+- [x] Expand `zh_ww3d2_compile_frontier` to 46 original WW3D2 sources by adding
+      hierarchy/animation/LOD definitions, render-object definitions,
+      AAB-tree/visibility/spatial helpers, mesh-geometry/build metadata,
+      decal/particle/snap-point support, and strip/metal/motion helpers after
+      resolving case-sensitive header bridges, Win32 string aliases, and
+      localized clang/MSVC loop-scope/template lookup fixes.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -801,8 +807,8 @@ shares structure and follows behind.
       port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the current
       DirectX 8 backend, GDI text handle, texture/material declaration,
-      `vector3i.h`/mesh-geometry include, `snappts.h`, and clang dependent-name
-      blockers instead of substituting renderer behavior.
+      Miles/WWAudio binding, SR utility include, and remaining renderer
+      body blockers instead of substituting renderer behavior.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.
