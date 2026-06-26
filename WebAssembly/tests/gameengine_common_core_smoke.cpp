@@ -37,6 +37,7 @@
 #include "Common/RAMFile.h"
 #include "Common/RandomValue.h"
 #include "Common/Registry.h"
+#include "Common/Science.h"
 #include "Common/string.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/TerrainTypes.h"
@@ -1504,6 +1505,46 @@ bool exercise_multiplayer_settings_and_money()
 			"MultiplayerSettings default starting money failed");
 }
 
+bool exercise_science_metadata()
+{
+	NameKeyGenerator generator;
+	TheNameKeyGenerator = &generator;
+	generator.init();
+
+	ScienceStore science_store;
+	TheScienceStore = &science_store;
+	science_store.init();
+
+	char science_line[] = "Science = SCIENCE_BROWSER_SMOKE";
+	INI science_ini;
+	std::strtok(science_line, " \t\r\n=");
+	ScienceStore::friend_parseScienceDefinition(&science_ini);
+
+	const ScienceType science = science_store.getScienceFromInternalName(AsciiString("SCIENCE_BROWSER_SMOKE"));
+	UnicodeString science_name;
+	UnicodeString science_description;
+	const std::vector<AsciiString> science_names = science_store.friend_getScienceNames();
+
+	const bool ok =
+		expect(science != SCIENCE_INVALID, "ScienceStore name lookup returned invalid science") &&
+		expect(science_store.isValidScience(science), "ScienceStore parsed science is not valid") &&
+		expect(std::strcmp(science_store.getInternalNameForScience(science).str(), "SCIENCE_BROWSER_SMOKE") == 0,
+			"ScienceStore reverse name lookup failed") &&
+		expect(science_names.size() == 1 &&
+				std::strcmp(science_names[0].str(), "SCIENCE_BROWSER_SMOKE") == 0,
+			"ScienceStore friend_getScienceNames failed") &&
+		expect(science_store.getSciencePurchaseCost(science) == 0,
+			"ScienceInfo default purchase cost changed") &&
+		expect(science_store.isScienceGrantable(science), "ScienceInfo default grantable flag changed") &&
+		expect(science_store.getNameAndDescription(science, science_name, science_description),
+			"ScienceStore name/description lookup failed");
+
+	TheScienceStore = nullptr;
+	generator.reset();
+	TheNameKeyGenerator = nullptr;
+	return ok;
+}
+
 bool exercise_dict()
 {
 	const NameKeyType bool_key = static_cast<NameKeyType>(10);
@@ -1581,7 +1622,8 @@ int main()
 		exercise_bezier() &&
 		exercise_partition_solver() &&
 		exercise_terrain_types() &&
-		exercise_multiplayer_settings_and_money();
+		exercise_multiplayer_settings_and_money() &&
+		exercise_science_metadata();
 
 	shutdownMemoryManager();
 

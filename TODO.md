@@ -615,10 +615,18 @@ shares structure and follows behind.
 - [x] Compile original `Common/RTS/Science.cpp` against the current temporary
       `Common/INI.h` parser bridge for science definitions and translated
       labels.
+- [x] Link and smoke-test original `ScienceStore` metadata behavior through the
+      current `Common/INI` bridge, including parsed science registration,
+      internal-name round trips, WorldBuilder name enumeration, default purchase
+      cost, grantability, and empty translated name/description storage without
+      invoking player-owned prerequisite checks.
 - [ ] Replace the temporary `parseScience`, `parseScienceVector`, and
       `parseAndTranslateLabel` bridge helpers with the real `Common/INI.cpp` /
       `GameText` parse path, then smoke-test science-definition and
-      special-power parsing against real INI data.
+      special-power parsing against real INI data. Special-power runtime
+      parsing also needs the original academy classification table from
+      `AcademyStats.cpp` to link in the runtime smoke instead of remaining
+      compile-only.
 - [x] Compile original `Common/MultiplayerSettings.cpp` and
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
@@ -1109,9 +1117,12 @@ shares structure and follows behind.
       `SYSTEMTIME` shim and fixing the original `Team` DLINK clang contract.
 - [x] Link and smoke-test original `GameNetwork/NetCommandList.cpp`,
       `NetCommandMsg.cpp`, `NetCommandRef.cpp`, and `NetPacket.cpp` sorting,
-      attach/detach ownership, and non-game command packet round-trips,
-      including explicit 16-bit chat-text wire serialization under wasm
-      `WideChar`.
+      attach/detach ownership, and non-game command packet round-trips across
+      frame/run-ahead/chat/progress/file-progress, player-leave, run-ahead
+      metrics, destroy-player, keepalive, disconnect, packet-router, wrapper,
+      file-announce, disconnect-frame/screen-off, and frame-resend request
+      commands, including explicit 16-bit chat-text wire serialization under
+      wasm `WideChar`.
 - [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after adding the browser-safe WinSock compile surface and
       preserving the original UDP/transport logic for the later WebSocket/WebRTC
@@ -1151,9 +1162,10 @@ shares structure and follows behind.
       run-ahead `GlobalData` bridge fields, original `GameLogic` progress
       hooks, and narrow clang loop-scope fixes.
 - [ ] Link and smoke-test the broader GameNetwork command-message and
-      connection-manager slice after the real player/message, packet
-      serialization, game-start progress, and browser transport dependencies
-      are available beyond the current compile-only coverage.
+      connection-manager slice after the real player/message game-command
+      reconstruction, ack packet paths, game-start progress, and browser
+      transport dependencies are available beyond the currently smoke-tested
+      control packet surface.
 - [ ] Link and smoke-test original GameNetwork setup/LAN/config behavior after
       the real `GlobalData`, `MapCache`, `MultiplayerSettings`,
       `PlayerTemplateStore`, `GameText`, `LANAPI`, `NetworkInterface`,

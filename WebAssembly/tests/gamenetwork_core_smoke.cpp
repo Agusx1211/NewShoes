@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
@@ -261,6 +262,332 @@ bool exerciseNetPacketRoundTrip()
 	return frame_ok && run_ok && chat_ok && progress_ok && file_ok;
 }
 
+bool exerciseNetPacketControlRoundTrip()
+{
+	NetPlayerLeaveCommandMsg *leave = newInstance(NetPlayerLeaveCommandMsg);
+	leave->setExecutionFrame(3100);
+	leave->setPlayerID(2);
+	leave->setID(46);
+	leave->setLeavingPlayerID(5);
+	NetCommandRef *leave_ref = roundTripCommand(leave, 0x04, "NetPacket did not add player-leave command");
+	if (leave_ref == nullptr) {
+		return false;
+	}
+	NetPlayerLeaveCommandMsg *parsed_leave = static_cast<NetPlayerLeaveCommandMsg *>(leave_ref->getCommand());
+	const bool leave_ok =
+		expect(parsed_leave->getNetCommandType() == NETCOMMANDTYPE_PLAYERLEAVE,
+			"Player-leave command type changed") &&
+		expect(parsed_leave->getExecutionFrame() == 3100, "Player-leave execution frame changed") &&
+		expect(parsed_leave->getPlayerID() == 2, "Player-leave player id changed") &&
+		expect(parsed_leave->getID() == 46, "Player-leave command id changed") &&
+		expect(parsed_leave->getLeavingPlayerID() == 5, "Player-leave slot changed");
+	leave_ref->deleteInstance();
+
+	NetRunAheadMetricsCommandMsg *metrics = newInstance(NetRunAheadMetricsCommandMsg);
+	metrics->setPlayerID(3);
+	metrics->setID(47);
+	metrics->setAverageLatency(0.375f);
+	metrics->setAverageFps(58);
+	NetCommandRef *metrics_ref = roundTripCommand(metrics, 0x05, "NetPacket did not add run-ahead metrics command");
+	if (metrics_ref == nullptr) {
+		return false;
+	}
+	NetRunAheadMetricsCommandMsg *parsed_metrics =
+		static_cast<NetRunAheadMetricsCommandMsg *>(metrics_ref->getCommand());
+	const bool metrics_ok =
+		expect(parsed_metrics->getNetCommandType() == NETCOMMANDTYPE_RUNAHEADMETRICS,
+			"Run-ahead metrics command type changed") &&
+		expect(parsed_metrics->getPlayerID() == 3, "Run-ahead metrics player id changed") &&
+		expect(parsed_metrics->getID() == 47, "Run-ahead metrics command id changed") &&
+		expect(std::fabs(parsed_metrics->getAverageLatency() - 0.375f) <= 0.0001f,
+			"Run-ahead metrics latency changed") &&
+		expect(parsed_metrics->getAverageFps() == 58, "Run-ahead metrics FPS changed");
+	metrics_ref->deleteInstance();
+
+	NetDestroyPlayerCommandMsg *destroy = newInstance(NetDestroyPlayerCommandMsg);
+	destroy->setExecutionFrame(3200);
+	destroy->setPlayerID(4);
+	destroy->setID(48);
+	destroy->setPlayerIndex(6);
+	NetCommandRef *destroy_ref = roundTripCommand(destroy, 0x06, "NetPacket did not add destroy-player command");
+	if (destroy_ref == nullptr) {
+		return false;
+	}
+	NetDestroyPlayerCommandMsg *parsed_destroy =
+		static_cast<NetDestroyPlayerCommandMsg *>(destroy_ref->getCommand());
+	const bool destroy_ok =
+		expect(parsed_destroy->getNetCommandType() == NETCOMMANDTYPE_DESTROYPLAYER,
+			"Destroy-player command type changed") &&
+		expect(parsed_destroy->getExecutionFrame() == 3200, "Destroy-player execution frame changed") &&
+		expect(parsed_destroy->getPlayerID() == 4, "Destroy-player player id changed") &&
+		expect(parsed_destroy->getID() == 48, "Destroy-player command id changed") &&
+		expect(parsed_destroy->getPlayerIndex() == 6, "Destroy-player index changed");
+	destroy_ref->deleteInstance();
+
+	NetKeepAliveCommandMsg *keep_alive = newInstance(NetKeepAliveCommandMsg);
+	keep_alive->setPlayerID(5);
+	NetCommandRef *keep_alive_ref = roundTripCommand(keep_alive, 0x07, "NetPacket did not add keepalive command");
+	if (keep_alive_ref == nullptr) {
+		return false;
+	}
+	const bool keep_alive_ok =
+		expect(keep_alive_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_KEEPALIVE,
+			"Keepalive command type changed") &&
+		expect(keep_alive_ref->getCommand()->getPlayerID() == 5, "Keepalive player id changed");
+	keep_alive_ref->deleteInstance();
+
+	NetDisconnectKeepAliveCommandMsg *disconnect_keep_alive = newInstance(NetDisconnectKeepAliveCommandMsg);
+	disconnect_keep_alive->setPlayerID(6);
+	NetCommandRef *disconnect_keep_alive_ref =
+		roundTripCommand(disconnect_keep_alive, 0x08, "NetPacket did not add disconnect-keepalive command");
+	if (disconnect_keep_alive_ref == nullptr) {
+		return false;
+	}
+	const bool disconnect_keep_alive_ok =
+		expect(disconnect_keep_alive_ref->getCommand()->getNetCommandType() ==
+				NETCOMMANDTYPE_DISCONNECTKEEPALIVE,
+			"Disconnect-keepalive command type changed") &&
+		expect(disconnect_keep_alive_ref->getCommand()->getPlayerID() == 6,
+			"Disconnect-keepalive player id changed");
+	disconnect_keep_alive_ref->deleteInstance();
+
+	NetDisconnectPlayerCommandMsg *disconnect_player = newInstance(NetDisconnectPlayerCommandMsg);
+	disconnect_player->setPlayerID(7);
+	disconnect_player->setID(49);
+	disconnect_player->setDisconnectSlot(3);
+	disconnect_player->setDisconnectFrame(3300);
+	NetCommandRef *disconnect_player_ref =
+		roundTripCommand(disconnect_player, 0x09, "NetPacket did not add disconnect-player command");
+	if (disconnect_player_ref == nullptr) {
+		return false;
+	}
+	NetDisconnectPlayerCommandMsg *parsed_disconnect_player =
+		static_cast<NetDisconnectPlayerCommandMsg *>(disconnect_player_ref->getCommand());
+	const bool disconnect_player_ok =
+		expect(parsed_disconnect_player->getNetCommandType() == NETCOMMANDTYPE_DISCONNECTPLAYER,
+			"Disconnect-player command type changed") &&
+		expect(parsed_disconnect_player->getPlayerID() == 7, "Disconnect-player player id changed") &&
+		expect(parsed_disconnect_player->getID() == 49, "Disconnect-player command id changed") &&
+		expect(parsed_disconnect_player->getDisconnectSlot() == 3, "Disconnect-player slot changed") &&
+		expect(parsed_disconnect_player->getDisconnectFrame() == 3300,
+			"Disconnect-player frame changed");
+	disconnect_player_ref->deleteInstance();
+
+	NetPacketRouterQueryCommandMsg *router_query = newInstance(NetPacketRouterQueryCommandMsg);
+	router_query->setPlayerID(8);
+	NetCommandRef *router_query_ref =
+		roundTripCommand(router_query, 0x0a, "NetPacket did not add router-query command");
+	if (router_query_ref == nullptr) {
+		return false;
+	}
+	const bool router_query_ok =
+		expect(router_query_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_PACKETROUTERQUERY,
+			"Router-query command type changed") &&
+		expect(router_query_ref->getCommand()->getPlayerID() == 8, "Router-query player id changed");
+	router_query_ref->deleteInstance();
+
+	NetPacketRouterAckCommandMsg *router_ack = newInstance(NetPacketRouterAckCommandMsg);
+	router_ack->setPlayerID(9);
+	NetCommandRef *router_ack_ref =
+		roundTripCommand(router_ack, 0x0b, "NetPacket did not add router-ack command");
+	if (router_ack_ref == nullptr) {
+		return false;
+	}
+	const bool router_ack_ok =
+		expect(router_ack_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_PACKETROUTERACK,
+			"Router-ack command type changed") &&
+		expect(router_ack_ref->getCommand()->getPlayerID() == 9, "Router-ack player id changed");
+	router_ack_ref->deleteInstance();
+
+	NetDisconnectChatCommandMsg *disconnect_chat = newInstance(NetDisconnectChatCommandMsg);
+	disconnect_chat->setPlayerID(10);
+	disconnect_chat->setText(UnicodeString(L"drop"));
+	NetCommandRef *disconnect_chat_ref =
+		roundTripCommand(disconnect_chat, 0x0c, "NetPacket did not add disconnect-chat command");
+	if (disconnect_chat_ref == nullptr) {
+		return false;
+	}
+	NetDisconnectChatCommandMsg *parsed_disconnect_chat =
+		static_cast<NetDisconnectChatCommandMsg *>(disconnect_chat_ref->getCommand());
+	const bool disconnect_chat_ok =
+		expect(parsed_disconnect_chat->getNetCommandType() == NETCOMMANDTYPE_DISCONNECTCHAT,
+			"Disconnect-chat command type changed") &&
+		expect(parsed_disconnect_chat->getPlayerID() == 10, "Disconnect-chat player id changed") &&
+		expect(std::wcscmp(parsed_disconnect_chat->getText().str(), L"drop") == 0,
+			"Disconnect-chat text changed");
+	disconnect_chat_ref->deleteInstance();
+
+	NetDisconnectVoteCommandMsg *disconnect_vote = newInstance(NetDisconnectVoteCommandMsg);
+	disconnect_vote->setPlayerID(11);
+	disconnect_vote->setID(50);
+	disconnect_vote->setSlot(4);
+	disconnect_vote->setVoteFrame(3400);
+	NetCommandRef *disconnect_vote_ref =
+		roundTripCommand(disconnect_vote, 0x0d, "NetPacket did not add disconnect-vote command");
+	if (disconnect_vote_ref == nullptr) {
+		return false;
+	}
+	NetDisconnectVoteCommandMsg *parsed_disconnect_vote =
+		static_cast<NetDisconnectVoteCommandMsg *>(disconnect_vote_ref->getCommand());
+	const bool disconnect_vote_ok =
+		expect(parsed_disconnect_vote->getNetCommandType() == NETCOMMANDTYPE_DISCONNECTVOTE,
+			"Disconnect-vote command type changed") &&
+		expect(parsed_disconnect_vote->getPlayerID() == 11, "Disconnect-vote player id changed") &&
+		expect(parsed_disconnect_vote->getID() == 50, "Disconnect-vote command id changed") &&
+		expect(parsed_disconnect_vote->getSlot() == 4, "Disconnect-vote slot changed") &&
+		expect(parsed_disconnect_vote->getVoteFrame() == 3400, "Disconnect-vote frame changed");
+	disconnect_vote_ref->deleteInstance();
+
+	NetCommandMsg *load_complete = newInstance(NetCommandMsg);
+	load_complete->setNetCommandType(NETCOMMANDTYPE_LOADCOMPLETE);
+	load_complete->setPlayerID(12);
+	load_complete->setID(51);
+	NetCommandRef *load_complete_ref =
+		roundTripCommand(load_complete, 0x0e, "NetPacket did not add load-complete command");
+	if (load_complete_ref == nullptr) {
+		return false;
+	}
+	const bool load_complete_ok =
+		expect(load_complete_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_LOADCOMPLETE,
+			"Load-complete command type changed") &&
+		expect(load_complete_ref->getCommand()->getPlayerID() == 12, "Load-complete player id changed") &&
+		expect(load_complete_ref->getCommand()->getID() == 51, "Load-complete command id changed");
+	load_complete_ref->deleteInstance();
+
+	NetCommandMsg *timeout_start = newInstance(NetCommandMsg);
+	timeout_start->setNetCommandType(NETCOMMANDTYPE_TIMEOUTSTART);
+	timeout_start->setPlayerID(13);
+	timeout_start->setID(52);
+	NetCommandRef *timeout_start_ref =
+		roundTripCommand(timeout_start, 0x0f, "NetPacket did not add timeout-start command");
+	if (timeout_start_ref == nullptr) {
+		return false;
+	}
+	const bool timeout_start_ok =
+		expect(timeout_start_ref->getCommand()->getNetCommandType() == NETCOMMANDTYPE_TIMEOUTSTART,
+			"Timeout-start command type changed") &&
+		expect(timeout_start_ref->getCommand()->getPlayerID() == 13, "Timeout-start player id changed") &&
+		expect(timeout_start_ref->getCommand()->getID() == 52, "Timeout-start command id changed");
+	timeout_start_ref->deleteInstance();
+
+	NetWrapperCommandMsg *wrapper = newInstance(NetWrapperCommandMsg);
+	wrapper->setPlayerID(14);
+	wrapper->setID(53);
+	wrapper->setWrappedCommandID(99);
+	wrapper->setChunkNumber(2);
+	wrapper->setNumChunks(5);
+	wrapper->setTotalDataLength(17);
+	wrapper->setDataOffset(8);
+	UnsignedByte wrapper_payload[] = { 0xde, 0xad, 0xbe, 0xef };
+	wrapper->setData(wrapper_payload, sizeof(wrapper_payload));
+	NetCommandRef *wrapper_ref = roundTripCommand(wrapper, 0x10, "NetPacket did not add wrapper command");
+	if (wrapper_ref == nullptr) {
+		return false;
+	}
+	NetWrapperCommandMsg *parsed_wrapper = static_cast<NetWrapperCommandMsg *>(wrapper_ref->getCommand());
+	const bool wrapper_ok =
+		expect(parsed_wrapper->getNetCommandType() == NETCOMMANDTYPE_WRAPPER,
+			"Wrapper command type changed") &&
+		expect(parsed_wrapper->getPlayerID() == 14, "Wrapper player id changed") &&
+		expect(parsed_wrapper->getID() == 53, "Wrapper command id changed") &&
+		expect(parsed_wrapper->getWrappedCommandID() == 99, "Wrapper wrapped command id changed") &&
+		expect(parsed_wrapper->getChunkNumber() == 2 && parsed_wrapper->getNumChunks() == 5,
+			"Wrapper chunk metadata changed") &&
+		expect(parsed_wrapper->getTotalDataLength() == 17 && parsed_wrapper->getDataOffset() == 8,
+			"Wrapper data span changed") &&
+		expect(parsed_wrapper->getDataLength() == sizeof(wrapper_payload) &&
+				std::memcmp(parsed_wrapper->getData(), wrapper_payload, sizeof(wrapper_payload)) == 0,
+			"Wrapper payload changed");
+	wrapper_ref->deleteInstance();
+
+	NetFileAnnounceCommandMsg *file_announce = newInstance(NetFileAnnounceCommandMsg);
+	file_announce->setPlayerID(15);
+	file_announce->setID(54);
+	file_announce->setPortableFilename(AsciiString("Maps/Smoke/Test.map"));
+	file_announce->setFileID(501);
+	file_announce->setPlayerMask(0x33);
+	NetCommandRef *file_announce_ref =
+		roundTripCommand(file_announce, 0x11, "NetPacket did not add file-announce command");
+	if (file_announce_ref == nullptr) {
+		return false;
+	}
+	NetFileAnnounceCommandMsg *parsed_file_announce =
+		static_cast<NetFileAnnounceCommandMsg *>(file_announce_ref->getCommand());
+	const bool file_announce_ok =
+		expect(parsed_file_announce->getNetCommandType() == NETCOMMANDTYPE_FILEANNOUNCE,
+			"File-announce command type changed") &&
+		expect(parsed_file_announce->getPlayerID() == 15, "File-announce player id changed") &&
+		expect(parsed_file_announce->getID() == 54, "File-announce command id changed") &&
+		expect(std::strcmp(parsed_file_announce->getPortableFilename().str(), "Maps/Smoke/Test.map") == 0,
+			"File-announce filename changed") &&
+		expect(parsed_file_announce->getFileID() == 501, "File-announce file id changed") &&
+		expect(parsed_file_announce->getPlayerMask() == 0x33, "File-announce player mask changed");
+	file_announce_ref->deleteInstance();
+
+	NetDisconnectFrameCommandMsg *disconnect_frame = newInstance(NetDisconnectFrameCommandMsg);
+	disconnect_frame->setPlayerID(16);
+	disconnect_frame->setID(55);
+	disconnect_frame->setDisconnectFrame(3500);
+	NetCommandRef *disconnect_frame_ref =
+		roundTripCommand(disconnect_frame, 0x12, "NetPacket did not add disconnect-frame command");
+	if (disconnect_frame_ref == nullptr) {
+		return false;
+	}
+	NetDisconnectFrameCommandMsg *parsed_disconnect_frame =
+		static_cast<NetDisconnectFrameCommandMsg *>(disconnect_frame_ref->getCommand());
+	const bool disconnect_frame_ok =
+		expect(parsed_disconnect_frame->getNetCommandType() == NETCOMMANDTYPE_DISCONNECTFRAME,
+			"Disconnect-frame command type changed") &&
+		expect(parsed_disconnect_frame->getPlayerID() == 16, "Disconnect-frame player id changed") &&
+		expect(parsed_disconnect_frame->getID() == 55, "Disconnect-frame command id changed") &&
+		expect(parsed_disconnect_frame->getDisconnectFrame() == 3500,
+			"Disconnect-frame value changed");
+	disconnect_frame_ref->deleteInstance();
+
+	NetDisconnectScreenOffCommandMsg *screen_off = newInstance(NetDisconnectScreenOffCommandMsg);
+	screen_off->setPlayerID(17);
+	screen_off->setID(56);
+	screen_off->setNewFrame(3600);
+	NetCommandRef *screen_off_ref =
+		roundTripCommand(screen_off, 0x13, "NetPacket did not add disconnect-screen-off command");
+	if (screen_off_ref == nullptr) {
+		return false;
+	}
+	NetDisconnectScreenOffCommandMsg *parsed_screen_off =
+		static_cast<NetDisconnectScreenOffCommandMsg *>(screen_off_ref->getCommand());
+	const bool screen_off_ok =
+		expect(parsed_screen_off->getNetCommandType() == NETCOMMANDTYPE_DISCONNECTSCREENOFF,
+			"Disconnect-screen-off command type changed") &&
+		expect(parsed_screen_off->getPlayerID() == 17, "Disconnect-screen-off player id changed") &&
+		expect(parsed_screen_off->getID() == 56, "Disconnect-screen-off command id changed") &&
+		expect(parsed_screen_off->getNewFrame() == 3600, "Disconnect-screen-off frame changed");
+	screen_off_ref->deleteInstance();
+
+	NetFrameResendRequestCommandMsg *resend = newInstance(NetFrameResendRequestCommandMsg);
+	resend->setPlayerID(18);
+	resend->setID(57);
+	resend->setFrameToResend(3700);
+	NetCommandRef *resend_ref =
+		roundTripCommand(resend, 0x14, "NetPacket did not add frame-resend-request command");
+	if (resend_ref == nullptr) {
+		return false;
+	}
+	NetFrameResendRequestCommandMsg *parsed_resend =
+		static_cast<NetFrameResendRequestCommandMsg *>(resend_ref->getCommand());
+	const bool resend_ok =
+		expect(parsed_resend->getNetCommandType() == NETCOMMANDTYPE_FRAMERESENDREQUEST,
+			"Frame-resend-request command type changed") &&
+		expect(parsed_resend->getPlayerID() == 18, "Frame-resend-request player id changed") &&
+		expect(parsed_resend->getID() == 57, "Frame-resend-request command id changed") &&
+		expect(parsed_resend->getFrameToResend() == 3700, "Frame-resend-request frame changed");
+	resend_ref->deleteInstance();
+
+	return leave_ok && metrics_ok && destroy_ok && keep_alive_ok && disconnect_keep_alive_ok &&
+		disconnect_player_ok && router_query_ok && router_ack_ok && disconnect_chat_ok &&
+		disconnect_vote_ok && load_complete_ok && timeout_start_ok && wrapper_ok &&
+		file_announce_ok && disconnect_frame_ok && screen_off_ok && resend_ok;
+}
+
 bool exerciseUser()
 {
 	User *first = newInstance(User)(UnicodeString(L"Commander"), 0x01020304u, 8088);
@@ -305,13 +632,13 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
-		exerciseNetPacketRoundTrip() && exerciseUser();
+		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() && exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,User\",\"covered\":\"command lists and packet round-trips\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,User\",\"covered\":\"command lists, packet round-trips, and control command values\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
