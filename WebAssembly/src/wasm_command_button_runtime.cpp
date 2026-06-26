@@ -10,6 +10,7 @@
 #include "Common/INI.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/ControlBarScheme.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/WeaponSet.h"
 
@@ -174,7 +175,7 @@ ControlBar::ControlBar()
 	m_UIDirty = false;
 	m_commandButtons = nullptr;
 	m_commandSets = nullptr;
-	m_controlBarSchemeManager = nullptr;
+	m_controlBarSchemeManager = NEW ControlBarSchemeManager;
 	m_currentSelectedDrawable = nullptr;
 	m_currContext = CB_CONTEXT_NONE;
 	m_rallyPointDrawableID = INVALID_DRAWABLE_ID;
@@ -191,6 +192,10 @@ ControlBar::~ControlBar()
 		CommandSet *set = m_commandSets->friend_getNext();
 		m_commandSets->deleteInstance();
 		m_commandSets = set;
+	}
+	if (m_controlBarSchemeManager != nullptr) {
+		delete m_controlBarSchemeManager;
+		m_controlBarSchemeManager = nullptr;
 	}
 }
 

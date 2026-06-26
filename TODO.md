@@ -657,10 +657,9 @@ shares structure and follows behind.
       image collection ownership once mapped image/UI asset loading is linked;
       the current preflight verifies public template metadata but does not
       resolve private image IDs to `Image` instances.
-- [ ] Link and smoke-test the original command-set, control-bar scheme,
-      DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
-      reader and their destination managers/singletons are available without
-      target-local parser stubs.
+- [ ] Link and smoke-test the original DamageFX and map-data INI parse routes
+      after the real `Common/INI.cpp` reader and their destination
+      managers/singletons are available without target-local parser stubs.
 - [ ] Link and smoke-test the original command-button INI parser route after
       the real `Common/INI.cpp` reader, ControlBar, and SpecialPowerStore
       singleton surfaces are available without target-local parser stubs.
@@ -671,6 +670,11 @@ shares structure and follows behind.
       `INICommandSet.cpp` and shipped `AmericaInfantryRangerCommandSet`, after
       loading the referenced shipped command-button subset through the original
       command-button parser.
+- [x] Link and smoke-test the original control-bar scheme parser route through
+      the focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `INIControlBarScheme.cpp`, `ControlBarScheme.cpp`, and
+      `GameClient/Image.cpp` over shipped default and faction schemes with
+      original 512 mapped-image resolution.
 - [ ] Expand command-button parser preflight from the focused shipped
       upgrade/special-power subset to full `CommandButton.ini` coverage after
       real `ThingFactory` / `ThingTemplate` object-template resolution is
@@ -1760,6 +1764,16 @@ shares structure and follows behind.
       image definitions, packed UVs, and rotated image status in Playwright.
       This is a mapped-image metadata preflight only; texture upload and UI
       rendering still need the browser renderer.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Default\ControlBarScheme.ini` and
+      `Data\INI\ControlBarScheme.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INIControlBarScheme.cpp`,
+      `GameClient/GUI/ControlBar/ControlBarScheme.cpp`, and
+      `GameClient/Image.cpp`, expose parsed default and faction scheme
+      metadata as `assetProbe.controlBarScheme`, and require it for the
+      Playwright `startupAssets.ready` state. This is a focused shipped
+      control-bar scheme preflight only; command-bar rendering, ControlBar UI
+      ownership, and unresolved optional image references remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\multiplayer.ini` from `INIZH.big` through original
       `Common/INI.cpp::load`, `Common/INI/INIMultiplayer.cpp`,

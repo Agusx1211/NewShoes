@@ -26,6 +26,7 @@
 #include "Common/Upgrade.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/ControlBarScheme.h"
 #include "GameClient/DrawGroupInfo.h"
 #include "GameClient/GameText.h"
 #include "GameClient/Image.h"
@@ -55,6 +56,9 @@ constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
+constexpr const char CONTROL_BAR_SCHEME_INI_PATH[] = "Data\\INI\\ControlBarScheme.ini";
+constexpr const char DEFAULT_CONTROL_BAR_SCHEME_INI_PATH[] =
+	"Data\\INI\\Default\\ControlBarScheme.ini";
 constexpr const char CRATE_INI_PATH[] = "Data\\INI\\Crate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
@@ -642,6 +646,45 @@ std::size_t count_verified_fields(const RealMappedImageIniProbeResult &result)
 		(result.watermark_china_rotated ? 1U : 0U);
 }
 
+std::size_t count_verified_fields(const RealControlBarSchemeIniProbeResult &result)
+{
+	return
+		(result.default_found ? 1U : 0U) +
+		(result.default_queue_image.empty() ? 1U : 0U) +
+		(result.default_right_hud_image.empty() ? 1U : 0U) +
+		(result.default_base_image == "InGameUIAmericaBase" ? 1U : 0U) +
+		(result.default_base_layer == 4 ? 1U : 0U) +
+		(result.default_base_width == 800 ? 1U : 0U) +
+		(result.default_base_height == 191 ? 1U : 0U) +
+		(result.america_found ? 1U : 0U) +
+		(result.america_side == "America" ? 1U : 0U) +
+		(result.america_queue_image.empty() ? 1U : 0U) +
+		(result.america_right_hud_image.empty() ? 1U : 0U) +
+		(result.america_command_marker_image == "SAEmptyFrame" ? 1U : 0U) +
+		(result.america_power_purchase_image == "GeneralsPowerWindow_American" ? 1U : 0U) +
+		(result.america_base_image == "InGameUIAmericaBase" ? 1U : 0U) +
+		(result.america_screen_x == 800 ? 1U : 0U) +
+		(result.america_screen_y == 600 ? 1U : 0U) +
+		(result.america_base_layer == 4 ? 1U : 0U) +
+		(result.america_base_x == 0 ? 1U : 0U) +
+		(result.america_base_y == 408 ? 1U : 0U) +
+		(result.america_base_width == 800 ? 1U : 0U) +
+		(result.america_base_height == 191 ? 1U : 0U) +
+		(result.gla_found ? 1U : 0U) +
+		(result.gla_side == "GLA" ? 1U : 0U) +
+		(result.gla_right_hud_image.empty() ? 1U : 0U) +
+		(result.gla_command_marker_image == "SUEmptyFrame" ? 1U : 0U) +
+		(result.gla_power_purchase_image == "GeneralsPowerWindow_GLA" ? 1U : 0U) +
+		(result.gla_base_image == "InGameUIGLABase" ? 1U : 0U) +
+		(result.china_found ? 1U : 0U) +
+		(result.china_side == "China" ? 1U : 0U) +
+		(result.china_right_hud_image.empty() ? 1U : 0U) +
+		(result.china_command_marker_image == "SNEmptyFrame" ? 1U : 0U) +
+		(result.china_power_purchase_image == "GeneralsPowerMenu_China" ? 1U : 0U) +
+		(result.china_gen_arrow_image.empty() ? 1U : 0U) +
+		(result.china_base_image == "InGameUIChinaBase" ? 1U : 0U);
+}
+
 std::size_t count_verified_fields(const RealCrateIniProbeResult &result)
 {
 	return
@@ -972,6 +1015,109 @@ void inspect_mapped_image(
 	}
 	if (uv_hi_y != nullptr) {
 		*uv_hi_y = uv->hi.y;
+	}
+}
+
+std::string image_name(const Image *image)
+{
+	return image != nullptr ? image->getName().str() : "";
+}
+
+const ControlBarSchemeImage *first_scheme_layer_image(
+	const ControlBarScheme *scheme,
+	int layer)
+{
+	if (scheme == nullptr || layer < 0 || layer >= MAX_CONTROL_BAR_SCHEME_IMAGE_LAYERS ||
+			scheme->m_layer[layer].empty()) {
+		return nullptr;
+	}
+
+	return scheme->m_layer[layer].front();
+}
+
+void inspect_default_control_bar_scheme(
+	ControlBarSchemeManager &manager,
+	RealControlBarSchemeIniProbeResult &result)
+{
+	const ControlBarScheme *scheme = manager.findControlBarScheme(AsciiString("Default"));
+	result.default_found = scheme != nullptr;
+	if (scheme == nullptr) {
+		return;
+	}
+
+	result.default_queue_image = image_name(scheme->m_buttonQueueImage);
+	result.default_right_hud_image = image_name(scheme->m_rightHUDImage);
+	const ControlBarSchemeImage *base_image = first_scheme_layer_image(scheme, 4);
+	if (base_image != nullptr) {
+		result.default_base_image = image_name(base_image->m_image);
+		result.default_base_layer = base_image->m_layer;
+		result.default_base_width = base_image->m_size.x;
+		result.default_base_height = base_image->m_size.y;
+	}
+}
+
+void inspect_control_bar_scheme_sample(
+	ControlBarSchemeManager &manager,
+	const char *name,
+	bool &found,
+	std::string &side,
+	std::string &right_hud_image,
+	std::string &command_marker_image,
+	std::string &power_purchase_image,
+	std::string &base_image_name,
+	std::string *queue_image = nullptr,
+	std::string *gen_arrow_image = nullptr,
+	int *screen_x = nullptr,
+	int *screen_y = nullptr,
+	int *base_layer = nullptr,
+	int *base_x = nullptr,
+	int *base_y = nullptr,
+	int *base_width = nullptr,
+	int *base_height = nullptr)
+{
+	const ControlBarScheme *scheme = manager.findControlBarScheme(AsciiString(name));
+	found = scheme != nullptr;
+	if (scheme == nullptr) {
+		return;
+	}
+
+	side = scheme->m_side.str();
+	right_hud_image = image_name(scheme->m_rightHUDImage);
+	command_marker_image = image_name(scheme->m_commandMarkerImage);
+	power_purchase_image = image_name(scheme->m_powerPurchaseImage);
+	if (queue_image != nullptr) {
+		*queue_image = image_name(scheme->m_buttonQueueImage);
+	}
+	if (gen_arrow_image != nullptr) {
+		*gen_arrow_image = image_name(scheme->m_genArrow);
+	}
+	if (screen_x != nullptr) {
+		*screen_x = scheme->m_ScreenCreationRes.x;
+	}
+	if (screen_y != nullptr) {
+		*screen_y = scheme->m_ScreenCreationRes.y;
+	}
+
+	const ControlBarSchemeImage *base_image = first_scheme_layer_image(scheme, 4);
+	if (base_image == nullptr) {
+		return;
+	}
+
+	base_image_name = image_name(base_image->m_image);
+	if (base_layer != nullptr) {
+		*base_layer = base_image->m_layer;
+	}
+	if (base_x != nullptr) {
+		*base_x = base_image->m_position.x;
+	}
+	if (base_y != nullptr) {
+		*base_y = base_image->m_position.y;
+	}
+	if (base_width != nullptr) {
+		*base_width = base_image->m_size.x;
+	}
+	if (base_height != nullptr) {
+		*base_height = base_image->m_size.y;
 	}
 }
 
@@ -2761,6 +2907,170 @@ RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *a
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
+	if (mapped_image_collection != nullptr) {
+		delete mapped_image_collection;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(const char *archive_path)
+{
+	RealControlBarSchemeIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INIControlBarScheme.cpp + ControlBarScheme.cpp + Image.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	ControlBar *old_control_bar = TheControlBar;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ImageCollection *mapped_image_collection = nullptr;
+	ControlBar *control_bar = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo default_file_info = {};
+			result.default_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(DEFAULT_CONTROL_BAR_SCHEME_INI_PATH),
+					&default_file_info) &&
+				default_file_info.sizeHigh == 0 &&
+				default_file_info.sizeLow > 0;
+			result.default_bytes = result.default_file_exists ?
+				static_cast<std::size_t>(default_file_info.sizeLow) : 0U;
+
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(CONTROL_BAR_SCHEME_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.default_file_exists && result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				mapped_image_collection = NEW ImageCollection;
+				TheMappedImageCollection = mapped_image_collection;
+				mapped_image_collection->load(512);
+				result.mapped_images_loaded = true;
+				result.mapped_image_count = count_mapped_images(*mapped_image_collection);
+
+				control_bar = NEW ControlBar;
+				TheControlBar = control_bar;
+				ControlBarSchemeManager *manager = control_bar->getControlBarSchemeManager();
+				result.control_bar_loaded = manager != nullptr;
+
+				if (manager != nullptr) {
+					INI default_ini;
+					default_ini.load(
+						AsciiString(DEFAULT_CONTROL_BAR_SCHEME_INI_PATH),
+						INI_LOAD_OVERWRITE,
+						nullptr);
+					result.original_default_ini_load = true;
+
+					INI ini;
+					ini.load(AsciiString(CONTROL_BAR_SCHEME_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+					result.original_ini_load = true;
+
+					inspect_default_control_bar_scheme(*manager, result);
+					inspect_control_bar_scheme_sample(
+						*manager,
+						"America8x6",
+						result.america_found,
+						result.america_side,
+						result.america_right_hud_image,
+						result.america_command_marker_image,
+						result.america_power_purchase_image,
+						result.america_base_image,
+						&result.america_queue_image,
+						nullptr,
+						&result.america_screen_x,
+						&result.america_screen_y,
+						&result.america_base_layer,
+						&result.america_base_x,
+						&result.america_base_y,
+						&result.america_base_width,
+						&result.america_base_height);
+					inspect_control_bar_scheme_sample(
+						*manager,
+						"GLA8x6",
+						result.gla_found,
+						result.gla_side,
+						result.gla_right_hud_image,
+						result.gla_command_marker_image,
+						result.gla_power_purchase_image,
+						result.gla_base_image);
+					inspect_control_bar_scheme_sample(
+						*manager,
+						"China8x6",
+						result.china_found,
+						result.china_side,
+						result.china_right_hud_image,
+						result.china_command_marker_image,
+						result.china_power_purchase_image,
+						result.china_base_image,
+						nullptr,
+						&result.china_gen_arrow_image);
+
+					result.parsed_fields = count_verified_fields(result);
+					result.ok =
+						result.default_bytes > 1000 &&
+						result.bytes > 10000 &&
+						result.mapped_images_loaded &&
+						result.mapped_image_count == 1186 &&
+						result.name_key_generator_loaded &&
+						result.control_bar_loaded &&
+						result.original_default_ini_load &&
+						result.original_ini_load &&
+						result.parsed_fields == 34;
+				}
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheControlBar = old_control_bar;
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (control_bar != nullptr) {
+		delete control_bar;
+	}
 	if (mapped_image_collection != nullptr) {
 		delete mapped_image_collection;
 	}

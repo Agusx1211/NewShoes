@@ -288,6 +288,67 @@ function assertCommandSetProbe(assetProbe, context) {
   }
 }
 
+function assertControlBarSchemeProbe(assetProbe, context) {
+  const scheme = assetProbe?.controlBarScheme;
+  const defaultScheme = scheme?.default;
+  const america = scheme?.america;
+  const gla = scheme?.gla;
+  const china = scheme?.china;
+  if (!assetProbe?.inizh?.controlBarSchemeIni
+      || !assetProbe.inizh.defaultControlBarSchemeIni
+      || !scheme?.attempted
+      || !scheme.ok
+      || scheme.source !== "GameEngine/Common/INI.cpp::load + INIControlBarScheme.cpp + ControlBarScheme.cpp + Image.cpp"
+      || !scheme.loadedArchives
+      || !scheme.fileExists
+      || !scheme.defaultFileExists
+      || !scheme.nameKeyGeneratorLoaded
+      || !scheme.mappedImagesLoaded
+      || !scheme.controlBarLoaded
+      || !scheme.originalDefaultIniLoad
+      || !scheme.originalIniLoad
+      || scheme.bytes <= 10000
+      || scheme.defaultBytes <= 1000
+      || scheme.parsedFields !== 34
+      || scheme.mappedImages !== 1186
+      || !defaultScheme?.found
+      || defaultScheme.queueImage !== ""
+      || defaultScheme.rightHUDImage !== ""
+      || defaultScheme.baseImage !== "InGameUIAmericaBase"
+      || defaultScheme.baseLayer !== 4
+      || defaultScheme.baseWidth !== 800
+      || defaultScheme.baseHeight !== 191
+      || !america?.found
+      || america.side !== "America"
+      || america.queueImage !== ""
+      || america.rightHUDImage !== ""
+      || america.commandMarkerImage !== "SAEmptyFrame"
+      || america.powerPurchaseImage !== "GeneralsPowerWindow_American"
+      || america.baseImage !== "InGameUIAmericaBase"
+      || america.screenX !== 800
+      || america.screenY !== 600
+      || america.baseLayer !== 4
+      || america.baseX !== 0
+      || america.baseY !== 408
+      || america.baseWidth !== 800
+      || america.baseHeight !== 191
+      || !gla?.found
+      || gla.side !== "GLA"
+      || gla.rightHUDImage !== ""
+      || gla.commandMarkerImage !== "SUEmptyFrame"
+      || gla.powerPurchaseImage !== "GeneralsPowerWindow_GLA"
+      || gla.baseImage !== "InGameUIGLABase"
+      || !china?.found
+      || china.side !== "China"
+      || china.rightHUDImage !== ""
+      || china.commandMarkerImage !== "SNEmptyFrame"
+      || china.powerPurchaseImage !== "GeneralsPowerMenu_China"
+      || china.genArrowImage !== ""
+      || china.baseImage !== "InGameUIChinaBase") {
+    throw new Error(`${context} did not parse expected ControlBarScheme.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertCrateProbe(assetProbe, context) {
   const crate = assetProbe?.crate;
   const salvage = crate?.salvage;
@@ -762,6 +823,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.upgrade
         || !startupAssets.required?.commandButton
         || !startupAssets.required?.commandSet
+        || !startupAssets.required?.controlBarScheme
         || !startupAssets.required?.crate
         || !startupAssets.required?.specialPower
         || !startupAssets.required?.playerTemplate
@@ -846,6 +908,8 @@ try {
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
+      || !assetProbe.inizh?.controlBarSchemeIni
+      || !assetProbe.inizh?.defaultControlBarSchemeIni
       || !assetProbe.inizh?.crateIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
@@ -863,6 +927,7 @@ try {
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
+  assertControlBarSchemeProbe(assetProbe, "aggregate runtime archive probe");
   assertCrateProbe(assetProbe, "aggregate runtime archive probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
   assertMappedImageProbe(assetProbe, "aggregate runtime archive probe");
@@ -927,6 +992,7 @@ try {
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertControlBarSchemeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCrateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
   assertMappedImageProbe(bootResult.state.assetProbe, "boot asset probe");

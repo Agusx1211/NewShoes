@@ -272,6 +272,8 @@ bool startup_boot_ini_present()
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_command_set_ini &&
+		g_archive_probe.has_control_bar_scheme_ini &&
+		g_archive_probe.has_default_control_bar_scheme_ini &&
 		g_archive_probe.has_game_data_ini &&
 		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_roads_ini &&
@@ -363,6 +365,14 @@ bool startup_command_set_ready()
 		g_archive_probe.command_set_ok;
 }
 
+bool startup_control_bar_scheme_ready()
+{
+	return g_archive_probe.has_control_bar_scheme_ini &&
+		g_archive_probe.has_default_control_bar_scheme_ini &&
+		g_archive_probe.control_bar_scheme_attempted &&
+		g_archive_probe.control_bar_scheme_ok;
+}
+
 bool startup_crate_ready()
 {
 	return g_archive_probe.has_crate_ini &&
@@ -423,6 +433,7 @@ bool startup_assets_ready()
 		startup_upgrade_ready() &&
 		startup_command_button_ready() &&
 		startup_command_set_ready() &&
+		startup_control_bar_scheme_ready() &&
 		startup_crate_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
@@ -475,6 +486,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_command_set_ready()) {
 		return "command_set_probe_failed";
+	}
+	if (!startup_control_bar_scheme_ready()) {
+		return "control_bar_scheme_probe_failed";
 	}
 	if (!startup_crate_ready()) {
 		return "crate_probe_failed";
@@ -546,6 +560,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_command_set_ready()) {
 		return "Runtime BIG archive set did not pass the CommandSet.ini startup probe.";
+	}
+	if (!startup_control_bar_scheme_ready()) {
+		return "Runtime BIG archive set did not pass the ControlBarScheme.ini startup probe.";
 	}
 	if (!startup_crate_ready()) {
 		return "Runtime BIG archive set did not pass the Crate.ini startup probe.";
@@ -899,6 +916,125 @@ std::string build_command_set_probe_json()
 	return buffer;
 }
 
+std::string build_control_bar_scheme_probe_json()
+{
+	char buffer[9000];
+	const std::string source_json = json_escape(g_archive_probe.control_bar_scheme_source);
+	const std::string default_queue_json =
+		json_escape(g_archive_probe.control_bar_scheme_default_queue_image);
+	const std::string default_right_hud_json =
+		json_escape(g_archive_probe.control_bar_scheme_default_right_hud_image);
+	const std::string default_base_json =
+		json_escape(g_archive_probe.control_bar_scheme_default_base_image);
+	const std::string america_side_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_side);
+	const std::string america_queue_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_queue_image);
+	const std::string america_right_hud_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_right_hud_image);
+	const std::string america_command_marker_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_command_marker_image);
+	const std::string america_power_purchase_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_power_purchase_image);
+	const std::string america_base_json =
+		json_escape(g_archive_probe.control_bar_scheme_america_base_image);
+	const std::string gla_side_json =
+		json_escape(g_archive_probe.control_bar_scheme_gla_side);
+	const std::string gla_right_hud_json =
+		json_escape(g_archive_probe.control_bar_scheme_gla_right_hud_image);
+	const std::string gla_command_marker_json =
+		json_escape(g_archive_probe.control_bar_scheme_gla_command_marker_image);
+	const std::string gla_power_purchase_json =
+		json_escape(g_archive_probe.control_bar_scheme_gla_power_purchase_image);
+	const std::string gla_base_json =
+		json_escape(g_archive_probe.control_bar_scheme_gla_base_image);
+	const std::string china_side_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_side);
+	const std::string china_right_hud_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_right_hud_image);
+	const std::string china_command_marker_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_command_marker_image);
+	const std::string china_power_purchase_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_power_purchase_image);
+	const std::string china_gen_arrow_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_gen_arrow_image);
+	const std::string china_base_json =
+		json_escape(g_archive_probe.control_bar_scheme_china_base_image);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,\"defaultBytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,"
+		"\"fileExists\":%s,\"defaultFileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"mappedImagesLoaded\":%s,"
+		"\"controlBarLoaded\":%s,\"originalDefaultIniLoad\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"mappedImages\":%zu,"
+		"\"default\":{\"found\":%s,\"queueImage\":\"%s\","
+		"\"rightHUDImage\":\"%s\",\"baseImage\":\"%s\","
+		"\"baseLayer\":%d,\"baseWidth\":%d,\"baseHeight\":%d},"
+		"\"america\":{\"found\":%s,\"side\":\"%s\",\"queueImage\":\"%s\","
+		"\"rightHUDImage\":\"%s\",\"commandMarkerImage\":\"%s\","
+		"\"powerPurchaseImage\":\"%s\",\"baseImage\":\"%s\","
+		"\"screenX\":%d,\"screenY\":%d,\"baseLayer\":%d,"
+		"\"baseX\":%d,\"baseY\":%d,\"baseWidth\":%d,\"baseHeight\":%d},"
+		"\"gla\":{\"found\":%s,\"side\":\"%s\",\"rightHUDImage\":\"%s\","
+		"\"commandMarkerImage\":\"%s\",\"powerPurchaseImage\":\"%s\","
+		"\"baseImage\":\"%s\"},"
+		"\"china\":{\"found\":%s,\"side\":\"%s\",\"rightHUDImage\":\"%s\","
+		"\"commandMarkerImage\":\"%s\",\"powerPurchaseImage\":\"%s\","
+		"\"genArrowImage\":\"%s\",\"baseImage\":\"%s\"}}",
+		g_archive_probe.control_bar_scheme_attempted ? "true" : "false",
+		g_archive_probe.control_bar_scheme_ok ? "true" : "false",
+		g_archive_probe.control_bar_scheme_bytes,
+		g_archive_probe.control_bar_scheme_default_bytes,
+		source_json.c_str(),
+		g_archive_probe.control_bar_scheme_loaded_archives ? "true" : "false",
+		g_archive_probe.control_bar_scheme_file_exists ? "true" : "false",
+		g_archive_probe.control_bar_scheme_default_file_exists ? "true" : "false",
+		g_archive_probe.control_bar_scheme_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.control_bar_scheme_mapped_images_loaded ? "true" : "false",
+		g_archive_probe.control_bar_scheme_control_bar_loaded ? "true" : "false",
+		g_archive_probe.control_bar_scheme_original_default_ini_load ? "true" : "false",
+		g_archive_probe.control_bar_scheme_original_ini_load ? "true" : "false",
+		g_archive_probe.control_bar_scheme_parsed_fields,
+		g_archive_probe.control_bar_scheme_mapped_image_count,
+		g_archive_probe.control_bar_scheme_default_found ? "true" : "false",
+		default_queue_json.c_str(),
+		default_right_hud_json.c_str(),
+		default_base_json.c_str(),
+		g_archive_probe.control_bar_scheme_default_base_layer,
+		g_archive_probe.control_bar_scheme_default_base_width,
+		g_archive_probe.control_bar_scheme_default_base_height,
+		g_archive_probe.control_bar_scheme_america_found ? "true" : "false",
+		america_side_json.c_str(),
+		america_queue_json.c_str(),
+		america_right_hud_json.c_str(),
+		america_command_marker_json.c_str(),
+		america_power_purchase_json.c_str(),
+		america_base_json.c_str(),
+		g_archive_probe.control_bar_scheme_america_screen_x,
+		g_archive_probe.control_bar_scheme_america_screen_y,
+		g_archive_probe.control_bar_scheme_america_base_layer,
+		g_archive_probe.control_bar_scheme_america_base_x,
+		g_archive_probe.control_bar_scheme_america_base_y,
+		g_archive_probe.control_bar_scheme_america_base_width,
+		g_archive_probe.control_bar_scheme_america_base_height,
+		g_archive_probe.control_bar_scheme_gla_found ? "true" : "false",
+		gla_side_json.c_str(),
+		gla_right_hud_json.c_str(),
+		gla_command_marker_json.c_str(),
+		gla_power_purchase_json.c_str(),
+		gla_base_json.c_str(),
+		g_archive_probe.control_bar_scheme_china_found ? "true" : "false",
+		china_side_json.c_str(),
+		china_right_hud_json.c_str(),
+		china_command_marker_json.c_str(),
+		china_power_purchase_json.c_str(),
+		china_gen_arrow_json.c_str(),
+		china_base_json.c_str());
+
+	return buffer;
+}
+
 std::string build_crate_probe_json()
 {
 	char buffer[9000];
@@ -1125,13 +1261,14 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[112000];
+	char buffer[122000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
 	const std::string command_set_probe_json = build_command_set_probe_json();
+	const std::string control_bar_scheme_probe_json = build_control_bar_scheme_probe_json();
 	const std::string crate_probe_json = build_crate_probe_json();
 	const std::string draw_group_info_probe_json = build_draw_group_info_probe_json();
 	const std::string mapped_image_probe_json = build_mapped_image_probe_json();
@@ -1293,7 +1430,8 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"commandSetIni\":%s,\"crateIni\":%s,"
+		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
+		"\"defaultControlBarSchemeIni\":%s,\"crateIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
@@ -1322,6 +1460,7 @@ const char *write_state_json()
 		"\"upgrade\":%s,"
 		"\"commandButton\":%s,"
 		"\"commandSet\":%s,"
+		"\"controlBarScheme\":%s,"
 		"\"crate\":%s,"
 		"\"drawGroupInfo\":%s,"
 		"\"mappedImages\":%s,"
@@ -1475,7 +1614,7 @@ const char *write_state_json()
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
-		"\"commandSet\":%s,\"crate\":%s,"
+		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
@@ -1533,6 +1672,8 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_command_set_ini ? "true" : "false",
+		g_archive_probe.has_control_bar_scheme_ini ? "true" : "false",
+		g_archive_probe.has_default_control_bar_scheme_ini ? "true" : "false",
 		g_archive_probe.has_crate_ini ? "true" : "false",
 		g_archive_probe.has_player_template_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
@@ -1592,6 +1733,7 @@ const char *write_state_json()
 		upgrade_probe_json.c_str(),
 		command_button_probe_json.c_str(),
 		command_set_probe_json.c_str(),
+		control_bar_scheme_probe_json.c_str(),
 		crate_probe_json.c_str(),
 		draw_group_info_probe_json.c_str(),
 		mapped_image_probe_json.c_str(),
@@ -1928,6 +2070,7 @@ const char *write_state_json()
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
 		startup_command_set_ready() ? "true" : "false",
+		startup_control_bar_scheme_ready() ? "true" : "false",
 		startup_crate_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",

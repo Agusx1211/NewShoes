@@ -34,6 +34,9 @@ constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
+constexpr const char CONTROL_BAR_SCHEME_INI_PATH[] = "Data\\INI\\ControlBarScheme.ini";
+constexpr const char DEFAULT_CONTROL_BAR_SCHEME_INI_PATH[] =
+	"Data\\INI\\Default\\ControlBarScheme.ini";
 constexpr const char CRATE_INI_PATH[] = "Data\\INI\\Crate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
@@ -369,6 +372,74 @@ void copy_command_set_probe(const RealCommandSetIniProbeResult &command_set, Arc
 	result.command_set_ranger_slot1_special_power = command_set.ranger_slot1_special_power;
 	result.command_set_ranger_slot1_upgrade = command_set.ranger_slot1_upgrade;
 	result.command_set_ranger_slot4_upgrade = command_set.ranger_slot4_upgrade;
+}
+
+void copy_control_bar_scheme_probe(
+	const RealControlBarSchemeIniProbeResult &control_bar_scheme,
+	ArchiveProbeResult &result)
+{
+	result.control_bar_scheme_attempted = control_bar_scheme.attempted;
+	result.control_bar_scheme_ok = control_bar_scheme.ok;
+	result.control_bar_scheme_loaded_archives = control_bar_scheme.loaded_archives;
+	result.control_bar_scheme_default_file_exists = control_bar_scheme.default_file_exists;
+	result.control_bar_scheme_file_exists = control_bar_scheme.file_exists;
+	result.control_bar_scheme_name_key_generator_loaded =
+		control_bar_scheme.name_key_generator_loaded;
+	result.control_bar_scheme_mapped_images_loaded =
+		control_bar_scheme.mapped_images_loaded;
+	result.control_bar_scheme_control_bar_loaded = control_bar_scheme.control_bar_loaded;
+	result.control_bar_scheme_original_default_ini_load =
+		control_bar_scheme.original_default_ini_load;
+	result.control_bar_scheme_original_ini_load = control_bar_scheme.original_ini_load;
+	result.control_bar_scheme_default_bytes = control_bar_scheme.default_bytes;
+	result.control_bar_scheme_bytes = control_bar_scheme.bytes;
+	result.control_bar_scheme_mapped_image_count = control_bar_scheme.mapped_image_count;
+	result.control_bar_scheme_parsed_fields = control_bar_scheme.parsed_fields;
+	result.control_bar_scheme_source = control_bar_scheme.source;
+	result.control_bar_scheme_default_found = control_bar_scheme.default_found;
+	result.control_bar_scheme_default_queue_image = control_bar_scheme.default_queue_image;
+	result.control_bar_scheme_default_right_hud_image =
+		control_bar_scheme.default_right_hud_image;
+	result.control_bar_scheme_default_base_image = control_bar_scheme.default_base_image;
+	result.control_bar_scheme_default_base_layer = control_bar_scheme.default_base_layer;
+	result.control_bar_scheme_default_base_width = control_bar_scheme.default_base_width;
+	result.control_bar_scheme_default_base_height = control_bar_scheme.default_base_height;
+	result.control_bar_scheme_america_found = control_bar_scheme.america_found;
+	result.control_bar_scheme_america_side = control_bar_scheme.america_side;
+	result.control_bar_scheme_america_queue_image = control_bar_scheme.america_queue_image;
+	result.control_bar_scheme_america_right_hud_image =
+		control_bar_scheme.america_right_hud_image;
+	result.control_bar_scheme_america_command_marker_image =
+		control_bar_scheme.america_command_marker_image;
+	result.control_bar_scheme_america_power_purchase_image =
+		control_bar_scheme.america_power_purchase_image;
+	result.control_bar_scheme_america_base_image = control_bar_scheme.america_base_image;
+	result.control_bar_scheme_america_screen_x = control_bar_scheme.america_screen_x;
+	result.control_bar_scheme_america_screen_y = control_bar_scheme.america_screen_y;
+	result.control_bar_scheme_america_base_layer = control_bar_scheme.america_base_layer;
+	result.control_bar_scheme_america_base_x = control_bar_scheme.america_base_x;
+	result.control_bar_scheme_america_base_y = control_bar_scheme.america_base_y;
+	result.control_bar_scheme_america_base_width = control_bar_scheme.america_base_width;
+	result.control_bar_scheme_america_base_height = control_bar_scheme.america_base_height;
+	result.control_bar_scheme_gla_found = control_bar_scheme.gla_found;
+	result.control_bar_scheme_gla_side = control_bar_scheme.gla_side;
+	result.control_bar_scheme_gla_right_hud_image = control_bar_scheme.gla_right_hud_image;
+	result.control_bar_scheme_gla_command_marker_image =
+		control_bar_scheme.gla_command_marker_image;
+	result.control_bar_scheme_gla_power_purchase_image =
+		control_bar_scheme.gla_power_purchase_image;
+	result.control_bar_scheme_gla_base_image = control_bar_scheme.gla_base_image;
+	result.control_bar_scheme_china_found = control_bar_scheme.china_found;
+	result.control_bar_scheme_china_side = control_bar_scheme.china_side;
+	result.control_bar_scheme_china_right_hud_image =
+		control_bar_scheme.china_right_hud_image;
+	result.control_bar_scheme_china_command_marker_image =
+		control_bar_scheme.china_command_marker_image;
+	result.control_bar_scheme_china_power_purchase_image =
+		control_bar_scheme.china_power_purchase_image;
+	result.control_bar_scheme_china_gen_arrow_image =
+		control_bar_scheme.china_gen_arrow_image;
+	result.control_bar_scheme_china_base_image = control_bar_scheme.china_base_image;
 }
 
 void copy_crate_probe(const RealCrateIniProbeResult &crate, ArchiveProbeResult &result)
@@ -911,6 +982,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
 			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
+			result.has_control_bar_scheme_ini =
+				archive_file_system.doesFileExist(CONTROL_BAR_SCHEME_INI_PATH);
+			result.has_default_control_bar_scheme_ini =
+				archive_file_system.doesFileExist(DEFAULT_CONTROL_BAR_SCHEME_INI_PATH);
 			result.has_crate_ini = archive_file_system.doesFileExist(CRATE_INI_PATH);
 			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
@@ -1017,6 +1092,14 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_upgrade_ini) {
 		copy_command_set_probe(probe_original_command_set_ini_load(archive_path), result);
 		result.ok = result.ok && result.command_set_ok;
+	}
+	if (result.loaded &&
+			result.has_control_bar_scheme_ini &&
+			result.has_default_control_bar_scheme_ini) {
+		copy_control_bar_scheme_probe(
+			probe_original_control_bar_scheme_ini_load(archive_path),
+			result);
+		result.ok = result.ok && result.control_bar_scheme_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

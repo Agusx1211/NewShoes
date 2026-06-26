@@ -345,6 +345,60 @@ struct RealMappedImageIniProbeResult
 	bool watermark_china_rotated = false;
 };
 
+struct RealControlBarSchemeIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool default_file_exists = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool mapped_images_loaded = false;
+	bool control_bar_loaded = false;
+	bool original_default_ini_load = false;
+	bool original_ini_load = false;
+	std::size_t default_bytes = 0;
+	std::size_t bytes = 0;
+	std::size_t mapped_image_count = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	bool default_found = false;
+	std::string default_queue_image;
+	std::string default_right_hud_image;
+	std::string default_base_image;
+	int default_base_layer = 0;
+	int default_base_width = 0;
+	int default_base_height = 0;
+	bool america_found = false;
+	std::string america_side;
+	std::string america_queue_image;
+	std::string america_right_hud_image;
+	std::string america_command_marker_image;
+	std::string america_power_purchase_image;
+	std::string america_base_image;
+	int america_screen_x = 0;
+	int america_screen_y = 0;
+	int america_base_layer = 0;
+	int america_base_x = 0;
+	int america_base_y = 0;
+	int america_base_width = 0;
+	int america_base_height = 0;
+	bool gla_found = false;
+	std::string gla_side;
+	std::string gla_right_hud_image;
+	std::string gla_command_marker_image;
+	std::string gla_power_purchase_image;
+	std::string gla_base_image;
+	bool china_found = false;
+	std::string china_side;
+	std::string china_right_hud_image;
+	std::string china_command_marker_image;
+	std::string china_power_purchase_image;
+	std::string china_gen_arrow_image;
+	std::string china_base_image;
+};
+
 struct RealCrateIniProbeResult
 {
 	bool attempted = false;
@@ -691,6 +745,7 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
 RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path);
 RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *archive_path);
+RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(const char *archive_path);
 RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
