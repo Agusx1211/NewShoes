@@ -52,8 +52,9 @@ the extracted archive under Node or the browser harness. The browser variant
 also boots the main `cnc-port` harness and verifies `window.CnCPort.rpc("mountArchive")`
 can fetch `INIZH.big` into MEMFS and probe it through the same original BIG
 reader. The runtime-archives variant extracts the inventoried local BIG set,
-then fetches each archive into browser MEMFS and verifies that the original BIG
-reader can index and read from every archive.
+then boots the main `cnc-port` harness, fetches all runtime archives into one
+MEMFS directory with `window.CnCPort.rpc("mountArchives")`, and verifies every
+archive plus the aggregate `*.big` archive tree through the original BIG reader.
 
 ## Toolchain
 
@@ -92,7 +93,8 @@ The selected baseline flags are:
 - 1 MiB stack via `TOTAL_STACK=1048576`.
 - Debug assertions enabled for the bootstrap build.
 - Exported C symbols: `cnc_port_boot`, `cnc_port_frame`,
-  `cnc_port_start_main_loop`, `cnc_port_stop_main_loop`, `cnc_port_state`.
+  `cnc_port_start_main_loop`, `cnc_port_stop_main_loop`,
+  `cnc_port_probe_archive`, `cnc_port_state`.
 
 Clean generated wasm files:
 
@@ -122,9 +124,10 @@ that wasm stdout/stderr is captured by the harness log, checks the WebGL2
 canvas/RPC state, exercises resize handling, and writes screenshots to
 `artifacts/screenshots/`.
 
-The same harness exposes `window.CnCPort.rpc("mountArchive", { url, name })` for
-real-asset tests. It fetches a user-supplied BIG archive, writes it under
-`/assets/` in the wasm MEMFS, then asks `cnc-port` to verify the mounted archive
+The same harness exposes `window.CnCPort.rpc("mountArchive", { url, name })` and
+`window.CnCPort.rpc("mountArchives", { path, archives })` for real-asset tests.
+These commands fetch user-supplied BIG archives, write them under `/assets/` in
+the wasm MEMFS, then ask `cnc-port` to verify the mounted archive or archive set
 with the original `Win32BIGFileSystem`.
 
 Run the wasm-backed smoke test:

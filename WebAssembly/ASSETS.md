@@ -24,7 +24,9 @@ The initial development path is same-origin fetch from ignored local artifacts:
 2. The local harness server exposes that ignored directory only on the user's
    machine.
 3. The JS bridge preloads required archive bytes before engine startup.
-   The current harness path is `window.CnCPort.rpc("mountArchive", { url, name })`.
+   The current harness paths are `window.CnCPort.rpc("mountArchive", { url, name })`
+   for one BIG and `window.CnCPort.rpc("mountArchives", { path, archives })`
+   for the runtime archive set.
 4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
 5. The original engine BIG/file/INI code reads the mounted bytes.
 
@@ -48,8 +50,9 @@ npm run extract:runtime-archives
 The script extracts these archives into ignored `artifacts/real-assets/` and
 checks that every output has a nonempty `BIGF` archive header.
 After extraction, `npm run test:runtime-archives-browser` verifies the browser
-fetch/MEMFS delivery path by loading each archive through the Playwright harness
-and reading it with the original `Win32BIGFileSystem`.
+fetch/MEMFS delivery path by loading the full archive set through the main
+`cnc-port` Playwright harness and reading each archive plus the aggregate
+archive tree with the original `Win32BIGFileSystem`.
 
 | Archive | Source | Role |
 |---|---|---|

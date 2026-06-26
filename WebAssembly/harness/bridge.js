@@ -38,6 +38,7 @@ const harnessState = {
   originalEngineLinked: false,
   originalCoreProbe: null,
   assetProbe: null,
+  mountedArchives: [],
   logs: [],
 };
 
@@ -230,31 +231,15 @@ function snapshotState() {
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     assetProbe: harnessState.assetProbe,
+    mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
 }
 
-function ensureMemfsDirectory(fs, path) {
-  try {
-    fs.mkdir(path);
-  } catch {
-    // Existing directories are fine; a later write/probe will surface real failures.
-  }
-}
-
-function archiveNameFromUrl(url) {
-  const parsed = new URL(url, window.location.href);
-  const parts = parsed.pathname.split("/").filter(Boolean);
-  return parts[parts.length - 1] || "archive.big";
-}
-
-function normalizeAssetPath(path) {
-  if (!path.startsWith("/assets/")) {
-    return null;
-  }
-
+function normalizeAssetParts(path) {
+  const rawPath = String(path);
   const parts = [];
-  for (const part of path.split("/")) {
+  for (const part of rawPath.split("/")) {
     if (!part || part === ".") {
       continue;
     }
@@ -264,44 +249,129 @@ function normalizeAssetPath(path) {
     parts.push(part);
   }
 
-  return parts[0] === "assets" && parts.length > 1 ? `/${parts.join("/")}` : null;
+  return rawPath.startsWith("/assets")
+    && parts[0] === "assets"
+    ? parts
+    : null;
 }
 
-async function mountArchive(payload = {}) {
-  const wasmModule = await wasmModulePromise;
-  if (!wasmModule) {
-    return { ok: false, command: "mountArchive", error: "Wasm module unavailable; archive cannot be mounted" };
+function normalizeAssetDirectory(path) {
+  const parts = normalizeAssetParts(path);
+  return parts && parts.length >= 1 ? `/${parts.join("/")}` : null;
+}
+
+function normalizeAssetPath(path) {
+  const parts = normalizeAssetParts(path);
+  return parts && parts[0] === "assets" && parts.length > 1 ? `/${parts.join("/")}` : null;
+}
+
+function ensureMemfsDirectory(fs, path) {
+  const directory = normalizeAssetDirectory(path);
+  if (!directory) {
+    throw new Error(`MEMFS directory must stay under /assets: ${path}`);
   }
 
+  let current = "";
+  for (const part of directory.split("/").filter(Boolean)) {
+    current += `/${part}`;
+    try {
+      fs.mkdir(current);
+    } catch {
+      // Existing directories are fine; a later write/probe will surface real failures.
+    }
+  }
+}
+
+function archiveNameFromUrl(url) {
+  const parsed = new URL(url, window.location.href);
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "archive.big";
+}
+
+function parentDirectory(path) {
+  const slash = path.lastIndexOf("/");
+  return slash > 0 ? path.slice(0, slash) : "/";
+}
+
+function archivePathFromPayload(payload, baseDirectory = "/assets") {
   const url = String(payload.url ?? "");
   if (!url) {
-    return { ok: false, command: "mountArchive", error: "Missing archive URL" };
+    return { error: "Missing archive URL" };
   }
 
   const name = String(payload.name ?? archiveNameFromUrl(url));
-  const requestedMemfsPath = String(payload.path ?? `/assets/${name}`);
+  const requestedMemfsPath = String(payload.path ?? `${baseDirectory}/${name}`);
   const memfsPath = normalizeAssetPath(requestedMemfsPath);
   if (!memfsPath) {
-    return { ok: false, command: "mountArchive", error: `Archive path must stay under /assets/: ${requestedMemfsPath}` };
+    return { error: `Archive path must stay under /assets/: ${requestedMemfsPath}` };
   }
 
-  const response = await fetch(url);
+  return { url, name, memfsPath };
+}
+
+async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets") {
+  const archive = archivePathFromPayload(payload, baseDirectory);
+  if (archive.error) {
+    return archive;
+  }
+
+  const response = await fetch(archive.url);
   if (!response.ok) {
     return {
-      ok: false,
-      command: "mountArchive",
-      error: `Archive fetch failed: ${response.status} ${response.statusText}`,
+      error: `${archive.name} fetch failed: ${response.status} ${response.statusText}`,
     };
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  ensureMemfsDirectory(wasmModule.fs, "/assets");
-  wasmModule.fs.writeFile(memfsPath, bytes);
-  applyModuleState(parseModuleState(wasmModule.probeArchive(memfsPath)));
-  harnessState.wasm = "loaded";
-  recordLog("archive mounted", {
-    path: memfsPath,
+  ensureMemfsDirectory(wasmModule.fs, parentDirectory(archive.memfsPath));
+  wasmModule.fs.writeFile(archive.memfsPath, bytes);
+
+  return {
+    name: archive.name,
+    path: archive.memfsPath,
     bytes: bytes.byteLength,
+  };
+}
+
+function probeArchive(wasmModule, archivePath) {
+  applyModuleState(parseModuleState(wasmModule.probeArchive(archivePath)));
+  harnessState.wasm = "loaded";
+  return harnessState.assetProbe;
+}
+
+function rememberMountedArchives(archives) {
+  const byPath = new Map(harnessState.mountedArchives.map((archive) => [archive.path, archive]));
+  for (const archive of archives) {
+    byPath.set(archive.path, archive);
+  }
+  harnessState.mountedArchives = Array.from(byPath.values()).sort((left, right) =>
+    left.path.localeCompare(right.path));
+}
+
+async function getWasmModuleForArchives(command) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return { error: "Wasm module unavailable; archive cannot be mounted", command };
+  }
+  return { wasmModule };
+}
+
+async function mountArchive(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountArchive");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+
+  const archive = await writeArchiveToMemfs(moduleResult.wasmModule, payload);
+  if (archive.error) {
+    return { ok: false, command: "mountArchive", error: archive.error };
+  }
+
+  probeArchive(moduleResult.wasmModule, archive.path);
+  rememberMountedArchives([archive]);
+  recordLog("archive mounted", {
+    path: archive.path,
+    bytes: archive.bytes,
     ok: Boolean(harnessState.assetProbe?.ok),
   });
 
@@ -309,9 +379,81 @@ async function mountArchive(payload = {}) {
     ok: Boolean(harnessState.assetProbe?.ok),
     command: "mountArchive",
     state: snapshotState(),
-    archive: {
-      path: memfsPath,
-      bytes: bytes.byteLength,
+    archive,
+  };
+}
+
+async function mountArchives(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountArchives");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+
+  const archiveInputs = Array.isArray(payload.archives) ? payload.archives : [];
+  if (archiveInputs.length === 0) {
+    return { ok: false, command: "mountArchives", error: "Missing archive list" };
+  }
+
+  const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/runtime"));
+  if (!baseDirectory) {
+    return { ok: false, command: "mountArchives", error: `Archive directory must stay under /assets/: ${payload.path}` };
+  }
+
+  const archives = [];
+  const archiveProbes = [];
+  for (const input of archiveInputs) {
+    const archive = await writeArchiveToMemfs(moduleResult.wasmModule, input, baseDirectory);
+    if (archive.error) {
+      return { ok: false, command: "mountArchives", error: archive.error, archives };
+    }
+
+    const expectedBytes = Number(input.expectedBytes ?? input.bytes ?? archive.bytes);
+    const assetProbe = payload.verifyEach === false
+      ? null
+      : probeArchive(moduleResult.wasmModule, archive.path);
+    archives.push({
+      ...archive,
+      expectedBytes,
+      bytesMatch: archive.bytes === expectedBytes,
+    });
+    if (assetProbe) {
+      archiveProbes.push({
+        name: archive.name,
+        path: archive.path,
+        ok: Boolean(assetProbe.ok),
+        indexedFiles: assetProbe.indexedFiles,
+        sampleBytes: assetProbe.sampleBytes,
+      });
+    }
+  }
+
+  const probePath = `${baseDirectory}/*.big`;
+  const aggregateProbe = probeArchive(moduleResult.wasmModule, probePath);
+  rememberMountedArchives(archives);
+
+  const allArchiveBytesMatch = archives.every((archive) => archive.bytesMatch);
+  const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
+  const ok = Boolean(aggregateProbe?.ok) && allArchiveBytesMatch && allArchiveProbesOk;
+  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+
+  recordLog("archive set mounted", {
+    path: baseDirectory,
+    archiveCount: archives.length,
+    totalBytes,
+    ok,
+  });
+
+  return {
+    ok,
+    command: "mountArchives",
+    state: snapshotState(),
+    archiveSet: {
+      path: baseDirectory,
+      probePath,
+      archiveCount: archives.length,
+      totalBytes,
+      archives,
+      probes: archiveProbes,
     },
   };
 }
@@ -324,6 +466,8 @@ async function rpc(command, payload = {}) {
       return { ok: true, command, state: await stepFrames(payload) };
     case "mountArchive":
       return mountArchive(payload);
+    case "mountArchives":
+      return mountArchives(payload);
     case "startMainLoop":
       {
         const wasmModule = await wasmModulePromise;

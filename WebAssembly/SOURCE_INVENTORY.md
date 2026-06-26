@@ -122,9 +122,10 @@ The wasm CMake skeleton currently builds:
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, captures Emscripten module stdout/stderr into the
   harness log, fetches local real-asset BIG archives into the `cnc-port` MEMFS
-  through `mountArchive`, and exposes the graphics/asset state through RPC
-  snapshots. This is the browser canvas/GL/log/asset bridge surface only;
-  original W3D display, WW3D rendering, engine archive consumption, and
+  through `mountArchive` / `mountArchives`, and exposes the graphics/asset
+  state plus mounted archive manifests through RPC snapshots. This is the
+  browser canvas/GL/log/asset bridge surface only; original W3D display,
+  WW3D rendering, engine archive consumption, and
   `DEBUG_LOG`/assert routing still need to bind to it before those runtime
   paths are complete.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
@@ -644,9 +645,10 @@ The wasm CMake skeleton currently builds:
   fallback reads.
 - `runtime_archives_smoke.mjs`: an opt-in browser harness smoke
   (`npm run test:runtime-archives-browser`) that depends on user-supplied
-  extracted assets, fetches the inventoried runtime BIG archives one at a time,
-  writes each archive into Emscripten MEMFS, and verifies the original
-  `Win32BIGFileSystem` can index and read a sample file from every archive.
+  extracted assets, boots the main `cnc-port` harness, fetches the inventoried
+  runtime BIG archives into one Emscripten MEMFS directory, and verifies the
+  original `Win32BIGFileSystem` can index and read a sample file from every
+  archive plus the aggregate `*.big` archive tree.
 
 ## Next Compile Order
 

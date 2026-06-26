@@ -1533,6 +1533,12 @@ shares structure and follows behind.
       `INIZH.big` required INI files. This proves archive availability to the
       bootstrap only; full engine startup still needs to consume the mounted
       archive set.
+- [x] Add a main `cnc-port` harness `mountArchives` RPC that fetches the
+      inventoried runtime BIG set into one Emscripten MEMFS directory, verifies
+      every archive plus the aggregate `*.big` archive tree through the original
+      `Win32BIGFileSystem`, and exposes the mounted archive manifest in harness
+      state. This proves the browser can preload the current runtime archive
+      set for later engine startup; the exact minimum boot set remains open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
