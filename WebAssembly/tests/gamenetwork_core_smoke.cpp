@@ -5,6 +5,7 @@
 
 #include "PreRTS.h"
 
+#include "Common/CRC.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "GameNetwork/Connection.h"
@@ -38,6 +39,14 @@ bool expect(bool condition, const char *message)
 bool expectAscii(const AsciiString &actual, const char *expected, const char *message)
 {
 	return expect(std::strcmp(actual.str(), expected) == 0, message);
+}
+
+bool transportMessageHasValidCrc(const TransportMessage &message)
+{
+	CRC crc;
+	crc.computeCRC(&message.header.magic,
+		message.length + sizeof(TransportMessageHeader) - sizeof(UnsignedInt));
+	return crc.get() == message.header.crc;
 }
 
 void decryptTransportMessage(TransportMessage &message)
@@ -620,6 +629,44 @@ bool exerciseNetPacketControlRoundTrip()
 		file_announce_ok && disconnect_frame_ok && screen_off_ok && resend_ok;
 }
 
+bool exerciseTransportQueue()
+{
+	Transport transport;
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+
+	const UnsignedByte payload[] = {0x10, 0x20, 0x30, 0x40, 0x50};
+	const bool rejects_ok =
+		expect(!transport.queueSend(0x01020304u, 1234, payload, 0),
+			"Transport accepted empty packet") &&
+		expect(!transport.queueSend(0x01020304u, 1234, payload, MAX_PACKET_SIZE + 1),
+			"Transport accepted oversized packet");
+
+	const bool queued = transport.queueSend(0x01020304u, 1234, payload, sizeof(payload));
+	TransportMessage decoded = transport.m_outBuffer[0];
+	decryptTransportMessage(decoded);
+	const bool first_ok =
+		expect(queued, "Transport did not queue packet") &&
+		expect(decoded.length == static_cast<Int>(sizeof(payload)), "Transport queued length changed") &&
+		expect(decoded.addr == 0x01020304u, "Transport queued address changed") &&
+		expect(decoded.port == 1234, "Transport queued port changed") &&
+		expect(decoded.header.magic == GENERALS_MAGIC_NUMBER, "Transport magic changed") &&
+		expect(transportMessageHasValidCrc(decoded), "Transport CRC did not validate") &&
+		expect(std::memcmp(decoded.data, payload, sizeof(payload)) == 0, "Transport queued payload changed");
+
+	UnsignedByte single_byte = 0x7a;
+	Bool fill_ok = TRUE;
+	for (Int i = 1; i < MAX_MESSAGES; ++i) {
+		fill_ok = fill_ok && transport.queueSend(0x01020304u + i, static_cast<UnsignedShort>(1234 + i),
+			&single_byte, sizeof(single_byte));
+	}
+	const bool full_ok =
+		expect(fill_ok, "Transport did not fill all queue slots") &&
+		expect(!transport.queueSend(0x0a0b0c0du, 9999, &single_byte, sizeof(single_byte)),
+			"Transport accepted packet after queue filled");
+
+	return rejects_ok && first_ok && full_ok;
+}
+
 NetCommandRef *parseQueuedTransportCommand(const Transport &transport, Int slot, UnsignedInt expected_addr,
 	UnsignedShort expected_port)
 {
@@ -826,14 +873,14 @@ int main()
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() &&
-		exerciseConnectionQueue() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
-		exerciseUser();
+		exerciseTransportQueue() && exerciseConnectionQueue() && exerciseFileTransferPathHelpers() &&
+		exerciseFrameMetrics() && exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, transport packet buffering, command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

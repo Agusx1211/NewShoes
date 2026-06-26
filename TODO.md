@@ -1141,8 +1141,9 @@ shares structure and follows behind.
       commands, including explicit 16-bit chat-text wire serialization under
       wasm `WideChar`.
 - [x] Link original `GameNetwork/Transport.cpp` and `udp.cpp` into the
-      GameNetwork core archive and smoke-test connection packet buffering before
-      raw UDP flushing.
+      GameNetwork core archive and smoke-test direct transport queue rejection,
+      encrypted packet header/payload/CRC preservation, full-queue behavior, and
+      connection packet buffering before raw UDP flushing.
 - [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after adding the browser-safe WinSock compile surface and
       preserving the original UDP/transport logic for the later WebSocket/WebRTC
