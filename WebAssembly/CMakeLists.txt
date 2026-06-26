@@ -24,6 +24,7 @@ set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(WWDOWNLOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDownload")
 set(WWSHADE_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/wwshade")
+set(MAIN_DIR "${ZH_CODE_DIR}/Main")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
@@ -1472,6 +1473,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainTracks.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DView.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/WorldHeightMap.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/camerashakesystem.cpp"
@@ -1883,6 +1885,7 @@ target_compile_options(zh_gameengine_real_compile_frontier PRIVATE
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
   "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
   "-iquote${ZH_LIB_INCLUDE_DIR}"
   "-iquote${ZH_CODE_DIR}/Libraries/Source"
   "-iquote${WWVEGAS_DIR}"
@@ -1912,6 +1915,7 @@ target_include_directories(zh_gameengine_real_compile_frontier PRIVATE
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "${GAMEENGINE_DIR}/Source"
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
   "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
