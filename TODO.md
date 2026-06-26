@@ -1543,6 +1543,10 @@ shares structure and follows behind.
       wasm bootstrap's C++ state via an exported `cnc-port` archive-set hook,
       with Playwright coverage proving the engine-side state sees the mounted
       archive directory, mask, count, and byte total.
+- [x] Prove the browser harness can fetch, verify, and register the runtime BIG
+      set before the wasm bootstrap `boot` RPC, then boot with the archive mount
+      state retained. This validates the preload-before-engine-start ordering;
+      full original engine initialization still needs to consume that state.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

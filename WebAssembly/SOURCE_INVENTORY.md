@@ -647,12 +647,13 @@ The wasm CMake skeleton currently builds:
   fallback reads.
 - `runtime_archives_smoke.mjs`: an opt-in browser harness smoke
   (`npm run test:runtime-archives-browser`) that depends on user-supplied
-  extracted assets, boots the main `cnc-port` harness, fetches the inventoried
-  runtime BIG archives into one Emscripten MEMFS directory, and verifies the
+  extracted assets, fetches the inventoried runtime BIG archives into one
+  Emscripten MEMFS directory before the `cnc-port` boot RPC, and verifies the
   original `Win32BIGFileSystem` can index and read a sample file from every
   archive plus the aggregate `*.big` archive tree. It also asserts the wasm C++
   bootstrap has registered the verified archive directory, `*.big` mask, archive
-  count, and total byte count for later original engine startup.
+  count, and total byte count before boot and keeps that state after boot for
+  later original engine startup.
 
 ## Next Compile Order
 

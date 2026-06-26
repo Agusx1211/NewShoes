@@ -75,19 +75,15 @@ try {
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
-  const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
-    source: "runtime archive browser smoke",
-  }));
-  if (!bootResult.ok || bootResult.state.wasm !== "loaded") {
-    throw new Error(`cnc-port boot failed before archive set mount: ${JSON.stringify(bootResult)}`);
-  }
-
   const mountResult = await page.evaluate((archives) => window.CnCPort.rpc("mountArchives", {
     path: "/assets/runtime",
     archives,
   }), archiveInputs);
   if (!mountResult.ok) {
-    throw new Error(`cnc-port runtime archive set mount failed: ${JSON.stringify(mountResult)}`);
+    throw new Error(`cnc-port runtime archive set preload failed: ${JSON.stringify(mountResult)}`);
+  }
+  if (mountResult.state.booted) {
+    throw new Error(`runtime archives should preload before bootstrap boot: ${JSON.stringify(mountResult.state)}`);
   }
 
   const archiveSet = mountResult.archiveSet;
@@ -122,6 +118,24 @@ try {
     throw new Error(`wasm archive mount state mismatch: ${JSON.stringify(archiveMount)}`);
   }
 
+  const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
+    source: "runtime archive browser smoke after archive preload",
+  }));
+  if (!bootResult.ok || bootResult.state.wasm !== "loaded" || !bootResult.state.booted) {
+    throw new Error(`cnc-port boot failed after archive preload: ${JSON.stringify(bootResult)}`);
+  }
+  const bootArchiveMount = bootResult.state.archiveMount;
+  if (bootArchiveMount?.registered !== archiveMount.registered
+      || bootArchiveMount.directory !== archiveMount.directory
+      || bootArchiveMount.fileMask !== archiveMount.fileMask
+      || bootArchiveMount.archiveCount !== archiveMount.archiveCount
+      || bootArchiveMount.totalBytes !== archiveMount.totalBytes) {
+    throw new Error(`archive mount state changed across boot: ${JSON.stringify({
+      beforeBoot: archiveMount,
+      afterBoot: bootArchiveMount,
+    })}`);
+  }
+
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
@@ -131,6 +145,7 @@ try {
     totalBytes: archiveSet.totalBytes,
     aggregateProbe: assetProbe,
     archiveMount,
+    bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
   }, null, 2));

@@ -56,7 +56,9 @@ then boots the main `cnc-port` harness, fetches all runtime archives into one
 MEMFS directory with `window.CnCPort.rpc("mountArchives")`, and verifies every
 archive plus the aggregate `*.big` archive tree through the original BIG reader.
 The verified aggregate archive directory and `*.big` mask are also registered
-in the wasm bootstrap state for the later original engine startup path.
+in the wasm bootstrap state before the harness calls `boot`, then checked again
+after boot so the later original engine startup path has a stable preloaded
+archive-set contract.
 
 ## Toolchain
 
@@ -132,7 +134,9 @@ These commands fetch user-supplied BIG archives, write them under `/assets/` in
 the wasm MEMFS, then ask `cnc-port` to verify the mounted archive or archive set
 with the original `Win32BIGFileSystem`. After a verified archive-set mount,
 `cnc-port` records the aggregate archive directory, mask, count, and byte total
-in its C++ state under `archiveMount`.
+in its C++ state under `archiveMount`. `mountArchives` is valid before `boot`;
+the runtime archive smoke uses that ordering to match the eventual engine
+startup preload path.
 
 Run the wasm-backed smoke test:
 
