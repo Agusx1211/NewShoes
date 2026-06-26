@@ -16,6 +16,7 @@
 #include "Common/WellKnownKeys.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
+#include "GameClient/Snow.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -25,6 +26,7 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 constexpr const char EXPECTED_SHELL_MAP_NAME[] = "Maps\\ShellMapMD\\ShellMapMD.map";
 constexpr const char SHELL_MAP_MD_PATH[] = "maps\\shellmapmd\\shellmapmd.map";
 constexpr const char TOURNAMENT_DESERT_PATH[] = "maps\\tournament desert\\tournament desert.map";
@@ -56,6 +58,24 @@ std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
 		(std::fabs(result.default_structure_rubble_height - 10.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.group_select_volume_base - 0.5f) < 0.001f ? 1U : 0U) +
 		(result.max_particle_count == 2500 ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
+{
+	return
+		(result.snow_texture == "ExSnowFlake.tga" ? 1U : 0U) +
+		(!result.snow_enabled ? 1U : 0U) +
+		(result.use_point_sprites ? 1U : 0U) +
+		(std::fabs(result.snow_box_dimensions - 200.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_box_density - 1.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_frequency_scale_x - 0.0533f) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.snow_frequency_scale_y - 0.0275f) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.snow_amplitude - 5.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_velocity - 4.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_point_size - 1.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_quad_size - 0.5f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_max_point_size - 64.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.snow_min_point_size - 0.0f) < 0.001f ? 1U : 0U);
 }
 
 bool unicode_not_empty(const UnicodeString &value)
@@ -158,6 +178,104 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path)
+{
+	RealWeatherIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + GameClient/Snow.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	OVERRIDE<WeatherSetting> old_weather_setting = TheWeatherSetting;
+	SnowManager *old_snow_manager = TheSnowManager;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	WeatherSetting *weather_setting_to_delete = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheWeatherSetting = nullptr;
+		TheSnowManager = nullptr;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(WEATHER_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				INI ini;
+				ini.load(AsciiString(WEATHER_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				weather_setting_to_delete =
+					const_cast<WeatherSetting *>(TheWeatherSetting.getNonOverloadedPointer());
+				const WeatherSetting *weather_setting = TheWeatherSetting;
+				if (weather_setting != nullptr) {
+					result.snow_texture = weather_setting->m_snowTexture.str();
+					result.snow_enabled = weather_setting->m_snowEnabled;
+					result.use_point_sprites = weather_setting->m_usePointSprites;
+					result.snow_box_dimensions = weather_setting->m_snowBoxDimensions;
+					result.snow_box_density = weather_setting->m_snowBoxDensity;
+					result.snow_frequency_scale_x = weather_setting->m_snowFrequencyScaleX;
+					result.snow_frequency_scale_y = weather_setting->m_snowFrequencyScaleY;
+					result.snow_amplitude = weather_setting->m_snowAmplitude;
+					result.snow_velocity = weather_setting->m_snowVelocity;
+					result.snow_point_size = weather_setting->m_snowPointSize;
+					result.snow_quad_size = weather_setting->m_snowQuadSize;
+					result.snow_max_point_size = weather_setting->m_snowMaxPointSize;
+					result.snow_min_point_size = weather_setting->m_snowMinPointSize;
+					result.parsed_fields = count_verified_fields(result);
+				}
+
+				result.ok =
+					result.bytes > 1000 &&
+					result.original_ini_load &&
+					result.parsed_fields == 13;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	if (weather_setting_to_delete == nullptr) {
+		weather_setting_to_delete =
+			const_cast<WeatherSetting *>(TheWeatherSetting.getNonOverloadedPointer());
+	}
+
+	TheWeatherSetting = old_weather_setting;
+	TheSnowManager = old_snow_manager;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (weather_setting_to_delete != nullptr) {
+		weather_setting_to_delete->deleteInstance();
+	}
 
 	shutdownMemoryManager();
 

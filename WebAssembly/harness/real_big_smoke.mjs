@@ -31,6 +31,33 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertWeatherProbe(assetProbe, context) {
+  const weather = assetProbe?.weather;
+  if (!assetProbe?.inizh?.weatherIni
+      || !weather?.attempted
+      || !weather.ok
+      || weather.source !== "GameEngine/Common/INI.cpp::load + GameClient/Snow.cpp"
+      || !weather.loadedArchives
+      || !weather.fileExists
+      || !weather.originalIniLoad
+      || weather.parsedFields !== 13
+      || weather.snowTexture !== "ExSnowFlake.tga"
+      || weather.snowEnabled !== false
+      || weather.pointSprites !== true
+      || Math.abs(weather.snowBoxDimensions - 200.0) > 0.001
+      || Math.abs(weather.snowBoxDensity - 1.0) > 0.001
+      || Math.abs(weather.snowFrequencyScaleX - 0.0533) > 0.0001
+      || Math.abs(weather.snowFrequencyScaleY - 0.0275) > 0.0001
+      || Math.abs(weather.snowAmplitude - 5.0) > 0.001
+      || Math.abs(weather.snowVelocity - 4.0) > 0.001
+      || Math.abs(weather.snowPointSize - 1.0) > 0.001
+      || Math.abs(weather.snowQuadSize - 0.5) > 0.001
+      || Math.abs(weather.snowMaxPointSize - 64.0) > 0.001
+      || Math.abs(weather.snowMinPointSize - 0.0) > 0.001) {
+    throw new Error(`${context} did not parse expected Weather.ini values: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertStartupAssetsMissing(state, context) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== false || startupAssets.status !== "missing_runtime_archives") {
@@ -89,6 +116,7 @@ try {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
+  assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {

@@ -47,5 +47,32 @@ struct RealMapCacheIniProbeResult
 	int tournament_desert_players = 0;
 };
 
+struct RealWeatherIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	std::string snow_texture;
+	bool snow_enabled = false;
+	bool use_point_sprites = false;
+	float snow_box_dimensions = 0.0f;
+	float snow_box_density = 0.0f;
+	float snow_frequency_scale_x = 0.0f;
+	float snow_frequency_scale_y = 0.0f;
+	float snow_amplitude = 0.0f;
+	float snow_velocity = 0.0f;
+	float snow_point_size = 0.0f;
+	float snow_quad_size = 0.0f;
+	float snow_max_point_size = 0.0f;
+	float snow_min_point_size = 0.0f;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
+RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);

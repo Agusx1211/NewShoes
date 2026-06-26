@@ -68,6 +68,33 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertWeatherProbe(assetProbe, context) {
+  const weather = assetProbe?.weather;
+  if (!assetProbe?.inizh?.weatherIni
+      || !weather?.attempted
+      || !weather.ok
+      || weather.source !== "GameEngine/Common/INI.cpp::load + GameClient/Snow.cpp"
+      || !weather.loadedArchives
+      || !weather.fileExists
+      || !weather.originalIniLoad
+      || weather.parsedFields !== 13
+      || weather.snowTexture !== "ExSnowFlake.tga"
+      || weather.snowEnabled !== false
+      || weather.pointSprites !== true
+      || Math.abs(weather.snowBoxDimensions - 200.0) > 0.001
+      || Math.abs(weather.snowBoxDensity - 1.0) > 0.001
+      || Math.abs(weather.snowFrequencyScaleX - 0.0533) > 0.0001
+      || Math.abs(weather.snowFrequencyScaleY - 0.0275) > 0.0001
+      || Math.abs(weather.snowAmplitude - 5.0) > 0.001
+      || Math.abs(weather.snowVelocity - 4.0) > 0.001
+      || Math.abs(weather.snowPointSize - 1.0) > 0.001
+      || Math.abs(weather.snowQuadSize - 0.5) > 0.001
+      || Math.abs(weather.snowMaxPointSize - 64.0) > 0.001
+      || Math.abs(weather.snowMinPointSize - 0.0) > 0.001) {
+    throw new Error(`${context} did not parse expected Weather.ini values: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertMapCacheProbe(assetProbe, context) {
   const mapCache = assetProbe?.mapCache;
   if (!assetProbe?.maps?.mapCacheIni
@@ -102,6 +129,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.bootProbeOk
         || !startupAssets.required?.inizh
         || !startupAssets.required?.gameData
+        || !startupAssets.required?.weather
         || !startupAssets.required?.gameText
         || !startupAssets.required?.mapCache)) {
     throw new Error(`${context} startup asset requirements incomplete: ${JSON.stringify(startupAssets)}`);
@@ -180,6 +208,7 @@ try {
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
+  assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
@@ -228,6 +257,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
 

@@ -614,9 +614,9 @@ shares structure and follows behind.
       singleton surface are available without target-local parser stubs.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
-      singleton comes online; they exist only to keep the `GameData` and shipped
-      map-cache preflights on original `INI.cpp::load` without pulling unrelated
-      UI/terrain/object managers into `cnc-port`.
+      singleton comes online; they exist only to keep the `GameData`,
+      `Weather`, and shipped map-cache preflights on original `INI.cpp::load`
+      without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
       `MapUtil.cpp` / `WorldHeightMap.cpp` ownership once those runtime surfaces
@@ -1604,7 +1604,7 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/GameData/GameText/MapCache probes
+      `ready` after the boot-time archive/GameData/Weather/GameText/MapCache probes
       pass. This is bootstrap preflight only; full engine-init missing-asset
       handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
@@ -1655,6 +1655,13 @@ shares structure and follows behind.
       runtime-archive boot paths in Playwright. This is a focused `GameData`
       preflight only; full all-block original INI loading remains open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Weather.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load` and `GameClient/Snow.cpp`, expose parsed snow
+      settings as `assetProbe.weather`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped weather-settings
+      preflight only; full startup CRC coverage, map overrides, and snow
+      rendering remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Maps\MapCache.ini` from the registered runtime archive set through the
       original `Common/INI.cpp::load` and `Common/INI/INIMapCache.cpp`, expose
       shipped map-cache counts and known map entries as `assetProbe.mapCache`,
@@ -1680,6 +1687,14 @@ shares structure and follows behind.
       can use the real INI reader and singleton surfaces instead of the
       target-local `Common/INI.h` compatibility bridge.
 - [ ] `GameText`/string tables load (CSF/GameText) for the chosen language.
+- [x] Shipped weather settings load from real `Data\INI\Weather.ini` through
+      original `Common/INI.cpp::load` and `GameClient/Snow.cpp`, with harness
+      state proving parsed snow texture, enabled flag, point-sprite flag, and
+      numeric snow fields.
+- [ ] Load the original default + shipped weather sequence
+      (`Data\INI\Default\Weather.ini` then `Data\INI\Weather.ini`) through the
+      full `GameEngine.cpp` startup path with xfer CRC once engine init consumes
+      the mounted archive set.
 - [x] Shipped map cache loads from real `MapsZH.big` through original
       `Common/INI.cpp::load` and `INIMapCache.cpp`, with harness state proving
       parsed map counts plus known ShellMapMD and Tournament Desert entries.
@@ -1708,6 +1723,8 @@ shares structure and follows behind.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
+- [ ] Snow/weather rendering through original `SnowManager` / W3D weather
+      paths, including map weather overrides, verified by harness screenshots.
 - [ ] Reach the **main menu rendering** end-to-end; screenshot it.
 
 ---

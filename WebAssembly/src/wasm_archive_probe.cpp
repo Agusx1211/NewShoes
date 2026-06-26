@@ -29,6 +29,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -108,6 +109,31 @@ void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchivePr
 	result.game_data_default_structure_rubble_height = game_data.default_structure_rubble_height;
 	result.game_data_group_select_volume_base = game_data.group_select_volume_base;
 	result.game_data_max_particle_count = game_data.max_particle_count;
+}
+
+void copy_weather_probe(const RealWeatherIniProbeResult &weather, ArchiveProbeResult &result)
+{
+	result.weather_attempted = weather.attempted;
+	result.weather_ok = weather.ok;
+	result.weather_loaded_archives = weather.loaded_archives;
+	result.weather_file_exists = weather.file_exists;
+	result.weather_original_ini_load = weather.original_ini_load;
+	result.weather_bytes = weather.bytes;
+	result.weather_parsed_fields = weather.parsed_fields;
+	result.weather_source = weather.source;
+	result.weather_snow_texture = weather.snow_texture;
+	result.weather_snow_enabled = weather.snow_enabled;
+	result.weather_use_point_sprites = weather.use_point_sprites;
+	result.weather_snow_box_dimensions = weather.snow_box_dimensions;
+	result.weather_snow_box_density = weather.snow_box_density;
+	result.weather_snow_frequency_scale_x = weather.snow_frequency_scale_x;
+	result.weather_snow_frequency_scale_y = weather.snow_frequency_scale_y;
+	result.weather_snow_amplitude = weather.snow_amplitude;
+	result.weather_snow_velocity = weather.snow_velocity;
+	result.weather_snow_point_size = weather.snow_point_size;
+	result.weather_snow_quad_size = weather.snow_quad_size;
+	result.weather_snow_max_point_size = weather.snow_max_point_size;
+	result.weather_snow_min_point_size = weather.snow_min_point_size;
 }
 
 void copy_map_cache_probe(const RealMapCacheIniProbeResult &map_cache, ArchiveProbeResult &result)
@@ -200,6 +226,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
+			result.has_weather_ini = archive_file_system.doesFileExist(WEATHER_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
 
 			std::vector<char> sample_data;
@@ -227,6 +254,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_game_data_ini) {
 		copy_game_data_probe(probe_original_game_data_ini_load(archive_path), result);
 		result.ok = result.ok && result.game_data_ok;
+	}
+	if (result.loaded && result.has_weather_ini) {
+		copy_weather_probe(probe_original_weather_ini_load(archive_path), result);
+		result.ok = result.ok && result.weather_ok;
 	}
 	if (result.loaded && result.has_map_cache_ini && result.has_generals_csf) {
 		copy_map_cache_probe(probe_original_map_cache_ini_load(archive_path), result);
