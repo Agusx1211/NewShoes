@@ -1939,6 +1939,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/dynamesh.cpp"
   "${WWVEGAS_DIR}/WW3D2/font3d.cpp"
   "${WWVEGAS_DIR}/WW3D2/formconv.cpp"
+  "${WWVEGAS_DIR}/WW3D2/FramGrab.cpp"
   "${WWVEGAS_DIR}/WW3D2/hanim.cpp"
   "${WWVEGAS_DIR}/WW3D2/hanimmgr.cpp"
   "${WWVEGAS_DIR}/WW3D2/hcanim.cpp"
@@ -1973,6 +1974,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/part_emt.cpp"
   "${WWVEGAS_DIR}/WW3D2/part_ldr.cpp"
   "${WWVEGAS_DIR}/WW3D2/pivot.cpp"
+  "${WWVEGAS_DIR}/WW3D2/pointgr.cpp"
   "${WWVEGAS_DIR}/WW3D2/polyinfo.cpp"
   "${WWVEGAS_DIR}/WW3D2/pot.cpp"
   "${WWVEGAS_DIR}/WW3D2/predlod.cpp"
@@ -1980,6 +1982,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/projector.cpp"
   "${WWVEGAS_DIR}/WW3D2/proto.cpp"
   "${WWVEGAS_DIR}/WW3D2/render2d.cpp"
+  "${WWVEGAS_DIR}/WW3D2/render2dsentence.cpp"
   "${WWVEGAS_DIR}/WW3D2/renderobjectrecycler.cpp"
   "${WWVEGAS_DIR}/WW3D2/rendobj.cpp"
   "${WWVEGAS_DIR}/WW3D2/rinfo.cpp"
@@ -2000,6 +2003,8 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/stripoptimizer.cpp"
   "${WWVEGAS_DIR}/WW3D2/surfaceclass.cpp"
   "${WWVEGAS_DIR}/WW3D2/texfcach.cpp"
+  "${WWVEGAS_DIR}/WW3D2/texproject.cpp"
+  "${WWVEGAS_DIR}/WW3D2/textdraw.cpp"
   "${WWVEGAS_DIR}/WW3D2/texture.cpp"
   "${WWVEGAS_DIR}/WW3D2/texturefilter.cpp"
   "${WWVEGAS_DIR}/WW3D2/texturefile.cpp"
@@ -2012,6 +2017,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/w3d_dep.cpp"
   "${WWVEGAS_DIR}/WW3D2/w3d_util.cpp"
   "${WWVEGAS_DIR}/WW3D2/w3dexclusionlist.cpp"
+  "${WWVEGAS_DIR}/WW3D2/ww3d.cpp"
   "${WWVEGAS_DIR}/WW3D2/ww3dformat.cpp"
 )
 
@@ -2029,6 +2035,7 @@ target_include_directories(zh_ww3d2_compile_frontier PUBLIC
 
 target_compile_options(zh_ww3d2_compile_frontier PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
   "-iquote${ZH_LIB_INCLUDE_DIR}"
   "-iquote${ZH_CODE_DIR}/Libraries/Source"

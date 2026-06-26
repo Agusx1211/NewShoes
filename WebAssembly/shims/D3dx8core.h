@@ -10,6 +10,20 @@
 #define D3DX_FILTER_TRIANGLE 4
 #define D3DX_FILTER_BOX 5
 
+static inline HRESULT D3DXGetErrorStringA(HRESULT result, LPSTR buffer, UINT buffer_len)
+{
+	if (buffer == nullptr || buffer_len == 0) {
+		return E_FAIL;
+	}
+
+	const int written = std::snprintf(
+		buffer,
+		static_cast<std::size_t>(buffer_len),
+		"D3D HRESULT 0x%08lx",
+		static_cast<unsigned long>(result));
+	return written > 0 ? D3D_OK : E_FAIL;
+}
+
 static inline UINT D3DXGetFVFVertexSize(DWORD fvf)
 {
 	UINT size = 0;
@@ -52,3 +66,55 @@ HRESULT D3DXLoadSurfaceFromSurface(
 	const RECT *source_rect,
 	DWORD filter,
 	D3DCOLOR color_key);
+
+HRESULT D3DXCreateTexture(
+	IDirect3DDevice8 *device,
+	UINT width,
+	UINT height,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DTexture8 **texture);
+
+HRESULT D3DXCreateTextureFromFileExA(
+	IDirect3DDevice8 *device,
+	LPCSTR src_file,
+	UINT width,
+	UINT height,
+	UINT mip_levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	DWORD filter,
+	DWORD mip_filter,
+	D3DCOLOR color_key,
+	void *src_info,
+	void *palette,
+	IDirect3DTexture8 **texture);
+
+HRESULT D3DXFilterTexture(
+	IDirect3DBaseTexture8 *base_texture,
+	const void *palette,
+	UINT src_level,
+	DWORD filter);
+
+HRESULT D3DXCreateCubeTexture(
+	IDirect3DDevice8 *device,
+	UINT edge_length,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DCubeTexture8 **texture);
+
+HRESULT D3DXCreateVolumeTexture(
+	IDirect3DDevice8 *device,
+	UINT width,
+	UINT height,
+	UINT depth,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DVolumeTexture8 **texture);

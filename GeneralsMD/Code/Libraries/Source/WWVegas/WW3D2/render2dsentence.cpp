@@ -1720,8 +1720,9 @@ FontCharsClass::Grow_Unicode_Array (WCHAR ch)
 		return ;
 	} 
 
-	uint16 first_index	= min( FirstUnicodeChar, ch );
-	uint16 last_index		= max( LastUnicodeChar, ch );
+	uint16 ch_index		= static_cast<uint16>(ch);
+	uint16 first_index	= min( FirstUnicodeChar, ch_index );
+	uint16 last_index		= max( LastUnicodeChar, ch_index );
 	uint16 count			= (last_index - first_index) + 1;
 
 	//

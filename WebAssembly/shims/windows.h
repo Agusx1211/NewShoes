@@ -58,6 +58,7 @@ using HMODULE = HINSTANCE;
 using HBITMAP = void *;
 using HDC = void *;
 using HFONT = void *;
+using HGDIOBJ = void *;
 using FARPROC = void (*)();
 using HACCEL = void *;
 using HRSRC = void *;
@@ -79,6 +80,7 @@ using LPCTSTR = const char *;
 using LPTSTR = char *;
 using LPVOID = void *;
 using UINT = unsigned int;
+using COLORREF = DWORD;
 using VOID = void;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
@@ -190,6 +192,12 @@ struct RECT
 	long top;
 	long right;
 	long bottom;
+};
+
+struct SIZE
+{
+	long cx;
+	long cy;
 };
 
 struct MSG
@@ -338,8 +346,11 @@ static inline int _wtoi(const wchar_t *value)
 #define IDIGNORE 5
 
 #define HWND_NOTOPMOST reinterpret_cast<HWND>(-2)
+#define HWND_TOPMOST reinterpret_cast<HWND>(-1)
 #define SWP_NOSIZE 0x0001
 #define SWP_NOMOVE 0x0002
+#define SWP_NOZORDER 0x0004
+#define GWL_STYLE (-16)
 
 #define DRIVE_UNKNOWN 0
 #define DRIVE_NO_ROOT_DIR 1
@@ -372,11 +383,21 @@ static inline int _wtoi(const wchar_t *value)
 #define TIME_FORCE24HOURFORMAT 0x00000008
 #define CSIDL_PERSONAL 0x0005
 #define CSIDL_DESKTOPDIRECTORY 0x0010
-#define FILE_ATTRIBUTE_READONLY 0x00000001
-#define FILE_ATTRIBUTE_DIRECTORY 0x00000010
-#define INVALID_FILE_ATTRIBUTES 0xffffffff
-#define REG_OPTION_NON_VOLATILE 0x00000000
-#define REG_SZ 1
+	#define FILE_ATTRIBUTE_READONLY 0x00000001
+	#define FILE_ATTRIBUTE_DIRECTORY 0x00000010
+	#define INVALID_FILE_ATTRIBUTES 0xffffffff
+	#define BI_RGB 0L
+	#define DIB_RGB_COLORS 0
+	#define ETO_OPAQUE 0x0002
+	#define DEFAULT_CHARSET 1
+	#define OUT_DEFAULT_PRECIS 0
+	#define CLIP_DEFAULT_PRECIS 0
+	#define ANTIALIASED_QUALITY 4
+	#define VARIABLE_PITCH 2
+	#define FW_NORMAL 400
+	#define FW_BOLD 700
+	#define REG_OPTION_NON_VOLATILE 0x00000000
+	#define REG_SZ 1
 #define REG_BINARY 3
 #define REG_DWORD 4
 #define VER_PLATFORM_WIN32s 0
@@ -476,6 +497,78 @@ struct WIN32_FIND_DATA
 	DWORD nFileSizeHigh;
 	DWORD nFileSizeLow;
 	char cFileName[_MAX_PATH];
+};
+
+#ifndef RGB
+#define RGB(red, green, blue) \
+	(static_cast<COLORREF>((static_cast<BYTE>(red)) | \
+	(static_cast<WORD>(static_cast<BYTE>(green)) << 8) | \
+	(static_cast<DWORD>(static_cast<BYTE>(blue)) << 16)))
+#endif
+
+struct RGBQUAD
+{
+	BYTE rgbBlue;
+	BYTE rgbGreen;
+	BYTE rgbRed;
+	BYTE rgbReserved;
+};
+
+#ifndef WASM_WIN32_BITMAPINFOHEADER_DEFINED
+#define WASM_WIN32_BITMAPINFOHEADER_DEFINED
+struct BITMAPINFOHEADER
+{
+	DWORD biSize;
+	LONG biWidth;
+	LONG biHeight;
+	WORD biPlanes;
+	WORD biBitCount;
+	DWORD biCompression;
+	DWORD biSizeImage;
+	LONG biXPelsPerMeter;
+	LONG biYPelsPerMeter;
+	DWORD biClrUsed;
+	DWORD biClrImportant;
+};
+#endif
+
+struct BITMAPINFO
+{
+	BITMAPINFOHEADER bmiHeader;
+	RGBQUAD bmiColors[1];
+};
+
+struct __attribute__((packed)) BITMAPFILEHEADER
+{
+	WORD bfType;
+	DWORD bfSize;
+	WORD bfReserved1;
+	WORD bfReserved2;
+	DWORD bfOffBits;
+};
+
+struct TEXTMETRIC
+{
+	LONG tmHeight;
+	LONG tmAscent;
+	LONG tmDescent;
+	LONG tmInternalLeading;
+	LONG tmExternalLeading;
+	LONG tmAveCharWidth;
+	LONG tmMaxCharWidth;
+	LONG tmWeight;
+	LONG tmOverhang;
+	LONG tmDigitizedAspectX;
+	LONG tmDigitizedAspectY;
+	WCHAR tmFirstChar;
+	WCHAR tmLastChar;
+	WCHAR tmDefaultChar;
+	WCHAR tmBreakChar;
+	BYTE tmItalic;
+	BYTE tmUnderlined;
+	BYTE tmStruckOut;
+	BYTE tmPitchAndFamily;
+	BYTE tmCharSet;
 };
 
 struct CANDIDATELIST
@@ -616,6 +709,34 @@ static inline BOOL SetWindowText(HWND, const char *)
 }
 
 static inline BOOL SetWindowTextW(HWND, const wchar_t *)
+{
+	return TRUE;
+}
+
+static inline BOOL GetWindowRect(HWND, RECT *rect)
+{
+	if (rect == nullptr) {
+		return FALSE;
+	}
+
+	rect->left = 0;
+	rect->top = 0;
+	rect->right = 0;
+	rect->bottom = 0;
+	return FALSE;
+}
+
+static inline BOOL GetClientRect(HWND, RECT *rect)
+{
+	return GetWindowRect(nullptr, rect);
+}
+
+static inline LONG GetWindowLong(HWND, int)
+{
+	return 0;
+}
+
+static inline BOOL AdjustWindowRect(RECT *, DWORD, BOOL)
 {
 	return TRUE;
 }
@@ -800,9 +921,37 @@ static inline BOOL GetVolumeInformation(LPCSTR, LPSTR, DWORD, LPDWORD, LPDWORD, 
 	return FALSE;
 }
 
-#ifndef GetUserName
-#define GetUserName GetUserNameA
-#endif
+BOOL ExtTextOutW(HDC dc, int x, int y, UINT options, const RECT *rect, LPCWSTR text, UINT count, const int *dx);
+BOOL GetTextExtentPoint32W(HDC dc, LPCWSTR text, int count, SIZE *size);
+BOOL GetTextMetrics(HDC dc, TEXTMETRIC *metrics);
+HDC GetDC(HWND window);
+int ReleaseDC(HWND window, HDC dc);
+HFONT CreateFont(
+	int height,
+	int width,
+	int escapement,
+	int orientation,
+	int weight,
+	DWORD italic,
+	DWORD underline,
+	DWORD strike_out,
+	DWORD char_set,
+	DWORD output_precision,
+	DWORD clip_precision,
+	DWORD quality,
+	DWORD pitch_and_family,
+	LPCSTR face_name);
+HBITMAP CreateDIBSection(HDC dc, const BITMAPINFO *bitmap_info, UINT usage, void **bits, HANDLE section, DWORD offset);
+HDC CreateCompatibleDC(HDC dc);
+BOOL DeleteDC(HDC dc);
+HGDIOBJ SelectObject(HDC dc, HGDIOBJ object);
+BOOL DeleteObject(HGDIOBJ object);
+COLORREF SetBkColor(HDC dc, COLORREF color);
+COLORREF SetTextColor(HDC dc, COLORREF color);
+
+	#ifndef GetUserName
+	#define GetUserName GetUserNameA
+	#endif
 
 #ifndef GetComputerName
 #define GetComputerName GetComputerNameA

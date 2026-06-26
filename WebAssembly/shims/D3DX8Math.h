@@ -2,6 +2,10 @@
 
 #include <cmath>
 
+#ifndef D3DX_PI
+#define D3DX_PI 3.14159265358979323846f
+#endif
+
 struct D3DXVECTOR3
 {
 	float x;
@@ -75,6 +79,22 @@ static inline D3DXMATRIX operator*(const D3DXMATRIX &left, const D3DXMATRIX &rig
 	}
 
 	return result;
+}
+
+static inline D3DXMATRIX *D3DXMatrixRotationZ(D3DXMATRIX *out, float angle)
+{
+	if (out == nullptr) {
+		return nullptr;
+	}
+
+	const float sine = std::sin(angle);
+	const float cosine = std::cos(angle);
+	*out = D3DXMATRIX(
+		cosine, sine, 0.0f, 0.0f,
+		-sine, cosine, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f);
+	return out;
 }
 
 static inline D3DXVECTOR4 *D3DXVec4Transform(
