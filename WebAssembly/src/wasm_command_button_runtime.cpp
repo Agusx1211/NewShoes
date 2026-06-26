@@ -5,9 +5,12 @@
 #define DEFINE_RADIUSCURSOR_NAMES
 #define DEFINE_WEAPONSLOTTYPE_NAMES
 
+#include <cstdint>
+
 #include "Common/INI.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/ControlBar.h"
+#include "GameLogic/GameLogic.h"
 #include "GameLogic/WeaponSet.h"
 
 ControlBar *TheControlBar = nullptr;
@@ -36,6 +39,29 @@ const FieldParse CommandButton::s_commandButtonFieldParseTable[] =
 	{ "ButtonBorderType", INI::parseLookupList, CommandButtonMappedBorderTypeNames, offsetof(CommandButton, m_commandButtonBorder) },
 	{ "RadiusCursorType", INI::parseIndexList, TheRadiusCursorNames, offsetof(CommandButton, m_radiusCursor) },
 	{ "UnitSpecificSound", INI::parseAudioEventRTS, nullptr, offsetof(CommandButton, m_unitSpecificSound) },
+	{ nullptr, nullptr, nullptr, 0 }
+};
+
+const FieldParse CommandSet::m_commandSetFieldParseTable[] =
+{
+	{ "1", CommandSet::parseCommandButton, (void *)0, offsetof(CommandSet, m_command) },
+	{ "2", CommandSet::parseCommandButton, (void *)1, offsetof(CommandSet, m_command) },
+	{ "3", CommandSet::parseCommandButton, (void *)2, offsetof(CommandSet, m_command) },
+	{ "4", CommandSet::parseCommandButton, (void *)3, offsetof(CommandSet, m_command) },
+	{ "5", CommandSet::parseCommandButton, (void *)4, offsetof(CommandSet, m_command) },
+	{ "6", CommandSet::parseCommandButton, (void *)5, offsetof(CommandSet, m_command) },
+	{ "7", CommandSet::parseCommandButton, (void *)6, offsetof(CommandSet, m_command) },
+	{ "8", CommandSet::parseCommandButton, (void *)7, offsetof(CommandSet, m_command) },
+	{ "9", CommandSet::parseCommandButton, (void *)8, offsetof(CommandSet, m_command) },
+	{ "10", CommandSet::parseCommandButton, (void *)9, offsetof(CommandSet, m_command) },
+	{ "11", CommandSet::parseCommandButton, (void *)10, offsetof(CommandSet, m_command) },
+	{ "12", CommandSet::parseCommandButton, (void *)11, offsetof(CommandSet, m_command) },
+	{ "13", CommandSet::parseCommandButton, (void *)12, offsetof(CommandSet, m_command) },
+	{ "14", CommandSet::parseCommandButton, (void *)13, offsetof(CommandSet, m_command) },
+	{ "15", CommandSet::parseCommandButton, (void *)14, offsetof(CommandSet, m_command) },
+	{ "16", CommandSet::parseCommandButton, (void *)15, offsetof(CommandSet, m_command) },
+	{ "17", CommandSet::parseCommandButton, (void *)16, offsetof(CommandSet, m_command) },
+	{ "18", CommandSet::parseCommandButton, (void *)17, offsetof(CommandSet, m_command) },
 	{ nullptr, nullptr, nullptr, 0 }
 };
 
@@ -85,6 +111,64 @@ void CommandButton::cacheButtonImage()
 	m_buttonImageName.clear();
 }
 
+void CommandSet::parseCommandButton(INI *ini, void *, void *store, const void *user_data)
+{
+	const char *token = ini->getNextToken();
+	const CommandButton *command_button =
+		TheControlBar != nullptr ? TheControlBar->findCommandButton(AsciiString(token)) : nullptr;
+	if (command_button == nullptr) {
+		throw INI_INVALID_DATA;
+	}
+
+	const CommandButton **button_array = static_cast<const CommandButton **>(store);
+	const Int button_index = static_cast<Int>(reinterpret_cast<std::intptr_t>(user_data));
+	if (button_index < 0 || button_index >= MAX_COMMANDS_PER_SET) {
+		throw INI_INVALID_DATA;
+	}
+
+	button_array[button_index] = command_button;
+}
+
+CommandSet::CommandSet(const AsciiString &name) :
+	m_name(name),
+	m_next(nullptr)
+{
+	for (Int index = 0; index < MAX_COMMANDS_PER_SET; ++index) {
+		m_command[index] = nullptr;
+	}
+}
+
+const CommandButton *CommandSet::getCommandButton(Int index) const
+{
+	if (index < 0 || index >= MAX_COMMANDS_PER_SET) {
+		return nullptr;
+	}
+
+	const CommandButton *button = nullptr;
+	if (TheGameLogic != nullptr && TheGameLogic->findControlBarOverride(m_name, index, button)) {
+		return button;
+	}
+
+	return m_command[index];
+}
+
+Bool GameLogic::findControlBarOverride(
+	const AsciiString &,
+	Int,
+	ConstCommandButtonPtr &command_button) const __attribute__((weak))
+{
+	command_button = nullptr;
+	return FALSE;
+}
+
+void CommandSet::friend_addToList(CommandSet **list_head)
+{
+	m_next = *list_head;
+	*list_head = this;
+}
+
+CommandSet::~CommandSet() = default;
+
 ControlBar::ControlBar()
 {
 	m_UIDirty = false;
@@ -102,6 +186,11 @@ ControlBar::~ControlBar()
 		CommandButton *button = m_commandButtons->friend_getNext();
 		m_commandButtons->deleteInstance();
 		m_commandButtons = button;
+	}
+	while (m_commandSets != nullptr) {
+		CommandSet *set = m_commandSets->friend_getNext();
+		m_commandSets->deleteInstance();
+		m_commandSets = set;
 	}
 }
 
@@ -142,6 +231,26 @@ const CommandButton *ControlBar::findCommandButton(const AsciiString &name)
 	return button;
 }
 
+CommandSet *ControlBar::findNonConstCommandSet(const AsciiString &name)
+{
+	for (CommandSet *set = m_commandSets; set != nullptr; set = set->friend_getNext()) {
+		if (set->getName() == name) {
+			return const_cast<CommandSet *>(static_cast<const CommandSet *>(set));
+		}
+	}
+
+	return nullptr;
+}
+
+const CommandSet *ControlBar::findCommandSet(const AsciiString &name)
+{
+	CommandSet *set = findNonConstCommandSet(name);
+	if (set != nullptr) {
+		set = static_cast<CommandSet *>(set->friend_getFinalOverride());
+	}
+	return set;
+}
+
 CommandButton *ControlBar::newCommandButton(const AsciiString &name)
 {
 	CommandButton *button = newInstance(CommandButton);
@@ -161,4 +270,48 @@ CommandButton *ControlBar::newCommandButtonOverride(CommandButton *button_to_ove
 	override_button->markAsOverride();
 	button_to_override->setNextOverride(override_button);
 	return override_button;
+}
+
+CommandSet *ControlBar::newCommandSet(const AsciiString &name)
+{
+	CommandSet *set = newInstance(CommandSet)(name);
+	set->friend_addToList(&m_commandSets);
+	return set;
+}
+
+CommandSet *ControlBar::newCommandSetOverride(CommandSet *set_to_override)
+{
+	if (set_to_override == nullptr) {
+		return nullptr;
+	}
+
+	CommandSet *override_set = newInstance(CommandSet)(set_to_override->getName());
+	*override_set = *set_to_override;
+	override_set->markAsOverride();
+	set_to_override->setNextOverride(override_set);
+	return override_set;
+}
+
+void ControlBar::parseCommandSetDefinition(INI *ini)
+{
+	const char *token = ini->getNextToken();
+	AsciiString name(token);
+
+	CommandSet *command_set = TheControlBar->findNonConstCommandSet(name);
+	if (command_set == nullptr) {
+		command_set = TheControlBar->newCommandSet(name);
+		if (ini->getLoadType() == INI_LOAD_CREATE_OVERRIDES) {
+			command_set->markAsOverride();
+		}
+	} else if (ini->getLoadType() != INI_LOAD_CREATE_OVERRIDES) {
+		throw INI_INVALID_DATA;
+	} else {
+		command_set = TheControlBar->newCommandSetOverride(command_set);
+	}
+
+	if (command_set == nullptr) {
+		throw INI_INVALID_DATA;
+	}
+
+	ini->initFromINI(command_set, command_set->friend_getFieldParse());
 }

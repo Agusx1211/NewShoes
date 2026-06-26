@@ -7,6 +7,7 @@
 #include "Common/INI.h"
 #include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
+#include "GameLogic/GameLogic.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Weapon.h"
 
@@ -17,6 +18,7 @@ class ControlBar;
 
 AudioManager *TheAudio __attribute__((weak)) = nullptr;
 ControlBar *TheControlBar __attribute__((weak)) = nullptr;
+GameLogic *TheGameLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
 
 #define UNUSED_INI_BLOCK_PARSER(name) \
@@ -401,7 +403,6 @@ UNUSED_INI_BLOCK_PARSER(parseAudioSettingsDefinition)
 UNUSED_INI_BLOCK_PARSER(parseCampaignDefinition)
 UNUSED_INI_BLOCK_PARSER(parseChallengeModeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMetaMapDefinition)
-UNUSED_INI_BLOCK_PARSER(parseCommandSetDefinition)
 UNUSED_INI_BLOCK_PARSER(parseControlBarSchemeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseControlBarResizerDefinition)
 UNUSED_INI_BLOCK_PARSER(parseCrateTemplateDefinition)

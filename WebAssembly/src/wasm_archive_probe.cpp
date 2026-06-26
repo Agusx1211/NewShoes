@@ -32,6 +32,8 @@ constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
+constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
+constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -314,6 +316,57 @@ void copy_command_button_probe(const RealCommandButtonIniProbeResult &command_bu
 		command_button.flash_bang_switch_has_multi_select;
 	result.command_button_flash_bang_switch_has_need_upgrade =
 		command_button.flash_bang_switch_has_need_upgrade;
+}
+
+void copy_command_set_probe(const RealCommandSetIniProbeResult &command_set, ArchiveProbeResult &result)
+{
+	result.command_set_attempted = command_set.attempted;
+	result.command_set_ok = command_set.ok;
+	result.command_set_loaded_archives = command_set.loaded_archives;
+	result.command_set_file_exists = command_set.file_exists;
+	result.command_set_command_button_file_exists = command_set.command_button_file_exists;
+	result.command_set_special_power_file_exists = command_set.special_power_file_exists;
+	result.command_set_upgrade_file_exists = command_set.upgrade_file_exists;
+	result.command_set_name_key_generator_loaded = command_set.name_key_generator_loaded;
+	result.command_set_special_power_original_ini_load =
+		command_set.special_power_original_ini_load;
+	result.command_set_upgrade_original_ini_load = command_set.upgrade_original_ini_load;
+	result.command_set_command_button_original_ini_load =
+		command_set.command_button_original_ini_load;
+	result.command_set_original_ini_load = command_set.original_ini_load;
+	result.command_set_filtered_from_shipped = command_set.filtered_from_shipped;
+	result.command_set_bytes = command_set.bytes;
+	result.command_set_command_button_bytes = command_set.command_button_bytes;
+	result.command_set_special_power_bytes = command_set.special_power_bytes;
+	result.command_set_upgrade_bytes = command_set.upgrade_bytes;
+	result.command_set_filtered_command_button_bytes =
+		command_set.filtered_command_button_bytes;
+	result.command_set_filtered_command_button_blocks =
+		command_set.filtered_command_button_blocks;
+	result.command_set_filtered_command_set_bytes = command_set.filtered_command_set_bytes;
+	result.command_set_filtered_command_set_blocks = command_set.filtered_command_set_blocks;
+	result.command_set_parsed_fields = command_set.parsed_fields;
+	result.command_set_command_button_count = command_set.command_button_count;
+	result.command_set_count = command_set.command_set_count;
+	result.command_set_source = command_set.source;
+	result.command_set_ranger_found = command_set.ranger_set_found;
+	result.command_set_ranger_slot1 = command_set.ranger_slot1;
+	result.command_set_ranger_slot2 = command_set.ranger_slot2;
+	result.command_set_ranger_slot4 = command_set.ranger_slot4;
+	result.command_set_ranger_slot11 = command_set.ranger_slot11;
+	result.command_set_ranger_slot13 = command_set.ranger_slot13;
+	result.command_set_ranger_slot14 = command_set.ranger_slot14;
+	result.command_set_ranger_slot1_command = command_set.ranger_slot1_command;
+	result.command_set_ranger_slot2_command = command_set.ranger_slot2_command;
+	result.command_set_ranger_slot4_command = command_set.ranger_slot4_command;
+	result.command_set_ranger_slot11_command = command_set.ranger_slot11_command;
+	result.command_set_ranger_slot13_command = command_set.ranger_slot13_command;
+	result.command_set_ranger_slot14_command = command_set.ranger_slot14_command;
+	result.command_set_ranger_slot2_weapon_slot = command_set.ranger_slot2_weapon_slot;
+	result.command_set_ranger_slot4_weapon_slot = command_set.ranger_slot4_weapon_slot;
+	result.command_set_ranger_slot1_special_power = command_set.ranger_slot1_special_power;
+	result.command_set_ranger_slot1_upgrade = command_set.ranger_slot1_upgrade;
+	result.command_set_ranger_slot4_upgrade = command_set.ranger_slot4_upgrade;
 }
 
 void copy_player_template_probe(const RealPlayerTemplateIniProbeResult &player_template, ArchiveProbeResult &result)
@@ -741,7 +794,8 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
 		if (result.loaded) {
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
-			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
+			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
+			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
 			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
@@ -822,6 +876,14 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_upgrade_ini) {
 		copy_command_button_probe(probe_original_command_button_ini_load(archive_path), result);
 		result.ok = result.ok && result.command_button_ok;
+	}
+	if (result.loaded &&
+			result.has_command_set_ini &&
+			result.has_command_button_ini &&
+			result.has_special_power_ini &&
+			result.has_upgrade_ini) {
+		copy_command_set_probe(probe_original_command_set_ini_load(archive_path), result);
+		result.ok = result.ok && result.command_set_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

@@ -2609,6 +2609,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   src/wasm_command_button_runtime.cpp
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INICommandSet.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"

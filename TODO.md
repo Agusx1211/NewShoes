@@ -667,11 +667,19 @@ shares structure and follows behind.
 - [x] Link `UpgradeCenter` into command-button parser preflight so shipped
       `CommandButton.ini` resolves real upgrade pointers before command-button
       runtime validation.
+- [x] Link focused original command-set parser preflight through real
+      `INICommandSet.cpp` and shipped `AmericaInfantryRangerCommandSet`, after
+      loading the referenced shipped command-button subset through the original
+      command-button parser.
 - [ ] Expand command-button parser preflight from the focused shipped
       upgrade/special-power subset to full `CommandButton.ini` coverage after
       real `ThingFactory` / `ThingTemplate` object-template resolution is
       available; the current coverage intentionally avoids `Object =` command
       buttons until that dependency is real.
+- [ ] Expand command-set parser preflight from focused
+      `AmericaInfantryRangerCommandSet` coverage to full `CommandSet.ini`
+      coverage after full command-button and object-template resolution is
+      available.
 - [x] Link and smoke-test the original upgrade INI parser route through the
       focused browser INI runtime, using original `Common/INI.cpp::load`,
       `INIUpgrade.cpp`, `Upgrade.cpp`, `NameKeyGenerator`, and shipped

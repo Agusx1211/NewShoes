@@ -450,6 +450,54 @@ struct RealCommandButtonIniProbeResult
 	bool flash_bang_switch_has_need_upgrade = false;
 };
 
+struct RealCommandSetIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool command_button_file_exists = false;
+	bool special_power_file_exists = false;
+	bool upgrade_file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool special_power_original_ini_load = false;
+	bool upgrade_original_ini_load = false;
+	bool command_button_original_ini_load = false;
+	bool original_ini_load = false;
+	bool filtered_from_shipped = false;
+	std::size_t bytes = 0;
+	std::size_t command_button_bytes = 0;
+	std::size_t special_power_bytes = 0;
+	std::size_t upgrade_bytes = 0;
+	std::size_t filtered_command_button_bytes = 0;
+	std::size_t filtered_command_button_blocks = 0;
+	std::size_t filtered_command_set_bytes = 0;
+	std::size_t filtered_command_set_blocks = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t command_button_count = 0;
+	std::size_t command_set_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool ranger_set_found = false;
+	std::string ranger_slot1;
+	std::string ranger_slot2;
+	std::string ranger_slot4;
+	std::string ranger_slot11;
+	std::string ranger_slot13;
+	std::string ranger_slot14;
+	int ranger_slot1_command = 0;
+	int ranger_slot2_command = 0;
+	int ranger_slot4_command = 0;
+	int ranger_slot11_command = 0;
+	int ranger_slot13_command = 0;
+	int ranger_slot14_command = 0;
+	int ranger_slot2_weapon_slot = 0;
+	int ranger_slot4_weapon_slot = 0;
+	std::string ranger_slot1_special_power;
+	std::string ranger_slot1_upgrade;
+	std::string ranger_slot4_upgrade;
+};
+
 struct RealPlayerTemplateIniProbeResult
 {
 	bool attempted = false;
@@ -531,4 +579,5 @@ RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char 
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
 RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const char *archive_path);
+RealCommandSetIniProbeResult probe_original_command_set_ini_load(const char *archive_path);
 RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const char *archive_path);

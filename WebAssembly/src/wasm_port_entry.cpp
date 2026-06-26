@@ -271,6 +271,7 @@ bool startup_boot_ini_present()
 {
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_command_button_ini &&
+		g_archive_probe.has_command_set_ini &&
 		g_archive_probe.has_game_data_ini &&
 		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_roads_ini &&
@@ -355,6 +356,13 @@ bool startup_command_button_ready()
 		g_archive_probe.command_button_ok;
 }
 
+bool startup_command_set_ready()
+{
+	return g_archive_probe.has_command_set_ini &&
+		g_archive_probe.command_set_attempted &&
+		g_archive_probe.command_set_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -407,6 +415,7 @@ bool startup_assets_ready()
 		startup_terrain_roads_ready() &&
 		startup_upgrade_ready() &&
 		startup_command_button_ready() &&
+		startup_command_set_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -455,6 +464,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_command_button_ready()) {
 		return "command_button_probe_failed";
+	}
+	if (!startup_command_set_ready()) {
+		return "command_set_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -520,6 +532,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_command_button_ready()) {
 		return "Runtime BIG archive set did not pass the CommandButton.ini startup probe.";
+	}
+	if (!startup_command_set_ready()) {
+		return "Runtime BIG archive set did not pass the CommandSet.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -782,6 +797,94 @@ std::string build_command_button_probe_json()
 	return buffer;
 }
 
+std::string build_command_set_probe_json()
+{
+	char buffer[10000];
+	const std::string source_json = json_escape(g_archive_probe.command_set_source);
+	const std::string slot1_json = json_escape(g_archive_probe.command_set_ranger_slot1);
+	const std::string slot2_json = json_escape(g_archive_probe.command_set_ranger_slot2);
+	const std::string slot4_json = json_escape(g_archive_probe.command_set_ranger_slot4);
+	const std::string slot11_json = json_escape(g_archive_probe.command_set_ranger_slot11);
+	const std::string slot13_json = json_escape(g_archive_probe.command_set_ranger_slot13);
+	const std::string slot14_json = json_escape(g_archive_probe.command_set_ranger_slot14);
+	const std::string slot1_special_power_json =
+		json_escape(g_archive_probe.command_set_ranger_slot1_special_power);
+	const std::string slot1_upgrade_json =
+		json_escape(g_archive_probe.command_set_ranger_slot1_upgrade);
+	const std::string slot4_upgrade_json =
+		json_escape(g_archive_probe.command_set_ranger_slot4_upgrade);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"commandButtonBytes\":%zu,\"specialPowerBytes\":%zu,"
+		"\"upgradeBytes\":%zu,\"source\":\"%s\","
+		"\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"commandButtonFileExists\":%s,\"specialPowerFileExists\":%s,"
+		"\"upgradeFileExists\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"specialPowerOriginalIniLoad\":%s,\"upgradeOriginalIniLoad\":%s,"
+		"\"commandButtonOriginalIniLoad\":%s,\"originalIniLoad\":%s,"
+		"\"filteredFromShipped\":%s,"
+		"\"filteredCommandButtonBytes\":%zu,"
+		"\"filteredCommandButtonBlocks\":%zu,"
+		"\"filteredCommandSetBytes\":%zu,"
+		"\"filteredCommandSetBlocks\":%zu,"
+		"\"parsedFields\":%zu,\"commandButtons\":%zu,\"commandSets\":%zu,"
+		"\"ranger\":{\"found\":%s,"
+		"\"slot1\":{\"name\":\"%s\",\"command\":%d,"
+		"\"specialPower\":\"%s\",\"upgrade\":\"%s\"},"
+		"\"slot2\":{\"name\":\"%s\",\"command\":%d,\"weaponSlot\":%d},"
+		"\"slot4\":{\"name\":\"%s\",\"command\":%d,\"weaponSlot\":%d,"
+		"\"upgrade\":\"%s\"},"
+		"\"slot11\":{\"name\":\"%s\",\"command\":%d},"
+		"\"slot13\":{\"name\":\"%s\",\"command\":%d},"
+		"\"slot14\":{\"name\":\"%s\",\"command\":%d}}}",
+		g_archive_probe.command_set_attempted ? "true" : "false",
+		g_archive_probe.command_set_ok ? "true" : "false",
+		g_archive_probe.command_set_bytes,
+		g_archive_probe.command_set_command_button_bytes,
+		g_archive_probe.command_set_special_power_bytes,
+		g_archive_probe.command_set_upgrade_bytes,
+		source_json.c_str(),
+		g_archive_probe.command_set_loaded_archives ? "true" : "false",
+		g_archive_probe.command_set_file_exists ? "true" : "false",
+		g_archive_probe.command_set_command_button_file_exists ? "true" : "false",
+		g_archive_probe.command_set_special_power_file_exists ? "true" : "false",
+		g_archive_probe.command_set_upgrade_file_exists ? "true" : "false",
+		g_archive_probe.command_set_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.command_set_special_power_original_ini_load ? "true" : "false",
+		g_archive_probe.command_set_upgrade_original_ini_load ? "true" : "false",
+		g_archive_probe.command_set_command_button_original_ini_load ? "true" : "false",
+		g_archive_probe.command_set_original_ini_load ? "true" : "false",
+		g_archive_probe.command_set_filtered_from_shipped ? "true" : "false",
+		g_archive_probe.command_set_filtered_command_button_bytes,
+		g_archive_probe.command_set_filtered_command_button_blocks,
+		g_archive_probe.command_set_filtered_command_set_bytes,
+		g_archive_probe.command_set_filtered_command_set_blocks,
+		g_archive_probe.command_set_parsed_fields,
+		g_archive_probe.command_set_command_button_count,
+		g_archive_probe.command_set_count,
+		g_archive_probe.command_set_ranger_found ? "true" : "false",
+		slot1_json.c_str(),
+		g_archive_probe.command_set_ranger_slot1_command,
+		slot1_special_power_json.c_str(),
+		slot1_upgrade_json.c_str(),
+		slot2_json.c_str(),
+		g_archive_probe.command_set_ranger_slot2_command,
+		g_archive_probe.command_set_ranger_slot2_weapon_slot,
+		slot4_json.c_str(),
+		g_archive_probe.command_set_ranger_slot4_command,
+		g_archive_probe.command_set_ranger_slot4_weapon_slot,
+		slot4_upgrade_json.c_str(),
+		slot11_json.c_str(),
+		g_archive_probe.command_set_ranger_slot11_command,
+		slot13_json.c_str(),
+		g_archive_probe.command_set_ranger_slot13_command,
+		slot14_json.c_str(),
+		g_archive_probe.command_set_ranger_slot14_command);
+
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -818,12 +921,13 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[96000];
+	char buffer[108000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
+	const std::string command_set_probe_json = build_command_set_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -982,6 +1086,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
+		"\"commandSetIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
@@ -1008,6 +1113,7 @@ const char *write_state_json()
 		"\"americaGrantable\":%s,\"paladinGrantable\":%s},"
 		"\"upgrade\":%s,"
 		"\"commandButton\":%s,"
+		"\"commandSet\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -1158,7 +1264,7 @@ const char *write_state_json()
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
-		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
+		"\"commandSet\":%s,\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
@@ -1214,6 +1320,7 @@ const char *write_state_json()
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
+		g_archive_probe.has_command_set_ini ? "true" : "false",
 		g_archive_probe.has_player_template_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
@@ -1270,6 +1377,7 @@ const char *write_state_json()
 		g_archive_probe.science_paladin_grantable ? "true" : "false",
 		upgrade_probe_json.c_str(),
 		command_button_probe_json.c_str(),
+		command_set_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,
@@ -1602,6 +1710,7 @@ const char *write_state_json()
 		startup_science_ready() ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
+		startup_command_set_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",

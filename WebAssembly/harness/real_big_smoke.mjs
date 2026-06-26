@@ -174,6 +174,57 @@ function assertCommandButtonProbe(assetProbe, context) {
   }
 }
 
+function assertCommandSetProbe(assetProbe, context) {
+  const commandSet = assetProbe?.commandSet;
+  const ranger = commandSet?.ranger;
+  if (!assetProbe?.inizh?.commandSetIni
+      || !commandSet?.attempted
+      || !commandSet.ok
+      || commandSet.source !== "GameEngine/Common/INI.cpp::load + INICommandSet.cpp + ControlBar.cpp CommandSet parser"
+      || !commandSet.loadedArchives
+      || !commandSet.fileExists
+      || !commandSet.commandButtonFileExists
+      || !commandSet.specialPowerFileExists
+      || !commandSet.upgradeFileExists
+      || !commandSet.nameKeyGeneratorLoaded
+      || !commandSet.specialPowerOriginalIniLoad
+      || !commandSet.upgradeOriginalIniLoad
+      || !commandSet.commandButtonOriginalIniLoad
+      || !commandSet.originalIniLoad
+      || !commandSet.filteredFromShipped
+      || commandSet.bytes <= 50000
+      || commandSet.commandButtonBytes <= 100000
+      || commandSet.specialPowerBytes <= 5000
+      || commandSet.upgradeBytes <= 5000
+      || commandSet.filteredCommandButtonBytes <= 1000
+      || commandSet.filteredCommandButtonBlocks !== 6
+      || commandSet.filteredCommandSetBytes <= 200
+      || commandSet.filteredCommandSetBlocks !== 1
+      || commandSet.parsedFields !== 23
+      || commandSet.commandButtons !== 6
+      || commandSet.commandSets !== 1
+      || !ranger?.found
+      || ranger.slot1?.name !== "Command_AmericaRangerCaptureBuilding"
+      || ranger.slot1.command !== 21
+      || ranger.slot1.specialPower !== "SpecialAbilityRangerCaptureBuilding"
+      || ranger.slot1.upgrade !== "Upgrade_InfantryCaptureBuilding"
+      || ranger.slot2?.name !== "Command_AmericaRangerSwitchToMachineGun"
+      || ranger.slot2.command !== 26
+      || ranger.slot2.weaponSlot !== 0
+      || ranger.slot4?.name !== "Command_AmericaRangerSwitchToFlagBangGrenades"
+      || ranger.slot4.command !== 26
+      || ranger.slot4.weaponSlot !== 1
+      || ranger.slot4.upgrade !== "Upgrade_AmericaRangerFlashBangGrenade"
+      || ranger.slot11?.name !== "Command_AttackMove"
+      || ranger.slot11.command !== 8
+      || ranger.slot13?.name !== "Command_Guard"
+      || ranger.slot13.command !== 9
+      || ranger.slot14?.name !== "Command_Stop"
+      || ranger.slot14.command !== 12) {
+    throw new Error(`${context} did not parse expected CommandSet.ini entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -420,6 +471,7 @@ try {
   }
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.playerTemplateIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
@@ -434,6 +486,7 @@ try {
   assertArmorProbe(assetProbe, "cnc-port INIZH probe");
   assertUpgradeProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandButtonProbe(assetProbe, "cnc-port INIZH probe");
+  assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");

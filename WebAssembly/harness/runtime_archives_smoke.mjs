@@ -237,6 +237,57 @@ function assertCommandButtonProbe(assetProbe, context) {
   }
 }
 
+function assertCommandSetProbe(assetProbe, context) {
+  const commandSet = assetProbe?.commandSet;
+  const ranger = commandSet?.ranger;
+  if (!assetProbe?.inizh?.commandSetIni
+      || !commandSet?.attempted
+      || !commandSet.ok
+      || commandSet.source !== "GameEngine/Common/INI.cpp::load + INICommandSet.cpp + ControlBar.cpp CommandSet parser"
+      || !commandSet.loadedArchives
+      || !commandSet.fileExists
+      || !commandSet.commandButtonFileExists
+      || !commandSet.specialPowerFileExists
+      || !commandSet.upgradeFileExists
+      || !commandSet.nameKeyGeneratorLoaded
+      || !commandSet.specialPowerOriginalIniLoad
+      || !commandSet.upgradeOriginalIniLoad
+      || !commandSet.commandButtonOriginalIniLoad
+      || !commandSet.originalIniLoad
+      || !commandSet.filteredFromShipped
+      || commandSet.bytes <= 50000
+      || commandSet.commandButtonBytes <= 100000
+      || commandSet.specialPowerBytes <= 5000
+      || commandSet.upgradeBytes <= 5000
+      || commandSet.filteredCommandButtonBytes <= 1000
+      || commandSet.filteredCommandButtonBlocks !== 6
+      || commandSet.filteredCommandSetBytes <= 200
+      || commandSet.filteredCommandSetBlocks !== 1
+      || commandSet.parsedFields !== 23
+      || commandSet.commandButtons !== 6
+      || commandSet.commandSets !== 1
+      || !ranger?.found
+      || ranger.slot1?.name !== "Command_AmericaRangerCaptureBuilding"
+      || ranger.slot1.command !== 21
+      || ranger.slot1.specialPower !== "SpecialAbilityRangerCaptureBuilding"
+      || ranger.slot1.upgrade !== "Upgrade_InfantryCaptureBuilding"
+      || ranger.slot2?.name !== "Command_AmericaRangerSwitchToMachineGun"
+      || ranger.slot2.command !== 26
+      || ranger.slot2.weaponSlot !== 0
+      || ranger.slot4?.name !== "Command_AmericaRangerSwitchToFlagBangGrenades"
+      || ranger.slot4.command !== 26
+      || ranger.slot4.weaponSlot !== 1
+      || ranger.slot4.upgrade !== "Upgrade_AmericaRangerFlashBangGrenade"
+      || ranger.slot11?.name !== "Command_AttackMove"
+      || ranger.slot11.command !== 8
+      || ranger.slot13?.name !== "Command_Guard"
+      || ranger.slot13.command !== 9
+      || ranger.slot14?.name !== "Command_Stop"
+      || ranger.slot14.command !== 12) {
+    throw new Error(`${context} did not parse expected CommandSet.ini entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertSpecialPowerProbe(assetProbe, context) {
   const specialPower = assetProbe?.specialPower;
   const daisyCutter = specialPower?.daisyCutter;
@@ -605,6 +656,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.science
         || !startupAssets.required?.upgrade
         || !startupAssets.required?.commandButton
+        || !startupAssets.required?.commandSet
         || !startupAssets.required?.specialPower
         || !startupAssets.required?.playerTemplate
         || !startupAssets.required?.multiplayer
@@ -687,6 +739,7 @@ try {
   const assetProbe = mountResult.state?.assetProbe;
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.upgradeIni
@@ -702,6 +755,7 @@ try {
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
+  assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -762,6 +816,7 @@ try {
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
