@@ -776,10 +776,19 @@ shares structure and follows behind.
       `W3DDynamicLight.cpp`, and the currently disabled `W3DGranny.cpp`
       translation unit, after adding exact-case bridges for
       `WW3D2/Light.h` and `lib/baseType.h`.
+- [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
+      `zh_ww3d2_compile_frontier`: animation/render-object helpers,
+      collision/intersection helpers, light/projector support, asset/cache and
+      exclusion helpers, render-info/sound render-object leaves, and small W3D
+      utility/metadata translation units.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
       compile-only globals.
+- [ ] Link and smoke-test original WW3D2 light/render-object behavior after
+      `rendobj.cpp`, browser-safe Win32 string aliases, scene/camera defaults,
+      and asset/render-object singleton dependencies can build without renderer
+      stubs.
 - [ ] Re-enable and compile the active `INCLUDE_GRANNY_IN_BUILD` code path in
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
@@ -790,6 +799,10 @@ shares structure and follows behind.
       legacy function-pointer table casting, and fixed-underlying
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
+- [ ] Continue the original WW3D2 compile frontier by resolving the current
+      DirectX 8 backend, GDI text handle, texture/material declaration,
+      `vector3i.h`/mesh-geometry include, `snappts.h`, and clang dependent-name
+      blockers instead of substituting renderer behavior.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

@@ -1907,6 +1907,67 @@ target_link_libraries(zh_w3d_device_utility PUBLIC
   zh_wwmath_core
 )
 
+add_library(zh_ww3d2_compile_frontier STATIC
+  "${WWVEGAS_DIR}/WW3D2/animobj.cpp"
+  "${WWVEGAS_DIR}/WW3D2/assetstatus.cpp"
+  "${WWVEGAS_DIR}/WW3D2/coltest.cpp"
+  "${WWVEGAS_DIR}/WW3D2/composite.cpp"
+  "${WWVEGAS_DIR}/WW3D2/font3d.cpp"
+  "${WWVEGAS_DIR}/WW3D2/intersec.cpp"
+  "${WWVEGAS_DIR}/WW3D2/layer.cpp"
+  "${WWVEGAS_DIR}/WW3D2/light.cpp"
+  "${WWVEGAS_DIR}/WW3D2/meshdam.cpp"
+  "${WWVEGAS_DIR}/WW3D2/nullrobj.cpp"
+  "${WWVEGAS_DIR}/WW3D2/pivot.cpp"
+  "${WWVEGAS_DIR}/WW3D2/polyinfo.cpp"
+  "${WWVEGAS_DIR}/WW3D2/pot.cpp"
+  "${WWVEGAS_DIR}/WW3D2/predlod.cpp"
+  "${WWVEGAS_DIR}/WW3D2/projector.cpp"
+  "${WWVEGAS_DIR}/WW3D2/renderobjectrecycler.cpp"
+  "${WWVEGAS_DIR}/WW3D2/rinfo.cpp"
+  "${WWVEGAS_DIR}/WW3D2/soundrobj.cpp"
+  "${WWVEGAS_DIR}/WW3D2/texfcach.cpp"
+  "${WWVEGAS_DIR}/WW3D2/w3d_dep.cpp"
+  "${WWVEGAS_DIR}/WW3D2/w3d_util.cpp"
+  "${WWVEGAS_DIR}/WW3D2/w3dexclusionlist.cpp"
+)
+
+target_include_directories(zh_ww3d2_compile_frontier PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_ww3d2_compile_frontier PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_gameclient_text STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/GameText.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/LanguageFilter.cpp"
