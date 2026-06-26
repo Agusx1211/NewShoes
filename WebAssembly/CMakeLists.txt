@@ -1394,6 +1394,9 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/Thing/ThingTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/crc.cpp"
   "${GAMEENGINE_COMMON_DIR}/version.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/W3DConvert.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32OSDisplay.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LadderDefs.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LobbyUtils.cpp"
@@ -1406,6 +1409,8 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/PersistentStorageThread.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/PingThread.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/ThreadUtils.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyOverlay.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/IPEnumeration.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/NAT.cpp"
@@ -1760,6 +1765,15 @@ set(ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES
 )
 
 set_source_files_properties(${ZH_GAMELOGIC_PRERTS_FRONTIER_SOURCES} PROPERTIES
+  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
+)
+
+set(ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyChat.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpyGP.cpp"
+)
+
+set_source_files_properties(${ZH_LEGACY_GAMESPY_PRERTS_FRONTIER_SOURCES} PROPERTIES
   COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
 )
 

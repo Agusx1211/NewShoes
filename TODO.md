@@ -124,6 +124,9 @@ shares structure and follows behind.
 - [x] Add lowercase include wrappers for original WWLib mono debug-output
       headers and Win32 message-loop compatibility types/functions needed by
       WWLib `msgloop.cpp` under the current empty browser queue.
+- [x] Add browser/compiler shims for original Win32 message-box flags,
+      topmost-window positioning, and CD-drive probing used by the current
+      Win32Device common compile frontier under Emscripten.
 - [x] Add a minimal `D3DX8Math.h` vector/matrix shim for original
       `GameEngine/Common` Bezier helpers under Emscripten.
 - [x] Add lowercase include wrappers for original GameEngine `Common/File.h`
@@ -747,6 +750,14 @@ shares structure and follows behind.
 - [x] Audit original Bezier helper warnings under clang/Emscripten:
       `BezierSegment` array-constructor bound mismatch and
       `BezFwdIterator` conservative pointer-initialization diagnostics.
+- [x] Compile original device common leaves in the real-header compile
+      frontier: `W3DDevice/Common/W3DConvert.cpp`,
+      `Win32Device/Common/Win32CDManager.cpp`, and
+      `Win32Device/Common/Win32OSDisplay.cpp`, with current browser no-CD and
+      message-box compatibility shims.
+- [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
+      compatibility with a real browser/harness OS-display dialog/error
+      reporting contract before relying on runtime warning prompts.
 - [x] `Common/System` (file system iface, BIG archive, streams, memory) compiles.
 - [x] `Common/INI` parser compiles as original source in the real-header
       compile frontier (reuse original — do NOT rewrite).
@@ -1214,6 +1225,17 @@ shares structure and follows behind.
       `GameResultsThread.cpp`) after adding the SEH translator shim,
       declarative GameSpy GP/Peer/QR2/Stats compile surface, explicit
       WinSock/WinMM includes, and narrow clang/POSIX socket compatibility fixes.
+- [x] Compile original legacy GameSpy chat/GP callback sources
+      (`GameSpyChat.cpp` and `GameSpyGP.cpp`) after adding a declarative
+      `GameNetwork/GameSpy.h` / `TheGameSpyChat` compile bridge and localized
+      clang fixes for STL qualification plus implicit helper return types.
+- [ ] Replace the declarative legacy `GameNetwork/GameSpy.h` /
+      `TheGameSpyChat` compile bridge with the real browser GameSpy chat/GP
+      runtime binding before running the original legacy chat callbacks or GP
+      error/status callbacks.
+- [ ] Audit original `GameNetwork/GameSpyGameInfo.cpp` before runtime GameSpy
+      integration; it is explicitly obsolete in the current source tree and
+      conflicts with the newer `GameSpy/StagingRoomGameInfo` path.
 - [ ] Link and smoke-test original GameSpy thread queue behavior after browser
       Worker/pthread scheduling, GP/Peer/QR2/Stats runtime bindings,
       ICMP/socket fallbacks, and harness state probes are available; current

@@ -261,14 +261,36 @@ static inline int _wtoi(const wchar_t *value)
 #define MAX_COMPUTERNAME_LENGTH 15
 #endif
 
+#define MB_OK 0x00000000
+#define MB_OKCANCEL 0x00000001
 #define MB_ABORTRETRYIGNORE 0x00000002
 #define MB_ICONHAND 0x00000010
-#define MB_SETFOREGROUND 0x00010000
+#define MB_ICONSTOP MB_ICONHAND
+#define MB_ICONERROR MB_ICONHAND
+#define MB_ICONEXCLAMATION 0x00000030
+#define MB_ICONINFORMATION 0x00000040
+#define MB_APPLMODAL 0x00000000
+#define MB_SYSTEMMODAL 0x00001000
 #define MB_TASKMODAL 0x00002000
+#define MB_SETFOREGROUND 0x00010000
 
+#define IDOK 1
+#define IDCANCEL 2
 #define IDABORT 3
 #define IDRETRY 4
 #define IDIGNORE 5
+
+#define HWND_NOTOPMOST reinterpret_cast<HWND>(-2)
+#define SWP_NOSIZE 0x0001
+#define SWP_NOMOVE 0x0002
+
+#define DRIVE_UNKNOWN 0
+#define DRIVE_NO_ROOT_DIR 1
+#define DRIVE_REMOVABLE 2
+#define DRIVE_FIXED 3
+#define DRIVE_REMOTE 4
+#define DRIVE_CDROM 5
+#define DRIVE_RAMDISK 6
 
 #define EVENT_MODIFY_STATE 0x0002
 #define KEY_READ 0x20019
@@ -526,6 +548,11 @@ static inline int MessageBox(void *window, const char *text, const char *caption
 	return MessageBoxA(window, text, caption, flags);
 }
 
+static inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT)
+{
+	return TRUE;
+}
+
 static inline BOOL SetWindowText(HWND, const char *)
 {
 	return TRUE;
@@ -661,6 +688,16 @@ static inline BOOL GetComputerNameA(LPSTR buffer, unsigned long *buffer_len)
 {
 	const char *host = std::getenv("HOSTNAME");
 	return WasmCopyWin32Identity(host, buffer, buffer_len);
+}
+
+static inline UINT GetDriveType(LPCSTR)
+{
+	return DRIVE_NO_ROOT_DIR;
+}
+
+static inline BOOL GetVolumeInformation(LPCSTR, LPSTR, DWORD, LPDWORD, LPDWORD, LPDWORD, LPSTR, DWORD)
+{
+	return FALSE;
 }
 
 #ifndef GetUserName
