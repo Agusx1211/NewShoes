@@ -177,6 +177,26 @@ function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   }
 }
 
+function assertOriginalEngineStartup(state, label, expectedStatus) {
+  const startup = state.originalEngineStartup;
+  if (!startup
+      || startup.ok !== false
+      || startup.initAttempted !== false
+      || startup.source !== "GameEngine/Common/GameEngine.cpp::init"
+      || startup.status !== expectedStatus) {
+    throw new Error(`${label} original engine startup state mismatch: ${JSON.stringify(startup)}`);
+  }
+
+  if (startup.browserDeviceLayer?.ready !== false
+      || startup.browserDeviceLayer?.createGameEngine !== false
+      || startup.browserDeviceLayer?.gameClient !== false
+      || startup.browserDeviceLayer?.audioManager !== false
+      || startup.browserDeviceLayer?.display !== false
+      || startup.browserDeviceLayer?.input !== false) {
+    throw new Error(`${label} should report browser device layer as not runtime-ready: ${JSON.stringify(startup.browserDeviceLayer)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -223,6 +243,7 @@ try {
   }
   if (expectWasm) {
     assertStartupAssets(bootResult.state, "boot", "missing_runtime_archives");
+    assertOriginalEngineStartup(bootResult.state, "boot", "missing_runtime_archives");
     assertWasmTiming(bootResult.state, "boot");
     assertWin32Timing(bootResult.state, "boot");
     assertWwDebugProbe(bootResult.state, "boot");

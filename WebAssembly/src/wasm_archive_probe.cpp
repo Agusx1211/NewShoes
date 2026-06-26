@@ -27,8 +27,10 @@ const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
+constexpr const char DEFAULT_GAME_DATA_INI_PATH[] = "Data\\INI\\Default\\GameData.ini";
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
+constexpr const char DEFAULT_FX_LIST_INI_PATH[] = "Data\\INI\\Default\\FXList.ini";
 constexpr const char FX_LIST_INI_PATH[] = "Data\\INI\\FXList.ini";
 constexpr const char DEFAULT_OBJECT_CREATION_LIST_INI_PATH[] =
 	"Data\\INI\\Default\\ObjectCreationList.ini";
@@ -45,19 +47,36 @@ constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
 constexpr const char CONTROL_BAR_SCHEME_INI_PATH[] = "Data\\INI\\ControlBarScheme.ini";
 constexpr const char DEFAULT_CONTROL_BAR_SCHEME_INI_PATH[] =
 	"Data\\INI\\Default\\ControlBarScheme.ini";
+constexpr const char DEFAULT_CRATE_INI_PATH[] = "Data\\INI\\Default\\Crate.ini";
 constexpr const char CRATE_INI_PATH[] = "Data\\INI\\Crate.ini";
+constexpr const char RANK_INI_PATH[] = "Data\\INI\\Rank.ini";
+constexpr const char DEFAULT_PLAYER_TEMPLATE_INI_PATH[] =
+	"Data\\INI\\Default\\PlayerTemplate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
+constexpr const char DEFAULT_MULTIPLAYER_INI_PATH[] = "Data\\INI\\Default\\Multiplayer.ini";
+constexpr const char DEFAULT_SCIENCE_INI_PATH[] = "Data\\INI\\Default\\Science.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
+constexpr const char DEFAULT_TERRAIN_INI_PATH[] = "Data\\INI\\Default\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
+constexpr const char DEFAULT_ROADS_INI_PATH[] = "Data\\INI\\Default\\Roads.ini";
 constexpr const char DRAW_GROUP_INFO_INI_PATH[] = "Data\\INI\\DrawGroupInfo.ini";
+constexpr const char DEFAULT_UPGRADE_INI_PATH[] = "Data\\INI\\Default\\Upgrade.ini";
 constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
+constexpr const char DEFAULT_OBJECT_INI_PATH[] = "Data\\INI\\Default\\Object.ini";
+constexpr const char OBJECT_INI_DIRECTORY[] = "Data\\INI\\Object\\";
+constexpr const char DEFAULT_SPECIAL_POWER_INI_PATH[] =
+	"Data\\INI\\Default\\SpecialPower.ini";
 constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
 constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
+constexpr const char DEFAULT_WATER_INI_PATH[] = "Data\\INI\\Default\\Water.ini";
 constexpr const char WATER_INI_PATH[] = "Data\\INI\\Water.ini";
+constexpr const char DEFAULT_WEATHER_INI_PATH[] = "Data\\INI\\Default\\Weather.ini";
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
+constexpr const char COMMAND_MAP_INI_PATH[] = "Data\\INI\\CommandMap.ini";
+constexpr const char ENGLISH_COMMAND_MAP_INI_PATH[] = "Data\\English\\CommandMap.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -1337,8 +1356,12 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 
 			result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
 		if (result.loaded) {
+			result.has_default_game_data_ini =
+				archive_file_system.doesFileExist(DEFAULT_GAME_DATA_INI_PATH);
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
+			result.has_default_fx_list_ini =
+				archive_file_system.doesFileExist(DEFAULT_FX_LIST_INI_PATH);
 			result.has_fx_list_ini = archive_file_system.doesFileExist(FX_LIST_INI_PATH);
 			result.has_default_object_creation_list_ini =
 				archive_file_system.doesFileExist(DEFAULT_OBJECT_CREATION_LIST_INI_PATH);
@@ -1354,25 +1377,58 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 				archive_file_system.doesFileExist(CONTROL_BAR_SCHEME_INI_PATH);
 			result.has_default_control_bar_scheme_ini =
 				archive_file_system.doesFileExist(DEFAULT_CONTROL_BAR_SCHEME_INI_PATH);
+			result.has_default_crate_ini = archive_file_system.doesFileExist(DEFAULT_CRATE_INI_PATH);
 			result.has_crate_ini = archive_file_system.doesFileExist(CRATE_INI_PATH);
+			result.has_rank_ini = archive_file_system.doesFileExist(RANK_INI_PATH);
+			result.has_default_player_template_ini =
+				archive_file_system.doesFileExist(DEFAULT_PLAYER_TEMPLATE_INI_PATH);
 			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
+			result.has_default_multiplayer_ini =
+				archive_file_system.doesFileExist(DEFAULT_MULTIPLAYER_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
+			result.has_default_science_ini =
+				archive_file_system.doesFileExist(DEFAULT_SCIENCE_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
+			result.has_default_special_power_ini =
+				archive_file_system.doesFileExist(DEFAULT_SPECIAL_POWER_INI_PATH);
 			result.has_special_power_ini = archive_file_system.doesFileExist(SPECIAL_POWER_INI_PATH);
+			result.has_default_terrain_ini =
+				archive_file_system.doesFileExist(DEFAULT_TERRAIN_INI_PATH);
 			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
+			result.has_default_roads_ini =
+				archive_file_system.doesFileExist(DEFAULT_ROADS_INI_PATH);
 			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
 			result.has_draw_group_info_ini = archive_file_system.doesFileExist(DRAW_GROUP_INFO_INI_PATH);
+			result.has_default_upgrade_ini =
+				archive_file_system.doesFileExist(DEFAULT_UPGRADE_INI_PATH);
 			result.has_upgrade_ini = archive_file_system.doesFileExist(UPGRADE_INI_PATH);
+			result.has_default_object_ini =
+				archive_file_system.doesFileExist(DEFAULT_OBJECT_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist(WEAPON_INI_PATH);
 			result.has_particle_system_ini =
 				archive_file_system.doesFileExist(PARTICLE_SYSTEM_INI_PATH);
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
 			result.has_video_ini = archive_file_system.doesFileExist(VIDEO_INI_PATH);
+			result.has_default_water_ini = archive_file_system.doesFileExist(DEFAULT_WATER_INI_PATH);
 			result.has_water_ini = archive_file_system.doesFileExist(WATER_INI_PATH);
+			result.has_default_weather_ini =
+				archive_file_system.doesFileExist(DEFAULT_WEATHER_INI_PATH);
 			result.has_weather_ini = archive_file_system.doesFileExist(WEATHER_INI_PATH);
+			result.has_command_map_ini = archive_file_system.doesFileExist(COMMAND_MAP_INI_PATH);
+			result.has_english_command_map_ini =
+				archive_file_system.doesFileExist(ENGLISH_COMMAND_MAP_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
+
+			FilenameList object_ini_files;
+			archive_file_system.getFileListInDirectory(
+				AsciiString(""),
+				AsciiString(OBJECT_INI_DIRECTORY),
+				AsciiString("*.ini"),
+				object_ini_files,
+				TRUE);
+			result.object_ini_file_count = object_ini_files.size();
 
 			std::vector<char> sample_data;
 			const bool sample_ok = read_first_indexed_archive_file(

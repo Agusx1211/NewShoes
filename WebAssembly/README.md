@@ -85,10 +85,14 @@ map, and string counts into one startup-readiness view. It also reports
 runtime archive set, moves to
 `pending_boot_probe` after preload registration, and only becomes `ready` after
 the boot-time archive/GameData/Water/Weather/GameText/MapCache probes pass.
-This is still a bootstrap preflight; full original all-block INI loading, startup CRC
-coverage, default+shipped water/weather loading, map water/weather overrides,
-water/weather rendering, and live map-cache rebuilds remain part of engine
-startup work.
+It also reports `originalEngineStartup`, which keeps full original
+`GameEngine.cpp::init` separate from the bootstrap preflight: it lists missing
+default/startup files from the current archive set and reports browser device
+factory readiness as false until real browser-backed factories replace the
+compile-only surface. This is still a bootstrap preflight; full original
+all-block INI loading, startup CRC coverage, default+shipped water/weather
+loading, map water/weather overrides, water/weather rendering, and live
+map-cache rebuilds remain part of engine startup work.
 
 ## Toolchain
 
@@ -180,9 +184,11 @@ over real `Water.ini`, asserts `assetProbe.weather` through original
 `GameClient/Snow.cpp` over real `Weather.ini`, asserts `assetProbe.mapCache`
 through original `INIMapCache.cpp` over real `Maps\MapCache.ini`, asserts
 `dataSummary` for aggregate parser/template/map/string counts, and checks
-`startupAssets` for the missing, pending, and ready archive states. Full
-original engine startup, all-block INI parsing, language initialization, font
-loading, water/weather rendering, and live map-cache rebuilds remain open.
+`startupAssets` for the missing, pending, and ready archive states. It also
+asserts `originalEngineStartup`, including the current missing default/startup
+INI list and the fact that browser device factories are not runtime-ready yet.
+Full original engine startup, all-block INI parsing, language initialization,
+font loading, water/weather rendering, and live map-cache rebuilds remain open.
 
 Run the wasm-backed smoke test:
 

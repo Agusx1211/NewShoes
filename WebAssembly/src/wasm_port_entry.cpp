@@ -688,7 +688,7 @@ const char *startup_asset_message()
 	if (!g_archive_mount.boot_probe_ok || !g_archive_probe.ok) {
 		return "Runtime BIG archive boot probe failed.";
 	}
-	return "Runtime BIG archive set is ready for original engine startup.";
+	return "Runtime BIG archive set passed the bootstrap startup asset preflight.";
 }
 
 void log_boot_state()
@@ -847,6 +847,238 @@ std::string build_data_summary_json()
 		g_archive_probe.map_cache_official_maps,
 		g_archive_probe.has_generals_csf ? "true" : "false",
 		g_archive_probe.game_text_control_bar_label_count);
+
+	return buffer;
+}
+
+bool original_engine_startup_files_ready()
+{
+	return g_archive_probe.loaded &&
+		g_archive_probe.has_default_game_data_ini &&
+		g_archive_probe.has_game_data_ini &&
+		g_archive_probe.has_default_water_ini &&
+		g_archive_probe.has_water_ini &&
+		g_archive_probe.has_default_weather_ini &&
+		g_archive_probe.has_weather_ini &&
+		g_archive_probe.has_generals_csf &&
+		g_archive_probe.has_default_science_ini &&
+		g_archive_probe.has_science_ini &&
+		g_archive_probe.has_default_multiplayer_ini &&
+		g_archive_probe.has_multiplayer_ini &&
+		g_archive_probe.has_default_terrain_ini &&
+		g_archive_probe.has_terrain_ini &&
+		g_archive_probe.has_default_roads_ini &&
+		g_archive_probe.has_roads_ini &&
+		g_archive_probe.has_rank_ini &&
+		g_archive_probe.has_default_player_template_ini &&
+		g_archive_probe.has_player_template_ini &&
+		g_archive_probe.has_default_fx_list_ini &&
+		g_archive_probe.has_fx_list_ini &&
+		g_archive_probe.has_weapon_ini &&
+		g_archive_probe.has_default_object_creation_list_ini &&
+		g_archive_probe.has_object_creation_list_ini &&
+		g_archive_probe.has_locomotor_ini &&
+		g_archive_probe.has_default_special_power_ini &&
+		g_archive_probe.has_special_power_ini &&
+		g_archive_probe.has_damage_fx_ini &&
+		g_archive_probe.has_armor_ini &&
+		g_archive_probe.has_default_object_ini &&
+		g_archive_probe.object_ini_file_count > 0 &&
+		g_archive_probe.has_default_upgrade_ini &&
+		g_archive_probe.has_upgrade_ini &&
+		g_archive_probe.has_default_ai_data_ini &&
+		g_archive_probe.has_default_crate_ini &&
+		g_archive_probe.has_crate_ini &&
+		g_archive_probe.has_english_command_map_ini &&
+		g_archive_probe.has_command_map_ini &&
+		g_archive_probe.has_map_cache_ini &&
+		g_archive_probe.has_default_video_ini &&
+		g_archive_probe.has_video_ini;
+}
+
+std::string build_missing_original_engine_startup_files_json()
+{
+	if (!g_archive_probe.loaded) {
+		return "[]";
+	}
+
+	std::string json = "[";
+	bool first = true;
+	const auto append_missing = [&json, &first](bool present, const char *path) {
+		if (present) {
+			return;
+		}
+		if (!first) {
+			json += ",";
+		}
+		json += "\"";
+		json += json_escape(path);
+		json += "\"";
+		first = false;
+	};
+
+	append_missing(g_archive_probe.has_default_game_data_ini, "Data\\INI\\Default\\GameData.ini");
+	append_missing(g_archive_probe.has_game_data_ini, "Data\\INI\\GameData.ini");
+	append_missing(g_archive_probe.has_default_water_ini, "Data\\INI\\Default\\Water.ini");
+	append_missing(g_archive_probe.has_water_ini, "Data\\INI\\Water.ini");
+	append_missing(g_archive_probe.has_default_weather_ini, "Data\\INI\\Default\\Weather.ini");
+	append_missing(g_archive_probe.has_weather_ini, "Data\\INI\\Weather.ini");
+	append_missing(g_archive_probe.has_generals_csf, "Data\\English\\Generals.csf");
+	append_missing(g_archive_probe.has_default_science_ini, "Data\\INI\\Default\\Science.ini");
+	append_missing(g_archive_probe.has_science_ini, "Data\\INI\\Science.ini");
+	append_missing(g_archive_probe.has_default_multiplayer_ini, "Data\\INI\\Default\\Multiplayer.ini");
+	append_missing(g_archive_probe.has_multiplayer_ini, "Data\\INI\\multiplayer.ini");
+	append_missing(g_archive_probe.has_default_terrain_ini, "Data\\INI\\Default\\Terrain.ini");
+	append_missing(g_archive_probe.has_terrain_ini, "Data\\INI\\Terrain.ini");
+	append_missing(g_archive_probe.has_default_roads_ini, "Data\\INI\\Default\\Roads.ini");
+	append_missing(g_archive_probe.has_roads_ini, "Data\\INI\\Roads.ini");
+	append_missing(g_archive_probe.has_rank_ini, "Data\\INI\\Rank.ini");
+	append_missing(g_archive_probe.has_default_player_template_ini, "Data\\INI\\Default\\PlayerTemplate.ini");
+	append_missing(g_archive_probe.has_player_template_ini, "Data\\INI\\PlayerTemplate.ini");
+	append_missing(g_archive_probe.has_default_fx_list_ini, "Data\\INI\\Default\\FXList.ini");
+	append_missing(g_archive_probe.has_fx_list_ini, "Data\\INI\\FXList.ini");
+	append_missing(g_archive_probe.has_weapon_ini, "Data\\INI\\Weapon.ini");
+	append_missing(g_archive_probe.has_default_object_creation_list_ini, "Data\\INI\\Default\\ObjectCreationList.ini");
+	append_missing(g_archive_probe.has_object_creation_list_ini, "Data\\INI\\ObjectCreationList.ini");
+	append_missing(g_archive_probe.has_locomotor_ini, "Data\\INI\\Locomotor.ini");
+	append_missing(g_archive_probe.has_default_special_power_ini, "Data\\INI\\Default\\SpecialPower.ini");
+	append_missing(g_archive_probe.has_special_power_ini, "Data\\INI\\SpecialPower.ini");
+	append_missing(g_archive_probe.has_damage_fx_ini, "Data\\INI\\DamageFX.ini");
+	append_missing(g_archive_probe.has_armor_ini, "Data\\INI\\Armor.ini");
+	append_missing(g_archive_probe.has_default_object_ini, "Data\\INI\\Default\\Object.ini");
+	append_missing(g_archive_probe.object_ini_file_count > 0, "Data\\INI\\Object\\*.ini");
+	append_missing(g_archive_probe.has_default_upgrade_ini, "Data\\INI\\Default\\Upgrade.ini");
+	append_missing(g_archive_probe.has_upgrade_ini, "Data\\INI\\Upgrade.ini");
+	append_missing(g_archive_probe.has_default_ai_data_ini, "Data\\INI\\Default\\AIData.ini");
+	append_missing(g_archive_probe.has_default_crate_ini, "Data\\INI\\Default\\Crate.ini");
+	append_missing(g_archive_probe.has_crate_ini, "Data\\INI\\Crate.ini");
+	append_missing(g_archive_probe.has_english_command_map_ini, "Data\\English\\CommandMap.ini");
+	append_missing(g_archive_probe.has_command_map_ini, "Data\\INI\\CommandMap.ini");
+	append_missing(g_archive_probe.has_map_cache_ini, "Maps\\MapCache.ini");
+	append_missing(g_archive_probe.has_default_video_ini, "Data\\INI\\Default\\Video.ini");
+	append_missing(g_archive_probe.has_video_ini, "Data\\INI\\Video.ini");
+
+	json += "]";
+	return json;
+}
+
+const char *original_engine_startup_status()
+{
+	if (!g_archive_mount.registered) {
+		return "missing_runtime_archives";
+	}
+	if (!g_archive_mount.boot_probe_attempted) {
+		return "pending_boot_probe";
+	}
+	if (!startup_assets_ready()) {
+		return startup_asset_status();
+	}
+	if (!original_engine_startup_files_ready()) {
+		return "missing_startup_files";
+	}
+	return "browser_device_layer_pending";
+}
+
+const char *original_engine_startup_message()
+{
+	if (!g_archive_mount.registered) {
+		return "Register the Zero Hour runtime BIG archive set before attempting original GameEngine::init().";
+	}
+	if (!g_archive_mount.boot_probe_attempted) {
+		return "Runtime BIG archive set is registered; boot must consume it before original GameEngine::init().";
+	}
+	if (!startup_assets_ready()) {
+		return startup_asset_message();
+	}
+	if (!original_engine_startup_files_ready()) {
+		return "Original GameEngine::init() names startup INI/data paths that are absent from the current runtime archive set.";
+	}
+	return "Original startup data is present; real browser GameEngine device factories must be implemented before init can run.";
+}
+
+std::string build_original_engine_startup_json()
+{
+	char buffer[18000];
+	const std::string status_json = json_escape(original_engine_startup_status());
+	const std::string message_json = json_escape(original_engine_startup_message());
+	const std::string missing_files_json =
+		build_missing_original_engine_startup_files_json();
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"ok\":false,\"source\":\"GameEngine/Common/GameEngine.cpp::init\","
+		"\"initAttempted\":false,\"status\":\"%s\",\"message\":\"%s\","
+		"\"startupAssetsReady\":%s,\"dataPreflightReady\":%s,"
+		"\"startupFiles\":{\"ready\":%s,\"missing\":%s,"
+		"\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
+		"\"defaultWaterIni\":%s,\"waterIni\":%s,"
+		"\"defaultWeatherIni\":%s,\"weatherIni\":%s,"
+		"\"generalsCsf\":%s,\"defaultScienceIni\":%s,\"scienceIni\":%s,"
+		"\"defaultMultiplayerIni\":%s,\"multiplayerIni\":%s,"
+		"\"defaultTerrainIni\":%s,\"terrainIni\":%s,"
+		"\"defaultRoadsIni\":%s,\"roadsIni\":%s,"
+		"\"rankIni\":%s,\"defaultPlayerTemplateIni\":%s,"
+		"\"playerTemplateIni\":%s,\"defaultFXListIni\":%s,\"fxListIni\":%s,"
+		"\"weaponIni\":%s,\"defaultObjectCreationListIni\":%s,"
+		"\"objectCreationListIni\":%s,\"locomotorIni\":%s,"
+		"\"defaultSpecialPowerIni\":%s,\"specialPowerIni\":%s,"
+		"\"damageFXIni\":%s,\"armorIni\":%s,\"defaultObjectIni\":%s,"
+		"\"objectIniFiles\":%zu,\"defaultUpgradeIni\":%s,\"upgradeIni\":%s,"
+		"\"defaultAIDataIni\":%s,\"defaultCrateIni\":%s,\"crateIni\":%s,"
+		"\"englishCommandMapIni\":%s,\"commandMapIni\":%s,"
+		"\"mapCacheIni\":%s,\"defaultVideoIni\":%s,\"videoIni\":%s},"
+		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":false,"
+		"\"browserGameEngine\":false,\"localFileSystem\":false,"
+		"\"archiveFileSystem\":false,\"gameLogic\":false,"
+		"\"gameClient\":false,\"moduleFactory\":false,"
+		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
+		"\"webBrowser\":false,\"particleSystemManager\":false,"
+		"\"audioManager\":false,\"display\":false,\"input\":false}}",
+		status_json.c_str(),
+		message_json.c_str(),
+		startup_assets_ready() ? "true" : "false",
+		startup_data_probes_ready() ? "true" : "false",
+		original_engine_startup_files_ready() ? "true" : "false",
+		missing_files_json.c_str(),
+		g_archive_probe.has_default_game_data_ini ? "true" : "false",
+		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_default_water_ini ? "true" : "false",
+		g_archive_probe.has_water_ini ? "true" : "false",
+		g_archive_probe.has_default_weather_ini ? "true" : "false",
+		g_archive_probe.has_weather_ini ? "true" : "false",
+		g_archive_probe.has_generals_csf ? "true" : "false",
+		g_archive_probe.has_default_science_ini ? "true" : "false",
+		g_archive_probe.has_science_ini ? "true" : "false",
+		g_archive_probe.has_default_multiplayer_ini ? "true" : "false",
+		g_archive_probe.has_multiplayer_ini ? "true" : "false",
+		g_archive_probe.has_default_terrain_ini ? "true" : "false",
+		g_archive_probe.has_terrain_ini ? "true" : "false",
+		g_archive_probe.has_default_roads_ini ? "true" : "false",
+		g_archive_probe.has_roads_ini ? "true" : "false",
+		g_archive_probe.has_rank_ini ? "true" : "false",
+		g_archive_probe.has_default_player_template_ini ? "true" : "false",
+		g_archive_probe.has_player_template_ini ? "true" : "false",
+		g_archive_probe.has_default_fx_list_ini ? "true" : "false",
+		g_archive_probe.has_fx_list_ini ? "true" : "false",
+		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_probe.has_default_object_creation_list_ini ? "true" : "false",
+		g_archive_probe.has_object_creation_list_ini ? "true" : "false",
+		g_archive_probe.has_locomotor_ini ? "true" : "false",
+		g_archive_probe.has_default_special_power_ini ? "true" : "false",
+		g_archive_probe.has_special_power_ini ? "true" : "false",
+		g_archive_probe.has_damage_fx_ini ? "true" : "false",
+		g_archive_probe.has_armor_ini ? "true" : "false",
+		g_archive_probe.has_default_object_ini ? "true" : "false",
+		g_archive_probe.object_ini_file_count,
+		g_archive_probe.has_default_upgrade_ini ? "true" : "false",
+		g_archive_probe.has_upgrade_ini ? "true" : "false",
+		g_archive_probe.has_default_ai_data_ini ? "true" : "false",
+		g_archive_probe.has_default_crate_ini ? "true" : "false",
+		g_archive_probe.has_crate_ini ? "true" : "false",
+		g_archive_probe.has_english_command_map_ini ? "true" : "false",
+		g_archive_probe.has_command_map_ini ? "true" : "false",
+		g_archive_probe.has_map_cache_ini ? "true" : "false",
+		g_archive_probe.has_default_video_ini ? "true" : "false",
+		g_archive_probe.has_video_ini ? "true" : "false");
 
 	return buffer;
 }
@@ -2107,6 +2339,7 @@ const char *write_state_json()
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
 	const std::string data_summary_json = build_data_summary_json();
+	const std::string original_engine_startup_json = build_original_engine_startup_json();
 	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
 	const std::string global_data_user_data_path_json =
 		json_escape(g_global_data_probe.user_data_path);
@@ -2131,17 +2364,27 @@ const char *write_state_json()
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
-		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,\"fxListIni\":%s,"
+		"\"inizh\":{\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
+		"\"armorIni\":%s,\"damageFXIni\":%s,"
+		"\"defaultFXListIni\":%s,\"fxListIni\":%s,"
 		"\"defaultObjectCreationListIni\":%s,\"objectCreationListIni\":%s,"
 		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"locomotorIni\":%s,"
 		"\"commandButtonIni\":%s,"
 		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
 		"\"defaultControlBarSchemeIni\":%s,\"crateIni\":%s,"
-		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
-		"\"multiplayerIni\":%s,"
-		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
+		"\"defaultCrateIni\":%s,\"rankIni\":%s,"
+		"\"defaultPlayerTemplateIni\":%s,\"playerTemplateIni\":%s,"
+		"\"defaultScienceIni\":%s,\"scienceIni\":%s,"
+		"\"defaultSpecialPowerIni\":%s,\"specialPowerIni\":%s,"
+		"\"defaultMultiplayerIni\":%s,\"multiplayerIni\":%s,"
+		"\"defaultTerrainIni\":%s,\"terrainIni\":%s,"
+		"\"defaultRoadsIni\":%s,\"roadsIni\":%s,"
+		"\"defaultUpgradeIni\":%s,\"upgradeIni\":%s,"
+		"\"defaultObjectIni\":%s,\"objectIniFiles\":%zu,"
 		"\"drawGroupInfoIni\":%s,"
-		"\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"defaultWaterIni\":%s,\"waterIni\":%s,"
+		"\"defaultWeatherIni\":%s,\"weatherIni\":%s,"
+		"\"commandMapIni\":%s,\"englishCommandMapIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s,\"particleSystemIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
@@ -2334,6 +2577,7 @@ const char *write_state_json()
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"dataSummary\":%s,"
+		"\"originalEngineStartup\":%s,"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
@@ -2384,8 +2628,11 @@ const char *write_state_json()
 		archive_path_json.c_str(),
 		g_archive_probe.indexed_file_count,
 		g_archive_probe.sample_bytes,
+		g_archive_probe.has_default_game_data_ini ? "true" : "false",
+		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
+		g_archive_probe.has_default_fx_list_ini ? "true" : "false",
 		g_archive_probe.has_fx_list_ini ? "true" : "false",
 		g_archive_probe.has_default_object_creation_list_ini ? "true" : "false",
 		g_archive_probe.has_object_creation_list_ini ? "true" : "false",
@@ -2397,17 +2644,31 @@ const char *write_state_json()
 		g_archive_probe.has_control_bar_scheme_ini ? "true" : "false",
 		g_archive_probe.has_default_control_bar_scheme_ini ? "true" : "false",
 		g_archive_probe.has_crate_ini ? "true" : "false",
+		g_archive_probe.has_default_crate_ini ? "true" : "false",
+		g_archive_probe.has_rank_ini ? "true" : "false",
+		g_archive_probe.has_default_player_template_ini ? "true" : "false",
 		g_archive_probe.has_player_template_ini ? "true" : "false",
-		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_default_science_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
+		g_archive_probe.has_default_special_power_ini ? "true" : "false",
 		g_archive_probe.has_special_power_ini ? "true" : "false",
+		g_archive_probe.has_default_multiplayer_ini ? "true" : "false",
 		g_archive_probe.has_multiplayer_ini ? "true" : "false",
+		g_archive_probe.has_default_terrain_ini ? "true" : "false",
 		g_archive_probe.has_terrain_ini ? "true" : "false",
+		g_archive_probe.has_default_roads_ini ? "true" : "false",
 		g_archive_probe.has_roads_ini ? "true" : "false",
+		g_archive_probe.has_default_upgrade_ini ? "true" : "false",
 		g_archive_probe.has_upgrade_ini ? "true" : "false",
+		g_archive_probe.has_default_object_ini ? "true" : "false",
+		g_archive_probe.object_ini_file_count,
 		g_archive_probe.has_draw_group_info_ini ? "true" : "false",
+		g_archive_probe.has_default_water_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
+		g_archive_probe.has_default_weather_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
+		g_archive_probe.has_command_map_ini ? "true" : "false",
+		g_archive_probe.has_english_command_map_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
 		g_archive_probe.has_default_video_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
@@ -2820,6 +3081,7 @@ const char *write_state_json()
 		startup_game_text_ready() ? "true" : "false",
 		startup_map_cache_ready() ? "true" : "false",
 		data_summary_json.c_str(),
+		original_engine_startup_json.c_str(),
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,

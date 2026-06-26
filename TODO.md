@@ -1716,6 +1716,10 @@ shares structure and follows behind.
       PlayerTemplate/Multiplayer/Terrain/TerrainRoads/GameData/Water/Weather/
       Video/GameText/MapCache probes pass. This is bootstrap preflight only;
       full engine-init missing-asset handling remains open.
+- [x] Expose a harness-verified `originalEngineStartup` readiness state that
+      distinguishes linked original code from runnable original startup, reports
+      missing `GameEngine.cpp` startup files, and keeps browser device factory
+      readiness explicit instead of invoking `GameEngine::init()` with stubs.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
@@ -1912,6 +1916,17 @@ shares structure and follows behind.
       alternate shipped filename, or add the correct browser archive mapping,
       because the current extracted Zero Hour runtime BIG/CAB inventory does
       not contain that path.
+- [ ] Resolve the remaining original `GameEngine.cpp` default/startup INI
+      dependencies now reported by `originalEngineStartup`: the current runtime
+      BIG set also lacks `Data\INI\Default\GameData.ini`,
+      `Data\INI\Default\Water.ini`, `Data\INI\Default\Science.ini`,
+      `Data\INI\Default\Multiplayer.ini`, `Data\INI\Default\Terrain.ini`,
+      `Data\INI\Default\Roads.ini`, `Data\INI\Default\PlayerTemplate.ini`,
+      `Data\INI\Default\FXList.ini`,
+      `Data\INI\Default\ObjectCreationList.ini`,
+      `Data\INI\Default\SpecialPower.ini`,
+      `Data\INI\Default\Upgrade.ini`, `Data\INI\Default\Crate.ini`,
+      `Data\INI\CommandMap.ini`, and `Data\INI\Default\Video.ini`.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

@@ -1269,6 +1269,98 @@ function assertDataSummary(state, context, expectedStartupReady) {
   }
 }
 
+function assertOriginalEngineStartup(state, context, expectedStatus, expectedStartupAssetsReady) {
+  const startup = state.originalEngineStartup;
+  if (!startup
+      || startup.ok !== false
+      || startup.initAttempted !== false
+      || startup.source !== "GameEngine/Common/GameEngine.cpp::init"
+      || startup.status !== expectedStatus
+      || startup.startupAssetsReady !== expectedStartupAssetsReady) {
+    throw new Error(`${context} original engine startup header mismatch: ${JSON.stringify(startup)}`);
+  }
+
+  if (startup.browserDeviceLayer?.ready !== false
+      || startup.browserDeviceLayer?.createGameEngine !== false
+      || startup.browserDeviceLayer?.browserGameEngine !== false
+      || startup.browserDeviceLayer?.archiveFileSystem !== false
+      || startup.browserDeviceLayer?.gameClient !== false
+      || startup.browserDeviceLayer?.audioManager !== false
+      || startup.browserDeviceLayer?.display !== false
+      || startup.browserDeviceLayer?.input !== false) {
+    throw new Error(`${context} should report browser device layer as not runtime-ready: ${JSON.stringify(startup.browserDeviceLayer)}`);
+  }
+}
+
+function assertOriginalEngineStartupMissingFiles(state, context) {
+  assertOriginalEngineStartup(state, context, "missing_startup_files", true);
+  const files = state.originalEngineStartup.startupFiles;
+  const missing = new Set(files?.missing ?? []);
+  const expectedMissing = [
+    "Data\\INI\\Default\\GameData.ini",
+    "Data\\INI\\Default\\Water.ini",
+    "Data\\INI\\Default\\Science.ini",
+    "Data\\INI\\Default\\Multiplayer.ini",
+    "Data\\INI\\Default\\Terrain.ini",
+    "Data\\INI\\Default\\Roads.ini",
+    "Data\\INI\\Rank.ini",
+    "Data\\INI\\Default\\PlayerTemplate.ini",
+    "Data\\INI\\Default\\FXList.ini",
+    "Data\\INI\\Default\\ObjectCreationList.ini",
+    "Data\\INI\\Default\\SpecialPower.ini",
+    "Data\\INI\\Default\\Upgrade.ini",
+    "Data\\INI\\Default\\Crate.ini",
+    "Data\\INI\\CommandMap.ini",
+    "Data\\INI\\Default\\Video.ini",
+  ];
+
+  if (files?.ready !== false
+      || files.defaultGameDataIni !== false
+      || files.defaultWaterIni !== false
+      || files.defaultWeatherIni !== true
+      || files.defaultScienceIni !== false
+      || files.defaultMultiplayerIni !== false
+      || files.defaultTerrainIni !== false
+      || files.defaultRoadsIni !== false
+      || files.rankIni !== false
+      || files.defaultPlayerTemplateIni !== false
+      || files.defaultFXListIni !== false
+      || files.defaultObjectCreationListIni !== false
+      || files.defaultSpecialPowerIni !== false
+      || files.defaultUpgradeIni !== false
+      || files.defaultCrateIni !== false
+      || files.commandMapIni !== false
+      || files.englishCommandMapIni !== true
+      || files.defaultVideoIni !== false
+      || files.gameDataIni !== true
+      || files.waterIni !== true
+      || files.weatherIni !== true
+      || files.scienceIni !== true
+      || files.multiplayerIni !== true
+      || files.terrainIni !== true
+      || files.roadsIni !== true
+      || files.playerTemplateIni !== true
+      || files.fxListIni !== true
+      || files.objectCreationListIni !== true
+      || files.specialPowerIni !== true
+      || files.upgradeIni !== true
+      || files.crateIni !== true
+      || files.videoIni !== true
+      || !Number.isInteger(files.objectIniFiles)
+      || files.objectIniFiles !== 43) {
+    throw new Error(`${context} startup file readiness mismatch: ${JSON.stringify(files)}`);
+  }
+
+  if (missing.size !== expectedMissing.length) {
+    throw new Error(`${context} missing startup path count mismatch: ${JSON.stringify(files?.missing)}`);
+  }
+  for (const path of expectedMissing) {
+    if (!missing.has(path)) {
+      throw new Error(`${context} missing startup path not reported: ${path} in ${JSON.stringify(files?.missing)}`);
+    }
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -1383,6 +1475,7 @@ try {
   assertVideoProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
   assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
+  assertOriginalEngineStartup(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
@@ -1456,6 +1549,7 @@ try {
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
   assertDataSummary(bootResult.state, "runtime archive boot", true);
+  assertOriginalEngineStartupMissingFiles(bootResult.state, "runtime archive boot");
 
   console.log(JSON.stringify({
     ok: true,
@@ -1469,6 +1563,7 @@ try {
     bootArchiveMount,
     startupAssets: bootResult.state.startupAssets,
     dataSummary: bootResult.state.dataSummary,
+    originalEngineStartup: bootResult.state.originalEngineStartup,
     bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
