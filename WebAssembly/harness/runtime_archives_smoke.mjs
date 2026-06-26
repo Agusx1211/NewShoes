@@ -113,6 +113,15 @@ try {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
   }
 
+  const archiveMount = mountResult.state.archiveMount;
+  if (!archiveMount?.registered
+      || archiveMount.directory !== "/assets/runtime/"
+      || archiveMount.fileMask !== "*.big"
+      || archiveMount.archiveCount !== runtimeArchives.length
+      || archiveMount.totalBytes !== archiveSet.totalBytes) {
+    throw new Error(`wasm archive mount state mismatch: ${JSON.stringify(archiveMount)}`);
+  }
+
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
@@ -121,6 +130,7 @@ try {
     archiveCount: archiveSet.archiveCount,
     totalBytes: archiveSet.totalBytes,
     aggregateProbe: assetProbe,
+    archiveMount,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
   }, null, 2));

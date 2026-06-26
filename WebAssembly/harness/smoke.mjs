@@ -102,6 +102,9 @@ try {
   if (expectWasm && bootResult.state.originalCoreProbe?.logicSeedCRC !== 2826459604) {
     throw new Error(`Original RandomValue seed CRC mismatch: ${JSON.stringify(bootResult.state.originalCoreProbe)}`);
   }
+  if (expectWasm && bootResult.state.archiveMount?.registered !== false) {
+    throw new Error(`Archive set should not be registered before asset mount: ${JSON.stringify(bootResult.state.archiveMount)}`);
+  }
   if (expectWasm) {
     assertWasmTiming(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");

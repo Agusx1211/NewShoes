@@ -38,6 +38,7 @@ const harnessState = {
   originalEngineLinked: false,
   originalCoreProbe: null,
   assetProbe: null,
+  archiveMount: null,
   mountedArchives: [],
   logs: [],
 };
@@ -166,6 +167,7 @@ function applyModuleState(moduleState) {
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
+  harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
 }
 
 async function loadWasmModule() {
@@ -184,6 +186,11 @@ async function loadWasmModule() {
       startMainLoop: module.cwrap("cnc_port_start_main_loop", "string", []),
       stopMainLoop: module.cwrap("cnc_port_stop_main_loop", "string", []),
       probeArchive: module.cwrap("cnc_port_probe_archive", "string", ["string"]),
+      registerArchiveSet: module.cwrap(
+        "cnc_port_register_archive_set",
+        "string",
+        ["string", "string", "number", "number"],
+      ),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
     };
@@ -231,6 +238,7 @@ function snapshotState() {
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     assetProbe: harnessState.assetProbe,
+    archiveMount: harnessState.archiveMount,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
@@ -339,6 +347,19 @@ function probeArchive(wasmModule, archivePath) {
   return harnessState.assetProbe;
 }
 
+function registerArchiveSet(wasmModule, archiveSet) {
+  const directory = archiveSet.path.endsWith("/") ? archiveSet.path : `${archiveSet.path}/`;
+  const fileMask = archiveSet.probePath.slice(archiveSet.probePath.lastIndexOf("/") + 1) || "*.big";
+  applyModuleState(parseModuleState(wasmModule.registerArchiveSet(
+    directory,
+    fileMask,
+    archiveSet.archiveCount,
+    archiveSet.totalBytes,
+  )));
+  harnessState.wasm = "loaded";
+  return harnessState.archiveMount;
+}
+
 function rememberMountedArchives(archives) {
   const byPath = new Map(harnessState.mountedArchives.map((archive) => [archive.path, archive]));
   for (const archive of archives) {
@@ -435,6 +456,17 @@ async function mountArchives(payload = {}) {
   const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
   const ok = Boolean(aggregateProbe?.ok) && allArchiveBytesMatch && allArchiveProbesOk;
   const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+  const archiveSet = {
+    path: baseDirectory,
+    probePath,
+    archiveCount: archives.length,
+    totalBytes,
+    archives,
+    probes: archiveProbes,
+  };
+  if (ok) {
+    registerArchiveSet(moduleResult.wasmModule, archiveSet);
+  }
 
   recordLog("archive set mounted", {
     path: baseDirectory,
@@ -447,14 +479,7 @@ async function mountArchives(payload = {}) {
     ok,
     command: "mountArchives",
     state: snapshotState(),
-    archiveSet: {
-      path: baseDirectory,
-      probePath,
-      archiveCount: archives.length,
-      totalBytes,
-      archives,
-      probes: archiveProbes,
-    },
+    archiveSet,
   };
 }
 

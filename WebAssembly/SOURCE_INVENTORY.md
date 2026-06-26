@@ -116,16 +116,18 @@ The wasm CMake skeleton currently builds:
   `emscripten_get_now()` timing probe; the callback and timing probe are the
   browser scheduling surface that the real engine tick and final timing layer
   still need to replace. The archive probe proves fetched MEMFS archive
-  availability only; original engine startup still needs to consume the mounted
-  runtime archive set.
+  availability and the archive-set registration records the verified aggregate
+  archive directory/mask in C++ bootstrap state; original engine startup still
+  needs to consume the mounted runtime archive set.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, captures Emscripten module stdout/stderr into the
   harness log, fetches local real-asset BIG archives into the `cnc-port` MEMFS
-  through `mountArchive` / `mountArchives`, and exposes the graphics/asset
-  state plus mounted archive manifests through RPC snapshots. This is the
-  browser canvas/GL/log/asset bridge surface only; original W3D display,
-  WW3D rendering, engine archive consumption, and
+  through `mountArchive` / `mountArchives`, registers verified aggregate archive
+  sets with the wasm bootstrap, and exposes the graphics/asset state plus
+  mounted archive manifests through RPC snapshots. This is the browser
+  canvas/GL/log/asset bridge surface only; original W3D display, WW3D rendering,
+  engine archive consumption, and
   `DEBUG_LOG`/assert routing still need to bind to it before those runtime
   paths are complete.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
@@ -648,7 +650,9 @@ The wasm CMake skeleton currently builds:
   extracted assets, boots the main `cnc-port` harness, fetches the inventoried
   runtime BIG archives into one Emscripten MEMFS directory, and verifies the
   original `Win32BIGFileSystem` can index and read a sample file from every
-  archive plus the aggregate `*.big` archive tree.
+  archive plus the aggregate `*.big` archive tree. It also asserts the wasm C++
+  bootstrap has registered the verified archive directory, `*.big` mask, archive
+  count, and total byte count for later original engine startup.
 
 ## Next Compile Order
 

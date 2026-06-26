@@ -31,6 +31,17 @@ UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
 std::string g_state_json;
 
+struct ArchiveMountState
+{
+	bool registered = false;
+	std::string directory;
+	std::string file_mask;
+	int archive_count = 0;
+	double total_bytes = 0.0;
+};
+
+ArchiveMountState g_archive_mount;
+
 double browser_now_ms()
 {
 #ifdef __EMSCRIPTEN__
@@ -130,8 +141,10 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[1600];
+	char buffer[2200];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
+	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
+	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"booted\":%s,\"frame\":%u,\"module\":\"wasm-port-bootstrap\","
 		"\"mainLoop\":{\"running\":%s,\"fps\":%d,\"ticks\":%u},"
@@ -141,6 +154,8 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,\"weaponIni\":%s}},"
+		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
+		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s}}",
@@ -162,6 +177,11 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_mount.registered ? "true" : "false",
+		archive_mount_directory_json.c_str(),
+		archive_mount_file_mask_json.c_str(),
+		g_archive_mount.archive_count,
+		g_archive_mount.total_bytes,
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,
@@ -211,6 +231,25 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_archive(const char *archive_path
 		archive_path != nullptr ? archive_path : "",
 		g_archive_probe.ok ? 1 : 0,
 		g_archive_probe.indexed_file_count);
+	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
+	const char *archive_directory,
+	const char *archive_file_mask,
+	int archive_count,
+	double total_bytes)
+{
+	g_archive_mount.registered = true;
+	g_archive_mount.directory = archive_directory != nullptr ? archive_directory : "";
+	g_archive_mount.file_mask = archive_file_mask != nullptr ? archive_file_mask : "";
+	g_archive_mount.archive_count = archive_count < 0 ? 0 : archive_count;
+	g_archive_mount.total_bytes = total_bytes < 0.0 ? 0.0 : total_bytes;
+	std::printf("cnc-port: archive set directory=%s mask=%s count=%d bytes=%.0f\n",
+		g_archive_mount.directory.c_str(),
+		g_archive_mount.file_mask.c_str(),
+		g_archive_mount.archive_count,
+		g_archive_mount.total_bytes);
 	return write_state_json();
 }
 

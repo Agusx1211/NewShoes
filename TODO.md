@@ -1539,6 +1539,10 @@ shares structure and follows behind.
       `Win32BIGFileSystem`, and exposes the mounted archive manifest in harness
       state. This proves the browser can preload the current runtime archive
       set for later engine startup; the exact minimum boot set remains open.
+- [x] Register the verified runtime BIG aggregate (`directory + *.big`) in the
+      wasm bootstrap's C++ state via an exported `cnc-port` archive-set hook,
+      with Playwright coverage proving the engine-side state sees the mounted
+      archive directory, mask, count, and byte total.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

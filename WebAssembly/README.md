@@ -55,6 +55,8 @@ reader. The runtime-archives variant extracts the inventoried local BIG set,
 then boots the main `cnc-port` harness, fetches all runtime archives into one
 MEMFS directory with `window.CnCPort.rpc("mountArchives")`, and verifies every
 archive plus the aggregate `*.big` archive tree through the original BIG reader.
+The verified aggregate archive directory and `*.big` mask are also registered
+in the wasm bootstrap state for the later original engine startup path.
 
 ## Toolchain
 
@@ -94,7 +96,7 @@ The selected baseline flags are:
 - Debug assertions enabled for the bootstrap build.
 - Exported C symbols: `cnc_port_boot`, `cnc_port_frame`,
   `cnc_port_start_main_loop`, `cnc_port_stop_main_loop`,
-  `cnc_port_probe_archive`, `cnc_port_state`.
+  `cnc_port_probe_archive`, `cnc_port_register_archive_set`, `cnc_port_state`.
 
 Clean generated wasm files:
 
@@ -128,7 +130,9 @@ The same harness exposes `window.CnCPort.rpc("mountArchive", { url, name })` and
 `window.CnCPort.rpc("mountArchives", { path, archives })` for real-asset tests.
 These commands fetch user-supplied BIG archives, write them under `/assets/` in
 the wasm MEMFS, then ask `cnc-port` to verify the mounted archive or archive set
-with the original `Win32BIGFileSystem`.
+with the original `Win32BIGFileSystem`. After a verified archive-set mount,
+`cnc-port` records the aggregate archive directory, mask, count, and byte total
+in its C++ state under `archiveMount`.
 
 Run the wasm-backed smoke test:
 

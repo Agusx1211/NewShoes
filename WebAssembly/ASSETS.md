@@ -26,7 +26,8 @@ The initial development path is same-origin fetch from ignored local artifacts:
 3. The JS bridge preloads required archive bytes before engine startup.
    The current harness paths are `window.CnCPort.rpc("mountArchive", { url, name })`
    for one BIG and `window.CnCPort.rpc("mountArchives", { path, archives })`
-   for the runtime archive set.
+   for the runtime archive set. A verified archive-set mount is registered back
+   into the wasm bootstrap as the aggregate archive directory plus `*.big` mask.
 4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
 5. The original engine BIG/file/INI code reads the mounted bytes.
 
@@ -52,7 +53,8 @@ checks that every output has a nonempty `BIGF` archive header.
 After extraction, `npm run test:runtime-archives-browser` verifies the browser
 fetch/MEMFS delivery path by loading the full archive set through the main
 `cnc-port` Playwright harness and reading each archive plus the aggregate
-archive tree with the original `Win32BIGFileSystem`.
+archive tree with the original `Win32BIGFileSystem`. It also checks the C++
+bootstrap `archiveMount` state that the later original startup path will consume.
 
 | Archive | Source | Role |
 |---|---|---|
