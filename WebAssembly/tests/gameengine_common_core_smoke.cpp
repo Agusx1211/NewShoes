@@ -28,6 +28,7 @@
 #include "Common/List.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/ModelState.h"
+#include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/ObjectStatusTypes.h"
 #include "Common/PartitionSolver.h"
@@ -47,6 +48,7 @@
 #include "GameLogic/ArmorSet.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/LogicRandomValue.h"
+#include "GameNetwork/GameInfo.h"
 #include "Lib/Trig.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
@@ -55,8 +57,6 @@ SubsystemInterfaceList *TheSubsystemList = nullptr;
 GameLogic *TheGameLogic = nullptr;
 GlobalData *TheGlobalData = nullptr;
 GameTextInterface *TheGameText = nullptr;
-class AudioManager;
-AudioManager *TheAudio = nullptr;
 
 namespace {
 template<typename T>
@@ -1432,6 +1432,78 @@ bool exercise_terrain_types()
 		expect(road->getRestrictConstruction(), "TerrainType default restrict copy failed");
 }
 
+Money parse_money_line(char *line)
+{
+	INI ini;
+	Money money;
+	std::strtok(line, " \t\r\n=");
+	Money::parseMoneyAmount(&ini, nullptr, &money, nullptr);
+	return money;
+}
+
+bool exercise_multiplayer_settings_and_money()
+{
+	char default_line[] = "DefaultStartingMoney = 10000";
+	Money default_money = parse_money_line(default_line);
+
+	char alternate_line[] = "StartingMoneyChoice = 5000";
+	Money alternate_money = parse_money_line(alternate_line);
+
+	char default_copy_line[] = "DefaultStartingMoney = 10000";
+	Money default_copy = parse_money_line(default_copy_line);
+
+	MultiplayerSettings settings;
+	const bool defaults_ok =
+		expect(settings.getMaxBeaconsPerPlayer() == 3, "MultiplayerSettings beacon default failed") &&
+		expect(settings.isShroudInMultiplayer(), "MultiplayerSettings shroud default failed") &&
+		expect(settings.showRandomPlayerTemplate(), "MultiplayerSettings random template default failed") &&
+		expect(settings.showRandomStartPos(), "MultiplayerSettings random start default failed") &&
+		expect(settings.showRandomColor(), "MultiplayerSettings random color default failed") &&
+		expect(settings.getNumColors() == 0, "MultiplayerSettings initial color count failed") &&
+		expect(settings.getColor(0) == nullptr, "MultiplayerSettings missing color lookup failed") &&
+		expect(settings.getColor(PLAYERTEMPLATE_RANDOM) != nullptr,
+			"MultiplayerSettings random color definition missing") &&
+		expect(settings.getColor(PLAYERTEMPLATE_OBSERVER) != nullptr,
+			"MultiplayerSettings observer color definition missing");
+	if (!defaults_ok) {
+		return false;
+	}
+
+	MultiplayerColorDefinition *first_color = settings.newMultiplayerColorDefinition(AsciiString("USA"));
+	MultiplayerColorDefinition *second_color = settings.newMultiplayerColorDefinition(AsciiString("GLA"));
+	if (!expect(first_color != nullptr && second_color != nullptr,
+			"MultiplayerSettings color allocation failed")) {
+		return false;
+	}
+
+	RGBColor day = { 0.25f, 0.50f, 1.0f };
+	RGBColor night = { 0.10f, 0.20f, 0.30f };
+	first_color->setColor(day);
+	first_color->setNightColor(night);
+
+	settings.addStartingMoneyChoice(default_money, TRUE);
+	settings.addStartingMoneyChoice(alternate_money, FALSE);
+	const MultiplayerStartingMoneyList &starting_money = settings.getStartingMoneyList();
+
+	return expect(default_money.countMoney() == 10000, "Money parser default amount failed") &&
+		expect(alternate_money.countMoney() == 5000, "Money parser alternate amount failed") &&
+		expect(default_money.amountEqual(default_copy), "Money amountEqual failed") &&
+		expect(!default_money.amountEqual(alternate_money), "Money amountEqual mismatch failed") &&
+		expect(settings.getNumColors() == 2, "MultiplayerSettings color count failed") &&
+		expect(settings.getColor(0) == first_color, "MultiplayerSettings first color lookup failed") &&
+		expect(settings.getColor(1) == second_color, "MultiplayerSettings second color lookup failed") &&
+		expect(settings.getColor(2) == nullptr, "MultiplayerSettings out-of-range color lookup failed") &&
+		expect(first_color->getColor() == static_cast<Color>(0xff3f7fff),
+			"MultiplayerColorDefinition day color packing failed") &&
+		expect(first_color->getNightColor() == static_cast<Color>(0xff19334c),
+			"MultiplayerColorDefinition night color packing failed") &&
+		expect(starting_money.size() == 2, "MultiplayerSettings starting money list size failed") &&
+		expect(starting_money[0].countMoney() == 10000 && starting_money[1].countMoney() == 5000,
+			"MultiplayerSettings starting money choices failed") &&
+		expect(settings.getDefaultStartingMoney().countMoney() == 10000,
+			"MultiplayerSettings default starting money failed");
+}
+
 bool exercise_dict()
 {
 	const NameKeyType bool_key = static_cast<NameKeyType>(10);
@@ -1508,7 +1580,8 @@ int main()
 		exercise_list_and_circle() &&
 		exercise_bezier() &&
 		exercise_partition_solver() &&
-		exercise_terrain_types();
+		exercise_terrain_types() &&
+		exercise_multiplayer_settings_and_money();
 
 	shutdownMemoryManager();
 

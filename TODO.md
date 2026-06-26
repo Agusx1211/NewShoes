@@ -623,13 +623,19 @@ shares structure and follows behind.
       `Common/TerrainTypes.cpp` against the current `Common/INI` parse-table
       bridge, with wasm smoke coverage for terrain defaults, list insertion,
       and default-terrain copying.
+- [x] Link and smoke-test original `Common/MultiplayerSettings.cpp` and
+      `Common/RTS/Money.cpp` value behavior, including multiplayer defaults,
+      color allocation/packing, starting-money choices/defaults, money parsing,
+      and amount equality without invoking the deeper economy/audio side
+      effects.
 - [x] Compile original `Common/PerfTimer.cpp` into the wasm Common core after
       guarding its x86 precision-timer assembly behind the current dormant
       `NO_PERF_TIMERS` build and an Emscripten `QueryPerformanceCounter`
       fallback.
-- [ ] Link and smoke-test `MultiplayerSettings` and `Money` runtime behavior
-      after the deeper `Player`/`Thing`/`StealthUpdate` economy path can link
-      without target-local GameLogic singleton shims.
+- [ ] Link and smoke-test `Money` deposit/withdraw runtime side effects after
+      the deeper audio, `Player`/`Thing`, academy stats, and
+      `StealthUpdate` economy paths can link without target-local GameLogic
+      singleton shims.
 - [ ] Link and smoke-test original `PlayerList` behavior after real `Player`,
       `Team`, `TunnelTracker`, control-bar, and GameLogic player ownership
       dependencies replace the current compile-only surface.
