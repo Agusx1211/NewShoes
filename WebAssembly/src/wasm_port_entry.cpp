@@ -271,6 +271,7 @@ bool startup_boot_ini_present()
 {
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_damage_fx_ini &&
+		g_archive_probe.has_default_ai_data_ini &&
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_command_set_ini &&
 		g_archive_probe.has_control_bar_scheme_ini &&
@@ -317,6 +318,14 @@ bool startup_weapon_ready()
 		g_archive_probe.has_particle_system_ini &&
 		g_archive_probe.weapon_attempted &&
 		g_archive_probe.weapon_ok;
+}
+
+bool startup_ai_data_ready()
+{
+	return g_archive_probe.has_default_ai_data_ini &&
+		g_archive_probe.has_science_ini &&
+		g_archive_probe.ai_data_attempted &&
+		g_archive_probe.ai_data_ok;
 }
 
 bool startup_science_ready()
@@ -443,6 +452,7 @@ bool startup_assets_ready()
 		startup_armor_ready() &&
 		startup_damage_fx_ready() &&
 		startup_weapon_ready() &&
+		startup_ai_data_ready() &&
 		startup_science_ready() &&
 		startup_special_power_ready() &&
 		startup_player_template_ready() &&
@@ -484,6 +494,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_weapon_ready()) {
 		return "weapon_probe_failed";
+	}
+	if (!startup_ai_data_ready()) {
+		return "ai_data_probe_failed";
 	}
 	if (!startup_science_ready()) {
 		return "science_probe_failed";
@@ -564,6 +577,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_weapon_ready()) {
 		return "Runtime BIG archive set did not pass the Weapon.ini startup probe.";
+	}
+	if (!startup_ai_data_ready()) {
+		return "Runtime BIG archive set did not pass the AIData.ini startup probe.";
 	}
 	if (!startup_science_ready()) {
 		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
@@ -789,6 +805,126 @@ std::string build_weapon_probe_json()
 		tomahawk_fire_sound_json.c_str(),
 		g_archive_probe.weapon_tomahawk_projectile_exhaust_loaded ? "true" : "false",
 		g_archive_probe.weapon_tomahawk_heroic_projectile_exhaust_loaded ? "true" : "false");
+
+	return buffer;
+}
+
+std::string build_ai_data_probe_json()
+{
+	char buffer[7600];
+	const std::string source_json = json_escape(g_archive_probe.ai_data_source);
+	const std::string america_base_defense_json =
+		json_escape(g_archive_probe.ai_data_america_base_defense_structure);
+	const std::string america_skill_set1_first_science_json =
+		json_escape(g_archive_probe.ai_data_america_skill_set1_first_science);
+	const std::string gla_base_defense_json =
+		json_escape(g_archive_probe.ai_data_gla_base_defense_structure);
+	const std::string america_first_build_template_json =
+		json_escape(g_archive_probe.ai_data_america_first_build_template);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,\"scienceBytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"defaultFileExists\":%s,"
+		"\"overrideFileExists\":%s,\"scienceFileExists\":%s,"
+		"\"scienceStoreLoaded\":%s,\"aiLoaded\":%s,"
+		"\"scienceOriginalIniLoad\":%s,\"defaultOriginalIniLoad\":%s,"
+		"\"overrideOriginalIniLoad\":%s,\"parsedFields\":%zu,"
+		"\"timing\":{\"structureSeconds\":%.3f,\"teamSeconds\":%.3f,"
+		"\"forceIdleFrames\":%u,\"guardChaseUnitFrames\":%u,"
+		"\"guardEnemyScanFrames\":%u,\"guardEnemyReturnScanFrames\":%u},"
+		"\"resources\":{\"wealthy\":%d,\"poor\":%d,"
+		"\"teamResourcesToStart\":%.3f},"
+		"\"rates\":{\"structuresWealthy\":%.3f,\"teamsWealthy\":%.3f,"
+		"\"structuresPoor\":%.3f,\"teamsPoor\":%.3f},"
+		"\"guard\":{\"innerAI\":%.3f,\"outerAI\":%.3f,"
+		"\"innerHuman\":%.3f,\"outerHuman\":%.3f},"
+		"\"combat\":{\"attackPriorityDistanceModifier\":%.3f,"
+		"\"maxRecruitRadius\":%.3f,"
+		"\"skirmishBaseDefenseExtraDistance\":%.3f,"
+		"\"wallHeight\":%.3f,\"attackUsesLineOfSight\":%s,"
+		"\"attackIgnoreInsignificantBuildings\":%s,"
+		"\"enableRepulsors\":%s,\"aiCrushesInfantry\":%s,"
+		"\"supplyCenterSafeRadius\":%.3f,\"rebuildDelaySeconds\":%d},"
+		"\"groupPathing\":{\"minInfantryForGroup\":%d,"
+		"\"minVehiclesForGroup\":%d,\"minDistanceForGroup\":%.3f,"
+		"\"distanceRequiresGroup\":%.3f},"
+		"\"counts\":{\"sideInfo\":%zu,\"buildLists\":%zu},"
+		"\"america\":{\"found\":%s,\"resourceGatherersEasy\":%d,"
+		"\"resourceGatherersNormal\":%d,\"resourceGatherersHard\":%d,"
+		"\"baseDefenseStructure\":\"%s\",\"skillSet1Count\":%zu,"
+		"\"skillSet1FirstScience\":\"%s\"},"
+		"\"gla\":{\"found\":%s,\"resourceGatherersEasy\":%d,"
+		"\"baseDefenseStructure\":\"%s\"},"
+		"\"americaBuildList\":{\"found\":%s,\"structures\":%zu,"
+		"\"firstTemplate\":\"%s\",\"firstX\":%.3f,\"firstY\":%.3f,"
+		"\"firstAngle\":%.5f,\"firstAutomaticallyBuild\":%s}}",
+		g_archive_probe.ai_data_attempted ? "true" : "false",
+		g_archive_probe.ai_data_ok ? "true" : "false",
+		g_archive_probe.ai_data_bytes,
+		g_archive_probe.ai_data_science_bytes,
+		source_json.c_str(),
+		g_archive_probe.ai_data_loaded_archives ? "true" : "false",
+		g_archive_probe.ai_data_default_file_exists ? "true" : "false",
+		g_archive_probe.ai_data_override_file_exists ? "true" : "false",
+		g_archive_probe.ai_data_science_file_exists ? "true" : "false",
+		g_archive_probe.ai_data_science_store_loaded ? "true" : "false",
+		g_archive_probe.ai_data_ai_loaded ? "true" : "false",
+		g_archive_probe.ai_data_science_original_ini_load ? "true" : "false",
+		g_archive_probe.ai_data_default_original_ini_load ? "true" : "false",
+		g_archive_probe.ai_data_override_original_ini_load ? "true" : "false",
+		g_archive_probe.ai_data_parsed_fields,
+		g_archive_probe.ai_data_structure_seconds,
+		g_archive_probe.ai_data_team_seconds,
+		g_archive_probe.ai_data_force_idle_frames,
+		g_archive_probe.ai_data_guard_chase_unit_frames,
+		g_archive_probe.ai_data_guard_enemy_scan_frames,
+		g_archive_probe.ai_data_guard_enemy_return_scan_frames,
+		g_archive_probe.ai_data_resources_wealthy,
+		g_archive_probe.ai_data_resources_poor,
+		g_archive_probe.ai_data_team_resources_to_start,
+		g_archive_probe.ai_data_structures_wealthy_rate,
+		g_archive_probe.ai_data_teams_wealthy_rate,
+		g_archive_probe.ai_data_structures_poor_rate,
+		g_archive_probe.ai_data_teams_poor_rate,
+		g_archive_probe.ai_data_guard_inner_modifier_ai,
+		g_archive_probe.ai_data_guard_outer_modifier_ai,
+		g_archive_probe.ai_data_guard_inner_modifier_human,
+		g_archive_probe.ai_data_guard_outer_modifier_human,
+		g_archive_probe.ai_data_attack_priority_distance_modifier,
+		g_archive_probe.ai_data_max_recruit_radius,
+		g_archive_probe.ai_data_skirmish_base_defense_extra_distance,
+		g_archive_probe.ai_data_wall_height,
+		g_archive_probe.ai_data_attack_uses_line_of_sight ? "true" : "false",
+		g_archive_probe.ai_data_attack_ignore_insignificant_buildings ?
+			"true" : "false",
+		g_archive_probe.ai_data_enable_repulsors ? "true" : "false",
+		g_archive_probe.ai_data_ai_crushes_infantry ? "true" : "false",
+		g_archive_probe.ai_data_supply_center_safe_radius,
+		g_archive_probe.ai_data_rebuild_delay_seconds,
+		g_archive_probe.ai_data_min_infantry_for_group,
+		g_archive_probe.ai_data_min_vehicles_for_group,
+		g_archive_probe.ai_data_min_distance_for_group,
+		g_archive_probe.ai_data_distance_requires_group,
+		g_archive_probe.ai_data_side_info_count,
+		g_archive_probe.ai_data_build_list_count,
+		g_archive_probe.ai_data_america_side_found ? "true" : "false",
+		g_archive_probe.ai_data_america_resource_gatherers_easy,
+		g_archive_probe.ai_data_america_resource_gatherers_normal,
+		g_archive_probe.ai_data_america_resource_gatherers_hard,
+		america_base_defense_json.c_str(),
+		g_archive_probe.ai_data_america_skill_set1_count,
+		america_skill_set1_first_science_json.c_str(),
+		g_archive_probe.ai_data_gla_side_found ? "true" : "false",
+		g_archive_probe.ai_data_gla_resource_gatherers_easy,
+		gla_base_defense_json.c_str(),
+		g_archive_probe.ai_data_america_build_list_found ? "true" : "false",
+		g_archive_probe.ai_data_america_build_list_structure_count,
+		america_first_build_template_json.c_str(),
+		g_archive_probe.ai_data_america_first_build_x,
+		g_archive_probe.ai_data_america_first_build_y,
+		g_archive_probe.ai_data_america_first_build_angle,
+		g_archive_probe.ai_data_america_first_build_automatically_build ?
+			"true" : "false");
 
 	return buffer;
 }
@@ -1426,11 +1562,12 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[126000];
+	char buffer[256000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
 	const std::string weapon_probe_json = build_weapon_probe_json();
+	const std::string ai_data_probe_json = build_ai_data_probe_json();
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
@@ -1596,7 +1733,8 @@ const char *write_state_json()
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
-		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,\"commandButtonIni\":%s,"
+		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,"
+		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"commandButtonIni\":%s,"
 		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
 		"\"defaultControlBarSchemeIni\":%s,\"crateIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
@@ -1618,6 +1756,7 @@ const char *write_state_json()
 		"\"tankMicrowaveDamage\":%.3f},"
 		"\"damageFX\":%s,"
 		"\"weapon\":%s,"
+		"\"aiData\":%s,"
 		"\"science\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
@@ -1782,7 +1921,8 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"science\":%s,"
-		"\"weapon\":%s,\"particleSystem\":%s,\"upgrade\":%s,\"commandButton\":%s,"
+		"\"weapon\":%s,\"particleSystem\":%s,\"aiData\":%s,"
+		"\"upgrade\":%s,\"commandButton\":%s,"
 		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
@@ -1840,6 +1980,8 @@ const char *write_state_json()
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
+		g_archive_probe.has_default_ai_data_ini ? "true" : "false",
+		g_archive_probe.has_ai_data_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_command_set_ini ? "true" : "false",
 		g_archive_probe.has_control_bar_scheme_ini ? "true" : "false",
@@ -1883,6 +2025,7 @@ const char *write_state_json()
 		g_archive_probe.armor_tank_microwave_damage,
 		damage_fx_probe_json.c_str(),
 		weapon_probe_json.c_str(),
+		ai_data_probe_json.c_str(),
 		g_archive_probe.science_attempted ? "true" : "false",
 		g_archive_probe.science_ok ? "true" : "false",
 		g_archive_probe.science_bytes,
@@ -2243,6 +2386,7 @@ const char *write_state_json()
 		startup_science_ready() ? "true" : "false",
 		startup_weapon_ready() ? "true" : "false",
 		g_archive_probe.has_particle_system_ini ? "true" : "false",
+		startup_ai_data_ready() ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
 		startup_command_set_ready() ? "true" : "false",

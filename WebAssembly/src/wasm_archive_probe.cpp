@@ -29,6 +29,8 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
+constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
+constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -229,6 +231,88 @@ void copy_weapon_probe(const RealWeaponIniProbeResult &weapon, ArchiveProbeResul
 		weapon.tomahawk_projectile_exhaust_loaded;
 	result.weapon_tomahawk_heroic_projectile_exhaust_loaded =
 		weapon.tomahawk_heroic_projectile_exhaust_loaded;
+}
+
+void copy_ai_data_probe(const RealAIDataIniProbeResult &ai_data, ArchiveProbeResult &result)
+{
+	result.ai_data_attempted = ai_data.attempted;
+	result.ai_data_ok = ai_data.ok;
+	result.ai_data_loaded_archives = ai_data.loaded_archives;
+	result.ai_data_default_file_exists = ai_data.default_file_exists;
+	result.ai_data_override_file_exists = ai_data.override_file_exists;
+	result.ai_data_science_file_exists = ai_data.science_file_exists;
+	result.ai_data_science_store_loaded = ai_data.science_store_loaded;
+	result.ai_data_ai_loaded = ai_data.ai_loaded;
+	result.ai_data_science_original_ini_load = ai_data.science_original_ini_load;
+	result.ai_data_default_original_ini_load = ai_data.default_original_ini_load;
+	result.ai_data_override_original_ini_load = ai_data.override_original_ini_load;
+	result.ai_data_bytes = ai_data.bytes;
+	result.ai_data_science_bytes = ai_data.science_bytes;
+	result.ai_data_parsed_fields = ai_data.parsed_fields;
+	result.ai_data_source = ai_data.source;
+	result.ai_data_structure_seconds = ai_data.structure_seconds;
+	result.ai_data_team_seconds = ai_data.team_seconds;
+	result.ai_data_resources_wealthy = ai_data.resources_wealthy;
+	result.ai_data_resources_poor = ai_data.resources_poor;
+	result.ai_data_force_idle_frames = ai_data.force_idle_frames;
+	result.ai_data_structures_wealthy_rate = ai_data.structures_wealthy_rate;
+	result.ai_data_teams_wealthy_rate = ai_data.teams_wealthy_rate;
+	result.ai_data_structures_poor_rate = ai_data.structures_poor_rate;
+	result.ai_data_teams_poor_rate = ai_data.teams_poor_rate;
+	result.ai_data_team_resources_to_start = ai_data.team_resources_to_start;
+	result.ai_data_guard_inner_modifier_ai = ai_data.guard_inner_modifier_ai;
+	result.ai_data_guard_outer_modifier_ai = ai_data.guard_outer_modifier_ai;
+	result.ai_data_guard_inner_modifier_human = ai_data.guard_inner_modifier_human;
+	result.ai_data_guard_outer_modifier_human = ai_data.guard_outer_modifier_human;
+	result.ai_data_guard_chase_unit_frames = ai_data.guard_chase_unit_frames;
+	result.ai_data_guard_enemy_scan_frames = ai_data.guard_enemy_scan_frames;
+	result.ai_data_guard_enemy_return_scan_frames =
+		ai_data.guard_enemy_return_scan_frames;
+	result.ai_data_attack_priority_distance_modifier =
+		ai_data.attack_priority_distance_modifier;
+	result.ai_data_max_recruit_radius = ai_data.max_recruit_radius;
+	result.ai_data_skirmish_base_defense_extra_distance =
+		ai_data.skirmish_base_defense_extra_distance;
+	result.ai_data_wall_height = ai_data.wall_height;
+	result.ai_data_attack_uses_line_of_sight = ai_data.attack_uses_line_of_sight;
+	result.ai_data_attack_ignore_insignificant_buildings =
+		ai_data.attack_ignore_insignificant_buildings;
+	result.ai_data_enable_repulsors = ai_data.enable_repulsors;
+	result.ai_data_min_infantry_for_group = ai_data.min_infantry_for_group;
+	result.ai_data_min_vehicles_for_group = ai_data.min_vehicles_for_group;
+	result.ai_data_min_distance_for_group = ai_data.min_distance_for_group;
+	result.ai_data_distance_requires_group = ai_data.distance_requires_group;
+	result.ai_data_supply_center_safe_radius = ai_data.supply_center_safe_radius;
+	result.ai_data_rebuild_delay_seconds = ai_data.rebuild_delay_seconds;
+	result.ai_data_ai_crushes_infantry = ai_data.ai_crushes_infantry;
+	result.ai_data_side_info_count = ai_data.side_info_count;
+	result.ai_data_build_list_count = ai_data.build_list_count;
+	result.ai_data_america_side_found = ai_data.america_side_found;
+	result.ai_data_america_resource_gatherers_easy =
+		ai_data.america_resource_gatherers_easy;
+	result.ai_data_america_resource_gatherers_normal =
+		ai_data.america_resource_gatherers_normal;
+	result.ai_data_america_resource_gatherers_hard =
+		ai_data.america_resource_gatherers_hard;
+	result.ai_data_america_base_defense_structure =
+		ai_data.america_base_defense_structure;
+	result.ai_data_america_skill_set1_count = ai_data.america_skill_set1_count;
+	result.ai_data_america_skill_set1_first_science =
+		ai_data.america_skill_set1_first_science;
+	result.ai_data_gla_side_found = ai_data.gla_side_found;
+	result.ai_data_gla_resource_gatherers_easy =
+		ai_data.gla_resource_gatherers_easy;
+	result.ai_data_gla_base_defense_structure = ai_data.gla_base_defense_structure;
+	result.ai_data_america_build_list_found = ai_data.america_build_list_found;
+	result.ai_data_america_build_list_structure_count =
+		ai_data.america_build_list_structure_count;
+	result.ai_data_america_first_build_template =
+		ai_data.america_first_build_template;
+	result.ai_data_america_first_build_x = ai_data.america_first_build_x;
+	result.ai_data_america_first_build_y = ai_data.america_first_build_y;
+	result.ai_data_america_first_build_angle = ai_data.america_first_build_angle;
+	result.ai_data_america_first_build_automatically_build =
+		ai_data.america_first_build_automatically_build;
 }
 
 void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeResult &result)
@@ -1075,10 +1159,13 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		TheArchiveFileSystem = &archive_file_system;
 		TheFileSystem = &file_system;
 
-		result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+			result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
 		if (result.loaded) {
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
+			result.has_default_ai_data_ini =
+				archive_file_system.doesFileExist(DEFAULT_AI_DATA_INI_PATH);
+			result.has_ai_data_ini = archive_file_system.doesFileExist(AI_DATA_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
 			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
 			result.has_control_bar_scheme_ini =
@@ -1142,6 +1229,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_weapon_ini && result.has_particle_system_ini) {
 		copy_weapon_probe(probe_original_weapon_ini_load(archive_path), result);
 		result.ok = result.ok && result.weapon_ok;
+	}
+	if (result.loaded && result.has_default_ai_data_ini && result.has_science_ini) {
+		copy_ai_data_probe(probe_original_ai_data_ini_load(archive_path), result);
+		result.ok = result.ok && result.ai_data_ok;
 	}
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);

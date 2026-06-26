@@ -626,9 +626,18 @@ shares structure and follows behind.
       `GameText.cpp` for shipped faction/template counts, sides, intrinsic
       sciences, start units/buildings, special-power shortcut metadata, and
       load/score assets exposed through the public original API.
+- [x] Link and smoke-test the original AIData INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `Common/INI/INIAiData.cpp`, `GameLogic/AI/AI.cpp`, and
+      `GameLogic/Map/SidesList.cpp` for shipped tactical timers, resource
+      thresholds, guard/combat/group-pathing metadata, side entries, and build
+      lists.
 - [ ] Link and smoke-test the original audio INI parser routes after the real
       `Common/INI.cpp` reader, audio manager, and full runtime singleton
       surface are available without target-local parser stubs.
+- [ ] Replace the focused AIData runtime's metadata-only AI/pathfinder
+      compatibility path with full original AI/pathfinder ownership once
+      `GameLogic/Pathfinder` can link into runtime startup.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
@@ -1758,6 +1767,14 @@ shares structure and follows behind.
       `startupAssets.ready` state. This is a focused weapon-template metadata
       preflight only; live projectile creation, firing, delayed damage, FX/OCL
       playback, and object/weapon-set ownership remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Default\AIData.ini` and optional `Data\INI\AIData.ini`
+      overrides from the mounted runtime BIG set through original
+      `Common/INI.cpp::load`, `INIAiData.cpp`, `GameLogic/AI/AI.cpp`, and
+      `GameLogic/Map/SidesList.cpp`, expose parsed shipped AIData metadata as
+      `assetProbe.aiData`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused AI metadata/build-list
+      preflight only; live AI updates and pathfinder ownership remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\Science.ini` from the mounted runtime BIG set through original
       `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, expose parsed

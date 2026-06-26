@@ -310,7 +310,11 @@ AI *TheAI = NULL;
 AI::AI( void )
 {
 	m_aiData = NEW TAiData;
+#ifdef WASM_REAL_INI_AI_METADATA_ONLY
+	m_pathfinder = NULL;
+#else
 	m_pathfinder = NEW Pathfinder;
+#endif
 	m_nextFormationID = NO_FORMATION_ID;
 }
 
@@ -327,6 +331,16 @@ void AI::init( void )
  */
 void AI::reset( void )
 {
+#ifdef WASM_REAL_INI_AI_METADATA_ONLY
+	while (m_aiData && m_aiData->m_next) {
+		TAiData *cur = m_aiData;
+		m_aiData = m_aiData->m_next;
+		delete cur;
+	}
+	m_groupList.clear();
+	m_nextGroupID = 0;
+	m_nextFormationID = NO_FORMATION_ID;
+#else
 	m_pathfinder->reset();
 	while (m_aiData && m_aiData->m_next) {
 		TAiData *cur = m_aiData;
@@ -348,6 +362,7 @@ void AI::reset( void )
 	m_nextGroupID = 0;
 	m_nextFormationID = NO_FORMATION_ID;
 	getNextFormationID(); // increment once past NO_FORMATION_ID.  jba.
+#endif
 }
 
 /**
@@ -355,6 +370,9 @@ void AI::reset( void )
  */
 void AI::update( void )
 {
+#ifdef WASM_REAL_INI_AI_METADATA_ONLY
+	return;
+#else
 	// Do pathfinding.
 	m_pathfinder->processPathfindQueue();
 
@@ -362,6 +380,7 @@ void AI::update( void )
 	{
 		ThePlayerList->UPDATE();
 	}
+#endif
 
 }
 
@@ -370,9 +389,11 @@ void AI::update( void )
  */
 AI::~AI()
 {
+#ifndef WASM_REAL_INI_AI_METADATA_ONLY
 	if (m_pathfinder) {
 		delete m_pathfinder;
 	}
+#endif
 	m_pathfinder = NULL;
 	while (m_aiData) 
 	{
@@ -1001,6 +1022,17 @@ void TAiData::loadPostProcess( void )
 void AI::crc( Xfer *xfer )
 {
 
+#ifdef WASM_REAL_INI_AI_METADATA_ONLY
+	AsciiString marker;
+	TAiData *aiData = m_aiData;
+	while (aiData)
+	{
+		marker = "MARKER:TAiData";
+		xfer->xferAsciiString(&marker);
+		xfer->xferSnapshot( aiData );
+		aiData = aiData->m_next;
+	}
+#else
 	xfer->xferSnapshot( m_pathfinder );
 	CRCGEN_LOG(("CRC after AI pathfinder for frame %d is 0x%8.8X\n", TheGameLogic->getFrame(), ((XferCRC *)xfer)->getCRC()));
 
@@ -1023,6 +1055,7 @@ void AI::crc( Xfer *xfer )
 			xfer->xferSnapshot( (*groupIt) );
 		}
 	}
+#endif
 
 }  // end crc
 
@@ -1042,5 +1075,3 @@ void AI::loadPostProcess( void )
 {
 
 }  // end loadPostProcess
-
-

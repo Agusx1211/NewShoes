@@ -2608,6 +2608,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   src/wasm_real_ini_probe.cpp
   src/wasm_command_button_runtime.cpp
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIAiData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandSet.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIControlBarScheme.cpp"
@@ -2645,6 +2646,8 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoPlayer.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Water.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Map/SidesList.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
@@ -2652,7 +2655,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
 )
 
 set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp" PROPERTIES
-  COMPILE_OPTIONS "-include;${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
+  COMPILE_OPTIONS "-include;${WWVEGAS_PORT_SHIM};-include;${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
@@ -2662,6 +2665,8 @@ target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
+  NO_DEBUG_CRC=1
+  WASM_REAL_INI_AI_METADATA_ONLY=1
   WASM_REAL_INI_WEAPON_METADATA_ONLY=1
 )
 
@@ -2975,7 +2980,7 @@ set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/
 )
 
 set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PROPERTIES
-  COMPILE_OPTIONS "-include${GAMEENGINE_INCLUDE_DIR}/Common/INI.h"
+  COMPILE_OPTIONS "-include${WWVEGAS_PORT_SHIM};-include${GAMEENGINE_INCLUDE_DIR}/Common/INI.h"
 )
 
 add_executable(cnc-port

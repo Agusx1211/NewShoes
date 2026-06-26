@@ -132,6 +132,76 @@ struct RealWeaponIniProbeResult
 	bool tomahawk_heroic_projectile_exhaust_loaded = false;
 };
 
+struct RealAIDataIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool default_file_exists = false;
+	bool override_file_exists = false;
+	bool science_file_exists = false;
+	bool science_store_loaded = false;
+	bool ai_loaded = false;
+	bool science_original_ini_load = false;
+	bool default_original_ini_load = false;
+	bool override_original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t science_bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	float structure_seconds = 0.0f;
+	float team_seconds = 0.0f;
+	int resources_wealthy = 0;
+	int resources_poor = 0;
+	unsigned int force_idle_frames = 0;
+	float structures_wealthy_rate = 0.0f;
+	float teams_wealthy_rate = 0.0f;
+	float structures_poor_rate = 0.0f;
+	float teams_poor_rate = 0.0f;
+	float team_resources_to_start = 0.0f;
+	float guard_inner_modifier_ai = 0.0f;
+	float guard_outer_modifier_ai = 0.0f;
+	float guard_inner_modifier_human = 0.0f;
+	float guard_outer_modifier_human = 0.0f;
+	unsigned int guard_chase_unit_frames = 0;
+	unsigned int guard_enemy_scan_frames = 0;
+	unsigned int guard_enemy_return_scan_frames = 0;
+	float attack_priority_distance_modifier = 0.0f;
+	float max_recruit_radius = 0.0f;
+	float skirmish_base_defense_extra_distance = 0.0f;
+	float wall_height = 0.0f;
+	bool attack_uses_line_of_sight = false;
+	bool attack_ignore_insignificant_buildings = false;
+	bool enable_repulsors = false;
+	int min_infantry_for_group = 0;
+	int min_vehicles_for_group = 0;
+	float min_distance_for_group = 0.0f;
+	float distance_requires_group = 0.0f;
+	float supply_center_safe_radius = 0.0f;
+	int rebuild_delay_seconds = 0;
+	bool ai_crushes_infantry = false;
+	std::size_t side_info_count = 0;
+	std::size_t build_list_count = 0;
+	bool america_side_found = false;
+	int america_resource_gatherers_easy = 0;
+	int america_resource_gatherers_normal = 0;
+	int america_resource_gatherers_hard = 0;
+	std::string america_base_defense_structure;
+	std::size_t america_skill_set1_count = 0;
+	std::string america_skill_set1_first_science;
+	bool gla_side_found = false;
+	int gla_resource_gatherers_easy = 0;
+	std::string gla_base_defense_structure;
+	bool america_build_list_found = false;
+	std::size_t america_build_list_structure_count = 0;
+	std::string america_first_build_template;
+	float america_first_build_x = 0.0f;
+	float america_first_build_y = 0.0f;
+	float america_first_build_angle = 0.0f;
+	bool america_first_build_automatically_build = false;
+};
+
 struct RealScienceIniProbeResult
 {
 	bool attempted = false;
@@ -820,6 +890,7 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
 RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path);
+RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);

@@ -184,6 +184,78 @@ function assertWeaponProbe(assetProbe, context) {
   }
 }
 
+function assertAIDataProbe(assetProbe, context) {
+  const aiData = assetProbe?.aiData;
+  if (!assetProbe?.inizh?.defaultAIDataIni
+      || !assetProbe.inizh.scienceIni
+      || !aiData?.attempted
+      || !aiData.ok
+      || aiData.source !== "GameEngine/Common/INI.cpp::load + INIAiData.cpp + AI.cpp + SidesList.cpp"
+      || !aiData.loadedArchives
+      || !aiData.defaultFileExists
+      || !aiData.scienceFileExists
+      || !aiData.scienceStoreLoaded
+      || !aiData.aiLoaded
+      || !aiData.scienceOriginalIniLoad
+      || !aiData.defaultOriginalIniLoad
+      || aiData.overrideOriginalIniLoad !== aiData.overrideFileExists
+      || aiData.bytes <= 20000
+      || aiData.scienceBytes <= 20000
+      || aiData.parsedFields !== 50
+      || Math.abs(aiData.timing?.structureSeconds - 0.0) > 0.001
+      || Math.abs(aiData.timing?.teamSeconds - 10.0) > 0.001
+      || aiData.timing?.forceIdleFrames !== 3
+      || aiData.timing?.guardChaseUnitFrames !== 300
+      || aiData.timing?.guardEnemyScanFrames !== 15
+      || aiData.timing?.guardEnemyReturnScanFrames !== 30
+      || aiData.resources?.wealthy !== 7000
+      || aiData.resources?.poor !== 2000
+      || Math.abs(aiData.resources?.teamResourcesToStart - 0.1) > 0.001
+      || Math.abs(aiData.rates?.structuresWealthy - 2.0) > 0.001
+      || Math.abs(aiData.rates?.teamsWealthy - 2.0) > 0.001
+      || Math.abs(aiData.rates?.structuresPoor - 0.6) > 0.001
+      || Math.abs(aiData.rates?.teamsPoor - 0.6) > 0.001
+      || Math.abs(aiData.guard?.innerAI - 1.1) > 0.001
+      || Math.abs(aiData.guard?.outerAI - 1.333) > 0.001
+      || Math.abs(aiData.guard?.innerHuman - 1.8) > 0.001
+      || Math.abs(aiData.guard?.outerHuman - 2.2) > 0.001
+      || Math.abs(aiData.combat?.attackPriorityDistanceModifier - 100.0) > 0.001
+      || Math.abs(aiData.combat?.maxRecruitRadius - 500.0) > 0.001
+      || Math.abs(aiData.combat?.skirmishBaseDefenseExtraDistance - 150.0) > 0.001
+      || Math.abs(aiData.combat?.wallHeight - 43.0) > 0.001
+      || aiData.combat?.attackUsesLineOfSight !== true
+      || aiData.combat?.attackIgnoreInsignificantBuildings !== true
+      || aiData.combat?.enableRepulsors !== true
+      || aiData.combat?.aiCrushesInfantry !== true
+      || Math.abs(aiData.combat?.supplyCenterSafeRadius - 300.0) > 0.001
+      || aiData.combat?.rebuildDelaySeconds !== 30
+      || aiData.groupPathing?.minInfantryForGroup !== 3
+      || aiData.groupPathing?.minVehiclesForGroup !== 3
+      || Math.abs(aiData.groupPathing?.minDistanceForGroup - 100.0) > 0.001
+      || Math.abs(aiData.groupPathing?.distanceRequiresGroup - 500.0) > 0.001
+      || aiData.counts?.sideInfo !== 12
+      || aiData.counts?.buildLists !== 12
+      || !aiData.america?.found
+      || aiData.america.resourceGatherersEasy !== 2
+      || aiData.america.resourceGatherersNormal !== 2
+      || aiData.america.resourceGatherersHard !== 2
+      || aiData.america.baseDefenseStructure !== "AmericaPatriotBattery"
+      || aiData.america.skillSet1Count !== 7
+      || aiData.america.skillSet1FirstScience !== "SCIENCE_PaladinTank"
+      || !aiData.gla?.found
+      || aiData.gla.resourceGatherersEasy !== 5
+      || aiData.gla.baseDefenseStructure !== "GLAStingerSite"
+      || !aiData.americaBuildList?.found
+      || aiData.americaBuildList.structures <= 10
+      || aiData.americaBuildList.firstTemplate !== "AmericaCommandCenter"
+      || Math.abs(aiData.americaBuildList.firstX - 501.22) > 0.01
+      || Math.abs(aiData.americaBuildList.firstY - 546.25) > 0.01
+      || Math.abs(aiData.americaBuildList.firstAngle - (-135.0 * Math.PI / 180.0)) > 0.001
+      || aiData.americaBuildList.firstAutomaticallyBuild !== true) {
+    throw new Error(`${context} did not parse expected AIData.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertScienceProbe(assetProbe, context) {
   const science = assetProbe?.science;
   if (!assetProbe?.inizh?.scienceIni
@@ -913,6 +985,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.science
         || !startupAssets.required?.weapon
         || !startupAssets.required?.particleSystem
+        || !startupAssets.required?.aiData
         || !startupAssets.required?.upgrade
         || !startupAssets.required?.commandButton
         || !startupAssets.required?.commandSet
@@ -1012,6 +1085,7 @@ try {
       || !assetProbe.inizh?.playerTemplateIni
       || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.roadsIni
+      || !assetProbe.inizh?.defaultAIDataIni
       || !assetProbe.inizh?.weaponIni
       || !assetProbe.inizh?.particleSystemIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
@@ -1020,6 +1094,7 @@ try {
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertDamageFXProbe(assetProbe, "aggregate runtime archive probe");
   assertWeaponProbe(assetProbe, "aggregate runtime archive probe");
+  assertAIDataProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
@@ -1087,6 +1162,7 @@ try {
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDamageFXProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeaponProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertAIDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");

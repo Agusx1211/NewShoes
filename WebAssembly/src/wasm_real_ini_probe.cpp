@@ -40,9 +40,14 @@
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/Water.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
+#ifdef AI_PASSIVE
+#undef AI_PASSIVE
+#endif
+#include "GameLogic/AI.h"
 #include "GameLogic/Armor.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
+#include "GameLogic/SidesList.h"
 #include "GameLogic/Weapon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
@@ -58,6 +63,8 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
 constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
+constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
+constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -276,6 +283,63 @@ void inspect_crate_entry(
 	}
 }
 
+const AISideInfo *find_ai_side_info(const TAiData *data, const char *side)
+{
+	for (const AISideInfo *info = data != nullptr ? data->m_sideInfo : nullptr;
+			info != nullptr;
+			info = info->m_next) {
+		if (info->m_side == side) {
+			return info;
+		}
+	}
+	return nullptr;
+}
+
+const AISideBuildList *find_ai_build_list(const TAiData *data, const char *side)
+{
+	for (const AISideBuildList *build = data != nullptr ? data->m_sideBuildLists : nullptr;
+			build != nullptr;
+			build = build->m_next) {
+		if (build->m_side == side) {
+			return build;
+		}
+	}
+	return nullptr;
+}
+
+std::size_t count_ai_side_info(const TAiData *data)
+{
+	std::size_t count = 0;
+	for (const AISideInfo *info = data != nullptr ? data->m_sideInfo : nullptr;
+			info != nullptr;
+			info = info->m_next) {
+		++count;
+	}
+	return count;
+}
+
+std::size_t count_ai_build_lists(const TAiData *data)
+{
+	std::size_t count = 0;
+	for (const AISideBuildList *build = data != nullptr ? data->m_sideBuildLists : nullptr;
+			build != nullptr;
+			build = build->m_next) {
+		++count;
+	}
+	return count;
+}
+
+std::size_t count_ai_build_structures(const AISideBuildList *build)
+{
+	std::size_t count = 0;
+	for (const BuildListInfo *info = build != nullptr ? build->m_buildList : nullptr;
+			info != nullptr;
+			info = info->getNext()) {
+		++count;
+	}
+	return count;
+}
+
 std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
 {
 	return
@@ -360,6 +424,61 @@ std::size_t count_verified_fields(const RealWeaponIniProbeResult &result)
 		(result.tomahawk_fire_sound == "TomahawkWeapon" ? 1U : 0U) +
 		(result.tomahawk_projectile_exhaust_loaded ? 1U : 0U) +
 		(result.tomahawk_heroic_projectile_exhaust_loaded ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealAIDataIniProbeResult &result)
+{
+	return
+		(std::fabs(result.structure_seconds - 0.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.team_seconds - 10.0f) < 0.001f ? 1U : 0U) +
+		(result.resources_wealthy == 7000 ? 1U : 0U) +
+		(result.resources_poor == 2000 ? 1U : 0U) +
+		(result.force_idle_frames == 3U ? 1U : 0U) +
+		(std::fabs(result.structures_wealthy_rate - 2.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.teams_wealthy_rate - 2.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.structures_poor_rate - 0.6f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.teams_poor_rate - 0.6f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.team_resources_to_start - 0.1f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.guard_inner_modifier_ai - 1.1f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.guard_outer_modifier_ai - 1.333f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.guard_inner_modifier_human - 1.8f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.guard_outer_modifier_human - 2.2f) < 0.001f ? 1U : 0U) +
+		(result.guard_chase_unit_frames == 300U ? 1U : 0U) +
+		(result.guard_enemy_scan_frames == 15U ? 1U : 0U) +
+		(result.guard_enemy_return_scan_frames == 30U ? 1U : 0U) +
+		(std::fabs(result.attack_priority_distance_modifier - 100.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.max_recruit_radius - 500.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.skirmish_base_defense_extra_distance - 150.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.wall_height - 43.0f) < 0.001f ? 1U : 0U) +
+		(result.attack_uses_line_of_sight ? 1U : 0U) +
+		(result.attack_ignore_insignificant_buildings ? 1U : 0U) +
+		(result.enable_repulsors ? 1U : 0U) +
+		(result.min_infantry_for_group == 3 ? 1U : 0U) +
+		(result.min_vehicles_for_group == 3 ? 1U : 0U) +
+		(std::fabs(result.min_distance_for_group - 100.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.distance_requires_group - 500.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.supply_center_safe_radius - 300.0f) < 0.001f ? 1U : 0U) +
+		(result.rebuild_delay_seconds == 30 ? 1U : 0U) +
+		(result.ai_crushes_infantry ? 1U : 0U) +
+		(result.side_info_count == 12 ? 1U : 0U) +
+		(result.build_list_count == 12 ? 1U : 0U) +
+		(result.america_side_found ? 1U : 0U) +
+		(result.america_resource_gatherers_easy == 2 ? 1U : 0U) +
+		(result.america_resource_gatherers_normal == 2 ? 1U : 0U) +
+		(result.america_resource_gatherers_hard == 2 ? 1U : 0U) +
+		(result.america_base_defense_structure == "AmericaPatriotBattery" ? 1U : 0U) +
+		(result.america_skill_set1_count == 7 ? 1U : 0U) +
+		(result.america_skill_set1_first_science == "SCIENCE_PaladinTank" ? 1U : 0U) +
+		(result.gla_side_found ? 1U : 0U) +
+		(result.gla_resource_gatherers_easy == 5 ? 1U : 0U) +
+		(result.gla_base_defense_structure == "GLAStingerSite" ? 1U : 0U) +
+		(result.america_build_list_found ? 1U : 0U) +
+		(result.america_build_list_structure_count > 10 ? 1U : 0U) +
+		(result.america_first_build_template == "AmericaCommandCenter" ? 1U : 0U) +
+		(std::fabs(result.america_first_build_x - 501.22f) < 0.01f ? 1U : 0U) +
+		(std::fabs(result.america_first_build_y - 546.25f) < 0.01f ? 1U : 0U) +
+		(std::fabs(result.america_first_build_angle - (-135.0f * PI / 180.0f)) < 0.001f ? 1U : 0U) +
+		(result.america_first_build_automatically_build ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
@@ -1967,6 +2086,232 @@ RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path
 	}
 	if (fx_list_store != nullptr) {
 		delete fx_list_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_path)
+{
+	RealAIDataIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INIAiData.cpp + AI.cpp + SidesList.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ScienceStore *old_science_store = TheScienceStore;
+	AI *old_ai = TheAI;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ScienceStore *science_store = nullptr;
+	AI *ai = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo default_file_info = {};
+			result.default_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(DEFAULT_AI_DATA_INI_PATH), &default_file_info) &&
+				default_file_info.sizeHigh == 0 &&
+				default_file_info.sizeLow > 0;
+			result.bytes = result.default_file_exists ?
+				static_cast<std::size_t>(default_file_info.sizeLow) : 0U;
+
+			FileInfo override_file_info = {};
+			result.override_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(AI_DATA_INI_PATH), &override_file_info) &&
+				override_file_info.sizeHigh == 0 &&
+				override_file_info.sizeLow > 0;
+			if (result.override_file_exists) {
+				result.bytes += static_cast<std::size_t>(override_file_info.sizeLow);
+			}
+
+			FileInfo science_file_info = {};
+			result.science_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(SCIENCE_INI_PATH), &science_file_info) &&
+				science_file_info.sizeHigh == 0 &&
+				science_file_info.sizeLow > 0;
+			result.science_bytes = result.science_file_exists ?
+				static_cast<std::size_t>(science_file_info.sizeLow) : 0U;
+
+			if (result.default_file_exists && result.science_file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+				}
+
+				science_store = NEW ScienceStore;
+				TheScienceStore = science_store;
+				science_store->init();
+				result.science_store_loaded = true;
+
+				INI science_ini;
+				science_ini.load(AsciiString(SCIENCE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.science_original_ini_load = true;
+
+				ai = NEW AI;
+				TheAI = ai;
+				ai->init();
+				result.ai_loaded = true;
+
+				INI default_ini;
+				default_ini.load(
+					AsciiString(DEFAULT_AI_DATA_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.default_original_ini_load = true;
+
+				if (result.override_file_exists) {
+					INI override_ini;
+					override_ini.load(
+						AsciiString(AI_DATA_INI_PATH), INI_LOAD_CREATE_OVERRIDES, nullptr);
+					result.override_original_ini_load = true;
+				}
+
+				const TAiData *data = ai->getAiData();
+				result.structure_seconds = data->m_structureSeconds;
+				result.team_seconds = data->m_teamSeconds;
+				result.resources_wealthy = data->m_resourcesWealthy;
+				result.resources_poor = data->m_resourcesPoor;
+				result.force_idle_frames = data->m_forceIdleFramesCount;
+				result.structures_wealthy_rate = data->m_structuresWealthyMod;
+				result.teams_wealthy_rate = data->m_teamWealthyMod;
+				result.structures_poor_rate = data->m_structuresPoorMod;
+				result.teams_poor_rate = data->m_teamPoorMod;
+				result.team_resources_to_start = data->m_teamResourcesToBuild;
+				result.guard_inner_modifier_ai = data->m_guardInnerModifierAI;
+				result.guard_outer_modifier_ai = data->m_guardOuterModifierAI;
+				result.guard_inner_modifier_human = data->m_guardInnerModifierHuman;
+				result.guard_outer_modifier_human = data->m_guardOuterModifierHuman;
+				result.guard_chase_unit_frames = data->m_guardChaseUnitFrames;
+				result.guard_enemy_scan_frames = data->m_guardEnemyScanRate;
+				result.guard_enemy_return_scan_frames = data->m_guardEnemyReturnScanRate;
+				result.attack_priority_distance_modifier =
+					data->m_attackPriorityDistanceModifier;
+				result.max_recruit_radius = data->m_maxRecruitDistance;
+				result.skirmish_base_defense_extra_distance =
+					data->m_skirmishBaseDefenseExtraDistance;
+				result.wall_height = data->m_wallHeight;
+				result.attack_uses_line_of_sight = data->m_attackUsesLineOfSight;
+				result.attack_ignore_insignificant_buildings =
+					data->m_attackIgnoreInsignificantBuildings;
+				result.enable_repulsors = data->m_enableRepulsors;
+				result.min_infantry_for_group = data->m_minInfantryForGroup;
+				result.min_vehicles_for_group = data->m_minVehiclesForGroup;
+				result.min_distance_for_group = data->m_minDistanceForGroup;
+				result.distance_requires_group = data->m_distanceRequiresGroup;
+				result.supply_center_safe_radius = data->m_supplyCenterSafeRadius;
+				result.rebuild_delay_seconds = data->m_rebuildDelaySeconds;
+				result.ai_crushes_infantry = data->m_aiCrushesInfantry;
+				result.side_info_count = count_ai_side_info(data);
+				result.build_list_count = count_ai_build_lists(data);
+
+				const AISideInfo *america = find_ai_side_info(data, "America");
+				result.america_side_found = america != nullptr;
+				if (america != nullptr) {
+					result.america_resource_gatherers_easy = america->m_easy;
+					result.america_resource_gatherers_normal = america->m_normal;
+					result.america_resource_gatherers_hard = america->m_hard;
+					result.america_base_defense_structure =
+						america->m_baseDefenseStructure1.str();
+					result.america_skill_set1_count =
+						static_cast<std::size_t>(america->m_skillSet1.m_numSkills);
+					if (america->m_skillSet1.m_numSkills > 0) {
+						result.america_skill_set1_first_science =
+							science_store->getInternalNameForScience(
+								america->m_skillSet1.m_skills[0]).str();
+					}
+				}
+
+				const AISideInfo *gla = find_ai_side_info(data, "GLA");
+				result.gla_side_found = gla != nullptr;
+				if (gla != nullptr) {
+					result.gla_resource_gatherers_easy = gla->m_easy;
+					result.gla_base_defense_structure = gla->m_baseDefenseStructure1.str();
+				}
+
+				const AISideBuildList *america_build = find_ai_build_list(data, "America");
+				result.america_build_list_found = america_build != nullptr;
+				result.america_build_list_structure_count =
+					count_ai_build_structures(america_build);
+				BuildListInfo *first_build =
+					america_build != nullptr ? america_build->m_buildList : nullptr;
+				if (first_build != nullptr) {
+					result.america_first_build_template =
+						first_build->getTemplateName().str();
+					const Coord3D *location = first_build->getLocation();
+					result.america_first_build_x = location->x;
+					result.america_first_build_y = location->y;
+					result.america_first_build_angle = first_build->getAngle();
+					result.america_first_build_automatically_build =
+						first_build->isAutomaticBuild();
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 20000 &&
+					result.science_bytes > 20000 &&
+					result.science_store_loaded &&
+					result.ai_loaded &&
+					result.science_original_ini_load &&
+					result.default_original_ini_load &&
+					(!result.override_file_exists || result.override_original_ini_load) &&
+					result.parsed_fields == 50;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheAI = old_ai;
+	TheScienceStore = old_science_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (ai != nullptr) {
+		delete ai;
+	}
+	if (science_store != nullptr) {
+		delete science_store;
+	}
+	if (game_text != nullptr) {
+		delete game_text;
 	}
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;
