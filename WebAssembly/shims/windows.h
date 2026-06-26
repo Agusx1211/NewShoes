@@ -29,6 +29,10 @@
 #define OPTIONAL
 #endif
 
+#ifndef CONST
+#define CONST const
+#endif
+
 #ifndef FAR
 #define FAR
 #endif
@@ -44,6 +48,7 @@
 using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
+using ULONG = unsigned long;
 using HANDLE = void *;
 using HGLOBAL = HANDLE;
 using HKEY = void *;
@@ -58,6 +63,7 @@ using HRSRC = void *;
 using HIMC = void *;
 using HKL = void *;
 using HWND = void *;
+using LPDISPATCH = void *;
 using LONG = long;
 using HRESULT = LONG;
 using WCHAR = wchar_t;
@@ -77,6 +83,14 @@ using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
 using LPTHREAD_START_ROUTINE = DWORD (WINAPI *)(LPVOID);
+
+struct GUID
+{
+	unsigned long Data1;
+	unsigned short Data2;
+	unsigned short Data3;
+	unsigned char Data4[8];
+};
 
 #ifndef S_OK
 #define S_OK static_cast<HRESULT>(0)
@@ -143,6 +157,14 @@ struct POINT
 {
 	long x;
 	long y;
+};
+
+struct RECT
+{
+	long left;
+	long top;
+	long right;
+	long bottom;
 };
 
 struct MSG

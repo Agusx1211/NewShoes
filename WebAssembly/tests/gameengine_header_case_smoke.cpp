@@ -2,6 +2,9 @@
 
 #include "Common/OVERRIDE.h"
 #include "convert.h"
+#include "d3d8.h"
+#include "D3dx8core.h"
+#include "Dx8Wrapper.h"
 #include "font.h"
 #include "GameLOgic/GameLogic.h"
 #include "GameLogic/Module/Diemodule.h"
@@ -49,6 +52,12 @@ int main()
 		return 1;
 	}
 	if (x_axis.X != 1.0f || x_axis.Y != 0.0f || x_axis.Z != 0.0f) {
+		return 1;
+	}
+	if (D3DFMT_DXT1 != MAKEFOURCC('D', 'X', 'T', '1')) {
+		return 1;
+	}
+	if (D3DXGetFVFVertexSize(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1) != 32) {
 		return 1;
 	}
 

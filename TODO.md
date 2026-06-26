@@ -794,6 +794,19 @@ shares structure and follows behind.
       forward-declaration gaps, case-sensitive `font.h` / `convert.h` /
       `streakrender.h` bridges, opaque GDI handle typedefs, and localized
       `StringClass` mutable-buffer fixes.
+- [x] Expand `zh_ww3d2_compile_frontier` to 82 original WW3D2 sources by adding
+      the first Direct3D-adjacent renderer/helper batch (`bitmaphandler.cpp`,
+      `bmp2d.cpp`, `boxrobj.cpp`, `camera.cpp`, `decalmsh.cpp`, `dx8fvf.cpp`,
+      `dx8polygonrenderer.cpp`, `dx8texman.cpp`, `formconv.cpp`,
+      `line3d.cpp`, `linegrp.cpp`, `matpass.cpp`, `matrixmapper.cpp`,
+      `mesh.cpp`, `render2d.cpp`, `ringobj.cpp`, `scene.cpp`, `segline.cpp`,
+      `seglinerenderer.cpp`, `shattersystem.cpp`, `static_sort_list.cpp`,
+      `statistics.cpp`, `streak.cpp`, `streakRender.cpp`,
+      `texturethumbnail.cpp`, `txt2d.cpp`, and `ww3dformat.cpp`) after adding
+      a declaration-only Direct3D 8/D3DX compile surface, case wrappers for
+      `Dx8Wrapper.h` / D3DX headers, Windows `GUID`/`RECT`/`CONST`
+      compatibility, and scalar Emscripten fallbacks for original
+      `dx8wrapper.h` color packing/clamping x86 assembly.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -813,10 +826,11 @@ shares structure and follows behind.
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the current
-      DirectX 8 backend, GDI text rendering contract, texture/material
-      DirectX backend, Miles/WWAudio binding, Video-for-Windows frame-grab
-      contract, missing Surrender `sr*` utility headers, and remaining renderer
-      body blockers instead of substituting renderer behavior.
+      DirectX 8 runtime backend (`dx8wrapper.cpp`, caps, buffers, renderer,
+      texture/material upload paths), DDS/DirectDraw format helpers, GDI text
+      rendering contract, Miles/WWAudio binding, Video-for-Windows frame-grab
+      contract, missing Surrender `sr*` utility headers, and remaining
+      renderer body blockers instead of substituting renderer behavior.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

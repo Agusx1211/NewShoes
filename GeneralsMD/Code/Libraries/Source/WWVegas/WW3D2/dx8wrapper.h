@@ -1004,6 +1004,13 @@ WWINLINE unsigned int DX8Wrapper::Convert_Color(const Vector4& color)
 
 WWINLINE unsigned int DX8Wrapper::Convert_Color(const Vector3& color,float alpha)
 {
+#if defined(__EMSCRIPTEN__) || !defined(_MSC_VER)
+	const unsigned int r = static_cast<unsigned int>(color.X * 255.0f);
+	const unsigned int g = static_cast<unsigned int>(color.Y * 255.0f);
+	const unsigned int b = static_cast<unsigned int>(color.Z * 255.0f);
+	const unsigned int a = static_cast<unsigned int>(alpha * 255.0f);
+	return (a << 24) | (r << 16) | (g << 8) | b;
+#else
 	const float scale = 255.0;
 	unsigned int col;
 
@@ -1070,6 +1077,7 @@ not_changed:
 		mov	col,eax
 	}
 	return col;
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -1080,6 +1088,13 @@ not_changed:
 
 WWINLINE void DX8Wrapper::Clamp_Color(Vector4& color)
 {
+#if defined(__EMSCRIPTEN__) || !defined(_MSC_VER)
+	for (int i=0;i<4;++i) {
+		float f=(color[i]<0.0f) ? 0.0f : color[i];
+		color[i]=(f>1.0f) ? 1.0f : f;
+	}
+	return;
+#else
 	if (!CPUDetectClass::Has_CMOV_Instruction()) {
 		for (int i=0;i<4;++i) {
 			float f=(color[i]<0.0f) ? 0.0f : color[i];
@@ -1130,6 +1145,7 @@ WWINLINE void DX8Wrapper::Clamp_Color(Vector4& color)
 		cmovnb edi,edx
 		mov dword ptr[esi+12],edi
 	}
+#endif
 }
 
 // ----------------------------------------------------------------------------
