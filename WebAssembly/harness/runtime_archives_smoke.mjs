@@ -117,6 +117,9 @@ try {
       || archiveMount.totalBytes !== archiveSet.totalBytes) {
     throw new Error(`wasm archive mount state mismatch: ${JSON.stringify(archiveMount)}`);
   }
+  if (archiveMount.bootProbe?.attempted || archiveMount.bootProbe?.ok) {
+    throw new Error(`boot archive probe should not run before boot: ${JSON.stringify(archiveMount.bootProbe)}`);
+  }
 
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
     source: "runtime archive browser smoke after archive preload",
@@ -135,6 +138,16 @@ try {
       afterBoot: bootArchiveMount,
     })}`);
   }
+  if (!bootArchiveMount.bootProbe?.attempted
+      || !bootArchiveMount.bootProbe.ok
+      || bootArchiveMount.bootProbe.indexedFiles !== assetProbe.indexedFiles) {
+    throw new Error(`boot archive probe did not consume registered archive set: ${JSON.stringify(bootArchiveMount)}`);
+  }
+  if (!bootResult.state.assetProbe?.ok
+      || bootResult.state.assetProbe.archive !== archiveSet.probePath
+      || bootResult.state.assetProbe.indexedFiles !== assetProbe.indexedFiles) {
+    throw new Error(`boot asset probe mismatch: ${JSON.stringify(bootResult.state.assetProbe)}`);
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -145,6 +158,7 @@ try {
     totalBytes: archiveSet.totalBytes,
     aggregateProbe: assetProbe,
     archiveMount,
+    bootArchiveMount,
     bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",

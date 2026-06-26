@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -38,6 +39,9 @@ struct ArchiveMountState
 	std::string file_mask;
 	int archive_count = 0;
 	double total_bytes = 0.0;
+	bool boot_probe_attempted = false;
+	bool boot_probe_ok = false;
+	std::size_t boot_probe_indexed_file_count = 0;
 };
 
 ArchiveMountState g_archive_mount;
@@ -72,6 +76,25 @@ void run_original_core_probe()
 	g_original_logic_random_value = GetGameLogicRandomValue(10, 100, file, 1);
 	g_original_logic_seed_crc = GetGameLogicRandomSeedCRC();
 	g_original_core_probe_ok = true;
+}
+
+void probe_registered_archive_set_for_boot()
+{
+	g_archive_mount.boot_probe_attempted = g_archive_mount.registered;
+	g_archive_mount.boot_probe_ok = false;
+	g_archive_mount.boot_probe_indexed_file_count = 0;
+	if (!g_archive_mount.registered) {
+		return;
+	}
+
+	const std::string archive_path = g_archive_mount.directory + g_archive_mount.file_mask;
+	g_archive_probe = probe_original_archive(archive_path.c_str());
+	g_archive_mount.boot_probe_ok = g_archive_probe.ok;
+	g_archive_mount.boot_probe_indexed_file_count = g_archive_probe.indexed_file_count;
+	std::printf("cnc-port: boot archive probe path=%s ok=%d indexed=%zu\n",
+		archive_path.c_str(),
+		g_archive_probe.ok ? 1 : 0,
+		g_archive_probe.indexed_file_count);
 }
 
 void log_boot_state()
@@ -118,6 +141,7 @@ void ensure_booted()
 		++g_frame;
 		record_tick_time();
 		run_original_core_probe();
+		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
 }
@@ -141,7 +165,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[2200];
+	char buffer[2500];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
@@ -155,7 +179,8 @@ const char *write_state_json()
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,\"weaponIni\":%s}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
-		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f},"
+		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
+		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s}}",
@@ -182,6 +207,9 @@ const char *write_state_json()
 		archive_mount_file_mask_json.c_str(),
 		g_archive_mount.archive_count,
 		g_archive_mount.total_bytes,
+		g_archive_mount.boot_probe_attempted ? "true" : "false",
+		g_archive_mount.boot_probe_ok ? "true" : "false",
+		g_archive_mount.boot_probe_indexed_file_count,
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,
@@ -245,6 +273,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
 	g_archive_mount.file_mask = archive_file_mask != nullptr ? archive_file_mask : "";
 	g_archive_mount.archive_count = archive_count < 0 ? 0 : archive_count;
 	g_archive_mount.total_bytes = total_bytes < 0.0 ? 0.0 : total_bytes;
+	g_archive_mount.boot_probe_attempted = false;
+	g_archive_mount.boot_probe_ok = false;
+	g_archive_mount.boot_probe_indexed_file_count = 0;
 	std::printf("cnc-port: archive set directory=%s mask=%s count=%d bytes=%.0f\n",
 		g_archive_mount.directory.c_str(),
 		g_archive_mount.file_mask.c_str(),

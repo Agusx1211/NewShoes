@@ -1547,6 +1547,11 @@ shares structure and follows behind.
       set before the wasm bootstrap `boot` RPC, then boot with the archive mount
       state retained. This validates the preload-before-engine-start ordering;
       full original engine initialization still needs to consume that state.
+- [x] Have the wasm bootstrap consume the registered runtime archive set during
+      `boot` by probing the aggregate `directory + *.big` path through the
+      original `Win32BIGFileSystem`, with Playwright coverage for the boot-time
+      probe result. This is an asset-startup preflight only; full engine init
+      and real INI/data parsing remain open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

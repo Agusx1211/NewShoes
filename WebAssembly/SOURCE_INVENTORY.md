@@ -117,8 +117,11 @@ The wasm CMake skeleton currently builds:
   browser scheduling surface that the real engine tick and final timing layer
   still need to replace. The archive probe proves fetched MEMFS archive
   availability and the archive-set registration records the verified aggregate
-  archive directory/mask in C++ bootstrap state; original engine startup still
-  needs to consume the mounted runtime archive set.
+  archive directory/mask in C++ bootstrap state. When present at `boot`, the
+  bootstrap probes that registered aggregate path through the original
+  `Win32BIGFileSystem` and reports the result in `archiveMount.bootProbe`;
+  original engine startup still needs to consume the mounted runtime archive set
+  beyond this preflight.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, captures Emscripten module stdout/stderr into the
@@ -653,7 +656,8 @@ The wasm CMake skeleton currently builds:
   archive plus the aggregate `*.big` archive tree. It also asserts the wasm C++
   bootstrap has registered the verified archive directory, `*.big` mask, archive
   count, and total byte count before boot and keeps that state after boot for
-  later original engine startup.
+  later original engine startup, including a boot-time `archiveMount.bootProbe`
+  produced by consuming the registered aggregate archive path.
 
 ## Next Compile Order
 

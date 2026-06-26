@@ -58,7 +58,9 @@ archive plus the aggregate `*.big` archive tree through the original BIG reader.
 The verified aggregate archive directory and `*.big` mask are also registered
 in the wasm bootstrap state before the harness calls `boot`, then checked again
 after boot so the later original engine startup path has a stable preloaded
-archive-set contract.
+archive-set contract. During `boot`, the wasm bootstrap now consumes that
+registered archive set by probing the aggregate path through the original
+`Win32BIGFileSystem`; the result is reported as `archiveMount.bootProbe`.
 
 ## Toolchain
 
@@ -136,7 +138,7 @@ with the original `Win32BIGFileSystem`. After a verified archive-set mount,
 `cnc-port` records the aggregate archive directory, mask, count, and byte total
 in its C++ state under `archiveMount`. `mountArchives` is valid before `boot`;
 the runtime archive smoke uses that ordering to match the eventual engine
-startup preload path.
+startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
 
 Run the wasm-backed smoke test:
 

@@ -30,7 +30,9 @@ The initial development path is same-origin fetch from ignored local artifacts:
    into the wasm bootstrap as the aggregate archive directory plus `*.big` mask
    before the harness calls `boot`.
 4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
-5. The original engine BIG/file/INI code reads the mounted bytes during startup.
+5. The wasm bootstrap consumes the registered archive set during `boot` by
+   probing the aggregate path with the original `Win32BIGFileSystem`.
+6. The original engine BIG/file/INI code reads the mounted bytes during startup.
 
 This keeps the browser-specific boundary at file delivery. BIG parsing, INI
 parsing, object templates, UI data, audio events, maps, and gameplay behavior
@@ -56,7 +58,9 @@ fetch/MEMFS delivery path by loading the full archive set through the main
 `cnc-port` Playwright harness and reading each archive plus the aggregate
 archive tree with the original `Win32BIGFileSystem`. It also checks the C++
 bootstrap `archiveMount` state both before and after `boot`, which is the
-preload ordering the later original startup path will consume.
+preload ordering the later original startup path will consume. The post-boot
+state includes `archiveMount.bootProbe`, proving the bootstrap used the
+registered aggregate path during boot.
 
 | Archive | Source | Role |
 |---|---|---|
