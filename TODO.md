@@ -978,6 +978,12 @@ shares structure and follows behind.
       Miles, and Win32 mutex declaration surface. This is compile coverage only;
       the current declarations are inert and do not provide Web Audio playback,
       sample/stream ownership, decoding, or 3D positioning.
+- [x] Start `zh_bink_video_device_compile_frontier` with original
+      `GameEngineDevice/Source/VideoDevice/Bink/BinkVideoPlayer.cpp` after
+      expanding the compile-only Bink declaration shim for the handle fields,
+      surface constants, and API calls used by the original player/stream code.
+      This is compile coverage only; `.bik` decoding, video-to-texture upload,
+      audio sync, and browser-backed WebCodecs/`<video>` playback remain open.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -1690,6 +1696,8 @@ shares structure and follows behind.
 
 - [ ] Re-target `VideoDevice/Bink` (`BinkVideoPlayer`/`VideoStream`) to WebCodecs
       or `<video>`.
+- [ ] Replace the compile-only Bink API declarations with a browser-backed video
+      provider that preserves the original `VideoPlayer`/`VideoStream` call path.
 - [ ] Decide path for `.bik` files: transcode offline vs in-browser decode.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
