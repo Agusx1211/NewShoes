@@ -440,13 +440,17 @@ shares structure and follows behind.
 - [x] Expanded `GameEngine/Common` facade/geometry slice compiles from original
       sources: `FileSystem.cpp`, `Snapshot.cpp`, `Geometry.cpp`,
       `BitFlags.cpp`, and `MiniLog.cpp`, with wasm smoke coverage for the
-      original file-system local dispatch path, model-condition and armor-set
-      bit-name tables, and geometry bounds/footprint calculations.
+      original file-system local/archive dispatch path, facade existence cache,
+      file-info and directory-list delegation, music-CD presence probe,
+      model-condition and armor-set bit-name tables, and geometry bounds /
+      footprint calculations.
 - [x] Expanded `GameEngine/Common` compression/data-chunk slice compiles from
       original sources: `Compression.cpp` and `DataChunk.cpp`, linked against
       the existing original `CompressionManager` slice, with wasm smoke
-      coverage for compressed cached-file reads and `DataChunkInput` table /
-      chunk parsing.
+      coverage for compressed cached-file reads, `DataChunkInput` table / chunk
+      parsing, and original `DataChunkOutput` temp-file serialization for
+      primitive values, byte arrays, ASCII/Unicode strings, name keys, and
+      `Dict` values through the current user-data path shim.
 - [x] Expanded `GameEngine/Common` string/network utility slice compiles from
       original source: `QuotedPrintable.cpp`, with wasm smoke coverage for
       ASCII quoted-printable and the original UTF-16LE Unicode wire format used
@@ -480,10 +484,13 @@ shares structure and follows behind.
 - [ ] Link and smoke-test the real-header memory/file/archive/system leaves
       after the browser archive/audio/persistence singleton contracts replace
       the current target-local smoke globals.
-- [ ] Exercise original `Common/System/FileSystem.cpp` archive lookup,
-      `doesFileExist`, directory listing, file-info, and music-CD paths after a
-      concrete browser `ArchiveFileSystem` / audio layer replaces the current
-      smoke globals.
+- [x] Exercise original `Common/System/FileSystem.cpp` facade dispatch for
+      archive lookup, `doesFileExist` true/false cache entries, directory
+      listing, file-info, and `areMusicFilesOnCD` against the linked local/BIG
+      smoke backends and CD manager.
+- [ ] Replace the current `FileSystem` smoke globals with the final browser
+      archive/audio singleton contracts, then harness-test music archive
+      load/unload and asset lookup through fetched browser archives.
 - [x] Remove the `gameengine-common-core-smoke` local `FileSystem::openFile`
       link shim after original `Common/System/FileSystem.cpp` compiles into the
       smoke target with target-local archive/audio singleton globals.
@@ -512,7 +519,11 @@ shares structure and follows behind.
       indexing and reading at least one file from each archive.
 - [ ] Extend the browser MEMFS real-asset smoke from `INIZH.big` to the exact
       minimum boot archive set once engine startup uses fetched archives.
-- [ ] Exercise original `DataChunkOutput` write/temp-file path after the real
+- [x] Exercise original `DataChunkOutput` write/temp-file path in the linked
+      Common smoke through the current `GlobalData` user-data path shim,
+      round-tripping the generated table/chunk stream through original
+      `DataChunkInput`.
+- [ ] Re-run original `DataChunkOutput` write/temp-file coverage after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.
 - [x] Compile original `Common/version.cpp` after adding a lowercase

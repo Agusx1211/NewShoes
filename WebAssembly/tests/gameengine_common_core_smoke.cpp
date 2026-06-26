@@ -358,8 +358,13 @@ struct DataChunkParseResult
 	DataChunkVersionType version;
 	Int data_size;
 	Int integer;
+	Real real;
 	Byte byte;
 	AsciiString text;
+	UnicodeString wide_text;
+	std::vector<char> bytes;
+	NameKeyType name_key;
+	Dict dict;
 };
 
 struct Scanline
@@ -411,6 +416,26 @@ Bool parse_smoke_data_chunk(DataChunkInput &input, DataChunkInfo *info, void *us
 	result->integer = input.readInt();
 	result->byte = input.readByte();
 	result->text = input.readAsciiString();
+	return TRUE;
+}
+
+Bool parse_smoke_data_chunk_output(DataChunkInput &input, DataChunkInfo *info, void *user_data)
+{
+	auto *result = static_cast<DataChunkParseResult *>(user_data);
+	result->called = TRUE;
+	result->version = info->version;
+	result->data_size = info->dataSize;
+	result->integer = input.readInt();
+	result->real = input.readReal();
+	result->byte = input.readByte();
+	result->text = input.readAsciiString();
+	result->wide_text = input.readUnicodeString();
+
+	result->bytes.assign(5, 0);
+	input.readArrayOfBytes(result->bytes.data(), static_cast<Int>(result->bytes.size()));
+
+	result->name_key = input.readNameKey();
+	result->dict = input.readDict();
 	return TRUE;
 }
 
@@ -752,6 +777,11 @@ bool exercise_archive_big_files()
 	const Int payload_size = static_cast<Int>(std::strlen(payload));
 	const std::vector<char> big_archive = make_smoke_big_archive(archived_path, payload, payload_size);
 
+	NameKeyGenerator generator;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	TheNameKeyGenerator = &generator;
+	generator.init();
+
 	SmokeLocalFileSystem local_file_system;
 	local_file_system.setPayload("Smoke.big", big_archive.data(), static_cast<Int>(big_archive.size()));
 
@@ -773,11 +803,27 @@ bool exercise_archive_big_files()
 			file_info.sizeHigh == 0 && file_info.sizeLow == payload_size,
 		"Win32BIGFile file info failed") && ok;
 
+	ok = expect(file_system.doesFileExist(archived_path),
+		"FileSystem archive doesFileExist dispatch failed") && ok;
+	ok = expect(!file_system.doesFileExist("Data\\INI\\MissingWorker.ini"),
+		"FileSystem missing file cache dispatch failed") && ok;
+
+	FileInfo facade_file_info = {};
+	ok = expect(file_system.getFileInfo(AsciiString(archived_path), &facade_file_info) &&
+			facade_file_info.sizeHigh == 0 && facade_file_info.sizeLow == payload_size,
+		"FileSystem archive getFileInfo dispatch failed") && ok;
+
 	FilenameList filenames;
 	archive_file_system.getFileListInDirectory(
 		AsciiString(""), AsciiString(""), AsciiString("*.ini"), filenames, TRUE);
 	ok = expect(filenames.find(AsciiString("data\\ini\\worker.ini")) != filenames.end(),
 		"ArchiveFile file list failed") && ok;
+
+	FilenameList facade_filenames;
+	file_system.getFileListInDirectory(
+		AsciiString(""), AsciiString("*.ini"), facade_filenames, TRUE);
+	ok = expect(facade_filenames.find(AsciiString("data\\ini\\worker.ini")) != facade_filenames.end(),
+		"FileSystem archive directory-list dispatch failed") && ok;
 
 	File *opened = file_system.openFile(archived_path, File::READ | File::BINARY);
 	char readback[sizeof(payload)] = {};
@@ -808,6 +854,40 @@ bool exercise_archive_big_files()
 	TheFileSystem = nullptr;
 	TheArchiveFileSystem = nullptr;
 	TheLocalFileSystem = nullptr;
+	generator.reset();
+	TheNameKeyGenerator = old_name_key_generator;
+	return ok;
+}
+
+bool exercise_file_system_music_cd_probe()
+{
+	const char music_big_path[] = "D:\\genseczh.big";
+	const char payload[] = "music";
+
+	SmokeLocalFileSystem local_file_system;
+	local_file_system.setPayload(music_big_path, payload, static_cast<Int>(std::strlen(payload)));
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	SmokeCDManager cd_manager;
+
+	CDManagerInterface *old_cd_manager = TheCDManager;
+	TheCDManager = &cd_manager;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+
+	bool ok = expect(!file_system.areMusicFilesOnCD(),
+		"FileSystem music-CD probe should be false without drives");
+	CDDriveInterface *drive = cd_manager.newDrive("D:\\");
+	ok = expect(drive != nullptr, "FileSystem music-CD probe drive setup failed") && ok;
+	ok = expect(file_system.areMusicFilesOnCD(),
+		"FileSystem music-CD probe did not find genseczh.big on the drive") && ok;
+
+	cd_manager.destroyAllDrives();
+	TheFileSystem = nullptr;
+	TheArchiveFileSystem = nullptr;
+	TheLocalFileSystem = nullptr;
+	TheCDManager = old_cd_manager;
 	return ok;
 }
 
@@ -917,6 +997,95 @@ bool exercise_data_chunks()
 			"DataChunkInput reset/open size failed");
 	input.closeDataChunk();
 	return reopen_ok;
+}
+
+bool exercise_data_chunk_output()
+{
+	const char temp_path[] = "./_tmpChunk.dat";
+	::remove(temp_path);
+
+	GlobalData global_data;
+	global_data.setPath_UserData(AsciiString("./"));
+	GlobalData *old_global_data = TheGlobalData;
+	TheGlobalData = &global_data;
+
+	NameKeyGenerator generator;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	TheNameKeyGenerator = &generator;
+	generator.init();
+
+	const NameKeyType name_key = generator.nameToKey("SaveChunkKey");
+	const NameKeyType dict_bool_key = generator.nameToKey("DictBool");
+	const NameKeyType dict_int_key = generator.nameToKey("DictInt");
+	const NameKeyType dict_real_key = generator.nameToKey("DictReal");
+	const NameKeyType dict_ascii_key = generator.nameToKey("DictAscii");
+	const NameKeyType dict_unicode_key = generator.nameToKey("DictUnicode");
+
+	UnicodeString wide_text;
+	wide_text.translate(AsciiString("reactor"));
+	UnicodeString dict_wide;
+	dict_wide.translate(AsciiString("upgrade"));
+
+	Dict dict;
+	dict.setBool(dict_bool_key, true);
+	dict.setInt(dict_int_key, 9001);
+	dict.setReal(dict_real_key, 2.25f);
+	dict.setAsciiString(dict_ascii_key, AsciiString("supply-dock"));
+	dict.setUnicodeString(dict_unicode_key, dict_wide);
+
+	SmokeOutputStream output;
+	{
+		DataChunkOutput data_output(&output);
+		char root[] = "SAVE_ROOT";
+		data_output.openDataChunk(root, 7);
+		data_output.writeInt(1234);
+		data_output.writeReal(6.5f);
+		data_output.writeByte(17);
+		data_output.writeAsciiString(AsciiString("command-center"));
+		data_output.writeUnicodeString(wide_text);
+		char raw_bytes[] = { 'Z', 'H', 'W', 'A', 'S' };
+		data_output.writeArrayOfBytes(raw_bytes, static_cast<Int>(sizeof(raw_bytes)));
+		data_output.writeNameKey(name_key);
+		data_output.writeDict(dict);
+		data_output.closeDataChunk();
+	}
+
+	::remove(temp_path);
+
+	SmokeChunkInputStream stream(output.data());
+	DataChunkInput input(&stream);
+	DataChunkParseResult result = {};
+	input.registerParser(AsciiString("SAVE_ROOT"), AsciiString(""), parse_smoke_data_chunk_output, &result);
+	const bool ok =
+		expect(input.isValidFileType(), "DataChunkOutput did not write a readable table of contents") &&
+		expect(input.parse(&result), "DataChunkOutput round-trip parse failed") &&
+		expect(result.called, "DataChunkOutput parser was not invoked") &&
+		expect(result.version == 7, "DataChunkOutput version round-trip failed") &&
+		expect(result.integer == 1234, "DataChunkOutput int round-trip failed") &&
+		expect(near(result.real, 6.5f, 0.0001f), "DataChunkOutput real round-trip failed") &&
+		expect(result.byte == 17, "DataChunkOutput byte round-trip failed") &&
+		expect(std::strcmp(result.text.str(), "command-center") == 0,
+			"DataChunkOutput AsciiString round-trip failed") &&
+		expect(result.wide_text.compare(wide_text) == 0,
+			"DataChunkOutput UnicodeString round-trip failed") &&
+		expect(result.bytes.size() == 5 && std::memcmp(result.bytes.data(), "ZHWAS", 5) == 0,
+			"DataChunkOutput byte-array round-trip failed") &&
+		expect(result.name_key == name_key, "DataChunkOutput NameKey round-trip failed") &&
+		expect(result.dict.getPairCount() == 5, "DataChunkOutput Dict pair count failed") &&
+		expect(result.dict.getBool(dict_bool_key), "DataChunkOutput Dict bool round-trip failed") &&
+		expect(result.dict.getInt(dict_int_key) == 9001, "DataChunkOutput Dict int round-trip failed") &&
+		expect(near(result.dict.getReal(dict_real_key), 2.25f, 0.0001f),
+			"DataChunkOutput Dict real round-trip failed") &&
+		expect(std::strcmp(result.dict.getAsciiString(dict_ascii_key).str(), "supply-dock") == 0,
+			"DataChunkOutput Dict AsciiString round-trip failed") &&
+		expect(result.dict.getUnicodeString(dict_unicode_key).compare(dict_wide) == 0,
+			"DataChunkOutput Dict UnicodeString round-trip failed");
+
+	result.dict.clear();
+	generator.reset();
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGlobalData = old_global_data;
+	return ok;
 }
 
 bool exercise_ram_file()
@@ -1602,8 +1771,10 @@ int main()
 		exercise_file_system_dispatch() &&
 		exercise_win32_local_file_system() &&
 		exercise_archive_big_files() &&
+		exercise_file_system_music_cd_probe() &&
 		exercise_cached_file_input_stream() &&
 		exercise_data_chunks() &&
+		exercise_data_chunk_output() &&
 		exercise_ram_file() &&
 		exercise_registry_defaults() &&
 		exercise_version() &&
@@ -1639,7 +1810,7 @@ int main()
 		"SubsystemInterface,CDManager,Registry,"
 		"Version,AudioRequest,Directory,StackDump,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
-		"BitFlags,Snapshot,Geometry,Compression,DataChunk,MiniLog,Dict,"
+		"BitFlags,Snapshot,Geometry,Compression,DataChunkInput,DataChunkOutput,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"
 		"EncryptString,PartitionSolver,NameKeyGenerator,RandomValue,crc,"
 		"TerrainTypes,MultiplayerSettings,PerfTimer,AudioEventRTS,GameAudio,GameMusic,GameSounds,"
