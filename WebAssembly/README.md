@@ -61,6 +61,9 @@ after boot so the later original engine startup path has a stable preloaded
 archive-set contract. During `boot`, the wasm bootstrap now consumes that
 registered archive set by probing the aggregate path through the original
 `Win32BIGFileSystem`; the result is reported as `archiveMount.bootProbe`.
+The same smoke verifies `assetProbe.gameText` by loading the real English
+`Generals.csf` through original `GameText.cpp` and checking known
+title/control-bar labels plus `CONTROLBAR:` prefix enumeration.
 
 ## Toolchain
 
@@ -139,6 +142,9 @@ with the original `Win32BIGFileSystem`. After a verified archive-set mount,
 in its C++ state under `archiveMount`. `mountArchives` is valid before `boot`;
 the runtime archive smoke uses that ordering to match the eventual engine
 startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
+It also asserts the C++ `assetProbe.gameText` result from original
+`GameText.cpp` over the fetched English CSF. Full original engine startup,
+INI parsing, language initialization, and font loading remain open.
 
 Run the wasm-backed smoke test:
 

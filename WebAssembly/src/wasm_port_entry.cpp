@@ -165,7 +165,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[2500];
+	char buffer[3000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
@@ -177,7 +177,9 @@ const char *write_state_json()
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
-		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,\"weaponIni\":%s}},"
+		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,\"weaponIni\":%s},"
+		"\"gameText\":{\"attempted\":%s,\"ok\":%s,\"generalsCsf\":%s,"
+		"\"titleLabel\":%s,\"controlBarLabel\":%s,\"controlBarLabels\":%zu}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
 		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
@@ -202,6 +204,12 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_probe.game_text_attempted ? "true" : "false",
+		g_archive_probe.game_text_ok ? "true" : "false",
+		g_archive_probe.has_generals_csf ? "true" : "false",
+		g_archive_probe.game_text_title_label ? "true" : "false",
+		g_archive_probe.game_text_control_bar_label ? "true" : "false",
+		g_archive_probe.game_text_control_bar_label_count,
 		g_archive_mount.registered ? "true" : "false",
 		archive_mount_directory_json.c_str(),
 		archive_mount_file_mask_json.c_str(),

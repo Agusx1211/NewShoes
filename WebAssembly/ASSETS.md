@@ -60,7 +60,9 @@ archive tree with the original `Win32BIGFileSystem`. It also checks the C++
 bootstrap `archiveMount` state both before and after `boot`, which is the
 preload ordering the later original startup path will consume. The post-boot
 state includes `archiveMount.bootProbe`, proving the bootstrap used the
-registered aggregate path during boot.
+registered aggregate path during boot. The same smoke asserts
+`assetProbe.gameText` by loading the real English `Generals.csf` through
+original `GameText.cpp` from the fetched archive set and checking known labels.
 
 | Archive | Source | Role |
 |---|---|---|

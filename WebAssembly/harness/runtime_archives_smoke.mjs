@@ -34,6 +34,18 @@ function isInside(parent, child) {
   return path === "" || (!path.startsWith("..") && !path.startsWith(sep));
 }
 
+function assertGameTextProbe(assetProbe, context) {
+  const gameText = assetProbe?.gameText;
+  if (!gameText?.attempted
+      || !gameText.ok
+      || !gameText.generalsCsf
+      || !gameText.titleLabel
+      || !gameText.controlBarLabel
+      || gameText.controlBarLabels <= 20) {
+    throw new Error(`${context} did not load real GameText CSF labels: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -104,6 +116,7 @@ try {
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
+  assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
@@ -148,6 +161,7 @@ try {
       || bootResult.state.assetProbe.indexedFiles !== assetProbe.indexedFiles) {
     throw new Error(`boot asset probe mismatch: ${JSON.stringify(bootResult.state.assetProbe)}`);
   }
+  assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
 
   console.log(JSON.stringify({
     ok: true,

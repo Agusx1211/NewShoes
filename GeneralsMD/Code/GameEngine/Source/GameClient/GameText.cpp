@@ -199,8 +199,43 @@ class GameTextManager : public GameTextInterface
 };
 
 static int _cdecl			compareLUT ( const void *,  const void*);
+
+static Bool readCSFString(File *file, WideChar *buffer, Int length)
+{
+	if (length <= 0) {
+		return TRUE;
+	}
+
+#ifdef __EMSCRIPTEN__
+	for (Int index = 0; index < length; ++index) {
+		UnsignedShort codeUnit = 0;
+		if (file->read(&codeUnit, sizeof(codeUnit)) != sizeof(codeUnit)) {
+			return FALSE;
+		}
+		buffer[index] = static_cast<WideChar>(codeUnit);
+	}
+	return TRUE;
+#else
+	return file->read(buffer, length * sizeof(WideChar)) == length * sizeof(WideChar);
+#endif
+}
+
+static void decodeCSFString(WideChar *buffer)
+{
+	WideChar *ptr = buffer;
+
+	while (*ptr) {
+#ifdef __EMSCRIPTEN__
+		*ptr = static_cast<WideChar>(
+			(~static_cast<UnsignedInt>(static_cast<UnsignedShort>(*ptr))) & 0xffffU);
+#else
+		*ptr = ~*ptr;
+#endif
+		ptr++;
+	}
+}
 //----------------------------------------------------------------------------
-//         Private Data                                                     
+//         Private Data
 //----------------------------------------------------------------------------
 
 
@@ -962,30 +997,20 @@ Bool GameTextManager::parseCSF( const Char *filename )
 				goto quit;
 			}
 
-		 	file->read ( &len, sizeof ( Int ) );
+			file->read ( &len, sizeof ( Int ) );
 
 			if ( len )
 			{
-				file->read ( m_tbuffer, len*sizeof(WideChar) );
+				if (!readCSFString(file, m_tbuffer, len)) {
+					goto quit;
+				}
 			}
 
 			if ( num == 0 )
 			{
 				// only use the first string found
 				m_tbuffer[len] = 0;
-				
-				{
-					WideChar *ptr;
-				
-					ptr = m_tbuffer;
-				
-					while ( *ptr )
-					{
-						*ptr = ~*ptr;
-						ptr++;
-					}
-				}
-				
+				decodeCSFString(m_tbuffer);
 				stripSpaces ( m_tbuffer );
 				m_stringInfo[listCount].text = m_tbuffer;
 			}

@@ -2580,6 +2580,7 @@ target_include_directories(cnc-port PRIVATE
 
 target_link_libraries(cnc-port PRIVATE
   zh_gameengine_common_core
+  zh_gameclient_text
 )
 
 target_link_options(cnc-port PRIVATE

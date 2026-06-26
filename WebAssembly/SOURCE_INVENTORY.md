@@ -120,6 +120,9 @@ The wasm CMake skeleton currently builds:
   archive directory/mask in C++ bootstrap state. When present at `boot`, the
   bootstrap probes that registered aggregate path through the original
   `Win32BIGFileSystem` and reports the result in `archiveMount.bootProbe`;
+  it also links the focused original text archive and reports
+  `assetProbe.gameText` after loading real English CSF labels through
+  `GameText.cpp`.
   original engine startup still needs to consume the mounted runtime archive set
   beyond this preflight.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
@@ -460,7 +463,9 @@ The wasm CMake skeleton currently builds:
 - `zh_gameclient_text`: original `GameEngine/GameClient/GameText.cpp` and
   `LanguageFilter.cpp` compiled into a focused wasm static library so
   networking/download tests can use the real text manager without linking the
-  full GameClient utility archive.
+  full GameClient utility archive. The main `cnc-port` bootstrap also links
+  this archive for a real-asset `Data\English\Generals.csf` preflight through
+  the original `FileSystem` archive fallback path.
 - `zh_gamenetwork_core`: original `GameEngine/GameNetwork` command/frame,
   setup, LAN, and leaf utility sources `Connection.cpp`,
   `ConnectionManager.cpp`, `DisconnectManager.cpp`, `DownloadManager.cpp`,
@@ -657,7 +662,9 @@ The wasm CMake skeleton currently builds:
   bootstrap has registered the verified archive directory, `*.big` mask, archive
   count, and total byte count before boot and keeps that state after boot for
   later original engine startup, including a boot-time `archiveMount.bootProbe`
-  produced by consuming the registered aggregate archive path.
+  produced by consuming the registered aggregate archive path. It also asserts
+  `assetProbe.gameText` from original `GameText.cpp` by checking the English CSF
+  file, known title/control-bar labels, and `CONTROLBAR:` prefix enumeration.
 
 ## Next Compile Order
 

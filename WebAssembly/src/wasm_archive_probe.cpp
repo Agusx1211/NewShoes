@@ -12,6 +12,8 @@
 #include "Common/GlobalData.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/UnicodeString.h"
+#include "GameClient/GameText.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -19,6 +21,9 @@ SubsystemInterfaceList *TheSubsystemList = nullptr;
 GlobalData *TheGlobalData = nullptr;
 class AudioManager;
 AudioManager *TheAudio = nullptr;
+HWND ApplicationHWnd = NULL;
+const Char *g_strFile = "Data\\Generals.str";
+const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
@@ -80,6 +85,42 @@ bool read_first_indexed_archive_file(
 
 	return false;
 }
+
+void probe_original_game_text(ArchiveProbeResult &result)
+{
+	result.game_text_attempted = true;
+	GameTextInterface *old_game_text = TheGameText;
+	GameTextInterface *game_text = CreateGameTextInterface();
+	TheGameText = game_text;
+
+	try {
+		if (game_text != nullptr) {
+			game_text->init();
+
+			Bool title_exists = FALSE;
+			const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+			result.game_text_title_label = title_exists && !title.isEmpty();
+
+			Bool control_bar_exists = FALSE;
+			const UnicodeString control_bar_text =
+				game_text->fetch("CONTROLBAR:ConstructAmericaCommandCenter", &control_bar_exists);
+			result.game_text_control_bar_label = control_bar_exists && !control_bar_text.isEmpty();
+
+			AsciiStringVec &control_bar_labels =
+				game_text->getStringsWithLabelPrefix(AsciiString("CONTROLBAR:"));
+			result.game_text_control_bar_label_count = control_bar_labels.size();
+			result.game_text_ok =
+				result.game_text_title_label &&
+				result.game_text_control_bar_label &&
+				result.game_text_control_bar_label_count > 20;
+		}
+	} catch (...) {
+		result.game_text_ok = false;
+	}
+
+	TheGameText = old_game_text;
+	delete game_text;
+}
 }
 
 ArchiveProbeResult probe_original_archive(const char *archive_path)
@@ -111,6 +152,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist("Data\\INI\\Armor.ini");
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
+			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
 
 			std::vector<char> sample_data;
 			const bool sample_ok = read_first_indexed_archive_file(
@@ -120,6 +162,9 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 				result.indexed_file_count);
 			result.sample_bytes = sample_data.size();
 			result.ok = sample_ok && result.indexed_file_count > 0;
+			if (result.has_generals_csf) {
+				probe_original_game_text(result);
+			}
 		}
 
 		TheFileSystem = nullptr;

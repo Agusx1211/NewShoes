@@ -238,6 +238,9 @@ shares structure and follows behind.
 - [x] Make original `UnicodeString::nextToken` copy token bytes using
       `sizeof(WideChar)` so tokenization remains valid under wasm's non-MSVC
       wide-character width.
+- [x] Make original `GameClient/GameText.cpp` read and decode CSF string
+      payloads as explicit 16-bit code units under wasm's 32-bit `WideChar`,
+      with browser real-asset coverage against `Data\English\Generals.csf`.
 - [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
       libc++/wasm before relying on it for asset and file buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
@@ -1130,6 +1133,11 @@ shares structure and follows behind.
 - [x] Compile original `GameClient/GameText.cpp` and smoke-test the string-file
       path through the original `GameTextInterface`, including label fetch,
       escaped text, map string files, prefix lookup, and missing-label fallback.
+- [x] Link original `GameText.cpp`/`LanguageFilter.cpp` into the main
+      `cnc-port` archive preflight and harness-test real
+      `Data\English\Generals.csf` loading from the fetched runtime BIG set,
+      including the title label, an America command-center control-bar label,
+      and `CONTROLBAR:` prefix enumeration.
 - [x] Compile original `GameClient/DisplayString.cpp`,
       `DisplayStringManager.cpp`, `GUI/GameFont.cpp`,
       `GUI/WinInstanceData.cpp`, and empty legacy `DrawableManager.cpp`; smoke
@@ -1552,6 +1560,12 @@ shares structure and follows behind.
       original `Win32BIGFileSystem`, with Playwright coverage for the boot-time
       probe result. This is an asset-startup preflight only; full engine init
       and real INI/data parsing remain open.
+- [x] Extend the wasm bootstrap archive preflight to load the real English
+      CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
+      with Playwright coverage for the CSF file, known labels, and
+      `CONTROLBAR:` label enumeration. This is a GameText asset preflight only;
+      full original GameText startup and language/font initialization remain
+      open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
