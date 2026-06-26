@@ -640,11 +640,10 @@ shares structure and follows behind.
       ScienceStore validation, ControlBar, PlayerTemplateStore, and
       SpecialPowerStore singleton surfaces are available without target-local
       parser stubs.
-- [ ] Link and smoke-test original crate, draw-group, terrain-road /
-      bridge, and upgrade INI parser routes after the real `Common/INI.cpp`
-      reader, `CrateSystem`, `DrawGroupInfo`, `TerrainRoads`, and
-      `UpgradeCenter` singleton surfaces are available without target-local
-      parser stubs.
+- [ ] Link and smoke-test original crate, draw-group, and upgrade INI parser
+      routes after the real `Common/INI.cpp` reader, `CrateSystem`,
+      `DrawGroupInfo`, and `UpgradeCenter` singleton surfaces are available
+      without target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
@@ -1269,8 +1268,8 @@ shares structure and follows behind.
       InGameUI, GameClient, drawable/display, object, and browser render/input
       paths are available and harness-driven.
 - [x] Compile original `GameClient/Terrain/TerrainRoads.cpp` in the GameClient
-      utility target; current coverage is compile-only until terrain and
-      rendering can be harness-driven.
+      utility target; `Data\INI\Roads.ini` runtime parser coverage now proves
+      definition loading, while map road placement and rendering remain open.
 - [x] Compile original `GameClient/GraphDraw.cpp` in the GameClient utility
       target; it is currently compile-only because the active wasm build does
       not define `PERF_TIMERS`.
@@ -1619,8 +1618,9 @@ shares structure and follows behind.
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
       `ready` after the boot-time archive/Armor/Science/Multiplayer/Terrain/
-      GameData/Water/Weather/Video/GameText/MapCache probes pass. This is bootstrap
-      preflight only; full engine-init missing-asset handling remains open.
+      TerrainRoads/GameData/Water/Weather/Video/GameText/MapCache probes pass.
+      This is bootstrap preflight only; full engine-init missing-asset handling
+      remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
@@ -1684,8 +1684,15 @@ shares structure and follows behind.
       `Common/TerrainTypes.cpp`, expose parsed shipped terrain metadata as
       `assetProbe.terrain`, and require it for the Playwright
       `startupAssets.ready` state. This is a focused shipped terrain-type
-      preflight only; terrain-road/bridge parsing, map terrain loading, and W3D
-      terrain rendering remain open.
+      preflight only; map terrain loading and W3D terrain rendering remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Roads.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INITerrainRoad.cpp`,
+      `Common/INI/INITerrainBridge.cpp`, and `GameClient/TerrainRoads.cpp`,
+      expose parsed shipped road/bridge metadata as `assetProbe.terrainRoads`,
+      and require it for the Playwright `startupAssets.ready` state. This is a
+      focused shipped terrain-road/bridge preflight only; map road placement,
+      bridge gameplay integration, and W3D terrain/bridge rendering remain open.
 - [x] Extend the wasm bootstrap archive preflight to load the real English
       CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
       with Playwright coverage for the CSF file, known labels, and
@@ -1763,6 +1770,12 @@ shares structure and follows behind.
       `Common/TerrainTypes.cpp`, with harness state proving 247 terrain
       collection entries plus selected transition/asphalt/desert/beach/snow
       classes and textures.
+- [x] Shipped terrain-road and bridge definitions load from real
+      `Data\INI\Roads.ini` through original `Common/INI.cpp::load`,
+      `Common/INI/INITerrainRoad.cpp`, `Common/INI/INITerrainBridge.cpp`, and
+      `GameClient/TerrainRoads.cpp`, with harness state proving 63 roads,
+      27 bridges, selected two-lane/four-lane/dirt-road fields, and the
+      Concrete bridge model/texture/FX metadata.
 - [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the

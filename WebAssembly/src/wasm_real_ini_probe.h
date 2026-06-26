@@ -242,6 +242,49 @@ struct RealTerrainIniProbeResult
 	bool asphalt_restrict_construction = false;
 };
 
+struct RealTerrainRoadsIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t road_count = 0;
+	std::size_t bridge_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool two_lane_found = false;
+	bool four_lane_found = false;
+	bool dirt_road_found = false;
+	bool concrete_bridge_found = false;
+	std::string two_lane_texture;
+	std::string four_lane_texture;
+	std::string dirt_road_texture;
+	std::string concrete_bridge_texture;
+	std::string concrete_bridge_model;
+	std::string concrete_bridge_damaged_texture;
+	std::string concrete_bridge_scaffold;
+	std::string concrete_bridge_tower_left;
+	std::string concrete_bridge_damage_sound;
+	std::string concrete_bridge_repaired_sound;
+	std::string concrete_bridge_damage_ocl;
+	std::string concrete_bridge_damage_fx;
+	std::string concrete_bridge_repair_fx;
+	float two_lane_width = 0.0f;
+	float two_lane_width_in_texture = 0.0f;
+	float four_lane_width = 0.0f;
+	float dirt_road_width = 0.0f;
+	float dirt_road_width_in_texture = 0.0f;
+	float concrete_bridge_scale = 0.0f;
+	float concrete_bridge_radar_red = 0.0f;
+	float concrete_bridge_radar_green = 0.0f;
+	float concrete_bridge_radar_blue = 0.0f;
+	float concrete_bridge_transition_effects_height = 0.0f;
+	int concrete_bridge_num_fx_per_type = 0;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
@@ -251,3 +294,4 @@ RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);
 RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);
 RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path);
 RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);
+RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);

@@ -32,6 +32,7 @@ constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
+constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -230,6 +231,53 @@ void copy_terrain_probe(const RealTerrainIniProbeResult &terrain, ArchiveProbeRe
 	result.terrain_asphalt_restrict_construction = terrain.asphalt_restrict_construction;
 }
 
+void copy_terrain_roads_probe(const RealTerrainRoadsIniProbeResult &terrain_roads, ArchiveProbeResult &result)
+{
+	result.terrain_roads_attempted = terrain_roads.attempted;
+	result.terrain_roads_ok = terrain_roads.ok;
+	result.terrain_roads_loaded_archives = terrain_roads.loaded_archives;
+	result.terrain_roads_file_exists = terrain_roads.file_exists;
+	result.terrain_roads_original_ini_load = terrain_roads.original_ini_load;
+	result.terrain_roads_bytes = terrain_roads.bytes;
+	result.terrain_roads_parsed_fields = terrain_roads.parsed_fields;
+	result.terrain_roads_road_count = terrain_roads.road_count;
+	result.terrain_roads_bridge_count = terrain_roads.bridge_count;
+	result.terrain_roads_source = terrain_roads.source;
+	result.terrain_roads_two_lane_found = terrain_roads.two_lane_found;
+	result.terrain_roads_four_lane_found = terrain_roads.four_lane_found;
+	result.terrain_roads_dirt_road_found = terrain_roads.dirt_road_found;
+	result.terrain_roads_concrete_bridge_found = terrain_roads.concrete_bridge_found;
+	result.terrain_roads_two_lane_texture = terrain_roads.two_lane_texture;
+	result.terrain_roads_four_lane_texture = terrain_roads.four_lane_texture;
+	result.terrain_roads_dirt_road_texture = terrain_roads.dirt_road_texture;
+	result.terrain_roads_concrete_bridge_texture = terrain_roads.concrete_bridge_texture;
+	result.terrain_roads_concrete_bridge_model = terrain_roads.concrete_bridge_model;
+	result.terrain_roads_concrete_bridge_damaged_texture =
+		terrain_roads.concrete_bridge_damaged_texture;
+	result.terrain_roads_concrete_bridge_scaffold = terrain_roads.concrete_bridge_scaffold;
+	result.terrain_roads_concrete_bridge_tower_left = terrain_roads.concrete_bridge_tower_left;
+	result.terrain_roads_concrete_bridge_damage_sound =
+		terrain_roads.concrete_bridge_damage_sound;
+	result.terrain_roads_concrete_bridge_repaired_sound =
+		terrain_roads.concrete_bridge_repaired_sound;
+	result.terrain_roads_concrete_bridge_damage_ocl = terrain_roads.concrete_bridge_damage_ocl;
+	result.terrain_roads_concrete_bridge_damage_fx = terrain_roads.concrete_bridge_damage_fx;
+	result.terrain_roads_concrete_bridge_repair_fx = terrain_roads.concrete_bridge_repair_fx;
+	result.terrain_roads_two_lane_width = terrain_roads.two_lane_width;
+	result.terrain_roads_two_lane_width_in_texture = terrain_roads.two_lane_width_in_texture;
+	result.terrain_roads_four_lane_width = terrain_roads.four_lane_width;
+	result.terrain_roads_dirt_road_width = terrain_roads.dirt_road_width;
+	result.terrain_roads_dirt_road_width_in_texture = terrain_roads.dirt_road_width_in_texture;
+	result.terrain_roads_concrete_bridge_scale = terrain_roads.concrete_bridge_scale;
+	result.terrain_roads_concrete_bridge_radar_red = terrain_roads.concrete_bridge_radar_red;
+	result.terrain_roads_concrete_bridge_radar_green = terrain_roads.concrete_bridge_radar_green;
+	result.terrain_roads_concrete_bridge_radar_blue = terrain_roads.concrete_bridge_radar_blue;
+	result.terrain_roads_concrete_bridge_transition_effects_height =
+		terrain_roads.concrete_bridge_transition_effects_height;
+	result.terrain_roads_concrete_bridge_num_fx_per_type =
+		terrain_roads.concrete_bridge_num_fx_per_type;
+}
+
 void copy_water_probe(const RealWaterIniProbeResult &water, ArchiveProbeResult &result)
 {
 	result.water_attempted = water.attempted;
@@ -397,6 +445,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
 			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
+			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
@@ -446,6 +495,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_terrain_ini) {
 		copy_terrain_probe(probe_original_terrain_ini_load(archive_path), result);
 		result.ok = result.ok && result.terrain_ok;
+	}
+	if (result.loaded && result.has_roads_ini) {
+		copy_terrain_roads_probe(probe_original_terrain_roads_ini_load(archive_path), result);
+		result.ok = result.ok && result.terrain_roads_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

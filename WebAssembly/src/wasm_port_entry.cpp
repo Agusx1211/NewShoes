@@ -273,6 +273,7 @@ bool startup_boot_ini_present()
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_game_data_ini &&
 		g_archive_probe.has_terrain_ini &&
+		g_archive_probe.has_roads_ini &&
 		g_archive_probe.has_weapon_ini;
 }
 
@@ -316,6 +317,13 @@ bool startup_terrain_ready()
 	return g_archive_probe.has_terrain_ini &&
 		g_archive_probe.terrain_attempted &&
 		g_archive_probe.terrain_ok;
+}
+
+bool startup_terrain_roads_ready()
+{
+	return g_archive_probe.has_roads_ini &&
+		g_archive_probe.terrain_roads_attempted &&
+		g_archive_probe.terrain_roads_ok;
 }
 
 bool startup_game_text_ready()
@@ -365,6 +373,7 @@ bool startup_assets_ready()
 		startup_science_ready() &&
 		startup_multiplayer_ready() &&
 		startup_terrain_ready() &&
+		startup_terrain_roads_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -398,6 +407,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_terrain_ready()) {
 		return "terrain_probe_failed";
+	}
+	if (!startup_terrain_roads_ready()) {
+		return "terrain_roads_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -448,6 +460,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_terrain_ready()) {
 		return "Runtime BIG archive set did not pass the Terrain.ini startup probe.";
+	}
+	if (!startup_terrain_roads_ready()) {
+		return "Runtime BIG archive set did not pass the Roads.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -546,7 +561,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[48000];
+	char buffer[56000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
@@ -565,6 +580,34 @@ const char *write_state_json()
 		json_escape(g_archive_probe.terrain_beach_tropical_texture);
 	const std::string terrain_snow_flat_texture_json =
 		json_escape(g_archive_probe.terrain_snow_flat_texture);
+	const std::string terrain_roads_source_json =
+		json_escape(g_archive_probe.terrain_roads_source);
+	const std::string terrain_roads_two_lane_texture_json =
+		json_escape(g_archive_probe.terrain_roads_two_lane_texture);
+	const std::string terrain_roads_four_lane_texture_json =
+		json_escape(g_archive_probe.terrain_roads_four_lane_texture);
+	const std::string terrain_roads_dirt_road_texture_json =
+		json_escape(g_archive_probe.terrain_roads_dirt_road_texture);
+	const std::string terrain_roads_concrete_bridge_texture_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_texture);
+	const std::string terrain_roads_concrete_bridge_model_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_model);
+	const std::string terrain_roads_concrete_bridge_damaged_texture_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_damaged_texture);
+	const std::string terrain_roads_concrete_bridge_scaffold_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_scaffold);
+	const std::string terrain_roads_concrete_bridge_tower_left_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_tower_left);
+	const std::string terrain_roads_concrete_bridge_damage_sound_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_damage_sound);
+	const std::string terrain_roads_concrete_bridge_repaired_sound_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_repaired_sound);
+	const std::string terrain_roads_concrete_bridge_damage_ocl_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_damage_ocl);
+	const std::string terrain_roads_concrete_bridge_damage_fx_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_damage_fx);
+	const std::string terrain_roads_concrete_bridge_repair_fx_json =
+		json_escape(g_archive_probe.terrain_roads_concrete_bridge_repair_fx);
 	const std::string water_source_json = json_escape(g_archive_probe.water_source);
 	const std::string water_morning_sky_texture_json =
 		json_escape(g_archive_probe.water_morning_sky_texture);
@@ -619,7 +662,7 @@ const char *write_state_json()
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"gameDataIni\":%s,\"scienceIni\":%s,\"multiplayerIni\":%s,"
-		"\"terrainIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"terrainIni\":%s,\"roadsIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
@@ -670,6 +713,31 @@ const char *write_state_json()
 		"\"asphaltClass\":%d,\"desertDryClass\":%d,"
 		"\"beachTropicalClass\":%d,\"snowFlatClass\":%d,"
 		"\"asphaltBlendEdges\":%s,\"asphaltRestrictConstruction\":%s},"
+		"\"terrainRoads\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"roads\":%zu,"
+		"\"bridges\":%zu,\"twoLane\":%s,\"fourLane\":%s,"
+		"\"dirtRoad\":%s,\"concreteBridge\":%s,"
+		"\"twoLaneTexture\":\"%s\",\"fourLaneTexture\":\"%s\","
+		"\"dirtRoadTexture\":\"%s\",\"concreteBridgeTexture\":\"%s\","
+		"\"concreteBridgeModel\":\"%s\","
+		"\"concreteBridgeDamagedTexture\":\"%s\","
+		"\"concreteBridgeScaffold\":\"%s\","
+		"\"concreteBridgeTowerLeft\":\"%s\","
+		"\"concreteBridgeDamageSound\":\"%s\","
+		"\"concreteBridgeRepairedSound\":\"%s\","
+		"\"concreteBridgeDamageOCL\":\"%s\","
+		"\"concreteBridgeDamageFX\":\"%s\","
+		"\"concreteBridgeRepairFX\":\"%s\","
+		"\"twoLaneWidth\":%.3f,\"twoLaneWidthInTexture\":%.3f,"
+		"\"fourLaneWidth\":%.3f,\"dirtRoadWidth\":%.3f,"
+		"\"dirtRoadWidthInTexture\":%.3f,"
+		"\"concreteBridgeScale\":%.3f,"
+		"\"concreteBridgeRadarRed\":%.4f,"
+		"\"concreteBridgeRadarGreen\":%.4f,"
+		"\"concreteBridgeRadarBlue\":%.4f,"
+		"\"concreteBridgeTransitionEffectsHeight\":%.3f,"
+		"\"concreteBridgeNumFXPerType\":%d},"
 		"\"water\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"waterSets\":%zu,"
@@ -713,7 +781,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"multiplayer\":%s,\"terrain\":%s,"
+		"\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
@@ -772,6 +840,7 @@ const char *write_state_json()
 		g_archive_probe.has_science_ini ? "true" : "false",
 		g_archive_probe.has_multiplayer_ini ? "true" : "false",
 		g_archive_probe.has_terrain_ini ? "true" : "false",
+		g_archive_probe.has_roads_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
@@ -890,6 +959,44 @@ const char *write_state_json()
 		g_archive_probe.terrain_snow_flat_class,
 		g_archive_probe.terrain_asphalt_blend_edges ? "true" : "false",
 		g_archive_probe.terrain_asphalt_restrict_construction ? "true" : "false",
+		g_archive_probe.terrain_roads_attempted ? "true" : "false",
+		g_archive_probe.terrain_roads_ok ? "true" : "false",
+		g_archive_probe.terrain_roads_bytes,
+		terrain_roads_source_json.c_str(),
+		g_archive_probe.terrain_roads_loaded_archives ? "true" : "false",
+		g_archive_probe.terrain_roads_file_exists ? "true" : "false",
+		g_archive_probe.terrain_roads_original_ini_load ? "true" : "false",
+		g_archive_probe.terrain_roads_parsed_fields,
+		g_archive_probe.terrain_roads_road_count,
+		g_archive_probe.terrain_roads_bridge_count,
+		g_archive_probe.terrain_roads_two_lane_found ? "true" : "false",
+		g_archive_probe.terrain_roads_four_lane_found ? "true" : "false",
+		g_archive_probe.terrain_roads_dirt_road_found ? "true" : "false",
+		g_archive_probe.terrain_roads_concrete_bridge_found ? "true" : "false",
+		terrain_roads_two_lane_texture_json.c_str(),
+		terrain_roads_four_lane_texture_json.c_str(),
+		terrain_roads_dirt_road_texture_json.c_str(),
+		terrain_roads_concrete_bridge_texture_json.c_str(),
+		terrain_roads_concrete_bridge_model_json.c_str(),
+		terrain_roads_concrete_bridge_damaged_texture_json.c_str(),
+		terrain_roads_concrete_bridge_scaffold_json.c_str(),
+		terrain_roads_concrete_bridge_tower_left_json.c_str(),
+		terrain_roads_concrete_bridge_damage_sound_json.c_str(),
+		terrain_roads_concrete_bridge_repaired_sound_json.c_str(),
+		terrain_roads_concrete_bridge_damage_ocl_json.c_str(),
+		terrain_roads_concrete_bridge_damage_fx_json.c_str(),
+		terrain_roads_concrete_bridge_repair_fx_json.c_str(),
+		g_archive_probe.terrain_roads_two_lane_width,
+		g_archive_probe.terrain_roads_two_lane_width_in_texture,
+		g_archive_probe.terrain_roads_four_lane_width,
+		g_archive_probe.terrain_roads_dirt_road_width,
+		g_archive_probe.terrain_roads_dirt_road_width_in_texture,
+		g_archive_probe.terrain_roads_concrete_bridge_scale,
+		g_archive_probe.terrain_roads_concrete_bridge_radar_red,
+		g_archive_probe.terrain_roads_concrete_bridge_radar_green,
+		g_archive_probe.terrain_roads_concrete_bridge_radar_blue,
+		g_archive_probe.terrain_roads_concrete_bridge_transition_effects_height,
+		g_archive_probe.terrain_roads_concrete_bridge_num_fx_per_type,
 		g_archive_probe.water_attempted ? "true" : "false",
 		g_archive_probe.water_ok ? "true" : "false",
 		g_archive_probe.water_bytes,
@@ -997,6 +1104,7 @@ const char *write_state_json()
 		startup_science_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
 		startup_terrain_ready() ? "true" : "false",
+		startup_terrain_roads_ready() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",

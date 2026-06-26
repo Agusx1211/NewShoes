@@ -20,6 +20,7 @@
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
+#include "GameClient/TerrainRoads.h"
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/Water.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
@@ -40,6 +41,7 @@ constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
+constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -210,6 +212,41 @@ std::size_t count_verified_fields(const RealTerrainIniProbeResult &result)
 		(result.snow_flat_class == TERRAIN_FLAT_SNOW ? 1U : 0U);
 }
 
+std::size_t count_verified_fields(const RealTerrainRoadsIniProbeResult &result)
+{
+	return
+		(result.road_count == 63 ? 1U : 0U) +
+		(result.bridge_count == 27 ? 1U : 0U) +
+		(result.two_lane_found ? 1U : 0U) +
+		(result.two_lane_texture == "TRTwoLane.tga" ? 1U : 0U) +
+		(std::fabs(result.two_lane_width - 35.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.two_lane_width_in_texture - 0.9f) < 0.001f ? 1U : 0U) +
+		(result.four_lane_found ? 1U : 0U) +
+		(result.four_lane_texture == "TRFourLane.tga" ? 1U : 0U) +
+		(std::fabs(result.four_lane_width - 60.0f) < 0.001f ? 1U : 0U) +
+		(result.dirt_road_found ? 1U : 0U) +
+		(result.dirt_road_texture == "TRDirtRoad.tga" ? 1U : 0U) +
+		(std::fabs(result.dirt_road_width - 52.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.dirt_road_width_in_texture - 0.95f) < 0.001f ? 1U : 0U) +
+		(result.concrete_bridge_found ? 1U : 0U) +
+		(result.concrete_bridge_texture == "CBBridgeSt.tga" ? 1U : 0U) +
+		(result.concrete_bridge_model == "CBBridgeSt" ? 1U : 0U) +
+		(result.concrete_bridge_damaged_texture == "CBBridgeSt_d.tga" ? 1U : 0U) +
+		(result.concrete_bridge_scaffold == "BridgeScaffold01" ? 1U : 0U) +
+		(result.concrete_bridge_tower_left == "BridgeTowerConcreteLeft01" ? 1U : 0U) +
+		(result.concrete_bridge_damage_sound == "BridgeDamaged" ? 1U : 0U) +
+		(result.concrete_bridge_repaired_sound == "BridgeRepaired" ? 1U : 0U) +
+		(result.concrete_bridge_damage_ocl == "OCL_BridgeDamaged01" ? 1U : 0U) +
+		(result.concrete_bridge_damage_fx == "FX_BridgeDamaged01" ? 1U : 0U) +
+		(result.concrete_bridge_repair_fx == "FX_BridgeRepaired01" ? 1U : 0U) +
+		(std::fabs(result.concrete_bridge_scale - 0.85f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.concrete_bridge_radar_red - (192.0f / 255.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.concrete_bridge_radar_green - (192.0f / 255.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.concrete_bridge_radar_blue - (192.0f / 255.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.concrete_bridge_transition_effects_height - 0.0f) < 0.001f ? 1U : 0U) +
+		(result.concrete_bridge_num_fx_per_type == 32 ? 1U : 0U);
+}
+
 void reset_water_settings()
 {
 	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
@@ -293,6 +330,48 @@ void inspect_terrain_entry(
 
 	texture = terrain->getTexture().str();
 	terrain_class = terrain->getClass();
+}
+
+std::size_t count_terrain_roads(TerrainRoadCollection &terrain_roads)
+{
+	std::size_t count = 0;
+	for (TerrainRoadType *road = terrain_roads.firstRoad(); road != nullptr;
+			road = terrain_roads.nextRoad(road)) {
+		++count;
+	}
+	return count;
+}
+
+std::size_t count_terrain_bridges(TerrainRoadCollection &terrain_roads)
+{
+	std::size_t count = 0;
+	for (TerrainRoadType *bridge = terrain_roads.firstBridge(); bridge != nullptr;
+			bridge = terrain_roads.nextBridge(bridge)) {
+		++count;
+	}
+	return count;
+}
+
+void inspect_terrain_road_entry(
+	TerrainRoadCollection &terrain_roads,
+	const char *name,
+	bool &found,
+	std::string &texture,
+	float &width,
+	float &width_in_texture)
+{
+	TerrainRoadType *road = terrain_roads.findRoad(AsciiString(name));
+	found = road != nullptr;
+	if (!found) {
+		texture.clear();
+		width = 0.0f;
+		width_in_texture = 0.0f;
+		return;
+	}
+
+	texture = road->getTexture().str();
+	width = road->getRoadWidth();
+	width_in_texture = road->getRoadWidthInTexture();
 }
 }
 
@@ -1084,6 +1163,134 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 
 	if (terrain_types != nullptr) {
 		delete terrain_types;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path)
+{
+	RealTerrainRoadsIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INITerrainRoad.cpp + INITerrainBridge.cpp + TerrainRoads.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	TerrainRoadCollection *old_terrain_roads = TheTerrainRoads;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	TerrainRoadCollection *terrain_roads = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(ROADS_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				terrain_roads = NEW TerrainRoadCollection;
+				TheTerrainRoads = terrain_roads;
+
+				INI ini;
+				ini.load(AsciiString(ROADS_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.road_count = count_terrain_roads(*terrain_roads);
+				result.bridge_count = count_terrain_bridges(*terrain_roads);
+				inspect_terrain_road_entry(
+					*terrain_roads,
+					"TwoLane",
+					result.two_lane_found,
+					result.two_lane_texture,
+					result.two_lane_width,
+					result.two_lane_width_in_texture);
+				float four_lane_width_in_texture = 0.0f;
+				inspect_terrain_road_entry(
+					*terrain_roads,
+					"FourLane",
+					result.four_lane_found,
+					result.four_lane_texture,
+					result.four_lane_width,
+					four_lane_width_in_texture);
+				inspect_terrain_road_entry(
+					*terrain_roads,
+					"DirtRoad",
+					result.dirt_road_found,
+					result.dirt_road_texture,
+					result.dirt_road_width,
+					result.dirt_road_width_in_texture);
+
+				TerrainRoadType *concrete = terrain_roads->findBridge(AsciiString("Concrete"));
+				result.concrete_bridge_found = concrete != nullptr;
+				if (concrete != nullptr) {
+					const RGBColor radar_color = concrete->getRadarColor();
+					result.concrete_bridge_texture = concrete->getTexture().str();
+					result.concrete_bridge_model = concrete->getBridgeModel().str();
+					result.concrete_bridge_damaged_texture = concrete->getTextureDamaged().str();
+					result.concrete_bridge_scaffold = concrete->getScaffoldObjectName().str();
+					result.concrete_bridge_tower_left =
+						concrete->getTowerObjectName(BRIDGE_TOWER_FROM_LEFT).str();
+					result.concrete_bridge_damage_sound =
+						concrete->getDamageToSoundString(BODY_DAMAGED).str();
+					result.concrete_bridge_repaired_sound =
+						concrete->getRepairedToSoundString(BODY_DAMAGED).str();
+					result.concrete_bridge_damage_ocl =
+						concrete->getDamageToOCLString(BODY_DAMAGED, 0).str();
+					result.concrete_bridge_damage_fx =
+						concrete->getDamageToFXString(BODY_DAMAGED, 0).str();
+					result.concrete_bridge_repair_fx =
+						concrete->getRepairedToFXString(BODY_PRISTINE, 0).str();
+					result.concrete_bridge_scale = concrete->getBridgeScale();
+					result.concrete_bridge_radar_red = radar_color.red;
+					result.concrete_bridge_radar_green = radar_color.green;
+					result.concrete_bridge_radar_blue = radar_color.blue;
+					result.concrete_bridge_transition_effects_height =
+						concrete->getTransitionEffectsHeight();
+					result.concrete_bridge_num_fx_per_type = concrete->getNumFXPerType();
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 30000 &&
+					result.original_ini_load &&
+					result.parsed_fields == 30;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheTerrainRoads = old_terrain_roads;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (terrain_roads != nullptr) {
+		delete terrain_roads;
 	}
 
 	shutdownMemoryManager();

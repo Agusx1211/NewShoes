@@ -267,6 +267,51 @@ function assertTerrainProbe(assetProbe, context) {
   }
 }
 
+function assertTerrainRoadsProbe(assetProbe, context) {
+  const terrainRoads = assetProbe?.terrainRoads;
+  const expectedRadar = 192 / 255;
+  if (!assetProbe?.inizh?.roadsIni
+      || !terrainRoads?.attempted
+      || !terrainRoads.ok
+      || terrainRoads.source !== "GameEngine/Common/INI.cpp::load + INITerrainRoad.cpp + INITerrainBridge.cpp + TerrainRoads.cpp"
+      || !terrainRoads.loadedArchives
+      || !terrainRoads.fileExists
+      || !terrainRoads.originalIniLoad
+      || terrainRoads.parsedFields !== 30
+      || terrainRoads.roads !== 63
+      || terrainRoads.bridges !== 27
+      || !terrainRoads.twoLane
+      || !terrainRoads.fourLane
+      || !terrainRoads.dirtRoad
+      || !terrainRoads.concreteBridge
+      || terrainRoads.twoLaneTexture !== "TRTwoLane.tga"
+      || terrainRoads.fourLaneTexture !== "TRFourLane.tga"
+      || terrainRoads.dirtRoadTexture !== "TRDirtRoad.tga"
+      || terrainRoads.concreteBridgeTexture !== "CBBridgeSt.tga"
+      || terrainRoads.concreteBridgeModel !== "CBBridgeSt"
+      || terrainRoads.concreteBridgeDamagedTexture !== "CBBridgeSt_d.tga"
+      || terrainRoads.concreteBridgeScaffold !== "BridgeScaffold01"
+      || terrainRoads.concreteBridgeTowerLeft !== "BridgeTowerConcreteLeft01"
+      || terrainRoads.concreteBridgeDamageSound !== "BridgeDamaged"
+      || terrainRoads.concreteBridgeRepairedSound !== "BridgeRepaired"
+      || terrainRoads.concreteBridgeDamageOCL !== "OCL_BridgeDamaged01"
+      || terrainRoads.concreteBridgeDamageFX !== "FX_BridgeDamaged01"
+      || terrainRoads.concreteBridgeRepairFX !== "FX_BridgeRepaired01"
+      || Math.abs(terrainRoads.twoLaneWidth - 35.0) > 0.001
+      || Math.abs(terrainRoads.twoLaneWidthInTexture - 0.9) > 0.001
+      || Math.abs(terrainRoads.fourLaneWidth - 60.0) > 0.001
+      || Math.abs(terrainRoads.dirtRoadWidth - 52.0) > 0.001
+      || Math.abs(terrainRoads.dirtRoadWidthInTexture - 0.95) > 0.001
+      || Math.abs(terrainRoads.concreteBridgeScale - 0.85) > 0.001
+      || Math.abs(terrainRoads.concreteBridgeRadarRed - expectedRadar) > 0.001
+      || Math.abs(terrainRoads.concreteBridgeRadarGreen - expectedRadar) > 0.001
+      || Math.abs(terrainRoads.concreteBridgeRadarBlue - expectedRadar) > 0.001
+      || Math.abs(terrainRoads.concreteBridgeTransitionEffectsHeight - 0.0) > 0.001
+      || terrainRoads.concreteBridgeNumFXPerType !== 32) {
+    throw new Error(`${context} did not parse expected Roads.ini road and bridge entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertMapCacheProbe(assetProbe, context) {
   const mapCache = assetProbe?.mapCache;
   if (!assetProbe?.maps?.mapCacheIni
@@ -304,6 +349,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.science
         || !startupAssets.required?.multiplayer
         || !startupAssets.required?.terrain
+        || !startupAssets.required?.terrainRoads
         || !startupAssets.required?.gameData
         || !startupAssets.required?.water
         || !startupAssets.required?.weather
@@ -384,6 +430,7 @@ try {
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.terrainIni
+      || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
@@ -392,6 +439,7 @@ try {
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
   assertTerrainProbe(assetProbe, "aggregate runtime archive probe");
+  assertTerrainRoadsProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
   assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
@@ -447,6 +495,7 @@ try {
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertTerrainProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertTerrainRoadsProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
