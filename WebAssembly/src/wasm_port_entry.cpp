@@ -885,6 +885,49 @@ std::string build_command_set_probe_json()
 	return buffer;
 }
 
+std::string build_draw_group_info_probe_json()
+{
+	char buffer[3000];
+	const std::string source_json = json_escape(g_archive_probe.draw_group_info_source);
+	const std::string font_name_json = json_escape(g_archive_probe.draw_group_info_font_name);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,"
+		"\"fontName\":\"%s\",\"fontSize\":%d,\"fontIsBold\":%s,"
+		"\"usePlayerColor\":%s,\"colorForText\":%u,"
+		"\"colorForTextDropShadow\":%u,"
+		"\"dropShadowOffsetX\":%d,\"dropShadowOffsetY\":%d,"
+		"\"usingPixelOffsetX\":%s,\"usingPixelOffsetY\":%s,"
+		"\"pixelOffsetX\":%d,\"pixelOffsetY\":%d,"
+		"\"percentOffsetX\":%.4f,\"percentOffsetY\":%.4f}",
+		g_archive_probe.draw_group_info_attempted ? "true" : "false",
+		g_archive_probe.draw_group_info_ok ? "true" : "false",
+		g_archive_probe.draw_group_info_bytes,
+		source_json.c_str(),
+		g_archive_probe.draw_group_info_loaded_archives ? "true" : "false",
+		g_archive_probe.draw_group_info_file_exists ? "true" : "false",
+		g_archive_probe.draw_group_info_original_ini_load ? "true" : "false",
+		g_archive_probe.draw_group_info_parsed_fields,
+		font_name_json.c_str(),
+		g_archive_probe.draw_group_info_font_size,
+		g_archive_probe.draw_group_info_font_is_bold ? "true" : "false",
+		g_archive_probe.draw_group_info_use_player_color ? "true" : "false",
+		g_archive_probe.draw_group_info_color_for_text,
+		g_archive_probe.draw_group_info_color_for_text_drop_shadow,
+		g_archive_probe.draw_group_info_drop_shadow_offset_x,
+		g_archive_probe.draw_group_info_drop_shadow_offset_y,
+		g_archive_probe.draw_group_info_using_pixel_offset_x ? "true" : "false",
+		g_archive_probe.draw_group_info_using_pixel_offset_y ? "true" : "false",
+		g_archive_probe.draw_group_info_pixel_offset_x,
+		g_archive_probe.draw_group_info_pixel_offset_y,
+		g_archive_probe.draw_group_info_percent_offset_x,
+		g_archive_probe.draw_group_info_percent_offset_y);
+
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -928,6 +971,7 @@ const char *write_state_json()
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
 	const std::string command_set_probe_json = build_command_set_probe_json();
+	const std::string draw_group_info_probe_json = build_draw_group_info_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -1090,6 +1134,7 @@ const char *write_state_json()
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
+		"\"drawGroupInfoIni\":%s,"
 		"\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
@@ -1114,6 +1159,7 @@ const char *write_state_json()
 		"\"upgrade\":%s,"
 		"\"commandButton\":%s,"
 		"\"commandSet\":%s,"
+		"\"drawGroupInfo\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -1329,6 +1375,7 @@ const char *write_state_json()
 		g_archive_probe.has_terrain_ini ? "true" : "false",
 		g_archive_probe.has_roads_ini ? "true" : "false",
 		g_archive_probe.has_upgrade_ini ? "true" : "false",
+		g_archive_probe.has_draw_group_info_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
@@ -1378,6 +1425,7 @@ const char *write_state_json()
 		upgrade_probe_json.c_str(),
 		command_button_probe_json.c_str(),
 		command_set_probe_json.c_str(),
+		draw_group_info_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,

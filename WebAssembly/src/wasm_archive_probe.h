@@ -18,6 +18,7 @@ struct ArchiveProbeResult
 	bool has_multiplayer_ini = false;
 	bool has_terrain_ini = false;
 	bool has_roads_ini = false;
+	bool has_draw_group_info_ini = false;
 	bool has_upgrade_ini = false;
 	bool has_weapon_ini = false;
 	bool has_map_cache_ini = false;
@@ -104,6 +105,11 @@ struct ArchiveProbeResult
 	bool terrain_roads_loaded_archives = false;
 	bool terrain_roads_file_exists = false;
 	bool terrain_roads_original_ini_load = false;
+	bool draw_group_info_attempted = false;
+	bool draw_group_info_ok = false;
+	bool draw_group_info_loaded_archives = false;
+	bool draw_group_info_file_exists = false;
+	bool draw_group_info_original_ini_load = false;
 	bool upgrade_attempted = false;
 	bool upgrade_ok = false;
 	bool upgrade_loaded_archives = false;
@@ -189,6 +195,8 @@ struct ArchiveProbeResult
 	std::size_t terrain_roads_parsed_fields = 0;
 	std::size_t terrain_roads_road_count = 0;
 	std::size_t terrain_roads_bridge_count = 0;
+	std::size_t draw_group_info_bytes = 0;
+	std::size_t draw_group_info_parsed_fields = 0;
 	std::size_t upgrade_bytes = 0;
 	std::size_t upgrade_parsed_fields = 0;
 	std::size_t upgrade_count = 0;
@@ -212,6 +220,7 @@ struct ArchiveProbeResult
 	std::string special_power_source;
 	std::string command_button_source;
 	std::string command_set_source;
+	std::string draw_group_info_source;
 	std::string player_template_source;
 	bool armor_no_armor_found = false;
 	bool armor_human_armor_found = false;
@@ -320,6 +329,20 @@ struct ArchiveProbeResult
 	std::string command_set_ranger_slot1_special_power;
 	std::string command_set_ranger_slot1_upgrade;
 	std::string command_set_ranger_slot4_upgrade;
+	std::string draw_group_info_font_name;
+	int draw_group_info_font_size = 0;
+	bool draw_group_info_font_is_bold = false;
+	bool draw_group_info_use_player_color = false;
+	unsigned int draw_group_info_color_for_text = 0;
+	unsigned int draw_group_info_color_for_text_drop_shadow = 0;
+	int draw_group_info_drop_shadow_offset_x = 0;
+	int draw_group_info_drop_shadow_offset_y = 0;
+	bool draw_group_info_using_pixel_offset_x = false;
+	bool draw_group_info_using_pixel_offset_y = false;
+	int draw_group_info_pixel_offset_x = 0;
+	int draw_group_info_pixel_offset_y = 0;
+	float draw_group_info_percent_offset_x = 0.0f;
+	float draw_group_info_percent_offset_y = 0.0f;
 	bool player_template_america_found = false;
 	bool player_template_china_found = false;
 	bool player_template_gla_found = false;

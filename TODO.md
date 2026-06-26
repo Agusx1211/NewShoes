@@ -686,9 +686,18 @@ shares structure and follows behind.
       `Data\INI\Upgrade.ini` for veterancy templates, unique shipped upgrade
       count, build time/cost/type, academy classification, and preserved audio
       event names.
-- [ ] Link and smoke-test original crate and draw-group INI parser routes after
-      the real `Common/INI.cpp` reader, `CrateSystem`, and `DrawGroupInfo`
-      singleton surfaces are available without target-local parser stubs.
+- [x] Link the original draw-group INI parser destination into the focused
+      browser INI runtime, using original `INIDrawGroupInfo.cpp` and
+      `DrawGroupInfo.cpp`; archive/browser harness state now exposes the
+      optional probe and verifies the current shipped runtime archives do not
+      contain `Data\INI\DrawGroupInfo.ini`.
+- [ ] Locate or source the original `Run\Data\INI\DrawGroupInfo.ini` asset
+      referenced by the project files but absent from the current extracted
+      runtime BIG set, then enable the optional draw-group probe as a
+      real-data parse smoke.
+- [ ] Link and smoke-test the original crate INI parser route after the real
+      `Common/INI.cpp` reader and `CrateSystem` singleton surface are
+      available without target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but

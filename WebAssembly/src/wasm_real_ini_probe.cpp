@@ -25,6 +25,7 @@
 #include "Common/Upgrade.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/ControlBar.h"
+#include "GameClient/DrawGroupInfo.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
@@ -54,6 +55,7 @@ constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
+constexpr const char DRAW_GROUP_INFO_INI_PATH[] = "Data\\INI\\DrawGroupInfo.ini";
 constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
@@ -558,6 +560,23 @@ std::size_t count_verified_fields(const RealTerrainRoadsIniProbeResult &result)
 		(std::fabs(result.concrete_bridge_radar_blue - (192.0f / 255.0f)) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.concrete_bridge_transition_effects_height - 0.0f) < 0.001f ? 1U : 0U) +
 		(result.concrete_bridge_num_fx_per_type == 32 ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealDrawGroupInfoIniProbeResult &result)
+{
+	return
+		(result.font_name == "Arial" ? 1U : 0U) +
+		(result.font_size == 10 ? 1U : 0U) +
+		(!result.font_is_bold ? 1U : 0U) +
+		(result.use_player_color ? 1U : 0U) +
+		(result.color_for_text == 0xffffffffU ? 1U : 0U) +
+		(result.color_for_text_drop_shadow == 0xff000000U ? 1U : 0U) +
+		(result.drop_shadow_offset_x == -1 ? 1U : 0U) +
+		(result.drop_shadow_offset_y == -1 ? 1U : 0U) +
+		(!result.using_pixel_offset_x ? 1U : 0U) +
+		(std::fabs(result.percent_offset_x - -0.05f) < 0.001f ? 1U : 0U) +
+		(result.using_pixel_offset_y ? 1U : 0U) +
+		(result.pixel_offset_y == -10 ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealUpgradeIniProbeResult &result)
@@ -2339,6 +2358,102 @@ RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char 
 
 	if (terrain_roads != nullptr) {
 		delete terrain_roads;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path)
+{
+	RealDrawGroupInfoIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + DrawGroupInfo.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	DrawGroupInfo *old_draw_group_info = TheDrawGroupInfo;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	DrawGroupInfo *draw_group_info = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(DRAW_GROUP_INFO_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				draw_group_info = NEW DrawGroupInfo;
+				TheDrawGroupInfo = draw_group_info;
+
+				INI ini;
+				ini.load(AsciiString(DRAW_GROUP_INFO_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.font_name = draw_group_info->m_fontName.str();
+				result.font_size = draw_group_info->m_fontSize;
+				result.font_is_bold = draw_group_info->m_fontIsBold;
+				result.use_player_color = draw_group_info->m_usePlayerColor;
+				result.color_for_text =
+					static_cast<unsigned int>(draw_group_info->m_colorForText);
+				result.color_for_text_drop_shadow =
+					static_cast<unsigned int>(draw_group_info->m_colorForTextDropShadow);
+				result.drop_shadow_offset_x = draw_group_info->m_dropShadowOffsetX;
+				result.drop_shadow_offset_y = draw_group_info->m_dropShadowOffsetY;
+				result.using_pixel_offset_x = draw_group_info->m_usingPixelOffsetX;
+				result.using_pixel_offset_y = draw_group_info->m_usingPixelOffsetY;
+				if (draw_group_info->m_usingPixelOffsetX) {
+					result.pixel_offset_x = draw_group_info->m_pixelOffsetX;
+				} else {
+					result.percent_offset_x = draw_group_info->m_percentOffsetX;
+				}
+				if (draw_group_info->m_usingPixelOffsetY) {
+					result.pixel_offset_y = draw_group_info->m_pixelOffsetY;
+				} else {
+					result.percent_offset_y = draw_group_info->m_percentOffsetY;
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100 &&
+					result.original_ini_load &&
+					result.parsed_fields == 12;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheDrawGroupInfo = old_draw_group_info;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (draw_group_info != nullptr) {
+		delete draw_group_info;
 	}
 
 	shutdownMemoryManager();

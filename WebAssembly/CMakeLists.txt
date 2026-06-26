@@ -2610,6 +2610,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandSet.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIDrawGroupInfo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
@@ -2627,6 +2628,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/SpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Image.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
@@ -2951,6 +2953,10 @@ target_link_libraries(zh_gamenetwork_core PUBLIC
 
 set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp" PROPERTIES
   COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+)
+
+set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${GAMEENGINE_INCLUDE_DIR}/Common/INI.h"
 )
 
 add_executable(cnc-port

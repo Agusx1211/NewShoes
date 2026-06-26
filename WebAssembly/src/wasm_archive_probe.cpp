@@ -37,6 +37,7 @@ constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
+constexpr const char DRAW_GROUP_INFO_INI_PATH[] = "Data\\INI\\DrawGroupInfo.ini";
 constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
@@ -367,6 +368,35 @@ void copy_command_set_probe(const RealCommandSetIniProbeResult &command_set, Arc
 	result.command_set_ranger_slot1_special_power = command_set.ranger_slot1_special_power;
 	result.command_set_ranger_slot1_upgrade = command_set.ranger_slot1_upgrade;
 	result.command_set_ranger_slot4_upgrade = command_set.ranger_slot4_upgrade;
+}
+
+void copy_draw_group_info_probe(
+	const RealDrawGroupInfoIniProbeResult &draw_group_info,
+	ArchiveProbeResult &result)
+{
+	result.draw_group_info_attempted = draw_group_info.attempted;
+	result.draw_group_info_ok = draw_group_info.ok;
+	result.draw_group_info_loaded_archives = draw_group_info.loaded_archives;
+	result.draw_group_info_file_exists = draw_group_info.file_exists;
+	result.draw_group_info_original_ini_load = draw_group_info.original_ini_load;
+	result.draw_group_info_bytes = draw_group_info.bytes;
+	result.draw_group_info_parsed_fields = draw_group_info.parsed_fields;
+	result.draw_group_info_source = draw_group_info.source;
+	result.draw_group_info_font_name = draw_group_info.font_name;
+	result.draw_group_info_font_size = draw_group_info.font_size;
+	result.draw_group_info_font_is_bold = draw_group_info.font_is_bold;
+	result.draw_group_info_use_player_color = draw_group_info.use_player_color;
+	result.draw_group_info_color_for_text = draw_group_info.color_for_text;
+	result.draw_group_info_color_for_text_drop_shadow =
+		draw_group_info.color_for_text_drop_shadow;
+	result.draw_group_info_drop_shadow_offset_x = draw_group_info.drop_shadow_offset_x;
+	result.draw_group_info_drop_shadow_offset_y = draw_group_info.drop_shadow_offset_y;
+	result.draw_group_info_using_pixel_offset_x = draw_group_info.using_pixel_offset_x;
+	result.draw_group_info_using_pixel_offset_y = draw_group_info.using_pixel_offset_y;
+	result.draw_group_info_pixel_offset_x = draw_group_info.pixel_offset_x;
+	result.draw_group_info_pixel_offset_y = draw_group_info.pixel_offset_y;
+	result.draw_group_info_percent_offset_x = draw_group_info.percent_offset_x;
+	result.draw_group_info_percent_offset_y = draw_group_info.percent_offset_y;
 }
 
 void copy_player_template_probe(const RealPlayerTemplateIniProbeResult &player_template, ArchiveProbeResult &result)
@@ -803,6 +833,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_special_power_ini = archive_file_system.doesFileExist(SPECIAL_POWER_INI_PATH);
 			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
 			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
+			result.has_draw_group_info_ini = archive_file_system.doesFileExist(DRAW_GROUP_INFO_INI_PATH);
 			result.has_upgrade_ini = archive_file_system.doesFileExist(UPGRADE_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
@@ -865,6 +896,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_roads_ini) {
 		copy_terrain_roads_probe(probe_original_terrain_roads_ini_load(archive_path), result);
 		result.ok = result.ok && result.terrain_roads_ok;
+	}
+	if (result.loaded && result.has_draw_group_info_ini) {
+		copy_draw_group_info_probe(probe_original_draw_group_info_ini_load(archive_path), result);
+		result.ok = result.ok && result.draw_group_info_ok;
 	}
 	if (result.loaded && result.has_upgrade_ini) {
 		copy_upgrade_probe(probe_original_upgrade_ini_load(archive_path), result);

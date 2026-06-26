@@ -285,6 +285,33 @@ struct RealTerrainRoadsIniProbeResult
 	int concrete_bridge_num_fx_per_type = 0;
 };
 
+struct RealDrawGroupInfoIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	std::string font_name;
+	int font_size = 0;
+	bool font_is_bold = false;
+	bool use_player_color = false;
+	unsigned int color_for_text = 0;
+	unsigned int color_for_text_drop_shadow = 0;
+	int drop_shadow_offset_x = 0;
+	int drop_shadow_offset_y = 0;
+	bool using_pixel_offset_x = false;
+	bool using_pixel_offset_y = false;
+	int pixel_offset_x = 0;
+	int pixel_offset_y = 0;
+	float percent_offset_x = 0.0f;
+	float percent_offset_y = 0.0f;
+};
+
 struct RealUpgradeIniProbeResult
 {
 	bool attempted = false;
@@ -576,6 +603,7 @@ RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);
 RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path);
 RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
+RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
 RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const char *archive_path);

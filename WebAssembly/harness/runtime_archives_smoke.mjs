@@ -288,6 +288,18 @@ function assertCommandSetProbe(assetProbe, context) {
   }
 }
 
+function assertDrawGroupInfoProbeAbsent(assetProbe, context) {
+  const drawGroupInfo = assetProbe?.drawGroupInfo;
+  if (assetProbe?.inizh?.drawGroupInfoIni !== false
+      || drawGroupInfo?.attempted !== false
+      || drawGroupInfo.ok !== false
+      || drawGroupInfo.fileExists !== false
+      || drawGroupInfo.originalIniLoad !== false
+      || drawGroupInfo.parsedFields !== 0) {
+    throw new Error(`${context} should report no shipped DrawGroupInfo.ini: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertSpecialPowerProbe(assetProbe, context) {
   const specialPower = assetProbe?.specialPower;
   const daisyCutter = specialPower?.daisyCutter;
@@ -756,6 +768,7 @@ try {
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
+  assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -817,6 +830,7 @@ try {
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");

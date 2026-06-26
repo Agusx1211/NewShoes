@@ -225,6 +225,18 @@ function assertCommandSetProbe(assetProbe, context) {
   }
 }
 
+function assertDrawGroupInfoProbeAbsent(assetProbe, context) {
+  const drawGroupInfo = assetProbe?.drawGroupInfo;
+  if (assetProbe?.inizh?.drawGroupInfoIni !== false
+      || drawGroupInfo?.attempted !== false
+      || drawGroupInfo.ok !== false
+      || drawGroupInfo.fileExists !== false
+      || drawGroupInfo.originalIniLoad !== false
+      || drawGroupInfo.parsedFields !== 0) {
+    throw new Error(`${context} should report no shipped DrawGroupInfo.ini: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -487,6 +499,7 @@ try {
   assertUpgradeProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandButtonProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");
+  assertDrawGroupInfoProbeAbsent(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");
