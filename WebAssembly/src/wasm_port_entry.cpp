@@ -296,6 +296,13 @@ bool startup_armor_ready()
 		g_archive_probe.armor_ok;
 }
 
+bool startup_science_ready()
+{
+	return g_archive_probe.has_science_ini &&
+		g_archive_probe.science_attempted &&
+		g_archive_probe.science_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -340,6 +347,7 @@ bool startup_assets_ready()
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
 		startup_armor_ready() &&
+		startup_science_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -364,6 +372,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_armor_ready()) {
 		return "armor_probe_failed";
+	}
+	if (!startup_science_ready()) {
+		return "science_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -405,6 +416,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_armor_ready()) {
 		return "Runtime BIG archive set did not pass the Armor.ini startup probe.";
+	}
+	if (!startup_science_ready()) {
+		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -503,9 +517,10 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[33000];
+	char buffer[36000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
+	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
@@ -562,7 +577,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"gameDataIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"gameDataIni\":%s,\"scienceIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
@@ -575,6 +590,14 @@ const char *write_state_json()
 		"\"humanArmorPiercingDamage\":%.3f,\"humanFlameDamage\":%.3f,"
 		"\"tankSmallArmsDamage\":%.3f,\"tankRadiationDamage\":%.3f,"
 		"\"tankMicrowaveDamage\":%.3f},"
+		"\"science\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"sciences\":%zu,"
+		"\"america\":%s,\"rank3\":%s,\"paladinTank\":%s,"
+		"\"paladinNameLoaded\":%s,\"paladinDescriptionLoaded\":%s,"
+		"\"americaPurchaseCost\":%d,\"paladinPurchaseCost\":%d,"
+		"\"americaGrantable\":%s,\"paladinGrantable\":%s},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
@@ -624,7 +647,8 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
-		"\"required\":{\"inizh\":%s,\"armor\":%s,\"gameData\":%s,\"water\":%s,\"weather\":%s,"
+		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
+		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
@@ -679,6 +703,7 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_science_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
@@ -705,6 +730,26 @@ const char *write_state_json()
 		g_archive_probe.armor_tank_small_arms_damage,
 		g_archive_probe.armor_tank_radiation_damage,
 		g_archive_probe.armor_tank_microwave_damage,
+		g_archive_probe.science_attempted ? "true" : "false",
+		g_archive_probe.science_ok ? "true" : "false",
+		g_archive_probe.science_bytes,
+		science_source_json.c_str(),
+		g_archive_probe.science_loaded_archives ? "true" : "false",
+		g_archive_probe.science_file_exists ? "true" : "false",
+		g_archive_probe.science_game_text_loaded ? "true" : "false",
+		g_archive_probe.science_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.science_original_ini_load ? "true" : "false",
+		g_archive_probe.science_parsed_fields,
+		g_archive_probe.science_count,
+		g_archive_probe.science_america_found ? "true" : "false",
+		g_archive_probe.science_rank3_found ? "true" : "false",
+		g_archive_probe.science_paladin_found ? "true" : "false",
+		g_archive_probe.science_paladin_name_loaded ? "true" : "false",
+		g_archive_probe.science_paladin_description_loaded ? "true" : "false",
+		g_archive_probe.science_america_purchase_cost,
+		g_archive_probe.science_paladin_purchase_cost,
+		g_archive_probe.science_america_grantable ? "true" : "false",
+		g_archive_probe.science_paladin_grantable ? "true" : "false",
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
@@ -825,6 +870,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		startup_boot_ini_present() ? "true" : "false",
 		startup_armor_ready() ? "true" : "false",
+		startup_science_ready() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",

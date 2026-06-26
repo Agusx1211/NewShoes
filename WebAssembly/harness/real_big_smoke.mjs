@@ -193,6 +193,7 @@ try {
   }
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }

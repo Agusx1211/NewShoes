@@ -13,6 +13,7 @@
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/Science.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
@@ -33,6 +34,7 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
+constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -85,6 +87,21 @@ std::size_t count_verified_fields(const RealArmorIniProbeResult &result)
 		(std::fabs(result.tank_small_arms_damage - 25.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.tank_radiation_damage - 50.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.tank_microwave_damage - 0.0f) < 0.001f ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
+{
+	return
+		(result.science_count == 95 ? 1U : 0U) +
+		(result.america_science_found ? 1U : 0U) +
+		(result.rank3_science_found ? 1U : 0U) +
+		(result.paladin_science_found ? 1U : 0U) +
+		(result.america_purchase_cost == 0 ? 1U : 0U) +
+		(result.paladin_purchase_cost == 1 ? 1U : 0U) +
+		(!result.america_grantable ? 1U : 0U) +
+		(result.paladin_grantable ? 1U : 0U) +
+		(result.paladin_name_loaded ? 1U : 0U) +
+		(result.paladin_description_loaded ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
@@ -382,6 +399,131 @@ RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path)
 
 	if (armor_store != nullptr) {
 		delete armor_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path)
+{
+	RealScienceIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + Common/RTS/Science.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ScienceStore *old_science_store = TheScienceStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ScienceStore *science_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(SCIENCE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+					Bool title_exists = FALSE;
+					const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+					result.game_text_loaded = title_exists && unicode_not_empty(title);
+				}
+
+				science_store = NEW ScienceStore;
+				TheScienceStore = science_store;
+				science_store->init();
+
+				INI ini;
+				ini.load(AsciiString(SCIENCE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				const ScienceType america =
+					science_store->getScienceFromInternalName(AsciiString("SCIENCE_AMERICA"));
+				const ScienceType rank3 =
+					science_store->getScienceFromInternalName(AsciiString("SCIENCE_Rank3"));
+				const ScienceType paladin =
+					science_store->getScienceFromInternalName(AsciiString("SCIENCE_PaladinTank"));
+
+				result.america_science_found = science_store->isValidScience(america);
+				result.rank3_science_found = science_store->isValidScience(rank3);
+				result.paladin_science_found = science_store->isValidScience(paladin);
+				result.science_count = science_store->friend_getScienceNames().size();
+				result.america_purchase_cost = science_store->getSciencePurchaseCost(america);
+				result.paladin_purchase_cost = science_store->getSciencePurchaseCost(paladin);
+				result.america_grantable = science_store->isScienceGrantable(america);
+				result.paladin_grantable = science_store->isScienceGrantable(paladin);
+
+				UnicodeString paladin_name;
+				UnicodeString paladin_description;
+				if (science_store->getNameAndDescription(paladin, paladin_name, paladin_description)) {
+					result.paladin_name_loaded = unicode_not_empty(paladin_name);
+					result.paladin_description_loaded = unicode_not_empty(paladin_description);
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 20000 &&
+					result.game_text_loaded &&
+					result.name_key_generator_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 10;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheScienceStore = old_science_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (science_store != nullptr) {
+		delete science_store;
+	}
+	if (game_text != nullptr) {
+		delete game_text;
 	}
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;

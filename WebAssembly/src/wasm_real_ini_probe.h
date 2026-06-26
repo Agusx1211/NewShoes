@@ -49,6 +49,31 @@ struct RealArmorIniProbeResult
 	float tank_microwave_damage = 0.0f;
 };
 
+struct RealScienceIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool game_text_loaded = false;
+	bool name_key_generator_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t science_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool america_science_found = false;
+	bool rank3_science_found = false;
+	bool paladin_science_found = false;
+	bool paladin_name_loaded = false;
+	bool paladin_description_loaded = false;
+	int america_purchase_cost = 0;
+	int paladin_purchase_cost = 0;
+	bool america_grantable = false;
+	bool paladin_grantable = false;
+};
+
 struct RealMapCacheIniProbeResult
 {
 	bool attempted = false;
@@ -153,6 +178,7 @@ struct RealVideoIniProbeResult
 
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
+RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);
 RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);

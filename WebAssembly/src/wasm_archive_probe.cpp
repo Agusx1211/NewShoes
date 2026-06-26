@@ -29,6 +29,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
+constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -117,6 +118,30 @@ void copy_armor_probe(const RealArmorIniProbeResult &armor, ArchiveProbeResult &
 	result.armor_tank_small_arms_damage = armor.tank_small_arms_damage;
 	result.armor_tank_radiation_damage = armor.tank_radiation_damage;
 	result.armor_tank_microwave_damage = armor.tank_microwave_damage;
+}
+
+void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeResult &result)
+{
+	result.science_attempted = science.attempted;
+	result.science_ok = science.ok;
+	result.science_loaded_archives = science.loaded_archives;
+	result.science_file_exists = science.file_exists;
+	result.science_game_text_loaded = science.game_text_loaded;
+	result.science_name_key_generator_loaded = science.name_key_generator_loaded;
+	result.science_original_ini_load = science.original_ini_load;
+	result.science_bytes = science.bytes;
+	result.science_parsed_fields = science.parsed_fields;
+	result.science_count = science.science_count;
+	result.science_source = science.source;
+	result.science_america_found = science.america_science_found;
+	result.science_rank3_found = science.rank3_science_found;
+	result.science_paladin_found = science.paladin_science_found;
+	result.science_paladin_name_loaded = science.paladin_name_loaded;
+	result.science_paladin_description_loaded = science.paladin_description_loaded;
+	result.science_america_purchase_cost = science.america_purchase_cost;
+	result.science_paladin_purchase_cost = science.paladin_purchase_cost;
+	result.science_america_grantable = science.america_grantable;
+	result.science_paladin_grantable = science.paladin_grantable;
 }
 
 void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchiveProbeResult &result)
@@ -303,6 +328,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
+			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
@@ -340,6 +366,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_armor_ini) {
 		copy_armor_probe(probe_original_armor_ini_load(archive_path), result);
 		result.ok = result.ok && result.armor_ok;
+	}
+	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
+		copy_science_probe(probe_original_science_ini_load(archive_path), result);
+		result.ok = result.ok && result.science_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

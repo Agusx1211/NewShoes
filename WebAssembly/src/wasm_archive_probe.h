@@ -11,6 +11,7 @@ struct ArchiveProbeResult
 	bool has_armor_ini = false;
 	bool has_command_button_ini = false;
 	bool has_game_data_ini = false;
+	bool has_science_ini = false;
 	bool has_weapon_ini = false;
 	bool has_map_cache_ini = false;
 	bool has_water_ini = false;
@@ -23,6 +24,13 @@ struct ArchiveProbeResult
 	bool armor_file_exists = false;
 	bool armor_name_key_generator_loaded = false;
 	bool armor_original_ini_load = false;
+	bool science_attempted = false;
+	bool science_ok = false;
+	bool science_loaded_archives = false;
+	bool science_file_exists = false;
+	bool science_game_text_loaded = false;
+	bool science_name_key_generator_loaded = false;
+	bool science_original_ini_load = false;
 	bool game_data_attempted = false;
 	bool game_data_ok = false;
 	bool game_data_loaded_archives = false;
@@ -63,6 +71,9 @@ struct ArchiveProbeResult
 	std::size_t sample_bytes = 0;
 	std::size_t armor_bytes = 0;
 	std::size_t armor_parsed_fields = 0;
+	std::size_t science_bytes = 0;
+	std::size_t science_parsed_fields = 0;
+	std::size_t science_count = 0;
 	std::size_t game_data_bytes = 0;
 	std::size_t game_data_parsed_fields = 0;
 	std::size_t water_bytes = 0;
@@ -81,6 +92,7 @@ struct ArchiveProbeResult
 	std::size_t game_text_control_bar_label_count = 0;
 	std::string game_data_shell_map_name;
 	std::string armor_source;
+	std::string science_source;
 	bool armor_no_armor_found = false;
 	bool armor_human_armor_found = false;
 	bool armor_tank_armor_found = false;
@@ -92,6 +104,15 @@ struct ArchiveProbeResult
 	float armor_tank_small_arms_damage = 0.0f;
 	float armor_tank_radiation_damage = 0.0f;
 	float armor_tank_microwave_damage = 0.0f;
+	bool science_america_found = false;
+	bool science_rank3_found = false;
+	bool science_paladin_found = false;
+	bool science_paladin_name_loaded = false;
+	bool science_paladin_description_loaded = false;
+	int science_america_purchase_cost = 0;
+	int science_paladin_purchase_cost = 0;
+	bool science_america_grantable = false;
+	bool science_paladin_grantable = false;
 	bool game_data_use_fps_limit = false;
 	bool game_data_use_cloud_map = false;
 	int game_data_frames_per_second_limit = 0;

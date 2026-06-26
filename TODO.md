@@ -615,8 +615,8 @@ shares structure and follows behind.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
-      `GameData`, `Water`, `Weather`, `Video`, and shipped map-cache preflights
-      on original `INI.cpp::load`
+      `GameData`, `Science`, `Water`, `Weather`, `Video`, and shipped map-cache
+      preflights on original `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
@@ -1613,7 +1613,7 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/Armor/GameData/Water/Weather/Video/GameText/MapCache
+      `ready` after the boot-time archive/Armor/Science/GameData/Water/Weather/Video/GameText/MapCache
       probes pass. This is bootstrap preflight only; full engine-init missing-asset
       handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
@@ -1657,6 +1657,13 @@ shares structure and follows behind.
       Playwright `startupAssets.ready` state. This is a focused shipped
       armor-template preflight only; object `ArmorSet` wiring and full gameplay
       template loading remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Science.ini` from the mounted runtime BIG set through original
+      `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, expose parsed
+      shipped science metadata as `assetProbe.science`, and require it for the
+      Playwright `startupAssets.ready` state. This is a focused science-store
+      metadata preflight only; player-owned purchase/prerequisite checks remain
+      open.
 - [x] Extend the wasm bootstrap archive preflight to load the real English
       CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
       with Playwright coverage for the CSF file, known labels, and
@@ -1718,6 +1725,11 @@ shares structure and follows behind.
       original `Common/INI.cpp::load` and `GameLogic/Object/Armor.cpp`, with
       harness state proving `NoArmor`, `HumanArmor`, and `TankArmor` damage
       coefficients through original `ArmorTemplate::adjustDamage`.
+- [x] Shipped science metadata loads from real `Data\INI\Science.ini` through
+      original `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, with full
+      runtime-archive harness state proving 95 science definitions, base/rank
+      science lookup, Paladin purchase/grantable metadata, and translated
+      display/description labels.
 - [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the

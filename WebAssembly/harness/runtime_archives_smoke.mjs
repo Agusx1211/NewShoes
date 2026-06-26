@@ -94,6 +94,32 @@ function assertArmorProbe(assetProbe, context) {
   }
 }
 
+function assertScienceProbe(assetProbe, context) {
+  const science = assetProbe?.science;
+  if (!assetProbe?.inizh?.scienceIni
+      || !science?.attempted
+      || !science.ok
+      || science.source !== "GameEngine/Common/INI.cpp::load + Common/RTS/Science.cpp"
+      || !science.loadedArchives
+      || !science.fileExists
+      || !science.gameTextLoaded
+      || !science.nameKeyGeneratorLoaded
+      || !science.originalIniLoad
+      || science.parsedFields !== 10
+      || science.sciences !== 95
+      || !science.america
+      || !science.rank3
+      || !science.paladinTank
+      || !science.paladinNameLoaded
+      || !science.paladinDescriptionLoaded
+      || science.americaPurchaseCost !== 0
+      || science.paladinPurchaseCost !== 1
+      || science.americaGrantable !== false
+      || science.paladinGrantable !== true) {
+    throw new Error(`${context} did not parse expected Science.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -210,6 +236,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.bootProbeOk
         || !startupAssets.required?.inizh
         || !startupAssets.required?.armor
+        || !startupAssets.required?.science
         || !startupAssets.required?.gameData
         || !startupAssets.required?.water
         || !startupAssets.required?.weather
@@ -287,11 +314,13 @@ try {
   const assetProbe = mountResult.state?.assetProbe;
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
+  assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
   assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
@@ -344,6 +373,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
