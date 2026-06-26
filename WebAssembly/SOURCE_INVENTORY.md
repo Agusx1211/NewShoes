@@ -110,8 +110,10 @@ The wasm CMake skeleton currently builds:
   and executes original `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on
   boot as a harness-verified Common-core link probe. It also exposes a
   harness-verified `emscripten_set_main_loop` start/stop bridge that currently
-  drives the bootstrap frame counter; the callback is the browser scheduling
-  surface that the real engine tick still needs to replace.
+  drives the bootstrap frame counter and reports a monotonic
+  `emscripten_get_now()` timing probe; the callback and timing probe are the
+  browser scheduling surface that the real engine tick and final timing layer
+  still need to replace.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, and exposes the graphics state through RPC snapshots.

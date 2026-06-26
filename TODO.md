@@ -1502,6 +1502,11 @@ shares structure and follows behind.
       browser scheduling surface only; the real engine tick still needs to
       replace the bootstrap counter.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
+- [x] Expose a harness-verified wasm timing probe sourced from
+      `emscripten_get_now()` so manual frame and `emscripten_set_main_loop`
+      ticks report monotonic browser timing. This validates the bootstrap's
+      browser timing source only; final engine QPC/WinMM timing consolidation
+      remains open.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.
 - [x] Initialize the browser harness canvas with a real WebGL2 drawing buffer,
       resize-synchronized viewport/backing state, black clear, and smoke-tested

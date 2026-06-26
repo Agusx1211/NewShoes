@@ -20,6 +20,7 @@ const harnessState = {
     fps: 0,
     ticks: 0,
   },
+  timing: null,
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -159,6 +160,7 @@ function applyModuleState(moduleState) {
   harnessState.frame = Number(moduleState.frame ?? harnessState.frame);
   harnessState.runtime = moduleState.module ?? "wasm";
   harnessState.mainLoop = moduleState.mainLoop ?? harnessState.mainLoop;
+  harnessState.timing = moduleState.timing ?? harnessState.timing;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
 }
@@ -216,6 +218,7 @@ function snapshotState() {
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
     mainLoop: harnessState.mainLoop,
+    timing: harnessState.timing,
     canvas: harnessState.canvas,
     graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,

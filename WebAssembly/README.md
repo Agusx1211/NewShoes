@@ -78,7 +78,10 @@ The build uses `emcmake cmake` and writes generated files to ignored `dist/`.
 It currently builds the port boundary bootstrap plus focused original library
 slices, not the full original engine. The browser bootstrap links and executes
 an original `GameEngine/Common/RandomValue.cpp` deterministic probe so the
-harness can prove original code is present in the loaded wasm module.
+harness can prove original code is present in the loaded wasm module. It also
+reports a browser-backed `emscripten_get_now()` timing probe through the harness
+state so manual and scheduled bootstrap ticks can be checked for monotonic
+advancement before the real engine timing layer replaces the bootstrap.
 The selected baseline flags are:
 
 - ES module output with `MODULARIZE=1` / `EXPORT_ES6=1`.
@@ -86,7 +89,8 @@ The selected baseline flags are:
 - Memory growth enabled, 64 MiB initial memory, 2 GiB maximum memory.
 - 1 MiB stack via `TOTAL_STACK=1048576`.
 - Debug assertions enabled for the bootstrap build.
-- Exported C symbols: `cnc_port_boot`, `cnc_port_frame`, `cnc_port_state`.
+- Exported C symbols: `cnc_port_boot`, `cnc_port_frame`,
+  `cnc_port_start_main_loop`, `cnc_port_stop_main_loop`, `cnc_port_state`.
 
 Clean generated wasm files:
 
@@ -111,8 +115,9 @@ npm run test:harness
 The smoke test starts a local static server, boots the browser harness through
 `window.CnCPort.rpc("boot")`, advances deterministic frames through
 `window.CnCPort.rpc("frame", { count })`, verifies the wasm-scheduled
-Emscripten main-loop tick bridge, checks the WebGL2 canvas/RPC state, exercises
-resize handling, and writes screenshots to `artifacts/screenshots/`.
+Emscripten main-loop tick bridge plus its browser-backed timing probe, checks
+the WebGL2 canvas/RPC state, exercises resize handling, and writes screenshots
+to `artifacts/screenshots/`.
 
 Run the wasm-backed smoke test:
 

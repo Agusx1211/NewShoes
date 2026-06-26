@@ -44,6 +44,23 @@ async function waitForMainLoopTicks(page, startingFrame, startingTicks, tickCoun
   throw new Error(`Main loop did not advance ${tickCount} ticks: ${JSON.stringify(result.state)}`);
 }
 
+function assertWasmTiming(state, label) {
+  const timing = state.timing;
+  if (!timing?.ok || timing.source !== "emscripten_get_now") {
+    throw new Error(`${label} timing probe missing: ${JSON.stringify(timing)}`);
+  }
+
+  for (const field of ["bootMs", "lastTickMs", "lastDeltaMs"]) {
+    if (!Number.isFinite(timing[field])) {
+      throw new Error(`${label} timing field ${field} is not finite: ${JSON.stringify(timing)}`);
+    }
+  }
+
+  if (timing.lastTickMs < timing.bootMs || timing.lastDeltaMs < 0) {
+    throw new Error(`${label} timing is not monotonic: ${JSON.stringify(timing)}`);
+  }
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
@@ -74,6 +91,9 @@ try {
   if (expectWasm && bootResult.state.originalCoreProbe?.logicSeedCRC !== 2826459604) {
     throw new Error(`Original RandomValue seed CRC mismatch: ${JSON.stringify(bootResult.state.originalCoreProbe)}`);
   }
+  if (expectWasm) {
+    assertWasmTiming(bootResult.state, "boot");
+  }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
     throw new Error(`Expected browser harness to initialize WebGL2: ${JSON.stringify(bootResult.state.graphics)}`);
   }
@@ -92,6 +112,12 @@ try {
   if (frameResult.state.frame !== initialFrame + 3) {
     throw new Error(`Frame RPC did not advance deterministically: ${JSON.stringify(frameResult.state)}`);
   }
+  if (expectWasm) {
+    assertWasmTiming(frameResult.state, "frame");
+    if (frameResult.state.timing.lastTickMs < bootResult.state.timing.lastTickMs) {
+      throw new Error(`Frame timing regressed: ${JSON.stringify(frameResult.state.timing)}`);
+    }
+  }
 
   if (expectWasm) {
     const loopStartResult = await page.evaluate(() => window.CnCPort.rpc("startMainLoop"));
@@ -101,6 +127,8 @@ try {
     if (loopStartResult.state.mainLoop.fps !== 60) {
       throw new Error(`Unexpected main loop FPS: ${JSON.stringify(loopStartResult.state.mainLoop)}`);
     }
+    assertWasmTiming(loopStartResult.state, "main loop start");
+    const loopStartTickMs = loopStartResult.state.timing.lastTickMs;
 
     const loopState = await waitForMainLoopTicks(
       page,
@@ -110,6 +138,10 @@ try {
     );
     if (!loopState.mainLoop.running) {
       throw new Error(`Main loop stopped before ticking: ${JSON.stringify(loopState)}`);
+    }
+    assertWasmTiming(loopState, "main loop tick");
+    if (loopState.timing.lastTickMs < loopStartTickMs) {
+      throw new Error(`Main loop timing regressed: ${JSON.stringify(loopState.timing)}`);
     }
 
     const loopStopResult = await page.evaluate(() => window.CnCPort.rpc("stopMainLoop"));
