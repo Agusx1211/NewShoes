@@ -1477,6 +1477,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DView.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DVideoBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DWebBrowser.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/WorldHeightMap.cpp"
