@@ -106,21 +106,27 @@ dependency is proven.
 The wasm CMake skeleton currently builds:
 
 - `cnc-port`: a browser module boundary used by the harness. It still uses a
-  bootstrap entry instead of the original engine startup path, but now compiles
-  and executes original `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on
-  boot as a harness-verified Common-core link probe. It also exposes a
+  bootstrap entry instead of the original engine startup path, but now links the
+  original `zh_gameengine_common_core` archive/file slice, executes original
+  `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on boot as a
+  harness-verified Common-core link probe, and can verify mounted BIG archives
+  through the original `Win32BIGFileSystem`. It also exposes a
   harness-verified `emscripten_set_main_loop` start/stop bridge that currently
   drives the bootstrap frame counter and reports a monotonic
   `emscripten_get_now()` timing probe; the callback and timing probe are the
   browser scheduling surface that the real engine tick and final timing layer
-  still need to replace.
+  still need to replace. The archive probe proves fetched MEMFS archive
+  availability only; original engine startup still needs to consume the mounted
+  runtime archive set.
 - `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
   buffer for the game canvas, keeps its viewport/backing size synchronized with
   browser resize state, captures Emscripten module stdout/stderr into the
-  harness log, and exposes the graphics state through RPC snapshots. This is
-  the browser canvas/GL/log bridge surface only; original W3D display, WW3D
-  rendering, and `DEBUG_LOG`/assert routing still need to bind to it before
-  those runtime paths are complete.
+  harness log, fetches local real-asset BIG archives into the `cnc-port` MEMFS
+  through `mountArchive`, and exposes the graphics/asset state through RPC
+  snapshots. This is the browser canvas/GL/log/asset bridge surface only;
+  original W3D display, WW3D rendering, engine archive consumption, and
+  `DEBUG_LOG`/assert routing still need to bind to it before those runtime
+  paths are complete.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
 - `zh_compression_manager`: original `CompressionManager.cpp` compiled into a

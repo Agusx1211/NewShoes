@@ -48,10 +48,12 @@ npm run test:runtime-archives-browser
 This also requires the user-supplied disc images. It builds the current wasm
 targets, verifies/extracts `INIZH.big`, then uses the original
 `Win32BIGFileSystem` and `FileSystem` path to index and read real INI files from
-the extracted archive under Node or the browser harness. The runtime-archives
-variant extracts the inventoried local BIG set, then fetches each archive into
-browser MEMFS and verifies that the original BIG reader can index and read from
-every archive.
+the extracted archive under Node or the browser harness. The browser variant
+also boots the main `cnc-port` harness and verifies `window.CnCPort.rpc("mountArchive")`
+can fetch `INIZH.big` into MEMFS and probe it through the same original BIG
+reader. The runtime-archives variant extracts the inventoried local BIG set,
+then fetches each archive into browser MEMFS and verifies that the original BIG
+reader can index and read from every archive.
 
 ## Toolchain
 
@@ -119,6 +121,11 @@ Emscripten main-loop tick bridge plus its browser-backed timing probe, verifies
 that wasm stdout/stderr is captured by the harness log, checks the WebGL2
 canvas/RPC state, exercises resize handling, and writes screenshots to
 `artifacts/screenshots/`.
+
+The same harness exposes `window.CnCPort.rpc("mountArchive", { url, name })` for
+real-asset tests. It fetches a user-supplied BIG archive, writes it under
+`/assets/` in the wasm MEMFS, then asks `cnc-port` to verify the mounted archive
+with the original `Win32BIGFileSystem`.
 
 Run the wasm-backed smoke test:
 

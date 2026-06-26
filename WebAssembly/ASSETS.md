@@ -24,6 +24,7 @@ The initial development path is same-origin fetch from ignored local artifacts:
 2. The local harness server exposes that ignored directory only on the user's
    machine.
 3. The JS bridge preloads required archive bytes before engine startup.
+   The current harness path is `window.CnCPort.rpc("mountArchive", { url, name })`.
 4. The Emscripten side mounts or copies those bytes into MEMFS/IDBFS.
 5. The original engine BIG/file/INI code reads the mounted bytes.
 

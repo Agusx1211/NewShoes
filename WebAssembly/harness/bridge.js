@@ -37,6 +37,7 @@ const harnessState = {
   },
   originalEngineLinked: false,
   originalCoreProbe: null,
+  assetProbe: null,
   logs: [],
 };
 
@@ -163,6 +164,7 @@ function applyModuleState(moduleState) {
   harnessState.timing = moduleState.timing ?? harnessState.timing;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
+  harnessState.assetProbe = moduleState.assetProbe ?? null;
 }
 
 async function loadWasmModule() {
@@ -180,7 +182,9 @@ async function loadWasmModule() {
       frame: module.cwrap("cnc_port_frame", "string", []),
       startMainLoop: module.cwrap("cnc_port_start_main_loop", "string", []),
       stopMainLoop: module.cwrap("cnc_port_stop_main_loop", "string", []),
+      probeArchive: module.cwrap("cnc_port_probe_archive", "string", ["string"]),
       state: module.cwrap("cnc_port_state", "string", []),
+      fs: module.FS,
     };
   } catch (error) {
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
@@ -225,7 +229,90 @@ function snapshotState() {
     graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
+    assetProbe: harnessState.assetProbe,
     logCount: harnessState.logs.length,
+  };
+}
+
+function ensureMemfsDirectory(fs, path) {
+  try {
+    fs.mkdir(path);
+  } catch {
+    // Existing directories are fine; a later write/probe will surface real failures.
+  }
+}
+
+function archiveNameFromUrl(url) {
+  const parsed = new URL(url, window.location.href);
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "archive.big";
+}
+
+function normalizeAssetPath(path) {
+  if (!path.startsWith("/assets/")) {
+    return null;
+  }
+
+  const parts = [];
+  for (const part of path.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      return null;
+    }
+    parts.push(part);
+  }
+
+  return parts[0] === "assets" && parts.length > 1 ? `/${parts.join("/")}` : null;
+}
+
+async function mountArchive(payload = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return { ok: false, command: "mountArchive", error: "Wasm module unavailable; archive cannot be mounted" };
+  }
+
+  const url = String(payload.url ?? "");
+  if (!url) {
+    return { ok: false, command: "mountArchive", error: "Missing archive URL" };
+  }
+
+  const name = String(payload.name ?? archiveNameFromUrl(url));
+  const requestedMemfsPath = String(payload.path ?? `/assets/${name}`);
+  const memfsPath = normalizeAssetPath(requestedMemfsPath);
+  if (!memfsPath) {
+    return { ok: false, command: "mountArchive", error: `Archive path must stay under /assets/: ${requestedMemfsPath}` };
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    return {
+      ok: false,
+      command: "mountArchive",
+      error: `Archive fetch failed: ${response.status} ${response.statusText}`,
+    };
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  ensureMemfsDirectory(wasmModule.fs, "/assets");
+  wasmModule.fs.writeFile(memfsPath, bytes);
+  applyModuleState(parseModuleState(wasmModule.probeArchive(memfsPath)));
+  harnessState.wasm = "loaded";
+  recordLog("archive mounted", {
+    path: memfsPath,
+    bytes: bytes.byteLength,
+    ok: Boolean(harnessState.assetProbe?.ok),
+  });
+
+  return {
+    ok: Boolean(harnessState.assetProbe?.ok),
+    command: "mountArchive",
+    state: snapshotState(),
+    archive: {
+      path: memfsPath,
+      bytes: bytes.byteLength,
+    },
   };
 }
 
@@ -235,6 +322,8 @@ async function rpc(command, payload = {}) {
       return { ok: true, command, state: await boot(payload) };
     case "frame":
       return { ok: true, command, state: await stepFrames(payload) };
+    case "mountArchive":
+      return mountArchive(payload);
     case "startMainLoop":
       {
         const wasmModule = await wasmModulePromise;

@@ -2552,8 +2552,7 @@ target_link_libraries(zh_gamenetwork_core PUBLIC
 )
 
 add_executable(cnc-port
-  "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
-  "${GAMEENGINE_COMMON_DIR}/crc.cpp"
+  src/wasm_archive_probe.cpp
   src/wasm_port_entry.cpp
 )
 
@@ -2575,7 +2574,12 @@ target_include_directories(cnc-port PRIVATE
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
+)
+
+target_link_libraries(cnc-port PRIVATE
+  zh_gameengine_common_core
 )
 
 target_link_options(cnc-port PRIVATE
@@ -2589,8 +2593,8 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sMAXIMUM_MEMORY=2147483648"
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_state']"
-  "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_state']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 
 add_executable(compression-eac-smoke

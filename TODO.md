@@ -1527,6 +1527,12 @@ shares structure and follows behind.
 ### File system device (Win32Device/Common → browser)
 - [ ] Re-target `Win32LocalFileSystem`/`Win32LocalFile` onto MEMFS/IDBFS.
 - [ ] Re-target `Win32BIGFileSystem`/`Win32BIGFile` to read fetched BIG archives.
+- [x] Add a main `cnc-port` harness `mountArchive` RPC that fetches a
+      user-supplied BIG into Emscripten MEMFS and verifies it through the
+      original `Win32BIGFileSystem`, with browser smoke coverage for
+      `INIZH.big` required INI files. This proves archive availability to the
+      bootstrap only; full engine startup still needs to consume the mounted
+      archive set.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

@@ -36,6 +36,28 @@ try {
   const archiveUrl = new URL(archiveRelativePath, server.url).href;
 
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+
+  const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot", {
+    source: "real BIG browser smoke",
+  }));
+  if (!bootResult.ok || bootResult.state.wasm !== "loaded") {
+    throw new Error(`cnc-port boot failed before archive mount: ${JSON.stringify(bootResult)}`);
+  }
+
+  const mountResult = await page.evaluate((archiveUrl) => window.CnCPort.rpc("mountArchive", {
+    url: archiveUrl,
+    name: "INIZH.big",
+  }), archiveUrl);
+  const assetProbe = mountResult.state?.assetProbe;
+  if (!mountResult.ok || !assetProbe?.ok) {
+    throw new Error(`cnc-port archive mount failed: ${JSON.stringify(mountResult)}`);
+  }
+  if (!assetProbe.inizh?.armorIni
+      || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.weaponIni) {
+    throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
+  }
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {
     const moduleExports = await import(moduleUrl);
@@ -78,6 +100,7 @@ try {
     url: harnessUrl,
     archive: archiveRelativePath,
     bytes: result.bytes,
+    cncPortAssetProbe: assetProbe,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
   }, null, 2));
