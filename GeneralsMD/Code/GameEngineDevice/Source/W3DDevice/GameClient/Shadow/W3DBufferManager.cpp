@@ -64,7 +64,7 @@ W3DBufferManager::W3DBufferManager(void)
 
 	for (Int i=0; i<MAX_FVF; i++)
 		m_W3DVertexBuffers[i]=NULL;
-	for (i=0; i<MAX_FVF; i++)
+	for (Int i=0; i<MAX_FVF; i++)
 		for (Int j=0; j<MAX_VB_SIZES; j++)
 			m_W3DVertexBufferSlots[i][j]=NULL;
 

@@ -69,6 +69,7 @@ class MeshClass;
 class W3DTerrainLogic;
 class W3DAssetManager;
 class SimpleSceneClass;
+enum BodyDamageType : int;
 
 //-----------------------------------------------------------------------------
 //           Type Defines

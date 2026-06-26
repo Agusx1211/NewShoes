@@ -795,6 +795,24 @@ shares structure and follows behind.
       original shader-manager, status-circle, camera-shake, and height-map
       code. This is compile coverage only until terrain/render/water paths are
       browser-rendered and harness-verified.
+- [x] Compile the original W3D renderer-helper batch in the real-header compile
+      frontier: `W3DAssetManager.cpp`, `W3DAssetManagerExposed.cpp`,
+      `W3DBibBuffer.cpp`, `W3DBridgeBuffer.cpp`, `W3DCustomEdging.cpp`,
+      all `Drawable/Draw/W3D*Draw.cpp` leaves, all
+      `Shadow/W3D*Shadow.cpp` leaves plus `W3DBufferManager.cpp`,
+      `W3DParticleSys.cpp`, `W3DPropBuffer.cpp`, `W3DRoadBuffer.cpp`,
+      `W3DShaderManager.cpp`, `W3DShroud.cpp`, `W3DSmudge.cpp`,
+      `W3DSnow.cpp`, `W3DTerrainBackground.cpp`, `W3DTerrainTracks.cpp`,
+      `W3DTreeBuffer.cpp`, and `W3dWaypointBuffer.cpp`, after adding the
+      reached Benchmark/Bink/DirectInput/D3D/D3DX/Win32 declaration surface,
+      case bridges, and localized standard clang compatibility fixes. This is
+      compile coverage only until the browser renderer, input, particles,
+      shaders, and shadow paths are harness-verified.
+- [x] Compile original `W3DDevice/GameClient/W3DScene.cpp` in the
+      real-header compile frontier after resolving the reached legacy
+      MSVC loop-scope assumptions without changing scene traversal or render
+      queue behavior. This is compile coverage only until the browser
+      renderer can drive scene/camera output through harness screenshots.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -885,9 +903,20 @@ shares structure and follows behind.
       dependencies, and browser asset/texture bindings have a real port
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      display, scene, terrain renderer, drawable modules, shader, water, and
-      shadow sources, after the remaining WW3D2/Direct3D browser compatibility
-      surface is available as part of the renderer port.
+      `W3DDisplay.cpp`, `W3DGameClient.cpp`, `W3DInGameUI.cpp`,
+      `W3DMouse.cpp`, `W3DTerrainVisual.cpp`, `W3DView.cpp`,
+      `W3DWebBrowser.cpp`, `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`,
+      after the remaining WW3D2/Direct3D/browser device compatibility surface
+      is available as part of the renderer port.
+- [ ] Resolve the `W3DVideoBuffer.cpp` header gap: the source includes
+      `W3DDevice/GameClient/W3DVideoBuffer.h`, but no matching checked-in
+      header is currently present in `GeneralsMD/Code`; either restore the
+      original header or route the source through the real video-buffer
+      interface before adding it to the compile frontier.
+- [ ] Compile original `Water/W3DWater.cpp` and `Water/W3DWaterTracks.cpp`
+      after resolving the reached water-track enum forward, D3DX shader-buffer
+      include, WinMM timing, Win32 cursor/key helpers, and water-track editor
+      initialization access issues without replacing water behavior.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
       source blocker: the legacy BrowserEngine DLL import in
       `dx8webbrowser.cpp`. Runtime browser ports are still needed for the

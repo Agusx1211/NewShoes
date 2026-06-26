@@ -449,7 +449,7 @@ static void remapTexture16Bit(Int dx, Int dy, Int pitch, SurfaceClass::SurfaceDe
 		Convert_Pixel((unsigned char *)&pal[y],*sd,rgb);
 	}
 
-	for (y=0; y<dy; y++)
+	for (Int y=0; y<dy; y++)
 	{	for (Int x=0; x<dx; x++)
 		{	//check if this pixel is part of team color palette
 			for (Int p=0; p<TEAM_COLOR_PALETTE_SIZE; p++)
@@ -485,7 +485,7 @@ static void remapAlphaTexture16Bit(Int dx, Int dy, Int pitch, SurfaceClass::Surf
 	RGB_To_HSV(hsv_color,v_color);
 #endif
 
-	for (y=0; y<dy; y++)
+	for (Int y=0; y<dy; y++)
 	{	
 		for (x=0; x<dx; x++)
 		{
@@ -552,7 +552,7 @@ static void remapTexture32Bit(Int dx, Int dy, Int pitch, SurfaceClass::SurfaceDe
 		Convert_Pixel((unsigned char *)&pal[y],*sd,rgb);
 	}
 
-	for (y=0; y<dy; y++)
+	for (Int y=0; y<dy; y++)
 	{	for (Int x=0; x<dx; x++)
 		{	//check if this pixel is part of team color palette
 			for (Int p=0; p<TEAM_COLOR_PALETTE_SIZE; p++)
@@ -582,7 +582,7 @@ static void remapAlphaTexture32Bit(Int dx, Int dy, Int pitch, SurfaceClass::Surf
 	RGB_To_HSV(hsv_color,v_color);
 #endif
 
-	for (y=0; y<dy; y++)
+	for (Int y=0; y<dy; y++)
 	{	for (x=0; x<dx; x++)
 		{
 			pixel=data[x];
@@ -731,7 +731,7 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(
 
 #ifdef	INCLUDE_GRANNY_IN_BUILD
 	Bool isGranny = false;
-	char *pext=strrchr(name,'.');	//find file extension
+	const char *pext=strrchr(name,'.');	//find file extension
 	if (pext)
 		isGranny=(strnicmp(pext,".GR2",4) == 0);
 #endif
@@ -796,10 +796,10 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(
 	{	
 		// If we didn't find one, try to load on demand
 		char filename [MAX_PATH];
-		char *mesh_name = ::strchr (name, '.');
+		const char *mesh_name = ::strchr (name, '.');
 		if (mesh_name != NULL) 
 		{
-			::lstrcpyn(filename, name, ((int)mesh_name) - ((int)name) + 1);
+			::lstrcpyn(filename, name, static_cast<int>(mesh_name - name) + 1);
 #ifdef	INCLUDE_GRANNY_IN_BUILD
 			if (isGranny)
 				::lstrcat(filename, ".gr2");
@@ -1019,7 +1019,7 @@ bool W3DAssetManager::Load_3D_Assets( const char * filename )
 
 #ifdef	INCLUDE_GRANNY_IN_BUILD
 	Bool isGranny = false;
-	char *pext=strrchr(filename,'.');	//find file extension
+	const char *pext=strrchr(filename,'.');	//find file extension
 	if (pext)
 		isGranny=(strnicmp(pext,".GR2",4) == 0);
 	if (!isGranny)
@@ -1122,7 +1122,7 @@ HAnimClass *	W3DAssetManager::Get_HAnim(const char * name)
 
 #ifdef	INCLUDE_GRANNY_IN_BUILD
 	Bool isGranny = false;
-	char *pext=strrchr(name,'.');	//find file extension
+	const char *pext=strrchr(name,'.');	//find file extension
 	if (pext)
 		isGranny=(strnicmp(pext,".GR2",4) == 0);
 	if (!isGranny)
@@ -1447,7 +1447,7 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(const char * name,float scal
 {
 	Bool isGranny = false;
 #ifdef	INCLUDE_GRANNY_IN_BUILD
-	char *pext=strrchr(name,'.');	//find file extension
+	const char *pext=strrchr(name,'.');	//find file extension
 	if (pext)
 		isGranny=(strnicmp(pext,".GR2",4) == 0);
 #endif
@@ -1490,9 +1490,9 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(const char * name,float scal
 	Set_WW3D_Load_On_Demand(true); // Auto Load.
 	if (WW3D_Load_On_Demand && proto == NULL) {	// If we didn't find one, try to load on demand
 		char filename [MAX_PATH];
-		char *mesh_name = ::strchr (name, '.');
+		const char *mesh_name = ::strchr (name, '.');
 		if (mesh_name != NULL) {
-			::lstrcpyn (filename, name, ((int)mesh_name) - ((int)name) + 1);
+			::lstrcpyn (filename, name, static_cast<int>(mesh_name - name) + 1);
 			if (isGranny)
 				::lstrcat (filename, ".gr2");
 			else

@@ -2700,7 +2700,7 @@ void W3DShaderManager::shutdown(void)
 		}
 	}
 
-	for (i=0; i < FT_MAX; i++)
+	for (Int i=0; i < FT_MAX; i++)
 	{	
 		if (W3DFilters[i])
 		{
@@ -3722,7 +3722,6 @@ void FlatTerrainShaderPixelShader::reset(void)
 
 	DX8Wrapper::Invalidate_Cached_Render_States();
 }
-
 
 
 

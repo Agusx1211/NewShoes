@@ -71,7 +71,25 @@ struct D3DXVECTOR4
 
 struct D3DXMATRIX
 {
-	float m[4][4];
+	union {
+		float m[4][4];
+		struct {
+			float _11, _12, _13, _14;
+			float _21, _22, _23, _24;
+			float _31, _32, _33, _34;
+			float _41, _42, _43, _44;
+		};
+	};
+
+	D3DXMATRIX() :
+		m{
+			{ 1.0f, 0.0f, 0.0f, 0.0f },
+			{ 0.0f, 1.0f, 0.0f, 0.0f },
+			{ 0.0f, 0.0f, 1.0f, 0.0f },
+			{ 0.0f, 0.0f, 0.0f, 1.0f }
+		}
+	{
+	}
 
 	D3DXMATRIX(
 		float m11, float m12, float m13, float m14,
@@ -105,6 +123,68 @@ static inline D3DXMATRIX operator*(const D3DXMATRIX &left, const D3DXMATRIX &rig
 	}
 
 	return result;
+}
+
+static inline D3DXMATRIX &operator*=(D3DXMATRIX &left, const D3DXMATRIX &right)
+{
+	left = left * right;
+	return left;
+}
+
+static inline D3DXMATRIX *D3DXMatrixMultiply(
+	D3DXMATRIX *out,
+	const D3DXMATRIX *left,
+	const D3DXMATRIX *right)
+{
+	if (out == nullptr || left == nullptr || right == nullptr) {
+		return nullptr;
+	}
+
+	*out = *left * *right;
+	return out;
+}
+
+static inline D3DXMATRIX *D3DXMatrixScaling(D3DXMATRIX *out, float sx, float sy, float sz)
+{
+	if (out == nullptr) {
+		return nullptr;
+	}
+
+	*out = D3DXMATRIX(
+		sx, 0.0f, 0.0f, 0.0f,
+		0.0f, sy, 0.0f, 0.0f,
+		0.0f, 0.0f, sz, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f);
+	return out;
+}
+
+static inline D3DXMATRIX *D3DXMatrixTranslation(D3DXMATRIX *out, float x, float y, float z)
+{
+	if (out == nullptr) {
+		return nullptr;
+	}
+
+	*out = D3DXMATRIX(
+		1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		x, y, z, 1.0f);
+	return out;
+}
+
+static inline D3DXMATRIX *D3DXMatrixTranspose(D3DXMATRIX *out, const D3DXMATRIX *matrix)
+{
+	if (out == nullptr || matrix == nullptr) {
+		return nullptr;
+	}
+
+	D3DXMATRIX result(
+		matrix->m[0][0], matrix->m[1][0], matrix->m[2][0], matrix->m[3][0],
+		matrix->m[0][1], matrix->m[1][1], matrix->m[2][1], matrix->m[3][1],
+		matrix->m[0][2], matrix->m[1][2], matrix->m[2][2], matrix->m[3][2],
+		matrix->m[0][3], matrix->m[1][3], matrix->m[2][3], matrix->m[3][3]);
+	*out = result;
+	return out;
 }
 
 static inline D3DXMATRIX *D3DXMatrixRotationZ(D3DXMATRIX *out, float angle)

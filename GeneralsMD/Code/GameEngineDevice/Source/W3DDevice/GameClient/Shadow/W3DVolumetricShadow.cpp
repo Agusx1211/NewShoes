@@ -1403,7 +1403,8 @@ void W3DVolumetricShadow::RenderMeshVolume(Int meshIndex, Int lightIndex, const 
 	Matrix4x4 mWorld(*meshXform);
 
 	///@todo: W3D always does transpose on all of matrix sets.  Slow???  Better to hack view matrix.
-	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&mWorld.Transpose());
+	Matrix4x4 transposedWorld = mWorld.Transpose();
+	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&transposedWorld);
 	
 	W3DBufferManager::W3DVertexBufferSlot *vbSlot=m_shadowVolumeVB[lightIndex][ meshIndex ];
 	if (!vbSlot)
@@ -1523,7 +1524,8 @@ void W3DVolumetricShadow::RenderDynamicMeshVolume(Int meshIndex, Int lightIndex,
 	
 	Matrix4x4 mWorld(*meshXform);
 
-	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&mWorld.Transpose());
+	Matrix4x4 transposedWorld = mWorld.Transpose();
+	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&transposedWorld);
 
 	if (shadowVertexBufferD3D != lastActiveVertexBuffer)
 	{	m_pDev->SetStreamSource(0,shadowVertexBufferD3D,sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX));
@@ -1678,7 +1680,8 @@ void W3DVolumetricShadow::RenderMeshVolumeBounds(Int meshIndex, Int lightIndex, 
 	//todo: replace this with mesh transform
 	Matrix4x4 mWorld(1);	//identity since boxes are pre-transformed to world space.
 
-	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&mWorld.Transpose());
+	Matrix4x4 transposedWorld = mWorld.Transpose();
+	m_pDev->SetTransform(D3DTS_WORLD,(_D3DMATRIX *)&transposedWorld);
 	
 	m_pDev->SetStreamSource(0,shadowVertexBufferD3D,sizeof(SHADOW_DYNAMIC_VOLUME_VERTEX));
 	m_pDev->SetVertexShader(SHADOW_DYNAMIC_VOLUME_FVF);

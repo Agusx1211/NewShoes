@@ -293,6 +293,7 @@ static inline int _wtoi(const wchar_t *value)
 
 #define GMEM_MOVEABLE 0x0002
 #define GMEM_FIXED 0x0000
+#define HEAP_ZERO_MEMORY 0x00000008
 
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
@@ -635,6 +636,22 @@ static inline void GlobalMemoryStatus(MEMORYSTATUS *status)
 
 	std::memset(status, 0, sizeof(*status));
 	status->dwLength = sizeof(*status);
+}
+
+static inline HANDLE GetProcessHeap()
+{
+	return reinterpret_cast<HANDLE>(1);
+}
+
+static inline LPVOID HeapAlloc(HANDLE, DWORD flags, std::size_t bytes)
+{
+	return (flags & HEAP_ZERO_MEMORY) ? std::calloc(1, bytes) : std::malloc(bytes);
+}
+
+static inline BOOL HeapFree(HANDLE, DWORD, LPVOID memory)
+{
+	std::free(memory);
+	return TRUE;
 }
 
 static inline DWORD FormatMessage(

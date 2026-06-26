@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // DirectInput keyboard scan codes used by the original GameClient key table.
 // The browser input layer will translate DOM keyboard events onto these engine
 // key values instead of making the platform-independent code include DirectX.
@@ -7,6 +9,21 @@
 #ifndef DIRECTINPUT_VERSION
 #define DIRECTINPUT_VERSION 0x0800
 #endif
+
+struct IDirectInput8;
+struct IDirectInputDevice8;
+
+using LPDIRECTINPUT8 = IDirectInput8 *;
+using LPDIRECTINPUTDEVICE8 = IDirectInputDevice8 *;
+
+struct DIDEVICEOBJECTDATA
+{
+	unsigned long dwOfs;
+	unsigned long dwData;
+	unsigned long dwTimeStamp;
+	unsigned long dwSequence;
+	std::uintptr_t uAppData;
+};
 
 #define DIK_ESCAPE 0x01
 #define DIK_1 0x02

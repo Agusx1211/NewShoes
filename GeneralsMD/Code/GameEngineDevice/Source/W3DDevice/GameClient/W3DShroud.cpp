@@ -41,6 +41,7 @@
 #include "WW3D2/textureloader.h"
 #include "common/GlobalData.h"
 #include "GameLogic/PartitionManager.h"
+#include "mmsystem.h"
 
 #ifdef _INTERNAL
 // for occasional debugging...
