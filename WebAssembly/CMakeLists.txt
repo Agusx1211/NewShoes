@@ -38,6 +38,8 @@ set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
 set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
 set(RNDSTRNG_PORT_SHIM "${WASM_SHIMS_DIR}/rndstrng_port.h")
 
+find_program(NODE_EXECUTABLE NAMES node nodejs REQUIRED)
+
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
   "${COMPRESSION_EAC_DIR}/btreedecode.cpp"
@@ -2064,7 +2066,54 @@ target_compile_options(zh_ww3d2_compile_frontier PRIVATE
   -Wno-writable-strings
 )
 
+set(WWSHADE_SHADER_SOURCES
+  "${WWSHADE_DIR}/shd6bumpdiff.vsh"
+  "${WWSHADE_DIR}/shd6bumpspec.vsh"
+  "${WWSHADE_DIR}/shd7bumpdiffpass0.vsh"
+  "${WWSHADE_DIR}/shd7bumpdiffpass1.vsh"
+  "${WWSHADE_DIR}/shd7bumpspecpass0.vsh"
+  "${WWSHADE_DIR}/shd7bumpspecpass1.vsh"
+  "${WWSHADE_DIR}/shd8bumpdiff.psh"
+  "${WWSHADE_DIR}/shd8bumpdiff.vsh"
+  "${WWSHADE_DIR}/shd8bumpspec.psh"
+  "${WWSHADE_DIR}/shd8bumpspec.vsh"
+  "${WWSHADE_DIR}/shd8ssbumpdiff.psh"
+  "${WWSHADE_DIR}/shd8ssbumpdiff.vsh"
+  "${WWSHADE_DIR}/shd8ssbumpspec.psh"
+  "${WWSHADE_DIR}/shd8ssbumpspec.vsh"
+)
+
+set(WWSHADE_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/wwshade")
+set(WWSHADE_SHADER_CODE_HEADERS)
+
+foreach(shader_source IN LISTS WWSHADE_SHADER_SOURCES)
+  get_filename_component(shader_name "${shader_source}" NAME)
+  set(shader_header "${WWSHADE_GENERATED_DIR}/${shader_name}_code.h")
+  list(APPEND WWSHADE_SHADER_CODE_HEADERS "${shader_header}")
+  add_custom_command(
+    OUTPUT "${shader_header}"
+    COMMAND "${NODE_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_wwshade_shader_header.mjs"
+      "${shader_source}"
+      "${shader_header}"
+    DEPENDS
+      "${shader_source}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_wwshade_shader_header.mjs"
+    VERBATIM
+  )
+endforeach()
+
+add_custom_target(zh_wwshade_shader_headers
+  DEPENDS ${WWSHADE_SHADER_CODE_HEADERS}
+)
+
 add_library(zh_wwshade_compile_frontier STATIC
+  "${WWSHADE_DIR}/shd6bumpdiff.cpp"
+  "${WWSHADE_DIR}/shd6bumpspec.cpp"
+  "${WWSHADE_DIR}/shd7bumpdiff.cpp"
+  "${WWSHADE_DIR}/shd7bumpspec.cpp"
+  "${WWSHADE_DIR}/shd8bumpdiff.cpp"
+  "${WWSHADE_DIR}/shd8bumpspec.cpp"
   "${WWSHADE_DIR}/shdbumpdiff.cpp"
   "${WWSHADE_DIR}/shdbumpspec.cpp"
   "${WWSHADE_DIR}/shdcubemap.cpp"
@@ -2084,8 +2133,13 @@ add_library(zh_wwshade_compile_frontier STATIC
   "${WWSHADE_DIR}/shdsubmesh.cpp"
 )
 
+add_dependencies(zh_wwshade_compile_frontier
+  zh_wwshade_shader_headers
+)
+
 target_include_directories(zh_wwshade_compile_frontier PUBLIC
   "${WASM_SHIMS_DIR}"
+  "${WWSHADE_GENERATED_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
   "${ZH_CODE_DIR}/Libraries/Source"
   "${WWVEGAS_DIR}"
@@ -2102,6 +2156,7 @@ target_compile_options(zh_wwshade_compile_frontier PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${WWSHADE_GENERATED_DIR}"
   "-iquote${ZH_LIB_INCLUDE_DIR}"
   "-iquote${ZH_CODE_DIR}/Libraries/Source"
   "-iquote${WWVEGAS_DIR}"

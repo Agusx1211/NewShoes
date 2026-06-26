@@ -846,6 +846,13 @@ shares structure and follows behind.
       renderer, simple/gloss/cubemap/legacy W3D paths, and hardware-shader
       helper declarations. This is compile coverage only until the Direct3D
       shader runtime is mapped to a browser renderer.
+- [x] Expand `zh_wwshade_compile_frontier` to all 23 original
+      `WWVegas/wwshade` C++ sources by generating the legacy
+      `*.vsh_code.h` / `*.psh_code.h` headers at build time from the original
+      checked-in shader text, then adding the DX6/DX7/DX8 bump variants. This
+      is compile coverage only; shader assembly, shader creation, and material
+      rendering still need browser renderer mappings before any rendering claim
+      is done.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -872,12 +879,10 @@ shares structure and follows behind.
       Surrender renderer/object behavior, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer
       behavior.
-- [ ] Continue the original `WWVegas/wwshade` compile frontier by restoring or
-      regenerating the checked-in shader blob headers required by the six
-      DX6/DX7/DX8 bump variants (`shd6bumpdiff.cpp`, `shd6bumpspec.cpp`,
-      `shd7bumpdiff.cpp`, `shd7bumpspec.cpp`, `shd8bumpdiff.cpp`, and
-      `shd8bumpspec.cpp`), then mapping D3DX shader assembly and shader
-      creation to the browser renderer pipeline without inventing shader data.
+- [ ] Map original `WWVegas/wwshade` D3DX shader assembly, Direct3D shader
+      creation, shader constants, and material/render-state application to the
+      browser renderer pipeline, using the generated headers from original
+      shader text without inventing shader data.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

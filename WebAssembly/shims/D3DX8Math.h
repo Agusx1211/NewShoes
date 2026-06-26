@@ -23,6 +23,16 @@ struct D3DXVECTOR3
 		x(vector.x), y(vector.y), z(vector.z)
 	{
 	}
+
+	operator float *()
+	{
+		return &x;
+	}
+
+	operator const float *() const
+	{
+		return &x;
+	}
 };
 
 struct D3DXVECTOR4
@@ -46,6 +56,16 @@ struct D3DXVECTOR4
 	const float &operator[](int index) const
 	{
 		return (&x)[index];
+	}
+
+	operator float *()
+	{
+		return &x;
+	}
+
+	operator const float *() const
+	{
+		return &x;
 	}
 };
 
