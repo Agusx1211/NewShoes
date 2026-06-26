@@ -390,6 +390,66 @@ struct RealSpecialPowerIniProbeResult
 	std::string scud_storm_initiate_sound;
 };
 
+struct RealCommandButtonIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool science_file_exists = false;
+	bool special_power_file_exists = false;
+	bool upgrade_file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool science_original_ini_load = false;
+	bool special_power_original_ini_load = false;
+	bool upgrade_original_ini_load = false;
+	bool original_ini_load = false;
+	bool filtered_from_shipped = false;
+	bool special_power_option_pairing_valid = false;
+	std::size_t bytes = 0;
+	std::size_t science_bytes = 0;
+	std::size_t special_power_bytes = 0;
+	std::size_t upgrade_bytes = 0;
+	std::size_t filtered_bytes = 0;
+	std::size_t filtered_blocks = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t button_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool flash_bang_upgrade_found = false;
+	int flash_bang_upgrade_command = 0;
+	int flash_bang_upgrade_border = 0;
+	std::string flash_bang_upgrade_name;
+	std::string flash_bang_upgrade_label;
+	std::string flash_bang_upgrade_description;
+	bool ranger_capture_found = false;
+	int ranger_capture_command = 0;
+	unsigned int ranger_capture_options = 0;
+	int ranger_capture_border = 0;
+	std::string ranger_capture_upgrade_name;
+	std::string ranger_capture_special_power_name;
+	std::string ranger_capture_label;
+	std::string ranger_capture_description;
+	std::string ranger_capture_cursor;
+	std::string ranger_capture_invalid_cursor;
+	bool ranger_capture_has_enemy_target = false;
+	bool ranger_capture_has_neutral_target = false;
+	bool ranger_capture_has_multi_select = false;
+	bool ranger_capture_has_need_upgrade = false;
+	bool ranger_capture_has_need_special_power_science = false;
+	bool flash_bang_switch_found = false;
+	int flash_bang_switch_command = 0;
+	unsigned int flash_bang_switch_options = 0;
+	int flash_bang_switch_weapon_slot = 0;
+	int flash_bang_switch_border = 0;
+	std::string flash_bang_switch_upgrade_name;
+	std::string flash_bang_switch_label;
+	std::string flash_bang_switch_description;
+	bool flash_bang_switch_has_check_like = false;
+	bool flash_bang_switch_has_multi_select = false;
+	bool flash_bang_switch_has_need_upgrade = false;
+};
+
 struct RealPlayerTemplateIniProbeResult
 {
 	bool attempted = false;
@@ -470,4 +530,5 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
+RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const char *archive_path);
 RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const char *archive_path);

@@ -5,6 +5,7 @@
 
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
+#include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Weapon.h"
@@ -16,6 +17,7 @@ class ControlBar;
 
 AudioManager *TheAudio __attribute__((weak)) = nullptr;
 ControlBar *TheControlBar __attribute__((weak)) = nullptr;
+ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
 
 #define UNUSED_INI_BLOCK_PARSER(name) \
 	void __attribute__((weak)) INI::name(INI *) \
@@ -116,6 +118,13 @@ void UserPreferences::setInt(AsciiString key, Int value)
 void UserPreferences::setAsciiString(AsciiString key, AsciiString value)
 {
 	(*this)[key] = value;
+}
+
+ThingTemplate *__attribute__((weak)) ThingFactory::findTemplateInternal(
+	const AsciiString &,
+	Bool)
+{
+	return nullptr;
 }
 
 OptionPreferences::OptionPreferences(void)
@@ -391,7 +400,6 @@ UNUSED_INI_BLOCK_PARSER(parseAudioEventDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAudioSettingsDefinition)
 UNUSED_INI_BLOCK_PARSER(parseCampaignDefinition)
 UNUSED_INI_BLOCK_PARSER(parseChallengeModeDefinition)
-UNUSED_INI_BLOCK_PARSER(parseCommandButtonDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMetaMapDefinition)
 UNUSED_INI_BLOCK_PARSER(parseCommandSetDefinition)
 UNUSED_INI_BLOCK_PARSER(parseControlBarSchemeDefinition)

@@ -348,6 +348,13 @@ bool startup_upgrade_ready()
 		g_archive_probe.upgrade_ok;
 }
 
+bool startup_command_button_ready()
+{
+	return g_archive_probe.has_command_button_ini &&
+		g_archive_probe.command_button_attempted &&
+		g_archive_probe.command_button_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -399,6 +406,7 @@ bool startup_assets_ready()
 		startup_terrain_ready() &&
 		startup_terrain_roads_ready() &&
 		startup_upgrade_ready() &&
+		startup_command_button_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -444,6 +452,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_upgrade_ready()) {
 		return "upgrade_probe_failed";
+	}
+	if (!startup_command_button_ready()) {
+		return "command_button_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -506,6 +517,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_upgrade_ready()) {
 		return "Runtime BIG archive set did not pass the Upgrade.ini startup probe.";
+	}
+	if (!startup_command_button_ready()) {
+		return "Runtime BIG archive set did not pass the CommandButton.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -655,6 +669,119 @@ std::string build_upgrade_probe_json()
 	return buffer;
 }
 
+std::string build_command_button_probe_json()
+{
+	char buffer[9000];
+	const std::string source_json = json_escape(g_archive_probe.command_button_source);
+	const std::string flash_bang_upgrade_name_json =
+		json_escape(g_archive_probe.command_button_flash_bang_upgrade_name);
+	const std::string flash_bang_upgrade_label_json =
+		json_escape(g_archive_probe.command_button_flash_bang_upgrade_label);
+	const std::string flash_bang_upgrade_description_json =
+		json_escape(g_archive_probe.command_button_flash_bang_upgrade_description);
+	const std::string ranger_capture_upgrade_name_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_upgrade_name);
+	const std::string ranger_capture_special_power_name_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_special_power_name);
+	const std::string ranger_capture_label_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_label);
+	const std::string ranger_capture_description_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_description);
+	const std::string ranger_capture_cursor_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_cursor);
+	const std::string ranger_capture_invalid_cursor_json =
+		json_escape(g_archive_probe.command_button_ranger_capture_invalid_cursor);
+	const std::string flash_bang_switch_upgrade_name_json =
+		json_escape(g_archive_probe.command_button_flash_bang_switch_upgrade_name);
+	const std::string flash_bang_switch_label_json =
+		json_escape(g_archive_probe.command_button_flash_bang_switch_label);
+	const std::string flash_bang_switch_description_json =
+		json_escape(g_archive_probe.command_button_flash_bang_switch_description);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"scienceBytes\":%zu,\"specialPowerBytes\":%zu,\"upgradeBytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"scienceFileExists\":%s,\"specialPowerFileExists\":%s,"
+		"\"upgradeFileExists\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"scienceOriginalIniLoad\":%s,\"specialPowerOriginalIniLoad\":%s,"
+		"\"upgradeOriginalIniLoad\":%s,\"originalIniLoad\":%s,"
+		"\"filteredFromShipped\":%s,\"filteredBytes\":%zu,"
+		"\"filteredBlocks\":%zu,\"parsedFields\":%zu,\"buttons\":%zu,"
+		"\"specialPowerOptionPairingValid\":%s,"
+		"\"flashBangUpgrade\":{\"found\":%s,\"command\":%d,\"border\":%d,"
+		"\"upgrade\":\"%s\",\"textLabel\":\"%s\",\"description\":\"%s\"},"
+		"\"rangerCapture\":{\"found\":%s,\"command\":%d,\"options\":%u,"
+		"\"border\":%d,\"upgrade\":\"%s\",\"specialPower\":\"%s\","
+		"\"textLabel\":\"%s\",\"description\":\"%s\","
+		"\"cursor\":\"%s\",\"invalidCursor\":\"%s\","
+		"\"hasEnemyTarget\":%s,\"hasNeutralTarget\":%s,"
+		"\"hasMultiSelect\":%s,\"hasNeedUpgrade\":%s,"
+		"\"hasNeedSpecialPowerScience\":%s},"
+		"\"flashBangSwitch\":{\"found\":%s,\"command\":%d,\"options\":%u,"
+		"\"weaponSlot\":%d,\"border\":%d,\"upgrade\":\"%s\","
+		"\"textLabel\":\"%s\",\"description\":\"%s\","
+		"\"hasCheckLike\":%s,\"hasMultiSelect\":%s,\"hasNeedUpgrade\":%s}}",
+		g_archive_probe.command_button_attempted ? "true" : "false",
+		g_archive_probe.command_button_ok ? "true" : "false",
+		g_archive_probe.command_button_bytes,
+		g_archive_probe.command_button_science_bytes,
+		g_archive_probe.command_button_special_power_bytes,
+		g_archive_probe.command_button_upgrade_bytes,
+		source_json.c_str(),
+		g_archive_probe.command_button_loaded_archives ? "true" : "false",
+		g_archive_probe.command_button_file_exists ? "true" : "false",
+		g_archive_probe.command_button_science_file_exists ? "true" : "false",
+		g_archive_probe.command_button_special_power_file_exists ? "true" : "false",
+		g_archive_probe.command_button_upgrade_file_exists ? "true" : "false",
+		g_archive_probe.command_button_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.command_button_science_original_ini_load ? "true" : "false",
+		g_archive_probe.command_button_special_power_original_ini_load ? "true" : "false",
+		g_archive_probe.command_button_upgrade_original_ini_load ? "true" : "false",
+		g_archive_probe.command_button_original_ini_load ? "true" : "false",
+		g_archive_probe.command_button_filtered_from_shipped ? "true" : "false",
+		g_archive_probe.command_button_filtered_bytes,
+		g_archive_probe.command_button_filtered_blocks,
+		g_archive_probe.command_button_parsed_fields,
+		g_archive_probe.command_button_count,
+		g_archive_probe.command_button_special_power_option_pairing_valid ? "true" : "false",
+		g_archive_probe.command_button_flash_bang_upgrade_found ? "true" : "false",
+		g_archive_probe.command_button_flash_bang_upgrade_command,
+		g_archive_probe.command_button_flash_bang_upgrade_border,
+		flash_bang_upgrade_name_json.c_str(),
+		flash_bang_upgrade_label_json.c_str(),
+		flash_bang_upgrade_description_json.c_str(),
+		g_archive_probe.command_button_ranger_capture_found ? "true" : "false",
+		g_archive_probe.command_button_ranger_capture_command,
+		g_archive_probe.command_button_ranger_capture_options,
+		g_archive_probe.command_button_ranger_capture_border,
+		ranger_capture_upgrade_name_json.c_str(),
+		ranger_capture_special_power_name_json.c_str(),
+		ranger_capture_label_json.c_str(),
+		ranger_capture_description_json.c_str(),
+		ranger_capture_cursor_json.c_str(),
+		ranger_capture_invalid_cursor_json.c_str(),
+		g_archive_probe.command_button_ranger_capture_has_enemy_target ? "true" : "false",
+		g_archive_probe.command_button_ranger_capture_has_neutral_target ? "true" : "false",
+		g_archive_probe.command_button_ranger_capture_has_multi_select ? "true" : "false",
+		g_archive_probe.command_button_ranger_capture_has_need_upgrade ? "true" : "false",
+		g_archive_probe.command_button_ranger_capture_has_need_special_power_science ?
+			"true" : "false",
+		g_archive_probe.command_button_flash_bang_switch_found ? "true" : "false",
+		g_archive_probe.command_button_flash_bang_switch_command,
+		g_archive_probe.command_button_flash_bang_switch_options,
+		g_archive_probe.command_button_flash_bang_switch_weapon_slot,
+		g_archive_probe.command_button_flash_bang_switch_border,
+		flash_bang_switch_upgrade_name_json.c_str(),
+		flash_bang_switch_label_json.c_str(),
+		flash_bang_switch_description_json.c_str(),
+		g_archive_probe.command_button_flash_bang_switch_has_check_like ? "true" : "false",
+		g_archive_probe.command_button_flash_bang_switch_has_multi_select ? "true" : "false",
+		g_archive_probe.command_button_flash_bang_switch_has_need_upgrade ? "true" : "false");
+
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -691,11 +818,12 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[86000];
+	char buffer[96000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
+	const std::string command_button_probe_json = build_command_button_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -879,6 +1007,7 @@ const char *write_state_json()
 		"\"americaPurchaseCost\":%d,\"paladinPurchaseCost\":%d,"
 		"\"americaGrantable\":%s,\"paladinGrantable\":%s},"
 		"\"upgrade\":%s,"
+		"\"commandButton\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -1028,7 +1157,8 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"upgrade\":%s,\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
+		"\"upgrade\":%s,\"commandButton\":%s,"
+		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
@@ -1139,6 +1269,7 @@ const char *write_state_json()
 		g_archive_probe.science_america_grantable ? "true" : "false",
 		g_archive_probe.science_paladin_grantable ? "true" : "false",
 		upgrade_probe_json.c_str(),
+		command_button_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,
@@ -1470,6 +1601,7 @@ const char *write_state_json()
 		startup_armor_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
+		startup_command_button_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",

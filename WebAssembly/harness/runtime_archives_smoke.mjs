@@ -175,6 +175,68 @@ function assertUpgradeProbe(assetProbe, context) {
   }
 }
 
+function assertCommandButtonProbe(assetProbe, context) {
+  const commandButton = assetProbe?.commandButton;
+  const flashBangUpgrade = commandButton?.flashBangUpgrade;
+  const rangerCapture = commandButton?.rangerCapture;
+  const flashBangSwitch = commandButton?.flashBangSwitch;
+  if (!assetProbe?.inizh?.commandButtonIni
+      || !commandButton?.attempted
+      || !commandButton.ok
+      || commandButton.source !== "GameEngine/Common/INI.cpp::load + INICommandButton.cpp + ControlBar.cpp field table + Upgrade.cpp + SpecialPower.cpp"
+      || !commandButton.loadedArchives
+      || !commandButton.fileExists
+      || !commandButton.scienceFileExists
+      || !commandButton.specialPowerFileExists
+      || !commandButton.upgradeFileExists
+      || !commandButton.nameKeyGeneratorLoaded
+      || commandButton.scienceOriginalIniLoad !== false
+      || !commandButton.specialPowerOriginalIniLoad
+      || !commandButton.upgradeOriginalIniLoad
+      || !commandButton.originalIniLoad
+      || !commandButton.filteredFromShipped
+      || commandButton.bytes <= 100000
+      || commandButton.specialPowerBytes <= 5000
+      || commandButton.upgradeBytes <= 5000
+      || commandButton.filteredBytes <= 500
+      || commandButton.filteredBlocks !== 3
+      || commandButton.parsedFields !== 34
+      || commandButton.buttons !== 3
+      || !commandButton.specialPowerOptionPairingValid
+      || !flashBangUpgrade?.found
+      || flashBangUpgrade.command !== 5
+      || flashBangUpgrade.border !== 2
+      || flashBangUpgrade.upgrade !== "Upgrade_AmericaRangerFlashBangGrenade"
+      || flashBangUpgrade.textLabel !== "CONTROLBAR:UpgradeAmericaFlashBangGrenade"
+      || flashBangUpgrade.description !== "CONTROLBAR:TooltipUSAUpgradeFlashBangGrenades"
+      || !rangerCapture?.found
+      || rangerCapture.command !== 21
+      || rangerCapture.border !== 3
+      || rangerCapture.upgrade !== "Upgrade_InfantryCaptureBuilding"
+      || rangerCapture.specialPower !== "SpecialAbilityRangerCaptureBuilding"
+      || rangerCapture.textLabel !== "CONTROLBAR:CaptureBuilding"
+      || rangerCapture.description !== "CONTROLBAR:ToolTipUSARangerCaptureBuilding"
+      || rangerCapture.cursor !== "CaptureBuilding"
+      || rangerCapture.invalidCursor !== "GenericInvalid"
+      || !rangerCapture.hasEnemyTarget
+      || !rangerCapture.hasNeutralTarget
+      || !rangerCapture.hasMultiSelect
+      || !rangerCapture.hasNeedUpgrade
+      || !rangerCapture.hasNeedSpecialPowerScience
+      || !flashBangSwitch?.found
+      || flashBangSwitch.command !== 26
+      || flashBangSwitch.weaponSlot !== 1
+      || flashBangSwitch.border !== 3
+      || flashBangSwitch.upgrade !== "Upgrade_AmericaRangerFlashBangGrenade"
+      || flashBangSwitch.textLabel !== "CONTROLBAR:FlashBangGrenadeMode"
+      || flashBangSwitch.description !== "CONTROLBAR:ToolTipSwitchToUSAFlashBang"
+      || !flashBangSwitch.hasCheckLike
+      || !flashBangSwitch.hasMultiSelect
+      || !flashBangSwitch.hasNeedUpgrade) {
+    throw new Error(`${context} did not parse expected CommandButton.ini entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertSpecialPowerProbe(assetProbe, context) {
   const specialPower = assetProbe?.specialPower;
   const daisyCutter = specialPower?.daisyCutter;
@@ -542,6 +604,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.armor
         || !startupAssets.required?.science
         || !startupAssets.required?.upgrade
+        || !startupAssets.required?.commandButton
         || !startupAssets.required?.specialPower
         || !startupAssets.required?.playerTemplate
         || !startupAssets.required?.multiplayer
@@ -638,6 +701,7 @@ try {
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
+  assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -697,6 +761,7 @@ try {
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");

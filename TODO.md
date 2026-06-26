@@ -664,9 +664,14 @@ shares structure and follows behind.
 - [ ] Link and smoke-test the original command-button INI parser route after
       the real `Common/INI.cpp` reader, ControlBar, and SpecialPowerStore
       singleton surfaces are available without target-local parser stubs.
-- [ ] Link `UpgradeCenter` into command-button parser preflight so shipped
+- [x] Link `UpgradeCenter` into command-button parser preflight so shipped
       `CommandButton.ini` resolves real upgrade pointers before command-button
       runtime validation.
+- [ ] Expand command-button parser preflight from the focused shipped
+      upgrade/special-power subset to full `CommandButton.ini` coverage after
+      real `ThingFactory` / `ThingTemplate` object-template resolution is
+      available; the current coverage intentionally avoids `Object =` command
+      buttons until that dependency is real.
 - [x] Link and smoke-test the original upgrade INI parser route through the
       focused browser INI runtime, using original `Common/INI.cpp::load`,
       `INIUpgrade.cpp`, `Upgrade.cpp`, `NameKeyGenerator`, and shipped

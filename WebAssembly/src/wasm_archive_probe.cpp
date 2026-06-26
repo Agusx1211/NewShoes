@@ -226,6 +226,96 @@ void copy_special_power_probe(const RealSpecialPowerIniProbeResult &special_powe
 		special_power.scud_storm_initiate_sound;
 }
 
+void copy_command_button_probe(const RealCommandButtonIniProbeResult &command_button, ArchiveProbeResult &result)
+{
+	result.command_button_attempted = command_button.attempted;
+	result.command_button_ok = command_button.ok;
+	result.command_button_loaded_archives = command_button.loaded_archives;
+	result.command_button_file_exists = command_button.file_exists;
+	result.command_button_science_file_exists = command_button.science_file_exists;
+	result.command_button_special_power_file_exists = command_button.special_power_file_exists;
+	result.command_button_upgrade_file_exists = command_button.upgrade_file_exists;
+	result.command_button_name_key_generator_loaded =
+		command_button.name_key_generator_loaded;
+	result.command_button_science_original_ini_load =
+		command_button.science_original_ini_load;
+	result.command_button_special_power_original_ini_load =
+		command_button.special_power_original_ini_load;
+	result.command_button_upgrade_original_ini_load =
+		command_button.upgrade_original_ini_load;
+	result.command_button_original_ini_load = command_button.original_ini_load;
+	result.command_button_filtered_from_shipped = command_button.filtered_from_shipped;
+	result.command_button_special_power_option_pairing_valid =
+		command_button.special_power_option_pairing_valid;
+	result.command_button_bytes = command_button.bytes;
+	result.command_button_science_bytes = command_button.science_bytes;
+	result.command_button_special_power_bytes = command_button.special_power_bytes;
+	result.command_button_upgrade_bytes = command_button.upgrade_bytes;
+	result.command_button_filtered_bytes = command_button.filtered_bytes;
+	result.command_button_filtered_blocks = command_button.filtered_blocks;
+	result.command_button_parsed_fields = command_button.parsed_fields;
+	result.command_button_count = command_button.button_count;
+	result.command_button_source = command_button.source;
+	result.command_button_flash_bang_upgrade_found =
+		command_button.flash_bang_upgrade_found;
+	result.command_button_flash_bang_upgrade_command =
+		command_button.flash_bang_upgrade_command;
+	result.command_button_flash_bang_upgrade_border =
+		command_button.flash_bang_upgrade_border;
+	result.command_button_flash_bang_upgrade_name =
+		command_button.flash_bang_upgrade_name;
+	result.command_button_flash_bang_upgrade_label =
+		command_button.flash_bang_upgrade_label;
+	result.command_button_flash_bang_upgrade_description =
+		command_button.flash_bang_upgrade_description;
+	result.command_button_ranger_capture_found = command_button.ranger_capture_found;
+	result.command_button_ranger_capture_command = command_button.ranger_capture_command;
+	result.command_button_ranger_capture_options = command_button.ranger_capture_options;
+	result.command_button_ranger_capture_border = command_button.ranger_capture_border;
+	result.command_button_ranger_capture_upgrade_name =
+		command_button.ranger_capture_upgrade_name;
+	result.command_button_ranger_capture_special_power_name =
+		command_button.ranger_capture_special_power_name;
+	result.command_button_ranger_capture_label = command_button.ranger_capture_label;
+	result.command_button_ranger_capture_description =
+		command_button.ranger_capture_description;
+	result.command_button_ranger_capture_cursor = command_button.ranger_capture_cursor;
+	result.command_button_ranger_capture_invalid_cursor =
+		command_button.ranger_capture_invalid_cursor;
+	result.command_button_ranger_capture_has_enemy_target =
+		command_button.ranger_capture_has_enemy_target;
+	result.command_button_ranger_capture_has_neutral_target =
+		command_button.ranger_capture_has_neutral_target;
+	result.command_button_ranger_capture_has_multi_select =
+		command_button.ranger_capture_has_multi_select;
+	result.command_button_ranger_capture_has_need_upgrade =
+		command_button.ranger_capture_has_need_upgrade;
+	result.command_button_ranger_capture_has_need_special_power_science =
+		command_button.ranger_capture_has_need_special_power_science;
+	result.command_button_flash_bang_switch_found =
+		command_button.flash_bang_switch_found;
+	result.command_button_flash_bang_switch_command =
+		command_button.flash_bang_switch_command;
+	result.command_button_flash_bang_switch_options =
+		command_button.flash_bang_switch_options;
+	result.command_button_flash_bang_switch_weapon_slot =
+		command_button.flash_bang_switch_weapon_slot;
+	result.command_button_flash_bang_switch_border =
+		command_button.flash_bang_switch_border;
+	result.command_button_flash_bang_switch_upgrade_name =
+		command_button.flash_bang_switch_upgrade_name;
+	result.command_button_flash_bang_switch_label =
+		command_button.flash_bang_switch_label;
+	result.command_button_flash_bang_switch_description =
+		command_button.flash_bang_switch_description;
+	result.command_button_flash_bang_switch_has_check_like =
+		command_button.flash_bang_switch_has_check_like;
+	result.command_button_flash_bang_switch_has_multi_select =
+		command_button.flash_bang_switch_has_multi_select;
+	result.command_button_flash_bang_switch_has_need_upgrade =
+		command_button.flash_bang_switch_has_need_upgrade;
+}
+
 void copy_player_template_probe(const RealPlayerTemplateIniProbeResult &player_template, ArchiveProbeResult &result)
 {
 	result.player_template_attempted = player_template.attempted;
@@ -725,6 +815,13 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_upgrade_ini) {
 		copy_upgrade_probe(probe_original_upgrade_ini_load(archive_path), result);
 		result.ok = result.ok && result.upgrade_ok;
+	}
+	if (result.loaded &&
+			result.has_command_button_ini &&
+			result.has_special_power_ini &&
+			result.has_upgrade_ini) {
+		copy_command_button_probe(probe_original_command_button_ini_load(archive_path), result);
+		result.ok = result.ok && result.command_button_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

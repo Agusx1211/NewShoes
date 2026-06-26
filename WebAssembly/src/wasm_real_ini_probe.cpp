@@ -2,12 +2,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <string>
+#include <vector>
 
 #include "PreRTS.h"
 
 #include "Common/ArchiveFileSystem.h"
 #include "Common/AcademyStats.h"
+#include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
@@ -21,6 +24,7 @@
 #include "Common/TerrainTypes.h"
 #include "Common/Upgrade.h"
 #include "Common/WellKnownKeys.h"
+#include "GameClient/ControlBar.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
@@ -45,6 +49,7 @@ constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
+constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -57,6 +62,8 @@ constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 constexpr const char EXPECTED_SHELL_MAP_NAME[] = "Maps\\ShellMapMD\\ShellMapMD.map";
 constexpr const char SHELL_MAP_MD_PATH[] = "maps\\shellmapmd\\shellmapmd.map";
 constexpr const char TOURNAMENT_DESERT_PATH[] = "maps\\tournament desert\\tournament desert.map";
+constexpr const char SPECIAL_POWER_PROBE_INI_PATH[] = "__wasm_command_button_special_power_probe.ini";
+constexpr const char COMMAND_BUTTON_PROBE_INI_PATH[] = "__wasm_command_button_probe.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -72,6 +79,129 @@ void split_archive_path(const char *archive_path, AsciiString &directory, AsciiS
 
 	directory = normalized.substr(0, slash + 1).c_str();
 	file_mask = normalized.substr(slash + 1).c_str();
+}
+
+std::string trim_ascii(std::string value)
+{
+	const std::size_t first = value.find_first_not_of(" \t\r\n");
+	if (first == std::string::npos) {
+		return "";
+	}
+
+	const std::size_t last = value.find_last_not_of(" \t\r\n");
+	return value.substr(first, last - first + 1);
+}
+
+std::size_t line_content_end(const std::string &text, std::size_t line_start, std::size_t line_end)
+{
+	while (line_end > line_start &&
+			(text[line_end - 1] == '\n' || text[line_end - 1] == '\r')) {
+		--line_end;
+	}
+	return line_end;
+}
+
+std::size_t next_line_start(const std::string &text, std::size_t line_start)
+{
+	const std::size_t newline = text.find('\n', line_start);
+	return newline == std::string::npos ? text.size() : newline + 1;
+}
+
+bool read_archive_text(FileSystem &file_system, const char *path, std::string &text)
+{
+	FileInfo file_info = {};
+	if (!file_system.getFileInfo(AsciiString(path), &file_info) ||
+			file_info.sizeHigh != 0 ||
+			file_info.sizeLow <= 0) {
+		return false;
+	}
+
+	File *file = file_system.openFile(path, File::READ | File::BINARY);
+	if (file == nullptr) {
+		return false;
+	}
+
+	std::vector<char> bytes(static_cast<std::size_t>(file_info.sizeLow));
+	const Int bytes_read = file->read(bytes.data(), file_info.sizeLow);
+	file->close();
+	if (bytes_read != file_info.sizeLow) {
+		return false;
+	}
+
+	text.assign(bytes.begin(), bytes.end());
+	return true;
+}
+
+bool append_ini_block(
+	const std::string &source,
+	const char *block_type,
+	const char *button_name,
+	std::string &destination)
+{
+	const std::string header = std::string(block_type) + " " + button_name;
+
+	for (std::size_t line_start = 0; line_start < source.size();
+			line_start = next_line_start(source, line_start)) {
+		const std::size_t line_end = next_line_start(source, line_start);
+		const std::size_t content_end = line_content_end(source, line_start, line_end);
+		if (source.compare(line_start, content_end - line_start, header) != 0) {
+			continue;
+		}
+
+		std::size_t block_end = line_end;
+		for (std::size_t block_line_start = line_end; block_line_start < source.size();
+				block_line_start = next_line_start(source, block_line_start)) {
+			const std::size_t block_line_end = next_line_start(source, block_line_start);
+			const std::size_t block_content_end =
+				line_content_end(source, block_line_start, block_line_end);
+			const std::string line =
+				source.substr(block_line_start, block_content_end - block_line_start);
+			block_end = block_line_end;
+			if (trim_ascii(line) == "End") {
+				break;
+			}
+		}
+
+		destination.append(source, line_start, block_end - line_start);
+		if (destination.empty() || destination.back() != '\n') {
+			destination.push_back('\n');
+		}
+		destination.push_back('\n');
+		return true;
+	}
+
+	return false;
+}
+
+bool append_command_button_block(
+	const std::string &source,
+	const char *button_name,
+	std::string &destination)
+{
+	return append_ini_block(source, "CommandButton", button_name, destination);
+}
+
+bool write_probe_ini_file(const char *path, const std::string &text)
+{
+	if (TheFileSystem == nullptr) {
+		return false;
+	}
+
+	File *file = TheFileSystem->openFile(
+		path,
+		File::WRITE | File::CREATE | File::TRUNCATE | File::BINARY);
+	if (file == nullptr) {
+		return false;
+	}
+
+	const Int bytes_written = file->write(text.data(), static_cast<Int>(text.size()));
+	file->close();
+	return bytes_written == static_cast<Int>(text.size());
+}
+
+bool write_probe_ini_file(const std::string &text)
+{
+	return write_probe_ini_file(COMMAND_BUTTON_PROBE_INI_PATH, text);
 }
 
 std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
@@ -159,6 +289,46 @@ std::size_t count_verified_fields(const RealSpecialPowerIniProbeResult &result)
 		(result.crate_drop_required_science == "SCIENCE_CrateDrop" ? 1U : 0U) +
 		(result.neutron_missile_initiate_at_location_sound == "AirRaidSiren" ? 1U : 0U) +
 		(result.scud_storm_initiate_sound == "ScudStormInitiated" ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealCommandButtonIniProbeResult &result)
+{
+	return
+		(result.filtered_from_shipped ? 1U : 0U) +
+		(result.filtered_blocks == 3 ? 1U : 0U) +
+		(result.button_count == 3 ? 1U : 0U) +
+		(result.flash_bang_upgrade_found ? 1U : 0U) +
+		(result.flash_bang_upgrade_command == GUI_COMMAND_PLAYER_UPGRADE ? 1U : 0U) +
+		(result.flash_bang_upgrade_border == COMMAND_BUTTON_BORDER_UPGRADE ? 1U : 0U) +
+		(result.flash_bang_upgrade_name == "Upgrade_AmericaRangerFlashBangGrenade" ? 1U : 0U) +
+		(result.flash_bang_upgrade_label == "CONTROLBAR:UpgradeAmericaFlashBangGrenade" ? 1U : 0U) +
+		(result.flash_bang_upgrade_description ==
+			"CONTROLBAR:TooltipUSAUpgradeFlashBangGrenades" ? 1U : 0U) +
+		(result.ranger_capture_found ? 1U : 0U) +
+		(result.ranger_capture_command == GUI_COMMAND_SPECIAL_POWER ? 1U : 0U) +
+		(result.ranger_capture_border == COMMAND_BUTTON_BORDER_ACTION ? 1U : 0U) +
+		(result.ranger_capture_upgrade_name == "Upgrade_InfantryCaptureBuilding" ? 1U : 0U) +
+		(result.ranger_capture_special_power_name == "SpecialAbilityRangerCaptureBuilding" ? 1U : 0U) +
+		(result.ranger_capture_label == "CONTROLBAR:CaptureBuilding" ? 1U : 0U) +
+		(result.ranger_capture_description == "CONTROLBAR:ToolTipUSARangerCaptureBuilding" ? 1U : 0U) +
+		(result.ranger_capture_cursor == "CaptureBuilding" ? 1U : 0U) +
+		(result.ranger_capture_invalid_cursor == "GenericInvalid" ? 1U : 0U) +
+		(result.ranger_capture_has_enemy_target ? 1U : 0U) +
+		(result.ranger_capture_has_neutral_target ? 1U : 0U) +
+		(result.ranger_capture_has_multi_select ? 1U : 0U) +
+		(result.ranger_capture_has_need_upgrade ? 1U : 0U) +
+		(result.ranger_capture_has_need_special_power_science ? 1U : 0U) +
+		(result.flash_bang_switch_found ? 1U : 0U) +
+		(result.flash_bang_switch_command == GUI_COMMAND_SWITCH_WEAPON ? 1U : 0U) +
+		(result.flash_bang_switch_weapon_slot == SECONDARY_WEAPON ? 1U : 0U) +
+		(result.flash_bang_switch_border == COMMAND_BUTTON_BORDER_ACTION ? 1U : 0U) +
+		(result.flash_bang_switch_upgrade_name == "Upgrade_AmericaRangerFlashBangGrenade" ? 1U : 0U) +
+		(result.flash_bang_switch_label == "CONTROLBAR:FlashBangGrenadeMode" ? 1U : 0U) +
+		(result.flash_bang_switch_description == "CONTROLBAR:ToolTipSwitchToUSAFlashBang" ? 1U : 0U) +
+		(result.flash_bang_switch_has_check_like ? 1U : 0U) +
+		(result.flash_bang_switch_has_multi_select ? 1U : 0U) +
+		(result.flash_bang_switch_has_need_upgrade ? 1U : 0U) +
+		(result.special_power_option_pairing_valid ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealPlayerTemplateIniProbeResult &result)
@@ -594,6 +764,107 @@ void inspect_upgrade_entry(
 	cost = upgrade->calcCostToBuild(nullptr);
 	research_sound = upgrade->getResearchCompleteSound()->getEventName().str();
 	academy_classification = static_cast<int>(upgrade->getAcademyClassificationType());
+}
+
+std::size_t count_command_buttons(ControlBar &control_bar)
+{
+	std::size_t count = 0;
+	for (const CommandButton *button = control_bar.getCommandButtons(); button != nullptr;
+			button = button->getNext()) {
+		++count;
+	}
+	return count;
+}
+
+void inspect_flash_bang_upgrade_button(ControlBar &control_bar, RealCommandButtonIniProbeResult &result)
+{
+	const CommandButton *button =
+		control_bar.findCommandButton(AsciiString("Command_UpgradeAmericaRangerFlashBangGrenade"));
+	result.flash_bang_upgrade_found = button != nullptr;
+	if (button == nullptr) {
+		return;
+	}
+
+	const UpgradeTemplate *upgrade = button->getUpgradeTemplate();
+	result.flash_bang_upgrade_command = static_cast<int>(button->getCommandType());
+	result.flash_bang_upgrade_border =
+		static_cast<int>(button->getCommandButtonMappedBorderType());
+	result.flash_bang_upgrade_name = upgrade != nullptr ? upgrade->getUpgradeName().str() : "";
+	result.flash_bang_upgrade_label = button->getTextLabel().str();
+	result.flash_bang_upgrade_description = button->getDescriptionLabel().str();
+}
+
+void inspect_ranger_capture_button(ControlBar &control_bar, RealCommandButtonIniProbeResult &result)
+{
+	const CommandButton *button =
+		control_bar.findCommandButton(AsciiString("Command_AmericaRangerCaptureBuilding"));
+	result.ranger_capture_found = button != nullptr;
+	if (button == nullptr) {
+		return;
+	}
+
+	const UpgradeTemplate *upgrade = button->getUpgradeTemplate();
+	const SpecialPowerTemplate *special_power = button->getSpecialPowerTemplate();
+	result.ranger_capture_command = static_cast<int>(button->getCommandType());
+	result.ranger_capture_options = button->getOptions();
+	result.ranger_capture_border = static_cast<int>(button->getCommandButtonMappedBorderType());
+	result.ranger_capture_upgrade_name = upgrade != nullptr ? upgrade->getUpgradeName().str() : "";
+	result.ranger_capture_special_power_name =
+		special_power != nullptr ? special_power->getName().str() : "";
+	result.ranger_capture_label = button->getTextLabel().str();
+	result.ranger_capture_description = button->getDescriptionLabel().str();
+	result.ranger_capture_cursor = button->getCursorName().str();
+	result.ranger_capture_invalid_cursor = button->getInvalidCursorName().str();
+	result.ranger_capture_has_enemy_target =
+		(button->getOptions() & NEED_TARGET_ENEMY_OBJECT) != 0;
+	result.ranger_capture_has_neutral_target =
+		(button->getOptions() & NEED_TARGET_NEUTRAL_OBJECT) != 0;
+	result.ranger_capture_has_multi_select =
+		(button->getOptions() & OK_FOR_MULTI_SELECT) != 0;
+	result.ranger_capture_has_need_upgrade =
+		(button->getOptions() & NEED_UPGRADE) != 0;
+	result.ranger_capture_has_need_special_power_science =
+		(button->getOptions() & NEED_SPECIAL_POWER_SCIENCE) != 0;
+}
+
+void inspect_flash_bang_switch_button(ControlBar &control_bar, RealCommandButtonIniProbeResult &result)
+{
+	const CommandButton *button =
+		control_bar.findCommandButton(AsciiString("Command_AmericaRangerSwitchToFlagBangGrenades"));
+	result.flash_bang_switch_found = button != nullptr;
+	if (button == nullptr) {
+		return;
+	}
+
+	const UpgradeTemplate *upgrade = button->getUpgradeTemplate();
+	result.flash_bang_switch_command = static_cast<int>(button->getCommandType());
+	result.flash_bang_switch_options = button->getOptions();
+	result.flash_bang_switch_weapon_slot = static_cast<int>(button->getWeaponSlot());
+	result.flash_bang_switch_border = static_cast<int>(button->getCommandButtonMappedBorderType());
+	result.flash_bang_switch_upgrade_name =
+		upgrade != nullptr ? upgrade->getUpgradeName().str() : "";
+	result.flash_bang_switch_label = button->getTextLabel().str();
+	result.flash_bang_switch_description = button->getDescriptionLabel().str();
+	result.flash_bang_switch_has_check_like =
+		(button->getOptions() & CHECK_LIKE) != 0;
+	result.flash_bang_switch_has_multi_select =
+		(button->getOptions() & OK_FOR_MULTI_SELECT) != 0;
+	result.flash_bang_switch_has_need_upgrade =
+		(button->getOptions() & NEED_UPGRADE) != 0;
+}
+
+bool command_buttons_have_valid_special_power_options(ControlBar &control_bar)
+{
+	for (const CommandButton *button = control_bar.getCommandButtons(); button != nullptr;
+			button = button->getNext()) {
+		const bool has_special_power = button->getSpecialPowerTemplate() != nullptr;
+		const bool needs_special_power_science =
+			(button->getOptions() & NEED_SPECIAL_POWER_SCIENCE) != 0;
+		if (has_special_power != needs_special_power_science) {
+			return false;
+		}
+	}
+	return true;
 }
 }
 
@@ -2071,6 +2342,206 @@ RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_pa
 
 	if (upgrade_center != nullptr) {
 		delete upgrade_center;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const char *archive_path)
+{
+	RealCommandButtonIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INICommandButton.cpp + ControlBar.cpp field table + Upgrade.cpp + SpecialPower.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	SpecialPowerStore *old_special_power_store = TheSpecialPowerStore;
+	UpgradeCenter *old_upgrade_center = TheUpgradeCenter;
+	ControlBar *old_control_bar = TheControlBar;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	SpecialPowerStore *special_power_store = nullptr;
+	UpgradeCenter *upgrade_center = nullptr;
+	ControlBar *control_bar = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo command_button_file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(COMMAND_BUTTON_INI_PATH), &command_button_file_info) &&
+				command_button_file_info.sizeHigh == 0 &&
+				command_button_file_info.sizeLow > 0;
+			result.bytes = result.file_exists ?
+				static_cast<std::size_t>(command_button_file_info.sizeLow) : 0U;
+
+			FileInfo science_file_info = {};
+			result.science_file_exists =
+				archive_file_system.getFileInfo(AsciiString(SCIENCE_INI_PATH), &science_file_info) &&
+				science_file_info.sizeHigh == 0 &&
+				science_file_info.sizeLow > 0;
+			result.science_bytes = result.science_file_exists ?
+				static_cast<std::size_t>(science_file_info.sizeLow) : 0U;
+
+			FileInfo special_power_file_info = {};
+			result.special_power_file_exists =
+				archive_file_system.getFileInfo(AsciiString(SPECIAL_POWER_INI_PATH), &special_power_file_info) &&
+				special_power_file_info.sizeHigh == 0 &&
+				special_power_file_info.sizeLow > 0;
+			result.special_power_bytes = result.special_power_file_exists ?
+				static_cast<std::size_t>(special_power_file_info.sizeLow) : 0U;
+
+			FileInfo upgrade_file_info = {};
+			result.upgrade_file_exists =
+				archive_file_system.getFileInfo(AsciiString(UPGRADE_INI_PATH), &upgrade_file_info) &&
+				upgrade_file_info.sizeHigh == 0 &&
+				upgrade_file_info.sizeLow > 0;
+			result.upgrade_bytes = result.upgrade_file_exists ?
+				static_cast<std::size_t>(upgrade_file_info.sizeLow) : 0U;
+
+			if (result.file_exists &&
+					result.special_power_file_exists &&
+					result.upgrade_file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				special_power_store = NEW SpecialPowerStore;
+				TheSpecialPowerStore = special_power_store;
+				special_power_store->init();
+
+				upgrade_center = NEW UpgradeCenter;
+				TheUpgradeCenter = upgrade_center;
+				upgrade_center->init();
+
+				INI upgrade_ini;
+				upgrade_ini.load(AsciiString(UPGRADE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.upgrade_original_ini_load = true;
+
+				std::string shipped_special_powers;
+				std::string filtered_special_power;
+				if (read_archive_text(file_system, SPECIAL_POWER_INI_PATH, shipped_special_powers)) {
+					append_ini_block(
+						shipped_special_powers,
+						"SpecialPower",
+						"SpecialAbilityRangerCaptureBuilding",
+						filtered_special_power);
+				}
+				if (!filtered_special_power.empty() &&
+						write_probe_ini_file(SPECIAL_POWER_PROBE_INI_PATH, filtered_special_power)) {
+					INI special_power_ini;
+					special_power_ini.load(
+						AsciiString(SPECIAL_POWER_PROBE_INI_PATH),
+						INI_LOAD_OVERWRITE,
+						nullptr);
+					result.special_power_original_ini_load = true;
+				}
+
+				std::string shipped_command_buttons;
+				std::string filtered_command_buttons;
+				if (read_archive_text(file_system, COMMAND_BUTTON_INI_PATH, shipped_command_buttons)) {
+					if (append_command_button_block(
+							shipped_command_buttons,
+							"Command_UpgradeAmericaRangerFlashBangGrenade",
+							filtered_command_buttons)) {
+						++result.filtered_blocks;
+					}
+					if (append_command_button_block(
+							shipped_command_buttons,
+							"Command_AmericaRangerCaptureBuilding",
+							filtered_command_buttons)) {
+						++result.filtered_blocks;
+					}
+					if (append_command_button_block(
+							shipped_command_buttons,
+							"Command_AmericaRangerSwitchToFlagBangGrenades",
+							filtered_command_buttons)) {
+						++result.filtered_blocks;
+					}
+				}
+
+				result.filtered_bytes = filtered_command_buttons.size();
+				result.filtered_from_shipped = result.filtered_blocks == 3;
+				if (result.filtered_from_shipped && write_probe_ini_file(filtered_command_buttons)) {
+					control_bar = NEW ControlBar;
+					TheControlBar = control_bar;
+
+					INI command_button_ini;
+					command_button_ini.load(
+						AsciiString(COMMAND_BUTTON_PROBE_INI_PATH),
+						INI_LOAD_OVERWRITE,
+						nullptr);
+					result.original_ini_load = true;
+
+					result.button_count = count_command_buttons(*control_bar);
+					inspect_flash_bang_upgrade_button(*control_bar, result);
+					inspect_ranger_capture_button(*control_bar, result);
+					inspect_flash_bang_switch_button(*control_bar, result);
+					result.special_power_option_pairing_valid =
+						command_buttons_have_valid_special_power_options(*control_bar);
+					result.parsed_fields = count_verified_fields(result);
+					result.ok =
+						result.bytes > 100000 &&
+						result.special_power_bytes > 5000 &&
+						result.upgrade_bytes > 5000 &&
+						result.name_key_generator_loaded &&
+						result.special_power_original_ini_load &&
+						result.upgrade_original_ini_load &&
+						result.original_ini_load &&
+						result.filtered_bytes > 500 &&
+						result.parsed_fields == 34;
+				}
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	std::remove(COMMAND_BUTTON_PROBE_INI_PATH);
+	std::remove(SPECIAL_POWER_PROBE_INI_PATH);
+
+	TheControlBar = old_control_bar;
+	TheUpgradeCenter = old_upgrade_center;
+	TheSpecialPowerStore = old_special_power_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (control_bar != nullptr) {
+		delete control_bar;
+	}
+	if (upgrade_center != nullptr) {
+		delete upgrade_center;
+	}
+	if (special_power_store != nullptr) {
+		delete special_power_store;
 	}
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;

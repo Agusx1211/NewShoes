@@ -1302,6 +1302,7 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIDamageFX.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIDrawGroupInfo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMappedImage.cpp"
@@ -2605,7 +2606,9 @@ target_compile_options(zh_gameengine_globaldata_runtime PRIVATE
 add_library(zh_gameengine_real_ini_runtime STATIC
   src/wasm_real_ini_compat.cpp
   src/wasm_real_ini_probe.cpp
+  src/wasm_command_button_runtime.cpp
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
