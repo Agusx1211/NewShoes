@@ -17,6 +17,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
+#endif
+
 #ifndef IN
 #define IN
 #endif
@@ -279,6 +283,15 @@ static inline unsigned int _controlfp(unsigned int new_value, unsigned int mask)
 static inline int _wtoi(const wchar_t *value)
 {
 	return value ? static_cast<int>(std::wcstol(value, nullptr, 10)) : 0;
+}
+
+static inline double Win32PortNowMilliseconds()
+{
+#if defined(__EMSCRIPTEN__)
+	return emscripten_get_now();
+#else
+	return static_cast<double>(std::time(nullptr)) * 1000.0;
+#endif
 }
 
 #ifndef __min
@@ -1257,7 +1270,7 @@ static inline FARPROC GetProcAddress(HMODULE, LPCSTR)
 
 static inline DWORD GetTickCount()
 {
-	return static_cast<DWORD>(std::time(nullptr) * 1000);
+	return static_cast<DWORD>(Win32PortNowMilliseconds());
 }
 
 static inline DWORD GetCurrentTime()
@@ -1293,7 +1306,7 @@ static inline void GetLocalTime(SYSTEMTIME *system_time)
 static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *counter)
 {
 	if (counter != nullptr) {
-		counter->QuadPart = static_cast<long long>(GetTickCount());
+		counter->QuadPart = static_cast<long long>((Win32PortNowMilliseconds() * 1000.0) + 0.5);
 	}
 	return TRUE;
 }
@@ -1301,7 +1314,7 @@ static inline BOOL QueryPerformanceCounter(LARGE_INTEGER *counter)
 static inline BOOL QueryPerformanceFrequency(LARGE_INTEGER *frequency)
 {
 	if (frequency != nullptr) {
-		frequency->QuadPart = 1000;
+		frequency->QuadPart = 1000000;
 	}
 	return TRUE;
 }

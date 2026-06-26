@@ -221,8 +221,9 @@ shares structure and follows behind.
       terrain LOD/decal, AI debug), preserving original enumerator values.
 - [x] Add STLport `<hash_map>` compatibility, including the legacy
       `hash_map::resize` reserve-style call used by original Thing templates.
-- [ ] Consolidate the `mmsystem.h`/`timeGetTime` shim with the final browser
-      engine timing layer before replacing `Main/WinMain.cpp`.
+- [x] Consolidate the `mmsystem.h`/`timeGetTime`, `GetTickCount`, and
+      `QueryPerformanceCounter` shims onto the browser `emscripten_get_now()`
+      timing source, with harness state coverage for the Win32 timing surface.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
       pthread-aware yield/wait path before enabling shared-memory wasm threads.
 - [ ] Continue the legacy enum-forward audit for the remaining original
@@ -1548,7 +1549,9 @@ shares structure and follows behind.
       that advances the current wasm bootstrap tick at 60 Hz. This proves the
       browser scheduling surface only; the real engine tick still needs to
       replace the bootstrap counter.
-- [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
+- [x] Timing layer: `QueryPerformanceCounter`/`timeGetTime` →
+      `emscripten_get_now()` / browser `performance.now`, with harness state
+      checks for monotonic Win32 timing values.
 - [x] Expose a harness-verified wasm timing probe sourced from
       `emscripten_get_now()` so manual frame and `emscripten_set_main_loop`
       ticks report monotonic browser timing. This validates the bootstrap's

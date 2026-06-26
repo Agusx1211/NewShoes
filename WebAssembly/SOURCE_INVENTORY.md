@@ -117,9 +117,10 @@ The wasm CMake skeleton currently builds:
   through the original `Win32BIGFileSystem`. It also exposes a
   harness-verified `emscripten_set_main_loop` start/stop bridge that currently
   drives the bootstrap frame counter and reports a monotonic
-  `emscripten_get_now()` timing probe; the callback and timing probe are the
-  browser scheduling surface that the real engine tick and final timing layer
-  still need to replace. The archive probe proves fetched MEMFS archive
+  `emscripten_get_now()` timing probe plus a Win32 timing probe routed through
+  `timeGetTime`, `GetTickCount`, and `QueryPerformanceCounter`; the callback
+  and timing probes are the browser scheduling surface that the real engine tick
+  still needs to replace. The archive probe proves fetched MEMFS archive
   availability and the archive-set registration records the verified aggregate
   archive directory/mask in C++ bootstrap state. When present at `boot`, the
   bootstrap probes that registered aggregate path through the original

@@ -7,6 +7,8 @@
 
 #include "Common/RandomValue.h"
 #include "GameLogic/LogicRandomValue.h"
+#include "mmsystem.h"
+#include "windows.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -26,6 +28,14 @@ bool g_timing_probe_ok = false;
 double g_boot_time_ms = 0.0;
 double g_last_tick_time_ms = 0.0;
 double g_last_tick_delta_ms = 0.0;
+bool g_win32_timing_probe_ok = false;
+DWORD g_boot_time_get_time_ms = 0;
+DWORD g_last_time_get_time_ms = 0;
+DWORD g_boot_tick_count_ms = 0;
+DWORD g_last_tick_count_ms = 0;
+long long g_qpc_frequency = 0;
+long long g_boot_qpc = 0;
+long long g_last_qpc = 0;
 bool g_original_core_probe_ok = false;
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
@@ -67,6 +77,25 @@ void record_tick_time()
 	}
 	g_last_tick_time_ms = now_ms;
 	g_timing_probe_ok = true;
+
+	LARGE_INTEGER qpc = {};
+	LARGE_INTEGER frequency = {};
+	const DWORD time_get_time_ms = timeGetTime();
+	const DWORD tick_count_ms = GetTickCount();
+	const bool win32_timing_ok =
+		QueryPerformanceCounter(&qpc) &&
+		QueryPerformanceFrequency(&frequency) &&
+		frequency.QuadPart > 0;
+	if (!g_win32_timing_probe_ok) {
+		g_boot_time_get_time_ms = time_get_time_ms;
+		g_boot_tick_count_ms = tick_count_ms;
+		g_boot_qpc = qpc.QuadPart;
+	}
+	g_last_time_get_time_ms = time_get_time_ms;
+	g_last_tick_count_ms = tick_count_ms;
+	g_qpc_frequency = frequency.QuadPart;
+	g_last_qpc = qpc.QuadPart;
+	g_win32_timing_probe_ok = win32_timing_ok;
 }
 
 void run_original_core_probe()
@@ -165,7 +194,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[3000];
+	char buffer[4200];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
@@ -174,6 +203,10 @@ const char *write_state_json()
 		"\"mainLoop\":{\"running\":%s,\"fps\":%d,\"ticks\":%u},"
 		"\"timing\":{\"source\":\"emscripten_get_now\",\"ok\":%s,"
 		"\"bootMs\":%.3f,\"lastTickMs\":%.3f,\"lastDeltaMs\":%.3f},"
+		"\"win32Timing\":{\"source\":\"browser_win32_shim\",\"ok\":%s,"
+		"\"frequency\":%lld,\"bootQpc\":%lld,\"lastQpc\":%lld,"
+		"\"bootTimeGetTime\":%lu,\"lastTimeGetTime\":%lu,"
+		"\"bootTickCount\":%lu,\"lastTickCount\":%lu},"
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
@@ -195,6 +228,14 @@ const char *write_state_json()
 		g_boot_time_ms,
 		g_last_tick_time_ms,
 		g_last_tick_delta_ms,
+		g_win32_timing_probe_ok ? "true" : "false",
+		g_qpc_frequency,
+		g_boot_qpc,
+		g_last_qpc,
+		static_cast<unsigned long>(g_boot_time_get_time_ms),
+		static_cast<unsigned long>(g_last_time_get_time_ms),
+		static_cast<unsigned long>(g_boot_tick_count_ms),
+		static_cast<unsigned long>(g_last_tick_count_ms),
 		g_archive_probe.attempted ? "true" : "false",
 		g_archive_probe.ok ? "true" : "false",
 		g_archive_probe.loaded ? "true" : "false",

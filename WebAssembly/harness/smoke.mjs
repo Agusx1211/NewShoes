@@ -61,6 +61,33 @@ function assertWasmTiming(state, label) {
   }
 }
 
+function assertWin32Timing(state, label, previous = null) {
+  const timing = state.win32Timing;
+  if (!timing?.ok || timing.source !== "browser_win32_shim") {
+    throw new Error(`${label} Win32 timing probe missing: ${JSON.stringify(timing)}`);
+  }
+
+  if (timing.frequency !== 1000000) {
+    throw new Error(`${label} unexpected QPC frequency: ${JSON.stringify(timing)}`);
+  }
+
+  for (const field of ["bootQpc", "lastQpc", "bootTimeGetTime", "lastTimeGetTime", "bootTickCount", "lastTickCount"]) {
+    if (!Number.isFinite(timing[field])) {
+      throw new Error(`${label} Win32 timing field ${field} is not finite: ${JSON.stringify(timing)}`);
+    }
+  }
+
+  if (timing.lastQpc < timing.bootQpc
+      || timing.lastTimeGetTime < timing.bootTimeGetTime
+      || timing.lastTickCount < timing.bootTickCount) {
+    throw new Error(`${label} Win32 timing is not monotonic: ${JSON.stringify(timing)}`);
+  }
+
+  if (previous && timing.lastQpc < previous.lastQpc) {
+    throw new Error(`${label} Win32 QPC regressed: ${JSON.stringify({ previous, timing })}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -107,6 +134,7 @@ try {
   }
   if (expectWasm) {
     assertWasmTiming(bootResult.state, "boot");
+    assertWin32Timing(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
@@ -129,6 +157,7 @@ try {
   }
   if (expectWasm) {
     assertWasmTiming(frameResult.state, "frame");
+    assertWin32Timing(frameResult.state, "frame", bootResult.state.win32Timing);
     if (frameResult.state.timing.lastTickMs < bootResult.state.timing.lastTickMs) {
       throw new Error(`Frame timing regressed: ${JSON.stringify(frameResult.state.timing)}`);
     }
@@ -143,6 +172,7 @@ try {
       throw new Error(`Unexpected main loop FPS: ${JSON.stringify(loopStartResult.state.mainLoop)}`);
     }
     assertWasmTiming(loopStartResult.state, "main loop start");
+    assertWin32Timing(loopStartResult.state, "main loop start", frameResult.state.win32Timing);
     const loopStartTickMs = loopStartResult.state.timing.lastTickMs;
 
     const loopState = await waitForMainLoopTicks(
@@ -155,6 +185,7 @@ try {
       throw new Error(`Main loop stopped before ticking: ${JSON.stringify(loopState)}`);
     }
     assertWasmTiming(loopState, "main loop tick");
+    assertWin32Timing(loopState, "main loop tick", loopStartResult.state.win32Timing);
     if (loopState.timing.lastTickMs < loopStartTickMs) {
       throw new Error(`Main loop timing regressed: ${JSON.stringify(loopState.timing)}`);
     }

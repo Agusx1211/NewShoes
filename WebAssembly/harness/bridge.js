@@ -21,6 +21,7 @@ const harnessState = {
     ticks: 0,
   },
   timing: null,
+  win32Timing: null,
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -164,6 +165,7 @@ function applyModuleState(moduleState) {
   harnessState.runtime = moduleState.module ?? "wasm";
   harnessState.mainLoop = moduleState.mainLoop ?? harnessState.mainLoop;
   harnessState.timing = moduleState.timing ?? harnessState.timing;
+  harnessState.win32Timing = moduleState.win32Timing ?? harnessState.win32Timing;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
@@ -233,6 +235,7 @@ function snapshotState() {
     wasm: harnessState.wasm,
     mainLoop: harnessState.mainLoop,
     timing: harnessState.timing,
+    win32Timing: harnessState.win32Timing,
     canvas: harnessState.canvas,
     graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,

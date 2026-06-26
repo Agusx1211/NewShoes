@@ -1,7 +1,5 @@
 #pragma once
 
-#include <emscripten/emscripten.h>
-
 #include "windows.h"
 
 using MMRESULT = unsigned int;
@@ -19,7 +17,7 @@ struct TIMECAPS
 
 static inline DWORD timeGetTime()
 {
-	return static_cast<DWORD>(emscripten_get_now());
+	return static_cast<DWORD>(Win32PortNowMilliseconds());
 }
 
 static inline MMRESULT timeBeginPeriod(UINT)
