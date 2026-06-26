@@ -120,13 +120,17 @@ The wasm CMake skeleton currently builds:
   `emscripten_get_now()` timing probe plus a Win32 timing probe routed through
   `timeGetTime`, `GetTickCount`, and `QueryPerformanceCounter`; the callback
   and timing probes are the browser scheduling surface that the real engine tick
-  still needs to replace. The archive probe proves fetched MEMFS archive
-  availability and the archive-set registration records the verified aggregate
-  archive directory/mask in C++ bootstrap state. When present at `boot`, the
-  bootstrap probes that registered aggregate path through the original
-  `Win32BIGFileSystem` and reports the result in `archiveMount.bootProbe`;
-  it also links the focused original text archive and reports
-  `assetProbe.gameText` after loading real English CSF labels through
+  still needs to replace. The bootstrap also links original
+  `WWVegas/WWDebug/wwdebug.cpp`, installs message/assert handlers, and reports a
+  harness-verified `debugProbe` for info/warning/error/assert routing through
+  captured wasm stdout; full `Common/System/Debug.cpp` `DEBUG_LOG` and
+  release-crash routing are still outside this bootstrap path. The archive probe
+  proves fetched MEMFS archive availability and the archive-set registration
+  records the verified aggregate archive directory/mask in C++ bootstrap state.
+  When present at `boot`, the bootstrap probes that registered aggregate path
+  through the original `Win32BIGFileSystem` and reports the result in
+  `archiveMount.bootProbe`; it also links the focused original text archive and
+  reports `assetProbe.gameText` after loading real English CSF labels through
   `GameText.cpp`.
   original engine startup still needs to consume the mounted runtime archive set
   beyond this preflight.

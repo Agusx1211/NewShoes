@@ -38,6 +38,7 @@ const harnessState = {
   },
   originalEngineLinked: false,
   originalCoreProbe: null,
+  debugProbe: null,
   assetProbe: null,
   archiveMount: null,
   mountedArchives: [],
@@ -168,6 +169,7 @@ function applyModuleState(moduleState) {
   harnessState.win32Timing = moduleState.win32Timing ?? harnessState.win32Timing;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
+  harnessState.debugProbe = moduleState.debugProbe ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
 }
@@ -240,6 +242,7 @@ function snapshotState() {
     graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
+    debugProbe: harnessState.debugProbe,
     assetProbe: harnessState.assetProbe,
     archiveMount: harnessState.archiveMount,
     mountedArchives: harnessState.mountedArchives,

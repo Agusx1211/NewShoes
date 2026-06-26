@@ -1566,6 +1566,11 @@ shares structure and follows behind.
 - [x] Capture Emscripten module stdout/stderr through the browser harness log
       RPC and smoke-test the wasm bootstrap boot line. Original `DEBUG_LOG` and
       assert routing still need the real debug subsystem integration.
+- [x] Install original `WWDebug` message/assert handlers in the browser
+      bootstrap and harness-test info/warning/error/assert routing through the
+      captured wasm stdout stream. This proves the original `WWDebug` handler
+      bridge only; full `Common/System/Debug.cpp` `DEBUG_LOG` and release-crash
+      routing remain open.
 - [ ] Engine `init()` runs to completion without crashing.
 - [ ] Graceful handling of missing assets (clear error, not a hang).
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).

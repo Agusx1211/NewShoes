@@ -9,6 +9,7 @@
 #include "GameLogic/LogicRandomValue.h"
 #include "mmsystem.h"
 #include "windows.h"
+#include "wwdebug.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -36,6 +37,16 @@ DWORD g_last_tick_count_ms = 0;
 long long g_qpc_frequency = 0;
 long long g_boot_qpc = 0;
 long long g_last_qpc = 0;
+bool g_debug_handlers_installed = false;
+bool g_debug_probe_ok = false;
+int g_debug_message_count = 0;
+int g_debug_information_count = 0;
+int g_debug_warning_count = 0;
+int g_debug_error_count = 0;
+int g_debug_assert_count = 0;
+std::string g_debug_last_type;
+std::string g_debug_last_message;
+std::string g_debug_last_assert;
 bool g_original_core_probe_ok = false;
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
@@ -63,6 +74,61 @@ double browser_now_ms()
 #else
 	return 0.0;
 #endif
+}
+
+const char *debug_type_name(DebugType type)
+{
+	switch (type) {
+		case WWDEBUG_TYPE_INFORMATION:
+			return "information";
+		case WWDEBUG_TYPE_WARNING:
+			return "warning";
+		case WWDEBUG_TYPE_ERROR:
+			return "error";
+		case WWDEBUG_TYPE_USER:
+			return "user";
+	}
+	return "unknown";
+}
+
+void browser_debug_message_handler(DebugType type, const char *message)
+{
+	const char *type_name = debug_type_name(type);
+	++g_debug_message_count;
+	switch (type) {
+		case WWDEBUG_TYPE_INFORMATION:
+			++g_debug_information_count;
+			break;
+		case WWDEBUG_TYPE_WARNING:
+			++g_debug_warning_count;
+			break;
+		case WWDEBUG_TYPE_ERROR:
+			++g_debug_error_count;
+			break;
+		case WWDEBUG_TYPE_USER:
+			break;
+	}
+	g_debug_last_type = type_name;
+	g_debug_last_message = message != nullptr ? message : "";
+	std::printf("cnc-port: wwdebug %s %s\n", type_name, g_debug_last_message.c_str());
+}
+
+void browser_debug_assert_handler(const char *message)
+{
+	++g_debug_assert_count;
+	g_debug_last_assert = message != nullptr ? message : "";
+	std::printf("cnc-port: wwdebug assert %s\n", g_debug_last_assert.c_str());
+}
+
+void install_debug_handlers()
+{
+	if (g_debug_handlers_installed) {
+		return;
+	}
+
+	WWDebug_Install_Message_Handler(browser_debug_message_handler);
+	WWDebug_Install_Assert_Handler(browser_debug_assert_handler);
+	g_debug_handlers_installed = true;
 }
 
 void record_tick_time()
@@ -105,6 +171,25 @@ void run_original_core_probe()
 	g_original_logic_random_value = GetGameLogicRandomValue(10, 100, file, 1);
 	g_original_logic_seed_crc = GetGameLogicRandomSeedCRC();
 	g_original_core_probe_ok = true;
+}
+
+void run_original_debug_probe()
+{
+	install_debug_handlers();
+	const int starting_messages = g_debug_message_count;
+	const int starting_asserts = g_debug_assert_count;
+	WWRELEASE_SAY(("cnc-port wwdebug info frame=%u", g_frame));
+	WWRELEASE_WARNING(("cnc-port wwdebug warning frame=%u", g_frame));
+	WWRELEASE_ERROR(("cnc-port wwdebug error frame=%u", g_frame));
+	WWDebug_Assert_Fail_Print(
+		"cnc_port_debug_probe",
+		"wasm_port_entry.cpp",
+		1,
+		"browser handler installed");
+	g_debug_probe_ok =
+		g_debug_handlers_installed &&
+		g_debug_message_count >= starting_messages + 3 &&
+		g_debug_assert_count >= starting_asserts + 1;
 }
 
 void probe_registered_archive_set_for_boot()
@@ -170,6 +255,7 @@ void ensure_booted()
 		++g_frame;
 		record_tick_time();
 		run_original_core_probe();
+		run_original_debug_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -194,10 +280,13 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[4200];
+	char buffer[6000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
+	const std::string debug_last_type_json = json_escape(g_debug_last_type);
+	const std::string debug_last_message_json = json_escape(g_debug_last_message);
+	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"booted\":%s,\"frame\":%u,\"module\":\"wasm-port-bootstrap\","
 		"\"mainLoop\":{\"running\":%s,\"fps\":%d,\"ticks\":%u},"
@@ -218,7 +307,11 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
-		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s}}",
+		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
+		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
+		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
+		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
+		"\"lastType\":\"%s\",\"lastMessage\":\"%s\",\"lastAssert\":\"%s\"}}",
 		g_booted ? "true" : "false",
 		g_frame,
 		g_main_loop_running ? "true" : "false",
@@ -262,7 +355,17 @@ const char *write_state_json()
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,
-		g_original_core_probe_ok ? "true" : "false");
+		g_original_core_probe_ok ? "true" : "false",
+		g_debug_handlers_installed ? "true" : "false",
+		g_debug_probe_ok ? "true" : "false",
+		g_debug_message_count,
+		g_debug_information_count,
+		g_debug_warning_count,
+		g_debug_error_count,
+		g_debug_assert_count,
+		debug_last_type_json.c_str(),
+		debug_last_message_json.c_str(),
+		debug_last_assert_json.c_str());
 	g_state_json = buffer;
 	return g_state_json.c_str();
 }

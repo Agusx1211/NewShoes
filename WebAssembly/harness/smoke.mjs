@@ -88,6 +88,26 @@ function assertWin32Timing(state, label, previous = null) {
   }
 }
 
+function assertWwDebugProbe(state, label) {
+  const probe = state.debugProbe;
+  if (!probe?.ok || probe.source !== "WWVegas/WWDebug/wwdebug.cpp") {
+    throw new Error(`${label} WWDebug probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.handlersInstalled
+      || probe.messageCount < 3
+      || probe.information < 1
+      || probe.warnings < 1
+      || probe.errors < 1
+      || probe.asserts < 1) {
+    throw new Error(`${label} WWDebug counters incomplete: ${JSON.stringify(probe)}`);
+  }
+
+  if (probe.lastType !== "error" || !String(probe.lastAssert ?? "").includes("cnc_port_debug_probe")) {
+    throw new Error(`${label} WWDebug last values unexpected: ${JSON.stringify(probe)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -135,7 +155,10 @@ try {
   if (expectWasm) {
     assertWasmTiming(bootResult.state, "boot");
     assertWin32Timing(bootResult.state, "boot");
+    assertWwDebugProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
     throw new Error(`Expected browser harness to initialize WebGL2: ${JSON.stringify(bootResult.state.graphics)}`);
