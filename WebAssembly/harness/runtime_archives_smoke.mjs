@@ -120,6 +120,61 @@ function assertScienceProbe(assetProbe, context) {
   }
 }
 
+function assertUpgradeProbe(assetProbe, context) {
+  const upgrade = assetProbe?.upgrade;
+  const flashBang = upgrade?.flashBang;
+  const captureBuilding = upgrade?.captureBuilding;
+  const laserMissiles = upgrade?.laserMissiles;
+  const chinaMines = upgrade?.chinaMines;
+  const americaRadar = upgrade?.americaRadar;
+  if (!assetProbe?.inizh?.upgradeIni
+      || !upgrade?.attempted
+      || !upgrade.ok
+      || upgrade.source !== "GameEngine/Common/INI.cpp::load + INIUpgrade.cpp + Upgrade.cpp"
+      || !upgrade.loadedArchives
+      || !upgrade.fileExists
+      || !upgrade.nameKeyGeneratorLoaded
+      || !upgrade.originalIniLoad
+      || upgrade.bytes <= 5000
+      || upgrade.parsedFields !== 34
+      || upgrade.upgrades !== 83
+      || !upgrade.veterancy?.veteran
+      || !upgrade.veterancy.elite
+      || !upgrade.veterancy.heroic
+      || !flashBang?.found
+      || flashBang.displayName !== "UPGRADE:RangerFlashBangGrenade"
+      || flashBang.type !== 0
+      || flashBang.buildFrames !== 900
+      || flashBang.cost !== 800
+      || flashBang.researchSound !== "RangerVoiceUpgradeFlashBangGrenades"
+      || !captureBuilding?.found
+      || captureBuilding.displayName !== "UPGRADE:RangerCaptureBuilding"
+      || captureBuilding.type !== 0
+      || captureBuilding.buildFrames !== 900
+      || captureBuilding.cost !== 1000
+      || !laserMissiles?.found
+      || laserMissiles.displayName !== "UPGRADE:AmericaLaserMissiles"
+      || laserMissiles.type !== 0
+      || laserMissiles.buildFrames !== 1200
+      || laserMissiles.cost !== 1500
+      || laserMissiles.researchSound !== "RaptorVoiceUpgradeLaserGuidedMissiles"
+      || !chinaMines?.found
+      || chinaMines.displayName !== "UPGRADE:Mines"
+      || chinaMines.type !== 1
+      || chinaMines.buildFrames !== 600
+      || chinaMines.cost !== 600
+      || chinaMines.researchSound !== "MineFieldPlaced"
+      || !americaRadar?.found
+      || americaRadar.displayName !== "UPGRADE:Radar"
+      || americaRadar.type !== 1
+      || americaRadar.buildFrames !== 300
+      || americaRadar.cost !== 500
+      || americaRadar.researchSound !== ""
+      || americaRadar.academyClassification !== 1) {
+    throw new Error(`${context} did not parse expected Upgrade.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertSpecialPowerProbe(assetProbe, context) {
   const specialPower = assetProbe?.specialPower;
   const daisyCutter = specialPower?.daisyCutter;
@@ -486,6 +541,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.inizh
         || !startupAssets.required?.armor
         || !startupAssets.required?.science
+        || !startupAssets.required?.upgrade
         || !startupAssets.required?.specialPower
         || !startupAssets.required?.playerTemplate
         || !startupAssets.required?.multiplayer
@@ -570,6 +626,7 @@ try {
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
+      || !assetProbe.inizh?.upgradeIni
       || !assetProbe.inizh?.specialPowerIni
       || !assetProbe.inizh?.playerTemplateIni
       || !assetProbe.inizh?.terrainIni
@@ -580,6 +637,7 @@ try {
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
+  assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -638,6 +696,7 @@ try {
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");

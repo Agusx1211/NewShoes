@@ -633,7 +633,8 @@ shares structure and follows behind.
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
       `GameData`, `Science`, `SpecialPower`, `Multiplayer`, `Water`, `Weather`,
-      `Video`, and shipped map-cache preflights on original `INI.cpp::load`
+      `Video`, `Upgrade`, and shipped map-cache preflights on original
+      `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped special-power runtime's weak `TheAudio`
       compatibility singleton and Emscripten-only null audio-info guard with the
@@ -663,10 +664,18 @@ shares structure and follows behind.
 - [ ] Link and smoke-test the original command-button INI parser route after
       the real `Common/INI.cpp` reader, ControlBar, and SpecialPowerStore
       singleton surfaces are available without target-local parser stubs.
-- [ ] Link and smoke-test original crate, draw-group, and upgrade INI parser
-      routes after the real `Common/INI.cpp` reader, `CrateSystem`,
-      `DrawGroupInfo`, and `UpgradeCenter` singleton surfaces are available
-      without target-local parser stubs.
+- [ ] Link `UpgradeCenter` into command-button parser preflight so shipped
+      `CommandButton.ini` resolves real upgrade pointers before command-button
+      runtime validation.
+- [x] Link and smoke-test the original upgrade INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `INIUpgrade.cpp`, `Upgrade.cpp`, `NameKeyGenerator`, and shipped
+      `Data\INI\Upgrade.ini` for veterancy templates, unique shipped upgrade
+      count, build time/cost/type, academy classification, and preserved audio
+      event names.
+- [ ] Link and smoke-test original crate and draw-group INI parser routes after
+      the real `Common/INI.cpp` reader, `CrateSystem`, and `DrawGroupInfo`
+      singleton surfaces are available without target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but

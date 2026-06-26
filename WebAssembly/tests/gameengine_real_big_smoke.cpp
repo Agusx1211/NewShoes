@@ -126,12 +126,15 @@ int run_real_big_smoke_impl(const char *archive_path)
 
 		const char armor_path[] = "Data\\INI\\Armor.ini";
 		const char command_button_path[] = "Data\\INI\\CommandButton.ini";
+		const char upgrade_path[] = "Data\\INI\\Upgrade.ini";
 		const char weapon_path[] = "Data\\INI\\Weapon.ini";
 
 		ok = expect(archive_file_system.doesFileExist(armor_path),
 			"real INIZH.big missing Armor.ini") && ok;
 		ok = expect(archive_file_system.doesFileExist(command_button_path),
 			"real INIZH.big missing CommandButton.ini") && ok;
+		ok = expect(archive_file_system.doesFileExist(upgrade_path),
+			"real INIZH.big missing Upgrade.ini") && ok;
 		ok = expect(archive_file_system.doesFileExist(weapon_path),
 			"real INIZH.big missing Weapon.ini") && ok;
 
@@ -153,6 +156,13 @@ int run_real_big_smoke_impl(const char *archive_path)
 		ok = expect(contains_text(command_button_data, "CommandButton") &&
 				contains_text(command_button_data, "Command_"),
 			"real INIZH.big CommandButton.ini content mismatch") && ok;
+
+		std::vector<char> upgrade_data;
+		ok = expect(read_archive_file(file_system, upgrade_path, upgrade_data),
+			"real INIZH.big Upgrade.ini read failed") && ok;
+		ok = expect(contains_text(upgrade_data, ";Upgrade definition") &&
+				contains_text(upgrade_data, "Upgrade Upgrade_AmericaRangerFlashBangGrenade"),
+			"real INIZH.big Upgrade.ini content mismatch") && ok;
 
 		std::vector<char> weapon_data;
 		ok = expect(read_archive_file(file_system, weapon_path, weapon_data),

@@ -2613,6 +2613,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INITerrain.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INITerrainBridge.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INITerrainRoad.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIUpgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIVideo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
@@ -2620,7 +2621,9 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/SpecialPower.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/Image.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoPlayer.cpp"
@@ -2658,6 +2661,7 @@ target_include_directories(zh_gameengine_real_ini_runtime PUBLIC
 )
 
 target_compile_options(zh_gameengine_real_ini_runtime PRIVATE
+  -fexceptions
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
@@ -3002,6 +3006,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sMAXIMUM_MEMORY=2147483648"
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
   "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
@@ -4135,6 +4140,7 @@ target_link_options(gameengine-real-big-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sNODERAWFS=1"
@@ -4173,6 +4179,7 @@ target_link_options(gameengine-real-big-browser-smoke PRIVATE
   "SHELL:-sEXPORT_ES6=1"
   "SHELL:-sEXPORT_NAME=createGameEngineRealBigBrowserSmokeModule"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"

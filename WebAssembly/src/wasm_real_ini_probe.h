@@ -285,6 +285,54 @@ struct RealTerrainRoadsIniProbeResult
 	int concrete_bridge_num_fx_per_type = 0;
 };
 
+struct RealUpgradeIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t upgrade_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool veteran_found = false;
+	bool elite_found = false;
+	bool heroic_found = false;
+	bool flash_bang_found = false;
+	bool capture_building_found = false;
+	bool laser_missiles_found = false;
+	bool china_mines_found = false;
+	bool america_radar_found = false;
+	std::string flash_bang_display_name;
+	std::string capture_building_display_name;
+	std::string laser_missiles_display_name;
+	std::string china_mines_display_name;
+	std::string america_radar_display_name;
+	std::string flash_bang_research_sound;
+	std::string laser_missiles_research_sound;
+	std::string china_mines_research_sound;
+	std::string america_radar_research_sound;
+	int flash_bang_type = 0;
+	int capture_building_type = 0;
+	int laser_missiles_type = 0;
+	int china_mines_type = 0;
+	int america_radar_type = 0;
+	int flash_bang_build_frames = 0;
+	int capture_building_build_frames = 0;
+	int laser_missiles_build_frames = 0;
+	int china_mines_build_frames = 0;
+	int america_radar_build_frames = 0;
+	int flash_bang_cost = 0;
+	int capture_building_cost = 0;
+	int laser_missiles_cost = 0;
+	int china_mines_cost = 0;
+	int america_radar_cost = 0;
+	int america_radar_academy_classification = 0;
+};
+
 struct RealSpecialPowerIniProbeResult
 {
 	bool attempted = false;
@@ -420,5 +468,6 @@ RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);
 RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path);
 RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
+RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
 RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const char *archive_path);

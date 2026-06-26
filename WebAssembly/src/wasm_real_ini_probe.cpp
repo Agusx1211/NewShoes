@@ -19,6 +19,7 @@
 #include "Common/Science.h"
 #include "Common/SpecialPower.h"
 #include "Common/TerrainTypes.h"
+#include "Common/Upgrade.h"
 #include "Common/WellKnownKeys.h"
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
@@ -47,6 +48,7 @@ constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
+constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -350,6 +352,45 @@ std::size_t count_verified_fields(const RealTerrainRoadsIniProbeResult &result)
 		(result.concrete_bridge_num_fx_per_type == 32 ? 1U : 0U);
 }
 
+std::size_t count_verified_fields(const RealUpgradeIniProbeResult &result)
+{
+	return
+		(result.upgrade_count == 83 ? 1U : 0U) +
+		(result.veteran_found ? 1U : 0U) +
+		(result.elite_found ? 1U : 0U) +
+		(result.heroic_found ? 1U : 0U) +
+		(result.flash_bang_found ? 1U : 0U) +
+		(result.flash_bang_display_name == "UPGRADE:RangerFlashBangGrenade" ? 1U : 0U) +
+		(result.flash_bang_type == UPGRADE_TYPE_PLAYER ? 1U : 0U) +
+		(result.flash_bang_build_frames == 900 ? 1U : 0U) +
+		(result.flash_bang_cost == 800 ? 1U : 0U) +
+		(result.flash_bang_research_sound == "RangerVoiceUpgradeFlashBangGrenades" ? 1U : 0U) +
+		(result.capture_building_found ? 1U : 0U) +
+		(result.capture_building_display_name == "UPGRADE:RangerCaptureBuilding" ? 1U : 0U) +
+		(result.capture_building_type == UPGRADE_TYPE_PLAYER ? 1U : 0U) +
+		(result.capture_building_build_frames == 900 ? 1U : 0U) +
+		(result.capture_building_cost == 1000 ? 1U : 0U) +
+		(result.laser_missiles_found ? 1U : 0U) +
+		(result.laser_missiles_display_name == "UPGRADE:AmericaLaserMissiles" ? 1U : 0U) +
+		(result.laser_missiles_type == UPGRADE_TYPE_PLAYER ? 1U : 0U) +
+		(result.laser_missiles_build_frames == 1200 ? 1U : 0U) +
+		(result.laser_missiles_cost == 1500 ? 1U : 0U) +
+		(result.laser_missiles_research_sound == "RaptorVoiceUpgradeLaserGuidedMissiles" ? 1U : 0U) +
+		(result.china_mines_found ? 1U : 0U) +
+		(result.china_mines_display_name == "UPGRADE:Mines" ? 1U : 0U) +
+		(result.china_mines_type == UPGRADE_TYPE_OBJECT ? 1U : 0U) +
+		(result.china_mines_build_frames == 600 ? 1U : 0U) +
+		(result.china_mines_cost == 600 ? 1U : 0U) +
+		(result.china_mines_research_sound == "MineFieldPlaced" ? 1U : 0U) +
+		(result.america_radar_found ? 1U : 0U) +
+		(result.america_radar_display_name == "UPGRADE:Radar" ? 1U : 0U) +
+		(result.america_radar_type == UPGRADE_TYPE_OBJECT ? 1U : 0U) +
+		(result.america_radar_build_frames == 300 ? 1U : 0U) +
+		(result.america_radar_cost == 500 ? 1U : 0U) +
+		(result.america_radar_research_sound.empty() ? 1U : 0U) +
+		(result.america_radar_academy_classification == ACT_UPGRADE_RADAR ? 1U : 0U);
+}
+
 void reset_water_settings()
 {
 	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
@@ -512,6 +553,47 @@ void inspect_terrain_road_entry(
 	texture = road->getTexture().str();
 	width = road->getRoadWidth();
 	width_in_texture = road->getRoadWidthInTexture();
+}
+
+std::size_t count_upgrade_templates(UpgradeCenter &upgrade_center)
+{
+	std::size_t count = 0;
+	for (UpgradeTemplate *upgrade = upgrade_center.firstUpgradeTemplate(); upgrade != nullptr;
+			upgrade = upgrade->friend_getNext()) {
+		++count;
+	}
+	return count;
+}
+
+void inspect_upgrade_entry(
+	UpgradeCenter &upgrade_center,
+	const char *name,
+	bool &found,
+	std::string &display_name,
+	int &type,
+	int &build_frames,
+	int &cost,
+	std::string &research_sound,
+	int &academy_classification)
+{
+	const UpgradeTemplate *upgrade = upgrade_center.findUpgrade(AsciiString(name));
+	found = upgrade != nullptr;
+	if (upgrade == nullptr) {
+		display_name.clear();
+		type = 0;
+		build_frames = 0;
+		cost = 0;
+		research_sound.clear();
+		academy_classification = 0;
+		return;
+	}
+
+	display_name = upgrade->getDisplayNameLabel().str();
+	type = static_cast<int>(upgrade->getUpgradeType());
+	build_frames = upgrade->calcTimeToBuild(nullptr);
+	cost = upgrade->calcCostToBuild(nullptr);
+	research_sound = upgrade->getResearchCompleteSound()->getEventName().str();
+	academy_classification = static_cast<int>(upgrade->getAcademyClassificationType());
 }
 }
 
@@ -1848,6 +1930,150 @@ RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char 
 
 	if (terrain_roads != nullptr) {
 		delete terrain_roads;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path)
+{
+	RealUpgradeIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INIUpgrade.cpp + Upgrade.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	UpgradeCenter *old_upgrade_center = TheUpgradeCenter;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	UpgradeCenter *upgrade_center = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(UPGRADE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				upgrade_center = NEW UpgradeCenter;
+				TheUpgradeCenter = upgrade_center;
+				upgrade_center->init();
+
+				INI ini;
+				ini.load(AsciiString(UPGRADE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.upgrade_count = count_upgrade_templates(*upgrade_center);
+				result.veteran_found = upgrade_center->findVeterancyUpgrade(LEVEL_VETERAN) != nullptr;
+				result.elite_found = upgrade_center->findVeterancyUpgrade(LEVEL_ELITE) != nullptr;
+				result.heroic_found = upgrade_center->findVeterancyUpgrade(LEVEL_HEROIC) != nullptr;
+
+				int unused_academy = 0;
+				inspect_upgrade_entry(
+					*upgrade_center,
+					"Upgrade_AmericaRangerFlashBangGrenade",
+					result.flash_bang_found,
+					result.flash_bang_display_name,
+					result.flash_bang_type,
+					result.flash_bang_build_frames,
+					result.flash_bang_cost,
+					result.flash_bang_research_sound,
+					unused_academy);
+				std::string ignored_research_sound;
+				inspect_upgrade_entry(
+					*upgrade_center,
+					"Upgrade_InfantryCaptureBuilding",
+					result.capture_building_found,
+					result.capture_building_display_name,
+					result.capture_building_type,
+					result.capture_building_build_frames,
+					result.capture_building_cost,
+					ignored_research_sound,
+					unused_academy);
+				inspect_upgrade_entry(
+					*upgrade_center,
+					"Upgrade_AmericaLaserMissiles",
+					result.laser_missiles_found,
+					result.laser_missiles_display_name,
+					result.laser_missiles_type,
+					result.laser_missiles_build_frames,
+					result.laser_missiles_cost,
+					result.laser_missiles_research_sound,
+					unused_academy);
+				inspect_upgrade_entry(
+					*upgrade_center,
+					"Upgrade_ChinaMines",
+					result.china_mines_found,
+					result.china_mines_display_name,
+					result.china_mines_type,
+					result.china_mines_build_frames,
+					result.china_mines_cost,
+					result.china_mines_research_sound,
+					unused_academy);
+				inspect_upgrade_entry(
+					*upgrade_center,
+					"Upgrade_AmericaRadar",
+					result.america_radar_found,
+					result.america_radar_display_name,
+					result.america_radar_type,
+					result.america_radar_build_frames,
+					result.america_radar_cost,
+					result.america_radar_research_sound,
+					result.america_radar_academy_classification);
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 5000 &&
+					result.name_key_generator_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 34;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheUpgradeCenter = old_upgrade_center;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (upgrade_center != nullptr) {
+		delete upgrade_center;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
 	}
 
 	shutdownMemoryManager();

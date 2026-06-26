@@ -35,6 +35,7 @@ constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
+constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -440,6 +441,54 @@ void copy_terrain_roads_probe(const RealTerrainRoadsIniProbeResult &terrain_road
 		terrain_roads.concrete_bridge_num_fx_per_type;
 }
 
+void copy_upgrade_probe(const RealUpgradeIniProbeResult &upgrade, ArchiveProbeResult &result)
+{
+	result.upgrade_attempted = upgrade.attempted;
+	result.upgrade_ok = upgrade.ok;
+	result.upgrade_loaded_archives = upgrade.loaded_archives;
+	result.upgrade_file_exists = upgrade.file_exists;
+	result.upgrade_name_key_generator_loaded = upgrade.name_key_generator_loaded;
+	result.upgrade_original_ini_load = upgrade.original_ini_load;
+	result.upgrade_bytes = upgrade.bytes;
+	result.upgrade_parsed_fields = upgrade.parsed_fields;
+	result.upgrade_count = upgrade.upgrade_count;
+	result.upgrade_source = upgrade.source;
+	result.upgrade_veteran_found = upgrade.veteran_found;
+	result.upgrade_elite_found = upgrade.elite_found;
+	result.upgrade_heroic_found = upgrade.heroic_found;
+	result.upgrade_flash_bang_found = upgrade.flash_bang_found;
+	result.upgrade_capture_building_found = upgrade.capture_building_found;
+	result.upgrade_laser_missiles_found = upgrade.laser_missiles_found;
+	result.upgrade_china_mines_found = upgrade.china_mines_found;
+	result.upgrade_america_radar_found = upgrade.america_radar_found;
+	result.upgrade_flash_bang_display_name = upgrade.flash_bang_display_name;
+	result.upgrade_capture_building_display_name = upgrade.capture_building_display_name;
+	result.upgrade_laser_missiles_display_name = upgrade.laser_missiles_display_name;
+	result.upgrade_china_mines_display_name = upgrade.china_mines_display_name;
+	result.upgrade_america_radar_display_name = upgrade.america_radar_display_name;
+	result.upgrade_flash_bang_research_sound = upgrade.flash_bang_research_sound;
+	result.upgrade_laser_missiles_research_sound = upgrade.laser_missiles_research_sound;
+	result.upgrade_china_mines_research_sound = upgrade.china_mines_research_sound;
+	result.upgrade_america_radar_research_sound = upgrade.america_radar_research_sound;
+	result.upgrade_flash_bang_type = upgrade.flash_bang_type;
+	result.upgrade_capture_building_type = upgrade.capture_building_type;
+	result.upgrade_laser_missiles_type = upgrade.laser_missiles_type;
+	result.upgrade_china_mines_type = upgrade.china_mines_type;
+	result.upgrade_america_radar_type = upgrade.america_radar_type;
+	result.upgrade_flash_bang_build_frames = upgrade.flash_bang_build_frames;
+	result.upgrade_capture_building_build_frames = upgrade.capture_building_build_frames;
+	result.upgrade_laser_missiles_build_frames = upgrade.laser_missiles_build_frames;
+	result.upgrade_china_mines_build_frames = upgrade.china_mines_build_frames;
+	result.upgrade_america_radar_build_frames = upgrade.america_radar_build_frames;
+	result.upgrade_flash_bang_cost = upgrade.flash_bang_cost;
+	result.upgrade_capture_building_cost = upgrade.capture_building_cost;
+	result.upgrade_laser_missiles_cost = upgrade.laser_missiles_cost;
+	result.upgrade_china_mines_cost = upgrade.china_mines_cost;
+	result.upgrade_america_radar_cost = upgrade.america_radar_cost;
+	result.upgrade_america_radar_academy_classification =
+		upgrade.america_radar_academy_classification;
+}
+
 void copy_water_probe(const RealWaterIniProbeResult &water, ArchiveProbeResult &result)
 {
 	result.water_attempted = water.attempted;
@@ -610,6 +659,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_special_power_ini = archive_file_system.doesFileExist(SPECIAL_POWER_INI_PATH);
 			result.has_terrain_ini = archive_file_system.doesFileExist(TERRAIN_INI_PATH);
 			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
+			result.has_upgrade_ini = archive_file_system.doesFileExist(UPGRADE_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
@@ -671,6 +721,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_roads_ini) {
 		copy_terrain_roads_probe(probe_original_terrain_roads_ini_load(archive_path), result);
 		result.ok = result.ok && result.terrain_roads_ok;
+	}
+	if (result.loaded && result.has_upgrade_ini) {
+		copy_upgrade_probe(probe_original_upgrade_ini_load(archive_path), result);
+		result.ok = result.ok && result.upgrade_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

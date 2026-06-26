@@ -274,6 +274,7 @@ bool startup_boot_ini_present()
 		g_archive_probe.has_game_data_ini &&
 		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_roads_ini &&
+		g_archive_probe.has_upgrade_ini &&
 		g_archive_probe.has_weapon_ini;
 }
 
@@ -340,6 +341,13 @@ bool startup_terrain_roads_ready()
 		g_archive_probe.terrain_roads_ok;
 }
 
+bool startup_upgrade_ready()
+{
+	return g_archive_probe.has_upgrade_ini &&
+		g_archive_probe.upgrade_attempted &&
+		g_archive_probe.upgrade_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -390,6 +398,7 @@ bool startup_assets_ready()
 		startup_multiplayer_ready() &&
 		startup_terrain_ready() &&
 		startup_terrain_roads_ready() &&
+		startup_upgrade_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -432,6 +441,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_terrain_roads_ready()) {
 		return "terrain_roads_probe_failed";
+	}
+	if (!startup_upgrade_ready()) {
+		return "upgrade_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -491,6 +503,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_terrain_roads_ready()) {
 		return "Runtime BIG archive set did not pass the Roads.ini startup probe.";
+	}
+	if (!startup_upgrade_ready()) {
+		return "Runtime BIG archive set did not pass the Upgrade.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -553,6 +568,93 @@ std::string json_escape(const std::string &value)
 	return escaped;
 }
 
+std::string build_upgrade_probe_json()
+{
+	char buffer[6000];
+	const std::string source_json = json_escape(g_archive_probe.upgrade_source);
+	const std::string flash_bang_display_name_json =
+		json_escape(g_archive_probe.upgrade_flash_bang_display_name);
+	const std::string capture_building_display_name_json =
+		json_escape(g_archive_probe.upgrade_capture_building_display_name);
+	const std::string laser_missiles_display_name_json =
+		json_escape(g_archive_probe.upgrade_laser_missiles_display_name);
+	const std::string china_mines_display_name_json =
+		json_escape(g_archive_probe.upgrade_china_mines_display_name);
+	const std::string america_radar_display_name_json =
+		json_escape(g_archive_probe.upgrade_america_radar_display_name);
+	const std::string flash_bang_research_sound_json =
+		json_escape(g_archive_probe.upgrade_flash_bang_research_sound);
+	const std::string laser_missiles_research_sound_json =
+		json_escape(g_archive_probe.upgrade_laser_missiles_research_sound);
+	const std::string china_mines_research_sound_json =
+		json_escape(g_archive_probe.upgrade_china_mines_research_sound);
+	const std::string america_radar_research_sound_json =
+		json_escape(g_archive_probe.upgrade_america_radar_research_sound);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"upgrades\":%zu,"
+		"\"veterancy\":{\"veteran\":%s,\"elite\":%s,\"heroic\":%s},"
+		"\"flashBang\":{\"found\":%s,\"displayName\":\"%s\",\"type\":%d,"
+		"\"buildFrames\":%d,\"cost\":%d,\"researchSound\":\"%s\"},"
+		"\"captureBuilding\":{\"found\":%s,\"displayName\":\"%s\",\"type\":%d,"
+		"\"buildFrames\":%d,\"cost\":%d},"
+		"\"laserMissiles\":{\"found\":%s,\"displayName\":\"%s\",\"type\":%d,"
+		"\"buildFrames\":%d,\"cost\":%d,\"researchSound\":\"%s\"},"
+		"\"chinaMines\":{\"found\":%s,\"displayName\":\"%s\",\"type\":%d,"
+		"\"buildFrames\":%d,\"cost\":%d,\"researchSound\":\"%s\"},"
+		"\"americaRadar\":{\"found\":%s,\"displayName\":\"%s\",\"type\":%d,"
+		"\"buildFrames\":%d,\"cost\":%d,\"researchSound\":\"%s\","
+		"\"academyClassification\":%d}}",
+		g_archive_probe.upgrade_attempted ? "true" : "false",
+		g_archive_probe.upgrade_ok ? "true" : "false",
+		g_archive_probe.upgrade_bytes,
+		source_json.c_str(),
+		g_archive_probe.upgrade_loaded_archives ? "true" : "false",
+		g_archive_probe.upgrade_file_exists ? "true" : "false",
+		g_archive_probe.upgrade_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.upgrade_original_ini_load ? "true" : "false",
+		g_archive_probe.upgrade_parsed_fields,
+		g_archive_probe.upgrade_count,
+		g_archive_probe.upgrade_veteran_found ? "true" : "false",
+		g_archive_probe.upgrade_elite_found ? "true" : "false",
+		g_archive_probe.upgrade_heroic_found ? "true" : "false",
+		g_archive_probe.upgrade_flash_bang_found ? "true" : "false",
+		flash_bang_display_name_json.c_str(),
+		g_archive_probe.upgrade_flash_bang_type,
+		g_archive_probe.upgrade_flash_bang_build_frames,
+		g_archive_probe.upgrade_flash_bang_cost,
+		flash_bang_research_sound_json.c_str(),
+		g_archive_probe.upgrade_capture_building_found ? "true" : "false",
+		capture_building_display_name_json.c_str(),
+		g_archive_probe.upgrade_capture_building_type,
+		g_archive_probe.upgrade_capture_building_build_frames,
+		g_archive_probe.upgrade_capture_building_cost,
+		g_archive_probe.upgrade_laser_missiles_found ? "true" : "false",
+		laser_missiles_display_name_json.c_str(),
+		g_archive_probe.upgrade_laser_missiles_type,
+		g_archive_probe.upgrade_laser_missiles_build_frames,
+		g_archive_probe.upgrade_laser_missiles_cost,
+		laser_missiles_research_sound_json.c_str(),
+		g_archive_probe.upgrade_china_mines_found ? "true" : "false",
+		china_mines_display_name_json.c_str(),
+		g_archive_probe.upgrade_china_mines_type,
+		g_archive_probe.upgrade_china_mines_build_frames,
+		g_archive_probe.upgrade_china_mines_cost,
+		china_mines_research_sound_json.c_str(),
+		g_archive_probe.upgrade_america_radar_found ? "true" : "false",
+		america_radar_display_name_json.c_str(),
+		g_archive_probe.upgrade_america_radar_type,
+		g_archive_probe.upgrade_america_radar_build_frames,
+		g_archive_probe.upgrade_america_radar_cost,
+		america_radar_research_sound_json.c_str(),
+		g_archive_probe.upgrade_america_radar_academy_classification);
+
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -593,6 +695,7 @@ const char *write_state_json()
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
+	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -753,7 +856,8 @@ const char *write_state_json()
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
-		"\"terrainIni\":%s,\"roadsIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
+		"\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
@@ -774,6 +878,7 @@ const char *write_state_json()
 		"\"paladinNameLoaded\":%s,\"paladinDescriptionLoaded\":%s,"
 		"\"americaPurchaseCost\":%d,\"paladinPurchaseCost\":%d,"
 		"\"americaGrantable\":%s,\"paladinGrantable\":%s},"
+		"\"upgrade\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -923,7 +1028,8 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
+		"\"upgrade\":%s,\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
+		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
@@ -985,6 +1091,7 @@ const char *write_state_json()
 		g_archive_probe.has_multiplayer_ini ? "true" : "false",
 		g_archive_probe.has_terrain_ini ? "true" : "false",
 		g_archive_probe.has_roads_ini ? "true" : "false",
+		g_archive_probe.has_upgrade_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
@@ -1031,6 +1138,7 @@ const char *write_state_json()
 		g_archive_probe.science_paladin_purchase_cost,
 		g_archive_probe.science_america_grantable ? "true" : "false",
 		g_archive_probe.science_paladin_grantable ? "true" : "false",
+		upgrade_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,
@@ -1361,6 +1469,7 @@ const char *write_state_json()
 		startup_boot_ini_present() ? "true" : "false",
 		startup_armor_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
+		startup_upgrade_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
