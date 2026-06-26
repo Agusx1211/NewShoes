@@ -834,6 +834,11 @@ shares structure and follows behind.
       browser bridge plus opaque ATL/`IDispatch` compatibility. This is compile
       coverage only until the original BrowserEngine/embedded-browser path is
       replaced with a browser DOM/iframe or external-link contract.
+- [x] Compile original `W3DDevice/GameClient/W3DInGameUI.cpp` in the
+      real-header compile frontier with the existing W3D scene/view/render-object
+      compatibility surface. This is compile coverage only until move hints,
+      selection regions, placement-angle UI, and GUI repaint paths are driven
+      by browser display/input and harness screenshots.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -924,8 +929,8 @@ shares structure and follows behind.
       dependencies, and browser asset/texture bindings have a real port
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      `W3DDisplay.cpp`, `W3DInGameUI.cpp`, `W3DTerrainVisual.cpp`,
-      `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`, after the remaining
+      `W3DDisplay.cpp`, `W3DTerrainVisual.cpp`, `W3DVideoBuffer.cpp`, and
+      `Water/W3DWater*.cpp`, after the remaining
       WW3D2/Direct3D/browser device compatibility surface is available as part
       of the renderer port.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
