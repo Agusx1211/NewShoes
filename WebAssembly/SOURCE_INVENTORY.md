@@ -105,7 +105,10 @@ dependency is proven.
 
 The wasm CMake skeleton currently builds:
 
-- `cnc-port`: a minimal browser module boundary used by the harness.
+- `cnc-port`: a browser module boundary used by the harness. It still uses a
+  bootstrap entry instead of the original engine startup path, but now compiles
+  and executes original `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on
+  boot as a harness-verified Common-core link probe.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
 - `zh_compression_manager`: original `CompressionManager.cpp` compiled into a

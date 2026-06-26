@@ -8,6 +8,8 @@ const harnessState = {
   frame: 0,
   runtime: "js-stub",
   wasm: null,
+  originalEngineLinked: false,
+  originalCoreProbe: null,
   logs: [],
 };
 
@@ -78,6 +80,8 @@ function applyModuleState(moduleState) {
   harnessState.booted = Boolean(moduleState.booted);
   harnessState.frame = Number(moduleState.frame ?? harnessState.frame);
   harnessState.runtime = moduleState.module ?? "wasm";
+  harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
+  harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
 }
 
 async function loadWasmModule() {
@@ -123,6 +127,8 @@ function snapshotState() {
     frame: harnessState.frame,
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
+    originalEngineLinked: harnessState.originalEngineLinked,
+    originalCoreProbe: harnessState.originalCoreProbe,
     logCount: harnessState.logs.length,
     canvas: {
       width: canvas.width,

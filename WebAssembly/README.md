@@ -75,8 +75,10 @@ npm run build:wasm
 ```
 
 The build uses `emcmake cmake` and writes generated files to ignored `dist/`.
-It currently builds the port boundary skeleton plus focused original library
-slices, not the full original engine.
+It currently builds the port boundary bootstrap plus focused original library
+slices, not the full original engine. The browser bootstrap links and executes
+an original `GameEngine/Common/RandomValue.cpp` deterministic probe so the
+harness can prove original code is present in the loaded wasm module.
 The selected baseline flags are:
 
 - ES module output with `MODULARIZE=1` / `EXPORT_ES6=1`.

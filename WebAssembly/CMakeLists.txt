@@ -2552,6 +2552,8 @@ target_link_libraries(zh_gamenetwork_core PUBLIC
 )
 
 add_executable(cnc-port
+  "${GAMEENGINE_COMMON_DIR}/RandomValue.cpp"
+  "${GAMEENGINE_COMMON_DIR}/crc.cpp"
   src/wasm_port_entry.cpp
 )
 
@@ -2561,9 +2563,19 @@ set_target_properties(cnc-port PROPERTIES
 )
 
 target_compile_options(cnc-port PRIVATE
+  -fms-extensions
   -Wall
   -Wextra
   -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_include_directories(cnc-port PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${ZH_LIB_INCLUDE_DIR}"
 )
 
 target_link_options(cnc-port PRIVATE

@@ -34,6 +34,15 @@ try {
   if (expectWasm && bootResult.state.wasm !== "loaded") {
     throw new Error(`Expected wasm module to load: ${JSON.stringify(bootResult.state)}`);
   }
+  if (expectWasm && !bootResult.state.originalEngineLinked) {
+    throw new Error(`Expected original engine probe to be linked: ${JSON.stringify(bootResult.state)}`);
+  }
+  if (expectWasm && bootResult.state.originalCoreProbe?.logicRandomValue !== 14) {
+    throw new Error(`Original RandomValue probe mismatch: ${JSON.stringify(bootResult.state.originalCoreProbe)}`);
+  }
+  if (expectWasm && bootResult.state.originalCoreProbe?.logicSeedCRC !== 2826459604) {
+    throw new Error(`Original RandomValue seed CRC mismatch: ${JSON.stringify(bootResult.state.originalCoreProbe)}`);
+  }
 
   const initialFrame = bootResult.state.frame;
   const frameResult = await page.evaluate(() => window.CnCPort.rpc("frame", {

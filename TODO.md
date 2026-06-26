@@ -1491,6 +1491,10 @@ shares structure and follows behind.
 
 - [ ] Replace the skeleton wasm boot module with original engine Emscripten
       initialization.
+- [x] Link the browser bootstrap module against original `GameEngine/Common`
+      deterministic RNG/CRC code (`RandomValue.cpp` and `crc.cpp`) and expose a
+      harness-verified `originalCoreProbe` state result on boot. This is only a
+      Common-core link probe, not full engine initialization.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
