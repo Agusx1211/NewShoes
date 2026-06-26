@@ -6,14 +6,21 @@
 #include "PreRTS.h"
 
 #include "Common/GameMemory.h"
+#include "Common/GlobalData.h"
+#include "GameNetwork/FileTransfer.h"
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
+#include "GameNetwork/FrameMetrics.h"
 #include "GameNetwork/NetCommandList.h"
 #include "GameNetwork/NetCommandMsg.h"
 #include "GameNetwork/NetCommandRef.h"
 #include "GameNetwork/NetPacket.h"
 #include "GameNetwork/NetworkUtil.h"
 #include "GameNetwork/User.h"
+
+class Display;
+Display *TheDisplay = nullptr;
+GlobalData *TheGlobalData = nullptr;
 
 namespace {
 bool expect(bool condition, const char *message)
@@ -23,6 +30,11 @@ bool expect(bool condition, const char *message)
 		return false;
 	}
 	return true;
+}
+
+bool expectAscii(const AsciiString &actual, const char *expected, const char *message)
+{
+	return expect(std::strcmp(actual.str(), expected) == 0, message);
 }
 
 NetCommandRef *roundTripCommand(NetCommandMsg *msg, UnsignedByte relay, const char *context)
@@ -588,6 +600,80 @@ bool exerciseNetPacketControlRoundTrip()
 		file_announce_ok && disconnect_frame_ok && screen_off_ok && resend_ok;
 }
 
+bool exerciseFileTransferPathHelpers()
+{
+	const AsciiString map("Maps\\UserMaps\\Tournament Desert\\Tournament Desert.map");
+
+	return expectAscii(GetBasePathFromPath(map), "Maps\\UserMaps\\Tournament Desert",
+			"FileTransfer base path helper changed") &&
+		expectAscii(GetFileFromPath(map), "Tournament Desert.map", "FileTransfer file helper changed") &&
+		expectAscii(GetExtensionFromFile(AsciiString("Tournament Desert.map")), "map",
+			"FileTransfer extension helper changed") &&
+		expectAscii(GetBaseFileFromFile(AsciiString("Tournament Desert.map")), "Tournament Desert",
+			"FileTransfer base-file helper changed") &&
+		expectAscii(GetPreviewFromMap(map), "Maps\\UserMaps\\Tournament Desert\\Tournament Desert.tga",
+			"FileTransfer preview path helper changed") &&
+		expectAscii(GetINIFromMap(map), "Maps\\UserMaps\\Tournament Desert\\map.ini",
+			"FileTransfer map.ini path helper changed") &&
+		expectAscii(GetStrFileFromMap(map), "Maps\\UserMaps\\Tournament Desert\\map.str",
+			"FileTransfer map.str path helper changed") &&
+		expectAscii(GetSoloINIFromMap(map), "Maps\\UserMaps\\Tournament Desert\\solo.ini",
+			"FileTransfer solo.ini path helper changed") &&
+		expectAscii(GetAssetUsageFromMap(map), "Maps\\UserMaps\\Tournament Desert\\assetusage.txt",
+			"FileTransfer assetusage path helper changed") &&
+		expectAscii(GetReadmeFromMap(map), "Maps\\UserMaps\\Tournament Desert\\readme.txt",
+			"FileTransfer readme path helper changed") &&
+		expectAscii(GetBasePathFromPath(AsciiString("Loose.map")), "",
+			"FileTransfer loose-map base path changed") &&
+		expectAscii(GetFileFromPath(AsciiString("Loose.map")), "Loose.map",
+			"FileTransfer loose-map file helper changed") &&
+		expectAscii(GetExtensionFromFile(AsciiString("NoExtension")), "NoExtension",
+			"FileTransfer no-extension helper changed") &&
+		expectAscii(GetBaseFileFromFile(AsciiString("NoExtension")), "",
+			"FileTransfer no-extension base-file helper changed");
+}
+
+bool exerciseFrameMetrics()
+{
+	GlobalData global_data;
+	global_data.m_networkFPSHistoryLength = 4;
+	global_data.m_networkLatencyHistoryLength = 4;
+	global_data.m_networkCushionHistoryLength = 3;
+	TheGlobalData = &global_data;
+
+	bool ok = false;
+	{
+		FrameMetrics metrics;
+		metrics.init();
+		const bool init_ok =
+			expect(metrics.getAverageFPS() == 30, "FrameMetrics initial FPS changed") &&
+			expect(std::fabs(metrics.getAverageLatency() - 0.2f) <= 0.0001f,
+				"FrameMetrics initial latency changed") &&
+			expect(metrics.getMinimumCushion() == -1, "FrameMetrics initial cushion changed");
+
+		metrics.addCushion(6);
+		const bool first_cushion_ok = expect(metrics.getMinimumCushion() == 6,
+			"FrameMetrics first cushion failed");
+		metrics.addCushion(4);
+		const bool lower_cushion_ok = expect(metrics.getMinimumCushion() == 4,
+			"FrameMetrics lower cushion failed");
+		metrics.addCushion(8);
+		const bool wrapped_cushion_ok = expect(metrics.getMinimumCushion() == 8,
+			"FrameMetrics cushion wrap failed");
+
+		metrics.reset();
+		const bool reset_ok =
+			expect(metrics.getAverageFPS() == 30, "FrameMetrics reset FPS changed") &&
+			expect(std::fabs(metrics.getAverageLatency() - 0.2f) <= 0.0001f,
+				"FrameMetrics reset latency changed") &&
+			expect(metrics.getMinimumCushion() == -1, "FrameMetrics reset cushion changed");
+		ok = init_ok && first_cushion_ok && lower_cushion_ok && wrapped_cushion_ok && reset_ok;
+	}
+
+	TheGlobalData = nullptr;
+	return ok;
+}
+
 bool exerciseUser()
 {
 	User *first = newInstance(User)(UnicodeString(L"Commander"), 0x01020304u, 8088);
@@ -632,13 +718,14 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
-		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() && exerciseUser();
+		exerciseNetPacketRoundTrip() && exerciseNetPacketControlRoundTrip() &&
+		exerciseFileTransferPathHelpers() && exerciseFrameMetrics() && exerciseUser();
 	shutdownMemoryManager();
 
 	if (!ok) {
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,User\",\"covered\":\"command lists, packet round-trips, and control command values\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,User\",\"covered\":\"command lists, packet round-trips, control command values, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

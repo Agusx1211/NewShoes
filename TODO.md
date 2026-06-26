@@ -1109,16 +1109,20 @@ shares structure and follows behind.
 - [x] Compile original `GameNetwork/FrameMetrics.cpp` after extending the
       temporary wasm `Common/GlobalData.h` surface with original network
       history fields/defaults and fixing its legacy MSVC loop-scope assumption.
-- [ ] Link and smoke-test original `GameNetwork/FrameMetrics.cpp` after the
-      browser display/FPS surface and real `GlobalData` singleton are available;
-      current coverage is compile-only.
+- [x] Link and smoke-test original `GameNetwork/FrameMetrics.cpp`
+      init/reset/cushion history behavior against the current wasm
+      `GlobalData` shim.
+- [ ] Link and smoke-test original `GameNetwork/FrameMetrics.cpp` FPS sampling
+      and latency response after the browser display/FPS surface and real
+      `GlobalData` singleton are available.
 - [ ] Link and smoke-test original `GameNetwork/Connection.cpp` queue behavior
       after real packetization, message, and browser transport send/receive
       dependencies are available; current coverage is compile-only.
-- [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
-      helper and transfer flow after `GameInfo`, `Shell`, `LoadScreen`, and the
-      browser network/file-transfer path are available; current coverage is
-      compile-only.
+- [x] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
+      helper behavior.
+- [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` transfer flow
+      after `GameInfo`, `Shell`, `LoadScreen`, and the browser
+      network/file-transfer path are available.
 - [x] Compile original `GameNetwork/NetPacket.cpp` after resolving its
       clang/libc++ strictness issues (`NetPacketList` null return,
       legacy loop-scope variable use, and `BitFlags::set` enum conversion)
