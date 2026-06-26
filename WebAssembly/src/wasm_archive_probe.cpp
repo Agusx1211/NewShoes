@@ -28,6 +28,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
+constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -131,6 +132,36 @@ void copy_armor_probe(const RealArmorIniProbeResult &armor, ArchiveProbeResult &
 	result.armor_tank_small_arms_damage = armor.tank_small_arms_damage;
 	result.armor_tank_radiation_damage = armor.tank_radiation_damage;
 	result.armor_tank_microwave_damage = armor.tank_microwave_damage;
+}
+
+void copy_damage_fx_probe(const RealDamageFXIniProbeResult &damage_fx, ArchiveProbeResult &result)
+{
+	result.damage_fx_attempted = damage_fx.attempted;
+	result.damage_fx_ok = damage_fx.ok;
+	result.damage_fx_loaded_archives = damage_fx.loaded_archives;
+	result.damage_fx_file_exists = damage_fx.file_exists;
+	result.damage_fx_name_key_generator_loaded = damage_fx.name_key_generator_loaded;
+	result.damage_fx_fx_list_store_loaded = damage_fx.fx_list_store_loaded;
+	result.damage_fx_store_loaded = damage_fx.damage_fx_store_loaded;
+	result.damage_fx_original_ini_load = damage_fx.original_ini_load;
+	result.damage_fx_bytes = damage_fx.bytes;
+	result.damage_fx_parsed_fields = damage_fx.parsed_fields;
+	result.damage_fx_source = damage_fx.source;
+	result.damage_fx_default_found = damage_fx.default_damage_fx_found;
+	result.damage_fx_tank_found = damage_fx.tank_damage_fx_found;
+	result.damage_fx_small_tank_found = damage_fx.small_tank_damage_fx_found;
+	result.damage_fx_structure_found = damage_fx.structure_damage_fx_found;
+	result.damage_fx_infantry_found = damage_fx.infantry_damage_fx_found;
+	result.damage_fx_default_explosion_throttle =
+		damage_fx.default_explosion_throttle;
+	result.damage_fx_tank_small_arms_throttle =
+		damage_fx.tank_small_arms_throttle;
+	result.damage_fx_small_tank_comanche_throttle =
+		damage_fx.small_tank_comanche_throttle;
+	result.damage_fx_structure_flame_throttle =
+		damage_fx.structure_flame_throttle;
+	result.damage_fx_infantry_sniper_throttle =
+		damage_fx.infantry_sniper_throttle;
 }
 
 void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeResult &result)
@@ -980,6 +1011,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
 		if (result.loaded) {
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
+			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
 			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
 			result.has_control_bar_scheme_ini =
@@ -1033,6 +1065,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_armor_ini) {
 		copy_armor_probe(probe_original_armor_ini_load(archive_path), result);
 		result.ok = result.ok && result.armor_ok;
+	}
+	if (result.loaded && result.has_damage_fx_ini) {
+		copy_damage_fx_probe(probe_original_damage_fx_ini_load(archive_path), result);
+		result.ok = result.ok && result.damage_fx_ok;
 	}
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);

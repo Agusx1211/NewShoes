@@ -94,6 +94,33 @@ function assertArmorProbe(assetProbe, context) {
   }
 }
 
+function assertDamageFXProbe(assetProbe, context) {
+  const damageFX = assetProbe?.damageFX;
+  if (!assetProbe?.inizh?.damageFXIni
+      || !damageFX?.attempted
+      || !damageFX.ok
+      || damageFX.source !== "GameEngine/Common/INI.cpp::load + INIDamageFX.cpp + DamageFX.cpp + focused FXList lookup"
+      || !damageFX.loadedArchives
+      || !damageFX.fileExists
+      || !damageFX.nameKeyGeneratorLoaded
+      || !damageFX.fxListStoreLoaded
+      || !damageFX.damageFXStoreLoaded
+      || !damageFX.originalIniLoad
+      || damageFX.parsedFields !== 10
+      || !damageFX.found?.default
+      || !damageFX.found?.tank
+      || !damageFX.found?.smallTank
+      || !damageFX.found?.structure
+      || !damageFX.found?.infantry
+      || damageFX.throttle?.defaultExplosion !== 9
+      || damageFX.throttle?.tankSmallArms !== 3
+      || damageFX.throttle?.smallTankComanche !== 3
+      || damageFX.throttle?.structureFlame !== 9
+      || damageFX.throttle?.infantrySniper !== 3) {
+    throw new Error(`${context} did not parse expected DamageFX.ini definitions: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertScienceProbe(assetProbe, context) {
   const science = assetProbe?.science;
   if (!assetProbe?.inizh?.scienceIni
@@ -819,6 +846,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.bootProbeOk
         || !startupAssets.required?.inizh
         || !startupAssets.required?.armor
+        || !startupAssets.required?.damageFX
         || !startupAssets.required?.science
         || !startupAssets.required?.upgrade
         || !startupAssets.required?.commandButton
@@ -906,6 +934,7 @@ try {
 
   const assetProbe = mountResult.state?.assetProbe;
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
+      || !assetProbe.inizh?.damageFXIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.controlBarSchemeIni
@@ -923,6 +952,7 @@ try {
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
+  assertDamageFXProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
@@ -988,6 +1018,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertDamageFXProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");

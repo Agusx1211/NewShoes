@@ -11,6 +11,7 @@
 
 #include "Common/ArchiveFileSystem.h"
 #include "Common/AcademyStats.h"
+#include "Common/DamageFX.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
@@ -28,6 +29,7 @@
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/DrawGroupInfo.h"
+#include "GameClient/FXList.h"
 #include "GameClient/GameText.h"
 #include "GameClient/Image.h"
 #include "GameClient/MapUtil.h"
@@ -50,6 +52,7 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
+constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -287,6 +290,21 @@ std::size_t count_verified_fields(const RealArmorIniProbeResult &result)
 		(std::fabs(result.tank_small_arms_damage - 25.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.tank_radiation_damage - 50.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.tank_microwave_damage - 0.0f) < 0.001f ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealDamageFXIniProbeResult &result)
+{
+	return
+		(result.default_damage_fx_found ? 1U : 0U) +
+		(result.tank_damage_fx_found ? 1U : 0U) +
+		(result.small_tank_damage_fx_found ? 1U : 0U) +
+		(result.structure_damage_fx_found ? 1U : 0U) +
+		(result.infantry_damage_fx_found ? 1U : 0U) +
+		(result.default_explosion_throttle == 9U ? 1U : 0U) +
+		(result.tank_small_arms_throttle == 3U ? 1U : 0U) +
+		(result.small_tank_comanche_throttle == 3U ? 1U : 0U) +
+		(result.structure_flame_throttle == 9U ? 1U : 0U) +
+		(result.infantry_sniper_throttle == 3U ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
@@ -1551,6 +1569,150 @@ RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path)
 
 	if (armor_store != nullptr) {
 		delete armor_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path)
+{
+	RealDamageFXIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INIDamageFX.cpp + DamageFX.cpp + focused FXList lookup";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FXListStore *old_fx_list_store = TheFXListStore;
+	DamageFXStore *old_damage_fx_store = TheDamageFXStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	FXListStore *fx_list_store = nullptr;
+	DamageFXStore *damage_fx_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(DAMAGE_FX_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				fx_list_store = NEW FXListStore;
+				TheFXListStore = fx_list_store;
+				fx_list_store->init();
+				result.fx_list_store_loaded = true;
+
+				damage_fx_store = NEW DamageFXStore;
+				TheDamageFXStore = damage_fx_store;
+				damage_fx_store->init();
+				result.damage_fx_store_loaded = true;
+
+				initDamageTypeFlags();
+
+				INI ini;
+				ini.load(AsciiString(DAMAGE_FX_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				const DamageFX *default_damage_fx =
+					damage_fx_store->findDamageFX(AsciiString("DefaultDamageFX"));
+				const DamageFX *tank_damage_fx =
+					damage_fx_store->findDamageFX(AsciiString("TankDamageFX"));
+				const DamageFX *small_tank_damage_fx =
+					damage_fx_store->findDamageFX(AsciiString("SmallTankDamageFX"));
+				const DamageFX *structure_damage_fx =
+					damage_fx_store->findDamageFX(AsciiString("StructureDamageFX"));
+				const DamageFX *infantry_damage_fx =
+					damage_fx_store->findDamageFX(AsciiString("InfantryDamageFX"));
+
+				result.default_damage_fx_found = default_damage_fx != nullptr;
+				result.tank_damage_fx_found = tank_damage_fx != nullptr;
+				result.small_tank_damage_fx_found = small_tank_damage_fx != nullptr;
+				result.structure_damage_fx_found = structure_damage_fx != nullptr;
+				result.infantry_damage_fx_found = infantry_damage_fx != nullptr;
+
+				if (default_damage_fx != nullptr) {
+					result.default_explosion_throttle =
+						default_damage_fx->getDamageFXThrottleTime(DAMAGE_EXPLOSION, nullptr);
+				}
+				if (tank_damage_fx != nullptr) {
+					result.tank_small_arms_throttle =
+						tank_damage_fx->getDamageFXThrottleTime(DAMAGE_SMALL_ARMS, nullptr);
+				}
+				if (small_tank_damage_fx != nullptr) {
+					result.small_tank_comanche_throttle =
+						small_tank_damage_fx->getDamageFXThrottleTime(
+							DAMAGE_COMANCHE_VULCAN,
+							nullptr);
+				}
+				if (structure_damage_fx != nullptr) {
+					result.structure_flame_throttle =
+						structure_damage_fx->getDamageFXThrottleTime(DAMAGE_FLAME, nullptr);
+				}
+				if (infantry_damage_fx != nullptr) {
+					result.infantry_sniper_throttle =
+						infantry_damage_fx->getDamageFXThrottleTime(DAMAGE_SNIPER, nullptr);
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 10000 &&
+					result.name_key_generator_loaded &&
+					result.fx_list_store_loaded &&
+					result.damage_fx_store_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 10;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheDamageFXStore = old_damage_fx_store;
+	TheFXListStore = old_fx_list_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (damage_fx_store != nullptr) {
+		delete damage_fx_store;
+	}
+	if (fx_list_store != nullptr) {
+		delete fx_list_store;
 	}
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;

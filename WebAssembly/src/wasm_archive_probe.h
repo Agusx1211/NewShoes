@@ -9,6 +9,7 @@ struct ArchiveProbeResult
 	bool ok = false;
 	bool loaded = false;
 	bool has_armor_ini = false;
+	bool has_damage_fx_ini = false;
 	bool has_command_button_ini = false;
 	bool has_command_set_ini = false;
 	bool has_control_bar_scheme_ini = false;
@@ -35,6 +36,14 @@ struct ArchiveProbeResult
 	bool armor_file_exists = false;
 	bool armor_name_key_generator_loaded = false;
 	bool armor_original_ini_load = false;
+	bool damage_fx_attempted = false;
+	bool damage_fx_ok = false;
+	bool damage_fx_loaded_archives = false;
+	bool damage_fx_file_exists = false;
+	bool damage_fx_name_key_generator_loaded = false;
+	bool damage_fx_fx_list_store_loaded = false;
+	bool damage_fx_store_loaded = false;
+	bool damage_fx_original_ini_load = false;
 	bool science_attempted = false;
 	bool science_ok = false;
 	bool science_loaded_archives = false;
@@ -180,6 +189,8 @@ struct ArchiveProbeResult
 	std::size_t sample_bytes = 0;
 	std::size_t armor_bytes = 0;
 	std::size_t armor_parsed_fields = 0;
+	std::size_t damage_fx_bytes = 0;
+	std::size_t damage_fx_parsed_fields = 0;
 	std::size_t science_bytes = 0;
 	std::size_t science_parsed_fields = 0;
 	std::size_t science_count = 0;
@@ -259,6 +270,7 @@ struct ArchiveProbeResult
 	std::size_t game_text_control_bar_label_count = 0;
 	std::string game_data_shell_map_name;
 	std::string armor_source;
+	std::string damage_fx_source;
 	std::string science_source;
 	std::string special_power_source;
 	std::string command_button_source;
@@ -279,6 +291,16 @@ struct ArchiveProbeResult
 	float armor_tank_small_arms_damage = 0.0f;
 	float armor_tank_radiation_damage = 0.0f;
 	float armor_tank_microwave_damage = 0.0f;
+	bool damage_fx_default_found = false;
+	bool damage_fx_tank_found = false;
+	bool damage_fx_small_tank_found = false;
+	bool damage_fx_structure_found = false;
+	bool damage_fx_infantry_found = false;
+	unsigned int damage_fx_default_explosion_throttle = 0;
+	unsigned int damage_fx_tank_small_arms_throttle = 0;
+	unsigned int damage_fx_small_tank_comanche_throttle = 0;
+	unsigned int damage_fx_structure_flame_throttle = 0;
+	unsigned int damage_fx_infantry_sniper_throttle = 0;
 	bool science_america_found = false;
 	bool science_rank3_found = false;
 	bool science_paladin_found = false;

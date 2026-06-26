@@ -7,7 +7,9 @@
 #include "Common/INI.h"
 #include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
+#include "GameClient/FXList.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/Object.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/Weapon.h"
 
@@ -20,6 +22,7 @@ AudioManager *TheAudio __attribute__((weak)) = nullptr;
 ControlBar *TheControlBar __attribute__((weak)) = nullptr;
 GameLogic *TheGameLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
+FXListStore *TheFXListStore __attribute__((weak)) = nullptr;
 
 #define UNUSED_INI_BLOCK_PARSER(name) \
 	void __attribute__((weak)) INI::name(INI *) \
@@ -34,6 +37,52 @@ void __attribute__((weak)) setFPMode(void)
 void __attribute__((weak)) parseReallyLowMHz(INI *)
 {
 	throw INI_UNKNOWN_TOKEN;
+}
+
+FXList::FXList()
+{
+}
+
+FXList::~FXList()
+{
+}
+
+void FXList::clear()
+{
+}
+
+void FXList::doFXPos(
+	const Coord3D *,
+	const Matrix3D *,
+	const Real,
+	const Coord3D *,
+	const Real) const
+{
+}
+
+void FXList::doFXObj(const Object *, const Object *) const
+{
+}
+
+FXListStore::FXListStore()
+{
+}
+
+FXListStore::~FXListStore()
+{
+}
+
+const FXList *FXListStore::findFXList(const char *name) const
+{
+	if (name != nullptr && stricmp(name, "None") == 0) {
+		return nullptr;
+	}
+	return nullptr;
+}
+
+VeterancyLevel __attribute__((weak)) Object::getVeterancyLevel() const
+{
+	return LEVEL_REGULAR;
 }
 
 void __attribute__((weak)) ScriptEngine::parseScriptAction(INI *)
@@ -406,7 +455,6 @@ UNUSED_INI_BLOCK_PARSER(parseMetaMapDefinition)
 UNUSED_INI_BLOCK_PARSER(parseControlBarResizerDefinition)
 UNUSED_INI_BLOCK_PARSER(parseCredits)
 UNUSED_INI_BLOCK_PARSER(parseWindowTransitions)
-UNUSED_INI_BLOCK_PARSER(parseDamageFXDefinition)
 UNUSED_INI_BLOCK_PARSER(parseDialogDefinition)
 UNUSED_INI_BLOCK_PARSER(parseEvaEvent)
 UNUSED_INI_BLOCK_PARSER(parseFXListDefinition)

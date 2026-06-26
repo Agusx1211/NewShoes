@@ -270,6 +270,7 @@ void probe_registered_archive_set_for_boot()
 bool startup_boot_ini_present()
 {
 	return g_archive_probe.has_armor_ini &&
+		g_archive_probe.has_damage_fx_ini &&
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_command_set_ini &&
 		g_archive_probe.has_control_bar_scheme_ini &&
@@ -300,6 +301,13 @@ bool startup_armor_ready()
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.armor_attempted &&
 		g_archive_probe.armor_ok;
+}
+
+bool startup_damage_fx_ready()
+{
+	return g_archive_probe.has_damage_fx_ini &&
+		g_archive_probe.damage_fx_attempted &&
+		g_archive_probe.damage_fx_ok;
 }
 
 bool startup_science_ready()
@@ -424,6 +432,7 @@ bool startup_assets_ready()
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
 		startup_armor_ready() &&
+		startup_damage_fx_ready() &&
 		startup_science_ready() &&
 		startup_special_power_ready() &&
 		startup_player_template_ready() &&
@@ -459,6 +468,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_armor_ready()) {
 		return "armor_probe_failed";
+	}
+	if (!startup_damage_fx_ready()) {
+		return "damage_fx_probe_failed";
 	}
 	if (!startup_science_ready()) {
 		return "science_probe_failed";
@@ -533,6 +545,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_armor_ready()) {
 		return "Runtime BIG archive set did not pass the Armor.ini startup probe.";
+	}
+	if (!startup_damage_fx_ready()) {
+		return "Runtime BIG archive set did not pass the DamageFX.ini startup probe.";
 	}
 	if (!startup_science_ready()) {
 		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
@@ -626,6 +641,47 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return escaped;
+}
+
+std::string build_damage_fx_probe_json()
+{
+	char buffer[3200];
+	const std::string source_json = json_escape(g_archive_probe.damage_fx_source);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"fxListStoreLoaded\":%s,"
+		"\"damageFXStoreLoaded\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,"
+		"\"found\":{\"default\":%s,\"tank\":%s,\"smallTank\":%s,"
+		"\"structure\":%s,\"infantry\":%s},"
+		"\"throttle\":{\"defaultExplosion\":%u,"
+		"\"tankSmallArms\":%u,\"smallTankComanche\":%u,"
+		"\"structureFlame\":%u,\"infantrySniper\":%u}}",
+		g_archive_probe.damage_fx_attempted ? "true" : "false",
+		g_archive_probe.damage_fx_ok ? "true" : "false",
+		g_archive_probe.damage_fx_bytes,
+		source_json.c_str(),
+		g_archive_probe.damage_fx_loaded_archives ? "true" : "false",
+		g_archive_probe.damage_fx_file_exists ? "true" : "false",
+		g_archive_probe.damage_fx_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.damage_fx_fx_list_store_loaded ? "true" : "false",
+		g_archive_probe.damage_fx_store_loaded ? "true" : "false",
+		g_archive_probe.damage_fx_original_ini_load ? "true" : "false",
+		g_archive_probe.damage_fx_parsed_fields,
+		g_archive_probe.damage_fx_default_found ? "true" : "false",
+		g_archive_probe.damage_fx_tank_found ? "true" : "false",
+		g_archive_probe.damage_fx_small_tank_found ? "true" : "false",
+		g_archive_probe.damage_fx_structure_found ? "true" : "false",
+		g_archive_probe.damage_fx_infantry_found ? "true" : "false",
+		g_archive_probe.damage_fx_default_explosion_throttle,
+		g_archive_probe.damage_fx_tank_small_arms_throttle,
+		g_archive_probe.damage_fx_small_tank_comanche_throttle,
+		g_archive_probe.damage_fx_structure_flame_throttle,
+		g_archive_probe.damage_fx_infantry_sniper_throttle);
+
+	return buffer;
 }
 
 std::string build_upgrade_probe_json()
@@ -1261,9 +1317,10 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[122000];
+	char buffer[126000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
+	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
@@ -1429,7 +1486,7 @@ const char *write_state_json()
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
-		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
+		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,\"commandButtonIni\":%s,"
 		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
 		"\"defaultControlBarSchemeIni\":%s,\"crateIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
@@ -1449,6 +1506,7 @@ const char *write_state_json()
 		"\"humanArmorPiercingDamage\":%.3f,\"humanFlameDamage\":%.3f,"
 		"\"tankSmallArmsDamage\":%.3f,\"tankRadiationDamage\":%.3f,"
 		"\"tankMicrowaveDamage\":%.3f},"
+		"\"damageFX\":%s,"
 		"\"science\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
@@ -1612,7 +1670,7 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
-		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
+		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"science\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
 		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
@@ -1670,6 +1728,7 @@ const char *write_state_json()
 		g_archive_probe.indexed_file_count,
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_armor_ini ? "true" : "false",
+		g_archive_probe.has_damage_fx_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_command_set_ini ? "true" : "false",
 		g_archive_probe.has_control_bar_scheme_ini ? "true" : "false",
@@ -1710,6 +1769,7 @@ const char *write_state_json()
 		g_archive_probe.armor_tank_small_arms_damage,
 		g_archive_probe.armor_tank_radiation_damage,
 		g_archive_probe.armor_tank_microwave_damage,
+		damage_fx_probe_json.c_str(),
 		g_archive_probe.science_attempted ? "true" : "false",
 		g_archive_probe.science_ok ? "true" : "false",
 		g_archive_probe.science_bytes,
@@ -2066,6 +2126,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		startup_boot_ini_present() ? "true" : "false",
 		startup_armor_ready() ? "true" : "false",
+		startup_damage_fx_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",

@@ -49,6 +49,32 @@ struct RealArmorIniProbeResult
 	float tank_microwave_damage = 0.0f;
 };
 
+struct RealDamageFXIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool fx_list_store_loaded = false;
+	bool damage_fx_store_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	bool default_damage_fx_found = false;
+	bool tank_damage_fx_found = false;
+	bool small_tank_damage_fx_found = false;
+	bool structure_damage_fx_found = false;
+	bool infantry_damage_fx_found = false;
+	unsigned int default_explosion_throttle = 0;
+	unsigned int tank_small_arms_throttle = 0;
+	unsigned int small_tank_comanche_throttle = 0;
+	unsigned int structure_flame_throttle = 0;
+	unsigned int infantry_sniper_throttle = 0;
+};
+
 struct RealScienceIniProbeResult
 {
 	bool attempted = false;
@@ -735,6 +761,7 @@ struct RealPlayerTemplateIniProbeResult
 
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
+RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);

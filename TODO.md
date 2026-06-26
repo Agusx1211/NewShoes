@@ -657,9 +657,18 @@ shares structure and follows behind.
       image collection ownership once mapped image/UI asset loading is linked;
       the current preflight verifies public template metadata but does not
       resolve private image IDs to `Image` instances.
-- [ ] Link and smoke-test the original DamageFX and map-data INI parse routes
-      after the real `Common/INI.cpp` reader and their destination
-      managers/singletons are available without target-local parser stubs.
+- [x] Link and smoke-test the original DamageFX INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `Common/INI/INIDamageFX.cpp`, and `Common/DamageFX.cpp` over shipped
+      `Data\INI\DamageFX.ini` with focused FXList lookup and regular-veterancy
+      throttle coverage.
+- [ ] Replace the focused DamageFX runtime's FXList lookup surface and weak
+      `Object::getVeterancyLevel` bridge with original `FXListStore` /
+      `FXList` parser and `Object` / experience ownership once FX playback and
+      object runtime can link without renderer/audio/gameplay stubs.
+- [ ] Link and smoke-test the original map-data INI parse route
+      after the real `Common/INI.cpp` reader and its destination
+      manager/singleton are available without target-local parser stubs.
 - [ ] Link and smoke-test the original command-button INI parser route after
       the real `Common/INI.cpp` reader, ControlBar, and SpecialPowerStore
       singleton surfaces are available without target-local parser stubs.
@@ -1732,6 +1741,15 @@ shares structure and follows behind.
       armor-template preflight only; object `ArmorSet` wiring and full gameplay
       template loading remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\DamageFX.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INIDamageFX.cpp`, and
+      `Common/DamageFX.cpp`, expose parsed shipped damage-FX definitions and
+      throttle frames as `assetProbe.damageFX`, and require it for the
+      Playwright `startupAssets.ready` state. This is a focused DamageFX
+      metadata/throttle preflight only; FXList resolution/playback and object
+      veterancy ownership wait for the real FXList/GameClient/renderer/audio
+      and object runtime.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\Science.ini` from the mounted runtime BIG set through original
       `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, expose parsed
       shipped science metadata as `assetProbe.science`, and require it for the
@@ -1859,6 +1877,12 @@ shares structure and follows behind.
       original `Common/INI.cpp::load` and `GameLogic/Object/Armor.cpp`, with
       harness state proving `NoArmor`, `HumanArmor`, and `TankArmor` damage
       coefficients through original `ArmorTemplate::adjustDamage`.
+- [x] Shipped DamageFX definitions load from real `Data\INI\DamageFX.ini`
+      through original `Common/INI.cpp::load`,
+      `Common/INI/INIDamageFX.cpp`, and `Common/DamageFX.cpp`, with harness
+      state proving `DefaultDamageFX`, `TankDamageFX`, `SmallTankDamageFX`,
+      `StructureDamageFX`, and `InfantryDamageFX` plus parsed frame throttle
+      values for selected damage types.
 - [x] Shipped science metadata loads from real `Data\INI\Science.ini` through
       original `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, with full
       runtime-archive harness state proving 95 science definitions, base/rank

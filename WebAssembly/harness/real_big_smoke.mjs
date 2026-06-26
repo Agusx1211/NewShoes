@@ -57,6 +57,33 @@ function assertArmorProbe(assetProbe, context) {
   }
 }
 
+function assertDamageFXProbe(assetProbe, context) {
+  const damageFX = assetProbe?.damageFX;
+  if (!assetProbe?.inizh?.damageFXIni
+      || !damageFX?.attempted
+      || !damageFX.ok
+      || damageFX.source !== "GameEngine/Common/INI.cpp::load + INIDamageFX.cpp + DamageFX.cpp + focused FXList lookup"
+      || !damageFX.loadedArchives
+      || !damageFX.fileExists
+      || !damageFX.nameKeyGeneratorLoaded
+      || !damageFX.fxListStoreLoaded
+      || !damageFX.damageFXStoreLoaded
+      || !damageFX.originalIniLoad
+      || damageFX.parsedFields !== 10
+      || !damageFX.found?.default
+      || !damageFX.found?.tank
+      || !damageFX.found?.smallTank
+      || !damageFX.found?.structure
+      || !damageFX.found?.infantry
+      || damageFX.throttle?.defaultExplosion !== 9
+      || damageFX.throttle?.tankSmallArms !== 3
+      || damageFX.throttle?.smallTankComanche !== 3
+      || damageFX.throttle?.structureFlame !== 9
+      || damageFX.throttle?.infantrySniper !== 3) {
+    throw new Error(`${context} did not parse expected DamageFX.ini definitions: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertUpgradeProbe(assetProbe, context) {
   const upgrade = assetProbe?.upgrade;
   const flashBang = upgrade?.flashBang;
@@ -636,6 +663,7 @@ try {
     throw new Error(`cnc-port archive mount failed: ${JSON.stringify(mountResult)}`);
   }
   if (!assetProbe.inizh?.armorIni
+      || !assetProbe.inizh?.damageFXIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.controlBarSchemeIni
@@ -653,6 +681,7 @@ try {
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
   assertArmorProbe(assetProbe, "cnc-port INIZH probe");
+  assertDamageFXProbe(assetProbe, "cnc-port INIZH probe");
   assertUpgradeProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandButtonProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");
