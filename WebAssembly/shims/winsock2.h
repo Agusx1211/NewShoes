@@ -3,6 +3,7 @@
 #include <cerrno>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -37,6 +38,14 @@ using HOSTENT = struct hostent;
 
 #ifndef WSAEISCONN
 #define WSAEISCONN EISCONN
+#endif
+
+#ifndef WSAECONNRESET
+#define WSAECONNRESET ECONNRESET
+#endif
+
+#ifndef WSAENOTCONN
+#define WSAENOTCONN ENOTCONN
 #endif
 
 #ifndef MAKEWORD
@@ -89,4 +98,9 @@ static inline int WSAGetLastError()
 static inline int closesocket(int socket_fd)
 {
 	return close(socket_fd);
+}
+
+static inline int ioctlsocket(int socket_fd, long request, unsigned long *value)
+{
+	return ioctl(socket_fd, request, value);
 }

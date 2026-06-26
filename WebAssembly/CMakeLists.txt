@@ -22,6 +22,7 @@ set(WWMATH_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWMath")
 set(WWLIB_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWLib")
 set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
+set(WWDOWNLOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDownload")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
 set(GAMEENGINE_COMMON_DIR "${GAMEENGINE_DIR}/Source/Common")
@@ -1121,6 +1122,35 @@ target_link_libraries(zh_wwutil PUBLIC
   zh_wwmath_lookup
 )
 
+add_library(zh_wwdownload STATIC
+  "${WWDOWNLOAD_DIR}/Download.cpp"
+  "${WWDOWNLOAD_DIR}/FTP.CPP"
+  "${WWDOWNLOAD_DIR}/registry.cpp"
+  "${WWDOWNLOAD_DIR}/urlBuilder.cpp"
+)
+
+target_include_directories(zh_wwdownload PUBLIC
+  "${WASM_SHIMS_DIR}/WWDownload"
+  "${WASM_SHIMS_DIR}"
+  "${WWDOWNLOAD_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_definitions(zh_wwdownload PRIVATE
+  NDEBUG
+)
+
+target_compile_options(zh_wwdownload PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-parentheses
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_gameengine_common_core STATIC
   "${WASM_SHIMS_DIR}/INICommonCompat.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/GameMemory.cpp"
@@ -1970,6 +2000,7 @@ add_library(zh_gamenetwork_core STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/Connection.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/ConnectionManager.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/DisconnectManager.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/DownloadManager.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/FileTransfer.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/FrameData.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/FrameDataManager.cpp"
@@ -2020,6 +2051,7 @@ target_compile_options(zh_gamenetwork_core PRIVATE
 
 target_link_libraries(zh_gamenetwork_core PUBLIC
   zh_gameengine_common_core
+  zh_wwdownload
 )
 
 add_executable(cnc-port
@@ -2934,6 +2966,36 @@ target_compile_options(wwutil-smoke PRIVATE
 )
 
 target_link_options(wwutil-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwdownload-smoke
+  tests/wwdownload_smoke.cpp
+)
+
+set_target_properties(wwdownload-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwdownload-smoke PRIVATE
+  zh_wwdownload
+)
+
+target_compile_options(wwdownload-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwdownload-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

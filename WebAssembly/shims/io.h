@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -71,4 +72,8 @@
 
 #ifndef _access
 #define _access WASM_POSIX_SCOPE access
+#endif
+
+#ifndef _chmod
+#define _chmod WASM_POSIX_SCOPE chmod
 #endif

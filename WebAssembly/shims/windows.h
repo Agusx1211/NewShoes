@@ -70,6 +70,7 @@ using VOID = void;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
+using LPTHREAD_START_ROUTINE = DWORD (WINAPI *)(LPVOID);
 
 #ifndef S_OK
 #define S_OK static_cast<HRESULT>(0)
@@ -77,6 +78,10 @@ using WORD = unsigned short;
 
 #ifndef S_FALSE
 #define S_FALSE static_cast<HRESULT>(1)
+#endif
+
+#ifndef E_FAIL
+#define E_FAIL static_cast<HRESULT>(0x80004005L)
 #endif
 
 #ifndef SEVERITY_ERROR
@@ -1278,6 +1283,31 @@ static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
 static inline BOOL CloseHandle(HANDLE)
 {
 	return TRUE;
+}
+
+static inline int MulDiv(int number, int numerator, int denominator)
+{
+	if (denominator == 0) {
+		return -1;
+	}
+	return static_cast<int>((static_cast<long long>(number) * numerator) / denominator);
+}
+
+static inline HANDLE CreateThread(
+	void *,
+	DWORD,
+	LPTHREAD_START_ROUTINE start_address,
+	LPVOID parameter,
+	DWORD,
+	LPDWORD thread_id)
+{
+	if (thread_id != nullptr) {
+		*thread_id = 1;
+	}
+	if (start_address != nullptr) {
+		start_address(parameter);
+	}
+	return reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
 }
 
 static inline LONG RegOpenKeyEx(HKEY, LPCSTR, DWORD, DWORD, HKEY *result)

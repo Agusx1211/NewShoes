@@ -1010,10 +1010,10 @@ unsigned long MyIPAddress( int sockfd )
 
 	if( sockfd != -1 )
 	{
-		i = sizeof( sin );
-		getsockname( sockfd, (struct sockaddr *)&sin, &i );
+		socklen_t socketLength = sizeof( sin );
+		getsockname( sockfd, (struct sockaddr *)&sin, &socketLength );
 
-		ip = sin.sin_addr.S_un.S_addr;
+		ip = sin.sin_addr.s_addr;
 	}
 	else
 	{
@@ -1127,9 +1127,9 @@ int Cftp::SendNewPort( void )
 		}
 
 
-		i = sizeof( m_DataSockAddr);
+		socklen_t dataSocketLength = sizeof( m_DataSockAddr);
 
-		getsockname( m_iDataSocket, (struct sockaddr *)&m_DataSockAddr, &i );
+		getsockname( m_iDataSocket, (struct sockaddr *)&m_DataSockAddr, &dataSocketLength );
 
 		listen( m_iDataSocket, 5 );
 
@@ -1841,7 +1841,6 @@ bool Prepare_Directories(const char *rootdir, const char *filename)
 	}
 	return(true);
 }
-
 
 
 

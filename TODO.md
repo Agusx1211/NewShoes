@@ -1107,9 +1107,16 @@ shares structure and follows behind.
       re-target.
 - [x] Compile original `GameNetwork/NAT.cpp` after the GameSpy Peer headers,
       WinMM timing shim, and original `GlobalData` firewall fields are reachable.
-- [ ] Compile original `GameNetwork/DownloadManager.cpp` after the WWDownload
-      dependency surface is either restored from the vendored source or
-      re-targeted to the browser networking path.
+- [x] Compile original `GameNetwork/DownloadManager.cpp` after restoring the
+      current WWDownload dependency surface from the vendored source.
+- [x] Link and smoke-test original `WWDownload` idle state and registry URL
+      defaults without starting the raw FTP socket path.
+- [ ] Replace original WWDownload raw FTP/WinSock transport with a browser
+      fetch/proxy/update-download contract before patch/download runtime flows
+      are considered functional.
+- [ ] Link and smoke-test original `GameNetwork/DownloadManager.cpp` queue and
+      status behavior after the real `GameText` singleton, browser download
+      transport, and update UI callback surfaces are available.
 - [x] Compile original `GameNetwork/FirewallHelper.cpp` after adding the
       original firewall fields/defaults to the temporary `GlobalData` shim,
       portable `itoa` compatibility, and explicit loop variables for legacy
