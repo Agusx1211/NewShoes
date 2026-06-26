@@ -2649,6 +2649,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_GAMELOGIC_DIR}/AI/AI.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/SidesList.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Locomotor.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/CrateSystem.cpp"
@@ -2667,6 +2668,7 @@ target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
   DISABLE_DEBUG_PROFILE=1
   NO_DEBUG_CRC=1
   WASM_REAL_INI_AI_METADATA_ONLY=1
+  WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY=1
   WASM_REAL_INI_WEAPON_METADATA_ONLY=1
 )
 

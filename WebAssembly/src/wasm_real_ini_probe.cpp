@@ -47,6 +47,7 @@
 #include "GameLogic/Armor.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
+#include "GameLogic/Locomotor.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Weapon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -65,6 +66,7 @@ constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini
 constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
 constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
 constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
+constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -479,6 +481,59 @@ std::size_t count_verified_fields(const RealAIDataIniProbeResult &result)
 		(std::fabs(result.america_first_build_y - 546.25f) < 0.01f ? 1U : 0U) +
 		(std::fabs(result.america_first_build_angle - (-135.0f * PI / 180.0f)) < 0.001f ? 1U : 0U) +
 		(result.america_first_build_automatically_build ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealLocomotorIniProbeResult &result)
+{
+	return
+		(result.template_count == 182 ? 1U : 0U) +
+		(result.basic_human_found ? 1U : 0U) +
+		(std::fabs(result.basic_human_speed - (20.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.basic_human_speed_damaged - (10.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.basic_human_turn_rate - (500.0f * PI / 180.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.basic_human_acceleration - (100.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.basic_human_braking - (100.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(result.basic_human_surfaces == (LOCOMOTORSURFACE_GROUND | LOCOMOTORSURFACE_RUBBLE) ? 1U : 0U) +
+		(result.basic_human_appearance == LOCO_LEGS_TWO ? 1U : 0U) +
+		(result.basic_human_z_behavior == Z_NO_Z_MOTIVE_FORCE ? 1U : 0U) +
+		(result.basic_human_move_priority == LOCO_MOVES_FRONT ? 1U : 0U) +
+		(result.basic_human_stick_to_ground ? 1U : 0U) +
+		(result.missile_defender_found ? 1U : 0U) +
+		(std::fabs(result.missile_defender_speed - (20.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(result.missile_defender_move_priority == LOCO_MOVES_MIDDLE ? 1U : 0U) +
+		(result.humvee_found ? 1U : 0U) +
+		(std::fabs(result.humvee_speed - (60.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_speed_damaged - (30.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_turn_rate - (180.0f * PI / 180.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_acceleration - (1000.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_braking - (1000.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_min_turn_speed - (20.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_turn_pivot_offset - (-0.33f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_wheel_turn_angle - (22.0f * PI / 180.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_max_wheel_extension - (-1.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.humvee_max_wheel_compression - 0.5f) < 0.001f ? 1U : 0U) +
+		(result.humvee_surfaces == LOCOMOTORSURFACE_GROUND ? 1U : 0U) +
+		(result.humvee_appearance == LOCO_WHEELS_FOUR ? 1U : 0U) +
+		(result.humvee_z_behavior == Z_NO_Z_MOTIVE_FORCE ? 1U : 0U) +
+		(!result.humvee_stick_to_ground ? 1U : 0U) +
+		(result.humvee_has_suspension ? 1U : 0U) +
+		(result.humvee_can_move_backward ? 1U : 0U) +
+		(result.comanche_found ? 1U : 0U) +
+		(std::fabs(result.comanche_speed - (120.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_speed_damaged - (120.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_turn_rate - (180.0f * PI / 180.0f / 30.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_acceleration - (60.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_lift - (120.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_lift_damaged - (80.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_braking - (240.0f / 900.0f)) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.comanche_preferred_height - 100.0f) < 0.001f ? 1U : 0U) +
+		(result.comanche_surfaces == LOCOMOTORSURFACE_AIR ? 1U : 0U) +
+		(result.comanche_appearance == LOCO_HOVER ? 1U : 0U) +
+		(result.comanche_z_behavior == Z_SURFACE_RELATIVE_HEIGHT ? 1U : 0U) +
+		(result.comanche_airborne_targeting_height == 30 ? 1U : 0U) +
+		(result.comanche_allow_airborne_motive_force ? 1U : 0U) +
+		(result.comanche_apply_2d_friction_when_airborne ? 1U : 0U) +
+		(result.comanche_locomotor_works_when_dead ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
@@ -2312,6 +2367,185 @@ RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_pat
 	}
 	if (game_text != nullptr) {
 		delete game_text;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archive_path)
+{
+	RealLocomotorIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + GameLogic/Object/Locomotor.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	LocomotorStore *old_locomotor_store = TheLocomotorStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	LocomotorStore *locomotor_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(LOCOMOTOR_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ?
+				static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				locomotor_store = NEW LocomotorStore;
+				TheLocomotorStore = locomotor_store;
+				locomotor_store->init();
+				result.locomotor_store_loaded = true;
+
+				INI ini;
+				ini.load(AsciiString(LOCOMOTOR_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+				result.template_count =
+					static_cast<std::size_t>(locomotor_store->wasmGetTemplateCount());
+
+				const LocomotorTemplate *basic_human =
+					locomotor_store->findLocomotorTemplate(NAMEKEY("BasicHumanLocomotor"));
+				result.basic_human_found = basic_human != nullptr;
+				if (basic_human != nullptr) {
+					result.basic_human_speed = basic_human->wasmGetMaxSpeed();
+					result.basic_human_speed_damaged =
+						basic_human->wasmGetMaxSpeedDamaged();
+					result.basic_human_turn_rate = basic_human->wasmGetMaxTurnRate();
+					result.basic_human_acceleration = basic_human->wasmGetAcceleration();
+					result.basic_human_braking = basic_human->wasmGetBraking();
+					result.basic_human_surfaces =
+						static_cast<int>(basic_human->wasmGetSurfaces());
+					result.basic_human_appearance =
+						static_cast<int>(basic_human->wasmGetAppearance());
+					result.basic_human_z_behavior =
+						static_cast<int>(basic_human->wasmGetBehaviorZ());
+					result.basic_human_move_priority =
+						static_cast<int>(basic_human->wasmGetMovePriority());
+					result.basic_human_stick_to_ground =
+						basic_human->wasmGetStickToGround();
+				}
+
+				const LocomotorTemplate *missile_defender =
+					locomotor_store->findLocomotorTemplate(NAMEKEY("MissileDefenderLocomotor"));
+				result.missile_defender_found = missile_defender != nullptr;
+				if (missile_defender != nullptr) {
+					result.missile_defender_speed =
+						missile_defender->wasmGetMaxSpeed();
+					result.missile_defender_move_priority =
+						static_cast<int>(missile_defender->wasmGetMovePriority());
+				}
+
+				const LocomotorTemplate *humvee =
+					locomotor_store->findLocomotorTemplate(NAMEKEY("HumveeLocomotor"));
+				result.humvee_found = humvee != nullptr;
+				if (humvee != nullptr) {
+					result.humvee_speed = humvee->wasmGetMaxSpeed();
+					result.humvee_speed_damaged = humvee->wasmGetMaxSpeedDamaged();
+					result.humvee_turn_rate = humvee->wasmGetMaxTurnRate();
+					result.humvee_acceleration = humvee->wasmGetAcceleration();
+					result.humvee_braking = humvee->wasmGetBraking();
+					result.humvee_min_turn_speed = humvee->wasmGetMinTurnSpeed();
+					result.humvee_turn_pivot_offset = humvee->wasmGetTurnPivotOffset();
+					result.humvee_wheel_turn_angle = humvee->wasmGetWheelTurnAngle();
+					result.humvee_max_wheel_extension = humvee->wasmGetMaxWheelExtension();
+					result.humvee_max_wheel_compression =
+						humvee->wasmGetMaxWheelCompression();
+					result.humvee_surfaces = static_cast<int>(humvee->wasmGetSurfaces());
+					result.humvee_appearance =
+						static_cast<int>(humvee->wasmGetAppearance());
+					result.humvee_z_behavior =
+						static_cast<int>(humvee->wasmGetBehaviorZ());
+					result.humvee_stick_to_ground = humvee->wasmGetStickToGround();
+					result.humvee_has_suspension = humvee->wasmGetHasSuspension();
+					result.humvee_can_move_backward = humvee->wasmGetCanMoveBackward();
+				}
+
+				const LocomotorTemplate *comanche =
+					locomotor_store->findLocomotorTemplate(NAMEKEY("ComancheLocomotor"));
+				result.comanche_found = comanche != nullptr;
+				if (comanche != nullptr) {
+					result.comanche_speed = comanche->wasmGetMaxSpeed();
+					result.comanche_speed_damaged = comanche->wasmGetMaxSpeedDamaged();
+					result.comanche_turn_rate = comanche->wasmGetMaxTurnRate();
+					result.comanche_acceleration = comanche->wasmGetAcceleration();
+					result.comanche_lift = comanche->wasmGetLift();
+					result.comanche_lift_damaged = comanche->wasmGetLiftDamaged();
+					result.comanche_braking = comanche->wasmGetBraking();
+					result.comanche_preferred_height =
+						comanche->wasmGetPreferredHeight();
+					result.comanche_surfaces =
+						static_cast<int>(comanche->wasmGetSurfaces());
+					result.comanche_appearance =
+						static_cast<int>(comanche->wasmGetAppearance());
+					result.comanche_z_behavior =
+						static_cast<int>(comanche->wasmGetBehaviorZ());
+					result.comanche_airborne_targeting_height =
+						comanche->wasmGetAirborneTargetingHeight();
+					result.comanche_allow_airborne_motive_force =
+						comanche->wasmGetAllowMotiveForceWhileAirborne();
+					result.comanche_apply_2d_friction_when_airborne =
+						comanche->wasmGetApply2DFrictionWhenAirborne();
+					result.comanche_locomotor_works_when_dead =
+						comanche->wasmGetLocomotorWorksWhenDead();
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100000 &&
+					result.name_key_generator_loaded &&
+					result.locomotor_store_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 48;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheLocomotorStore = old_locomotor_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (locomotor_store != nullptr) {
+		delete locomotor_store;
 	}
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;

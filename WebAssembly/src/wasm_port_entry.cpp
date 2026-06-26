@@ -272,6 +272,7 @@ bool startup_boot_ini_present()
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_damage_fx_ini &&
 		g_archive_probe.has_default_ai_data_ini &&
+		g_archive_probe.has_locomotor_ini &&
 		g_archive_probe.has_command_button_ini &&
 		g_archive_probe.has_command_set_ini &&
 		g_archive_probe.has_control_bar_scheme_ini &&
@@ -326,6 +327,13 @@ bool startup_ai_data_ready()
 		g_archive_probe.has_science_ini &&
 		g_archive_probe.ai_data_attempted &&
 		g_archive_probe.ai_data_ok;
+}
+
+bool startup_locomotor_ready()
+{
+	return g_archive_probe.has_locomotor_ini &&
+		g_archive_probe.locomotor_attempted &&
+		g_archive_probe.locomotor_ok;
 }
 
 bool startup_science_ready()
@@ -453,6 +461,7 @@ bool startup_assets_ready()
 		startup_damage_fx_ready() &&
 		startup_weapon_ready() &&
 		startup_ai_data_ready() &&
+		startup_locomotor_ready() &&
 		startup_science_ready() &&
 		startup_special_power_ready() &&
 		startup_player_template_ready() &&
@@ -497,6 +506,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_ai_data_ready()) {
 		return "ai_data_probe_failed";
+	}
+	if (!startup_locomotor_ready()) {
+		return "locomotor_probe_failed";
 	}
 	if (!startup_science_ready()) {
 		return "science_probe_failed";
@@ -580,6 +592,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_ai_data_ready()) {
 		return "Runtime BIG archive set did not pass the AIData.ini startup probe.";
+	}
+	if (!startup_locomotor_ready()) {
+		return "Runtime BIG archive set did not pass the Locomotor.ini startup probe.";
 	}
 	if (!startup_science_ready()) {
 		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
@@ -924,6 +939,105 @@ std::string build_ai_data_probe_json()
 		g_archive_probe.ai_data_america_first_build_y,
 		g_archive_probe.ai_data_america_first_build_angle,
 		g_archive_probe.ai_data_america_first_build_automatically_build ?
+			"true" : "false");
+
+	return buffer;
+}
+
+std::string build_locomotor_probe_json()
+{
+	char buffer[5200];
+	const std::string source_json = json_escape(g_archive_probe.locomotor_source);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"locomotorStoreLoaded\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"templates\":%zu,"
+		"\"basicHuman\":{\"found\":%s,\"speed\":%.6f,"
+		"\"speedDamaged\":%.6f,\"turnRate\":%.6f,"
+		"\"acceleration\":%.6f,\"braking\":%.6f,"
+		"\"surfaces\":%d,\"appearance\":%d,\"zBehavior\":%d,"
+		"\"movePriority\":%d,\"stickToGround\":%s},"
+		"\"missileDefender\":{\"found\":%s,\"speed\":%.6f,"
+		"\"movePriority\":%d},"
+		"\"humvee\":{\"found\":%s,\"speed\":%.6f,"
+		"\"speedDamaged\":%.6f,\"turnRate\":%.6f,"
+		"\"acceleration\":%.6f,\"braking\":%.6f,"
+		"\"minTurnSpeed\":%.6f,\"turnPivotOffset\":%.6f,"
+		"\"wheelTurnAngle\":%.6f,\"maxWheelExtension\":%.6f,"
+		"\"maxWheelCompression\":%.6f,\"surfaces\":%d,"
+		"\"appearance\":%d,\"zBehavior\":%d,\"stickToGround\":%s,"
+		"\"hasSuspension\":%s,\"canMoveBackward\":%s},"
+		"\"comanche\":{\"found\":%s,\"speed\":%.6f,"
+		"\"speedDamaged\":%.6f,\"turnRate\":%.6f,"
+		"\"acceleration\":%.6f,\"lift\":%.6f,\"liftDamaged\":%.6f,"
+		"\"braking\":%.6f,\"preferredHeight\":%.3f,"
+		"\"surfaces\":%d,\"appearance\":%d,\"zBehavior\":%d,"
+		"\"airborneTargetingHeight\":%d,"
+		"\"allowAirborneMotiveForce\":%s,"
+		"\"apply2DFrictionWhenAirborne\":%s,"
+		"\"locomotorWorksWhenDead\":%s}}",
+		g_archive_probe.locomotor_attempted ? "true" : "false",
+		g_archive_probe.locomotor_ok ? "true" : "false",
+		g_archive_probe.locomotor_bytes,
+		source_json.c_str(),
+		g_archive_probe.locomotor_loaded_archives ? "true" : "false",
+		g_archive_probe.locomotor_file_exists ? "true" : "false",
+		g_archive_probe.locomotor_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.locomotor_store_loaded ? "true" : "false",
+		g_archive_probe.locomotor_original_ini_load ? "true" : "false",
+		g_archive_probe.locomotor_parsed_fields,
+		g_archive_probe.locomotor_template_count,
+		g_archive_probe.locomotor_basic_human_found ? "true" : "false",
+		g_archive_probe.locomotor_basic_human_speed,
+		g_archive_probe.locomotor_basic_human_speed_damaged,
+		g_archive_probe.locomotor_basic_human_turn_rate,
+		g_archive_probe.locomotor_basic_human_acceleration,
+		g_archive_probe.locomotor_basic_human_braking,
+		g_archive_probe.locomotor_basic_human_surfaces,
+		g_archive_probe.locomotor_basic_human_appearance,
+		g_archive_probe.locomotor_basic_human_z_behavior,
+		g_archive_probe.locomotor_basic_human_move_priority,
+		g_archive_probe.locomotor_basic_human_stick_to_ground ? "true" : "false",
+		g_archive_probe.locomotor_missile_defender_found ? "true" : "false",
+		g_archive_probe.locomotor_missile_defender_speed,
+		g_archive_probe.locomotor_missile_defender_move_priority,
+		g_archive_probe.locomotor_humvee_found ? "true" : "false",
+		g_archive_probe.locomotor_humvee_speed,
+		g_archive_probe.locomotor_humvee_speed_damaged,
+		g_archive_probe.locomotor_humvee_turn_rate,
+		g_archive_probe.locomotor_humvee_acceleration,
+		g_archive_probe.locomotor_humvee_braking,
+		g_archive_probe.locomotor_humvee_min_turn_speed,
+		g_archive_probe.locomotor_humvee_turn_pivot_offset,
+		g_archive_probe.locomotor_humvee_wheel_turn_angle,
+		g_archive_probe.locomotor_humvee_max_wheel_extension,
+		g_archive_probe.locomotor_humvee_max_wheel_compression,
+		g_archive_probe.locomotor_humvee_surfaces,
+		g_archive_probe.locomotor_humvee_appearance,
+		g_archive_probe.locomotor_humvee_z_behavior,
+		g_archive_probe.locomotor_humvee_stick_to_ground ? "true" : "false",
+		g_archive_probe.locomotor_humvee_has_suspension ? "true" : "false",
+		g_archive_probe.locomotor_humvee_can_move_backward ? "true" : "false",
+		g_archive_probe.locomotor_comanche_found ? "true" : "false",
+		g_archive_probe.locomotor_comanche_speed,
+		g_archive_probe.locomotor_comanche_speed_damaged,
+		g_archive_probe.locomotor_comanche_turn_rate,
+		g_archive_probe.locomotor_comanche_acceleration,
+		g_archive_probe.locomotor_comanche_lift,
+		g_archive_probe.locomotor_comanche_lift_damaged,
+		g_archive_probe.locomotor_comanche_braking,
+		g_archive_probe.locomotor_comanche_preferred_height,
+		g_archive_probe.locomotor_comanche_surfaces,
+		g_archive_probe.locomotor_comanche_appearance,
+		g_archive_probe.locomotor_comanche_z_behavior,
+		g_archive_probe.locomotor_comanche_airborne_targeting_height,
+		g_archive_probe.locomotor_comanche_allow_airborne_motive_force ?
+			"true" : "false",
+		g_archive_probe.locomotor_comanche_apply_2d_friction_when_airborne ?
+			"true" : "false",
+		g_archive_probe.locomotor_comanche_locomotor_works_when_dead ?
 			"true" : "false");
 
 	return buffer;
@@ -1568,6 +1682,7 @@ const char *write_state_json()
 	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
 	const std::string weapon_probe_json = build_weapon_probe_json();
 	const std::string ai_data_probe_json = build_ai_data_probe_json();
+	const std::string locomotor_probe_json = build_locomotor_probe_json();
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
@@ -1734,7 +1849,8 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,"
-		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"commandButtonIni\":%s,"
+		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"locomotorIni\":%s,"
+		"\"commandButtonIni\":%s,"
 		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
 		"\"defaultControlBarSchemeIni\":%s,\"crateIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
@@ -1757,6 +1873,7 @@ const char *write_state_json()
 		"\"damageFX\":%s,"
 		"\"weapon\":%s,"
 		"\"aiData\":%s,"
+		"\"locomotor\":%s,"
 		"\"science\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
@@ -1922,6 +2039,7 @@ const char *write_state_json()
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"science\":%s,"
 		"\"weapon\":%s,\"particleSystem\":%s,\"aiData\":%s,"
+		"\"locomotor\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
 		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
@@ -1982,6 +2100,7 @@ const char *write_state_json()
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
 		g_archive_probe.has_default_ai_data_ini ? "true" : "false",
 		g_archive_probe.has_ai_data_ini ? "true" : "false",
+		g_archive_probe.has_locomotor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_command_set_ini ? "true" : "false",
 		g_archive_probe.has_control_bar_scheme_ini ? "true" : "false",
@@ -2026,6 +2145,7 @@ const char *write_state_json()
 		damage_fx_probe_json.c_str(),
 		weapon_probe_json.c_str(),
 		ai_data_probe_json.c_str(),
+		locomotor_probe_json.c_str(),
 		g_archive_probe.science_attempted ? "true" : "false",
 		g_archive_probe.science_ok ? "true" : "false",
 		g_archive_probe.science_bytes,
@@ -2387,6 +2507,7 @@ const char *write_state_json()
 		startup_weapon_ready() ? "true" : "false",
 		g_archive_probe.has_particle_system_ini ? "true" : "false",
 		startup_ai_data_ready() ? "true" : "false",
+		startup_locomotor_ready() ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
 		startup_command_set_ready() ? "true" : "false",

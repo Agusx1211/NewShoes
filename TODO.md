@@ -632,6 +632,10 @@ shares structure and follows behind.
       `GameLogic/Map/SidesList.cpp` for shipped tactical timers, resource
       thresholds, guard/combat/group-pathing metadata, side entries, and build
       lists.
+- [x] Link and smoke-test the original locomotor INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `GameLogic/Object/Locomotor.cpp`, and `LocomotorStore` for shipped
+      infantry, vehicle, and air locomotor metadata.
 - [ ] Link and smoke-test the original audio INI parser routes after the real
       `Common/INI.cpp` reader, audio manager, and full runtime singleton
       surface are available without target-local parser stubs.
@@ -1776,6 +1780,13 @@ shares structure and follows behind.
       `startupAssets.ready` state. This is a focused AI metadata/build-list
       preflight only; live AI updates and pathfinder ownership remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Locomotor.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load` and `GameLogic/Object/Locomotor.cpp`, expose
+      parsed shipped Locomotor metadata as `assetProbe.locomotor`, and require
+      it for the Playwright `startupAssets.ready` state. This is a focused
+      locomotor-template metadata preflight only; live locomotor updates,
+      physics, pathing, and object movement ownership remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\Science.ini` from the mounted runtime BIG set through original
       `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, expose parsed
       shipped science metadata as `assetProbe.science`, and require it for the
@@ -1885,6 +1896,11 @@ shares structure and follows behind.
       and require it for the Playwright `startupAssets.ready` state. This is a
       shipped map-cache load preflight only; live user-map scanning/rebuilds and
       full map loading remain open.
+- [ ] Resolve the original `Data\INI\Rank.ini` startup dependency referenced by
+      `GameEngine.cpp` / `RankInfoStore`: source the real asset, confirm an
+      alternate shipped filename, or add the correct browser archive mapping,
+      because the current extracted Zero Hour runtime BIG/CAB inventory does
+      not contain that path.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).

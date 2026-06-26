@@ -36,15 +36,17 @@
 #define DEFINE_LOCO_APPEARANCE_NAMES
 
 #include "Common/INI.h"
+#include "GameLogic/Locomotor.h"
+#ifndef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/PartitionManager.h"
-#include "GameLogic/Locomotor.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/Module/PhysicsUpdate.h"
 #include "GameLogic/Module/BodyModule.h"
 #include "GameLogic/Module/AIUpdate.h"
+#endif
 
 #ifdef _INTERNAL
 // for occasional debugging...
@@ -52,11 +54,13 @@
 //#pragma MESSAGE("************************************** WARNING, optimization disabled for debugging purposes")
 #endif
 
+#ifndef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
 static const Real DONUT_TIME_DELAY_SECONDS=2.5f;
 static const Real DONUT_DISTANCE=4.0*PATHFIND_CELL_SIZE_F;
 
 
 #define MAX_BRAKING_FACTOR 5.0f
+#endif
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // PUBLIC DATA ////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -83,6 +87,7 @@ static const char *TheLocomotorPriorityNames[] =
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
 static Real calcSlowDownDist(Real curSpeed, Real desiredSpeed, Real maxBraking)
 {
 	Real delta = curSpeed - desiredSpeed;
@@ -272,6 +277,7 @@ static void calcDirectionToApplyThrust(
 	}
 
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // PUBLIC FUNCTIONS ///////////////////////////////////////////////////////////////////////////////
@@ -650,6 +656,7 @@ LocomotorTemplate *LocomotorStore::newOverride( LocomotorTemplate *locoTemplate 
 //-------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
 Locomotor::Locomotor(const LocomotorTemplate* tmpl)
 {
 	m_template = tmpl;
@@ -2805,4 +2812,4 @@ Locomotor* LocomotorSet::findLocomotor(LocomotorSurfaceTypeMask t)
 	return NULL;
 }
 
-
+#endif

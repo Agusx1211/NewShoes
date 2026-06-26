@@ -219,6 +219,71 @@ function assertAIDataProbe(assetProbe, context) {
   }
 }
 
+function assertLocomotorProbe(assetProbe, context) {
+  const locomotor = assetProbe?.locomotor;
+  if (!assetProbe?.inizh?.locomotorIni
+      || !locomotor?.attempted
+      || !locomotor.ok
+      || locomotor.source !== "GameEngine/Common/INI.cpp::load + GameLogic/Object/Locomotor.cpp"
+      || !locomotor.loadedArchives
+      || !locomotor.fileExists
+      || !locomotor.nameKeyGeneratorLoaded
+      || !locomotor.locomotorStoreLoaded
+      || !locomotor.originalIniLoad
+      || locomotor.bytes <= 100000
+      || locomotor.parsedFields !== 48
+      || locomotor.templates !== 182
+      || !locomotor.basicHuman?.found
+      || Math.abs(locomotor.basicHuman.speed - (20.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.basicHuman.speedDamaged - (10.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.basicHuman.turnRate - (500.0 * Math.PI / 180.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.basicHuman.acceleration - (100.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.basicHuman.braking - (100.0 / 900.0)) > 0.001
+      || locomotor.basicHuman.surfaces !== 17
+      || locomotor.basicHuman.appearance !== 0
+      || locomotor.basicHuman.zBehavior !== 0
+      || locomotor.basicHuman.movePriority !== 2
+      || locomotor.basicHuman.stickToGround !== true
+      || !locomotor.missileDefender?.found
+      || Math.abs(locomotor.missileDefender.speed - (20.0 / 30.0)) > 0.001
+      || locomotor.missileDefender.movePriority !== 1
+      || !locomotor.humvee?.found
+      || Math.abs(locomotor.humvee.speed - (60.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.humvee.speedDamaged - (30.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.humvee.turnRate - (180.0 * Math.PI / 180.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.humvee.acceleration - (1000.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.humvee.braking - (1000.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.humvee.minTurnSpeed - (20.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.humvee.turnPivotOffset - (-0.33)) > 0.001
+      || Math.abs(locomotor.humvee.wheelTurnAngle - (22.0 * Math.PI / 180.0)) > 0.001
+      || Math.abs(locomotor.humvee.maxWheelExtension - (-1.0)) > 0.001
+      || Math.abs(locomotor.humvee.maxWheelCompression - 0.5) > 0.001
+      || locomotor.humvee.surfaces !== 1
+      || locomotor.humvee.appearance !== 1
+      || locomotor.humvee.zBehavior !== 0
+      || locomotor.humvee.stickToGround !== false
+      || locomotor.humvee.hasSuspension !== true
+      || locomotor.humvee.canMoveBackward !== true
+      || !locomotor.comanche?.found
+      || Math.abs(locomotor.comanche.speed - (120.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.comanche.speedDamaged - (120.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.comanche.turnRate - (180.0 * Math.PI / 180.0 / 30.0)) > 0.001
+      || Math.abs(locomotor.comanche.acceleration - (60.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.comanche.lift - (120.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.comanche.liftDamaged - (80.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.comanche.braking - (240.0 / 900.0)) > 0.001
+      || Math.abs(locomotor.comanche.preferredHeight - 100.0) > 0.001
+      || locomotor.comanche.surfaces !== 8
+      || locomotor.comanche.appearance !== 3
+      || locomotor.comanche.zBehavior !== 2
+      || locomotor.comanche.airborneTargetingHeight !== 30
+      || locomotor.comanche.allowAirborneMotiveForce !== true
+      || locomotor.comanche.apply2DFrictionWhenAirborne !== true
+      || locomotor.comanche.locomotorWorksWhenDead !== true) {
+    throw new Error(`${context} did not parse expected Locomotor.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertUpgradeProbe(assetProbe, context) {
   const upgrade = assetProbe?.upgrade;
   const flashBang = upgrade?.flashBang;
@@ -812,6 +877,7 @@ try {
       || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.upgradeIni
       || !assetProbe.inizh?.defaultAIDataIni
+      || !assetProbe.inizh?.locomotorIni
       || !assetProbe.inizh?.weaponIni
       || !assetProbe.inizh?.particleSystemIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
@@ -821,6 +887,7 @@ try {
   assertDamageFXProbe(assetProbe, "cnc-port INIZH probe");
   assertWeaponProbe(assetProbe, "cnc-port INIZH probe");
   assertAIDataProbe(assetProbe, "cnc-port INIZH probe");
+  assertLocomotorProbe(assetProbe, "cnc-port INIZH probe");
   assertUpgradeProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandButtonProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");

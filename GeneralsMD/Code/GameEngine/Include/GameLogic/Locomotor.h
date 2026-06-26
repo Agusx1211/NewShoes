@@ -134,6 +134,34 @@ public:
 
 	void validate();
 
+#ifdef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
+	AsciiString wasmGetName() const { return m_name; }
+	LocomotorSurfaceTypeMask wasmGetSurfaces() const { return m_surfaces; }
+	Real wasmGetMaxSpeed() const { return m_maxSpeed; }
+	Real wasmGetMaxSpeedDamaged() const { return m_maxSpeedDamaged; }
+	Real wasmGetMaxTurnRate() const { return m_maxTurnRate; }
+	Real wasmGetAcceleration() const { return m_acceleration; }
+	Real wasmGetLift() const { return m_lift; }
+	Real wasmGetLiftDamaged() const { return m_liftDamaged; }
+	Real wasmGetBraking() const { return m_braking; }
+	Real wasmGetMinTurnSpeed() const { return m_minTurnSpeed; }
+	Real wasmGetPreferredHeight() const { return m_preferredHeight; }
+	Real wasmGetTurnPivotOffset() const { return m_turnPivotOffset; }
+	Int wasmGetAirborneTargetingHeight() const { return m_airborneTargetingHeight; }
+	LocomotorBehaviorZ wasmGetBehaviorZ() const { return m_behaviorZ; }
+	LocomotorAppearance wasmGetAppearance() const { return m_appearance; }
+	LocomotorPriority wasmGetMovePriority() const { return m_movePriority; }
+	Bool wasmGetStickToGround() const { return m_stickToGround; }
+	Bool wasmGetCanMoveBackward() const { return m_canMoveBackward; }
+	Bool wasmGetHasSuspension() const { return m_hasSuspension; }
+	Bool wasmGetAllowMotiveForceWhileAirborne() const { return m_allowMotiveForceWhileAirborne; }
+	Bool wasmGetApply2DFrictionWhenAirborne() const { return m_apply2DFrictionWhenAirborne; }
+	Bool wasmGetLocomotorWorksWhenDead() const { return m_locomotorWorksWhenDead; }
+	Real wasmGetWheelTurnAngle() const { return m_wheelTurnAngle; }
+	Real wasmGetMaxWheelExtension() const { return m_maximumWheelExtension; }
+	Real wasmGetMaxWheelCompression() const { return m_maximumWheelCompression; }
+#endif
+
 protected:
 
 
@@ -492,6 +520,10 @@ public:
 	
 
 	static void parseLocomotorTemplateDefinition(INI* ini);
+
+#ifdef WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY
+	Int wasmGetTemplateCount() const { return static_cast<Int>(m_locomotorTemplates.size()); }
+#endif
 
 protected:
 

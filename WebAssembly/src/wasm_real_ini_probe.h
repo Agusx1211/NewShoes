@@ -202,6 +202,69 @@ struct RealAIDataIniProbeResult
 	bool america_first_build_automatically_build = false;
 };
 
+struct RealLocomotorIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool locomotor_store_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t template_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool basic_human_found = false;
+	bool missile_defender_found = false;
+	bool humvee_found = false;
+	bool comanche_found = false;
+	float basic_human_speed = 0.0f;
+	float basic_human_speed_damaged = 0.0f;
+	float basic_human_turn_rate = 0.0f;
+	float basic_human_acceleration = 0.0f;
+	float basic_human_braking = 0.0f;
+	int basic_human_surfaces = 0;
+	int basic_human_appearance = 0;
+	int basic_human_z_behavior = 0;
+	int basic_human_move_priority = 0;
+	bool basic_human_stick_to_ground = false;
+	float missile_defender_speed = 0.0f;
+	int missile_defender_move_priority = 0;
+	float humvee_speed = 0.0f;
+	float humvee_speed_damaged = 0.0f;
+	float humvee_turn_rate = 0.0f;
+	float humvee_acceleration = 0.0f;
+	float humvee_braking = 0.0f;
+	float humvee_min_turn_speed = 0.0f;
+	float humvee_turn_pivot_offset = 0.0f;
+	float humvee_wheel_turn_angle = 0.0f;
+	float humvee_max_wheel_extension = 0.0f;
+	float humvee_max_wheel_compression = 0.0f;
+	int humvee_surfaces = 0;
+	int humvee_appearance = 0;
+	int humvee_z_behavior = 0;
+	bool humvee_stick_to_ground = false;
+	bool humvee_has_suspension = false;
+	bool humvee_can_move_backward = false;
+	float comanche_speed = 0.0f;
+	float comanche_speed_damaged = 0.0f;
+	float comanche_turn_rate = 0.0f;
+	float comanche_acceleration = 0.0f;
+	float comanche_lift = 0.0f;
+	float comanche_lift_damaged = 0.0f;
+	float comanche_braking = 0.0f;
+	float comanche_preferred_height = 0.0f;
+	int comanche_surfaces = 0;
+	int comanche_appearance = 0;
+	int comanche_z_behavior = 0;
+	int comanche_airborne_targeting_height = 0;
+	bool comanche_allow_airborne_motive_force = false;
+	bool comanche_apply_2d_friction_when_airborne = false;
+	bool comanche_locomotor_works_when_dead = false;
+};
+
 struct RealScienceIniProbeResult
 {
 	bool attempted = false;
@@ -891,6 +954,7 @@ RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
 RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path);
 RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_path);
+RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);

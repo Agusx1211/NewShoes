@@ -31,6 +31,7 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
 constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
+constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -313,6 +314,85 @@ void copy_ai_data_probe(const RealAIDataIniProbeResult &ai_data, ArchiveProbeRes
 	result.ai_data_america_first_build_angle = ai_data.america_first_build_angle;
 	result.ai_data_america_first_build_automatically_build =
 		ai_data.america_first_build_automatically_build;
+}
+
+void copy_locomotor_probe(const RealLocomotorIniProbeResult &locomotor, ArchiveProbeResult &result)
+{
+	result.locomotor_attempted = locomotor.attempted;
+	result.locomotor_ok = locomotor.ok;
+	result.locomotor_loaded_archives = locomotor.loaded_archives;
+	result.locomotor_file_exists = locomotor.file_exists;
+	result.locomotor_name_key_generator_loaded =
+		locomotor.name_key_generator_loaded;
+	result.locomotor_store_loaded = locomotor.locomotor_store_loaded;
+	result.locomotor_original_ini_load = locomotor.original_ini_load;
+	result.locomotor_bytes = locomotor.bytes;
+	result.locomotor_parsed_fields = locomotor.parsed_fields;
+	result.locomotor_template_count = locomotor.template_count;
+	result.locomotor_source = locomotor.source;
+	result.locomotor_basic_human_found = locomotor.basic_human_found;
+	result.locomotor_missile_defender_found = locomotor.missile_defender_found;
+	result.locomotor_humvee_found = locomotor.humvee_found;
+	result.locomotor_comanche_found = locomotor.comanche_found;
+	result.locomotor_basic_human_speed = locomotor.basic_human_speed;
+	result.locomotor_basic_human_speed_damaged =
+		locomotor.basic_human_speed_damaged;
+	result.locomotor_basic_human_turn_rate = locomotor.basic_human_turn_rate;
+	result.locomotor_basic_human_acceleration =
+		locomotor.basic_human_acceleration;
+	result.locomotor_basic_human_braking = locomotor.basic_human_braking;
+	result.locomotor_basic_human_surfaces = locomotor.basic_human_surfaces;
+	result.locomotor_basic_human_appearance = locomotor.basic_human_appearance;
+	result.locomotor_basic_human_z_behavior = locomotor.basic_human_z_behavior;
+	result.locomotor_basic_human_move_priority =
+		locomotor.basic_human_move_priority;
+	result.locomotor_basic_human_stick_to_ground =
+		locomotor.basic_human_stick_to_ground;
+	result.locomotor_missile_defender_speed = locomotor.missile_defender_speed;
+	result.locomotor_missile_defender_move_priority =
+		locomotor.missile_defender_move_priority;
+	result.locomotor_humvee_speed = locomotor.humvee_speed;
+	result.locomotor_humvee_speed_damaged = locomotor.humvee_speed_damaged;
+	result.locomotor_humvee_turn_rate = locomotor.humvee_turn_rate;
+	result.locomotor_humvee_acceleration = locomotor.humvee_acceleration;
+	result.locomotor_humvee_braking = locomotor.humvee_braking;
+	result.locomotor_humvee_min_turn_speed = locomotor.humvee_min_turn_speed;
+	result.locomotor_humvee_turn_pivot_offset =
+		locomotor.humvee_turn_pivot_offset;
+	result.locomotor_humvee_wheel_turn_angle =
+		locomotor.humvee_wheel_turn_angle;
+	result.locomotor_humvee_max_wheel_extension =
+		locomotor.humvee_max_wheel_extension;
+	result.locomotor_humvee_max_wheel_compression =
+		locomotor.humvee_max_wheel_compression;
+	result.locomotor_humvee_surfaces = locomotor.humvee_surfaces;
+	result.locomotor_humvee_appearance = locomotor.humvee_appearance;
+	result.locomotor_humvee_z_behavior = locomotor.humvee_z_behavior;
+	result.locomotor_humvee_stick_to_ground = locomotor.humvee_stick_to_ground;
+	result.locomotor_humvee_has_suspension = locomotor.humvee_has_suspension;
+	result.locomotor_humvee_can_move_backward =
+		locomotor.humvee_can_move_backward;
+	result.locomotor_comanche_speed = locomotor.comanche_speed;
+	result.locomotor_comanche_speed_damaged =
+		locomotor.comanche_speed_damaged;
+	result.locomotor_comanche_turn_rate = locomotor.comanche_turn_rate;
+	result.locomotor_comanche_acceleration = locomotor.comanche_acceleration;
+	result.locomotor_comanche_lift = locomotor.comanche_lift;
+	result.locomotor_comanche_lift_damaged = locomotor.comanche_lift_damaged;
+	result.locomotor_comanche_braking = locomotor.comanche_braking;
+	result.locomotor_comanche_preferred_height =
+		locomotor.comanche_preferred_height;
+	result.locomotor_comanche_surfaces = locomotor.comanche_surfaces;
+	result.locomotor_comanche_appearance = locomotor.comanche_appearance;
+	result.locomotor_comanche_z_behavior = locomotor.comanche_z_behavior;
+	result.locomotor_comanche_airborne_targeting_height =
+		locomotor.comanche_airborne_targeting_height;
+	result.locomotor_comanche_allow_airborne_motive_force =
+		locomotor.comanche_allow_airborne_motive_force;
+	result.locomotor_comanche_apply_2d_friction_when_airborne =
+		locomotor.comanche_apply_2d_friction_when_airborne;
+	result.locomotor_comanche_locomotor_works_when_dead =
+		locomotor.comanche_locomotor_works_when_dead;
 }
 
 void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeResult &result)
@@ -1166,6 +1246,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_default_ai_data_ini =
 				archive_file_system.doesFileExist(DEFAULT_AI_DATA_INI_PATH);
 			result.has_ai_data_ini = archive_file_system.doesFileExist(AI_DATA_INI_PATH);
+			result.has_locomotor_ini = archive_file_system.doesFileExist(LOCOMOTOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
 			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
 			result.has_control_bar_scheme_ini =
@@ -1233,6 +1314,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_default_ai_data_ini && result.has_science_ini) {
 		copy_ai_data_probe(probe_original_ai_data_ini_load(archive_path), result);
 		result.ok = result.ok && result.ai_data_ok;
+	}
+	if (result.loaded && result.has_locomotor_ini) {
+		copy_locomotor_probe(probe_original_locomotor_ini_load(archive_path), result);
+		result.ok = result.ok && result.locomotor_ok;
 	}
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);
