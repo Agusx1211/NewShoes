@@ -1643,6 +1643,12 @@ shares structure and follows behind.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
+- [x] Link original `Win32Device/Common/Win32CDManager.cpp` into the wasm
+      bootstrap and harness-test `CreateCDManager()->init()` against the
+      browser Win32 drive shims, proving startup reaches a no-CD-drives state
+      without blocking. This is the CD-manager device preflight only; the
+      GameClient CD-check prompts still need to route through browser asset
+      readiness instead of physical media.
 - [ ] Persistence: user prefs / saves to IDBFS.
 
 ### Data load with original code

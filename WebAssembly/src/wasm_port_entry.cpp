@@ -4,6 +4,7 @@
 #include <string>
 
 #include "wasm_archive_probe.h"
+#include "wasm_cdmanager_probe.h"
 #include "wasm_globaldata_probe.h"
 
 #include "Common/Debug.h"
@@ -59,6 +60,7 @@ UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
 GlobalDataProbeResult g_global_data_probe;
 CommandLineProbeResult g_command_line_probe;
+CDManagerProbeResult g_cd_manager_probe;
 std::string g_state_json;
 
 struct ArchiveMountState
@@ -238,6 +240,14 @@ void run_original_command_line_probe()
 		g_command_line_probe.y_resolution);
 }
 
+void run_original_cd_manager_probe()
+{
+	g_cd_manager_probe = probe_original_cd_manager();
+	std::printf("cnc-port: cdmanager probe ok=%d drives=%d\n",
+		g_cd_manager_probe.ok ? 1 : 0,
+		g_cd_manager_probe.drive_count);
+}
+
 void probe_registered_archive_set_for_boot()
 {
 	g_archive_mount.boot_probe_attempted = g_archive_mount.registered;
@@ -398,6 +408,7 @@ void ensure_booted()
 		run_original_debug_log_probe();
 		run_original_global_data_probe();
 		run_original_command_line_probe();
+		run_original_cd_manager_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -422,7 +433,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[16000];
+	char buffer[17000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
@@ -436,6 +447,7 @@ const char *write_state_json()
 	const std::string global_data_shell_map_name_json =
 		json_escape(g_global_data_probe.shell_map_name);
 	const std::string command_line_source_json = json_escape(g_command_line_probe.source);
+	const std::string cd_manager_source_json = json_escape(g_cd_manager_probe.source);
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -486,6 +498,9 @@ const char *write_state_json()
 		"\"shellMapOn\":%s,\"playSizzle\":%s,\"animateWindows\":%s,"
 		"\"scriptDebug\":%s,\"particleEdit\":%s,\"winCursors\":%s,"
 		"\"playStats\":%d,\"chipSetType\":%d},"
+		"\"cdManagerProbe\":{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
+		"\"created\":%s,\"initialized\":%s,\"driveCount\":%d,"
+		"\"noCdDrives\":%s},"
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
 		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
@@ -595,6 +610,13 @@ const char *write_state_json()
 		g_command_line_probe.win_cursors ? "true" : "false",
 		g_command_line_probe.play_stats,
 		g_command_line_probe.chip_set_type,
+		cd_manager_source_json.c_str(),
+		g_cd_manager_probe.attempted ? "true" : "false",
+		g_cd_manager_probe.ok ? "true" : "false",
+		g_cd_manager_probe.created ? "true" : "false",
+		g_cd_manager_probe.initialized ? "true" : "false",
+		g_cd_manager_probe.drive_count,
+		g_cd_manager_probe.no_cd_drives ? "true" : "false",
 		g_debug_handlers_installed ? "true" : "false",
 		g_debug_probe_ok ? "true" : "false",
 		g_debug_message_count,

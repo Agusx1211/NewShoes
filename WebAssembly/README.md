@@ -102,7 +102,12 @@ an original `GameEngine/Common/RandomValue.cpp` deterministic probe so the
 harness can prove original code is present in the loaded wasm module. It also
 reports a browser-backed `emscripten_get_now()` timing probe through the harness
 state so manual and scheduled bootstrap ticks can be checked for monotonic
-advancement before the real engine timing layer replaces the bootstrap.
+advancement before the real engine timing layer replaces the bootstrap. The
+bootstrap also links original `Win32Device/Common/Win32CDManager.cpp` and
+reports `cdManagerProbe`, proving the browser Win32 drive shims let the original
+CD manager initialize to a no-drive state without blocking. GameClient CD-start
+prompts still need to be routed through browser asset readiness before engine
+startup is complete.
 The selected baseline flags are:
 
 - ES module output with `MODULARIZE=1` / `EXPORT_ES6=1`.

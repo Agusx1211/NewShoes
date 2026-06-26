@@ -159,6 +159,17 @@ function assertCommandLineProbe(state, label) {
   }
 }
 
+function assertCDManagerProbe(state, label) {
+  const probe = state.cdManagerProbe;
+  if (!probe?.ok || probe.source !== "Win32Device/Common/Win32CDManager.cpp") {
+    throw new Error(`${label} CD manager probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.created || !probe.initialized || probe.driveCount !== 0 || !probe.noCdDrives) {
+    throw new Error(`${label} CD manager browser no-CD state incomplete: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
@@ -218,11 +229,13 @@ try {
     assertCommonDebugLog(bootResult.state, "boot");
     assertGlobalDataProbe(bootResult.state, "boot");
     assertCommandLineProbe(bootResult.state, "boot");
+    assertCDManagerProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: globaldata probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: commandline probe ok=1");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: cdmanager probe ok=1");
     await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {

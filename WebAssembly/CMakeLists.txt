@@ -2851,9 +2851,15 @@ target_link_libraries(zh_gamenetwork_core PUBLIC
   zh_wwdownload
 )
 
+set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+)
+
 add_executable(cnc-port
   src/wasm_archive_probe.cpp
+  src/wasm_cdmanager_probe.cpp
   src/wasm_port_entry.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
 set_target_properties(cnc-port PROPERTIES
