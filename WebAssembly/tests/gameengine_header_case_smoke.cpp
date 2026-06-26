@@ -1,6 +1,8 @@
 #include "PreRTS.h"
 
 #include "Common/OVERRIDE.h"
+#include "convert.h"
+#include "font.h"
 #include "GameLOgic/GameLogic.h"
 #include "GameLogic/Module/Diemodule.h"
 #include "LightEnvironment.h"
@@ -8,6 +10,7 @@
 #include "hmdldef.h"
 #include "lib/baseType.h"
 #include "snappts.h"
+#include "streakrender.h"
 #include "vector3i.h"
 #include "WW3D2/ColType.h"
 #include "WW3D2/Light.h"

@@ -787,6 +787,13 @@ shares structure and follows behind.
       decal/particle/snap-point support, and strip/metal/motion helpers after
       resolving case-sensitive header bridges, Win32 string aliases, and
       localized clang/MSVC loop-scope/template lookup fixes.
+- [x] Expand `zh_ww3d2_compile_frontier` to 55 original WW3D2 sources by adding
+      animation channel/morph/raw animation bodies, material-info helpers,
+      texture filename metadata, DX8 renderer debugger compile coverage, and
+      text-texture helper coverage after resolving original header
+      forward-declaration gaps, case-sensitive `font.h` / `convert.h` /
+      `streakrender.h` bridges, opaque GDI handle typedefs, and localized
+      `StringClass` mutable-buffer fixes.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -806,8 +813,9 @@ shares structure and follows behind.
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the current
-      DirectX 8 backend, GDI text handle, texture/material declaration,
-      Miles/WWAudio binding, SR utility include, and remaining renderer
+      DirectX 8 backend, GDI text rendering contract, texture/material
+      DirectX backend, Miles/WWAudio binding, Video-for-Windows frame-grab
+      contract, missing Surrender `sr*` utility headers, and remaining renderer
       body blockers instead of substituting renderer behavior.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
