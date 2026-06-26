@@ -35,7 +35,9 @@ ObjectCreationListStore *TheObjectCreationListStore __attribute__((weak)) = null
 PartitionManager *ThePartitionManager __attribute__((weak)) = nullptr;
 TerrainLogic *TheTerrainLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
+#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 FXListStore *TheFXListStore __attribute__((weak)) = nullptr;
+#endif
 
 #define UNUSED_INI_BLOCK_PARSER(name) \
 	void __attribute__((weak)) INI::name(INI *) \
@@ -52,6 +54,7 @@ void __attribute__((weak)) parseReallyLowMHz(INI *)
 	throw INI_UNKNOWN_TOKEN;
 }
 
+#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 FXList::FXList()
 {
 }
@@ -92,6 +95,7 @@ const FXList *FXListStore::findFXList(const char *name) const
 	}
 	return nullptr;
 }
+#endif
 
 VeterancyLevel __attribute__((weak)) Object::getVeterancyLevel() const
 {
@@ -441,7 +445,9 @@ UNUSED_INI_BLOCK_PARSER(parseCredits)
 UNUSED_INI_BLOCK_PARSER(parseWindowTransitions)
 UNUSED_INI_BLOCK_PARSER(parseDialogDefinition)
 UNUSED_INI_BLOCK_PARSER(parseEvaEvent)
+#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 UNUSED_INI_BLOCK_PARSER(parseFXListDefinition)
+#endif
 UNUSED_INI_BLOCK_PARSER(parseInGameUIDefinition)
 UNUSED_INI_BLOCK_PARSER(parseLanguageDefinition)
 UNUSED_INI_BLOCK_PARSER(parseMapDataDefinition)

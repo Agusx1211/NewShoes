@@ -10,6 +10,7 @@ struct ArchiveProbeResult
 	bool loaded = false;
 	bool has_armor_ini = false;
 	bool has_damage_fx_ini = false;
+	bool has_fx_list_ini = false;
 	bool has_default_ai_data_ini = false;
 	bool has_ai_data_ini = false;
 	bool has_locomotor_ini = false;
@@ -48,6 +49,13 @@ struct ArchiveProbeResult
 	bool damage_fx_fx_list_store_loaded = false;
 	bool damage_fx_store_loaded = false;
 	bool damage_fx_original_ini_load = false;
+	bool fx_list_attempted = false;
+	bool fx_list_ok = false;
+	bool fx_list_loaded_archives = false;
+	bool fx_list_file_exists = false;
+	bool fx_list_name_key_generator_loaded = false;
+	bool fx_list_store_loaded = false;
+	bool fx_list_original_ini_load = false;
 	bool science_attempted = false;
 	bool science_ok = false;
 	bool science_loaded_archives = false;
@@ -224,6 +232,9 @@ struct ArchiveProbeResult
 	std::size_t armor_parsed_fields = 0;
 	std::size_t damage_fx_bytes = 0;
 	std::size_t damage_fx_parsed_fields = 0;
+	std::size_t fx_list_bytes = 0;
+	std::size_t fx_list_parsed_fields = 0;
+	std::size_t fx_list_count = 0;
 	std::size_t science_bytes = 0;
 	std::size_t science_parsed_fields = 0;
 	std::size_t science_count = 0;
@@ -318,6 +329,7 @@ struct ArchiveProbeResult
 	std::string game_data_shell_map_name;
 	std::string armor_source;
 	std::string damage_fx_source;
+	std::string fx_list_source;
 	std::string science_source;
 	std::string special_power_source;
 	std::string command_button_source;
@@ -349,6 +361,16 @@ struct ArchiveProbeResult
 	unsigned int damage_fx_small_tank_comanche_throttle = 0;
 	unsigned int damage_fx_structure_flame_throttle = 0;
 	unsigned int damage_fx_infantry_sniper_throttle = 0;
+	bool fx_list_toxin_shell_found = false;
+	bool fx_list_car_crusher_found = false;
+	bool fx_list_damage_tank_struck_found = false;
+	bool fx_list_moab_blast_found = false;
+	bool fx_list_bunker_buster_found = false;
+	std::size_t fx_list_toxin_shell_nuggets = 0;
+	std::size_t fx_list_car_crusher_nuggets = 0;
+	std::size_t fx_list_damage_tank_struck_nuggets = 0;
+	std::size_t fx_list_moab_blast_nuggets = 0;
+	std::size_t fx_list_bunker_buster_nuggets = 0;
 	bool science_america_found = false;
 	bool science_rank3_found = false;
 	bool science_paladin_found = false;

@@ -63,6 +63,7 @@
 FXListStore *TheFXListStore = NULL;					///< the FXList store definition
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 static void adjustVector(Coord3D *vec, const Matrix3D* mtx)
 {
 	if (mtx)
@@ -77,6 +78,7 @@ static void adjustVector(Coord3D *vec, const Matrix3D* mtx)
 		vec->z = vectmp.Z;
 	}
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // PRIVATE CLASSES ///////////////////////////////////////////////////////////////////////////////////
@@ -85,11 +87,16 @@ static void adjustVector(Coord3D *vec, const Matrix3D* mtx)
 //-------------------------------------------------------------------------------------------------
 void FXNugget::doFXObj(const Object* primary, const Object* secondary) const
 {
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+	(void)primary;
+	(void)secondary;
+#else
 	const Coord3D* p = primary ? primary->getPosition() : NULL;
 	const Matrix3D* mtx = primary ? primary->getTransformMatrix() : NULL;
 	const Real speed = 0.0f;	// yes, that's right -- NOT the object's speed.
 	const Coord3D* s = secondary ? secondary->getPosition() : NULL;
 	doFXPos(p, mtx, speed, s);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -101,6 +108,9 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* /*primaryMtx*/, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		AudioEventRTS sound(m_soundName);
 		
 		if (primary) 
@@ -109,10 +119,15 @@ public:
 		}
 
 		TheAudio->addAudioEvent(&sound);
+#endif
 	}
 
 	virtual void doFXObj(const Object* primary, const Object* secondary = NULL) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)secondary;
+#else
 		AudioEventRTS sound(m_soundName);
 		if (primary)
 		{
@@ -121,6 +136,7 @@ public:
 		}
 
 		TheAudio->addAudioEvent(&sound);
+#endif
 	}
 
 
@@ -143,6 +159,7 @@ private:
 EMPTY_DTOR(SoundFXNugget)
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_FXLIST_METADATA_ONLY
 static Real calcDist(const Coord3D& src, const Coord3D& dst)
 {
   Real dx = dst.x - src.x;
@@ -150,6 +167,7 @@ static Real calcDist(const Coord3D& src, const Coord3D& dst)
   Real dz = dst.z - src.z;
   return sqrt(dx*dx + dy*dy + dz*dz);
 }
+#endif
 
 //-------------------------------------------------------------------------------------------------
 class TracerFXNugget : public FXNugget
@@ -171,6 +189,12 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* primaryMtx, const Real primarySpeed, const Coord3D *secondary, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)primaryMtx;
+		(void)primarySpeed;
+		(void)secondary;
+#else
 		if (m_probability <= GameClientRandomValueReal(0, 1))
 			return;
 
@@ -220,6 +244,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary and secondary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -269,6 +294,10 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* /*primaryMtx*/, const Real /*primarySpeed*/, const Coord3D * secondary, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)secondary;
+#else
 		const ThingTemplate* tmpl = TheThingFactory->findTemplate(m_templateName);
 		DEBUG_ASSERTCRASH(tmpl, ("RayEffect %s not found\n",m_templateName.str()));
 		if (primary && secondary && tmpl)
@@ -289,6 +318,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary AND secondary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -326,6 +356,9 @@ public:
 
 	virtual void doFXObj(const Object* primary, const Object* /*secondary*/) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		if (primary)
 		{
 			Real radius = m_radius;
@@ -339,10 +372,14 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* /*primaryMtx*/, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		if (primary)
 		{
 			TheDisplay->createLightPulse(primary, &m_color, 1, m_radius, m_increaseFrames, m_decreaseFrames);
@@ -351,6 +388,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -391,6 +429,9 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* /*primaryMtx*/, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		if (primary)
 		{
 			if (TheTacticalView)
@@ -400,6 +441,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -449,6 +491,9 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* /*primaryMtx*/, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		if (primary)
 		{
 			Int scorch = m_scorch;
@@ -462,6 +507,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -525,6 +571,11 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* primaryMtx, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real overrideRadius ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)primaryMtx;
+		(void)overrideRadius;
+#else
 		if (primary)
 		{
 			reallyDoFX(primary, primaryMtx, NULL, overrideRadius);
@@ -533,10 +584,15 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	virtual void doFXObj(const Object* primary, const Object* secondary) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)secondary;
+#else
 		if (primary)
 		{
 
@@ -561,6 +617,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -593,6 +650,12 @@ protected:
 
 	void reallyDoFX(const Coord3D *primary, const Matrix3D* mtx, const Object* thingToAttachTo, Real overrideRadius ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)mtx;
+		(void)thingToAttachTo;
+		(void)overrideRadius;
+#else
 		Coord3D offset = m_offset;
 		if (mtx)
 		{
@@ -662,6 +725,7 @@ protected:
 				}
 			}
 		}
+#endif
 	}
 
 
@@ -696,11 +760,19 @@ public:
 
 	virtual void doFXPos(const Coord3D *primary, const Matrix3D* primaryMtx, const Real /*primarySpeed*/, const Coord3D * /*secondary*/, const Real /*overrideRadius*/ ) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+		(void)primaryMtx;
+#else
 		DEBUG_CRASH(("You must use the object form for this effect"));
+#endif
 	}
 
 	virtual void doFXObj(const Object* primary, const Object* /*secondary*/) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)primary;
+#else
 		if (primary)
 		{
       // first, try the unadorned name.
@@ -713,6 +785,7 @@ public:
 		{
 			DEBUG_CRASH(("You must have a primary source for this effect"));
 		}
+#endif
 	}
 
 	static void parse(INI *ini, void *instance, void* /*store*/, const void* /*userData*/)
@@ -734,6 +807,10 @@ protected:
 
 	void doFxAtBones(const Object* obj, Int start) const
 	{
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+		(void)obj;
+		(void)start;
+#else
     Coord3D bonePos[MAX_BONE_POINTS];
     Matrix3D boneMtx[MAX_BONE_POINTS];
 
@@ -750,6 +827,7 @@ protected:
 				FXList::doFXPos(m_fx, &p, &m, 0.0f, NULL, 0.0f);
 			}
 		}
+#endif
 	}
 
 private:
@@ -805,6 +883,13 @@ void FXList::clear()
 //-------------------------------------------------------------------------------------------------
 void FXList::doFXPos(const Coord3D *primary, const Matrix3D* primaryMtx, const Real primarySpeed, const Coord3D *secondary, const Real overrideRadius ) const
 {
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+	(void)primary;
+	(void)primaryMtx;
+	(void)primarySpeed;
+	(void)secondary;
+	(void)overrideRadius;
+#else
 	if (ThePartitionManager->getShroudStatusForPlayer(ThePlayerList->getLocalPlayer()->getPlayerIndex(), primary) != CELLSHROUD_CLEAR)
 		return;
 
@@ -812,11 +897,16 @@ void FXList::doFXPos(const Coord3D *primary, const Matrix3D* primaryMtx, const R
 	{
 		(*it)->doFXPos(primary, primaryMtx, primarySpeed, secondary, overrideRadius);
 	}
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
 void FXList::doFXObj(const Object* primary, const Object* secondary) const
 {
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+	(void)primary;
+	(void)secondary;
+#else
 	if (primary && primary->getShroudedStatus(ThePlayerList->getLocalPlayer()->getPlayerIndex()) > OBJECTSHROUD_PARTIAL_CLEAR)
 		return;	//the primary object is fogged or shrouded so don't bother with the effect.
 
@@ -826,6 +916,7 @@ void FXList::doFXObj(const Object* primary, const Object* secondary) const
 		// HERE THE PRIMARY IS THE GUY RECEIVING THE FX, AND SECONDARY MIGHT BE THE GUY DEALING IT
 		(*it)->doFXObj(primary, secondary);
 	}
+#endif
 }
 
 

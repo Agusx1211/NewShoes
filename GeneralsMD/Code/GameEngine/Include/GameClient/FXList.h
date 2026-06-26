@@ -141,6 +141,10 @@ public:
 		m_nuggets.push_back(fxn);
 	}
 
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+	Int wasmGetNuggetCount() const { return static_cast<Int>(m_nuggets.size()); }
+#endif
+
 	/// inline convenience method to avoid having to check for null.
 	inline static void doFXPos(const FXList* fx, const Coord3D *primary, const Matrix3D* primaryMtx = NULL, const Real primarySpeed = 0.0f, const Coord3D *secondary = NULL, const Real overrideRadius = 0.0f)
 	{
@@ -209,6 +213,10 @@ public:
 	
 	static void parseFXListDefinition(INI* ini);
 
+#ifdef WASM_REAL_INI_FXLIST_METADATA_ONLY
+	Int wasmGetListCount() const { return static_cast<Int>(m_fxmap.size()); }
+#endif
+
 private:
 
 	// use the hashing function for Ints. 
@@ -222,4 +230,3 @@ private:
 extern FXListStore *TheFXListStore;
 
 #endif // _FXList_H_
-

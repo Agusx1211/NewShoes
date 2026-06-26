@@ -84,6 +84,34 @@ function assertDamageFXProbe(assetProbe, context) {
   }
 }
 
+function assertFXListProbe(assetProbe, context) {
+  const fxList = assetProbe?.fxList;
+  if (!assetProbe?.inizh?.fxListIni
+      || !fxList?.attempted
+      || !fxList.ok
+      || fxList.source !== "GameEngine/Common/INI.cpp::load + GameClient/FXList.cpp"
+      || !fxList.loadedArchives
+      || !fxList.fileExists
+      || !fxList.nameKeyGeneratorLoaded
+      || !fxList.fxListStoreLoaded
+      || !fxList.originalIniLoad
+      || fxList.bytes <= 100000
+      || fxList.parsedFields !== 11
+      || fxList.lists !== 428
+      || !fxList.samples?.toxinShell?.found
+      || fxList.samples.toxinShell.nuggets !== 1
+      || !fxList.samples?.carCrusher?.found
+      || fxList.samples.carCrusher.nuggets !== 1
+      || !fxList.samples?.damageTankStruck?.found
+      || fxList.samples.damageTankStruck.nuggets !== 6
+      || !fxList.samples?.moabBlast?.found
+      || fxList.samples.moabBlast.nuggets !== 10
+      || !fxList.samples?.bunkerBuster?.found
+      || fxList.samples.bunkerBuster.nuggets !== 8) {
+    throw new Error(`${context} did not parse expected FXList.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeaponProbe(assetProbe, context) {
   const weapon = assetProbe?.weapon;
   const ranger = weapon?.ranger;
@@ -864,6 +892,7 @@ try {
   }
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.damageFXIni
+      || !assetProbe.inizh?.fxListIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.controlBarSchemeIni
@@ -885,6 +914,7 @@ try {
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
   assertArmorProbe(assetProbe, "cnc-port INIZH probe");
   assertDamageFXProbe(assetProbe, "cnc-port INIZH probe");
+  assertFXListProbe(assetProbe, "cnc-port INIZH probe");
   assertWeaponProbe(assetProbe, "cnc-port INIZH probe");
   assertAIDataProbe(assetProbe, "cnc-port INIZH probe");
   assertLocomotorProbe(assetProbe, "cnc-port INIZH probe");

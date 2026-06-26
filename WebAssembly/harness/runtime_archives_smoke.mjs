@@ -121,6 +121,34 @@ function assertDamageFXProbe(assetProbe, context) {
   }
 }
 
+function assertFXListProbe(assetProbe, context) {
+  const fxList = assetProbe?.fxList;
+  if (!assetProbe?.inizh?.fxListIni
+      || !fxList?.attempted
+      || !fxList.ok
+      || fxList.source !== "GameEngine/Common/INI.cpp::load + GameClient/FXList.cpp"
+      || !fxList.loadedArchives
+      || !fxList.fileExists
+      || !fxList.nameKeyGeneratorLoaded
+      || !fxList.fxListStoreLoaded
+      || !fxList.originalIniLoad
+      || fxList.bytes <= 100000
+      || fxList.parsedFields !== 11
+      || fxList.lists !== 428
+      || !fxList.samples?.toxinShell?.found
+      || fxList.samples.toxinShell.nuggets !== 1
+      || !fxList.samples?.carCrusher?.found
+      || fxList.samples.carCrusher.nuggets !== 1
+      || !fxList.samples?.damageTankStruck?.found
+      || fxList.samples.damageTankStruck.nuggets !== 6
+      || !fxList.samples?.moabBlast?.found
+      || fxList.samples.moabBlast.nuggets !== 10
+      || !fxList.samples?.bunkerBuster?.found
+      || fxList.samples.bunkerBuster.nuggets !== 8) {
+    throw new Error(`${context} did not parse expected FXList.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeaponProbe(assetProbe, context) {
   const weapon = assetProbe?.weapon;
   const ranger = weapon?.ranger;
@@ -1047,6 +1075,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.inizh
         || !startupAssets.required?.armor
         || !startupAssets.required?.damageFX
+        || !startupAssets.required?.fxList
         || !startupAssets.required?.science
         || !startupAssets.required?.weapon
         || !startupAssets.required?.particleSystem
@@ -1160,6 +1189,7 @@ try {
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertDamageFXProbe(assetProbe, "aggregate runtime archive probe");
+  assertFXListProbe(assetProbe, "aggregate runtime archive probe");
   assertWeaponProbe(assetProbe, "aggregate runtime archive probe");
   assertAIDataProbe(assetProbe, "aggregate runtime archive probe");
   assertLocomotorProbe(assetProbe, "aggregate runtime archive probe");
@@ -1229,6 +1259,7 @@ try {
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDamageFXProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertFXListProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeaponProbe(bootResult.state.assetProbe, "boot asset probe");
   assertAIDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertLocomotorProbe(bootResult.state.assetProbe, "boot asset probe");

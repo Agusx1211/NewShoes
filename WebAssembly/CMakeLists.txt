@@ -2638,6 +2638,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/FXList.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarScheme.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Image.cpp"
@@ -2668,6 +2669,7 @@ target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
   DISABLE_DEBUG_PROFILE=1
   NO_DEBUG_CRC=1
   WASM_REAL_INI_AI_METADATA_ONLY=1
+  WASM_REAL_INI_FXLIST_METADATA_ONLY=1
   WASM_REAL_INI_LOCOMOTOR_METADATA_ONLY=1
   WASM_REAL_INI_WEAPON_METADATA_ONLY=1
 )

@@ -675,10 +675,14 @@ shares structure and follows behind.
       `Common/INI/INIDamageFX.cpp`, and `Common/DamageFX.cpp` over shipped
       `Data\INI\DamageFX.ini` with focused FXList lookup and regular-veterancy
       throttle coverage.
-- [ ] Replace the focused DamageFX runtime's FXList lookup surface and weak
-      `Object::getVeterancyLevel` bridge with original `FXListStore` /
-      `FXList` parser and `Object` / experience ownership once FX playback and
-      object runtime can link without renderer/audio/gameplay stubs.
+- [x] Link and smoke-test the original FXList INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load` and
+      `GameClient/FXList.cpp` over shipped `Data\INI\FXList.ini` with harness
+      state proving 428 shipped FX lists and selected nugget counts.
+- [ ] Wire DamageFX preflight lookup against the loaded startup `FXListStore`
+      and replace the weak `Object::getVeterancyLevel` bridge with original
+      object / experience ownership once FX playback and object runtime can
+      link without renderer/audio/gameplay stubs.
 - [ ] Link and smoke-test the original map-data INI parse route
       after the real `Common/INI.cpp` reader and its destination
       manager/singleton are available without target-local parser stubs.
@@ -1763,6 +1767,13 @@ shares structure and follows behind.
       veterancy ownership wait for the real FXList/GameClient/renderer/audio
       and object runtime.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\FXList.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load` and `GameClient/FXList.cpp`, expose parsed
+      shipped FX-list metadata as `assetProbe.fxList`, and require it for the
+      Playwright `startupAssets.ready` state. This is a focused FXList
+      metadata preflight only; live FX playback still waits for browser
+      renderer/audio/object ownership.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\ParticleSystem.ini` and `Data\INI\Weapon.ini` from `INIZH.big`
       through original `Common/INI.cpp::load`, `INIParticleSys.cpp`,
       `INIWeapon.cpp`, `GameClient/System/ParticleSys.cpp`, and
@@ -1925,6 +1936,12 @@ shares structure and follows behind.
       state proving `DefaultDamageFX`, `TankDamageFX`, `SmallTankDamageFX`,
       `StructureDamageFX`, and `InfantryDamageFX` plus parsed frame throttle
       values for selected damage types.
+- [x] Shipped FX lists load from real `Data\INI\FXList.ini` through original
+      `Common/INI.cpp::load` and `GameClient/FXList.cpp`, with harness state
+      proving 428 shipped FX lists plus nugget counts for
+      `WeaponFX_ToxinShellWeapon`, `FX_CarOverlappedByCrusher`,
+      `FX_DamageTankStruck`, `WeaponFX_MOAB_Blast`, and
+      `FX_BunkerBusterExplosion`.
 - [x] Shipped weapon templates load from real `Data\INI\Weapon.ini` through
       original `Common/INI.cpp::load`, `Common/INI/INIWeapon.cpp`, and
       `GameLogic/Object/Weapon.cpp`, after loading real

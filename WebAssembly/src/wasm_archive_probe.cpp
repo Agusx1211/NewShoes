@@ -29,6 +29,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
+constexpr const char FX_LIST_INI_PATH[] = "Data\\INI\\FXList.ini";
 constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
 constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
 constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
@@ -167,6 +168,32 @@ void copy_damage_fx_probe(const RealDamageFXIniProbeResult &damage_fx, ArchivePr
 		damage_fx.structure_flame_throttle;
 	result.damage_fx_infantry_sniper_throttle =
 		damage_fx.infantry_sniper_throttle;
+}
+
+void copy_fx_list_probe(const RealFXListIniProbeResult &fx_list, ArchiveProbeResult &result)
+{
+	result.fx_list_attempted = fx_list.attempted;
+	result.fx_list_ok = fx_list.ok;
+	result.fx_list_loaded_archives = fx_list.loaded_archives;
+	result.fx_list_file_exists = fx_list.file_exists;
+	result.fx_list_name_key_generator_loaded = fx_list.name_key_generator_loaded;
+	result.fx_list_store_loaded = fx_list.fx_list_store_loaded;
+	result.fx_list_original_ini_load = fx_list.original_ini_load;
+	result.fx_list_bytes = fx_list.bytes;
+	result.fx_list_parsed_fields = fx_list.parsed_fields;
+	result.fx_list_count = fx_list.list_count;
+	result.fx_list_source = fx_list.source;
+	result.fx_list_toxin_shell_found = fx_list.toxin_shell_found;
+	result.fx_list_toxin_shell_nuggets = fx_list.toxin_shell_nuggets;
+	result.fx_list_car_crusher_found = fx_list.car_crusher_found;
+	result.fx_list_car_crusher_nuggets = fx_list.car_crusher_nuggets;
+	result.fx_list_damage_tank_struck_found = fx_list.damage_tank_struck_found;
+	result.fx_list_damage_tank_struck_nuggets =
+		fx_list.damage_tank_struck_nuggets;
+	result.fx_list_moab_blast_found = fx_list.moab_blast_found;
+	result.fx_list_moab_blast_nuggets = fx_list.moab_blast_nuggets;
+	result.fx_list_bunker_buster_found = fx_list.bunker_buster_found;
+	result.fx_list_bunker_buster_nuggets = fx_list.bunker_buster_nuggets;
 }
 
 void copy_weapon_probe(const RealWeaponIniProbeResult &weapon, ArchiveProbeResult &result)
@@ -1243,6 +1270,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		if (result.loaded) {
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
+			result.has_fx_list_ini = archive_file_system.doesFileExist(FX_LIST_INI_PATH);
 			result.has_default_ai_data_ini =
 				archive_file_system.doesFileExist(DEFAULT_AI_DATA_INI_PATH);
 			result.has_ai_data_ini = archive_file_system.doesFileExist(AI_DATA_INI_PATH);
@@ -1306,6 +1334,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_damage_fx_ini) {
 		copy_damage_fx_probe(probe_original_damage_fx_ini_load(archive_path), result);
 		result.ok = result.ok && result.damage_fx_ok;
+	}
+	if (result.loaded && result.has_fx_list_ini) {
+		copy_fx_list_probe(probe_original_fx_list_ini_load(archive_path), result);
+		result.ok = result.ok && result.fx_list_ok;
 	}
 	if (result.loaded && result.has_weapon_ini && result.has_particle_system_ini) {
 		copy_weapon_probe(probe_original_weapon_ini_load(archive_path), result);

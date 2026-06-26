@@ -70,6 +70,7 @@ constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
+constexpr const char FX_LIST_INI_PATH[] = "Data\\INI\\FXList.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
@@ -384,6 +385,22 @@ std::size_t count_verified_fields(const RealDamageFXIniProbeResult &result)
 		(result.small_tank_comanche_throttle == 3U ? 1U : 0U) +
 		(result.structure_flame_throttle == 9U ? 1U : 0U) +
 		(result.infantry_sniper_throttle == 3U ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealFXListIniProbeResult &result)
+{
+	return
+		(result.list_count == 428 ? 1U : 0U) +
+		(result.toxin_shell_found ? 1U : 0U) +
+		(result.toxin_shell_nuggets == 1 ? 1U : 0U) +
+		(result.car_crusher_found ? 1U : 0U) +
+		(result.car_crusher_nuggets == 1 ? 1U : 0U) +
+		(result.damage_tank_struck_found ? 1U : 0U) +
+		(result.damage_tank_struck_nuggets == 6 ? 1U : 0U) +
+		(result.moab_blast_found ? 1U : 0U) +
+		(result.moab_blast_nuggets == 10 ? 1U : 0U) +
+		(result.bunker_buster_found ? 1U : 0U) +
+		(result.bunker_buster_nuggets == 8 ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeaponIniProbeResult &result)
@@ -1940,6 +1957,129 @@ RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive
 	if (damage_fx_store != nullptr) {
 		delete damage_fx_store;
 	}
+	if (fx_list_store != nullptr) {
+		delete fx_list_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_path)
+{
+	RealFXListIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + GameClient/FXList.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FXListStore *old_fx_list_store = TheFXListStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	FXListStore *fx_list_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(FX_LIST_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ?
+				static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				fx_list_store = NEW FXListStore;
+				TheFXListStore = fx_list_store;
+				fx_list_store->init();
+				result.fx_list_store_loaded = true;
+
+				INI ini;
+				ini.load(AsciiString(FX_LIST_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+				result.list_count =
+					static_cast<std::size_t>(fx_list_store->wasmGetListCount());
+
+				const FXList *toxin_shell =
+					fx_list_store->findFXList("WeaponFX_ToxinShellWeapon");
+				result.toxin_shell_found = toxin_shell != nullptr;
+				result.toxin_shell_nuggets = toxin_shell != nullptr ?
+					static_cast<std::size_t>(toxin_shell->wasmGetNuggetCount()) : 0U;
+
+				const FXList *car_crusher =
+					fx_list_store->findFXList("FX_CarOverlappedByCrusher");
+				result.car_crusher_found = car_crusher != nullptr;
+				result.car_crusher_nuggets = car_crusher != nullptr ?
+					static_cast<std::size_t>(car_crusher->wasmGetNuggetCount()) : 0U;
+
+				const FXList *damage_tank_struck =
+					fx_list_store->findFXList("FX_DamageTankStruck");
+				result.damage_tank_struck_found = damage_tank_struck != nullptr;
+				result.damage_tank_struck_nuggets = damage_tank_struck != nullptr ?
+					static_cast<std::size_t>(
+						damage_tank_struck->wasmGetNuggetCount()) : 0U;
+
+				const FXList *moab_blast =
+					fx_list_store->findFXList("WeaponFX_MOAB_Blast");
+				result.moab_blast_found = moab_blast != nullptr;
+				result.moab_blast_nuggets = moab_blast != nullptr ?
+					static_cast<std::size_t>(moab_blast->wasmGetNuggetCount()) : 0U;
+
+				const FXList *bunker_buster =
+					fx_list_store->findFXList("FX_BunkerBusterExplosion");
+				result.bunker_buster_found = bunker_buster != nullptr;
+				result.bunker_buster_nuggets = bunker_buster != nullptr ?
+					static_cast<std::size_t>(bunker_buster->wasmGetNuggetCount()) : 0U;
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100000 &&
+					result.name_key_generator_loaded &&
+					result.fx_list_store_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 11;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheFXListStore = old_fx_list_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
 	if (fx_list_store != nullptr) {
 		delete fx_list_store;
 	}

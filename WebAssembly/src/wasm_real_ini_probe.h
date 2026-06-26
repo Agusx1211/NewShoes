@@ -75,6 +75,32 @@ struct RealDamageFXIniProbeResult
 	unsigned int infantry_sniper_throttle = 0;
 };
 
+struct RealFXListIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool fx_list_store_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t list_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool toxin_shell_found = false;
+	bool car_crusher_found = false;
+	bool damage_tank_struck_found = false;
+	bool moab_blast_found = false;
+	bool bunker_buster_found = false;
+	std::size_t toxin_shell_nuggets = 0;
+	std::size_t car_crusher_nuggets = 0;
+	std::size_t damage_tank_struck_nuggets = 0;
+	std::size_t moab_blast_nuggets = 0;
+	std::size_t bunker_buster_nuggets = 0;
+};
+
 struct RealWeaponIniProbeResult
 {
 	bool attempted = false;
@@ -952,6 +978,7 @@ struct RealPlayerTemplateIniProbeResult
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
+RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_path);
 RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path);
 RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_path);
 RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archive_path);
