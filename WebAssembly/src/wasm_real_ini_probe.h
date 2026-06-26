@@ -176,6 +176,41 @@ struct RealVideoIniProbeResult
 	std::string sample_filename;
 };
 
+struct RealMultiplayerIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t color_count = 0;
+	std::size_t starting_money_count = 0;
+	std::string source;
+	std::string archive_path;
+	int start_countdown_seconds = 0;
+	int max_beacons_per_player = 0;
+	bool use_shroud = false;
+	bool show_random_player_template = false;
+	bool show_random_start_pos = false;
+	bool show_random_color = false;
+	bool gold_color_found = false;
+	bool purple_color_found = false;
+	unsigned int gold_color = 0;
+	unsigned int purple_night_color = 0;
+	unsigned int chat_default_color = 0;
+	unsigned int chat_game_color = 0;
+	unsigned int chat_player_normal_color = 0;
+	unsigned int chat_self_color = 0;
+	unsigned int chat_map_selected_color = 0;
+	int starting_money_first = 0;
+	int starting_money_second = 0;
+	int starting_money_third = 0;
+	int starting_money_fourth = 0;
+	int default_starting_money = 0;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
@@ -183,3 +218,4 @@ RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);
 RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);
 RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path);
+RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path);

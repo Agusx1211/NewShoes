@@ -609,14 +609,19 @@ shares structure and follows behind.
 - [x] Compile original `Common/INI/INICommandButton.cpp` into the GameClient
       utility slice as compile coverage for command-button parsing against the
       current ControlBar/SpecialPower declarations.
-- [ ] Link and smoke-test the original audio and multiplayer INI parser routes
-      after the real `Common/INI.cpp` reader, audio manager, and full runtime
-      singleton surface are available without target-local parser stubs.
+- [x] Link and smoke-test the original multiplayer INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `INIMultiplayer.cpp`, `MultiplayerSettings.cpp`, `Money.cpp`, and
+      `GameNetwork/GameSpy/Chat.cpp` for shipped settings, color, starting
+      money, and online chat-color data.
+- [ ] Link and smoke-test the original audio INI parser routes after the real
+      `Common/INI.cpp` reader, audio manager, and full runtime singleton
+      surface are available without target-local parser stubs.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
       singleton comes online; they exist only to keep the focused `Armor`,
-      `GameData`, `Science`, `Water`, `Weather`, `Video`, and shipped map-cache
-      preflights on original `INI.cpp::load`
+      `GameData`, `Science`, `Multiplayer`, `Water`, `Weather`, `Video`, and
+      shipped map-cache preflights on original `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
@@ -1613,9 +1618,9 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/Armor/Science/GameData/Water/Weather/Video/GameText/MapCache
-      probes pass. This is bootstrap preflight only; full engine-init missing-asset
-      handling remains open.
+      `ready` after the boot-time archive/Armor/Science/Multiplayer/GameData/
+      Water/Weather/Video/GameText/MapCache probes pass. This is bootstrap
+      preflight only; full engine-init missing-asset handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
@@ -1664,6 +1669,15 @@ shares structure and follows behind.
       Playwright `startupAssets.ready` state. This is a focused science-store
       metadata preflight only; player-owned purchase/prerequisite checks remain
       open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\multiplayer.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INIMultiplayer.cpp`,
+      `Common/MultiplayerSettings.cpp`, `Common/RTS/Money.cpp`, and
+      `GameNetwork/GameSpy/Chat.cpp`, expose parsed shipped multiplayer
+      settings as `assetProbe.multiplayer`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped multiplayer
+      settings preflight only; LAN/GameSpy lobby flow, player templates, and
+      network setup remain open.
 - [x] Extend the wasm bootstrap archive preflight to load the real English
       CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
       with Playwright coverage for the CSF file, known labels, and
@@ -1730,6 +1744,12 @@ shares structure and follows behind.
       runtime-archive harness state proving 95 science definitions, base/rank
       science lookup, Paladin purchase/grantable metadata, and translated
       display/description labels.
+- [x] Shipped multiplayer settings load from real
+      `Data\INI\multiplayer.ini` through original `Common/INI.cpp::load`,
+      `Common/INI/INIMultiplayer.cpp`, `Common/MultiplayerSettings.cpp`,
+      `Common/RTS/Money.cpp`, and `GameNetwork/GameSpy/Chat.cpp`, with harness
+      state proving countdown/beacon/shroud flags, 8 multiplayer colors, 4
+      starting-money choices/default, and selected online chat colors.
 - [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the

@@ -30,6 +30,7 @@ namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
+constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -162,6 +163,40 @@ void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchivePr
 	result.game_data_default_structure_rubble_height = game_data.default_structure_rubble_height;
 	result.game_data_group_select_volume_base = game_data.group_select_volume_base;
 	result.game_data_max_particle_count = game_data.max_particle_count;
+}
+
+void copy_multiplayer_probe(const RealMultiplayerIniProbeResult &multiplayer, ArchiveProbeResult &result)
+{
+	result.multiplayer_attempted = multiplayer.attempted;
+	result.multiplayer_ok = multiplayer.ok;
+	result.multiplayer_loaded_archives = multiplayer.loaded_archives;
+	result.multiplayer_file_exists = multiplayer.file_exists;
+	result.multiplayer_original_ini_load = multiplayer.original_ini_load;
+	result.multiplayer_bytes = multiplayer.bytes;
+	result.multiplayer_parsed_fields = multiplayer.parsed_fields;
+	result.multiplayer_color_count = multiplayer.color_count;
+	result.multiplayer_starting_money_count = multiplayer.starting_money_count;
+	result.multiplayer_source = multiplayer.source;
+	result.multiplayer_start_countdown_seconds = multiplayer.start_countdown_seconds;
+	result.multiplayer_max_beacons_per_player = multiplayer.max_beacons_per_player;
+	result.multiplayer_use_shroud = multiplayer.use_shroud;
+	result.multiplayer_show_random_player_template = multiplayer.show_random_player_template;
+	result.multiplayer_show_random_start_pos = multiplayer.show_random_start_pos;
+	result.multiplayer_show_random_color = multiplayer.show_random_color;
+	result.multiplayer_gold_color_found = multiplayer.gold_color_found;
+	result.multiplayer_purple_color_found = multiplayer.purple_color_found;
+	result.multiplayer_gold_color = multiplayer.gold_color;
+	result.multiplayer_purple_night_color = multiplayer.purple_night_color;
+	result.multiplayer_chat_default_color = multiplayer.chat_default_color;
+	result.multiplayer_chat_game_color = multiplayer.chat_game_color;
+	result.multiplayer_chat_player_normal_color = multiplayer.chat_player_normal_color;
+	result.multiplayer_chat_self_color = multiplayer.chat_self_color;
+	result.multiplayer_chat_map_selected_color = multiplayer.chat_map_selected_color;
+	result.multiplayer_starting_money_first = multiplayer.starting_money_first;
+	result.multiplayer_starting_money_second = multiplayer.starting_money_second;
+	result.multiplayer_starting_money_third = multiplayer.starting_money_third;
+	result.multiplayer_starting_money_fourth = multiplayer.starting_money_fourth;
+	result.multiplayer_default_starting_money = multiplayer.default_starting_money;
 }
 
 void copy_water_probe(const RealWaterIniProbeResult &water, ArchiveProbeResult &result)
@@ -328,6 +363,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
+			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
@@ -370,6 +406,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);
 		result.ok = result.ok && result.science_ok;
+	}
+	if (result.loaded && result.has_multiplayer_ini) {
+		copy_multiplayer_probe(probe_original_multiplayer_ini_load(archive_path), result);
+		result.ok = result.ok && result.multiplayer_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

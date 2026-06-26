@@ -139,6 +139,39 @@ function assertVideoProbe(assetProbe, context) {
   }
 }
 
+function assertMultiplayerProbe(assetProbe, context) {
+  const multiplayer = assetProbe?.multiplayer;
+  if (!assetProbe?.inizh?.multiplayerIni
+      || !multiplayer?.attempted
+      || !multiplayer.ok
+      || multiplayer.source !== "GameEngine/Common/INI.cpp::load + INIMultiplayer.cpp + MultiplayerSettings.cpp + GameSpy/Chat.cpp"
+      || !multiplayer.loadedArchives
+      || !multiplayer.fileExists
+      || !multiplayer.originalIniLoad
+      || multiplayer.parsedFields !== 22
+      || multiplayer.colors !== 8
+      || multiplayer.startingMoneyChoices !== 4
+      || multiplayer.startCountdownSeconds !== 5
+      || multiplayer.maxBeaconsPerPlayer !== 3
+      || multiplayer.useShroud !== false
+      || multiplayer.showRandomPlayerTemplate !== true
+      || multiplayer.showRandomStartPos !== true
+      || multiplayer.showRandomColor !== true
+      || !multiplayer.goldColorFound
+      || !multiplayer.purpleColorFound
+      || multiplayer.goldColor !== 0xffdde20d
+      || multiplayer.purpleNightColor !== 0xffdf009c
+      || multiplayer.chatDefaultColor !== 0xffffffff
+      || multiplayer.chatGameColor !== 0xffffffff
+      || multiplayer.chatPlayerNormalColor !== 0xffff0000
+      || multiplayer.chatSelfColor !== 0xffff8000
+      || multiplayer.chatMapSelectedColor !== 0xffffff00
+      || multiplayer.defaultStartingMoney !== 10000
+      || JSON.stringify(multiplayer.startingMoney) !== JSON.stringify([5000, 10000, 20000, 50000])) {
+    throw new Error(`${context} did not parse expected Multiplayer.ini settings: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertStartupAssetsMissing(state, context) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== false || startupAssets.status !== "missing_runtime_archives") {
@@ -193,6 +226,7 @@ try {
   }
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.weaponIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
@@ -202,6 +236,7 @@ try {
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");
+  assertMultiplayerProbe(assetProbe, "cnc-port INIZH probe");
   assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 
   const result = await page.evaluate(async ({ moduleUrl, archiveUrl }) => {

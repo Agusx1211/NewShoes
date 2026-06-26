@@ -12,6 +12,7 @@
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/Science.h"
 #include "Common/WellKnownKeys.h"
@@ -20,6 +21,7 @@
 #include "GameClient/Snow.h"
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/Water.h"
+#include "GameNetwork/GameSpy/PeerDefs.h"
 #include "GameLogic/Armor.h"
 #include "GameLogic/Damage.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -35,6 +37,7 @@ namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
+constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -153,6 +156,33 @@ std::size_t count_verified_fields(const RealVideoIniProbeResult &result)
 		(!result.first_filename.empty() ? 1U : 0U) +
 		(!result.sample_internal_name.empty() ? 1U : 0U) +
 		(!result.sample_filename.empty() ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealMultiplayerIniProbeResult &result)
+{
+	return
+		(result.start_countdown_seconds == 5 ? 1U : 0U) +
+		(result.max_beacons_per_player == 3 ? 1U : 0U) +
+		(!result.use_shroud ? 1U : 0U) +
+		(result.show_random_player_template ? 1U : 0U) +
+		(result.show_random_start_pos ? 1U : 0U) +
+		(result.show_random_color ? 1U : 0U) +
+		(result.color_count == 8 ? 1U : 0U) +
+		(result.gold_color_found ? 1U : 0U) +
+		(result.gold_color == 0xFFDDE20DU ? 1U : 0U) +
+		(result.purple_color_found ? 1U : 0U) +
+		(result.purple_night_color == 0xFFDF009CU ? 1U : 0U) +
+		(result.starting_money_count == 4 ? 1U : 0U) +
+		(result.starting_money_first == 5000 ? 1U : 0U) +
+		(result.starting_money_second == 10000 ? 1U : 0U) +
+		(result.starting_money_third == 20000 ? 1U : 0U) +
+		(result.starting_money_fourth == 50000 ? 1U : 0U) +
+		(result.default_starting_money == 10000 ? 1U : 0U) +
+		(result.chat_default_color == 0xFFFFFFFFU ? 1U : 0U) +
+		(result.chat_game_color == 0xFFFFFFFFU ? 1U : 0U) +
+		(result.chat_player_normal_color == 0xFFFF0000U ? 1U : 0U) +
+		(result.chat_self_color == 0xFFFF8000U ? 1U : 0U) +
+		(result.chat_map_selected_color == 0xFFFFFF00U ? 1U : 0U);
 }
 
 void reset_water_settings()
@@ -747,6 +777,148 @@ RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path)
 		TheFileSystem = old_file_system;
 		TheArchiveFileSystem = old_archive_file_system;
 		TheLocalFileSystem = old_local_file_system;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *archive_path)
+{
+	RealMultiplayerIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INIMultiplayer.cpp + MultiplayerSettings.cpp + GameSpy/Chat.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	MultiplayerSettings *old_multiplayer_settings = TheMultiplayerSettings;
+	Color old_game_spy_color[GSCOLOR_MAX];
+	std::copy(GameSpyColor, GameSpyColor + GSCOLOR_MAX, old_game_spy_color);
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	MultiplayerSettings *multiplayer_settings_to_delete = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheMultiplayerSettings = nullptr;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(MULTIPLAYER_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				INI ini;
+				ini.load(AsciiString(MULTIPLAYER_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				MultiplayerSettings *settings = TheMultiplayerSettings;
+				multiplayer_settings_to_delete = settings;
+				if (settings != nullptr) {
+					result.start_countdown_seconds = settings->getStartCountdownTimerSeconds();
+					result.max_beacons_per_player = settings->getMaxBeaconsPerPlayer();
+					result.use_shroud = settings->isShroudInMultiplayer();
+					result.show_random_player_template = settings->showRandomPlayerTemplate();
+					result.show_random_start_pos = settings->showRandomStartPos();
+					result.show_random_color = settings->showRandomColor();
+					result.color_count = static_cast<std::size_t>(settings->getNumColors());
+
+					const MultiplayerColorDefinition *gold = settings->getColor(0);
+					result.gold_color_found =
+						gold != nullptr && gold->getTooltipName() == AsciiString("Color:Gold");
+					if (gold != nullptr) {
+						result.gold_color = static_cast<unsigned int>(gold->getColor());
+					}
+
+					const MultiplayerColorDefinition *purple = settings->getColor(6);
+					result.purple_color_found =
+						purple != nullptr && purple->getTooltipName() == AsciiString("Color:Purple");
+					if (purple != nullptr) {
+						result.purple_night_color = static_cast<unsigned int>(purple->getNightColor());
+					}
+
+					const MultiplayerStartingMoneyList &starting_money =
+						settings->getStartingMoneyList();
+					result.starting_money_count = starting_money.size();
+					if (starting_money.size() > 0) {
+						result.starting_money_first =
+							static_cast<int>(starting_money[0].countMoney());
+					}
+					if (starting_money.size() > 1) {
+						result.starting_money_second =
+							static_cast<int>(starting_money[1].countMoney());
+					}
+					if (starting_money.size() > 2) {
+						result.starting_money_third =
+							static_cast<int>(starting_money[2].countMoney());
+					}
+					if (starting_money.size() > 3) {
+						result.starting_money_fourth =
+							static_cast<int>(starting_money[3].countMoney());
+					}
+					if (!starting_money.empty()) {
+						result.default_starting_money =
+							static_cast<int>(settings->getDefaultStartingMoney().countMoney());
+					}
+				}
+
+				result.chat_default_color =
+					static_cast<unsigned int>(GameSpyColor[GSCOLOR_DEFAULT]);
+				result.chat_game_color =
+					static_cast<unsigned int>(GameSpyColor[GSCOLOR_GAME]);
+				result.chat_player_normal_color =
+					static_cast<unsigned int>(GameSpyColor[GSCOLOR_PLAYER_NORMAL]);
+				result.chat_self_color =
+					static_cast<unsigned int>(GameSpyColor[GSCOLOR_CHAT_SELF]);
+				result.chat_map_selected_color =
+					static_cast<unsigned int>(GameSpyColor[GSCOLOR_MAP_SELECTED]);
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 2000 &&
+					result.original_ini_load &&
+					TheMultiplayerSettings != nullptr &&
+					result.parsed_fields == 22;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	if (multiplayer_settings_to_delete == nullptr &&
+		TheMultiplayerSettings != old_multiplayer_settings) {
+		multiplayer_settings_to_delete = TheMultiplayerSettings;
+	}
+
+	TheMultiplayerSettings = old_multiplayer_settings;
+	std::copy(old_game_spy_color, old_game_spy_color + GSCOLOR_MAX, GameSpyColor);
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (multiplayer_settings_to_delete != nullptr &&
+		multiplayer_settings_to_delete != old_multiplayer_settings) {
+		delete multiplayer_settings_to_delete;
 	}
 
 	shutdownMemoryManager();
