@@ -85,6 +85,9 @@ shares structure and follows behind.
 - [x] Add lowercase include wrappers for original WWDebug allocator and WWLib
       Targa headers (`fastallocator.h`, `targa.h`) under the case-sensitive
       wasm build.
+- [x] Add a case-variant include wrapper for original `WWLib/RefCount.h`
+      users reached by W3D terrain tile data under the case-sensitive wasm
+      build.
 - [x] Add lowercase include wrappers for original WWLib surface and PCX headers
       (`surface.h`, `pcx.h`) under the case-sensitive wasm build.
 - [x] Add portable `strupr`/`strrev` compatibility for original WWLib utility
@@ -755,6 +758,17 @@ shares structure and follows behind.
       `Win32Device/Common/Win32CDManager.cpp`, and
       `Win32Device/Common/Win32OSDisplay.cpp`, with current browser no-CD and
       message-box compatibility shims.
+- [x] Compile additional lightweight original W3D device leaves in the
+      real-header compile frontier: `W3DThingFactory.cpp`,
+      `W3DGameLogic.cpp`, and `TileData.cpp`, after fixing
+      `WorldHeightMap.h` self-containment and the `WWLib/RefCount.h`
+      case-sensitive include path.
+- [ ] Compile original W3D renderer-adjacent factories and lexicon
+      (`W3DModuleFactory.cpp`, `W3DFunctionLexicon.cpp`, height-map leaves)
+      after the WW3D2/Direct3D include surface, GDI font handle compatibility,
+      legacy function-pointer table casting, and fixed-underlying
+      `GameLODLevel` forward declaration are handled as part of the renderer
+      port.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

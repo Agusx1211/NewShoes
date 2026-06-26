@@ -36,7 +36,7 @@
 #include "WWLib/RefCount.h"
 #include "WWMath/Vector3.h"
 #include "W3DDevice/GameClient/TileData.h"
-#include "../../gameengine/include/common/MapObject.h"
+#include "Common/MapObject.h"
 
 #include "Common/STLTypedefs.h"
 typedef std::vector<ICoord2D> VecICoord2D;
@@ -89,6 +89,8 @@ class InputStream;
 class OutputStream;
 class DataChunkInput;
 struct DataChunkInfo;
+class TerrainTextureClass;
+class AlphaTerrainTextureClass;
 class AlphaEdgeTextureClass;
 
 #define NUM_ALPHA_TILES 12
