@@ -57,6 +57,12 @@ RadiusDecalTemplate::RadiusDecalTemplate() :
 // ------------------------------------------------------------------------------------------------
 void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, const Player* owningPlayer, RadiusDecal& result) const
 {
+#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
+	(void)pos;
+	(void)radius;
+	(void)owningPlayer;
+	result.clear();
+#else
 	result.clear();
 	
 	if (owningPlayer == NULL)
@@ -95,6 +101,7 @@ void RadiusDecalTemplate::createRadiusDecal(const Coord3D& pos, Real radius, con
 			DEBUG_CRASH(("Unable to add decal %s\n",decalInfo.m_ShadowName));
 		}
 	}
+#endif
 }
 
 // ------------------------------------------------------------------------------------------------

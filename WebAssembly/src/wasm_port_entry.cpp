@@ -272,6 +272,7 @@ bool startup_boot_ini_present()
 	return g_archive_probe.has_armor_ini &&
 		g_archive_probe.has_damage_fx_ini &&
 		g_archive_probe.has_fx_list_ini &&
+		g_archive_probe.has_object_creation_list_ini &&
 		g_archive_probe.has_default_ai_data_ini &&
 		g_archive_probe.has_locomotor_ini &&
 		g_archive_probe.has_command_button_ini &&
@@ -319,6 +320,16 @@ bool startup_fx_list_ready()
 	return g_archive_probe.has_fx_list_ini &&
 		g_archive_probe.fx_list_attempted &&
 		g_archive_probe.fx_list_ok;
+}
+
+bool startup_object_creation_list_ready()
+{
+	return g_archive_probe.has_object_creation_list_ini &&
+		g_archive_probe.has_fx_list_ini &&
+		g_archive_probe.has_weapon_ini &&
+		g_archive_probe.has_particle_system_ini &&
+		g_archive_probe.object_creation_list_attempted &&
+		g_archive_probe.object_creation_list_ok;
 }
 
 bool startup_weapon_ready()
@@ -468,6 +479,7 @@ bool startup_assets_ready()
 		startup_armor_ready() &&
 		startup_damage_fx_ready() &&
 		startup_fx_list_ready() &&
+		startup_object_creation_list_ready() &&
 		startup_weapon_ready() &&
 		startup_ai_data_ready() &&
 		startup_locomotor_ready() &&
@@ -512,6 +524,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_fx_list_ready()) {
 		return "fx_list_probe_failed";
+	}
+	if (!startup_object_creation_list_ready()) {
+		return "object_creation_list_probe_failed";
 	}
 	if (!startup_weapon_ready()) {
 		return "weapon_probe_failed";
@@ -601,6 +616,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_fx_list_ready()) {
 		return "Runtime BIG archive set did not pass the FXList.ini startup probe.";
+	}
+	if (!startup_object_creation_list_ready()) {
+		return "Runtime BIG archive set did not pass the ObjectCreationList.ini startup probe.";
 	}
 	if (!startup_weapon_ready()) {
 		return "Runtime BIG archive set did not pass the Weapon.ini startup probe.";
@@ -782,6 +800,84 @@ std::string build_fx_list_probe_json()
 		g_archive_probe.fx_list_moab_blast_nuggets,
 		g_archive_probe.fx_list_bunker_buster_found ? "true" : "false",
 		g_archive_probe.fx_list_bunker_buster_nuggets);
+
+	return buffer;
+}
+
+std::string build_object_creation_list_probe_json()
+{
+	char buffer[4600];
+	const std::string source_json =
+		json_escape(g_archive_probe.object_creation_list_source);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"fxListBytes\":%zu,\"weaponBytes\":%zu,\"particleBytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,"
+		"\"defaultFileExists\":%s,\"fileExists\":%s,"
+		"\"fxListFileExists\":%s,\"weaponFileExists\":%s,"
+		"\"particleFileExists\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"fxListStoreLoaded\":%s,\"particleSystemManagerLoaded\":%s,"
+		"\"weaponStoreLoaded\":%s,\"objectCreationListStoreLoaded\":%s,"
+		"\"fxListOriginalIniLoad\":%s,"
+		"\"particleOriginalIniLoad\":%s,\"weaponOriginalIniLoad\":%s,"
+		"\"defaultOriginalIniLoad\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"lists\":%zu,\"nuggets\":%zu,"
+		"\"samples\":{\"fireWallSegment\":{\"found\":%s,\"nuggets\":%zu},"
+		"\"technicalCrush\":{\"found\":%s,\"nuggets\":%zu},"
+		"\"daisyCutter\":{\"found\":%s,\"nuggets\":%zu},"
+		"\"scudStorm\":{\"found\":%s,\"nuggets\":%zu},"
+		"\"sneakAttackTunnel\":{\"found\":%s,\"nuggets\":%zu}}}",
+		g_archive_probe.object_creation_list_attempted ? "true" : "false",
+		g_archive_probe.object_creation_list_ok ? "true" : "false",
+		g_archive_probe.object_creation_list_bytes,
+		g_archive_probe.object_creation_list_fx_list_bytes,
+		g_archive_probe.object_creation_list_weapon_bytes,
+		g_archive_probe.object_creation_list_particle_bytes,
+		source_json.c_str(),
+		g_archive_probe.object_creation_list_loaded_archives ? "true" : "false",
+		g_archive_probe.object_creation_list_default_file_exists ? "true" : "false",
+		g_archive_probe.object_creation_list_file_exists ? "true" : "false",
+		g_archive_probe.object_creation_list_fx_list_file_exists ? "true" : "false",
+		g_archive_probe.object_creation_list_weapon_file_exists ? "true" : "false",
+		g_archive_probe.object_creation_list_particle_file_exists ? "true" : "false",
+		g_archive_probe.object_creation_list_name_key_generator_loaded ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_fx_list_store_loaded ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_particle_system_manager_loaded ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_weapon_store_loaded ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_store_loaded ? "true" : "false",
+		g_archive_probe.object_creation_list_fx_list_original_ini_load ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_particle_original_ini_load ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_weapon_original_ini_load ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_default_original_ini_load ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_original_ini_load ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_parsed_fields,
+		g_archive_probe.object_creation_list_count,
+		g_archive_probe.object_creation_list_nugget_count,
+		g_archive_probe.object_creation_list_fire_wall_segment_found ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_fire_wall_segment_nuggets,
+		g_archive_probe.object_creation_list_technical_crush_found ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_technical_crush_nuggets,
+		g_archive_probe.object_creation_list_daisy_cutter_found ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_daisy_cutter_nuggets,
+		g_archive_probe.object_creation_list_scud_storm_found ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_scud_storm_nuggets,
+		g_archive_probe.object_creation_list_sneak_attack_tunnel_found ?
+			"true" : "false",
+		g_archive_probe.object_creation_list_sneak_attack_tunnel_nuggets);
 
 	return buffer;
 }
@@ -1736,6 +1832,8 @@ const char *write_state_json()
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
 	const std::string fx_list_probe_json = build_fx_list_probe_json();
+	const std::string object_creation_list_probe_json =
+		build_object_creation_list_probe_json();
 	const std::string weapon_probe_json = build_weapon_probe_json();
 	const std::string ai_data_probe_json = build_ai_data_probe_json();
 	const std::string locomotor_probe_json = build_locomotor_probe_json();
@@ -1905,6 +2003,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"damageFXIni\":%s,\"fxListIni\":%s,"
+		"\"defaultObjectCreationListIni\":%s,\"objectCreationListIni\":%s,"
 		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"locomotorIni\":%s,"
 		"\"commandButtonIni\":%s,"
 		"\"commandSetIni\":%s,\"controlBarSchemeIni\":%s,"
@@ -1928,6 +2027,7 @@ const char *write_state_json()
 		"\"tankMicrowaveDamage\":%.3f},"
 		"\"damageFX\":%s,"
 		"\"fxList\":%s,"
+		"\"objectCreationList\":%s,"
 		"\"weapon\":%s,"
 		"\"aiData\":%s,"
 		"\"locomotor\":%s,"
@@ -2095,6 +2195,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"fxList\":%s,\"science\":%s,"
+		"\"objectCreationList\":%s,"
 		"\"weapon\":%s,\"particleSystem\":%s,\"aiData\":%s,"
 		"\"locomotor\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
@@ -2156,6 +2257,8 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
 		g_archive_probe.has_fx_list_ini ? "true" : "false",
+		g_archive_probe.has_default_object_creation_list_ini ? "true" : "false",
+		g_archive_probe.has_object_creation_list_ini ? "true" : "false",
 		g_archive_probe.has_default_ai_data_ini ? "true" : "false",
 		g_archive_probe.has_ai_data_ini ? "true" : "false",
 		g_archive_probe.has_locomotor_ini ? "true" : "false",
@@ -2202,6 +2305,7 @@ const char *write_state_json()
 		g_archive_probe.armor_tank_microwave_damage,
 		damage_fx_probe_json.c_str(),
 		fx_list_probe_json.c_str(),
+		object_creation_list_probe_json.c_str(),
 		weapon_probe_json.c_str(),
 		ai_data_probe_json.c_str(),
 		locomotor_probe_json.c_str(),
@@ -2564,6 +2668,7 @@ const char *write_state_json()
 		startup_damage_fx_ready() ? "true" : "false",
 		startup_fx_list_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
+		startup_object_creation_list_ready() ? "true" : "false",
 		startup_weapon_ready() ? "true" : "false",
 		g_archive_probe.has_particle_system_ini ? "true" : "false",
 		startup_ai_data_ready() ? "true" : "false",

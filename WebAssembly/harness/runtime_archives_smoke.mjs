@@ -149,6 +149,48 @@ function assertFXListProbe(assetProbe, context) {
   }
 }
 
+function assertObjectCreationListProbe(assetProbe, context) {
+  const objectCreationList = assetProbe?.objectCreationList;
+  const samples = objectCreationList?.samples;
+  if (!assetProbe?.inizh?.objectCreationListIni
+      || !objectCreationList?.attempted
+      || !objectCreationList.ok
+      || objectCreationList.source !== "GameEngine/Common/INI.cpp::load + ObjectCreationList.cpp metadata"
+      || !objectCreationList.loadedArchives
+      || !objectCreationList.fileExists
+      || !objectCreationList.fxListFileExists
+      || !objectCreationList.weaponFileExists
+      || !objectCreationList.particleFileExists
+      || !objectCreationList.nameKeyGeneratorLoaded
+      || !objectCreationList.fxListStoreLoaded
+      || !objectCreationList.particleSystemManagerLoaded
+      || !objectCreationList.weaponStoreLoaded
+      || !objectCreationList.objectCreationListStoreLoaded
+      || !objectCreationList.fxListOriginalIniLoad
+      || !objectCreationList.particleOriginalIniLoad
+      || !objectCreationList.weaponOriginalIniLoad
+      || !objectCreationList.originalIniLoad
+      || objectCreationList.bytes <= 100000
+      || objectCreationList.fxListBytes <= 100000
+      || objectCreationList.weaponBytes <= 100000
+      || objectCreationList.particleBytes <= 100000
+      || objectCreationList.parsedFields !== 12
+      || objectCreationList.lists !== 281
+      || objectCreationList.nuggets !== 704
+      || !samples?.fireWallSegment?.found
+      || samples.fireWallSegment.nuggets <= 0
+      || !samples?.technicalCrush?.found
+      || samples.technicalCrush.nuggets <= 0
+      || !samples?.daisyCutter?.found
+      || samples.daisyCutter.nuggets <= 0
+      || !samples?.scudStorm?.found
+      || samples.scudStorm.nuggets <= 0
+      || !samples?.sneakAttackTunnel?.found
+      || samples.sneakAttackTunnel.nuggets <= 0) {
+    throw new Error(`${context} did not parse expected ObjectCreationList.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeaponProbe(assetProbe, context) {
   const weapon = assetProbe?.weapon;
   const ranger = weapon?.ranger;
@@ -1168,6 +1210,8 @@ try {
   const assetProbe = mountResult.state?.assetProbe;
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.damageFXIni
+      || !assetProbe.inizh?.fxListIni
+      || !assetProbe.inizh?.objectCreationListIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.controlBarSchemeIni
@@ -1190,6 +1234,7 @@ try {
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertDamageFXProbe(assetProbe, "aggregate runtime archive probe");
   assertFXListProbe(assetProbe, "aggregate runtime archive probe");
+  assertObjectCreationListProbe(assetProbe, "aggregate runtime archive probe");
   assertWeaponProbe(assetProbe, "aggregate runtime archive probe");
   assertAIDataProbe(assetProbe, "aggregate runtime archive probe");
   assertLocomotorProbe(assetProbe, "aggregate runtime archive probe");
@@ -1260,6 +1305,7 @@ try {
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDamageFXProbe(bootResult.state.assetProbe, "boot asset probe");
   assertFXListProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertObjectCreationListProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeaponProbe(bootResult.state.assetProbe, "boot asset probe");
   assertAIDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertLocomotorProbe(bootResult.state.assetProbe, "boot asset probe");

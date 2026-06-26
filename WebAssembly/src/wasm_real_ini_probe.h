@@ -101,6 +101,47 @@ struct RealFXListIniProbeResult
 	std::size_t bunker_buster_nuggets = 0;
 };
 
+struct RealObjectCreationListIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool default_file_exists = false;
+	bool file_exists = false;
+	bool fx_list_file_exists = false;
+	bool weapon_file_exists = false;
+	bool particle_file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool fx_list_store_loaded = false;
+	bool particle_system_manager_loaded = false;
+	bool weapon_store_loaded = false;
+	bool object_creation_list_store_loaded = false;
+	bool fx_list_original_ini_load = false;
+	bool particle_original_ini_load = false;
+	bool weapon_original_ini_load = false;
+	bool default_original_ini_load = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t fx_list_bytes = 0;
+	std::size_t weapon_bytes = 0;
+	std::size_t particle_bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t list_count = 0;
+	std::size_t nugget_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool fire_wall_segment_found = false;
+	bool technical_crush_found = false;
+	bool daisy_cutter_found = false;
+	bool scud_storm_found = false;
+	bool sneak_attack_tunnel_found = false;
+	std::size_t fire_wall_segment_nuggets = 0;
+	std::size_t technical_crush_nuggets = 0;
+	std::size_t daisy_cutter_nuggets = 0;
+	std::size_t scud_storm_nuggets = 0;
+	std::size_t sneak_attack_tunnel_nuggets = 0;
+};
+
 struct RealWeaponIniProbeResult
 {
 	bool attempted = false;
@@ -979,6 +1020,7 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
 RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_path);
+RealObjectCreationListIniProbeResult probe_original_object_creation_list_ini_load(const char *archive_path);
 RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path);
 RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_path);
 RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archive_path);

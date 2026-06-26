@@ -112,6 +112,48 @@ function assertFXListProbe(assetProbe, context) {
   }
 }
 
+function assertObjectCreationListProbe(assetProbe, context) {
+  const objectCreationList = assetProbe?.objectCreationList;
+  const samples = objectCreationList?.samples;
+  if (!assetProbe?.inizh?.objectCreationListIni
+      || !objectCreationList?.attempted
+      || !objectCreationList.ok
+      || objectCreationList.source !== "GameEngine/Common/INI.cpp::load + ObjectCreationList.cpp metadata"
+      || !objectCreationList.loadedArchives
+      || !objectCreationList.fileExists
+      || !objectCreationList.fxListFileExists
+      || !objectCreationList.weaponFileExists
+      || !objectCreationList.particleFileExists
+      || !objectCreationList.nameKeyGeneratorLoaded
+      || !objectCreationList.fxListStoreLoaded
+      || !objectCreationList.particleSystemManagerLoaded
+      || !objectCreationList.weaponStoreLoaded
+      || !objectCreationList.objectCreationListStoreLoaded
+      || !objectCreationList.fxListOriginalIniLoad
+      || !objectCreationList.particleOriginalIniLoad
+      || !objectCreationList.weaponOriginalIniLoad
+      || !objectCreationList.originalIniLoad
+      || objectCreationList.bytes <= 100000
+      || objectCreationList.fxListBytes <= 100000
+      || objectCreationList.weaponBytes <= 100000
+      || objectCreationList.particleBytes <= 100000
+      || objectCreationList.parsedFields !== 12
+      || objectCreationList.lists !== 281
+      || objectCreationList.nuggets !== 704
+      || !samples?.fireWallSegment?.found
+      || samples.fireWallSegment.nuggets <= 0
+      || !samples?.technicalCrush?.found
+      || samples.technicalCrush.nuggets <= 0
+      || !samples?.daisyCutter?.found
+      || samples.daisyCutter.nuggets <= 0
+      || !samples?.scudStorm?.found
+      || samples.scudStorm.nuggets <= 0
+      || !samples?.sneakAttackTunnel?.found
+      || samples.sneakAttackTunnel.nuggets <= 0) {
+    throw new Error(`${context} did not parse expected ObjectCreationList.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeaponProbe(assetProbe, context) {
   const weapon = assetProbe?.weapon;
   const ranger = weapon?.ranger;
@@ -893,6 +935,7 @@ try {
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.damageFXIni
       || !assetProbe.inizh?.fxListIni
+      || !assetProbe.inizh?.objectCreationListIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
       || !assetProbe.inizh?.controlBarSchemeIni
@@ -915,6 +958,7 @@ try {
   assertArmorProbe(assetProbe, "cnc-port INIZH probe");
   assertDamageFXProbe(assetProbe, "cnc-port INIZH probe");
   assertFXListProbe(assetProbe, "cnc-port INIZH probe");
+  assertObjectCreationListProbe(assetProbe, "cnc-port INIZH probe");
   assertWeaponProbe(assetProbe, "cnc-port INIZH probe");
   assertAIDataProbe(assetProbe, "cnc-port INIZH probe");
   assertLocomotorProbe(assetProbe, "cnc-port INIZH probe");

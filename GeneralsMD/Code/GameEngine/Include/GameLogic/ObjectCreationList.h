@@ -135,6 +135,10 @@ public:
 
 	void addObjectCreationNugget(ObjectCreationNugget* nugget);
 
+#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
+	Int wasmGetNuggetCount() const { return static_cast<Int>(m_nuggets.size()); }
+#endif
+
 	// Kris: August 23, 2003
 	// All OCLs return the first object that is created (or NULL if not applicable).
 	inline static Object* create( const ObjectCreationList* ocl, const Object* primaryObj, const Coord3D *primary, const Coord3D *secondary, Bool createOwner, UnsignedInt lifetimeFrames = 0 )
@@ -206,6 +210,11 @@ public:
 
 	void addObjectCreationNugget(ObjectCreationNugget* nugget);
 
+#ifdef WASM_REAL_INI_OBJECT_CREATION_LIST_METADATA_ONLY
+	Int wasmGetListCount() const { return static_cast<Int>(m_ocls.size()); }
+	Int wasmGetNuggetCount() const { return static_cast<Int>(m_nuggets.size()); }
+#endif
+
 private:
 
 	typedef std::map< NameKeyType, ObjectCreationList, std::less<NameKeyType> > ObjectCreationListMap;
@@ -221,4 +230,3 @@ private:
 extern ObjectCreationListStore *TheObjectCreationListStore;
 
 #endif // _ObjectCreationList_H_
-

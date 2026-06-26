@@ -30,6 +30,9 @@ namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char FX_LIST_INI_PATH[] = "Data\\INI\\FXList.ini";
+constexpr const char DEFAULT_OBJECT_CREATION_LIST_INI_PATH[] =
+	"Data\\INI\\Default\\ObjectCreationList.ini";
+constexpr const char OBJECT_CREATION_LIST_INI_PATH[] = "Data\\INI\\ObjectCreationList.ini";
 constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
 constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
 constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
@@ -194,6 +197,72 @@ void copy_fx_list_probe(const RealFXListIniProbeResult &fx_list, ArchiveProbeRes
 	result.fx_list_moab_blast_nuggets = fx_list.moab_blast_nuggets;
 	result.fx_list_bunker_buster_found = fx_list.bunker_buster_found;
 	result.fx_list_bunker_buster_nuggets = fx_list.bunker_buster_nuggets;
+}
+
+void copy_object_creation_list_probe(
+	const RealObjectCreationListIniProbeResult &object_creation_list,
+	ArchiveProbeResult &result)
+{
+	result.object_creation_list_attempted = object_creation_list.attempted;
+	result.object_creation_list_ok = object_creation_list.ok;
+	result.object_creation_list_loaded_archives = object_creation_list.loaded_archives;
+	result.object_creation_list_default_file_exists =
+		object_creation_list.default_file_exists;
+	result.object_creation_list_file_exists = object_creation_list.file_exists;
+	result.object_creation_list_fx_list_file_exists =
+		object_creation_list.fx_list_file_exists;
+	result.object_creation_list_weapon_file_exists =
+		object_creation_list.weapon_file_exists;
+	result.object_creation_list_particle_file_exists =
+		object_creation_list.particle_file_exists;
+	result.object_creation_list_name_key_generator_loaded =
+		object_creation_list.name_key_generator_loaded;
+	result.object_creation_list_fx_list_store_loaded =
+		object_creation_list.fx_list_store_loaded;
+	result.object_creation_list_particle_system_manager_loaded =
+		object_creation_list.particle_system_manager_loaded;
+	result.object_creation_list_weapon_store_loaded =
+		object_creation_list.weapon_store_loaded;
+	result.object_creation_list_store_loaded =
+		object_creation_list.object_creation_list_store_loaded;
+	result.object_creation_list_fx_list_original_ini_load =
+		object_creation_list.fx_list_original_ini_load;
+	result.object_creation_list_particle_original_ini_load =
+		object_creation_list.particle_original_ini_load;
+	result.object_creation_list_weapon_original_ini_load =
+		object_creation_list.weapon_original_ini_load;
+	result.object_creation_list_default_original_ini_load =
+		object_creation_list.default_original_ini_load;
+	result.object_creation_list_original_ini_load =
+		object_creation_list.original_ini_load;
+	result.object_creation_list_bytes = object_creation_list.bytes;
+	result.object_creation_list_fx_list_bytes = object_creation_list.fx_list_bytes;
+	result.object_creation_list_weapon_bytes = object_creation_list.weapon_bytes;
+	result.object_creation_list_particle_bytes = object_creation_list.particle_bytes;
+	result.object_creation_list_parsed_fields = object_creation_list.parsed_fields;
+	result.object_creation_list_count = object_creation_list.list_count;
+	result.object_creation_list_nugget_count = object_creation_list.nugget_count;
+	result.object_creation_list_source = object_creation_list.source;
+	result.object_creation_list_fire_wall_segment_found =
+		object_creation_list.fire_wall_segment_found;
+	result.object_creation_list_technical_crush_found =
+		object_creation_list.technical_crush_found;
+	result.object_creation_list_daisy_cutter_found =
+		object_creation_list.daisy_cutter_found;
+	result.object_creation_list_scud_storm_found =
+		object_creation_list.scud_storm_found;
+	result.object_creation_list_sneak_attack_tunnel_found =
+		object_creation_list.sneak_attack_tunnel_found;
+	result.object_creation_list_fire_wall_segment_nuggets =
+		object_creation_list.fire_wall_segment_nuggets;
+	result.object_creation_list_technical_crush_nuggets =
+		object_creation_list.technical_crush_nuggets;
+	result.object_creation_list_daisy_cutter_nuggets =
+		object_creation_list.daisy_cutter_nuggets;
+	result.object_creation_list_scud_storm_nuggets =
+		object_creation_list.scud_storm_nuggets;
+	result.object_creation_list_sneak_attack_tunnel_nuggets =
+		object_creation_list.sneak_attack_tunnel_nuggets;
 }
 
 void copy_weapon_probe(const RealWeaponIniProbeResult &weapon, ArchiveProbeResult &result)
@@ -1271,6 +1340,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
 			result.has_fx_list_ini = archive_file_system.doesFileExist(FX_LIST_INI_PATH);
+			result.has_default_object_creation_list_ini =
+				archive_file_system.doesFileExist(DEFAULT_OBJECT_CREATION_LIST_INI_PATH);
+			result.has_object_creation_list_ini =
+				archive_file_system.doesFileExist(OBJECT_CREATION_LIST_INI_PATH);
 			result.has_default_ai_data_ini =
 				archive_file_system.doesFileExist(DEFAULT_AI_DATA_INI_PATH);
 			result.has_ai_data_ini = archive_file_system.doesFileExist(AI_DATA_INI_PATH);
@@ -1338,6 +1411,16 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_fx_list_ini) {
 		copy_fx_list_probe(probe_original_fx_list_ini_load(archive_path), result);
 		result.ok = result.ok && result.fx_list_ok;
+	}
+	if (result.loaded &&
+			result.has_object_creation_list_ini &&
+			result.has_fx_list_ini &&
+			result.has_weapon_ini &&
+			result.has_particle_system_ini) {
+		copy_object_creation_list_probe(
+			probe_original_object_creation_list_ini_load(archive_path),
+			result);
+		result.ok = result.ok && result.object_creation_list_ok;
 	}
 	if (result.loaded && result.has_weapon_ini && result.has_particle_system_ini) {
 		copy_weapon_probe(probe_original_weapon_ini_load(archive_path), result);

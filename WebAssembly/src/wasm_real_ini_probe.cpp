@@ -48,6 +48,7 @@
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
 #include "GameLogic/Locomotor.h"
+#include "GameLogic/ObjectCreationList.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Weapon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -64,6 +65,9 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
 constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
+constexpr const char DEFAULT_OBJECT_CREATION_LIST_INI_PATH[] =
+	"Data\\INI\\Default\\ObjectCreationList.ini";
+constexpr const char OBJECT_CREATION_LIST_INI_PATH[] = "Data\\INI\\ObjectCreationList.ini";
 constexpr const char DEFAULT_AI_DATA_INI_PATH[] = "Data\\INI\\Default\\AIData.ini";
 constexpr const char AI_DATA_INI_PATH[] = "Data\\INI\\AIData.ini";
 constexpr const char LOCOMOTOR_INI_PATH[] = "Data\\INI\\Locomotor.ini";
@@ -401,6 +405,23 @@ std::size_t count_verified_fields(const RealFXListIniProbeResult &result)
 		(result.moab_blast_nuggets == 10 ? 1U : 0U) +
 		(result.bunker_buster_found ? 1U : 0U) +
 		(result.bunker_buster_nuggets == 8 ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealObjectCreationListIniProbeResult &result)
+{
+	return
+		(result.list_count == 281 ? 1U : 0U) +
+		(result.nugget_count == 704 ? 1U : 0U) +
+		(result.fire_wall_segment_found ? 1U : 0U) +
+		(result.fire_wall_segment_nuggets > 0 ? 1U : 0U) +
+		(result.technical_crush_found ? 1U : 0U) +
+		(result.technical_crush_nuggets > 0 ? 1U : 0U) +
+		(result.daisy_cutter_found ? 1U : 0U) +
+		(result.daisy_cutter_nuggets > 0 ? 1U : 0U) +
+		(result.scud_storm_found ? 1U : 0U) +
+		(result.scud_storm_nuggets > 0 ? 1U : 0U) +
+		(result.sneak_attack_tunnel_found ? 1U : 0U) +
+		(result.sneak_attack_tunnel_nuggets > 0 ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeaponIniProbeResult &result)
@@ -2080,6 +2101,239 @@ RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_pat
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
+	if (fx_list_store != nullptr) {
+		delete fx_list_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealObjectCreationListIniProbeResult probe_original_object_creation_list_ini_load(const char *archive_path)
+{
+	RealObjectCreationListIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + ObjectCreationList.cpp metadata";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FXListStore *old_fx_list_store = TheFXListStore;
+	ParticleSystemManager *old_particle_system_manager = TheParticleSystemManager;
+	WeaponStore *old_weapon_store = TheWeaponStore;
+	ObjectCreationListStore *old_object_creation_list_store = TheObjectCreationListStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	FXListStore *fx_list_store = nullptr;
+	ProbeParticleSystemManager *particle_system_manager = nullptr;
+	WeaponStore *weapon_store = nullptr;
+	ObjectCreationListStore *object_creation_list_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo default_file_info = {};
+			result.default_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(DEFAULT_OBJECT_CREATION_LIST_INI_PATH),
+					&default_file_info) &&
+				default_file_info.sizeHigh == 0 &&
+				default_file_info.sizeLow > 0;
+
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(OBJECT_CREATION_LIST_INI_PATH),
+					&file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ?
+				static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			FileInfo fx_list_file_info = {};
+			result.fx_list_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(FX_LIST_INI_PATH),
+					&fx_list_file_info) &&
+				fx_list_file_info.sizeHigh == 0 &&
+				fx_list_file_info.sizeLow > 0;
+			result.fx_list_bytes = result.fx_list_file_exists ?
+				static_cast<std::size_t>(fx_list_file_info.sizeLow) : 0U;
+
+			FileInfo weapon_file_info = {};
+			result.weapon_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(WEAPON_INI_PATH),
+					&weapon_file_info) &&
+				weapon_file_info.sizeHigh == 0 &&
+				weapon_file_info.sizeLow > 0;
+			result.weapon_bytes = result.weapon_file_exists ?
+				static_cast<std::size_t>(weapon_file_info.sizeLow) : 0U;
+
+			FileInfo particle_file_info = {};
+			result.particle_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(PARTICLE_SYSTEM_INI_PATH),
+					&particle_file_info) &&
+				particle_file_info.sizeHigh == 0 &&
+				particle_file_info.sizeLow > 0;
+			result.particle_bytes = result.particle_file_exists ?
+				static_cast<std::size_t>(particle_file_info.sizeLow) : 0U;
+
+			if (result.file_exists &&
+					result.fx_list_file_exists &&
+					result.weapon_file_exists &&
+					result.particle_file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				fx_list_store = NEW FXListStore;
+				TheFXListStore = fx_list_store;
+				fx_list_store->init();
+				result.fx_list_store_loaded = true;
+
+				INI dependency_ini;
+				dependency_ini.load(AsciiString(FX_LIST_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.fx_list_original_ini_load = true;
+
+				particle_system_manager = NEW ProbeParticleSystemManager;
+				TheParticleSystemManager = particle_system_manager;
+				particle_system_manager->init();
+				result.particle_system_manager_loaded = true;
+				result.particle_original_ini_load = true;
+
+				weapon_store = NEW WeaponStore;
+				TheWeaponStore = weapon_store;
+				weapon_store->init();
+				result.weapon_store_loaded = true;
+
+				initDamageTypeFlags();
+
+				INI weapon_ini;
+				weapon_ini.load(AsciiString(WEAPON_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.weapon_original_ini_load = true;
+
+				object_creation_list_store = NEW ObjectCreationListStore;
+				TheObjectCreationListStore = object_creation_list_store;
+				object_creation_list_store->init();
+				result.object_creation_list_store_loaded = true;
+
+				INI ini;
+				if (result.default_file_exists) {
+					ini.load(
+						AsciiString(DEFAULT_OBJECT_CREATION_LIST_INI_PATH),
+						INI_LOAD_OVERWRITE,
+						nullptr);
+					result.default_original_ini_load = true;
+				}
+				ini.load(AsciiString(OBJECT_CREATION_LIST_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+				result.list_count =
+					static_cast<std::size_t>(
+						object_creation_list_store->wasmGetListCount());
+				result.nugget_count =
+					static_cast<std::size_t>(
+						object_creation_list_store->wasmGetNuggetCount());
+
+				const ObjectCreationList *fire_wall_segment =
+					object_creation_list_store->findObjectCreationList("OCL_FireWallSegment");
+				result.fire_wall_segment_found = fire_wall_segment != nullptr;
+				result.fire_wall_segment_nuggets = fire_wall_segment != nullptr ?
+					static_cast<std::size_t>(fire_wall_segment->wasmGetNuggetCount()) : 0U;
+
+				const ObjectCreationList *technical_crush =
+					object_creation_list_store->findObjectCreationList(
+						"OCL_TechnicalJeep_CrushEffect");
+				result.technical_crush_found = technical_crush != nullptr;
+				result.technical_crush_nuggets = technical_crush != nullptr ?
+					static_cast<std::size_t>(technical_crush->wasmGetNuggetCount()) : 0U;
+
+				const ObjectCreationList *daisy_cutter =
+					object_creation_list_store->findObjectCreationList("SUPERWEAPON_DaisyCutter");
+				result.daisy_cutter_found = daisy_cutter != nullptr;
+				result.daisy_cutter_nuggets = daisy_cutter != nullptr ?
+					static_cast<std::size_t>(daisy_cutter->wasmGetNuggetCount()) : 0U;
+
+				const ObjectCreationList *scud_storm =
+					object_creation_list_store->findObjectCreationList("SUPERWEAPON_ScudStorm");
+				result.scud_storm_found = scud_storm != nullptr;
+				result.scud_storm_nuggets = scud_storm != nullptr ?
+					static_cast<std::size_t>(scud_storm->wasmGetNuggetCount()) : 0U;
+
+				const ObjectCreationList *sneak_attack_tunnel =
+					object_creation_list_store->findObjectCreationList(
+						"OCL_CreateSneakAttackTunnel");
+				result.sneak_attack_tunnel_found = sneak_attack_tunnel != nullptr;
+				result.sneak_attack_tunnel_nuggets = sneak_attack_tunnel != nullptr ?
+					static_cast<std::size_t>(
+						sneak_attack_tunnel->wasmGetNuggetCount()) : 0U;
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100000 &&
+					result.fx_list_bytes > 100000 &&
+					result.weapon_bytes > 100000 &&
+					result.particle_bytes > 100000 &&
+					result.name_key_generator_loaded &&
+					result.fx_list_store_loaded &&
+					result.particle_system_manager_loaded &&
+					result.weapon_store_loaded &&
+					result.object_creation_list_store_loaded &&
+					result.fx_list_original_ini_load &&
+					result.particle_original_ini_load &&
+					result.weapon_original_ini_load &&
+					result.original_ini_load &&
+					result.parsed_fields == 12;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheObjectCreationListStore = old_object_creation_list_store;
+	TheWeaponStore = old_weapon_store;
+	TheParticleSystemManager = old_particle_system_manager;
+	TheFXListStore = old_fx_list_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (object_creation_list_store != nullptr) {
+		delete object_creation_list_store;
+	}
+	if (weapon_store != nullptr) {
+		delete weapon_store;
+	}
+	if (particle_system_manager != nullptr) {
+		delete particle_system_manager;
+	}
 	if (fx_list_store != nullptr) {
 		delete fx_list_store;
 	}

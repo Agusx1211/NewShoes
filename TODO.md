@@ -1942,6 +1942,17 @@ shares structure and follows behind.
       `WeaponFX_ToxinShellWeapon`, `FX_CarOverlappedByCrusher`,
       `FX_DamageTankStruck`, `WeaponFX_MOAB_Blast`, and
       `FX_BunkerBusterExplosion`.
+- [x] Shipped object creation lists load from real
+      `Data\INI\ObjectCreationList.ini` through original `Common/INI.cpp::load`
+      and `GameLogic/Object/ObjectCreationList.cpp` in the wasm metadata-only
+      probe, after loading real FXList, Weapon, and ParticleSystem dependencies;
+      browser harness state proves 281 shipped OCL definitions, 704 nuggets, and
+      sampled entries for firewall segments, technical crush effects, Daisy
+      Cutter, Scud Storm, and Sneak Attack tunnel creation.
+- [ ] Replace the wasm OCL metadata-only creation guards with full runtime object
+      creation once `ThingFactory`, `GameLogic`, `PartitionManager`, terrain,
+      Drawable/FX/audio ownership, and object template loading are linked through
+      the real startup path.
 - [x] Shipped weapon templates load from real `Data\INI\Weapon.ini` through
       original `Common/INI.cpp::load`, `Common/INI/INIWeapon.cpp`, and
       `GameLogic/Object/Weapon.cpp`, after loading real
