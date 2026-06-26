@@ -381,6 +381,7 @@ static inline int _wtoi(const wchar_t *value)
 #define PAGE_READWRITE 0x04
 #define FILE_MAP_WRITE 0x0002
 #define WAIT_OBJECT_0 0x00000000
+#define WAIT_TIMEOUT 0x00000102
 #define INFINITE 0xffffffff
 #define ERROR_SUCCESS 0
 #define ERROR_FILE_NOT_FOUND 2
@@ -1772,6 +1773,11 @@ static inline DWORD SizeofResource(HMODULE, HRSRC)
 static inline HANDLE OpenEvent(DWORD, BOOL, const char *)
 {
 	return nullptr;
+}
+
+static inline HANDLE CreateEvent(void *, BOOL, BOOL, const char *)
+{
+	return reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
 }
 
 static inline BOOL CloseHandle(HANDLE)

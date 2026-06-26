@@ -956,6 +956,12 @@ shares structure and follows behind.
       is compile coverage only; shader assembly, shader creation, and material
       rendering still need browser renderer mappings before any rendering claim
       is done.
+- [x] Start `zh_wwaudio_compile_frontier` with all 19 original
+      `WWVegas/WWAudio` C++ sources after adding the reached Miles/Win32
+      declaration surface, case-sensitive include bridges, and localized
+      clang/MSVC compatibility fixes. This is compile coverage only; the
+      current Miles declarations are inert and do not provide Web Audio
+      playback.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -1000,6 +1006,11 @@ shares structure and follows behind.
       Surrender renderer/object behavior, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer
       behavior.
+- [ ] Replace the compile-only `Mss.H` Miles surface, dummy Win32 event
+      handles, and `_beginthread` delayed-release-thread trap used by
+      `WWVegas/WWAudio` with browser Web Audio scheduling/decoding and a real
+      wasm-safe release/timer contract before linking WWAudio into runtime
+      audio paths.
 - [ ] Map original `WWVegas/wwshade` D3DX shader assembly, Direct3D shader
       creation, shader constants, and material/render-state application to the
       browser renderer pipeline, using the generated headers from original

@@ -24,6 +24,7 @@ set(WWSAVELOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWSaveLoad")
 set(WWUTIL_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/Wwutil")
 set(WWDOWNLOAD_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWDownload")
 set(WWSHADE_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/wwshade")
+set(WWAUDIO_DIR "${ZH_CODE_DIR}/Libraries/Source/WWVegas/WWAudio")
 set(MAIN_DIR "${ZH_CODE_DIR}/Main")
 set(GAMEENGINE_DIR "${ZH_CODE_DIR}/GameEngine")
 set(GAMEENGINE_INCLUDE_DIR "${GAMEENGINE_DIR}/Include")
@@ -1997,6 +1998,69 @@ target_link_libraries(zh_w3d_device_utility PUBLIC
   zh_wwdebug_core
   zh_wwlib_refcount
   zh_wwmath_core
+)
+
+add_library(zh_wwaudio_compile_frontier STATIC
+  "${WWAUDIO_DIR}/AudibleSound.cpp"
+  "${WWAUDIO_DIR}/AudioSaveLoad.cpp"
+  "${WWAUDIO_DIR}/FilteredSound.cpp"
+  "${WWAUDIO_DIR}/Listener.cpp"
+  "${WWAUDIO_DIR}/LogicalListener.cpp"
+  "${WWAUDIO_DIR}/LogicalSound.cpp"
+  "${WWAUDIO_DIR}/Sound3D.cpp"
+  "${WWAUDIO_DIR}/SoundBuffer.cpp"
+  "${WWAUDIO_DIR}/SoundPseudo3D.cpp"
+  "${WWAUDIO_DIR}/SoundScene.cpp"
+  "${WWAUDIO_DIR}/SoundSceneObj.cpp"
+  "${WWAUDIO_DIR}/Threads.cpp"
+  "${WWAUDIO_DIR}/Utils.cpp"
+  "${WWAUDIO_DIR}/WWAudio.cpp"
+  "${WWAUDIO_DIR}/listenerhandle.cpp"
+  "${WWAUDIO_DIR}/sound2dhandle.cpp"
+  "${WWAUDIO_DIR}/sound3dhandle.cpp"
+  "${WWAUDIO_DIR}/soundhandle.cpp"
+  "${WWAUDIO_DIR}/soundstreamhandle.cpp"
+)
+
+target_include_directories(zh_wwaudio_compile_frontier PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWAUDIO_DIR}"
+  "${WWVEGAS_DIR}/Miles6/include"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+)
+
+target_compile_options(zh_wwaudio_compile_frontier PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWAUDIO_DIR}"
+  "-iquote${WWVEGAS_DIR}/Miles6/include"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
 )
 
 add_library(zh_ww3d2_compile_frontier STATIC
