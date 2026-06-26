@@ -2618,6 +2618,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/SpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"

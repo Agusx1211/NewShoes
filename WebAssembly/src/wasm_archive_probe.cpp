@@ -31,6 +31,7 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
+constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -222,6 +223,90 @@ void copy_special_power_probe(const RealSpecialPowerIniProbeResult &special_powe
 		special_power.neutron_missile_initiate_at_location_sound;
 	result.special_power_scud_storm_initiate_sound =
 		special_power.scud_storm_initiate_sound;
+}
+
+void copy_player_template_probe(const RealPlayerTemplateIniProbeResult &player_template, ArchiveProbeResult &result)
+{
+	result.player_template_attempted = player_template.attempted;
+	result.player_template_ok = player_template.ok;
+	result.player_template_loaded_archives = player_template.loaded_archives;
+	result.player_template_file_exists = player_template.file_exists;
+	result.player_template_science_file_exists = player_template.science_file_exists;
+	result.player_template_game_text_loaded = player_template.game_text_loaded;
+	result.player_template_name_key_generator_loaded =
+		player_template.name_key_generator_loaded;
+	result.player_template_science_original_ini_load =
+		player_template.science_original_ini_load;
+	result.player_template_original_ini_load = player_template.original_ini_load;
+	result.player_template_bytes = player_template.bytes;
+	result.player_template_science_bytes = player_template.science_bytes;
+	result.player_template_parsed_fields = player_template.parsed_fields;
+	result.player_template_count = player_template.player_template_count;
+	result.player_template_side_count = player_template.side_count;
+	result.player_template_source = player_template.source;
+	result.player_template_america_found = player_template.america_found;
+	result.player_template_china_found = player_template.china_found;
+	result.player_template_gla_found = player_template.gla_found;
+	result.player_template_observer_found = player_template.observer_found;
+	result.player_template_air_force_found = player_template.air_force_found;
+	result.player_template_boss_found = player_template.boss_found;
+	result.player_template_america_display_name_loaded =
+		player_template.america_display_name_loaded;
+	result.player_template_america_side = player_template.america_side;
+	result.player_template_america_base_side = player_template.america_base_side;
+	result.player_template_america_playable = player_template.america_playable;
+	result.player_template_america_old_faction = player_template.america_old_faction;
+	result.player_template_america_start_money = player_template.america_start_money;
+	result.player_template_america_intrinsic_science_count =
+		player_template.america_intrinsic_science_count;
+	result.player_template_america_intrinsic_science_valid =
+		player_template.america_intrinsic_science_valid;
+	result.player_template_america_starting_building =
+		player_template.america_starting_building;
+	result.player_template_america_starting_unit0 = player_template.america_starting_unit0;
+	result.player_template_america_shortcut_command_set =
+		player_template.america_shortcut_command_set;
+	result.player_template_america_shortcut_win_name =
+		player_template.america_shortcut_win_name;
+	result.player_template_america_shortcut_button_count =
+		player_template.america_shortcut_button_count;
+	result.player_template_america_load_screen = player_template.america_load_screen;
+	result.player_template_america_score_screen = player_template.america_score_screen;
+	result.player_template_america_load_music = player_template.america_load_music;
+	result.player_template_america_score_music = player_template.america_score_music;
+	result.player_template_america_beacon = player_template.america_beacon;
+	result.player_template_observer_is_observer = player_template.observer_is_observer;
+	result.player_template_observer_playable = player_template.observer_playable;
+	result.player_template_observer_side = player_template.observer_side;
+	result.player_template_observer_load_screen = player_template.observer_load_screen;
+	result.player_template_observer_beacon = player_template.observer_beacon;
+	result.player_template_air_force_side = player_template.air_force_side;
+	result.player_template_air_force_base_side = player_template.air_force_base_side;
+	result.player_template_air_force_playable = player_template.air_force_playable;
+	result.player_template_air_force_old_faction = player_template.air_force_old_faction;
+	result.player_template_air_force_starting_building =
+		player_template.air_force_starting_building;
+	result.player_template_air_force_starting_unit0 =
+		player_template.air_force_starting_unit0;
+	result.player_template_air_force_shortcut_command_set =
+		player_template.air_force_shortcut_command_set;
+	result.player_template_air_force_shortcut_button_count =
+		player_template.air_force_shortcut_button_count;
+	result.player_template_boss_side = player_template.boss_side;
+	result.player_template_boss_base_side = player_template.boss_base_side;
+	result.player_template_boss_playable = player_template.boss_playable;
+	result.player_template_boss_old_faction = player_template.boss_old_faction;
+	result.player_template_boss_intrinsic_science_count =
+		player_template.boss_intrinsic_science_count;
+	result.player_template_boss_intrinsic_sciences_valid =
+		player_template.boss_intrinsic_sciences_valid;
+	result.player_template_boss_starting_building = player_template.boss_starting_building;
+	result.player_template_boss_starting_unit0 = player_template.boss_starting_unit0;
+	result.player_template_boss_shortcut_command_set =
+		player_template.boss_shortcut_command_set;
+	result.player_template_boss_shortcut_win_name = player_template.boss_shortcut_win_name;
+	result.player_template_boss_shortcut_button_count =
+		player_template.boss_shortcut_button_count;
 }
 
 void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchiveProbeResult &result)
@@ -518,6 +603,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		if (result.loaded) {
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
+			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
 			result.has_science_ini = archive_file_system.doesFileExist(SCIENCE_INI_PATH);
@@ -569,6 +655,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_special_power_ini && result.has_science_ini && result.has_generals_csf) {
 		copy_special_power_probe(probe_original_special_power_ini_load(archive_path), result);
 		result.ok = result.ok && result.special_power_ok;
+	}
+	if (result.loaded && result.has_player_template_ini && result.has_science_ini && result.has_generals_csf) {
+		copy_player_template_probe(probe_original_player_template_ini_load(archive_path), result);
+		result.ok = result.ok && result.player_template_ok;
 	}
 	if (result.loaded && result.has_multiplayer_ini) {
 		copy_multiplayer_probe(probe_original_multiplayer_ini_load(archive_path), result);

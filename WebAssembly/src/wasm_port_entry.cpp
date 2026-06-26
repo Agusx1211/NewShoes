@@ -312,6 +312,13 @@ bool startup_special_power_ready()
 		g_archive_probe.special_power_ok;
 }
 
+bool startup_player_template_ready()
+{
+	return g_archive_probe.has_player_template_ini &&
+		g_archive_probe.player_template_attempted &&
+		g_archive_probe.player_template_ok;
+}
+
 bool startup_multiplayer_ready()
 {
 	return g_archive_probe.has_multiplayer_ini &&
@@ -379,6 +386,7 @@ bool startup_assets_ready()
 		startup_armor_ready() &&
 		startup_science_ready() &&
 		startup_special_power_ready() &&
+		startup_player_template_ready() &&
 		startup_multiplayer_ready() &&
 		startup_terrain_ready() &&
 		startup_terrain_roads_ready() &&
@@ -412,6 +420,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_special_power_ready()) {
 		return "special_power_probe_failed";
+	}
+	if (!startup_player_template_ready()) {
+		return "player_template_probe_failed";
 	}
 	if (!startup_multiplayer_ready()) {
 		return "multiplayer_probe_failed";
@@ -468,6 +479,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_special_power_ready()) {
 		return "Runtime BIG archive set did not pass the SpecialPower.ini startup probe.";
+	}
+	if (!startup_player_template_ready()) {
+		return "Runtime BIG archive set did not pass the PlayerTemplate.ini startup probe.";
 	}
 	if (!startup_multiplayer_ready()) {
 		return "Runtime BIG archive set did not pass the Multiplayer.ini startup probe.";
@@ -575,7 +589,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[72000];
+	char buffer[86000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
@@ -589,6 +603,58 @@ const char *write_state_json()
 		json_escape(g_archive_probe.special_power_neutron_missile_initiate_at_location_sound);
 	const std::string special_power_scud_sound_json =
 		json_escape(g_archive_probe.special_power_scud_storm_initiate_sound);
+	const std::string player_template_source_json =
+		json_escape(g_archive_probe.player_template_source);
+	const std::string player_template_america_side_json =
+		json_escape(g_archive_probe.player_template_america_side);
+	const std::string player_template_america_base_side_json =
+		json_escape(g_archive_probe.player_template_america_base_side);
+	const std::string player_template_america_starting_building_json =
+		json_escape(g_archive_probe.player_template_america_starting_building);
+	const std::string player_template_america_starting_unit0_json =
+		json_escape(g_archive_probe.player_template_america_starting_unit0);
+	const std::string player_template_america_shortcut_command_set_json =
+		json_escape(g_archive_probe.player_template_america_shortcut_command_set);
+	const std::string player_template_america_shortcut_win_name_json =
+		json_escape(g_archive_probe.player_template_america_shortcut_win_name);
+	const std::string player_template_america_load_screen_json =
+		json_escape(g_archive_probe.player_template_america_load_screen);
+	const std::string player_template_america_score_screen_json =
+		json_escape(g_archive_probe.player_template_america_score_screen);
+	const std::string player_template_america_load_music_json =
+		json_escape(g_archive_probe.player_template_america_load_music);
+	const std::string player_template_america_score_music_json =
+		json_escape(g_archive_probe.player_template_america_score_music);
+	const std::string player_template_america_beacon_json =
+		json_escape(g_archive_probe.player_template_america_beacon);
+	const std::string player_template_observer_side_json =
+		json_escape(g_archive_probe.player_template_observer_side);
+	const std::string player_template_observer_load_screen_json =
+		json_escape(g_archive_probe.player_template_observer_load_screen);
+	const std::string player_template_observer_beacon_json =
+		json_escape(g_archive_probe.player_template_observer_beacon);
+	const std::string player_template_air_force_side_json =
+		json_escape(g_archive_probe.player_template_air_force_side);
+	const std::string player_template_air_force_base_side_json =
+		json_escape(g_archive_probe.player_template_air_force_base_side);
+	const std::string player_template_air_force_starting_building_json =
+		json_escape(g_archive_probe.player_template_air_force_starting_building);
+	const std::string player_template_air_force_starting_unit0_json =
+		json_escape(g_archive_probe.player_template_air_force_starting_unit0);
+	const std::string player_template_air_force_shortcut_command_set_json =
+		json_escape(g_archive_probe.player_template_air_force_shortcut_command_set);
+	const std::string player_template_boss_side_json =
+		json_escape(g_archive_probe.player_template_boss_side);
+	const std::string player_template_boss_base_side_json =
+		json_escape(g_archive_probe.player_template_boss_base_side);
+	const std::string player_template_boss_starting_building_json =
+		json_escape(g_archive_probe.player_template_boss_starting_building);
+	const std::string player_template_boss_starting_unit0_json =
+		json_escape(g_archive_probe.player_template_boss_starting_unit0);
+	const std::string player_template_boss_shortcut_command_set_json =
+		json_escape(g_archive_probe.player_template_boss_shortcut_command_set);
+	const std::string player_template_boss_shortcut_win_name_json =
+		json_escape(g_archive_probe.player_template_boss_shortcut_win_name);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
@@ -685,7 +751,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
+		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
@@ -733,6 +799,32 @@ const char *write_state_json()
 		"\"neutronMissile\":{\"found\":%s,"
 		"\"initiateAtLocationSound\":\"%s\"},"
 		"\"scudStorm\":{\"found\":%s,\"initiateSound\":\"%s\"}},"
+		"\"playerTemplate\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
+		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"scienceOriginalIniLoad\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"templates\":%zu,"
+		"\"sides\":%zu,"
+		"\"found\":{\"america\":%s,\"china\":%s,\"gla\":%s,"
+		"\"observer\":%s,\"airForce\":%s,\"boss\":%s},"
+		"\"america\":{\"displayNameLoaded\":%s,\"side\":\"%s\",\"baseSide\":\"%s\","
+		"\"playable\":%s,\"oldFaction\":%s,\"startMoney\":%d,"
+		"\"intrinsicScienceCount\":%zu,\"intrinsicScienceValid\":%s,"
+		"\"startingBuilding\":\"%s\",\"startingUnit0\":\"%s\","
+		"\"shortcutCommandSet\":\"%s\",\"shortcutWinName\":\"%s\","
+		"\"shortcutButtonCount\":%d,\"loadScreen\":\"%s\","
+		"\"scoreScreen\":\"%s\",\"loadMusic\":\"%s\",\"scoreMusic\":\"%s\","
+		"\"beacon\":\"%s\"},"
+		"\"observer\":{\"observer\":%s,\"playable\":%s,\"side\":\"%s\","
+		"\"loadScreen\":\"%s\",\"beacon\":\"%s\"},"
+		"\"airForce\":{\"side\":\"%s\",\"baseSide\":\"%s\",\"playable\":%s,"
+		"\"oldFaction\":%s,\"startingBuilding\":\"%s\",\"startingUnit0\":\"%s\","
+		"\"shortcutCommandSet\":\"%s\",\"shortcutButtonCount\":%d},"
+		"\"boss\":{\"side\":\"%s\",\"baseSide\":\"%s\",\"playable\":%s,"
+		"\"oldFaction\":%s,\"intrinsicScienceCount\":%zu,"
+		"\"intrinsicSciencesValid\":%s,\"startingBuilding\":\"%s\","
+		"\"startingUnit0\":\"%s\",\"shortcutCommandSet\":\"%s\","
+		"\"shortcutWinName\":\"%s\",\"shortcutButtonCount\":%d}},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
@@ -831,7 +923,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
-		"\"specialPower\":%s,\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
+		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
@@ -886,6 +978,7 @@ const char *write_state_json()
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
+		g_archive_probe.has_player_template_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
 		g_archive_probe.has_special_power_ini ? "true" : "false",
@@ -990,6 +1083,69 @@ const char *write_state_json()
 		special_power_neutron_sound_json.c_str(),
 		g_archive_probe.special_power_scud_storm_found ? "true" : "false",
 		special_power_scud_sound_json.c_str(),
+		g_archive_probe.player_template_attempted ? "true" : "false",
+		g_archive_probe.player_template_ok ? "true" : "false",
+		g_archive_probe.player_template_bytes,
+		g_archive_probe.player_template_science_bytes,
+		player_template_source_json.c_str(),
+		g_archive_probe.player_template_loaded_archives ? "true" : "false",
+		g_archive_probe.player_template_file_exists ? "true" : "false",
+		g_archive_probe.player_template_science_file_exists ? "true" : "false",
+		g_archive_probe.player_template_game_text_loaded ? "true" : "false",
+		g_archive_probe.player_template_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.player_template_science_original_ini_load ? "true" : "false",
+		g_archive_probe.player_template_original_ini_load ? "true" : "false",
+		g_archive_probe.player_template_parsed_fields,
+		g_archive_probe.player_template_count,
+		g_archive_probe.player_template_side_count,
+		g_archive_probe.player_template_america_found ? "true" : "false",
+		g_archive_probe.player_template_china_found ? "true" : "false",
+		g_archive_probe.player_template_gla_found ? "true" : "false",
+		g_archive_probe.player_template_observer_found ? "true" : "false",
+		g_archive_probe.player_template_air_force_found ? "true" : "false",
+		g_archive_probe.player_template_boss_found ? "true" : "false",
+		g_archive_probe.player_template_america_display_name_loaded ? "true" : "false",
+		player_template_america_side_json.c_str(),
+		player_template_america_base_side_json.c_str(),
+		g_archive_probe.player_template_america_playable ? "true" : "false",
+		g_archive_probe.player_template_america_old_faction ? "true" : "false",
+		g_archive_probe.player_template_america_start_money,
+		g_archive_probe.player_template_america_intrinsic_science_count,
+		g_archive_probe.player_template_america_intrinsic_science_valid ? "true" : "false",
+		player_template_america_starting_building_json.c_str(),
+		player_template_america_starting_unit0_json.c_str(),
+		player_template_america_shortcut_command_set_json.c_str(),
+		player_template_america_shortcut_win_name_json.c_str(),
+		g_archive_probe.player_template_america_shortcut_button_count,
+		player_template_america_load_screen_json.c_str(),
+		player_template_america_score_screen_json.c_str(),
+		player_template_america_load_music_json.c_str(),
+		player_template_america_score_music_json.c_str(),
+		player_template_america_beacon_json.c_str(),
+		g_archive_probe.player_template_observer_is_observer ? "true" : "false",
+		g_archive_probe.player_template_observer_playable ? "true" : "false",
+		player_template_observer_side_json.c_str(),
+		player_template_observer_load_screen_json.c_str(),
+		player_template_observer_beacon_json.c_str(),
+		player_template_air_force_side_json.c_str(),
+		player_template_air_force_base_side_json.c_str(),
+		g_archive_probe.player_template_air_force_playable ? "true" : "false",
+		g_archive_probe.player_template_air_force_old_faction ? "true" : "false",
+		player_template_air_force_starting_building_json.c_str(),
+		player_template_air_force_starting_unit0_json.c_str(),
+		player_template_air_force_shortcut_command_set_json.c_str(),
+		g_archive_probe.player_template_air_force_shortcut_button_count,
+		player_template_boss_side_json.c_str(),
+		player_template_boss_base_side_json.c_str(),
+		g_archive_probe.player_template_boss_playable ? "true" : "false",
+		g_archive_probe.player_template_boss_old_faction ? "true" : "false",
+		g_archive_probe.player_template_boss_intrinsic_science_count,
+		g_archive_probe.player_template_boss_intrinsic_sciences_valid ? "true" : "false",
+		player_template_boss_starting_building_json.c_str(),
+		player_template_boss_starting_unit0_json.c_str(),
+		player_template_boss_shortcut_command_set_json.c_str(),
+		player_template_boss_shortcut_win_name_json.c_str(),
+		g_archive_probe.player_template_boss_shortcut_button_count,
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
@@ -1206,6 +1362,7 @@ const char *write_state_json()
 		startup_armor_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
+		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
 		startup_terrain_ready() ? "true" : "false",
 		startup_terrain_roads_ready() ? "true" : "false",

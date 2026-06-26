@@ -385,6 +385,9 @@ void WeaponBonusSet::appendBonuses(WeaponBonusConditionFlags flags, WeaponBonus 
 	}
 }
 
+class ImageCollection;
+ImageCollection *TheMappedImageCollection __attribute__((weak)) = nullptr;
+
 UNUSED_INI_BLOCK_PARSER(parseAIDataDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAnim2DDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAudioEventDefinition)
@@ -417,7 +420,6 @@ UNUSED_INI_BLOCK_PARSER(parseObjectDefinition)
 UNUSED_INI_BLOCK_PARSER(parseObjectCreationListDefinition)
 UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
 UNUSED_INI_BLOCK_PARSER(parseParticleSystemDefinition)
-UNUSED_INI_BLOCK_PARSER(parsePlayerTemplateDefinition)
 UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
 UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
 UNUSED_INI_BLOCK_PARSER(parseUpgradeDefinition)

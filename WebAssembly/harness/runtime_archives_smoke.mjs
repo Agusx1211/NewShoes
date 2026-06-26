@@ -184,6 +184,81 @@ function assertSpecialPowerProbe(assetProbe, context) {
   }
 }
 
+function assertPlayerTemplateProbe(assetProbe, context) {
+  const playerTemplate = assetProbe?.playerTemplate;
+  const found = playerTemplate?.found;
+  const america = playerTemplate?.america;
+  const observer = playerTemplate?.observer;
+  const airForce = playerTemplate?.airForce;
+  const boss = playerTemplate?.boss;
+  if (!assetProbe?.inizh?.playerTemplateIni
+      || !playerTemplate?.attempted
+      || !playerTemplate.ok
+      || playerTemplate.source !== "GameEngine/Common/INI.cpp::load + PlayerTemplate.cpp + Science.cpp"
+      || !playerTemplate.loadedArchives
+      || !playerTemplate.fileExists
+      || !playerTemplate.scienceFileExists
+      || !playerTemplate.gameTextLoaded
+      || !playerTemplate.nameKeyGeneratorLoaded
+      || !playerTemplate.scienceOriginalIniLoad
+      || !playerTemplate.originalIniLoad
+      || playerTemplate.bytes <= 10000
+      || playerTemplate.scienceBytes <= 20000
+      || playerTemplate.parsedFields !== 50
+      || playerTemplate.templates !== 15
+      || playerTemplate.sides !== 15
+      || !found?.america
+      || !found.china
+      || !found.gla
+      || !found.observer
+      || !found.airForce
+      || !found.boss
+      || !america?.displayNameLoaded
+      || america.side !== "America"
+      || america.baseSide !== "USA"
+      || america.playable !== true
+      || america.oldFaction !== true
+      || america.startMoney !== 0
+      || america.intrinsicScienceCount !== 1
+      || america.intrinsicScienceValid !== true
+      || america.startingBuilding !== "AmericaCommandCenter"
+      || america.startingUnit0 !== "AmericaVehicleDozer"
+      || america.shortcutCommandSet !== "SpecialPowerShortcutUSA"
+      || america.shortcutWinName !== "GenPowersShortcutBarUS.wnd"
+      || america.shortcutButtonCount !== 10
+      || america.loadScreen !== "SAFactionLogoPage_US"
+      || america.scoreScreen !== "America_ScoreScreen"
+      || america.loadMusic !== "Load_USA"
+      || america.scoreMusic !== "Score_USA"
+      || america.beacon !== "MultiplayerBeacon"
+      || observer?.observer !== true
+      || observer.playable !== false
+      || observer.side !== "Observer"
+      || observer.loadScreen !== "Mp_Load"
+      || observer.beacon !== "MultiplayerBeacon"
+      || airForce?.side !== "AmericaAirForceGeneral"
+      || airForce.baseSide !== "USA"
+      || airForce.playable !== true
+      || airForce.oldFaction !== false
+      || airForce.startingBuilding !== "AirF_AmericaCommandCenter"
+      || airForce.startingUnit0 !== "AirF_AmericaVehicleDozer"
+      || airForce.shortcutCommandSet !== "AirF_SpecialPowerShortcutUSA"
+      || airForce.shortcutButtonCount !== 11
+      || boss?.side !== "Boss"
+      || boss.baseSide !== "China"
+      || boss.playable !== true
+      || boss.oldFaction !== false
+      || boss.intrinsicScienceCount !== 3
+      || boss.intrinsicSciencesValid !== true
+      || boss.startingBuilding !== "Boss_CommandCenter"
+      || boss.startingUnit0 !== "Boss_VehicleDozer"
+      || boss.shortcutCommandSet !== "SpecialPowerShortcutBoss"
+      || boss.shortcutWinName !== "GenPowersShortcutBarChina.wnd"
+      || boss.shortcutButtonCount !== 9) {
+    throw new Error(`${context} did not parse expected PlayerTemplate.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -412,6 +487,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.armor
         || !startupAssets.required?.science
         || !startupAssets.required?.specialPower
+        || !startupAssets.required?.playerTemplate
         || !startupAssets.required?.multiplayer
         || !startupAssets.required?.terrain
         || !startupAssets.required?.terrainRoads
@@ -495,6 +571,7 @@ try {
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.specialPowerIni
+      || !assetProbe.inizh?.playerTemplateIni
       || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.weaponIni) {
@@ -504,6 +581,7 @@ try {
   assertArmorProbe(assetProbe, "aggregate runtime archive probe");
   assertScienceProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
+  assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
   assertTerrainProbe(assetProbe, "aggregate runtime archive probe");
   assertTerrainRoadsProbe(assetProbe, "aggregate runtime archive probe");
@@ -561,6 +639,7 @@ try {
   assertArmorProbe(bootResult.state.assetProbe, "boot asset probe");
   assertScienceProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertTerrainProbe(bootResult.state.assetProbe, "boot asset probe");
   assertTerrainRoadsProbe(bootResult.state.assetProbe, "boot asset probe");

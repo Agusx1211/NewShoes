@@ -303,6 +303,7 @@ try {
   }
   if (!assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
+      || !assetProbe.inizh?.playerTemplateIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.specialPowerIni

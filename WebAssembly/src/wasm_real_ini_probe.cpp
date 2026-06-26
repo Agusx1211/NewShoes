@@ -15,6 +15,7 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/PlayerTemplate.h"
 #include "Common/Science.h"
 #include "Common/SpecialPower.h"
 #include "Common/TerrainTypes.h"
@@ -42,6 +43,7 @@ constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
+constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -155,6 +157,61 @@ std::size_t count_verified_fields(const RealSpecialPowerIniProbeResult &result)
 		(result.crate_drop_required_science == "SCIENCE_CrateDrop" ? 1U : 0U) +
 		(result.neutron_missile_initiate_at_location_sound == "AirRaidSiren" ? 1U : 0U) +
 		(result.scud_storm_initiate_sound == "ScudStormInitiated" ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealPlayerTemplateIniProbeResult &result)
+{
+	return
+		(result.player_template_count == 15 ? 1U : 0U) +
+		(result.side_count == 15 ? 1U : 0U) +
+		(result.america_found ? 1U : 0U) +
+		(result.china_found ? 1U : 0U) +
+		(result.gla_found ? 1U : 0U) +
+		(result.observer_found ? 1U : 0U) +
+		(result.air_force_found ? 1U : 0U) +
+		(result.boss_found ? 1U : 0U) +
+		(result.america_display_name_loaded ? 1U : 0U) +
+		(result.america_side == "America" ? 1U : 0U) +
+		(result.america_base_side == "USA" ? 1U : 0U) +
+		(result.america_playable ? 1U : 0U) +
+		(result.america_old_faction ? 1U : 0U) +
+		(result.america_start_money == 0 ? 1U : 0U) +
+		(result.america_intrinsic_science_count == 1 ? 1U : 0U) +
+		(result.america_intrinsic_science_valid ? 1U : 0U) +
+		(result.america_starting_building == "AmericaCommandCenter" ? 1U : 0U) +
+		(result.america_starting_unit0 == "AmericaVehicleDozer" ? 1U : 0U) +
+		(result.america_shortcut_command_set == "SpecialPowerShortcutUSA" ? 1U : 0U) +
+		(result.america_shortcut_win_name == "GenPowersShortcutBarUS.wnd" ? 1U : 0U) +
+		(result.america_shortcut_button_count == 10 ? 1U : 0U) +
+		(result.america_load_screen == "SAFactionLogoPage_US" ? 1U : 0U) +
+		(result.america_score_screen == "America_ScoreScreen" ? 1U : 0U) +
+		(result.america_load_music == "Load_USA" ? 1U : 0U) +
+		(result.america_score_music == "Score_USA" ? 1U : 0U) +
+		(result.america_beacon == "MultiplayerBeacon" ? 1U : 0U) +
+		(result.observer_is_observer ? 1U : 0U) +
+		(!result.observer_playable ? 1U : 0U) +
+		(result.observer_side == "Observer" ? 1U : 0U) +
+		(result.observer_load_screen == "Mp_Load" ? 1U : 0U) +
+		(result.observer_beacon == "MultiplayerBeacon" ? 1U : 0U) +
+		(result.air_force_side == "AmericaAirForceGeneral" ? 1U : 0U) +
+		(result.air_force_base_side == "USA" ? 1U : 0U) +
+		(result.air_force_playable ? 1U : 0U) +
+		(!result.air_force_old_faction ? 1U : 0U) +
+		(result.air_force_starting_building == "AirF_AmericaCommandCenter" ? 1U : 0U) +
+		(result.air_force_starting_unit0 == "AirF_AmericaVehicleDozer" ? 1U : 0U) +
+		(result.air_force_shortcut_command_set == "AirF_SpecialPowerShortcutUSA" ? 1U : 0U) +
+		(result.air_force_shortcut_button_count == 11 ? 1U : 0U) +
+		(result.boss_side == "Boss" ? 1U : 0U) +
+		(result.boss_base_side == "China" ? 1U : 0U) +
+		(result.boss_playable ? 1U : 0U) +
+		(!result.boss_old_faction ? 1U : 0U) +
+		(result.boss_intrinsic_science_count == 3 ? 1U : 0U) +
+		(result.boss_intrinsic_sciences_valid ? 1U : 0U) +
+		(result.boss_starting_building == "Boss_CommandCenter" ? 1U : 0U) +
+		(result.boss_starting_unit0 == "Boss_VehicleDozer" ? 1U : 0U) +
+		(result.boss_shortcut_command_set == "SpecialPowerShortcutBoss" ? 1U : 0U) +
+		(result.boss_shortcut_win_name == "GenPowersShortcutBarChina.wnd" ? 1U : 0U) +
+		(result.boss_shortcut_button_count == 9 ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
@@ -328,6 +385,43 @@ std::size_t count_loaded_water_settings()
 bool unicode_not_empty(const UnicodeString &value)
 {
 	return !value.isEmpty() && value.getLength() > 0;
+}
+
+bool sciences_valid(const ScienceStore &science_store, const ScienceVec &sciences)
+{
+	if (sciences.empty()) {
+		return false;
+	}
+
+	for (ScienceVec::const_iterator it = sciences.begin(); it != sciences.end(); ++it) {
+		if (!science_store.isValidScience(*it)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void seed_player_template_alias_name_keys()
+{
+	// PlayerTemplateStore caches old-map alias keys in function statics; keep
+	// focused repeated probes on the same key order as the first original load.
+	(void)NAMEKEY("FactionCivilian");
+	(void)NAMEKEY("FactionAmerica");
+	(void)NAMEKEY("FactionAmericaChooseAGeneral");
+	(void)NAMEKEY("FactionAmericaTankCommand");
+	(void)NAMEKEY("FactionAmericaSpecialForces");
+	(void)NAMEKEY("FactionAmericaAirForce");
+	(void)NAMEKEY("FactionChina");
+	(void)NAMEKEY("FactionChinaChooseAGeneral");
+	(void)NAMEKEY("FactionChinaRedArmy");
+	(void)NAMEKEY("FactionChinaSpecialWeapons");
+	(void)NAMEKEY("FactionChinaSecretPolice");
+	(void)NAMEKEY("FactionGLA");
+	(void)NAMEKEY("FactionGLAChooseAGeneral");
+	(void)NAMEKEY("FactionGLATerrorCell");
+	(void)NAMEKEY("FactionGLABiowarCommand");
+	(void)NAMEKEY("FactionGLAWarlordCommand");
 }
 
 void inspect_map_cache_entry(
@@ -930,6 +1024,220 @@ RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char 
 
 	if (special_power_store != nullptr) {
 		delete special_power_store;
+	}
+	if (science_store != nullptr) {
+		delete science_store;
+	}
+	if (game_text != nullptr) {
+		delete game_text;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const char *archive_path)
+{
+	RealPlayerTemplateIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + PlayerTemplate.cpp + Science.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ScienceStore *old_science_store = TheScienceStore;
+	PlayerTemplateStore *old_player_template_store = ThePlayerTemplateStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ScienceStore *science_store = nullptr;
+	PlayerTemplateStore *player_template_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo science_file_info = {};
+			result.science_file_exists =
+				archive_file_system.getFileInfo(AsciiString(SCIENCE_INI_PATH), &science_file_info) &&
+				science_file_info.sizeHigh == 0 &&
+				science_file_info.sizeLow > 0;
+			result.science_bytes = result.science_file_exists ?
+				static_cast<std::size_t>(science_file_info.sizeLow) : 0U;
+
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(PLAYER_TEMPLATE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.science_file_exists && result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+					Bool title_exists = FALSE;
+					const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+					result.game_text_loaded = title_exists && unicode_not_empty(title);
+				}
+
+				science_store = NEW ScienceStore;
+				TheScienceStore = science_store;
+				science_store->init();
+
+				INI science_ini;
+				science_ini.load(AsciiString(SCIENCE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.science_original_ini_load = true;
+
+				player_template_store = NEW PlayerTemplateStore;
+				ThePlayerTemplateStore = player_template_store;
+				player_template_store->init();
+
+				seed_player_template_alias_name_keys();
+
+				INI ini;
+				ini.load(AsciiString(PLAYER_TEMPLATE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				result.player_template_count =
+					static_cast<std::size_t>(player_template_store->getPlayerTemplateCount());
+				AsciiStringList side_strings;
+				player_template_store->getAllSideStrings(&side_strings);
+				result.side_count = side_strings.size();
+
+				const PlayerTemplate *america =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionAmerica"));
+				const PlayerTemplate *china =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionChina"));
+				const PlayerTemplate *gla =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionGLA"));
+				const PlayerTemplate *observer =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionObserver"));
+				const PlayerTemplate *air_force =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionAmericaAirForceGeneral"));
+				const PlayerTemplate *boss =
+					player_template_store->findPlayerTemplate(NAMEKEY("FactionBossGeneral"));
+
+				result.america_found = america != nullptr;
+				result.china_found = china != nullptr;
+				result.gla_found = gla != nullptr;
+				result.observer_found = observer != nullptr;
+				result.air_force_found = air_force != nullptr;
+				result.boss_found = boss != nullptr;
+
+				if (america != nullptr) {
+					const ScienceVec &sciences = america->getIntrinsicSciences();
+					result.america_display_name_loaded = unicode_not_empty(america->getDisplayName());
+					result.america_side = america->getSide().str();
+					result.america_base_side = america->getBaseSide().str();
+					result.america_playable = america->isPlayableSide();
+					result.america_old_faction = america->isOldFaction();
+					result.america_start_money = static_cast<int>(america->getMoney()->countMoney());
+					result.america_intrinsic_science_count = sciences.size();
+					result.america_intrinsic_science_valid = sciences_valid(*science_store, sciences);
+					result.america_starting_building = america->getStartingBuilding().str();
+					result.america_starting_unit0 = america->getStartingUnit(0).str();
+					result.america_shortcut_command_set =
+						america->getSpecialPowerShortcutCommandSet().str();
+					result.america_shortcut_win_name =
+						america->getSpecialPowerShortcutWinName().str();
+					result.america_shortcut_button_count =
+						static_cast<int>(america->getSpecialPowerShortcutButtonCount());
+					result.america_load_screen = america->getLoadScreen().str();
+					result.america_score_screen = america->getScoreScreen().str();
+					result.america_load_music = america->getLoadScreenMusic().str();
+					result.america_score_music = america->getScoreScreenMusic().str();
+					result.america_beacon = america->getBeaconTemplate().str();
+				}
+				if (observer != nullptr) {
+					result.observer_is_observer = observer->isObserver();
+					result.observer_playable = observer->isPlayableSide();
+					result.observer_side = observer->getSide().str();
+					result.observer_load_screen = observer->getLoadScreen().str();
+					result.observer_beacon = observer->getBeaconTemplate().str();
+				}
+				if (air_force != nullptr) {
+					result.air_force_side = air_force->getSide().str();
+					result.air_force_base_side = air_force->getBaseSide().str();
+					result.air_force_playable = air_force->isPlayableSide();
+					result.air_force_old_faction = air_force->isOldFaction();
+					result.air_force_starting_building = air_force->getStartingBuilding().str();
+					result.air_force_starting_unit0 = air_force->getStartingUnit(0).str();
+					result.air_force_shortcut_command_set =
+						air_force->getSpecialPowerShortcutCommandSet().str();
+					result.air_force_shortcut_button_count =
+						static_cast<int>(air_force->getSpecialPowerShortcutButtonCount());
+				}
+				if (boss != nullptr) {
+					const ScienceVec &sciences = boss->getIntrinsicSciences();
+					result.boss_side = boss->getSide().str();
+					result.boss_base_side = boss->getBaseSide().str();
+					result.boss_playable = boss->isPlayableSide();
+					result.boss_old_faction = boss->isOldFaction();
+					result.boss_intrinsic_science_count = sciences.size();
+					result.boss_intrinsic_sciences_valid = sciences_valid(*science_store, sciences);
+					result.boss_starting_building = boss->getStartingBuilding().str();
+					result.boss_starting_unit0 = boss->getStartingUnit(0).str();
+					result.boss_shortcut_command_set = boss->getSpecialPowerShortcutCommandSet().str();
+					result.boss_shortcut_win_name = boss->getSpecialPowerShortcutWinName().str();
+					result.boss_shortcut_button_count =
+						static_cast<int>(boss->getSpecialPowerShortcutButtonCount());
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 10000 &&
+					result.science_bytes > 20000 &&
+					result.game_text_loaded &&
+					result.name_key_generator_loaded &&
+					result.science_original_ini_load &&
+					result.original_ini_load &&
+					result.parsed_fields == 50;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	ThePlayerTemplateStore = old_player_template_store;
+	TheScienceStore = old_science_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (player_template_store != nullptr) {
+		delete player_template_store;
 	}
 	if (science_store != nullptr) {
 		delete science_store;

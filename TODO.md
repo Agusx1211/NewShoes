@@ -620,6 +620,12 @@ shares structure and follows behind.
       `AcademyStats.cpp` for shipped superweapon metadata, required sciences,
       timer/radius fields, academy classifications, and preserved audio event
       names.
+- [x] Link and smoke-test the original player-template INI parser route through
+      the focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `Common/RTS/PlayerTemplate.cpp`, `Common/RTS/Science.cpp`, and
+      `GameText.cpp` for shipped faction/template counts, sides, intrinsic
+      sciences, start units/buildings, special-power shortcut metadata, and
+      load/score assets exposed through the public original API.
 - [ ] Link and smoke-test the original audio INI parser routes after the real
       `Common/INI.cpp` reader, audio manager, and full runtime singleton
       surface are available without target-local parser stubs.
@@ -645,14 +651,18 @@ shares structure and follows behind.
       compatibility definition with original `TerrainVisual.cpp` ownership once
       terrain visual/map-loading runtime surfaces can link without renderer
       dependencies.
+- [ ] Replace the focused shipped player-template runtime's weak
+      `TheMappedImageCollection` compatibility definition with original mapped
+      image collection ownership once mapped image/UI asset loading is linked;
+      the current preflight verifies public template metadata but does not
+      resolve private image IDs to `Image` instances.
 - [ ] Link and smoke-test the original command-set, control-bar scheme,
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
       target-local parser stubs.
-- [ ] Link and smoke-test original player-template and command-button INI
-      parser routes after the real `Common/INI.cpp` reader, ControlBar,
-      PlayerTemplateStore, and SpecialPowerStore singleton surfaces are
-      available without target-local parser stubs.
+- [ ] Link and smoke-test the original command-button INI parser route after
+      the real `Common/INI.cpp` reader, ControlBar, and SpecialPowerStore
+      singleton surfaces are available without target-local parser stubs.
 - [ ] Link and smoke-test original crate, draw-group, and upgrade INI parser
       routes after the real `Common/INI.cpp` reader, `CrateSystem`,
       `DrawGroupInfo`, and `UpgradeCenter` singleton surfaces are available
@@ -1630,10 +1640,10 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/Armor/Science/Multiplayer/Terrain/
-      TerrainRoads/GameData/Water/Weather/Video/GameText/MapCache probes pass.
-      This is bootstrap preflight only; full engine-init missing-asset handling
-      remains open.
+      `ready` after the boot-time archive/Armor/Science/SpecialPower/
+      PlayerTemplate/Multiplayer/Terrain/TerrainRoads/GameData/Water/Weather/
+      Video/GameText/MapCache probes pass. This is bootstrap preflight only;
+      full engine-init missing-asset handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
@@ -1691,6 +1701,15 @@ shares structure and follows behind.
       `startupAssets.ready` state. This is a focused shipped special-power
       preflight only; default-file layering, audio metadata lookup/playback,
       control-bar ownership, and actual power execution remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\PlayerTemplate.ini` from the mounted runtime BIG set through
+      original `Common/INI.cpp::load`, `Common/RTS/PlayerTemplate.cpp`,
+      `Common/RTS/Science.cpp`, and `GameText.cpp`, expose parsed shipped
+      player-template metadata as `assetProbe.playerTemplate`, and require it
+      for the Playwright `startupAssets.ready` state. This is a focused
+      shipped player-template preflight only; default-file layering,
+      mapped-image resolution, command-button/control-bar ownership, and full
+      match setup remain open.
 - [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\multiplayer.ini` from `INIZH.big` through original
       `Common/INI.cpp::load`, `Common/INI/INIMultiplayer.cpp`,
@@ -1791,6 +1810,17 @@ shares structure and follows behind.
       `Data\INI\Default\SpecialPower.ini`, then load the original default +
       shipped special-power sequence through `SpecialPowerStore::init` / full
       `GameEngine.cpp` startup once the minimum boot archive set is defined.
+- [x] Shipped player templates load from real
+      `Data\INI\PlayerTemplate.ini` through original `Common/INI.cpp::load`,
+      `Common/RTS/PlayerTemplate.cpp`, `Common/RTS/Science.cpp`, and
+      `GameText.cpp`, with full runtime-archive harness state proving 15
+      templates/sides plus America, Observer, Air Force General, and Boss
+      template fields.
+- [ ] Locate and include the archive source for
+      `Data\INI\Default\PlayerTemplate.ini`, then load the original default +
+      shipped player-template sequence through `PlayerTemplateStore::init` /
+      full `GameEngine.cpp` startup once the minimum boot archive set is
+      defined.
 - [x] Shipped multiplayer settings load from real
       `Data\INI\multiplayer.ini` through original `Common/INI.cpp::load`,
       `Common/INI/INIMultiplayer.cpp`, `Common/MultiplayerSettings.cpp`,
