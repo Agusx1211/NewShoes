@@ -84,6 +84,69 @@ function assertDamageFXProbe(assetProbe, context) {
   }
 }
 
+function assertWeaponProbe(assetProbe, context) {
+  const weapon = assetProbe?.weapon;
+  const ranger = weapon?.ranger;
+  const crusader = weapon?.crusader;
+  const tomahawk = weapon?.tomahawk;
+  if (!assetProbe?.inizh?.weaponIni
+      || !assetProbe.inizh.particleSystemIni
+      || !weapon?.attempted
+      || !weapon.ok
+      || weapon.source !== "GameEngine/Common/INI.cpp::load + INIParticleSys.cpp + INIWeapon.cpp + Weapon.cpp"
+      || !weapon.loadedArchives
+      || !weapon.fileExists
+      || !weapon.particleFileExists
+      || !weapon.nameKeyGeneratorLoaded
+      || !weapon.fxListStoreLoaded
+      || !weapon.particleSystemManagerLoaded
+      || !weapon.weaponStoreLoaded
+      || !weapon.particleOriginalIniLoad
+      || !weapon.originalIniLoad
+      || weapon.bytes <= 100000
+      || weapon.particleBytes <= 100000
+      || weapon.particleTemplates <= 100
+      || weapon.parsedFields !== 37
+      || !weapon.particleTemplatesFound?.tomahawkExhaust
+      || !weapon.particleTemplatesFound?.heroicTomahawkExhaust
+      || !ranger?.found
+      || Math.abs(ranger.primaryDamage - 5.0) > 0.001
+      || Math.abs(ranger.attackRange - 100.0) > 0.001
+      || ranger.delayFrames !== 3
+      || ranger.clipSize !== 3
+      || ranger.clipReloadFrames !== 21
+      || ranger.damageType !== 3
+      || ranger.deathType !== 0
+      || ranger.fireSound !== "RangerWeapon"
+      || !crusader?.found
+      || Math.abs(crusader.primaryDamage - 60.0) > 0.001
+      || Math.abs(crusader.primaryDamageRadius - 5.0) > 0.001
+      || Math.abs(crusader.attackRange - 150.0) > 0.001
+      || crusader.delayFrames !== 60
+      || crusader.clipSize !== 0
+      || crusader.damageType !== 2
+      || crusader.deathType !== 0
+      || crusader.fireSound !== "CrusaderTankWeapon"
+      || !tomahawk?.found
+      || Math.abs(tomahawk.primaryDamage - 150.0) > 0.001
+      || Math.abs(tomahawk.primaryDamageRadius - 10.0) > 0.001
+      || Math.abs(tomahawk.secondaryDamage - 50.0) > 0.001
+      || Math.abs(tomahawk.secondaryDamageRadius - 25.0) > 0.001
+      || Math.abs(tomahawk.attackRange - 350.0) > 0.001
+      || Math.abs(tomahawk.minimumAttackRange - 97.5) > 0.001
+      || tomahawk.preAttackDelayFrames !== 8
+      || tomahawk.delayFrames !== 1
+      || tomahawk.clipSize !== 1
+      || tomahawk.clipReloadFrames !== 210
+      || tomahawk.damageType !== 0
+      || tomahawk.deathType !== 4
+      || tomahawk.fireSound !== "TomahawkWeapon"
+      || !tomahawk.projectileExhaustLoaded
+      || !tomahawk.heroicProjectileExhaustLoaded) {
+    throw new Error(`${context} did not parse expected Weapon.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertUpgradeProbe(assetProbe, context) {
   const upgrade = assetProbe?.upgrade;
   const flashBang = upgrade?.flashBang;
@@ -676,12 +739,14 @@ try {
       || !assetProbe.inizh?.terrainIni
       || !assetProbe.inizh?.roadsIni
       || !assetProbe.inizh?.upgradeIni
-      || !assetProbe.inizh?.weaponIni) {
+      || !assetProbe.inizh?.weaponIni
+      || !assetProbe.inizh?.particleSystemIni) {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
   assertArmorProbe(assetProbe, "cnc-port INIZH probe");
   assertDamageFXProbe(assetProbe, "cnc-port INIZH probe");
+  assertWeaponProbe(assetProbe, "cnc-port INIZH probe");
   assertUpgradeProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandButtonProbe(assetProbe, "cnc-port INIZH probe");
   assertCommandSetProbe(assetProbe, "cnc-port INIZH probe");

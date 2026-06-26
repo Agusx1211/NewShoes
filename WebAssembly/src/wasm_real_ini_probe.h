@@ -75,6 +75,63 @@ struct RealDamageFXIniProbeResult
 	unsigned int infantry_sniper_throttle = 0;
 };
 
+struct RealWeaponIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool particle_file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool fx_list_store_loaded = false;
+	bool particle_system_manager_loaded = false;
+	bool weapon_store_loaded = false;
+	bool particle_original_ini_load = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t particle_bytes = 0;
+	std::size_t particle_template_count = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	bool tomahawk_exhaust_template_found = false;
+	bool heroic_tomahawk_exhaust_template_found = false;
+	bool ranger_found = false;
+	bool crusader_found = false;
+	bool tomahawk_found = false;
+	float ranger_primary_damage = 0.0f;
+	float ranger_attack_range = 0.0f;
+	int ranger_delay_frames = 0;
+	int ranger_clip_size = 0;
+	int ranger_clip_reload_frames = 0;
+	int ranger_damage_type = 0;
+	int ranger_death_type = 0;
+	std::string ranger_fire_sound;
+	float crusader_primary_damage = 0.0f;
+	float crusader_primary_damage_radius = 0.0f;
+	float crusader_attack_range = 0.0f;
+	int crusader_delay_frames = 0;
+	int crusader_clip_size = 0;
+	int crusader_damage_type = 0;
+	int crusader_death_type = 0;
+	std::string crusader_fire_sound;
+	float tomahawk_primary_damage = 0.0f;
+	float tomahawk_primary_damage_radius = 0.0f;
+	float tomahawk_secondary_damage = 0.0f;
+	float tomahawk_secondary_damage_radius = 0.0f;
+	float tomahawk_attack_range = 0.0f;
+	float tomahawk_minimum_attack_range = 0.0f;
+	int tomahawk_pre_attack_delay_frames = 0;
+	int tomahawk_delay_frames = 0;
+	int tomahawk_clip_size = 0;
+	int tomahawk_clip_reload_frames = 0;
+	int tomahawk_damage_type = 0;
+	int tomahawk_death_type = 0;
+	std::string tomahawk_fire_sound;
+	bool tomahawk_projectile_exhaust_loaded = false;
+	bool tomahawk_heroic_projectile_exhaust_loaded = false;
+};
+
 struct RealScienceIniProbeResult
 {
 	bool attempted = false;
@@ -762,6 +819,7 @@ struct RealPlayerTemplateIniProbeResult
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive_path);
+RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path);
 RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);

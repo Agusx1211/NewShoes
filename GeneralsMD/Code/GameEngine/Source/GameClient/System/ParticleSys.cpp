@@ -3036,6 +3036,17 @@ ParticleSystemTemplate *ParticleSystemManager::findTemplate( const AsciiString &
 	if (find != m_templateMap.end()) {
 		sysTemplate = (*find).second;
 	}
+	else {
+		TemplateMap::const_iterator begin(m_templateMap.begin());
+		TemplateMap::const_iterator end(m_templateMap.end());
+		for (; begin != end; ++begin) {
+			ParticleSystemTemplate *candidate = (*begin).second;
+			if (candidate != NULL && candidate->getName().compare(name) == 0) {
+				sysTemplate = candidate;
+				break;
+			}
+		}
+	}
 
 	return sysTemplate;
 }

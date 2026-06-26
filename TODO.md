@@ -1750,6 +1750,15 @@ shares structure and follows behind.
       veterancy ownership wait for the real FXList/GameClient/renderer/audio
       and object runtime.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\ParticleSystem.ini` and `Data\INI\Weapon.ini` from `INIZH.big`
+      through original `Common/INI.cpp::load`, `INIParticleSys.cpp`,
+      `INIWeapon.cpp`, `GameClient/System/ParticleSys.cpp`, and
+      `GameLogic/Object/Weapon.cpp`, expose parsed shipped weapon metadata as
+      `assetProbe.weapon`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused weapon-template metadata
+      preflight only; live projectile creation, firing, delayed damage, FX/OCL
+      playback, and object/weapon-set ownership remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\Science.ini` from the mounted runtime BIG set through original
       `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, expose parsed
       shipped science metadata as `assetProbe.science`, and require it for the
@@ -1883,6 +1892,14 @@ shares structure and follows behind.
       state proving `DefaultDamageFX`, `TankDamageFX`, `SmallTankDamageFX`,
       `StructureDamageFX`, and `InfantryDamageFX` plus parsed frame throttle
       values for selected damage types.
+- [x] Shipped weapon templates load from real `Data\INI\Weapon.ini` through
+      original `Common/INI.cpp::load`, `Common/INI/INIWeapon.cpp`, and
+      `GameLogic/Object/Weapon.cpp`, after loading real
+      `Data\INI\ParticleSystem.ini` through `INIParticleSys.cpp` and
+      `ParticleSys.cpp`; full runtime-archive harness state proves 1,084
+      particle templates plus Ranger, Crusader, and Tomahawk weapon damage,
+      range, delay, clip, death/damage type, fire-sound, and projectile-exhaust
+      metadata.
 - [x] Shipped science metadata loads from real `Data\INI\Science.ini` through
       original `Common/INI.cpp::load` and `Common/RTS/Science.cpp`, with full
       runtime-archive harness state proving 95 science definitions, base/rank
@@ -1984,6 +2001,11 @@ shares structure and follows behind.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
+- [ ] Replace the focused particle-template metadata path's weak Object/Drawable
+      compatibility bridges with the full original `ParticleSystem` /
+      `ParticleSystemManager` runtime once object, drawable, game-client, and
+      renderer ownership are linked; verify weapon projectile-exhaust particles
+      through harness screenshots/state.
 - [ ] Snow/weather rendering through original `SnowManager` / W3D weather
       paths, including map weather overrides, verified by harness screenshots.
 - [ ] Reach the **main menu rendering** end-to-end; screenshot it.
@@ -2011,6 +2033,12 @@ shares structure and follows behind.
 - [ ] Selection (single, box, double-click) works.
 - [ ] Movement orders + pathfinding (`AI`, locomotors) execute.
 - [ ] Combat: weapons, damage, armor, FX resolve correctly.
+- [ ] Replace the focused `Weapon.cpp` metadata-only browser build with the
+      full original `Weapon` / `WeaponStore` fire, delayed-damage, projectile,
+      laser, FX, and OCL runtime linked through real `Object`,
+      `PartitionManager`, `ThingFactory`, `ObjectCreationList`, `Drawable`,
+      `Player`, `WeaponSet`, and update-module ownership; harness-test real
+      attack orders and resulting damage/state changes.
 - [ ] Production: build structures/units, resources (supplies) flow.
 - [ ] `ScriptEngine` runs map scripts.
 - [ ] Fixed-timestep simulation is **deterministic** (same seed → same result).

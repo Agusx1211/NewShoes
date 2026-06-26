@@ -279,7 +279,8 @@ bool startup_boot_ini_present()
 		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_roads_ini &&
 		g_archive_probe.has_upgrade_ini &&
-		g_archive_probe.has_weapon_ini;
+		g_archive_probe.has_weapon_ini &&
+		g_archive_probe.has_particle_system_ini;
 }
 
 bool startup_archive_probe_loaded()
@@ -308,6 +309,14 @@ bool startup_damage_fx_ready()
 	return g_archive_probe.has_damage_fx_ini &&
 		g_archive_probe.damage_fx_attempted &&
 		g_archive_probe.damage_fx_ok;
+}
+
+bool startup_weapon_ready()
+{
+	return g_archive_probe.has_weapon_ini &&
+		g_archive_probe.has_particle_system_ini &&
+		g_archive_probe.weapon_attempted &&
+		g_archive_probe.weapon_ok;
 }
 
 bool startup_science_ready()
@@ -433,6 +442,7 @@ bool startup_assets_ready()
 		startup_boot_ini_present() &&
 		startup_armor_ready() &&
 		startup_damage_fx_ready() &&
+		startup_weapon_ready() &&
 		startup_science_ready() &&
 		startup_special_power_ready() &&
 		startup_player_template_ready() &&
@@ -471,6 +481,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_damage_fx_ready()) {
 		return "damage_fx_probe_failed";
+	}
+	if (!startup_weapon_ready()) {
+		return "weapon_probe_failed";
 	}
 	if (!startup_science_ready()) {
 		return "science_probe_failed";
@@ -548,6 +561,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_damage_fx_ready()) {
 		return "Runtime BIG archive set did not pass the DamageFX.ini startup probe.";
+	}
+	if (!startup_weapon_ready()) {
+		return "Runtime BIG archive set did not pass the Weapon.ini startup probe.";
 	}
 	if (!startup_science_ready()) {
 		return "Runtime BIG archive set did not pass the Science.ini startup probe.";
@@ -680,6 +696,99 @@ std::string build_damage_fx_probe_json()
 		g_archive_probe.damage_fx_small_tank_comanche_throttle,
 		g_archive_probe.damage_fx_structure_flame_throttle,
 		g_archive_probe.damage_fx_infantry_sniper_throttle);
+
+	return buffer;
+}
+
+std::string build_weapon_probe_json()
+{
+	char buffer[6200];
+	const std::string source_json = json_escape(g_archive_probe.weapon_source);
+	const std::string ranger_fire_sound_json =
+		json_escape(g_archive_probe.weapon_ranger_fire_sound);
+	const std::string crusader_fire_sound_json =
+		json_escape(g_archive_probe.weapon_crusader_fire_sound);
+	const std::string tomahawk_fire_sound_json =
+		json_escape(g_archive_probe.weapon_tomahawk_fire_sound);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"particleBytes\":%zu,\"particleTemplates\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"particleFileExists\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"fxListStoreLoaded\":%s,\"particleSystemManagerLoaded\":%s,"
+		"\"weaponStoreLoaded\":%s,\"particleOriginalIniLoad\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,"
+		"\"particleTemplatesFound\":{\"tomahawkExhaust\":%s,"
+		"\"heroicTomahawkExhaust\":%s},"
+		"\"ranger\":{\"found\":%s,\"primaryDamage\":%.3f,"
+		"\"attackRange\":%.3f,\"delayFrames\":%d,\"clipSize\":%d,"
+		"\"clipReloadFrames\":%d,\"damageType\":%d,\"deathType\":%d,"
+		"\"fireSound\":\"%s\"},"
+		"\"crusader\":{\"found\":%s,\"primaryDamage\":%.3f,"
+		"\"primaryDamageRadius\":%.3f,\"attackRange\":%.3f,"
+		"\"delayFrames\":%d,\"clipSize\":%d,\"damageType\":%d,"
+		"\"deathType\":%d,\"fireSound\":\"%s\"},"
+		"\"tomahawk\":{\"found\":%s,\"primaryDamage\":%.3f,"
+		"\"primaryDamageRadius\":%.3f,\"secondaryDamage\":%.3f,"
+		"\"secondaryDamageRadius\":%.3f,\"attackRange\":%.3f,"
+		"\"minimumAttackRange\":%.3f,\"preAttackDelayFrames\":%d,"
+		"\"delayFrames\":%d,\"clipSize\":%d,\"clipReloadFrames\":%d,"
+		"\"damageType\":%d,\"deathType\":%d,\"fireSound\":\"%s\","
+		"\"projectileExhaustLoaded\":%s,"
+		"\"heroicProjectileExhaustLoaded\":%s}}",
+		g_archive_probe.weapon_attempted ? "true" : "false",
+		g_archive_probe.weapon_ok ? "true" : "false",
+		g_archive_probe.weapon_bytes,
+		g_archive_probe.weapon_particle_bytes,
+		g_archive_probe.weapon_particle_template_count,
+		source_json.c_str(),
+		g_archive_probe.weapon_loaded_archives ? "true" : "false",
+		g_archive_probe.weapon_file_exists ? "true" : "false",
+		g_archive_probe.weapon_particle_file_exists ? "true" : "false",
+		g_archive_probe.weapon_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.weapon_fx_list_store_loaded ? "true" : "false",
+		g_archive_probe.weapon_particle_system_manager_loaded ? "true" : "false",
+		g_archive_probe.weapon_store_loaded ? "true" : "false",
+		g_archive_probe.weapon_particle_original_ini_load ? "true" : "false",
+		g_archive_probe.weapon_original_ini_load ? "true" : "false",
+		g_archive_probe.weapon_parsed_fields,
+		g_archive_probe.weapon_tomahawk_exhaust_template_found ? "true" : "false",
+		g_archive_probe.weapon_heroic_tomahawk_exhaust_template_found ? "true" : "false",
+		g_archive_probe.weapon_ranger_found ? "true" : "false",
+		g_archive_probe.weapon_ranger_primary_damage,
+		g_archive_probe.weapon_ranger_attack_range,
+		g_archive_probe.weapon_ranger_delay_frames,
+		g_archive_probe.weapon_ranger_clip_size,
+		g_archive_probe.weapon_ranger_clip_reload_frames,
+		g_archive_probe.weapon_ranger_damage_type,
+		g_archive_probe.weapon_ranger_death_type,
+		ranger_fire_sound_json.c_str(),
+		g_archive_probe.weapon_crusader_found ? "true" : "false",
+		g_archive_probe.weapon_crusader_primary_damage,
+		g_archive_probe.weapon_crusader_primary_damage_radius,
+		g_archive_probe.weapon_crusader_attack_range,
+		g_archive_probe.weapon_crusader_delay_frames,
+		g_archive_probe.weapon_crusader_clip_size,
+		g_archive_probe.weapon_crusader_damage_type,
+		g_archive_probe.weapon_crusader_death_type,
+		crusader_fire_sound_json.c_str(),
+		g_archive_probe.weapon_tomahawk_found ? "true" : "false",
+		g_archive_probe.weapon_tomahawk_primary_damage,
+		g_archive_probe.weapon_tomahawk_primary_damage_radius,
+		g_archive_probe.weapon_tomahawk_secondary_damage,
+		g_archive_probe.weapon_tomahawk_secondary_damage_radius,
+		g_archive_probe.weapon_tomahawk_attack_range,
+		g_archive_probe.weapon_tomahawk_minimum_attack_range,
+		g_archive_probe.weapon_tomahawk_pre_attack_delay_frames,
+		g_archive_probe.weapon_tomahawk_delay_frames,
+		g_archive_probe.weapon_tomahawk_clip_size,
+		g_archive_probe.weapon_tomahawk_clip_reload_frames,
+		g_archive_probe.weapon_tomahawk_damage_type,
+		g_archive_probe.weapon_tomahawk_death_type,
+		tomahawk_fire_sound_json.c_str(),
+		g_archive_probe.weapon_tomahawk_projectile_exhaust_loaded ? "true" : "false",
+		g_archive_probe.weapon_tomahawk_heroic_projectile_exhaust_loaded ? "true" : "false");
 
 	return buffer;
 }
@@ -1321,6 +1430,7 @@ const char *write_state_json()
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
+	const std::string weapon_probe_json = build_weapon_probe_json();
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
@@ -1495,7 +1605,7 @@ const char *write_state_json()
 		"\"drawGroupInfoIni\":%s,"
 		"\"waterIni\":%s,\"weatherIni\":%s,"
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
-		"\"weaponIni\":%s},"
+		"\"weaponIni\":%s,\"particleSystemIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
 		"\"armor\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
@@ -1507,6 +1617,7 @@ const char *write_state_json()
 		"\"tankSmallArmsDamage\":%.3f,\"tankRadiationDamage\":%.3f,"
 		"\"tankMicrowaveDamage\":%.3f},"
 		"\"damageFX\":%s,"
+		"\"weapon\":%s,"
 		"\"science\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
@@ -1671,7 +1782,7 @@ const char *write_state_json()
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"science\":%s,"
-		"\"upgrade\":%s,\"commandButton\":%s,"
+		"\"weapon\":%s,\"particleSystem\":%s,\"upgrade\":%s,\"commandButton\":%s,"
 		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
@@ -1748,6 +1859,7 @@ const char *write_state_json()
 		g_archive_probe.has_video_ini ? "true" : "false",
 		g_archive_probe.has_default_video_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_probe.has_particle_system_ini ? "true" : "false",
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
 		g_archive_probe.armor_attempted ? "true" : "false",
 		g_archive_probe.armor_ok ? "true" : "false",
@@ -1770,6 +1882,7 @@ const char *write_state_json()
 		g_archive_probe.armor_tank_radiation_damage,
 		g_archive_probe.armor_tank_microwave_damage,
 		damage_fx_probe_json.c_str(),
+		weapon_probe_json.c_str(),
 		g_archive_probe.science_attempted ? "true" : "false",
 		g_archive_probe.science_ok ? "true" : "false",
 		g_archive_probe.science_bytes,
@@ -2128,6 +2241,8 @@ const char *write_state_json()
 		startup_armor_ready() ? "true" : "false",
 		startup_damage_fx_ready() ? "true" : "false",
 		startup_science_ready() ? "true" : "false",
+		startup_weapon_ready() ? "true" : "false",
+		g_archive_probe.has_particle_system_ini ? "true" : "false",
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
 		startup_command_set_ready() ? "true" : "false",

@@ -7,6 +7,7 @@
 #include "Common/INI.h"
 #include "Common/ThingFactory.h"
 #include "Common/UserPreferences.h"
+#include "GameClient/Drawable.h"
 #include "GameClient/FXList.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
@@ -17,10 +18,22 @@
 
 class AudioManager;
 class ControlBar;
+class Display;
+class GameClient;
+class GameLODManager;
+class ObjectCreationListStore;
+class PartitionManager;
+class TerrainLogic;
 
 AudioManager *TheAudio __attribute__((weak)) = nullptr;
 ControlBar *TheControlBar __attribute__((weak)) = nullptr;
+Display *TheDisplay __attribute__((weak)) = nullptr;
+GameClient *TheGameClient __attribute__((weak)) = nullptr;
 GameLogic *TheGameLogic __attribute__((weak)) = nullptr;
+GameLODManager *TheGameLODManager __attribute__((weak)) = nullptr;
+ObjectCreationListStore *TheObjectCreationListStore __attribute__((weak)) = nullptr;
+PartitionManager *ThePartitionManager __attribute__((weak)) = nullptr;
+TerrainLogic *TheTerrainLogic __attribute__((weak)) = nullptr;
 ThingFactory *TheThingFactory __attribute__((weak)) = nullptr;
 FXListStore *TheFXListStore __attribute__((weak)) = nullptr;
 
@@ -83,6 +96,17 @@ const FXList *FXListStore::findFXList(const char *name) const
 VeterancyLevel __attribute__((weak)) Object::getVeterancyLevel() const
 {
 	return LEVEL_REGULAR;
+}
+
+ObjectShroudStatus __attribute__((weak)) Object::getShroudedStatus(Int) const
+{
+	return OBJECTSHROUD_CLEAR;
+}
+
+const Matrix3D *__attribute__((weak)) Drawable::getTransformMatrix(void) const
+{
+	static Matrix3D identity(TRUE);
+	return &identity;
 }
 
 void __attribute__((weak)) ScriptEngine::parseScriptAction(INI *)
@@ -406,45 +430,6 @@ void OptionPreferences::setCampaignDifficulty(Int)
 {
 }
 
-void WeaponBonus::appendBonuses(WeaponBonus &bonus) const
-{
-	for (int field = 0; field < WeaponBonus::FIELD_COUNT; ++field) {
-		bonus.m_field[field] += m_field[field] - 1.0f;
-	}
-}
-
-void WeaponBonusSet::parseWeaponBonusSet(INI *ini)
-{
-	const WeaponBonusConditionType condition =
-		static_cast<WeaponBonusConditionType>(INI::scanIndexList(ini->getNextToken(), TheWeaponBonusNames));
-	const WeaponBonus::Field field =
-		static_cast<WeaponBonus::Field>(INI::scanIndexList(ini->getNextToken(), TheWeaponBonusFieldNames));
-	m_bonus[condition].setField(field, INI::scanPercentToReal(ini->getNextToken()));
-}
-
-void WeaponBonusSet::parseWeaponBonusSet(INI *ini, void *, void *store, const void *)
-{
-	static_cast<WeaponBonusSet *>(store)->parseWeaponBonusSet(ini);
-}
-
-void WeaponBonusSet::parseWeaponBonusSetPtr(INI *ini, void *, void *store, const void *)
-{
-	(*static_cast<WeaponBonusSet **>(store))->parseWeaponBonusSet(ini);
-}
-
-void WeaponBonusSet::appendBonuses(WeaponBonusConditionFlags flags, WeaponBonus &bonus) const
-{
-	if (flags == 0) {
-		return;
-	}
-
-	for (int index = 0; index < WEAPONBONUSCONDITION_COUNT; ++index) {
-		if ((flags & (1 << index)) != 0) {
-			m_bonus[index].appendBonuses(bonus);
-		}
-	}
-}
-
 UNUSED_INI_BLOCK_PARSER(parseAIDataDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAnim2DDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAudioEventDefinition)
@@ -469,10 +454,8 @@ UNUSED_INI_BLOCK_PARSER(parseMusicTrackDefinition)
 UNUSED_INI_BLOCK_PARSER(parseObjectDefinition)
 UNUSED_INI_BLOCK_PARSER(parseObjectCreationListDefinition)
 UNUSED_INI_BLOCK_PARSER(parseObjectReskinDefinition)
-UNUSED_INI_BLOCK_PARSER(parseParticleSystemDefinition)
 UNUSED_INI_BLOCK_PARSER(parseRankDefinition)
 UNUSED_INI_BLOCK_PARSER(parseShellMenuSchemeDefinition)
-UNUSED_INI_BLOCK_PARSER(parseWeaponTemplateDefinition)
 UNUSED_INI_BLOCK_PARSER(parseWebpageURLDefinition)
 UNUSED_INI_BLOCK_PARSER(parseHeaderTemplateDefinition)
 UNUSED_INI_BLOCK_PARSER(parseStaticGameLODDefinition)

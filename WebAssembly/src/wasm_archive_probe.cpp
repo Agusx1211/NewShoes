@@ -44,6 +44,8 @@ constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
 constexpr const char DRAW_GROUP_INFO_INI_PATH[] = "Data\\INI\\DrawGroupInfo.ini";
 constexpr const char UPGRADE_INI_PATH[] = "Data\\INI\\Upgrade.ini";
+constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
+constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
 constexpr const char VIDEO_INI_PATH[] = "Data\\INI\\Video.ini";
@@ -162,6 +164,71 @@ void copy_damage_fx_probe(const RealDamageFXIniProbeResult &damage_fx, ArchivePr
 		damage_fx.structure_flame_throttle;
 	result.damage_fx_infantry_sniper_throttle =
 		damage_fx.infantry_sniper_throttle;
+}
+
+void copy_weapon_probe(const RealWeaponIniProbeResult &weapon, ArchiveProbeResult &result)
+{
+	result.weapon_attempted = weapon.attempted;
+	result.weapon_ok = weapon.ok;
+	result.weapon_loaded_archives = weapon.loaded_archives;
+	result.weapon_file_exists = weapon.file_exists;
+	result.weapon_particle_file_exists = weapon.particle_file_exists;
+	result.weapon_name_key_generator_loaded = weapon.name_key_generator_loaded;
+	result.weapon_fx_list_store_loaded = weapon.fx_list_store_loaded;
+	result.weapon_particle_system_manager_loaded =
+		weapon.particle_system_manager_loaded;
+	result.weapon_store_loaded = weapon.weapon_store_loaded;
+	result.weapon_particle_original_ini_load = weapon.particle_original_ini_load;
+	result.weapon_original_ini_load = weapon.original_ini_load;
+	result.weapon_bytes = weapon.bytes;
+	result.weapon_particle_bytes = weapon.particle_bytes;
+	result.weapon_particle_template_count = weapon.particle_template_count;
+	result.weapon_parsed_fields = weapon.parsed_fields;
+	result.weapon_source = weapon.source;
+	result.weapon_tomahawk_exhaust_template_found =
+		weapon.tomahawk_exhaust_template_found;
+	result.weapon_heroic_tomahawk_exhaust_template_found =
+		weapon.heroic_tomahawk_exhaust_template_found;
+	result.weapon_ranger_found = weapon.ranger_found;
+	result.weapon_crusader_found = weapon.crusader_found;
+	result.weapon_tomahawk_found = weapon.tomahawk_found;
+	result.weapon_ranger_primary_damage = weapon.ranger_primary_damage;
+	result.weapon_ranger_attack_range = weapon.ranger_attack_range;
+	result.weapon_ranger_delay_frames = weapon.ranger_delay_frames;
+	result.weapon_ranger_clip_size = weapon.ranger_clip_size;
+	result.weapon_ranger_clip_reload_frames = weapon.ranger_clip_reload_frames;
+	result.weapon_ranger_damage_type = weapon.ranger_damage_type;
+	result.weapon_ranger_death_type = weapon.ranger_death_type;
+	result.weapon_ranger_fire_sound = weapon.ranger_fire_sound;
+	result.weapon_crusader_primary_damage = weapon.crusader_primary_damage;
+	result.weapon_crusader_primary_damage_radius = weapon.crusader_primary_damage_radius;
+	result.weapon_crusader_attack_range = weapon.crusader_attack_range;
+	result.weapon_crusader_delay_frames = weapon.crusader_delay_frames;
+	result.weapon_crusader_clip_size = weapon.crusader_clip_size;
+	result.weapon_crusader_damage_type = weapon.crusader_damage_type;
+	result.weapon_crusader_death_type = weapon.crusader_death_type;
+	result.weapon_crusader_fire_sound = weapon.crusader_fire_sound;
+	result.weapon_tomahawk_primary_damage = weapon.tomahawk_primary_damage;
+	result.weapon_tomahawk_primary_damage_radius =
+		weapon.tomahawk_primary_damage_radius;
+	result.weapon_tomahawk_secondary_damage = weapon.tomahawk_secondary_damage;
+	result.weapon_tomahawk_secondary_damage_radius =
+		weapon.tomahawk_secondary_damage_radius;
+	result.weapon_tomahawk_attack_range = weapon.tomahawk_attack_range;
+	result.weapon_tomahawk_minimum_attack_range =
+		weapon.tomahawk_minimum_attack_range;
+	result.weapon_tomahawk_pre_attack_delay_frames =
+		weapon.tomahawk_pre_attack_delay_frames;
+	result.weapon_tomahawk_delay_frames = weapon.tomahawk_delay_frames;
+	result.weapon_tomahawk_clip_size = weapon.tomahawk_clip_size;
+	result.weapon_tomahawk_clip_reload_frames = weapon.tomahawk_clip_reload_frames;
+	result.weapon_tomahawk_damage_type = weapon.tomahawk_damage_type;
+	result.weapon_tomahawk_death_type = weapon.tomahawk_death_type;
+	result.weapon_tomahawk_fire_sound = weapon.tomahawk_fire_sound;
+	result.weapon_tomahawk_projectile_exhaust_loaded =
+		weapon.tomahawk_projectile_exhaust_loaded;
+	result.weapon_tomahawk_heroic_projectile_exhaust_loaded =
+		weapon.tomahawk_heroic_projectile_exhaust_loaded;
 }
 
 void copy_science_probe(const RealScienceIniProbeResult &science, ArchiveProbeResult &result)
@@ -1028,7 +1095,9 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_roads_ini = archive_file_system.doesFileExist(ROADS_INI_PATH);
 			result.has_draw_group_info_ini = archive_file_system.doesFileExist(DRAW_GROUP_INFO_INI_PATH);
 			result.has_upgrade_ini = archive_file_system.doesFileExist(UPGRADE_INI_PATH);
-			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
+			result.has_weapon_ini = archive_file_system.doesFileExist(WEAPON_INI_PATH);
+			result.has_particle_system_ini =
+				archive_file_system.doesFileExist(PARTICLE_SYSTEM_INI_PATH);
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_default_video_ini = archive_file_system.doesFileExist(DEFAULT_VIDEO_INI_PATH);
 			result.has_video_ini = archive_file_system.doesFileExist(VIDEO_INI_PATH);
@@ -1069,6 +1138,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_damage_fx_ini) {
 		copy_damage_fx_probe(probe_original_damage_fx_ini_load(archive_path), result);
 		result.ok = result.ok && result.damage_fx_ok;
+	}
+	if (result.loaded && result.has_weapon_ini && result.has_particle_system_ini) {
+		copy_weapon_probe(probe_original_weapon_ini_load(archive_path), result);
+		result.ok = result.ok && result.weapon_ok;
 	}
 	if (result.loaded && result.has_science_ini && result.has_generals_csf) {
 		copy_science_probe(probe_original_science_ini_load(archive_path), result);

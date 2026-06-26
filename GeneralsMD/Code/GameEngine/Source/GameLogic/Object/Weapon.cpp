@@ -412,6 +412,9 @@ void WeaponTemplate::reset( void )
 //-------------------------------------------------------------------------------------------------
 void WeaponTemplate::postProcessLoad()
 {
+#ifdef WASM_REAL_INI_WEAPON_METADATA_ONLY
+	return;
+#else
 	if (!TheThingFactory)
 	{
 		DEBUG_CRASH(("you must call this after TheThingFactory is inited"));
@@ -455,6 +458,7 @@ void WeaponTemplate::postProcessLoad()
 		m_projectileDetonationOCLNames[i].clear();
 	}
 
+#endif
 }  // end postProcessLoad
 
 //-------------------------------------------------------------------------------------------------
@@ -566,6 +570,7 @@ Bool WeaponTemplate::isContactWeapon() const
 #endif
 }
 
+#ifndef WASM_REAL_INI_WEAPON_METADATA_ONLY
 //-------------------------------------------------------------------------------------------------
 Real WeaponTemplate::estimateWeaponTemplateDamage(
 	const Object *sourceObj, 
@@ -1502,6 +1507,7 @@ void WeaponTemplate::dealDamageInternal(ObjectID sourceID, ObjectID victimID, co
 		DEBUG_CRASH(("projectile weapons should never get dealDamage called directly\n"));
 	}
 }
+#endif
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -1525,6 +1531,7 @@ WeaponStore::~WeaponStore()
 }
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_WEAPON_METADATA_ONLY
 void WeaponStore::handleProjectileDetonation(const WeaponTemplate* wt, const Object *source, const Coord3D* pos, WeaponBonusConditionFlags extraBonusFlags, Bool inflictDamage )
 {
 	Weapon* w = TheWeaponStore->allocateNewWeapon(wt, PRIMARY_WEAPON);
@@ -1555,6 +1562,7 @@ void WeaponStore::createAndFireTempWeapon(const WeaponTemplate* wt, const Object
 	w->fireWeapon(source, target);
 	w->deleteInstance();
 }
+#endif
 
 //-------------------------------------------------------------------------------------------------
 const WeaponTemplate *WeaponStore::findWeaponTemplate( AsciiString name ) const 
@@ -1612,6 +1620,9 @@ WeaponTemplate *WeaponStore::newOverride(WeaponTemplate *weaponTemplate)
 //-------------------------------------------------------------------------------------------------
 void WeaponStore::update()
 {
+#ifdef WASM_REAL_INI_WEAPON_METADATA_ONLY
+	return;
+#else
 	for (std::list<WeaponDelayedDamageInfo>::iterator ddi = m_weaponDDI.begin(); ddi != m_weaponDDI.end(); )
 	{
 		UnsignedInt curFrame = TheGameLogic->getFrame();
@@ -1627,6 +1638,7 @@ void WeaponStore::update()
 			++ddi;
 		}
 	}
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1682,6 +1694,9 @@ void WeaponStore::setDelayedDamage(const WeaponTemplate *weapon, const Coord3D* 
 //-------------------------------------------------------------------------------------------------
 void WeaponStore::postProcessLoad()
 {
+#ifdef WASM_REAL_INI_WEAPON_METADATA_ONLY
+	return;
+#else
 	if (!TheThingFactory)
 	{
 		DEBUG_CRASH(("you must call this after TheThingFactory is inited"));
@@ -1695,6 +1710,7 @@ void WeaponStore::postProcessLoad()
 			wt->postProcessLoad();
 	}
 
+#endif
 }  // end postProcessLoad
 
 //-------------------------------------------------------------------------------------------------
@@ -1745,6 +1761,7 @@ void WeaponStore::postProcessLoad()
 //-------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
+#ifndef WASM_REAL_INI_WEAPON_METADATA_ONLY
 Weapon::Weapon(const WeaponTemplate* tmpl, WeaponSlotType wslot)
 {
 	// Weapons start empty; you must reload before use.
@@ -3479,6 +3496,7 @@ void Weapon::loadPostProcess( void )
 		}
 	}
 }
+#endif
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------

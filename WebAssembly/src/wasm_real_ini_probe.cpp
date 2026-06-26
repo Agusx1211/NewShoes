@@ -11,6 +11,7 @@
 
 #include "Common/ArchiveFileSystem.h"
 #include "Common/AcademyStats.h"
+#include "Common/AudioEventRTS.h"
 #include "Common/DamageFX.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
@@ -33,6 +34,7 @@
 #include "GameClient/GameText.h"
 #include "GameClient/Image.h"
 #include "GameClient/MapUtil.h"
+#include "GameClient/ParticleSys.h"
 #include "GameClient/Snow.h"
 #include "GameClient/TerrainRoads.h"
 #include "GameClient/VideoPlayer.h"
@@ -41,6 +43,7 @@
 #include "GameLogic/Armor.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
+#include "GameLogic/Weapon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -53,6 +56,8 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
+constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
+constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char SCIENCE_INI_PATH[] = "Data\\INI\\Science.ini";
 constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
@@ -83,6 +88,14 @@ constexpr const char SPECIAL_POWER_PROBE_INI_PATH[] = "__wasm_command_button_spe
 constexpr const char COMMAND_BUTTON_PROBE_INI_PATH[] = "__wasm_command_button_probe.ini";
 constexpr const char COMMAND_SET_PROBE_INI_PATH[] = "__wasm_command_set_probe.ini";
 constexpr const char CRATE_PROBE_INI_PATH[] = "__wasm_crate_probe.ini";
+
+class ProbeParticleSystemManager final : public ParticleSystemManager
+{
+public:
+	Int getOnScreenParticleCount(void) override { return 0; }
+	void doParticles(RenderInfoClass &) override {}
+	void queueParticleRender() override {}
+};
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -305,6 +318,48 @@ std::size_t count_verified_fields(const RealDamageFXIniProbeResult &result)
 		(result.small_tank_comanche_throttle == 3U ? 1U : 0U) +
 		(result.structure_flame_throttle == 9U ? 1U : 0U) +
 		(result.infantry_sniper_throttle == 3U ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealWeaponIniProbeResult &result)
+{
+	return
+		(result.particle_template_count > 0 ? 1U : 0U) +
+		(result.tomahawk_exhaust_template_found ? 1U : 0U) +
+		(result.heroic_tomahawk_exhaust_template_found ? 1U : 0U) +
+		(result.ranger_found ? 1U : 0U) +
+		(std::fabs(result.ranger_primary_damage - 5.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.ranger_attack_range - 100.0f) < 0.001f ? 1U : 0U) +
+		(result.ranger_delay_frames == 3 ? 1U : 0U) +
+		(result.ranger_clip_size == 3 ? 1U : 0U) +
+		(result.ranger_clip_reload_frames == 21 ? 1U : 0U) +
+		(result.ranger_damage_type == DAMAGE_SMALL_ARMS ? 1U : 0U) +
+		(result.ranger_death_type == DEATH_NORMAL ? 1U : 0U) +
+		(result.ranger_fire_sound == "RangerWeapon" ? 1U : 0U) +
+		(result.crusader_found ? 1U : 0U) +
+		(std::fabs(result.crusader_primary_damage - 60.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.crusader_primary_damage_radius - 5.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.crusader_attack_range - 150.0f) < 0.001f ? 1U : 0U) +
+		(result.crusader_delay_frames == 60 ? 1U : 0U) +
+		(result.crusader_clip_size == 0 ? 1U : 0U) +
+		(result.crusader_damage_type == DAMAGE_ARMOR_PIERCING ? 1U : 0U) +
+		(result.crusader_death_type == DEATH_NORMAL ? 1U : 0U) +
+		(result.crusader_fire_sound == "CrusaderTankWeapon" ? 1U : 0U) +
+		(result.tomahawk_found ? 1U : 0U) +
+		(std::fabs(result.tomahawk_primary_damage - 150.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tomahawk_primary_damage_radius - 10.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tomahawk_secondary_damage - 50.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tomahawk_secondary_damage_radius - 25.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tomahawk_attack_range - 350.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tomahawk_minimum_attack_range - 97.5f) < 0.001f ? 1U : 0U) +
+		(result.tomahawk_pre_attack_delay_frames == 8 ? 1U : 0U) +
+		(result.tomahawk_delay_frames == 1 ? 1U : 0U) +
+		(result.tomahawk_clip_size == 1 ? 1U : 0U) +
+		(result.tomahawk_clip_reload_frames == 210 ? 1U : 0U) +
+		(result.tomahawk_damage_type == DAMAGE_EXPLOSION ? 1U : 0U) +
+		(result.tomahawk_death_type == DEATH_EXPLODED ? 1U : 0U) +
+		(result.tomahawk_fire_sound == "TomahawkWeapon" ? 1U : 0U) +
+		(result.tomahawk_projectile_exhaust_loaded ? 1U : 0U) +
+		(result.tomahawk_heroic_projectile_exhaust_loaded ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealScienceIniProbeResult &result)
@@ -1710,6 +1765,205 @@ RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive
 
 	if (damage_fx_store != nullptr) {
 		delete damage_fx_store;
+	}
+	if (fx_list_store != nullptr) {
+		delete fx_list_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path)
+{
+	RealWeaponIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INIParticleSys.cpp + INIWeapon.cpp + Weapon.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FXListStore *old_fx_list_store = TheFXListStore;
+	ParticleSystemManager *old_particle_system_manager = TheParticleSystemManager;
+	WeaponStore *old_weapon_store = TheWeaponStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	FXListStore *fx_list_store = nullptr;
+	ProbeParticleSystemManager *particle_system_manager = nullptr;
+	WeaponStore *weapon_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives =
+			archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo weapon_file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(WEAPON_INI_PATH), &weapon_file_info) &&
+				weapon_file_info.sizeHigh == 0 &&
+				weapon_file_info.sizeLow > 0;
+			result.bytes =
+				result.file_exists ? static_cast<std::size_t>(weapon_file_info.sizeLow) : 0U;
+
+			FileInfo particle_file_info = {};
+			result.particle_file_exists =
+				archive_file_system.getFileInfo(
+					AsciiString(PARTICLE_SYSTEM_INI_PATH),
+					&particle_file_info) &&
+				particle_file_info.sizeHigh == 0 &&
+				particle_file_info.sizeLow > 0;
+			result.particle_bytes =
+				result.particle_file_exists ?
+					static_cast<std::size_t>(particle_file_info.sizeLow) :
+					0U;
+
+			if (result.file_exists && result.particle_file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				fx_list_store = NEW FXListStore;
+				TheFXListStore = fx_list_store;
+				fx_list_store->init();
+				result.fx_list_store_loaded = true;
+
+				particle_system_manager = NEW ProbeParticleSystemManager;
+				TheParticleSystemManager = particle_system_manager;
+				particle_system_manager->init();
+				result.particle_system_manager_loaded = true;
+				result.particle_original_ini_load = true;
+				result.particle_template_count =
+					static_cast<std::size_t>(std::distance(
+						particle_system_manager->beginParticleSystemTemplate(),
+						particle_system_manager->endParticleSystemTemplate()));
+				result.tomahawk_exhaust_template_found =
+					particle_system_manager->findTemplate("TomahawkMissileExhaust") != nullptr;
+				result.heroic_tomahawk_exhaust_template_found =
+					particle_system_manager->findTemplate("HeroicTomahawkMissileExhaust") != nullptr;
+
+				weapon_store = NEW WeaponStore;
+				TheWeaponStore = weapon_store;
+				weapon_store->init();
+				result.weapon_store_loaded = true;
+
+				initDamageTypeFlags();
+
+				INI ini;
+				ini.load(AsciiString(WEAPON_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				WeaponBonus base_bonus;
+				const WeaponTemplate *ranger =
+					weapon_store->findWeaponTemplate("RangerAdvancedCombatRifle");
+				const WeaponTemplate *crusader =
+					weapon_store->findWeaponTemplate("CrusaderTankGun");
+				const WeaponTemplate *tomahawk =
+					weapon_store->findWeaponTemplate("TomahawkMissileWeapon");
+
+				result.ranger_found = ranger != nullptr;
+				result.crusader_found = crusader != nullptr;
+				result.tomahawk_found = tomahawk != nullptr;
+
+				if (ranger != nullptr) {
+					result.ranger_primary_damage = ranger->getPrimaryDamage(base_bonus);
+					result.ranger_attack_range = ranger->getUnmodifiedAttackRange();
+					result.ranger_delay_frames = ranger->getDelayBetweenShots(base_bonus);
+					result.ranger_clip_size = ranger->getClipSize();
+					result.ranger_clip_reload_frames = ranger->getClipReloadTime(base_bonus);
+					result.ranger_damage_type = ranger->getDamageType();
+					result.ranger_death_type = ranger->getDeathType();
+					result.ranger_fire_sound = ranger->getFireSound().getEventName().str();
+				}
+
+				if (crusader != nullptr) {
+					result.crusader_primary_damage = crusader->getPrimaryDamage(base_bonus);
+					result.crusader_primary_damage_radius =
+						crusader->getPrimaryDamageRadius(base_bonus);
+					result.crusader_attack_range = crusader->getUnmodifiedAttackRange();
+					result.crusader_delay_frames = crusader->getDelayBetweenShots(base_bonus);
+					result.crusader_clip_size = crusader->getClipSize();
+					result.crusader_damage_type = crusader->getDamageType();
+					result.crusader_death_type = crusader->getDeathType();
+					result.crusader_fire_sound = crusader->getFireSound().getEventName().str();
+				}
+
+				if (tomahawk != nullptr) {
+					result.tomahawk_primary_damage = tomahawk->getPrimaryDamage(base_bonus);
+					result.tomahawk_primary_damage_radius =
+						tomahawk->getPrimaryDamageRadius(base_bonus);
+					result.tomahawk_secondary_damage = tomahawk->getSecondaryDamage(base_bonus);
+					result.tomahawk_secondary_damage_radius =
+						tomahawk->getSecondaryDamageRadius(base_bonus);
+					result.tomahawk_attack_range = tomahawk->getUnmodifiedAttackRange();
+					result.tomahawk_minimum_attack_range = tomahawk->getMinimumAttackRange();
+					result.tomahawk_pre_attack_delay_frames =
+						tomahawk->getPreAttackDelay(base_bonus);
+					result.tomahawk_delay_frames = tomahawk->getDelayBetweenShots(base_bonus);
+					result.tomahawk_clip_size = tomahawk->getClipSize();
+					result.tomahawk_clip_reload_frames =
+						tomahawk->getClipReloadTime(base_bonus);
+					result.tomahawk_damage_type = tomahawk->getDamageType();
+					result.tomahawk_death_type = tomahawk->getDeathType();
+					result.tomahawk_fire_sound = tomahawk->getFireSound().getEventName().str();
+					result.tomahawk_projectile_exhaust_loaded =
+						tomahawk->getProjectileExhaust(LEVEL_REGULAR) != nullptr;
+					result.tomahawk_heroic_projectile_exhaust_loaded =
+						tomahawk->getProjectileExhaust(LEVEL_HEROIC) != nullptr;
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 100000 &&
+					result.particle_bytes > 100000 &&
+					result.name_key_generator_loaded &&
+					result.fx_list_store_loaded &&
+					result.particle_system_manager_loaded &&
+					result.weapon_store_loaded &&
+					result.particle_original_ini_load &&
+					result.original_ini_load &&
+					result.parsed_fields == 37;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheWeaponStore = old_weapon_store;
+	TheParticleSystemManager = old_particle_system_manager;
+	TheFXListStore = old_fx_list_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (weapon_store != nullptr) {
+		delete weapon_store;
+	}
+	if (particle_system_manager != nullptr) {
+		delete particle_system_manager;
 	}
 	if (fx_list_store != nullptr) {
 		delete fx_list_store;

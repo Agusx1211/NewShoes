@@ -2618,6 +2618,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIMappedImage.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMultiplayer.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIParticleSys.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INISpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INITerrain.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INITerrainBridge.cpp"
@@ -2625,16 +2626,19 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INIUpgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIVideo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWeapon.cpp"
   "${GAMEENGINE_COMMON_DIR}/MultiplayerSettings.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/PlayerTemplate.cpp"
   "${GAMEENGINE_COMMON_DIR}/RTS/SpecialPower.cpp"
   "${GAMEENGINE_COMMON_DIR}/DamageFX.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/ObjectStatusTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarScheme.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/System/Image.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainRoads.cpp"
@@ -2642,8 +2646,13 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/Water.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Weapon.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/CrateSystem.cpp"
+)
+
+set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include;${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
@@ -2653,6 +2662,7 @@ target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE
   DISABLE_DEBUG_CRASHING=1
   DISABLE_DEBUG_STACKTRACE=1
   DISABLE_DEBUG_PROFILE=1
+  WASM_REAL_INI_WEAPON_METADATA_ONLY=1
 )
 
 target_include_directories(zh_gameengine_real_ini_runtime PUBLIC
@@ -2675,6 +2685,8 @@ target_include_directories(zh_gameengine_real_ini_runtime PUBLIC
 
 target_compile_options(zh_gameengine_real_ini_runtime PRIVATE
   -fexceptions
+  -ffunction-sections
+  -fdata-sections
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
@@ -3013,6 +3025,7 @@ target_link_libraries(cnc-port PRIVATE
 )
 
 target_link_options(cnc-port PRIVATE
+  "SHELL:-Wl,--gc-sections"
   "SHELL:--no-entry"
   "SHELL:-sMODULARIZE=1"
   "SHELL:-sEXPORT_ES6=1"
