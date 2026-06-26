@@ -363,6 +363,13 @@ bool startup_command_set_ready()
 		g_archive_probe.command_set_ok;
 }
 
+bool startup_crate_ready()
+{
+	return g_archive_probe.has_crate_ini &&
+		g_archive_probe.crate_attempted &&
+		g_archive_probe.crate_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -416,6 +423,7 @@ bool startup_assets_ready()
 		startup_upgrade_ready() &&
 		startup_command_button_ready() &&
 		startup_command_set_ready() &&
+		startup_crate_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -467,6 +475,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_command_set_ready()) {
 		return "command_set_probe_failed";
+	}
+	if (!startup_crate_ready()) {
+		return "crate_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -535,6 +546,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_command_set_ready()) {
 		return "Runtime BIG archive set did not pass the CommandSet.ini startup probe.";
+	}
+	if (!startup_crate_ready()) {
+		return "Runtime BIG archive set did not pass the Crate.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -885,6 +899,101 @@ std::string build_command_set_probe_json()
 	return buffer;
 }
 
+std::string build_crate_probe_json()
+{
+	char buffer[9000];
+	const std::string source_json = json_escape(g_archive_probe.crate_source);
+	const std::string salvage_object_json =
+		json_escape(g_archive_probe.crate_salvage_object_name);
+	const std::string elite_first_json =
+		json_escape(g_archive_probe.crate_elite_first_object);
+	const std::string elite_second_json =
+		json_escape(g_archive_probe.crate_elite_second_object);
+	const std::string heroic_first_json =
+		json_escape(g_archive_probe.crate_heroic_first_object);
+	const std::string heroic_third_json =
+		json_escape(g_archive_probe.crate_heroic_third_object);
+	const std::string gla02_100_object_json =
+		json_escape(g_archive_probe.crate_gla02_100_object);
+	const std::string gla02_2500_object_json =
+		json_escape(g_archive_probe.crate_gla02_2500_object);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"scienceBytes\":%zu,\"filteredBytes\":%zu,\"source\":\"%s\","
+		"\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,"
+		"\"scienceOriginalIniLoad\":%s,\"originalIniLoad\":%s,"
+		"\"filteredFromShipped\":%s,\"filteredBlocks\":%zu,"
+		"\"parsedFields\":%zu,\"templates\":%zu,"
+		"\"salvage\":{\"found\":%s,\"creationChance\":%.3f,"
+		"\"salvagerKindOf\":%s,\"killerScienceValid\":%s,"
+		"\"objects\":%zu,\"object\":\"%s\",\"objectChance\":%.3f},"
+		"\"elite\":{\"found\":%s,\"creationChance\":%.3f,"
+		"\"veterancyLevel\":%d,\"objects\":%zu,"
+		"\"firstObject\":\"%s\",\"firstChance\":%.3f,"
+		"\"secondObject\":\"%s\",\"secondChance\":%.3f},"
+		"\"heroic\":{\"found\":%s,\"creationChance\":%.3f,"
+		"\"veterancyLevel\":%d,\"objects\":%zu,"
+		"\"firstObject\":\"%s\",\"firstChance\":%.3f,"
+		"\"thirdObject\":\"%s\",\"thirdChance\":%.3f},"
+		"\"gla02\":{\"hundred\":{\"found\":%s,\"ownedByMaker\":%s,"
+		"\"object\":\"%s\",\"chance\":%.3f},"
+		"\"twentyFiveHundred\":{\"found\":%s,\"ownedByMaker\":%s,"
+		"\"object\":\"%s\",\"chance\":%.3f}}}",
+		g_archive_probe.crate_attempted ? "true" : "false",
+		g_archive_probe.crate_ok ? "true" : "false",
+		g_archive_probe.crate_bytes,
+		g_archive_probe.crate_science_bytes,
+		g_archive_probe.crate_filtered_bytes,
+		source_json.c_str(),
+		g_archive_probe.crate_loaded_archives ? "true" : "false",
+		g_archive_probe.crate_file_exists ? "true" : "false",
+		g_archive_probe.crate_science_file_exists ? "true" : "false",
+		g_archive_probe.crate_game_text_loaded ? "true" : "false",
+		g_archive_probe.crate_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.crate_science_original_ini_load ? "true" : "false",
+		g_archive_probe.crate_original_ini_load ? "true" : "false",
+		g_archive_probe.crate_filtered_from_shipped ? "true" : "false",
+		g_archive_probe.crate_filtered_blocks,
+		g_archive_probe.crate_parsed_fields,
+		g_archive_probe.crate_template_count,
+		g_archive_probe.crate_salvage_found ? "true" : "false",
+		g_archive_probe.crate_salvage_creation_chance,
+		g_archive_probe.crate_salvage_salvager_kindof ? "true" : "false",
+		g_archive_probe.crate_salvage_killer_science_valid ? "true" : "false",
+		g_archive_probe.crate_salvage_object_count,
+		salvage_object_json.c_str(),
+		g_archive_probe.crate_salvage_object_chance,
+		g_archive_probe.crate_elite_found ? "true" : "false",
+		g_archive_probe.crate_elite_creation_chance,
+		g_archive_probe.crate_elite_veterancy_level,
+		g_archive_probe.crate_elite_object_count,
+		elite_first_json.c_str(),
+		g_archive_probe.crate_elite_first_chance,
+		elite_second_json.c_str(),
+		g_archive_probe.crate_elite_second_chance,
+		g_archive_probe.crate_heroic_found ? "true" : "false",
+		g_archive_probe.crate_heroic_creation_chance,
+		g_archive_probe.crate_heroic_veterancy_level,
+		g_archive_probe.crate_heroic_object_count,
+		heroic_first_json.c_str(),
+		g_archive_probe.crate_heroic_first_chance,
+		heroic_third_json.c_str(),
+		g_archive_probe.crate_heroic_third_chance,
+		g_archive_probe.crate_gla02_100_found ? "true" : "false",
+		g_archive_probe.crate_gla02_100_owned_by_maker ? "true" : "false",
+		gla02_100_object_json.c_str(),
+		g_archive_probe.crate_gla02_100_object_chance,
+		g_archive_probe.crate_gla02_2500_found ? "true" : "false",
+		g_archive_probe.crate_gla02_2500_owned_by_maker ? "true" : "false",
+		gla02_2500_object_json.c_str(),
+		g_archive_probe.crate_gla02_2500_object_chance);
+
+	return buffer;
+}
+
 std::string build_draw_group_info_probe_json()
 {
 	char buffer[3000];
@@ -971,6 +1080,7 @@ const char *write_state_json()
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
 	const std::string command_set_probe_json = build_command_set_probe_json();
+	const std::string crate_probe_json = build_crate_probe_json();
 	const std::string draw_group_info_probe_json = build_draw_group_info_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
@@ -1130,7 +1240,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"commandSetIni\":%s,"
+		"\"commandSetIni\":%s,\"crateIni\":%s,"
 		"\"playerTemplateIni\":%s,\"gameDataIni\":%s,\"scienceIni\":%s,\"specialPowerIni\":%s,"
 		"\"multiplayerIni\":%s,"
 		"\"terrainIni\":%s,\"roadsIni\":%s,\"upgradeIni\":%s,"
@@ -1159,6 +1269,7 @@ const char *write_state_json()
 		"\"upgrade\":%s,"
 		"\"commandButton\":%s,"
 		"\"commandSet\":%s,"
+		"\"crate\":%s,"
 		"\"drawGroupInfo\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
@@ -1310,7 +1421,8 @@ const char *write_state_json()
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"science\":%s,"
 		"\"upgrade\":%s,\"commandButton\":%s,"
-		"\"commandSet\":%s,\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
+		"\"commandSet\":%s,\"crate\":%s,"
+		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
 		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
@@ -1367,6 +1479,7 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_command_set_ini ? "true" : "false",
+		g_archive_probe.has_crate_ini ? "true" : "false",
 		g_archive_probe.has_player_template_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_science_ini ? "true" : "false",
@@ -1425,6 +1538,7 @@ const char *write_state_json()
 		upgrade_probe_json.c_str(),
 		command_button_probe_json.c_str(),
 		command_set_probe_json.c_str(),
+		crate_probe_json.c_str(),
 		draw_group_info_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
@@ -1759,6 +1873,7 @@ const char *write_state_json()
 		startup_upgrade_ready() ? "true" : "false",
 		startup_command_button_ready() ? "true" : "false",
 		startup_command_set_ready() ? "true" : "false",
+		startup_crate_ready() ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",

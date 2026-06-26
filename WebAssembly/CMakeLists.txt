@@ -2610,6 +2610,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandButton.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INICommandSet.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INICrate.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIDrawGroupInfo.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
@@ -2637,6 +2638,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/CrateSystem.cpp"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE

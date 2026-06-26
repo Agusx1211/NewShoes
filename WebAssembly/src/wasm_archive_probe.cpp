@@ -34,6 +34,7 @@ constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
+constexpr const char CRATE_INI_PATH[] = "Data\\INI\\Crate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -368,6 +369,58 @@ void copy_command_set_probe(const RealCommandSetIniProbeResult &command_set, Arc
 	result.command_set_ranger_slot1_special_power = command_set.ranger_slot1_special_power;
 	result.command_set_ranger_slot1_upgrade = command_set.ranger_slot1_upgrade;
 	result.command_set_ranger_slot4_upgrade = command_set.ranger_slot4_upgrade;
+}
+
+void copy_crate_probe(const RealCrateIniProbeResult &crate, ArchiveProbeResult &result)
+{
+	result.crate_attempted = crate.attempted;
+	result.crate_ok = crate.ok;
+	result.crate_loaded_archives = crate.loaded_archives;
+	result.crate_file_exists = crate.file_exists;
+	result.crate_science_file_exists = crate.science_file_exists;
+	result.crate_game_text_loaded = crate.game_text_loaded;
+	result.crate_name_key_generator_loaded = crate.name_key_generator_loaded;
+	result.crate_science_original_ini_load = crate.science_original_ini_load;
+	result.crate_original_ini_load = crate.original_ini_load;
+	result.crate_filtered_from_shipped = crate.filtered_from_shipped;
+	result.crate_bytes = crate.bytes;
+	result.crate_science_bytes = crate.science_bytes;
+	result.crate_filtered_bytes = crate.filtered_bytes;
+	result.crate_filtered_blocks = crate.filtered_blocks;
+	result.crate_parsed_fields = crate.parsed_fields;
+	result.crate_template_count = crate.crate_template_count;
+	result.crate_source = crate.source;
+	result.crate_salvage_found = crate.salvage_found;
+	result.crate_salvage_creation_chance = crate.salvage_creation_chance;
+	result.crate_salvage_salvager_kindof = crate.salvage_salvager_kindof;
+	result.crate_salvage_killer_science_valid = crate.salvage_killer_science_valid;
+	result.crate_salvage_object_count = crate.salvage_object_count;
+	result.crate_salvage_object_name = crate.salvage_object_name;
+	result.crate_salvage_object_chance = crate.salvage_object_chance;
+	result.crate_elite_found = crate.elite_found;
+	result.crate_elite_creation_chance = crate.elite_creation_chance;
+	result.crate_elite_veterancy_level = crate.elite_veterancy_level;
+	result.crate_elite_object_count = crate.elite_object_count;
+	result.crate_elite_first_object = crate.elite_first_object;
+	result.crate_elite_first_chance = crate.elite_first_chance;
+	result.crate_elite_second_object = crate.elite_second_object;
+	result.crate_elite_second_chance = crate.elite_second_chance;
+	result.crate_heroic_found = crate.heroic_found;
+	result.crate_heroic_creation_chance = crate.heroic_creation_chance;
+	result.crate_heroic_veterancy_level = crate.heroic_veterancy_level;
+	result.crate_heroic_object_count = crate.heroic_object_count;
+	result.crate_heroic_first_object = crate.heroic_first_object;
+	result.crate_heroic_first_chance = crate.heroic_first_chance;
+	result.crate_heroic_third_object = crate.heroic_third_object;
+	result.crate_heroic_third_chance = crate.heroic_third_chance;
+	result.crate_gla02_100_found = crate.gla02_100_found;
+	result.crate_gla02_100_owned_by_maker = crate.gla02_100_owned_by_maker;
+	result.crate_gla02_100_object = crate.gla02_100_object;
+	result.crate_gla02_100_object_chance = crate.gla02_100_object_chance;
+	result.crate_gla02_2500_found = crate.gla02_2500_found;
+	result.crate_gla02_2500_owned_by_maker = crate.gla02_2500_owned_by_maker;
+	result.crate_gla02_2500_object = crate.gla02_2500_object;
+	result.crate_gla02_2500_object_chance = crate.gla02_2500_object_chance;
 }
 
 void copy_draw_group_info_probe(
@@ -826,6 +879,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist(COMMAND_BUTTON_INI_PATH);
 			result.has_command_set_ini = archive_file_system.doesFileExist(COMMAND_SET_INI_PATH);
+			result.has_crate_ini = archive_file_system.doesFileExist(CRATE_INI_PATH);
 			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
@@ -900,6 +954,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_draw_group_info_ini) {
 		copy_draw_group_info_probe(probe_original_draw_group_info_ini_load(archive_path), result);
 		result.ok = result.ok && result.draw_group_info_ok;
+	}
+	if (result.loaded && result.has_crate_ini) {
+		copy_crate_probe(probe_original_crate_ini_load(archive_path), result);
+		result.ok = result.ok && result.crate_ok;
 	}
 	if (result.loaded && result.has_upgrade_ini) {
 		copy_upgrade_probe(probe_original_upgrade_ini_load(archive_path), result);

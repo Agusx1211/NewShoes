@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,7 @@
 #include "GameClient/Water.h"
 #include "GameNetwork/GameSpy/PeerDefs.h"
 #include "GameLogic/Armor.h"
+#include "GameLogic/CrateSystem.h"
 #include "GameLogic/Damage.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
@@ -52,6 +54,7 @@ constexpr const char SPECIAL_POWER_INI_PATH[] = "Data\\INI\\SpecialPower.ini";
 constexpr const char PLAYER_TEMPLATE_INI_PATH[] = "Data\\INI\\PlayerTemplate.ini";
 constexpr const char COMMAND_BUTTON_INI_PATH[] = "Data\\INI\\CommandButton.ini";
 constexpr const char COMMAND_SET_INI_PATH[] = "Data\\INI\\CommandSet.ini";
+constexpr const char CRATE_INI_PATH[] = "Data\\INI\\Crate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char ROADS_INI_PATH[] = "Data\\INI\\Roads.ini";
@@ -68,6 +71,7 @@ constexpr const char TOURNAMENT_DESERT_PATH[] = "maps\\tournament desert\\tourna
 constexpr const char SPECIAL_POWER_PROBE_INI_PATH[] = "__wasm_command_button_special_power_probe.ini";
 constexpr const char COMMAND_BUTTON_PROBE_INI_PATH[] = "__wasm_command_button_probe.ini";
 constexpr const char COMMAND_SET_PROBE_INI_PATH[] = "__wasm_command_set_probe.ini";
+constexpr const char CRATE_PROBE_INI_PATH[] = "__wasm_crate_probe.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -193,6 +197,14 @@ bool append_command_set_block(
 	return append_ini_block(source, "CommandSet", set_name, destination);
 }
 
+bool append_crate_data_block(
+	const std::string &source,
+	const char *crate_name,
+	std::string &destination)
+{
+	return append_ini_block(source, "CrateData", crate_name, destination);
+}
+
 bool write_probe_ini_file(const char *path, const std::string &text)
 {
 	if (TheFileSystem == nullptr) {
@@ -214,6 +226,30 @@ bool write_probe_ini_file(const char *path, const std::string &text)
 bool write_probe_ini_file(const std::string &text)
 {
 	return write_probe_ini_file(COMMAND_BUTTON_PROBE_INI_PATH, text);
+}
+
+const crateCreationEntry *crate_entry_at(const CrateTemplate *crate, std::size_t index)
+{
+	if (crate == nullptr || index >= crate->m_possibleCrates.size()) {
+		return nullptr;
+	}
+
+	crateCreationEntryConstIterator it = crate->m_possibleCrates.begin();
+	std::advance(it, static_cast<crateCreationEntryList::difference_type>(index));
+	return &(*it);
+}
+
+void inspect_crate_entry(
+	const CrateTemplate *crate,
+	std::size_t index,
+	std::string &name,
+	float &chance)
+{
+	const crateCreationEntry *entry = crate_entry_at(crate, index);
+	if (entry != nullptr) {
+		name = entry->crateName.str();
+		chance = entry->crateChance;
+	}
 }
 
 std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
@@ -577,6 +613,45 @@ std::size_t count_verified_fields(const RealDrawGroupInfoIniProbeResult &result)
 		(std::fabs(result.percent_offset_x - -0.05f) < 0.001f ? 1U : 0U) +
 		(result.using_pixel_offset_y ? 1U : 0U) +
 		(result.pixel_offset_y == -10 ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealCrateIniProbeResult &result)
+{
+	return
+		(result.crate_template_count == 7 ? 1U : 0U) +
+		(result.filtered_from_shipped ? 1U : 0U) +
+		(result.filtered_blocks == 7 ? 1U : 0U) +
+		(result.salvage_found ? 1U : 0U) +
+		(std::fabs(result.salvage_creation_chance - 1.0f) < 0.001f ? 1U : 0U) +
+		(result.salvage_salvager_kindof ? 1U : 0U) +
+		(result.salvage_killer_science_valid ? 1U : 0U) +
+		(result.salvage_object_count == 1 ? 1U : 0U) +
+		(result.salvage_object_name == "SalvageCrate" ? 1U : 0U) +
+		(std::fabs(result.salvage_object_chance - 1.0f) < 0.001f ? 1U : 0U) +
+		(result.elite_found ? 1U : 0U) +
+		(std::fabs(result.elite_creation_chance - 0.75f) < 0.001f ? 1U : 0U) +
+		(result.elite_veterancy_level == LEVEL_ELITE ? 1U : 0U) +
+		(result.elite_object_count == 2 ? 1U : 0U) +
+		(result.elite_first_object == "1000DollarCrate" ? 1U : 0U) +
+		(std::fabs(result.elite_first_chance - 0.75f) < 0.001f ? 1U : 0U) +
+		(result.elite_second_object == "SmallLevelUpCrate" ? 1U : 0U) +
+		(std::fabs(result.elite_second_chance - 0.25f) < 0.001f ? 1U : 0U) +
+		(result.heroic_found ? 1U : 0U) +
+		(std::fabs(result.heroic_creation_chance - 1.0f) < 0.001f ? 1U : 0U) +
+		(result.heroic_veterancy_level == LEVEL_HEROIC ? 1U : 0U) +
+		(result.heroic_object_count == 3 ? 1U : 0U) +
+		(result.heroic_first_object == "2500DollarCrate" ? 1U : 0U) +
+		(std::fabs(result.heroic_first_chance - 0.5f) < 0.001f ? 1U : 0U) +
+		(result.heroic_third_object == "2FreeCrusadersCrate" ? 1U : 0U) +
+		(std::fabs(result.heroic_third_chance - 0.25f) < 0.001f ? 1U : 0U) +
+		(result.gla02_100_found ? 1U : 0U) +
+		(result.gla02_100_owned_by_maker ? 1U : 0U) +
+		(result.gla02_100_object == "100DollarCrate" ? 1U : 0U) +
+		(std::fabs(result.gla02_100_object_chance - 1.0f) < 0.001f ? 1U : 0U) +
+		(result.gla02_2500_found ? 1U : 0U) +
+		(result.gla02_2500_owned_by_maker ? 1U : 0U) +
+		(result.gla02_2500_object == "2500DollarCrate" ? 1U : 0U) +
+		(std::fabs(result.gla02_2500_object_chance - 1.0f) < 0.001f ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealUpgradeIniProbeResult &result)
@@ -2456,6 +2531,229 @@ RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const ch
 		delete draw_group_info;
 	}
 
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path)
+{
+	RealCrateIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + INICrate.cpp + CrateSystem.cpp + Science.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ScienceStore *old_science_store = TheScienceStore;
+	CrateSystem *old_crate_system = TheCrateSystem;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ScienceStore *science_store = nullptr;
+	CrateSystem *crate_system = nullptr;
+	const char *probe_crate_names[] = {
+		"SalvageCrateData",
+		"EliteTankCrateData",
+		"HeroicTankCrateData",
+		"GLA02_Always100DollarCrate",
+		"GLA02_Always200DollarCrate",
+		"GLA02_Always1000DollarCrate",
+		"GLA02_Always2500DollarCrate",
+	};
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(CRATE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			FileInfo science_file_info = {};
+			result.science_file_exists =
+				archive_file_system.getFileInfo(AsciiString(SCIENCE_INI_PATH), &science_file_info) &&
+				science_file_info.sizeHigh == 0 &&
+				science_file_info.sizeLow > 0;
+			result.science_bytes = result.science_file_exists ?
+				static_cast<std::size_t>(science_file_info.sizeLow) : 0U;
+
+			if (result.file_exists && result.science_file_exists) {
+				std::string shipped_crates;
+				std::string filtered_crates;
+				if (read_archive_text(file_system, CRATE_INI_PATH, shipped_crates)) {
+					for (const char *crate_name : probe_crate_names) {
+						if (append_crate_data_block(shipped_crates, crate_name, filtered_crates)) {
+							++result.filtered_blocks;
+						}
+					}
+				}
+
+				result.filtered_bytes = filtered_crates.size();
+				result.filtered_from_shipped = result.filtered_blocks == 7;
+
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+					Bool title_exists = FALSE;
+					const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+					result.game_text_loaded = title_exists && unicode_not_empty(title);
+				}
+
+				science_store = NEW ScienceStore;
+				TheScienceStore = science_store;
+				science_store->init();
+
+				INI science_ini;
+				science_ini.load(AsciiString(SCIENCE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.science_original_ini_load = true;
+
+				crate_system = NEW CrateSystem;
+				TheCrateSystem = crate_system;
+				crate_system->init();
+
+				if (result.filtered_from_shipped &&
+						write_probe_ini_file(CRATE_PROBE_INI_PATH, filtered_crates)) {
+					INI ini;
+					ini.load(AsciiString(CRATE_PROBE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+					result.original_ini_load = true;
+
+					for (const char *crate_name : probe_crate_names) {
+						if (crate_system->findCrateTemplate(AsciiString(crate_name)) != nullptr) {
+							++result.crate_template_count;
+						}
+					}
+
+					const CrateTemplate *salvage =
+						crate_system->findCrateTemplate(AsciiString("SalvageCrateData"));
+					result.salvage_found = salvage != nullptr;
+					if (salvage != nullptr) {
+						result.salvage_creation_chance = salvage->m_creationChance;
+						result.salvage_salvager_kindof =
+							TEST_KINDOFMASK(salvage->m_killedByTypeKindof, KINDOF_SALVAGER);
+						result.salvage_killer_science_valid =
+							salvage->m_killerScience ==
+							static_cast<ScienceType>(name_key_generator->nameToKey("SCIENCE_GLA"));
+						result.salvage_object_count = salvage->m_possibleCrates.size();
+						inspect_crate_entry(
+							salvage,
+							0,
+							result.salvage_object_name,
+							result.salvage_object_chance);
+					}
+
+					const CrateTemplate *elite =
+						crate_system->findCrateTemplate(AsciiString("EliteTankCrateData"));
+					result.elite_found = elite != nullptr;
+					if (elite != nullptr) {
+						result.elite_creation_chance = elite->m_creationChance;
+						result.elite_veterancy_level = elite->m_veterancyLevel;
+						result.elite_object_count = elite->m_possibleCrates.size();
+						inspect_crate_entry(elite, 0, result.elite_first_object, result.elite_first_chance);
+						inspect_crate_entry(elite, 1, result.elite_second_object, result.elite_second_chance);
+					}
+
+					const CrateTemplate *heroic =
+						crate_system->findCrateTemplate(AsciiString("HeroicTankCrateData"));
+					result.heroic_found = heroic != nullptr;
+					if (heroic != nullptr) {
+						result.heroic_creation_chance = heroic->m_creationChance;
+						result.heroic_veterancy_level = heroic->m_veterancyLevel;
+						result.heroic_object_count = heroic->m_possibleCrates.size();
+						inspect_crate_entry(heroic, 0, result.heroic_first_object, result.heroic_first_chance);
+						inspect_crate_entry(heroic, 2, result.heroic_third_object, result.heroic_third_chance);
+					}
+
+					const CrateTemplate *gla02_100 =
+						crate_system->findCrateTemplate(AsciiString("GLA02_Always100DollarCrate"));
+					result.gla02_100_found = gla02_100 != nullptr;
+					if (gla02_100 != nullptr) {
+						result.gla02_100_owned_by_maker = gla02_100->m_isOwnedByMaker;
+						inspect_crate_entry(
+							gla02_100,
+							0,
+							result.gla02_100_object,
+							result.gla02_100_object_chance);
+					}
+
+					const CrateTemplate *gla02_2500 =
+						crate_system->findCrateTemplate(AsciiString("GLA02_Always2500DollarCrate"));
+					result.gla02_2500_found = gla02_2500 != nullptr;
+					if (gla02_2500 != nullptr) {
+						result.gla02_2500_owned_by_maker = gla02_2500->m_isOwnedByMaker;
+						inspect_crate_entry(
+							gla02_2500,
+							0,
+							result.gla02_2500_object,
+							result.gla02_2500_object_chance);
+					}
+
+					result.parsed_fields = count_verified_fields(result);
+					result.ok =
+						result.bytes > 10000 &&
+						result.science_bytes > 10000 &&
+						result.filtered_bytes > 500 &&
+						result.name_key_generator_loaded &&
+						result.science_original_ini_load &&
+						result.original_ini_load &&
+						result.parsed_fields == 34;
+				}
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheCrateSystem = old_crate_system;
+	TheScienceStore = old_science_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (crate_system != nullptr) {
+		delete crate_system;
+	}
+	if (science_store != nullptr) {
+		delete science_store;
+	}
+	if (game_text != nullptr) {
+		delete game_text;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+
+	std::remove(CRATE_PROBE_INI_PATH);
 	shutdownMemoryManager();
 
 	return result;

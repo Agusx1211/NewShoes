@@ -312,6 +312,59 @@ struct RealDrawGroupInfoIniProbeResult
 	float percent_offset_y = 0.0f;
 };
 
+struct RealCrateIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool science_file_exists = false;
+	bool game_text_loaded = false;
+	bool name_key_generator_loaded = false;
+	bool science_original_ini_load = false;
+	bool original_ini_load = false;
+	bool filtered_from_shipped = false;
+	std::size_t bytes = 0;
+	std::size_t science_bytes = 0;
+	std::size_t filtered_bytes = 0;
+	std::size_t filtered_blocks = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t crate_template_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool salvage_found = false;
+	float salvage_creation_chance = 0.0f;
+	bool salvage_salvager_kindof = false;
+	bool salvage_killer_science_valid = false;
+	std::size_t salvage_object_count = 0;
+	std::string salvage_object_name;
+	float salvage_object_chance = 0.0f;
+	bool elite_found = false;
+	float elite_creation_chance = 0.0f;
+	int elite_veterancy_level = 0;
+	std::size_t elite_object_count = 0;
+	std::string elite_first_object;
+	float elite_first_chance = 0.0f;
+	std::string elite_second_object;
+	float elite_second_chance = 0.0f;
+	bool heroic_found = false;
+	float heroic_creation_chance = 0.0f;
+	int heroic_veterancy_level = 0;
+	std::size_t heroic_object_count = 0;
+	std::string heroic_first_object;
+	float heroic_first_chance = 0.0f;
+	std::string heroic_third_object;
+	float heroic_third_chance = 0.0f;
+	bool gla02_100_found = false;
+	bool gla02_100_owned_by_maker = false;
+	std::string gla02_100_object;
+	float gla02_100_object_chance = 0.0f;
+	bool gla02_2500_found = false;
+	bool gla02_2500_owned_by_maker = false;
+	std::string gla02_2500_object;
+	float gla02_2500_object_chance = 0.0f;
+};
+
 struct RealUpgradeIniProbeResult
 {
 	bool attempted = false;
@@ -604,6 +657,7 @@ RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *ar
 RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_path);
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
 RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path);
+RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
 RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char *archive_path);
 RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const char *archive_path);

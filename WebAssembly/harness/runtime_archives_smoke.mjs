@@ -288,6 +288,64 @@ function assertCommandSetProbe(assetProbe, context) {
   }
 }
 
+function assertCrateProbe(assetProbe, context) {
+  const crate = assetProbe?.crate;
+  const salvage = crate?.salvage;
+  const elite = crate?.elite;
+  const heroic = crate?.heroic;
+  const gla02 = crate?.gla02;
+  if (!assetProbe?.inizh?.crateIni
+      || !crate?.attempted
+      || !crate.ok
+      || crate.source !== "GameEngine/Common/INI.cpp::load + INICrate.cpp + CrateSystem.cpp + Science.cpp"
+      || !crate.loadedArchives
+      || !crate.fileExists
+      || !crate.scienceFileExists
+      || !crate.nameKeyGeneratorLoaded
+      || !crate.scienceOriginalIniLoad
+      || !crate.originalIniLoad
+      || !crate.filteredFromShipped
+      || crate.bytes <= 10000
+      || crate.scienceBytes <= 10000
+      || crate.filteredBytes <= 500
+      || crate.filteredBlocks !== 7
+      || crate.parsedFields !== 34
+      || crate.templates !== 7
+      || !salvage?.found
+      || Math.abs(salvage.creationChance - 1.0) > 0.001
+      || !salvage.salvagerKindOf
+      || !salvage.killerScienceValid
+      || salvage.objects !== 1
+      || salvage.object !== "SalvageCrate"
+      || Math.abs(salvage.objectChance - 1.0) > 0.001
+      || !elite?.found
+      || Math.abs(elite.creationChance - 0.75) > 0.001
+      || elite.veterancyLevel !== 2
+      || elite.objects !== 2
+      || elite.firstObject !== "1000DollarCrate"
+      || Math.abs(elite.firstChance - 0.75) > 0.001
+      || elite.secondObject !== "SmallLevelUpCrate"
+      || Math.abs(elite.secondChance - 0.25) > 0.001
+      || !heroic?.found
+      || Math.abs(heroic.creationChance - 1.0) > 0.001
+      || heroic.veterancyLevel !== 3
+      || heroic.objects !== 3
+      || heroic.firstObject !== "2500DollarCrate"
+      || Math.abs(heroic.firstChance - 0.5) > 0.001
+      || heroic.thirdObject !== "2FreeCrusadersCrate"
+      || Math.abs(heroic.thirdChance - 0.25) > 0.001
+      || !gla02?.hundred?.found
+      || !gla02.hundred.ownedByMaker
+      || gla02.hundred.object !== "100DollarCrate"
+      || Math.abs(gla02.hundred.chance - 1.0) > 0.001
+      || !gla02.twentyFiveHundred?.found
+      || !gla02.twentyFiveHundred.ownedByMaker
+      || gla02.twentyFiveHundred.object !== "2500DollarCrate"
+      || Math.abs(gla02.twentyFiveHundred.chance - 1.0) > 0.001) {
+    throw new Error(`${context} did not parse expected Crate.ini CrateData entries: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertDrawGroupInfoProbeAbsent(assetProbe, context) {
   const drawGroupInfo = assetProbe?.drawGroupInfo;
   if (assetProbe?.inizh?.drawGroupInfoIni !== false
@@ -669,6 +727,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.upgrade
         || !startupAssets.required?.commandButton
         || !startupAssets.required?.commandSet
+        || !startupAssets.required?.crate
         || !startupAssets.required?.specialPower
         || !startupAssets.required?.playerTemplate
         || !startupAssets.required?.multiplayer
@@ -752,6 +811,7 @@ try {
   if (!assetProbe?.ok || !assetProbe.inizh?.armorIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
+      || !assetProbe.inizh?.crateIni
       || !assetProbe.inizh?.multiplayerIni
       || !assetProbe.inizh?.scienceIni
       || !assetProbe.inizh?.upgradeIni
@@ -768,6 +828,7 @@ try {
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
+  assertCrateProbe(assetProbe, "aggregate runtime archive probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
@@ -830,6 +891,7 @@ try {
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertCrateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");

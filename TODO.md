@@ -695,9 +695,15 @@ shares structure and follows behind.
       referenced by the project files but absent from the current extracted
       runtime BIG set, then enable the optional draw-group probe as a
       real-data parse smoke.
-- [ ] Link and smoke-test the original crate INI parser route after the real
-      `Common/INI.cpp` reader and `CrateSystem` singleton surface are
-      available without target-local parser stubs.
+- [x] Link and smoke-test the original crate INI parser route through the
+      focused browser INI runtime, using original `Common/INI.cpp::load`,
+      `INICrate.cpp`, `CrateSystem.cpp`, and `Science.cpp` over the shipped
+      `Data\INI\Crate.ini` `CrateData` subset for salvage, elite/heroic, and
+      GLA02 money-crate templates.
+- [ ] Expand crate parser preflight from the focused shipped `CrateData`
+      subset to full `Crate.ini` after real `ThingFactory` / `ThingTemplate`
+      object-template parsing can consume the file's `Object` blocks without
+      target-local parser stubs.
 - [ ] Decide the browser replacement contract for original Windows Media /
       shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
       `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
