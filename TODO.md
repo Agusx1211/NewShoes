@@ -614,13 +614,17 @@ shares structure and follows behind.
       singleton surface are available without target-local parser stubs.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
-      singleton comes online; they exist only to keep the `GameData`,
+      singleton comes online; they exist only to keep the `GameData`, `Water`,
       `Weather`, and shipped map-cache preflights on original `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
       `MapUtil.cpp` / `WorldHeightMap.cpp` ownership once those runtime surfaces
       can link without compile-only UI/map-loader dependencies.
+- [ ] Replace the focused shipped water runtime's weak `TheTerrainVisual`
+      compatibility definition with original `TerrainVisual.cpp` ownership once
+      terrain visual/map-loading runtime surfaces can link without renderer
+      dependencies.
 - [ ] Link and smoke-test the original command-set, control-bar scheme,
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
@@ -1217,6 +1221,10 @@ shares structure and follows behind.
       bridge with original scalar, color, bit-string, sub-token, quoted-string,
       and definition declarations needed by those sources; smoke-test image,
       water, and header-template runtime basics.
+- [x] Make original `GameClient/Water.h` self-contained for `AsciiString` and
+      GameMemory dependencies because it stores `AsciiString` values and uses
+      `Overridable` memory-pool macros directly when wasm targets suppress the
+      original `PreRTS.h` body.
 - [x] Compile original `GameClient/System/Anim2D.cpp` after extending the
       target-local `Common/INI.h` and `Common/Xfer.h` shims with the original
       index-list, duration parser, mapped-image, and unsigned-short transfer
@@ -1604,8 +1612,8 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/GameData/Weather/GameText/MapCache probes
-      pass. This is bootstrap preflight only; full engine-init missing-asset
+      `ready` after the boot-time archive/GameData/Water/Weather/GameText/MapCache
+      probes pass. This is bootstrap preflight only; full engine-init missing-asset
       handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
@@ -1655,6 +1663,14 @@ shares structure and follows behind.
       runtime-archive boot paths in Playwright. This is a focused `GameData`
       preflight only; full all-block original INI loading remains open.
 - [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Water.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and
+      `GameClient/Water.cpp`, expose parsed shipped water settings as
+      `assetProbe.water`, and require it for the Playwright
+      `startupAssets.ready` state. This is a focused shipped water-settings
+      preflight only; full default+shipped startup CRC coverage, map overrides /
+      `TerrainVisual` skybox replacement, and W3D water rendering remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
       `Data\INI\Weather.ini` from `INIZH.big` through original
       `Common/INI.cpp::load` and `GameClient/Snow.cpp`, expose parsed snow
       settings as `assetProbe.weather`, and require it for the Playwright
@@ -1687,6 +1703,15 @@ shares structure and follows behind.
       can use the real INI reader and singleton surfaces instead of the
       target-local `Common/INI.h` compatibility bridge.
 - [ ] `GameText`/string tables load (CSF/GameText) for the chosen language.
+- [x] Shipped water settings load from real `Data\INI\Water.ini` through
+      original `Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and
+      `GameClient/Water.cpp`, with harness state proving parsed morning/night
+      textures, repeat/scroll/sky texel fields, standing-water texture,
+      transparency depth/min-opacity, and additive-blending flag.
+- [ ] Load the original default + shipped water sequence
+      (`Data\INI\Default\Water.ini` then `Data\INI\Water.ini`) through the full
+      `GameEngine.cpp` startup path with xfer CRC once engine init consumes the
+      mounted archive set.
 - [x] Shipped weather settings load from real `Data\INI\Weather.ini` through
       original `Common/INI.cpp::load` and `GameClient/Snow.cpp`, with harness
       state proving parsed snow texture, enabled flag, point-sprite flag, and

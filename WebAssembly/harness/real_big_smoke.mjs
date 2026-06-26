@@ -31,6 +31,38 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertWaterProbe(assetProbe, context) {
+  const water = assetProbe?.water;
+  if (!assetProbe?.inizh?.waterIni
+      || !water?.attempted
+      || !water.ok
+      || water.source !== "GameEngine/Common/INI.cpp::load + INIWater.cpp + GameClient/Water.cpp"
+      || !water.loadedArchives
+      || !water.fileExists
+      || !water.originalIniLoad
+      || water.parsedFields !== 18
+      || water.waterSets !== 4
+      || !water.transparencyLoaded
+      || water.morningSkyTexture !== "TSCloudWis.tga"
+      || water.morningWaterTexture !== "TSWater.tga"
+      || water.nightSkyTexture !== "TSStarFeld.tga"
+      || water.nightWaterTexture !== "TSWater.tga"
+      || water.standingWaterTexture !== "TWWater01.tga"
+      || water.morningRepeatCount !== 32
+      || water.nightRepeatCount !== 32
+      || Math.abs(water.morningSkyTexelsPerUnit - 0.8) > 0.001
+      || Math.abs(water.nightSkyTexelsPerUnit - 1.6) > 0.001
+      || Math.abs(water.morningUScrollPerMS - 0.002) > 0.0001
+      || Math.abs(water.morningVScrollPerMS - 0.002) > 0.0001
+      || Math.abs(water.nightUScrollPerMS - 0.0) > 0.0001
+      || Math.abs(water.nightVScrollPerMS - 0.0) > 0.0001
+      || Math.abs(water.transparentWaterDepth - 3.0) > 0.001
+      || Math.abs(water.transparentWaterMinOpacity - 1.0) > 0.001
+      || water.additiveBlending !== false) {
+    throw new Error(`${context} did not parse expected Water.ini values: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeatherProbe(assetProbe, context) {
   const weather = assetProbe?.weather;
   if (!assetProbe?.inizh?.weatherIni
@@ -116,6 +148,7 @@ try {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
+  assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertStartupAssetsMissing(mountResult.state, "single INIZH mount");
 

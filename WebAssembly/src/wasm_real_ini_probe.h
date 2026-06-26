@@ -73,6 +73,38 @@ struct RealWeatherIniProbeResult
 	float snow_min_point_size = 0.0f;
 };
 
+struct RealWaterIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool original_ini_load = false;
+	bool transparency_loaded = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t water_set_count = 0;
+	std::string source;
+	std::string archive_path;
+	std::string morning_sky_texture;
+	std::string morning_water_texture;
+	std::string night_sky_texture;
+	std::string night_water_texture;
+	std::string standing_water_texture;
+	int morning_water_repeat_count = 0;
+	int night_water_repeat_count = 0;
+	float morning_sky_texels_per_unit = 0.0f;
+	float night_sky_texels_per_unit = 0.0f;
+	float morning_u_scroll_per_ms = 0.0f;
+	float morning_v_scroll_per_ms = 0.0f;
+	float night_u_scroll_per_ms = 0.0f;
+	float night_v_scroll_per_ms = 0.0f;
+	float transparent_water_depth = 0.0f;
+	float transparent_water_min_opacity = 0.0f;
+	bool additive_blending = false;
+};
+
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);
+RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);

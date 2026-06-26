@@ -69,18 +69,24 @@ original `Common/INI.cpp::load` path into original `GlobalData.cpp`, then
 verifying shipped values such as the shell map, FPS limit, cloud-map flag,
 rubble height, group-select volume, and particle limit. The bootstrap reports
 this as `gameData.source = "GameEngine/Common/INI.cpp::load"`. It now also
-checks `assetProbe.weather` by loading real `Data\INI\Weather.ini` through
-original `Common/INI.cpp::load` and `GameClient/Snow.cpp`, verifying shipped
+checks `assetProbe.water` by loading real `Data\INI\Water.ini` through original
+`Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and `GameClient/Water.cpp`,
+verifying shipped water textures, scroll/repeat values, and transparency
+settings. It also checks `assetProbe.weather` by loading real
+`Data\INI\Weather.ini` through original `Common/INI.cpp::load` and
+`GameClient/Snow.cpp`, verifying shipped
 snow/weather settings. It also checks `assetProbe.mapCache` by loading the real
 `Maps\MapCache.ini` through original `Common/INI.cpp::load` and
 `Common/INI/INIMapCache.cpp`, verifying shipped map counts plus known ShellMapMD
-and Tournament Desert entries. The bootstrap also reports `startupAssets`, which stays
+and Tournament Desert entries. The bootstrap also reports `startupAssets`, which
+stays
 `missing_runtime_archives` without a registered runtime archive set, moves to
 `pending_boot_probe` after preload registration, and only becomes `ready` after
-the boot-time archive/GameData/Weather/GameText/MapCache probes pass. This is
-still a bootstrap preflight; full original all-block INI loading, startup CRC
-coverage, map weather overrides, weather rendering, and live map-cache rebuilds
-remain part of engine startup work.
+the boot-time archive/GameData/Water/Weather/GameText/MapCache probes pass.
+This is still a bootstrap preflight; full original all-block INI loading, startup CRC
+coverage, default+shipped water/weather loading, map water/weather overrides,
+water/weather rendering, and live map-cache rebuilds remain part of engine
+startup work.
 
 ## Toolchain
 
@@ -167,12 +173,13 @@ startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
 It also asserts the C++ `assetProbe.gameText` result from original
 `GameText.cpp` over the fetched English CSF, asserts `assetProbe.gameData`
 through original `Common/INI.cpp::load` over real `GameData.ini`, asserts
-`assetProbe.weather` through original `GameClient/Snow.cpp` over real
-`Weather.ini`, asserts `assetProbe.mapCache` through original `INIMapCache.cpp`
-over real `Maps\MapCache.ini`, and checks `startupAssets` for the missing,
-pending, and ready archive states. Full original engine startup, all-block INI
-parsing, language initialization, font loading, weather rendering, and live
-map-cache rebuilds remain open.
+`assetProbe.water` through original `INIWater.cpp` / `GameClient/Water.cpp`
+over real `Water.ini`, asserts `assetProbe.weather` through original
+`GameClient/Snow.cpp` over real `Weather.ini`, asserts `assetProbe.mapCache`
+through original `INIMapCache.cpp` over real `Maps\MapCache.ini`, and checks
+`startupAssets` for the missing, pending, and ready archive states. Full
+original engine startup, all-block INI parsing, language initialization, font
+loading, water/weather rendering, and live map-cache rebuilds remain open.
 
 Run the wasm-backed smoke test:
 

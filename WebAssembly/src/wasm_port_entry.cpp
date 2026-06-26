@@ -296,6 +296,13 @@ bool startup_game_text_ready()
 		g_archive_probe.game_text_ok;
 }
 
+bool startup_water_ready()
+{
+	return g_archive_probe.has_water_ini &&
+		g_archive_probe.water_attempted &&
+		g_archive_probe.water_ok;
+}
+
 bool startup_weather_ready()
 {
 	return g_archive_probe.has_weather_ini &&
@@ -319,6 +326,7 @@ bool startup_assets_ready()
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
 		startup_game_data_ready() &&
+		startup_water_ready() &&
 		startup_weather_ready() &&
 		startup_game_text_ready() &&
 		startup_map_cache_ready();
@@ -340,6 +348,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
+	}
+	if (!startup_water_ready()) {
+		return "water_probe_failed";
 	}
 	if (!startup_weather_ready()) {
 		return "weather_probe_failed";
@@ -372,6 +383,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
+	}
+	if (!startup_water_ready()) {
+		return "Runtime BIG archive set did not pass the Water.ini startup probe.";
 	}
 	if (!startup_weather_ready()) {
 		return "Runtime BIG archive set did not pass the Weather.ini startup probe.";
@@ -461,11 +475,22 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[24500];
+	char buffer[27000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
+	const std::string water_source_json = json_escape(g_archive_probe.water_source);
+	const std::string water_morning_sky_texture_json =
+		json_escape(g_archive_probe.water_morning_sky_texture);
+	const std::string water_morning_water_texture_json =
+		json_escape(g_archive_probe.water_morning_water_texture);
+	const std::string water_night_sky_texture_json =
+		json_escape(g_archive_probe.water_night_sky_texture);
+	const std::string water_night_water_texture_json =
+		json_escape(g_archive_probe.water_night_water_texture);
+	const std::string water_standing_water_texture_json =
+		json_escape(g_archive_probe.water_standing_water_texture);
 	const std::string weather_source_json = json_escape(g_archive_probe.weather_source);
 	const std::string weather_snow_texture_json =
 		json_escape(g_archive_probe.weather_snow_texture);
@@ -499,7 +524,8 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
-		"\"gameDataIni\":%s,\"weatherIni\":%s,\"weaponIni\":%s},"
+		"\"gameDataIni\":%s,\"waterIni\":%s,\"weatherIni\":%s,"
+		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
@@ -508,6 +534,18 @@ const char *write_state_json()
 		"\"maxShellScreens\":%d,\"useCloudMap\":%s,"
 		"\"defaultStructureRubbleHeight\":%.3f,"
 		"\"groupSelectVolumeBase\":%.3f,\"maxParticleCount\":%d},"
+		"\"water\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"waterSets\":%zu,"
+		"\"transparencyLoaded\":%s,\"morningSkyTexture\":\"%s\","
+		"\"morningWaterTexture\":\"%s\",\"nightSkyTexture\":\"%s\","
+		"\"nightWaterTexture\":\"%s\",\"standingWaterTexture\":\"%s\","
+		"\"morningRepeatCount\":%d,\"nightRepeatCount\":%d,"
+		"\"morningSkyTexelsPerUnit\":%.3f,\"nightSkyTexelsPerUnit\":%.3f,"
+		"\"morningUScrollPerMS\":%.4f,\"morningVScrollPerMS\":%.4f,"
+		"\"nightUScrollPerMS\":%.4f,\"nightVScrollPerMS\":%.4f,"
+		"\"transparentWaterDepth\":%.3f,\"transparentWaterMinOpacity\":%.3f,"
+		"\"additiveBlending\":%s},"
 		"\"weather\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,"
@@ -531,7 +569,7 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
-		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"weather\":%s,"
+		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
@@ -586,6 +624,7 @@ const char *write_state_json()
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_weather_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
@@ -605,6 +644,32 @@ const char *write_state_json()
 		g_archive_probe.game_data_default_structure_rubble_height,
 		g_archive_probe.game_data_group_select_volume_base,
 		g_archive_probe.game_data_max_particle_count,
+		g_archive_probe.water_attempted ? "true" : "false",
+		g_archive_probe.water_ok ? "true" : "false",
+		g_archive_probe.water_bytes,
+		water_source_json.c_str(),
+		g_archive_probe.water_loaded_archives ? "true" : "false",
+		g_archive_probe.water_file_exists ? "true" : "false",
+		g_archive_probe.water_original_ini_load ? "true" : "false",
+		g_archive_probe.water_parsed_fields,
+		g_archive_probe.water_set_count,
+		g_archive_probe.water_transparency_loaded ? "true" : "false",
+		water_morning_sky_texture_json.c_str(),
+		water_morning_water_texture_json.c_str(),
+		water_night_sky_texture_json.c_str(),
+		water_night_water_texture_json.c_str(),
+		water_standing_water_texture_json.c_str(),
+		g_archive_probe.water_morning_repeat_count,
+		g_archive_probe.water_night_repeat_count,
+		g_archive_probe.water_morning_sky_texels_per_unit,
+		g_archive_probe.water_night_sky_texels_per_unit,
+		g_archive_probe.water_morning_u_scroll_per_ms,
+		g_archive_probe.water_morning_v_scroll_per_ms,
+		g_archive_probe.water_night_u_scroll_per_ms,
+		g_archive_probe.water_night_v_scroll_per_ms,
+		g_archive_probe.water_transparent_depth,
+		g_archive_probe.water_transparent_min_opacity,
+		g_archive_probe.water_additive_blending ? "true" : "false",
 		g_archive_probe.weather_attempted ? "true" : "false",
 		g_archive_probe.weather_ok ? "true" : "false",
 		g_archive_probe.weather_bytes,
@@ -666,6 +731,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		startup_boot_ini_present() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
+		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",
 		startup_game_text_ready() ? "true" : "false",
 		startup_map_cache_ready() ? "true" : "false",

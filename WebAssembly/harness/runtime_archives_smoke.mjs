@@ -68,6 +68,38 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertWaterProbe(assetProbe, context) {
+  const water = assetProbe?.water;
+  if (!assetProbe?.inizh?.waterIni
+      || !water?.attempted
+      || !water.ok
+      || water.source !== "GameEngine/Common/INI.cpp::load + INIWater.cpp + GameClient/Water.cpp"
+      || !water.loadedArchives
+      || !water.fileExists
+      || !water.originalIniLoad
+      || water.parsedFields !== 18
+      || water.waterSets !== 4
+      || !water.transparencyLoaded
+      || water.morningSkyTexture !== "TSCloudWis.tga"
+      || water.morningWaterTexture !== "TSWater.tga"
+      || water.nightSkyTexture !== "TSStarFeld.tga"
+      || water.nightWaterTexture !== "TSWater.tga"
+      || water.standingWaterTexture !== "TWWater01.tga"
+      || water.morningRepeatCount !== 32
+      || water.nightRepeatCount !== 32
+      || Math.abs(water.morningSkyTexelsPerUnit - 0.8) > 0.001
+      || Math.abs(water.nightSkyTexelsPerUnit - 1.6) > 0.001
+      || Math.abs(water.morningUScrollPerMS - 0.002) > 0.0001
+      || Math.abs(water.morningVScrollPerMS - 0.002) > 0.0001
+      || Math.abs(water.nightUScrollPerMS - 0.0) > 0.0001
+      || Math.abs(water.nightVScrollPerMS - 0.0) > 0.0001
+      || Math.abs(water.transparentWaterDepth - 3.0) > 0.001
+      || Math.abs(water.transparentWaterMinOpacity - 1.0) > 0.001
+      || water.additiveBlending !== false) {
+    throw new Error(`${context} did not parse expected Water.ini values: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWeatherProbe(assetProbe, context) {
   const weather = assetProbe?.weather;
   if (!assetProbe?.inizh?.weatherIni
@@ -129,6 +161,7 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.bootProbeOk
         || !startupAssets.required?.inizh
         || !startupAssets.required?.gameData
+        || !startupAssets.required?.water
         || !startupAssets.required?.weather
         || !startupAssets.required?.gameText
         || !startupAssets.required?.mapCache)) {
@@ -208,6 +241,7 @@ try {
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
+  assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
 
@@ -257,6 +291,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);

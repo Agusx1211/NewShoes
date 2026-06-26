@@ -17,15 +17,20 @@
 #include "GameClient/GameText.h"
 #include "GameClient/MapUtil.h"
 #include "GameClient/Snow.h"
+#include "GameClient/Water.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
+class TerrainVisual;
+
 MapCache *TheMapCache __attribute__((weak)) = nullptr;
+TerrainVisual *TheTerrainVisual __attribute__((weak)) = nullptr;
 const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialCameraPosition");
 
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char WATER_INI_PATH[] = "Data\\INI\\Water.ini";
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 constexpr const char EXPECTED_SHELL_MAP_NAME[] = "Maps\\ShellMapMD\\ShellMapMD.map";
 constexpr const char SHELL_MAP_MD_PATH[] = "maps\\shellmapmd\\shellmapmd.map";
@@ -76,6 +81,61 @@ std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
 		(std::fabs(result.snow_quad_size - 0.5f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.snow_max_point_size - 64.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.snow_min_point_size - 0.0f) < 0.001f ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealWaterIniProbeResult &result)
+{
+	return
+		(result.water_set_count == 4 ? 1U : 0U) +
+		(result.transparency_loaded ? 1U : 0U) +
+		(result.morning_sky_texture == "TSCloudWis.tga" ? 1U : 0U) +
+		(result.morning_water_texture == "TSWater.tga" ? 1U : 0U) +
+		(result.morning_water_repeat_count == 32 ? 1U : 0U) +
+		(std::fabs(result.morning_sky_texels_per_unit - 0.8f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.morning_u_scroll_per_ms - 0.002f) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.morning_v_scroll_per_ms - 0.002f) < 0.0001f ? 1U : 0U) +
+		(result.night_sky_texture == "TSStarFeld.tga" ? 1U : 0U) +
+		(result.night_water_texture == "TSWater.tga" ? 1U : 0U) +
+		(result.night_water_repeat_count == 32 ? 1U : 0U) +
+		(std::fabs(result.night_sky_texels_per_unit - 1.6f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.night_u_scroll_per_ms - 0.0f) < 0.0001f ? 1U : 0U) +
+		(std::fabs(result.night_v_scroll_per_ms - 0.0f) < 0.0001f ? 1U : 0U) +
+		(result.standing_water_texture == "TWWater01.tga" ? 1U : 0U) +
+		(std::fabs(result.transparent_water_depth - 3.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.transparent_water_min_opacity - 1.0f) < 0.001f ? 1U : 0U) +
+		(!result.additive_blending ? 1U : 0U);
+}
+
+void reset_water_settings()
+{
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		WaterSettings[index] = WaterSetting();
+	}
+}
+
+void copy_water_settings(WaterSetting (&destination)[TIME_OF_DAY_COUNT])
+{
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		destination[index] = WaterSettings[index];
+	}
+}
+
+void restore_water_settings(const WaterSetting (&source)[TIME_OF_DAY_COUNT])
+{
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		WaterSettings[index] = source[index];
+	}
+}
+
+std::size_t count_loaded_water_settings()
+{
+	std::size_t count = 0;
+	for (int index = TIME_OF_DAY_FIRST; index < TIME_OF_DAY_COUNT; ++index) {
+		if (!WaterSettings[index].m_waterTextureFile.isEmpty()) {
+			++count;
+		}
+	}
+	return count;
 }
 
 bool unicode_not_empty(const UnicodeString &value)
@@ -178,6 +238,121 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path)
+{
+	RealWaterIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INIWater.cpp + GameClient/Water.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	TerrainVisual *old_terrain_visual = TheTerrainVisual;
+	WaterTransparencySetting *old_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+	WaterSetting old_water_settings[TIME_OF_DAY_COUNT];
+	copy_water_settings(old_water_settings);
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	WaterTransparencySetting *water_transparency_to_delete = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheTerrainVisual = nullptr;
+		TheWaterTransparency = nullptr;
+		reset_water_settings();
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(WATER_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				INI ini;
+				ini.load(AsciiString(WATER_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				water_transparency_to_delete =
+					const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+				const WaterTransparencySetting *transparency = TheWaterTransparency;
+				result.transparency_loaded = transparency != nullptr;
+				result.water_set_count = count_loaded_water_settings();
+
+				const WaterSetting &morning = WaterSettings[TIME_OF_DAY_MORNING];
+				const WaterSetting &night = WaterSettings[TIME_OF_DAY_NIGHT];
+				result.morning_sky_texture = morning.m_skyTextureFile.str();
+				result.morning_water_texture = morning.m_waterTextureFile.str();
+				result.morning_water_repeat_count = morning.m_waterRepeatCount;
+				result.morning_sky_texels_per_unit = morning.m_skyTexelsPerUnit;
+				result.morning_u_scroll_per_ms = morning.m_uScrollPerMs;
+				result.morning_v_scroll_per_ms = morning.m_vScrollPerMs;
+				result.night_sky_texture = night.m_skyTextureFile.str();
+				result.night_water_texture = night.m_waterTextureFile.str();
+				result.night_water_repeat_count = night.m_waterRepeatCount;
+				result.night_sky_texels_per_unit = night.m_skyTexelsPerUnit;
+				result.night_u_scroll_per_ms = night.m_uScrollPerMs;
+				result.night_v_scroll_per_ms = night.m_vScrollPerMs;
+
+				if (transparency != nullptr) {
+					result.standing_water_texture = transparency->m_standingWaterTexture.str();
+					result.transparent_water_depth = transparency->m_transparentWaterDepth;
+					result.transparent_water_min_opacity = transparency->m_minWaterOpacity;
+					result.additive_blending = transparency->m_additiveBlend;
+				}
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 2000 &&
+					result.original_ini_load &&
+					result.parsed_fields == 18;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	if (water_transparency_to_delete == nullptr) {
+		WaterTransparencySetting *current_water_transparency =
+			const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+		if (current_water_transparency != old_water_transparency) {
+			water_transparency_to_delete = current_water_transparency;
+		}
+	}
+
+	TheWaterTransparency = old_water_transparency;
+	TheTerrainVisual = old_terrain_visual;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (water_transparency_to_delete != nullptr &&
+		water_transparency_to_delete != old_water_transparency) {
+		water_transparency_to_delete->deleteInstance();
+	}
+	restore_water_settings(old_water_settings);
 
 	shutdownMemoryManager();
 

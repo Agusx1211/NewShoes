@@ -2608,7 +2608,9 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/INI/INI.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIGameData.cpp"
   "${GAMEENGINE_COMMON_DIR}/INI/INIMapCache.cpp"
+  "${GAMEENGINE_COMMON_DIR}/INI/INIWater.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Water.cpp"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE

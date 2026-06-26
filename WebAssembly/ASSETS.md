@@ -69,17 +69,22 @@ original `GameText.cpp` from the fetched archive set and checking known labels.
 It also asserts `assetProbe.gameData` by loading real
 `Data\INI\GameData.ini` from `INIZH.big` through original
 `Common/INI.cpp::load` into original `GlobalData.cpp`, then verifying shipped
-values. It also asserts `assetProbe.weather` by loading real
-`Data\INI\Weather.ini` from `INIZH.big` through original
+values. It also asserts `assetProbe.water` by loading real
+`Data\INI\Water.ini` from `INIZH.big` through original
+`Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and
+`GameClient/Water.cpp`, then checking shipped water textures, scroll/repeat
+values, and transparency settings. It also asserts `assetProbe.weather` by
+loading real `Data\INI\Weather.ini` from `INIZH.big` through original
 `Common/INI.cpp::load` and `GameClient/Snow.cpp`, then checking shipped snow
 settings. It also asserts `assetProbe.mapCache` by loading real
 `Maps\MapCache.ini` from `MapsZH.big` through original `Common/INI.cpp::load`
 and `Common/INI/INIMapCache.cpp`, then checking shipped map counts and known
 map entries. The smoke also checks `startupAssets`:
 `pending_boot_probe` before boot and `ready` after the registered archive set
-passes the boot-time archive/GameData/Weather/GameText/MapCache probes. Full
-all-block original INI loading, weather rendering, and live map-cache rebuilding
-are still tracked separately from this bootstrap preflight.
+passes the boot-time archive/GameData/Water/Weather/GameText/MapCache probes.
+Full all-block original INI loading, default+shipped water/weather startup
+loading, water/weather rendering, and live map-cache rebuilding are still
+tracked separately from this bootstrap preflight.
 
 | Archive | Source | Role |
 |---|---|---|

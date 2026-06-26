@@ -33,7 +33,9 @@
 #define __WATER_H_
 
 // INLCLUDES //////////////////////////////////////////////////////////////////////////////////////
+#include "Common/AsciiString.h"
 #include "Common/GameType.h"
+#include "Common/GameMemory.h"
 #include "Common/Overridable.h"
 #include "Common/Override.h"
 
@@ -127,4 +129,3 @@ extern WaterSetting WaterSettings[ TIME_OF_DAY_COUNT ];
 extern OVERRIDE<WaterTransparencySetting> TheWaterTransparency;
 
 #endif // __WATER_H_
-

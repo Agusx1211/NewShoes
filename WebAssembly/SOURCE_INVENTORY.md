@@ -148,7 +148,10 @@ The wasm CMake skeleton currently builds:
   `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
   `FileSystem` path and original `Common/INI.cpp::load` into original
   `GlobalData.cpp`, then reports `assetProbe.gameData` with harness-verified
-  shipped scalar values. It also loads real `Data\INI\Weather.ini` through the
+  shipped scalar values. It also loads real `Data\INI\Water.ini` through the
+  original `Common/INI.cpp::load`, `Common/INI/INIWater.cpp`, and
+  `GameClient/Water.cpp`, then reports `assetProbe.water` with harness-verified
+  shipped water settings. It also loads real `Data\INI\Weather.ini` through the
   original `Common/INI.cpp::load` and `GameClient/Snow.cpp`, then reports
   `assetProbe.weather` with harness-verified shipped snow/weather settings. It
   also loads real `Maps\MapCache.ini` through the original
@@ -156,15 +159,17 @@ The wasm CMake skeleton currently builds:
   `assetProbe.mapCache` with harness-verified shipped map counts and known map
   entries. The focused runtime includes browser-default `UserPreferences` /
   `OptionPreferences` compatibility, a local `TheMapCache` plus
-  `TheKey_InitialCameraPosition` compatibility owner, and weak fail-fast unused
-  INI block parser definitions only to keep these startup data probes narrow;
-  full all-block INI destinations and live map-cache rebuilds remain tracked in
-  `TODO.md`. The bootstrap also reports `startupAssets` so the
+  `TheKey_InitialCameraPosition` compatibility owner, a weak `TheTerrainVisual`
+  compatibility definition for the focused shipped-water parse, and weak
+  fail-fast unused INI block parser definitions only to keep these startup data
+  probes narrow; full all-block INI destinations, original terrain visual
+  ownership, and live map-cache rebuilds remain tracked in `TODO.md`. The
+  bootstrap also reports `startupAssets` so the
   harness can distinguish missing runtime archives, registered-but-unprobed
   runtime archives, and a boot-probe-verified archive set with required INI,
-  GameData, Weather, GameText, and MapCache coverage. Original engine startup still needs
-  to consume the mounted runtime archive set through full all-block INI loading
-  beyond this preflight. The bootstrap also links original
+  GameData, Water, Weather, GameText, and MapCache coverage. Original engine
+  startup still needs to consume the mounted runtime archive set through full
+  all-block INI loading beyond this preflight. The bootstrap also links original
   `Win32Device/Common/Win32CDManager.cpp` and reports `cdManagerProbe` after
   initializing the original manager through browser drive shims; the verified
   startup state has zero CD drives and no blocking physical-media probe.
@@ -366,6 +371,14 @@ The wasm CMake skeleton currently builds:
   Win32/file-system shims. Browser smoke coverage verifies constructor defaults,
   user-data path setup, and `setTimeOfDay`; command-line mutation and replacing
   the remaining target-local `Common/GlobalData.h` shim are still open.
+- `zh_gameengine_real_ini_runtime`: focused linked-runtime target for original
+  `Common/INI.cpp::load` plus original leaf destinations currently needed by
+  startup preflights: `INIGameData.cpp`, `INIMapCache.cpp`, `INIWater.cpp`,
+  `GameClient/Snow.cpp`, and `GameClient/Water.cpp`. Browser real-asset smokes
+  verify shipped `GameData.ini`, `Water.ini`, `Weather.ini`, and
+  `Maps\MapCache.ini` values through the original file/archive path. This target
+  intentionally keeps weak compatibility owners for unrelated singleton
+  destinations until full engine startup links the original owners.
 - `zh_gameengine_real_compile_frontier`: compile-only original
   GameEngine/GameEngineDevice frontier with real headers first, covering the real
   browser-buildable non-device sources from the current
@@ -742,8 +755,10 @@ The wasm CMake skeleton currently builds:
   file, known title/control-bar labels, and `CONTROLBAR:` prefix enumeration,
   plus `assetProbe.gameData` by checking real `GameData.ini` values loaded via
   original `Common/INI.cpp::load` from `INIZH.big` through the same archive
-  path, plus `assetProbe.weather` by checking real `Weather.ini` values loaded
-  via original `GameClient/Snow.cpp` from `INIZH.big`, plus
+  path, plus `assetProbe.water` by checking real `Water.ini` values loaded via
+  original `INIWater.cpp` / `GameClient/Water.cpp` from `INIZH.big`, plus
+  `assetProbe.weather` by checking real `Weather.ini` values loaded via
+  original `GameClient/Snow.cpp` from `INIZH.big`, plus
   `assetProbe.mapCache` by checking real `Maps\MapCache.ini` values loaded via
   original `INIMapCache.cpp` from `MapsZH.big` through the aggregate archive
   path. The same smoke checks

@@ -29,6 +29,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
+constexpr const char WATER_INI_PATH[] = "Data\\INI\\Water.ini";
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
@@ -109,6 +110,36 @@ void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchivePr
 	result.game_data_default_structure_rubble_height = game_data.default_structure_rubble_height;
 	result.game_data_group_select_volume_base = game_data.group_select_volume_base;
 	result.game_data_max_particle_count = game_data.max_particle_count;
+}
+
+void copy_water_probe(const RealWaterIniProbeResult &water, ArchiveProbeResult &result)
+{
+	result.water_attempted = water.attempted;
+	result.water_ok = water.ok;
+	result.water_loaded_archives = water.loaded_archives;
+	result.water_file_exists = water.file_exists;
+	result.water_original_ini_load = water.original_ini_load;
+	result.water_transparency_loaded = water.transparency_loaded;
+	result.water_bytes = water.bytes;
+	result.water_parsed_fields = water.parsed_fields;
+	result.water_set_count = water.water_set_count;
+	result.water_source = water.source;
+	result.water_morning_sky_texture = water.morning_sky_texture;
+	result.water_morning_water_texture = water.morning_water_texture;
+	result.water_night_sky_texture = water.night_sky_texture;
+	result.water_night_water_texture = water.night_water_texture;
+	result.water_standing_water_texture = water.standing_water_texture;
+	result.water_morning_repeat_count = water.morning_water_repeat_count;
+	result.water_night_repeat_count = water.night_water_repeat_count;
+	result.water_morning_sky_texels_per_unit = water.morning_sky_texels_per_unit;
+	result.water_night_sky_texels_per_unit = water.night_sky_texels_per_unit;
+	result.water_morning_u_scroll_per_ms = water.morning_u_scroll_per_ms;
+	result.water_morning_v_scroll_per_ms = water.morning_v_scroll_per_ms;
+	result.water_night_u_scroll_per_ms = water.night_u_scroll_per_ms;
+	result.water_night_v_scroll_per_ms = water.night_v_scroll_per_ms;
+	result.water_transparent_depth = water.transparent_water_depth;
+	result.water_transparent_min_opacity = water.transparent_water_min_opacity;
+	result.water_additive_blending = water.additive_blending;
 }
 
 void copy_weather_probe(const RealWeatherIniProbeResult &weather, ArchiveProbeResult &result)
@@ -226,6 +257,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
 			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
+			result.has_water_ini = archive_file_system.doesFileExist(WATER_INI_PATH);
 			result.has_weather_ini = archive_file_system.doesFileExist(WEATHER_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
 
@@ -254,6 +286,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_game_data_ini) {
 		copy_game_data_probe(probe_original_game_data_ini_load(archive_path), result);
 		result.ok = result.ok && result.game_data_ok;
+	}
+	if (result.loaded && result.has_water_ini) {
+		copy_water_probe(probe_original_water_ini_load(archive_path), result);
+		result.ok = result.ok && result.water_ok;
 	}
 	if (result.loaded && result.has_weather_ini) {
 		copy_weather_probe(probe_original_weather_ini_load(archive_path), result);
