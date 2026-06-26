@@ -40,7 +40,11 @@
 // BGC, the path for the dll file is pretty odd, no?
 //      I'll leave it like this till I can figure out a
 //      better way.
+#if defined(__EMSCRIPTEN__)
+#include "BrowserEngine.h"
+#else
 #import "..\..\..\..\..\run\BrowserEngine.DLL" no_namespace
+#endif
 
 static	IFEBrowserEngine2Ptr	pBrowser = 0;
 

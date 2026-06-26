@@ -986,10 +986,16 @@ shares structure and follows behind.
       render-target, reflection, grid, river-water, and water-track integration
       paths with real WebGL2/WebGPU-backed behavior, then verify the original
       water renderer through harness screenshots.
-- [ ] Continue the original WW3D2 compile frontier by resolving the remaining
-      source blocker: the legacy BrowserEngine DLL import in
-      `dx8webbrowser.cpp`. Runtime browser ports are still needed for the
-      compiled Direct3D wrapper, WWAudio/Miles playback, GDI text
+- [x] Expand `zh_ww3d2_compile_frontier` to 115 original WW3D2 sources by
+      adding `dx8webbrowser.cpp` after guarding the legacy BrowserEngine DLL
+      import with an Emscripten declaration surface. This is compile coverage
+      only: the BrowserEngine smart pointer still fails activation under wasm
+      until the embedded-browser path has a real browser runtime port.
+- [ ] Replace the compile-only WW3D2 `BrowserEngine.h`/`dx8webbrowser.cpp`
+      declaration surface with a browser DOM/iframe, external-link, or
+      texture-backed embedded-web contract before enabling original embedded
+      browser panes at runtime. Runtime browser ports are also still needed
+      for the compiled Direct3D wrapper, WWAudio/Miles playback, GDI text
       rasterization, Video-for-Windows frame grabbing, MPU/timing reads,
       Surrender renderer/object behavior, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer

@@ -2029,6 +2029,7 @@ add_library(zh_ww3d2_compile_frontier STATIC
   "${WWVEGAS_DIR}/WW3D2/dx8rendererdebugger.cpp"
   "${WWVEGAS_DIR}/WW3D2/dx8texman.cpp"
   "${WWVEGAS_DIR}/WW3D2/dx8vertexbuffer.cpp"
+  "${WWVEGAS_DIR}/WW3D2/dx8webbrowser.cpp"
   "${WWVEGAS_DIR}/WW3D2/dx8wrapper.cpp"
   "${WWVEGAS_DIR}/WW3D2/dynamesh.cpp"
   "${WWVEGAS_DIR}/WW3D2/font3d.cpp"
