@@ -1,0 +1,4 @@
+#pragma once
+
+#define DDSCAPS2_CUBEMAP 0x00000200L
+#define DDSCAPS2_VOLUME 0x00200000L

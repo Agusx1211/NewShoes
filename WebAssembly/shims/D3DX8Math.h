@@ -2,6 +2,19 @@
 
 #include <cmath>
 
+struct D3DXVECTOR3
+{
+	float x;
+	float y;
+	float z;
+
+	D3DXVECTOR3() : x(0.0f), y(0.0f), z(0.0f) {}
+	D3DXVECTOR3(float x_in, float y_in, float z_in) :
+		x(x_in), y(y_in), z(z_in)
+	{
+	}
+};
+
 struct D3DXVECTOR4
 {
 	float x;
@@ -13,6 +26,16 @@ struct D3DXVECTOR4
 	D3DXVECTOR4(float x_in, float y_in, float z_in, float w_in) :
 		x(x_in), y(y_in), z(z_in), w(w_in)
 	{
+	}
+
+	float &operator[](int index)
+	{
+		return (&x)[index];
+	}
+
+	const float &operator[](int index) const
+	{
+		return (&x)[index];
 	}
 };
 
@@ -34,6 +57,25 @@ struct D3DXMATRIX
 	{
 	}
 };
+
+static inline D3DXMATRIX operator*(const D3DXMATRIX &left, const D3DXMATRIX &right)
+{
+	D3DXMATRIX result(
+		0.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 0.0f);
+
+	for (int row = 0; row < 4; ++row) {
+		for (int column = 0; column < 4; ++column) {
+			for (int index = 0; index < 4; ++index) {
+				result.m[row][column] += left.m[row][index] * right.m[index][column];
+			}
+		}
+	}
+
+	return result;
+}
 
 static inline D3DXVECTOR4 *D3DXVec4Transform(
 	D3DXVECTOR4 *out,
@@ -57,6 +99,15 @@ static inline D3DXVECTOR4 *D3DXVec4Transform(
 		vector->z * matrix->m[2][3] +
 		vector->w * matrix->m[3][3];
 	return out;
+}
+
+static inline D3DXVECTOR4 *D3DXVec3Transform(
+	D3DXVECTOR4 *out,
+	const D3DXVECTOR3 *vector,
+	const D3DXMATRIX *matrix)
+{
+	D3DXVECTOR4 vector4(vector->x, vector->y, vector->z, 1.0f);
+	return D3DXVec4Transform(out, &vector4, matrix);
 }
 
 static inline float D3DXVec4Dot(const D3DXVECTOR4 *left, const D3DXVECTOR4 *right)

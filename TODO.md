@@ -807,6 +807,17 @@ shares structure and follows behind.
       `Dx8Wrapper.h` / D3DX headers, Windows `GUID`/`RECT`/`CONST`
       compatibility, and scalar Emscripten fallbacks for original
       `dx8wrapper.h` color packing/clamping x86 assembly.
+- [x] Expand `zh_ww3d2_compile_frontier` to 105 original WW3D2 sources by
+      adding renderer/material/texture bodies (`assetmgr.cpp`, `dazzle.cpp`,
+      `ddsfile.cpp`, `dx8caps.cpp`, `dx8indexbuffer.cpp`, `dx8renderer.cpp`,
+      `dx8vertexbuffer.cpp`, `dynamesh.cpp`, `lightenvironment.cpp`,
+      `mapper.cpp`, `meshmatdesc.cpp`, `meshmdl.cpp`, `meshmdlio.cpp`,
+      `missingtexture.cpp`, `part_buf.cpp`, `shader.cpp`,
+      `sortingrenderer.cpp`, `sphereobj.cpp`, `surfaceclass.cpp`,
+      `texture.cpp`, `texturefilter.cpp`, `textureloader.cpp`, and
+      `vertmaterial.cpp`) after resolving declaration-only D3D8/D3DX/DirectDraw
+      compile-surface gaps and localized MSVC-to-clang source-compatibility
+      issues without replacing renderer behavior.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -825,12 +836,16 @@ shares structure and follows behind.
       legacy function-pointer table casting, and fixed-underlying
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
-- [ ] Continue the original WW3D2 compile frontier by resolving the current
-      DirectX 8 runtime backend (`dx8wrapper.cpp`, caps, buffers, renderer,
-      texture/material upload paths), DDS/DirectDraw format helpers, GDI text
-      rendering contract, Miles/WWAudio binding, Video-for-Windows frame-grab
-      contract, missing Surrender `sr*` utility headers, and remaining
-      renderer body blockers instead of substituting renderer behavior.
+- [ ] Continue the original WW3D2 compile frontier by resolving the remaining
+      clustered blockers from the current probe: full DirectX 8 wrapper/backend
+      body (`dx8wrapper.cpp`, `ww3d.cpp`), `dx8webbrowser.cpp`'s legacy
+      BrowserEngine DLL include, GDI text rendering (`render2dsentence.cpp`),
+      Miles/WWAudio binding (`animatedsoundmgr.cpp`), Video-for-Windows
+      frame-grab headers (`FramGrab.cpp`/`ww3d.cpp`), Surrender `sr*` utility
+      headers (`sr_util.cpp`), WWLib MPU timing (`texproject.cpp`),
+      backslash-spelled WWMath include compatibility (`textdraw.cpp`), and the
+      `pointgr.cpp` collision-call mismatch instead of substituting renderer
+      behavior.
 - [ ] Replace `Win32OSDisplay.cpp`'s current browser stderr/no-op message-box
       compatibility with a real browser/harness OS-display dialog/error
       reporting contract before relying on runtime warning prompts.

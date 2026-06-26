@@ -48,6 +48,7 @@
 using BYTE = unsigned char;
 using BOOL = int;
 using DWORD = unsigned long;
+using FLOAT = float;
 using ULONG = unsigned long;
 using HANDLE = void *;
 using HGLOBAL = HANDLE;
@@ -119,13 +120,37 @@ struct GUID
 		(static_cast<unsigned long>(code) & 0xffffUL))
 #endif
 
+#ifndef SUCCEEDED
+#define SUCCEEDED(hr) (static_cast<HRESULT>(hr) >= 0)
+#endif
+
+#ifndef FAILED
+#define FAILED(hr) (static_cast<HRESULT>(hr) < 0)
+#endif
+
+#ifndef LOWORD
+#define LOWORD(value) static_cast<WORD>(static_cast<DWORD>(value) & 0xffffUL)
+#endif
+
+#ifndef HIWORD
+#define HIWORD(value) static_cast<WORD>((static_cast<DWORD>(value) >> 16) & 0xffffUL)
+#endif
+
+#ifndef ZeroMemory
+#define ZeroMemory(destination, length) std::memset((destination), 0, (length))
+#endif
+
 struct CRITICAL_SECTION
 {
 	std::recursive_mutex mutex;
 };
 
-struct LARGE_INTEGER
+union LARGE_INTEGER
 {
+	struct {
+		DWORD LowPart;
+		LONG HighPart;
+	};
 	long long QuadPart;
 };
 
