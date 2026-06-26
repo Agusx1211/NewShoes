@@ -27,6 +27,7 @@ const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
+constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
@@ -92,6 +93,30 @@ bool read_first_indexed_archive_file(
 	}
 
 	return false;
+}
+
+void copy_armor_probe(const RealArmorIniProbeResult &armor, ArchiveProbeResult &result)
+{
+	result.armor_attempted = armor.attempted;
+	result.armor_ok = armor.ok;
+	result.armor_loaded_archives = armor.loaded_archives;
+	result.armor_file_exists = armor.file_exists;
+	result.armor_name_key_generator_loaded = armor.name_key_generator_loaded;
+	result.armor_original_ini_load = armor.original_ini_load;
+	result.armor_bytes = armor.bytes;
+	result.armor_parsed_fields = armor.parsed_fields;
+	result.armor_source = armor.source;
+	result.armor_no_armor_found = armor.no_armor_found;
+	result.armor_human_armor_found = armor.human_armor_found;
+	result.armor_tank_armor_found = armor.tank_armor_found;
+	result.armor_no_armor_explosion_damage = armor.no_armor_explosion_damage;
+	result.armor_no_armor_hazard_cleanup_damage = armor.no_armor_hazard_cleanup_damage;
+	result.armor_human_crush_damage = armor.human_crush_damage;
+	result.armor_human_armor_piercing_damage = armor.human_armor_piercing_damage;
+	result.armor_human_flame_damage = armor.human_flame_damage;
+	result.armor_tank_small_arms_damage = armor.tank_small_arms_damage;
+	result.armor_tank_radiation_damage = armor.tank_radiation_damage;
+	result.armor_tank_microwave_damage = armor.tank_microwave_damage;
 }
 
 void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchiveProbeResult &result)
@@ -275,7 +300,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 
 		result.loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
 		if (result.loaded) {
-			result.has_armor_ini = archive_file_system.doesFileExist("Data\\INI\\Armor.ini");
+			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
@@ -311,6 +336,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_game_data_ini) {
 		copy_game_data_probe(probe_original_game_data_ini_load(archive_path), result);
 		result.ok = result.ok && result.game_data_ok;
+	}
+	if (result.loaded && result.has_armor_ini) {
+		copy_armor_probe(probe_original_armor_ini_load(archive_path), result);
+		result.ok = result.ok && result.armor_ok;
 	}
 	if (result.loaded && result.has_water_ini) {
 		copy_water_probe(probe_original_water_ini_load(archive_path), result);

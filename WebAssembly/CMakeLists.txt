@@ -2613,6 +2613,8 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_GAMECLIENT_DIR}/Snow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/VideoPlayer.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Water.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/Armor.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/Damage.cpp"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE

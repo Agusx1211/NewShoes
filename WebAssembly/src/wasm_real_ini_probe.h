@@ -24,6 +24,31 @@ struct RealGameDataIniProbeResult
 	float group_select_volume_base = 0.0f;
 };
 
+struct RealArmorIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::string source;
+	std::string archive_path;
+	bool no_armor_found = false;
+	bool human_armor_found = false;
+	bool tank_armor_found = false;
+	float no_armor_explosion_damage = 0.0f;
+	float no_armor_hazard_cleanup_damage = 0.0f;
+	float human_crush_damage = 0.0f;
+	float human_armor_piercing_damage = 0.0f;
+	float human_flame_damage = 0.0f;
+	float tank_small_arms_damage = 0.0f;
+	float tank_radiation_damage = 0.0f;
+	float tank_microwave_damage = 0.0f;
+};
+
 struct RealMapCacheIniProbeResult
 {
 	bool attempted = false;
@@ -127,6 +152,7 @@ struct RealVideoIniProbeResult
 };
 
 RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive_path);
+RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path);
 RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path);
 RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_path);
 RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path);

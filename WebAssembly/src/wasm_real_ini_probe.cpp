@@ -19,6 +19,8 @@
 #include "GameClient/Snow.h"
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/Water.h"
+#include "GameLogic/Armor.h"
+#include "GameLogic/Damage.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
@@ -29,6 +31,7 @@ TerrainVisual *TheTerrainVisual __attribute__((weak)) = nullptr;
 const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialCameraPosition");
 
 namespace {
+constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char DEFAULT_VIDEO_INI_PATH[] = "Data\\INI\\Default\\Video.ini";
@@ -66,6 +69,22 @@ std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
 		(std::fabs(result.default_structure_rubble_height - 10.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.group_select_volume_base - 0.5f) < 0.001f ? 1U : 0U) +
 		(result.max_particle_count == 2500 ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealArmorIniProbeResult &result)
+{
+	return
+		(result.no_armor_found ? 1U : 0U) +
+		(result.human_armor_found ? 1U : 0U) +
+		(result.tank_armor_found ? 1U : 0U) +
+		(std::fabs(result.no_armor_explosion_damage - 100.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.no_armor_hazard_cleanup_damage - 0.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.human_crush_damage - 200.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.human_armor_piercing_damage - 10.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.human_flame_damage - 150.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tank_small_arms_damage - 25.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tank_radiation_damage - 50.0f) < 0.001f ? 1U : 0U) +
+		(std::fabs(result.tank_microwave_damage - 0.0f) < 0.001f ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealWeatherIniProbeResult &result)
@@ -251,6 +270,122 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path)
+{
+	RealArmorIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + GameLogic/Object/Armor.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ArmorStore *old_armor_store = TheArmorStore;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ArmorStore *armor_store = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(ARMOR_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				armor_store = NEW ArmorStore;
+				TheArmorStore = armor_store;
+
+				INI ini;
+				ini.load(AsciiString(ARMOR_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				const ArmorTemplate *no_armor = armor_store->findArmorTemplate("NoArmor");
+				const ArmorTemplate *human_armor = armor_store->findArmorTemplate("HumanArmor");
+				const ArmorTemplate *tank_armor = armor_store->findArmorTemplate("TankArmor");
+
+				result.no_armor_found = no_armor != nullptr;
+				result.human_armor_found = human_armor != nullptr;
+				result.tank_armor_found = tank_armor != nullptr;
+
+				if (no_armor != nullptr) {
+					result.no_armor_explosion_damage =
+						no_armor->adjustDamage(DAMAGE_EXPLOSION, 100.0f);
+					result.no_armor_hazard_cleanup_damage =
+						no_armor->adjustDamage(DAMAGE_HAZARD_CLEANUP, 100.0f);
+				}
+				if (human_armor != nullptr) {
+					result.human_crush_damage =
+						human_armor->adjustDamage(DAMAGE_CRUSH, 100.0f);
+					result.human_armor_piercing_damage =
+						human_armor->adjustDamage(DAMAGE_ARMOR_PIERCING, 100.0f);
+					result.human_flame_damage =
+						human_armor->adjustDamage(DAMAGE_FLAME, 100.0f);
+				}
+				if (tank_armor != nullptr) {
+					result.tank_small_arms_damage =
+						tank_armor->adjustDamage(DAMAGE_SMALL_ARMS, 100.0f);
+					result.tank_radiation_damage =
+						tank_armor->adjustDamage(DAMAGE_RADIATION, 100.0f);
+					result.tank_microwave_damage =
+						tank_armor->adjustDamage(DAMAGE_MICROWAVE, 100.0f);
+				}
+
+				result.parsed_fields = count_verified_fields(result);
+				result.ok =
+					result.bytes > 50000 &&
+					result.name_key_generator_loaded &&
+					result.original_ini_load &&
+					result.parsed_fields == 11;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheArmorStore = old_armor_store;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (armor_store != nullptr) {
+		delete armor_store;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
 
 	shutdownMemoryManager();
 

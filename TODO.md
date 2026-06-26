@@ -614,8 +614,9 @@ shares structure and follows behind.
       singleton surface are available without target-local parser stubs.
 - [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
       parser definitions with the real parser destinations as each owning
-      singleton comes online; they exist only to keep the `GameData`, `Water`,
-      `Weather`, and shipped map-cache preflights on original `INI.cpp::load`
+      singleton comes online; they exist only to keep the focused `Armor`,
+      `GameData`, `Water`, `Weather`, `Video`, and shipped map-cache preflights
+      on original `INI.cpp::load`
       without pulling unrelated UI/terrain/object managers into `cnc-port`.
 - [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
       `TheKey_InitialCameraPosition` compatibility definitions with the original
@@ -1612,7 +1613,7 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/GameData/Water/Weather/Video/GameText/MapCache
+      `ready` after the boot-time archive/Armor/GameData/Water/Weather/Video/GameText/MapCache
       probes pass. This is bootstrap preflight only; full engine-init missing-asset
       handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
@@ -1649,6 +1650,13 @@ shares structure and follows behind.
       original `Win32BIGFileSystem`, with Playwright coverage for the boot-time
       probe result. This is an asset-startup preflight only; full engine init
       and real INI/data parsing remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\Armor.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load` and `GameLogic/Object/Armor.cpp`, expose parsed
+      shipped armor coefficients as `assetProbe.armor`, and require it for the
+      Playwright `startupAssets.ready` state. This is a focused shipped
+      armor-template preflight only; object `ArmorSet` wiring and full gameplay
+      template loading remain open.
 - [x] Extend the wasm bootstrap archive preflight to load the real English
       CSF through original `GameText.cpp` and expose `assetProbe.gameText`,
       with Playwright coverage for the CSF file, known labels, and
@@ -1706,6 +1714,10 @@ shares structure and follows behind.
 ### Data load with original code
 - [ ] Load real `INIZH.big`; original INI parser reads it (objects, weapons,
       locomotors, armor, FX, command sets/buttons, control bars, science, etc.).
+- [x] Shipped armor templates load from real `Data\INI\Armor.ini` through
+      original `Common/INI.cpp::load` and `GameLogic/Object/Armor.cpp`, with
+      harness state proving `NoArmor`, `HumanArmor`, and `TankArmor` damage
+      coefficients through original `ArmorTemplate::adjustDamage`.
 - [x] Replace `assetProbe.gameData`'s scalar preflight with full original
       `Common/INI.cpp::load` over real `GameData.ini` once the linked runtime
       can use the real INI reader and singleton surfaces instead of the

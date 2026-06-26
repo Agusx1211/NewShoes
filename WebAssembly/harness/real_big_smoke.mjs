@@ -31,6 +31,32 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertArmorProbe(assetProbe, context) {
+  const armor = assetProbe?.armor;
+  if (!assetProbe?.inizh?.armorIni
+      || !armor?.attempted
+      || !armor.ok
+      || armor.source !== "GameEngine/Common/INI.cpp::load + GameLogic/Object/Armor.cpp"
+      || !armor.loadedArchives
+      || !armor.fileExists
+      || !armor.nameKeyGeneratorLoaded
+      || !armor.originalIniLoad
+      || armor.parsedFields !== 11
+      || !armor.noArmor
+      || !armor.humanArmor
+      || !armor.tankArmor
+      || Math.abs(armor.noArmorExplosionDamage - 100.0) > 0.001
+      || Math.abs(armor.noArmorHazardCleanupDamage - 0.0) > 0.001
+      || Math.abs(armor.humanCrushDamage - 200.0) > 0.001
+      || Math.abs(armor.humanArmorPiercingDamage - 10.0) > 0.001
+      || Math.abs(armor.humanFlameDamage - 150.0) > 0.001
+      || Math.abs(armor.tankSmallArmsDamage - 25.0) > 0.001
+      || Math.abs(armor.tankRadiationDamage - 50.0) > 0.001
+      || Math.abs(armor.tankMicrowaveDamage - 0.0) > 0.001) {
+    throw new Error(`${context} did not parse expected Armor.ini coefficients: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -171,6 +197,7 @@ try {
     throw new Error(`cnc-port INIZH probe missed required files: ${JSON.stringify(assetProbe)}`);
   }
   assertGameDataProbe(assetProbe, "cnc-port INIZH probe");
+  assertArmorProbe(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");

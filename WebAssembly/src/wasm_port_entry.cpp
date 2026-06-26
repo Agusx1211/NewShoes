@@ -289,6 +289,13 @@ bool startup_game_data_ready()
 		g_archive_probe.game_data_ok;
 }
 
+bool startup_armor_ready()
+{
+	return g_archive_probe.has_armor_ini &&
+		g_archive_probe.armor_attempted &&
+		g_archive_probe.armor_ok;
+}
+
 bool startup_game_text_ready()
 {
 	return g_archive_probe.has_generals_csf &&
@@ -332,6 +339,7 @@ bool startup_assets_ready()
 		g_archive_probe.ok &&
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
+		startup_armor_ready() &&
 		startup_game_data_ready() &&
 		startup_water_ready() &&
 		startup_weather_ready() &&
@@ -353,6 +361,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_boot_ini_present()) {
 		return "missing_boot_ini";
+	}
+	if (!startup_armor_ready()) {
+		return "armor_probe_failed";
 	}
 	if (!startup_game_data_ready()) {
 		return "game_data_probe_failed";
@@ -391,6 +402,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_boot_ini_present()) {
 		return "Runtime BIG archive set is missing required boot INI files.";
+	}
+	if (!startup_armor_ready()) {
+		return "Runtime BIG archive set did not pass the Armor.ini startup probe.";
 	}
 	if (!startup_game_data_ready()) {
 		return "Runtime BIG archive set did not pass the GameData.ini startup probe.";
@@ -489,8 +503,9 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[30000];
+	char buffer[33000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
+	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
@@ -551,6 +566,15 @@ const char *write_state_json()
 		"\"videoIni\":%s,\"defaultVideoIni\":%s,"
 		"\"weaponIni\":%s},"
 		"\"maps\":{\"mapCacheIni\":%s},"
+		"\"armor\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"noArmor\":%s,\"humanArmor\":%s,"
+		"\"tankArmor\":%s,\"noArmorExplosionDamage\":%.3f,"
+		"\"noArmorHazardCleanupDamage\":%.3f,\"humanCrushDamage\":%.3f,"
+		"\"humanArmorPiercingDamage\":%.3f,\"humanFlameDamage\":%.3f,"
+		"\"tankSmallArmsDamage\":%.3f,\"tankRadiationDamage\":%.3f,"
+		"\"tankMicrowaveDamage\":%.3f},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
@@ -600,7 +624,7 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
-		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"water\":%s,\"weather\":%s,"
+		"\"required\":{\"inizh\":%s,\"armor\":%s,\"gameData\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
@@ -661,6 +685,26 @@ const char *write_state_json()
 		g_archive_probe.has_default_video_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
+		g_archive_probe.armor_attempted ? "true" : "false",
+		g_archive_probe.armor_ok ? "true" : "false",
+		g_archive_probe.armor_bytes,
+		armor_source_json.c_str(),
+		g_archive_probe.armor_loaded_archives ? "true" : "false",
+		g_archive_probe.armor_file_exists ? "true" : "false",
+		g_archive_probe.armor_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.armor_original_ini_load ? "true" : "false",
+		g_archive_probe.armor_parsed_fields,
+		g_archive_probe.armor_no_armor_found ? "true" : "false",
+		g_archive_probe.armor_human_armor_found ? "true" : "false",
+		g_archive_probe.armor_tank_armor_found ? "true" : "false",
+		g_archive_probe.armor_no_armor_explosion_damage,
+		g_archive_probe.armor_no_armor_hazard_cleanup_damage,
+		g_archive_probe.armor_human_crush_damage,
+		g_archive_probe.armor_human_armor_piercing_damage,
+		g_archive_probe.armor_human_flame_damage,
+		g_archive_probe.armor_tank_small_arms_damage,
+		g_archive_probe.armor_tank_radiation_damage,
+		g_archive_probe.armor_tank_microwave_damage,
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
@@ -780,6 +824,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_attempted ? "true" : "false",
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		startup_boot_ini_present() ? "true" : "false",
+		startup_armor_ready() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",

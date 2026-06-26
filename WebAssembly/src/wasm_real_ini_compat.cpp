@@ -381,7 +381,6 @@ void WeaponBonusSet::appendBonuses(WeaponBonusConditionFlags flags, WeaponBonus 
 
 UNUSED_INI_BLOCK_PARSER(parseAIDataDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAnim2DDefinition)
-UNUSED_INI_BLOCK_PARSER(parseArmorDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAudioEventDefinition)
 UNUSED_INI_BLOCK_PARSER(parseAudioSettingsDefinition)
 UNUSED_INI_BLOCK_PARSER(parseTerrainBridgeDefinition)
