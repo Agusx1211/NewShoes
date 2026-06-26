@@ -1310,6 +1310,11 @@ static inline HANDLE CreateThread(
 	return reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1));
 }
 
+static inline BOOL TerminateThread(HANDLE, DWORD)
+{
+	return TRUE;
+}
+
 static inline LONG RegOpenKeyEx(HKEY, LPCSTR, DWORD, DWORD, HKEY *result)
 {
 	if (result != nullptr) {

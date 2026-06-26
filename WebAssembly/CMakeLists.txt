@@ -1394,6 +1394,8 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/version.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Chat.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LadderDefs.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/LobbyUtils.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/MainMenuUtils.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/PeerDefs.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/StagingRoomGameInfo.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/GameSpy/Thread/BuddyThread.cpp"

@@ -32,8 +32,10 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file int the GameEngine
 
 #include <fcntl.h>
+#include <io.h>
 
 //#include "Common/Registry.h"
+#include "Common/GlobalData.h"
 #include "Common/UserPreferences.h"
 #include "Common/Version.h"
 #include "GameClient/GameText.h"

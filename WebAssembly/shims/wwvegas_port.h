@@ -169,6 +169,10 @@ static inline int wwlib_wcsicmp(const wchar_t *left, const wchar_t *right)
 #define _wcsicmp wwlib_wcsicmp
 #endif
 
+#ifndef wcsicmp
+#define wcsicmp wwlib_wcsicmp
+#endif
+
 static inline void OutputDebugString(const char *message)
 {
 	if (message != nullptr) {

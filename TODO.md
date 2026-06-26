@@ -1203,11 +1203,11 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `GameNetwork/LANAPICallbacks.cpp` after the
       real `GameLogic::isInGame`, LAN UI, game setup, and transport callback
       surfaces are available; current coverage is compile-only.
-- [x] Restore enough declarative GameSpy Peer/GP/persistent-storage/SNMP
+- [x] Restore enough declarative GameSpy Peer/GP/persistent-storage/SNMP/ghttp
       compile surface to compile original `GameNetwork/GameSpy/PeerDefs.cpp`,
-      `LadderDefs.cpp`, `Chat.cpp`, `StagingRoomGameInfo.cpp`,
-      `Thread/ThreadUtils.cpp`, and `GameSpyOverlay.cpp` in the real-header
-      compile frontier.
+      `LadderDefs.cpp`, `Chat.cpp`, `LobbyUtils.cpp`, `MainMenuUtils.cpp`,
+      `StagingRoomGameInfo.cpp`, `Thread/ThreadUtils.cpp`, and
+      `GameSpyOverlay.cpp` in the real-header compile frontier.
 - [x] Compile original GameSpy thread sources (`BuddyThread.cpp`,
       `PeerThread.cpp`, `PingThread.cpp`, `PersistentStorageThread.cpp`, and
       `GameResultsThread.cpp`) after adding the SEH translator shim,
