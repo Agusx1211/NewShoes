@@ -62,7 +62,7 @@ class RenderObjClass;
 class Shadow;
 class TerrainTracksRenderObjClass;
 class HAnimClass;
-enum GameLODLevel;
+enum StaticGameLODLevel : int;
 //-------------------------------------------------------------------------------------------------
 /** The default client update module */
 //-------------------------------------------------------------------------------------------------
@@ -526,4 +526,3 @@ private:
 };
 
 #endif // __W3DModelDraw_H_
-

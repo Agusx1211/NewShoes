@@ -24,7 +24,7 @@ target and should be compiled or re-targeted for wasm.
 | `GameEngine/GameClient` | Partial | Utility slice now compiles all 147 original `GameEngine/Source/GameClient` `.cpp` files to wasm, plus the GameClient-facing original INI leaf parser sources (`INIAnimation.cpp`, `INICommandButton.cpp`, `INIMappedImage.cpp`, `INIVideo.cpp`, `INIWater.cpp`). Coverage includes display/text/image/animation/weather/water/video utilities, top-level `GameClient.cpp`, `InGameUI.cpp`, `Input/Mouse.cpp`, `Input/Keyboard.cpp`, `GUI/IMEManager.cpp`, view/camera state, dispatch, drawable/smudge/audio-debug leaves, map/terrain/radius-decal helpers, campaign/hint/ray/particle/drawable-update leaves, message/input translators, EVA/FX/selection info, window/layout/transition managers, `GameWindow`, `LoadScreen`, `Shell`, all core gadgets, control-bar sources, and the full GUI callback/menu set including Main/Options/Download, LAN/skirmish/replay, score, shell, and WOL login/lobby/ladder/game-setup flows. A smaller `GameText.cpp`/`LanguageFilter.cpp` text archive also links independently for DownloadManager coverage. Node smoke coverage verifies the currently linked non-rendering utility behavior and the text manager paths used by DownloadManager; most GameClient files are still compile coverage only until original ControlBar behavior, drawable/display, terrain, real browser input/IME, real Xfer/INI/GameLogic/GlobalData, replay state, GameInfo/LAN/GameSpy/WWDownload, WOL browser panes, and the browser render/video layers link and are harness-driven. |
 | `GameEngine/GameNetwork` | Partial | Core command/frame and setup/LAN/download-manager slice now compiles to wasm from original source: `Connection.cpp`, `ConnectionManager.cpp`, `DisconnectManager.cpp`, `DownloadManager.cpp`, `FileTransfer.cpp`, `FirewallHelper.cpp`, `FrameData.cpp`, `FrameDataManager.cpp`, `FrameMetrics.cpp`, `GameInfo.cpp`, `GameMessageParser.cpp`, `GameSpy/GSConfig.cpp`, `GUIUtil.cpp`, `LANAPI.cpp`, `LANAPICallbacks.cpp`, `LANAPIhandlers.cpp`, `LANGameInfo.cpp`, `NetCommandList.cpp`, `NetCommandMsg.cpp`, `NetCommandRef.cpp`, `NetCommandWrapperList.cpp`, `NetMessageStream.cpp`, `NetPacket.cpp`, `NetworkUtil.cpp`, `Transport.cpp`, `udp.cpp`, and `User.cpp`, plus original `Common/MessageStream.cpp` in the Common archive. The real-header compile frontier also covers original legacy `GameSpyChat.cpp` and `GameSpyGP.cpp`, original `GameSpy/Chat.cpp`, `GameSpy/LadderDefs.cpp`, `GameSpy/LobbyUtils.cpp`, `GameSpy/MainMenuUtils.cpp`, `GameSpy/PeerDefs.cpp`, `GameSpy/StagingRoomGameInfo.cpp`, GameSpy thread bodies (`BuddyThread.cpp`, `GameResultsThread.cpp`, `PeerThread.cpp`, `PersistentStorageThread.cpp`, `PingThread.cpp`, and `ThreadUtils.cpp`), `GameSpyOverlay.cpp`, `IPEnumeration.cpp`, `NAT.cpp`, and `Network.cpp`. Node smoke coverage verifies command-id generation, command type policy/name lookups, empty frame readiness through `FrameData`/`FrameDataManager`, direct `Transport::queueSend` rejection/full-queue behavior plus encrypted packet header/payload/CRC preservation, `Connection.cpp` send/ack queue behavior through original packetization and transport buffering, `NetCommandList` sorting/deduplication, `NetPacket` ACK-both/stage1/stage2 plus frame/run-ahead/chat/progress/file-progress and control/disconnect/router/wrapper/file-announce/frame-resend packet round-trips including 16-bit chat text wire serialization, `NetCommandWrapperList` incomplete/duplicate chunk handling and ready-command reassembly/removal, `FileTransfer.cpp` map-path helper behavior, `FrameMetrics.cpp` init/reset/cushion behavior against the current `GlobalData` shim, pooled `User` value behavior, and `DownloadManager` queue/status/error/last-local-file behavior against original `GameText.cpp`/`LanguageFilter.cpp` plus WWDownload. `ConnectionManager.cpp`, `DisconnectManager.cpp`, `Connection.cpp` receive/retry flow, the `FileTransfer.cpp` transfer loop, `FirewallHelper.cpp`, `FrameMetrics.cpp` FPS/latency sampling, `GameInfo.cpp`, `GUIUtil.cpp`, `LANAPI.cpp`, `LANAPICallbacks.cpp`, `LANAPIhandlers.cpp`, `LANGameInfo.cpp`, `NetMessageStream.cpp`, raw UDP flushing, and the real-header GameSpy/NAT/thread/chat/GP additions are compile coverage only until browser transport, `Shell`, `LoadScreen`, `Display`, real `GlobalData`, `GameLogic` progress/game-start state, `MapCache`, multiplayer/player-template/game-text singletons, player/message dependencies, disconnect UI, LAN callback flow, browser Worker/pthread scheduling, GameSpy GP/Peer/QR2/Stats runtime queues, the legacy `TheGameSpyChat` binding, ICMP/socket fallbacks, browser download/update transport, and full game-command/setup serialization smokes are available. LAN UI and runtime packet flow remain open. `GameSpyGameInfo.cpp` remains out of the frontier because the checked-in header marks it obsolete and it conflicts with `GameSpy/StagingRoomGameInfo`. |
 | `GameEngineDevice/Win32Device` | Partial | Original `Win32LocalFile.cpp`, `Win32LocalFileSystem.cpp`, `Win32BIGFile.cpp`, and `Win32BIGFileSystem.cpp` compile and have smoke coverage through the Common file/archive tests. The real-header compile frontier also covers original `Win32CDManager.cpp` and `Win32OSDisplay.cpp` with browser no-CD probing and message-box/window-position compatibility. Runtime window/input/timing and browser-native persistence remain open; `Win32OSDisplay` warning prompts currently route through the existing stderr/no-op compatibility surface until a browser/harness dialog contract is implemented. |
-| `GameEngineDevice/W3DDevice` | Partial | Original `W3DDevice/Common/W3DConvert.cpp`, `Common/Thing/W3DThingFactory.cpp`, `GameLogic/W3DGameLogic.cpp`, `GameClient/TileData.cpp`, `GameClient/W3DPoly.cpp`, `GameClient/W3DFileSystem.cpp`, `GameClient/GUI/GUICallbacks/W3DMOTD.cpp`, `GameClient/W3DDebugDisplay.cpp`, `GameClient/W3DDynamicLight.cpp`, and the currently inactive `W3DGranny.cpp` translation unit now compile in the real-header frontier as lightweight device/factory, terrain tile-data, polygon clipping, W3D file-factory, UI/debug, dynamic-light, and guarded Granny coverage. `zh_w3d_device_utility` link-smokes original `TileData.cpp` mip generation and original `W3DPoly.cpp` clipping behavior under wasm. `WorldHeightMap.h` has been made self-contained for its map-object and terrain-texture pointer declarations, and exact-case bridges now cover the original `WWLIB/ffactory.h`, `WW3D2/Light.h`, and `lib/baseType.h` include spellings. `W3DFileSystem.cpp`, `W3DDynamicLight.cpp`, and `W3DGranny.cpp` remain compile coverage only until browser asset paths, WWLib file-factory singletons, original WW3D2 light/render-object state, and Granny/texture bindings can link and be smoked. The W3D module factory, function lexicon, height maps, display, scene, terrain renderer, drawable modules, shader, water, shadow, and GUI device implementations remain renderer work and are not runtime-complete until Direct3D/WW3D2 surfaces are re-targeted to WebGL2/WebGPU and verified through harness screenshots. |
+| `GameEngineDevice/W3DDevice` | Partial | Original `W3DDevice/Common/W3DConvert.cpp`, `Common/System/W3DFunctionLexicon.cpp`, `Common/Thing/W3DThingFactory.cpp`, `Common/Thing/W3DModuleFactory.cpp`, `GameLogic/W3DGameLogic.cpp`, `GameClient/TileData.cpp`, `GameClient/W3DPoly.cpp`, `GameClient/W3DFileSystem.cpp`, the current W3D GUI/gadget batch (`W3DCheckBox.cpp`, `W3DComboBox.cpp`, `W3DHorizontalSlider.cpp`, `W3DListBox.cpp`, `W3DProgressBar.cpp`, `W3DPushButton.cpp`, `W3DRadioButton.cpp`, `W3DStaticText.cpp`, `W3DTabControl.cpp`, `W3DTextEntry.cpp`, `W3DVerticalSlider.cpp`, `W3DControlBar.cpp`, `W3DMainMenu.cpp`, `W3DGameFont.cpp`, `W3DGameWindow.cpp`, and `W3DGameWindowManager.cpp`), `GameClient/GUI/GUICallbacks/W3DMOTD.cpp`, `GameClient/W3DDebugDisplay.cpp`, `GameClient/W3DDynamicLight.cpp`, and the currently inactive `W3DGranny.cpp` translation unit now compile in the real-header frontier as lightweight device/factory, terrain tile-data, polygon clipping, W3D file-factory, UI/window, debug, dynamic-light, and guarded Granny coverage. `zh_w3d_device_utility` link-smokes original `TileData.cpp` mip generation and original `W3DPoly.cpp` clipping behavior under wasm. `WorldHeightMap.h` has been made self-contained for its map-object and terrain-texture pointer declarations; the W3D module headers now use fixed-underlying enum forwards where the original game enums already define them; and `FunctionLexicon` now stores typed callback entries through an explicit function-pointer-to-`void *` compatibility wrapper for clang/Emscripten. `W3DFileSystem.cpp`, `W3DDynamicLight.cpp`, `W3DGranny.cpp`, the W3D GUI/window batch, `W3DFunctionLexicon.cpp`, and `W3DModuleFactory.cpp` remain compile coverage only until browser asset paths, WWLib file-factory singletons, original WW3D2 light/render-object state, browser input, GUI display, Granny/texture bindings, and module-draw dependencies can link and be smoked. Height maps, display, scene, terrain renderer, drawable modules, shader, water, shadow, and broader GUI/render device implementations remain renderer work and are not runtime-complete until Direct3D/WW3D2 surfaces are re-targeted to WebGL2/WebGPU and verified through harness screenshots. |
 | `WWVegas/WW3D2` | Partial | `zh_ww3d2_compile_frontier` now builds 114 original WW3D2 sources across hierarchy/animation/LOD, render-object definitions, spatial/collision/visibility, scene helpers, light/projector/decal/particle/snap-point support, asset/status/cache/exclusion helpers, mesh/material metadata, Direct3D-adjacent format/render/texture helpers, GDI sentence/text/frame-grab support, `animatedsoundmgr.cpp`, `dx8wrapper.cpp`, `sr_util.cpp`, and `ww3d.cpp`. This is compile coverage only. The current Direct3D 8, WWAudio/Miles, and Surrender shims are declaration/type surfaces for compiling original code, not renderer, audio, or Surrender object implementations; browser runtime mappings for the compiled Direct3D wrapper, `ww3d.cpp` screen capture/frame-grab paths, GDI text rasterization, Video-for-Windows frame grabbing, WWAudio/Miles playback, Surrender renderer/object behavior, real WWLib MPU timing, and render-object/light runtime linking still need browser ports before WW3D2 can be runtime-complete. |
 | `WWVegas/wwshade` | Partial | `zh_wwshade_compile_frontier` now builds all 23 original shader/material sources, including the six DX6/DX7/DX8 bump variants, by generating the legacy `*.vsh_code.h` / `*.psh_code.h` headers at build time from the original checked-in shader text. This is compile coverage only until Direct3D shader assembly, shader creation, shader constants, and material/render-state application are mapped onto the browser renderer and validated through the harness. |
 | `WWVegas/WWAudio` | Not started | Runtime audio abstraction used by W3D/audio paths. |
@@ -46,16 +46,34 @@ Common/GameClient probes (`Common/OVERRIDE.h`, `Common/SimplePlayer.h`,
 `d3d8caps.h`, `d3d8types.h`, `d3dx8.h`, `D3dx8core.h`,
 `D3dx8tex.h`, `ddraw.h`, `D3DXMath.h`, `Dx8Wrapper.h`, `font.h`,
 `LightEnvironment.h`, `hmdldef.h`, `snappts.h`, `streakrender.h`,
-`vector3i.h`, `WW3D2/ColType.h`,
-`WW3D2/Light.h`, `WWMath/Matrix3D.h`,
+`vector3i.h`, the W3D device WW3D2 bridge batch
+(`WW3D2/AnimObj.h`, `WW3D2/AssetMgr.h`, `WW3D2/Camera.h`,
+`WW3D2/ColTest.h`, `WW3D2/ColType.h`, `WW3D2/Coltest.h`,
+`WW3D2/Coltype.h`, `WW3D2/DX8Caps.h`, `WW3D2/DX8IndexBuffer.h`,
+`WW3D2/DX8Renderer.h`, `WW3D2/DX8VertexBuffer.h`,
+`WW3D2/DX8WebBrowser.h`, `WW3D2/DX8Wrapper.h`, `WW3D2/HAnim.h`,
+`WW3D2/HLOD.h`, `WW3D2/HLod.h`, `WW3D2/HTree.h`, `WW3D2/Light.h`,
+`WW3D2/Line3D.h`, `WW3D2/Matinfo.h`, `WW3D2/Mesh.h`,
+`WW3D2/MeshMdl.h`, `WW3D2/Meshmatdesc.h`, `WW3D2/Meshmdl.h`,
+`WW3D2/Part_Emt.h`, `WW3D2/Part_Ldr.h`, `WW3D2/Part_emt.h`,
+`WW3D2/PointGr.h`, `WW3D2/PredLod.h`, `WW3D2/RInfo.h`,
+`WW3D2/RendObj.h`, `WW3D2/Render2D.h`,
+`WW3D2/Render2DSentence.h`, `WW3D2/Scene.h`, `WW3D2/Segline.h`,
+`WW3D2/Shader.h`, `WW3D2/SortingRenderer.h`,
+`WW3D2/SurfaceClass.h`, `WW3D2/Texture.h`, `WW3D2/TextureLoader.h`,
+`WW3D2/Textureloader.h`, `WW3D2/VertMaterial.h`, `WW3D2/WW3D.h`,
+`WW3D2/WW3DFormat.h`, and `WW3D2/dx8WebBrowser.h`),
+`WWMath/Matrix3D.h`,
 `WWLIB/ffactory.h`, `WWLib/RefCount.h`, `WWMATH/Vector2.h`, `WWMATH/Vector3.h`, and
 `WWMATH/Vector4.h`). The
 `gameengine-header-case-smoke` target compile-checks the currently
 browser-usable wrappers against original OVERRIDE, BaseType, D3D/D3DX format
-and FVF helpers, W3D collision type, W3D light enum, WWLib font/convert
-declarations, W3D streak-render declarations, Vector3i, and Matrix3D inline
-behavior; Windows Media / shell URL bodies still need a real browser-device
-contract before they can compile.
+and FVF helpers, W3D collision type, W3D light enum, representative W3D2
+asset/render/texture bridge headers, WWLib font/convert declarations, W3D
+streak-render declarations, Vector3i, and Matrix3D inline behavior; the full
+W3D bridge batch is exercised by `zh_gameengine_real_compile_frontier`, and
+Windows Media / shell URL bodies still need a real browser-device contract
+before they can compile.
 
 ## Tooling Or Editor Targets
 
@@ -253,8 +271,26 @@ The wasm CMake skeleton currently builds:
   initial Thing/model-definition sources (`DrawModule.cpp`, `Module.cpp`,
   `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`),
   lightweight W3D/device leaves (`W3DDevice/Common/W3DConvert.cpp`,
+  `W3DDevice/Common/System/W3DFunctionLexicon.cpp`,
+  `W3DDevice/Common/Thing/W3DModuleFactory.cpp`,
   `W3DDevice/Common/Thing/W3DThingFactory.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DCheckBox.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DComboBox.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DHorizontalSlider.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DListBox.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DProgressBar.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DPushButton.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DRadioButton.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DStaticText.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DTabControl.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DTextEntry.cpp`,
+  `W3DDevice/GameClient/GUI/Gadget/W3DVerticalSlider.cpp`,
+  `W3DDevice/GameClient/GUI/GUICallbacks/W3DControlBar.cpp`,
+  `W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp`,
   `W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp`,
+  `W3DDevice/GameClient/GUI/W3DGameFont.cpp`,
+  `W3DDevice/GameClient/GUI/W3DGameWindow.cpp`,
+  `W3DDevice/GameClient/GUI/W3DGameWindowManager.cpp`,
   `W3DDevice/GameClient/W3DDebugDisplay.cpp`,
   `W3DDevice/GameClient/W3DDynamicLight.cpp`,
   `W3DDevice/GameClient/W3DFileSystem.cpp`,
@@ -455,7 +491,8 @@ The wasm CMake skeleton currently builds:
 - `gameengine-header-case-smoke`: a Node-executed wasm smoke test that verifies
   case-variant wrappers for original GameEngine/WWVegas headers compile under
   the case-sensitive wasm build and resolve to original OVERRIDE, BaseType,
-  W3D collision type, DieModule, and Matrix3D inline behavior.
+  W3D collision type, representative W3D2 asset/render/texture bridge headers,
+  DieModule, and Matrix3D inline behavior.
 - `gameengine-common-core-smoke`: a Node-executed wasm smoke test that verifies
   the original `GameEngine/Common` core slice, including memory-manager
   initialization with original DMA/pool sizing, engine string

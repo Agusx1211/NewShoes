@@ -39,7 +39,7 @@
 #include "WW3D2/Texture.h"
 enum FilterTypes;
 enum CustomScenePassModes;
-enum StaticGameLODLevel;
+enum StaticGameLODLevel : int;
 enum ChipsetType;
 enum CpuType;
 enum GraphicsVenderID;

@@ -776,6 +776,14 @@ shares structure and follows behind.
       `W3DDynamicLight.cpp`, and the currently disabled `W3DGranny.cpp`
       translation unit, after adding exact-case bridges for
       `WW3D2/Light.h` and `lib/baseType.h`.
+- [x] Compile the original W3D GUI/factory device batch in the real-header
+      compile frontier: `W3DFunctionLexicon.cpp`, `W3DModuleFactory.cpp`, W3D
+      gadget draw sources, `W3DControlBar.cpp`, `W3DMainMenu.cpp`,
+      `W3DGameFont.cpp`, `W3DGameWindow.cpp`, and `W3DGameWindowManager.cpp`,
+      after adding the WW3D2 case-bridge batch, portable function-lexicon
+      callback storage, and fixed-underlying enum forwards for the reached W3D
+      module headers. This is compile coverage only until browser display,
+      input, and renderer paths are harness-driven.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -865,12 +873,10 @@ shares structure and follows behind.
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
       contract.
-- [ ] Compile original W3D renderer-adjacent factories and lexicon
-      (`W3DModuleFactory.cpp`, `W3DFunctionLexicon.cpp`, height-map leaves)
-      after the WW3D2/Direct3D include surface, GDI font handle compatibility,
-      legacy function-pointer table casting, and fixed-underlying
-      `GameLODLevel` forward declaration are handled as part of the renderer
-      port.
+- [ ] Compile the next original W3D renderer-adjacent leaves, including
+      height maps, display, scene, terrain renderer, drawable modules, shader,
+      water, and shadow sources, after the remaining WW3D2/Direct3D browser
+      compatibility surface is available as part of the renderer port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
       source blocker: the legacy BrowserEngine DLL import in
       `dx8webbrowser.cpp`. Runtime browser ports are still needed for the

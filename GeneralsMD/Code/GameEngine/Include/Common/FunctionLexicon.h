@@ -47,11 +47,24 @@ class FunctionLexicon : public SubsystemInterface
 
 public:
 
+	struct TableFunction
+	{
+		void *ptr;
+
+		TableFunction( void ) : ptr( 0 ) {}
+		TableFunction( void *function ) : ptr( function ) {}
+
+		template< typename FunctionType >
+		TableFunction( FunctionType *function ) : ptr( reinterpret_cast< void * >( function ) ) {}
+
+		operator void *( void ) const { return ptr; }
+	};
+
 	struct TableEntry
 	{
 		NameKeyType key;
 		const char *name;
-		void *func;
+		TableFunction func;
 	};
 
 	enum TableIndex
@@ -151,4 +164,3 @@ inline WindowLayoutShutdownFunc FunctionLexicon::winLayoutShutdownFunc( NameKeyT
 extern FunctionLexicon *TheFunctionLexicon;  ///< function dictionary external
 
 #endif // end __FUNCTIONLEXICON_H_
-
