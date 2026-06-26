@@ -612,11 +612,15 @@ shares structure and follows behind.
 - [ ] Link and smoke-test the original audio and multiplayer INI parser routes
       after the real `Common/INI.cpp` reader, audio manager, and full runtime
       singleton surface are available without target-local parser stubs.
-- [ ] Replace the focused browser `GameData.ini` runtime's weak fail-fast
-      unused INI block parser definitions with the real parser destinations as
-      each owning singleton comes online; they exist only to keep the
-      `GameData` preflight on original `INI.cpp::load` without pulling unrelated
+- [ ] Replace the focused browser INI runtime's weak fail-fast unused INI block
+      parser definitions with the real parser destinations as each owning
+      singleton comes online; they exist only to keep the `GameData` and shipped
+      map-cache preflights on original `INI.cpp::load` without pulling unrelated
       UI/terrain/object managers into `cnc-port`.
+- [ ] Replace the focused shipped map-cache runtime's local `TheMapCache` and
+      `TheKey_InitialCameraPosition` compatibility definitions with the original
+      `MapUtil.cpp` / `WorldHeightMap.cpp` ownership once those runtime surfaces
+      can link without compile-only UI/map-loader dependencies.
 - [ ] Link and smoke-test the original command-set, control-bar scheme,
       DamageFX, and map-data INI parse routes after the real `Common/INI.cpp`
       reader and their destination managers/singletons are available without
@@ -1600,9 +1604,9 @@ shares structure and follows behind.
 - [x] Expose a harness-verified bootstrap `startupAssets` state that reports
       missing runtime archives as `missing_runtime_archives`, reports registered
       archive sets as `pending_boot_probe` before boot, and only reports
-      `ready` after the boot-time archive/GameData/GameText probes pass. This is
-      bootstrap preflight only; full engine-init missing-asset handling remains
-      open.
+      `ready` after the boot-time archive/GameData/GameText/MapCache probes
+      pass. This is bootstrap preflight only; full engine-init missing-asset
+      handling remains open.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
@@ -1650,6 +1654,13 @@ shares structure and follows behind.
       `assetProbe.gameData`, and cover the single-archive and registered
       runtime-archive boot paths in Playwright. This is a focused `GameData`
       preflight only; full all-block original INI loading remains open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Maps\MapCache.ini` from the registered runtime archive set through the
+      original `Common/INI.cpp::load` and `Common/INI/INIMapCache.cpp`, expose
+      shipped map-cache counts and known map entries as `assetProbe.mapCache`,
+      and require it for the Playwright `startupAssets.ready` state. This is a
+      shipped map-cache load preflight only; live user-map scanning/rebuilds and
+      full map loading remain open.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
@@ -1669,7 +1680,12 @@ shares structure and follows behind.
       can use the real INI reader and singleton surfaces instead of the
       target-local `Common/INI.h` compatibility bridge.
 - [ ] `GameText`/string tables load (CSF/GameText) for the chosen language.
-- [ ] Map cache builds / loads.
+- [x] Shipped map cache loads from real `MapsZH.big` through original
+      `Common/INI.cpp::load` and `INIMapCache.cpp`, with harness state proving
+      parsed map counts plus known ShellMapMD and Tournament Desert entries.
+- [ ] Map cache rebuilds/scans live system and user map directories through
+      original `MapCache::updateCache`, including `.map` parsing, CRC/file-info
+      checks, user-data persistence, and browser MEMFS/IDBFS behavior.
 - [ ] Harness state query: dump counts of parsed templates to prove data loaded.
 
 ---

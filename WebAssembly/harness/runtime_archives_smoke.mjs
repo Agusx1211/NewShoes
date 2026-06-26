@@ -68,6 +68,28 @@ function assertGameDataProbe(assetProbe, context) {
   }
 }
 
+function assertMapCacheProbe(assetProbe, context) {
+  const mapCache = assetProbe?.mapCache;
+  if (!assetProbe?.maps?.mapCacheIni
+      || !mapCache?.attempted
+      || !mapCache.ok
+      || mapCache.source !== "GameEngine/Common/INI.cpp::load + INIMapCache.cpp"
+      || !mapCache.loadedArchives
+      || !mapCache.fileExists
+      || !mapCache.gameTextLoaded
+      || !mapCache.nameKeyGeneratorLoaded
+      || !mapCache.originalIniLoad
+      || mapCache.maps <= 80
+      || mapCache.multiplayerMaps <= 20
+      || mapCache.officialMaps <= 20
+      || !mapCache.shellMapMD
+      || !mapCache.tournamentDesert
+      || !mapCache.tournamentDesertDisplayName
+      || mapCache.tournamentDesertPlayers < 2) {
+    throw new Error(`${context} did not load expected MapCache.ini metadata: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertStartupAssets(state, context, expectedStatus, expectedOk) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
@@ -80,7 +102,8 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.bootProbeOk
         || !startupAssets.required?.inizh
         || !startupAssets.required?.gameData
-        || !startupAssets.required?.gameText)) {
+        || !startupAssets.required?.gameText
+        || !startupAssets.required?.mapCache)) {
     throw new Error(`${context} startup asset requirements incomplete: ${JSON.stringify(startupAssets)}`);
   }
 }
@@ -157,6 +180,7 @@ try {
   }
   assertGameTextProbe(assetProbe, "aggregate runtime archive probe");
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
+  assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
 
   if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
@@ -204,6 +228,7 @@ try {
   }
   assertGameTextProbe(bootResult.state.assetProbe, "boot asset probe");
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
 
   console.log(JSON.stringify({

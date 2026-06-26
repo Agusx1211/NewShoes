@@ -12,12 +12,22 @@
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
+#include "Common/WellKnownKeys.h"
+#include "GameClient/GameText.h"
+#include "GameClient/MapUtil.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
+MapCache *TheMapCache __attribute__((weak)) = nullptr;
+const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialCameraPosition");
+
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
+constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 constexpr const char EXPECTED_SHELL_MAP_NAME[] = "Maps\\ShellMapMD\\ShellMapMD.map";
+constexpr const char SHELL_MAP_MD_PATH[] = "maps\\shellmapmd\\shellmapmd.map";
+constexpr const char TOURNAMENT_DESERT_PATH[] = "maps\\tournament desert\\tournament desert.map";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -46,6 +56,30 @@ std::size_t count_verified_fields(const RealGameDataIniProbeResult &result)
 		(std::fabs(result.default_structure_rubble_height - 10.0f) < 0.001f ? 1U : 0U) +
 		(std::fabs(result.group_select_volume_base - 0.5f) < 0.001f ? 1U : 0U) +
 		(result.max_particle_count == 2500 ? 1U : 0U);
+}
+
+bool unicode_not_empty(const UnicodeString &value)
+{
+	return !value.isEmpty() && value.getLength() > 0;
+}
+
+void inspect_map_cache_entry(
+	MapCache &map_cache,
+	const char *path,
+	bool &exists,
+	bool &has_display_name,
+	int &player_count)
+{
+	MapCache::const_iterator it = map_cache.find(AsciiString(path));
+	exists = it != map_cache.end();
+	if (!exists) {
+		has_display_name = false;
+		player_count = 0;
+		return;
+	}
+
+	has_display_name = unicode_not_empty(it->second.m_displayName);
+	player_count = it->second.m_numPlayers;
 }
 }
 
@@ -124,6 +158,132 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
+
+	shutdownMemoryManager();
+
+	return result;
+}
+
+RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive_path)
+{
+	RealMapCacheIniProbeResult result;
+	result.attempted = true;
+	result.source = "GameEngine/Common/INI.cpp::load + INIMapCache.cpp";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	initMemoryManager();
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GameTextInterface *old_game_text = TheGameText;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	MapCache *old_map_cache = TheMapCache;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	GameTextInterface *game_text = nullptr;
+	NameKeyGenerator *name_key_generator = nullptr;
+	MapCache map_cache;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(MAP_CACHE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				game_text = CreateGameTextInterface();
+				TheGameText = game_text;
+				if (game_text != nullptr) {
+					game_text->init();
+					Bool title_exists = FALSE;
+					const UnicodeString title = game_text->fetch("GUI:Command&ConquerGenerals", &title_exists);
+					result.game_text_loaded = title_exists && unicode_not_empty(title);
+				}
+
+				TheMapCache = &map_cache;
+
+				INI ini;
+				ini.load(AsciiString(MAP_CACHE_INI_PATH), INI_LOAD_OVERWRITE, nullptr);
+				result.original_ini_load = true;
+
+				for (MapCache::const_iterator it = map_cache.begin(); it != map_cache.end(); ++it) {
+					if (it->second.m_isMultiplayer) {
+						++result.multiplayer_count;
+					}
+					if (it->second.m_isOfficial) {
+						++result.official_count;
+					}
+				}
+
+				result.map_count = map_cache.size();
+				inspect_map_cache_entry(
+					map_cache,
+					SHELL_MAP_MD_PATH,
+					result.has_shell_map_md,
+					result.shell_map_md_display_name,
+					result.shell_map_md_players);
+				inspect_map_cache_entry(
+					map_cache,
+					TOURNAMENT_DESERT_PATH,
+					result.has_tournament_desert,
+					result.tournament_desert_display_name,
+					result.tournament_desert_players);
+
+				result.ok =
+					result.bytes > 100000 &&
+					result.game_text_loaded &&
+					result.name_key_generator_loaded &&
+					result.original_ini_load &&
+					result.map_count > 80 &&
+					result.multiplayer_count > 20 &&
+					result.official_count > 20 &&
+					result.has_shell_map_md &&
+					result.has_tournament_desert &&
+					result.tournament_desert_display_name &&
+					result.tournament_desert_players >= 2;
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheMapCache = old_map_cache;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameText = old_game_text;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (game_text != nullptr) {
+		delete game_text;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
+	map_cache.clear();
 
 	shutdownMemoryManager();
 

@@ -68,13 +68,16 @@ title/control-bar labels plus `CONTROLBAR:` prefix enumeration. It also checks
 original `Common/INI.cpp::load` path into original `GlobalData.cpp`, then
 verifying shipped values such as the shell map, FPS limit, cloud-map flag,
 rubble height, group-select volume, and particle limit. The bootstrap reports
-this as `gameData.source = "GameEngine/Common/INI.cpp::load"`. The bootstrap
-also reports `startupAssets`, which stays
+this as `gameData.source = "GameEngine/Common/INI.cpp::load"`. It now also
+checks `assetProbe.mapCache` by loading the real `Maps\MapCache.ini` through
+original `Common/INI.cpp::load` and `Common/INI/INIMapCache.cpp`, verifying
+shipped map counts plus known ShellMapMD and Tournament Desert entries. The
+bootstrap also reports `startupAssets`, which stays
 `missing_runtime_archives` without a registered runtime archive set, moves to
 `pending_boot_probe` after preload registration, and only becomes `ready` after
-the boot-time archive/GameData/GameText probes pass. This is still a bootstrap
-preflight; full original all-block INI loading remains part of engine startup
-work.
+the boot-time archive/GameData/GameText/MapCache probes pass. This is still a
+bootstrap preflight; full original all-block INI loading and live map-cache
+rebuilds remain part of engine startup work.
 
 ## Toolchain
 
@@ -160,10 +163,11 @@ the runtime archive smoke uses that ordering to match the eventual engine
 startup preload path and asserts the boot-time `archiveMount.bootProbe` result.
 It also asserts the C++ `assetProbe.gameText` result from original
 `GameText.cpp` over the fetched English CSF, asserts `assetProbe.gameData`
-through original `Common/INI.cpp::load` over real `GameData.ini`, and checks
-`startupAssets` for the missing, pending, and ready archive states. Full
-original engine startup, all-block INI parsing, language initialization, and
-font loading remain open.
+through original `Common/INI.cpp::load` over real `GameData.ini`, asserts
+`assetProbe.mapCache` through original `INIMapCache.cpp` over real
+`Maps\MapCache.ini`, and checks `startupAssets` for the missing, pending, and
+ready archive states. Full original engine startup, all-block INI parsing,
+language initialization, font loading, and live map-cache rebuilds remain open.
 
 Run the wasm-backed smoke test:
 

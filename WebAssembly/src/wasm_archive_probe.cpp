@@ -28,6 +28,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
 constexpr const char GAME_DATA_INI_PATH[] = "Data\\INI\\GameData.ini";
+constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -109,6 +110,28 @@ void copy_game_data_probe(const RealGameDataIniProbeResult &game_data, ArchivePr
 	result.game_data_max_particle_count = game_data.max_particle_count;
 }
 
+void copy_map_cache_probe(const RealMapCacheIniProbeResult &map_cache, ArchiveProbeResult &result)
+{
+	result.map_cache_attempted = map_cache.attempted;
+	result.map_cache_ok = map_cache.ok;
+	result.map_cache_loaded_archives = map_cache.loaded_archives;
+	result.map_cache_file_exists = map_cache.file_exists;
+	result.map_cache_game_text_loaded = map_cache.game_text_loaded;
+	result.map_cache_name_key_generator_loaded = map_cache.name_key_generator_loaded;
+	result.map_cache_original_ini_load = map_cache.original_ini_load;
+	result.map_cache_bytes = map_cache.bytes;
+	result.map_cache_maps = map_cache.map_count;
+	result.map_cache_multiplayer_maps = map_cache.multiplayer_count;
+	result.map_cache_official_maps = map_cache.official_count;
+	result.map_cache_source = map_cache.source;
+	result.map_cache_has_shell_map_md = map_cache.has_shell_map_md;
+	result.map_cache_has_tournament_desert = map_cache.has_tournament_desert;
+	result.map_cache_shell_map_md_display_name = map_cache.shell_map_md_display_name;
+	result.map_cache_tournament_desert_display_name = map_cache.tournament_desert_display_name;
+	result.map_cache_shell_map_md_players = map_cache.shell_map_md_players;
+	result.map_cache_tournament_desert_players = map_cache.tournament_desert_players;
+}
+
 void probe_original_game_text(ArchiveProbeResult &result)
 {
 	result.game_text_attempted = true;
@@ -176,6 +199,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_command_button_ini = archive_file_system.doesFileExist("Data\\INI\\CommandButton.ini");
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
 			result.has_weapon_ini = archive_file_system.doesFileExist("Data\\INI\\Weapon.ini");
+			result.has_map_cache_ini = archive_file_system.doesFileExist(MAP_CACHE_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
 
 			std::vector<char> sample_data;
@@ -203,6 +227,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 	if (result.loaded && result.has_game_data_ini) {
 		copy_game_data_probe(probe_original_game_data_ini_load(archive_path), result);
 		result.ok = result.ok && result.game_data_ok;
+	}
+	if (result.loaded && result.has_map_cache_ini && result.has_generals_csf) {
+		copy_map_cache_probe(probe_original_map_cache_ini_load(archive_path), result);
+		result.ok = result.ok && result.map_cache_ok;
 	}
 
 	return result;

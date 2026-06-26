@@ -296,6 +296,13 @@ bool startup_game_text_ready()
 		g_archive_probe.game_text_ok;
 }
 
+bool startup_map_cache_ready()
+{
+	return g_archive_probe.has_map_cache_ini &&
+		g_archive_probe.map_cache_attempted &&
+		g_archive_probe.map_cache_ok;
+}
+
 bool startup_assets_ready()
 {
 	return g_archive_mount.registered &&
@@ -305,7 +312,8 @@ bool startup_assets_ready()
 		startup_archive_probe_loaded() &&
 		startup_boot_ini_present() &&
 		startup_game_data_ready() &&
-		startup_game_text_ready();
+		startup_game_text_ready() &&
+		startup_map_cache_ready();
 }
 
 const char *startup_asset_status()
@@ -327,6 +335,9 @@ const char *startup_asset_status()
 	}
 	if (!startup_game_text_ready()) {
 		return "game_text_probe_failed";
+	}
+	if (!startup_map_cache_ready()) {
+		return "map_cache_probe_failed";
 	}
 	if (!g_archive_mount.boot_probe_ok || !g_archive_probe.ok) {
 		return "archive_probe_failed";
@@ -353,6 +364,9 @@ const char *startup_asset_message()
 	}
 	if (!startup_game_text_ready()) {
 		return "Runtime BIG archive set did not pass the GameText CSF startup probe.";
+	}
+	if (!startup_map_cache_ready()) {
+		return "Runtime BIG archive set did not pass the MapCache.ini startup probe.";
 	}
 	if (!g_archive_mount.boot_probe_ok || !g_archive_probe.ok) {
 		return "Runtime BIG archive boot probe failed.";
@@ -433,11 +447,12 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[17000];
+	char buffer[22000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string game_data_shell_map_name_json =
 		json_escape(g_archive_probe.game_data_shell_map_name);
 	const std::string game_data_source_json = json_escape(g_archive_probe.game_data_source);
+	const std::string map_cache_source_json = json_escape(g_archive_probe.map_cache_source);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
@@ -468,6 +483,7 @@ const char *write_state_json()
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"armorIni\":%s,\"commandButtonIni\":%s,"
 		"\"gameDataIni\":%s,\"weaponIni\":%s},"
+		"\"maps\":{\"mapCacheIni\":%s},"
 		"\"gameData\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
 		"\"originalIniLoad\":%s,\"parsedFields\":%zu,\"shellMapName\":\"%s\","
@@ -475,6 +491,13 @@ const char *write_state_json()
 		"\"maxShellScreens\":%d,\"useCloudMap\":%s,"
 		"\"defaultStructureRubbleHeight\":%.3f,"
 		"\"groupSelectVolumeBase\":%.3f,\"maxParticleCount\":%d},"
+		"\"mapCache\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"gameTextLoaded\":%s,\"nameKeyGeneratorLoaded\":%s,"
+		"\"originalIniLoad\":%s,\"maps\":%zu,\"multiplayerMaps\":%zu,"
+		"\"officialMaps\":%zu,\"shellMapMD\":%s,\"tournamentDesert\":%s,"
+		"\"shellMapMDDisplayName\":%s,\"tournamentDesertDisplayName\":%s,"
+		"\"shellMapMDPlayers\":%d,\"tournamentDesertPlayers\":%d},"
 		"\"gameText\":{\"attempted\":%s,\"ok\":%s,\"generalsCsf\":%s,"
 		"\"titleLabel\":%s,\"controlBarLabel\":%s,\"controlBarLabels\":%zu}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
@@ -482,7 +505,7 @@ const char *write_state_json()
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
-		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"gameText\":%s}},"
+		"\"required\":{\"inizh\":%s,\"gameData\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"originalEngineLinked\":true,"
 		"\"originalCoreProbe\":{\"source\":\"GameEngine/Common/RandomValue.cpp\","
 		"\"seed\":%u,\"logicRandomValue\":%d,\"logicSeedCRC\":%u,\"ok\":%s},"
@@ -537,6 +560,7 @@ const char *write_state_json()
 		g_archive_probe.has_command_button_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_weapon_ini ? "true" : "false",
+		g_archive_probe.has_map_cache_ini ? "true" : "false",
 		g_archive_probe.game_data_attempted ? "true" : "false",
 		g_archive_probe.game_data_ok ? "true" : "false",
 		g_archive_probe.game_data_bytes,
@@ -553,6 +577,24 @@ const char *write_state_json()
 		g_archive_probe.game_data_default_structure_rubble_height,
 		g_archive_probe.game_data_group_select_volume_base,
 		g_archive_probe.game_data_max_particle_count,
+		g_archive_probe.map_cache_attempted ? "true" : "false",
+		g_archive_probe.map_cache_ok ? "true" : "false",
+		g_archive_probe.map_cache_bytes,
+		map_cache_source_json.c_str(),
+		g_archive_probe.map_cache_loaded_archives ? "true" : "false",
+		g_archive_probe.map_cache_file_exists ? "true" : "false",
+		g_archive_probe.map_cache_game_text_loaded ? "true" : "false",
+		g_archive_probe.map_cache_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.map_cache_original_ini_load ? "true" : "false",
+		g_archive_probe.map_cache_maps,
+		g_archive_probe.map_cache_multiplayer_maps,
+		g_archive_probe.map_cache_official_maps,
+		g_archive_probe.map_cache_has_shell_map_md ? "true" : "false",
+		g_archive_probe.map_cache_has_tournament_desert ? "true" : "false",
+		g_archive_probe.map_cache_shell_map_md_display_name ? "true" : "false",
+		g_archive_probe.map_cache_tournament_desert_display_name ? "true" : "false",
+		g_archive_probe.map_cache_shell_map_md_players,
+		g_archive_probe.map_cache_tournament_desert_players,
 		g_archive_probe.game_text_attempted ? "true" : "false",
 		g_archive_probe.game_text_ok ? "true" : "false",
 		g_archive_probe.has_generals_csf ? "true" : "false",
@@ -576,6 +618,7 @@ const char *write_state_json()
 		startup_boot_ini_present() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
 		startup_game_text_ready() ? "true" : "false",
+		startup_map_cache_ready() ? "true" : "false",
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,

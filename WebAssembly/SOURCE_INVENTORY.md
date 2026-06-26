@@ -148,15 +148,19 @@ The wasm CMake skeleton currently builds:
   `Data\INI\GameData.ini` through the original `Win32BIGFileSystem` /
   `FileSystem` path and original `Common/INI.cpp::load` into original
   `GlobalData.cpp`, then reports `assetProbe.gameData` with harness-verified
-  shipped scalar values. The focused runtime includes browser-default
-  `UserPreferences` / `OptionPreferences` compatibility and weak fail-fast
-  unused INI block parser definitions only to keep this `GameData` probe narrow;
-  full all-block INI destinations remain tracked in `TODO.md`. The bootstrap
-  also reports `startupAssets` so the
+  shipped scalar values. It also loads real `Maps\MapCache.ini` through the
+  original `Common/INI.cpp::load` and `Common/INI/INIMapCache.cpp`, then reports
+  `assetProbe.mapCache` with harness-verified shipped map counts and known map
+  entries. The focused runtime includes browser-default `UserPreferences` /
+  `OptionPreferences` compatibility, a local `TheMapCache` plus
+  `TheKey_InitialCameraPosition` compatibility owner, and weak fail-fast unused
+  INI block parser definitions only to keep these startup data probes narrow;
+  full all-block INI destinations and live map-cache rebuilds remain tracked in
+  `TODO.md`. The bootstrap also reports `startupAssets` so the
   harness can distinguish missing runtime archives, registered-but-unprobed
   runtime archives, and a boot-probe-verified archive set with required INI,
-  GameData, and GameText coverage. Original engine startup still needs to
-  consume the mounted runtime archive set through full all-block INI loading
+  GameData, GameText, and MapCache coverage. Original engine startup still needs
+  to consume the mounted runtime archive set through full all-block INI loading
   beyond this preflight. The bootstrap also links original
   `Win32Device/Common/Win32CDManager.cpp` and reports `cdManagerProbe` after
   initializing the original manager through browser drive shims; the verified
@@ -735,7 +739,9 @@ The wasm CMake skeleton currently builds:
   file, known title/control-bar labels, and `CONTROLBAR:` prefix enumeration,
   plus `assetProbe.gameData` by checking real `GameData.ini` values loaded via
   original `Common/INI.cpp::load` from `INIZH.big` through the same archive
-  path. The same smoke checks
+  path, plus `assetProbe.mapCache` by checking real `Maps\MapCache.ini` values
+  loaded via original `INIMapCache.cpp` from `MapsZH.big` through the aggregate
+  archive path. The same smoke checks
   `startupAssets` for the pre-boot `pending_boot_probe` state and the post-boot
   `ready` state.
 

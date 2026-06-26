@@ -69,10 +69,14 @@ original `GameText.cpp` from the fetched archive set and checking known labels.
 It also asserts `assetProbe.gameData` by loading real
 `Data\INI\GameData.ini` from `INIZH.big` through original
 `Common/INI.cpp::load` into original `GlobalData.cpp`, then verifying shipped
-values. The smoke also checks `startupAssets`:
+values. It also asserts `assetProbe.mapCache` by loading real
+`Maps\MapCache.ini` from `MapsZH.big` through original `Common/INI.cpp::load`
+and `Common/INI/INIMapCache.cpp`, then checking shipped map counts and known
+map entries. The smoke also checks `startupAssets`:
 `pending_boot_probe` before boot and `ready` after the registered archive set
-passes the boot-time archive/GameData/GameText probes. Full all-block original
-INI loading is still tracked separately from this bootstrap preflight.
+passes the boot-time archive/GameData/GameText/MapCache probes. Full all-block
+original INI loading and live map-cache rebuilding are still tracked separately
+from this bootstrap preflight.
 
 | Archive | Source | Role |
 |---|---|---|
