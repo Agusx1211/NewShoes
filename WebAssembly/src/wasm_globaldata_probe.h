@@ -28,4 +28,23 @@ struct GlobalDataProbeResult
 	std::string source;
 };
 
+struct CommandLineProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	int x_resolution = 0;
+	int y_resolution = 0;
+	bool windowed = false;
+	bool shell_map_on = true;
+	bool play_sizzle = true;
+	bool animate_windows = true;
+	bool script_debug = false;
+	bool particle_edit = false;
+	bool win_cursors = false;
+	int play_stats = 0;
+	int chip_set_type = 0;
+	std::string source;
+};
+
 GlobalDataProbeResult probe_original_global_data();
+CommandLineProbeResult probe_original_command_line();

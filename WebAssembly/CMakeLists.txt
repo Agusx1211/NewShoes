@@ -2540,6 +2540,7 @@ target_link_libraries(zh_gameengine_debug_runtime PUBLIC
 
 add_library(zh_gameengine_globaldata_runtime STATIC
   src/wasm_globaldata_probe.cpp
+  "${GAMEENGINE_COMMON_DIR}/CommandLine.cpp"
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
 )
 

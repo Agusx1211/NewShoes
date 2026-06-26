@@ -146,6 +146,8 @@ shares structure and follows behind.
       (`GameClient/view.h`, `lib/BaseType.h`, `WWMATH/Vector2.h`,
       `WWMATH/Vector3.h`, and `WWMATH/Vector4.h`) under the case-sensitive
       wasm build.
+- [x] Add lowercase `wwmath/vector3.h` and `wwmath/matrix3d.h` wrappers for original
+      `Common/CRCDebug.h` users under the case-sensitive wasm build.
 - [x] Add case-variant include wrappers for additional original GameClient
       menu/control sources (`GameClient/GadgetCheckbox.h`,
       `GameClient/Hotkey.h`, and `GameClient/mouse.h`) under the
@@ -734,9 +736,15 @@ shares structure and follows behind.
 - [x] Link and smoke-test original `GlobalData` constructor defaults and
       browser user-data path setup in the wasm bootstrap via
       `globalDataProbe`.
-- [ ] Link original `GlobalData` command-line mutation and replace the remaining
-      target-local `Common/GlobalData.h` singleton shim in the broader linked
-      runtime.
+- [x] Link and smoke-test original `Common/CommandLine.cpp` mutating real
+      `GlobalData` in the wasm bootstrap via `commandLineProbe`.
+- [ ] Replace the remaining target-local `Common/GlobalData.h` singleton shim
+      in the broader linked runtime after the focused `GlobalData` /
+      command-line bootstrap probes are folded into the main engine startup
+      path.
+- [ ] Replace the focused command-line runtime's local
+      `DX8Wrapper_PreserveFPU` compatibility definition with the original W3D
+      DX8 wrapper state once the W3D runtime links into `cnc-port`.
 - [x] Compile original `Common/UserPreferences.cpp` after the GameSpy Peer/GP
       SDK headers used by `GameNetwork/GameSpy/PeerDefs.h` are available or
       mapped to browser-safe networking interfaces.

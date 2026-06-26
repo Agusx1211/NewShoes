@@ -139,6 +139,26 @@ function assertGlobalDataProbe(state, label) {
   }
 }
 
+function assertCommandLineProbe(state, label) {
+  const probe = state.commandLineProbe;
+  if (!probe?.ok || probe.source !== "GameEngine/Common/CommandLine.cpp") {
+    throw new Error(`${label} CommandLine probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (probe.resolution?.x !== 1024
+      || probe.resolution?.y !== 768
+      || !probe.windowed
+      || probe.shellMapOn
+      || probe.playSizzle
+      || probe.animateWindows
+      || !probe.scriptDebug
+      || !probe.particleEdit
+      || probe.playStats !== 23
+      || probe.chipSetType !== 1) {
+    throw new Error(`${label} CommandLine mutations incomplete: ${JSON.stringify(probe)}`);
+  }
+}
+
 async function assertHarnessLog(page, message, textSubstring) {
   const result = await page.evaluate(() => window.CnCPort.rpc("state"));
   const found = result.logs.some((entry) => (
@@ -189,10 +209,12 @@ try {
     assertWwDebugProbe(bootResult.state, "boot");
     assertCommonDebugLog(bootResult.state, "boot");
     assertGlobalDataProbe(bootResult.state, "boot");
+    assertCommandLineProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: globaldata probe ok=1");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: commandline probe ok=1");
     await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {

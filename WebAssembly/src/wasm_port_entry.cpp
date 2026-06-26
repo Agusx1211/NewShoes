@@ -58,6 +58,7 @@ Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
 GlobalDataProbeResult g_global_data_probe;
+CommandLineProbeResult g_command_line_probe;
 std::string g_state_json;
 
 struct ArchiveMountState
@@ -228,6 +229,15 @@ void run_original_global_data_probe()
 		g_global_data_probe.user_data_path.c_str());
 }
 
+void run_original_command_line_probe()
+{
+	g_command_line_probe = probe_original_command_line();
+	std::printf("cnc-port: commandline probe ok=%d resolution=%dx%d\n",
+		g_command_line_probe.ok ? 1 : 0,
+		g_command_line_probe.x_resolution,
+		g_command_line_probe.y_resolution);
+}
+
 void probe_registered_archive_set_for_boot()
 {
 	g_archive_mount.boot_probe_attempted = g_archive_mount.registered;
@@ -294,6 +304,7 @@ void ensure_booted()
 		run_original_debug_probe();
 		run_original_debug_log_probe();
 		run_original_global_data_probe();
+		run_original_command_line_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -318,7 +329,7 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[9000];
+	char buffer[11000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
@@ -327,6 +338,7 @@ const char *write_state_json()
 		json_escape(g_global_data_probe.user_data_path);
 	const std::string global_data_shell_map_name_json =
 		json_escape(g_global_data_probe.shell_map_name);
+	const std::string command_line_source_json = json_escape(g_command_line_probe.source);
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -362,6 +374,11 @@ const char *write_state_json()
 		"\"networkDisconnectTime\":%u,\"networkPlayerTimeoutTime\":%u,"
 		"\"doubleClickTimeMs\":%u,\"exeCrc\":%u},"
 		"\"setTimeOfDay\":{\"ok\":%s,\"value\":%d}},"
+		"\"commandLineProbe\":{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
+		"\"resolution\":{\"x\":%d,\"y\":%d},\"windowed\":%s,"
+		"\"shellMapOn\":%s,\"playSizzle\":%s,\"animateWindows\":%s,"
+		"\"scriptDebug\":%s,\"particleEdit\":%s,\"winCursors\":%s,"
+		"\"playStats\":%d,\"chipSetType\":%d},"
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
 		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
@@ -435,6 +452,20 @@ const char *write_state_json()
 		g_global_data_probe.exe_crc,
 		g_global_data_probe.set_time_of_day_ok ? "true" : "false",
 		g_global_data_probe.time_of_day,
+		command_line_source_json.c_str(),
+		g_command_line_probe.attempted ? "true" : "false",
+		g_command_line_probe.ok ? "true" : "false",
+		g_command_line_probe.x_resolution,
+		g_command_line_probe.y_resolution,
+		g_command_line_probe.windowed ? "true" : "false",
+		g_command_line_probe.shell_map_on ? "true" : "false",
+		g_command_line_probe.play_sizzle ? "true" : "false",
+		g_command_line_probe.animate_windows ? "true" : "false",
+		g_command_line_probe.script_debug ? "true" : "false",
+		g_command_line_probe.particle_edit ? "true" : "false",
+		g_command_line_probe.win_cursors ? "true" : "false",
+		g_command_line_probe.play_stats,
+		g_command_line_probe.chip_set_type,
 		g_debug_handlers_installed ? "true" : "false",
 		g_debug_probe_ok ? "true" : "false",
 		g_debug_message_count,

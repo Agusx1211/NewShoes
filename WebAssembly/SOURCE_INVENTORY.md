@@ -78,7 +78,8 @@ WWAudio case bridges (`audiosaveload.h`, `soundcullobj.h`, `threads.h`,
 `W3DDevice/GameClient/Heightmap.h`,
 `W3DDevice/GameClient/FlatHeightmap.h`,
 `W3DDevice/GameClient/W3DVideoBuffer.h`, `WWMATH/Matrix3d.h`,
-`WWMATH/Vector2.h`, `WWMATH/Vector3.h`, and `WWMATH/Vector4.h`). The
+`WWMATH/Vector2.h`, `WWMATH/Vector3.h`, `WWMATH/Vector4.h`, and
+`wwmath/vector3.h` / `wwmath/matrix3d.h`). The
 `gameengine-header-case-smoke` target compile-checks the currently
 browser-usable wrappers against original OVERRIDE, BaseType, lowercase Common
 headers, Benchmark/Bink/DirectInput declaration wrappers, D3D/D3DX
@@ -130,9 +131,13 @@ The wasm CMake skeleton currently builds:
   `Common/GlobalData.cpp` runtime target now constructs the real
   `TheWritableGlobalData` object against browser file/user-directory shims and
   reports harness-verified constructor defaults, user-data path setup, and
-  `setTimeOfDay` mutation through `globalDataProbe`; command-line mutation and
-  full replacement of the target-local `Common/GlobalData.h` shim are still
-  open. The archive probe
+  `setTimeOfDay` mutation through `globalDataProbe`. The same focused runtime
+  target now links original `Common/CommandLine.cpp` and reports
+  harness-verified release-available command-line mutation of the real
+  `GlobalData` through `commandLineProbe`; this target still carries a local
+  `DX8Wrapper_PreserveFPU` compatibility global until the original W3D DX8
+  wrapper state links into the browser runtime, and full replacement of the
+  target-local `Common/GlobalData.h` shim remains open. The archive probe
   proves fetched MEMFS archive availability and the archive-set registration
   records the verified aggregate archive directory/mask in C++ bootstrap state.
   When present at `boot`, the bootstrap probes that registered aggregate path
