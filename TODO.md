@@ -864,6 +864,15 @@ shares structure and follows behind.
       until D3DX shader assembly/creation, reflection render targets, grid and
       river water rendering, water-track integration, and terrain/water scene
       state are mapped to browser renderer APIs and harness-verified.
+- [x] Compile original `W3DDevice/GameClient/W3DDisplay.cpp` in the
+      real-header compile frontier after adding the reached WWMath/WWLib
+      case-sensitive include bridges, Win32 bitmap/local-file/window
+      compatibility declarations, and localized MSVC-to-clang fixes for the
+      untyped model-state debug constant and debug-display callback call. This
+      is compile coverage only until W3D display/device construction, display
+      modes, gamma, front-buffer screenshot/movie capture, window state, and
+      Direct3D render paths are mapped to browser canvas/renderer APIs and
+      harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -953,9 +962,10 @@ shares structure and follows behind.
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
       contract.
-- [ ] Compile the remaining original W3D renderer-adjacent leaf,
-      `W3DDisplay.cpp`, after the remaining WW3D2/Direct3D/browser device
-      compatibility surface is available as part of the renderer port.
+- [ ] Replace the compile-only `W3DDisplay.cpp` display construction, display
+      mode, gamma, window-state, front-buffer screenshot/movie-capture, and
+      Direct3D render paths with browser canvas/WebGL2/WebGPU behavior, then
+      verify the original display loop through harness screenshots.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
       (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading) and
       key-state helper (`GetAsyncKeyState`) with browser pointer/cursor/keyboard

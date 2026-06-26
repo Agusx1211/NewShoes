@@ -53,6 +53,7 @@ using ULONG = unsigned long;
 using SHORT = short;
 using HANDLE = void *;
 using HGLOBAL = HANDLE;
+using HLOCAL = HGLOBAL;
 using HKEY = void *;
 using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
@@ -296,7 +297,16 @@ static inline int _wtoi(const wchar_t *value)
 
 #define GMEM_MOVEABLE 0x0002
 #define GMEM_FIXED 0x0000
+#define GMEM_ZEROINIT 0x0040
+#define LMEM_FIXED 0x0000
+#define LMEM_ZEROINIT 0x0040
+#define LPTR (LMEM_FIXED | LMEM_ZEROINIT)
 #define HEAP_ZERO_MEMORY 0x00000008
+
+#define GENERIC_READ 0x80000000UL
+#define GENERIC_WRITE 0x40000000UL
+#define CREATE_ALWAYS 2
+#define FILE_ATTRIBUTE_NORMAL 0x00000080UL
 
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
@@ -548,6 +558,9 @@ struct BITMAPINFO
 	RGBQUAD bmiColors[1];
 };
 
+using PBITMAPINFOHEADER = BITMAPINFOHEADER *;
+using PBITMAPINFO = BITMAPINFO *;
+
 struct __attribute__((packed)) BITMAPFILEHEADER
 {
 	WORD bfType;
@@ -663,6 +676,17 @@ static inline BOOL HeapFree(HANDLE, DWORD, LPVOID memory)
 	return TRUE;
 }
 
+static inline HGLOBAL LocalAlloc(UINT flags, std::size_t bytes)
+{
+	return (flags & LMEM_ZEROINIT) ? std::calloc(1, bytes) : std::malloc(bytes);
+}
+
+static inline HGLOBAL LocalFree(HGLOBAL memory)
+{
+	std::free(memory);
+	return nullptr;
+}
+
 static inline DWORD FormatMessage(
 	DWORD,
 	LPCVOID,
@@ -775,6 +799,11 @@ static inline BOOL ScreenToClient(HWND, POINT *)
 	return TRUE;
 }
 
+static inline BOOL ClientToScreen(HWND, POINT *)
+{
+	return TRUE;
+}
+
 static inline SHORT GetAsyncKeyState(int)
 {
 	return 0;
@@ -801,6 +830,11 @@ static inline BOOL GetClientRect(HWND, RECT *rect)
 static inline HWND GetDesktopWindow()
 {
 	return nullptr;
+}
+
+static inline BOOL IsIconic(HWND)
+{
+	return FALSE;
 }
 
 static inline LONG GetWindowLong(HWND, int)
@@ -1672,6 +1706,42 @@ static inline void _splitpath(
 		const std::string suffix = dot == std::string::npos ? std::string() : leaf.substr(dot);
 		std::snprintf(ext, _MAX_EXT, "%s", suffix.c_str());
 	}
+}
+
+static inline HANDLE CreateFile(
+	LPCSTR filename,
+	DWORD,
+	DWORD,
+	void *,
+	DWORD,
+	DWORD,
+	HANDLE)
+{
+	if (filename == nullptr) {
+		return INVALID_HANDLE_VALUE;
+	}
+
+	const std::string normalized = WasmNormalizePath(filename);
+	FILE *file = std::fopen(normalized.c_str(), "wb");
+	return file != nullptr ? reinterpret_cast<HANDLE>(file) : INVALID_HANDLE_VALUE;
+}
+
+static inline BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD bytes_to_write, LPDWORD bytes_written, void *)
+{
+	if (bytes_written != nullptr) {
+		*bytes_written = 0;
+	}
+	if (file == nullptr || file == INVALID_HANDLE_VALUE || buffer == nullptr) {
+		return FALSE;
+	}
+
+	FILE *stream = reinterpret_cast<FILE *>(file);
+	const std::size_t written = std::fwrite(buffer, 1, static_cast<std::size_t>(bytes_to_write), stream);
+	std::fflush(stream);
+	if (bytes_written != nullptr) {
+		*bytes_written = static_cast<DWORD>(written);
+	}
+	return written == static_cast<std::size_t>(bytes_to_write) ? TRUE : FALSE;
 }
 
 static inline int LoadString(HINSTANCE, UINT, LPSTR, int)
