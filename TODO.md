@@ -771,10 +771,19 @@ shares structure and follows behind.
       real-header compile frontier after adding the `WWLIB/ffactory.h`
       case-sensitive include bridge needed by the original W3D file factory
       header.
+- [x] Compile additional original W3D client/UI leaves in the real-header
+      compile frontier: `W3DMOTD.cpp`, `W3DDebugDisplay.cpp`,
+      `W3DDynamicLight.cpp`, and the currently disabled `W3DGranny.cpp`
+      translation unit, after adding exact-case bridges for
+      `WW3D2/Light.h` and `lib/baseType.h`.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
       compile-only globals.
+- [ ] Re-enable and compile the active `INCLUDE_GRANNY_IN_BUILD` code path in
+      original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
+      dependencies, and browser asset/texture bindings have a real port
+      contract.
 - [ ] Compile original W3D renderer-adjacent factories and lexicon
       (`W3DModuleFactory.cpp`, `W3DFunctionLexicon.cpp`, height-map leaves)
       after the WW3D2/Direct3D include surface, GDI font handle compatibility,

@@ -42,13 +42,14 @@ Common/GameClient probes (`Common/OVERRIDE.h`, `Common/SimplePlayer.h`,
 `GameClient/GadgetListbox.h`, `GameClient/Hotkey.h`,
 `GameClient/keyboard.h`, `GameClient/mouse.h`, `GameClient/view.h`,
 `Common/Scorekeeper.h`, `GameNetwork/Udp.h`, `Lib/Basetype.h`,
-`lib/BaseType.h`, `WW3D2/ColType.h`, `WWMath/Matrix3D.h`,
+`lib/BaseType.h`, `lib/baseType.h`, `WW3D2/ColType.h`,
+`WW3D2/Light.h`, `WWMath/Matrix3D.h`,
 `WWLIB/ffactory.h`, `WWLib/RefCount.h`, `WWMATH/Vector2.h`, `WWMATH/Vector3.h`, and
 `WWMATH/Vector4.h`). The
 `gameengine-header-case-smoke` target compile-checks the currently
 browser-usable wrappers against original OVERRIDE, BaseType, W3D collision
-type, and Matrix3D inline behavior; Windows Media / shell URL bodies still need
-a real browser-device contract before they can compile.
+type, W3D light enum, and Matrix3D inline behavior; Windows Media / shell URL
+bodies still need a real browser-device contract before they can compile.
 
 ## Tooling Or Editor Targets
 
@@ -231,7 +232,11 @@ The wasm CMake skeleton currently builds:
   `ModuleFactory.cpp`, `Thing.cpp`, `ThingFactory.cpp`, `ThingTemplate.cpp`),
   lightweight W3D/device leaves (`W3DDevice/Common/W3DConvert.cpp`,
   `W3DDevice/Common/Thing/W3DThingFactory.cpp`,
+  `W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp`,
+  `W3DDevice/GameClient/W3DDebugDisplay.cpp`,
+  `W3DDevice/GameClient/W3DDynamicLight.cpp`,
   `W3DDevice/GameClient/W3DFileSystem.cpp`,
+  `W3DDevice/GameClient/W3DGranny.cpp`,
   `W3DDevice/GameClient/W3DPoly.cpp`,
   `W3DDevice/GameClient/TileData.cpp`,
   `W3DDevice/GameLogic/W3DGameLogic.cpp`,

@@ -4,7 +4,9 @@
 #include "GameLOgic/GameLogic.h"
 #include "GameLogic/Module/Diemodule.h"
 #include "Lib/Basetype.h"
+#include "lib/baseType.h"
 #include "WW3D2/ColType.h"
+#include "WW3D2/Light.h"
 #include "WWMATH/Vector2.h"
 #include "WWMath/Matrix3D.h"
 
@@ -27,6 +29,9 @@ int main()
 		return 1;
 	}
 	if (COLL_TYPE_ALL != 1) {
+		return 1;
+	}
+	if (LightClass::POINT != 0 || sizeof(Int) != 4) {
 		return 1;
 	}
 	if (unit_y.Y != 1.0f) {

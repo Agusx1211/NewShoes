@@ -1396,7 +1396,11 @@ add_library(zh_gameengine_real_compile_frontier STATIC
   "${GAMEENGINE_COMMON_DIR}/version.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/W3DConvert.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/Thing/W3DThingFactory.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMOTD.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDebugDisplay.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DDynamicLight.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DGranny.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DGameLogic.cpp"
@@ -3147,8 +3151,11 @@ target_include_directories(gameengine-header-case-smoke PRIVATE
   "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
   "${ZH_LIB_INCLUDE_DIR}"
   "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
   "${WWLIB_DIR}"
   "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
 )
 
 target_compile_options(gameengine-header-case-smoke PRIVATE
