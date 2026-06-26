@@ -827,6 +827,14 @@ shares structure and follows behind.
       vector resizing, and texture accessors. This is compile coverage only:
       browser GDI text rasterization, VFW frame capture, and renderer runtime
       behavior still need real browser ports and harness screenshots.
+- [x] Expand `zh_ww3d2_compile_frontier` to 113 original WW3D2 sources by
+      adding `animatedsoundmgr.cpp` and `dx8wrapper.cpp` after adding the
+      WWAudio/Miles declaration surface, case-sensitive WWAudio include bridges,
+      additional Direct3D 8 render-state/gamma declarations, and localized
+      clang fixes for original loop scope and mutable string-buffer assumptions.
+      This is compile coverage only: WWAudio/Miles still needs a Web Audio
+      runtime port, and the Direct3D wrapper still needs real WebGL2/WebGPU
+      backend behavior before any rendering claim is done.
 - [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
       after the final browser asset `FileSystem`, `GlobalData` user-data path,
       and WWLib file-factory singleton contract are available without
@@ -846,12 +854,10 @@ shares structure and follows behind.
       `GameLODLevel` forward declaration are handled as part of the renderer
       port.
 - [ ] Continue the original WW3D2 compile frontier by resolving the remaining
-      clustered blockers from the current probe: the remaining DirectX 8
-      wrapper/backend body (`dx8wrapper.cpp`, including additional D3D render
-      state/gamma/texture declarations and WebGL/WebGPU mapping), the legacy
-      BrowserEngine DLL import in `dx8webbrowser.cpp`, Miles/WWAudio binding
-      (`animatedsoundmgr.cpp`), missing Surrender `sr*` utility headers
-      (`sr_util.cpp`), and runtime browser ports for GDI text rasterization,
+      clustered blockers from the current probe: the legacy BrowserEngine DLL
+      import in `dx8webbrowser.cpp`, missing Surrender `sr*` utility headers
+      (`sr_util.cpp`), and runtime browser ports for the compiled Direct3D
+      wrapper, WWAudio/Miles playback, GDI text rasterization,
       Video-for-Windows frame grabbing, MPU/timing reads, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer
       behavior.

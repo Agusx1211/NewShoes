@@ -3085,8 +3085,9 @@ void DX8Wrapper::Set_Light_Environment(LightEnvironmentClass* light_env)
 #endif
 		}
 
-		D3DLIGHT8 light;		
-		for (int l=0;l<light_count;++l) {
+		D3DLIGHT8 light;
+		int l=0;
+		for (;l<light_count;++l) {
 			
 			::ZeroMemory(&light, sizeof(D3DLIGHT8));
 			

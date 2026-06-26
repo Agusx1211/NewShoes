@@ -731,6 +731,11 @@ static inline BOOL GetClientRect(HWND, RECT *rect)
 	return GetWindowRect(nullptr, rect);
 }
 
+static inline HWND GetDesktopWindow()
+{
+	return nullptr;
+}
+
 static inline LONG GetWindowLong(HWND, int)
 {
 	return 0;
@@ -926,6 +931,7 @@ BOOL GetTextExtentPoint32W(HDC dc, LPCWSTR text, int count, SIZE *size);
 BOOL GetTextMetrics(HDC dc, TEXTMETRIC *metrics);
 HDC GetDC(HWND window);
 int ReleaseDC(HWND window, HDC dc);
+BOOL SetDeviceGammaRamp(HDC dc, LPVOID ramp);
 HFONT CreateFont(
 	int height,
 	int width,

@@ -13,6 +13,7 @@ using D3DMATERIALCOLORSOURCE = DWORD;
 using D3DTEXTUREADDRESS = DWORD;
 using D3DTEXTUREFILTERTYPE = DWORD;
 using D3DTEXTUREOP = DWORD;
+using LPDIRECT3DSURFACE8 = struct IDirect3DSurface8 *;
 
 #ifndef MAKEFOURCC
 #define MAKEFOURCC(ch0, ch1, ch2, ch3) \
@@ -146,11 +147,13 @@ enum D3DRENDERSTATETYPE {
 	D3DRS_ALPHABLENDENABLE = 27,
 	D3DRS_FOGENABLE = 28,
 	D3DRS_SPECULARENABLE = 29,
+	D3DRS_ZVISIBLE = 30,
 	D3DRS_FOGCOLOR = 34,
 	D3DRS_FOGTABLEMODE = 35,
 	D3DRS_FOGSTART = 36,
 	D3DRS_FOGEND = 37,
 	D3DRS_FOGDENSITY = 38,
+	D3DRS_EDGEANTIALIAS = 40,
 	D3DRS_RANGEFOGENABLE = 48,
 	D3DRS_STENCILENABLE = 52,
 	D3DRS_STENCILFAIL = 53,
@@ -371,6 +374,13 @@ struct D3DADAPTER_IDENTIFIER8
 	DWORD WHQLLevel;
 };
 
+struct D3DGAMMARAMP
+{
+	WORD red[256];
+	WORD green[256];
+	WORD blue[256];
+};
+
 struct D3DCAPS8
 {
 	DWORD AdapterOrdinal;
@@ -568,6 +578,7 @@ struct IDirect3DDevice8
 	virtual HRESULT UpdateTexture(IDirect3DBaseTexture8 *source_texture, IDirect3DBaseTexture8 *dest_texture) = 0;
 	virtual HRESULT CopyRects(IDirect3DSurface8 *source_surface, const RECT *source_rects, UINT rect_count, IDirect3DSurface8 *dest_surface, const POINT *dest_points) = 0;
 	virtual HRESULT ResourceManagerDiscardBytes(DWORD bytes) = 0;
+	virtual UINT GetAvailableTextureMem() = 0;
 	virtual HRESULT GetFrontBuffer(IDirect3DSurface8 *dest_surface) = 0;
 	virtual HRESULT SetRenderTarget(IDirect3DSurface8 *render_target, IDirect3DSurface8 *depth_stencil) = 0;
 	virtual HRESULT GetRenderTarget(IDirect3DSurface8 **render_target) = 0;
@@ -833,6 +844,34 @@ IDirect3D8 *Direct3DCreate8(UINT sdk_version);
 #define D3DPRESENT_INTERVAL_THREE 0x00000004L
 #define D3DPRESENT_INTERVAL_FOUR 0x00000008L
 #define D3DPRESENT_INTERVAL_IMMEDIATE 0x80000000L
+
+#define D3DSGR_NO_CALIBRATION 0
+#define D3DSGR_CALIBRATE 1
+#define D3DSHADE_FLAT 1
+#define D3DSHADE_GOURAUD 2
+#define D3DSHADE_PHONG 3
+#define D3DSTENCILOP_KEEP 1
+#define D3DSTENCILOP_ZERO 2
+#define D3DSTENCILOP_REPLACE 3
+#define D3DSTENCILOP_INCRSAT 4
+#define D3DSTENCILOP_DECRSAT 5
+#define D3DSTENCILOP_INVERT 6
+#define D3DSTENCILOP_INCR 7
+#define D3DSTENCILOP_DECR 8
+#define D3DWRAP_U 0x00000001L
+#define D3DWRAP_V 0x00000002L
+#define D3DWRAP_W 0x00000004L
+#define D3DPATCHEDGE_DISCRETE 0
+#define D3DPATCHEDGE_CONTINUOUS 1
+#define D3DVBF_DISABLE 0
+#define D3DVBF_1WEIGHTS 1
+#define D3DVBF_2WEIGHTS 2
+#define D3DVBF_3WEIGHTS 3
+#define D3DVBF_TWEENING 255
+#define D3DVBF_0WEIGHTS 256
+#define D3DZB_FALSE 0
+#define D3DZB_TRUE 1
+#define D3DZB_USEW 2
 
 #define D3DADAPTER_DEFAULT 0
 #define D3DDEVTYPE_HAL 1
