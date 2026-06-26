@@ -130,8 +130,8 @@ class TestSeismicFilter : public SeismicSimulationFilterBase
       }
 
       // stuff the values from the workspace into the heightmap's velocities
-      for (x = 0; x < workspaceWidth; ++x)
-        for (Int y = 0; y < workspaceWidth; ++y)
+      for (Int x = 0; x < (Int)workspaceWidth; ++x)
+        for (Int y = 0; y < (Int)workspaceWidth; ++y)
     			heightMap->setSeismicZVelocity( centerX - radius + x, centerY - radius + y,  workspace[  x + workspaceWidth * y ]  );
 
       delete [] workspace;
@@ -1307,4 +1307,3 @@ void W3DTerrainVisual::loadPostProcess( void )
 	TerrainVisual::loadPostProcess();
 
 }  // end loadPostProcess
-

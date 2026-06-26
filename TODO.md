@@ -839,6 +839,13 @@ shares structure and follows behind.
       compatibility surface. This is compile coverage only until move hints,
       selection regions, placement-angle UI, and GUI repaint paths are driven
       by browser display/input and harness screenshots.
+- [x] Compile original `W3DDevice/GameClient/W3DTerrainVisual.cpp` in the
+      real-header compile frontier after adding the `FlatHeightmap.h`
+      case-sensitive include bridge and fixing the reached legacy MSVC loop
+      scope in the seismic filter without changing terrain behavior. This is
+      compile coverage only until terrain visual load, water grid, bib/prop,
+      terrain-track, shadow, smudge, and scene paths are browser-rendered and
+      harness-verified.
 - [x] Compile the first original non-Direct3D `WWVegas/WW3D2` frontier batch as
       `zh_ww3d2_compile_frontier`: animation/render-object helpers,
       collision/intersection helpers, light/projector support, asset/cache and
@@ -929,8 +936,8 @@ shares structure and follows behind.
       dependencies, and browser asset/texture bindings have a real port
       contract.
 - [ ] Compile the remaining original W3D renderer-adjacent leaves, including
-      `W3DDisplay.cpp`, `W3DTerrainVisual.cpp`, `W3DVideoBuffer.cpp`, and
-      `Water/W3DWater*.cpp`, after the remaining
+      `W3DDisplay.cpp`, `W3DVideoBuffer.cpp`, and `Water/W3DWater*.cpp`, after
+      the remaining
       WW3D2/Direct3D/browser device compatibility surface is available as part
       of the renderer port.
 - [ ] Replace the current no-op Win32 cursor compatibility helpers
