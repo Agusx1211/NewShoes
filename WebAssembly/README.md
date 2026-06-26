@@ -19,9 +19,9 @@ Asset tooling for obtaining real game data to test the port against:
   `../assets` (`npm run extract:real-big`). Needs `7z`.
 - `tools/extract_zh_runtime_archives.sh` — extract the current runtime BIG
   inventory from the local disc images (`npm run extract:runtime-archives`).
-- `harness/` — a minimal browser harness with a black canvas and JS RPC stub for
-  boot/frame/log/state/screenshot commands. This is port infrastructure only; it does
-  not implement or simulate game behavior.
+- `harness/` — a minimal browser harness with a WebGL2-backed black canvas and
+  JS RPC stub for boot/frame/log/state/screenshot commands. This is port
+  infrastructure only; it does not implement or simulate game behavior.
 
 Extracted archives land under ignored `artifacts/real-assets/`.
 See `ASSETS.md` for the asset ownership rules and browser delivery plan.
@@ -110,8 +110,8 @@ npm run test:harness
 
 The smoke test starts a local static server, boots the browser harness through
 `window.CnCPort.rpc("boot")`, advances deterministic frames through
-`window.CnCPort.rpc("frame", { count })`, verifies the canvas/RPC state, and writes
-screenshots to `artifacts/screenshots/`.
+`window.CnCPort.rpc("frame", { count })`, verifies the WebGL2 canvas/RPC state,
+exercises resize handling, and writes screenshots to `artifacts/screenshots/`.
 
 Run the wasm-backed smoke test:
 

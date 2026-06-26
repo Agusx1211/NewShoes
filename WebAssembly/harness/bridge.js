@@ -1,5 +1,12 @@
 const canvas = document.querySelector("#viewport");
-const context = canvas.getContext("2d", { alpha: false });
+const gl = canvas.getContext("webgl2", {
+  alpha: false,
+  antialias: false,
+  depth: true,
+  stencil: false,
+  preserveDrawingBuffer: true,
+});
+const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
 
@@ -8,6 +15,20 @@ const harnessState = {
   frame: 0,
   runtime: "js-stub",
   wasm: null,
+  canvas: {
+    width: canvas.width,
+    height: canvas.height,
+    cssWidth: canvas.width,
+    cssHeight: canvas.height,
+    devicePixelRatio: 1,
+  },
+  graphics: {
+    api: gl ? "webgl2" : "2d-fallback",
+    ok: Boolean(gl),
+    contextLost: false,
+    drawingBufferWidth: canvas.width,
+    drawingBufferHeight: canvas.height,
+  },
   originalEngineLinked: false,
   originalCoreProbe: null,
   logs: [],
@@ -15,9 +36,61 @@ const harnessState = {
 
 const wasmModulePromise = loadWasmModule();
 
+function getCanvasDisplaySize() {
+  const rect = canvas.getBoundingClientRect();
+  const devicePixelRatio = window.devicePixelRatio || 1;
+  const cssWidth = rect.width || canvas.width;
+  const cssHeight = rect.height || canvas.height;
+
+  return {
+    width: Math.max(1, Math.round(cssWidth * devicePixelRatio)),
+    height: Math.max(1, Math.round(cssHeight * devicePixelRatio)),
+    cssWidth,
+    cssHeight,
+    devicePixelRatio,
+  };
+}
+
+function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
+  harnessState.canvas = {
+    width: canvas.width,
+    height: canvas.height,
+    cssWidth: Math.round(displaySize.cssWidth),
+    cssHeight: Math.round(displaySize.cssHeight),
+    devicePixelRatio: displaySize.devicePixelRatio,
+  };
+  harnessState.graphics = {
+    api: gl ? "webgl2" : "2d-fallback",
+    ok: Boolean(gl),
+    contextLost: gl ? gl.isContextLost() : false,
+    drawingBufferWidth: gl ? gl.drawingBufferWidth : canvas.width,
+    drawingBufferHeight: gl ? gl.drawingBufferHeight : canvas.height,
+  };
+}
+
+function syncCanvasSize() {
+  const displaySize = getCanvasDisplaySize();
+  if (canvas.width !== displaySize.width || canvas.height !== displaySize.height) {
+    canvas.width = displaySize.width;
+    canvas.height = displaySize.height;
+  }
+  if (gl) {
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  }
+  refreshCanvasState(displaySize);
+}
+
 function paintBlackWindow() {
-  context.fillStyle = "#000";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  syncCanvasSize();
+  if (gl) {
+    gl.clearColor(0, 0, 0, 1);
+    gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  } else if (fallbackContext) {
+    fallbackContext.fillStyle = "#000";
+    fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  refreshCanvasState();
 }
 
 function syncStatus(label = harnessState.booted ? "booted" : "idle") {
@@ -112,7 +185,13 @@ function parseModuleState(stateJson) {
 }
 
 function snapshotCanvas() {
-  const pixels = context.getImageData(0, 0, 1, 1).data;
+  syncCanvasSize();
+  const pixels = new Uint8Array(4);
+  if (gl) {
+    gl.readPixels(0, gl.drawingBufferHeight - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  } else if (fallbackContext) {
+    pixels.set(fallbackContext.getImageData(0, 0, 1, 1).data);
+  }
   return {
     width: canvas.width,
     height: canvas.height,
@@ -122,18 +201,17 @@ function snapshotCanvas() {
 }
 
 function snapshotState() {
+  syncCanvasSize();
   return {
     booted: harnessState.booted,
     frame: harnessState.frame,
     runtime: harnessState.runtime,
     wasm: harnessState.wasm,
+    canvas: harnessState.canvas,
+    graphics: harnessState.graphics,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     logCount: harnessState.logs.length,
-    canvas: {
-      width: canvas.width,
-      height: canvas.height,
-    },
   };
 }
 
@@ -163,6 +241,13 @@ async function rpc(command, payload = {}) {
 
 paintBlackWindow();
 syncStatus();
+
+if (window.ResizeObserver) {
+  const resizeObserver = new ResizeObserver(() => paintBlackWindow());
+  resizeObserver.observe(canvas);
+} else {
+  window.addEventListener("resize", () => paintBlackWindow());
+}
 
 window.CnCPort = {
   rpc,

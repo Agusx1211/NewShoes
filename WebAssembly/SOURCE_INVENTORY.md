@@ -109,6 +109,11 @@ The wasm CMake skeleton currently builds:
   bootstrap entry instead of the original engine startup path, but now compiles
   and executes original `GameEngine/Common/RandomValue.cpp` plus `crc.cpp` on
   boot as a harness-verified Common-core link probe.
+- `harness/bridge.js`: the browser harness initializes a real WebGL2 drawing
+  buffer for the game canvas, keeps its viewport/backing size synchronized with
+  browser resize state, and exposes the graphics state through RPC snapshots.
+  This is the browser canvas/GL bridge surface only; original W3D display and
+  WW3D rendering still need to bind to it before any renderer path is complete.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
 - `zh_compression_manager`: original `CompressionManager.cpp` compiled into a

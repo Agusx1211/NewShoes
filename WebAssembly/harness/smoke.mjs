@@ -13,6 +13,19 @@ const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
 
+async function waitForCanvasSize(page, width, height) {
+  await page.waitForFunction(async ({ expectedWidth, expectedHeight }) => {
+    const result = await window.CnCPort.rpc("state");
+    return result.state.canvas.width === expectedWidth
+      && result.state.canvas.height === expectedHeight
+      && result.state.graphics.drawingBufferWidth === expectedWidth
+      && result.state.graphics.drawingBufferHeight === expectedHeight;
+  }, { expectedWidth: width, expectedHeight: height });
+
+  const result = await page.evaluate(() => window.CnCPort.rpc("state"));
+  return result.state;
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
@@ -43,6 +56,13 @@ try {
   if (expectWasm && bootResult.state.originalCoreProbe?.logicSeedCRC !== 2826459604) {
     throw new Error(`Original RandomValue seed CRC mismatch: ${JSON.stringify(bootResult.state.originalCoreProbe)}`);
   }
+  if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {
+    throw new Error(`Expected browser harness to initialize WebGL2: ${JSON.stringify(bootResult.state.graphics)}`);
+  }
+  if (bootResult.state.graphics.drawingBufferWidth !== 1280
+      || bootResult.state.graphics.drawingBufferHeight !== 720) {
+    throw new Error(`Unexpected initial WebGL2 drawing buffer: ${JSON.stringify(bootResult.state)}`);
+  }
 
   const initialFrame = bootResult.state.frame;
   const frameResult = await page.evaluate(() => window.CnCPort.rpc("frame", {
@@ -61,6 +81,15 @@ try {
   if (!logResult.ok) {
     throw new Error(`Log RPC failed: ${JSON.stringify(logResult)}`);
   }
+
+  await page.setViewportSize({ width: 960, height: 640 });
+  const resizedState = await waitForCanvasSize(page, 960, 540);
+  if (resizedState.graphics.api !== "webgl2" || resizedState.graphics.contextLost) {
+    throw new Error(`WebGL2 context did not survive resize: ${JSON.stringify(resizedState.graphics)}`);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await waitForCanvasSize(page, 1280, 720);
 
   const screenshotResult = await page.evaluate(() => window.CnCPort.rpc("screenshot"));
   if (!screenshotResult.ok) {

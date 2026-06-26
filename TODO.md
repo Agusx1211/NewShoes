@@ -1499,6 +1499,10 @@ shares structure and follows behind.
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Timing layer: `QueryPerformanceCounter`/`timeGetTime` → `performance.now`.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.
+- [x] Initialize the browser harness canvas with a real WebGL2 drawing buffer,
+      resize-synchronized viewport/backing state, black clear, and smoke-tested
+      resize assertions. This is the browser bridge surface only; original W3D
+      display/device binding remains open.
 - [ ] Logging/`DEBUG_LOG`/assert routed to browser console + harness.
 - [ ] Engine `init()` runs to completion without crashing.
 - [ ] Graceful handling of missing assets (clear error, not a hang).
