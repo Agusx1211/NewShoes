@@ -1326,6 +1326,7 @@ function assertOriginalEngineStartup(
   expectedStatus,
   expectedStartupAssetsReady,
   expectedFileSystemReadiness = { local: false, archive: false },
+  expectedOriginalSetupReady = false,
 ) {
   const startup = state.originalEngineStartup;
   if (!startup
@@ -1340,6 +1341,10 @@ function assertOriginalEngineStartup(
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
       || startup.browserDeviceLayer?.browserGameEngine !== false
+      || startup.originalSetup?.globalData !== expectedOriginalSetupReady
+      || startup.originalSetup?.commandLine !== expectedOriginalSetupReady
+      || startup.originalSetup?.cdManager !== expectedOriginalSetupReady
+      || startup.browserDeviceLayer?.cdManager !== expectedOriginalSetupReady
       || startup.browserDeviceLayer?.localFileSystem !== expectedFileSystemReadiness.local
       || startup.browserDeviceLayer?.archiveFileSystem !== expectedFileSystemReadiness.archive
       || startup.browserDeviceLayer?.gameClient !== false
@@ -1357,6 +1362,7 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
     "missing_startup_files",
     true,
     { local: true, archive: true },
+    true,
   );
   const files = state.originalEngineStartup.startupFiles;
   const missing = new Set(files?.missing ?? []);
@@ -1432,6 +1438,7 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
     "browser_device_layer_pending",
     true,
     { local: true, archive: true },
+    true,
   );
   const files = state.originalEngineStartup.startupFiles;
   if (files?.ready !== true

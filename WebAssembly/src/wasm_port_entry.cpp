@@ -1053,8 +1053,11 @@ std::string build_original_engine_startup_json()
 		"\"defaultAIDataIni\":%s,\"defaultCrateIni\":%s,\"crateIni\":%s,"
 		"\"englishCommandMapIni\":%s,\"commandMapIni\":%s,"
 		"\"mapCacheIni\":%s,\"defaultVideoIni\":%s,\"videoIni\":%s},"
+		"\"originalSetup\":{\"globalData\":%s,\"commandLine\":%s,"
+		"\"cdManager\":%s},"
 		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":false,"
-		"\"browserGameEngine\":false,\"localFileSystem\":%s,"
+		"\"browserGameEngine\":false,\"cdManager\":%s,"
+		"\"localFileSystem\":%s,"
 		"\"archiveFileSystem\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":false,"
 		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
@@ -1106,6 +1109,10 @@ std::string build_original_engine_startup_json()
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
 		g_archive_probe.has_default_video_ini ? "true" : "false",
 		g_archive_probe.has_video_ini ? "true" : "false",
+		g_global_data_probe.ok ? "true" : "false",
+		g_command_line_probe.ok ? "true" : "false",
+		g_cd_manager_probe.ok ? "true" : "false",
+		g_cd_manager_probe.ok ? "true" : "false",
 		g_file_system_probe.local_ok ? "true" : "false",
 		g_file_system_probe.archive_ok ? "true" : "false");
 

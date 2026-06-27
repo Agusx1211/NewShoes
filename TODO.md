@@ -1728,6 +1728,10 @@ shares structure and follows behind.
       reported on plain boot and archive filesystem readiness is reported after
       the runtime BIG set is registered and boot-probed, while the overall
       browser device layer remains pending.
+- [x] Feed the harness-verified original `GlobalData`, `CommandLine`, and
+      no-CD `Win32CDManager` probes into `originalEngineStartup` setup/device
+      readiness fields, while keeping `GameEngine::init()` blocked on missing
+      startup assets and unimplemented browser renderer/audio/input devices.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
