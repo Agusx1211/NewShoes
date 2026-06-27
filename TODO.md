@@ -518,6 +518,10 @@ shares structure and follows behind.
       and lookup-table users.
 - [x] Full `WWVegas/WWSaveLoad` compiles, including definitions, parameters,
       twiddlers, and save/load round-trip coverage.
+- [x] Add endian-sensitive smoke coverage for original `ChunkSaveClass` /
+      `ChunkLoadClass` save-game chunk bytes under wasm, proving chunk IDs,
+      sizes, subchunk flags, micro-chunk headers, and 32-bit payloads preserve
+      the original little-endian x86 file contract.
 - [x] `WWVegas/Wwutil` compiles and smoke-tests math helpers, string/file
       utilities, read-only attributes, PE-header file-id strings, and removal
       under wasm.
