@@ -453,6 +453,7 @@ function virtualKeyFromEvent(event) {
 const win32Messages = Object.freeze({
   keyDown: 0x0100,
   keyUp: 0x0101,
+  char: 0x0102,
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
   leftButtonUp: 0x0202,
@@ -492,6 +493,16 @@ function mouseButtonMessage(event, isDown) {
 function wheelWParam(event) {
   const delta = event.deltaY > 0 ? -120 : 120;
   return (delta & 0xffff) << 16;
+}
+
+function win32CharCodeFromEvent(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return -1;
+  }
+  if (typeof event.key !== "string" || event.key.length !== 1) {
+    return -1;
+  }
+  return event.key.charCodeAt(0);
 }
 
 async function pushBrowserInputToWasm({
@@ -875,14 +886,25 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   event.preventDefault();
-  void pushBrowserInputToWasm({
-    virtualKey,
-    keyDown: true,
-    win32Message: {
-      message: win32Messages.keyDown,
-      wParam: virtualKey,
-    },
-  });
+  const charCode = win32CharCodeFromEvent(event);
+  void (async () => {
+    await pushBrowserInputToWasm({
+      virtualKey,
+      keyDown: true,
+      win32Message: {
+        message: win32Messages.keyDown,
+        wParam: virtualKey,
+      },
+    });
+    if (charCode >= 0) {
+      await pushBrowserInputToWasm({
+        win32Message: {
+          message: win32Messages.char,
+          wParam: charCode,
+        },
+      });
+    }
+  })();
 });
 window.addEventListener("keyup", (event) => {
   const virtualKey = virtualKeyFromEvent(event);

@@ -383,9 +383,12 @@ shares structure and follows behind.
 - [x] Extend the original `WndProc()` wasm smoke to cover `WM_SETCURSOR`,
       `WM_KILLFOCUS` / `WM_SETFOCUS`, and `WM_ACTIVATEAPP`, proving cursor
       restoration, `Win32Mouse` focus state, and the D3D reset hook are reached.
+- [x] Queue browser printable keyboard input as `WM_CHAR` after `WM_KEYDOWN`,
+      with harness coverage proving Shift+A produces Shift keydown, A keydown,
+      then an uppercase `WM_CHAR`.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including connecting the real game `WndProc`, `WM_CREATE` /
-      `WM_DESTROY` lifecycle dispatch, `WM_CHAR` / IME text paths, browser
+      `WM_DESTROY` lifecycle dispatch, IME composition text paths, browser
       double-click event policy, and focus/activation handling through the
       browser device layer.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in

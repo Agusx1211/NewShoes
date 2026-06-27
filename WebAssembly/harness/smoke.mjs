@@ -429,26 +429,37 @@ try {
     }
 
     const wmKeyDown = 0x0100;
+    const wmChar = 0x0102;
     const wmMouseMove = 0x0200;
     const vkShift = 0x10;
     const vkA = 0x41;
     const vkF6 = 0x75;
+    const charA = 0x41;
     const mouseMoveLParam = (34 << 16) | 12;
     await page.keyboard.down("Shift");
     await page.keyboard.down("A");
     await waitForBrowserInput(
       page,
-      (input) => input?.messageQueue?.count >= 2,
+      (input) => input?.messageQueue?.count >= 3,
       "Shift+A keydown queue",
     );
     const browserTextKeyProbe = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
     if (!browserTextKeyProbe.ok
-        || browserTextKeyProbe.probe.beforeCount !== 2
+        || browserTextKeyProbe.probe.beforeCount !== 3
         || browserTextKeyProbe.probe.peek?.message !== wmKeyDown
         || browserTextKeyProbe.probe.peek?.wParam !== vkShift
         || browserTextKeyProbe.probe.after?.message !== wmKeyDown
         || browserTextKeyProbe.probe.after?.wParam !== vkA) {
       throw new Error(`Browser text key mapping probe mismatch: ${JSON.stringify(browserTextKeyProbe)}`);
+    }
+    const browserCharProbe = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
+    if (!browserCharProbe.ok
+        || browserCharProbe.probe.beforeCount !== 2
+        || browserCharProbe.probe.peek?.message !== wmKeyDown
+        || browserCharProbe.probe.peek?.wParam !== vkA
+        || browserCharProbe.probe.after?.message !== wmChar
+        || browserCharProbe.probe.after?.wParam !== charA) {
+      throw new Error(`Browser WM_CHAR mapping probe mismatch: ${JSON.stringify(browserCharProbe)}`);
     }
     await page.keyboard.up("A");
     await page.keyboard.up("Shift");
