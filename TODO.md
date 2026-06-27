@@ -2265,6 +2265,14 @@ shares structure and follows behind.
       enumeration, and clean shutdown without enabling the hook for unrelated
       Win32 shim users. This is original loader/init coverage only; the
       original render-device clear still needs WebGL2-backed device behavior.
+- [x] Drive the original WW3D render-device path through
+      `WW3D::Set_Render_Device`, `DX8Wrapper::Begin_Scene`, `Clear`,
+      `End_Scene`, and `Present`, with focused wasm smoke coverage proving the
+      browser D3D8 shim now supports the original missing-texture init
+      (`CreateTexture`, `LockRect`, `UnlockRect`) and fixed index-buffer
+      allocation/locking needed for device-dependent WW3D startup. This is
+      wrapper-to-D3D-shim clear coverage only; vertex buffers, real WebGL2
+      buffer uploads, texture uploads, and visible GL draws remain open.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.

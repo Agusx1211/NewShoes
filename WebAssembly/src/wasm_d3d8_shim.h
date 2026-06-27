@@ -9,6 +9,13 @@ struct WasmD3D8ShimState
 	UINT get_proc_address_calls;
 	UINT free_library_calls;
 	UINT create_device_calls;
+	UINT create_texture_calls;
+	UINT texture_lock_rect_calls;
+	UINT texture_unlock_rect_calls;
+	UINT create_vertex_buffer_calls;
+	UINT create_index_buffer_calls;
+	UINT buffer_lock_calls;
+	UINT buffer_unlock_calls;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
