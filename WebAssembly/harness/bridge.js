@@ -2578,6 +2578,8 @@ async function loadWasmModule() {
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       probeWW3DRender2DTexturedQuad: module.cwrap(
         "cnc_port_probe_ww3d_render2d_textured_quad", "string", []),
+      probeWW3DTexturedMesh: module.cwrap(
+        "cnc_port_probe_ww3d_textured_mesh", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -4221,6 +4223,48 @@ async function rpc(command, payload = {}) {
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
         const probe = parseModuleState(wasmModule.probeWW3DRender2DTexturedQuad());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && pixelLooksRed(browserProbe.centerPixel)
+          && pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTexturedMesh":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D mesh cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTexturedMesh());
         const textureAfter = harnessState.graphics.d3d8Textures ?? null;
         const screenshot = snapshotCanvas();
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;

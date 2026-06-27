@@ -13,6 +13,7 @@ const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
+const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -1361,6 +1362,48 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dRender2DCanvasScreenshot });
 
+  // WW3D textured MeshClass probe: build a minimal single-textured W3D mesh
+  // (two-triangle quad) in memory, load it through the original
+  // MeshClass::Load_W3D chunk reader, and render it through WW3D::Render so the
+  // browser WebGL2 draw bridge samples the procedural texture onto the mesh.
+  const texturedMeshResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTexturedMesh"));
+  if (!texturedMeshResult.ok
+      || texturedMeshResult.probe?.source !== "ww3d_textured_mesh_probe"
+      || texturedMeshResult.probe?.results?.meshLoaded !== true
+      || texturedMeshResult.probe?.results?.meshLoad !== 0
+      || texturedMeshResult.probe?.results?.textureRegistered !== true
+      || texturedMeshResult.probe?.calls?.drawIndexed < 1
+      || texturedMeshResult.probe?.calls?.browserTextureCreate < 1
+      || texturedMeshResult.probe?.calls?.browserTextureBind < 1
+      || texturedMeshResult.probe?.calls?.browserBufferCreate < 2
+      || texturedMeshResult.probe?.calls?.browserBufferUpdate < 2
+      || texturedMeshResult.probe?.calls?.setTexture < 1
+      || texturedMeshResult.probe?.calls?.setTransform < 3
+      || texturedMeshResult.probe?.draw?.primitiveType !== 4
+      || texturedMeshResult.probe?.draw?.vertexBufferId <= 0
+      || texturedMeshResult.probe?.draw?.indexBufferId <= 0
+      || texturedMeshResult.probe?.draw?.transformMask !== 7
+      || texturedMeshResult.probe?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || texturedMeshResult.probe?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || texturedMeshResult.probe?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || texturedMeshResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || texturedMeshResult.browserProbe?.usedPersistentBuffers !== true
+      || texturedMeshResult.browserProbe?.usedTransforms !== true
+      || texturedMeshResult.browserProbe?.texture0?.id !== texturedMeshResult.probe?.texture?.id
+      || texturedMeshResult.browserProbe?.texture0?.ready !== true
+      || texturedMeshResult.browserProbe?.texture0?.sampled !== true
+      || texturedMeshResult.browserProbe?.texture0?.combiner?.supported !== true
+      || texturedMeshResult.browserProbe?.texture0?.sampler?.supported !== true
+      || !pixelLooksRed(texturedMeshResult.browserProbe?.centerPixel)
+      || !pixelLooksRed(texturedMeshResult.screenshot?.centerPixel)
+      || texturedMeshResult.textureDelta?.creates < 1
+      || texturedMeshResult.textureDelta?.updates < 1
+      || texturedMeshResult.textureDelta?.binds < 1) {
+    throw new Error(`WW3D textured mesh probe failed: ${JSON.stringify(texturedMeshResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dTexturedMeshCanvasScreenshot });
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));
@@ -1403,6 +1446,7 @@ try {
       d3d8ClearCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
+      ww3dTexturedMeshCanvasScreenshot,
     ],
     state: stateResult.state,
   }, null, 2));

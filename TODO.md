@@ -2601,8 +2601,40 @@ shares structure and follows behind.
       buffers, and the browser D3D8/WebGL2 draw bridge, verified by
       `harness-smoke-ww3d-render2d-canvas.png` and red center-pixel sampling
       in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Single textured mesh renders. A minimal single-textured W3D mesh (a
+      camera-facing two-triangle quad) is built in memory through the original
+      `ChunkSaveClass`/W3D chunk format, loaded through the original
+      `MeshClass::Load_W3D` reader, textured through the original
+      `WW3DAssetManager::Get_Texture` path (procedural red `TextureClass`
+      pre-registered in the asset-manager texture hash), rendered through
+      `WW3D::Render` and the browser D3D8/WebGL2 draw bridge, and verified by
+      `harness-smoke-ww3d-textured-mesh-canvas.png` plus red center-pixel,
+      texture-sampling, combiner, and transform assertions in
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
+      - [x] Add the `cnc_port_probe_ww3d_textured_mesh` wasm export,
+            `ww3dTexturedMesh` bridge RPC, and Playwright smoke coverage
+            analogous to the AABox and Render2D probes.
+      - [ ] Replace the probe's no-op browser stubs for the Win32 GDI
+            functions declared in the `windows.h` shim
+            (`CreateFont`, `CreateCompatibleDC`, `CreateDIBSection`,
+            `SelectObject`, `DeleteObject`, `SetBkColor`, `SetTextColor`,
+            `GetTextMetrics`, `GetDC`, `ReleaseDC`, `DeleteDC`) with a real
+            browser font/surface bridge before relying on the original WW3D
+            font/`Render2DSentenceClass` path; they currently only satisfy
+            the linker for the asset-manager font code path and are not
+            reached by the renderer probes.
+      - [ ] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
+            the same `MeshClass::Load_W3D` + browser draw-bridge path once
+            the asset pipeline can fetch and hand real W3D mesh chunks to the
+            engine, instead of the synthetic in-memory quad.
+      - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
+            install path (per-pass vertex-material/shader/texture ids and
+            texture-stage texcoords) for real multi-pass / multi-texture
+            meshes, instead of the probe's geometry-chunk load plus
+            `MeshModelClass::Set_Single_*` single-material install used to
+            work around the single-material (`NumMaterials == 1`)
+            `read_per_tri_materials` early-return in the legacy chunk path.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
-- [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
