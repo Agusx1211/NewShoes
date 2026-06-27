@@ -1702,6 +1702,16 @@ shares structure and follows behind.
       packet-router, wrapper, file-announce, disconnect-frame/screen-off, and
       frame-resend request commands, including explicit 16-bit chat-text wire
       serialization under wasm `WideChar`.
+- [x] Extend the original `NetCommandList` runtime smoke to cover the remaining
+      linked-list mutation surfaces: `appendList` (null/empty no-op, ordered
+      merge preserving command id order and relay, source list left intact,
+      duplicate command rejection), `removeMessage` (middle/head/tail unlink with
+      neighbor relink, detached-but-not-freed ref contract), and the
+      `findMessage(NetCommandMsg*)` overload (match by type/player/id plus
+      absent-command miss). This is command-list bookkeeping coverage only;
+      the broader connection-manager merge path still waits for real
+      game-command reconstruction, ack packet paths, and browser transport
+      receive.
 - [x] Add endian-sensitive smoke coverage for original `NetPacket.cpp`
       frame-command wire bytes under wasm, proving command markers plus
       little-endian `UnsignedInt` frame, `UnsignedShort` command-id, and
