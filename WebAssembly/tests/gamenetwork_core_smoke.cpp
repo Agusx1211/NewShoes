@@ -42,6 +42,17 @@ bool expectAscii(const AsciiString &actual, const char *expected, const char *me
 	return expect(std::strcmp(actual.str(), expected) == 0, message);
 }
 
+class InspectableConnection : public Connection
+{
+public:
+	void makeRetryEligible()
+	{
+		// Original retry logic compares elapsed time with m_retryTime; this
+		// avoids sleeping in the smoke while still exercising the retry branch.
+		m_retryTime = -1;
+	}
+};
+
 bool transportMessageHasValidCrc(const TransportMessage &message)
 {
 	CRC crc;
@@ -936,6 +947,82 @@ bool exerciseConnectionQueue()
 	return queued_ok && packet_ok && ack_ok && keepalive_send_ok && keepalive_packet_ok;
 }
 
+bool exerciseConnectionRetry()
+{
+	Transport transport;
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+
+	InspectableConnection connection;
+	connection.init();
+	connection.setFrameGrouping(0);
+	connection.attachTransport(&transport);
+	connection.setUser(newInstance(User)(UnicodeString(L"RetryPeer"), 0x0a010204u, 4322));
+
+	NetFrameCommandMsg *frame = newInstance(NetFrameCommandMsg);
+	frame->setExecutionFrame(4510);
+	frame->setPlayerID(3);
+	frame->setID(711);
+	frame->setCommandCount(2);
+	connection.sendNetCommandMsg(frame, 0x09);
+	frame->detach();
+
+	const bool first_send_ok =
+		expect(!connection.isQueueEmpty(), "Connection retry command did not queue") &&
+		expect(connection.doSend() == 1, "Connection retry first send failed") &&
+		expect(!connection.isQueueEmpty(), "Connection retry command should wait for ack");
+
+	NetCommandRef *first_packet = parseQueuedTransportCommand(transport, 0, 0x0a010204u, 4322);
+	const bool first_packet_ok =
+		expect(first_packet != nullptr, "Connection retry first packet did not parse") &&
+		expect(first_packet->getCommand()->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO,
+			"Connection retry first packet type changed") &&
+		expect(first_packet->getCommand()->getID() == 711,
+			"Connection retry first packet id changed") &&
+		expect(first_packet->getRelay() == 0x09, "Connection retry first relay changed");
+	if (first_packet != nullptr) {
+		first_packet->deleteInstance();
+	}
+
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+	const bool gated_retry_ok =
+		expect(connection.doSend() == 1, "Connection retry gated send accounting changed") &&
+		expect(transport.m_outBuffer[0].length == 0,
+			"Connection retried before the retry interval elapsed") &&
+		expect(!connection.isQueueEmpty(), "Connection retry queue emptied before ack");
+
+	connection.makeRetryEligible();
+	const bool queue_still_ok = expect(connection.processAck(712, 3) == nullptr,
+		"Connection removed command for mismatched ack");
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+	const bool retry_send_ok = expect(connection.doSend() == 1, "Connection eligible retry send failed");
+	NetCommandRef *retry_packet = parseQueuedTransportCommand(transport, 0, 0x0a010204u, 4322);
+	const bool retry_packet_ok =
+		expect(retry_packet != nullptr, "Connection retry packet did not parse") &&
+		expect(retry_packet->getCommand()->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO,
+			"Connection retry packet type changed") &&
+		expect(retry_packet->getCommand()->getID() == 711,
+			"Connection retry packet id changed") &&
+		expect(retry_packet->getRelay() == 0x09, "Connection retry relay changed");
+	if (retry_packet != nullptr) {
+		retry_packet->deleteInstance();
+	}
+
+	NetAckStage1CommandMsg *ack = newInstance(NetAckStage1CommandMsg);
+	ack->setCommandID(711);
+	ack->setOriginalPlayerID(3);
+	NetCommandRef *acked = connection.processAck(static_cast<NetCommandMsg *>(ack));
+	ack->detach();
+	const bool ack_ok =
+		expect(acked != nullptr, "Connection retry ack did not remove command") &&
+		expect(connection.isQueueEmpty(), "Connection retry command remained after ack");
+	if (acked != nullptr) {
+		acked->deleteInstance();
+	}
+
+	return first_send_ok && first_packet_ok && gated_retry_ok && queue_still_ok &&
+		retry_send_ok && retry_packet_ok && ack_ok;
+}
+
 bool exerciseFileTransferPathHelpers()
 {
 	const AsciiString map("Maps\\UserMaps\\Tournament Desert\\Tournament Desert.map");
@@ -1056,7 +1143,7 @@ int main()
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketAckRoundTrip() &&
 		exerciseNetPacketControlRoundTrip() && exerciseNetCommandWrapperList() && exerciseTransportQueue() &&
-		exerciseConnectionQueue() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
+		exerciseConnectionQueue() && exerciseConnectionRetry() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
 		exerciseUser();
 	shutdownMemoryManager();
 
@@ -1064,6 +1151,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues, transport packet buffering, command lists, packet round-trips, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering, command lists, packet round-trips, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

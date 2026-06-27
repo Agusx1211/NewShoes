@@ -1651,8 +1651,12 @@ shares structure and follows behind.
 - [x] Link and smoke-test original `GameNetwork/Connection.cpp` send/ack queue
       behavior through original packetization and `Transport::queueSend`
       buffering without binding UDP sockets.
-- [ ] Link and smoke-test original `GameNetwork/Connection.cpp` receive/retry
-      behavior after browser transport send/receive dependencies are available.
+- [x] Link and smoke-test original `GameNetwork/Connection.cpp` retry behavior
+      through original `doSend()` retry gating, retry packetization,
+      mismatched-ack retention, and ack removal on the current browser-safe
+      `Transport::queueSend` path. Real receive remains separate.
+- [ ] Link and smoke-test original `GameNetwork/Connection.cpp` receive
+      behavior after browser transport receive dependencies are available.
 - [x] Link and smoke-test original `GameNetwork/FileTransfer.cpp` map-path
       helper behavior.
 - [ ] Link and smoke-test original `GameNetwork/FileTransfer.cpp` transfer flow
