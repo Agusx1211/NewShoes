@@ -5522,6 +5522,124 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			expected_g = 0;
 			expected_b = 0;
 			break;
+		case 22:
+			case_name = "modulate2X";
+			color_op = D3DTOP_MODULATE2X;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			diffuse = 0xff800000UL;
+			expected_r = 64;
+			break;
+		case 23:
+			case_name = "modulate4X";
+			color_op = D3DTOP_MODULATE4X;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x40;
+			diffuse = 0xff800000UL;
+			expected_r = 128;
+			break;
+		case 24:
+			case_name = "addSigned";
+			color_op = D3DTOP_ADDSIGNED;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			diffuse = 0xff00ff00UL;
+			expected_r = 128;
+			expected_g = 128;
+			expected_b = 0;
+			break;
+		case 25:
+			case_name = "addSigned2X";
+			color_op = D3DTOP_ADDSIGNED2X;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0xff;
+			diffuse = 0xff00ff00UL;
+			expected_r = 255;
+			expected_g = 255;
+			expected_b = 0;
+			break;
+		case 26:
+			case_name = "subtract";
+			color_op = D3DTOP_SUBTRACT;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0xff;
+			texture_green = 0x80;
+			texture_blue = 0x40;
+			diffuse = 0xff402080UL;
+			expected_r = 191;
+			expected_g = 96;
+			expected_b = 0;
+			break;
+		case 27:
+			case_name = "addSmooth";
+			color_op = D3DTOP_ADDSMOOTH;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_red = 0x80;
+			diffuse = 0xff808080UL;
+			expected_r = 192;
+			expected_g = 128;
+			expected_b = 128;
+			break;
+		case 28:
+			case_name = "blendTextureAlpha";
+			color_op = D3DTOP_BLENDTEXTUREALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_alpha = 0x40;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
+		case 29:
+			case_name = "blendFactorAlpha";
+			color_op = D3DTOP_BLENDFACTORALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_factor = 0x40000000UL;
+			diffuse = 0xff00ff00UL;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
+		case 30:
+			case_name = "blendCurrentAlpha";
+			color_op = D3DTOP_BLENDCURRENTALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			diffuse = 0x8000ff00UL;
+			expected_r = 128;
+			expected_g = 127;
+			expected_b = 0;
+			break;
+		case 31:
+			case_name = "lerpColorArg0";
+			color_op = D3DTOP_LERP;
+			color_arg0 = D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_factor = 0x40000000UL;
+			diffuse = 0xff00ff00UL;
+			color_arg0_set = true;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
+		case 32:
+			case_name = "blendDiffuseAlpha";
+			color_op = D3DTOP_BLENDDIFFUSEALPHA;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			diffuse = 0x4000ff00UL;
+			expected_r = 64;
+			expected_g = 191;
+			expected_b = 0;
+			break;
 		default:
 			known_case = false;
 			break;

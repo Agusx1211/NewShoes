@@ -2493,6 +2493,12 @@ shares structure and follows behind.
       `D3DTA_TEMP`, with focused browser probes proving `RESULTARG=TEMP`
       preserves `CURRENT` and stage 1 can read `TEMP`. Broader terrain
       rendering remains blocked on the later multi-texture terrain path.
+- [x] Extend the WebGL2 fixed-function combiner bridge for original
+      `shader.cpp` texture ops beyond select/modulate/add: `MODULATE2X`,
+      `MODULATE4X`, `ADDSIGNED`, `ADDSIGNED2X`, `SUBTRACT`, `ADDSMOOTH`,
+      `BLENDDIFFUSEALPHA`, `BLENDTEXTUREALPHA`, `BLENDFACTORALPHA`,
+      `BLENDCURRENTALPHA`, and `LERP` now render through focused D3D8 browser
+      probes with center-pixel checks.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state

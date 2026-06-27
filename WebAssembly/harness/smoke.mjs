@@ -1083,9 +1083,9 @@ try {
   const combinerCaseNames = combinerCases.map((entry) => entry.probe?.caseName).join(",");
   const combinerCenters = combinerCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   if (!d3d8TextureCombinerResult.ok
-      || combinerCases.length !== 22
-      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor,multiplyAddColorArg0,multiplyAddAlphaArg0,stage1DotProduct3Grayscale,resultArgTempPreservesCurrent,stage1SelectTemp"
-      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255|255,128,128,255|160,0,0,255|117,117,117,255|0,255,0,255|255,0,0,255"
+      || combinerCases.length !== 33
+      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor,multiplyAddColorArg0,multiplyAddAlphaArg0,stage1DotProduct3Grayscale,resultArgTempPreservesCurrent,stage1SelectTemp,modulate2X,modulate4X,addSigned,addSigned2X,subtract,addSmooth,blendTextureAlpha,blendFactorAlpha,blendCurrentAlpha,lerpColorArg0,blendDiffuseAlpha"
+      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255|255,128,128,255|160,0,0,255|117,117,117,255|0,255,0,255|255,0,0,255|64,0,0,255|129,0,0,255|128,128,0,255|255,255,0,255|191,96,0,255|192,128,128,255|64,191,0,255|64,191,0,255|128,127,0,255|64,191,0,255|64,191,0,255"
       || combinerCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_combiner_probe")
       || combinerCases.some((entry) => entry.probe?.calls?.setTextureStageState !== entry.probe?.expectedStageStateCalls)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.colorArg0 !== entry.probe?.combiner?.colorArg0)
