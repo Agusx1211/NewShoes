@@ -449,6 +449,10 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` Targa image utility and Win32 globals (`TARGA.CPP`,
       `win.cpp`) compile and smoke-test truecolor TGA save/load, image flips,
       and original window/focus global state under wasm.
+- [x] `WWVegas/WWLib` conversion drawer globals (`_convert.cpp`) compile and
+      smoke-test the original `VoxelDrawer`, `UnitDrawer`, `TerrainDrawer`,
+      `AnimDrawer`, `NormalDrawer`, and `IsometricDrawer` definitions under
+      wasm.
 - [x] `WWVegas/WWLib` platform compatibility helpers (`data.cpp`,
       `rcfile.cpp`, `registry.cpp`) compile and smoke-test legacy data loading,
       raw CPS-style uncompression, and current browser no-resource/no-registry
@@ -457,9 +461,8 @@ shares structure and follows behind.
       a real resource lookup and persistence contract before relying on
       `ResourceFileClass` or `RegistryClass` for runtime settings/data.
 - [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
-      (`convert.cpp`, `_convert.cpp`, `dsurface.cpp`) after the browser
-      `DSurface`/pixel-format abstraction is defined, instead of stubbing draw
-      behavior.
+      (`convert.cpp`, `dsurface.cpp`) after the browser `DSurface`/pixel-format
+      abstraction is defined, instead of stubbing draw behavior.
 - [x] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline
       assembly.
