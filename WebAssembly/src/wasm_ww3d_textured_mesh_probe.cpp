@@ -6,7 +6,11 @@
 
 #include "PreRTS.h"
 
+#include "Common/ArchiveFileSystem.h"
+#include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
+#include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
 #include "assetmgr.h"
 #include "camera.h"
 #include "chunkio.h"
@@ -23,6 +27,8 @@
 #include "vertmaterial.h"
 #include "w3d_file.h"
 #include "wasm_d3d8_shim.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "W3DDevice/GameClient/W3DFileSystem.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -44,7 +50,21 @@ constexpr const char *kShippedMeshFileSystemPath = "/Art/W3D/CINE_Moon.W3D";
 constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
 constexpr const char *kShippedMeshTextureArchiveEntry = "art\\textures\\cine_moon.dds";
-constexpr const char *kShippedMeshTexturePath = "/art/textures/cine_moon.dds";
+constexpr const char *kShippedMeshTexturePath = "/Art/Textures/cine_moon.dds";
+
+class EmptyArchiveFileSystem : public ArchiveFileSystem {
+public:
+	void init() override {}
+	void update() override {}
+	void reset() override {}
+	void postProcessLoad() override {}
+
+	ArchiveFile *openArchiveFile(const Char *) override { return nullptr; }
+	void closeArchiveFile(const Char *) override {}
+	void closeAllArchiveFiles() override {}
+	void closeAllFiles() override {}
+	Bool loadBigFilesFromDirectory(AsciiString, AsciiString, Bool = FALSE) override { return FALSE; }
+};
 
 bool succeeded(int result)
 {
@@ -645,7 +665,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	bool texture_dds_loaded = false;
 	bool texture_resolved = false;
 	bool texture_has_d3d_surface = false;
-	bool texture_search_path_set = false;
+	bool texture_file_factory_installed = false;
+	bool texture_simple_factory_path_set = false;
 	bool mesh_chunk_found = false;
 	bool mesh_loaded = false;
 	HRESULT texture_level_desc_result = E_FAIL;
@@ -670,7 +691,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	WW3DAssetManager *asset_manager = nullptr;
 	MeshClass *mesh = nullptr;
 	CameraClass *camera = nullptr;
-	StringClass previous_texture_search_path(true);
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FileFactoryClass *old_file_factory = _TheFileFactory;
+	W3DFileSystem *old_w3d_file_system = TheW3DFileSystem;
+	Win32LocalFileSystem local_file_system;
+	EmptyArchiveFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator name_key_generator;
+	W3DFileSystem *w3d_file_system = nullptr;
 
 	if (succeeded(init_result)) {
 		asset_manager = W3DNEW WW3DAssetManager();
@@ -685,11 +716,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		mesh_archive_loaded = mounted_file_exists(kShippedMeshFileSystemPath);
 		texture_file_exists = mounted_file_exists(kShippedMeshTexturePath);
 		texture_archive_loaded = texture_file_exists;
-		if (_TheSimpleFileFactory != nullptr) {
-			_TheSimpleFileFactory->Get_Sub_Directory(previous_texture_search_path);
-			_TheSimpleFileFactory->Set_Sub_Directory("/art/textures/");
-			texture_search_path_set = true;
-		}
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheNameKeyGenerator = &name_key_generator;
+		name_key_generator.init();
+		file_system.init();
+		TheW3DFileSystem = new W3DFileSystem;
+		w3d_file_system = TheW3DFileSystem;
+		texture_file_factory_installed =
+			w3d_file_system != nullptr &&
+			_TheFileFactory == w3d_file_system;
 		if (texture_file_exists) {
 			DDSFileClass dds_file(kShippedMeshTextureName, 0);
 			texture_dds_available = dds_file.Is_Available();
@@ -786,10 +823,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	REF_PTR_RELEASE(camera);
 	REF_PTR_RELEASE(mesh);
 
-	if (texture_search_path_set && _TheSimpleFileFactory != nullptr) {
-		_TheSimpleFileFactory->Set_Sub_Directory(previous_texture_search_path.Peek_Buffer());
-	}
-
 	if (asset_manager != nullptr) {
 		delete asset_manager;
 		asset_manager = nullptr;
@@ -798,6 +831,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	if (succeeded(init_result)) {
 		WW3D::Shutdown();
 	}
+
+	if (w3d_file_system != nullptr) {
+		delete w3d_file_system;
+		w3d_file_system = nullptr;
+	}
+	TheW3DFileSystem = old_w3d_file_system;
+	_TheFileFactory = old_file_factory;
+	name_key_generator.reset();
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -825,7 +870,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		texture_archive_loaded &&
 		file_read &&
 		texture_file_exists &&
-		texture_search_path_set &&
+		texture_file_factory_installed &&
+		!texture_simple_factory_path_set &&
 		texture_registered &&
 		texture_dds_available &&
 		texture_dds_loaded &&
@@ -892,7 +938,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
 		"\"meshArchiveLoaded\":%s,\"textureArchiveLoaded\":%s,"
 		"\"fileRead\":%s,\"textureFileExists\":%s,"
-		"\"textureSearchPathSet\":%s,\"textureRegistered\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"textureSimpleFactoryPathSet\":%s,\"textureRegistered\":%s,"
 		"\"textureDDSAvailable\":%s,"
 		"\"textureDDSLoaded\":%s,\"textureResolved\":%s,"
 		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
@@ -912,7 +959,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
-		"\"source\":\"original TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures\"},"
+		"\"source\":\"original W3DFileSystem + TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures\"},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
 		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"
@@ -947,7 +994,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		bool_json(texture_archive_loaded),
 		bool_json(file_read),
 		bool_json(texture_file_exists),
-		bool_json(texture_search_path_set),
+		bool_json(texture_file_factory_installed),
+		bool_json(texture_simple_factory_path_set),
 		bool_json(texture_registered),
 		bool_json(texture_dds_available),
 		bool_json(texture_dds_loaded),

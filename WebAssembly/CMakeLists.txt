@@ -3470,6 +3470,7 @@ add_executable(cnc-port
   src/wasm_ww3d_render_probe.cpp
   src/wasm_ww3d_source_asset_probe.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
@@ -3482,6 +3483,10 @@ add_dependencies(cnc-port cnc_port_ww3d_asset_headers)
 
 set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-iquote${WINMAIN_WNDPROC_SHIMS_DIR};-iquote${WIN32_MOUSE_BROWSER_SHIMS_DIR};-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
+)
+
+set_source_files_properties("${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h;-include${WWVEGAS_PORT_SHIM};-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
 )
 
 target_compile_definitions(cnc-port PRIVATE

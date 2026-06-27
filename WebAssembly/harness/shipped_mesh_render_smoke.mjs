@@ -19,7 +19,7 @@ const D3DFMT_DXT5 = 0x35545844;
 const meshArchiveEntry = "Art\\W3D\\CINE_Moon.W3D";
 const meshMountPath = "/Art/W3D/CINE_Moon.W3D";
 const textureArchiveEntry = "Art\\Textures\\cine_moon.dds";
-const textureMountPath = "/art/textures/cine_moon.dds";
+const textureMountPath = "/Art/Textures/cine_moon.dds";
 const meshSourceLabel = `W3DZH.big:${meshArchiveEntry}`;
 const textureSourceLabel = `TexturesZH.big:${textureArchiveEntry}`;
 
@@ -40,6 +40,14 @@ function pixelLooksSyntheticRed(pixel) {
     && pixel[1] <= 80
     && pixel[2] <= 80
     && pixel[3] >= 200;
+}
+
+function withTimeout(promise, milliseconds, label) {
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${milliseconds}ms`)), milliseconds);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
 }
 
 if (!isInside(wasmRoot, archivePath)) {
@@ -126,10 +134,14 @@ try {
 
   let renderResult;
   try {
-    renderResult = await page.evaluate(() => window.CnCPort.rpc("ww3dShippedMesh", {
-      archivePath: "W3DZH.big:Art\\W3D\\CINE_Moon.W3D",
-      textureArchivePath: "TexturesZH.big:Art\\Textures\\cine_moon.dds",
-    }));
+    renderResult = await withTimeout(
+      page.evaluate(() => window.CnCPort.rpc("ww3dShippedMesh", {
+        archivePath: "W3DZH.big:Art\\W3D\\CINE_Moon.W3D",
+        textureArchivePath: "TexturesZH.big:Art\\Textures\\cine_moon.dds",
+      })),
+      30000,
+      "shipped WW3D mesh render",
+    );
   } catch (error) {
     throw new Error(`shipped WW3D mesh render crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
   }
@@ -146,7 +158,8 @@ try {
       || renderResult.probe?.results?.textureArchiveLoaded !== true
       || renderResult.probe?.results?.fileRead !== true
       || renderResult.probe?.results?.textureFileExists !== true
-      || renderResult.probe?.results?.textureSearchPathSet !== true
+      || renderResult.probe?.results?.textureFileFactoryInstalled !== true
+      || renderResult.probe?.results?.textureSimpleFactoryPathSet !== false
       || renderResult.probe?.results?.textureRegistered !== true
       || renderResult.probe?.results?.textureDDSAvailable !== true
       || renderResult.probe?.results?.textureDDSLoaded !== true
@@ -163,7 +176,7 @@ try {
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
       || renderResult.probe?.texture?.format !== D3DFMT_DXT5
       || renderResult.probe?.texture?.uploadFormat !== D3DFMT_DXT5
-      || renderResult.probe?.texture?.source !== "original TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures"
+      || renderResult.probe?.texture?.source !== "original W3DFileSystem + TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures"
       || renderResult.probe?.draw?.primitiveType !== 4
       || renderResult.probe?.draw?.vertexCount !== 4
       || renderResult.probe?.draw?.primitiveCount !== 2
