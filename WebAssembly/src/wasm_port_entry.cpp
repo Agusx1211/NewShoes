@@ -923,6 +923,119 @@ bool original_engine_startup_files_ready()
 		g_archive_probe.has_video_ini;
 }
 
+bool base_ini_startup_files_ready()
+{
+	return g_archive_probe.loaded &&
+		g_archive_probe.has_default_game_data_ini &&
+		g_archive_probe.has_default_water_ini &&
+		g_archive_probe.has_default_weather_ini &&
+		g_archive_probe.has_default_science_ini &&
+		g_archive_probe.has_default_multiplayer_ini &&
+		g_archive_probe.has_default_terrain_ini &&
+		g_archive_probe.has_default_roads_ini &&
+		g_archive_probe.has_rank_ini &&
+		g_archive_probe.has_default_player_template_ini &&
+		g_archive_probe.has_default_fx_list_ini &&
+		g_archive_probe.has_default_object_creation_list_ini &&
+		g_archive_probe.has_default_special_power_ini &&
+		g_archive_probe.has_default_object_ini &&
+		g_archive_probe.has_default_upgrade_ini &&
+		g_archive_probe.has_default_ai_data_ini &&
+		g_archive_probe.has_default_crate_ini &&
+		g_archive_probe.has_command_map_ini &&
+		g_archive_probe.has_default_video_ini;
+}
+
+void append_missing_json_path(std::string &json, bool &first, bool present, const char *path)
+{
+	if (present) {
+		return;
+	}
+	if (!first) {
+		json += ",";
+	}
+	json += "\"";
+	json += json_escape(path);
+	json += "\"";
+	first = false;
+}
+
+std::string build_missing_base_ini_startup_files_json()
+{
+	if (!g_archive_probe.loaded) {
+		return "[]";
+	}
+
+	std::string json = "[";
+	bool first = true;
+	append_missing_json_path(json, first, g_archive_probe.has_default_game_data_ini,
+		"Data\\INI\\Default\\GameData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_water_ini,
+		"Data\\INI\\Default\\Water.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_weather_ini,
+		"Data\\INI\\Default\\Weather.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_science_ini,
+		"Data\\INI\\Default\\Science.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_multiplayer_ini,
+		"Data\\INI\\Default\\Multiplayer.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_terrain_ini,
+		"Data\\INI\\Default\\Terrain.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_roads_ini,
+		"Data\\INI\\Default\\Roads.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_rank_ini, "Data\\INI\\Rank.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_player_template_ini,
+		"Data\\INI\\Default\\PlayerTemplate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_fx_list_ini,
+		"Data\\INI\\Default\\FXList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_object_creation_list_ini,
+		"Data\\INI\\Default\\ObjectCreationList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_special_power_ini,
+		"Data\\INI\\Default\\SpecialPower.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_object_ini,
+		"Data\\INI\\Default\\Object.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_upgrade_ini,
+		"Data\\INI\\Default\\Upgrade.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_ai_data_ini,
+		"Data\\INI\\Default\\AIData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_crate_ini,
+		"Data\\INI\\Default\\Crate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_command_map_ini,
+		"Data\\INI\\CommandMap.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_video_ini,
+		"Data\\INI\\Default\\Video.ini");
+
+	json += "]";
+	return json;
+}
+
+const char *base_ini_startup_message()
+{
+	if (!g_archive_probe.loaded) {
+		return "Archive probe has not loaded the original startup file inventory.";
+	}
+	if (!base_ini_startup_files_ready()) {
+		return "Mount or map base Generals INI.big alongside the Zero Hour runtime archives; original GameEngine.cpp still references these default/startup files.";
+	}
+	return "Original GameEngine.cpp base INI startup files are visible to the archive filesystem.";
+}
+
+std::string build_base_ini_startup_files_json()
+{
+	char buffer[3200];
+	const std::string missing_json = build_missing_base_ini_startup_files_json();
+	const std::string message_json = json_escape(base_ini_startup_message());
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"ready\":%s,\"archive\":\"INI.big\","
+		"\"source\":\"Base Generals Data1.cab\",\"missing\":%s,"
+		"\"message\":\"%s\"}",
+		base_ini_startup_files_ready() ? "true" : "false",
+		missing_json.c_str(),
+		message_json.c_str());
+
+	return buffer;
+}
+
 std::string build_missing_original_engine_startup_files_json()
 {
 	if (!g_archive_probe.loaded) {
@@ -931,59 +1044,47 @@ std::string build_missing_original_engine_startup_files_json()
 
 	std::string json = "[";
 	bool first = true;
-	const auto append_missing = [&json, &first](bool present, const char *path) {
-		if (present) {
-			return;
-		}
-		if (!first) {
-			json += ",";
-		}
-		json += "\"";
-		json += json_escape(path);
-		json += "\"";
-		first = false;
-	};
 
-	append_missing(g_archive_probe.has_default_game_data_ini, "Data\\INI\\Default\\GameData.ini");
-	append_missing(g_archive_probe.has_game_data_ini, "Data\\INI\\GameData.ini");
-	append_missing(g_archive_probe.has_default_water_ini, "Data\\INI\\Default\\Water.ini");
-	append_missing(g_archive_probe.has_water_ini, "Data\\INI\\Water.ini");
-	append_missing(g_archive_probe.has_default_weather_ini, "Data\\INI\\Default\\Weather.ini");
-	append_missing(g_archive_probe.has_weather_ini, "Data\\INI\\Weather.ini");
-	append_missing(g_archive_probe.has_generals_csf, "Data\\English\\Generals.csf");
-	append_missing(g_archive_probe.has_default_science_ini, "Data\\INI\\Default\\Science.ini");
-	append_missing(g_archive_probe.has_science_ini, "Data\\INI\\Science.ini");
-	append_missing(g_archive_probe.has_default_multiplayer_ini, "Data\\INI\\Default\\Multiplayer.ini");
-	append_missing(g_archive_probe.has_multiplayer_ini, "Data\\INI\\multiplayer.ini");
-	append_missing(g_archive_probe.has_default_terrain_ini, "Data\\INI\\Default\\Terrain.ini");
-	append_missing(g_archive_probe.has_terrain_ini, "Data\\INI\\Terrain.ini");
-	append_missing(g_archive_probe.has_default_roads_ini, "Data\\INI\\Default\\Roads.ini");
-	append_missing(g_archive_probe.has_roads_ini, "Data\\INI\\Roads.ini");
-	append_missing(g_archive_probe.has_rank_ini, "Data\\INI\\Rank.ini");
-	append_missing(g_archive_probe.has_default_player_template_ini, "Data\\INI\\Default\\PlayerTemplate.ini");
-	append_missing(g_archive_probe.has_player_template_ini, "Data\\INI\\PlayerTemplate.ini");
-	append_missing(g_archive_probe.has_default_fx_list_ini, "Data\\INI\\Default\\FXList.ini");
-	append_missing(g_archive_probe.has_fx_list_ini, "Data\\INI\\FXList.ini");
-	append_missing(g_archive_probe.has_weapon_ini, "Data\\INI\\Weapon.ini");
-	append_missing(g_archive_probe.has_default_object_creation_list_ini, "Data\\INI\\Default\\ObjectCreationList.ini");
-	append_missing(g_archive_probe.has_object_creation_list_ini, "Data\\INI\\ObjectCreationList.ini");
-	append_missing(g_archive_probe.has_locomotor_ini, "Data\\INI\\Locomotor.ini");
-	append_missing(g_archive_probe.has_default_special_power_ini, "Data\\INI\\Default\\SpecialPower.ini");
-	append_missing(g_archive_probe.has_special_power_ini, "Data\\INI\\SpecialPower.ini");
-	append_missing(g_archive_probe.has_damage_fx_ini, "Data\\INI\\DamageFX.ini");
-	append_missing(g_archive_probe.has_armor_ini, "Data\\INI\\Armor.ini");
-	append_missing(g_archive_probe.has_default_object_ini, "Data\\INI\\Default\\Object.ini");
-	append_missing(g_archive_probe.object_ini_file_count > 0, "Data\\INI\\Object\\*.ini");
-	append_missing(g_archive_probe.has_default_upgrade_ini, "Data\\INI\\Default\\Upgrade.ini");
-	append_missing(g_archive_probe.has_upgrade_ini, "Data\\INI\\Upgrade.ini");
-	append_missing(g_archive_probe.has_default_ai_data_ini, "Data\\INI\\Default\\AIData.ini");
-	append_missing(g_archive_probe.has_default_crate_ini, "Data\\INI\\Default\\Crate.ini");
-	append_missing(g_archive_probe.has_crate_ini, "Data\\INI\\Crate.ini");
-	append_missing(g_archive_probe.has_english_command_map_ini, "Data\\English\\CommandMap.ini");
-	append_missing(g_archive_probe.has_command_map_ini, "Data\\INI\\CommandMap.ini");
-	append_missing(g_archive_probe.has_map_cache_ini, "Maps\\MapCache.ini");
-	append_missing(g_archive_probe.has_default_video_ini, "Data\\INI\\Default\\Video.ini");
-	append_missing(g_archive_probe.has_video_ini, "Data\\INI\\Video.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_game_data_ini, "Data\\INI\\Default\\GameData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_game_data_ini, "Data\\INI\\GameData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_water_ini, "Data\\INI\\Default\\Water.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_water_ini, "Data\\INI\\Water.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_weather_ini, "Data\\INI\\Default\\Weather.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_weather_ini, "Data\\INI\\Weather.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_generals_csf, "Data\\English\\Generals.csf");
+	append_missing_json_path(json, first, g_archive_probe.has_default_science_ini, "Data\\INI\\Default\\Science.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_science_ini, "Data\\INI\\Science.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_multiplayer_ini, "Data\\INI\\Default\\Multiplayer.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_multiplayer_ini, "Data\\INI\\multiplayer.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_terrain_ini, "Data\\INI\\Default\\Terrain.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_terrain_ini, "Data\\INI\\Terrain.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_roads_ini, "Data\\INI\\Default\\Roads.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_roads_ini, "Data\\INI\\Roads.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_rank_ini, "Data\\INI\\Rank.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_player_template_ini, "Data\\INI\\Default\\PlayerTemplate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_player_template_ini, "Data\\INI\\PlayerTemplate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_fx_list_ini, "Data\\INI\\Default\\FXList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_fx_list_ini, "Data\\INI\\FXList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_weapon_ini, "Data\\INI\\Weapon.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_object_creation_list_ini, "Data\\INI\\Default\\ObjectCreationList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_object_creation_list_ini, "Data\\INI\\ObjectCreationList.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_locomotor_ini, "Data\\INI\\Locomotor.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_special_power_ini, "Data\\INI\\Default\\SpecialPower.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_special_power_ini, "Data\\INI\\SpecialPower.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_damage_fx_ini, "Data\\INI\\DamageFX.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_armor_ini, "Data\\INI\\Armor.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_object_ini, "Data\\INI\\Default\\Object.ini");
+	append_missing_json_path(json, first, g_archive_probe.object_ini_file_count > 0, "Data\\INI\\Object\\*.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_upgrade_ini, "Data\\INI\\Default\\Upgrade.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_upgrade_ini, "Data\\INI\\Upgrade.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_ai_data_ini, "Data\\INI\\Default\\AIData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_crate_ini, "Data\\INI\\Default\\Crate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_crate_ini, "Data\\INI\\Crate.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_english_command_map_ini, "Data\\English\\CommandMap.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_command_map_ini, "Data\\INI\\CommandMap.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_map_cache_ini, "Maps\\MapCache.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_video_ini, "Data\\INI\\Default\\Video.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_video_ini, "Data\\INI\\Video.ini");
 
 	json += "]";
 	return json;
@@ -1025,17 +1126,19 @@ const char *original_engine_startup_message()
 
 std::string build_original_engine_startup_json()
 {
-	char buffer[18000];
+	char buffer[22000];
 	const std::string status_json = json_escape(original_engine_startup_status());
 	const std::string message_json = json_escape(original_engine_startup_message());
 	const std::string missing_files_json =
 		build_missing_original_engine_startup_files_json();
+	const std::string base_ini_startup_json = build_base_ini_startup_files_json();
 
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"ok\":false,\"source\":\"GameEngine/Common/GameEngine.cpp::init\","
 		"\"initAttempted\":false,\"status\":\"%s\",\"message\":\"%s\","
 		"\"startupAssetsReady\":%s,\"dataPreflightReady\":%s,"
 		"\"startupFiles\":{\"ready\":%s,\"missing\":%s,"
+		"\"baseIniArchive\":%s,"
 		"\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
 		"\"defaultWaterIni\":%s,\"waterIni\":%s,"
 		"\"defaultWeatherIni\":%s,\"weatherIni\":%s,"
@@ -1070,6 +1173,7 @@ std::string build_original_engine_startup_json()
 		startup_data_probes_ready() ? "true" : "false",
 		original_engine_startup_files_ready() ? "true" : "false",
 		missing_files_json.c_str(),
+		base_ini_startup_json.c_str(),
 		g_archive_probe.has_default_game_data_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_default_water_ini ? "true" : "false",

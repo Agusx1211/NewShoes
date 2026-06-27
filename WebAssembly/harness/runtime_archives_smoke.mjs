@@ -1431,6 +1431,21 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
       throw new Error(`${context} missing startup path not reported: ${path} in ${JSON.stringify(files?.missing)}`);
     }
   }
+
+  const baseIniArchive = files?.baseIniArchive;
+  const baseMissing = new Set(baseIniArchive?.missing ?? []);
+  if (baseIniArchive?.ready !== false
+      || baseIniArchive.archive !== "INI.big"
+      || baseIniArchive.source !== "Base Generals Data1.cab"
+      || !baseIniArchive.message?.includes("base Generals INI.big")
+      || baseMissing.size !== expectedMissing.length) {
+    throw new Error(`${context} base INI startup diagnostic mismatch: ${JSON.stringify(baseIniArchive)}`);
+  }
+  for (const path of expectedMissing) {
+    if (!baseMissing.has(path)) {
+      throw new Error(`${context} base INI missing startup path not reported: ${path} in ${JSON.stringify(baseIniArchive)}`);
+    }
+  }
 }
 
 function assertOriginalEngineStartupWithBaseIni(state, context) {
@@ -1479,6 +1494,15 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
       || files.objectIniFiles <= 0
       || (files.missing?.length ?? 0) !== 0) {
     throw new Error(`${context} base INI archive did not complete startup file readiness: ${JSON.stringify(files)}`);
+  }
+
+  const baseIniArchive = files.baseIniArchive;
+  if (baseIniArchive?.ready !== true
+      || baseIniArchive.archive !== "INI.big"
+      || baseIniArchive.source !== "Base Generals Data1.cab"
+      || (baseIniArchive.missing?.length ?? -1) !== 0
+      || !baseIniArchive.message?.includes("base INI startup files are visible")) {
+    throw new Error(`${context} base INI startup diagnostic should be clear: ${JSON.stringify(baseIniArchive)}`);
   }
 }
 

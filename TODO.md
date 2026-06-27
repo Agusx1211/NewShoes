@@ -1743,6 +1743,10 @@ shares structure and follows behind.
       `FileSystem`, no-CD manager, GameNetwork) to preserve an already
       initialized memory manager before any of them are reused under
       runtime-owned bootstrap singleton residency.
+- [x] Expose a harness-verified `originalEngineStartup.startupFiles.baseIniArchive`
+      diagnostic that distinguishes the current Zero Hour-only archive preflight
+      from the base Generals `INI.big` startup/default INI files still required
+      by original `GameEngine.cpp`, without marking engine startup ready.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
