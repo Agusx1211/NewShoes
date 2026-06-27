@@ -1413,6 +1413,10 @@ shares structure and follows behind.
       `Data\English\Generals.csf` loading from the fetched runtime BIG set,
       including the title label, an America command-center control-bar label,
       and `CONTROLBAR:` prefix enumeration.
+- [x] Expose the original GameText registry-selected language and formatted CSF
+      path in `assetProbe.gameText`, and require the runtime archive
+      Playwright harness to prove the selected `Data\english\Generals.csf`
+      path exists before treating the CSF label probe as ready.
 - [x] Compile original `GameClient/DisplayString.cpp`,
       `DisplayStringManager.cpp`, `GUI/GameFont.cpp`,
       `GUI/WinInstanceData.cpp`, and empty legacy `DrawableManager.cpp`; smoke

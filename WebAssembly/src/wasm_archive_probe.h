@@ -270,8 +270,11 @@ struct ArchiveProbeResult
 	bool has_generals_csf = false;
 	bool game_text_attempted = false;
 	bool game_text_ok = false;
+	bool game_text_selected_csf_exists = false;
 	bool game_text_title_label = false;
 	bool game_text_control_bar_label = false;
+	std::string game_text_language;
+	std::string game_text_csf_path;
 	std::size_t indexed_file_count = 0;
 	std::size_t sample_bytes = 0;
 	std::size_t armor_bytes = 0;

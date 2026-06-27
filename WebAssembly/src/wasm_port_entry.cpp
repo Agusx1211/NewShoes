@@ -814,6 +814,10 @@ std::string build_win32_message_json(const MSG &message)
 std::string build_data_summary_json()
 {
 	char buffer[8200];
+	const std::string game_text_language_json =
+		json_escape(g_archive_probe.game_text_language);
+	const std::string game_text_csf_path_json =
+		json_escape(g_archive_probe.game_text_csf_path);
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"ok\":%s,\"startupReady\":%s,\"source\":\"assetProbe\","
 		"\"archives\":{\"indexedFiles\":%zu,\"sampleBytes\":%zu},"
@@ -848,7 +852,8 @@ std::string build_data_summary_json()
 		"\"bridges\":%zu,\"waterSets\":%zu,\"videos\":%zu},"
 		"\"maps\":{\"mapCacheEntries\":%zu,\"multiplayer\":%zu,"
 		"\"official\":%zu},"
-		"\"strings\":{\"generalsCsf\":%s,\"controlBarLabels\":%zu}}",
+		"\"strings\":{\"generalsCsf\":%s,\"language\":\"%s\","
+		"\"csfPath\":\"%s\",\"selectedCsf\":%s,\"controlBarLabels\":%zu}}",
 		startup_data_probes_ready() ? "true" : "false",
 		startup_assets_ready() ? "true" : "false",
 		g_archive_probe.indexed_file_count,
@@ -936,6 +941,9 @@ std::string build_data_summary_json()
 		g_archive_probe.map_cache_multiplayer_maps,
 		g_archive_probe.map_cache_official_maps,
 		g_archive_probe.has_generals_csf ? "true" : "false",
+		game_text_language_json.c_str(),
+		game_text_csf_path_json.c_str(),
+		g_archive_probe.game_text_selected_csf_exists ? "true" : "false",
 		g_archive_probe.game_text_control_bar_label_count);
 
 	return buffer;
@@ -2727,6 +2735,10 @@ const char *write_state_json()
 	const std::string video_sample_filename_json =
 		json_escape(g_archive_probe.video_sample_filename);
 	const std::string map_cache_source_json = json_escape(g_archive_probe.map_cache_source);
+	const std::string game_text_language_json =
+		json_escape(g_archive_probe.game_text_language);
+	const std::string game_text_csf_path_json =
+		json_escape(g_archive_probe.game_text_csf_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
@@ -2958,6 +2970,7 @@ const char *write_state_json()
 		"\"shellMapMDDisplayName\":%s,\"tournamentDesertDisplayName\":%s,"
 		"\"shellMapMDPlayers\":%d,\"tournamentDesertPlayers\":%d},"
 		"\"gameText\":{\"attempted\":%s,\"ok\":%s,\"generalsCsf\":%s,"
+		"\"language\":\"%s\",\"csfPath\":\"%s\",\"selectedCsf\":%s,"
 		"\"titleLabel\":%s,\"controlBarLabel\":%s,\"controlBarLabels\":%zu}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
 		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
@@ -3440,6 +3453,9 @@ const char *write_state_json()
 		g_archive_probe.game_text_attempted ? "true" : "false",
 		g_archive_probe.game_text_ok ? "true" : "false",
 		g_archive_probe.has_generals_csf ? "true" : "false",
+		game_text_language_json.c_str(),
+		game_text_csf_path_json.c_str(),
+		g_archive_probe.game_text_selected_csf_exists ? "true" : "false",
 		g_archive_probe.game_text_title_label ? "true" : "false",
 		g_archive_probe.game_text_control_bar_label ? "true" : "false",
 		g_archive_probe.game_text_control_bar_label_count,

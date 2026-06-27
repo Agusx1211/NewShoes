@@ -16,6 +16,7 @@
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/Registry.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
 #include "GameClient/GameText.h"
@@ -1357,6 +1358,14 @@ void copy_challenge_mode_probe(
 void probe_original_game_text(ArchiveProbeResult &result)
 {
 	result.game_text_attempted = true;
+	AsciiString language = GetRegistryLanguage();
+	AsciiString csf_file;
+	csf_file.format(g_csfFile, language.str());
+	result.game_text_language = language.str();
+	result.game_text_csf_path = csf_file.str();
+	result.game_text_selected_csf_exists =
+		TheArchiveFileSystem != nullptr && TheArchiveFileSystem->doesFileExist(csf_file.str());
+
 	GameTextInterface *old_game_text = TheGameText;
 	GameTextInterface *game_text = CreateGameTextInterface();
 	TheGameText = game_text;
@@ -1503,9 +1512,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.ok =
 				sample_ok &&
 				result.indexed_file_count > 0;
-			if (result.has_generals_csf) {
-				probe_original_game_text(result);
-			}
+			probe_original_game_text(result);
 		}
 
 		TheFileSystem = nullptr;

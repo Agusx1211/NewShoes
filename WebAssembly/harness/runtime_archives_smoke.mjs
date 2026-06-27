@@ -41,6 +41,8 @@ const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const archiveRoot = resolve(wasmRoot, process.argv[2] ?? defaultArchiveRoot);
+const expectedGameTextLanguage = "english";
+const expectedGameTextCsfPath = "Data\\english\\Generals.csf";
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -52,6 +54,9 @@ function assertGameTextProbe(assetProbe, context) {
   if (!gameText?.attempted
       || !gameText.ok
       || !gameText.generalsCsf
+      || gameText.language !== expectedGameTextLanguage
+      || gameText.csfPath !== expectedGameTextCsfPath
+      || !gameText.selectedCsf
       || !gameText.titleLabel
       || !gameText.controlBarLabel
       || gameText.controlBarLabels <= 20) {
@@ -1367,7 +1372,11 @@ function assertDataSummary(state, context, expectedStartupReady) {
     }
   }
 
-  if (!summary.strings?.generalsCsf || summary.strings.controlBarLabels !== 754) {
+  if (!summary.strings?.generalsCsf
+      || summary.strings.language !== expectedGameTextLanguage
+      || summary.strings.csfPath !== expectedGameTextCsfPath
+      || !summary.strings.selectedCsf
+      || summary.strings.controlBarLabels !== 754) {
     throw new Error(`${context} data summary string coverage mismatch: ${JSON.stringify(summary.strings)}`);
   }
 }
