@@ -2749,13 +2749,19 @@ shares structure and follows behind.
             assets through the normal file/archive system, but final startup
             still needs display-owned WW3D file-factory lifetime and the open
             range-backed archive streaming path above.
-      - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
-            install path (per-pass vertex-material/shader/texture ids and
-            texture-stage texcoords) for real multi-pass / multi-texture
-            meshes, instead of the probe's geometry-chunk load plus
-            `MeshModelClass::Set_Single_*` single-material install used to
-            work around the single-material (`NumMaterials == 1`)
-            `read_per_tri_materials` early-return in the legacy chunk path.
+      - [x] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
+            install path for a real shipped multi-pass mesh. The shipped mesh
+            loader smoke now scans `W3DZH.big` through `Win32BIGFileSystem`,
+            loads `art\w3d\exglsshd01.w3d` through `MeshClass::Load_W3D`,
+            and asserts that the original reader installs two material passes,
+            per-pass vertex material/shader/texture data, texture-stage UV
+            arrays, and the shipped texture names (`lakedusk.tga`,
+            `exglsshd.tga`) instead of the legacy single-material
+            `read_per_tri_materials` path used by `CINE_MOON`.
+      - [ ] Extend the material-pass loader/render coverage to a same-pass
+            multi-texture shipped mesh (stage 0 + stage 1 in one pass), then
+            wire that through browser rendering once the WebGL draw bridge
+            applies multiple texture stages.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
