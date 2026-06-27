@@ -3821,6 +3821,32 @@ target_link_options(wwlib-file-core-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
 )
 
+add_executable(wwlib-buffer-ownership-smoke
+  tests/wwlib_buffer_ownership_smoke.cpp
+)
+
+set_target_properties(wwlib-buffer-ownership-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-buffer-ownership-smoke PRIVATE
+  zh_wwlib_file_core
+)
+
+target_compile_options(wwlib-buffer-ownership-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unknown-pragmas
+)
+
+target_link_options(wwlib-buffer-ownership-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
 add_executable(wwlib-ramfile-smoke
   tests/wwlib_ramfile_smoke.cpp
 )

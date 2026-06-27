@@ -247,8 +247,11 @@ shares structure and follows behind.
 - [x] Make original `GameClient/GameText.cpp` read and decode CSF string
       payloads as explicit 16-bit code units under wasm's 32-bit `WideChar`,
       with browser real-asset coverage against `Data\English\Generals.csf`.
-- [ ] Audit original WWLib `Buffer` ownership/deallocation semantics under
-      libc++/wasm before relying on it for asset and file buffers.
+- [x] Audit original WWLib `Buffer` ownership/deallocation semantics under
+      libc++/wasm with focused runtime smoke coverage for borrowed stack
+      buffers, shallow-copy borrowing, assignment release/borrow transfer, and
+      idempotent owned-buffer reset before relying on it for asset and file
+      buffers.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
