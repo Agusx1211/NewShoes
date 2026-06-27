@@ -1,6 +1,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "PreRTS.h"
 
@@ -383,6 +385,39 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+UnsignedByte byteAt(const std::vector<char> &bytes, std::size_t offset)
+{
+	return static_cast<UnsignedByte>(bytes[offset]);
+}
+
+UnsignedInt littleEndian32At(const std::vector<char> &bytes, std::size_t offset)
+{
+	return static_cast<UnsignedInt>(byteAt(bytes, offset)) |
+		(static_cast<UnsignedInt>(byteAt(bytes, offset + 1)) << 8) |
+		(static_cast<UnsignedInt>(byteAt(bytes, offset + 2)) << 16) |
+		(static_cast<UnsignedInt>(byteAt(bytes, offset + 3)) << 24);
+}
+
+bool expectLittleEndian16(const std::vector<char> &bytes, std::size_t offset, UnsignedShort value,
+	const char *message)
+{
+	return expect(bytes.size() >= offset + 2 &&
+			byteAt(bytes, offset) == static_cast<UnsignedByte>(value & 0xff) &&
+			byteAt(bytes, offset + 1) == static_cast<UnsignedByte>((value >> 8) & 0xff),
+		message);
+}
+
+bool expectLittleEndian32(const std::vector<char> &bytes, std::size_t offset, UnsignedInt value,
+	const char *message)
+{
+	return expect(bytes.size() >= offset + 4 &&
+			byteAt(bytes, offset) == static_cast<UnsignedByte>(value & 0xff) &&
+			byteAt(bytes, offset + 1) == static_cast<UnsignedByte>((value >> 8) & 0xff) &&
+			byteAt(bytes, offset + 2) == static_cast<UnsignedByte>((value >> 16) & 0xff) &&
+			byteAt(bytes, offset + 3) == static_cast<UnsignedByte>((value >> 24) & 0xff),
+		message);
+}
+
 const FieldParse kSmokeIniFieldParse[] = {
 	{ "Token", INI::parseInt, nullptr, 0 },
 	{ nullptr, nullptr, nullptr, 0 },
@@ -437,6 +472,69 @@ Bool parse_smoke_data_chunk_output(DataChunkInput &input, DataChunkInfo *info, v
 	result->name_key = input.readNameKey();
 	result->dict = input.readDict();
 	return TRUE;
+}
+
+bool expect_data_chunk_output_wire_format(const std::vector<char> &bytes)
+{
+	const char root_name[] = "SAVE_ROOT";
+	const char name_key_name[] = "SaveChunkKey";
+
+	bool ok = expect(bytes.size() > 8, "DataChunkOutput wire payload too short") &&
+		expect(bytes[0] == 'C' && bytes[1] == 'k' && bytes[2] == 'M' && bytes[3] == 'p',
+			"DataChunkOutput table tag changed") &&
+		expectLittleEndian32(bytes, 4, 7, "DataChunkOutput symbol count byte order changed");
+	if (!ok) {
+		return false;
+	}
+
+	std::size_t offset = 8;
+	UnsignedInt root_id = 0xffffffffu;
+	UnsignedInt name_key_id = 0xffffffffu;
+	const UnsignedInt symbol_count = littleEndian32At(bytes, 4);
+	for (UnsignedInt i = 0; i < symbol_count; ++i) {
+		if (!expect(bytes.size() > offset, "DataChunkOutput symbol length missing")) {
+			return false;
+		}
+		const UnsignedByte name_length = byteAt(bytes, offset++);
+		if (!expect(bytes.size() >= offset + name_length + sizeof(UnsignedInt),
+				"DataChunkOutput symbol entry truncated")) {
+			return false;
+		}
+		const std::string name(bytes.data() + offset, bytes.data() + offset + name_length);
+		offset += name_length;
+		const UnsignedInt id = littleEndian32At(bytes, offset);
+		offset += sizeof(UnsignedInt);
+
+		if (name == root_name) {
+			root_id = id;
+		} else if (name == name_key_name) {
+			name_key_id = id;
+		}
+	}
+
+	const std::size_t chunk_offset = offset;
+	constexpr std::size_t kChunkHeaderBytes = sizeof(UnsignedInt) + sizeof(DataChunkVersionType) + sizeof(Int);
+	if (!expect(bytes.size() >= chunk_offset + kChunkHeaderBytes,
+			"DataChunkOutput chunk header truncated")) {
+		return false;
+	}
+	const UnsignedInt expected_data_size = static_cast<UnsignedInt>(bytes.size() - chunk_offset - kChunkHeaderBytes);
+
+	return expect(root_id == 1, "DataChunkOutput root symbol id changed") &&
+		expect(name_key_id == 2, "DataChunkOutput NameKey symbol id changed") &&
+		expect(bytes.size() >= chunk_offset + kChunkHeaderBytes + 11,
+			"DataChunkOutput primitive payload truncated") &&
+		expectLittleEndian32(bytes, chunk_offset, root_id, "DataChunkOutput chunk id byte order changed") &&
+		expectLittleEndian16(bytes, chunk_offset + 4, 7, "DataChunkOutput chunk version byte order changed") &&
+		expectLittleEndian32(bytes, chunk_offset + 6, expected_data_size,
+			"DataChunkOutput chunk data-size byte order changed") &&
+		expectLittleEndian32(bytes, chunk_offset + 10, 1234,
+			"DataChunkOutput integer payload byte order changed") &&
+		expectLittleEndian32(bytes, chunk_offset + 14, 0x40d00000u,
+			"DataChunkOutput real payload byte order changed") &&
+		expect(byteAt(bytes, chunk_offset + 18) == 17, "DataChunkOutput byte payload changed") &&
+		expectLittleEndian16(bytes, chunk_offset + 19, 14,
+			"DataChunkOutput AsciiString length byte order changed");
 }
 
 std::vector<char> make_smoke_big_archive(const Char *archived_path, const Char *payload, Int payload_size)
@@ -1052,11 +1150,14 @@ bool exercise_data_chunk_output()
 
 	::remove(temp_path);
 
+	const bool wire_ok = expect_data_chunk_output_wire_format(output.data());
+
 	SmokeChunkInputStream stream(output.data());
 	DataChunkInput input(&stream);
 	DataChunkParseResult result = {};
 	input.registerParser(AsciiString("SAVE_ROOT"), AsciiString(""), parse_smoke_data_chunk_output, &result);
 	const bool ok =
+		wire_ok &&
 		expect(input.isValidFileType(), "DataChunkOutput did not write a readable table of contents") &&
 		expect(input.parse(&result), "DataChunkOutput round-trip parse failed") &&
 		expect(result.called, "DataChunkOutput parser was not invoked") &&

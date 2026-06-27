@@ -628,6 +628,11 @@ shares structure and follows behind.
       Common smoke through the current `GlobalData` user-data path shim,
       round-tripping the generated table/chunk stream through original
       `DataChunkInput`.
+- [x] Add endian-sensitive smoke coverage for original `DataChunkOutput`
+      save/data bytes under wasm, proving the `CkMp` table, symbol count,
+      mapping IDs, chunk ID/version/data-size header, integer, real, byte, and
+      ASCII-string length fields preserve the original little-endian x86 file
+      contract.
 - [ ] Re-run original `DataChunkOutput` write/temp-file coverage after the real
       `GlobalData` user-data directory and browser persistence layer replace
       the current target-local `Common/GlobalData.h` shim.
