@@ -1937,19 +1937,41 @@ static inline DWORD GetModuleFileNameA(HINSTANCE, LPSTR buffer, DWORD size)
 #define GetModuleFileName GetModuleFileNameA
 #endif
 
-static inline HMODULE LoadLibraryA(LPCSTR)
+#if defined(WASM_D3D8_LOADER_SHIM)
+extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name);
+extern "C" BOOL wasm_d3d8_free_library(HMODULE module);
+extern "C" FARPROC wasm_d3d8_get_proc_address(HMODULE module, LPCSTR procedure_name);
+#endif
+
+static inline HMODULE LoadLibraryA(LPCSTR library_name)
 {
+#if defined(WASM_D3D8_LOADER_SHIM)
+	return wasm_d3d8_load_library_a(library_name);
+#else
+	(void)library_name;
 	return nullptr;
+#endif
 }
 
-static inline BOOL FreeLibrary(HMODULE)
+static inline BOOL FreeLibrary(HMODULE module)
 {
+#if defined(WASM_D3D8_LOADER_SHIM)
+	return wasm_d3d8_free_library(module);
+#else
+	(void)module;
 	return TRUE;
+#endif
 }
 
-static inline FARPROC GetProcAddress(HMODULE, LPCSTR)
+static inline FARPROC GetProcAddress(HMODULE module, LPCSTR procedure_name)
 {
+#if defined(WASM_D3D8_LOADER_SHIM)
+	return wasm_d3d8_get_proc_address(module, procedure_name);
+#else
+	(void)module;
+	(void)procedure_name;
 	return nullptr;
+#endif
 }
 
 #ifndef LoadLibrary

@@ -2258,6 +2258,13 @@ shares structure and follows behind.
       device-clear path can be observed through probe counters. This is a D3D8
       factory/device slice only; original `DX8Wrapper::Init` still needs
       target-scoped loader wiring and real WebGL2 draw calls.
+- [x] Wire original `WW3D2/dx8wrapper.cpp` D3D8 DLL loading through a
+      target-scoped wasm loader hook, with smoke coverage proving
+      `DX8Wrapper::Init` reaches `LoadLibrary("D3D8.DLL")`,
+      `GetProcAddress("Direct3DCreate8")`, the browser D3D8 factory, adapter
+      enumeration, and clean shutdown without enabling the hook for unrelated
+      Win32 shim users. This is original loader/init coverage only; the
+      original render-device clear still needs WebGL2-backed device behavior.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.

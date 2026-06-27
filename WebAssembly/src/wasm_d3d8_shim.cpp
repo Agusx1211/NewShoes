@@ -1,11 +1,39 @@
 #include "wasm_d3d8_shim.h"
 
+#include "D3dx8core.h"
+
 #include <cstring>
 #include <new>
 
 namespace {
 
 WasmD3D8ShimState g_state = {};
+int g_d3d8_module = 0;
+
+HMODULE d3d8_module_handle()
+{
+	return &g_d3d8_module;
+}
+
+char ascii_lower(char value)
+{
+	return (value >= 'A' && value <= 'Z') ? static_cast<char>(value - 'A' + 'a') : value;
+}
+
+bool ascii_iequals(const char *left, const char *right)
+{
+	if (left == nullptr || right == nullptr) {
+		return false;
+	}
+	while (*left != '\0' && *right != '\0') {
+		if (ascii_lower(*left) != ascii_lower(*right)) {
+			return false;
+		}
+		++left;
+		++right;
+	}
+	return *left == '\0' && *right == '\0';
+}
 
 void fill_display_mode(D3DDISPLAYMODE &mode)
 {
@@ -548,6 +576,31 @@ extern "C" const WasmD3D8ShimState *wasm_d3d8_get_state()
 	return &g_state;
 }
 
+extern "C" HMODULE wasm_d3d8_load_library_a(LPCSTR library_name)
+{
+	++g_state.load_library_calls;
+	if (ascii_iequals(library_name, "D3D8.DLL") || ascii_iequals(library_name, "D3D8")) {
+		return d3d8_module_handle();
+	}
+	return nullptr;
+}
+
+extern "C" BOOL wasm_d3d8_free_library(HMODULE module)
+{
+	++g_state.free_library_calls;
+	return module == nullptr || module == d3d8_module_handle() ? TRUE : FALSE;
+}
+
+extern "C" FARPROC wasm_d3d8_get_proc_address(HMODULE module, LPCSTR procedure_name)
+{
+	++g_state.get_proc_address_calls;
+	if (module == d3d8_module_handle() && procedure_name != nullptr &&
+		std::strcmp(procedure_name, "Direct3DCreate8") == 0) {
+		return reinterpret_cast<FARPROC>(&Direct3DCreate8);
+	}
+	return nullptr;
+}
+
 IDirect3D8 *Direct3DCreate8(UINT sdk_version)
 {
 	++g_state.direct3d_create_calls;
@@ -555,4 +608,84 @@ IDirect3D8 *Direct3DCreate8(UINT sdk_version)
 		return nullptr;
 	}
 	return new (std::nothrow) BrowserD3D8(sdk_version);
+}
+
+HRESULT D3DXLoadSurfaceFromSurface(
+	IDirect3DSurface8 *,
+	const void *,
+	const RECT *,
+	IDirect3DSurface8 *,
+	const void *,
+	const RECT *,
+	DWORD,
+	D3DCOLOR)
+{
+	return D3DERR_NOTAVAILABLE;
+}
+
+HRESULT D3DXCreateTexture(
+	IDirect3DDevice8 *device,
+	UINT width,
+	UINT height,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DTexture8 **texture)
+{
+	if (texture == nullptr) {
+		return E_FAIL;
+	}
+	*texture = nullptr;
+	if (device == nullptr) {
+		return E_FAIL;
+	}
+	return device->CreateTexture(width, height, levels, usage, format, pool, texture);
+}
+
+HRESULT D3DXCreateTextureFromFileExA(
+	IDirect3DDevice8 *,
+	LPCSTR,
+	UINT,
+	UINT,
+	UINT,
+	DWORD,
+	D3DFORMAT,
+	D3DPOOL,
+	DWORD,
+	DWORD,
+	D3DCOLOR,
+	void *,
+	void *,
+	IDirect3DTexture8 **texture)
+{
+	if (texture == nullptr) {
+		return E_FAIL;
+	}
+	*texture = nullptr;
+	return D3DERR_NOTAVAILABLE;
+}
+
+HRESULT D3DXFilterTexture(IDirect3DBaseTexture8 *, const void *, UINT, DWORD)
+{
+	return D3DERR_NOTAVAILABLE;
+}
+
+HRESULT D3DXCreateCubeTexture(
+	IDirect3DDevice8 *device,
+	UINT edge_length,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DCubeTexture8 **texture)
+{
+	if (texture == nullptr) {
+		return E_FAIL;
+	}
+	*texture = nullptr;
+	if (device == nullptr) {
+		return E_FAIL;
+	}
+	return device->CreateCubeTexture(edge_length, levels, usage, format, pool, texture);
 }

@@ -5,6 +5,9 @@
 struct WasmD3D8ShimState
 {
 	UINT direct3d_create_calls;
+	UINT load_library_calls;
+	UINT get_proc_address_calls;
+	UINT free_library_calls;
 	UINT create_device_calls;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
