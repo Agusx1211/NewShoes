@@ -2484,10 +2484,11 @@ shares structure and follows behind.
       `D3DTOP_DOTPRODUCT3` over `CURRENT` and `TFACTOR`. The combiner probe now
       renders a non-red texture through the same stage-0/stage-1 setup used by
       original render2d/W3D grayscale code and verifies the luma center pixel.
-- [ ] Extend the fixed-function texture combiner bridge beyond the current
-      stage-0 `DIFFUSE`/`CURRENT`/`TEXTURE` subset to cover original
-      terrain/render2d patterns that use `RESULTARG` and `D3DTA_TEMP`, with
-      focused browser probes before relying on terrain rendering.
+- [x] Extend the fixed-function texture combiner bridge beyond the current
+      stage-0 `DIFFUSE`/`CURRENT`/`TEXTURE` subset to cover `RESULTARG` and
+      `D3DTA_TEMP`, with focused browser probes proving `RESULTARG=TEMP`
+      preserves `CURRENT` and stage 1 can read `TEMP`. Broader terrain
+      rendering remains blocked on the later multi-texture terrain path.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state

@@ -5225,6 +5225,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 	DWORD color_arg0 = D3DTA_CURRENT;
 	DWORD color_arg1 = D3DTA_TEXTURE;
 	DWORD color_arg2 = D3DTA_DIFFUSE;
+	DWORD result_arg = D3DTA_CURRENT;
 	// D3D8 stage-0 ALPHAOP defaults: SELECTARG1 over TEXTURE/CURRENT.
 	DWORD alpha_op = D3DTOP_SELECTARG1;
 	DWORD alpha_arg0 = D3DTA_CURRENT;
@@ -5241,6 +5242,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 	bool alpha_case = false;
 	bool color_arg0_set = false;
 	bool alpha_arg0_set = false;
+	bool result_arg_set = false;
 	bool stage1_color_arg1_set = false;
 	bool stage1_color_arg2_set = false;
 	DWORD texture_factor = 0xffffffffUL;
@@ -5490,6 +5492,36 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			expected_g = 117;
 			expected_b = 117;
 			break;
+		case 20:
+			case_name = "resultArgTempPreservesCurrent";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			result_arg = D3DTA_TEMP;
+			stage1_color_op = D3DTOP_SELECTARG1;
+			stage1_color_arg1 = D3DTA_CURRENT;
+			diffuse = 0xff00ff00UL;
+			result_arg_set = true;
+			stage1_color_arg1_set = true;
+			expected_r = 0;
+			expected_g = 255;
+			expected_b = 0;
+			break;
+		case 21:
+			case_name = "stage1SelectTemp";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			result_arg = D3DTA_TEMP;
+			stage1_color_op = D3DTOP_SELECTARG1;
+			stage1_color_arg1 = D3DTA_TEMP;
+			diffuse = 0xff00ff00UL;
+			result_arg_set = true;
+			stage1_color_arg1_set = true;
+			expected_r = 255;
+			expected_g = 0;
+			expected_b = 0;
+			break;
 		default:
 			known_case = false;
 			break;
@@ -5499,6 +5531,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		++expected_stage_state_calls;
 	}
 	if (alpha_arg0_set) {
+		++expected_stage_state_calls;
+	}
+	if (result_arg_set) {
 		++expected_stage_state_calls;
 	}
 	if (stage1_color_arg1_set) {
@@ -5644,6 +5679,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		if (alpha_arg0_set) {
 			device->SetTextureStageState(0, D3DTSS_ALPHAARG0, alpha_arg0);
 		}
+		if (result_arg_set) {
+			device->SetTextureStageState(0, D3DTSS_RESULTARG, result_arg);
+		}
 		device->SetTextureStageState(0, D3DTSS_ALPHAARG1, alpha_arg1);
 		device->SetTextureStageState(0, D3DTSS_ALPHAARG2, alpha_arg2);
 		device->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTEXF_POINT);
@@ -5704,6 +5742,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG0] == color_arg0 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == color_arg1 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG2] == color_arg2 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_RESULTARG] == result_arg &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAOP] == alpha_op &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG0] == alpha_arg0 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG1] == alpha_arg1 &&
@@ -5721,6 +5760,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		"\"expectedCenter\":[%u,%u,%u,%u],"
 		"\"alphaCase\":%s,\"textureFactor\":%lu,\"expectedStageStateCalls\":%u,"
 		"\"combiner\":{\"colorOp\":%lu,\"colorArg0\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"resultArg\":%lu,"
 		"\"alphaOp\":%lu,\"alphaArg0\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
 		"\"stage1Combiner\":{\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
@@ -5748,6 +5788,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		static_cast<unsigned long>(color_arg0),
 		static_cast<unsigned long>(color_arg1),
 		static_cast<unsigned long>(color_arg2),
+		static_cast<unsigned long>(result_arg),
 		static_cast<unsigned long>(alpha_op),
 		static_cast<unsigned long>(alpha_arg0),
 		static_cast<unsigned long>(alpha_arg1),
