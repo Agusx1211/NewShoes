@@ -146,6 +146,11 @@ struct GUID
 #define HIWORD(value) static_cast<WORD>((static_cast<DWORD>(value) >> 16) & 0xffffUL)
 #endif
 
+#ifndef MAKELPARAM
+#define MAKELPARAM(low, high) static_cast<LPARAM>((static_cast<DWORD>(static_cast<WORD>(low)) & 0xffffUL) | \
+	((static_cast<DWORD>(static_cast<WORD>(high)) & 0xffffUL) << 16))
+#endif
+
 #ifndef ZeroMemory
 #define ZeroMemory(destination, length) std::memset((destination), 0, (length))
 #endif
@@ -409,7 +414,14 @@ static inline double Win32PortNowMilliseconds()
 #define ERROR_NO_MORE_ITEMS 259
 #define CP_ACP 0
 #define CP_UTF8 65001
+#define VK_LBUTTON 0x01
+#define VK_RBUTTON 0x02
+#define VK_MBUTTON 0x04
 #define VK_RETURN 0x0D
+#define VK_SHIFT 0x10
+#define VK_CONTROL 0x11
+#define VK_MENU 0x12
+#define VK_CAPITAL 0x14
 #define VK_INSERT 0x2D
 #define VK_DELETE 0x2E
 #define VK_LEFT 0x25
@@ -424,6 +436,8 @@ static inline double Win32PortNowMilliseconds()
 #define VK_F10 0x79
 #define VK_F11 0x7A
 #define VK_F12 0x7B
+#define VK_NUMLOCK 0x90
+#define VK_SCROLL 0x91
 #define IDC_ARROW reinterpret_cast<LPCSTR>(32512)
 #define IDC_CROSS reinterpret_cast<LPCSTR>(32515)
 #define IDC_SIZEALL reinterpret_cast<LPCSTR>(32646)
@@ -459,7 +473,23 @@ static inline double Win32PortNowMilliseconds()
 #define HKEY_LOCAL_MACHINE reinterpret_cast<HKEY>(0x80000002UL)
 #define PM_NOREMOVE 0x0000
 #define PM_REMOVE 0x0001
+#define WM_QUIT 0x0012
+#define WM_KEYDOWN 0x0100
+#define WM_KEYUP 0x0101
 #define WM_CHAR 0x0102
+#define WM_SYSKEYDOWN 0x0104
+#define WM_SYSKEYUP 0x0105
+#define WM_MOUSEMOVE 0x0200
+#define WM_LBUTTONDOWN 0x0201
+#define WM_LBUTTONUP 0x0202
+#define WM_LBUTTONDBLCLK 0x0203
+#define WM_RBUTTONDOWN 0x0204
+#define WM_RBUTTONUP 0x0205
+#define WM_RBUTTONDBLCLK 0x0206
+#define WM_MBUTTONDOWN 0x0207
+#define WM_MBUTTONUP 0x0208
+#define WM_MBUTTONDBLCLK 0x0209
+#define WM_MOUSEWHEEL 0x020A
 #define WM_IME_SETCONTEXT 0x0281
 #define WM_IME_NOTIFY 0x0282
 #define WM_IME_CONTROL 0x0283
@@ -808,6 +838,9 @@ inline HCURSOR current_cursor = nullptr;
 inline HWND capture_window = nullptr;
 inline bool key_down[256] = {};
 inline bool key_pressed_since_last_query[256] = {};
+inline MSG message_queue[256] = {};
+inline unsigned int message_queue_count = 0;
+inline bool message_queue_overflowed = false;
 
 static inline bool IsValidKey(int virtual_key)
 {
@@ -833,7 +866,7 @@ static inline void SetKeyState(int virtual_key, bool is_down)
 	key_down[virtual_key] = is_down;
 }
 
-static inline SHORT GetKeyState(int virtual_key)
+static inline SHORT BuildKeyState(int virtual_key, bool consume_pressed_since_last_query)
 {
 	if (!IsValidKey(virtual_key)) {
 		return 0;
@@ -842,9 +875,87 @@ static inline SHORT GetKeyState(int virtual_key)
 	SHORT state = key_down[virtual_key] ? static_cast<SHORT>(0x8000) : 0;
 	if (key_pressed_since_last_query[virtual_key]) {
 		state = static_cast<SHORT>(state | 0x0001);
-		key_pressed_since_last_query[virtual_key] = false;
+		if (consume_pressed_since_last_query) {
+			key_pressed_since_last_query[virtual_key] = false;
+		}
 	}
 	return state;
+}
+
+static inline SHORT GetAsyncKeyState(int virtual_key)
+{
+	return BuildKeyState(virtual_key, true);
+}
+
+static inline SHORT PeekKeyState(int virtual_key)
+{
+	return BuildKeyState(virtual_key, false);
+}
+
+static inline unsigned int MessageQueueCapacity()
+{
+	return static_cast<unsigned int>(sizeof(message_queue) / sizeof(message_queue[0]));
+}
+
+static inline bool MessageMatchesFilter(const MSG &message, HWND window, UINT filter_min, UINT filter_max)
+{
+	if (window != nullptr && message.hwnd != window) {
+		return false;
+	}
+	if (filter_min == 0 && filter_max == 0) {
+		return true;
+	}
+	return message.message >= filter_min && message.message <= filter_max;
+}
+
+static inline void RemoveQueuedMessage(unsigned int logical_index)
+{
+	if (logical_index >= message_queue_count) {
+		return;
+	}
+
+	for (unsigned int index = logical_index; index + 1 < message_queue_count; ++index) {
+		message_queue[index] = message_queue[index + 1];
+	}
+	message_queue[message_queue_count - 1] = {};
+	--message_queue_count;
+}
+
+static inline bool ReadQueuedMessage(MSG *message, HWND window, UINT filter_min, UINT filter_max, bool remove)
+{
+	for (unsigned int index = 0; index < message_queue_count; ++index) {
+		MSG &queued = message_queue[index];
+		if (!MessageMatchesFilter(queued, window, filter_min, filter_max)) {
+			continue;
+		}
+
+		if (message != nullptr) {
+			*message = queued;
+		}
+		if (remove) {
+			RemoveQueuedMessage(index);
+		}
+		return true;
+	}
+	return false;
+}
+
+static inline bool QueueMessage(HWND window, UINT message, WPARAM w_param, LPARAM l_param, DWORD time, const POINT *point)
+{
+	if (message_queue_count >= MessageQueueCapacity()) {
+		message_queue_overflowed = true;
+		return false;
+	}
+
+	MSG &queued = message_queue[message_queue_count];
+	queued.hwnd = window;
+	queued.message = message;
+	queued.wParam = w_param;
+	queued.lParam = l_param;
+	queued.time = time != 0 ? time : static_cast<DWORD>(Win32PortNowMilliseconds());
+	queued.pt = point != nullptr ? *point : cursor_position;
+	++message_queue_count;
+	return true;
 }
 
 static inline void Reset()
@@ -853,6 +964,11 @@ static inline void Reset()
 	cursor_position_available = false;
 	current_cursor = nullptr;
 	capture_window = nullptr;
+	message_queue_count = 0;
+	message_queue_overflowed = false;
+	for (unsigned int index = 0; index < MessageQueueCapacity(); ++index) {
+		message_queue[index] = {};
+	}
 	for (int index = 0; index < 256; ++index) {
 		key_down[index] = false;
 		key_pressed_since_last_query[index] = false;
@@ -905,7 +1021,12 @@ static inline BOOL ClientToScreen(HWND, POINT *)
 
 static inline SHORT GetAsyncKeyState(int virtual_key)
 {
-	return WasmWin32Input::GetKeyState(virtual_key);
+	return WasmWin32Input::GetAsyncKeyState(virtual_key);
+}
+
+static inline SHORT GetKeyState(int virtual_key)
+{
+	return WasmWin32Input::PeekKeyState(virtual_key);
 }
 
 static inline HWND SetCapture(HWND window)
@@ -1189,14 +1310,32 @@ static inline void Sleep(DWORD milliseconds)
 	usleep(static_cast<useconds_t>(milliseconds) * 1000U);
 }
 
-static inline BOOL PeekMessage(MSG *, HWND, UINT, UINT, UINT)
+static inline BOOL PeekMessage(MSG *message, HWND window, UINT filter_min, UINT filter_max, UINT remove_msg)
 {
-	return FALSE;
+	return WasmWin32Input::ReadQueuedMessage(
+		message,
+		window,
+		filter_min,
+		filter_max,
+		(remove_msg & PM_REMOVE) != 0) ? TRUE : FALSE;
 }
 
-static inline BOOL GetMessage(MSG *, HWND, UINT, UINT)
+static inline BOOL GetMessage(MSG *message, HWND window, UINT filter_min, UINT filter_max)
 {
-	return FALSE;
+	if (!WasmWin32Input::ReadQueuedMessage(message, window, filter_min, filter_max, true)) {
+		return FALSE;
+	}
+	return message != nullptr && message->message == WM_QUIT ? FALSE : TRUE;
+}
+
+static inline BOOL PostMessage(HWND window, UINT message, WPARAM w_param, LPARAM l_param)
+{
+	return WasmWin32Input::QueueMessage(window, message, w_param, l_param, 0, nullptr) ? TRUE : FALSE;
+}
+
+static inline void PostQuitMessage(int exit_code)
+{
+	WasmWin32Input::QueueMessage(nullptr, WM_QUIT, static_cast<WPARAM>(exit_code), 0, 0, nullptr);
 }
 
 static inline BOOL TranslateAccelerator(HWND, HACCEL, MSG *)

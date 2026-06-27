@@ -221,6 +221,12 @@ async function loadWasmModule() {
         ["number", "number", "number", "number", "number"],
       ),
       resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
+      postBrowserMessage: module.cwrap(
+        "cnc_port_post_browser_message",
+        "string",
+        ["number", "number", "number", "number", "number"],
+      ),
+      probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
@@ -434,6 +440,19 @@ function virtualKeyFromEvent(event) {
   return -1;
 }
 
+const win32Messages = Object.freeze({
+  keyDown: 0x0100,
+  keyUp: 0x0101,
+  mouseMove: 0x0200,
+  leftButtonDown: 0x0201,
+  leftButtonUp: 0x0202,
+  rightButtonDown: 0x0204,
+  rightButtonUp: 0x0205,
+  middleButtonDown: 0x0207,
+  middleButtonUp: 0x0208,
+  mouseWheel: 0x020a,
+});
+
 function canvasInputPointFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
@@ -443,10 +462,33 @@ function canvasInputPointFromEvent(event) {
   return { x, y };
 }
 
+function win32PointLParam(point) {
+  return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
+}
+
+function mouseButtonMessage(event, isDown) {
+  if (event.button === 0) {
+    return isDown ? win32Messages.leftButtonDown : win32Messages.leftButtonUp;
+  }
+  if (event.button === 1) {
+    return isDown ? win32Messages.middleButtonDown : win32Messages.middleButtonUp;
+  }
+  if (event.button === 2) {
+    return isDown ? win32Messages.rightButtonDown : win32Messages.rightButtonUp;
+  }
+  return -1;
+}
+
+function wheelWParam(event) {
+  const delta = event.deltaY > 0 ? -120 : 120;
+  return (delta & 0xffff) << 16;
+}
+
 async function pushBrowserInputToWasm({
   cursor = null,
   virtualKey = -1,
   keyDown = false,
+  win32Message = null,
 } = {}) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
@@ -454,14 +496,45 @@ async function pushBrowserInputToWasm({
   }
 
   const cursorAvailable = cursor ? 1 : 0;
-  const stateJson = wasmModule.setBrowserInput(
+  let stateJson = wasmModule.setBrowserInput(
     cursor?.x ?? 0,
     cursor?.y ?? 0,
     cursorAvailable,
     virtualKey,
     keyDown ? 1 : 0,
   );
+  if (win32Message) {
+    stateJson = wasmModule.postBrowserMessage(
+      win32Message.message,
+      win32Message.wParam ?? 0,
+      win32Message.lParam ?? 0,
+      win32Message.point?.x ?? cursor?.x ?? 0,
+      win32Message.point?.y ?? cursor?.y ?? 0,
+    );
+  }
   applyModuleState(parseModuleState(stateJson));
+  harnessState.wasm = "loaded";
+  return snapshotState();
+}
+
+async function postBrowserMessageToWasm({
+  message,
+  wParam = 0,
+  lParam = 0,
+  point = null,
+} = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  applyModuleState(parseModuleState(wasmModule.postBrowserMessage(
+    Number(message),
+    Number(wParam),
+    Number(lParam),
+    point?.x ?? 0,
+    point?.y ?? 0,
+  )));
   harnessState.wasm = "loaded";
   return snapshotState();
 }
@@ -474,6 +547,17 @@ async function resetBrowserInput() {
   applyModuleState(parseModuleState(wasmModule.resetBrowserInput()));
   harnessState.wasm = "loaded";
   return snapshotState();
+}
+
+async function probeBrowserMessageQueue() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+  const probe = parseModuleState(wasmModule.probeBrowserMessageQueue());
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
 }
 
 async function probeBrowserInput() {
@@ -662,6 +746,27 @@ async function rpc(command, payload = {}) {
         }
         return { ok: true, command, state };
       }
+    case "postMessage":
+      {
+        const state = await postBrowserMessageToWasm({
+          message: Number(payload.message),
+          wParam: Number(payload.wParam ?? 0),
+          lParam: Number(payload.lParam ?? 0),
+          point: payload.point ?? null,
+        });
+        if (!state) {
+          return { ok: false, command, error: "Wasm module unavailable; browser message cannot be posted" };
+        }
+        return { ok: true, command, state };
+      }
+    case "messageQueueProbe":
+      {
+        const probe = await probeBrowserMessageQueue();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; browser message queue cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
     case "inputProbe":
       {
         const probe = await probeBrowserInput();
@@ -701,11 +806,58 @@ if (window.ResizeObserver) {
 
 canvas.tabIndex = 0;
 canvas.addEventListener("pointermove", (event) => {
-  void pushBrowserInputToWasm({ cursor: canvasInputPointFromEvent(event) });
+  const point = canvasInputPointFromEvent(event);
+  void pushBrowserInputToWasm({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseMove,
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
 });
 canvas.addEventListener("pointerdown", (event) => {
   canvas.focus();
-  void pushBrowserInputToWasm({ cursor: canvasInputPointFromEvent(event) });
+  const point = canvasInputPointFromEvent(event);
+  const message = mouseButtonMessage(event, true);
+  event.preventDefault();
+  void pushBrowserInputToWasm({
+    cursor: point,
+    win32Message: message >= 0 ? {
+      message,
+      lParam: win32PointLParam(point),
+      point,
+    } : null,
+  });
+});
+canvas.addEventListener("pointerup", (event) => {
+  const point = canvasInputPointFromEvent(event);
+  const message = mouseButtonMessage(event, false);
+  event.preventDefault();
+  void pushBrowserInputToWasm({
+    cursor: point,
+    win32Message: message >= 0 ? {
+      message,
+      lParam: win32PointLParam(point),
+      point,
+    } : null,
+  });
+});
+canvas.addEventListener("wheel", (event) => {
+  const point = canvasInputPointFromEvent(event);
+  event.preventDefault();
+  void pushBrowserInputToWasm({
+    cursor: point,
+    win32Message: {
+      message: win32Messages.mouseWheel,
+      wParam: wheelWParam(event),
+      lParam: win32PointLParam(point),
+      point,
+    },
+  });
+}, { passive: false });
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
 });
 window.addEventListener("keydown", (event) => {
   const virtualKey = virtualKeyFromEvent(event);
@@ -713,7 +865,14 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   event.preventDefault();
-  void pushBrowserInputToWasm({ virtualKey, keyDown: true });
+  void pushBrowserInputToWasm({
+    virtualKey,
+    keyDown: true,
+    win32Message: {
+      message: win32Messages.keyDown,
+      wParam: virtualKey,
+    },
+  });
 });
 window.addEventListener("keyup", (event) => {
   const virtualKey = virtualKeyFromEvent(event);
@@ -721,7 +880,14 @@ window.addEventListener("keyup", (event) => {
     return;
   }
   event.preventDefault();
-  void pushBrowserInputToWasm({ virtualKey, keyDown: false });
+  void pushBrowserInputToWasm({
+    virtualKey,
+    keyDown: false,
+    win32Message: {
+      message: win32Messages.keyUp,
+      wParam: virtualKey,
+    },
+  });
 });
 window.addEventListener("blur", () => {
   void resetBrowserInput();

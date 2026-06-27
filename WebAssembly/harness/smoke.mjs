@@ -86,6 +86,8 @@ function assertBrowserInputInitial(state, label) {
   if (input.cursor?.available !== false
       || input.cursor.x !== 0
       || input.cursor.y !== 0
+      || input.messageQueue?.count !== 0
+      || input.messageQueue?.overflowed !== false
       || input.keys?.f6?.down !== false
       || input.keys?.f6?.pressedSinceLastQuery !== false) {
     throw new Error(`${label} browser input initial state mismatch: ${JSON.stringify(input)}`);
@@ -384,7 +386,10 @@ try {
     await page.mouse.move(canvasBox.x + 321, canvasBox.y + 123);
     const inputAfterPointer = await waitForBrowserInput(
       page,
-      (input) => input?.cursor?.available && input.cursor.x === 321 && input.cursor.y === 123,
+      (input) => input?.cursor?.available
+        && input.cursor.x === 321
+        && input.cursor.y === 123
+        && input.messageQueue?.count >= 1,
       "pointer move",
     );
     if (inputAfterPointer.keys?.f6?.down) {
@@ -394,7 +399,9 @@ try {
     await page.keyboard.down("F6");
     await waitForBrowserInput(
       page,
-      (input) => input?.keys?.f6?.down === true && input.keys.f6.pressedSinceLastQuery === true,
+      (input) => input?.keys?.f6?.down === true
+        && input.keys.f6.pressedSinceLastQuery === true
+        && input.messageQueue?.count >= 2,
       "F6 keydown",
     );
     const inputProbe = await page.evaluate(() => window.CnCPort.rpc("inputProbe"));
@@ -413,6 +420,58 @@ try {
       (input) => input?.keys?.f6?.down === false && input.keys.f6.pressedSinceLastQuery === false,
       "F6 keyup",
     );
+
+    const resetInputResult = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetInputResult.ok
+        || resetInputResult.state.browserInput?.messageQueue?.count !== 0
+        || resetInputResult.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Browser input reset did not clear Win32 message queue: ${JSON.stringify(resetInputResult)}`);
+    }
+
+    const wmKeyDown = 0x0100;
+    const wmMouseMove = 0x0200;
+    const vkF6 = 0x75;
+    const mouseMoveLParam = (34 << 16) | 12;
+    await page.evaluate(({ wmKeyDown, vkF6 }) => window.CnCPort.rpc("postMessage", {
+      message: wmKeyDown,
+      wParam: vkF6,
+      lParam: 0,
+      point: { x: 9, y: 10 },
+    }), { wmKeyDown, vkF6 });
+    await page.evaluate(({ wmMouseMove, mouseMoveLParam }) => window.CnCPort.rpc("postMessage", {
+      message: wmMouseMove,
+      wParam: 0,
+      lParam: mouseMoveLParam,
+      point: { x: 12, y: 34 },
+    }), { wmMouseMove, mouseMoveLParam });
+
+    const firstQueueProbe = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
+    if (!firstQueueProbe.ok
+        || firstQueueProbe.probe?.source !== "browser_win32_message_queue"
+        || firstQueueProbe.probe.beforeCount !== 2
+        || firstQueueProbe.probe.afterPeekCount !== 2
+        || firstQueueProbe.probe.afterRemoveCount !== 1
+        || firstQueueProbe.probe.peek?.message !== wmKeyDown
+        || firstQueueProbe.probe.peek?.wParam !== vkF6
+        || firstQueueProbe.probe.peek?.pt?.x !== 9
+        || firstQueueProbe.probe.peek?.pt?.y !== 10
+        || firstQueueProbe.probe.removed?.message !== wmKeyDown
+        || firstQueueProbe.probe.after?.message !== wmMouseMove) {
+      throw new Error(`Win32 message queue first probe mismatch: ${JSON.stringify(firstQueueProbe)}`);
+    }
+
+    const secondQueueProbe = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
+    if (!secondQueueProbe.ok
+        || secondQueueProbe.probe.beforeCount !== 1
+        || secondQueueProbe.probe.afterPeekCount !== 1
+        || secondQueueProbe.probe.afterRemoveCount !== 0
+        || secondQueueProbe.probe.removed?.message !== wmMouseMove
+        || secondQueueProbe.probe.removed?.lParam !== mouseMoveLParam
+        || secondQueueProbe.probe.removed?.pt?.x !== 12
+        || secondQueueProbe.probe.removed?.pt?.y !== 34
+        || secondQueueProbe.probe.after !== null) {
+      throw new Error(`Win32 message queue second probe mismatch: ${JSON.stringify(secondQueueProbe)}`);
+    }
   }
 
   const initialFrame = bootResult.state.frame;

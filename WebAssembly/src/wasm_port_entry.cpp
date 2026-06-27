@@ -758,11 +758,12 @@ std::string json_escape(const std::string &value)
 
 std::string build_browser_input_json()
 {
-	char buffer[1800];
+	char buffer[2200];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_win32_input_shim\","
 		"\"cursor\":{\"available\":%s,\"x\":%ld,\"y\":%ld},"
 		"\"cursorSet\":%s,\"capture\":%s,"
+		"\"messageQueue\":{\"count\":%u,\"overflowed\":%s},"
 		"\"keys\":{\"f5\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
 		"\"f6\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
 		"\"f7\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
@@ -774,6 +775,8 @@ std::string build_browser_input_json()
 		WasmWin32Input::cursor_position.y,
 		WasmWin32Input::current_cursor != nullptr ? "true" : "false",
 		WasmWin32Input::capture_window != nullptr ? "true" : "false",
+		WasmWin32Input::message_queue_count,
+		WasmWin32Input::message_queue_overflowed ? "true" : "false",
 		WasmWin32Input::key_down[VK_F5] ? "true" : "false",
 		WasmWin32Input::key_pressed_since_last_query[VK_F5] ? "true" : "false",
 		WasmWin32Input::key_down[VK_F6] ? "true" : "false",
@@ -786,6 +789,21 @@ std::string build_browser_input_json()
 		WasmWin32Input::key_pressed_since_last_query[VK_INSERT] ? "true" : "false",
 		WasmWin32Input::key_down[VK_DELETE] ? "true" : "false",
 		WasmWin32Input::key_pressed_since_last_query[VK_DELETE] ? "true" : "false");
+	return buffer;
+}
+
+std::string build_win32_message_json(const MSG &message)
+{
+	char buffer[500];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"message\":%u,\"wParam\":%u,\"lParam\":%d,"
+		"\"time\":%lu,\"pt\":{\"x\":%ld,\"y\":%ld}}",
+		message.message,
+		static_cast<unsigned int>(message.wParam),
+		static_cast<int>(message.lParam),
+		static_cast<unsigned long>(message.time),
+		message.pt.x,
+		message.pt.y);
 	return buffer;
 }
 
@@ -3512,6 +3530,56 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_browser_input()
 {
 	WasmWin32Input::Reset();
 	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
+	int message,
+	int w_param,
+	int l_param,
+	int point_x,
+	int point_y)
+{
+	POINT point = {point_x, point_y};
+	WasmWin32Input::QueueMessage(
+		nullptr,
+		static_cast<UINT>(message),
+		static_cast<WPARAM>(static_cast<unsigned int>(w_param)),
+		static_cast<LPARAM>(l_param),
+		0,
+		&point);
+	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_message_queue()
+{
+	const unsigned int before_count = WasmWin32Input::message_queue_count;
+	MSG peek_message = {};
+	MSG removed_message = {};
+	MSG after_message = {};
+	const BOOL peek_ok = PeekMessage(&peek_message, nullptr, 0, 0, PM_NOREMOVE);
+	const unsigned int after_peek_count = WasmWin32Input::message_queue_count;
+	const BOOL remove_ok = PeekMessage(&removed_message, nullptr, 0, 0, PM_REMOVE);
+	const unsigned int after_remove_count = WasmWin32Input::message_queue_count;
+	const BOOL after_ok = PeekMessage(&after_message, nullptr, 0, 0, PM_NOREMOVE);
+	const std::string peek_json = peek_ok ? build_win32_message_json(peek_message) : "null";
+	const std::string removed_json = remove_ok ? build_win32_message_json(removed_message) : "null";
+	const std::string after_json = after_ok ? build_win32_message_json(after_message) : "null";
+
+	char buffer[1400];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_win32_message_queue\","
+		"\"beforeCount\":%u,\"afterPeekCount\":%u,\"afterRemoveCount\":%u,"
+		"\"peek\":%s,\"removed\":%s,\"after\":%s,"
+		"\"overflowed\":%s}",
+		before_count,
+		after_peek_count,
+		after_remove_count,
+		peek_json.c_str(),
+		removed_json.c_str(),
+		after_json.c_str(),
+		WasmWin32Input::message_queue_overflowed ? "true" : "false");
+	g_input_probe_json = buffer;
+	return g_input_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_input()

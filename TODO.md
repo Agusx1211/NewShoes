@@ -357,9 +357,15 @@ shares structure and follows behind.
       (`mono.cpp`, `_mono.cpp`, `msgloop.cpp`) compile under wasm and
       smoke-test mono enable/disable/no-op output plus modeless-dialog,
       accelerator, and empty message-pump bookkeeping.
-- [ ] Replace the current empty Win32 message queue compatibility shim with the
-      browser DOM/input event bridge before compiling original WWLib
-      `keyboard.cpp` or the Win32 engine message loop against it.
+- [x] Replace the current empty Win32 message queue compatibility shim with a
+      browser-fed FIFO for `PeekMessage`, `GetMessage`, `PostMessage`, and
+      `PostQuitMessage`, with harness coverage proving DOM pointer/key events
+      enqueue Win32 messages and `PM_NOREMOVE`/`PM_REMOVE` preserve FIFO
+      semantics.
+- [ ] Finish original WWLib `keyboard.cpp` / Win32 engine message-loop
+      enablement on top of the browser-fed queue, including `MapVirtualKey` /
+      `ToAscii` character translation, double-click policy, and dispatch into
+      the original WndProc or keyboard intercept path.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in
       browser builds or route through the harness/browser console before
       relying on it for runtime diagnostics.
