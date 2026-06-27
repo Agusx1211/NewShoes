@@ -372,6 +372,10 @@ shares structure and follows behind.
 - [x] Compile original `Win32Mouse.cpp` into a focused wasm target and
       smoke-test its original Win32 message buffer translation for button,
       double-click, move, and wheel events.
+- [x] Compile original `Win32GameEngine.cpp` far enough for
+      `Win32GameEngine::serviceWindowsOS()` to run in wasm, and smoke-test
+      that it drains the browser-backed Win32 queue, dispatches through the
+      registered WndProc, and exposes `MSG::time` through `TheMessageTime`.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including connecting the real game `WndProc`, `WM_CREATE` /
       `WM_DESTROY` lifecycle dispatch, `WM_CHAR` / IME text paths, browser

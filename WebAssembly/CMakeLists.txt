@@ -35,6 +35,7 @@ set(GAMEENGINE_GAMENETWORK_DIR "${GAMEENGINE_DIR}/Source/GameNetwork")
 set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
+set(WIN32_GAMEENGINE_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_gameengine")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
 set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
@@ -2982,6 +2983,37 @@ target_link_libraries(zh_win32_mouse PUBLIC
   zh_gameclient_utility
 )
 
+add_library(zh_win32_gameengine_message_pump STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32GameEngine.cpp"
+)
+
+target_include_directories(zh_win32_gameengine_message_pump PUBLIC
+  "${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${MAIN_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_win32_gameengine_message_pump PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_gamenetwork_core STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/Connection.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/ConnectionManager.cpp"
@@ -4128,6 +4160,36 @@ target_compile_options(win32-mouse-smoke PRIVATE
 )
 
 target_link_options(win32-mouse-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(win32-gameengine-message-pump-smoke
+  tests/win32_gameengine_message_pump_smoke.cpp
+)
+
+set_target_properties(win32-gameengine-message-pump-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-gameengine-message-pump-smoke PRIVATE
+  zh_win32_gameengine_message_pump
+)
+
+target_compile_options(win32-gameengine-message-pump-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-gameengine-message-pump-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

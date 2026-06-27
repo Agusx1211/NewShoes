@@ -877,6 +877,15 @@ static inline BOOL ShowWindow(HWND, int)
 	return TRUE;
 }
 
+#ifndef SEM_FAILCRITICALERRORS
+#define SEM_FAILCRITICALERRORS 0x0001
+#endif
+
+static inline UINT SetErrorMode(UINT)
+{
+	return 0;
+}
+
 static inline BOOL SetWindowText(HWND, const char *)
 {
 	return TRUE;
