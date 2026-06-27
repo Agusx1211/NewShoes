@@ -134,6 +134,14 @@ function pixelHasColor(pixel, threshold = 8) {
   return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
+function pixelLooksRed(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] >= 180
+    && pixel[1] <= 80
+    && pixel[2] <= 80
+    && pixel[3] >= 200;
+}
+
 function assertWin32Timing(state, label, previous = null) {
   const timing = state.win32Timing;
   if (!timing?.ok || timing.source !== "browser_win32_shim") {
@@ -931,6 +939,32 @@ try {
       || Object.keys(d3d8TextureBindResult.browserProbe?.boundTextures ?? {}).length !== 0
       || d3d8TextureBindResult.browserProbe?.live !== 0) {
     throw new Error(`D3D8 texture bind probe failed: ${JSON.stringify(d3d8TextureBindResult)}`);
+  }
+
+  const d3d8TexturedQuadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TexturedQuad"));
+  if (!d3d8TexturedQuadResult.ok
+      || d3d8TexturedQuadResult.probe?.source !== "browser_d3d8_textured_quad_probe"
+      || d3d8TexturedQuadResult.probe?.calls?.createTexture !== 1
+      || d3d8TexturedQuadResult.probe?.calls?.browserTextureUpdate !== 1
+      || d3d8TexturedQuadResult.probe?.calls?.browserTextureBind !== 1
+      || d3d8TexturedQuadResult.probe?.calls?.drawIndexed !== 1
+      || d3d8TexturedQuadResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || d3d8TexturedQuadResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.id !== d3d8TexturedQuadResult.probe?.texture?.id
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.ready !== true
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampled !== true
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordOffset !== 28
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.format !== 21
+      || d3d8TexturedQuadResult.browserProbe?.boundTextures?.["0"] !== d3d8TexturedQuadResult.probe?.texture?.id
+      || !pixelLooksRed(d3d8TexturedQuadResult.browserProbe?.centerPixel)
+      || d3d8TexturedQuadResult.textureDelta?.creates !== 1
+      || d3d8TexturedQuadResult.textureDelta?.updates !== 1
+      || d3d8TexturedQuadResult.textureDelta?.binds !== 1
+      || d3d8TexturedQuadResult.textureDelta?.releaseUnbinds !== 1
+      || d3d8TexturedQuadResult.textureDelta?.releases !== 1
+      || d3d8TexturedQuadResult.textureProbe?.live !== 0
+      || Object.keys(d3d8TexturedQuadResult.textureProbe?.boundTextures ?? {}).length !== 0) {
+    throw new Error(`D3D8 textured quad probe failed: ${JSON.stringify(d3d8TexturedQuadResult)}`);
   }
 
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));

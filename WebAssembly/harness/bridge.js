@@ -65,6 +65,11 @@ const D3DCOLORWRITEENABLE_RED = 1;
 const D3DCOLORWRITEENABLE_GREEN = 2;
 const D3DCOLORWRITEENABLE_BLUE = 4;
 const D3DCOLORWRITEENABLE_ALPHA = 8;
+const D3D8_DIFFUSE_OFFSET = 24;
+const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
+// Matches WW3D2/dx8fvf.h VertexFormatXYZNDUV1/2: XYZ, normal, diffuse, UV0.
+const D3D8_XYZNDUV_TEXCOORD0_OFFSET = 28;
+const D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE = D3D8_XYZNDUV_TEXCOORD0_OFFSET + 8;
 const d3d8BufferStats = {
   creates: 0,
   updates: 0,
@@ -1001,12 +1006,14 @@ function ensureD3D8DrawProgram() {
   const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
     in vec3 aPosition;
     in vec4 aDiffuseBgra;
+    in vec2 aTexCoord0;
     uniform float uScale;
     uniform bool uUseTransforms;
     uniform mat4 uWorld;
     uniform mat4 uView;
     uniform mat4 uProjection;
     out vec4 vColor;
+    out vec2 vTexCoord0;
     void main() {
       if (uUseTransforms) {
         vec4 d3dClip = uProjection * uView * uWorld * vec4(aPosition, 1.0);
@@ -1015,11 +1022,15 @@ function ensureD3D8DrawProgram() {
         gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
       }
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
+      vTexCoord0 = aTexCoord0;
     }
   `);
   const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
     precision mediump float;
     in vec4 vColor;
+    in vec2 vTexCoord0;
+    uniform bool uUseTexture0;
+    uniform sampler2D uTexture0;
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
@@ -1049,10 +1060,14 @@ function ensureD3D8DrawProgram() {
       return true;
     }
     void main() {
-      if (uAlphaTestEnabled && !d3dAlphaCompare(vColor.a, uAlphaRef)) {
+      vec4 color = vColor;
+      if (uUseTexture0) {
+        color *= texture(uTexture0, vTexCoord0);
+      }
+      if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
       }
-      fragColor = vColor;
+      fragColor = color;
     }
   `);
   const program = gl.createProgram();
@@ -1071,11 +1086,14 @@ function ensureD3D8DrawProgram() {
     program,
     position: gl.getAttribLocation(program, "aPosition"),
     diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
+    texCoord0: gl.getAttribLocation(program, "aTexCoord0"),
     scale: gl.getUniformLocation(program, "uScale"),
     useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
     world: gl.getUniformLocation(program, "uWorld"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
+    useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
+    texture0: gl.getUniformLocation(program, "uTexture0"),
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
@@ -1107,6 +1125,14 @@ function d3dPrimitiveToGl(primitiveType) {
 
 function pixelHasColor(pixel, threshold = 8) {
   return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
+}
+
+function pixelLooksRed(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] >= 180
+    && pixel[1] <= 80
+    && pixel[2] <= 80
+    && pixel[3] >= 200;
 }
 
 function normalizeD3DMatrix(matrix) {
@@ -1297,6 +1323,12 @@ function paintD3D8DrawIndexed(payload = {}) {
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
   const renderState = normalizeD3D8RenderState(payload.renderState);
+  const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
+  const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
+  const texture0Ready = Boolean(texture0Resource?.initializedLevels?.has("0"));
+  const canSampleTexture0 = Boolean(
+    texture0Ready && vertexStride >= D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE
+  );
   let appliedRenderState = null;
   let drawOk = false;
   syncCanvasSize();
@@ -1310,9 +1342,21 @@ function paintD3D8DrawIndexed(payload = {}) {
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
-    if (bridgeProgram.diffuse >= 0 && vertexStride >= 28) {
+    if (bridgeProgram.diffuse >= 0 && vertexStride >= D3D8_DIFFUSE_MIN_STRIDE) {
       gl.enableVertexAttribArray(bridgeProgram.diffuse);
-      gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true, vertexStride, vertexByteOffset + 24);
+      gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true,
+        vertexStride, vertexByteOffset + D3D8_DIFFUSE_OFFSET);
+    } else if (bridgeProgram.diffuse >= 0) {
+      gl.disableVertexAttribArray(bridgeProgram.diffuse);
+      gl.vertexAttrib4f(bridgeProgram.diffuse, 1, 1, 1, 1);
+    }
+    if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0) {
+      gl.enableVertexAttribArray(bridgeProgram.texCoord0);
+      gl.vertexAttribPointer(bridgeProgram.texCoord0, 2, gl.FLOAT, false,
+        vertexStride, vertexByteOffset + D3D8_XYZNDUV_TEXCOORD0_OFFSET);
+    } else if (bridgeProgram.texCoord0 >= 0) {
+      gl.disableVertexAttribArray(bridgeProgram.texCoord0);
+      gl.vertexAttrib2f(bridgeProgram.texCoord0, 0, 0);
     }
     gl.uniform1f(bridgeProgram.scale, 1.0);
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
@@ -1323,6 +1367,18 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniformMatrix4fv(bridgeProgram.world, false, world);
       gl.uniformMatrix4fv(bridgeProgram.view, false, view);
       gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+    }
+    if (bridgeProgram.useTexture0) {
+      gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
+    }
+    if (bridgeProgram.texture0) {
+      gl.uniform1i(bridgeProgram.texture0, 0);
+    }
+    if (canSampleTexture0) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
+      gl.activeTexture(previousActiveTexture);
     }
     if (bridgeProgram.alphaTestEnabled) {
       gl.uniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
@@ -1361,6 +1417,16 @@ function paintD3D8DrawIndexed(payload = {}) {
     renderState,
     appliedRenderState,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
+    texture0: {
+      id: texture0Id,
+      ready: texture0Ready,
+      sampled: canSampleTexture0,
+      texCoordOffset: canSampleTexture0 ? D3D8_XYZNDUV_TEXCOORD0_OFFSET : null,
+      width: texture0Resource?.width ?? 0,
+      height: texture0Resource?.height ?? 0,
+      format: texture0Resource?.format ?? 0,
+      uploads: texture0Resource?.uploads ?? 0,
+    },
     centerPixel,
   };
   harnessState.graphics = {
@@ -1502,6 +1568,7 @@ async function loadWasmModule() {
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
+      probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -2451,6 +2518,50 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           browserDelta: delta,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TexturedQuad":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 textured quad probe cannot run" };
+        }
+        const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8TexturedQuad());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const textureDelta = {
+          creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+          updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+          binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+          releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.texture0?.id === probe.texture?.id
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.texCoordOffset === D3D8_XYZNDUV_TEXCOORD0_OFFSET
+          && browserProbe?.texture0?.format === D3DFMT_A8R8G8B8
+          && browserProbe?.boundTextures?.["0"] === probe.texture?.id
+          && pixelLooksRed(browserProbe?.centerPixel)
+          && textureDelta.creates === 1
+          && textureDelta.updates === 1
+          && textureDelta.binds === 1
+          && textureDelta.releaseUnbinds === 1
+          && textureDelta.releases === 1
+          && textureProbe?.live === 0
+          && Object.keys(textureProbe?.boundTextures ?? {}).length === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureProbe,
+          textureDelta,
           state: snapshotState(),
         };
       }
