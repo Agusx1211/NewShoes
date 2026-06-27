@@ -12,6 +12,11 @@ disc1_iso="${out_dir}/Disc1.iso"
 disc2_iso="${out_dir}/Disc2.iso"
 data_cab="${out_dir}/Data1.cab"
 language_cab="${out_dir}/Language.cab"
+base_work_dir="${out_dir}/base-generals"
+base_disc1_iso="${base_work_dir}/Disc1.iso"
+base_disc2_iso="${base_work_dir}/Disc2.iso"
+base_data_cab="${base_work_dir}/Data1.cab"
+base_language_cab="${base_work_dir}/Language.cab"
 
 data_archives=(
   AudioZH.big
@@ -40,6 +45,16 @@ top_level_archives=(
   GensecZH.big
 )
 
+base_data_archives=(
+  INI.big
+)
+
+base_language_archives=(
+  English.big
+)
+
+extracted_optional_archives=()
+
 if ! command -v 7z >/dev/null 2>&1; then
   echo "7z is required to extract the runtime archives." >&2
   exit 1
@@ -59,6 +74,37 @@ ensure_iso() {
   fi
 }
 
+find_optional_base_disc() {
+  local disc_number="$1"
+  local override_path="$2"
+
+  if [[ -n "${override_path}" ]]; then
+    if [[ ! -f "${override_path}" ]]; then
+      echo "Configured base Generals disc ${disc_number} image not found: ${override_path}" >&2
+      exit 1
+    fi
+    printf '%s\n' "${override_path}"
+    return
+  fi
+
+  local -a candidates=()
+  if [[ -d "${repo_root}/assets" ]]; then
+    while IFS= read -r -d '' candidate; do
+      candidates+=("${candidate}")
+    done < <(find "${repo_root}/assets" -maxdepth 1 -type f \
+      -iname "*Generals*Disc ${disc_number}*.bin" \
+      ! -iname "*Zero Hour*" \
+      -print0 | sort -z)
+  fi
+
+  if (( ${#candidates[@]} > 0 )); then
+    if (( ${#candidates[@]} > 1 )); then
+      echo "Multiple base Generals disc ${disc_number} candidates found; using ${candidates[0]}" >&2
+    fi
+    printf '%s\n' "${candidates[0]}"
+  fi
+}
+
 require_big() {
   local archive_path="$1"
 
@@ -70,6 +116,74 @@ require_big() {
   if [[ "$(head -c 4 "${archive_path}")" != "BIGF" ]]; then
     echo "Archive does not have BIGF header: ${archive_path}" >&2
     exit 1
+  fi
+}
+
+record_optional_archive_if_present() {
+  local archive="$1"
+  local archive_path="${out_dir}/${archive}"
+
+  if [[ ! -e "${archive_path}" ]]; then
+    return 1
+  fi
+
+  require_big "${archive_path}"
+  local existing_archive
+  for existing_archive in "${extracted_optional_archives[@]}"; do
+    if [[ "${existing_archive}" == "${archive}" ]]; then
+      return 0
+    fi
+  done
+  extracted_optional_archives+=("${archive}")
+  return 0
+}
+
+extract_optional_base_startup_archives() {
+  local base_disc1_image
+  local base_disc2_image
+
+  base_disc1_image="$(find_optional_base_disc 1 "${CNC_GENERALS_DISC1_IMAGE:-}")"
+  base_disc2_image="$(find_optional_base_disc 2 "${CNC_GENERALS_DISC2_IMAGE:-}")"
+
+  if [[ -z "${base_disc1_image}" && -z "${base_disc2_image}" ]]; then
+    local found_existing=false
+    local archive
+    for archive in "${base_data_archives[@]}" "${base_language_archives[@]}"; do
+      if record_optional_archive_if_present "${archive}"; then
+        found_existing=true
+      fi
+    done
+
+    if [[ "${found_existing}" == true ]]; then
+      echo "Optional base Generals disc images not found; keeping existing INI.big/English.big artifacts." >&2
+    else
+      echo "Optional base Generals disc images not found; skipping INI.big/English.big extraction." >&2
+    fi
+    return
+  fi
+
+  mkdir -p "${base_work_dir}"
+
+  if [[ -n "${base_disc1_image}" ]]; then
+    ensure_iso "${base_disc1_image}" "${base_disc1_iso}"
+    7z e -y "-o${base_work_dir}" "${base_disc1_iso}" Data1.cab >/dev/null
+    7z e -y "-o${out_dir}" "${base_data_cab}" "${base_data_archives[@]}" >/dev/null
+    for archive in "${base_data_archives[@]}"; do
+      record_optional_archive_if_present "${archive}"
+    done
+  elif ! record_optional_archive_if_present "INI.big"; then
+    echo "Optional base Generals disc 1 image not found; INI.big was not extracted." >&2
+  fi
+
+  if [[ -n "${base_disc2_image}" ]]; then
+    ensure_iso "${base_disc2_image}" "${base_disc2_iso}"
+    7z e -y "-o${base_work_dir}" "${base_disc2_iso}" Language.cab >/dev/null
+    7z e -y "-o${out_dir}" "${base_language_cab}" "${base_language_archives[@]}" >/dev/null
+    for archive in "${base_language_archives[@]}"; do
+      record_optional_archive_if_present "${archive}"
+    done
+  elif ! record_optional_archive_if_present "English.big"; then
+    echo "Optional base Generals disc 2 image not found; English.big was not extracted." >&2
   fi
 }
 
@@ -86,4 +200,10 @@ for archive in "${data_archives[@]}" "${language_archives[@]}" "${top_level_arch
   require_big "${out_dir}/${archive}"
 done
 
-printf '%s\n' "${data_archives[@]}" "${language_archives[@]}" "${top_level_archives[@]}" | sort -u
+extract_optional_base_startup_archives
+
+printf '%s\n' \
+  "${data_archives[@]}" \
+  "${language_archives[@]}" \
+  "${top_level_archives[@]}" \
+  "${extracted_optional_archives[@]}" | sort -u

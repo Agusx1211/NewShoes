@@ -9,7 +9,8 @@ inputs owned by the user who runs the port.
 
 ## Local Layout
 
-- `../assets/` holds the user's original Zero Hour disc images. This path is
+- `../assets/` holds the user's original Zero Hour disc images, and may also
+  hold optional base Command & Conquer: Generals disc images. This path is
   ignored by git.
 - `artifacts/real-assets/` holds extracted local test archives such as
   `INIZH.big`. This path is ignored by git.
@@ -56,10 +57,19 @@ npm run extract:runtime-archives
 
 The script extracts these archives into ignored `artifacts/real-assets/` and
 checks that every output has a nonempty `BIGF` archive header.
+If base Generals disc images are present, the same script also extracts
+`INI.big` and `English.big`. It auto-detects base `.bin` images in `../assets`
+when their names contain `Generals` and `Disc 1`/`Disc 2` but not `Zero Hour`;
+set `CNC_GENERALS_DISC1_IMAGE` and `CNC_GENERALS_DISC2_IMAGE` to force explicit
+paths.
 After extraction, `npm run test:runtime-archives-browser` verifies the browser
 fetch/MEMFS delivery path by loading the full archive set through the main
 `cnc-port` Playwright harness and reading each archive plus the aggregate
-archive tree with the original `Win32BIGFileSystem`. It also checks the C++
+archive tree with the original `Win32BIGFileSystem`. Optional base archives are
+mounted under `ZZBase_*.big` names so the aggregate `*.big` load keeps Zero Hour
+archive entries ahead of base fallback entries, matching the original expansion
+install behavior where the ZH install path is loaded before the base Generals
+install path. It also checks the C++
 bootstrap `archiveMount` state both before and after `boot`, which is the
 preload ordering the later original startup path will consume. The post-boot
 state includes `archiveMount.bootProbe`, proving the bootstrap used the
@@ -105,6 +115,13 @@ tracked separately from this bootstrap preflight.
 | `EnglishZH.big` | `Language.cab` | English text/localization data |
 | `GensecZH.big` | Disc 1 / `Data1.cab` | Zero Hour security/archive data |
 | `Gensec.big` | Disc 2 | Base security/archive data |
+
+Optional base startup archives:
+
+| Archive | Source | Role |
+|---|---|---|
+| `INI.big` | Base Generals `Data1.cab` | Default/startup INI files still referenced by original `GameEngine.cpp`, including `Data\INI\Default\*.ini`, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` |
+| `English.big` | Base Generals `Language.cab` | Base English localization fallback data |
 
 This is the current runtime archive set from the installer media, not yet the
 minimum boot set. The exact boot-minimum list must be proven after the original

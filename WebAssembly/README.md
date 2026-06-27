@@ -19,6 +19,8 @@ Asset tooling for obtaining real game data to test the port against:
   `../assets` (`npm run extract:real-big`). Needs `7z`.
 - `tools/extract_zh_runtime_archives.sh` — extract the current runtime BIG
   inventory from the local disc images (`npm run extract:runtime-archives`).
+  If base Command & Conquer: Generals disc images are also present, it also
+  extracts `INI.big` and `English.big` for original startup fallback data.
 - `harness/` — a minimal browser harness with a WebGL2-backed black canvas and
   JS RPC stub for boot/frame/log/state/screenshot commands. This is port
   infrastructure only; it does not implement or simulate game behavior.
@@ -36,6 +38,11 @@ npm run verify:assets
 This requires the user-supplied Zero Hour disc images in `../assets` and `7z`.
 Set `VERIFY_ASSETS_FORCE_CONVERT=1` to force both `.bin` images through
 `mode1_2352_to_iso.mjs` instead of accepting up-to-date ISO outputs.
+Base Generals disc images are not required for this sample verification.
+`npm run extract:runtime-archives` auto-detects base `.bin` images in
+`../assets` when their names contain `Generals` and `Disc 1`/`Disc 2` but not
+`Zero Hour`; set `CNC_GENERALS_DISC1_IMAGE=/path/to/disc1.bin` and
+`CNC_GENERALS_DISC2_IMAGE=/path/to/disc2.bin` to use explicit paths.
 
 Run the opt-in real BIG archive smoke:
 
@@ -55,6 +62,10 @@ reader. The runtime-archives variant extracts the inventoried local BIG set,
 then boots the main `cnc-port` harness, fetches all runtime archives into one
 MEMFS directory with `window.CnCPort.rpc("mountArchives")`, and verifies every
 archive plus the aggregate `*.big` archive tree through the original BIG reader.
+If optional base `INI.big`/`English.big` archives exist in
+`artifacts/real-assets/`, the smoke includes them too, mounted with names that
+sort after the Zero Hour archives so the original no-overwrite archive tree
+keeps Zero Hour files ahead of base fallback files.
 The verified aggregate archive directory and `*.big` mask are also registered
 in the wasm bootstrap state before the harness calls `boot`, then checked again
 after boot so the later original engine startup path has a stable preloaded
@@ -89,7 +100,10 @@ It also reports `originalEngineStartup`, which keeps full original
 `GameEngine.cpp::init` separate from the bootstrap preflight: it lists missing
 default/startup files from the current archive set and reports browser device
 factory readiness as false until real browser-backed factories replace the
-compile-only surface. This is still a bootstrap preflight; full original
+compile-only surface. With a real base `INI.big` present, the runtime-archives
+smoke expects those missing default/startup INI paths to become ready and the
+remaining `originalEngineStartup` status to advance to browser device-layer
+work. This is still a bootstrap preflight; full original
 all-block INI loading, startup CRC coverage, default+shipped water/weather
 loading, map water/weather overrides, water/weather rendering, and live
 map-cache rebuilds remain part of engine startup work.

@@ -24,6 +24,19 @@ const runtimeArchives = [
   "Gensec.big",
 ];
 
+const optionalBaseRuntimeArchives = [
+  {
+    sourceName: "INI.big",
+    mountName: "ZZBase_INI.big",
+    description: "base Generals default/startup INI data",
+  },
+  {
+    sourceName: "English.big",
+    mountName: "ZZBase_English.big",
+    description: "base Generals English localization data",
+  },
+];
+
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
@@ -1361,6 +1374,48 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
   }
 }
 
+function assertOriginalEngineStartupWithBaseIni(state, context) {
+  assertOriginalEngineStartup(state, context, "browser_device_layer_pending", true);
+  const files = state.originalEngineStartup.startupFiles;
+  if (files?.ready !== true
+      || files.defaultGameDataIni !== true
+      || files.defaultWaterIni !== true
+      || files.defaultWeatherIni !== true
+      || files.defaultScienceIni !== true
+      || files.defaultMultiplayerIni !== true
+      || files.defaultTerrainIni !== true
+      || files.defaultRoadsIni !== true
+      || files.rankIni !== true
+      || files.defaultPlayerTemplateIni !== true
+      || files.defaultFXListIni !== true
+      || files.defaultObjectCreationListIni !== true
+      || files.defaultSpecialPowerIni !== true
+      || files.defaultUpgradeIni !== true
+      || files.defaultCrateIni !== true
+      || files.commandMapIni !== true
+      || files.englishCommandMapIni !== true
+      || files.defaultVideoIni !== true
+      || files.gameDataIni !== true
+      || files.waterIni !== true
+      || files.weatherIni !== true
+      || files.scienceIni !== true
+      || files.multiplayerIni !== true
+      || files.terrainIni !== true
+      || files.roadsIni !== true
+      || files.playerTemplateIni !== true
+      || files.fxListIni !== true
+      || files.objectCreationListIni !== true
+      || files.specialPowerIni !== true
+      || files.upgradeIni !== true
+      || files.crateIni !== true
+      || files.videoIni !== true
+      || !Number.isInteger(files.objectIniFiles)
+      || files.objectIniFiles <= 0
+      || (files.missing?.length ?? 0) !== 0) {
+    throw new Error(`${context} base INI archive did not complete startup file readiness: ${JSON.stringify(files)}`);
+  }
+}
+
 if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
@@ -1384,6 +1439,39 @@ for (const name of runtimeArchives) {
     urlPath: relative(wasmRoot, path).split(sep).join("/"),
   });
 }
+
+const availableOptionalBaseArchives = [];
+for (const optionalArchive of optionalBaseRuntimeArchives) {
+  const path = resolve(archiveRoot, optionalArchive.sourceName);
+  if (!isInside(archiveRoot, path)) {
+    throw new Error(`optional archive path escaped ${archiveRoot}: ${path}`);
+  }
+
+  try {
+    await access(path);
+  } catch {
+    continue;
+  }
+
+  const fileStat = await stat(path);
+  if (!fileStat.isFile() || fileStat.size <= 0) {
+    throw new Error(`optional archive is not a readable file: ${path}`);
+  }
+
+  const archive = {
+    name: optionalArchive.mountName,
+    sourceName: optionalArchive.sourceName,
+    description: optionalArchive.description,
+    bytes: fileStat.size,
+    urlPath: relative(wasmRoot, path).split(sep).join("/"),
+  };
+  archives.push(archive);
+  availableOptionalBaseArchives.push(archive);
+}
+
+const hasBaseIniArchive = availableOptionalBaseArchives.some((archive) =>
+  archive.sourceName === "INI.big");
+const expectedArchiveCount = runtimeArchives.length + availableOptionalBaseArchives.length;
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -1414,8 +1502,8 @@ try {
   }
 
   const archiveSet = mountResult.archiveSet;
-  if (archiveSet.archiveCount !== runtimeArchives.length
-      || archiveSet.probes.length !== runtimeArchives.length) {
+  if (archiveSet.archiveCount !== expectedArchiveCount
+      || archiveSet.probes.length !== expectedArchiveCount) {
     throw new Error(`archive set count mismatch: ${JSON.stringify(archiveSet)}`);
   }
 
@@ -1477,7 +1565,7 @@ try {
   assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
   assertOriginalEngineStartup(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
-  if (mountResult.state.mountedArchives?.length !== runtimeArchives.length) {
+  if (mountResult.state.mountedArchives?.length !== archives.length) {
     throw new Error(`mounted archive state count mismatch: ${JSON.stringify(mountResult.state.mountedArchives)}`);
   }
 
@@ -1485,7 +1573,7 @@ try {
   if (!archiveMount?.registered
       || archiveMount.directory !== "/assets/runtime/"
       || archiveMount.fileMask !== "*.big"
-      || archiveMount.archiveCount !== runtimeArchives.length
+      || archiveMount.archiveCount !== archives.length
       || archiveMount.totalBytes !== archiveSet.totalBytes) {
     throw new Error(`wasm archive mount state mismatch: ${JSON.stringify(archiveMount)}`);
   }
@@ -1549,7 +1637,11 @@ try {
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
   assertDataSummary(bootResult.state, "runtime archive boot", true);
-  assertOriginalEngineStartupMissingFiles(bootResult.state, "runtime archive boot");
+  if (hasBaseIniArchive) {
+    assertOriginalEngineStartupWithBaseIni(bootResult.state, "runtime archive boot");
+  } else {
+    assertOriginalEngineStartupMissingFiles(bootResult.state, "runtime archive boot");
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -1558,6 +1650,12 @@ try {
     probes: archiveSet.probes,
     archiveCount: archiveSet.archiveCount,
     totalBytes: archiveSet.totalBytes,
+    optionalBaseArchives: availableOptionalBaseArchives.map((archive) => ({
+      sourceName: archive.sourceName,
+      mountName: archive.name,
+      bytes: archive.bytes,
+      description: archive.description,
+    })),
     aggregateProbe: assetProbe,
     archiveMount,
     bootArchiveMount,
