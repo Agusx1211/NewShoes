@@ -1428,6 +1428,57 @@ bool exercise_bit_flags()
 	armor_flags.set(ARMORSET_VETERAN);
 	const bool armor_name_ok = armor_flags.setBitByName("CRATE_UPGRADE_TWO");
 
+	// Set operations used by GameLogic condition matching and netcode:
+	// testForAny/testForAll/testForNone, countIntersection, and the
+	// set-wise clear/set/clearAndSet transfers.
+	ModelConditionFlags empty_flags;
+	ModelConditionFlags damaged_only;
+	damaged_only.set(MODELCONDITION_DAMAGED);
+	ModelConditionFlags moving_only;
+	moving_only.set(MODELCONDITION_MOVING);
+
+	const bool set_ops_ok =
+		expect(model_flags.any(), "BitFlags any() failed on non-empty flags") &&
+		expect(!empty_flags.any(), "BitFlags any() returned true on empty flags") &&
+		expect(model_flags.testForAny(damaged_only), "BitFlags testForAny failed on shared bits") &&
+		expect(!empty_flags.testForAny(damaged_only), "BitFlags testForAny matched against empty") &&
+		expect(model_flags.testForAll(damaged_only), "BitFlags testForAll failed on subset") &&
+		expect(!damaged_only.testForAll(model_flags),
+			"BitFlags testForAll should fail when argument has extra bits") &&
+		expect(!model_flags.testForNone(damaged_only),
+			"BitFlags testForNone matched a shared bit") &&
+		expect(model_flags.testForNone(moving_only) == false &&
+				damaged_only.testForNone(moving_only),
+			"BitFlags testForNone disjoint mismatch") &&
+		expect(model_flags.countIntersection(damaged_only) == 1,
+			"BitFlags countIntersection shared-count failed") &&
+		expect(model_flags.countIntersection(empty_flags) == 0,
+			"BitFlags countIntersection empty-count failed");
+
+	ModelConditionFlags transfer;
+	transfer.set(MODELCONDITION_MOVING);
+	transfer.set(damaged_only);
+	const bool union_ok =
+		expect(transfer.count() == 2 && transfer.test(MODELCONDITION_DAMAGED) &&
+				transfer.test(MODELCONDITION_MOVING),
+			"BitFlags set(BitFlags) union failed");
+
+	transfer.clear(damaged_only);
+	const bool clear_set_ok =
+		expect(transfer.count() == 1 && transfer.test(MODELCONDITION_MOVING) &&
+				!transfer.test(MODELCONDITION_DAMAGED),
+			"BitFlags clear(BitFlags) failed");
+
+	transfer.clearAndSet(moving_only, damaged_only);
+	const bool clear_and_set_ok =
+		expect(transfer.count() == 1 && transfer.test(MODELCONDITION_DAMAGED) &&
+				!transfer.test(MODELCONDITION_MOVING),
+			"BitFlags clearAndSet failed");
+
+	transfer.clear();
+	const bool full_clear_ok = expect(transfer.count() == 0 && !transfer.any(),
+		"BitFlags clear() failed");
+
 	return expect(model_flags.count() == 2, "ModelConditionFlags count failed") &&
 		expect(std::strcmp(ModelConditionFlags::getNameFromSingleBit(MODELCONDITION_DAMAGED), "DAMAGED") == 0,
 			"ModelConditionFlags name table failed") &&
@@ -1439,7 +1490,8 @@ bool exercise_bit_flags()
 		expect(armor_name_ok && armor_flags.test(ARMORSET_CRATE_UPGRADE_TWO),
 			"ArmorSetFlags name lookup failed") &&
 		expect(std::strcmp(ArmorSetFlags::getNameFromSingleBit(ARMORSET_VETERAN), "VETERAN") == 0,
-			"ArmorSetFlags name table failed");
+			"ArmorSetFlags name table failed") &&
+		set_ops_ok && union_ok && clear_set_ok && clear_and_set_ok && full_clear_ok;
 }
 
 bool exercise_geometry()
