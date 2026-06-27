@@ -183,6 +183,7 @@ const char *write_original_wndproc_json()
 		"\"pump\":{\"calls\":%u,\"lastPumped\":%u,\"messagesPumped\":%u},"
 		"\"mouse\":{\"attached\":%s,\"lostFocus\":%s,\"currentCursor\":%d,"
 		"\"events\":%u,\"lastProbeDrained\":%u,\"lastEvent\":%s},"
+		"\"keyboard\":{\"quitPosts\":%u,\"lastQuitExitCode\":%d},"
 		"\"resetD3D\":{\"calls\":%d,\"lastActive\":%s}}",
 		bool_json(g_original_wndproc_ready),
 		bool_json(g_original_wndproc_register_ok),
@@ -199,6 +200,8 @@ const char *write_original_wndproc_json()
 		g_original_wndproc_mouse_events,
 		g_original_wndproc_last_probe_drained,
 		mouse_event_json.c_str(),
+		WasmWin32Input::quit_message_posts,
+		WasmWin32Input::last_quit_exit_code,
 		g_reset_d3d_calls,
 		bool_json(g_last_reset_d3d_active));
 	g_original_wndproc_json = buffer;

@@ -2674,6 +2674,12 @@ shares structure and follows behind.
 
 - [ ] Mouse: Pointer events → engine `Mouse`/`W3DMouse` (move, buttons, wheel).
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
+- [x] Focused browser keydown proof: DOM `Escape` queues a Win32
+      `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
+      the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the
+      wasm harness observes the original `VK_ESCAPE` branch posting
+      `WM_QUIT` via `PostQuitMessage(0)`. This proves the WndProc key path only;
+      full DirectInput/`Keyboard` event delivery for gameplay remains open.
 - [ ] Pointer lock / capture behavior where needed.
 - [ ] Cursor rendering (engine-drawn cursor vs CSS cursor).
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
