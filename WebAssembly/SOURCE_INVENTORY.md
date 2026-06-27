@@ -264,6 +264,9 @@ The wasm CMake skeleton currently builds:
 - `zh_wwlib_mpu`: original `WWVegas/WWLib/mpu.cpp` compiled into a wasm static
   library with browser `QueryPerformanceCounter`-backed clock/rate reads and
   explicit unavailable CPU-MHz reporting for the legacy RDTSC speed query.
+- `zh_wwlib_cpudetect`: original `WWVegas/WWLib/cpudetect.cpp` compiled into a
+  wasm static library with conservative browser CPU feature reporting and
+  OS/memory logging through the Win32 compatibility shims.
 - `zh_wwlib_mutex`: original `WWVegas/WWLib/mutex.cpp` compiled into a wasm
   static library against the browser Win32 synchronization shims.
 - `zh_wwlib_thread`: original `WWVegas/WWLib/thread.cpp` compiled into a wasm
@@ -648,6 +651,9 @@ The wasm CMake skeleton currently builds:
   the current browser-safe no-native-process result under wasm.
 - `wwlib-lzo-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib LZO direct compression plus LZO pipe/straw round trips.
+- `wwlib-cpudetect-smoke`: a Node-executed wasm smoke test that verifies
+  original WWLib `CPUDetectClass` reports unavailable CPUID/RDTSC/SIMD/cache
+  details under wasm while populating OS, memory, processor, and compact logs.
 - `wwlib-md5-smoke`: a Node-executed wasm smoke test that verifies original
   WWLib MD5 against standard digest vectors and split-update hashing.
 - `wwlib-public-key-smoke`: a Node-executed wasm smoke test that verifies
