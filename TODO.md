@@ -456,7 +456,7 @@ shares structure and follows behind.
 - [x] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline
       assembly.
-- [ ] Restore or replace the missing WWLib GNU regex dependency before
+- [x] Restore or replace the missing WWLib GNU regex dependency before
       compiling original `regexpr.cpp`; do not stub `RegularExpressionClass`
       users.
 - [ ] Full `WWVegas/WWLib` (containers, string, ini, file abstractions)

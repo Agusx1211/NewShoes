@@ -557,6 +557,29 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_containers
 )
 
+add_library(zh_wwlib_regex STATIC
+  "${WWLIB_DIR}/regexpr.cpp"
+)
+
+target_include_directories(zh_wwlib_regex PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_regex PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_regex PUBLIC
+  zh_wwlib_string
+)
+
 add_library(zh_wwlib_systimer STATIC
   "${WWLIB_DIR}/_timer.cpp"
   "${WWLIB_DIR}/stimer.cpp"
@@ -3791,6 +3814,35 @@ target_compile_options(wwlib-mixfile-smoke PRIVATE
 )
 
 target_link_options(wwlib-mixfile-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-regex-smoke
+  tests/wwlib_regex_smoke.cpp
+)
+
+set_target_properties(wwlib-regex-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-regex-smoke PRIVATE
+  zh_wwlib_regex
+)
+
+target_compile_options(wwlib-regex-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-regex-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

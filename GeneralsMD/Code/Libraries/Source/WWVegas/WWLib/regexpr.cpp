@@ -242,9 +242,8 @@ bool RegularExpressionClass::operator == (const RegularExpressionClass &rhs) con
 }
 
 
-inline bool RegularExpressionClass::operator != (const RegularExpressionClass &rhs) const
+bool RegularExpressionClass::operator != (const RegularExpressionClass &rhs) const
 {
 	return !(*this == rhs);
 }
-
 
