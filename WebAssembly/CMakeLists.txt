@@ -3444,7 +3444,9 @@ add_executable(cnc-port
   src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
   src/wasm_wndproc_probe.cpp
+  src/wasm_win32_gdi_stub.cpp
   src/wasm_ww3d_render_probe.cpp
+  src/wasm_ww3d_textured_mesh_probe.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
@@ -3528,7 +3530,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 
