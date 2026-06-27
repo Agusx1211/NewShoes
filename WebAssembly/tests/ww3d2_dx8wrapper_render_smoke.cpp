@@ -3,7 +3,11 @@
 #include "PreRTS.h"
 
 #include "Common/GameMemory.h"
+#include "boxrobj.h"
+#include "camera.h"
+#include "coltype.h"
 #include "dx8wrapper.h"
+#include "rinfo.h"
 #include "wasm_d3d8_shim.h"
 #include "ww3d.h"
 
@@ -25,7 +29,7 @@ int main()
 	initMemoryManager();
 	wasm_d3d8_reset_state();
 
-	if (!expect(DX8Wrapper::Init(nullptr, false), "DX8Wrapper::Init failed")) {
+	if (!expect(WW3D::Init(nullptr, nullptr, false) == WW3D_ERROR_OK, "WW3D::Init failed")) {
 		return 1;
 	}
 
@@ -59,7 +63,67 @@ int main()
 		expect(state->end_scene_calls == 1, "EndScene call count mismatch") &&
 		expect(state->present_calls == 1, "Present call count mismatch");
 
-	DX8Wrapper::Shutdown();
+	const UINT vertex_buffers_before = state->create_vertex_buffer_calls;
+	const UINT index_buffers_before = state->create_index_buffer_calls;
+	const UINT stream_sources_before = state->set_stream_source_calls;
+	const UINT indices_before = state->set_indices_calls;
+	const UINT indexed_draws_before = state->draw_indexed_primitive_calls;
+
+	if (ok) {
+		BoxRenderObjClass::Set_Box_Display_Mask(COLL_TYPE_ALL);
+
+		CameraClass *camera = W3DNEW CameraClass();
+		AABoxRenderObjClass *box = NEW_REF(AABoxRenderObjClass, ());
+		ok = ok &&
+			expect(camera != nullptr, "CameraClass allocation failed") &&
+			expect(box != nullptr, "AABoxRenderObjClass allocation failed");
+
+		if (ok) {
+			WW3D::Set_Thumbnail_Enabled(false);
+			box->Set_Local_Center_Extent(Vector3(0.0f, 0.0f, 0.0f), Vector3(1.0f, 2.0f, 3.0f));
+			RenderInfoClass render_info(*camera);
+			const bool begin_ok = expect(
+				WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f)) == WW3D_ERROR_OK,
+				"WW3D::Begin_Render failed");
+			ok = ok && begin_ok;
+			if (begin_ok) {
+				const bool render_ok = expect(
+					WW3D::Render(*box, render_info) == WW3D_ERROR_OK, "WW3D::Render AABox failed");
+				const bool end_ok = expect(
+					WW3D::End_Render(false) == WW3D_ERROR_OK, "WW3D::End_Render failed");
+				ok = ok && render_ok && end_ok;
+			}
+		}
+
+		if (box != nullptr) {
+			box->Release_Ref();
+		}
+		if (camera != nullptr) {
+			camera->Release_Ref();
+		}
+	}
+
+	state = wasm_d3d8_get_state();
+	ok = ok &&
+		expect(state->begin_scene_calls == 2, "AABox render did not begin a second scene") &&
+		expect(state->end_scene_calls == 2, "AABox render did not end a second scene") &&
+		expect(state->present_calls == 1, "AABox render unexpectedly presented") &&
+		expect(state->create_vertex_buffer_calls > vertex_buffers_before,
+			"AABox render did not create a dynamic vertex buffer") &&
+		expect(state->create_index_buffer_calls > index_buffers_before,
+			"AABox render did not create a dynamic index buffer") &&
+		expect(state->set_stream_source_calls > stream_sources_before,
+			"AABox render did not bind a vertex stream") &&
+		expect(state->set_indices_calls > indices_before,
+			"AABox render did not bind an index buffer") &&
+		expect(state->draw_indexed_primitive_calls > indexed_draws_before,
+			"AABox render did not issue an indexed draw") &&
+		expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
+			"AABox render primitive type mismatch") &&
+		expect(state->last_draw_vertex_count == 8, "AABox render vertex count mismatch") &&
+		expect(state->last_draw_primitive_count == 12, "AABox render triangle count mismatch");
+
+	WW3D::Shutdown();
 
 	if (!ok) {
 		return 1;
@@ -67,11 +131,12 @@ int main()
 
 	std::printf("{\"ok\":true,\"smoke\":\"ww3d2-dx8wrapper-render\","
 		"\"createDevice\":%u,\"createTexture\":%u,\"createIndexBuffer\":%u,"
-		"\"createVertexBuffer\":%u,\"clear\":%u,\"present\":%u}\n",
+		"\"createVertexBuffer\":%u,\"drawIndexed\":%u,\"clear\":%u,\"present\":%u}\n",
 		state->create_device_calls,
 		state->create_texture_calls,
 		state->create_index_buffer_calls,
 		state->create_vertex_buffer_calls,
+		state->draw_indexed_primitive_calls,
 		state->clear_calls,
 		state->present_calls);
 	return 0;

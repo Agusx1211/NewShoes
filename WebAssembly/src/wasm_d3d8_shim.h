@@ -16,6 +16,18 @@ struct WasmD3D8ShimState
 	UINT create_index_buffer_calls;
 	UINT buffer_lock_calls;
 	UINT buffer_unlock_calls;
+	UINT set_stream_source_calls;
+	UINT set_indices_calls;
+	UINT draw_primitive_calls;
+	UINT draw_indexed_primitive_calls;
+	D3DPRIMITIVETYPE last_draw_primitive_type;
+	UINT last_draw_start_vertex;
+	UINT last_draw_min_vertex_index;
+	UINT last_draw_vertex_count;
+	UINT last_draw_start_index;
+	UINT last_draw_primitive_count;
+	UINT last_stream_source_stride;
+	UINT last_indices_base_vertex_index;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;

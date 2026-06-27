@@ -4941,6 +4941,7 @@ target_link_libraries(ww3d2-dx8wrapper-render-smoke PRIVATE
   zh_wwlib_thread
   zh_wwlib_mutex
   zh_wwlib_targa
+  zh_wwdebug_profile
   zh_wwdebug_core
   zh_compression_manager
   zh_compression_eac
