@@ -1732,6 +1732,13 @@ shares structure and follows behind.
 ### File system device (Win32Device/Common → browser)
 - [ ] Re-target `Win32LocalFileSystem`/`Win32LocalFile` onto MEMFS/IDBFS.
 - [ ] Re-target `Win32BIGFileSystem`/`Win32BIGFile` to read fetched BIG archives.
+- [x] Expose the original `Common/System/FileSystem.cpp` facade through the
+      main `cnc-port` browser harness state, proving local MEMFS
+      create/write/info/list/read/cache behavior on every boot and archive
+      fallback to `Data\INI\Armor.ini` when the runtime BIG set is registered
+      before boot. This is focused facade coverage only; persistent IDBFS,
+      final browser asset device ownership, and full `GameEngine::init`
+      consumption remain open.
 - [x] Add a main `cnc-port` harness `mountArchive` RPC that fetches a
       user-supplied BIG into Emscripten MEMFS and verifies it through the
       original `Win32BIGFileSystem`, with browser smoke coverage for

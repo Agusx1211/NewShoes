@@ -5,6 +5,7 @@
 
 #include "wasm_archive_probe.h"
 #include "wasm_cdmanager_probe.h"
+#include "wasm_filesystem_probe.h"
 #include "wasm_gamenetwork_probe.h"
 #include "wasm_globaldata_probe.h"
 
@@ -62,6 +63,7 @@ ArchiveProbeResult g_archive_probe;
 GlobalDataProbeResult g_global_data_probe;
 CommandLineProbeResult g_command_line_probe;
 CDManagerProbeResult g_cd_manager_probe;
+FileSystemProbeResult g_file_system_probe;
 GameNetworkProbeResult g_game_network_probe;
 std::string g_state_json;
 
@@ -248,6 +250,21 @@ void run_original_cd_manager_probe()
 	std::printf("cnc-port: cdmanager probe ok=%d drives=%d\n",
 		g_cd_manager_probe.ok ? 1 : 0,
 		g_cd_manager_probe.drive_count);
+}
+
+void run_original_file_system_probe()
+{
+	const char *archive_directory = g_archive_mount.registered
+		? g_archive_mount.directory.c_str()
+		: nullptr;
+	const char *archive_file_mask = g_archive_mount.registered
+		? g_archive_mount.file_mask.c_str()
+		: nullptr;
+	g_file_system_probe = probe_original_file_system(archive_directory, archive_file_mask);
+	std::printf("cnc-port: filesystem probe ok=%d local=%d archive=%d\n",
+		g_file_system_probe.ok ? 1 : 0,
+		g_file_system_probe.local_ok ? 1 : 0,
+		g_file_system_probe.archive_attempted ? (g_file_system_probe.archive_ok ? 1 : 0) : -1);
 }
 
 void run_original_game_network_probe()
@@ -2205,6 +2222,54 @@ std::string build_game_network_probe_json()
 	return buffer;
 }
 
+std::string build_file_system_probe_json()
+{
+	char buffer[3600];
+	const std::string source_json = json_escape(g_file_system_probe.source);
+	const std::string local_path_json = json_escape(g_file_system_probe.local_path);
+	const std::string archive_path_json = json_escape(g_file_system_probe.archive_path);
+	const std::string archive_owner_json = json_escape(g_file_system_probe.archive_owner);
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
+		"\"local\":{\"ok\":%s,\"path\":\"%s\",\"bytes\":%d,"
+		"\"directory\":%s,\"write\":%s,\"exists\":%s,\"cache\":%s,"
+		"\"info\":%s,\"infoSize\":%d,\"list\":%s,\"read\":%s,"
+		"\"missingCache\":%s},"
+		"\"archive\":{\"attempted\":%s,\"loaded\":%s,\"ok\":%s,"
+		"\"path\":\"%s\",\"owner\":\"%s\",\"indexedFiles\":%zu,"
+		"\"exists\":%s,\"info\":%s,\"infoSize\":%d,\"list\":%s,"
+		"\"read\":%s,\"bytes\":%d,\"ownerLookup\":%s}}",
+		source_json.c_str(),
+		g_file_system_probe.attempted ? "true" : "false",
+		g_file_system_probe.ok ? "true" : "false",
+		g_file_system_probe.local_ok ? "true" : "false",
+		local_path_json.c_str(),
+		g_file_system_probe.local_bytes,
+		g_file_system_probe.local_directory_ok ? "true" : "false",
+		g_file_system_probe.local_write_ok ? "true" : "false",
+		g_file_system_probe.local_exists_ok ? "true" : "false",
+		g_file_system_probe.local_cache_ok ? "true" : "false",
+		g_file_system_probe.local_info_ok ? "true" : "false",
+		g_file_system_probe.local_info_size,
+		g_file_system_probe.local_list_ok ? "true" : "false",
+		g_file_system_probe.local_read_ok ? "true" : "false",
+		g_file_system_probe.missing_cache_ok ? "true" : "false",
+		g_file_system_probe.archive_attempted ? "true" : "false",
+		g_file_system_probe.archive_loaded ? "true" : "false",
+		g_file_system_probe.archive_ok ? "true" : "false",
+		archive_path_json.c_str(),
+		archive_owner_json.c_str(),
+		g_file_system_probe.archive_indexed_file_count,
+		g_file_system_probe.archive_exists_ok ? "true" : "false",
+		g_file_system_probe.archive_info_ok ? "true" : "false",
+		g_file_system_probe.archive_info_size,
+		g_file_system_probe.archive_list_ok ? "true" : "false",
+		g_file_system_probe.archive_read_ok ? "true" : "false",
+		g_file_system_probe.archive_bytes,
+		g_file_system_probe.archive_owner_ok ? "true" : "false");
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -2217,6 +2282,7 @@ void ensure_booted()
 		run_original_global_data_probe();
 		run_original_command_line_probe();
 		run_original_cd_manager_probe();
+		run_original_file_system_probe();
 		run_original_game_network_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
@@ -2402,6 +2468,7 @@ const char *write_state_json()
 		json_escape(g_global_data_probe.shell_map_name);
 	const std::string command_line_source_json = json_escape(g_command_line_probe.source);
 	const std::string cd_manager_source_json = json_escape(g_cd_manager_probe.source);
+	const std::string file_system_probe_json = build_file_system_probe_json();
 	const std::string game_network_probe_json = build_game_network_probe_json();
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
@@ -2654,6 +2721,7 @@ const char *write_state_json()
 		"\"cdManagerProbe\":{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
 		"\"created\":%s,\"initialized\":%s,\"driveCount\":%d,"
 		"\"noCdDrives\":%s},"
+		"\"fileSystemProbe\":%s,"
 		"\"gameNetworkProbe\":%s,"
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
@@ -3186,6 +3254,7 @@ const char *write_state_json()
 		g_cd_manager_probe.initialized ? "true" : "false",
 		g_cd_manager_probe.drive_count,
 		g_cd_manager_probe.no_cd_drives ? "true" : "false",
+		file_system_probe_json.c_str(),
 		game_network_probe_json.c_str(),
 		g_debug_handlers_installed ? "true" : "false",
 		g_debug_probe_ok ? "true" : "false",

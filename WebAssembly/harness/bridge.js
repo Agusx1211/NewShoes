@@ -41,6 +41,7 @@ const harnessState = {
   globalDataProbe: null,
   commandLineProbe: null,
   cdManagerProbe: null,
+  fileSystemProbe: null,
   gameNetworkProbe: null,
   debugProbe: null,
   commonDebugLog: null,
@@ -180,6 +181,7 @@ function applyModuleState(moduleState) {
   harnessState.globalDataProbe = moduleState.globalDataProbe ?? null;
   harnessState.commandLineProbe = moduleState.commandLineProbe ?? null;
   harnessState.cdManagerProbe = moduleState.cdManagerProbe ?? null;
+  harnessState.fileSystemProbe = moduleState.fileSystemProbe ?? null;
   harnessState.gameNetworkProbe = moduleState.gameNetworkProbe ?? null;
   harnessState.debugProbe = moduleState.debugProbe ?? null;
   harnessState.commonDebugLog = moduleState.commonDebugLog ?? null;
@@ -261,6 +263,7 @@ function snapshotState() {
     globalDataProbe: harnessState.globalDataProbe,
     commandLineProbe: harnessState.commandLineProbe,
     cdManagerProbe: harnessState.cdManagerProbe,
+    fileSystemProbe: harnessState.fileSystemProbe,
     gameNetworkProbe: harnessState.gameNetworkProbe,
     debugProbe: harnessState.debugProbe,
     commonDebugLog: harnessState.commonDebugLog,

@@ -1156,6 +1156,44 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
   }
 }
 
+function assertFileSystemProbe(state, context) {
+  const probe = state.fileSystemProbe;
+  if (!probe?.ok || probe.source !== "GameEngine/Common/System/FileSystem.cpp") {
+    throw new Error(`${context} FileSystem probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.local?.ok
+      || probe.local.path !== "cnc-port-fs-probe/local-file.txt"
+      || probe.local.bytes <= 0
+      || !probe.local.directory
+      || !probe.local.write
+      || !probe.local.exists
+      || !probe.local.cache
+      || !probe.local.info
+      || probe.local.infoSize !== probe.local.bytes
+      || !probe.local.list
+      || !probe.local.read
+      || !probe.local.missingCache) {
+    throw new Error(`${context} FileSystem local facade incomplete: ${JSON.stringify(probe.local)}`);
+  }
+
+  if (!probe.archive?.attempted
+      || !probe.archive.loaded
+      || !probe.archive.ok
+      || probe.archive.path !== "Data\\INI\\Armor.ini"
+      || !String(probe.archive.owner ?? "").includes("INIZH.big")
+      || probe.archive.indexedFiles !== state.assetProbe?.indexedFiles
+      || !probe.archive.exists
+      || !probe.archive.info
+      || probe.archive.infoSize <= 50000
+      || !probe.archive.list
+      || !probe.archive.read
+      || probe.archive.bytes !== 16
+      || !probe.archive.ownerLookup) {
+    throw new Error(`${context} FileSystem archive facade incomplete: ${JSON.stringify(probe.archive)}`);
+  }
+}
+
 function assertDataSummary(state, context, expectedStartupReady) {
   const summary = state.dataSummary;
   const assetProbe = state.assetProbe;
@@ -1636,6 +1674,7 @@ try {
   assertVideoProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
+  assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
   if (hasBaseIniArchive) {
     assertOriginalEngineStartupWithBaseIni(bootResult.state, "runtime archive boot");

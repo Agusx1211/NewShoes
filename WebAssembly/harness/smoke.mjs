@@ -170,6 +170,32 @@ function assertCDManagerProbe(state, label) {
   }
 }
 
+function assertFileSystemProbe(state, label) {
+  const probe = state.fileSystemProbe;
+  if (!probe?.ok || probe.source !== "GameEngine/Common/System/FileSystem.cpp") {
+    throw new Error(`${label} FileSystem probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.local?.ok
+      || probe.local.path !== "cnc-port-fs-probe/local-file.txt"
+      || probe.local.bytes <= 0
+      || !probe.local.directory
+      || !probe.local.write
+      || !probe.local.exists
+      || !probe.local.cache
+      || !probe.local.info
+      || probe.local.infoSize !== probe.local.bytes
+      || !probe.local.list
+      || !probe.local.read
+      || !probe.local.missingCache) {
+    throw new Error(`${label} FileSystem local facade incomplete: ${JSON.stringify(probe.local)}`);
+  }
+
+  if (probe.archive?.attempted) {
+    throw new Error(`${label} FileSystem archive branch should wait for registered archives: ${JSON.stringify(probe.archive)}`);
+  }
+}
+
 function assertGameNetworkProbe(state, label) {
   const probe = state.gameNetworkProbe;
   if (!probe?.ok || probe.source !== "GameEngine/GameNetwork") {
@@ -290,6 +316,7 @@ try {
     assertGlobalDataProbe(bootResult.state, "boot");
     assertCommandLineProbe(bootResult.state, "boot");
     assertCDManagerProbe(bootResult.state, "boot");
+    assertFileSystemProbe(bootResult.state, "boot");
     assertGameNetworkProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
@@ -297,6 +324,7 @@ try {
     await assertHarnessLog(page, "wasm stdout", "cnc-port: globaldata probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: commandline probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: cdmanager probe ok=1");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: filesystem probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: gamenetwork probe ok=1");
     await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }

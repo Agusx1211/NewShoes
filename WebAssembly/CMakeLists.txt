@@ -2995,6 +2995,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 add_executable(cnc-port
   src/wasm_archive_probe.cpp
   src/wasm_cdmanager_probe.cpp
+  src/wasm_filesystem_probe.cpp
   src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
