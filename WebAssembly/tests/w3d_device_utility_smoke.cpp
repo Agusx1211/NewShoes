@@ -11,6 +11,7 @@
 #include "Common/GlobalData.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 #include "WWLIB/ffactory.h"
 #include "W3DDevice/GameClient/W3DFileSystem.h"
@@ -42,6 +43,35 @@ bool expect_w3d_available(FileClass *file, const char *name)
 		return false;
 	}
 	return true;
+}
+
+void append_be32(std::vector<char> &buffer, UnsignedInt value)
+{
+	buffer.push_back(static_cast<char>((value >> 24) & 0xff));
+	buffer.push_back(static_cast<char>((value >> 16) & 0xff));
+	buffer.push_back(static_cast<char>((value >> 8) & 0xff));
+	buffer.push_back(static_cast<char>(value & 0xff));
+}
+
+std::vector<char> make_smoke_big_archive(const char *archived_path, const char *payload)
+{
+	const UnsignedInt payload_size = static_cast<UnsignedInt>(std::strlen(payload));
+	const UnsignedInt path_bytes = static_cast<UnsignedInt>(std::strlen(archived_path) + 1);
+	const UnsignedInt directory_offset = 0x10;
+	const UnsignedInt file_offset = directory_offset + 8 + path_bytes;
+	const UnsignedInt archive_size = file_offset + payload_size;
+
+	std::vector<char> archive;
+	archive.reserve(archive_size);
+	archive.insert(archive.end(), { 'B', 'I', 'G', 'F' });
+	append_be32(archive, archive_size);
+	append_be32(archive, 1);
+	append_be32(archive, 0);
+	append_be32(archive, file_offset);
+	append_be32(archive, payload_size);
+	archive.insert(archive.end(), archived_path, archived_path + path_bytes);
+	archive.insert(archive.end(), payload, payload + payload_size);
+	return archive;
 }
 
 class EmptyArchiveFileSystem : public ArchiveFileSystem {
@@ -186,7 +216,7 @@ bool smoke_w3d_poly()
 		expect(saw_clip_edge, "clipped polygon did not create a plane intersection edge");
 }
 
-bool write_local_file(const char *path, const char *payload)
+bool write_binary_file(const char *path, const void *payload, std::size_t payload_size)
 {
 	std::vector<char> directory;
 	for (const char *cursor = path; *cursor != '\0'; ++cursor) {
@@ -204,10 +234,14 @@ bool write_local_file(const char *path, const char *payload)
 		std::fprintf(stderr, "failed to create local W3D fixture %s\n", path);
 		return false;
 	}
-	const std::size_t payload_size = std::strlen(payload);
 	const bool wrote = std::fwrite(payload, 1, payload_size, file) == payload_size;
 	std::fclose(file);
 	return expect(wrote, "failed to write local W3D fixture payload");
+}
+
+bool write_local_file(const char *path, const char *payload)
+{
+	return write_binary_file(path, payload, std::strlen(payload));
 }
 
 bool expect_w3d_file(FileFactoryClass *factory, const char *name, const char *expected_payload)
@@ -322,6 +356,86 @@ bool smoke_w3d_file_system()
 
 	return lookup_ok;
 }
+
+bool smoke_w3d_file_system_archive()
+{
+	const char archive_directory[] = "w3d-archive-smoke/";
+	const char archive_filename[] = "w3d-archive-smoke/SmokeTextures.big";
+	const char archived_path[] = "Art\\Textures\\ArchiveTexture.dds";
+	const char archive_payload[] = "archive-dds";
+	const std::vector<char> archive =
+		make_smoke_big_archive(archived_path, archive_payload);
+
+	if (!write_binary_file(archive_filename, archive.data(), archive.size())) {
+		return false;
+	}
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GlobalData *old_global_data = TheGlobalData;
+	FileFactoryClass *old_file_factory = _TheFileFactory;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator name_key_generator;
+
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGlobalData = nullptr;
+	name_key_generator.init();
+
+	bool lookup_ok = false;
+	{
+		W3DFileSystem w3d_file_system;
+		FileFactoryClass *factory = _TheFileFactory;
+		const bool archive_loaded = archive_file_system.loadBigFilesFromDirectory(
+			AsciiString(archive_directory), AsciiString("*.big"));
+		FileClass *file = factory != nullptr ? factory->Get_File("ArchiveTexture.dds") : nullptr;
+
+		lookup_ok =
+			expect(factory == &w3d_file_system,
+				"archive W3DFileSystem did not install as WW3D file factory") &&
+			expect(archive_loaded, "W3D archive smoke BIG did not load") &&
+			expect(file != nullptr, "W3D archive file factory returned no file") &&
+			expect(file != nullptr && file->Is_Available(),
+				"W3D archive file factory did not find archived texture") &&
+			expect(file != nullptr && file->Open(FileClass::READ) != 0,
+				"W3D archive file factory failed to open archived texture");
+
+		if (lookup_ok) {
+			char buffer[sizeof(archive_payload)] = {};
+			const int bytes_read = file->Read(buffer, static_cast<int>(std::strlen(archive_payload)));
+			lookup_ok =
+				expect(file->Size() == static_cast<int>(std::strlen(archive_payload)),
+					"W3D archive file factory size mismatch") &&
+				expect(bytes_read == static_cast<int>(std::strlen(archive_payload)),
+					"W3D archive file factory read count mismatch") &&
+				expect(std::memcmp(buffer, archive_payload, std::strlen(archive_payload)) == 0,
+					"W3D archive file factory payload mismatch");
+		}
+
+		if (file != nullptr) {
+			file->Close();
+			factory->Return_File(file);
+		}
+	}
+
+	_TheFileFactory = old_file_factory;
+	name_key_generator.reset();
+	TheGlobalData = old_global_data;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	std::remove(archive_filename);
+	return lookup_ok;
+}
 }
 
 int main()
@@ -335,6 +449,9 @@ int main()
 		return 1;
 	}
 	if (!smoke_w3d_file_system()) {
+		return 1;
+	}
+	if (!smoke_w3d_file_system_archive()) {
 		return 1;
 	}
 
