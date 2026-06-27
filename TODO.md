@@ -2499,6 +2499,11 @@ shares structure and follows behind.
       `BLENDDIFFUSEALPHA`, `BLENDTEXTUREALPHA`, `BLENDFACTORALPHA`,
       `BLENDCURRENTALPHA`, and `LERP` now render through focused D3D8 browser
       probes with center-pixel checks.
+- [x] Add stage-1 `D3DTSS_COLORARG0` support to the current WebGL2
+      fixed-function combiner bridge for non-texture stage-1
+      `MULTIPLYADD`/`LERP` operands, with focused browser probes proving
+      `TFACTOR | ALPHAREPLICATE` drives stage-1 color arg0 without pretending
+      stage-1 texture sampling is implemented.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state
