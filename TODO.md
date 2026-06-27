@@ -1206,10 +1206,12 @@ shares structure and follows behind.
       loose files, user-data fallback, map-preview fallback, and missing
       assets. This is filesystem dispatch coverage only; browser-backed W3D
       rendering remains open.
-- [ ] Link and smoke-test original WW3D2 light/render-object behavior after
-      `rendobj.cpp`, browser-safe Win32 string aliases, scene/camera defaults,
-      and asset/render-object singleton dependencies can build without renderer
-      stubs.
+- [x] Link and smoke-test original WW3D2 light/render-object behavior through
+      `rendobj.cpp`, `light.cpp`, `lightenvironment.cpp`, `camera.cpp`, and
+      `ww3d.cpp`, covering ref-counted render-object lifetime, clone/class IDs,
+      native screen-size defaults, point/directional light bounds, attenuation
+      folded into `LightEnvironmentClass`, and camera defaults. This is runtime
+      object/lighting math coverage only; WebGL2/WebGPU rendering remains open.
 - [ ] Re-enable and compile the active `INCLUDE_GRANNY_IN_BUILD` code path in
       original `W3DGranny.cpp` after the Granny SDK surface, WW3D render-object
       dependencies, and browser asset/texture bindings have a real port
