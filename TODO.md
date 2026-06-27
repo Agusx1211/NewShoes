@@ -2773,6 +2773,23 @@ shares structure and follows behind.
       - [ ] Wire the same-pass multi-texture shipped mesh through browser
             rendering once the WebGL draw bridge samples/applies multiple
             texture stages.
+          - [x] Add the `cnc_port_probe_ww3d_multitexture_shipped_mesh` wasm
+                export, `ww3dMultitextureShippedMesh` bridge RPC, and
+                `harness/multitexture_shipped_mesh_render_smoke.mjs` Playwright
+                smoke (`npm run test:ww3d-multitexture-shipped-mesh-render`).
+                The probe loads the real shipped `art\w3d\pablinkliteb.w3d`
+                (`PABLINKLITEB.OBJECT01`) through the runtime-owned
+                `Win32BIGFileSystem` / `W3DFileSystem`, resolves both shipped
+                textures (`psblink.tga` stage 0, `psgrad.tga` stage 1) through
+                the original `TextureClass::Init` / `TextureLoader` foreground
+                DDS path, preserves the real original W3D material-pass shader
+                so stage 1 is not forced to `D3DTOP_DISABLE`, renders through
+                `WW3D::Render` + the browser D3D8/WebGL2 draw bridge, and
+                reports stage 0/stage 1 combiner and sampler state plus
+                `browser_texture_bind_calls >= 2`. The build compiles/links and
+                the synthetic `harness/smoke.mjs` still passes; the real-asset
+                screenshot proof is pending a user-supplied `W3DZH.big` +
+                `TexturesZH.big` run of the new smoke.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.

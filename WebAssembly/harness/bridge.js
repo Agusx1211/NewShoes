@@ -2835,6 +2835,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
         "cnc_port_probe_ww3d_shipped_mesh", "string", ["string", "string"]),
+      probeWW3DMultitextureShippedMesh: module.cwrap(
+        "cnc_port_probe_ww3d_multitexture_shipped_mesh", "string", ["string", "string"]),
       probeWW3DSourceAssetLoad: module.cwrap(
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
       initOriginalWndProcInput: module.cwrap(
@@ -4934,6 +4936,55 @@ async function rpc(command, payload = {}) {
           && pixelHasColor(screenshot.centerPixel, 16)
           && !pixelLooksRed(browserProbe.centerPixel)
           && !pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dMultitextureShippedMesh":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; multi-texture shipped WW3D mesh cannot render" };
+        }
+        const archivePath = String(payload.archivePath ?? "/assets/runtime/W3DZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime/TexturesZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DMultitextureShippedMesh(
+          archivePath,
+          textureArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture1?.sampled === true
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture1?.ready === true
+          && pixelHasColor(browserProbe.centerPixel, 16)
+          && pixelHasColor(screenshot.centerPixel, 16);
         return {
           ok,
           command,

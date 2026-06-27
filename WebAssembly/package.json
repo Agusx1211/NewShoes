@@ -64,6 +64,7 @@
     "test:ww3d2-shatterplanes-loader": "npm run build:wasm && node tools/run_ww3d2_shatterplanes_smoke.mjs ../GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/RequiredAssets/ShatterPlanes0.w3d",
     "test:ww3d2-shipped-mesh-loader": "npm run build:wasm && npm run extract:runtime-archives && node tools/run_ww3d2_shipped_mesh_smoke.mjs artifacts/real-assets/W3DZH.big",
     "test:ww3d-shipped-mesh-render": "npm run build:wasm && npm run extract:runtime-archives && node harness/shipped_mesh_render_smoke.mjs artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big",
+    "test:ww3d-multitexture-shipped-mesh-render": "npm run build:wasm && npm run extract:runtime-archives && node harness/multitexture_shipped_mesh_render_smoke.mjs artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big",
     "test:gameengine-common-core": "npm run build:wasm && node dist/gameengine-common-core-smoke.cjs",
     "test:gamenetwork-core": "npm run build:wasm && node dist/gamenetwork-core-smoke.cjs",
     "test:gamenetwork-download-manager": "npm run build:wasm && node dist/gamenetwork-download-manager-smoke.cjs",
