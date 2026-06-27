@@ -1104,6 +1104,40 @@ try {
     throw new Error(`D3D8 legacy texture upload probe failed: ${JSON.stringify(d3d8LegacyTextureUploadResult)}`);
   }
 
+  const d3d8LegacyTextureDrawResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureDraw"));
+  const legacyDrawCases = d3d8LegacyTextureDrawResult.cases ?? [];
+  const legacyDrawNames = legacyDrawCases.map((entry) => entry.probe?.caseName).join(",");
+  const legacyDrawCenters = legacyDrawCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const legacyDrawSemantics = legacyDrawCases.map((entry) => entry.legacyUpload?.semantic).join(",");
+  const legacyDrawModes = legacyDrawCases.map((entry) => entry.browserProbe?.texture0?.semanticMode).join(",");
+  if (!d3d8LegacyTextureDrawResult.ok
+      || legacyDrawCases.length !== 3
+      || legacyDrawNames !== "A8AlphaBlend,L8Luminance,A8L8LuminanceAlpha"
+      || legacyDrawCenters !== "128,128,128,255|102,102,102,255|128,128,128,255"
+      || legacyDrawSemantics !== "alpha,luminance,luminanceAlpha"
+      || legacyDrawModes !== "1,2,3"
+      || legacyDrawCases.some((entry) => entry.probe?.source !== "browser_d3d8_legacy_texture_draw_probe")
+      || legacyDrawCases.some((entry) => entry.probe?.calls?.createTexture !== 1)
+      || legacyDrawCases.some((entry) => entry.probe?.calls?.textureLockRect !== 1)
+      || legacyDrawCases.some((entry) => entry.probe?.calls?.textureUnlockRect !== 1)
+      || legacyDrawCases.some((entry) => entry.probe?.calls?.browserTextureBind !== 1)
+      || legacyDrawCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 14)
+      || legacyDrawCases.some((entry) => entry.browserProbe?.texture0?.sampled !== true)
+      || legacyDrawCases.some((entry) => entry.browserProbe?.texture0?.semantic !== entry.legacyUpload?.semantic)
+      || legacyDrawCases.some((entry) => entry.browserProbe?.texture0?.combiner?.supported !== true)
+      || legacyDrawCases.some((entry) => entry.browserProbe?.texture0?.sampler?.supported !== true)
+      || legacyDrawCases.some((entry) => entry.centerPixelOk !== true)
+      || legacyDrawCases.some((entry) => entry.swizzleOk !== true)
+      || legacyDrawCases.some((entry) => entry.rawSampleOk !== true)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.updates !== 1)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.binds !== 1)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.releases !== 1)
+      || legacyDrawCases.some((entry) => entry.textureDelta?.samplerApplications !== 1)) {
+    throw new Error(`D3D8 legacy texture draw probe failed: ${JSON.stringify(d3d8LegacyTextureDrawResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

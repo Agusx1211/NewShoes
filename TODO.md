@@ -2479,6 +2479,16 @@ shares structure and follows behind.
       through Playwright. COUNT1/3/4, projected coordinates, camera-space
       generated coordinates, non-stage-0 transforms, and generalized FVF
       declaration decoding remain open.
+- [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
+      stage-0 WebGL2 textured draw path, not only through storage readback. The
+      draw bridge now records the texture semantic and reconstructs D3D8
+      sampler output in the shader (`A8 -> (0,0,0,A)`, `L8 -> (L,L,L,1)`,
+      `A8L8 -> (L,L,L,A)`) before the fixed-function combiner runs. A new
+      browser-driven probe renders all three formats with point sampling and
+      alpha blending where needed, and Playwright verifies center pixels,
+      shader semantic modes, lifecycle deltas, and raw upload metadata. Real
+      DDS/DXT payloads, palette textures, mip chains, and multi-stage texture
+      sampling remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

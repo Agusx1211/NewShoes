@@ -6040,6 +6040,371 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_legacy_texture_upload()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_legacy_texture_draw(unsigned int draw_case)
+{
+	wasm_d3d8_reset_state();
+
+	struct TexturedQuadVertex
+	{
+		float x;
+		float y;
+		float z;
+		float nx;
+		float ny;
+		float nz;
+		DWORD diffuse;
+		float u0;
+		float v0;
+		float u1;
+		float v1;
+	};
+
+	const char *case_name = "unknown";
+	const char *semantic = "unknown";
+	D3DFORMAT texture_format = D3DFMT_UNKNOWN;
+	UINT bytes_per_pixel = 1;
+	BYTE texel_byte0 = 0;
+	BYTE texel_byte1 = 0;
+	DWORD diffuse = 0xffffffffUL;
+	DWORD color_op = D3DTOP_SELECTARG1;
+	DWORD color_arg1 = D3DTA_TEXTURE;
+	DWORD color_arg2 = D3DTA_DIFFUSE;
+	DWORD alpha_op = D3DTOP_SELECTARG1;
+	DWORD alpha_arg1 = D3DTA_TEXTURE;
+	DWORD alpha_arg2 = D3DTA_DIFFUSE;
+	BOOL alpha_blend = FALSE;
+	unsigned int expected_r = 255;
+	unsigned int expected_g = 255;
+	unsigned int expected_b = 255;
+	unsigned int expected_a = 255;
+	bool known_case = true;
+	switch (draw_case) {
+		case 0:
+			case_name = "A8AlphaBlend";
+			semantic = "alpha";
+			texture_format = D3DFMT_A8;
+			texel_byte0 = 0x80;
+			color_op = D3DTOP_SELECTARG2;
+			alpha_blend = TRUE;
+			expected_r = 128;
+			expected_g = 128;
+			expected_b = 128;
+			break;
+		case 1:
+			case_name = "L8Luminance";
+			semantic = "luminance";
+			texture_format = D3DFMT_L8;
+			texel_byte0 = 0x66;
+			alpha_blend = FALSE;
+			expected_r = 102;
+			expected_g = 102;
+			expected_b = 102;
+			break;
+		case 2:
+			case_name = "A8L8LuminanceAlpha";
+			semantic = "luminanceAlpha";
+			texture_format = D3DFMT_A8L8;
+			bytes_per_pixel = 2;
+			texel_byte0 = 0xff;
+			texel_byte1 = 0x80;
+			alpha_blend = TRUE;
+			expected_r = 128;
+			expected_g = 128;
+			expected_b = 128;
+			break;
+		default:
+			known_case = false;
+			break;
+	}
+
+	if (!known_case) {
+		char buffer[256];
+		std::snprintf(buffer, sizeof(buffer),
+			"{\"source\":\"browser_d3d8_legacy_texture_draw_probe\",\"ok\":false,"
+			"\"caseId\":%u,\"error\":\"unknown legacy texture draw case\"}",
+			draw_case);
+		g_d3d8_probe_json = buffer;
+		return g_d3d8_probe_json.c_str();
+	}
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DTexture8 *texture = nullptr;
+	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	bool ok = d3d != nullptr && sizeof(TexturedQuadVertex) == 44;
+	HRESULT create_result = E_FAIL;
+	HRESULT texture_create_result = E_FAIL;
+	HRESULT texture_lock_result = E_FAIL;
+	HRESULT texture_unlock_result = E_FAIL;
+	HRESULT vertex_create_result = E_FAIL;
+	HRESULT vertex_lock_result = E_FAIL;
+	HRESULT vertex_unlock_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_texture_result = E_FAIL;
+	HRESULT set_stream_result = E_FAIL;
+	HRESULT set_indices_result = E_FAIL;
+	HRESULT draw_result = E_FAIL;
+	UINT texture_id = 0;
+	UINT texture_stage_write_count = 0;
+	UINT upload_pitch = 0;
+	UINT upload_row_bytes = 0;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xff000000UL, 1.0f, 0);
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, alpha_blend);
+		if (alpha_blend) {
+			device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+			device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+			device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+		}
+		device->SetRenderState(D3DRS_COLORWRITEENABLE,
+			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+		texture_create_result = device->CreateTexture(2, 2, 1, 0,
+			texture_format, D3DPOOL_MANAGED, &texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok && SUCCEEDED(texture_create_result) && texture != nullptr && texture_id != 0;
+	}
+
+	if (texture != nullptr) {
+		D3DLOCKED_RECT locked_rect = {};
+		texture_lock_result = texture->LockRect(0, &locked_rect, nullptr, 0);
+		if (SUCCEEDED(texture_lock_result) && locked_rect.pBits != nullptr) {
+			for (UINT y = 0; y < 2; ++y) {
+				BYTE *row = static_cast<BYTE *>(locked_rect.pBits) +
+					static_cast<std::size_t>(locked_rect.Pitch) * y;
+				for (UINT x = 0; x < 2; ++x) {
+					BYTE *pixel = row + x * bytes_per_pixel;
+					pixel[0] = texel_byte0;
+					if (bytes_per_pixel > 1) {
+						pixel[1] = texel_byte1;
+					}
+				}
+			}
+		}
+		texture_unlock_result = texture->UnlockRect(0);
+		const WasmD3D8ShimState *after = wasm_d3d8_get_state();
+		upload_pitch = after != nullptr ? after->last_browser_texture_pitch : 0;
+		upload_row_bytes = after != nullptr ? after->last_browser_texture_row_bytes : 0;
+		ok = ok && SUCCEEDED(texture_lock_result) && SUCCEEDED(texture_unlock_result)
+			&& upload_pitch == 2 * bytes_per_pixel
+			&& upload_row_bytes == 2 * bytes_per_pixel;
+	}
+
+	const TexturedQuadVertex vertices[4] = {
+		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, diffuse, 0.5f, 0.5f, 0.5f, 0.5f },
+		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, diffuse, 0.5f, 0.5f, 0.5f, 0.5f },
+		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, diffuse, 0.5f, 0.5f, 0.5f, 0.5f },
+		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, diffuse, 0.5f, 0.5f, 0.5f, 0.5f },
+	};
+	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
+
+	if (device != nullptr) {
+		vertex_create_result = device->CreateVertexBuffer(sizeof(vertices), D3DUSAGE_WRITEONLY, 0,
+			D3DPOOL_MANAGED, &vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_MANAGED, &index_buffer);
+		ok = ok && SUCCEEDED(vertex_create_result) && vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+	if (vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		vertex_lock_result = vertex_buffer->Lock(0, sizeof(vertices), &data, 0);
+		if (SUCCEEDED(vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, vertices, sizeof(vertices));
+		}
+		vertex_unlock_result = vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(vertex_lock_result) && SUCCEEDED(vertex_unlock_result);
+	}
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(0, sizeof(indices), &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memcpy(data, indices, sizeof(indices));
+		}
+		index_unlock_result = index_buffer->Unlock();
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result);
+	}
+
+	if (device != nullptr && texture != nullptr && vertex_buffer != nullptr && index_buffer != nullptr) {
+		struct TextureStageWrite
+		{
+			DWORD stage;
+			D3DTEXTURESTAGESTATETYPE state;
+			DWORD value;
+		};
+		const TextureStageWrite texture_stage_writes[] = {
+			{ 0, D3DTSS_COLOROP, color_op },
+			{ 0, D3DTSS_COLORARG1, color_arg1 },
+			{ 0, D3DTSS_COLORARG2, color_arg2 },
+			{ 0, D3DTSS_ALPHAOP, alpha_op },
+			{ 0, D3DTSS_ALPHAARG1, alpha_arg1 },
+			{ 0, D3DTSS_ALPHAARG2, alpha_arg2 },
+			{ 0, D3DTSS_MINFILTER, D3DTEXF_POINT },
+			{ 0, D3DTSS_MAGFILTER, D3DTEXF_POINT },
+			{ 0, D3DTSS_MIPFILTER, D3DTEXF_NONE },
+			{ 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP },
+			{ 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP },
+			{ 0, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU | 0 },
+			{ 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE },
+			{ 1, D3DTSS_COLOROP, D3DTOP_DISABLE },
+		};
+		for (UINT index = 0; index < sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]); ++index) {
+			const TextureStageWrite &write = texture_stage_writes[index];
+			if (SUCCEEDED(device->SetTextureStageState(write.stage, write.state, write.value))) {
+				++texture_stage_write_count;
+			}
+		}
+		set_texture_result = device->SetTexture(0, texture);
+		set_stream_result = device->SetStreamSource(0, vertex_buffer, sizeof(TexturedQuadVertex));
+		set_indices_result = device->SetIndices(index_buffer, 0);
+		draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+		ok = ok && texture_stage_write_count == sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]) &&
+			SUCCEEDED(set_texture_result) && SUCCEEDED(set_stream_result) &&
+			SUCCEEDED(set_indices_result) && SUCCEEDED(draw_result);
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (vertex_buffer != nullptr) {
+		vertex_buffer->Release();
+	}
+	if (texture != nullptr) {
+		texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_texture_calls == 1 &&
+		state->texture_lock_rect_calls == 1 &&
+		state->texture_unlock_rect_calls == 1 &&
+		state->browser_texture_create_calls == 1 &&
+		state->browser_texture_update_calls == 1 &&
+		state->browser_texture_bind_calls == 1 &&
+		state->browser_texture_release_calls == 1 &&
+		state->browser_buffer_create_calls == 2 &&
+		state->browser_buffer_update_calls == 2 &&
+		state->browser_buffer_release_calls == 2 &&
+		state->set_texture_calls == 1 &&
+		state->set_texture_stage_state_calls == texture_stage_write_count &&
+		state->draw_indexed_primitive_calls == 1 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == color_op &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == color_arg1 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG2] == color_arg2 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAOP] == alpha_op &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG1] == alpha_arg1 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG2] == alpha_arg2 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_DISABLE &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[4096];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_legacy_texture_draw_probe\","
+		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
+		"\"texture\":{\"id\":%u,\"format\":%u,\"bytesPerPixel\":%u,"
+		"\"texelBytes\":[%u,%u],\"semantic\":\"%s\","
+		"\"pitch\":%u,\"rowBytes\":%u},"
+		"\"expectedCenter\":[%u,%u,%u,%u],"
+		"\"alphaBlend\":%s,"
+		"\"combiner\":{\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
+		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
+		"\"setTexture\":%u,\"setTextureStageState\":%u,\"drawIndexed\":%u},"
+		"\"results\":{\"create\":%ld,\"textureCreate\":%ld,\"textureLock\":%ld,"
+		"\"textureUnlock\":%ld,\"vertexCreate\":%ld,\"vertexLock\":%ld,"
+		"\"vertexUnlock\":%ld,\"indexCreate\":%ld,\"indexLock\":%ld,"
+		"\"indexUnlock\":%ld,\"setTexture\":%ld,\"setStream\":%ld,"
+		"\"setIndices\":%ld,\"draw\":%ld}}",
+		ok ? "true" : "false",
+		draw_case,
+		case_name,
+		texture_id,
+		static_cast<unsigned int>(texture_format),
+		bytes_per_pixel,
+		static_cast<unsigned int>(texel_byte0),
+		static_cast<unsigned int>(texel_byte1),
+		semantic,
+		upload_pitch,
+		upload_row_bytes,
+		expected_r,
+		expected_g,
+		expected_b,
+		expected_a,
+		alpha_blend ? "true" : "false",
+		static_cast<unsigned long>(color_op),
+		static_cast<unsigned long>(color_arg1),
+		static_cast<unsigned long>(color_arg2),
+		static_cast<unsigned long>(alpha_op),
+		static_cast<unsigned long>(alpha_arg1),
+		static_cast<unsigned long>(alpha_arg2),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		static_cast<long>(create_result),
+		static_cast<long>(texture_create_result),
+		static_cast<long>(texture_lock_result),
+		static_cast<long>(texture_unlock_result),
+		static_cast<long>(vertex_create_result),
+		static_cast<long>(vertex_lock_result),
+		static_cast<long>(vertex_unlock_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_texture_result),
+		static_cast<long>(set_stream_result),
+		static_cast<long>(set_indices_result),
+		static_cast<long>(draw_result));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()
 {
 	return write_state_json();

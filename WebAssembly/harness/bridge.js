@@ -629,10 +629,8 @@ function applyD3D8TextureSwizzleIfChanged(resource, info) {
   if (resource.swizzleStorage === info.storage) {
     return resource.swizzleApplied || null;
   }
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_R, info.swizzle.r);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_G, info.swizzle.g);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_B, info.swizzle.b);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_A, info.swizzle.a);
+  // Keep the raw R/RG texture storage stable; the draw shader reconstructs
+  // D3D8 legacy sampler semantics before the fixed-function combiner runs.
   resource.swizzleStorage = info.storage;
   resource.swizzleSemantic = info.semantic;
   resource.swizzleApplied = {
@@ -642,6 +640,7 @@ function applyD3D8TextureSwizzleIfChanged(resource, info) {
     a: info.swizzle.a,
     semantic: info.semantic,
     storage: info.storage,
+    appliedBy: "shader",
   };
   return resource.swizzleApplied;
 }
@@ -947,6 +946,19 @@ function stage0TextureCombinerInfo(textureStage, canSampleTexture0) {
   };
 }
 
+function d3d8TextureSemanticMode(resource) {
+  switch (resource?.semantic) {
+    case "alpha":
+      return 1;
+    case "luminance":
+      return 2;
+    case "luminanceAlpha":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
 function withPreservedD3D8TextureUnit(callback) {
   if (!gl) {
     return null;
@@ -1115,6 +1127,8 @@ function updateD3D8Texture(payload = {}) {
 
   const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height);
   const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
+  resource.storage = info.storage;
+  resource.semantic = info.semantic || null;
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
@@ -1455,6 +1469,7 @@ function ensureD3D8DrawProgram() {
     in vec2 vTexCoord0;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
+    uniform int uTexture0Semantic;
     uniform int uStage0ColorOp;
     uniform int uStage0ColorArg1;
     uniform int uStage0ColorArg2;
@@ -1488,6 +1503,18 @@ function ensureD3D8DrawProgram() {
         return value >= reference;
       }
       return true;
+    }
+    vec4 d3dTexture0Sample(vec4 rawSample) {
+      if (uTexture0Semantic == 1) {
+        return vec4(0.0, 0.0, 0.0, rawSample.r);
+      }
+      if (uTexture0Semantic == 2) {
+        return vec4(rawSample.r, rawSample.r, rawSample.r, 1.0);
+      }
+      if (uTexture0Semantic == 3) {
+        return vec4(rawSample.r, rawSample.r, rawSample.r, rawSample.g);
+      }
+      return rawSample;
     }
     // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2.
     // Stage 0 CURRENT is the iterated diffuse color, matching the existing
@@ -1553,7 +1580,7 @@ function ensureD3D8DrawProgram() {
       return diffuseAlpha;
     }
     void main() {
-      vec4 texture0Color = uUseTexture0 ? texture(uTexture0, vTexCoord0) : vec4(1.0);
+      vec4 texture0Color = uUseTexture0 ? d3dTexture0Sample(texture(uTexture0, vTexCoord0)) : vec4(1.0);
       vec3 rgb = d3dStage0Color(vColor.rgb, texture0Color.rgb);
       float alpha = d3dStage0Alpha(vColor.a, texture0Color.a);
       vec4 color = vec4(rgb, alpha);
@@ -1589,6 +1616,7 @@ function ensureD3D8DrawProgram() {
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
+    texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
     stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
     stage0ColorArg1: gl.getUniformLocation(program, "uStage0ColorArg1"),
     stage0ColorArg2: gl.getUniformLocation(program, "uStage0ColorArg2"),
@@ -1912,6 +1940,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     texture0Transform,
   );
   const canSampleTexture0 = Boolean(texture0Ready && texture0Coordinates.supported);
+  const texture0SemanticMode = canSampleTexture0 ? d3d8TextureSemanticMode(texture0Resource) : 0;
   const appliedTexture0Combiner = stage0TextureCombinerInfo(renderState.textureStages[0], canSampleTexture0);
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -1965,6 +1994,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.texture0) {
       gl.uniform1i(bridgeProgram.texture0, 0);
+    }
+    if (bridgeProgram.texture0Semantic) {
+      gl.uniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
     }
     if (bridgeProgram.stage0ColorOp) {
       gl.uniform1i(bridgeProgram.stage0ColorOp, renderState.textureStages[0].colorOp);
@@ -2050,6 +2082,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       width: texture0Resource?.width ?? 0,
       height: texture0Resource?.height ?? 0,
       format: texture0Resource?.format ?? 0,
+      storage: texture0Resource?.storage ?? null,
+      semantic: texture0Resource?.semantic ?? null,
+      semanticMode: texture0SemanticMode,
       uploads: texture0Resource?.uploads ?? 0,
       sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
       combiner: appliedTexture0Combiner,
@@ -2200,6 +2235,7 @@ async function loadWasmModule() {
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
+      probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -3508,6 +3544,111 @@ async function rpc(command, payload = {}) {
           browserProbe: textureProbe,
           browserDelta: delta,
           perFormat,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8LegacyTextureDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 legacy texture draw probe cannot run" };
+        }
+        const cases = [];
+        for (const caseId of [0, 1, 2]) {
+          clearCanvas({ rgba: [0, 0, 0, 255] });
+          harnessState.graphics = {
+            ...harnessState.graphics,
+            lastD3D8DrawIndexed: null,
+          };
+          const before = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8LegacyTextureDraw(caseId));
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (before.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (before.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (before.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (before.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (before.releases ?? 0),
+            samplerApplications: (textureProbe?.samplerApplications ?? 0) - (before.samplerApplications ?? 0),
+          };
+          const expectedCenter = Array.isArray(probe.expectedCenter)
+            ? probe.expectedCenter
+            : [0, 0, 0, 255];
+          const centerPixelOk = browserProbe?.centerPixel
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+          const legacyUpload = Array.isArray(textureProbe?.legacyUploads)
+            ? textureProbe.legacyUploads[textureProbe.legacyUploads.length - 1] ?? null
+            : null;
+          const expectedSwizzle = probe.texture?.semantic === "luminanceAlpha"
+            ? { r: gl.RED, g: gl.RED, b: gl.RED, a: GL_GREEN, semantic: "luminanceAlpha" }
+            : probe.texture?.semantic === "luminance"
+              ? { r: gl.RED, g: gl.RED, b: gl.RED, a: gl.ONE, semantic: "luminance" }
+              : probe.texture?.semantic === "alpha"
+                ? { r: gl.ZERO, g: gl.ZERO, b: gl.ZERO, a: gl.RED, semantic: "alpha" }
+                : null;
+          const swizzle = legacyUpload?.swizzle ?? {};
+          const swizzleOk = expectedSwizzle !== null
+            && swizzle.r === expectedSwizzle.r
+            && swizzle.g === expectedSwizzle.g
+            && swizzle.b === expectedSwizzle.b
+            && swizzle.a === expectedSwizzle.a
+            && swizzle.semantic === expectedSwizzle.semantic;
+          const texelBytes = Array.isArray(probe.texture?.texelBytes) ? probe.texture.texelBytes : [];
+          const expectedRawSample = [
+            Number(texelBytes[0] ?? 0) >>> 0,
+            (Number(probe.texture?.bytesPerPixel ?? 0) >>> 0) > 1
+              ? Number(texelBytes[1] ?? 0) >>> 0
+              : 0,
+            0,
+            255,
+          ];
+          const rawSampleOk = Array.isArray(legacyUpload?.samplePixel)
+            && legacyUpload.samplePixel.join(",") === expectedRawSample.join(",");
+          const caseOk = Boolean(probe.ok)
+            && probe.source === "browser_d3d8_legacy_texture_draw_probe"
+            && probe.calls?.createTexture === 1
+            && probe.calls?.textureLockRect === 1
+            && probe.calls?.textureUnlockRect === 1
+            && probe.calls?.browserTextureUpdate === 1
+            && probe.calls?.browserTextureBind === 1
+            && probe.calls?.browserTextureRelease === 1
+            && probe.calls?.setTextureStageState === 14
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.ok === true
+            && browserProbe?.texture0?.id === probe.texture?.id
+            && browserProbe?.texture0?.format === probe.texture?.format
+            && browserProbe?.texture0?.sampled === true
+            && browserProbe?.texture0?.combiner?.supported === true
+            && browserProbe?.texture0?.sampler?.supported === true
+            && centerPixelOk
+            && legacyUpload?.format === probe.texture?.format
+            && legacyUpload?.semantic === probe.texture?.semantic
+            && swizzleOk
+            && rawSampleOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === 1
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureDelta.samplerApplications === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureDelta,
+            legacyUpload,
+            expectedRawSample,
+            centerPixelOk,
+            swizzleOk,
+            rawSampleOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
           state: snapshotState(),
         };
       }
