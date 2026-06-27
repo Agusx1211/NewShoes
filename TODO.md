@@ -561,6 +561,12 @@ shares structure and follows behind.
       file-info and directory-list delegation, music-CD presence probe,
       model-condition and armor-set bit-name tables, and geometry bounds /
       footprint calculations.
+- [x] Extend the original `BitFlags` smoke to cover the set-operation surface
+      used by GameLogic condition matching and netcode: `any`, `testForAny`,
+      `testForAll`, `testForNone`, `countIntersection`, and the set-wise
+      `set(BitFlags)`, `clear(BitFlags)`, `clearAndSet`, and `clear()` transfers.
+      This is bit-flag bookkeeping coverage only; full condition-matching still
+      waits for the linked `Player`/`Thing`/object runtime.
 - [x] Expanded `GameEngine/Common` compression/data-chunk slice compiles from
       original sources: `Compression.cpp` and `DataChunk.cpp`, linked against
       the existing original `CompressionManager` slice, with wasm smoke
