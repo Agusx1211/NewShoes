@@ -80,12 +80,17 @@ const d3d8TextureStats = {
   releases: 0,
   unsupportedUpdates: 0,
   live: 0,
+  binds: 0,
+  bindSkips: 0,
+  unbinds: 0,
   lastCreate: null,
   lastUpdate: null,
   lastSubrectUpdate: null,
   lastRelease: null,
   lastUnsupported: null,
+  lastBind: null,
 };
+const d3d8BoundTextureIds = new Array(8).fill(0);
 
 const harnessState = {
   booted: false,
@@ -582,11 +587,16 @@ function updateD3D8TextureSummary() {
       releases: d3d8TextureStats.releases,
       unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
       live: d3d8TextureStats.live,
+      binds: d3d8TextureStats.binds,
+      bindSkips: d3d8TextureStats.bindSkips,
+      unbinds: d3d8TextureStats.unbinds,
+      boundTextureIds: d3d8BoundTextureIds.slice(),
       lastCreate: d3d8TextureStats.lastCreate,
       lastUpdate: d3d8TextureStats.lastUpdate,
       lastSubrectUpdate: d3d8TextureStats.lastSubrectUpdate,
       lastRelease: d3d8TextureStats.lastRelease,
       lastUnsupported: d3d8TextureStats.lastUnsupported,
+      lastBind: d3d8TextureStats.lastBind,
     },
   };
 }
@@ -745,6 +755,41 @@ function releaseD3D8Texture(payload = {}) {
   d3d8Textures.delete(id);
   d3d8TextureStats.releases += 1;
   d3d8TextureStats.lastRelease = { id };
+  // If a released texture was still bound, clear the stale binding so a later
+  // bind of a recycled id is not skipped by the redundant-guard mirror.
+  for (let stage = 0; stage < d3d8BoundTextureIds.length; ++stage) {
+    if (d3d8BoundTextureIds[stage] === id) {
+      d3d8BoundTextureIds[stage] = 0;
+    }
+  }
+  updateD3D8TextureSummary();
+  return 1;
+}
+
+function bindD3D8Texture(payload = {}) {
+  const stage = Number(payload.stage ?? 0) >>> 0;
+  const id = Number(payload.id ?? 0) >>> 0;
+  if (stage >= d3d8BoundTextureIds.length) {
+    return 0;
+  }
+  // Mirror DX8Wrapper::Set_DX8_Texture's redundant-state guard on the JS side:
+  // identical stage bindings are skipped to avoid re-issuing gl.bindTexture.
+  if (d3d8BoundTextureIds[stage] === id) {
+    d3d8TextureStats.bindSkips += 1;
+    return 1;
+  }
+  d3d8BoundTextureIds[stage] = id;
+  if (gl) {
+    const texture = id !== 0 ? d3d8Textures.get(id)?.texture ?? null : null;
+    gl.activeTexture(gl.TEXTURE0 + stage);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+  }
+  if (id === 0) {
+    d3d8TextureStats.unbinds += 1;
+  } else {
+    d3d8TextureStats.binds += 1;
+  }
+  d3d8TextureStats.lastBind = { stage, id, texture: id !== 0 };
   updateD3D8TextureSummary();
   return 1;
 }
@@ -1345,6 +1390,7 @@ async function loadWasmModule() {
       cncPortD3D8TextureCreate: createD3D8Texture,
       cncPortD3D8TextureUpdate: updateD3D8Texture,
       cncPortD3D8TextureRelease: releaseD3D8Texture,
+      cncPortD3D8TextureBind: bindD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
     });
 

@@ -2,6 +2,8 @@
 
 #include "d3d8.h"
 
+#define WASM_D3D8_MAX_TEXTURE_STAGES 8
+
 struct WasmD3D8DrawRenderState
 {
 	DWORD cull_mode;
@@ -105,6 +107,13 @@ struct WasmD3D8ShimState
 	UINT get_transform_calls;
 	UINT set_viewport_calls;
 	UINT get_viewport_calls;
+	UINT set_texture_calls;
+	UINT set_texture_redundant_skips;
+	UINT set_texture_unknown_type_calls;
+	UINT last_set_texture_stage;
+	UINT last_set_texture_id;
+	DWORD last_set_texture_was_null;
+	UINT bound_texture_ids[WASM_D3D8_MAX_TEXTURE_STAGES];
 	UINT set_render_state_calls;
 	UINT get_render_state_calls;
 	D3DTRANSFORMSTATETYPE last_set_transform_state;

@@ -183,7 +183,7 @@ is the single chokepoint the browser shim needs to satisfy.
 
 Ordered so each slice is independently testable via the harness screenshot path.
 
-- [ ] **S1 — `SetTexture` bind route reached from `Set_DX8_Texture`
+- [x] **S1 — `SetTexture` bind route reached from `Set_DX8_Texture`
       (bind-only).** In the browser D3D8 device shim, implement
       `IDirect3DDevice8::SetTexture(stage, d3dBaseTex)`: resolve `d3dBaseTex`
       → stable browser texture ID → WebGL texture handle →
@@ -191,6 +191,15 @@ Ordered so each slice is independently testable via the harness screenshot path.
       the `Textures[MAX_TEXTURE_STAGES]` redundant guard on the WebGL side.
       Null → `bindTexture(target, null)`. Verify with a single-textured 2D blit
       screenshot.
+      *Implemented (GLM-5.2): `BrowserD3DDevice::SetTexture` resolves the 2D
+      `BrowserD3DTexture` browser id, mirrors the per-stage redundant guard
+      (`m_bound_texture_ids[8]` / `g_state.bound_texture_ids[8]`), and dispatches
+      `wasm_d3d8_browser_texture_bind(stage,id)` → `Module.cncPortD3D8TextureBind`
+      → `bindD3D8Texture` (`activeTexture`+`bindTexture`, null unbinds). Covered
+      by `tests/d3d8_texture_binding_smoke.cpp`. Visual 2D-blit verification via
+      the Playwright harness screenshot path is the remaining half-step and is
+      tracked below; the bind route + counters/shadow are proven at the unit
+      level.)*
 - [ ] **S2 — `TextureFilterClass::Apply` → sampler params.** Translate the six
       DX8 stage states to `gl.texParameter*` (or, preferably, a
       `WebGLSampler`-per-stage cache keyed on the 6-tuple). Honor
