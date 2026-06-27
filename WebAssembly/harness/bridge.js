@@ -460,6 +460,10 @@ function virtualKeyFromEvent(event) {
 }
 
 const win32Messages = Object.freeze({
+  activate: 0x0006,
+  setFocus: 0x0007,
+  killFocus: 0x0008,
+  activateApp: 0x001c,
   keyDown: 0x0100,
   keyUp: 0x0101,
   char: 0x0102,
@@ -474,6 +478,11 @@ const win32Messages = Object.freeze({
   middleButtonUp: 0x0208,
   middleButtonDoubleClick: 0x0209,
   mouseWheel: 0x020a,
+});
+
+const win32ActivateStates = Object.freeze({
+  inactive: 0,
+  active: 1,
 });
 
 const doubleClickPolicy = Object.freeze({
@@ -500,6 +509,7 @@ const doubleClickButtons = new Map([
 ]);
 
 const doubleClickStateByButton = new Map();
+let browserWin32Focused = false;
 
 function canvasInputPointFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
@@ -662,6 +672,39 @@ async function resetBrowserInput() {
   applyModuleState(parseModuleState(wasmModule.resetBrowserInput()));
   harnessState.wasm = "loaded";
   return snapshotState();
+}
+
+async function setBrowserWin32Focus(active) {
+  if (browserWin32Focused === active) {
+    return snapshotState();
+  }
+
+  browserWin32Focused = active;
+  if (!active) {
+    const resetState = await resetBrowserInput();
+    if (!resetState) {
+      return null;
+    }
+  }
+
+  const messages = active ? [
+    { message: win32Messages.activateApp, wParam: 1 },
+    { message: win32Messages.activate, wParam: win32ActivateStates.active },
+    { message: win32Messages.setFocus },
+  ] : [
+    { message: win32Messages.killFocus },
+    { message: win32Messages.activate, wParam: win32ActivateStates.inactive },
+    { message: win32Messages.activateApp, wParam: 0 },
+  ];
+
+  let state = null;
+  for (const message of messages) {
+    state = await postBrowserMessageToWasm(message);
+    if (!state) {
+      return null;
+    }
+  }
+  return state;
 }
 
 async function probeBrowserMessageQueue() {
@@ -984,6 +1027,12 @@ if (window.ResizeObserver) {
 }
 
 canvas.tabIndex = 0;
+canvas.addEventListener("focus", () => {
+  void setBrowserWin32Focus(true);
+});
+canvas.addEventListener("blur", () => {
+  void setBrowserWin32Focus(false);
+});
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);
   void pushBrowserInputToWasm({
@@ -1081,7 +1130,11 @@ window.addEventListener("keyup", (event) => {
   });
 });
 window.addEventListener("blur", () => {
-  void resetBrowserInput();
+  if (browserWin32Focused) {
+    void setBrowserWin32Focus(false);
+  } else {
+    void resetBrowserInput();
+  }
 });
 
 window.CnCPort = {

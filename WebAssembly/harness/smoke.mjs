@@ -529,6 +529,23 @@ try {
       throw new Error(`Original WndProc input did not initialize: ${JSON.stringify(originalWndProcInit)}`);
     }
 
+    const resetD3DCallsBeforeFocus = originalWndProcInit.probe.resetD3D?.calls ?? 0;
+    await page.locator("#viewport").focus();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "browser focus activation queue",
+    );
+    const browserFocusPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserFocusPump.ok
+        || browserFocusPump.probe.pump?.lastPumped !== 3
+        || browserFocusPump.probe.messageQueue?.count !== 0
+        || browserFocusPump.probe.resetD3D?.calls !== resetD3DCallsBeforeFocus + 1
+        || browserFocusPump.probe.resetD3D?.lastActive !== true
+        || browserFocusPump.probe.mouse?.lostFocus !== false) {
+      throw new Error(`Browser focus did not activate original WndProc state: ${JSON.stringify(browserFocusPump)}`);
+    }
+
     const leftButtonLParam = (45 << 16) | 123;
     await page.evaluate(({ wmLeftButtonDown, leftButtonLParam }) => window.CnCPort.rpc("postMessage", {
       message: wmLeftButtonDown,
@@ -632,6 +649,39 @@ try {
         || browserDoubleClickReleaseEvent?.left?.state !== "up"
         || browserDoubleClickReleaseEvent?.left?.frame !== 1) {
       throw new Error(`Browser double-click release did not feed Win32Mouse: ${JSON.stringify(browserDoubleClickReleaseProbe)}`);
+    }
+
+    const resetD3DCallsBeforeBlur = browserDoubleClickReleaseProbe.probe.resetD3D?.calls ?? 0;
+    await page.evaluate(() => document.querySelector("#viewport").blur());
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "browser blur deactivation queue",
+    );
+    const browserBlurPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserBlurPump.ok
+        || browserBlurPump.probe.pump?.lastPumped !== 3
+        || browserBlurPump.probe.messageQueue?.count !== 0
+        || browserBlurPump.probe.resetD3D?.calls !== resetD3DCallsBeforeBlur + 1
+        || browserBlurPump.probe.resetD3D?.lastActive !== false
+        || browserBlurPump.probe.mouse?.lostFocus !== true) {
+      throw new Error(`Browser blur did not deactivate original WndProc state: ${JSON.stringify(browserBlurPump)}`);
+    }
+
+    await page.locator("#viewport").focus();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "browser refocus activation queue",
+    );
+    const browserRefocusPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserRefocusPump.ok
+        || browserRefocusPump.probe.pump?.lastPumped !== 3
+        || browserRefocusPump.probe.messageQueue?.count !== 0
+        || browserRefocusPump.probe.resetD3D?.calls !== resetD3DCallsBeforeBlur + 2
+        || browserRefocusPump.probe.resetD3D?.lastActive !== true
+        || browserRefocusPump.probe.mouse?.lostFocus !== false) {
+      throw new Error(`Browser refocus did not reactivate original WndProc state: ${JSON.stringify(browserRefocusPump)}`);
     }
   }
 
