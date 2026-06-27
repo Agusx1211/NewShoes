@@ -121,7 +121,21 @@ int main()
 		expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
 			"AABox render primitive type mismatch") &&
 		expect(state->last_draw_vertex_count == 8, "AABox render vertex count mismatch") &&
-		expect(state->last_draw_primitive_count == 12, "AABox render triangle count mismatch");
+		expect(state->last_draw_primitive_count == 12, "AABox render triangle count mismatch") &&
+		expect(state->last_draw_stream_source_stride > 0, "AABox render stream stride was not captured") &&
+		expect(state->last_draw_vertex_buffer_length > 0, "AABox render vertex buffer length missing") &&
+		expect(state->last_draw_vertex_buffer_bytes ==
+				state->last_draw_vertex_count * state->last_draw_stream_source_stride,
+			"AABox render vertex byte range mismatch") &&
+		expect(state->last_draw_vertex_buffer_checksum != 0,
+			"AABox render vertex byte checksum missing") &&
+		expect(state->last_draw_index_format == D3DFMT_INDEX16,
+			"AABox render index format mismatch") &&
+		expect(state->last_draw_index_buffer_length > 0, "AABox render index buffer length missing") &&
+		expect(state->last_draw_index_buffer_bytes == state->last_draw_primitive_count * 3 * sizeof(WORD),
+			"AABox render index byte range mismatch") &&
+		expect(state->last_draw_index_buffer_checksum != 0,
+			"AABox render index byte checksum missing");
 
 	WW3D::Shutdown();
 
@@ -131,12 +145,15 @@ int main()
 
 	std::printf("{\"ok\":true,\"smoke\":\"ww3d2-dx8wrapper-render\","
 		"\"createDevice\":%u,\"createTexture\":%u,\"createIndexBuffer\":%u,"
-		"\"createVertexBuffer\":%u,\"drawIndexed\":%u,\"clear\":%u,\"present\":%u}\n",
+		"\"createVertexBuffer\":%u,\"drawIndexed\":%u,\"vertexBytes\":%u,"
+		"\"indexBytes\":%u,\"clear\":%u,\"present\":%u}\n",
 		state->create_device_calls,
 		state->create_texture_calls,
 		state->create_index_buffer_calls,
 		state->create_vertex_buffer_calls,
 		state->draw_indexed_primitive_calls,
+		state->last_draw_vertex_buffer_bytes,
+		state->last_draw_index_buffer_bytes,
 		state->clear_calls,
 		state->present_calls);
 	return 0;
