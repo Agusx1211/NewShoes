@@ -1821,6 +1821,10 @@ shares structure and follows behind.
       resize-synchronized viewport/backing state, black clear, and smoke-tested
       resize assertions. This is the browser bridge surface only; original W3D
       display/device binding remains open.
+- [x] Add a harness `clearCanvas` RPC that clears the browser WebGL2 drawing
+      buffer to a requested color, verifies pixel readback, captures a
+      non-black canvas screenshot, and restores the black boot window. This is
+      browser bridge validation only; original W3D display clear remains open.
 - [x] Logging/`DEBUG_LOG`/assert routed to browser console + harness.
 - [x] Capture Emscripten module stdout/stderr through the browser harness log
       RPC and smoke-test the wasm bootstrap boot line.

@@ -9,6 +9,7 @@ const wasmRoot = resolve(harnessRoot, "..");
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
+const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -820,6 +821,27 @@ try {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitForCanvasSize(page, 1280, 720);
 
+  const clearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
+    rgba: [32, 64, 128, 255],
+  }));
+  if (!clearResult.ok
+      || clearResult.probe?.source !== "browser_webgl2_clear"
+      || clearResult.probe?.clearColor?.join(",") !== "32,64,128,255"
+      || clearResult.probe?.topLeftPixel?.join(",") !== "32,64,128,255"
+      || clearResult.state.graphics?.lastClearOk !== true) {
+    throw new Error(`Canvas WebGL2 clear probe failed: ${JSON.stringify(clearResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: clearCanvasScreenshot });
+
+  const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
+    rgba: [0, 0, 0, 255],
+  }));
+  if (!resetClearResult.ok
+      || resetClearResult.probe?.topLeftPixel?.join(",") !== "0,0,0,255") {
+    throw new Error(`Canvas black reset failed: ${JSON.stringify(resetClearResult)}`);
+  }
+
   const screenshotResult = await page.evaluate(() => window.CnCPort.rpc("screenshot"));
   if (!screenshotResult.ok) {
     throw new Error(`Screenshot RPC failed: ${JSON.stringify(screenshotResult)}`);
@@ -847,7 +869,7 @@ try {
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
-    screenshots: [desktopScreenshot, canvasScreenshot],
+    screenshots: [desktopScreenshot, canvasScreenshot, clearCanvasScreenshot],
     state: stateResult.state,
   }, null, 2));
 } finally {

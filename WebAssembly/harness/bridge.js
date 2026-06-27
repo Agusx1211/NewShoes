@@ -74,6 +74,7 @@ function getCanvasDisplaySize() {
 }
 
 function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
+  const previousGraphics = harnessState.graphics ?? {};
   harnessState.canvas = {
     width: canvas.width,
     height: canvas.height,
@@ -82,6 +83,7 @@ function refreshCanvasState(displaySize = getCanvasDisplaySize()) {
     devicePixelRatio: displaySize.devicePixelRatio,
   };
   harnessState.graphics = {
+    ...previousGraphics,
     api: gl ? "webgl2" : "2d-fallback",
     ok: Boolean(gl),
     contextLost: gl ? gl.isContextLost() : false,
@@ -102,17 +104,82 @@ function syncCanvasSize() {
   refreshCanvasState(displaySize);
 }
 
-function paintBlackWindow() {
+function clampColorByte(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(255, Math.round(number)));
+}
+
+function normalizeRgba(payload = {}, fallback = [0, 0, 0, 255]) {
+  const source = Array.isArray(payload.rgba)
+    ? payload.rgba
+    : [payload.r, payload.g, payload.b, payload.a];
+
+  return [
+    clampColorByte(source[0], fallback[0]),
+    clampColorByte(source[1], fallback[1]),
+    clampColorByte(source[2], fallback[2]),
+    clampColorByte(source[3], fallback[3]),
+  ];
+}
+
+function sampleCanvasPixel(x = 0, y = 0) {
+  const pixels = new Uint8Array(4);
+  if (gl) {
+    const readX = Math.max(0, Math.min(gl.drawingBufferWidth - 1, Math.trunc(x)));
+    const readY = Math.max(0, Math.min(gl.drawingBufferHeight - 1, Math.trunc(y)));
+    gl.readPixels(readX, gl.drawingBufferHeight - 1 - readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  } else if (fallbackContext) {
+    const readX = Math.max(0, Math.min(canvas.width - 1, Math.trunc(x)));
+    const readY = Math.max(0, Math.min(canvas.height - 1, Math.trunc(y)));
+    pixels.set(fallbackContext.getImageData(readX, readY, 1, 1).data);
+  }
+  return Array.from(pixels);
+}
+
+function pixelsApproximatelyEqual(left, right, tolerance = 1) {
+  return left.length === right.length
+    && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
+}
+
+function paintCanvasRgba(rgba) {
   syncCanvasSize();
   if (gl) {
-    gl.clearColor(0, 0, 0, 1);
+    gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   } else if (fallbackContext) {
-    fallbackContext.fillStyle = "#000";
+    fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
     fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
   }
   refreshCanvasState();
+  return sampleCanvasPixel(0, 0);
+}
+
+function clearCanvas(payload = {}) {
+  const rgba = normalizeRgba(payload);
+  const pixel = paintCanvasRgba(rgba);
+  const ok = pixelsApproximatelyEqual(pixel, rgba);
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    lastClearColor: rgba,
+    lastClearPixel: pixel,
+    lastClearOk: ok,
+  };
+
+  return {
+    ok,
+    source: gl ? "browser_webgl2_clear" : "browser_2d_clear",
+    api: harnessState.graphics.api,
+    clearColor: rgba,
+    topLeftPixel: pixel,
+  };
+}
+
+function paintBlackWindow() {
+  clearCanvas({ rgba: [0, 0, 0, 255] });
 }
 
 function syncStatus(label = harnessState.booted ? "booted" : "idle") {
@@ -255,16 +322,10 @@ function parseModuleState(stateJson) {
 
 function snapshotCanvas() {
   syncCanvasSize();
-  const pixels = new Uint8Array(4);
-  if (gl) {
-    gl.readPixels(0, gl.drawingBufferHeight - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  } else if (fallbackContext) {
-    pixels.set(fallbackContext.getImageData(0, 0, 1, 1).data);
-  }
   return {
     width: canvas.width,
     height: canvas.height,
-    topLeftPixel: Array.from(pixels),
+    topLeftPixel: sampleCanvasPixel(0, 0),
     dataUrl: canvas.toDataURL("image/png"),
   };
 }
@@ -1032,6 +1093,11 @@ async function rpc(command, payload = {}) {
       }
     case "log":
       return { ok: true, command, entry: recordLog(payload.message ?? "", payload.data ?? null) };
+    case "clearCanvas":
+      {
+        const probe = clearCanvas(payload);
+        return { ok: probe.ok, command, probe, state: snapshotState() };
+      }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotCanvas() };
     case "state":
