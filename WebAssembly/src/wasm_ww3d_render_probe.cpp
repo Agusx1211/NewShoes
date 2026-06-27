@@ -1,26 +1,30 @@
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "PreRTS.h"
 
+#include "Common/GlobalData.h"
 #include "Common/GameMemory.h"
-#include "assetmgr.h"
+#include "GameClient/Image.h"
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
+#endif
+#define protected public
+#include "W3DDevice/GameClient/W3DDisplay.h"
+#undef protected
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "boxrobj.h"
 #include "camera.h"
-#include "chunkio.h"
 #include "coltype.h"
-#include "light.h"
-#include "lightenvironment.h"
-#include "mesh.h"
-#include "meshmdl.h"
-#include "ramfile.h"
 #include "rect.h"
 #include "render2d.h"
 #include "rinfo.h"
 #include "texture.h"
-#include "vertmaterial.h"
-#include "w3d_file.h"
 #include "wasm_d3d8_shim.h"
 #include "ww3d.h"
 
@@ -34,7 +38,7 @@ namespace {
 
 std::string g_ww3d_aabox_probe_json;
 std::string g_ww3d_render2d_probe_json;
-std::string g_ww3d_textured_mesh_probe_json;
+std::string g_ww3d_display_drawimage_probe_json;
 
 bool succeeded(int result)
 {
@@ -60,6 +64,70 @@ void fill_argb_texture_red(D3DLOCKED_RECT &locked_rect, unsigned int width, unsi
 		}
 	}
 }
+
+struct ProbeW3DDisplayStorage
+{
+	W3DDisplay *prepare_for_image_probe()
+	{
+		// Keep this as raw storage. Calling the W3DDisplay constructor retains
+		// its full vtable/destructor surface and pulls display-string/font
+		// singletons into this minimal probe. drawImage is called non-virtually
+		// below and reads only the fields initialized in init_for_image_probe.
+		std::memset(storage, 0, sizeof(storage));
+		prepared = true;
+		return as_display();
+	}
+
+	bool init_for_image_probe(unsigned int width, unsigned int height)
+	{
+		if (!prepared) {
+			return false;
+		}
+
+		render = NEW Render2DClass;
+		if (render == nullptr) {
+			return false;
+		}
+
+		W3DDisplay *display = as_display();
+		display->m_width = width;
+		display->m_height = height;
+		display->m_bitDepth = 32;
+		display->m_windowed = TRUE;
+		display->m_2DRender = render;
+		display->m_isClippedEnabled = FALSE;
+		display->m_clipRegion.lo.x = 0;
+		display->m_clipRegion.lo.y = 0;
+		display->m_clipRegion.hi.x = static_cast<Int>(width);
+		display->m_clipRegion.hi.y = static_cast<Int>(height);
+		Render2DClass::Set_Screen_Resolution(RectClass(0.0f, 0.0f,
+			static_cast<float>(width), static_cast<float>(height)));
+		render->Set_Coordinate_Range(RectClass(0.0f, 0.0f,
+			static_cast<float>(width), static_cast<float>(height)));
+		return true;
+	}
+
+	void release_probe_renderer()
+	{
+		if (render != nullptr) {
+			render->Reset();
+			delete render;
+			render = nullptr;
+		}
+		// The real W3DDisplay destructor tears down global display/device
+		// singletons that this focused drawImage probe never initializes.
+		as_display()->m_2DRender = nullptr;
+	}
+
+	W3DDisplay *as_display()
+	{
+		return reinterpret_cast<W3DDisplay *>(storage);
+	}
+
+	alignas(W3DDisplay) unsigned char storage[sizeof(W3DDisplay)] = {};
+	Render2DClass *render = nullptr;
+	bool prepared = false;
+};
 
 } // namespace
 
@@ -271,11 +339,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_textured_quad()
 		{
 			Render2DClass renderer(texture);
 			renderer.Set_Coordinate_Range(RectClass(0.0f, 0.0f, 800.0f, 600.0f));
-			renderer.Add_Quad_Backfaced(
-				Vector2(300.0f, 220.0f),
-				Vector2(300.0f, 380.0f),
-				Vector2(500.0f, 220.0f),
-				Vector2(500.0f, 380.0f),
+			renderer.Add_Quad(
+				RectClass(300.0f, 220.0f, 500.0f, 380.0f),
 				RectClass(0.0f, 0.0f, 1.0f, 1.0f),
 				0xffffffffUL);
 
@@ -470,334 +535,138 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_textured_quad()
 	return g_ww3d_render2d_probe_json.c_str();
 }
 
-namespace {
-
-// Name of the procedural texture the in-memory W3D mesh references.  The mesh
-// loader resolves texture names through WW3DAssetManager::Get_Texture, so the
-// probe registers a procedural red TextureClass under this (lower-cased) name
-// before loading the mesh chunk stream.
-constexpr const char *kProbeMeshTextureName = "probe_mesh_red.tga";
-constexpr unsigned int kProbeMeshTextureWidth = 2;
-constexpr unsigned int kProbeMeshTextureHeight = 2;
-
-// Build a minimal, single-textured W3D mesh (a camera-facing quad of two
-// triangles) into a RAM-backed chunk stream using the original ChunkSaveClass.
-// The bytes match the on-disk W3D format that MeshClass::Load_W3D parses.
-bool write_probe_mesh_w3d(FileClass &file)
-{
-	file.Open(static_cast<int>(FileClass::WRITE));
-
-	ChunkSaveClass csave(&file);
-
-	csave.Begin_Chunk(W3D_CHUNK_MESH);
-
-	// --- Mesh header (W3D v4.2) ---
-	W3dMeshHeader3Struct header;
-	std::memset(&header, 0, sizeof(header));
-	header.Version = W3D_CURRENT_MESH_VERSION;
-	header.Attributes = W3D_MESH_FLAG_TWO_SIDED; // disable backface culling for the probe
-	std::strncpy(header.MeshName, "probequad", W3D_NAME_LEN);
-	header.NumTris = 2;
-	header.NumVertices = 4;
-	header.NumMaterials = 1;
-	header.NumDamageStages = 0;
-	header.SortLevel = SORT_LEVEL_NONE;
-	header.VertexChannels =
-		W3D_VERTEX_CHANNEL_LOCATION |
-		W3D_VERTEX_CHANNEL_NORMAL |
-		W3D_VERTEX_CHANNEL_TEXCOORD;
-	header.FaceChannels = W3D_FACE_CHANNEL_FACE;
-	header.Min = W3dVectorStruct{-1.5f, -1.2f, -5.0f};
-	header.Max = W3dVectorStruct{1.5f, 1.2f, -5.0f};
-	header.SphCenter = W3dVectorStruct{0.0f, 0.0f, -5.0f};
-	header.SphRadius = 2.0f;
-
-	csave.Begin_Chunk(W3D_CHUNK_MESH_HEADER3);
-	csave.Write(&header, sizeof(header));
-	csave.End_Chunk();
-
-	// --- Vertices (camera at origin looking down -Z, so z = -5 is in front) ---
-	const W3dVectorStruct vertices[4] = {
-		W3dVectorStruct{-1.5f, -1.2f, -5.0f},
-		W3dVectorStruct{1.5f, -1.2f, -5.0f},
-		W3dVectorStruct{1.5f, 1.2f, -5.0f},
-		W3dVectorStruct{-1.5f, 1.2f, -5.0f},
-	};
-	csave.Begin_Chunk(W3D_CHUNK_VERTICES);
-	csave.Write(vertices, sizeof(vertices));
-	csave.End_Chunk();
-
-	// --- Vertex normals (pointing +Z toward the camera) ---
-	const W3dVectorStruct normals[4] = {
-		W3dVectorStruct{0.0f, 0.0f, 1.0f},
-		W3dVectorStruct{0.0f, 0.0f, 1.0f},
-		W3dVectorStruct{0.0f, 0.0f, 1.0f},
-		W3dVectorStruct{0.0f, 0.0f, 1.0f},
-	};
-	csave.Begin_Chunk(W3D_CHUNK_VERTEX_NORMALS);
-	csave.Write(normals, sizeof(normals));
-	csave.End_Chunk();
-
-	// --- Legacy texture coordinates (pass 0, stage 0) ---
-	const W3dTexCoordStruct texcoords[4] = {
-		W3dTexCoordStruct{0.0f, 1.0f},
-		W3dTexCoordStruct{1.0f, 1.0f},
-		W3dTexCoordStruct{1.0f, 0.0f},
-		W3dTexCoordStruct{0.0f, 0.0f},
-	};
-	csave.Begin_Chunk(W3D_CHUNK_TEXCOORDS);
-	csave.Write(texcoords, sizeof(texcoords));
-	csave.End_Chunk();
-
-	// --- Vertex colors (white). Gives the mesh a DCG diffuse-color array so the DX8
-	// renderer selects the XYZNDUV1 vertex format (diffuse at offset 24, UV at 28) that
-	// the browser draw bridge supports for stage-0 texture sampling. ---
-	const W3dRGBStruct vertex_colors[4] = {
-		W3dRGBStruct(255, 255, 255),
-		W3dRGBStruct(255, 255, 255),
-		W3dRGBStruct(255, 255, 255),
-		W3dRGBStruct(255, 255, 255),
-	};
-	csave.Begin_Chunk(W3D_CHUNK_VERTEX_COLORS);
-	csave.Write(vertex_colors, sizeof(vertex_colors));
-	csave.End_Chunk();
-
-	// --- Triangles (two tris winding the quad) ---
-	W3dTriStruct tris[2];
-	std::memset(tris, 0, sizeof(tris));
-	tris[0].Vindex[0] = 0;
-	tris[0].Vindex[1] = 1;
-	tris[0].Vindex[2] = 2;
-	tris[0].Attributes = 0;
-	tris[0].Normal = W3dVectorStruct{0.0f, 0.0f, 1.0f};
-	tris[0].Dist = -5.0f;
-	tris[1].Vindex[0] = 0;
-	tris[1].Vindex[1] = 2;
-	tris[1].Vindex[2] = 3;
-	tris[1].Attributes = 0;
-	tris[1].Normal = W3dVectorStruct{0.0f, 0.0f, 1.0f};
-	tris[1].Dist = -5.0f;
-	csave.Begin_Chunk(W3D_CHUNK_TRIANGLES);
-	csave.Write(tris, sizeof(tris));
-	csave.End_Chunk();
-
-	// --- Material info: one pass, one vertex material, one shader, one texture ---
-	W3dMaterialInfoStruct matinfo;
-	std::memset(&matinfo, 0, sizeof(matinfo));
-	matinfo.PassCount = 1;
-	matinfo.VertexMaterialCount = 1;
-	matinfo.ShaderCount = 1;
-	matinfo.TextureCount = 1;
-	csave.Begin_Chunk(W3D_CHUNK_MATERIAL_INFO);
-	csave.Write(&matinfo, sizeof(matinfo));
-	csave.End_Chunk();
-
-	// --- Shader: depth test + write, texturing enabled, modulate primary gradient ---
-	W3dShaderStruct shader;
-	W3d_Shader_Reset(&shader);
-	W3d_Shader_Set_Depth_Compare(&shader, W3DSHADER_DEPTHCOMPARE_PASS_LEQUAL);
-	W3d_Shader_Set_Depth_Mask(&shader, W3DSHADER_DEPTHMASK_WRITE_ENABLE);
-	W3d_Shader_Set_Texturing(&shader, W3DSHADER_TEXTURING_ENABLE);
-	W3d_Shader_Set_Pri_Gradient(&shader, W3DSHADER_PRIGRADIENT_MODULATE);
-	csave.Begin_Chunk(W3D_CHUNK_SHADERS);
-	csave.Write(&shader, sizeof(shader));
-	csave.End_Chunk();
-
-	// --- Vertex material (white diffuse, fully opaque) ---
-	csave.Begin_Chunk(W3D_CHUNK_VERTEX_MATERIALS);
-	csave.Begin_Chunk(W3D_CHUNK_VERTEX_MATERIAL);
-	{
-		const char *vmat_name = "probequad_vmat";
-		csave.Begin_Chunk(W3D_CHUNK_VERTEX_MATERIAL_NAME);
-		csave.Write(vmat_name, static_cast<unsigned int>(std::strlen(vmat_name) + 1));
-		csave.End_Chunk();
-
-		W3dVertexMaterialStruct vmat;
-		W3d_Vertex_Material_Reset(&vmat);
-		csave.Begin_Chunk(W3D_CHUNK_VERTEX_MATERIAL_INFO);
-		csave.Write(&vmat, sizeof(vmat));
-		csave.End_Chunk();
-	}
-	csave.End_Chunk(); // VERTEX_MATERIAL
-	csave.End_Chunk(); // VERTEX_MATERIALS
-
-	// --- Texture reference: resolves to the procedural red texture via the asset manager ---
-	csave.Begin_Chunk(W3D_CHUNK_TEXTURES);
-	csave.Begin_Chunk(W3D_CHUNK_TEXTURE);
-	{
-		csave.Begin_Chunk(W3D_CHUNK_TEXTURE_NAME);
-		csave.Write(kProbeMeshTextureName,
-			static_cast<unsigned int>(std::strlen(kProbeMeshTextureName) + 1));
-		csave.End_Chunk();
-
-		W3dTextureInfoStruct texinfo;
-		std::memset(&texinfo, 0, sizeof(texinfo));
-		texinfo.Attributes = W3DTEXTURE_NO_LOD | W3DTEXTURE_TYPE_COLORMAP;
-		texinfo.FrameCount = 1;
-		csave.Begin_Chunk(W3D_CHUNK_TEXTURE_INFO);
-		csave.Write(&texinfo, sizeof(texinfo));
-		csave.End_Chunk();
-	}
-	csave.End_Chunk(); // TEXTURE
-	csave.End_Chunk(); // TEXTURES
-
-	csave.End_Chunk(); // MESH
-
-	file.Close();
-	return true;
-}
-
-} // namespace
-
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
 
+	constexpr unsigned int texture_width = 2;
+	constexpr unsigned int texture_height = 2;
+	GlobalData global_data;
+	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+
 	const int init_result = WW3D::Init(nullptr, nullptr, false);
 	int set_device_result = WW3D_ERROR_GENERIC;
 	int begin_render_result = WW3D_ERROR_GENERIC;
-	int render_result = WW3D_ERROR_GENERIC;
 	int end_render_result = WW3D_ERROR_GENERIC;
-	bool mesh_loaded = false;
-	bool texture_registered = false;
-	bool mesh_written = false;
 	HRESULT texture_create_result = E_FAIL;
 	HRESULT texture_lock_result = E_FAIL;
 	HRESULT texture_unlock_result = E_FAIL;
+	bool texture_created = false;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool image_allocated = false;
+	bool image_configured = false;
+	bool image_raw_texture = false;
+	UnsignedInt image_status = 0;
+	float image_uv_lo_x = 0.0f;
+	float image_uv_lo_y = 0.0f;
+	float image_uv_hi_x = 0.0f;
+	float image_uv_hi_y = 0.0f;
+	Int image_width = 0;
+	Int image_height = 0;
+	bool drawimage_called = false;
 	UINT texture_id = 0;
-	int load_result = WW3D_ERROR_GENERIC;
 
-	WW3DAssetManager *asset_manager = nullptr;
 	TextureClass *texture = nullptr;
-	MeshClass *mesh = nullptr;
-	CameraClass *camera = nullptr;
+	ProbeW3DDisplayStorage display_storage;
+	W3DDisplay *display = nullptr;
 
 	if (succeeded(init_result)) {
-		asset_manager = W3DNEW WW3DAssetManager();
-	}
-
-	if (asset_manager != nullptr) {
 		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
 	}
 
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
-
-		// Procedural solid-red texture that the mesh's texture stage will sample.
 		texture = NEW_REF(TextureClass, (
-			kProbeMeshTextureWidth,
-			kProbeMeshTextureHeight,
+			texture_width,
+			texture_height,
 			WW3D_FORMAT_A8R8G8B8,
 			MIP_LEVELS_1));
+		texture_created = texture != nullptr && texture->Peek_D3D_Texture() != nullptr;
+		texture_create_result = texture_created ? D3D_OK : E_FAIL;
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+	}
 
-		if (texture != nullptr && texture->Peek_D3D_Texture() != nullptr) {
-			texture->Set_Texture_Name(kProbeMeshTextureName);
-			texture_create_result = D3D_OK;
+	if (texture_created) {
+		D3DLOCKED_RECT locked_rect = {};
+		texture_lock_result = texture->Peek_D3D_Texture()->LockRect(0, &locked_rect, nullptr, 0);
+		if (SUCCEEDED(texture_lock_result) && locked_rect.pBits != nullptr) {
+			fill_argb_texture_red(locked_rect, texture_width, texture_height);
+		}
+		texture_unlock_result = texture->Peek_D3D_Texture()->UnlockRect(0);
+	}
 
-			D3DLOCKED_RECT locked_rect = {};
-			texture_lock_result = texture->Peek_D3D_Texture()->LockRect(0, &locked_rect, nullptr, 0);
-			if (SUCCEEDED(texture_lock_result) && locked_rect.pBits != nullptr) {
-				fill_argb_texture_red(locked_rect, kProbeMeshTextureWidth, kProbeMeshTextureHeight);
+	if (texture_created && SUCCEEDED(texture_unlock_result)) {
+		display = display_storage.prepare_for_image_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_image_probe(800, 600);
+
+		Image *image = newInstance(Image);
+		image_allocated = image != nullptr;
+		if (image_allocated) {
+			Region2D uv = {};
+			uv.lo.x = 0.0f;
+			uv.lo.y = 0.0f;
+			uv.hi.x = 1.0f;
+			uv.hi.y = 1.0f;
+			ICoord2D image_size = {};
+			image_size.x = 200;
+			image_size.y = 160;
+			image->setName(AsciiString("wasm-probe-display-drawimage"));
+			image->setTextureWidth(texture_width);
+			image->setTextureHeight(texture_height);
+			image->setImageSize(&image_size);
+			image->setUV(&uv);
+			image->setRawTextureData(texture);
+			image->setStatus(IMAGE_STATUS_RAW_TEXTURE);
+			image_status = image->getStatus();
+			image_raw_texture = BitTest(image_status, IMAGE_STATUS_RAW_TEXTURE);
+			const Region2D *image_uv = image->getUV();
+			image_uv_lo_x = image_uv->lo.x;
+			image_uv_lo_y = image_uv->lo.y;
+			image_uv_hi_x = image_uv->hi.x;
+			image_uv_hi_y = image_uv->hi.y;
+			image_width = image->getImageWidth();
+			image_height = image->getImageHeight();
+			image_configured =
+				image->getRawTextureData() == texture &&
+				image_raw_texture &&
+				image_uv_lo_x == 0.0f &&
+				image_uv_lo_y == 0.0f &&
+				image_uv_hi_x == 1.0f &&
+				image_uv_hi_y == 1.0f &&
+				image_width == 200 &&
+				image_height == 160;
+		}
+
+		if (display_setup && image_configured) {
+			begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(begin_render_result)) {
+				display->W3DDisplay::drawImage(image, 300, 220, 500, 380, 0xffffffffUL,
+					Display::DRAW_IMAGE_ALPHA);
+				drawimage_called = true;
+				end_render_result = WW3D::End_Render(false);
 			}
-			texture_unlock_result = texture->Peek_D3D_Texture()->UnlockRect(0);
-
-			// Register the procedural texture under the name the mesh references so
-			// the original WW3DAssetManager::Get_Texture path returns it as-is.
-			texture->Add_Ref(); // ref owned by the asset-manager hash table
-			asset_manager->Texture_Hash().Insert(kProbeMeshTextureName, texture);
-			texture_registered = asset_manager->Texture_Hash().Get(kProbeMeshTextureName) == texture;
-
-			const WasmD3D8ShimState *state = wasm_d3d8_get_state();
-			texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		}
+		if (image != nullptr) {
+			image->deleteInstance();
 		}
 	}
 
-	if (texture_registered) {
-		// Build the in-memory W3D mesh chunk stream.
-		RAMFileClass file(nullptr, 4096);
-		mesh_written = write_probe_mesh_w3d(file);
-
-		if (mesh_written) {
-			file.Open(static_cast<int>(FileClass::READ));
-			ChunkLoadClass cload(&file);
-
-			if (cload.Open_Chunk() && cload.Cur_Chunk_ID() == W3D_CHUNK_MESH) {
-				mesh = NEW_REF(MeshClass, ());
-				load_result = mesh->Load_W3D(cload);
-				mesh_loaded = succeeded(load_result);
-				cload.Close_Chunk();
-			}
-			file.Close();
-
-			// The W3D loader's single-material early-return (NumMaterials == 1) leaves the
-			// mesh model's single shader/texture/material uninstalled, so install them
-			// through the original public MeshModelClass::Set_Single_* API before render.
-			// This binds the procedural texture and a texturing-enabled shader so the
-			// browser draw bridge samples stage 0.
-			if (mesh_loaded) {
-				MeshModelClass *model = mesh->Peek_Model();
-				model->Set_Single_Texture(texture, 0, 0);
-
-				ShaderClass shader;
-				shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
-				shader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
-				shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_ENABLE);
-				shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
-				shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-				model->Set_Single_Shader(shader);
-
-				VertexMaterialClass *vmat = NEW_REF(VertexMaterialClass, ());
-				model->Set_Single_Material(vmat, 0);
-				vmat->Release_Ref();
-			}
-		}
-	}
-
-	if (mesh_loaded) {
-		camera = W3DNEW CameraClass();
-		camera->Set_Aspect_Ratio(800.0f / 600.0f);
-
-		// Full-bright lighting so the textured quad is not darkened by the mesh
-		// vertex-lighting pass; texture (red) * diffuse (white) == red.
-		LightEnvironmentClass light_env;
-		light_env.Reset(Vector3(0.0f, 0.0f, -5.0f), Vector3(1.0f, 1.0f, 1.0f));
-
-		LightClass *light = W3DNEW LightClass(LightClass::DIRECTIONAL);
-		light->Set_Ambient(Vector3(1.0f, 1.0f, 1.0f));
-		light->Set_Diffuse(Vector3(1.0f, 1.0f, 1.0f));
-		light_env.Add_Light(*light);
-		light_env.Pre_Render_Update(camera->Get_Transform());
-
-		RenderInfoClass render_info(*camera);
-		render_info.light_environment = &light_env;
-
-		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
-		if (succeeded(begin_render_result)) {
-			render_result = WW3D::Render(*mesh, render_info);
-			end_render_result = WW3D::End_Render(false);
-		}
-
-		light->Release_Ref();
-	}
-
-	REF_PTR_RELEASE(camera);
-	REF_PTR_RELEASE(mesh);
-
-	if (texture != nullptr) {
-		// Release the probe's local ref; the asset-manager hash ref follows below.
-		texture->Release_Ref();
-		texture = nullptr;
-	}
-
-	if (asset_manager != nullptr) {
-		delete asset_manager; // releases textures held by the hash table
-		asset_manager = nullptr;
-	}
+	display_storage.release_probe_renderer();
+	REF_PTR_RELEASE(texture);
 
 	if (succeeded(init_result)) {
 		WW3D::Shutdown();
 	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	TheGlobalData = old_global_data;
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
@@ -806,49 +675,62 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
 	const WasmD3D8DrawTextureStageState *stage1 =
 		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
-
 	const bool ok =
 		state != nullptr &&
 		succeeded(init_result) &&
 		succeeded(set_device_result) &&
-		asset_manager == nullptr && // created and torn down within the probe
-		texture_registered &&
-		mesh_written &&
-		mesh_loaded &&
+		SUCCEEDED(texture_create_result) &&
+		SUCCEEDED(texture_lock_result) &&
+		SUCCEEDED(texture_unlock_result) &&
+		texture_created &&
+		display_allocated &&
+		display_setup &&
+		image_configured &&
 		succeeded(begin_render_result) &&
-		succeeded(render_result) &&
+		drawimage_called &&
 		succeeded(end_render_result) &&
 		texture_id != 0 &&
 		state->create_device_calls >= 1 &&
-		state->create_vertex_buffer_calls >= 1 &&
-		state->create_index_buffer_calls >= 1 &&
+		state->create_texture_calls >= 2 &&
+		state->texture_lock_rect_calls >= 1 &&
+		state->texture_unlock_rect_calls >= 1 &&
 		state->browser_texture_create_calls >= 1 &&
-		state->set_texture_calls >= 1 &&
-		state->browser_texture_bind_calls >= 1 &&
-		state->set_stream_source_calls >= 1 &&
-		state->set_indices_calls >= 1 &&
+		state->browser_texture_update_calls >= 1 &&
+		state->browser_texture_bind_calls >= 2 &&
+		state->browser_texture_release_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_texture_calls >= 2 &&
 		state->draw_indexed_primitive_calls >= 1 &&
-		state->set_transform_calls >= 3 &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
 		state->last_draw_vertex_buffer_id != 0 &&
 		state->last_draw_index_buffer_id != 0 &&
 		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA &&
 		stage0 != nullptr &&
 		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
 		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
 		stage1 != nullptr &&
 		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
 
-	char buffer[4800];
+	char buffer[5600];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_textured_mesh_probe\","
+		"{\"source\":\"ww3d_display_drawimage_probe\","
 		"\"ok\":%s,"
-		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
-		"\"textureCreate\":%ld,\"textureLock\":%ld,\"textureUnlock\":%ld,"
-		"\"textureRegistered\":%s,\"meshWritten\":%s,\"meshLoad\":%d,"
-		"\"meshLoaded\":%s,\"beginRender\":%d,\"render\":%d,\"endRender\":%d},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,\"textureCreate\":%ld,"
+		"\"textureLock\":%ld,\"textureUnlock\":%ld,\"textureCreated\":%s,"
+		"\"displayAllocated\":%s,\"displaySetup\":%s,\"imageAllocated\":%s,"
+		"\"imageConfigured\":%s,\"beginRender\":%d,\"drawImageCalled\":%s,"
+		"\"endRender\":%d},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
-		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
 		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
@@ -856,39 +738,40 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
 		"\"setIndices\":%u,\"drawIndexed\":%u,\"setTransform\":%u,"
 		"\"clear\":%u,\"present\":%u},"
-		"\"texture\":{\"id\":%u,\"name\":\"%s\","
-		"\"width\":%u,\"height\":%u,\"expectedCenter\":[255,0,0,255]},"
-		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
-		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
-		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"
-		"\"vertexBytes\":%u,\"vertexChecksum\":%lu,"
-		"\"indexBufferId\":%u,\"indexOffset\":%u,\"indexBytes\":%u,"
-		"\"indexChecksum\":%lu,\"indexFormat\":%d,\"transformMask\":%u},"
-		"\"renderState\":{\"cullMode\":%lu,\"zEnable\":%lu,"
-		"\"zWriteEnable\":%lu,\"zFunc\":%lu,\"alphaBlendEnable\":%lu,"
-		"\"srcBlend\":%lu,\"destBlend\":%lu,\"blendOp\":%lu,"
-		"\"alphaTestEnable\":%lu,\"colorWriteEnable\":%lu,"
-		"\"textureStages\":["
+		"\"texture\":{\"id\":%u,\"format\":%u,\"width\":%u,\"height\":%u,"
+		"\"expectedCenter\":[255,0,0,255],\"lastBindStage\":%u,"
+		"\"lastBindId\":%u},"
+		"\"image\":{\"rawTexture\":%s,\"status\":%u,\"uvLoX\":%.3f,"
+		"\"uvLoY\":%.3f,\"uvHiX\":%.3f,\"uvHiY\":%.3f,"
+		"\"width\":%d,\"height\":%d},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
 		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
-		"\"alphaOp\":%lu,\"texCoordIndex\":%lu},"
-		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}",
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu,"
+		"\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
 		bool_json(ok),
 		init_result,
 		set_device_result,
 		static_cast<long>(texture_create_result),
 		static_cast<long>(texture_lock_result),
 		static_cast<long>(texture_unlock_result),
-		bool_json(texture_registered),
-		bool_json(mesh_written),
-		load_result,
-		bool_json(mesh_loaded),
+		bool_json(texture_created),
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		bool_json(image_allocated),
+		bool_json(image_configured),
 		begin_render_result,
-		render_result,
+		bool_json(drawimage_called),
 		end_render_result,
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
-		state != nullptr ? state->create_vertex_buffer_calls : 0,
-		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
 		state != nullptr ? state->browser_texture_create_calls : 0,
 		state != nullptr ? state->browser_texture_update_calls : 0,
 		state != nullptr ? state->browser_texture_bind_calls : 0,
@@ -905,45 +788,42 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 		state != nullptr ? state->clear_calls : 0,
 		state != nullptr ? state->present_calls : 0,
 		texture_id,
-		kProbeMeshTextureName,
-		kProbeMeshTextureWidth,
-		kProbeMeshTextureHeight,
+		static_cast<unsigned int>(D3DFMT_A8R8G8B8),
+		texture_width,
+		texture_height,
+		state != nullptr ? state->last_browser_texture_bind_stage : 0,
+		state != nullptr ? state->last_browser_texture_bind_id : 0,
+		bool_json(image_raw_texture),
+		static_cast<unsigned int>(image_status),
+		static_cast<double>(image_uv_lo_x),
+		static_cast<double>(image_uv_lo_y),
+		static_cast<double>(image_uv_hi_x),
+		static_cast<double>(image_uv_hi_y),
+		image_width,
+		image_height,
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
-		state != nullptr ? state->last_draw_start_vertex : 0,
-		state != nullptr ? state->last_draw_min_vertex_index : 0,
 		state != nullptr ? state->last_draw_vertex_count : 0,
 		state != nullptr ? state->last_draw_primitive_count : 0,
 		state != nullptr ? state->last_draw_stream_source_stride : 0,
 		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
-		state != nullptr ? state->last_draw_vertex_buffer_offset : 0,
-		state != nullptr ? state->last_draw_vertex_buffer_bytes : 0,
-		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_buffer_checksum : 0),
 		state != nullptr ? state->last_draw_index_buffer_id : 0,
-		state != nullptr ? state->last_draw_index_buffer_offset : 0,
-		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
-		static_cast<unsigned long>(state != nullptr ? state->last_draw_index_buffer_checksum : 0),
 		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
 		state != nullptr ? state->last_draw_transform_mask : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->cull_mode) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_enable) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_write_enable) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_func) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->alpha_blend_enable) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->src_blend) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->dest_blend) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->blend_op) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->alpha_test_enable) : 0,
-		draw_state != nullptr ? static_cast<unsigned long>(draw_state->color_write_enable) : 0,
-		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLOROP]) : 0,
-		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG1]) : 0,
-		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG2]) : 0,
-		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAOP]) : 0,
-		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_TEXCOORDINDEX]) : 0,
-		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLOROP]) : 0,
-		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_TEXCOORDINDEX]) : 0);
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
 
-	g_ww3d_textured_mesh_probe_json = buffer;
-	return g_ww3d_textured_mesh_probe_json.c_str();
+	g_ww3d_display_drawimage_probe_json = buffer;
+	return g_ww3d_display_drawimage_probe_json.c_str();
 }
 
 }

@@ -13,6 +13,7 @@ const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
+const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
@@ -1084,15 +1085,16 @@ try {
   const combinerCaseNames = combinerCases.map((entry) => entry.probe?.caseName).join(",");
   const combinerCenters = combinerCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   if (!d3d8TextureCombinerResult.ok
-      || combinerCases.length !== 22
-      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor,multiplyAddColorArg0,multiplyAddAlphaArg0,stage1DotProduct3Grayscale,resultArgTempPreservesCurrent,stage1SelectTemp"
-      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255|255,128,128,255|160,0,0,255|117,117,117,255|0,255,0,255|255,0,0,255"
+      || combinerCases.length !== 35
+      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor,multiplyAddColorArg0,multiplyAddAlphaArg0,stage1DotProduct3Grayscale,resultArgTempPreservesCurrent,stage1SelectTemp,modulate2X,modulate4X,addSigned,addSigned2X,subtract,addSmooth,blendTextureAlpha,blendFactorAlpha,blendCurrentAlpha,lerpColorArg0,blendDiffuseAlpha,stage1MultiplyAddColorArg0,stage1LerpColorArg0"
+      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255|255,128,128,255|160,0,0,255|117,117,117,255|0,255,0,255|255,0,0,255|64,0,0,255|129,0,0,255|128,128,0,255|255,255,0,255|191,96,0,255|192,128,128,255|64,191,0,255|64,191,0,255|128,127,0,255|64,191,0,255|64,191,0,255|128,64,64,255|64,191,0,255"
       || combinerCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_combiner_probe")
       || combinerCases.some((entry) => entry.probe?.calls?.setTextureStageState !== entry.probe?.expectedStageStateCalls)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.colorArg0 !== entry.probe?.combiner?.colorArg0)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.resultArg !== entry.probe?.combiner?.resultArg)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.alphaArg0 !== entry.probe?.combiner?.alphaArg0)
       || combinerCases.some((entry) => entry.browserProbe?.stage1Combiner?.colorOp !== entry.probe?.stage1Combiner?.colorOp)
+      || combinerCases.some((entry) => entry.browserProbe?.stage1Combiner?.colorArg0 !== entry.probe?.stage1Combiner?.colorArg0)
       || combinerCases.some((entry) => entry.browserProbe?.stage1Combiner?.colorArg1 !== entry.probe?.stage1Combiner?.colorArg1)
       || combinerCases.some((entry) => entry.browserProbe?.stage1Combiner?.colorArg2 !== entry.probe?.stage1Combiner?.colorArg2)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.supported !== true)
@@ -1342,6 +1344,9 @@ try {
       || render2DResult.browserProbe?.indexCount !== 6
       || render2DResult.browserProbe?.usedPersistentBuffers !== true
       || render2DResult.browserProbe?.usedTransforms !== true
+      || render2DResult.browserProbe?.usedIdentityClipSpace !== true
+      || render2DResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== true
+      || render2DResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1028
       || render2DResult.browserProbe?.texture0?.id !== render2DResult.probe?.texture?.id
       || render2DResult.browserProbe?.texture0?.ready !== true
       || render2DResult.browserProbe?.texture0?.sampled !== true
@@ -1362,10 +1367,53 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dRender2DCanvasScreenshot });
 
-  // WW3D textured MeshClass probe: build a minimal single-textured W3D mesh
-  // (two-triangle quad) in memory, load it through the original
-  // MeshClass::Load_W3D chunk reader, and render it through WW3D::Render so the
-  // browser WebGL2 draw bridge samples the procedural texture onto the mesh.
+  const displayDrawImageResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayDrawImage"));
+  if (!displayDrawImageResult.ok
+      || displayDrawImageResult.probe?.source !== "ww3d_display_drawimage_probe"
+      || displayDrawImageResult.probe?.results?.displayAllocated !== true
+      || displayDrawImageResult.probe?.results?.displaySetup !== true
+      || displayDrawImageResult.probe?.results?.imageConfigured !== true
+      || displayDrawImageResult.probe?.results?.drawImageCalled !== true
+      || displayDrawImageResult.probe?.image?.rawTexture !== true
+      || displayDrawImageResult.probe?.image?.status !== 2
+      || displayDrawImageResult.probe?.image?.width !== 200
+      || displayDrawImageResult.probe?.image?.height !== 160
+      || displayDrawImageResult.probe?.calls?.drawIndexed < 1
+      || displayDrawImageResult.probe?.calls?.browserTextureCreate < 1
+      || displayDrawImageResult.probe?.calls?.browserTextureUpdate < 1
+      || displayDrawImageResult.probe?.calls?.browserTextureBind < 2
+      || displayDrawImageResult.probe?.calls?.browserTextureRelease < 1
+      || displayDrawImageResult.probe?.draw?.primitiveType !== 4
+      || displayDrawImageResult.probe?.draw?.vertexCount !== 4
+      || displayDrawImageResult.probe?.draw?.primitiveCount !== 2
+      || displayDrawImageResult.probe?.draw?.vertexStride !== 44
+      || displayDrawImageResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayDrawImageResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || displayDrawImageResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayDrawImageResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayDrawImageResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayDrawImageResult.browserProbe?.usedPersistentBuffers !== true
+      || displayDrawImageResult.browserProbe?.usedTransforms !== true
+      || displayDrawImageResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== true
+      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1028
+      || displayDrawImageResult.browserProbe?.texture0?.id !== displayDrawImageResult.probe?.texture?.id
+      || displayDrawImageResult.browserProbe?.texture0?.ready !== true
+      || displayDrawImageResult.browserProbe?.texture0?.sampled !== true
+      || displayDrawImageResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || displayDrawImageResult.browserProbe?.texture0?.combiner?.supported !== true
+      || displayDrawImageResult.browserProbe?.texture0?.sampler?.supported !== true
+      || !pixelLooksRed(displayDrawImageResult.browserProbe?.centerPixel)
+      || !pixelLooksRed(displayDrawImageResult.screenshot?.centerPixel)
+      || displayDrawImageResult.textureDelta?.creates < 1
+      || displayDrawImageResult.textureDelta?.updates < 1
+      || displayDrawImageResult.textureDelta?.binds < 1
+      || displayDrawImageResult.textureDelta?.releases < 1) {
+    throw new Error(`WW3DDisplay drawImage probe failed: ${JSON.stringify(displayDrawImageResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayDrawImageCanvasScreenshot });
+
   const texturedMeshResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTexturedMesh"));
   if (!texturedMeshResult.ok
       || texturedMeshResult.probe?.source !== "ww3d_textured_mesh_probe"
@@ -1446,6 +1494,7 @@ try {
       d3d8ClearCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
+      ww3dDisplayDrawImageCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
     ],
     state: stateResult.state,

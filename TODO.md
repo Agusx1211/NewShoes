@@ -2493,6 +2493,17 @@ shares structure and follows behind.
       `D3DTA_TEMP`, with focused browser probes proving `RESULTARG=TEMP`
       preserves `CURRENT` and stage 1 can read `TEMP`. Broader terrain
       rendering remains blocked on the later multi-texture terrain path.
+- [x] Extend the WebGL2 fixed-function combiner bridge for original
+      `shader.cpp` texture ops beyond select/modulate/add: `MODULATE2X`,
+      `MODULATE4X`, `ADDSIGNED`, `ADDSIGNED2X`, `SUBTRACT`, `ADDSMOOTH`,
+      `BLENDDIFFUSEALPHA`, `BLENDTEXTUREALPHA`, `BLENDFACTORALPHA`,
+      `BLENDCURRENTALPHA`, and `LERP` now render through focused D3D8 browser
+      probes with center-pixel checks.
+- [x] Add stage-1 `D3DTSS_COLORARG0` support to the current WebGL2
+      fixed-function combiner bridge for non-texture stage-1
+      `MULTIPLYADD`/`LERP` operands, with focused browser probes proving
+      `TFACTOR | ALPHAREPLICATE` drives stage-1 color arg0 without pretending
+      stage-1 texture sampling is implemented.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state
@@ -2583,7 +2594,10 @@ shares structure and follows behind.
       cull/front-face, depth test/write/func, blend func/op, shader-emulated
       alpha test uniforms, and color-write masks, with C++ state-capture smoke
       coverage plus Playwright harness assertions proving the rendered AABox
-      draw path uses the mapped GL state and still paints the canvas.
+      draw path uses the mapped GL state and still paints the canvas. The draw
+      bridge also detects Render2D identity-world/view/projection clip-space
+      submits and flips the GL cull face for D3D screen-space winding; the
+      Render2D and `W3DDisplay::drawImage` smokes assert that path.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.
@@ -2601,6 +2615,13 @@ shares structure and follows behind.
       buffers, and the browser D3D8/WebGL2 draw bridge, verified by
       `harness-smoke-ww3d-render2d-canvas.png` and red center-pixel sampling
       in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawImage` renders a synthetic raw-texture `Image`
+      through its real `Render2DClass` helper and the browser D3D8/WebGL2 draw
+      bridge, verified by `harness-smoke-ww3d-display-drawimage-canvas.png`
+      and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+      This proves the Image blit call path only; filename-backed mapped-image
+      loading, clipping/rotation variants, and `DisplayString` text rendering
+      remain open.
 - [x] Single textured mesh renders. A minimal single-textured W3D mesh (a
       camera-facing two-triangle quad) is built in memory through the original
       `ChunkSaveClass`/W3D chunk format, loaded through the original

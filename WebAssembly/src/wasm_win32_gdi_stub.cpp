@@ -1,20 +1,13 @@
-// Browser no-op stubs for the subset of Win32 GDI functions declared in the
-// project windows.h shim that are referenced (transitively, through the WW3D
-// asset-manager -> font/GDI-surface code path) when a WW3D probe links the
-// original WW3DAssetManager / FontCharsClass / Render2DSentenceClass surface.
-//
-// The browser port cannot use real GDI; these stubs satisfy the linker so the
-// genuine original mesh/asset APIs can be exercised. They are no-ops that are
-// not reached by the renderer probes (which do not render GDI fonts); a real
-// browser font/surface bridge is tracked as a follow-up in TODO.md.
+// Browser no-op stubs for Win32 GDI entry points that are transitively
+// referenced by the original WW3D asset-manager/font surface. Renderer probes
+// do not reach these paths; real browser font/surface rendering is tracked in
+// TODO.md before DisplayString/GDI text can be considered ported.
 
 #include "windows.h"
 
 BOOL GetTextMetrics(HDC /*dc*/, TEXTMETRIC *metrics)
 {
 	if (metrics != nullptr) {
-		// Plausible zero'd metrics so any (currently unused) caller does not
-		// dereference garbage if it ever runs in a browser build.
 		ZeroMemory(metrics, sizeof(TEXTMETRIC));
 	}
 	return FALSE;
