@@ -45,7 +45,6 @@ constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
 constexpr const char *kShippedMeshTextureArchiveEntry = "art\\textures\\cine_moon.dds";
 constexpr const char *kShippedMeshTexturePath = "/art/textures/cine_moon.dds";
-constexpr const char *kShippedMeshTextureFactoryPath = "/art/textures/cine_moon.tga";
 
 bool succeeded(int result)
 {
@@ -452,6 +451,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			render_result = WW3D::Render(*mesh, render_info);
+			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
+			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
 			end_render_result = WW3D::End_Render(false);
 		}
 
@@ -644,6 +645,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	bool texture_dds_loaded = false;
 	bool texture_resolved = false;
 	bool texture_has_d3d_surface = false;
+	bool texture_search_path_set = false;
 	bool mesh_chunk_found = false;
 	bool mesh_loaded = false;
 	HRESULT texture_level_desc_result = E_FAIL;
@@ -666,9 +668,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	AABoxClass object_box(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 0.0f, 0.0f));
 
 	WW3DAssetManager *asset_manager = nullptr;
-	TextureClass *texture = nullptr;
 	MeshClass *mesh = nullptr;
 	CameraClass *camera = nullptr;
+	StringClass previous_texture_search_path(true);
 
 	if (succeeded(init_result)) {
 		asset_manager = W3DNEW WW3DAssetManager();
@@ -683,75 +685,21 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		mesh_archive_loaded = mounted_file_exists(kShippedMeshFileSystemPath);
 		texture_file_exists = mounted_file_exists(kShippedMeshTexturePath);
 		texture_archive_loaded = texture_file_exists;
+		if (_TheSimpleFileFactory != nullptr) {
+			_TheSimpleFileFactory->Get_Sub_Directory(previous_texture_search_path);
+			_TheSimpleFileFactory->Set_Sub_Directory("/art/textures/");
+			texture_search_path_set = true;
+		}
+		if (texture_file_exists) {
+			DDSFileClass dds_file(kShippedMeshTextureName, 0);
+			texture_dds_available = dds_file.Is_Available();
+		}
 		if (mesh_archive_loaded) {
 			file_read = read_mounted_file(kShippedMeshFileSystemPath, mesh_data);
 		}
-
-		if (texture_file_exists) {
-			DDSFileClass dds_file(kShippedMeshTextureFactoryPath, 0);
-			texture_dds_available = dds_file.Is_Available();
-			texture_dds_loaded = texture_dds_available && dds_file.Load();
-			if (texture_dds_loaded) {
-				texture_width = dds_file.Get_Width(0);
-				texture_height = dds_file.Get_Height(0);
-				texture_levels = dds_file.Get_Mip_Level_Count();
-				texture_format = WW3DFormat_To_D3DFormat(dds_file.Get_Format());
-				texture = NEW_REF(TextureClass, (
-					texture_width,
-					texture_height,
-					dds_file.Get_Format(),
-					static_cast<MipCountType>(texture_levels)));
-
-				if (texture != nullptr && texture->Peek_D3D_Texture() != nullptr) {
-					texture->Set_Texture_Name(kShippedMeshTextureName);
-					texture_has_d3d_surface = true;
-					for (UINT level = 0; level < texture_levels; ++level) {
-						D3DSURFACE_DESC surface_desc = {};
-						D3DLOCKED_RECT locked_rect = {};
-						if (SUCCEEDED(texture->Peek_D3D_Texture()->GetLevelDesc(level, &surface_desc)) &&
-								SUCCEEDED(texture->Peek_D3D_Texture()->LockRect(level, &locked_rect, nullptr, 0))) {
-							if (locked_rect.pBits != nullptr) {
-								dds_file.Copy_Level_To_Surface(
-									level,
-									D3DFormat_To_WW3DFormat(surface_desc.Format),
-									surface_desc.Width,
-									surface_desc.Height,
-									static_cast<unsigned char *>(locked_rect.pBits),
-									locked_rect.Pitch);
-								++texture_uploaded_levels;
-							}
-							texture->Peek_D3D_Texture()->UnlockRect(level);
-						}
-					}
-
-					D3DSURFACE_DESC texture_desc = {};
-					texture_level_desc_result = texture->Peek_D3D_Texture()->GetLevelDesc(0, &texture_desc);
-					if (SUCCEEDED(texture_level_desc_result)) {
-						texture_width = texture_desc.Width;
-						texture_height = texture_desc.Height;
-						texture_format = texture_desc.Format;
-					}
-
-					texture->Add_Ref();
-					asset_manager->Texture_Hash().Insert(kShippedMeshTextureName, texture);
-					texture_registered =
-						asset_manager->Texture_Hash().Get(kShippedMeshTextureName) == texture;
-
-					const WasmD3D8ShimState *texture_state = wasm_d3d8_get_state();
-					if (texture_state != nullptr) {
-						texture_id = texture_state->last_browser_texture_id;
-						texture_upload_format = texture_state->last_browser_texture_format;
-						texture_upload_width = texture_state->last_browser_texture_width;
-						texture_upload_height = texture_state->last_browser_texture_height;
-						texture_upload_bytes = texture_state->last_browser_texture_bytes;
-						texture_upload_checksum = texture_state->last_browser_texture_checksum;
-					}
-				}
-			}
-		}
 	}
 
-	if (file_read && texture_registered) {
+	if (file_read) {
 		mesh = NEW_REF(MeshClass, ());
 		if (mesh != nullptr) {
 			mesh_chunk_found = load_first_mesh_chunk(mesh_data, mesh, load_result);
@@ -769,6 +717,26 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		if (texture_resolved) {
 			if (loaded_texture->Get_Texture_Name() != nullptr) {
 				loaded_texture_name = loaded_texture->Get_Texture_Name();
+			}
+			texture_registered =
+				asset_manager != nullptr &&
+				asset_manager->Texture_Hash().Get(kShippedMeshTextureName) == loaded_texture;
+			texture_dds_loaded = loaded_texture->Is_Initialized();
+			texture_has_d3d_surface = loaded_texture->Peek_D3D_Texture() != nullptr;
+			if (texture_has_d3d_surface) {
+				texture_uploaded_levels = loaded_texture->Peek_D3D_Texture()->GetLevelCount();
+				texture_levels = texture_uploaded_levels;
+				D3DSURFACE_DESC texture_desc = {};
+				texture_level_desc_result =
+					loaded_texture->Peek_D3D_Texture()->GetLevelDesc(0, &texture_desc);
+				if (SUCCEEDED(texture_level_desc_result)) {
+					texture_width = texture_desc.Width;
+					texture_height = texture_desc.Height;
+					texture_format = texture_desc.Format;
+					texture_upload_format = texture_desc.Format;
+					texture_upload_width = texture_desc.Width;
+					texture_upload_height = texture_desc.Height;
+				}
 			}
 		}
 
@@ -807,6 +775,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			render_result = WW3D::Render(*mesh, render_info);
+			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
+			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
 			end_render_result = WW3D::End_Render(false);
 		}
 
@@ -816,9 +786,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	REF_PTR_RELEASE(camera);
 	REF_PTR_RELEASE(mesh);
 
-	if (texture != nullptr) {
-		texture->Release_Ref();
-		texture = nullptr;
+	if (texture_search_path_set && _TheSimpleFileFactory != nullptr) {
+		_TheSimpleFileFactory->Set_Sub_Directory(previous_texture_search_path.Peek_Buffer());
 	}
 
 	if (asset_manager != nullptr) {
@@ -837,6 +806,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
 	const WasmD3D8DrawTextureStageState *stage1 =
 		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	if (state != nullptr) {
+		if (texture_id == 0) {
+			texture_id = state->last_set_texture_id;
+		}
+		if (texture_upload_bytes == 0) {
+			texture_upload_bytes = state->last_browser_texture_bytes;
+			texture_upload_checksum = state->last_browser_texture_checksum;
+		}
+	}
 
 	const bool ok =
 		state != nullptr &&
@@ -847,6 +825,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		texture_archive_loaded &&
 		file_read &&
 		texture_file_exists &&
+		texture_search_path_set &&
 		texture_registered &&
 		texture_dds_available &&
 		texture_dds_loaded &&
@@ -913,7 +892,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
 		"\"meshArchiveLoaded\":%s,\"textureArchiveLoaded\":%s,"
 		"\"fileRead\":%s,\"textureFileExists\":%s,"
-		"\"textureRegistered\":%s,\"textureDDSAvailable\":%s,"
+		"\"textureSearchPathSet\":%s,\"textureRegistered\":%s,"
+		"\"textureDDSAvailable\":%s,"
 		"\"textureDDSLoaded\":%s,\"textureResolved\":%s,"
 		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
 		"\"meshChunkFound\":%s,\"meshLoad\":%d,"
@@ -932,7 +912,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
-		"\"source\":\"original DDS loaded by DDSFileClass from mounted Art/Textures path\"},"
+		"\"source\":\"original TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures\"},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
 		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"
@@ -967,6 +947,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		bool_json(texture_archive_loaded),
 		bool_json(file_read),
 		bool_json(texture_file_exists),
+		bool_json(texture_search_path_set),
 		bool_json(texture_registered),
 		bool_json(texture_dds_available),
 		bool_json(texture_dds_loaded),

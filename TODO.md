@@ -2704,11 +2704,24 @@ shares structure and follows behind.
             original file/archive registration path so normal engine startup
             can stream user-supplied runtime archives without focused harness
             mounts or whole-archive MEMFS copies.
-      - [ ] Bring the original `TextureClass::Init` / `TextureLoader`
+      - [x] Bring the original `TextureClass::Init` / `TextureLoader`
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager
             request flow instead of pre-registering a manually uploaded
-            `TextureClass`.
+            `TextureClass`. The shipped mesh render probe now lets the original
+            mesh/material load request `cine_moon.tga` through
+            `WW3DAssetManager::Get_Texture`, `TextureClass::Init`, and the
+            foreground `TextureLoader` DDS path, with the browser D3D8 shim
+            implementing `UpdateTexture` for the original system-memory to
+            default-pool texture copy. The harness verifies the mounted
+            `Art\Textures\cine_moon.dds` source, all 7 DXT5 mip levels, the
+            asset-manager texture hash, and a screenshot-backed WebGL draw with
+            the real texture center pixel (`[204,191,163,255]`).
+      - [ ] Replace the shipped mesh probe's focused `/art/textures/`
+            `SimpleFileFactoryClass` search path setup with the original
+            W3DDevice file-factory / asset-path installation once browser
+            display/device startup owns WW3D asset lookup against the normal
+            file/archive system.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture
