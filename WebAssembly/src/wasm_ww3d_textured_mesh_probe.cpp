@@ -34,6 +34,7 @@ namespace {
 
 std::string g_ww3d_textured_mesh_probe_json;
 std::string g_ww3d_shipped_mesh_probe_json;
+std::string g_ww3d_shipped_multi_texture_mesh_probe_json;
 
 constexpr const char *kProbeMeshTextureName = "probe_mesh_red.tga";
 constexpr unsigned int kProbeMeshTextureWidth = 2;
@@ -42,6 +43,33 @@ constexpr const char *kShippedMeshPath = "art\\w3d\\cine_moon.w3d";
 constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
 constexpr const char *kShippedMeshTextureArchiveEntry = "art\\textures\\cine_moon.dds";
+constexpr const char *kSamePassMeshPath = "art\\w3d\\cbnukec_ds.w3d";
+constexpr const char *kSamePassMeshName = "CBNUKEC_DS.REDGLOW01";
+constexpr const char *kSamePassTexture0Name = "psblink.tga";
+constexpr const char *kSamePassTexture1Name = "psgrad.tga";
+constexpr const char *kSamePassTexture0ArchiveEntry = "art\\textures\\psblink.dds";
+constexpr const char *kSamePassTexture1ArchiveEntry = "art\\textures\\psgrad.dds";
+constexpr int kSamePassMeshChunkIndex = 1;
+constexpr unsigned int kSamePassMeshBytes = 8164;
+constexpr unsigned int kSamePassMeshChunkLength = 685;
+
+struct TextureStageProbeInfo
+{
+	TextureClass *texture = nullptr;
+	std::string name;
+	bool resolved = false;
+	bool registered = false;
+	bool dds_available = false;
+	bool dds_loaded = false;
+	bool has_d3d_surface = false;
+	HRESULT level_desc_result = E_FAIL;
+	UINT id = 0;
+	UINT width = 0;
+	UINT height = 0;
+	UINT levels = 0;
+	UINT uploaded_levels = 0;
+	DWORD format = D3DFMT_UNKNOWN;
+};
 
 bool succeeded(int result)
 {
@@ -119,6 +147,92 @@ bool load_first_mesh_chunk(const std::vector<unsigned char> &data, MeshClass *me
 
 	file.Close();
 	return found_mesh_chunk;
+}
+
+bool load_mesh_chunk_by_index(
+	const std::vector<unsigned char> &data,
+	int target_mesh_chunk_index,
+	MeshClass *mesh,
+	int &load_result,
+	int &loaded_mesh_chunk_index,
+	uint32 &loaded_mesh_chunk_length)
+{
+	RAMFileClass file(
+		const_cast<unsigned char *>(data.data()),
+		static_cast<int>(data.size()));
+	if (!file.Open(static_cast<int>(FileClass::READ))) {
+		return false;
+	}
+
+	bool found_mesh_chunk = false;
+	int mesh_chunk_index = 0;
+	ChunkLoadClass cload(&file);
+	while (cload.Open_Chunk()) {
+		if (cload.Cur_Chunk_ID() == W3D_CHUNK_MESH) {
+			if (mesh_chunk_index == target_mesh_chunk_index) {
+				found_mesh_chunk = true;
+				loaded_mesh_chunk_index = mesh_chunk_index;
+				loaded_mesh_chunk_length = cload.Cur_Chunk_Length();
+				load_result = mesh->Load_W3D(cload);
+				cload.Close_Chunk();
+				break;
+			}
+			++mesh_chunk_index;
+		}
+		cload.Close_Chunk();
+	}
+
+	file.Close();
+	return found_mesh_chunk;
+}
+
+TextureClass *peek_model_texture(MeshModelClass *model, int pass, int stage)
+{
+	if (model == nullptr) {
+		return nullptr;
+	}
+	TextureClass *texture = model->Peek_Single_Texture(pass, stage);
+	if (texture == nullptr && model->Get_Polygon_Count() > 0) {
+		texture = model->Peek_Texture(0, pass, stage);
+	}
+	return texture;
+}
+
+void inspect_texture_stage(
+	TextureClass *texture,
+	const char *expected_name,
+	WW3DAssetManager *asset_manager,
+	TextureStageProbeInfo &info)
+{
+	info.texture = texture;
+	info.resolved = texture != nullptr;
+	if (texture == nullptr) {
+		return;
+	}
+
+	if (texture->Get_Texture_Name() != nullptr) {
+		info.name = texture->Get_Texture_Name();
+	}
+	info.registered =
+		asset_manager != nullptr &&
+		asset_manager->Texture_Hash().Get(expected_name) == texture;
+	texture->Init();
+	info.dds_loaded = texture->Is_Initialized();
+	IDirect3DTexture8 *d3d_texture = texture->Peek_D3D_Texture();
+	info.has_d3d_surface = d3d_texture != nullptr;
+	if (d3d_texture != nullptr) {
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		info.id = state != nullptr ? state->last_browser_texture_id : 0;
+		info.uploaded_levels = d3d_texture->GetLevelCount();
+		info.levels = info.uploaded_levels;
+		D3DSURFACE_DESC desc = {};
+		info.level_desc_result = d3d_texture->GetLevelDesc(0, &desc);
+		if (SUCCEEDED(info.level_desc_result)) {
+			info.width = desc.Width;
+			info.height = desc.Height;
+			info.format = desc.Format;
+		}
+	}
 }
 
 float max3(float x, float y, float z)
@@ -998,6 +1112,469 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 
 	g_ww3d_shipped_mesh_probe_json = buffer;
 	return g_ww3d_shipped_mesh_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_multi_texture_mesh(
+	const char *archive_path,
+	const char *texture_archive_path)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	int load_result = WW3D_ERROR_GENERIC;
+	bool mesh_archive_loaded = false;
+	bool texture0_archive_loaded = false;
+	bool texture1_archive_loaded = false;
+	bool file_read = false;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
+	bool texture_simple_factory_path_set = false;
+	bool mesh_chunk_found = false;
+	bool mesh_loaded = false;
+	bool stage0_has_uv = false;
+	bool stage1_has_uv = false;
+	bool has_shader_array = false;
+	bool single_shader_adjusted = false;
+	int loaded_mesh_chunk_index = -1;
+	uint32 loaded_mesh_chunk_length = 0;
+	std::vector<unsigned char> mesh_data;
+	std::string mesh_name;
+	int vertices = 0;
+	int polygons = 0;
+	int pass_count = 0;
+	int uv_array_count = 0;
+	AABoxClass object_box(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 0.0f, 0.0f));
+	TextureStageProbeInfo texture0;
+	TextureStageProbeInfo texture1;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	MeshClass *mesh = nullptr;
+	CameraClass *camera = nullptr;
+
+	if (succeeded(init_result)) {
+		asset_manager = W3DNEW WW3DAssetManager();
+	}
+
+	if (asset_manager != nullptr) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_paths(archive_path, texture_archive_path);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		mesh_archive_loaded =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kSamePassMeshPath);
+		texture0_archive_loaded =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kSamePassTexture0ArchiveEntry);
+		texture1_archive_loaded =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kSamePassTexture1ArchiveEntry);
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		if (texture0_archive_loaded) {
+			DDSFileClass dds_file(kSamePassTexture0Name, 0);
+			texture0.dds_available = dds_file.Is_Available();
+		}
+		if (texture1_archive_loaded) {
+			DDSFileClass dds_file(kSamePassTexture1Name, 0);
+			texture1.dds_available = dds_file.Is_Available();
+		}
+		if (mesh_archive_loaded) {
+			file_read = wasm_browser_runtime_assets_read_file(kSamePassMeshPath, mesh_data);
+		}
+	}
+
+	if (file_read) {
+		mesh = NEW_REF(MeshClass, ());
+		if (mesh != nullptr) {
+			mesh_chunk_found = load_mesh_chunk_by_index(
+				mesh_data,
+				kSamePassMeshChunkIndex,
+				mesh,
+				load_result,
+				loaded_mesh_chunk_index,
+				loaded_mesh_chunk_length);
+			mesh_loaded = mesh_chunk_found && succeeded(load_result);
+		}
+	}
+
+	if (mesh_loaded && mesh->Peek_Model() != nullptr) {
+		MeshModelClass *model = mesh->Peek_Model();
+		mesh_name = mesh->Get_Name() != nullptr ? mesh->Get_Name() : "";
+		vertices = static_cast<int>(model->Get_Vertex_Count());
+		polygons = static_cast<int>(model->Get_Polygon_Count());
+		pass_count = model->Get_Pass_Count();
+		uv_array_count = model->Get_UV_Array_Count();
+		stage0_has_uv = model->Get_UV_Array(0, 0) != nullptr;
+		stage1_has_uv = model->Get_UV_Array(0, 1) != nullptr;
+
+		inspect_texture_stage(
+			peek_model_texture(model, 0, 0),
+			kSamePassTexture0Name,
+			asset_manager,
+			texture0);
+		inspect_texture_stage(
+			peek_model_texture(model, 0, 1),
+			kSamePassTexture1Name,
+			asset_manager,
+			texture1);
+
+		mesh->Get_Obj_Space_Bounding_Box(object_box);
+		frame_mesh_in_front_of_camera(*mesh, object_box);
+
+		has_shader_array = model->Has_Shader_Array(0);
+		if (!has_shader_array) {
+			ShaderClass shader = model->Get_Single_Shader(0);
+			shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
+			model->Set_Single_Shader(shader, 0);
+			single_shader_adjusted = true;
+		}
+	}
+
+	if (mesh_loaded) {
+		camera = W3DNEW CameraClass();
+		camera->Set_Aspect_Ratio(800.0f / 600.0f);
+
+		LightEnvironmentClass light_env;
+		light_env.Reset(Vector3(0.0f, 0.0f, -5.0f), Vector3(1.0f, 1.0f, 1.0f));
+
+		LightClass *light = W3DNEW LightClass(LightClass::DIRECTIONAL);
+		light->Set_Ambient(Vector3(1.0f, 1.0f, 1.0f));
+		light->Set_Diffuse(Vector3(1.0f, 1.0f, 1.0f));
+		light_env.Add_Light(*light);
+		light_env.Pre_Render_Update(camera->Get_Transform());
+
+		RenderInfoClass render_info(*camera);
+		render_info.light_environment = &light_env;
+
+		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			render_result = WW3D::Render(*mesh, render_info);
+			end_render_result = WW3D::End_Render(false);
+		}
+
+		light->Release_Ref();
+	}
+
+	REF_PTR_RELEASE(camera);
+	REF_PTR_RELEASE(mesh);
+
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		WW3D::Shutdown();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool stage0_reads_texture =
+		stage0 != nullptr &&
+		(((stage0->values[D3DTSS_COLORARG1] & D3DTA_SELECTMASK) == D3DTA_TEXTURE) ||
+			((stage0->values[D3DTSS_COLORARG2] & D3DTA_SELECTMASK) == D3DTA_TEXTURE));
+	const bool stage1_reads_texture =
+		stage1 != nullptr &&
+		(((stage1->values[D3DTSS_COLORARG1] & D3DTA_SELECTMASK) == D3DTA_TEXTURE) ||
+			((stage1->values[D3DTSS_COLORARG2] & D3DTA_SELECTMASK) == D3DTA_TEXTURE));
+	const bool texture0_compressed =
+		texture0.format == D3DFMT_DXT1 || texture0.format == D3DFMT_DXT3 ||
+		texture0.format == D3DFMT_DXT5;
+	const bool texture1_compressed =
+		texture1.format == D3DFMT_DXT1 || texture1.format == D3DFMT_DXT3 ||
+		texture1.format == D3DFMT_DXT5;
+
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		asset_manager == nullptr &&
+		mesh_archive_loaded &&
+		texture0_archive_loaded &&
+		texture1_archive_loaded &&
+		runtime_asset_system_installed &&
+		file_read &&
+		texture_file_factory_installed &&
+		!texture_simple_factory_path_set &&
+		mesh_chunk_found &&
+		mesh_loaded &&
+		mesh_data.size() == kSamePassMeshBytes &&
+		loaded_mesh_chunk_index == kSamePassMeshChunkIndex &&
+		loaded_mesh_chunk_length == kSamePassMeshChunkLength &&
+		mesh_name == kSamePassMeshName &&
+		vertices > 0 &&
+		polygons > 0 &&
+		pass_count == 1 &&
+		uv_array_count >= 2 &&
+		stage0_has_uv &&
+		stage1_has_uv &&
+		texture0.resolved &&
+		texture1.resolved &&
+		texture0.name == kSamePassTexture0Name &&
+		texture1.name == kSamePassTexture1Name &&
+		texture0.registered &&
+		texture1.registered &&
+		texture0.dds_available &&
+		texture1.dds_available &&
+		texture0.dds_loaded &&
+		texture1.dds_loaded &&
+		texture0.has_d3d_surface &&
+		texture1.has_d3d_surface &&
+		texture0.width > 0 &&
+		texture0.height > 0 &&
+		texture1.width > 0 &&
+		texture1.height > 0 &&
+		texture0.levels > 0 &&
+		texture1.levels > 0 &&
+		texture0.uploaded_levels == texture0.levels &&
+		texture1.uploaded_levels == texture1.levels &&
+		texture0_compressed &&
+		texture1_compressed &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		state->create_device_calls >= 1 &&
+		state->create_vertex_buffer_calls >= 1 &&
+		state->create_index_buffer_calls >= 1 &&
+		state->browser_texture_create_calls >= 2 &&
+		state->browser_texture_update_calls >= texture0.levels + texture1.levels &&
+		state->set_texture_calls >= 2 &&
+		state->browser_texture_bind_calls >= 2 &&
+		state->set_stream_source_calls >= 1 &&
+		state->set_indices_calls >= 1 &&
+		state->set_vertex_shader_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->set_transform_calls >= 3 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count > 0 &&
+		state->last_draw_primitive_count > 0 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_vertex_shader != 0 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE &&
+		stage0_reads_texture &&
+		stage0->values[D3DTSS_TEXCOORDINDEX] == 0 &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] != D3DTOP_DISABLE &&
+		stage1_reads_texture &&
+		stage1->values[D3DTSS_TEXCOORDINDEX] == 1;
+
+	const std::string archive_json = json_escape(archive_path != nullptr ? archive_path : "");
+	const std::string texture_archive_json =
+		json_escape(texture_archive_path != nullptr ? texture_archive_path : "");
+	const std::string mesh_path_json = json_escape(kSamePassMeshPath);
+	const std::string mesh_name_json = json_escape(mesh_name);
+	const std::string texture0_name_json = json_escape(texture0.name);
+	const std::string texture1_name_json = json_escape(texture1.name);
+	const std::string texture0_entry_json = json_escape(kSamePassTexture0ArchiveEntry);
+	const std::string texture1_entry_json = json_escape(kSamePassTexture1ArchiveEntry);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+
+	char buffer[16000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_shipped_multi_texture_mesh_probe\","
+		"\"ok\":%s,"
+		"\"archives\":{\"mesh\":\"%s\",\"texture\":\"%s\"},"
+		"\"mesh\":{\"path\":\"%s\",\"name\":\"%s\",\"bytes\":%u,"
+		"\"chunkIndex\":%d,\"chunkLength\":%u,"
+		"\"vertices\":%d,\"polygons\":%d,\"passCount\":%d,"
+		"\"uvArrayCount\":%d,\"stage0HasUV\":%s,\"stage1HasUV\":%s,"
+		"\"hasShaderArray\":%s,\"singleShaderCullDisabled\":%s,"
+		"\"objectBox\":{\"center\":[%.4f,%.4f,%.4f],"
+		"\"extent\":[%.4f,%.4f,%.4f]}},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"meshArchiveLoaded\":%s,\"texture0ArchiveLoaded\":%s,"
+		"\"texture1ArchiveLoaded\":%s,\"fileRead\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"textureSimpleFactoryPathSet\":%s,"
+		"\"meshChunkFound\":%s,\"meshLoad\":%d,"
+		"\"meshLoaded\":%s,\"beginRender\":%d,\"render\":%d,\"endRender\":%d},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"setVertexShader\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"textures\":["
+		"{\"stage\":0,\"id\":%u,\"name\":\"%s\","
+		"\"archiveEntry\":\"%s\",\"registered\":%s,\"ddsAvailable\":%s,"
+		"\"ddsLoaded\":%s,\"hasD3DSurface\":%s,\"levelDesc\":%ld,"
+		"\"width\":%u,\"height\":%u,\"levels\":%u,"
+		"\"uploadedLevels\":%u,\"format\":%lu},"
+		"{\"stage\":1,\"id\":%u,\"name\":\"%s\","
+		"\"archiveEntry\":\"%s\",\"registered\":%s,\"ddsAvailable\":%s,"
+		"\"ddsLoaded\":%s,\"hasD3DSurface\":%s,\"levelDesc\":%ld,"
+		"\"width\":%u,\"height\":%u,\"levels\":%u,"
+		"\"uploadedLevels\":%u,\"format\":%lu}],"
+		"\"runtimeAssets\":%s,"
+		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
+		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"vertexShaderFvf\":%lu,"
+		"\"vertexBufferId\":%u,\"vertexOffset\":%u,"
+		"\"vertexBytes\":%u,\"vertexChecksum\":%lu,"
+		"\"indexBufferId\":%u,\"indexOffset\":%u,\"indexBytes\":%u,"
+		"\"indexChecksum\":%lu,\"indexFormat\":%d,\"transformMask\":%u},"
+		"\"renderState\":{\"cullMode\":%lu,\"zEnable\":%lu,"
+		"\"zWriteEnable\":%lu,\"zFunc\":%lu,\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"blendOp\":%lu,"
+		"\"alphaTestEnable\":%lu,\"colorWriteEnable\":%lu,"
+		"\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg0\":%lu,"
+		"\"colorArg1\":%lu,\"colorArg2\":%lu,\"alphaOp\":%lu,"
+		"\"alphaArg1\":%lu,\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"colorArg0\":%lu,"
+		"\"colorArg1\":%lu,\"colorArg2\":%lu,\"alphaOp\":%lu,"
+		"\"alphaArg1\":%lu,\"alphaArg2\":%lu,\"texCoordIndex\":%lu}]}}",
+		bool_json(ok),
+		archive_json.c_str(),
+		texture_archive_json.c_str(),
+		mesh_path_json.c_str(),
+		mesh_name_json.c_str(),
+		static_cast<unsigned int>(mesh_data.size()),
+		loaded_mesh_chunk_index,
+		static_cast<unsigned int>(loaded_mesh_chunk_length),
+		vertices,
+		polygons,
+		pass_count,
+		uv_array_count,
+		bool_json(stage0_has_uv),
+		bool_json(stage1_has_uv),
+		bool_json(has_shader_array),
+		bool_json(single_shader_adjusted),
+		object_box.Center.X,
+		object_box.Center.Y,
+		object_box.Center.Z,
+		object_box.Extent.X,
+		object_box.Extent.Y,
+		object_box.Extent.Z,
+		init_result,
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(mesh_archive_loaded),
+		bool_json(texture0_archive_loaded),
+		bool_json(texture1_archive_loaded),
+		bool_json(file_read),
+		bool_json(texture_file_factory_installed),
+		bool_json(texture_simple_factory_path_set),
+		bool_json(mesh_chunk_found),
+		load_result,
+		bool_json(mesh_loaded),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		texture0.id,
+		texture0_name_json.c_str(),
+		texture0_entry_json.c_str(),
+		bool_json(texture0.registered),
+		bool_json(texture0.dds_available),
+		bool_json(texture0.dds_loaded),
+		bool_json(texture0.has_d3d_surface),
+		static_cast<long>(texture0.level_desc_result),
+		texture0.width,
+		texture0.height,
+		texture0.levels,
+		texture0.uploaded_levels,
+		static_cast<unsigned long>(texture0.format),
+		texture1.id,
+		texture1_name_json.c_str(),
+		texture1_entry_json.c_str(),
+		bool_json(texture1.registered),
+		bool_json(texture1.dds_available),
+		bool_json(texture1.dds_loaded),
+		bool_json(texture1.has_d3d_surface),
+		static_cast<long>(texture1.level_desc_result),
+		texture1.width,
+		texture1.height,
+		texture1.levels,
+		texture1.uploaded_levels,
+		static_cast<unsigned long>(texture1.format),
+		runtime_assets_json.c_str(),
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_start_vertex : 0,
+		state != nullptr ? state->last_draw_min_vertex_index : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_shader : 0),
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_offset : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_bytes : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_buffer_checksum : 0),
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_offset : 0,
+		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_index_buffer_checksum : 0),
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->cull_mode) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_enable) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_write_enable) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->z_func) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->alpha_blend_enable) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->src_blend) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->dest_blend) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->blend_op) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->alpha_test_enable) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->color_write_enable) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLOROP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG0]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG1]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG2]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAOP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAARG1]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAARG2]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_TEXCOORDINDEX]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLOROP]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLORARG0]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLORARG1]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLORARG2]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_ALPHAOP]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_ALPHAARG1]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_ALPHAARG2]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_TEXCOORDINDEX]) : 0);
+
+	g_ww3d_shipped_multi_texture_mesh_probe_json = buffer;
+	return g_ww3d_shipped_multi_texture_mesh_probe_json.c_str();
 }
 
 }

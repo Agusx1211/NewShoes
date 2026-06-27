@@ -82,6 +82,8 @@ struct WasmD3D8ShimState
 	UINT last_browser_texture_bind_id;
 	UINT set_stream_source_calls;
 	UINT set_indices_calls;
+	UINT set_vertex_shader_calls;
+	DWORD last_set_vertex_shader;
 	UINT draw_primitive_calls;
 	UINT draw_indexed_primitive_calls;
 	D3DPRIMITIVETYPE last_draw_primitive_type;
@@ -104,12 +106,14 @@ struct WasmD3D8ShimState
 	D3DFORMAT last_draw_index_format;
 	UINT last_draw_vertex_buffer_id;
 	UINT last_draw_index_buffer_id;
+	DWORD last_draw_vertex_shader;
 	UINT last_draw_transform_mask;
 	UINT last_draw_texture_transform_mask;
 	D3DMATRIX last_draw_world_transform;
 	D3DMATRIX last_draw_view_transform;
 	D3DMATRIX last_draw_projection_transform;
 	D3DMATRIX last_draw_texture0_transform;
+	D3DMATRIX last_draw_texture1_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
