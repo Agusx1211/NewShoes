@@ -236,17 +236,6 @@ int map_address(DWORD d3d_addr)
 	}
 }
 
-const char *filter_type_name(FilterType t)
-{
-	switch (t) {
-	case FILTER_TYPE_NONE: return "none";
-	case FILTER_TYPE_FAST: return "fast";
-	case FILTER_TYPE_BEST: return "best";
-	case FILTER_TYPE_DEFAULT: return "default";
-	default: return "?";
-	}
-}
-
 } // namespace
 
 int main()
@@ -519,6 +508,5 @@ int main()
 		// apply emits
 		D3DTSS_MINFILTER, D3DTSS_MAGFILTER, D3DTSS_MIPFILTER);
 
-	(void)filter_type_name; // referenced for documentation; kept for future expansion
 	return 0;
 }
