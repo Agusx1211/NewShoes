@@ -2704,6 +2704,17 @@ shares structure and follows behind.
             original file/archive registration path so normal engine startup
             can stream user-supplied runtime archives without focused harness
             mounts or whole-archive MEMFS copies.
+            - [x] Move the shipped mesh render smoke's range-fetched W3D and
+                  DDS bytes behind the original archive registration seam: the
+                  browser bridge now fetches selected BIG entries with HTTP
+                  `Range`, synthesizes small valid runtime BIG archives, mounts
+                  those archives under `/assets/runtime`, and registers them
+                  through the existing `Win32BIGFileSystem`/`FileSystem`/
+                  `W3DFileSystem` owner before rendering both the real
+                  `CINE_MOON` mesh and the same-pass multi-texture shipped
+                  mesh. This proves range-backed bytes can enter through the
+                  original archive path, but the general on-demand full-archive
+                  streamer for normal startup remains open.
       - [x] Bring the original `TextureClass::Init` / `TextureLoader`
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager
