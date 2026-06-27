@@ -2,8 +2,6 @@
 
 #include "d3d8.h"
 
-#define WASM_D3D8_MAX_TEXTURE_STAGES 8
-
 struct WasmD3D8DrawRenderState
 {
 	DWORD cull_mode;
@@ -46,6 +44,7 @@ struct WasmD3D8ShimState
 	UINT browser_texture_create_calls;
 	UINT browser_texture_update_calls;
 	UINT browser_texture_release_calls;
+	UINT browser_texture_bind_calls;
 	UINT last_browser_texture_id;
 	UINT last_browser_texture_level;
 	UINT last_browser_texture_x;
@@ -61,6 +60,12 @@ struct WasmD3D8ShimState
 	DWORD last_browser_texture_pool;
 	DWORD last_browser_texture_lock_flags;
 	DWORD last_browser_texture_checksum;
+	UINT set_texture_calls;
+	UINT last_set_texture_stage;
+	UINT last_set_texture_id;
+	UINT last_set_texture_type;
+	UINT last_browser_texture_bind_stage;
+	UINT last_browser_texture_bind_id;
 	UINT set_stream_source_calls;
 	UINT set_indices_calls;
 	UINT draw_primitive_calls;
@@ -107,13 +112,6 @@ struct WasmD3D8ShimState
 	UINT get_transform_calls;
 	UINT set_viewport_calls;
 	UINT get_viewport_calls;
-	UINT set_texture_calls;
-	UINT set_texture_redundant_skips;
-	UINT set_texture_unknown_type_calls;
-	UINT last_set_texture_stage;
-	UINT last_set_texture_id;
-	DWORD last_set_texture_was_null;
-	UINT bound_texture_ids[WASM_D3D8_MAX_TEXTURE_STAGES];
 	UINT set_render_state_calls;
 	UINT get_render_state_calls;
 	D3DTRANSFORMSTATETYPE last_set_transform_state;

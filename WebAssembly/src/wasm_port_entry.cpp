@@ -4363,6 +4363,141 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_upload()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_bind()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DTexture8 *texture = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT texture_create_result = E_FAIL;
+	HRESULT texture_lock_result = E_FAIL;
+	HRESULT texture_unlock_result = E_FAIL;
+	HRESULT bind_stage0_result = E_FAIL;
+	HRESULT bind_stage1_result = E_FAIL;
+	HRESULT null_stage0_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	UINT texture_id = 0;
+	if (device != nullptr) {
+		texture_create_result = device->CreateTexture(2, 2, 1, 0,
+			D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok && SUCCEEDED(texture_create_result) && texture != nullptr && texture_id != 0;
+	}
+
+	if (texture != nullptr) {
+		D3DLOCKED_RECT locked_rect = {};
+		texture_lock_result = texture->LockRect(0, &locked_rect, nullptr, 0);
+		if (SUCCEEDED(texture_lock_result) && locked_rect.pBits != nullptr) {
+			std::memset(locked_rect.pBits, 0, static_cast<std::size_t>(locked_rect.Pitch) * 2);
+			BYTE *pixel = static_cast<BYTE *>(locked_rect.pBits);
+			pixel[0] = 0x11;
+			pixel[1] = 0x22;
+			pixel[2] = 0x33;
+			pixel[3] = 0xff;
+		}
+		texture_unlock_result = texture->UnlockRect(0);
+		ok = ok && SUCCEEDED(texture_lock_result) && SUCCEEDED(texture_unlock_result);
+	}
+
+	if (device != nullptr && texture != nullptr) {
+		bind_stage0_result = device->SetTexture(0, texture);
+		bind_stage1_result = device->SetTexture(1, texture);
+		null_stage0_result = device->SetTexture(0, nullptr);
+		ok = ok && SUCCEEDED(bind_stage0_result) && SUCCEEDED(bind_stage1_result) &&
+			SUCCEEDED(null_stage0_result);
+	}
+
+	if (texture != nullptr) {
+		texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_texture_calls == 1 &&
+		state->texture_lock_rect_calls == 1 &&
+		state->texture_unlock_rect_calls == 1 &&
+		state->browser_texture_create_calls == 1 &&
+		state->browser_texture_update_calls == 1 &&
+		state->browser_texture_bind_calls == 3 &&
+		state->browser_texture_release_calls == 1 &&
+		state->set_texture_calls == 3 &&
+		state->last_set_texture_stage == 0 &&
+		state->last_set_texture_id == 0 &&
+		state->last_browser_texture_bind_stage == 0 &&
+		state->last_browser_texture_bind_id == 0;
+
+	char buffer[1700];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_texture_bind_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"textureCreate\":%ld,\"textureLock\":%ld,"
+		"\"textureUnlock\":%ld,\"bindStage0\":%ld,\"bindStage1\":%ld,"
+		"\"nullStage0\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,\"setTexture\":%u},"
+		"\"texture\":{\"id\":%u},"
+		"\"lastSetTexture\":{\"stage\":%u,\"textureId\":%u,\"type\":%u},"
+		"\"lastBrowserBind\":{\"stage\":%u,\"textureId\":%u}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(texture_create_result),
+		static_cast<long>(texture_lock_result),
+		static_cast<long>(texture_unlock_result),
+		static_cast<long>(bind_stage0_result),
+		static_cast<long>(bind_stage1_result),
+		static_cast<long>(null_stage0_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		texture_id,
+		state != nullptr ? state->last_set_texture_stage : 0,
+		state != nullptr ? state->last_set_texture_id : 0,
+		state != nullptr ? state->last_set_texture_type : 0,
+		state != nullptr ? state->last_browser_texture_bind_stage : 0,
+		state != nullptr ? state->last_browser_texture_bind_id : 0);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()
 {
 	return write_state_json();

@@ -584,6 +584,9 @@ void browser_texture_release(UINT texture_id)
 
 void browser_texture_bind(UINT stage, UINT texture_id)
 {
+	++g_state.browser_texture_bind_calls;
+	g_state.last_browser_texture_bind_stage = stage;
+	g_state.last_browser_texture_bind_id = texture_id;
 	wasm_d3d8_browser_texture_bind(stage, texture_id);
 }
 
@@ -1532,36 +1535,28 @@ public:
 	}
 	HRESULT SetTexture(DWORD stage, IDirect3DBaseTexture8 *texture) override
 	{
-		++g_state.set_texture_calls;
-		g_state.last_set_texture_stage = static_cast<UINT>(stage);
-
-		UINT browser_id = 0;
-		if (texture == nullptr) {
-			g_state.last_set_texture_was_null = 1;
-		} else if (texture->GetType() == D3DRTYPE_TEXTURE) {
-			// Today only the 2D BrowserD3DTexture carries a stable browser
-			// texture id; cube/volume/Z variants land in a later slice (S6).
-			const BrowserD3DTexture *browser_texture =
-				static_cast<const BrowserD3DTexture *>(texture);
-			browser_id = browser_texture->browser_texture_id();
-			g_state.last_set_texture_was_null = 0;
-		} else {
-			++g_state.set_texture_unknown_type_calls;
-			g_state.last_set_texture_was_null = 0;
-		}
-		g_state.last_set_texture_id = browser_id;
-
-		// Mirror DX8Wrapper::Set_DX8_Texture's redundant-state guard so we do
-		// not re-issue gl.bindTexture for an identical stage binding.
-		if (stage < WASM_D3D8_MAX_TEXTURE_STAGES) {
-			if (m_bound_texture_ids[stage] == browser_id) {
-				++g_state.set_texture_redundant_skips;
-				return S_OK;
+		UINT texture_id = 0;
+		D3DRESOURCETYPE texture_type = D3DRTYPE_FORCE_DWORD;
+		if (texture != nullptr) {
+			texture_type = texture->GetType();
+			if (texture_type != D3DRTYPE_TEXTURE) {
+				return E_FAIL;
 			}
-			m_bound_texture_ids[stage] = browser_id;
-			g_state.bound_texture_ids[stage] = browser_id;
+			BrowserD3DTexture *browser_texture =
+				static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(texture));
+			texture_id = browser_texture->browser_texture_id();
 		}
-		browser_texture_bind(static_cast<UINT>(stage), browser_id);
+
+		++g_state.set_texture_calls;
+		g_state.last_set_texture_stage = stage;
+		g_state.last_set_texture_id = texture_id;
+		g_state.last_set_texture_type = texture_type;
+		if (texture_id == 0) {
+			m_bound_texture_ids.erase(stage);
+		} else {
+			m_bound_texture_ids[stage] = texture_id;
+		}
+		browser_texture_bind(stage, texture_id);
 		return S_OK;
 	}
 	HRESULT SetTextureStageState(DWORD, D3DTEXTURESTAGESTATETYPE, DWORD) override { return S_OK; }
@@ -1816,13 +1811,13 @@ private:
 	D3DVIEWPORT8 m_viewport = {};
 	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
 	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
+	std::map<DWORD, UINT> m_bound_texture_ids;
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;
 	UINT m_indices_base_vertex_index = 0;
-	UINT m_bound_texture_ids[WASM_D3D8_MAX_TEXTURE_STAGES] = {};
 };
 
 class BrowserD3D8 final : public IDirect3D8

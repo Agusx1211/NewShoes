@@ -3467,7 +3467,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_ww3d_aabox','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_ww3d_aabox','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 
@@ -4931,33 +4931,6 @@ target_compile_options(d3d8-texture-upload-readiness-smoke PRIVATE
 )
 
 target_link_options(d3d8-texture-upload-readiness-smoke PRIVATE
-  "SHELL:-sENVIRONMENT=node"
-  "SHELL:-sSINGLE_FILE=1"
-  "SHELL:-sASSERTIONS=1"
-  "SHELL:-sALLOW_MEMORY_GROWTH=1"
-  "SHELL:-sINITIAL_MEMORY=67108864"
-  "SHELL:-sEXIT_RUNTIME=1"
-)
-
-add_executable(d3d8-texture-binding-smoke
-  tests/d3d8_texture_binding_smoke.cpp
-)
-
-set_target_properties(d3d8-texture-binding-smoke PROPERTIES
-  SUFFIX ".cjs"
-)
-
-target_link_libraries(d3d8-texture-binding-smoke PRIVATE
-  zh_browser_d3d8
-)
-
-target_compile_options(d3d8-texture-binding-smoke PRIVATE
-  -Wall
-  -Wextra
-  -Wpedantic
-)
-
-target_link_options(d3d8-texture-binding-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

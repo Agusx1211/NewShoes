@@ -2375,25 +2375,18 @@ shares structure and follows behind.
       sub-rect uploads reach WebGL and sample back with correct B/R swizzle and
       XRGB opaque alpha. This still does not bind textures into the original
       WW3D draw path or solve DDS/DXT payload upload.
+- [x] Add the first D3D8 `SetTexture` → browser WebGL2 bind route for uploaded
+      2D textures, with native stage/id counters, null-bind handling, JS
+      bound-stage tracking, release-time unbind cleanup, preserved WebGL active
+      texture state around uploads, and Playwright harness coverage proving
+      stage 0/1 binds, explicit null bind, and release cleanup. This still does
+      not translate texture-stage combiner state, sampler state, or sample the
+      bound texture in the draw shader.
+- [ ] Audit and match D3D8 `SetTexture` bound-resource lifetime/reference
+      semantics before relying on textures that remain bound across `Release`
+      or device reset; the current browser bridge tracks texture IDs and
+      release cleanup only.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
-- [x] Add the first M4 texture-*binding* slice (plan S1, bind-only): route
-      `IDirect3DDevice8::SetTexture(stage, d3dBaseTex)` through the browser
-      D3D8 device shim to a JS bridge callback
-      (`Module.cncPortD3D8TextureBind`) that resolves the stable browser
-      texture id (2D `BrowserD3DTexture` only), issues
-      `gl.activeTexture(TEXTURE0+stage)` + `gl.bindTexture(TEXTURE_2D, handle)`,
-      unbinds on null, mirrors `DX8Wrapper::Set_DX8_Texture`'s per-stage
-      redundant-state guard (`m_bound_texture_ids[8]` +
-      `g_state.bound_texture_ids[8]` + `set_texture_redundant_skips`), and
-      exposes counters/metadata (`set_texture_calls`, `last_set_texture_*`,
-      `set_texture_unknown_type_calls`) via `WasmD3D8ShimState`. Covered by
-      `tests/d3d8_texture_binding_smoke.cpp` (`npm run
-      test:d3d8-texture-binding`). Bind-only: no sampler-state/filter/wrap
-      translation (S2), no fixed-function combiner/color-op translation (S5),
-      no cube/volume/Z variants (S6), and no refcount change in `SetTexture`
-      yet. The harness screenshot path is the remaining visual half-step.
-      This is a D3D8→WebGL2 device-seam slice only; the deferred
-      `Apply_Render_State_Changes` flush wiring (S3) is still open.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
       `d3d8-render-state-mapping-smoke` records `D3DRS_CULLMODE`,
