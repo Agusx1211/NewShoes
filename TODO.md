@@ -346,6 +346,13 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` system timer wrappers (`_timer.cpp`, `systimer.cpp`,
       `stimer.cpp`) compile against browser WinMM timing shims and
       smoke-test the legacy `FrameTimer`/`TickCount` globals.
+- [x] `WWVegas/WWLib` mutex and critical-section wrappers (`mutex.cpp`)
+      compile against browser Win32 synchronization shims and smoke-test
+      original `MutexClass`, `CriticalSectionClass`, and
+      `FastCriticalSectionClass` RAII locking paths under wasm.
+- [ ] Retire the target-local `WebAssembly/shims/mutex.h` class definitions
+      once the broad focused targets link `zh_wwlib_mutex` wherever they use
+      original `MutexClass` / `CriticalSectionClass` out-of-line methods.
 - [x] `WWVegas/WWLib` thread wrapper (`thread.cpp`) compiles under wasm and
       smoke-tests the current original `_UNIX` fallback contract for
       construction, idle `Execute`/`Stop`, yielding, and thread-id queries.

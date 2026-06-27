@@ -557,6 +557,30 @@ target_link_libraries(zh_wwlib_file_ini PUBLIC
   zh_wwlib_containers
 )
 
+add_library(zh_wwlib_mutex STATIC
+  "${WWLIB_DIR}/mutex.cpp"
+)
+
+target_include_directories(zh_wwlib_mutex PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_mutex PUBLIC
+  "-iquote${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_mutex PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_regex STATIC
   "${WWLIB_DIR}/regexpr.cpp"
 )
@@ -3814,6 +3838,35 @@ target_compile_options(wwlib-mixfile-smoke PRIVATE
 )
 
 target_link_options(wwlib-mixfile-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-mutex-smoke
+  tests/wwlib_mutex_smoke.cpp
+)
+
+set_target_properties(wwlib-mutex-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-mutex-smoke PRIVATE
+  zh_wwlib_mutex
+)
+
+target_compile_options(wwlib-mutex-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-mutex-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
