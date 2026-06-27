@@ -2375,6 +2375,17 @@ shares structure and follows behind.
       sub-rect uploads reach WebGL and sample back with correct B/R swizzle and
       XRGB opaque alpha. This still does not bind textures into the original
       WW3D draw path or solve DDS/DXT payload upload.
+- [x] Add the first D3D8 `SetTexture` → browser WebGL2 bind route for uploaded
+      2D textures, with native stage/id counters, null-bind handling, JS
+      bound-stage tracking, release-time unbind cleanup, preserved WebGL active
+      texture state around uploads, and Playwright harness coverage proving
+      stage 0/1 binds, explicit null bind, and release cleanup. This still does
+      not translate texture-stage combiner state, sampler state, or sample the
+      bound texture in the draw shader.
+- [ ] Audit and match D3D8 `SetTexture` bound-resource lifetime/reference
+      semantics before relying on textures that remain bound across `Release`
+      or device reset; the current browser bridge tracks texture IDs and
+      release cleanup only.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

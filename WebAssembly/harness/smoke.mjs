@@ -914,6 +914,25 @@ try {
     throw new Error(`D3D8 texture upload probe failed: ${JSON.stringify(d3d8TextureUploadResult)}`);
   }
 
+  const d3d8TextureBindResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureBind"));
+  if (!d3d8TextureBindResult.ok
+      || d3d8TextureBindResult.probe?.source !== "browser_d3d8_texture_bind_probe"
+      || d3d8TextureBindResult.probe?.calls?.setTexture !== 3
+      || d3d8TextureBindResult.probe?.calls?.browserTextureBind !== 3
+      || d3d8TextureBindResult.browserDelta?.binds !== 2
+      || d3d8TextureBindResult.browserDelta?.unbinds !== 1
+      || d3d8TextureBindResult.browserDelta?.releaseUnbinds !== 1
+      || d3d8TextureBindResult.browserDelta?.missingBinds !== 0
+      || d3d8TextureBindResult.browserDelta?.releases !== 1
+      || d3d8TextureBindResult.browserProbe?.lastBind?.stage !== 0
+      || d3d8TextureBindResult.browserProbe?.lastBind?.id !== 0
+      || d3d8TextureBindResult.browserProbe?.lastBind?.nullBind !== true
+      || d3d8TextureBindResult.browserProbe?.lastReleaseUnbind?.stages?.join(",") !== "1"
+      || Object.keys(d3d8TextureBindResult.browserProbe?.boundTextures ?? {}).length !== 0
+      || d3d8TextureBindResult.browserProbe?.live !== 0) {
+    throw new Error(`D3D8 texture bind probe failed: ${JSON.stringify(d3d8TextureBindResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

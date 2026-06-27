@@ -232,8 +232,8 @@ int main()
 	// ---------------------------------------------------------------------------
 	// CPU-backed D3D8 resource coverage (texture / vertex buffer / index buffer).
 	// These resources are backed by host-side std::vector buffers in the shim;
-	// this exercises Lock/Unlock, descriptor, and pitch contracts only. There
-	// are no GL/WebGPU uploads in the current shim.
+	// this exercises Lock/Unlock, descriptor, pitch, and browser callback
+	// metadata while the actual WebGL effects are covered by the harness.
 	// ---------------------------------------------------------------------------
 
 	const UINT textures_before = state->create_texture_calls;
@@ -241,6 +241,8 @@ int main()
 	const UINT ibufs_before = state->create_index_buffer_calls;
 	const UINT tex_locks_before = state->texture_lock_rect_calls;
 	const UINT tex_unlocks_before = state->texture_unlock_rect_calls;
+	const UINT texture_binds_before = state->set_texture_calls;
+	const UINT browser_texture_binds_before = state->browser_texture_bind_calls;
 	const UINT buf_locks_before = state->buffer_lock_calls;
 	const UINT buf_unlocks_before = state->buffer_unlock_calls;
 
@@ -248,6 +250,7 @@ int main()
 	const UINT texture_height = 32;
 	const UINT texture_levels = 3;
 	IDirect3DTexture8 *texture = nullptr;
+	UINT texture_browser_id = 0;
 	if (!expect(SUCCEEDED(device->CreateTexture(texture_width, texture_height, texture_levels, 0,
 				D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture)),
 			"CreateTexture failed") ||
@@ -257,6 +260,13 @@ int main()
 		if (texture != nullptr) {
 			texture->Release();
 		}
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	texture_browser_id = state->last_browser_texture_id;
+	if (!expect(texture_browser_id != 0, "CreateTexture did not allocate a browser texture id")) {
+		texture->Release();
 		device->Release();
 		d3d->Release();
 		return 1;
@@ -329,6 +339,45 @@ int main()
 			"texture out-of-range LockRect should fail") ||
 		!expect(state->texture_lock_rect_calls == tex_locks_before + 2,
 			"texture out-of-range LockRect should not increment counter")) {
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	if (!expect(SUCCEEDED(device->SetTexture(0, texture)), "SetTexture stage 0 failed") ||
+		!expect(state->set_texture_calls == texture_binds_before + 1,
+			"set_texture_calls counter mismatch after texture bind") ||
+		!expect(state->browser_texture_bind_calls == browser_texture_binds_before + 1,
+			"browser_texture_bind_calls counter mismatch after texture bind") ||
+		!expect(state->last_set_texture_stage == 0,
+			"last_set_texture_stage mismatch after texture bind") ||
+		!expect(state->last_set_texture_id == texture_browser_id,
+			"last_set_texture_id mismatch after texture bind") ||
+		!expect(state->last_set_texture_type == D3DRTYPE_TEXTURE,
+			"last_set_texture_type mismatch after texture bind") ||
+		!expect(state->last_browser_texture_bind_stage == 0,
+			"last_browser_texture_bind_stage mismatch after texture bind") ||
+		!expect(state->last_browser_texture_bind_id == texture_browser_id,
+			"last_browser_texture_bind_id mismatch after texture bind")) {
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	if (!expect(SUCCEEDED(device->SetTexture(0, nullptr)), "SetTexture stage 0 null failed") ||
+		!expect(state->set_texture_calls == texture_binds_before + 2,
+			"set_texture_calls counter mismatch after null texture bind") ||
+		!expect(state->browser_texture_bind_calls == browser_texture_binds_before + 2,
+			"browser_texture_bind_calls counter mismatch after null texture bind") ||
+		!expect(state->last_set_texture_stage == 0,
+			"last_set_texture_stage mismatch after null texture bind") ||
+		!expect(state->last_set_texture_id == 0,
+			"last_set_texture_id mismatch after null texture bind") ||
+		!expect(state->last_browser_texture_bind_stage == 0,
+			"last_browser_texture_bind_stage mismatch after null texture bind") ||
+		!expect(state->last_browser_texture_bind_id == 0,
+			"last_browser_texture_bind_id mismatch after null texture bind")) {
 		texture->Release();
 		device->Release();
 		d3d->Release();

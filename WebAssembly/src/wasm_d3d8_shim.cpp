@@ -160,6 +160,19 @@ EM_JS(void, wasm_d3d8_browser_texture_release, (
 		id: texture_id >>> 0,
 	});
 });
+EM_JS(void, wasm_d3d8_browser_texture_bind, (
+	unsigned int stage,
+	unsigned int texture_id
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8TextureBind : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		stage: stage >>> 0,
+		id: texture_id >>> 0,
+	});
+});
 EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
 	unsigned int vertex_buffer_id,
@@ -242,6 +255,7 @@ void wasm_d3d8_browser_texture_create(unsigned int, unsigned int, unsigned int, 
 void wasm_d3d8_browser_texture_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 void wasm_d3d8_browser_texture_release(unsigned int) {}
+void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int) {}
@@ -566,6 +580,14 @@ void browser_texture_release(UINT texture_id)
 	g_state.last_browser_texture_lock_flags = 0;
 	g_state.last_browser_texture_checksum = 0;
 	wasm_d3d8_browser_texture_release(texture_id);
+}
+
+void browser_texture_bind(UINT stage, UINT texture_id)
+{
+	++g_state.browser_texture_bind_calls;
+	g_state.last_browser_texture_bind_stage = stage;
+	g_state.last_browser_texture_bind_id = texture_id;
+	wasm_d3d8_browser_texture_bind(stage, texture_id);
 }
 
 UINT allocate_browser_buffer_id()
@@ -1511,7 +1533,32 @@ public:
 		g_state.last_get_render_state = state;
 		return S_OK;
 	}
-	HRESULT SetTexture(DWORD, IDirect3DBaseTexture8 *) override { return S_OK; }
+	HRESULT SetTexture(DWORD stage, IDirect3DBaseTexture8 *texture) override
+	{
+		UINT texture_id = 0;
+		D3DRESOURCETYPE texture_type = D3DRTYPE_FORCE_DWORD;
+		if (texture != nullptr) {
+			texture_type = texture->GetType();
+			if (texture_type != D3DRTYPE_TEXTURE) {
+				return E_FAIL;
+			}
+			BrowserD3DTexture *browser_texture =
+				static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(texture));
+			texture_id = browser_texture->browser_texture_id();
+		}
+
+		++g_state.set_texture_calls;
+		g_state.last_set_texture_stage = stage;
+		g_state.last_set_texture_id = texture_id;
+		g_state.last_set_texture_type = texture_type;
+		if (texture_id == 0) {
+			m_bound_texture_ids.erase(stage);
+		} else {
+			m_bound_texture_ids[stage] = texture_id;
+		}
+		browser_texture_bind(stage, texture_id);
+		return S_OK;
+	}
 	HRESULT SetTextureStageState(DWORD, D3DTEXTURESTAGESTATETYPE, DWORD) override { return S_OK; }
 	HRESULT ValidateDevice(DWORD *passes) override
 	{
@@ -1764,6 +1811,7 @@ private:
 	D3DVIEWPORT8 m_viewport = {};
 	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
 	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
+	std::map<DWORD, UINT> m_bound_texture_ids;
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;

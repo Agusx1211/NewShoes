@@ -12,6 +12,7 @@ const framesNode = document.querySelector("#frames");
 let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
 const d3d8Textures = new Map();
+const d3d8BoundTextures = new Map();
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DYNAMIC = 0x00000200;
 const D3DLOCK_DISCARD = 0x00002000;
@@ -78,12 +79,19 @@ const d3d8TextureStats = {
   creates: 0,
   updates: 0,
   releases: 0,
+  binds: 0,
+  unbinds: 0,
+  releaseUnbinds: 0,
+  missingBinds: 0,
   unsupportedUpdates: 0,
   live: 0,
   lastCreate: null,
   lastUpdate: null,
   lastSubrectUpdate: null,
   lastRelease: null,
+  lastBind: null,
+  lastReleaseUnbind: null,
+  lastMissingBind: null,
   lastUnsupported: null,
 };
 
@@ -550,6 +558,21 @@ function d3d8TextureUploadView(info, bytes) {
   return new Uint16Array(copy.buffer);
 }
 
+function withPreservedD3D8TextureUnit(callback) {
+  if (!gl) {
+    return null;
+  }
+  const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+  gl.activeTexture(gl.TEXTURE0);
+  const previousTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+  try {
+    return callback();
+  } finally {
+    gl.bindTexture(gl.TEXTURE_2D, previousTexture);
+    gl.activeTexture(previousActiveTexture);
+  }
+}
+
 function sampleD3D8TexturePixel(resource, x, y) {
   if (!gl || !resource?.texture) {
     return null;
@@ -574,18 +597,30 @@ function sampleD3D8TexturePixel(resource, x, y) {
 
 function updateD3D8TextureSummary() {
   d3d8TextureStats.live = d3d8Textures.size;
+  const boundTextures = {};
+  for (const [stage, textureId] of d3d8BoundTextures.entries()) {
+    boundTextures[String(stage)] = textureId;
+  }
   harnessState.graphics = {
     ...harnessState.graphics,
     d3d8Textures: {
       creates: d3d8TextureStats.creates,
       updates: d3d8TextureStats.updates,
       releases: d3d8TextureStats.releases,
+      binds: d3d8TextureStats.binds,
+      unbinds: d3d8TextureStats.unbinds,
+      releaseUnbinds: d3d8TextureStats.releaseUnbinds,
+      missingBinds: d3d8TextureStats.missingBinds,
       unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
       live: d3d8TextureStats.live,
+      boundTextures,
       lastCreate: d3d8TextureStats.lastCreate,
       lastUpdate: d3d8TextureStats.lastUpdate,
       lastSubrectUpdate: d3d8TextureStats.lastSubrectUpdate,
       lastRelease: d3d8TextureStats.lastRelease,
+      lastBind: d3d8TextureStats.lastBind,
+      lastReleaseUnbind: d3d8TextureStats.lastReleaseUnbind,
+      lastMissingBind: d3d8TextureStats.lastMissingBind,
       lastUnsupported: d3d8TextureStats.lastUnsupported,
     },
   };
@@ -610,11 +645,13 @@ function createD3D8Texture(payload = {}) {
   }
 
   const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  withPreservedD3D8TextureUnit(() => {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  });
   const resource = {
     id,
     width,
@@ -685,25 +722,27 @@ function updateD3D8Texture(payload = {}) {
 
   const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height);
   const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
-  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
-  if (!levelInitialized || levelFormat !== info.storage) {
-    if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
-      gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
-        info.format, info.type, uploadBytes);
+  withPreservedD3D8TextureUnit(() => {
+    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    if (!levelInitialized || levelFormat !== info.storage) {
+      if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
+        gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
+          info.format, info.type, uploadBytes);
+      } else {
+        gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, levelSize.width, levelSize.height, 0,
+          info.format, info.type, null);
+        gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
+      }
+      resource.initializedLevels.add(levelKey);
+      resource.levelFormats.set(levelKey, info.storage);
     } else {
-      gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, levelSize.width, levelSize.height, 0,
-        info.format, info.type, null);
       gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
     }
-    resource.initializedLevels.add(levelKey);
-    resource.levelFormats.set(levelKey, info.storage);
-  } else {
-    gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
-  }
+  });
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
@@ -741,10 +780,94 @@ function releaseD3D8Texture(payload = {}) {
   if (!resource) {
     return 0;
   }
+  const releasedBindings = [];
+  for (const [stage, textureId] of d3d8BoundTextures.entries()) {
+    if (textureId === id) {
+      const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0 + stage);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(previousActiveTexture);
+      d3d8BoundTextures.delete(stage);
+      releasedBindings.push(stage);
+    }
+  }
   gl.deleteTexture(resource.texture);
   d3d8Textures.delete(id);
   d3d8TextureStats.releases += 1;
-  d3d8TextureStats.lastRelease = { id };
+  if (releasedBindings.length > 0) {
+    d3d8TextureStats.releaseUnbinds += releasedBindings.length;
+    d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
+  }
+  d3d8TextureStats.lastRelease = { id, releasedBindings };
+  updateD3D8TextureSummary();
+  return 1;
+}
+
+function bindD3D8Texture(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const stage = Number(payload.stage ?? 0) >>> 0;
+  const id = Number(payload.id ?? 0) >>> 0;
+  const maxTextureUnits = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+  if (stage >= maxTextureUnits) {
+    d3d8TextureStats.missingBinds += 1;
+    d3d8TextureStats.lastMissingBind = {
+      stage,
+      id,
+      reason: "stage exceeds WebGL texture units",
+      maxTextureUnits,
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+
+  const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+  gl.activeTexture(gl.TEXTURE0 + stage);
+  if (id === 0) {
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(previousActiveTexture);
+    d3d8BoundTextures.delete(stage);
+    d3d8TextureStats.unbinds += 1;
+    d3d8TextureStats.lastBind = {
+      stage,
+      id,
+      ok: true,
+      nullBind: true,
+      boundTexture: null,
+    };
+    updateD3D8TextureSummary();
+    return 1;
+  }
+
+  const resource = d3d8Textures.get(id);
+  if (!resource) {
+    gl.activeTexture(previousActiveTexture);
+    d3d8TextureStats.missingBinds += 1;
+    d3d8TextureStats.lastMissingBind = {
+      stage,
+      id,
+      reason: "texture id is not live",
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+
+  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+  gl.activeTexture(previousActiveTexture);
+  d3d8BoundTextures.set(stage, id);
+  d3d8TextureStats.binds += 1;
+  d3d8TextureStats.lastBind = {
+    stage,
+    id,
+    ok: true,
+    nullBind: false,
+    width: resource.width,
+    height: resource.height,
+    levels: resource.levels,
+    format: resource.format,
+    uploads: resource.uploads,
+  };
   updateD3D8TextureSummary();
   return 1;
 }
@@ -1237,6 +1360,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedTransforms: Boolean(useTransforms),
     renderState,
     appliedRenderState,
+    boundTextures: Object.fromEntries(d3d8BoundTextures),
     centerPixel,
   };
   harnessState.graphics = {
@@ -1345,6 +1469,7 @@ async function loadWasmModule() {
       cncPortD3D8TextureCreate: createD3D8Texture,
       cncPortD3D8TextureUpdate: updateD3D8Texture,
       cncPortD3D8TextureRelease: releaseD3D8Texture,
+      cncPortD3D8TextureBind: bindD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
     });
 
@@ -1376,6 +1501,7 @@ async function loadWasmModule() {
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
+      probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -2285,6 +2411,46 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TextureBind":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 texture bind probe cannot run" };
+        }
+        const before = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8TextureBind());
+        const browserProbe = harnessState.graphics.d3d8Textures ?? null;
+        const delta = {
+          binds: (browserProbe?.binds ?? 0) - (before.binds ?? 0),
+          unbinds: (browserProbe?.unbinds ?? 0) - (before.unbinds ?? 0),
+          releaseUnbinds: (browserProbe?.releaseUnbinds ?? 0) - (before.releaseUnbinds ?? 0),
+          missingBinds: (browserProbe?.missingBinds ?? 0) - (before.missingBinds ?? 0),
+          releases: (browserProbe?.releases ?? 0) - (before.releases ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe.calls?.setTexture === 3
+          && probe.calls?.browserTextureBind === 3
+          && delta.binds === 2
+          && delta.unbinds === 1
+          && delta.releaseUnbinds === 1
+          && delta.missingBinds === 0
+          && delta.releases === 1
+          && browserProbe?.lastBind?.stage === 0
+          && browserProbe?.lastBind?.id === 0
+          && browserProbe?.lastBind?.nullBind === true
+          && browserProbe?.lastReleaseUnbind?.id === probe.texture?.id
+          && browserProbe?.lastReleaseUnbind?.stages?.join(",") === "1"
+          && Object.keys(browserProbe?.boundTextures ?? {}).length === 0
+          && browserProbe?.live === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          browserDelta: delta,
           state: snapshotState(),
         };
       }
