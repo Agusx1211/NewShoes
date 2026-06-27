@@ -2871,6 +2871,15 @@ shares structure and follows behind.
             transform capture, visible canvas pixels, and
             `harness-smoke-ww3d-scene-camera-canvas.png`. Full
             `RTS3DScene` / `W3DDisplay` shell-map ownership remains open.
+      - [x] Add a focused original `RTS3DScene` render proof:
+            `cnc_port_probe_ww3d_rts_scene` links the real
+            `W3DScene.cpp`, builds an `RTS3DScene`, adds an
+            `AABoxRenderObjClass`, renders through `WW3D::Render(scene,
+            camera)`, verifies scene visibility plus shadow/particle flush
+            hooks, and the Playwright `ww3dRTSScene` RPC verifies persistent
+            WebGL buffers, transform capture, colored pixels, and
+            `harness-smoke-ww3d-rts-scene-canvas.png`. Full `W3DDisplay`
+            shell-map ownership remains open.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /

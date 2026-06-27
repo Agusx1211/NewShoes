@@ -12,6 +12,7 @@
 #include "wwvegas_port.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "GameClient/View.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/TileData.h"
@@ -248,12 +249,14 @@ void configure_global_data(GlobalData &global_data)
 
 } // namespace
 
-RefRenderObjListIterator *RTS3DScene::createLightsIterator()
+View *TheTacticalView __attribute__((weak)) = nullptr;
+
+RefRenderObjListIterator *__attribute__((weak)) RTS3DScene::createLightsIterator()
 {
 	return nullptr;
 }
 
-void RTS3DScene::destroyLightsIterator(RefRenderObjListIterator *)
+void __attribute__((weak)) RTS3DScene::destroyLightsIterator(RefRenderObjListIterator *)
 {
 }
 

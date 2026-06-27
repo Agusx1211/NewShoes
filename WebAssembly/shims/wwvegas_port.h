@@ -11,6 +11,14 @@
 
 typedef signed long long sint64;
 
+#ifndef __forceinline
+#if defined(__GNUC__) || defined(__clang__)
+#define __forceinline inline __attribute__((always_inline))
+#else
+#define __forceinline inline
+#endif
+#endif
+
 #ifndef __cdecl
 #define __cdecl
 #endif
