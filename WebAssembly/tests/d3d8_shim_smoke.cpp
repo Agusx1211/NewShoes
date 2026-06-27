@@ -509,12 +509,16 @@ int main()
 			"indexed draw vertex capture should include base vertex index") ||
 		!expect(state->last_draw_vertex_buffer_bytes == 3 * draw_stride,
 			"indexed draw vertex byte count mismatch") ||
+		!expect(state->last_draw_vertex_buffer_id != 0,
+			"indexed draw vertex browser buffer id missing") ||
 		!expect(state->last_draw_vertex_buffer_checksum != 0,
 			"indexed draw vertex checksum should be non-zero") ||
 		!expect(state->last_draw_index_buffer_offset == 8 * sizeof(WORD),
 			"indexed draw index capture offset mismatch") ||
 		!expect(state->last_draw_index_buffer_bytes == 3 * sizeof(WORD),
 			"indexed draw index byte count mismatch") ||
+		!expect(state->last_draw_index_buffer_id != 0,
+			"indexed draw index browser buffer id missing") ||
 		!expect(state->last_draw_index_buffer_checksum != 0,
 			"indexed draw index checksum should be non-zero") ||
 		!expect(state->last_draw_index_format == D3DFMT_INDEX16,
@@ -558,12 +562,17 @@ int main()
 		expect(state->set_viewport_calls == 1, "set_viewport_calls count mismatch") &&
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
 		expect(state->set_render_state_calls == 2, "set_render_state_calls count mismatch") &&
-		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch");
+		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch") &&
+		expect(state->browser_buffer_create_calls >= 2, "browser buffer create count mismatch") &&
+		expect(state->browser_buffer_update_calls >= 4, "browser buffer update count mismatch");
 
 	device->Release();
 	d3d->Release();
 
-	if (!state_ok) {
+	const bool release_ok =
+		expect(state->browser_buffer_release_calls >= 2, "browser buffer release count mismatch");
+
+	if (!state_ok || !release_ok) {
 		return 1;
 	}
 

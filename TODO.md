@@ -2327,7 +2327,15 @@ shares structure and follows behind.
       draw bridge. This applies the current fixed-function transform path for
       untextured AABox geometry only; full matrix stack, viewport/camera, and
       scene coverage remain open.
-- [ ] Vertex/index buffer abstraction → GL buffers.
+- [x] Give D3D8 vertex/index buffer resources stable browser buffer IDs and
+      persistent WebGL2 buffer ownership, with `Unlock` uploading the
+      WW3D-filled backing stores and `Release` deleting the cached GL buffers.
+      The original AABox render probe and Playwright harness now prove nonzero
+      buffer IDs, browser create/update notifications, and
+      `usedPersistentBuffers == true` for the real `DrawIndexedPrimitive` path.
+- [ ] Track D3D8 lock dirty ranges and usage hints so persistent GL buffers can
+      update only touched byte ranges and use streaming/orphaning behavior for
+      dynamic buffers instead of whole-buffer uploads on every `Unlock`.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.

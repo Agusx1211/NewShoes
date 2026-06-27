@@ -127,6 +127,8 @@ int main()
 		expect(state->last_draw_vertex_buffer_bytes ==
 				state->last_draw_vertex_count * state->last_draw_stream_source_stride,
 			"AABox render vertex byte range mismatch") &&
+		expect(state->last_draw_vertex_buffer_id != 0,
+			"AABox render vertex browser buffer id missing") &&
 		expect(state->last_draw_vertex_buffer_checksum != 0,
 			"AABox render vertex byte checksum missing") &&
 		expect(state->last_draw_index_format == D3DFMT_INDEX16,
@@ -134,8 +136,14 @@ int main()
 		expect(state->last_draw_index_buffer_length > 0, "AABox render index buffer length missing") &&
 		expect(state->last_draw_index_buffer_bytes == state->last_draw_primitive_count * 3 * sizeof(WORD),
 			"AABox render index byte range mismatch") &&
+		expect(state->last_draw_index_buffer_id != 0,
+			"AABox render index browser buffer id missing") &&
 		expect(state->last_draw_index_buffer_checksum != 0,
 			"AABox render index byte checksum missing") &&
+		expect(state->browser_buffer_create_calls >= 2,
+			"AABox render did not create browser buffers") &&
+		expect(state->browser_buffer_update_calls >= 2,
+			"AABox render did not update browser buffers") &&
 		expect((state->last_draw_transform_mask & 7u) == 7u,
 			"AABox render did not capture world/view/projection transforms");
 
@@ -148,7 +156,9 @@ int main()
 	std::printf("{\"ok\":true,\"smoke\":\"ww3d2-dx8wrapper-render\","
 		"\"createDevice\":%u,\"createTexture\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"drawIndexed\":%u,\"vertexBytes\":%u,"
-		"\"indexBytes\":%u,\"transformMask\":%u,\"clear\":%u,\"present\":%u}\n",
+		"\"indexBytes\":%u,\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"transformMask\":%u,\"clear\":%u,\"present\":%u}\n",
 		state->create_device_calls,
 		state->create_texture_calls,
 		state->create_index_buffer_calls,
@@ -156,6 +166,10 @@ int main()
 		state->draw_indexed_primitive_calls,
 		state->last_draw_vertex_buffer_bytes,
 		state->last_draw_index_buffer_bytes,
+		state->last_draw_vertex_buffer_id,
+		state->last_draw_index_buffer_id,
+		state->browser_buffer_create_calls,
+		state->browser_buffer_update_calls,
 		state->last_draw_transform_mask,
 		state->clear_calls,
 		state->present_calls);
