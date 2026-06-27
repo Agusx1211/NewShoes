@@ -23,8 +23,15 @@ GlobalData *TheGlobalData = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameLogic *TheGameLogic = nullptr;
 
-void Reset_D3D_Device(bool)
+namespace {
+int g_resetD3DCalls = 0;
+bool g_lastResetD3DActive = false;
+} // namespace
+
+void Reset_D3D_Device(bool active)
 {
+	++g_resetD3DCalls;
+	g_lastResetD3DActive = active;
 }
 
 namespace {
@@ -32,6 +39,9 @@ class SmokeWin32Mouse : public Win32Mouse
 {
 public:
 	using Win32Mouse::getMouseEvent;
+
+	bool isLostFocus() const { return m_lostFocus; }
+	MouseCursor currentWin32Cursor() const { return m_currentWin32Cursor; }
 };
 
 bool expect(bool condition, const char *message)
@@ -93,6 +103,48 @@ int main()
 
 	SmokeWin32Mouse mouse;
 	TheWin32Mouse = &mouse;
+
+	if (!expect(mouse.currentWin32Cursor() == Mouse::NONE, "Win32Mouse should start without a Win32 cursor set")) {
+		return 1;
+	}
+	if (!pump_one(ApplicationHWnd, WM_SETCURSOR, reinterpret_cast<WPARAM>(ApplicationHWnd), 0, 6998)) {
+		return 1;
+	}
+	if (!expect(mouse.currentWin32Cursor() == Mouse::ARROW,
+			"original WndProc should restore the current Win32 cursor on WM_SETCURSOR")) {
+		return 1;
+	}
+
+	if (!expect(!mouse.isLostFocus(), "Win32Mouse should start focused")) {
+		return 1;
+	}
+	if (!pump_one(ApplicationHWnd, WM_KILLFOCUS, 0, 0, 6999)) {
+		return 1;
+	}
+	if (!expect(mouse.isLostFocus(), "original WndProc should mark Win32Mouse lost-focus on WM_KILLFOCUS")) {
+		return 1;
+	}
+	if (!pump_one(ApplicationHWnd, WM_SETFOCUS, 0, 0, 7000)) {
+		return 1;
+	}
+	if (!expect(!mouse.isLostFocus(), "original WndProc should clear Win32Mouse lost-focus on WM_SETFOCUS")) {
+		return 1;
+	}
+
+	if (!pump_one(ApplicationHWnd, WM_ACTIVATEAPP, TRUE, 0, 7000)) {
+		return 1;
+	}
+	if (!expect(g_resetD3DCalls == 1 && g_lastResetD3DActive,
+			"original WndProc should notify the D3D reset hook on WM_ACTIVATEAPP activation")) {
+		return 1;
+	}
+	if (!pump_one(ApplicationHWnd, WM_ACTIVATEAPP, FALSE, 0, 7000)) {
+		return 1;
+	}
+	if (!expect(g_resetD3DCalls == 2 && !g_lastResetD3DActive,
+			"original WndProc should notify the D3D reset hook on WM_ACTIVATEAPP deactivation")) {
+		return 1;
+	}
 
 	if (!pump_one(ApplicationHWnd, WM_LBUTTONDOWN, 0, make_mouse_lparam(123, 45), 7001)) {
 		return 1;

@@ -380,6 +380,9 @@ shares structure and follows behind.
       to run in wasm, and smoke-test queued Win32 mouse messages flowing
       through `Win32GameEngine::serviceWindowsOS()` into the original
       `Win32Mouse` event buffer.
+- [x] Extend the original `WndProc()` wasm smoke to cover `WM_SETCURSOR`,
+      `WM_KILLFOCUS` / `WM_SETFOCUS`, and `WM_ACTIVATEAPP`, proving cursor
+      restoration, `Win32Mouse` focus state, and the D3D reset hook are reached.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including connecting the real game `WndProc`, `WM_CREATE` /
       `WM_DESTROY` lifecycle dispatch, `WM_CHAR` / IME text paths, browser
