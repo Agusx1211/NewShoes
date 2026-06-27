@@ -2708,27 +2708,24 @@ shares structure and follows behind.
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager
             request flow instead of pre-registering a manually uploaded
-            `TextureClass`. Under the Emscripten/D3D8-shim build
-            `ThreadClass::_Get_Current_Thread_ID()` and
-            `DX8Wrapper::_Get_Main_Thread_ID()` both resolve to `0`, so
-            `TextureLoader::Is_DX8_Thread()` is always true and
-            `WW3DAssetManager::Get_Texture(name)` constructs
-            `TextureClass(name, NULL, ...)`, which (with thumbnails disabled)
-            runs `TextureClass::Init` ->
-            `TextureLoader::Request_Foreground_Loading` -> `Finish_Load`
-            inline, with no background loader thread required. The new Node
-            `ww3d2-texture-loader-smoke` stages a 4x4 TGA in MEMFS, requests it
-            by bare name, and asserts the original WWLib Targa decode produces
-            an initialized `TextureClass` with a DX8 surface at the source
-            dimensions (not the 128x128 MissingTexture fallback) plus a second
-            request resolving through the asset-manager texture hash. The
-            remaining piece before the shipped mesh probe can drop its manual
-            upload is file-factory path resolution for `_TheFileFactory` (the
-            default `SimpleFileFactoryClass` is Windows-backslash path based;
-            the engine normally overrides it with `W3DFileSystem` routing
-            through `TheFileSystem`/BIG archives), which depends on the
-            browser range-backed BIG reader generalizing into normal engine
-            startup.
+            `TextureClass`. The shipped mesh render probe now lets the original
+            mesh/material load request `cine_moon.tga` through
+            `WW3DAssetManager::Get_Texture`, `TextureClass::Init`, and the
+            foreground `TextureLoader` DDS path, with the browser D3D8 shim
+            implementing `UpdateTexture` for the original system-memory to
+            default-pool texture copy. The harness verifies the mounted
+            `Art\Textures\cine_moon.dds` source, all 7 DXT5 mip levels, the
+            asset-manager texture hash, and a screenshot-backed WebGL draw with
+            the real texture center pixel (`[204,191,163,255]`). The
+            `ww3d2-texture-loader-smoke` target also stages a 4x4 TGA in MEMFS,
+            requests it by bare name, and asserts the original WWLib Targa path
+            initializes a non-missing `TextureClass` plus a second request
+            through the asset-manager texture hash.
+      - [ ] Replace the shipped mesh probe's focused `/art/textures/`
+            `SimpleFileFactoryClass` search path setup with the original
+            W3DDevice file-factory / asset-path installation once browser
+            display/device startup owns WW3D asset lookup against the normal
+            file/archive system.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture

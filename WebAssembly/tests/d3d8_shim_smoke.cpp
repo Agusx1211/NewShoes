@@ -385,6 +385,131 @@ int main()
 		return 1;
 	}
 
+	IDirect3DTexture8 *update_source = nullptr;
+	IDirect3DTexture8 *update_destination = nullptr;
+	const UINT update_uploads_before = state->browser_texture_update_calls;
+	if (!expect(SUCCEEDED(device->CreateTexture(4, 4, 2, 0, D3DFMT_A8R8G8B8,
+				D3DPOOL_SYSTEMMEM, &update_source)),
+			"UpdateTexture source CreateTexture failed") ||
+		!expect(SUCCEEDED(device->CreateTexture(4, 4, 2, 0, D3DFMT_A8R8G8B8,
+				D3DPOOL_DEFAULT, &update_destination)),
+			"UpdateTexture destination CreateTexture failed")) {
+		if (update_source != nullptr) {
+			update_source->Release();
+		}
+		if (update_destination != nullptr) {
+			update_destination->Release();
+		}
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	const UINT update_destination_id = state->last_browser_texture_id;
+
+	D3DLOCKED_RECT update_level0 = {};
+	D3DLOCKED_RECT update_level1 = {};
+	if (!expect(SUCCEEDED(update_source->LockRect(0, &update_level0, nullptr, 0)),
+			"UpdateTexture source level 0 LockRect failed") ||
+		!expect(update_level0.pBits != nullptr, "UpdateTexture source level 0 pBits null")) {
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	std::memset(update_level0.pBits, 0x31, static_cast<std::size_t>(update_level0.Pitch) * 4);
+	if (!expect(SUCCEEDED(update_source->UnlockRect(0)),
+			"UpdateTexture source level 0 UnlockRect failed") ||
+		!expect(SUCCEEDED(update_source->LockRect(1, &update_level1, nullptr, 0)),
+			"UpdateTexture source level 1 LockRect failed") ||
+		!expect(update_level1.pBits != nullptr, "UpdateTexture source level 1 pBits null")) {
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	std::memset(update_level1.pBits, 0x62, static_cast<std::size_t>(update_level1.Pitch) * 2);
+	if (!expect(SUCCEEDED(update_source->UnlockRect(1)),
+			"UpdateTexture source level 1 UnlockRect failed")) {
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	const UINT uploads_after_source_unlock = state->browser_texture_update_calls;
+
+	if (!expect(SUCCEEDED(device->UpdateTexture(update_source, update_destination)),
+			"UpdateTexture failed") ||
+		!expect(state->browser_texture_update_calls == uploads_after_source_unlock + 2,
+			"UpdateTexture should upload both destination mip levels") ||
+		!expect(state->last_browser_texture_id == update_destination_id,
+			"UpdateTexture last upload should target destination texture") ||
+		!expect(state->last_browser_texture_level == 1,
+			"UpdateTexture last upload level mismatch") ||
+		!expect(state->last_browser_texture_width == 2 && state->last_browser_texture_height == 2,
+			"UpdateTexture destination mip dimensions mismatch") ||
+		!expect(state->browser_texture_update_calls == update_uploads_before + 4,
+			"UpdateTexture total upload counter mismatch")) {
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	D3DLOCKED_RECT destination_readback = {};
+	if (!expect(SUCCEEDED(update_destination->LockRect(0, &destination_readback, nullptr, D3DLOCK_READONLY)),
+			"UpdateTexture destination readback LockRect failed") ||
+		!expect(destination_readback.pBits != nullptr, "UpdateTexture destination readback pBits null") ||
+		!expect(static_cast<BYTE *>(destination_readback.pBits)[0] == 0x31,
+			"UpdateTexture destination level 0 byte mismatch") ||
+		!expect(SUCCEEDED(update_destination->UnlockRect(0)),
+			"UpdateTexture destination readback UnlockRect failed")) {
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	IDirect3DTexture8 *invalid_pool_source = nullptr;
+	IDirect3DTexture8 *format_mismatch_source = nullptr;
+	if (!expect(SUCCEEDED(device->CreateTexture(4, 4, 2, 0, D3DFMT_A8R8G8B8,
+				D3DPOOL_DEFAULT, &invalid_pool_source)),
+			"UpdateTexture invalid-pool source CreateTexture failed") ||
+		!expect(FAILED(device->UpdateTexture(invalid_pool_source, update_destination)),
+			"UpdateTexture should reject a non-systemmem source texture") ||
+		!expect(SUCCEEDED(device->CreateTexture(4, 4, 2, 0, D3DFMT_X8R8G8B8,
+				D3DPOOL_SYSTEMMEM, &format_mismatch_source)),
+			"UpdateTexture format-mismatch source CreateTexture failed") ||
+		!expect(FAILED(device->UpdateTexture(format_mismatch_source, update_destination)),
+			"UpdateTexture should reject a format mismatch")) {
+		if (invalid_pool_source != nullptr) {
+			invalid_pool_source->Release();
+		}
+		if (format_mismatch_source != nullptr) {
+			format_mismatch_source->Release();
+		}
+		update_source->Release();
+		update_destination->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	invalid_pool_source->Release();
+	format_mismatch_source->Release();
+	update_source->Release();
+	update_destination->Release();
+
 	const UINT vertex_buffer_length = 256;
 	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
 	if (!expect(SUCCEEDED(device->CreateVertexBuffer(vertex_buffer_length, D3DUSAGE_WRITEONLY, 0,

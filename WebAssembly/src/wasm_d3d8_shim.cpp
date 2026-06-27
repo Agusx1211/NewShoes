@@ -885,6 +885,40 @@ public:
 		return S_OK;
 	}
 
+	bool is_locked() const { return m_locked; }
+
+	const D3DSURFACE_DESC &desc() const { return m_desc; }
+
+	const BYTE *pixels() const { return m_pixels.data(); }
+
+	UINT pitch() const { return static_cast<UINT>(m_pitch); }
+
+	bool copy_pixels_from(const BrowserD3DSurface &source)
+	{
+		if (m_locked || source.is_locked() ||
+			m_desc.Format != source.desc().Format ||
+			m_desc.Width != source.desc().Width ||
+			m_desc.Height != source.desc().Height ||
+			m_pixels.size() != source.m_pixels.size()) {
+			return false;
+		}
+		m_pixels = source.m_pixels;
+		return true;
+	}
+
+	BrowserD3DTextureDirtyRegion full_dirty_region() const
+	{
+		BrowserD3DTextureDirtyRegion dirty = {};
+		dirty.data = pixels();
+		dirty.x = 0;
+		dirty.y = 0;
+		dirty.width = m_desc.Width;
+		dirty.height = m_desc.Height;
+		dirty.pitch = pitch();
+		dirty.row_bytes = texture_pitch(m_desc.Format, m_desc.Width);
+		return dirty;
+	}
+
 	ULONG AddRef() override { return ++m_ref_count; }
 
 	ULONG Release() override
@@ -1048,6 +1082,25 @@ public:
 	}
 
 	UINT browser_texture_id() const { return m_browser_texture_id; }
+
+	D3DFORMAT format() const { return m_format; }
+
+	D3DPOOL pool() const { return m_pool; }
+
+	HRESULT copy_from(const BrowserD3DTexture &source)
+	{
+		if (m_levels.size() != source.m_levels.size()) {
+			return E_FAIL;
+		}
+		for (std::size_t level = 0; level < m_levels.size(); ++level) {
+			if (!m_levels[level]->copy_pixels_from(*source.m_levels[level])) {
+				return E_FAIL;
+			}
+			const BrowserD3DTextureDirtyRegion dirty = m_levels[level]->full_dirty_region();
+			browser_texture_update(m_browser_texture_id, static_cast<UINT>(level), m_format, dirty, m_usage);
+		}
+		return S_OK;
+	}
 
 	void create_browser_texture()
 	{
@@ -1519,9 +1572,23 @@ public:
 		return create_surface(width, height, format, D3DUSAGE_DEPTHSTENCIL, surface);
 	}
 
-	HRESULT UpdateTexture(IDirect3DBaseTexture8 *, IDirect3DBaseTexture8 *) override
+	HRESULT UpdateTexture(IDirect3DBaseTexture8 *source_texture, IDirect3DBaseTexture8 *destination_texture) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (source_texture == nullptr || destination_texture == nullptr ||
+			source_texture->GetType() != D3DRTYPE_TEXTURE ||
+			destination_texture->GetType() != D3DRTYPE_TEXTURE) {
+			return E_FAIL;
+		}
+		BrowserD3DTexture *source =
+			static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(source_texture));
+		BrowserD3DTexture *destination =
+			static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(destination_texture));
+		if (source->pool() != D3DPOOL_SYSTEMMEM ||
+			destination->pool() != D3DPOOL_DEFAULT ||
+			source->format() != destination->format()) {
+			return E_FAIL;
+		}
+		return destination->copy_from(*source);
 	}
 	HRESULT CopyRects(IDirect3DSurface8 *, const RECT *, UINT, IDirect3DSurface8 *, const POINT *) override
 	{

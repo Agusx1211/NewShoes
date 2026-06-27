@@ -146,6 +146,7 @@ try {
       || renderResult.probe?.results?.textureArchiveLoaded !== true
       || renderResult.probe?.results?.fileRead !== true
       || renderResult.probe?.results?.textureFileExists !== true
+      || renderResult.probe?.results?.textureSearchPathSet !== true
       || renderResult.probe?.results?.textureRegistered !== true
       || renderResult.probe?.results?.textureDDSAvailable !== true
       || renderResult.probe?.results?.textureDDSLoaded !== true
@@ -162,7 +163,7 @@ try {
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
       || renderResult.probe?.texture?.format !== D3DFMT_DXT5
       || renderResult.probe?.texture?.uploadFormat !== D3DFMT_DXT5
-      || renderResult.probe?.texture?.source !== "original DDS loaded by DDSFileClass from mounted Art/Textures path"
+      || renderResult.probe?.texture?.source !== "original TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures"
       || renderResult.probe?.draw?.primitiveType !== 4
       || renderResult.probe?.draw?.vertexCount !== 4
       || renderResult.probe?.draw?.primitiveCount !== 2
