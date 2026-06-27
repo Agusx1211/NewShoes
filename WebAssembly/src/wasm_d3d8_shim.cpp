@@ -83,6 +83,83 @@ EM_JS(void, wasm_d3d8_browser_buffer_release, (
 		id: buffer_id >>> 0,
 	});
 });
+EM_JS(void, wasm_d3d8_browser_texture_create, (
+	unsigned int texture_id,
+	unsigned int width,
+	unsigned int height,
+	unsigned int levels,
+	unsigned int format,
+	unsigned int usage,
+	unsigned int pool
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8TextureCreate : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		id: texture_id >>> 0,
+		width: width >>> 0,
+		height: height >>> 0,
+		levels: levels >>> 0,
+		format: format >>> 0,
+		usage: usage >>> 0,
+		pool: pool >>> 0,
+	});
+});
+EM_JS(void, wasm_d3d8_browser_texture_update, (
+	unsigned int texture_id,
+	unsigned int level,
+	unsigned int format,
+	unsigned int x,
+	unsigned int y,
+	unsigned int width,
+	unsigned int height,
+	unsigned int pitch,
+	unsigned int row_bytes,
+	unsigned int data_ptr,
+	unsigned int usage,
+	unsigned int lock_flags
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8TextureUpdate : null;
+	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
+		return;
+	}
+	const update_width = width >>> 0;
+	const update_height = height >>> 0;
+	const compact_row_bytes = row_bytes >>> 0;
+	const source_pitch = pitch >>> 0;
+	const compact = new Uint8Array(compact_row_bytes * update_height);
+	for (let row = 0; row < update_height; ++row) {
+		const source = data_ptr + (row * source_pitch);
+		const target = row * compact_row_bytes;
+		compact.set(Module.HEAPU8.subarray(source, source + compact_row_bytes), target);
+	}
+	bridge({
+		id: texture_id >>> 0,
+		level: level >>> 0,
+		format: format >>> 0,
+		x: x >>> 0,
+		y: y >>> 0,
+		width: update_width,
+		height: update_height,
+		pitch: source_pitch,
+		rowBytes: compact_row_bytes,
+		usage: usage >>> 0,
+		lockFlags: lock_flags >>> 0,
+		bytes: compact,
+	});
+});
+EM_JS(void, wasm_d3d8_browser_texture_release, (
+	unsigned int texture_id
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8TextureRelease : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		id: texture_id >>> 0,
+	});
+});
 EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	int primitive_type,
 	unsigned int vertex_buffer_id,
@@ -160,6 +237,11 @@ void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int, u
 void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int) {}
 void wasm_d3d8_browser_buffer_release(unsigned int, unsigned int) {}
+void wasm_d3d8_browser_texture_create(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int) {}
+void wasm_d3d8_browser_texture_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int) {}
@@ -170,6 +252,7 @@ namespace {
 WasmD3D8ShimState g_state = {};
 int g_d3d8_module = 0;
 UINT g_next_browser_buffer_id = 1;
+UINT g_next_browser_texture_id = 1;
 
 HMODULE d3d8_module_handle()
 {
@@ -273,11 +356,39 @@ DWORD checksum_bytes(const BYTE *data, UINT size)
 	return hash;
 }
 
+DWORD checksum_texture_region(const BYTE *data, UINT pitch, UINT row_bytes, UINT height)
+{
+	if (data == nullptr || pitch == 0 || row_bytes == 0 || height == 0) {
+		return 0;
+	}
+	DWORD hash = 2166136261u;
+	for (UINT row = 0; row < height; ++row) {
+		const BYTE *row_data = data + (row * pitch);
+		for (UINT column = 0; column < row_bytes; ++column) {
+			hash ^= row_data[column];
+			hash *= 16777619u;
+		}
+	}
+	return hash;
+}
+
 constexpr UINT DRAW_TRANSFORM_WORLD = 1u << 0;
 constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
 constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
+
+struct BrowserD3DTextureDirtyRegion
+{
+	const BYTE *data = nullptr;
+	UINT x = 0;
+	UINT y = 0;
+	UINT width = 0;
+	UINT height = 0;
+	UINT pitch = 0;
+	UINT row_bytes = 0;
+	DWORD lock_flags = 0;
+};
 
 UINT checked_range_size(UINT length, UINT offset, UINT requested_size)
 {
@@ -369,11 +480,108 @@ void browser_buffer_release(UINT kind, UINT buffer_id)
 	wasm_d3d8_browser_buffer_release(kind, buffer_id);
 }
 
+void browser_texture_create(UINT texture_id, UINT width, UINT height, UINT levels, D3DFORMAT format, DWORD usage,
+	D3DPOOL pool)
+{
+	if (texture_id == 0 || width == 0 || height == 0 || levels == 0) {
+		return;
+	}
+	++g_state.browser_texture_create_calls;
+	g_state.last_browser_texture_id = texture_id;
+	g_state.last_browser_texture_level = 0;
+	g_state.last_browser_texture_x = 0;
+	g_state.last_browser_texture_y = 0;
+	g_state.last_browser_texture_width = width;
+	g_state.last_browser_texture_height = height;
+	g_state.last_browser_texture_pitch = width * bytes_per_pixel(format);
+	g_state.last_browser_texture_row_bytes = g_state.last_browser_texture_pitch;
+	g_state.last_browser_texture_bytes = g_state.last_browser_texture_pitch * height;
+	g_state.last_browser_texture_levels = levels;
+	g_state.last_browser_texture_format = format;
+	g_state.last_browser_texture_usage = usage;
+	g_state.last_browser_texture_pool = pool;
+	g_state.last_browser_texture_lock_flags = 0;
+	g_state.last_browser_texture_checksum = 0;
+	wasm_d3d8_browser_texture_create(texture_id, width, height, levels, format, usage, pool);
+}
+
+void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const BrowserD3DTextureDirtyRegion &dirty,
+	DWORD usage)
+{
+	if (texture_id == 0 || dirty.data == nullptr || dirty.width == 0 || dirty.height == 0 ||
+		dirty.pitch == 0 || dirty.row_bytes == 0) {
+		return;
+	}
+	++g_state.browser_texture_update_calls;
+	g_state.last_browser_texture_id = texture_id;
+	g_state.last_browser_texture_level = level;
+	g_state.last_browser_texture_x = dirty.x;
+	g_state.last_browser_texture_y = dirty.y;
+	g_state.last_browser_texture_width = dirty.width;
+	g_state.last_browser_texture_height = dirty.height;
+	g_state.last_browser_texture_pitch = dirty.pitch;
+	g_state.last_browser_texture_row_bytes = dirty.row_bytes;
+	g_state.last_browser_texture_bytes = dirty.row_bytes * dirty.height;
+	g_state.last_browser_texture_levels = 0;
+	g_state.last_browser_texture_format = format;
+	g_state.last_browser_texture_usage = usage;
+	g_state.last_browser_texture_pool = 0;
+	g_state.last_browser_texture_lock_flags = dirty.lock_flags;
+	g_state.last_browser_texture_checksum =
+		checksum_texture_region(dirty.data, dirty.pitch, dirty.row_bytes, dirty.height);
+	wasm_d3d8_browser_texture_update(
+		texture_id,
+		level,
+		format,
+		dirty.x,
+		dirty.y,
+		dirty.width,
+		dirty.height,
+		dirty.pitch,
+		dirty.row_bytes,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(dirty.data)),
+		usage,
+		dirty.lock_flags);
+}
+
+void browser_texture_release(UINT texture_id)
+{
+	if (texture_id == 0) {
+		return;
+	}
+	++g_state.browser_texture_release_calls;
+	g_state.last_browser_texture_id = texture_id;
+	g_state.last_browser_texture_level = 0;
+	g_state.last_browser_texture_x = 0;
+	g_state.last_browser_texture_y = 0;
+	g_state.last_browser_texture_width = 0;
+	g_state.last_browser_texture_height = 0;
+	g_state.last_browser_texture_pitch = 0;
+	g_state.last_browser_texture_row_bytes = 0;
+	g_state.last_browser_texture_bytes = 0;
+	g_state.last_browser_texture_levels = 0;
+	g_state.last_browser_texture_format = D3DFMT_UNKNOWN;
+	g_state.last_browser_texture_usage = 0;
+	g_state.last_browser_texture_pool = 0;
+	g_state.last_browser_texture_lock_flags = 0;
+	g_state.last_browser_texture_checksum = 0;
+	wasm_d3d8_browser_texture_release(texture_id);
+}
+
 UINT allocate_browser_buffer_id()
 {
 	UINT id = g_next_browser_buffer_id++;
 	if (id == 0) {
 		id = g_next_browser_buffer_id++;
+	}
+	return id;
+}
+
+UINT allocate_browser_texture_id()
+{
+	UINT id = g_next_browser_texture_id++;
+	if (id == 0) {
+		id = g_next_browser_texture_id++;
 	}
 	return id;
 }
@@ -479,14 +687,16 @@ public:
 		return S_OK;
 	}
 
-	HRESULT LockRect(D3DLOCKED_RECT *locked_rect, const RECT *rect, DWORD) override
+	HRESULT LockRect(D3DLOCKED_RECT *locked_rect, const RECT *rect, DWORD flags) override
 	{
-		if (locked_rect == nullptr || m_pixels.empty()) {
+		if (locked_rect == nullptr || m_pixels.empty() || m_locked) {
 			return E_FAIL;
 		}
 
 		int left = 0;
 		int top = 0;
+		int right = static_cast<int>(m_desc.Width);
+		int bottom = static_cast<int>(m_desc.Height);
 		if (rect != nullptr) {
 			if (rect->left < 0 || rect->top < 0 || rect->right < rect->left || rect->bottom < rect->top ||
 				static_cast<UINT>(rect->right) > m_desc.Width ||
@@ -495,14 +705,47 @@ public:
 			}
 			left = rect->left;
 			top = rect->top;
+			right = rect->right;
+			bottom = rect->bottom;
 		}
 
 		locked_rect->Pitch = m_pitch;
 		locked_rect->pBits = m_pixels.data() + (top * m_pitch) + (left * bytes_per_pixel(m_desc.Format));
+		m_locked = true;
+		m_lock_flags = flags;
+		m_dirty_x = static_cast<UINT>(left);
+		m_dirty_y = static_cast<UINT>(top);
+		m_dirty_width = static_cast<UINT>(right - left);
+		m_dirty_height = static_cast<UINT>(bottom - top);
 		return S_OK;
 	}
 
-	HRESULT UnlockRect() override { return S_OK; }
+	HRESULT UnlockRect() override { return unlock_and_capture(nullptr); }
+
+	HRESULT unlock_and_capture(BrowserD3DTextureDirtyRegion *dirty)
+	{
+		if (!m_locked) {
+			return E_FAIL;
+		}
+		if (dirty != nullptr && (m_lock_flags & (D3DLOCK_READONLY | D3DLOCK_NO_DIRTY_UPDATE)) == 0) {
+			dirty->data = m_pixels.data() + (m_dirty_y * m_pitch) +
+				(m_dirty_x * bytes_per_pixel(m_desc.Format));
+			dirty->x = m_dirty_x;
+			dirty->y = m_dirty_y;
+			dirty->width = m_dirty_width;
+			dirty->height = m_dirty_height;
+			dirty->pitch = static_cast<UINT>(m_pitch);
+			dirty->row_bytes = m_dirty_width * bytes_per_pixel(m_desc.Format);
+			dirty->lock_flags = m_lock_flags;
+		}
+		m_locked = false;
+		m_lock_flags = 0;
+		m_dirty_x = 0;
+		m_dirty_y = 0;
+		m_dirty_width = 0;
+		m_dirty_height = 0;
+		return S_OK;
+	}
 
 	ULONG AddRef() override { return ++m_ref_count; }
 
@@ -520,6 +763,12 @@ private:
 	D3DSURFACE_DESC m_desc = {};
 	int m_pitch = 0;
 	std::vector<unsigned char> m_pixels;
+	bool m_locked = false;
+	DWORD m_lock_flags = 0;
+	UINT m_dirty_x = 0;
+	UINT m_dirty_y = 0;
+	UINT m_dirty_width = 0;
+	UINT m_dirty_height = 0;
 };
 
 class BrowserD3DTexture final : public IDirect3DTexture8, private BrowserD3DResource
@@ -556,10 +805,18 @@ public:
 				height /= 2;
 			}
 		}
+		m_usage = usage;
+		m_pool = pool;
+		m_format = format;
+		m_browser_texture_id = allocate_browser_texture_id();
+		m_last_lock_flags.resize(m_levels.size());
 	}
 
 	~BrowserD3DTexture()
 	{
+		if (m_browser_texture_created) {
+			browser_texture_release(m_browser_texture_id);
+		}
 		for (BrowserD3DSurface *surface : m_levels) {
 			surface->Release();
 		}
@@ -616,7 +873,11 @@ public:
 			return E_FAIL;
 		}
 		++g_state.texture_lock_rect_calls;
-		return m_levels[level]->LockRect(locked_rect, rect, flags);
+		HRESULT result = m_levels[level]->LockRect(locked_rect, rect, flags);
+		if (SUCCEEDED(result) && level < m_last_lock_flags.size()) {
+			m_last_lock_flags[level] = flags;
+		}
+		return result;
 	}
 
 	HRESULT UnlockRect(UINT level) override
@@ -625,7 +886,34 @@ public:
 			return E_FAIL;
 		}
 		++g_state.texture_unlock_rect_calls;
-		return m_levels[level]->UnlockRect();
+		BrowserD3DTextureDirtyRegion dirty = {};
+		if (level < m_last_lock_flags.size()) {
+			dirty.lock_flags = m_last_lock_flags[level];
+		}
+		HRESULT result = m_levels[level]->unlock_and_capture(&dirty);
+		if (level < m_last_lock_flags.size()) {
+			m_last_lock_flags[level] = 0;
+		}
+		if (SUCCEEDED(result)) {
+			browser_texture_update(m_browser_texture_id, level, m_format, dirty, m_usage);
+		}
+		return result;
+	}
+
+	UINT browser_texture_id() const { return m_browser_texture_id; }
+
+	void create_browser_texture()
+	{
+		if (m_browser_texture_created || m_levels.empty()) {
+			return;
+		}
+		D3DSURFACE_DESC desc = {};
+		if (FAILED(m_levels[0]->GetDesc(&desc))) {
+			return;
+		}
+		browser_texture_create(m_browser_texture_id, desc.Width, desc.Height,
+			static_cast<UINT>(m_levels.size()), m_format, m_usage, m_pool);
+		m_browser_texture_created = true;
 	}
 
 	ULONG AddRef() override { return ++m_ref_count; }
@@ -643,6 +931,12 @@ private:
 	ULONG m_ref_count = 1;
 	DWORD m_lod = 0;
 	std::vector<BrowserD3DSurface *> m_levels;
+	std::vector<DWORD> m_last_lock_flags;
+	DWORD m_usage = 0;
+	D3DPOOL m_pool = D3DPOOL_DEFAULT;
+	D3DFORMAT m_format = D3DFMT_A8R8G8B8;
+	UINT m_browser_texture_id = 0;
+	bool m_browser_texture_created = false;
 };
 
 class BrowserD3DVertexBuffer final : public IDirect3DVertexBuffer8, private BrowserD3DResource
@@ -997,6 +1291,7 @@ public:
 			*texture = nullptr;
 			return D3DERR_OUTOFVIDEOMEMORY;
 		}
+		browser_texture->create_browser_texture();
 		++g_state.create_texture_calls;
 		return S_OK;
 	}

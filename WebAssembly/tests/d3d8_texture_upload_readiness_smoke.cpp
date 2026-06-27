@@ -11,10 +11,10 @@
 //
 //   1. Proves the shim's CPU-side texture surface round-trips the exact
 //      per-format dimensions, pitch, level halving, and LockRect pointer
-//      arithmetic the future texture-upload bridge must read from. Observed
+//      arithmetic the browser texture-upload bridge reads from. Observed
 //      through the probe counters and last-value fields in WasmD3D8ShimState.
-//      This is the foundation the future DDS/DXT -> GL texture upload must
-//      stand on.
+//      This is the foundation the full DDS/DXT -> GL texture upload must stand
+//      on as the bridge expands beyond uncompressed CPU-backed surfaces.
 //
 //   2. Records the EXPECTED D3D8 texture format -> WebGL2 (OpenGL ES 3.0 /
 //      GLSL ES) mapping as a machine-readable JSON spec emitted on success.
@@ -56,7 +56,7 @@
 //     about DXT (it returns 4 for the unknown-format default), so a DXT
 //     texture created through the shim today reports a row pitch of width*4
 //     and a wrong surface size. This smoke observes and records that gap so
-//     the future texture-upload bridge knows it cannot read DXT backing stores
+//     the full texture-upload bridge knows it cannot read DXT backing stores
 //     from the shim's CPU surface and must instead pull compressed blocks from
 //     the original DDS payload before calling compressedTexImage2D.
 //
@@ -385,7 +385,7 @@ int main()
 	//    succeeds, but the shim's bytes_per_pixel() default does not model
 	//    block compression. Observe and record that the shim's reported level-0
 	//    pitch (width*4) and surface byte size do NOT match the real DXT block
-	//    pitch, so the future texture-upload bridge cannot consume the shim's
+	//    pitch, so the full texture-upload bridge cannot consume the shim's
 	//    CPU surface for DXT data and must source compressed blocks directly
 	//    from the original DDS payload.
 	// ----------------------------------------------------------------------
@@ -486,10 +486,10 @@ int main()
 	// must satisfy. The exact surface round-trip is already proven above; this
 	// JSON is the contract record, not an additional gate.
 	std::printf("{\"ok\":true,\"smoke\":\"d3d8-texture-upload-readiness\","
-		"\"note\":\"D3D8 texture surface round-trip + expected WebGL2 upload mapping spec; shim and draw bridge unchanged.\","
+		"\"note\":\"D3D8 texture surface round-trip + expected WebGL2 upload mapping spec; initial browser callbacks now cover uncompressed CPU textures.\","
 		"\"bridgeReady\":false,"
 		"\"bridgeGap\":["
-		"\"No browser texture create/update/release callbacks exist yet (no cncPortD3D8Texture*), so the shim's CPU surfaces never reach WebGL\","
+		"\"Texture binding, texture-stage state, sampler state, and textured draw/shader integration are not wired yet\","
 		"\"Shim bytes_per_pixel() does not model DXT block compression; DXT backing stores cannot be consumed directly\","
 		"\"A8R8G8B8/X8R8G8B8 require a B/R byte-swizzle on upload because WebGL2 has no GL_BGRA texImage2D\","
 		"\"A1R5G5B5/A4R4G4B4/P8 require CPU expansion/decode to RGBA8 before upload\","

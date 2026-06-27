@@ -11,10 +11,23 @@ const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
 let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
+const d3d8Textures = new Map();
 const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DYNAMIC = 0x00000200;
 const D3DLOCK_DISCARD = 0x00002000;
 const D3DLOCK_NOOVERWRITE = 0x00001000;
+const D3DFMT_R8G8B8 = 20;
+const D3DFMT_A8R8G8B8 = 21;
+const D3DFMT_X8R8G8B8 = 22;
+const D3DFMT_R5G6B5 = 23;
+const D3DFMT_X1R5G5B5 = 24;
+const D3DFMT_A1R5G5B5 = 25;
+const D3DFMT_A4R4G4B4 = 26;
+const D3DFMT_A8 = 28;
+const D3DFMT_X4R4G4B4 = 30;
+const D3DFMT_P8 = 41;
+const D3DFMT_L8 = 50;
+const D3DFMT_A8L8 = 51;
 const D3DZB_FALSE = 0;
 const D3DZB_TRUE = 1;
 const D3DZB_USEW = 2;
@@ -60,6 +73,18 @@ const d3d8BufferStats = {
   lastDynamicCreate: null,
   lastUpdate: null,
   lastRelease: null,
+};
+const d3d8TextureStats = {
+  creates: 0,
+  updates: 0,
+  releases: 0,
+  unsupportedUpdates: 0,
+  live: 0,
+  lastCreate: null,
+  lastUpdate: null,
+  lastSubrectUpdate: null,
+  lastRelease: null,
+  lastUnsupported: null,
 };
 
 const harnessState = {
@@ -371,6 +396,356 @@ function releaseD3D8Buffer(payload = {}) {
   d3d8BufferStats.releases += 1;
   d3d8BufferStats.lastRelease = { id, kind: resource.kindName };
   updateD3D8BufferSummary();
+  return 1;
+}
+
+function d3d8TextureLevelSize(resource, level) {
+  let width = resource.width;
+  let height = resource.height;
+  for (let index = 0; index < level; ++index) {
+    width = Math.max(1, width >> 1);
+    height = Math.max(1, height >> 1);
+  }
+  return { width, height };
+}
+
+function scale5(value) {
+  return (value << 3) | (value >> 2);
+}
+
+function scale4(value) {
+  return (value << 4) | value;
+}
+
+function d3d8TextureFormatInfo(format) {
+  const d3dFormat = Number(format ?? 0) >>> 0;
+  switch (d3dFormat) {
+    case D3DFMT_R8G8B8:
+    case D3DFMT_A8R8G8B8:
+    case D3DFMT_X8R8G8B8:
+    case D3DFMT_A1R5G5B5:
+    case D3DFMT_A4R4G4B4:
+    case D3DFMT_X1R5G5B5:
+    case D3DFMT_X4R4G4B4:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rgba8",
+      };
+    case D3DFMT_R5G6B5:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.RGB565,
+        format: gl.RGB,
+        type: gl.UNSIGNED_SHORT_5_6_5,
+        storage: "rgb565",
+      };
+    case D3DFMT_A8:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.R8,
+        format: gl.RED,
+        type: gl.UNSIGNED_BYTE,
+        storage: "r8-alpha",
+      };
+    case D3DFMT_L8:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.R8,
+        format: gl.RED,
+        type: gl.UNSIGNED_BYTE,
+        storage: "r8-luminance",
+      };
+    case D3DFMT_A8L8:
+      return {
+        d3dFormat,
+        supported: true,
+        internalFormat: gl.RG8,
+        format: gl.RG,
+        type: gl.UNSIGNED_BYTE,
+        storage: "rg8-luminance-alpha",
+      };
+    case D3DFMT_P8:
+      return {
+        d3dFormat,
+        supported: false,
+        reason: "P8 needs the engine palette before WebGL upload",
+      };
+    default:
+      return {
+        d3dFormat,
+        supported: false,
+        reason: "format is not implemented by the initial uncompressed texture bridge",
+      };
+  }
+}
+
+function convertD3D8TextureBytes(format, bytes, width, height) {
+  const d3dFormat = Number(format ?? 0) >>> 0;
+  const pixelCount = width * height;
+  if (d3dFormat === D3DFMT_A8R8G8B8 || d3dFormat === D3DFMT_X8R8G8B8) {
+    const output = new Uint8Array(pixelCount * 4);
+    for (let pixel = 0; pixel < pixelCount; ++pixel) {
+      const source = pixel * 4;
+      const target = pixel * 4;
+      output[target] = bytes[source + 2];
+      output[target + 1] = bytes[source + 1];
+      output[target + 2] = bytes[source];
+      output[target + 3] = d3dFormat === D3DFMT_X8R8G8B8 ? 255 : bytes[source + 3];
+    }
+    return output;
+  }
+  if (d3dFormat === D3DFMT_R8G8B8) {
+    const output = new Uint8Array(pixelCount * 4);
+    for (let pixel = 0; pixel < pixelCount; ++pixel) {
+      const source = pixel * 3;
+      const target = pixel * 4;
+      output[target] = bytes[source + 2];
+      output[target + 1] = bytes[source + 1];
+      output[target + 2] = bytes[source];
+      output[target + 3] = 255;
+    }
+    return output;
+  }
+  if (d3dFormat === D3DFMT_A1R5G5B5 || d3dFormat === D3DFMT_X1R5G5B5) {
+    const output = new Uint8Array(pixelCount * 4);
+    for (let pixel = 0; pixel < pixelCount; ++pixel) {
+      const source = pixel * 2;
+      const value = bytes[source] | (bytes[source + 1] << 8);
+      const target = pixel * 4;
+      output[target] = scale5((value >> 10) & 0x1f);
+      output[target + 1] = scale5((value >> 5) & 0x1f);
+      output[target + 2] = scale5(value & 0x1f);
+      output[target + 3] = d3dFormat === D3DFMT_X1R5G5B5 ? 255 : (value & 0x8000) ? 255 : 0;
+    }
+    return output;
+  }
+  if (d3dFormat === D3DFMT_A4R4G4B4 || d3dFormat === D3DFMT_X4R4G4B4) {
+    const output = new Uint8Array(pixelCount * 4);
+    for (let pixel = 0; pixel < pixelCount; ++pixel) {
+      const source = pixel * 2;
+      const value = bytes[source] | (bytes[source + 1] << 8);
+      const target = pixel * 4;
+      output[target] = scale4((value >> 8) & 0x0f);
+      output[target + 1] = scale4((value >> 4) & 0x0f);
+      output[target + 2] = scale4(value & 0x0f);
+      output[target + 3] = d3dFormat === D3DFMT_X4R4G4B4 ? 255 : scale4((value >> 12) & 0x0f);
+    }
+    return output;
+  }
+  return bytes;
+}
+
+function d3d8TextureUploadView(info, bytes) {
+  if (info.type !== gl.UNSIGNED_SHORT_5_6_5) {
+    return bytes;
+  }
+  const copy = new Uint8Array(bytes);
+  return new Uint16Array(copy.buffer);
+}
+
+function sampleD3D8TexturePixel(resource, x, y) {
+  if (!gl || !resource?.texture) {
+    return null;
+  }
+  const framebuffer = gl.createFramebuffer();
+  const previousFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, resource.texture, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  let pixel = null;
+  if (status === gl.FRAMEBUFFER_COMPLETE) {
+    const readX = Math.max(0, Math.min(resource.width - 1, Math.trunc(x)));
+    const readY = Math.max(0, Math.min(resource.height - 1, Math.trunc(y)));
+    const pixels = new Uint8Array(4);
+    gl.readPixels(readX, readY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    pixel = Array.from(pixels);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, previousFramebuffer);
+  gl.deleteFramebuffer(framebuffer);
+  return pixel;
+}
+
+function updateD3D8TextureSummary() {
+  d3d8TextureStats.live = d3d8Textures.size;
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    d3d8Textures: {
+      creates: d3d8TextureStats.creates,
+      updates: d3d8TextureStats.updates,
+      releases: d3d8TextureStats.releases,
+      unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
+      live: d3d8TextureStats.live,
+      lastCreate: d3d8TextureStats.lastCreate,
+      lastUpdate: d3d8TextureStats.lastUpdate,
+      lastSubrectUpdate: d3d8TextureStats.lastSubrectUpdate,
+      lastRelease: d3d8TextureStats.lastRelease,
+      lastUnsupported: d3d8TextureStats.lastUnsupported,
+    },
+  };
+}
+
+function createD3D8Texture(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const id = Number(payload.id ?? 0) >>> 0;
+  const width = Number(payload.width ?? 0) >>> 0;
+  const height = Number(payload.height ?? 0) >>> 0;
+  const levels = Math.max(1, Number(payload.levels ?? 1) >>> 0);
+  const format = Number(payload.format ?? 0) >>> 0;
+  if (id === 0 || width === 0 || height === 0) {
+    return 0;
+  }
+
+  const existing = d3d8Textures.get(id);
+  if (existing) {
+    gl.deleteTexture(existing.texture);
+  }
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const resource = {
+    id,
+    width,
+    height,
+    levels,
+    format,
+    usage: Number(payload.usage ?? 0) >>> 0,
+    pool: Number(payload.pool ?? 0) >>> 0,
+    texture,
+    initializedLevels: new Set(),
+    levelFormats: new Map(),
+    uploads: 0,
+  };
+  d3d8Textures.set(id, resource);
+  d3d8TextureStats.creates += 1;
+  d3d8TextureStats.lastCreate = {
+    id,
+    width,
+    height,
+    levels,
+    format,
+    usage: resource.usage,
+    pool: resource.pool,
+  };
+  updateD3D8TextureSummary();
+  return 1;
+}
+
+function updateD3D8Texture(payload = {}) {
+  if (!gl || !(payload.bytes instanceof Uint8Array)) {
+    return 0;
+  }
+  const id = Number(payload.id ?? 0) >>> 0;
+  const level = Number(payload.level ?? 0) >>> 0;
+  const x = Number(payload.x ?? 0) >>> 0;
+  const y = Number(payload.y ?? 0) >>> 0;
+  const width = Number(payload.width ?? 0) >>> 0;
+  const height = Number(payload.height ?? 0) >>> 0;
+  const format = Number(payload.format ?? 0) >>> 0;
+  let resource = d3d8Textures.get(id);
+  if (!resource) {
+    if (!createD3D8Texture({ id, width, height, levels: level + 1, format, usage: payload.usage })) {
+      return 0;
+    }
+    resource = d3d8Textures.get(id);
+  }
+  if (!resource || width === 0 || height === 0 || level >= resource.levels) {
+    return 0;
+  }
+
+  const info = d3d8TextureFormatInfo(format);
+  if (!info.supported) {
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id,
+      level,
+      format,
+      reason: info.reason,
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+
+  const levelSize = d3d8TextureLevelSize(resource, level);
+  if (x + width > levelSize.width || y + height > levelSize.height) {
+    return 0;
+  }
+
+  const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height);
+  const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
+  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  const levelKey = String(level);
+  const levelInitialized = resource.initializedLevels.has(levelKey);
+  const levelFormat = resource.levelFormats.get(levelKey);
+  if (!levelInitialized || levelFormat !== info.storage) {
+    if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
+      gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
+        info.format, info.type, uploadBytes);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, levelSize.width, levelSize.height, 0,
+        info.format, info.type, null);
+      gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
+    }
+    resource.initializedLevels.add(levelKey);
+    resource.levelFormats.set(levelKey, info.storage);
+  } else {
+    gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
+  }
+
+  resource.uploads += 1;
+  d3d8TextureStats.updates += 1;
+  d3d8TextureStats.lastUpdate = {
+    id,
+    level,
+    x,
+    y,
+    width,
+    height,
+    format,
+    storage: info.storage,
+    pitch: Number(payload.pitch ?? 0) >>> 0,
+    rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
+    byteSize: payload.bytes.byteLength,
+    convertedByteSize: convertedBytes.byteLength,
+    usage: Number(payload.usage ?? 0) >>> 0,
+    lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
+    uploads: resource.uploads,
+    samplePixel: level === 0 && info.storage === "rgba8" ? sampleD3D8TexturePixel(resource, x, y) : null,
+  };
+  if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
+    d3d8TextureStats.lastSubrectUpdate = d3d8TextureStats.lastUpdate;
+  }
+  updateD3D8TextureSummary();
+  return 1;
+}
+
+function releaseD3D8Texture(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const id = Number(payload.id ?? 0) >>> 0;
+  const resource = d3d8Textures.get(id);
+  if (!resource) {
+    return 0;
+  }
+  gl.deleteTexture(resource.texture);
+  d3d8Textures.delete(id);
+  d3d8TextureStats.releases += 1;
+  d3d8TextureStats.lastRelease = { id };
+  updateD3D8TextureSummary();
   return 1;
 }
 
@@ -967,6 +1342,9 @@ async function loadWasmModule() {
       cncPortD3D8BufferCreate: createD3D8Buffer,
       cncPortD3D8BufferUpdate: updateD3D8Buffer,
       cncPortD3D8BufferRelease: releaseD3D8Buffer,
+      cncPortD3D8TextureCreate: createD3D8Texture,
+      cncPortD3D8TextureUpdate: updateD3D8Texture,
+      cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
     });
 
@@ -997,6 +1375,7 @@ async function loadWasmModule() {
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
+      probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -1874,6 +2253,33 @@ async function rpc(command, payload = {}) {
           && browserProbe?.releases >= 2
           && browserProbe?.liveVertex === 0
           && browserProbe?.liveIndex === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TextureUpload":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 texture upload probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8TextureUpload());
+        const browserProbe = harnessState.graphics.d3d8Textures ?? null;
+        const ok = Boolean(probe.ok)
+          && browserProbe?.updates >= 3
+          && browserProbe?.releases >= 2
+          && browserProbe?.live === 0
+          && browserProbe?.lastSubrectUpdate?.x === 1
+          && browserProbe?.lastSubrectUpdate?.y === 2
+          && browserProbe?.lastSubrectUpdate?.width === 1
+          && browserProbe?.lastSubrectUpdate?.height === 1
+          && browserProbe?.lastSubrectUpdate?.samplePixel?.join(",") === "48,32,16,64"
+          && browserProbe?.lastUpdate?.format === 22
+          && browserProbe?.lastUpdate?.samplePixel?.join(",") === "7,6,5,255";
         return {
           ok,
           command,

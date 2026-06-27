@@ -4139,6 +4139,230 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_buffer_hints()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_upload()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DTexture8 *argb_texture = nullptr;
+	IDirect3DTexture8 *xrgb_texture = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT argb_create_result = E_FAIL;
+	HRESULT argb_lock_result = E_FAIL;
+	HRESULT argb_unlock_result = E_FAIL;
+	HRESULT subrect_lock_result = E_FAIL;
+	HRESULT subrect_unlock_result = E_FAIL;
+	HRESULT xrgb_create_result = E_FAIL;
+	HRESULT xrgb_lock_result = E_FAIL;
+	HRESULT xrgb_unlock_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	UINT argb_texture_id = 0;
+	UINT argb_update_width = 0;
+	UINT argb_update_height = 0;
+	UINT argb_update_pitch = 0;
+	UINT argb_update_row_bytes = 0;
+	DWORD argb_update_checksum = 0;
+	UINT subrect_x = 0;
+	UINT subrect_y = 0;
+	UINT subrect_width = 0;
+	UINT subrect_height = 0;
+	UINT subrect_pitch = 0;
+	UINT subrect_row_bytes = 0;
+	DWORD subrect_checksum = 0;
+	UINT xrgb_texture_id = 0;
+	UINT xrgb_update_width = 0;
+	UINT xrgb_update_height = 0;
+	DWORD xrgb_update_checksum = 0;
+
+	if (device != nullptr) {
+		argb_create_result = device->CreateTexture(4, 4, 2, 0,
+			D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &argb_texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		argb_texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok && SUCCEEDED(argb_create_result) && argb_texture != nullptr && argb_texture_id != 0;
+	}
+
+	if (argb_texture != nullptr) {
+		D3DLOCKED_RECT locked_rect = {};
+		argb_lock_result = argb_texture->LockRect(0, &locked_rect, nullptr, 0);
+		if (SUCCEEDED(argb_lock_result) && locked_rect.pBits != nullptr) {
+			std::memset(locked_rect.pBits, 0, static_cast<std::size_t>(locked_rect.Pitch) * 4);
+			BYTE *pixel = static_cast<BYTE *>(locked_rect.pBits);
+			pixel[0] = 0x22; // B
+			pixel[1] = 0x44; // G
+			pixel[2] = 0x66; // R
+			pixel[3] = 0x88; // A
+		}
+		argb_unlock_result = argb_texture->UnlockRect(0);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		argb_update_width = state != nullptr ? state->last_browser_texture_width : 0;
+		argb_update_height = state != nullptr ? state->last_browser_texture_height : 0;
+		argb_update_pitch = state != nullptr ? state->last_browser_texture_pitch : 0;
+		argb_update_row_bytes = state != nullptr ? state->last_browser_texture_row_bytes : 0;
+		argb_update_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(argb_lock_result) && SUCCEEDED(argb_unlock_result) &&
+			argb_update_width == 4 && argb_update_height == 4 &&
+			argb_update_pitch == 16 && argb_update_row_bytes == 16;
+	}
+
+	if (argb_texture != nullptr) {
+		RECT sub_rect = {};
+		sub_rect.left = 1;
+		sub_rect.top = 2;
+		sub_rect.right = 2;
+		sub_rect.bottom = 3;
+		D3DLOCKED_RECT locked_rect = {};
+		subrect_lock_result = argb_texture->LockRect(0, &locked_rect, &sub_rect, 0);
+		if (SUCCEEDED(subrect_lock_result) && locked_rect.pBits != nullptr) {
+			BYTE *pixel = static_cast<BYTE *>(locked_rect.pBits);
+			pixel[0] = 0x10; // B
+			pixel[1] = 0x20; // G
+			pixel[2] = 0x30; // R
+			pixel[3] = 0x40; // A
+		}
+		subrect_unlock_result = argb_texture->UnlockRect(0);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		subrect_x = state != nullptr ? state->last_browser_texture_x : 0;
+		subrect_y = state != nullptr ? state->last_browser_texture_y : 0;
+		subrect_width = state != nullptr ? state->last_browser_texture_width : 0;
+		subrect_height = state != nullptr ? state->last_browser_texture_height : 0;
+		subrect_pitch = state != nullptr ? state->last_browser_texture_pitch : 0;
+		subrect_row_bytes = state != nullptr ? state->last_browser_texture_row_bytes : 0;
+		subrect_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(subrect_lock_result) && SUCCEEDED(subrect_unlock_result) &&
+			subrect_x == 1 && subrect_y == 2 && subrect_width == 1 && subrect_height == 1 &&
+			subrect_pitch == 16 && subrect_row_bytes == 4;
+	}
+
+	if (device != nullptr) {
+		xrgb_create_result = device->CreateTexture(2, 2, 1, 0,
+			D3DFMT_X8R8G8B8, D3DPOOL_MANAGED, &xrgb_texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		xrgb_texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok && SUCCEEDED(xrgb_create_result) && xrgb_texture != nullptr && xrgb_texture_id != 0;
+	}
+
+	if (xrgb_texture != nullptr) {
+		D3DLOCKED_RECT locked_rect = {};
+		xrgb_lock_result = xrgb_texture->LockRect(0, &locked_rect, nullptr, 0);
+		if (SUCCEEDED(xrgb_lock_result) && locked_rect.pBits != nullptr) {
+			std::memset(locked_rect.pBits, 0, static_cast<std::size_t>(locked_rect.Pitch) * 2);
+			BYTE *pixel = static_cast<BYTE *>(locked_rect.pBits);
+			pixel[0] = 0x05; // B
+			pixel[1] = 0x06; // G
+			pixel[2] = 0x07; // R
+			pixel[3] = 0x00; // X, browser upload must force alpha opaque
+		}
+		xrgb_unlock_result = xrgb_texture->UnlockRect(0);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		xrgb_update_width = state != nullptr ? state->last_browser_texture_width : 0;
+		xrgb_update_height = state != nullptr ? state->last_browser_texture_height : 0;
+		xrgb_update_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(xrgb_lock_result) && SUCCEEDED(xrgb_unlock_result) &&
+			xrgb_update_width == 2 && xrgb_update_height == 2;
+	}
+
+	if (xrgb_texture != nullptr) {
+		xrgb_texture->Release();
+	}
+	if (argb_texture != nullptr) {
+		argb_texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_texture_calls == 2 &&
+		state->texture_lock_rect_calls == 3 &&
+		state->texture_unlock_rect_calls == 3 &&
+		state->browser_texture_create_calls == 2 &&
+		state->browser_texture_update_calls == 3 &&
+		state->browser_texture_release_calls == 2;
+
+	char buffer[1900];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_texture_upload_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"argbCreate\":%ld,\"argbLock\":%ld,"
+		"\"argbUnlock\":%ld,\"subrectLock\":%ld,\"subrectUnlock\":%ld,"
+		"\"xrgbCreate\":%ld,\"xrgbLock\":%ld,\"xrgbUnlock\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,\"browserTextureRelease\":%u},"
+		"\"argbUpdate\":{\"textureId\":%u,\"width\":%u,\"height\":%u,"
+		"\"pitch\":%u,\"rowBytes\":%u,\"checksum\":%lu,"
+		"\"expectedSample\":[102,68,34,136]},"
+		"\"subrectUpdate\":{\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u,"
+		"\"pitch\":%u,\"rowBytes\":%u,\"checksum\":%lu,"
+		"\"expectedSample\":[48,32,16,64]},"
+		"\"xrgbUpdate\":{\"textureId\":%u,\"width\":%u,\"height\":%u,"
+		"\"checksum\":%lu,\"expectedSample\":[7,6,5,255]}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(argb_create_result),
+		static_cast<long>(argb_lock_result),
+		static_cast<long>(argb_unlock_result),
+		static_cast<long>(subrect_lock_result),
+		static_cast<long>(subrect_unlock_result),
+		static_cast<long>(xrgb_create_result),
+		static_cast<long>(xrgb_lock_result),
+		static_cast<long>(xrgb_unlock_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		argb_texture_id,
+		argb_update_width,
+		argb_update_height,
+		argb_update_pitch,
+		argb_update_row_bytes,
+		static_cast<unsigned long>(argb_update_checksum),
+		subrect_x,
+		subrect_y,
+		subrect_width,
+		subrect_height,
+		subrect_pitch,
+		subrect_row_bytes,
+		static_cast<unsigned long>(subrect_checksum),
+		xrgb_texture_id,
+		xrgb_update_width,
+		xrgb_update_height,
+		static_cast<unsigned long>(xrgb_update_checksum));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()
 {
 	return write_state_json();

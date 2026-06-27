@@ -2366,6 +2366,15 @@ shares structure and follows behind.
       swizzle for A8/L8/A8L8, and WEBGL_compressed_texture_s3tc targets with
       block-byte sizing for DXT1/DXT3/DXT5) that the future real DDS/DXT→GL
       texture upload task must satisfy.
+- [x] Add the first browser WebGL2 texture-resource bridge for D3D8
+      `CreateTexture` / `LockRect` / `UnlockRect` / `Release`, with stable
+      browser texture IDs, dirty sub-rect row compaction, uncompressed
+      D3D8-format byte conversion (`A8R8G8B8`, `X8R8G8B8`, RGB565, packed
+      16-bit ARGB/XRGB, A8/L8/A8L8), explicit unsupported reporting for
+      palette/DXT formats, and Playwright harness coverage proving full and
+      sub-rect uploads reach WebGL and sample back with correct B/R swizzle and
+      XRGB opaque alpha. This still does not bind textures into the original
+      WW3D draw path or solve DDS/DXT payload upload.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

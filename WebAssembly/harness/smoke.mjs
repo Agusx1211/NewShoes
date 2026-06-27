@@ -891,6 +891,29 @@ try {
     throw new Error(`D3D8 buffer hint probe failed: ${JSON.stringify(d3d8BufferHintsResult)}`);
   }
 
+  const d3d8TextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureUpload"));
+  if (!d3d8TextureUploadResult.ok
+      || d3d8TextureUploadResult.probe?.source !== "browser_d3d8_texture_upload_probe"
+      || d3d8TextureUploadResult.probe?.calls?.createTexture !== 2
+      || d3d8TextureUploadResult.probe?.calls?.textureLockRect !== 3
+      || d3d8TextureUploadResult.probe?.calls?.textureUnlockRect !== 3
+      || d3d8TextureUploadResult.probe?.calls?.browserTextureCreate !== 2
+      || d3d8TextureUploadResult.probe?.calls?.browserTextureUpdate !== 3
+      || d3d8TextureUploadResult.probe?.calls?.browserTextureRelease !== 2
+      || d3d8TextureUploadResult.probe?.argbUpdate?.pitch !== 16
+      || d3d8TextureUploadResult.probe?.argbUpdate?.rowBytes !== 16
+      || d3d8TextureUploadResult.probe?.subrectUpdate?.x !== 1
+      || d3d8TextureUploadResult.probe?.subrectUpdate?.y !== 2
+      || d3d8TextureUploadResult.probe?.subrectUpdate?.rowBytes !== 4
+      || d3d8TextureUploadResult.browserProbe?.updates !== 3
+      || d3d8TextureUploadResult.browserProbe?.releases !== 2
+      || d3d8TextureUploadResult.browserProbe?.live !== 0
+      || d3d8TextureUploadResult.browserProbe?.lastSubrectUpdate?.samplePixel?.join(",") !== "48,32,16,64"
+      || d3d8TextureUploadResult.browserProbe?.lastUpdate?.format !== 22
+      || d3d8TextureUploadResult.browserProbe?.lastUpdate?.samplePixel?.join(",") !== "7,6,5,255") {
+    throw new Error(`D3D8 texture upload probe failed: ${JSON.stringify(d3d8TextureUploadResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection
