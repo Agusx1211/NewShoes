@@ -463,6 +463,12 @@ shares structure and follows behind.
 - [ ] Replace the current browser no-resource/no-registry WWLib fallbacks with
       a real resource lookup and persistence contract before relying on
       `ResourceFileClass` or `RegistryClass` for runtime settings/data.
+- [x] `WWVegas/WWLib` legacy URL launcher (`LaunchWeb.cpp`) compiles under
+      wasm and smoke-tests null, empty, and normal URL calls through the current
+      browser-safe no-native-process path.
+- [ ] Replace the current `LaunchWebBrowser` no-native-process fallback with a
+      harness-observable `window.open` / external-link browser bridge before
+      relying on original URL-launching UI flows.
 - [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
       (`convert.cpp`, `dsurface.cpp`) after the browser `DSurface`/pixel-format
       abstraction is defined, instead of stubbing draw behavior.

@@ -257,6 +257,23 @@ struct WNDCLASSA
 #define WNDCLASS WNDCLASSA
 #endif
 
+struct STARTUPINFOA
+{
+	DWORD cb;
+};
+
+#ifndef STARTUPINFO
+#define STARTUPINFO STARTUPINFOA
+#endif
+
+struct PROCESS_INFORMATION
+{
+	HANDLE hProcess;
+	HANDLE hThread;
+	DWORD dwProcessId;
+	DWORD dwThreadId;
+};
+
 struct _EXCEPTION_POINTERS
 {
 	void *ExceptionRecord;
@@ -2051,6 +2068,11 @@ static inline DWORD GetTempPath(DWORD buffer_len, LPSTR buffer)
 	return static_cast<DWORD>(required);
 }
 
+static inline UINT GetWindowsDirectory(LPSTR buffer, UINT buffer_len)
+{
+	return static_cast<UINT>(GetTempPath(buffer_len, buffer));
+}
+
 static inline UINT GetTempFileName(LPCSTR path, LPCSTR prefix, UINT unique, LPSTR buffer)
 {
 	if (buffer == nullptr) {
@@ -2420,6 +2442,35 @@ static inline BOOL WriteFile(HANDLE file, LPCVOID buffer, DWORD bytes_to_write, 
 static inline int LoadString(HINSTANCE, UINT, LPSTR, int)
 {
 	return 0;
+}
+
+static inline HINSTANCE FindExecutable(LPCSTR, LPCSTR, LPSTR result)
+{
+	if (result != nullptr) {
+		result[0] = '\0';
+	}
+	return nullptr;
+}
+
+static inline BOOL CreateProcess(
+	LPCSTR,
+	LPSTR,
+	void *,
+	void *,
+	BOOL,
+	DWORD,
+	void *,
+	LPCSTR,
+	STARTUPINFO *,
+	PROCESS_INFORMATION *process_info)
+{
+	if (process_info != nullptr) {
+		process_info->hProcess = nullptr;
+		process_info->hThread = nullptr;
+		process_info->dwProcessId = 0;
+		process_info->dwThreadId = 0;
+	}
+	return FALSE;
 }
 
 static inline HRSRC FindResource(HMODULE, LPCSTR, LPCSTR)

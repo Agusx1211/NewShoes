@@ -966,6 +966,29 @@ target_link_libraries(zh_wwlib_font PUBLIC
   zh_wwlib_convert_globals
 )
 
+add_library(zh_wwlib_launchweb STATIC
+  "${WWLIB_DIR}/LaunchWeb.cpp"
+)
+
+target_include_directories(zh_wwlib_launchweb PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_definitions(zh_wwlib_launchweb PRIVATE
+  NDEBUG
+)
+
+target_compile_options(zh_wwlib_launchweb PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_md5 STATIC
   "${WWLIB_DIR}/md5.cpp"
 )
@@ -3651,6 +3674,35 @@ target_compile_options(wwlib-font-smoke PRIVATE
 )
 
 target_link_options(wwlib-font-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-launchweb-smoke
+  tests/wwlib_launchweb_smoke.cpp
+)
+
+set_target_properties(wwlib-launchweb-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-launchweb-smoke PRIVATE
+  zh_wwlib_launchweb
+)
+
+target_compile_options(wwlib-launchweb-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-launchweb-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
