@@ -230,10 +230,12 @@ function updateD3D8Buffer(payload = {}) {
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const bytes = payload.bytes;
+  const byteOffset = Number(payload.byteOffset ?? 0) >>> 0;
+  const requiredByteSize = byteOffset + bytes.byteLength;
   const key = d3d8BufferKey(kind, id);
   let resource = d3d8Buffers.get(key);
   if (!resource) {
-    if (!createD3D8Buffer({ kind, id, byteSize: bytes.byteLength })) {
+    if (!createD3D8Buffer({ kind, id, byteSize: requiredByteSize })) {
       return 0;
     }
     resource = d3d8Buffers.get(key);
@@ -243,17 +245,17 @@ function updateD3D8Buffer(payload = {}) {
   }
 
   gl.bindBuffer(resource.target, resource.buffer);
-  if (bytes.byteLength > resource.byteSize) {
-    gl.bufferData(resource.target, bytes, gl.DYNAMIC_DRAW);
-    resource.byteSize = bytes.byteLength;
-  } else {
-    gl.bufferSubData(resource.target, 0, bytes);
+  if (requiredByteSize > resource.byteSize) {
+    gl.bufferData(resource.target, requiredByteSize, gl.DYNAMIC_DRAW);
+    resource.byteSize = requiredByteSize;
   }
+  gl.bufferSubData(resource.target, byteOffset, bytes);
   resource.uploads += 1;
   d3d8BufferStats.updates += 1;
   d3d8BufferStats.lastUpdate = {
     id,
     kind: resource.kindName,
+    byteOffset,
     byteSize: bytes.byteLength,
     uploads: resource.uploads,
   };
@@ -699,6 +701,7 @@ async function loadWasmModule() {
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
+      probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -1524,6 +1527,28 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8BufferDirty":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 buffer dirty probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8BufferDirty());
+        const browserProbe = harnessState.graphics.d3d8Buffers ?? null;
+        const ok = Boolean(probe.ok)
+          && browserProbe?.lastUpdate?.byteOffset === probe.indexUpdate?.offset
+          && browserProbe?.lastUpdate?.byteSize === probe.indexUpdate?.bytes
+          && browserProbe?.releases >= 2
+          && browserProbe?.liveVertex === 0
+          && browserProbe?.liveIndex === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
           state: snapshotState(),
         };
       }

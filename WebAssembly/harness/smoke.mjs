@@ -855,6 +855,20 @@ try {
 
   await page.locator("#viewport").screenshot({ path: d3d8ClearCanvasScreenshot });
 
+  const d3d8BufferDirtyResult = await page.evaluate(() => window.CnCPort.rpc("d3d8BufferDirty"));
+  if (!d3d8BufferDirtyResult.ok
+      || d3d8BufferDirtyResult.probe?.source !== "browser_d3d8_buffer_dirty_probe"
+      || d3d8BufferDirtyResult.probe?.vertexUpdate?.offset !== 24
+      || d3d8BufferDirtyResult.probe?.vertexUpdate?.bytes !== 40
+      || d3d8BufferDirtyResult.probe?.indexUpdate?.offset !== 8
+      || d3d8BufferDirtyResult.probe?.indexUpdate?.bytes !== 20
+      || d3d8BufferDirtyResult.browserProbe?.lastUpdate?.byteOffset !== 8
+      || d3d8BufferDirtyResult.browserProbe?.lastUpdate?.byteSize !== 20
+      || d3d8BufferDirtyResult.browserProbe?.liveVertex !== 0
+      || d3d8BufferDirtyResult.browserProbe?.liveIndex !== 0) {
+    throw new Error(`D3D8 dirty buffer update probe failed: ${JSON.stringify(d3d8BufferDirtyResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

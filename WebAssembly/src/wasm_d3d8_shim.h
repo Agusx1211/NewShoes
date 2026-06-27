@@ -21,6 +21,7 @@ struct WasmD3D8ShimState
 	UINT browser_buffer_release_calls;
 	UINT last_browser_buffer_kind;
 	UINT last_browser_buffer_id;
+	UINT last_browser_buffer_offset;
 	UINT last_browser_buffer_bytes;
 	UINT set_stream_source_calls;
 	UINT set_indices_calls;
