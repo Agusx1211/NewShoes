@@ -359,6 +359,7 @@ bool smoke_w3d_file_system()
 
 bool smoke_w3d_file_system_archive()
 {
+	const char archive_directory_path[] = "w3d-archive-smoke";
 	const char archive_directory[] = "w3d-archive-smoke/";
 	const char archive_filename[] = "w3d-archive-smoke/SmokeTextures.big";
 	const char archived_path[] = "Art\\Textures\\ArchiveTexture.dds";
@@ -380,13 +381,14 @@ bool smoke_w3d_file_system_archive()
 	Win32LocalFileSystem local_file_system;
 	Win32BIGFileSystem archive_file_system;
 	FileSystem file_system;
+	GlobalData global_data;
 	NameKeyGenerator name_key_generator;
 
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
 	TheNameKeyGenerator = &name_key_generator;
-	TheGlobalData = nullptr;
+	TheGlobalData = &global_data;
 	name_key_generator.init();
 
 	bool lookup_ok = false;
@@ -427,13 +429,14 @@ bool smoke_w3d_file_system_archive()
 
 	_TheFileFactory = old_file_factory;
 	name_key_generator.reset();
-	TheGlobalData = old_global_data;
 	TheNameKeyGenerator = old_name_key_generator;
+	TheGlobalData = old_global_data;
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
 	std::remove(archive_filename);
+	std::remove(archive_directory_path);
 	return lookup_ok;
 }
 }
