@@ -2698,9 +2698,15 @@ shares structure and follows behind.
             `Render2DSentenceClass` text (`ZEROHOUR`) through the real
             `FontCharsClass` glyph path and verify visible glyph coverage in
             `harness-smoke-ww3d-render2d-sentence-canvas.png`.
-      - [ ] Lift the proven `Render2DSentenceClass` text path into a focused
+      - [x] Lift the proven `Render2DSentenceClass` text path into a focused
             `W3DDisplayString` / `DisplayString` text render probe before
-            calling full Image/DisplayString text rendering complete.
+            calling full Image/DisplayString text rendering complete: the
+            `cnc_port_probe_ww3d_display_string` export creates original
+            `W3DFontLibrary` / `W3DDisplayString` objects, drives
+            `DisplayString::setText` / `setFont` / `draw` through the
+            browser GDI glyph bridge and D3D8/WebGL2 draw bridge, and the
+            `ww3dDisplayString` RPC verifies visible text in
+            `harness-smoke-ww3d-display-string-canvas.png`.
       - [x] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
             the same `MeshClass::Load_W3D` + browser draw-bridge path instead
             of the synthetic in-memory quad: the browser harness mounts the
@@ -2842,7 +2848,7 @@ shares structure and follows behind.
        - [x] Wire `Render2DSentenceClass` text → D3D8/WebGL2 textured quad
              through `DX8Wrapper::_Copy_DX8_Rects`, with browser screenshot
              coverage of visible glyphs.
-       - [ ] Add the `W3DDisplayString` / `DisplayString` screenshot probe on
+       - [x] Add the `W3DDisplayString` / `DisplayString` screenshot probe on
              top of the proven sentence renderer.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.

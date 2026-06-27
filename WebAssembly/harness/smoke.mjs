@@ -17,6 +17,10 @@ const ww3dRender2DSentenceCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-render2d-sentence-canvas.png",
 );
+const ww3dDisplayStringCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-string-canvas.png",
+);
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
@@ -1505,6 +1509,60 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dRender2DSentenceCanvasScreenshot });
 
+  const displayStringResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayString"));
+  if (!displayStringResult.ok
+      || displayStringResult.probe?.source !== "ww3d_display_string_probe"
+      || displayStringResult.probe?.font?.normalLoaded !== true
+      || displayStringResult.probe?.font?.boldLoaded !== true
+      || (displayStringResult.probe?.font?.normalHeight ?? 0) <= 0
+      || (displayStringResult.probe?.font?.boldHeight ?? 0) <= 0
+      || displayStringResult.probe?.results?.displayStringAllocated !== true
+      || displayStringResult.probe?.results?.fontSet !== true
+      || displayStringResult.probe?.results?.textSet !== true
+      || displayStringResult.probe?.results?.sizeComputed !== true
+      || displayStringResult.probe?.results?.drawCalled !== true
+      || displayStringResult.probe?.textMetrics?.length !== 7
+      || (displayStringResult.probe?.textMetrics?.width ?? 0) <= 0
+      || (displayStringResult.probe?.textMetrics?.height ?? 0) <= 0
+      || (displayStringResult.probe?.textMetrics?.widthViaChars ?? 0) <= 0
+      || (displayStringResult.probe?.calls?.copyRects ?? 0) < 1
+      || (displayStringResult.probe?.calls?.browserTextureCreate ?? 0) < 1
+      || (displayStringResult.probe?.calls?.browserTextureUpdate ?? 0) < 1
+      || (displayStringResult.probe?.calls?.browserTextureBind ?? 0) < 1
+      || (displayStringResult.probe?.calls?.browserBufferCreate ?? 0) < 2
+      || (displayStringResult.probe?.calls?.browserBufferUpdate ?? 0) < 2
+      || displayStringResult.probe?.copyRects?.format !== 26
+      || (displayStringResult.probe?.copyRects?.uploadedTextureId ?? 0) <= 0
+      || displayStringResult.probe?.draw?.primitiveType !== 4
+      || (displayStringResult.probe?.draw?.vertexCount ?? 0) < 8
+      || (displayStringResult.probe?.draw?.primitiveCount ?? 0) < 4
+      || displayStringResult.probe?.draw?.vertexStride !== 44
+      || displayStringResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayStringResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || displayStringResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayStringResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayStringResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayStringResult.browserProbe?.vertexStride !== 44
+      || displayStringResult.browserProbe?.usedPersistentBuffers !== true
+      || displayStringResult.browserProbe?.usedTransforms !== true
+      || displayStringResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayStringResult.browserProbe?.texture0?.id !==
+        displayStringResult.probe?.copyRects?.uploadedTextureId
+      || displayStringResult.browserProbe?.texture0?.ready !== true
+      || displayStringResult.browserProbe?.texture0?.sampled !== true
+      || displayStringResult.browserProbe?.texture0?.format !== 26
+      || displayStringResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || displayStringResult.browserProbe?.texture0?.sampler?.supported !== true
+      || (displayStringResult.textRegion?.coloredPixelCount ?? 0) <= 16
+      || (displayStringResult.textRegion?.maxComponent ?? 0) <= 32
+      || displayStringResult.textureDelta?.creates < 1
+      || displayStringResult.textureDelta?.updates < 1
+      || displayStringResult.textureDelta?.binds < 1) {
+    throw new Error(`WW3DDisplayString text probe failed: ${JSON.stringify(displayStringResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayStringCanvasScreenshot });
+
   const displayDrawImageResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayDrawImage"));
   if (!displayDrawImageResult.ok
       || displayDrawImageResult.probe?.source !== "ww3d_display_drawimage_probe"
@@ -1702,6 +1760,7 @@ try {
       ww3dAABoxCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
       ww3dRender2DSentenceCanvasScreenshot,
+      ww3dDisplayStringCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       gdiFontCanvasScreenshot,
