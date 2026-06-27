@@ -5328,6 +5328,61 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			alpha_case = true;
 			expected_r = 64;
 			break;
+		case 8:
+			case_name = "complementTexture";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE | D3DTA_COMPLEMENT;
+			color_arg2 = D3DTA_DIFFUSE;
+			diffuse = 0xff808080UL;
+			expected_r = 0;
+			expected_g = 255;
+			expected_b = 255;
+			break;
+		case 9:
+			case_name = "alphaReplicateTexture";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE | D3DTA_ALPHAREPLICATE;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_alpha = 0x40;
+			diffuse = 0xff808080UL;
+			expected_r = 64;
+			expected_g = 64;
+			expected_b = 64;
+			break;
+		case 10:
+			case_name = "alphaReplicateComplementTexture";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE | D3DTA_ALPHAREPLICATE | D3DTA_COMPLEMENT;
+			color_arg2 = D3DTA_DIFFUSE;
+			texture_alpha = 0x40;
+			diffuse = 0xff808080UL;
+			expected_r = 191;
+			expected_g = 191;
+			expected_b = 191;
+			break;
+		case 11:
+			case_name = "complementAlphaTexture";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			alpha_op = D3DTOP_SELECTARG1;
+			alpha_arg1 = D3DTA_TEXTURE | D3DTA_COMPLEMENT;
+			alpha_arg2 = D3DTA_DIFFUSE;
+			texture_alpha = 0x40;
+			diffuse = 0xff808080UL;
+			alpha_case = true;
+			expected_r = 191;
+			break;
+		case 12:
+			case_name = "alphaReplicateComplementDiffuse";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_DIFFUSE | D3DTA_ALPHAREPLICATE | D3DTA_COMPLEMENT;
+			color_arg2 = D3DTA_TEXTURE;
+			diffuse = 0x40808080UL;
+			expected_r = 191;
+			expected_g = 191;
+			expected_b = 191;
+			break;
 		default:
 			known_case = false;
 			break;

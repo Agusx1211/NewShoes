@@ -2441,8 +2441,8 @@ shares structure and follows behind.
       arguments. A new browser-driven D3D8 combiner probe renders distinct
       texture-select, diffuse-select, modulate, and add cases and verifies the
       resulting center pixels through Playwright. Full multi-stage chaining,
-      argument modifiers, generated shader variants, texture transforms, and
-      non-stage-0 sampling remain open.
+      generated shader variants, texture transforms, and non-stage-0 sampling
+      remain open.
 - [x] Add the stage-0 D3D8 alpha texture combiner subset for the current
       WebGL2 draw bridge, splitting the fragment shader into separate RGB
       (`D3DTSS_COLOROP`/`COLORARG1`/`COLORARG2`) and alpha
@@ -2457,9 +2457,21 @@ shares structure and follows behind.
       alpha blending (`SRCALPHA`/`INVSRCALPHA`) against an opaque black clear,
       since the WebGL canvas is itself opaque (`alpha:false`). Playwright
       harness coverage proves each alpha op produces the expected center pixel.
-      RGB and alpha combiner independence, argument modifiers, multi-stage
-      chaining, generated shader variants, texture transforms, and
-      non-stage-0 sampling remain open.
+      RGB and alpha combiner independence, multi-stage chaining, generated
+      shader variants, texture transforms, and non-stage-0 sampling remain open.
+- [x] Apply the D3D8 texture argument modifier bits `D3DTA_COMPLEMENT` and
+      `D3DTA_ALPHAREPLICATE` in the current stage-0 WebGL2 fixed-function
+      combiner path for both color and alpha arguments. The browser combiner
+      probe now covers color complement, color alpha-replication, combined
+      alpha-replication plus complement, and alpha complement through
+      `SRCALPHA` blending, with Playwright center-pixel assertions proving the
+      shader applies the modifiers.
+- [ ] Extend the fixed-function texture combiner bridge beyond the current
+      stage-0 `DIFFUSE`/`CURRENT`/`TEXTURE` subset to cover original
+      terrain/render2d patterns that use `D3DTA_TFACTOR`, `COLORARG0` /
+      `ALPHAARG0`, `RESULTARG`, and additional ops such as `MULTIPLYADD`,
+      with focused browser probes before relying on terrain and grayscale 2D
+      image rendering.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state
