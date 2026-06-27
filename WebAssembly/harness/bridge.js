@@ -51,6 +51,7 @@ const harnessState = {
   startupAssets: null,
   dataSummary: null,
   originalEngineStartup: null,
+  originalWndProcInput: null,
   mountedArchives: [],
   logs: [],
 };
@@ -228,6 +229,13 @@ async function loadWasmModule() {
       ),
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
+      initOriginalWndProcInput: module.cwrap(
+        "cnc_port_init_original_wndproc_input",
+        "string",
+        ["number", "number"],
+      ),
+      pumpOriginalWndProcInput: module.cwrap("cnc_port_pump_original_wndproc_input", "string", []),
+      probeOriginalWndProcInput: module.cwrap("cnc_port_probe_original_wndproc_input", "string", []),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
     };
@@ -288,6 +296,7 @@ function snapshotState() {
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
     originalEngineStartup: harnessState.originalEngineStartup,
+    originalWndProcInput: harnessState.originalWndProcInput,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
@@ -592,6 +601,46 @@ async function probeBrowserInput() {
   return probe;
 }
 
+async function initOriginalWndProcInput(payload = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const width = Number(payload.width ?? canvas.width);
+  const height = Number(payload.height ?? canvas.height);
+  const probe = parseModuleState(wasmModule.initOriginalWndProcInput(width, height));
+  harnessState.originalWndProcInput = probe;
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function pumpOriginalWndProcInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.pumpOriginalWndProcInput());
+  harnessState.originalWndProcInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function probeOriginalWndProcInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalWndProcInput());
+  harnessState.originalWndProcInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
 function rememberMountedArchives(archives) {
   const byPath = new Map(harnessState.mountedArchives.map((archive) => [archive.path, archive]));
   for (const archive of archives) {
@@ -793,6 +842,30 @@ async function rpc(command, payload = {}) {
         const probe = await probeBrowserInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; browser input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "initOriginalWndProcInput":
+      {
+        const probe = await initOriginalWndProcInput(payload);
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot initialize" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "pumpOriginalWndProcInput":
+      {
+        const probe = await pumpOriginalWndProcInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot pump" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalWndProcInputProbe":
+      {
+        const probe = await probeOriginalWndProcInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }

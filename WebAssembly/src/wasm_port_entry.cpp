@@ -22,6 +22,10 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
+extern HWND ApplicationHWnd;
+
+void cnc_port_service_original_wndproc_messages();
+
 namespace {
 constexpr UnsignedInt ORIGINAL_CORE_PROBE_SEED = 0x12345678U;
 constexpr int EMSCRIPTEN_MAIN_LOOP_FPS = 60;
@@ -2459,6 +2463,7 @@ void tick_frame()
 {
 	if (g_booted) {
 		++g_frame;
+		cnc_port_service_original_wndproc_messages();
 		record_tick_time();
 	}
 }
@@ -3541,7 +3546,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_post_browser_message(
 {
 	POINT point = {point_x, point_y};
 	WasmWin32Input::QueueMessage(
-		nullptr,
+		ApplicationHWnd,
 		static_cast<UINT>(message),
 		static_cast<WPARAM>(static_cast<unsigned int>(w_param)),
 		static_cast<LPARAM>(l_param),

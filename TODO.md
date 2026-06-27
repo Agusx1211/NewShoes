@@ -386,11 +386,18 @@ shares structure and follows behind.
 - [x] Queue browser printable keyboard input as `WM_CHAR` after `WM_KEYDOWN`,
       with harness coverage proving Shift+A produces Shift keydown, A keydown,
       then an uppercase `WM_CHAR`.
+- [x] Link the real `Main/WinMain.cpp` `WndProc()` into the main `cnc-port`
+      browser harness and prove a browser-fed `WM_LBUTTONDOWN` drains through
+      original `Win32GameEngine::serviceWindowsOS()` into the Win32 mouse
+      event buffer under Playwright.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
-      queue, including connecting the real game `WndProc`, `WM_CREATE` /
-      `WM_DESTROY` lifecycle dispatch, IME composition text paths, browser
-      double-click event policy, and focus/activation handling through the
-      browser device layer.
+      queue, including `WM_CREATE` / `WM_DESTROY` lifecycle dispatch, IME
+      composition text paths, browser double-click event policy, and
+      focus/activation handling through the browser device layer.
+- [ ] Retire the browser-only narrow `Win32Mouse`/`Mouse` shim used by the
+      `cnc-port` WndProc harness once the main executable can link the full
+      original GameClient mouse/control-bar surface without duplicate command
+      button runtime symbols.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in
       browser builds or route through the harness/browser console before
       relying on it for runtime diagnostics.

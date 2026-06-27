@@ -431,6 +431,7 @@ try {
     const wmKeyDown = 0x0100;
     const wmChar = 0x0102;
     const wmMouseMove = 0x0200;
+    const wmLeftButtonDown = 0x0201;
     const vkShift = 0x10;
     const vkA = 0x41;
     const vkF6 = 0x75;
@@ -514,6 +515,45 @@ try {
         || secondQueueProbe.probe.removed?.pt?.y !== 34
         || secondQueueProbe.probe.after !== null) {
       throw new Error(`Win32 message queue second probe mismatch: ${JSON.stringify(secondQueueProbe)}`);
+    }
+
+    const originalWndProcInit = await page.evaluate(() => window.CnCPort.rpc(
+      "initOriginalWndProcInput",
+      { width: 1280, height: 720 },
+    ));
+    if (!originalWndProcInit.ok
+        || !originalWndProcInit.probe?.ready
+        || !originalWndProcInit.probe.registered
+        || !originalWndProcInit.probe.windowCreated
+        || !originalWndProcInit.probe.mouse?.attached) {
+      throw new Error(`Original WndProc input did not initialize: ${JSON.stringify(originalWndProcInit)}`);
+    }
+
+    const leftButtonLParam = (45 << 16) | 123;
+    await page.evaluate(({ wmLeftButtonDown, leftButtonLParam }) => window.CnCPort.rpc("postMessage", {
+      message: wmLeftButtonDown,
+      wParam: 0,
+      lParam: leftButtonLParam,
+      point: { x: 123, y: 45 },
+    }), { wmLeftButtonDown, leftButtonLParam });
+
+    const originalWndProcPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!originalWndProcPump.ok
+        || originalWndProcPump.probe.pump?.lastPumped !== 1
+        || originalWndProcPump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Original WndProc pump did not dispatch browser message: ${JSON.stringify(originalWndProcPump)}`);
+    }
+
+    const originalWndProcProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const lastMouseEvent = originalWndProcProbe.probe?.mouse?.lastEvent;
+    if (!originalWndProcProbe.ok
+        || originalWndProcProbe.probe.mouse?.events !== 1
+        || originalWndProcProbe.probe.mouse?.lastProbeDrained !== 1
+        || lastMouseEvent?.pos?.x !== 123
+        || lastMouseEvent?.pos?.y !== 45
+        || lastMouseEvent?.left?.state !== "down"
+        || lastMouseEvent?.left?.frame !== 1) {
+      throw new Error(`Original WndProc did not feed Win32Mouse: ${JSON.stringify(originalWndProcProbe)}`);
     }
   }
 

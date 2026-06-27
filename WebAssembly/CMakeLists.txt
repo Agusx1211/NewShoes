@@ -36,6 +36,7 @@ set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WIN32_GAMEENGINE_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_gameengine")
+set(WIN32_MOUSE_BROWSER_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_mouse_browser")
 set(WINMAIN_WNDPROC_SHIMS_DIR "${WASM_SHIMS_DIR}/winmain_wndproc")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
@@ -2984,6 +2985,37 @@ target_link_libraries(zh_win32_mouse PUBLIC
   zh_gameclient_utility
 )
 
+add_library(zh_win32_mouse_browser STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32Mouse.cpp"
+)
+
+target_include_directories(zh_win32_mouse_browser PUBLIC
+  "${WIN32_MOUSE_BROWSER_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${MAIN_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_win32_mouse_browser PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_winmain_wndproc STATIC
   "${MAIN_DIR}/WinMain.cpp"
 )
@@ -3019,6 +3051,45 @@ target_compile_options(zh_winmain_wndproc PRIVATE
 
 target_link_libraries(zh_winmain_wndproc PUBLIC
   zh_win32_mouse
+)
+
+add_library(zh_winmain_wndproc_browser STATIC
+  "${MAIN_DIR}/WinMain.cpp"
+)
+
+target_include_directories(zh_winmain_wndproc_browser PUBLIC
+  "${WINMAIN_WNDPROC_SHIMS_DIR}"
+  "${WIN32_MOUSE_BROWSER_SHIMS_DIR}"
+  "${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${MAIN_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_winmain_wndproc_browser PRIVATE
+  -DCNC_WASM_WNDPROC_ONLY
+  -DCNC_WASM_WNDPROC_EXTERNAL_GLOBALS
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_winmain_wndproc_browser PUBLIC
+  zh_win32_mouse_browser
 )
 
 add_library(zh_win32_gameengine_message_pump STATIC
@@ -3126,12 +3197,17 @@ add_executable(cnc-port
   src/wasm_filesystem_probe.cpp
   src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
+  src/wasm_wndproc_probe.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
 set_target_properties(cnc-port PROPERTIES
   OUTPUT_NAME "cnc-port"
   SUFFIX ".js"
+)
+
+set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
+  COMPILE_OPTIONS "-iquote${WINMAIN_WNDPROC_SHIMS_DIR};-iquote${WIN32_MOUSE_BROWSER_SHIMS_DIR};-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
 )
 
 target_compile_definitions(cnc-port PRIVATE
@@ -3166,6 +3242,8 @@ target_link_libraries(cnc-port PRIVATE
   zh_gameclient_text
   zh_gameengine_debug_runtime
   zh_wwdebug_core
+  zh_winmain_wndproc_browser
+  zh_win32_gameengine_message_pump
   zh_gamenetwork_core
 )
 
@@ -3182,7 +3260,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 
