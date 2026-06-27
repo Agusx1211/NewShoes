@@ -8,6 +8,7 @@
 #include "wasm_filesystem_probe.h"
 #include "wasm_gamenetwork_probe.h"
 #include "wasm_globaldata_probe.h"
+#include "wasm_d3d8_shim.h"
 
 #include "Common/Debug.h"
 #include "Common/RandomValue.h"
@@ -71,6 +72,7 @@ FileSystemProbeResult g_file_system_probe;
 GameNetworkProbeResult g_game_network_probe;
 std::string g_state_json;
 std::string g_input_probe_json;
+std::string g_d3d8_probe_json;
 
 struct ArchiveMountState
 {
@@ -3732,6 +3734,104 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_input()
 		build_browser_input_json().c_str());
 	g_input_probe_json = buffer;
 	return g_input_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_clear(std::uint32_t clear_color)
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT begin_result = E_FAIL;
+	HRESULT clear_result = E_FAIL;
+	HRESULT end_result = E_FAIL;
+	HRESULT present_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		begin_result = device->BeginScene();
+		clear_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			static_cast<D3DCOLOR>(clear_color), 1.0f, 0);
+		end_result = device->EndScene();
+		present_result = device->Present(nullptr, nullptr, nullptr, nullptr);
+		ok = ok && SUCCEEDED(begin_result) && SUCCEEDED(clear_result) &&
+			SUCCEEDED(end_result) && SUCCEEDED(present_result);
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->begin_scene_calls == 1 &&
+		state->clear_calls == 1 &&
+		state->end_scene_calls == 1 &&
+		state->present_calls == 1 &&
+		state->last_clear_color == static_cast<D3DCOLOR>(clear_color);
+
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const unsigned int red = (clear_color >> 16) & 0xff;
+	const unsigned int green = (clear_color >> 8) & 0xff;
+	const unsigned int blue = clear_color & 0xff;
+	const unsigned int alpha = (clear_color >> 24) & 0xff;
+
+	char buffer[900];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_clear_probe\","
+		"\"ok\":%s,"
+		"\"clearColor\":%lu,"
+		"\"rgba\":[%u,%u,%u,%u],"
+		"\"results\":{\"create\":%ld,\"begin\":%ld,\"clear\":%ld,\"end\":%ld,\"present\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"beginScene\":%u,"
+		"\"clear\":%u,\"endScene\":%u,\"present\":%u},"
+		"\"lastClear\":{\"flags\":%lu,\"color\":%lu,\"z\":%.3f,\"stencil\":%lu}}",
+		ok ? "true" : "false",
+		static_cast<unsigned long>(clear_color),
+		red,
+		green,
+		blue,
+		alpha,
+		static_cast<long>(create_result),
+		static_cast<long>(begin_result),
+		static_cast<long>(clear_result),
+		static_cast<long>(end_result),
+		static_cast<long>(present_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->begin_scene_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->end_scene_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_flags : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_color : 0),
+		state != nullptr ? state->last_clear_z : 0.0f,
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_stencil : 0));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()

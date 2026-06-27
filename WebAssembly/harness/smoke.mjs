@@ -10,6 +10,7 @@ const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
+const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -834,6 +835,21 @@ try {
 
   await page.locator("#viewport").screenshot({ path: clearCanvasScreenshot });
 
+  const d3d8ClearResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Clear", {
+    rgba: [48, 96, 144, 255],
+  }));
+  if (!d3d8ClearResult.ok
+      || d3d8ClearResult.probe?.source !== "browser_d3d8_clear_probe"
+      || d3d8ClearResult.probe?.rgba?.join(",") !== "48,96,144,255"
+      || d3d8ClearResult.probe?.calls?.clear !== 1
+      || d3d8ClearResult.browserProbe?.source !== "browser_d3d8_clear"
+      || d3d8ClearResult.browserProbe?.topLeftPixel?.join(",") !== "48,96,144,255"
+      || d3d8ClearResult.screenshot?.topLeftPixel?.join(",") !== "48,96,144,255") {
+    throw new Error(`D3D8 WebGL2 clear probe failed: ${JSON.stringify(d3d8ClearResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: d3d8ClearCanvasScreenshot });
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));
@@ -869,7 +885,7 @@ try {
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
-    screenshots: [desktopScreenshot, canvasScreenshot, clearCanvasScreenshot],
+    screenshots: [desktopScreenshot, canvasScreenshot, clearCanvasScreenshot, d3d8ClearCanvasScreenshot],
     state: stateResult.state,
   }, null, 2));
 } finally {

@@ -125,6 +125,10 @@ function normalizeRgba(payload = {}, fallback = [0, 0, 0, 255]) {
   ];
 }
 
+function d3dColorFromRgba(rgba) {
+  return (((rgba[3] << 24) >>> 0) | (rgba[0] << 16) | (rgba[1] << 8) | rgba[2]) >>> 0;
+}
+
 function sampleCanvasPixel(x = 0, y = 0) {
   const pixels = new Uint8Array(4);
   if (gl) {
@@ -176,6 +180,59 @@ function clearCanvas(payload = {}) {
     clearColor: rgba,
     topLeftPixel: pixel,
   };
+}
+
+function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
+  const clearFlags = flags >>> 0;
+  const rgba = [
+    clampColorByte(red, 0),
+    clampColorByte(green, 0),
+    clampColorByte(blue, 0),
+    clampColorByte(alpha, 255),
+  ];
+  syncCanvasSize();
+  if (gl) {
+    let clearBits = 0;
+    if ((clearFlags & 0x1) !== 0) {
+      gl.clearColor(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255, rgba[3] / 255);
+      clearBits |= gl.COLOR_BUFFER_BIT;
+    }
+    if ((clearFlags & 0x2) !== 0) {
+      gl.clearDepth(Number(z));
+      clearBits |= gl.DEPTH_BUFFER_BIT;
+    }
+    if ((clearFlags & 0x4) !== 0 && gl.getContextAttributes()?.stencil) {
+      gl.clearStencil(stencil >>> 0);
+      clearBits |= gl.STENCIL_BUFFER_BIT;
+    }
+    if (clearBits !== 0) {
+      gl.clear(clearBits);
+    }
+  } else if (fallbackContext && (clearFlags & 0x1) !== 0) {
+    fallbackContext.fillStyle = `rgb(${rgba[0]} ${rgba[1]} ${rgba[2]})`;
+    fallbackContext.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  refreshCanvasState();
+  const pixel = sampleCanvasPixel(0, 0);
+  const colorOk = (clearFlags & 0x1) === 0 || pixelsApproximatelyEqual(pixel, rgba);
+  const probe = {
+    ok: colorOk,
+    source: "browser_d3d8_clear",
+    api: harnessState.graphics.api,
+    flags: clearFlags,
+    clearColor: rgba,
+    topLeftPixel: pixel,
+    z: Number(z),
+    stencil: stencil >>> 0,
+  };
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    lastD3D8Clear: probe,
+    lastClearColor: rgba,
+    lastClearPixel: pixel,
+    lastClearOk: colorOk,
+  };
+  return colorOk ? 1 : 0;
 }
 
 function paintBlackWindow() {
@@ -270,6 +327,7 @@ async function loadWasmModule() {
       locateFile: (path) => path.endsWith(".wasm") ? `../dist/${path}` : path,
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
+      cncPortD3D8Clear: paintD3D8Clear,
     });
 
     return {
@@ -296,6 +354,7 @@ async function loadWasmModule() {
       ),
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
+      probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -1097,6 +1156,30 @@ async function rpc(command, payload = {}) {
       {
         const probe = clearCanvas(payload);
         return { ok: probe.ok, command, probe, state: snapshotState() };
+      }
+    case "d3d8Clear":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 clear cannot run" };
+        }
+        const rgba = normalizeRgba(payload);
+        const clearColor = d3dColorFromRgba(rgba);
+        const probe = parseModuleState(wasmModule.probeD3D8Clear(clearColor));
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8Clear ?? null;
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && browserProbe.clearColor?.join(",") === rgba.join(",")
+          && screenshot.topLeftPixel.join(",") === rgba.join(",");
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
       }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotCanvas() };

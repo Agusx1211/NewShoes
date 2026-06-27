@@ -2309,6 +2309,10 @@ shares structure and follows behind.
       checksums for the original AABox `DrawIndexedPrimitive` path. This proves
       the WebGL2 upload path can read the actual WW3D-filled vertex/index backing
       stores; it still does not create GL buffers or render visible geometry.
+- [x] Bridge the browser D3D8 shim `Clear(D3DCLEAR_TARGET)` path into the harness
+      WebGL2 context through the Emscripten module callback, with a wasm-exported
+      D3D8 clear probe and Playwright screenshot/pixel coverage proving the
+      actual `IDirect3DDevice8::Clear` path paints the canvas.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
@@ -2317,7 +2321,9 @@ shares structure and follows behind.
 - [ ] Matrix/transform stack and viewport/camera setup.
 
 ### Increasing fidelity (each step verified by screenshot)
-- [ ] Clear to a color (prove the GL path works).
+- [x] Clear to a color (prove the GL path works) through the browser D3D8
+      `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and
+      top-left pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.

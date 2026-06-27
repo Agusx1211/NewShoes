@@ -7,6 +7,31 @@
 #include <new>
 #include <vector>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
+#ifdef __EMSCRIPTEN__
+EM_JS(void, wasm_d3d8_browser_clear_target, (unsigned int flags, unsigned int color_arg, double z, unsigned int stencil), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8Clear : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	const color = color_arg >>> 0;
+	bridge(
+		flags >>> 0,
+		(color >>> 16) & 0xff,
+		(color >>> 8) & 0xff,
+		color & 0xff,
+		(color >>> 24) & 0xff,
+		z,
+		stencil >>> 0,
+	);
+});
+#else
+void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
+#endif
+
 namespace {
 
 WasmD3D8ShimState g_state = {};
@@ -140,6 +165,15 @@ UINT primitive_vertex_count(D3DPRIMITIVETYPE primitive_type, UINT primitive_coun
 		default:
 			return 0;
 	}
+}
+
+void browser_clear_target(DWORD flags, D3DCOLOR color, float z, DWORD stencil)
+{
+	wasm_d3d8_browser_clear_target(
+		static_cast<unsigned int>(flags),
+		static_cast<unsigned int>(color),
+		static_cast<double>(z),
+		static_cast<unsigned int>(stencil));
 }
 
 struct BrowserD3DResource
@@ -800,6 +834,9 @@ public:
 		g_state.last_clear_color = color;
 		g_state.last_clear_z = z;
 		g_state.last_clear_stencil = stencil;
+		if ((flags & D3DCLEAR_TARGET) != 0) {
+			browser_clear_target(flags, color, z, stencil);
+		}
 		return S_OK;
 	}
 
