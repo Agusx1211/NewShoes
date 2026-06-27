@@ -2402,6 +2402,13 @@ shares structure and follows behind.
       assertions proving stage 0/1 state reaches the browser draw probe. This is
       observability only: GL sampler application, fixed-function combiner
       emulation, and multi-stage blending remain open.
+- [x] Apply captured D3D8 stage-0 sampler state to the current WebGL2 textured
+      draw path, mapping `D3DTSS_MINFILTER`/`MAGFILTER`/`MIPFILTER` and
+      `ADDRESSU`/`ADDRESSV` to WebGL texture parameters, with Playwright
+      textured-quad assertions proving `LINEAR` min, `NEAREST` mag, `CLAMP`
+      U, and `WRAP` V reach the bound GL texture. This still does not emulate
+      fixed-function combiner ops, multi-stage sampling, texture transforms, or
+      general mip-chain completeness.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

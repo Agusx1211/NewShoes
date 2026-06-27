@@ -971,6 +971,17 @@ try {
       || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.addressV !== 1
       || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[1]?.colorOp !== 1
       || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex !== 1
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.d3d?.minFilter !== 2
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.d3d?.magFilter !== 1
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.d3d?.mipFilter !== 0
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.d3d?.addressU !== 3
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.d3d?.addressV !== 1
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.gl?.minFilter !== 9729
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.gl?.magFilter !== 9728
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.gl?.wrapS !== 33071
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.gl?.wrapT !== 10497
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.usedMipmaps !== false
+      || d3d8TexturedQuadResult.textureProbe?.lastSampler?.textureId !== d3d8TexturedQuadResult.probe?.texture?.id
       || d3d8TexturedQuadResult.browserProbe?.texture0?.id !== d3d8TexturedQuadResult.probe?.texture?.id
       || d3d8TexturedQuadResult.browserProbe?.texture0?.ready !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampled !== true

@@ -449,7 +449,7 @@ int main()
 
 	std::printf(
 		"{\"ok\":true,\"smoke\":\"d3d8-texture-stage-state-mapping\","
-		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping; sampler application remains open.\","
+		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping; sampler application remains open beyond the harness stage-0 draw path.\","
 		"\"caps\":{\"textureFilterCaps\":%lu,\"textureAddressCaps\":%lu,\"maxAnisotropy\":%lu,"
 		"\"linearMin\":%s,\"linearMag\":%s,\"linearMip\":%s,\"anisotropicMin\":%s,\"anisotropicMag\":%s},"
 		"\"stage0Default\":{\"d3dMinFilter\":%u,\"d3dMagFilter\":%u,\"d3dMipFilter\":%u,"

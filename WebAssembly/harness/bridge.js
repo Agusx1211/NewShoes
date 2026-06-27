@@ -89,10 +89,14 @@ const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
 const D3DTADDRESS_WRAP = 1;
+const D3DTADDRESS_MIRROR = 2;
 const D3DTADDRESS_CLAMP = 3;
+const D3DTADDRESS_BORDER = 4;
+const D3DTADDRESS_MIRRORONCE = 5;
 const D3DTEXF_NONE = 0;
 const D3DTEXF_POINT = 1;
 const D3DTEXF_LINEAR = 2;
+const D3DTEXF_ANISOTROPIC = 3;
 const D3DTTFF_DISABLE = 0;
 const D3D8_TEXTURE_STAGE_COUNT = 8;
 const D3D8_DIFFUSE_OFFSET = 24;
@@ -119,6 +123,7 @@ const d3d8TextureStats = {
   releaseUnbinds: 0,
   missingBinds: 0,
   unsupportedUpdates: 0,
+  samplerApplications: 0,
   live: 0,
   lastCreate: null,
   lastUpdate: null,
@@ -128,6 +133,7 @@ const d3d8TextureStats = {
   lastReleaseUnbind: null,
   lastMissingBind: null,
   lastUnsupported: null,
+  lastSampler: null,
 };
 
 const harnessState = {
@@ -593,6 +599,142 @@ function d3d8TextureUploadView(info, bytes) {
   return new Uint16Array(copy.buffer);
 }
 
+function d3dTextureAddressToGl(address) {
+  switch (Number(address) >>> 0) {
+    case D3DTADDRESS_WRAP:
+      return { value: gl.REPEAT, supported: true, name: "repeat" };
+    case D3DTADDRESS_MIRROR:
+      return { value: gl.MIRRORED_REPEAT, supported: true, name: "mirroredRepeat" };
+    case D3DTADDRESS_CLAMP:
+      return { value: gl.CLAMP_TO_EDGE, supported: true, name: "clampToEdge" };
+    case D3DTADDRESS_BORDER:
+      return { value: gl.CLAMP_TO_EDGE, supported: false, name: "borderFallbackClamp" };
+    case D3DTADDRESS_MIRRORONCE:
+      return { value: gl.MIRRORED_REPEAT, supported: false, name: "mirrorOnceFallbackMirror" };
+    default:
+      return { value: gl.CLAMP_TO_EDGE, supported: false, name: "unknownFallbackClamp" };
+  }
+}
+
+function d3dTextureMagFilterToGl(filter) {
+  switch (Number(filter) >>> 0) {
+    case D3DTEXF_POINT:
+      return { value: gl.NEAREST, supported: true, name: "nearest" };
+    case D3DTEXF_LINEAR:
+    case D3DTEXF_ANISOTROPIC:
+      return { value: gl.LINEAR, supported: true, name: "linear" };
+    default:
+      return { value: gl.NEAREST, supported: false, name: "unknownFallbackNearest" };
+  }
+}
+
+function d3dTextureMinFilterToGl(minFilter, mipFilter, hasCompleteMipChain) {
+  const min = Number(minFilter) >>> 0;
+  const mip = Number(mipFilter) >>> 0;
+  const linearMin = min === D3DTEXF_LINEAR || min === D3DTEXF_ANISOTROPIC;
+  const base = linearMin ? gl.LINEAR : gl.NEAREST;
+  const supportedMin = min === D3DTEXF_POINT || min === D3DTEXF_LINEAR || min === D3DTEXF_ANISOTROPIC;
+  if (mip === D3DTEXF_NONE || !hasCompleteMipChain) {
+    return {
+      value: base,
+      supported: supportedMin && (mip === D3DTEXF_NONE || mip === D3DTEXF_POINT || mip === D3DTEXF_LINEAR),
+      name: base === gl.LINEAR ? "linear" : "nearest",
+      usedMipmaps: false,
+      requestedMipmaps: mip !== D3DTEXF_NONE,
+      fallbackReason: mip !== D3DTEXF_NONE && !hasCompleteMipChain ? "incomplete mip chain" : null,
+    };
+  }
+  if (mip === D3DTEXF_POINT) {
+    return {
+      value: linearMin ? gl.LINEAR_MIPMAP_NEAREST : gl.NEAREST_MIPMAP_NEAREST,
+      supported: supportedMin,
+      name: linearMin ? "linearMipmapNearest" : "nearestMipmapNearest",
+      usedMipmaps: true,
+      requestedMipmaps: true,
+      fallbackReason: null,
+    };
+  }
+  if (mip === D3DTEXF_LINEAR) {
+    return {
+      value: linearMin ? gl.LINEAR_MIPMAP_LINEAR : gl.NEAREST_MIPMAP_LINEAR,
+      supported: supportedMin,
+      name: linearMin ? "linearMipmapLinear" : "nearestMipmapLinear",
+      usedMipmaps: true,
+      requestedMipmaps: true,
+      fallbackReason: null,
+    };
+  }
+  return {
+    value: base,
+    supported: false,
+    name: base === gl.LINEAR ? "unknownMipFallbackLinear" : "unknownMipFallbackNearest",
+    usedMipmaps: false,
+    requestedMipmaps: true,
+    fallbackReason: "unsupported mip filter",
+  };
+}
+
+function textureHasCompleteMipChain(resource) {
+  if (!resource || resource.levels <= 1) {
+    return false;
+  }
+  for (let level = 0; level < resource.levels; ++level) {
+    if (!resource.initializedLevels.has(String(level))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
+  if (!gl || !resource?.texture || !textureStage) {
+    return null;
+  }
+  const completeMipChain = textureHasCompleteMipChain(resource);
+  const min = d3dTextureMinFilterToGl(textureStage.minFilter, textureStage.mipFilter, completeMipChain);
+  const mag = d3dTextureMagFilterToGl(textureStage.magFilter);
+  const wrapS = d3dTextureAddressToGl(textureStage.addressU);
+  const wrapT = d3dTextureAddressToGl(textureStage.addressV);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min.value);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mag.value);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS.value);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT.value);
+
+  const applied = {
+    stage,
+    textureId: resource.id,
+    d3d: {
+      minFilter: Number(textureStage.minFilter) >>> 0,
+      magFilter: Number(textureStage.magFilter) >>> 0,
+      mipFilter: Number(textureStage.mipFilter) >>> 0,
+      addressU: Number(textureStage.addressU) >>> 0,
+      addressV: Number(textureStage.addressV) >>> 0,
+    },
+    gl: {
+      minFilter: min.value,
+      magFilter: mag.value,
+      wrapS: wrapS.value,
+      wrapT: wrapT.value,
+    },
+    names: {
+      minFilter: min.name,
+      magFilter: mag.name,
+      wrapS: wrapS.name,
+      wrapT: wrapT.name,
+    },
+    completeMipChain,
+    usedMipmaps: min.usedMipmaps,
+    requestedMipmaps: min.requestedMipmaps,
+    fallbackReason: min.fallbackReason,
+    supported: min.supported && mag.supported && wrapS.supported && wrapT.supported,
+  };
+  resource.samplerState = applied;
+  d3d8TextureStats.samplerApplications += 1;
+  d3d8TextureStats.lastSampler = applied;
+  updateD3D8TextureSummary();
+  return applied;
+}
+
 function withPreservedD3D8TextureUnit(callback) {
   if (!gl) {
     return null;
@@ -647,6 +789,7 @@ function updateD3D8TextureSummary() {
       releaseUnbinds: d3d8TextureStats.releaseUnbinds,
       missingBinds: d3d8TextureStats.missingBinds,
       unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
+      samplerApplications: d3d8TextureStats.samplerApplications,
       live: d3d8TextureStats.live,
       boundTextures,
       lastCreate: d3d8TextureStats.lastCreate,
@@ -657,6 +800,7 @@ function updateD3D8TextureSummary() {
       lastReleaseUnbind: d3d8TextureStats.lastReleaseUnbind,
       lastMissingBind: d3d8TextureStats.lastMissingBind,
       lastUnsupported: d3d8TextureStats.lastUnsupported,
+      lastSampler: d3d8TextureStats.lastSampler,
     },
   };
 }
@@ -699,6 +843,7 @@ function createD3D8Texture(payload = {}) {
     initializedLevels: new Set(),
     levelFormats: new Map(),
     uploads: 0,
+    samplerState: null,
   };
   d3d8Textures.set(id, resource);
   d3d8TextureStats.creates += 1;
@@ -1438,6 +1583,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     texture0Ready && vertexStride >= D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE
   );
   let appliedRenderState = null;
+  let appliedTexture0Sampler = null;
   let drawOk = false;
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -1486,6 +1632,11 @@ function paintD3D8DrawIndexed(payload = {}) {
       const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texture0Resource.texture);
+      appliedTexture0Sampler = applyD3D8TextureSamplerToBoundTexture(
+        0,
+        renderState.textureStages[0],
+        texture0Resource,
+      );
       gl.activeTexture(previousActiveTexture);
     }
     if (bridgeProgram.alphaTestEnabled) {
@@ -1534,6 +1685,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       height: texture0Resource?.height ?? 0,
       format: texture0Resource?.format ?? 0,
       uploads: texture0Resource?.uploads ?? 0,
+      sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
     },
     centerPixel,
   };
@@ -2670,6 +2822,17 @@ async function rpc(command, payload = {}) {
           && browserProbe?.renderState?.textureStages?.[0]?.addressV === D3DTADDRESS_WRAP
           && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
           && browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex === 1
+          && browserProbe?.texture0?.sampler?.d3d?.minFilter === D3DTEXF_LINEAR
+          && browserProbe?.texture0?.sampler?.d3d?.magFilter === D3DTEXF_POINT
+          && browserProbe?.texture0?.sampler?.d3d?.mipFilter === D3DTEXF_NONE
+          && browserProbe?.texture0?.sampler?.d3d?.addressU === D3DTADDRESS_CLAMP
+          && browserProbe?.texture0?.sampler?.d3d?.addressV === D3DTADDRESS_WRAP
+          && browserProbe?.texture0?.sampler?.gl?.minFilter === gl.LINEAR
+          && browserProbe?.texture0?.sampler?.gl?.magFilter === gl.NEAREST
+          && browserProbe?.texture0?.sampler?.gl?.wrapS === gl.CLAMP_TO_EDGE
+          && browserProbe?.texture0?.sampler?.gl?.wrapT === gl.REPEAT
+          && browserProbe?.texture0?.sampler?.usedMipmaps === false
+          && textureProbe?.lastSampler?.textureId === probe.texture?.id
           && browserProbe?.texture0?.id === probe.texture?.id
           && browserProbe?.texture0?.ready === true
           && browserProbe?.texture0?.sampled === true
