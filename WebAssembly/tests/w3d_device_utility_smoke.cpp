@@ -1,11 +1,24 @@
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
+#include <sys/stat.h>
 
 #include "PreRTS.h"
 
+#include "Common/ArchiveFileSystem.h"
+#include "Common/FileSystem.h"
+#include "Common/GlobalData.h"
+#include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "WWLIB/ffactory.h"
+#include "W3DDevice/GameClient/W3DFileSystem.h"
 #include "W3DDevice/GameClient/TileData.h"
 #include "W3DDevice/GameClient/W3DPoly.h"
+
+SubsystemInterfaceList *TheSubsystemList = nullptr;
+GlobalData *TheGlobalData = nullptr;
 
 namespace {
 bool near(float actual, float expected, float epsilon = 0.0001f)
@@ -21,6 +34,29 @@ bool expect(bool condition, const char *message)
 	}
 	return true;
 }
+
+bool expect_w3d_available(FileClass *file, const char *name)
+{
+	if (!file->Is_Available()) {
+		std::fprintf(stderr, "W3D file factory did not find %s\n", name);
+		return false;
+	}
+	return true;
+}
+
+class EmptyArchiveFileSystem : public ArchiveFileSystem {
+public:
+	void init() override {}
+	void update() override {}
+	void reset() override {}
+	void postProcessLoad() override {}
+
+	ArchiveFile *openArchiveFile(const Char *) override { return nullptr; }
+	void closeArchiveFile(const Char *) override {}
+	void closeAllArchiveFiles() override {}
+	void closeAllFiles() override {}
+	Bool loadBigFilesFromDirectory(AsciiString, AsciiString, Bool = FALSE) override { return FALSE; }
+};
 
 std::vector<UnsignedByte> mip_expected(const UnsignedByte *source, int high_width)
 {
@@ -149,14 +185,156 @@ bool smoke_w3d_poly()
 	return expect(saw_left_edge, "clipped polygon lost the original inside edge") &&
 		expect(saw_clip_edge, "clipped polygon did not create a plane intersection edge");
 }
+
+bool write_local_file(const char *path, const char *payload)
+{
+	std::vector<char> directory;
+	for (const char *cursor = path; *cursor != '\0'; ++cursor) {
+		directory.push_back(*cursor);
+		if (*cursor == '/' || *cursor == '\\') {
+			const char saved = directory.back();
+			directory.back() = '\0';
+			mkdir(directory.data(), 0777);
+			directory.back() = saved;
+		}
+	}
+
+	std::FILE *file = std::fopen(path, "wb");
+	if (file == nullptr) {
+		std::fprintf(stderr, "failed to create local W3D fixture %s\n", path);
+		return false;
+	}
+	const std::size_t payload_size = std::strlen(payload);
+	const bool wrote = std::fwrite(payload, 1, payload_size, file) == payload_size;
+	std::fclose(file);
+	return expect(wrote, "failed to write local W3D fixture payload");
+}
+
+bool expect_w3d_file(FileFactoryClass *factory, const char *name, const char *expected_payload)
+{
+	FileClass *file = factory->Get_File(name);
+	if (!expect(file != nullptr, "W3D file factory returned no file")) {
+		return false;
+	}
+
+	const bool opened =
+		expect(std::strcmp(file->File_Name(), name) == 0, "W3D file name was not preserved") &&
+		expect_w3d_available(file, name) &&
+		expect(file->Open(FileClass::READ) != 0, "W3D file factory failed to open expected file");
+
+	if (!opened) {
+		factory->Return_File(file);
+		return false;
+	}
+
+	const int expected_size = static_cast<int>(std::strlen(expected_payload));
+	std::vector<char> buffer(static_cast<std::size_t>(expected_size) + 1U, '\0');
+	const int bytes_read = file->Read(buffer.data(), expected_size);
+	const bool ok =
+		expect(file->Size() == expected_size, "W3D file factory size mismatch") &&
+		expect(bytes_read == expected_size, "W3D file factory read byte count mismatch") &&
+		expect(std::memcmp(buffer.data(), expected_payload, static_cast<std::size_t>(expected_size)) == 0,
+			"W3D file factory payload mismatch") &&
+		expect(file->Seek(0, SEEK_SET) == 0, "W3D file factory seek-to-start failed") &&
+		expect(file->Read(buffer.data(), 1) == 1, "W3D file factory second read failed") &&
+		expect(buffer[0] == expected_payload[0], "W3D file factory second read payload mismatch");
+
+	file->Close();
+	factory->Return_File(file);
+	return ok;
+}
+
+bool expect_w3d_missing(FileFactoryClass *factory, const char *name)
+{
+	FileClass *file = factory->Get_File(name);
+	if (!expect(file != nullptr, "W3D file factory returned no missing-file object")) {
+		return false;
+	}
+
+	const bool ok =
+		expect(!file->Is_Available(), "W3D file factory reported a missing file as available") &&
+		expect(file->Open(FileClass::READ) == 0, "W3D file factory opened a missing file");
+	factory->Return_File(file);
+	return ok;
+}
+
+bool smoke_w3d_file_system()
+{
+	if (!write_local_file("Data/english/Art/W3D/Localized Model.w3d", "localized-w3d") ||
+		!write_local_file("Data/english/Art/Textures/LocalizedTexture.tga", "localized-tga") ||
+		!write_local_file("Art/W3D/SharedModel.w3d", "shared-w3d") ||
+		!write_local_file("Art/Textures/SharedTexture.dds", "shared-dds") ||
+		!write_local_file("Loose/Config.dat", "loose-data") ||
+		!write_local_file("UserData/W3D/UserModel.w3d", "user-w3d") ||
+		!write_local_file("UserData/Textures/UserTexture.tga", "user-tga") ||
+		!write_local_file("UserData/MapPreviews/Preview.tga", "preview-tga")) {
+		return false;
+	}
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	GlobalData *old_global_data = TheGlobalData;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	FileFactoryClass *old_file_factory = _TheFileFactory;
+
+	Win32LocalFileSystem local_file_system;
+	EmptyArchiveFileSystem archive_file_system;
+	FileSystem file_system;
+	GlobalData global_data;
+	NameKeyGenerator name_key_generator;
+	global_data.setPath_UserData(AsciiString("UserData/"));
+
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	TheGlobalData = &global_data;
+	TheNameKeyGenerator = &name_key_generator;
+	name_key_generator.init();
+
+	bool lookup_ok = false;
+	{
+		W3DFileSystem w3d_file_system;
+		FileFactoryClass *factory = _TheFileFactory;
+		const bool factory_ok = expect(factory == &w3d_file_system,
+			"W3DFileSystem did not install itself as the active WW3D file factory");
+
+		lookup_ok =
+			factory_ok &&
+			expect_w3d_file(factory, "Localized Model.w3d", "localized-w3d") &&
+			expect_w3d_file(factory, "LocalizedTexture.tga", "localized-tga") &&
+			expect_w3d_file(factory, "SharedModel.w3d", "shared-w3d") &&
+			expect_w3d_file(factory, "SharedTexture.dds", "shared-dds") &&
+			expect_w3d_file(factory, "Loose/Config.dat", "loose-data") &&
+			expect_w3d_file(factory, "UserModel.w3d", "user-w3d") &&
+			expect_w3d_file(factory, "UserTexture.tga", "user-tga") &&
+			expect_w3d_file(factory, "Preview.tga", "preview-tga") &&
+			expect_w3d_missing(factory, "MissingAsset.w3d");
+	}
+
+	_TheFileFactory = old_file_factory;
+	name_key_generator.reset();
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGlobalData = old_global_data;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	return lookup_ok;
+}
 }
 
 int main()
 {
+	initMemoryManager();
+
 	if (!smoke_tile_data()) {
 		return 1;
 	}
 	if (!smoke_w3d_poly()) {
+		return 1;
+	}
+	if (!smoke_w3d_file_system()) {
 		return 1;
 	}
 

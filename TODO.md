@@ -1200,10 +1200,12 @@ shares structure and follows behind.
       surface constants, and API calls used by the original player/stream code.
       This is compile coverage only; `.bik` decoding, video-to-texture upload,
       audio sync, and browser-backed WebCodecs/`<video>` playback remain open.
-- [ ] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
-      after the final browser asset `FileSystem`, `GlobalData` user-data path,
-      and WWLib file-factory singleton contract are available without
-      compile-only globals.
+- [x] Link and smoke-test original `W3DFileSystem.cpp` filename/path dispatch
+      through the original WW3D file-factory singleton and `FileSystem`
+      facade, covering localized W3D/TGA lookup, shared W3D/DDS lookup,
+      loose files, user-data fallback, map-preview fallback, and missing
+      assets. This is filesystem dispatch coverage only; browser-backed W3D
+      rendering remains open.
 - [ ] Link and smoke-test original WW3D2 light/render-object behavior after
       `rendobj.cpp`, browser-safe Win32 string aliases, scene/camera defaults,
       and asset/render-object singleton dependencies can build without renderer

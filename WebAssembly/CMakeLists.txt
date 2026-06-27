@@ -2130,6 +2130,7 @@ target_include_directories(zh_gameengine_real_compile_frontier PRIVATE
 
 add_library(zh_w3d_device_utility STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPoly.cpp"
 )
 
@@ -2154,6 +2155,7 @@ target_include_directories(zh_w3d_device_utility PUBLIC
 target_compile_options(zh_w3d_device_utility PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${WASM_SHIMS_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
   "-iquote${GAMEENGINE_DIR}/Source"
@@ -2182,6 +2184,8 @@ target_compile_options(zh_w3d_device_utility PRIVATE
 )
 
 target_link_libraries(zh_w3d_device_utility PUBLIC
+  zh_gameengine_common_core
+  zh_wwlib_file_ini
   zh_wwdebug_core
   zh_wwlib_refcount
   zh_wwmath_core
@@ -4736,6 +4740,8 @@ target_link_options(w3d-device-utility-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
