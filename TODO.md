@@ -2645,6 +2645,16 @@ shares structure and follows behind.
             hierarchy name, root bone, and pivot count. This asset contains no
             `W3D_CHUNK_HMODEL` or `W3D_CHUNK_MESH`; real source/shipped model
             and mesh parsing/rendering remain open.
+      - [x] Load a real shipped W3D mesh from `W3DZH.big` through the original
+            archive and mesh loader path in wasm: `Win32BIGFileSystem`
+            indexes the user-supplied archive, the smoke scans real `.w3d`
+            entries for top-level `W3D_CHUNK_MESH`, selects the smallest
+            loadable mesh (`art\w3d\cine_moon.w3d`), and asserts
+            `MeshClass::Load_W3D` produces the original `CINE_MOON` model
+            with 4 vertices, 2 triangles, and the `cine_moon.tga` texture
+            reference. This is loader-only coverage; rendering the shipped
+            mesh through the browser draw bridge and fetching its real texture
+            from user archives remain open.
       - [ ] Replace the probe's no-op browser stubs for the Win32 GDI
             functions declared in the `windows.h` shim
             (`CreateFont`, `CreateCompatibleDC`, `CreateDIBSection`,
