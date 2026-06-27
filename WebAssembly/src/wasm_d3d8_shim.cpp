@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <new>
+#include <vector>
 
 namespace {
 
@@ -70,6 +71,26 @@ void fill_caps(D3DCAPS8 &caps)
 	caps.MaxPointSize = 64.0f;
 }
 
+UINT bytes_per_pixel(D3DFORMAT format)
+{
+	switch (format) {
+		case D3DFMT_R8G8B8:
+			return 3;
+		case D3DFMT_R5G6B5:
+		case D3DFMT_X1R5G5B5:
+		case D3DFMT_A1R5G5B5:
+		case D3DFMT_A4R4G4B4:
+		case D3DFMT_A8L8:
+			return 2;
+		case D3DFMT_A8:
+		case D3DFMT_P8:
+		case D3DFMT_L8:
+			return 1;
+		default:
+			return 4;
+	}
+}
+
 struct BrowserD3DResource
 {
 	explicit BrowserD3DResource(IDirect3DDevice8 *device) : m_device(device) {}
@@ -100,18 +121,22 @@ protected:
 class BrowserD3DSurface final : public IDirect3DSurface8, private BrowserD3DResource
 {
 public:
-	BrowserD3DSurface(IDirect3DDevice8 *device, UINT width, UINT height, D3DFORMAT format, DWORD usage) :
+	BrowserD3DSurface(IDirect3DDevice8 *device, UINT width, UINT height, D3DFORMAT format, DWORD usage,
+		D3DPOOL pool = D3DPOOL_DEFAULT) :
 		BrowserD3DResource(device)
 	{
+		const UINT pitch = width * bytes_per_pixel(format);
 		std::memset(&m_desc, 0, sizeof(m_desc));
 		m_desc.Format = format;
 		m_desc.Type = D3DRTYPE_SURFACE;
 		m_desc.Usage = usage;
-		m_desc.Pool = D3DPOOL_DEFAULT;
+		m_desc.Pool = pool;
 		m_desc.Width = width;
 		m_desc.Height = height;
-		m_desc.Size = width * height * 4;
+		m_desc.Size = pitch * height;
 		m_desc.MultiSampleType = D3DMULTISAMPLE_NONE;
+		m_pitch = static_cast<int>(pitch);
+		m_pixels.resize(m_desc.Size);
 	}
 
 	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
@@ -138,8 +163,30 @@ public:
 		return S_OK;
 	}
 
-	HRESULT LockRect(D3DLOCKED_RECT *, const RECT *, DWORD) override { return D3DERR_NOTAVAILABLE; }
-	HRESULT UnlockRect() override { return D3DERR_NOTAVAILABLE; }
+	HRESULT LockRect(D3DLOCKED_RECT *locked_rect, const RECT *rect, DWORD) override
+	{
+		if (locked_rect == nullptr || m_pixels.empty()) {
+			return E_FAIL;
+		}
+
+		int left = 0;
+		int top = 0;
+		if (rect != nullptr) {
+			if (rect->left < 0 || rect->top < 0 || rect->right < rect->left || rect->bottom < rect->top ||
+				static_cast<UINT>(rect->right) > m_desc.Width ||
+				static_cast<UINT>(rect->bottom) > m_desc.Height) {
+				return E_FAIL;
+			}
+			left = rect->left;
+			top = rect->top;
+		}
+
+		locked_rect->Pitch = m_pitch;
+		locked_rect->pBits = m_pixels.data() + (top * m_pitch) + (left * bytes_per_pixel(m_desc.Format));
+		return S_OK;
+	}
+
+	HRESULT UnlockRect() override { return S_OK; }
 
 	ULONG AddRef() override { return ++m_ref_count; }
 
@@ -155,6 +202,259 @@ public:
 private:
 	ULONG m_ref_count = 1;
 	D3DSURFACE_DESC m_desc = {};
+	int m_pitch = 0;
+	std::vector<unsigned char> m_pixels;
+};
+
+class BrowserD3DTexture final : public IDirect3DTexture8, private BrowserD3DResource
+{
+public:
+	BrowserD3DTexture(IDirect3DDevice8 *device, UINT width, UINT height, UINT levels, DWORD usage,
+		D3DFORMAT format, D3DPOOL pool) :
+		BrowserD3DResource(device)
+	{
+		if (width == 0) {
+			width = 1;
+		}
+		if (height == 0) {
+			height = 1;
+		}
+		if (format == D3DFMT_UNKNOWN) {
+			format = D3DFMT_A8R8G8B8;
+		}
+		if (levels == 0) {
+			levels = 1;
+		}
+
+		for (UINT level = 0; level < levels; ++level) {
+			BrowserD3DSurface *surface = new (std::nothrow) BrowserD3DSurface(
+				device, width, height, format, usage, pool);
+			if (surface == nullptr) {
+				break;
+			}
+			m_levels.push_back(surface);
+			if (width > 1) {
+				width /= 2;
+			}
+			if (height > 1) {
+				height /= 2;
+			}
+		}
+	}
+
+	~BrowserD3DTexture()
+	{
+		for (BrowserD3DSurface *surface : m_levels) {
+			surface->Release();
+		}
+	}
+
+	bool is_valid() const { return !m_levels.empty(); }
+
+	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
+	HRESULT SetPrivateData(const GUID &guid, const void *data, DWORD size, DWORD flags) override
+	{
+		return BrowserD3DResource::SetPrivateData(guid, data, size, flags);
+	}
+	HRESULT GetPrivateData(const GUID &guid, void *data, DWORD *size) override
+	{
+		return BrowserD3DResource::GetPrivateData(guid, data, size);
+	}
+	HRESULT FreePrivateData(const GUID &guid) override { return BrowserD3DResource::FreePrivateData(guid); }
+	DWORD SetPriority(DWORD priority) override { return BrowserD3DResource::SetPriority(priority); }
+	DWORD GetPriority() override { return BrowserD3DResource::GetPriority(); }
+	void PreLoad() override { BrowserD3DResource::PreLoad(); }
+	D3DRESOURCETYPE GetType() override { return D3DRTYPE_TEXTURE; }
+
+	DWORD SetLOD(DWORD lod) override
+	{
+		const DWORD previous = m_lod;
+		m_lod = lod;
+		return previous;
+	}
+
+	DWORD GetLOD() override { return m_lod; }
+	DWORD GetLevelCount() override { return static_cast<DWORD>(m_levels.size()); }
+
+	HRESULT GetLevelDesc(UINT level, D3DSURFACE_DESC *desc) override
+	{
+		if (level >= m_levels.size() || desc == nullptr) {
+			return E_FAIL;
+		}
+		return m_levels[level]->GetDesc(desc);
+	}
+
+	HRESULT GetSurfaceLevel(UINT level, IDirect3DSurface8 **surface) override
+	{
+		if (level >= m_levels.size() || surface == nullptr) {
+			return E_FAIL;
+		}
+		m_levels[level]->AddRef();
+		*surface = m_levels[level];
+		return S_OK;
+	}
+
+	HRESULT LockRect(UINT level, D3DLOCKED_RECT *locked_rect, const RECT *rect, DWORD flags) override
+	{
+		if (level >= m_levels.size()) {
+			return E_FAIL;
+		}
+		++g_state.texture_lock_rect_calls;
+		return m_levels[level]->LockRect(locked_rect, rect, flags);
+	}
+
+	HRESULT UnlockRect(UINT level) override
+	{
+		if (level >= m_levels.size()) {
+			return E_FAIL;
+		}
+		++g_state.texture_unlock_rect_calls;
+		return m_levels[level]->UnlockRect();
+	}
+
+	ULONG AddRef() override { return ++m_ref_count; }
+
+	ULONG Release() override
+	{
+		const ULONG ref_count = --m_ref_count;
+		if (ref_count == 0) {
+			delete this;
+		}
+		return ref_count;
+	}
+
+private:
+	ULONG m_ref_count = 1;
+	DWORD m_lod = 0;
+	std::vector<BrowserD3DSurface *> m_levels;
+};
+
+class BrowserD3DVertexBuffer final : public IDirect3DVertexBuffer8, private BrowserD3DResource
+{
+public:
+	BrowserD3DVertexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, DWORD, D3DPOOL) :
+		BrowserD3DResource(device),
+		m_bytes(length)
+	{
+	}
+
+	bool is_valid() const { return !m_bytes.empty(); }
+
+	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
+	HRESULT SetPrivateData(const GUID &guid, const void *data, DWORD size, DWORD flags) override
+	{
+		return BrowserD3DResource::SetPrivateData(guid, data, size, flags);
+	}
+	HRESULT GetPrivateData(const GUID &guid, void *data, DWORD *size) override
+	{
+		return BrowserD3DResource::GetPrivateData(guid, data, size);
+	}
+	HRESULT FreePrivateData(const GUID &guid) override { return BrowserD3DResource::FreePrivateData(guid); }
+	DWORD SetPriority(DWORD priority) override { return BrowserD3DResource::SetPriority(priority); }
+	DWORD GetPriority() override { return BrowserD3DResource::GetPriority(); }
+	void PreLoad() override { BrowserD3DResource::PreLoad(); }
+	D3DRESOURCETYPE GetType() override { return D3DRTYPE_VERTEXBUFFER; }
+
+	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
+	{
+		if (data == nullptr || offset > m_bytes.size()) {
+			return E_FAIL;
+		}
+		if (size == 0) {
+			size = static_cast<UINT>(m_bytes.size() - offset);
+		}
+		if (size > m_bytes.size() - offset) {
+			return E_FAIL;
+		}
+		++g_state.buffer_lock_calls;
+		*data = m_bytes.data() + offset;
+		return S_OK;
+	}
+
+	HRESULT Unlock() override
+	{
+		++g_state.buffer_unlock_calls;
+		return S_OK;
+	}
+
+	ULONG AddRef() override { return ++m_ref_count; }
+
+	ULONG Release() override
+	{
+		const ULONG ref_count = --m_ref_count;
+		if (ref_count == 0) {
+			delete this;
+		}
+		return ref_count;
+	}
+
+private:
+	ULONG m_ref_count = 1;
+	std::vector<BYTE> m_bytes;
+};
+
+class BrowserD3DIndexBuffer final : public IDirect3DIndexBuffer8, private BrowserD3DResource
+{
+public:
+	BrowserD3DIndexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, D3DFORMAT, D3DPOOL) :
+		BrowserD3DResource(device),
+		m_bytes(length)
+	{
+	}
+
+	bool is_valid() const { return !m_bytes.empty(); }
+
+	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
+	HRESULT SetPrivateData(const GUID &guid, const void *data, DWORD size, DWORD flags) override
+	{
+		return BrowserD3DResource::SetPrivateData(guid, data, size, flags);
+	}
+	HRESULT GetPrivateData(const GUID &guid, void *data, DWORD *size) override
+	{
+		return BrowserD3DResource::GetPrivateData(guid, data, size);
+	}
+	HRESULT FreePrivateData(const GUID &guid) override { return BrowserD3DResource::FreePrivateData(guid); }
+	DWORD SetPriority(DWORD priority) override { return BrowserD3DResource::SetPriority(priority); }
+	DWORD GetPriority() override { return BrowserD3DResource::GetPriority(); }
+	void PreLoad() override { BrowserD3DResource::PreLoad(); }
+	D3DRESOURCETYPE GetType() override { return D3DRTYPE_INDEXBUFFER; }
+
+	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
+	{
+		if (data == nullptr || offset > m_bytes.size()) {
+			return E_FAIL;
+		}
+		if (size == 0) {
+			size = static_cast<UINT>(m_bytes.size() - offset);
+		}
+		if (size > m_bytes.size() - offset) {
+			return E_FAIL;
+		}
+		++g_state.buffer_lock_calls;
+		*data = m_bytes.data() + offset;
+		return S_OK;
+	}
+
+	HRESULT Unlock() override
+	{
+		++g_state.buffer_unlock_calls;
+		return S_OK;
+	}
+
+	ULONG AddRef() override { return ++m_ref_count; }
+
+	ULONG Release() override
+	{
+		const ULONG ref_count = --m_ref_count;
+		if (ref_count == 0) {
+			delete this;
+		}
+		return ref_count;
+	}
+
+private:
+	ULONG m_ref_count = 1;
+	std::vector<BYTE> m_bytes;
 };
 
 class BrowserD3DDevice final : public IDirect3DDevice8
@@ -261,9 +561,24 @@ public:
 	HRESULT GetRasterStatus(void *) override { return D3DERR_NOTAVAILABLE; }
 	void SetGammaRamp(DWORD, const void *) override {}
 	void GetGammaRamp(void *) override {}
-	HRESULT CreateTexture(UINT, UINT, UINT, DWORD, D3DFORMAT, D3DPOOL, IDirect3DTexture8 **) override
+	HRESULT CreateTexture(UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool,
+		IDirect3DTexture8 **texture) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (texture == nullptr) {
+			return E_FAIL;
+		}
+		*texture = new (std::nothrow) BrowserD3DTexture(this, width, height, levels, usage, format, pool);
+		if (*texture == nullptr) {
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		BrowserD3DTexture *browser_texture = static_cast<BrowserD3DTexture *>(*texture);
+		if (!browser_texture->is_valid()) {
+			browser_texture->Release();
+			*texture = nullptr;
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		++g_state.create_texture_calls;
+		return S_OK;
 	}
 	HRESULT CreateVolumeTexture(UINT, UINT, UINT, UINT, DWORD, D3DFORMAT, D3DPOOL,
 		IDirect3DVolumeTexture8 **) override
@@ -274,13 +589,43 @@ public:
 	{
 		return D3DERR_NOTAVAILABLE;
 	}
-	HRESULT CreateVertexBuffer(UINT, DWORD, DWORD, D3DPOOL, IDirect3DVertexBuffer8 **) override
+	HRESULT CreateVertexBuffer(UINT length, DWORD usage, DWORD fvf, D3DPOOL pool,
+		IDirect3DVertexBuffer8 **buffer) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (buffer == nullptr) {
+			return E_FAIL;
+		}
+		*buffer = new (std::nothrow) BrowserD3DVertexBuffer(this, length, usage, fvf, pool);
+		if (*buffer == nullptr) {
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		BrowserD3DVertexBuffer *browser_buffer = static_cast<BrowserD3DVertexBuffer *>(*buffer);
+		if (!browser_buffer->is_valid()) {
+			browser_buffer->Release();
+			*buffer = nullptr;
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		++g_state.create_vertex_buffer_calls;
+		return S_OK;
 	}
-	HRESULT CreateIndexBuffer(UINT, DWORD, D3DFORMAT, D3DPOOL, IDirect3DIndexBuffer8 **) override
+	HRESULT CreateIndexBuffer(UINT length, DWORD usage, D3DFORMAT format, D3DPOOL pool,
+		IDirect3DIndexBuffer8 **buffer) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (buffer == nullptr) {
+			return E_FAIL;
+		}
+		*buffer = new (std::nothrow) BrowserD3DIndexBuffer(this, length, usage, format, pool);
+		if (*buffer == nullptr) {
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		BrowserD3DIndexBuffer *browser_buffer = static_cast<BrowserD3DIndexBuffer *>(*buffer);
+		if (!browser_buffer->is_valid()) {
+			browser_buffer->Release();
+			*buffer = nullptr;
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		++g_state.create_index_buffer_calls;
+		return S_OK;
 	}
 
 	HRESULT CreateImageSurface(UINT width, UINT height, D3DFORMAT format, IDirect3DSurface8 **surface) override
