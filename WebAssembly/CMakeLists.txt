@@ -4885,6 +4885,33 @@ target_link_options(d3d8-shim-smoke PRIVATE
   "SHELL:-sEXIT_RUNTIME=1"
 )
 
+add_executable(d3d8-render-state-mapping-smoke
+  tests/d3d8_render_state_mapping_smoke.cpp
+)
+
+set_target_properties(d3d8-render-state-mapping-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(d3d8-render-state-mapping-smoke PRIVATE
+  zh_browser_d3d8
+)
+
+target_compile_options(d3d8-render-state-mapping-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(d3d8-render-state-mapping-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
 add_executable(ww3d2-dx8wrapper-loader-smoke
   tests/ww3d2_dx8wrapper_loader_smoke.cpp
 )

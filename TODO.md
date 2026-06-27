@@ -2349,6 +2349,17 @@ shares structure and follows behind.
       WebGL.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
+- [x] Add focused render-state mapping *expectations* coverage through the
+      existing browser D3D8 shim (no shim or draw-bridge changes): a new
+      `d3d8-render-state-mapping-smoke` records `D3DRS_CULLMODE`,
+      `D3DRS_ZENABLE`, `D3DRS_ZWRITEENABLE`, `D3DRS_ZFUNC`,
+      `D3DRS_ALPHABLENDENABLE`, `D3DRS_SRCBLEND`/`DESTBLEND`, `D3DRS_BLENDOP`,
+      `D3DRS_ALPHATESTENABLE`/`ALPHAFUNC`/`ALPHAREF`, and
+      `D3DRS_COLORWRITEENABLE` Set/Get round-trips through the existing shim,
+      and emits a machine-readable D3D8→WebGL2 mapping spec (canonical
+      `frontFace(GL_CW)`+`cullFace` cull table, ZENABLE/ZWRITE/ZFUNC depth
+      table, blend factor/op table, shader-emulated alpha test, and
+      color-write mask) that the future real GL-state mapping must satisfy.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.
