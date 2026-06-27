@@ -1735,6 +1735,10 @@ shares structure and follows behind.
 - [x] Mark `originalEngineStartup.originalSetup` as probe-only and not yet
       runtime-owned, so the harness distinguishes focused setup validation from
       durable singleton ownership by the real engine startup path.
+- [ ] Before promoting setup probes to durable bootstrap-owned singleton
+      residency, refactor exported archive/data probes to preserve an already
+      initialized memory manager and restore resident globals without calling
+      `shutdownMemoryManager()` out from under the bootstrap.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---
