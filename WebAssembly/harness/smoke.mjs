@@ -869,6 +869,28 @@ try {
     throw new Error(`D3D8 dirty buffer update probe failed: ${JSON.stringify(d3d8BufferDirtyResult)}`);
   }
 
+  const d3d8BufferHintsResult = await page.evaluate(() => window.CnCPort.rpc("d3d8BufferHints"));
+  if (!d3d8BufferHintsResult.ok
+      || d3d8BufferHintsResult.probe?.source !== "browser_d3d8_buffer_hints_probe"
+      || d3d8BufferHintsResult.probe?.staticUpdate?.usage !== 8
+      || d3d8BufferHintsResult.probe?.staticUpdate?.lockFlags !== 0
+      || d3d8BufferHintsResult.probe?.dynamicUpdate?.usage !== 520
+      || d3d8BufferHintsResult.probe?.dynamicUpdate?.lockFlags !== 10240
+      || d3d8BufferHintsResult.browserProbe?.lastStaticCreate?.glUsage !== "staticDraw"
+      || d3d8BufferHintsResult.browserProbe?.lastStaticCreate?.writeOnly !== true
+      || d3d8BufferHintsResult.browserProbe?.lastDynamicCreate?.glUsage !== "streamDraw"
+      || d3d8BufferHintsResult.browserProbe?.lastCreate?.glUsage !== "streamDraw"
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.glUsage !== "streamDraw"
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.discard !== true
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.noOverwrite !== false
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.orphaned !== true
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.byteOffset !== 0
+      || d3d8BufferHintsResult.browserProbe?.lastUpdate?.byteSize !== 32
+      || d3d8BufferHintsResult.browserProbe?.liveVertex !== 0
+      || d3d8BufferHintsResult.browserProbe?.liveIndex !== 0) {
+    throw new Error(`D3D8 buffer hint probe failed: ${JSON.stringify(d3d8BufferHintsResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

@@ -33,7 +33,8 @@ EM_JS(void, wasm_d3d8_browser_clear_target, (unsigned int flags, unsigned int co
 EM_JS(void, wasm_d3d8_browser_buffer_create, (
 	unsigned int kind,
 	unsigned int buffer_id,
-	unsigned int byte_size
+	unsigned int byte_size,
+	unsigned int usage
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BufferCreate : null;
 	if (typeof bridge !== "function") {
@@ -43,6 +44,7 @@ EM_JS(void, wasm_d3d8_browser_buffer_create, (
 		kind: kind >>> 0,
 		id: buffer_id >>> 0,
 		byteSize: byte_size >>> 0,
+		usage: usage >>> 0,
 	});
 });
 EM_JS(void, wasm_d3d8_browser_buffer_update, (
@@ -50,7 +52,9 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 	unsigned int buffer_id,
 	unsigned int data_ptr,
 	unsigned int byte_offset,
-	unsigned int byte_size
+	unsigned int byte_size,
+	unsigned int usage,
+	unsigned int lock_flags
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BufferUpdate : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
@@ -61,6 +65,8 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 		id: buffer_id >>> 0,
 		byteOffset: byte_offset >>> 0,
 		byteSize: byte_size >>> 0,
+		usage: usage >>> 0,
+		lockFlags: lock_flags >>> 0,
 		bytes: Module.HEAPU8.slice(data_ptr, data_ptr + byte_size),
 	});
 });
@@ -127,8 +133,9 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 });
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
-void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int) {}
-void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int, unsigned int) {}
+void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int) {}
 void wasm_d3d8_browser_buffer_release(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
@@ -286,7 +293,7 @@ void browser_clear_target(DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 		static_cast<unsigned int>(stencil));
 }
 
-void browser_buffer_create(UINT kind, UINT buffer_id, UINT byte_size)
+void browser_buffer_create(UINT kind, UINT buffer_id, UINT byte_size, DWORD usage)
 {
 	if (buffer_id == 0 || byte_size == 0) {
 		return;
@@ -296,10 +303,13 @@ void browser_buffer_create(UINT kind, UINT buffer_id, UINT byte_size)
 	g_state.last_browser_buffer_id = buffer_id;
 	g_state.last_browser_buffer_offset = 0;
 	g_state.last_browser_buffer_bytes = byte_size;
-	wasm_d3d8_browser_buffer_create(kind, buffer_id, byte_size);
+	g_state.last_browser_buffer_usage = usage;
+	g_state.last_browser_buffer_lock_flags = 0;
+	wasm_d3d8_browser_buffer_create(kind, buffer_id, byte_size, usage);
 }
 
-void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byte_offset, UINT byte_size)
+void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byte_offset, UINT byte_size, DWORD usage,
+	DWORD lock_flags)
 {
 	if (buffer_id == 0 || data == nullptr || byte_size == 0) {
 		return;
@@ -309,12 +319,16 @@ void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byt
 	g_state.last_browser_buffer_id = buffer_id;
 	g_state.last_browser_buffer_offset = byte_offset;
 	g_state.last_browser_buffer_bytes = byte_size;
+	g_state.last_browser_buffer_usage = usage;
+	g_state.last_browser_buffer_lock_flags = lock_flags;
 	wasm_d3d8_browser_buffer_update(
 		kind,
 		buffer_id,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(data)),
 		byte_offset,
-		byte_size);
+		byte_size,
+		usage,
+		lock_flags);
 }
 
 void browser_buffer_release(UINT kind, UINT buffer_id)
@@ -327,6 +341,8 @@ void browser_buffer_release(UINT kind, UINT buffer_id)
 	g_state.last_browser_buffer_id = buffer_id;
 	g_state.last_browser_buffer_offset = 0;
 	g_state.last_browser_buffer_bytes = 0;
+	g_state.last_browser_buffer_usage = 0;
+	g_state.last_browser_buffer_lock_flags = 0;
 	wasm_d3d8_browser_buffer_release(kind, buffer_id);
 }
 
@@ -607,9 +623,10 @@ private:
 class BrowserD3DVertexBuffer final : public IDirect3DVertexBuffer8, private BrowserD3DResource
 {
 public:
-	BrowserD3DVertexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, DWORD, D3DPOOL) :
+	BrowserD3DVertexBuffer(IDirect3DDevice8 *device, UINT length, DWORD usage, DWORD, D3DPOOL) :
 		BrowserD3DResource(device),
 		m_bytes(length),
+		m_usage(usage),
 		m_browser_buffer_id(allocate_browser_buffer_id())
 	{
 	}
@@ -631,7 +648,7 @@ public:
 	void PreLoad() override { BrowserD3DResource::PreLoad(); }
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_VERTEXBUFFER; }
 
-	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
+	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD flags) override
 	{
 		if (data == nullptr || m_locked || offset > m_bytes.size()) {
 			return E_FAIL;
@@ -646,6 +663,7 @@ public:
 		m_locked = true;
 		m_dirty_offset = offset;
 		m_dirty_size = size;
+		m_lock_flags = flags;
 		*data = m_bytes.data() + offset;
 		return S_OK;
 	}
@@ -657,10 +675,11 @@ public:
 		}
 		++g_state.buffer_unlock_calls;
 		browser_buffer_update(BROWSER_BUFFER_VERTEX, m_browser_buffer_id,
-			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size);
+			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size, m_usage, m_lock_flags);
 		m_locked = false;
 		m_dirty_offset = 0;
 		m_dirty_size = 0;
+		m_lock_flags = 0;
 		return S_OK;
 	}
 
@@ -671,7 +690,7 @@ public:
 	void create_browser_buffer()
 	{
 		if (!m_browser_buffer_created) {
-			browser_buffer_create(BROWSER_BUFFER_VERTEX, m_browser_buffer_id, length());
+			browser_buffer_create(BROWSER_BUFFER_VERTEX, m_browser_buffer_id, length(), m_usage);
 			m_browser_buffer_created = true;
 		}
 	}
@@ -702,19 +721,22 @@ public:
 private:
 	ULONG m_ref_count = 1;
 	std::vector<BYTE> m_bytes;
+	DWORD m_usage = 0;
 	UINT m_browser_buffer_id = 0;
 	bool m_browser_buffer_created = false;
 	bool m_locked = false;
 	UINT m_dirty_offset = 0;
 	UINT m_dirty_size = 0;
+	DWORD m_lock_flags = 0;
 };
 
 class BrowserD3DIndexBuffer final : public IDirect3DIndexBuffer8, private BrowserD3DResource
 {
 public:
-	BrowserD3DIndexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, D3DFORMAT format, D3DPOOL) :
+	BrowserD3DIndexBuffer(IDirect3DDevice8 *device, UINT length, DWORD usage, D3DFORMAT format, D3DPOOL) :
 		BrowserD3DResource(device),
 		m_bytes(length),
+		m_usage(usage),
 		m_format(format),
 		m_browser_buffer_id(allocate_browser_buffer_id())
 	{
@@ -737,7 +759,7 @@ public:
 	void PreLoad() override { BrowserD3DResource::PreLoad(); }
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_INDEXBUFFER; }
 
-	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
+	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD flags) override
 	{
 		if (data == nullptr || m_locked || offset > m_bytes.size()) {
 			return E_FAIL;
@@ -752,6 +774,7 @@ public:
 		m_locked = true;
 		m_dirty_offset = offset;
 		m_dirty_size = size;
+		m_lock_flags = flags;
 		*data = m_bytes.data() + offset;
 		return S_OK;
 	}
@@ -763,10 +786,11 @@ public:
 		}
 		++g_state.buffer_unlock_calls;
 		browser_buffer_update(BROWSER_BUFFER_INDEX, m_browser_buffer_id,
-			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size);
+			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size, m_usage, m_lock_flags);
 		m_locked = false;
 		m_dirty_offset = 0;
 		m_dirty_size = 0;
+		m_lock_flags = 0;
 		return S_OK;
 	}
 
@@ -779,7 +803,7 @@ public:
 	void create_browser_buffer()
 	{
 		if (!m_browser_buffer_created) {
-			browser_buffer_create(BROWSER_BUFFER_INDEX, m_browser_buffer_id, length());
+			browser_buffer_create(BROWSER_BUFFER_INDEX, m_browser_buffer_id, length(), m_usage);
 			m_browser_buffer_created = true;
 		}
 	}
@@ -810,12 +834,14 @@ public:
 private:
 	ULONG m_ref_count = 1;
 	std::vector<BYTE> m_bytes;
+	DWORD m_usage = 0;
 	D3DFORMAT m_format = D3DFMT_INDEX16;
 	UINT m_browser_buffer_id = 0;
 	bool m_browser_buffer_created = false;
 	bool m_locked = false;
 	UINT m_dirty_offset = 0;
 	UINT m_dirty_size = 0;
+	DWORD m_lock_flags = 0;
 };
 
 class BrowserD3DDevice final : public IDirect3DDevice8

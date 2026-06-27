@@ -11,11 +11,17 @@ const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
 let d3d8DrawProgram = null;
 const d3d8Buffers = new Map();
+const D3DUSAGE_WRITEONLY = 0x00000008;
+const D3DUSAGE_DYNAMIC = 0x00000200;
+const D3DLOCK_DISCARD = 0x00002000;
+const D3DLOCK_NOOVERWRITE = 0x00001000;
 const d3d8BufferStats = {
   creates: 0,
   updates: 0,
   releases: 0,
   lastCreate: null,
+  lastStaticCreate: null,
+  lastDynamicCreate: null,
   lastUpdate: null,
   lastRelease: null,
 };
@@ -161,6 +167,21 @@ function d3d8BufferTarget(kind) {
   return d3d8BufferKindName(kind) === "index" ? gl.ELEMENT_ARRAY_BUFFER : gl.ARRAY_BUFFER;
 }
 
+function d3d8BufferUsageInfo(usage) {
+  const d3dUsage = Number(usage ?? 0) >>> 0;
+  const dynamic = Boolean(d3dUsage & D3DUSAGE_DYNAMIC);
+  const writeOnly = Boolean(d3dUsage & D3DUSAGE_WRITEONLY);
+  const glUsage = dynamic ? gl.STREAM_DRAW : writeOnly ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW;
+  const glUsageName = dynamic ? "streamDraw" : writeOnly ? "staticDraw" : "dynamicDraw";
+  return {
+    d3dUsage,
+    dynamic,
+    writeOnly,
+    glUsage,
+    glUsageName,
+  };
+}
+
 function updateD3D8BufferSummary() {
   let liveVertex = 0;
   let liveIndex = 0;
@@ -180,6 +201,8 @@ function updateD3D8BufferSummary() {
       liveVertex,
       liveIndex,
       lastCreate: d3d8BufferStats.lastCreate,
+      lastStaticCreate: d3d8BufferStats.lastStaticCreate,
+      lastDynamicCreate: d3d8BufferStats.lastDynamicCreate,
       lastUpdate: d3d8BufferStats.lastUpdate,
       lastRelease: d3d8BufferStats.lastRelease,
     },
@@ -193,6 +216,7 @@ function createD3D8Buffer(payload = {}) {
   const kind = Number(payload.kind ?? 0) >>> 0;
   const id = Number(payload.id ?? 0) >>> 0;
   const byteSize = Number(payload.byteSize ?? 0) >>> 0;
+  const usageInfo = d3d8BufferUsageInfo(payload.usage);
   const target = d3d8BufferTarget(kind);
   if (id === 0 || byteSize === 0 || target === 0 || d3d8BufferKindName(kind) === "unknown") {
     return 0;
@@ -206,7 +230,7 @@ function createD3D8Buffer(payload = {}) {
 
   const buffer = gl.createBuffer();
   gl.bindBuffer(target, buffer);
-  gl.bufferData(target, byteSize, gl.DYNAMIC_DRAW);
+  gl.bufferData(target, byteSize, usageInfo.glUsage);
   const record = {
     id,
     kind,
@@ -214,11 +238,29 @@ function createD3D8Buffer(payload = {}) {
     byteSize,
     target,
     buffer,
+    d3dUsage: usageInfo.d3dUsage,
+    dynamic: usageInfo.dynamic,
+    writeOnly: usageInfo.writeOnly,
+    glUsage: usageInfo.glUsage,
+    glUsageName: usageInfo.glUsageName,
     uploads: 0,
   };
   d3d8Buffers.set(key, record);
   d3d8BufferStats.creates += 1;
-  d3d8BufferStats.lastCreate = { id, kind: record.kindName, byteSize };
+  d3d8BufferStats.lastCreate = {
+    id,
+    kind: record.kindName,
+    byteSize,
+    d3dUsage: record.d3dUsage,
+    dynamic: record.dynamic,
+    writeOnly: record.writeOnly,
+    glUsage: record.glUsageName,
+  };
+  if (record.dynamic) {
+    d3d8BufferStats.lastDynamicCreate = d3d8BufferStats.lastCreate;
+  } else if (record.writeOnly) {
+    d3d8BufferStats.lastStaticCreate = d3d8BufferStats.lastCreate;
+  }
   updateD3D8BufferSummary();
   return 1;
 }
@@ -231,11 +273,12 @@ function updateD3D8Buffer(payload = {}) {
   const id = Number(payload.id ?? 0) >>> 0;
   const bytes = payload.bytes;
   const byteOffset = Number(payload.byteOffset ?? 0) >>> 0;
+  const lockFlags = Number(payload.lockFlags ?? 0) >>> 0;
   const requiredByteSize = byteOffset + bytes.byteLength;
   const key = d3d8BufferKey(kind, id);
   let resource = d3d8Buffers.get(key);
   if (!resource) {
-    if (!createD3D8Buffer({ kind, id, byteSize: requiredByteSize })) {
+    if (!createD3D8Buffer({ kind, id, byteSize: requiredByteSize, usage: payload.usage })) {
       return 0;
     }
     resource = d3d8Buffers.get(key);
@@ -245,9 +288,15 @@ function updateD3D8Buffer(payload = {}) {
   }
 
   gl.bindBuffer(resource.target, resource.buffer);
+  let resized = false;
+  let orphaned = false;
   if (requiredByteSize > resource.byteSize) {
-    gl.bufferData(resource.target, requiredByteSize, gl.DYNAMIC_DRAW);
+    gl.bufferData(resource.target, requiredByteSize, resource.glUsage);
     resource.byteSize = requiredByteSize;
+    resized = true;
+  } else if (resource.dynamic && (lockFlags & D3DLOCK_DISCARD)) {
+    gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
+    orphaned = true;
   }
   gl.bufferSubData(resource.target, byteOffset, bytes);
   resource.uploads += 1;
@@ -257,6 +306,13 @@ function updateD3D8Buffer(payload = {}) {
     kind: resource.kindName,
     byteOffset,
     byteSize: bytes.byteLength,
+    d3dUsage: resource.d3dUsage,
+    glUsage: resource.glUsageName,
+    lockFlags,
+    discard: Boolean(lockFlags & D3DLOCK_DISCARD),
+    noOverwrite: Boolean(lockFlags & D3DLOCK_NOOVERWRITE),
+    orphaned,
+    resized,
     uploads: resource.uploads,
   };
   updateD3D8BufferSummary();
@@ -702,6 +758,7 @@ async function loadWasmModule() {
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
+      probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -1541,6 +1598,41 @@ async function rpc(command, payload = {}) {
         const ok = Boolean(probe.ok)
           && browserProbe?.lastUpdate?.byteOffset === probe.indexUpdate?.offset
           && browserProbe?.lastUpdate?.byteSize === probe.indexUpdate?.bytes
+          && browserProbe?.releases >= 2
+          && browserProbe?.liveVertex === 0
+          && browserProbe?.liveIndex === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8BufferHints":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 buffer hint probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8BufferHints());
+        const browserProbe = harnessState.graphics.d3d8Buffers ?? null;
+        const ok = Boolean(probe.ok)
+          && browserProbe?.lastCreate?.dynamic === true
+          && browserProbe?.lastCreate?.glUsage === "streamDraw"
+          && browserProbe?.lastStaticCreate?.dynamic === false
+          && browserProbe?.lastStaticCreate?.writeOnly === true
+          && browserProbe?.lastStaticCreate?.glUsage === "staticDraw"
+          && browserProbe?.lastDynamicCreate?.dynamic === true
+          && browserProbe?.lastDynamicCreate?.glUsage === "streamDraw"
+          && browserProbe?.lastUpdate?.glUsage === "streamDraw"
+          && browserProbe?.lastUpdate?.discard === true
+          && browserProbe?.lastUpdate?.noOverwrite === false
+          && browserProbe?.lastUpdate?.orphaned === true
+          && browserProbe?.lastUpdate?.byteOffset === probe.dynamicUpdate?.offset
+          && browserProbe?.lastUpdate?.byteSize === probe.dynamicUpdate?.bytes
+          && browserProbe?.lastUpdate?.d3dUsage === probe.dynamicUpdate?.usage
+          && browserProbe?.lastUpdate?.lockFlags === probe.dynamicUpdate?.lockFlags
           && browserProbe?.releases >= 2
           && browserProbe?.liveVertex === 0
           && browserProbe?.liveIndex === 0;

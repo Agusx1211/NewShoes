@@ -342,7 +342,11 @@ int main()
 			"CreateVertexBuffer failed") ||
 		!expect(vertex_buffer != nullptr, "CreateVertexBuffer returned null") ||
 		!expect(state->create_vertex_buffer_calls == vbufs_before + 1,
-			"create_vertex_buffer_calls counter mismatch")) {
+			"create_vertex_buffer_calls counter mismatch") ||
+		!expect(state->last_browser_buffer_usage == D3DUSAGE_WRITEONLY,
+			"static vertex buffer usage hint mismatch") ||
+		!expect(state->last_browser_buffer_lock_flags == 0,
+			"static vertex buffer create should not report lock flags")) {
 		if (vertex_buffer != nullptr) {
 			vertex_buffer->Release();
 		}
@@ -375,7 +379,11 @@ int main()
 		!expect(state->last_browser_buffer_offset == vertex_offset,
 			"vertex dirty update offset mismatch") ||
 		!expect(state->last_browser_buffer_bytes == vertex_size,
-			"vertex dirty update byte count mismatch")) {
+			"vertex dirty update byte count mismatch") ||
+		!expect(state->last_browser_buffer_usage == D3DUSAGE_WRITEONLY,
+			"vertex dirty update usage hint mismatch") ||
+		!expect(state->last_browser_buffer_lock_flags == 0,
+			"vertex dirty update lock flags mismatch")) {
 		vertex_buffer->Release();
 		texture->Release();
 		device->Release();
@@ -608,6 +616,93 @@ int main()
 		d3d->Release();
 		return 1;
 	}
+
+	IDirect3DVertexBuffer8 *dynamic_vertex_buffer = nullptr;
+	const DWORD dynamic_usage = D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC;
+	if (!expect(SUCCEEDED(device->CreateVertexBuffer(128, dynamic_usage, 0,
+				D3DPOOL_DEFAULT, &dynamic_vertex_buffer)),
+			"dynamic CreateVertexBuffer failed") ||
+		!expect(dynamic_vertex_buffer != nullptr, "dynamic CreateVertexBuffer returned null") ||
+		!expect(state->last_browser_buffer_usage == dynamic_usage,
+			"dynamic vertex buffer usage hint mismatch") ||
+		!expect(state->last_browser_buffer_lock_flags == 0,
+			"dynamic vertex buffer create should not report lock flags")) {
+		if (dynamic_vertex_buffer != nullptr) {
+			dynamic_vertex_buffer->Release();
+		}
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	BYTE *dynamic_data = nullptr;
+	const DWORD discard_flags = D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK;
+	if (!expect(SUCCEEDED(dynamic_vertex_buffer->Lock(0, 32, &dynamic_data, discard_flags)),
+			"dynamic vertex discard Lock failed") ||
+		!expect(dynamic_data != nullptr, "dynamic vertex discard Lock returned null")) {
+		dynamic_vertex_buffer->Release();
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	std::memset(dynamic_data, 0xee, 32);
+	if (!expect(SUCCEEDED(dynamic_vertex_buffer->Unlock()), "dynamic vertex discard Unlock failed") ||
+		!expect(state->last_browser_buffer_kind == 1,
+			"dynamic vertex discard update kind mismatch") ||
+		!expect(state->last_browser_buffer_usage == dynamic_usage,
+			"dynamic vertex discard usage hint mismatch") ||
+		!expect(state->last_browser_buffer_lock_flags == discard_flags,
+			"dynamic vertex discard lock flags mismatch") ||
+		!expect(state->last_browser_buffer_offset == 0,
+			"dynamic vertex discard offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == 32,
+			"dynamic vertex discard byte count mismatch")) {
+		dynamic_vertex_buffer->Release();
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	const DWORD no_overwrite_flags = D3DLOCK_NOOVERWRITE | D3DLOCK_NOSYSLOCK;
+	if (!expect(SUCCEEDED(dynamic_vertex_buffer->Lock(32, 16, &dynamic_data, no_overwrite_flags)),
+			"dynamic vertex no-overwrite Lock failed") ||
+		!expect(dynamic_data != nullptr, "dynamic vertex no-overwrite Lock returned null")) {
+		dynamic_vertex_buffer->Release();
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	std::memset(dynamic_data, 0xef, 16);
+	if (!expect(SUCCEEDED(dynamic_vertex_buffer->Unlock()), "dynamic vertex no-overwrite Unlock failed") ||
+		!expect(state->last_browser_buffer_usage == dynamic_usage,
+			"dynamic vertex no-overwrite usage hint mismatch") ||
+		!expect(state->last_browser_buffer_lock_flags == no_overwrite_flags,
+			"dynamic vertex no-overwrite lock flags mismatch") ||
+		!expect(state->last_browser_buffer_offset == 32,
+			"dynamic vertex no-overwrite offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == 16,
+			"dynamic vertex no-overwrite byte count mismatch")) {
+		dynamic_vertex_buffer->Release();
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	dynamic_vertex_buffer->Release();
 
 	const UINT draw_stride = 16;
 	const UINT draw_base_vertex = 2;

@@ -3977,6 +3977,168 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_buffer_dirty()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_buffer_hints()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVertexBuffer8 *static_vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *dynamic_index_buffer = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT static_create_result = E_FAIL;
+	HRESULT static_lock_result = E_FAIL;
+	HRESULT static_unlock_result = E_FAIL;
+	HRESULT dynamic_create_result = E_FAIL;
+	HRESULT dynamic_lock_result = E_FAIL;
+	HRESULT dynamic_unlock_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	const DWORD static_usage = D3DUSAGE_WRITEONLY;
+	const DWORD dynamic_usage = D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC;
+	const DWORD dynamic_lock_flags = D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK;
+	DWORD static_create_usage = 0;
+	DWORD static_update_usage = 0;
+	DWORD static_update_flags = 0;
+	DWORD dynamic_create_usage = 0;
+	DWORD dynamic_update_usage = 0;
+	DWORD dynamic_update_flags = 0;
+	UINT dynamic_update_offset = 0;
+	UINT dynamic_update_bytes = 0;
+
+	if (device != nullptr) {
+		static_create_result = device->CreateVertexBuffer(64, static_usage, 0,
+			D3DPOOL_DEFAULT, &static_vertex_buffer);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		static_create_usage = state != nullptr ? state->last_browser_buffer_usage : 0;
+		ok = ok && SUCCEEDED(static_create_result) && static_vertex_buffer != nullptr &&
+			static_create_usage == static_usage;
+	}
+
+	if (static_vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		static_lock_result = static_vertex_buffer->Lock(8, 16, &data, 0);
+		if (SUCCEEDED(static_lock_result) && data != nullptr) {
+			std::memset(data, 0x3c, 16);
+		}
+		static_unlock_result = static_vertex_buffer->Unlock();
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		static_update_usage = state != nullptr ? state->last_browser_buffer_usage : 0;
+		static_update_flags = state != nullptr ? state->last_browser_buffer_lock_flags : 0;
+		ok = ok && SUCCEEDED(static_lock_result) && SUCCEEDED(static_unlock_result) &&
+			static_update_usage == static_usage && static_update_flags == 0;
+	}
+
+	if (device != nullptr) {
+		dynamic_create_result = device->CreateIndexBuffer(96, dynamic_usage, D3DFMT_INDEX16,
+			D3DPOOL_DEFAULT, &dynamic_index_buffer);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		dynamic_create_usage = state != nullptr ? state->last_browser_buffer_usage : 0;
+		ok = ok && SUCCEEDED(dynamic_create_result) && dynamic_index_buffer != nullptr &&
+			dynamic_create_usage == dynamic_usage;
+	}
+
+	if (dynamic_index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		dynamic_lock_result = dynamic_index_buffer->Lock(0, 32, &data, dynamic_lock_flags);
+		if (SUCCEEDED(dynamic_lock_result) && data != nullptr) {
+			std::memset(data, 0x7d, 32);
+		}
+		dynamic_unlock_result = dynamic_index_buffer->Unlock();
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		dynamic_update_usage = state != nullptr ? state->last_browser_buffer_usage : 0;
+		dynamic_update_flags = state != nullptr ? state->last_browser_buffer_lock_flags : 0;
+		dynamic_update_offset = state != nullptr ? state->last_browser_buffer_offset : 0;
+		dynamic_update_bytes = state != nullptr ? state->last_browser_buffer_bytes : 0;
+		ok = ok && SUCCEEDED(dynamic_lock_result) && SUCCEEDED(dynamic_unlock_result) &&
+			dynamic_update_usage == dynamic_usage && dynamic_update_flags == dynamic_lock_flags &&
+			dynamic_update_offset == 0 && dynamic_update_bytes == 32;
+	}
+
+	if (dynamic_index_buffer != nullptr) {
+		dynamic_index_buffer->Release();
+	}
+	if (static_vertex_buffer != nullptr) {
+		static_vertex_buffer->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_vertex_buffer_calls == 1 &&
+		state->create_index_buffer_calls == 1 &&
+		state->buffer_lock_calls == 2 &&
+		state->buffer_unlock_calls == 2 &&
+		state->browser_buffer_create_calls == 2 &&
+		state->browser_buffer_update_calls == 2 &&
+		state->browser_buffer_release_calls == 2;
+
+	char buffer[1600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_buffer_hints_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"staticCreate\":%ld,\"staticLock\":%ld,"
+		"\"staticUnlock\":%ld,\"dynamicCreate\":%ld,\"dynamicLock\":%ld,\"dynamicUnlock\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createVertexBuffer\":%u,"
+		"\"createIndexBuffer\":%u,\"bufferLock\":%u,\"bufferUnlock\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u},"
+		"\"staticUpdate\":{\"createUsage\":%lu,\"usage\":%lu,\"lockFlags\":%lu},"
+		"\"dynamicUpdate\":{\"createUsage\":%lu,\"usage\":%lu,\"lockFlags\":%lu,"
+		"\"offset\":%u,\"bytes\":%u}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(static_create_result),
+		static_cast<long>(static_lock_result),
+		static_cast<long>(static_unlock_result),
+		static_cast<long>(dynamic_create_result),
+		static_cast<long>(dynamic_lock_result),
+		static_cast<long>(dynamic_unlock_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->buffer_lock_calls : 0,
+		state != nullptr ? state->buffer_unlock_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		static_cast<unsigned long>(static_create_usage),
+		static_cast<unsigned long>(static_update_usage),
+		static_cast<unsigned long>(static_update_flags),
+		static_cast<unsigned long>(dynamic_create_usage),
+		static_cast<unsigned long>(dynamic_update_usage),
+		static_cast<unsigned long>(dynamic_update_flags),
+		dynamic_update_offset,
+		dynamic_update_bytes);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()
 {
 	return write_state_json();

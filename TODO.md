@@ -2338,9 +2338,15 @@ shares structure and follows behind.
       `byteOffset`. The focused D3D8 smoke now covers subrange/tail uploads plus
       invalid nested/stray lock calls, and the Playwright harness proves nonzero
       `gl.bufferSubData` offsets reach WebGL through the `d3d8BufferDirty` RPC.
-- [ ] Use D3D8 usage/lock hints to pick WebGL buffer usage and
+- [x] Use D3D8 usage/lock hints to pick WebGL buffer usage and
       streaming/orphaning behavior for dynamic buffers instead of treating all
-      updates as `DYNAMIC_DRAW` bufferSubData writes.
+      updates as `DYNAMIC_DRAW` bufferSubData writes. The bridge now maps
+      non-dynamic write-only buffers to `STATIC_DRAW`, dynamic buffers to
+      `STREAM_DRAW`, and dynamic `D3DLOCK_DISCARD` updates to an orphaning
+      `bufferData` call before `bufferSubData`, with focused C++ smoke coverage
+      for usage/lock flag propagation and Playwright `d3d8BufferHints` coverage
+      proving static/stream usage choices plus dynamic discard orphaning in
+      WebGL.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
