@@ -625,6 +625,35 @@ try {
       throw new Error(`Browser focus did not activate original WndProc state: ${JSON.stringify(browserFocusPump)}`);
     }
 
+    const quitPostsBeforeEscape = browserFocusPump.probe.keyboard?.quitPosts ?? 0;
+    await page.keyboard.down("Escape");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "browser escape keydown queue",
+    );
+    const browserEscapePump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserEscapePump.ok
+        || browserEscapePump.probe.pump?.lastPumped !== 1
+        || browserEscapePump.probe.messageQueue?.count !== 0
+        || browserEscapePump.probe.keyboard?.quitPosts !== quitPostsBeforeEscape + 1
+        || browserEscapePump.probe.keyboard?.lastQuitExitCode !== 0) {
+      throw new Error(`Browser Escape key did not reach original WndProc quit path: ${JSON.stringify(browserEscapePump)}`);
+    }
+    await page.keyboard.up("Escape");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "browser escape keyup queue",
+    );
+    const browserEscapeReleasePump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserEscapeReleasePump.ok
+        || browserEscapeReleasePump.probe.pump?.lastPumped !== 1
+        || browserEscapeReleasePump.probe.messageQueue?.count !== 0
+        || browserEscapeReleasePump.probe.keyboard?.quitPosts !== quitPostsBeforeEscape + 1) {
+      throw new Error(`Browser Escape release did not leave original WndProc quit state stable: ${JSON.stringify(browserEscapeReleasePump)}`);
+    }
+
     const leftButtonLParam = (45 << 16) | 123;
     await page.evaluate(({ wmLeftButtonDown, leftButtonLParam }) => window.CnCPort.rpc("postMessage", {
       message: wmLeftButtonDown,

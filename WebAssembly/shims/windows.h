@@ -979,6 +979,8 @@ inline bool key_pressed_since_last_query[256] = {};
 inline MSG message_queue[256] = {};
 inline unsigned int message_queue_count = 0;
 inline bool message_queue_overflowed = false;
+inline unsigned int quit_message_posts = 0;
+inline int last_quit_exit_code = 0;
 struct WindowClassRecord
 {
 	LPCSTR name = nullptr;
@@ -1241,6 +1243,8 @@ static inline void Reset()
 	capture_window = nullptr;
 	message_queue_count = 0;
 	message_queue_overflowed = false;
+	quit_message_posts = 0;
+	last_quit_exit_code = 0;
 	for (unsigned int index = 0; index < MessageQueueCapacity(); ++index) {
 		message_queue[index] = {};
 	}
@@ -1787,7 +1791,10 @@ static inline BOOL PostMessage(HWND window, UINT message, WPARAM w_param, LPARAM
 
 static inline void PostQuitMessage(int exit_code)
 {
-	WasmWin32Input::QueueMessage(nullptr, WM_QUIT, static_cast<WPARAM>(exit_code), 0, 0, nullptr);
+	if (WasmWin32Input::QueueMessage(nullptr, WM_QUIT, static_cast<WPARAM>(exit_code), 0, 0, nullptr)) {
+		++WasmWin32Input::quit_message_posts;
+		WasmWin32Input::last_quit_exit_code = exit_code;
+	}
 }
 
 static inline BOOL TranslateAccelerator(HWND, HACCEL, MSG *)
