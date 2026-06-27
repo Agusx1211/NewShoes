@@ -1677,6 +1677,10 @@ shares structure and follows behind.
       packet-router, wrapper, file-announce, disconnect-frame/screen-off, and
       frame-resend request commands, including explicit 16-bit chat-text wire
       serialization under wasm `WideChar`.
+- [x] Add endian-sensitive smoke coverage for original `NetPacket.cpp`
+      frame-command wire bytes under wasm, proving command markers plus
+      little-endian `UnsignedInt` frame, `UnsignedShort` command-id, and
+      command-count fields match the original x86 protocol contract.
 - [x] Link and smoke-test original `GameNetwork/NetCommandWrapperList.cpp`
       chunk reassembly into parsed commands, including incomplete-list
       draining, duplicate chunk handling, relay preservation, and ready-list

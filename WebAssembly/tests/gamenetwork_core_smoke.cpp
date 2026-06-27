@@ -42,6 +42,22 @@ bool expectAscii(const AsciiString &actual, const char *expected, const char *me
 	return expect(std::strcmp(actual.str(), expected) == 0, message);
 }
 
+bool expectLittleEndian16(const UnsignedByte *bytes, UnsignedShort value, const char *message)
+{
+	return expect(bytes[0] == static_cast<UnsignedByte>(value & 0xff) &&
+			bytes[1] == static_cast<UnsignedByte>((value >> 8) & 0xff),
+		message);
+}
+
+bool expectLittleEndian32(const UnsignedByte *bytes, UnsignedInt value, const char *message)
+{
+	return expect(bytes[0] == static_cast<UnsignedByte>(value & 0xff) &&
+			bytes[1] == static_cast<UnsignedByte>((value >> 8) & 0xff) &&
+			bytes[2] == static_cast<UnsignedByte>((value >> 16) & 0xff) &&
+			bytes[3] == static_cast<UnsignedByte>((value >> 24) & 0xff),
+		message);
+}
+
 class InspectableConnection : public Connection
 {
 public:
@@ -361,6 +377,35 @@ bool exerciseNetPacketRoundTrip()
 	file_ref->deleteInstance();
 
 	return frame_ok && run_ok && chat_ok && progress_ok && file_ok;
+}
+
+bool exerciseNetPacketWireFormat()
+{
+	NetFrameCommandMsg *frame = newInstance(NetFrameCommandMsg);
+	frame->setExecutionFrame(0x01020304u);
+	frame->setPlayerID(0x05);
+	frame->setID(0x2233);
+	frame->setCommandCount(0x4455);
+
+	UnsignedByte payload[MAX_PACKET_SIZE] = {};
+	Int payload_length = 0;
+	if (!buildPacketPayload(frame, 0x06, payload, payload_length,
+			"NetPacket did not build frame wire payload")) {
+		return false;
+	}
+	frame->detach();
+
+	return expect(payload_length == 17, "Frame wire payload length changed") &&
+		expect(payload[0] == 'T' && payload[1] == NETCOMMANDTYPE_FRAMEINFO,
+			"Frame wire command marker changed") &&
+		expect(payload[2] == 'F', "Frame wire frame marker changed") &&
+		expectLittleEndian32(payload + 3, 0x01020304u, "Frame wire frame byte order changed") &&
+		expect(payload[7] == 'R' && payload[8] == 0x06, "Frame wire relay changed") &&
+		expect(payload[9] == 'P' && payload[10] == 0x05, "Frame wire player changed") &&
+		expect(payload[11] == 'C', "Frame wire command-id marker changed") &&
+		expectLittleEndian16(payload + 12, 0x2233, "Frame wire command-id byte order changed") &&
+		expect(payload[14] == 'D', "Frame wire data marker changed") &&
+		expectLittleEndian16(payload + 15, 0x4455, "Frame wire command-count byte order changed");
 }
 
 bool exerciseNetPacketAckRoundTrip()
@@ -1141,7 +1186,7 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
-		exerciseNetPacketRoundTrip() && exerciseNetPacketAckRoundTrip() &&
+		exerciseNetPacketRoundTrip() && exerciseNetPacketWireFormat() && exerciseNetPacketAckRoundTrip() &&
 		exerciseNetPacketControlRoundTrip() && exerciseNetCommandWrapperList() && exerciseTransportQueue() &&
 		exerciseConnectionQueue() && exerciseConnectionRetry() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
 		exerciseUser();
@@ -1151,6 +1196,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering, command lists, packet round-trips, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering, command lists, packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
