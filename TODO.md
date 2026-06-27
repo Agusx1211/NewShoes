@@ -2386,6 +2386,15 @@ shares structure and follows behind.
       semantics before relying on textures that remain bound across `Release`
       or device reset; the current browser bridge tracks texture IDs and
       release cleanup only.
+- [x] Add the first browser WebGL2 stage-0 textured draw path for uploaded and
+      bound 2D textures through the existing persistent-buffer
+      `DrawIndexedPrimitive` bridge, with a focused D3D8 textured-quad probe,
+      `VertexFormatXYZNDUV*` UV0 offset handling, shader sampling that
+      multiplies the existing diffuse color, and Playwright center-pixel
+      coverage proving a red uploaded texture is sampled. This is still a
+      harness bridge slice only: no generalized FVF declaration decoding,
+      sampler-state translation, texture-stage combiner mapping, multi-stage
+      blending, or original textured mesh/menu rendering yet.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
