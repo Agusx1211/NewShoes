@@ -86,6 +86,16 @@ unsigned long Get_CPU_Rate(unsigned long & high)
 
 unsigned long Get_CPU_Clock(unsigned long & high)
 {
+#ifdef __EMSCRIPTEN__
+	LARGE_INTEGER value;
+	if (QueryPerformanceCounter(&value)) {
+		unsigned long long ticks = static_cast<unsigned long long>(value.QuadPart);
+		high = static_cast<unsigned long>(ticks >> 32);
+		return(static_cast<unsigned long>(ticks & 0xffffffffUL));
+	}
+	high = 0;
+	return(0);
+#else
 	int h;
 	int l;
 	__asm {
@@ -96,6 +106,7 @@ unsigned long Get_CPU_Clock(unsigned long & high)
 	}
 	high = h;
 	return(l);
+#endif
 }
 
 
@@ -126,17 +137,24 @@ static unsigned long TSC_High;
 
 void RDTSC(void)
 {
+#ifdef __EMSCRIPTEN__
+	TSC_Low = Get_CPU_Clock(TSC_High);
+#else
     _asm
     {
         ASM_RDTSC;
         mov     TSC_Low, eax
         mov     TSC_High, edx
     }
+#endif
 }
 
 
 int Get_RDTSC_CPU_Speed(void)
 {
+#ifdef __EMSCRIPTEN__
+	return(0);
+#else
 	LARGE_INTEGER t0,t1;
 	DWORD	freq=0;						// Most current freq. calc.
 	DWORD	freq2=0;						// 2nd most current freq. calc.
@@ -255,6 +273,6 @@ int Get_RDTSC_CPU_Speed(void)
 
 	return (norm_freq);
 
+#endif
 }
-
 

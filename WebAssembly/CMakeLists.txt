@@ -578,6 +578,25 @@ target_compile_options(zh_wwlib_systimer PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_mpu STATIC
+  "${WWLIB_DIR}/mpu.cpp"
+)
+
+target_include_directories(zh_wwlib_mpu PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_mpu PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
 add_library(zh_wwlib_thread STATIC
   "${WWLIB_DIR}/thread.cpp"
 )
@@ -3805,6 +3824,35 @@ target_compile_options(wwlib-thread-smoke PRIVATE
 )
 
 target_link_options(wwlib-thread-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-mpu-smoke
+  tests/wwlib_mpu_smoke.cpp
+)
+
+set_target_properties(wwlib-mpu-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-mpu-smoke PRIVATE
+  zh_wwlib_mpu
+)
+
+target_compile_options(wwlib-mpu-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-mpu-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

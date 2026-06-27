@@ -453,7 +453,7 @@ shares structure and follows behind.
       (`convert.cpp`, `_convert.cpp`, `dsurface.cpp`) after the browser
       `DSurface`/pixel-format abstraction is defined, instead of stubbing draw
       behavior.
-- [ ] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
+- [x] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline
       assembly.
 - [ ] Restore or replace the missing WWLib GNU regex dependency before
@@ -1213,8 +1213,8 @@ shares structure and follows behind.
       texture-backed embedded-web contract before enabling original embedded
       browser panes at runtime. Runtime browser ports are also still needed
       for the compiled Direct3D wrapper, WWAudio/Miles playback, GDI text
-      rasterization, Video-for-Windows frame grabbing, MPU/timing reads,
-      Surrender renderer/object behavior, and `ww3d.cpp`
+      rasterization, Video-for-Windows frame grabbing, Surrender
+      renderer/object behavior, and `ww3d.cpp`
       screen-capture/render-device paths instead of substituting renderer
       behavior.
 - [ ] Replace the compile-only `Mss.H` Miles surface, dummy Win32 event
