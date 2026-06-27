@@ -1582,6 +1582,29 @@ try {
     throw new Error(`GDI font bridge produced no glyph coverage: ${JSON.stringify(gdiFontProbeResult)}`);
   }
 
+  const ww3dFontCharsResult = await page.evaluate(() => window.CnCPort.rpc("ww3dFontChars", {
+    pointSize: 24,
+    face: "Arial",
+  }));
+  if (!ww3dFontCharsResult.ok
+      || ww3dFontCharsResult.probe?.source !== "ww3d_font_chars_probe"
+      || ww3dFontCharsResult.probe?.assetManagerCreated !== true
+      || ww3dFontCharsResult.probe?.usedExistingAssetManager !== false
+      || ww3dFontCharsResult.probe?.fontCreated !== true
+      || (ww3dFontCharsResult.probe?.refsAfterGet ?? 0) < 2
+      || (ww3dFontCharsResult.probe?.charHeight ?? 0) <= 0
+      || ww3dFontCharsResult.probe?.glyphCount !== 4
+      || ww3dFontCharsResult.probe?.positiveWidths !== 4
+      || ww3dFontCharsResult.probe?.charsWithCoverage !== 4
+      || (ww3dFontCharsResult.probe?.positiveSpacings ?? 0) < 3
+      || (ww3dFontCharsResult.probe?.blitCoverage ?? 0) <= 0
+      || (ww3dFontCharsResult.probe?.glyphs?.A?.width ?? 0) <= 0
+      || (ww3dFontCharsResult.probe?.glyphs?.M?.width ?? 0) <= 0
+      || (ww3dFontCharsResult.probe?.glyphs?.g?.width ?? 0) <= 0
+      || (ww3dFontCharsResult.probe?.glyphs?.W?.width ?? 0) <= 0) {
+    throw new Error(`WW3D FontChars original glyph cache probe failed: ${JSON.stringify(ww3dFontCharsResult)}`);
+  }
+
   await page.locator("#viewport").screenshot({ path: gdiFontCanvasScreenshot });
 
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {

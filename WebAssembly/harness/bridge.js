@@ -3084,6 +3084,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_shipped_multi_texture_mesh", "string", ["string", "string"]),
       probeWW3DSourceAssetLoad: module.cwrap(
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
+      probeWW3DFontChars: module.cwrap(
+        "cnc_port_probe_ww3d_font_chars", "string", ["number", "string", "number"]),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -5526,6 +5528,26 @@ async function rpc(command, payload = {}) {
           && probe.measureReported === true
           && (probe.glyphCoverage ?? 0) > 0
           && (probe.fontHeight ?? 0) > 0;
+        return { ok, command, probe, state: snapshotState() };
+      }
+    case "ww3dFontChars":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D FontChars cannot run" };
+        }
+        const pointSize = Math.max(8, Math.min(72, Number(payload.pointSize ?? 24)));
+        const face = String(payload.face ?? "Arial");
+        const bold = payload.bold ? 1 : 0;
+        const probe = parseModuleState(wasmModule.probeWW3DFontChars(pointSize, face, bold));
+        const ok = Boolean(probe.ok)
+          && probe.source === "ww3d_font_chars_probe"
+          && probe.assetManagerCreated === true
+          && probe.fontCreated === true
+          && (probe.charHeight ?? 0) > 0
+          && probe.positiveWidths === probe.glyphCount
+          && probe.charsWithCoverage === probe.glyphCount
+          && (probe.blitCoverage ?? 0) > 0;
         return { ok, command, probe, state: snapshotState() };
       }
     default:

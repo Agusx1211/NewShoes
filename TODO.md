@@ -2678,12 +2678,15 @@ shares structure and follows behind.
             `artifacts/screenshots/harness-smoke-gdi-font-canvas.png`. The node
             smoke targets keep the no-op `wasm_win32_gdi_stub.cpp` so the
             asset-manager font compile path still links without a browser.
-      - [ ] Drive the original `FontCharsClass::Initialize_GDI_Font` +
+      - [x] Drive the original `FontCharsClass::Initialize_GDI_Font` +
             `Store_GDI_Char` through the new browser GDI bridge (not just the
-            standalone `cnc_port_probe_gdi_font` mirror) once the focused
-            smoke can stand up a `WW3DAssetManager::Get_FontChars` request
-            without the full WW3D display/device singleton; this proves the
-            real original font cache builds glyphs through the canvas bridge.
+            standalone `cnc_port_probe_gdi_font` mirror): the
+            `cnc_port_probe_ww3d_font_chars` export creates a focused
+            `WW3DAssetManager`, calls `Get_FontChars("Arial", 24, false)`, and
+            drives original `Get_Char_Width` / `Blit_Char` calls for real glyph
+            cache entries. The Playwright `ww3dFontChars` RPC asserts positive
+            original font metrics, glyph widths, ref ownership, and non-zero
+            blit coverage from `Store_GDI_Char`.
       - [ ] Wire `Render2DSentenceClass` text rendering through the browser
             GDI bridge and the existing D3D8/WebGL2 draw bridge end-to-end
             (font → glyph surface → `DX8Wrapper::_Copy_DX8_Rects` → texture →
@@ -2828,7 +2831,7 @@ shares structure and follows behind.
              points the original `FontCharsClass` rasterizes through now produce
              real canvas-backed glyphs and metrics. Node smoke targets keep the
              no-op stub.
-       - [ ] Drive the real `FontCharsClass` glyph cache through the bridge.
+       - [x] Drive the real `FontCharsClass` glyph cache through the bridge.
        - [ ] Wire `Render2DSentenceClass` text → D3D8/WebGL2 textured quad
              with a `DisplayString` screenshot probe.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
