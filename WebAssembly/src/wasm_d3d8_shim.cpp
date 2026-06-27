@@ -904,7 +904,7 @@ public:
 		g_state.last_draw_vertex_count = vertex_count;
 		g_state.last_draw_start_index = start_index;
 		g_state.last_draw_primitive_count = primitive_count;
-		capture_bound_draw(min_index, vertex_count, start_index,
+		capture_bound_draw(m_indices_base_vertex_index + min_index, vertex_count, start_index,
 			primitive_vertex_count(primitive_type, primitive_count));
 		return S_OK;
 	}
@@ -956,6 +956,7 @@ public:
 			m_indices->Release();
 		}
 		m_indices = index_data;
+		m_indices_base_vertex_index = base_vertex_index;
 		return S_OK;
 	}
 
@@ -1030,6 +1031,7 @@ private:
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;
+	UINT m_indices_base_vertex_index = 0;
 };
 
 class BrowserD3D8 final : public IDirect3D8

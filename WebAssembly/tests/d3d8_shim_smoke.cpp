@@ -493,6 +493,40 @@ int main()
 		return 1;
 	}
 
+	const UINT draw_stride = 16;
+	const UINT draw_base_vertex = 2;
+	const UINT draw_min_index = 1;
+	if (!expect(SUCCEEDED(device->SetStreamSource(0, vertex_buffer, draw_stride)),
+			"SetStreamSource failed") ||
+		!expect(SUCCEEDED(device->SetIndices(index_buffer, draw_base_vertex)), "SetIndices failed") ||
+		!expect(SUCCEEDED(device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, draw_min_index, 3, 8, 1)),
+			"DrawIndexedPrimitive failed") ||
+		!expect(state->last_indices_base_vertex_index == draw_base_vertex,
+			"last_indices_base_vertex_index mismatch") ||
+		!expect(state->last_draw_stream_source_stride == draw_stride,
+			"last_draw_stream_source_stride mismatch") ||
+		!expect(state->last_draw_vertex_buffer_offset == (draw_base_vertex + draw_min_index) * draw_stride,
+			"indexed draw vertex capture should include base vertex index") ||
+		!expect(state->last_draw_vertex_buffer_bytes == 3 * draw_stride,
+			"indexed draw vertex byte count mismatch") ||
+		!expect(state->last_draw_vertex_buffer_checksum != 0,
+			"indexed draw vertex checksum should be non-zero") ||
+		!expect(state->last_draw_index_buffer_offset == 8 * sizeof(WORD),
+			"indexed draw index capture offset mismatch") ||
+		!expect(state->last_draw_index_buffer_bytes == 3 * sizeof(WORD),
+			"indexed draw index byte count mismatch") ||
+		!expect(state->last_draw_index_buffer_checksum != 0,
+			"indexed draw index checksum should be non-zero") ||
+		!expect(state->last_draw_index_format == D3DFMT_INDEX16,
+			"indexed draw index format mismatch")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	index_buffer->Release();
 	vertex_buffer->Release();
 	texture->Release();
