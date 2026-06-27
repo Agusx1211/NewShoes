@@ -1,8 +1,8 @@
 // Smoke: exercise the original TextureClass::Init / TextureLoader foreground
 // filename-loading path under browser wasm.
 //
-// The shipped mesh render probe currently pre-registers a manually uploaded
-// TextureClass. This smoke proves the *normal* asset-manager request flow --
+// The shipped mesh render probe depends on this same path for real DDS assets.
+// This smoke proves the *normal* asset-manager request flow --
 // WW3DAssetManager::Get_Texture(name) -> TextureClass(name,NULL,...) ->
 // TextureClass::Init -> TextureLoader::Request_Foreground_Loading ->
 // Finish_Load -> DDSFileClass/Targa decode -> DX8 texture upload -- already
