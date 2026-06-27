@@ -2,6 +2,7 @@
 /WebAssembly/artifacts/
 /WebAssembly/build/
 /WebAssembly/dist/
+/WebAssembly/err.txt
 /node_modules/
 /WebAssembly/node_modules/
 /assets/
