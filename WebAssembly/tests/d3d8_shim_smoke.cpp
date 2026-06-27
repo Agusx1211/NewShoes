@@ -369,7 +369,13 @@ int main()
 		!expect(state->buffer_lock_calls == buf_locks_before + 1,
 			"buffer_lock_calls counter mismatch after vertex lock") ||
 		!expect(state->buffer_unlock_calls == buf_unlocks_before + 1,
-			"buffer_unlock_calls counter mismatch after vertex unlock")) {
+			"buffer_unlock_calls counter mismatch after vertex unlock") ||
+		!expect(state->last_browser_buffer_kind == 1,
+			"vertex dirty update kind mismatch") ||
+		!expect(state->last_browser_buffer_offset == vertex_offset,
+			"vertex dirty update offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == vertex_size,
+			"vertex dirty update byte count mismatch")) {
 		vertex_buffer->Release();
 		texture->Release();
 		device->Release();
@@ -387,7 +393,57 @@ int main()
 		!expect(state->buffer_lock_calls == buf_locks_before + 2,
 			"buffer_lock_calls counter mismatch after vertex tail lock") ||
 		!expect(state->buffer_unlock_calls == buf_unlocks_before + 2,
-			"buffer_unlock_calls counter mismatch after vertex tail unlock")) {
+			"buffer_unlock_calls counter mismatch after vertex tail unlock") ||
+		!expect(state->last_browser_buffer_kind == 1,
+			"vertex tail dirty update kind mismatch") ||
+		!expect(state->last_browser_buffer_offset == vertex_offset,
+			"vertex tail dirty update offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == vertex_buffer_length - vertex_offset,
+			"vertex tail dirty update byte count mismatch")) {
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	const UINT vertex_updates_after_tail = state->browser_buffer_update_calls;
+	if (!expect(FAILED(vertex_buffer->Unlock()), "vertex buffer stray Unlock should fail") ||
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 2,
+			"buffer_unlock_calls should not increment on failed vertex unlock") ||
+		!expect(state->browser_buffer_update_calls == vertex_updates_after_tail,
+			"browser buffer updates should not increment on failed vertex unlock")) {
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	BYTE *vertex_nested = nullptr;
+	if (!expect(SUCCEEDED(vertex_buffer->Lock(0, vertex_size, &vertex_nested, 0)),
+			"vertex buffer nested-test Lock failed") ||
+		!expect(vertex_nested != nullptr, "vertex buffer nested-test Lock returned null")) {
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	if (!expect(FAILED(vertex_buffer->Lock(vertex_offset, vertex_size, &vertex_data, 0)),
+			"vertex buffer nested Lock should fail") ||
+		!expect(state->buffer_lock_calls == buf_locks_before + 3,
+			"buffer_lock_calls should not increment on nested vertex lock")) {
+		vertex_buffer->Unlock();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	if (!expect(SUCCEEDED(vertex_buffer->Unlock()), "vertex buffer nested-test Unlock failed") ||
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 3,
+			"buffer_unlock_calls counter mismatch after vertex nested-test unlock")) {
 		vertex_buffer->Release();
 		texture->Release();
 		device->Release();
@@ -399,11 +455,11 @@ int main()
 	// does NOT bump the buffer_lock_calls counter.
 	if (!expect(FAILED(vertex_buffer->Lock(vertex_buffer_length + 8, 0, &vertex_data, 0)),
 			"vertex buffer out-of-range offset Lock should fail") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 2,
+		!expect(state->buffer_lock_calls == buf_locks_before + 3,
 			"buffer_lock_calls should not increment on failed vertex lock") ||
 		!expect(FAILED(vertex_buffer->Lock(vertex_offset, vertex_buffer_length, &vertex_data, 0)),
 			"vertex buffer oversized size Lock should fail") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 2,
+		!expect(state->buffer_lock_calls == buf_locks_before + 3,
 			"buffer_lock_calls should not increment on oversized vertex lock")) {
 		vertex_buffer->Release();
 		texture->Release();
@@ -445,10 +501,16 @@ int main()
 	}
 	std::memset(index_data, 0xcd, index_size);
 	if (!expect(SUCCEEDED(index_buffer->Unlock()), "index buffer Unlock failed") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 3,
+		!expect(state->buffer_lock_calls == buf_locks_before + 4,
 			"buffer_lock_calls counter mismatch after index lock") ||
-		!expect(state->buffer_unlock_calls == buf_unlocks_before + 3,
-			"buffer_unlock_calls counter mismatch after index unlock")) {
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 4,
+			"buffer_unlock_calls counter mismatch after index unlock") ||
+		!expect(state->last_browser_buffer_kind == 2,
+			"index dirty update kind mismatch") ||
+		!expect(state->last_browser_buffer_offset == index_offset,
+			"index dirty update offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == index_size,
+			"index dirty update byte count mismatch")) {
 		index_buffer->Release();
 		vertex_buffer->Release();
 		texture->Release();
@@ -463,10 +525,64 @@ int main()
 			"index buffer whole-tail Lock failed") ||
 		!expect(index_tail != nullptr, "index buffer whole-tail Lock returned null") ||
 		!expect(SUCCEEDED(index_buffer->Unlock()), "index buffer whole-tail Unlock failed") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 4,
+		!expect(state->buffer_lock_calls == buf_locks_before + 5,
 			"buffer_lock_calls counter mismatch after index tail lock") ||
-		!expect(state->buffer_unlock_calls == buf_unlocks_before + 4,
-			"buffer_unlock_calls counter mismatch after index tail unlock")) {
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 5,
+			"buffer_unlock_calls counter mismatch after index tail unlock") ||
+		!expect(state->last_browser_buffer_kind == 2,
+			"index tail dirty update kind mismatch") ||
+		!expect(state->last_browser_buffer_offset == index_offset,
+			"index tail dirty update offset mismatch") ||
+		!expect(state->last_browser_buffer_bytes == index_buffer_length - index_offset,
+			"index tail dirty update byte count mismatch")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	const UINT index_updates_after_tail = state->browser_buffer_update_calls;
+	if (!expect(FAILED(index_buffer->Unlock()), "index buffer stray Unlock should fail") ||
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 5,
+			"buffer_unlock_calls should not increment on failed index unlock") ||
+		!expect(state->browser_buffer_update_calls == index_updates_after_tail,
+			"browser buffer updates should not increment on failed index unlock")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	BYTE *index_nested = nullptr;
+	if (!expect(SUCCEEDED(index_buffer->Lock(0, index_size, &index_nested, 0)),
+			"index buffer nested-test Lock failed") ||
+		!expect(index_nested != nullptr, "index buffer nested-test Lock returned null")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	if (!expect(FAILED(index_buffer->Lock(index_offset, index_size, &index_data, 0)),
+			"index buffer nested Lock should fail") ||
+		!expect(state->buffer_lock_calls == buf_locks_before + 6,
+			"buffer_lock_calls should not increment on nested index lock")) {
+		index_buffer->Unlock();
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	if (!expect(SUCCEEDED(index_buffer->Unlock()), "index buffer nested-test Unlock failed") ||
+		!expect(state->buffer_unlock_calls == buf_unlocks_before + 6,
+			"buffer_unlock_calls counter mismatch after index nested-test unlock")) {
 		index_buffer->Release();
 		vertex_buffer->Release();
 		texture->Release();
@@ -479,11 +595,11 @@ int main()
 	// contract and must not increment the successful-lock counter.
 	if (!expect(FAILED(index_buffer->Lock(index_buffer_length + 8, 0, &index_data, 0)),
 			"index buffer out-of-range offset Lock should fail") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 4,
+		!expect(state->buffer_lock_calls == buf_locks_before + 6,
 			"buffer_lock_calls should not increment on failed index lock") ||
 		!expect(FAILED(index_buffer->Lock(index_offset, index_buffer_length, &index_data, 0)),
 			"index buffer oversized size Lock should fail") ||
-		!expect(state->buffer_lock_calls == buf_locks_before + 4,
+		!expect(state->buffer_lock_calls == buf_locks_before + 6,
 			"buffer_lock_calls should not increment on oversized index lock")) {
 		index_buffer->Release();
 		vertex_buffer->Release();

@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "wasm_archive_probe.h"
@@ -3830,6 +3831,148 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_clear(std::uint32_t clear_c
 		static_cast<unsigned long>(state != nullptr ? state->last_clear_color : 0),
 		state != nullptr ? state->last_clear_z : 0.0f,
 		static_cast<unsigned long>(state != nullptr ? state->last_clear_stencil : 0));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_buffer_dirty()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT vertex_create_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT vertex_lock_result = E_FAIL;
+	HRESULT vertex_unlock_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	const UINT vertex_offset = 24;
+	const UINT vertex_bytes = 40;
+	const UINT index_offset = 8;
+	const UINT index_bytes = 20;
+	UINT vertex_update_offset = 0;
+	UINT vertex_update_bytes = 0;
+	UINT index_update_offset = 0;
+	UINT index_update_bytes = 0;
+
+	if (device != nullptr) {
+		vertex_create_result = device->CreateVertexBuffer(128, D3DUSAGE_WRITEONLY, 0,
+			D3DPOOL_DEFAULT, &vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(96, D3DUSAGE_WRITEONLY, D3DFMT_INDEX16,
+			D3DPOOL_DEFAULT, &index_buffer);
+		ok = ok && SUCCEEDED(vertex_create_result) && vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+
+	if (vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		vertex_lock_result = vertex_buffer->Lock(vertex_offset, vertex_bytes, &data, 0);
+		if (SUCCEEDED(vertex_lock_result) && data != nullptr) {
+			std::memset(data, 0x5a, vertex_bytes);
+		}
+		vertex_unlock_result = vertex_buffer->Unlock();
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		vertex_update_offset = state != nullptr ? state->last_browser_buffer_offset : 0;
+		vertex_update_bytes = state != nullptr ? state->last_browser_buffer_bytes : 0;
+		ok = ok && SUCCEEDED(vertex_lock_result) && SUCCEEDED(vertex_unlock_result) &&
+			vertex_update_offset == vertex_offset && vertex_update_bytes == vertex_bytes;
+	}
+
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(index_offset, index_bytes, &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memset(data, 0xa5, index_bytes);
+		}
+		index_unlock_result = index_buffer->Unlock();
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		index_update_offset = state != nullptr ? state->last_browser_buffer_offset : 0;
+		index_update_bytes = state != nullptr ? state->last_browser_buffer_bytes : 0;
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result) &&
+			index_update_offset == index_offset && index_update_bytes == index_bytes;
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (vertex_buffer != nullptr) {
+		vertex_buffer->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_vertex_buffer_calls == 1 &&
+		state->create_index_buffer_calls == 1 &&
+		state->buffer_lock_calls == 2 &&
+		state->buffer_unlock_calls == 2 &&
+		state->browser_buffer_create_calls == 2 &&
+		state->browser_buffer_update_calls == 2 &&
+		state->browser_buffer_release_calls == 2;
+
+	char buffer[1200];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_buffer_dirty_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"vertexCreate\":%ld,\"indexCreate\":%ld,"
+		"\"vertexLock\":%ld,\"vertexUnlock\":%ld,\"indexLock\":%ld,\"indexUnlock\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createVertexBuffer\":%u,"
+		"\"createIndexBuffer\":%u,\"bufferLock\":%u,\"bufferUnlock\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u},"
+		"\"vertexUpdate\":{\"offset\":%u,\"bytes\":%u},"
+		"\"indexUpdate\":{\"offset\":%u,\"bytes\":%u}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(vertex_create_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(vertex_lock_result),
+		static_cast<long>(vertex_unlock_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->buffer_lock_calls : 0,
+		state != nullptr ? state->buffer_unlock_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		vertex_update_offset,
+		vertex_update_bytes,
+		index_update_offset,
+		index_update_bytes);
 	g_d3d8_probe_json = buffer;
 	return g_d3d8_probe_json.c_str();
 }

@@ -2333,9 +2333,14 @@ shares structure and follows behind.
       The original AABox render probe and Playwright harness now prove nonzero
       buffer IDs, browser create/update notifications, and
       `usedPersistentBuffers == true` for the real `DrawIndexedPrimitive` path.
-- [ ] Track D3D8 lock dirty ranges and usage hints so persistent GL buffers can
-      update only touched byte ranges and use streaming/orphaning behavior for
-      dynamic buffers instead of whole-buffer uploads on every `Unlock`.
+- [x] Track D3D8 lock dirty ranges through the persistent browser buffer bridge
+      so `Unlock` uploads only the touched byte range with a destination
+      `byteOffset`. The focused D3D8 smoke now covers subrange/tail uploads plus
+      invalid nested/stray lock calls, and the Playwright harness proves nonzero
+      `gl.bufferSubData` offsets reach WebGL through the `d3d8BufferDirty` RPC.
+- [ ] Use D3D8 usage/lock hints to pick WebGL buffer usage and
+      streaming/orphaning behavior for dynamic buffers instead of treating all
+      updates as `DYNAMIC_DRAW` bufferSubData writes.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.

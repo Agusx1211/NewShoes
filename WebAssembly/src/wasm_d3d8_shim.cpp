@@ -49,6 +49,7 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 	unsigned int kind,
 	unsigned int buffer_id,
 	unsigned int data_ptr,
+	unsigned int byte_offset,
 	unsigned int byte_size
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8BufferUpdate : null;
@@ -58,6 +59,7 @@ EM_JS(void, wasm_d3d8_browser_buffer_update, (
 	bridge({
 		kind: kind >>> 0,
 		id: buffer_id >>> 0,
+		byteOffset: byte_offset >>> 0,
 		byteSize: byte_size >>> 0,
 		bytes: Module.HEAPU8.slice(data_ptr, data_ptr + byte_size),
 	});
@@ -126,7 +128,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int) {}
-void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int) {}
+void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 void wasm_d3d8_browser_buffer_release(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
@@ -292,11 +294,12 @@ void browser_buffer_create(UINT kind, UINT buffer_id, UINT byte_size)
 	++g_state.browser_buffer_create_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
+	g_state.last_browser_buffer_offset = 0;
 	g_state.last_browser_buffer_bytes = byte_size;
 	wasm_d3d8_browser_buffer_create(kind, buffer_id, byte_size);
 }
 
-void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byte_size)
+void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byte_offset, UINT byte_size)
 {
 	if (buffer_id == 0 || data == nullptr || byte_size == 0) {
 		return;
@@ -304,11 +307,13 @@ void browser_buffer_update(UINT kind, UINT buffer_id, const BYTE *data, UINT byt
 	++g_state.browser_buffer_update_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
+	g_state.last_browser_buffer_offset = byte_offset;
 	g_state.last_browser_buffer_bytes = byte_size;
 	wasm_d3d8_browser_buffer_update(
 		kind,
 		buffer_id,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(data)),
+		byte_offset,
 		byte_size);
 }
 
@@ -320,6 +325,7 @@ void browser_buffer_release(UINT kind, UINT buffer_id)
 	++g_state.browser_buffer_release_calls;
 	g_state.last_browser_buffer_kind = kind;
 	g_state.last_browser_buffer_id = buffer_id;
+	g_state.last_browser_buffer_offset = 0;
 	g_state.last_browser_buffer_bytes = 0;
 	wasm_d3d8_browser_buffer_release(kind, buffer_id);
 }
@@ -627,7 +633,7 @@ public:
 
 	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
 	{
-		if (data == nullptr || offset > m_bytes.size()) {
+		if (data == nullptr || m_locked || offset > m_bytes.size()) {
 			return E_FAIL;
 		}
 		if (size == 0) {
@@ -637,14 +643,24 @@ public:
 			return E_FAIL;
 		}
 		++g_state.buffer_lock_calls;
+		m_locked = true;
+		m_dirty_offset = offset;
+		m_dirty_size = size;
 		*data = m_bytes.data() + offset;
 		return S_OK;
 	}
 
 	HRESULT Unlock() override
 	{
+		if (!m_locked) {
+			return E_FAIL;
+		}
 		++g_state.buffer_unlock_calls;
-		browser_buffer_update(BROWSER_BUFFER_VERTEX, m_browser_buffer_id, m_bytes.data(), length());
+		browser_buffer_update(BROWSER_BUFFER_VERTEX, m_browser_buffer_id,
+			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size);
+		m_locked = false;
+		m_dirty_offset = 0;
+		m_dirty_size = 0;
 		return S_OK;
 	}
 
@@ -688,6 +704,9 @@ private:
 	std::vector<BYTE> m_bytes;
 	UINT m_browser_buffer_id = 0;
 	bool m_browser_buffer_created = false;
+	bool m_locked = false;
+	UINT m_dirty_offset = 0;
+	UINT m_dirty_size = 0;
 };
 
 class BrowserD3DIndexBuffer final : public IDirect3DIndexBuffer8, private BrowserD3DResource
@@ -720,7 +739,7 @@ public:
 
 	HRESULT Lock(UINT offset, UINT size, BYTE **data, DWORD) override
 	{
-		if (data == nullptr || offset > m_bytes.size()) {
+		if (data == nullptr || m_locked || offset > m_bytes.size()) {
 			return E_FAIL;
 		}
 		if (size == 0) {
@@ -730,14 +749,24 @@ public:
 			return E_FAIL;
 		}
 		++g_state.buffer_lock_calls;
+		m_locked = true;
+		m_dirty_offset = offset;
+		m_dirty_size = size;
 		*data = m_bytes.data() + offset;
 		return S_OK;
 	}
 
 	HRESULT Unlock() override
 	{
+		if (!m_locked) {
+			return E_FAIL;
+		}
 		++g_state.buffer_unlock_calls;
-		browser_buffer_update(BROWSER_BUFFER_INDEX, m_browser_buffer_id, m_bytes.data(), length());
+		browser_buffer_update(BROWSER_BUFFER_INDEX, m_browser_buffer_id,
+			m_bytes.data() + m_dirty_offset, m_dirty_offset, m_dirty_size);
+		m_locked = false;
+		m_dirty_offset = 0;
+		m_dirty_size = 0;
 		return S_OK;
 	}
 
@@ -784,6 +813,9 @@ private:
 	D3DFORMAT m_format = D3DFMT_INDEX16;
 	UINT m_browser_buffer_id = 0;
 	bool m_browser_buffer_created = false;
+	bool m_locked = false;
+	UINT m_dirty_offset = 0;
+	UINT m_dirty_size = 0;
 };
 
 class BrowserD3DDevice final : public IDirect3DDevice8
