@@ -1320,7 +1320,13 @@ function assertDataSummary(state, context, expectedStartupReady) {
   }
 }
 
-function assertOriginalEngineStartup(state, context, expectedStatus, expectedStartupAssetsReady) {
+function assertOriginalEngineStartup(
+  state,
+  context,
+  expectedStatus,
+  expectedStartupAssetsReady,
+  expectedFileSystemReadiness = { local: false, archive: false },
+) {
   const startup = state.originalEngineStartup;
   if (!startup
       || startup.ok !== false
@@ -1334,7 +1340,8 @@ function assertOriginalEngineStartup(state, context, expectedStatus, expectedSta
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
       || startup.browserDeviceLayer?.browserGameEngine !== false
-      || startup.browserDeviceLayer?.archiveFileSystem !== false
+      || startup.browserDeviceLayer?.localFileSystem !== expectedFileSystemReadiness.local
+      || startup.browserDeviceLayer?.archiveFileSystem !== expectedFileSystemReadiness.archive
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
       || startup.browserDeviceLayer?.display !== false
@@ -1344,7 +1351,13 @@ function assertOriginalEngineStartup(state, context, expectedStatus, expectedSta
 }
 
 function assertOriginalEngineStartupMissingFiles(state, context) {
-  assertOriginalEngineStartup(state, context, "missing_startup_files", true);
+  assertOriginalEngineStartup(
+    state,
+    context,
+    "missing_startup_files",
+    true,
+    { local: true, archive: true },
+  );
   const files = state.originalEngineStartup.startupFiles;
   const missing = new Set(files?.missing ?? []);
   const expectedMissing = [
@@ -1413,7 +1426,13 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
 }
 
 function assertOriginalEngineStartupWithBaseIni(state, context) {
-  assertOriginalEngineStartup(state, context, "browser_device_layer_pending", true);
+  assertOriginalEngineStartup(
+    state,
+    context,
+    "browser_device_layer_pending",
+    true,
+    { local: true, archive: true },
+  );
   const files = state.originalEngineStartup.startupFiles;
   if (files?.ready !== true
       || files.defaultGameDataIni !== true

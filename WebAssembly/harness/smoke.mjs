@@ -254,6 +254,8 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
 
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
+      || startup.browserDeviceLayer?.localFileSystem !== true
+      || startup.browserDeviceLayer?.archiveFileSystem !== false
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
       || startup.browserDeviceLayer?.display !== false

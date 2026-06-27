@@ -1723,6 +1723,11 @@ shares structure and follows behind.
       distinguishes linked original code from runnable original startup, reports
       missing `GameEngine.cpp` startup files, and keeps browser device factory
       readiness explicit instead of invoking `GameEngine::init()` with stubs.
+- [x] Feed the harness-verified `FileSystem` facade probe into
+      `originalEngineStartup.browserDeviceLayer`, so local MEMFS readiness is
+      reported on plain boot and archive filesystem readiness is reported after
+      the runtime BIG set is registered and boot-probed, while the overall
+      browser device layer remains pending.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---

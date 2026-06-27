@@ -1054,8 +1054,8 @@ std::string build_original_engine_startup_json()
 		"\"englishCommandMapIni\":%s,\"commandMapIni\":%s,"
 		"\"mapCacheIni\":%s,\"defaultVideoIni\":%s,\"videoIni\":%s},"
 		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":false,"
-		"\"browserGameEngine\":false,\"localFileSystem\":false,"
-		"\"archiveFileSystem\":false,\"gameLogic\":false,"
+		"\"browserGameEngine\":false,\"localFileSystem\":%s,"
+		"\"archiveFileSystem\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":false,"
 		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
 		"\"webBrowser\":false,\"particleSystemManager\":false,"
@@ -1105,7 +1105,9 @@ std::string build_original_engine_startup_json()
 		g_archive_probe.has_command_map_ini ? "true" : "false",
 		g_archive_probe.has_map_cache_ini ? "true" : "false",
 		g_archive_probe.has_default_video_ini ? "true" : "false",
-		g_archive_probe.has_video_ini ? "true" : "false");
+		g_archive_probe.has_video_ini ? "true" : "false",
+		g_file_system_probe.local_ok ? "true" : "false",
+		g_file_system_probe.archive_ok ? "true" : "false");
 
 	return buffer;
 }
