@@ -49,6 +49,10 @@
 #define CALLBACK WINAPI
 #endif
 
+#ifndef APIENTRY
+#define APIENTRY WINAPI
+#endif
+
 #ifndef __stdcall
 #define __stdcall
 #endif
@@ -426,6 +430,7 @@ static inline double Win32PortNowMilliseconds()
 #define GWL_STYLE (-16)
 #define GWL_WNDPROC (-4)
 #define GWLP_WNDPROC GWL_WNDPROC
+#define HTCLIENT 1
 
 #define DRIVE_UNKNOWN 0
 #define DRIVE_NO_ROOT_DIR 1
@@ -499,6 +504,25 @@ static inline double Win32PortNowMilliseconds()
 #define IDC_CROSS reinterpret_cast<LPCSTR>(32515)
 #define IDC_SIZEALL reinterpret_cast<LPCSTR>(32646)
 #define WM_USER 0x0400
+#define WM_NCHITTEST 0x0084
+#define WM_POWERBROADCAST 0x0218
+#define WM_SYSCOMMAND 0x0112
+#define WM_QUERYENDSESSION 0x0011
+#define WM_CLOSE 0x0010
+#define WM_SETFOCUS 0x0007
+#define WM_KILLFOCUS 0x0008
+#define WM_SIZE 0x0005
+#define WM_ACTIVATEAPP 0x001C
+#define WM_ACTIVATE 0x0006
+#define WM_SETCURSOR 0x0020
+#define WM_PAINT 0x000F
+#define WM_ERASEBKGND 0x0014
+#define SC_SIZE 0xF000
+#define SC_MOVE 0xF010
+#define SC_MAXIMIZE 0xF030
+#define SC_KEYMENU 0xF100
+#define SC_MONITORPOWER 0xF170
+#define WA_INACTIVE 0
 #define LOCALE_SYSTEM_DEFAULT 0x0800
 #define DATE_SHORTDATE 0x00000001
 #define TIME_NOSECONDS 0x00000002
@@ -872,6 +896,11 @@ static inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT)
 	return TRUE;
 }
 
+static inline BOOL ClipCursor(const RECT *)
+{
+	return TRUE;
+}
+
 static inline BOOL ShowWindow(HWND, int)
 {
 	return TRUE;
@@ -917,6 +946,7 @@ struct WindowRecord
 	HWND handle = nullptr;
 	LPCSTR class_name = nullptr;
 	WNDPROC procedure = nullptr;
+	RECT rect = {};
 };
 inline WindowClassRecord window_classes[32] = {};
 inline unsigned int window_class_count = 0;
@@ -1099,7 +1129,7 @@ static inline WindowRecord *FindWindow(HWND window)
 	return nullptr;
 }
 
-static inline HWND CreateWindowRecord(LPCSTR class_name)
+static inline HWND CreateWindowRecord(LPCSTR class_name, int x = 0, int y = 0, int width = 0, int height = 0)
 {
 	if (window_count >= WindowCapacity()) {
 		return nullptr;
@@ -1108,6 +1138,10 @@ static inline HWND CreateWindowRecord(LPCSTR class_name)
 	WindowRecord &record = windows[window_count];
 	record.handle = reinterpret_cast<HWND>(next_window_handle++);
 	record.class_name = class_name;
+	record.rect.left = x;
+	record.rect.top = y;
+	record.rect.right = x + width;
+	record.rect.bottom = y + height;
 	if (WindowClassRecord *window_class = FindWindowClass(class_name)) {
 		record.procedure = window_class->procedure;
 	}
@@ -1325,22 +1359,38 @@ static inline BOOL ReleaseCapture()
 	return TRUE;
 }
 
-static inline BOOL GetWindowRect(HWND, RECT *rect)
+static inline BOOL GetWindowRect(HWND window, RECT *rect)
 {
 	if (rect == nullptr) {
 		return FALSE;
 	}
 
-	rect->left = 0;
-	rect->top = 0;
-	rect->right = 0;
-	rect->bottom = 0;
+	if (const WasmWin32Input::WindowRecord *record = WasmWin32Input::FindWindow(window)) {
+		*rect = record->rect;
+		return TRUE;
+	}
+
+	*rect = {};
 	return FALSE;
 }
 
-static inline BOOL GetClientRect(HWND, RECT *rect)
+static inline BOOL GetClientRect(HWND window, RECT *rect)
 {
-	return GetWindowRect(nullptr, rect);
+	if (rect == nullptr) {
+		return FALSE;
+	}
+
+	RECT window_rect = {};
+	if (!GetWindowRect(window, &window_rect)) {
+		*rect = {};
+		return FALSE;
+	}
+
+	rect->left = 0;
+	rect->top = 0;
+	rect->right = window_rect.right - window_rect.left;
+	rect->bottom = window_rect.bottom - window_rect.top;
+	return TRUE;
 }
 
 static inline HWND GetDesktopWindow()
@@ -1362,16 +1412,16 @@ static inline HWND CreateWindowExA(
 	LPCSTR class_name,
 	LPCSTR,
 	DWORD,
-	int,
-	int,
-	int,
-	int,
+	int x,
+	int y,
+	int width,
+	int height,
 	HWND,
 	HMENU,
 	HINSTANCE,
 	LPVOID)
 {
-	return WasmWin32Input::CreateWindowRecord(class_name);
+	return WasmWin32Input::CreateWindowRecord(class_name, x, y, width, height);
 }
 
 static inline HWND CreateWindowA(

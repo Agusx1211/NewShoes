@@ -585,6 +585,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message,
 				return TRUE;	//tell Windows not to reset mouse cursor image to default.
 			}
 
+#ifndef CNC_WASM_WNDPROC_ONLY
 			case WM_PAINT:
 			{
 				if (gDoPaint) {
@@ -616,6 +617,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message,
 					return TRUE;	//we don't need to erase the background because we always draw entire window.
 				break;
 			}
+#endif
 
 // Well, it was a nice idea, but we don't get a message for an ejection. 
 // (Really unforunate, actually.) I'm leaving this in in-case some one wants
@@ -674,6 +676,8 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message,
 	return DefWindowProc( hWnd, message, wParam, lParam );
 
 }  // end WndProc
+
+#ifndef CNC_WASM_WNDPROC_ONLY
 
 // initializeAppWindows =======================================================
 /** Register windows class and create application windows. */
@@ -1116,3 +1120,5 @@ GameEngine *CreateGameEngine( void )
 	return engine;
 
 }  // end CreateGameEngine
+
+#endif

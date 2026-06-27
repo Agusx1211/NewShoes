@@ -376,10 +376,15 @@ shares structure and follows behind.
       `Win32GameEngine::serviceWindowsOS()` to run in wasm, and smoke-test
       that it drains the browser-backed Win32 queue, dispatches through the
       registered WndProc, and exposes `MSG::time` through `TheMessageTime`.
+- [x] Compile original `Main/WinMain.cpp` far enough for the real `WndProc()`
+      to run in wasm, and smoke-test queued Win32 mouse messages flowing
+      through `Win32GameEngine::serviceWindowsOS()` into the original
+      `Win32Mouse` event buffer.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including connecting the real game `WndProc`, `WM_CREATE` /
       `WM_DESTROY` lifecycle dispatch, `WM_CHAR` / IME text paths, browser
-      double-click event policy, and real WndProc-to-`Win32Mouse` delivery.
+      double-click event policy, and focus/activation handling through the
+      browser device layer.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in
       browser builds or route through the harness/browser console before
       relying on it for runtime diagnostics.

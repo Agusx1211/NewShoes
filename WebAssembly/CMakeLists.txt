@@ -36,6 +36,7 @@ set(GAMEENGINE_DEVICE_DIR "${ZH_CODE_DIR}/GameEngineDevice")
 set(GAMEENGINE_DEVICE_INCLUDE_DIR "${GAMEENGINE_DEVICE_DIR}/Include")
 set(WASM_SHIMS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shims")
 set(WIN32_GAMEENGINE_SHIMS_DIR "${WASM_SHIMS_DIR}/win32_gameengine")
+set(WINMAIN_WNDPROC_SHIMS_DIR "${WASM_SHIMS_DIR}/winmain_wndproc")
 set(WWVEGAS_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_port.h")
 set(WWVEGAS_MUTEX_PORT_SHIM "${WASM_SHIMS_DIR}/wwvegas_mutex_port.h")
 set(WWSTRING_PORT_SHIM "${WASM_SHIMS_DIR}/wwstring_port.h")
@@ -2983,6 +2984,43 @@ target_link_libraries(zh_win32_mouse PUBLIC
   zh_gameclient_utility
 )
 
+add_library(zh_winmain_wndproc STATIC
+  "${MAIN_DIR}/WinMain.cpp"
+)
+
+target_include_directories(zh_winmain_wndproc PUBLIC
+  "${WINMAIN_WNDPROC_SHIMS_DIR}"
+  "${WIN32_GAMEENGINE_SHIMS_DIR}"
+  "${WASM_SHIMS_DIR}"
+  "${MAIN_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_winmain_wndproc PRIVATE
+  -DCNC_WASM_WNDPROC_ONLY
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_winmain_wndproc PUBLIC
+  zh_win32_mouse
+)
+
 add_library(zh_win32_gameengine_message_pump STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32GameEngine.cpp"
 )
@@ -4190,6 +4228,37 @@ target_compile_options(win32-gameengine-message-pump-smoke PRIVATE
 )
 
 target_link_options(win32-gameengine-message-pump-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(winmain-wndproc-mouse-smoke
+  tests/winmain_wndproc_mouse_smoke.cpp
+)
+
+set_target_properties(winmain-wndproc-mouse-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(winmain-wndproc-mouse-smoke PRIVATE
+  zh_winmain_wndproc
+  zh_win32_gameengine_message_pump
+)
+
+target_compile_options(winmain-wndproc-mouse-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(winmain-wndproc-mouse-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
