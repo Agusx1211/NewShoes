@@ -2863,6 +2863,14 @@ shares structure and follows behind.
             `FlatHeightMapRenderObjClass` scene/display ownership remains the
             broader terrain item.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
+      - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
+            ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
+            `AABoxRenderObjClass` to a scene, renders through
+            `WW3D::Render(scene, camera)`, and the Playwright
+            `ww3dSceneCamera` RPC verifies persistent WebGL buffers,
+            transform capture, visible canvas pixels, and
+            `harness-smoke-ww3d-scene-camera-canvas.png`. Full
+            `RTS3DScene` / `W3DDisplay` shell-map ownership remains open.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /

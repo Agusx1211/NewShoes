@@ -12,6 +12,7 @@ const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
+const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
 const ww3dRender2DSentenceCanvasScreenshot = resolve(
   screenshotDir,
@@ -1410,6 +1411,40 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dAABoxCanvasScreenshot });
 
+  const sceneCameraResult = await page.evaluate(() => window.CnCPort.rpc("ww3dSceneCamera"));
+  if (!sceneCameraResult.ok
+      || sceneCameraResult.probe?.source !== "ww3d_scene_camera_probe"
+      || sceneCameraResult.probe?.results?.cameraCreated !== true
+      || sceneCameraResult.probe?.results?.sceneCreated !== true
+      || sceneCameraResult.probe?.results?.renderObjectCreated !== true
+      || sceneCameraResult.probe?.results?.objectAdded !== true
+      || sceneCameraResult.probe?.calls?.drawIndexed < 1
+      || sceneCameraResult.probe?.calls?.browserBufferCreate < 2
+      || sceneCameraResult.probe?.calls?.browserBufferUpdate < 2
+      || sceneCameraResult.probe?.calls?.setTransform < 3
+      || sceneCameraResult.probe?.draw?.primitiveType !== 4
+      || sceneCameraResult.probe?.draw?.vertexCount !== 8
+      || sceneCameraResult.probe?.draw?.primitiveCount !== 12
+      || sceneCameraResult.probe?.draw?.vertexBufferId <= 0
+      || sceneCameraResult.probe?.draw?.indexBufferId <= 0
+      || sceneCameraResult.probe?.draw?.transformMask !== 7
+      || sceneCameraResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || sceneCameraResult.browserProbe?.vertexStride !== 44
+      || sceneCameraResult.browserProbe?.indexCount !== 36
+      || sceneCameraResult.browserProbe?.usedPersistentBuffers !== true
+      || sceneCameraResult.browserProbe?.usedTransforms !== true
+      || sceneCameraResult.browserProbe?.renderState?.cullMode !== 2
+      || sceneCameraResult.browserProbe?.renderState?.zEnable !== 1
+      || sceneCameraResult.browserProbe?.renderState?.zWriteEnable !== 0
+      || sceneCameraResult.browserProbe?.renderState?.zFunc !== 4
+      || sceneCameraResult.browserProbe?.renderState?.alphaBlendEnable !== 1
+      || !pixelHasColor(sceneCameraResult.browserProbe?.centerPixel)
+      || !pixelHasColor(sceneCameraResult.screenshot?.centerPixel)) {
+    throw new Error(`WW3D scene/camera probe failed: ${JSON.stringify(sceneCameraResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dSceneCameraCanvasScreenshot });
+
   const render2DResult = await page.evaluate(() => window.CnCPort.rpc("ww3dRender2DTexturedQuad"));
   if (!render2DResult.ok
       || render2DResult.probe?.source !== "ww3d_render2d_textured_quad_probe"
@@ -1798,6 +1833,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
+      ww3dSceneCameraCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
       ww3dRender2DSentenceCanvasScreenshot,
       ww3dDisplayStringCanvasScreenshot,

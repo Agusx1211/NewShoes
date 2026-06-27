@@ -3126,6 +3126,7 @@ async function loadWasmModule() {
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
+      probeWW3DSceneCamera: module.cwrap("cnc_port_probe_ww3d_scene_camera", "string", []),
       probeWW3DRender2DTexturedQuad: module.cwrap(
         "cnc_port_probe_ww3d_render2d_textured_quad", "string", []),
       probeWW3DRender2DSentence: module.cwrap(
@@ -5285,6 +5286,38 @@ async function rpc(command, payload = {}) {
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const ok = Boolean(probe.ok)
           && Boolean(browserProbe?.ok)
+          && pixelHasColor(browserProbe.centerPixel)
+          && pixelHasColor(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dSceneCamera":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D scene/camera cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DSceneCamera());
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 36
           && pixelHasColor(browserProbe.centerPixel)
           && pixelHasColor(screenshot.centerPixel);
         return {
