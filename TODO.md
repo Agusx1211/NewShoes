@@ -390,10 +390,13 @@ shares structure and follows behind.
       browser harness and prove a browser-fed `WM_LBUTTONDOWN` drains through
       original `Win32GameEngine::serviceWindowsOS()` into the Win32 mouse
       event buffer under Playwright.
+- [x] Map browser pointer double-click sequences to original
+      `WM_*BUTTONDBLCLK` messages and prove the main harness pumps them through
+      original `WndProc()` into the Win32 mouse double-click state.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including `WM_CREATE` / `WM_DESTROY` lifecycle dispatch, IME
-      composition text paths, browser double-click event policy, and
-      focus/activation handling through the browser device layer.
+      composition text paths, and focus/activation handling through the
+      browser device layer.
 - [ ] Retire the browser-only narrow `Win32Mouse`/`Mouse` shim used by the
       `cnc-port` WndProc harness once the main executable can link the full
       original GameClient mouse/control-bar surface without duplicate command

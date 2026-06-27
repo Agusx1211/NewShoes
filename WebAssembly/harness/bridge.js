@@ -466,12 +466,40 @@ const win32Messages = Object.freeze({
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
   leftButtonUp: 0x0202,
+  leftButtonDoubleClick: 0x0203,
   rightButtonDown: 0x0204,
   rightButtonUp: 0x0205,
+  rightButtonDoubleClick: 0x0206,
   middleButtonDown: 0x0207,
   middleButtonUp: 0x0208,
+  middleButtonDoubleClick: 0x0209,
   mouseWheel: 0x020a,
 });
+
+const doubleClickPolicy = Object.freeze({
+  timeMs: 500,
+  maxDistance: 4,
+});
+
+const doubleClickButtons = new Map([
+  [0, {
+    down: win32Messages.leftButtonDown,
+    up: win32Messages.leftButtonUp,
+    doubleClick: win32Messages.leftButtonDoubleClick,
+  }],
+  [1, {
+    down: win32Messages.middleButtonDown,
+    up: win32Messages.middleButtonUp,
+    doubleClick: win32Messages.middleButtonDoubleClick,
+  }],
+  [2, {
+    down: win32Messages.rightButtonDown,
+    up: win32Messages.rightButtonUp,
+    doubleClick: win32Messages.rightButtonDoubleClick,
+  }],
+]);
+
+const doubleClickStateByButton = new Map();
 
 function canvasInputPointFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
@@ -486,17 +514,73 @@ function win32PointLParam(point) {
   return ((point.y & 0xffff) << 16) | (point.x & 0xffff);
 }
 
-function mouseButtonMessage(event, isDown) {
-  if (event.button === 0) {
-    return isDown ? win32Messages.leftButtonDown : win32Messages.leftButtonUp;
+function eventTimestampMs(event) {
+  return Number.isFinite(event.timeStamp) ? event.timeStamp : performance.now();
+}
+
+function doubleClickStateForButton(button) {
+  let state = doubleClickStateByButton.get(button);
+  if (!state) {
+    state = {
+      lastUpTimeMs: Number.NEGATIVE_INFINITY,
+      lastPoint: null,
+      currentDownWasDoubleClick: false,
+    };
+    doubleClickStateByButton.set(button, state);
   }
-  if (event.button === 1) {
-    return isDown ? win32Messages.middleButtonDown : win32Messages.middleButtonUp;
+  return state;
+}
+
+function isDoubleClickPointerDown(event, point) {
+  if (!doubleClickButtons.has(event.button)) {
+    return false;
   }
-  if (event.button === 2) {
-    return isDown ? win32Messages.rightButtonDown : win32Messages.rightButtonUp;
+  const state = doubleClickStateForButton(event.button);
+  if (!state.lastPoint) {
+    return false;
   }
-  return -1;
+  const elapsedMs = eventTimestampMs(event) - state.lastUpTimeMs;
+  const deltaX = point.x - state.lastPoint.x;
+  const deltaY = point.y - state.lastPoint.y;
+  return elapsedMs >= 0
+    && elapsedMs <= doubleClickPolicy.timeMs
+    && Math.abs(deltaX) <= doubleClickPolicy.maxDistance
+    && Math.abs(deltaY) <= doubleClickPolicy.maxDistance;
+}
+
+function mouseButtonMessage(event, isDown, point) {
+  const messages = doubleClickButtons.get(event.button);
+  if (!messages) {
+    return -1;
+  }
+  if (!isDown) {
+    return messages.up;
+  }
+
+  const state = doubleClickStateForButton(event.button);
+  state.currentDownWasDoubleClick = isDoubleClickPointerDown(event, point);
+  return state.currentDownWasDoubleClick ? messages.doubleClick : messages.down;
+}
+
+function rememberPointerUpForDoubleClick(event, point) {
+  if (!doubleClickButtons.has(event.button)) {
+    return;
+  }
+
+  const state = doubleClickStateForButton(event.button);
+  if (state.currentDownWasDoubleClick) {
+    state.lastUpTimeMs = Number.NEGATIVE_INFINITY;
+    state.lastPoint = null;
+    state.currentDownWasDoubleClick = false;
+    return;
+  }
+
+  state.lastUpTimeMs = eventTimestampMs(event);
+  state.lastPoint = { x: point.x, y: point.y };
+}
+
+function resetDoubleClickState() {
+  doubleClickStateByButton.clear();
 }
 
 function wheelWParam(event) {
@@ -574,6 +658,7 @@ async function resetBrowserInput() {
   if (!wasmModule) {
     return null;
   }
+  resetDoubleClickState();
   applyModuleState(parseModuleState(wasmModule.resetBrowserInput()));
   harnessState.wasm = "loaded";
   return snapshotState();
@@ -913,7 +998,7 @@ canvas.addEventListener("pointermove", (event) => {
 canvas.addEventListener("pointerdown", (event) => {
   canvas.focus();
   const point = canvasInputPointFromEvent(event);
-  const message = mouseButtonMessage(event, true);
+  const message = mouseButtonMessage(event, true, point);
   event.preventDefault();
   void pushBrowserInputToWasm({
     cursor: point,
@@ -926,7 +1011,8 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 canvas.addEventListener("pointerup", (event) => {
   const point = canvasInputPointFromEvent(event);
-  const message = mouseButtonMessage(event, false);
+  const message = mouseButtonMessage(event, false, point);
+  rememberPointerUpForDoubleClick(event, point);
   event.preventDefault();
   void pushBrowserInputToWasm({
     cursor: point,

@@ -555,6 +555,84 @@ try {
         || lastMouseEvent?.left?.frame !== 1) {
       throw new Error(`Original WndProc did not feed Win32Mouse: ${JSON.stringify(originalWndProcProbe)}`);
     }
+
+    await page.mouse.move(canvasBox.x + 234, canvasBox.y + 56);
+    const resetBeforeDoubleClick = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetBeforeDoubleClick.ok
+        || resetBeforeDoubleClick.state.browserInput?.messageQueue?.count !== 0
+        || resetBeforeDoubleClick.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Browser double-click reset mismatch: ${JSON.stringify(resetBeforeDoubleClick)}`);
+    }
+
+    await page.mouse.down();
+    await page.mouse.up();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "first browser click queue",
+    );
+    const firstBrowserClickPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!firstBrowserClickPump.ok
+        || firstBrowserClickPump.probe.pump?.lastPumped !== 2
+        || firstBrowserClickPump.probe.messageQueue?.count !== 0) {
+      throw new Error(`First browser click did not pump through original WndProc: ${JSON.stringify(firstBrowserClickPump)}`);
+    }
+    const firstBrowserClickProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const firstBrowserClickEvent = firstBrowserClickProbe.probe?.mouse?.lastEvent;
+    if (!firstBrowserClickProbe.ok
+        || firstBrowserClickProbe.probe.mouse?.lastProbeDrained !== 2
+        || firstBrowserClickEvent?.pos?.x !== 234
+        || firstBrowserClickEvent?.pos?.y !== 56
+        || firstBrowserClickEvent?.left?.state !== "up"
+        || firstBrowserClickEvent?.left?.frame !== 1) {
+      throw new Error(`First browser click did not feed Win32Mouse down/up events: ${JSON.stringify(firstBrowserClickProbe)}`);
+    }
+
+    await page.mouse.down();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "browser double-click down queue",
+    );
+    const browserDoubleClickPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserDoubleClickPump.ok
+        || browserDoubleClickPump.probe.pump?.lastPumped !== 1
+        || browserDoubleClickPump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Browser double-click did not pump through original WndProc: ${JSON.stringify(browserDoubleClickPump)}`);
+    }
+    const browserDoubleClickProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const browserDoubleClickEvent = browserDoubleClickProbe.probe?.mouse?.lastEvent;
+    if (!browserDoubleClickProbe.ok
+        || browserDoubleClickProbe.probe.mouse?.lastProbeDrained !== 1
+        || browserDoubleClickEvent?.pos?.x !== 234
+        || browserDoubleClickEvent?.pos?.y !== 56
+        || browserDoubleClickEvent?.left?.state !== "doubleClick"
+        || browserDoubleClickEvent?.left?.frame !== 1) {
+      throw new Error(`Browser double-click did not feed Win32Mouse: ${JSON.stringify(browserDoubleClickProbe)}`);
+    }
+
+    await page.mouse.up();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "browser double-click release queue",
+    );
+    const browserDoubleClickReleasePump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserDoubleClickReleasePump.ok
+        || browserDoubleClickReleasePump.probe.pump?.lastPumped !== 1
+        || browserDoubleClickReleasePump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Browser double-click release did not pump through original WndProc: ${JSON.stringify(browserDoubleClickReleasePump)}`);
+    }
+    const browserDoubleClickReleaseProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const browserDoubleClickReleaseEvent = browserDoubleClickReleaseProbe.probe?.mouse?.lastEvent;
+    if (!browserDoubleClickReleaseProbe.ok
+        || browserDoubleClickReleaseProbe.probe.mouse?.lastProbeDrained !== 1
+        || browserDoubleClickReleaseEvent?.pos?.x !== 234
+        || browserDoubleClickReleaseEvent?.pos?.y !== 56
+        || browserDoubleClickReleaseEvent?.left?.state !== "up"
+        || browserDoubleClickReleaseEvent?.left?.frame !== 1) {
+      throw new Error(`Browser double-click release did not feed Win32Mouse: ${JSON.stringify(browserDoubleClickReleaseProbe)}`);
+    }
   }
 
   const initialFrame = bootResult.state.frame;
