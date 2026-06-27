@@ -3461,13 +3461,13 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 
 add_executable(cnc-port
   src/wasm_archive_probe.cpp
+  src/wasm_browser_runtime_assets.cpp
   src/wasm_cdmanager_probe.cpp
   src/wasm_filesystem_probe.cpp
   src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
   src/wasm_wndproc_probe.cpp
   src/wasm_win32_gdi_stub.cpp
-  src/wasm_browser_device.cpp
   src/wasm_ww3d_render_probe.cpp
   src/wasm_ww3d_source_asset_probe.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
