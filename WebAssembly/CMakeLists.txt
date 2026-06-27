@@ -668,6 +668,31 @@ target_compile_options(zh_wwlib_thread PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_cpudetect STATIC
+  "${WWLIB_DIR}/cpudetect.cpp"
+)
+
+target_include_directories(zh_wwlib_cpudetect PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_cpudetect PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_cpudetect PUBLIC
+  zh_wwlib_string
+  zh_wwlib_systimer
+)
+
 add_library(zh_wwlib_mono STATIC
   "${WWLIB_DIR}/mono.cpp"
   "${WWLIB_DIR}/_mono.cpp"
@@ -4114,6 +4139,37 @@ target_link_options(wwlib-mpu-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-cpudetect-smoke
+  tests/wwlib_cpudetect_smoke.cpp
+)
+
+set_target_properties(wwlib-cpudetect-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-cpudetect-smoke PRIVATE
+  zh_wwlib_cpudetect
+)
+
+target_compile_options(wwlib-cpudetect-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-cpudetect-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
 add_executable(wwlib-legacy-platform-smoke

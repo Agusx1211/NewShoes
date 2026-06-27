@@ -127,6 +127,10 @@ const char* CPUDetectClass::Get_Processor_Manufacturer_Name()
 
 static unsigned Calculate_Processor_Speed(__int64& ticks_per_second)
 {
+	ticks_per_second = 0;
+#ifdef __EMSCRIPTEN__
+	return 0;
+#else
 	struct {
 		unsigned timer0_h;
 		unsigned timer0_l;
@@ -165,12 +169,15 @@ static unsigned Calculate_Processor_Speed(__int64& ticks_per_second)
 	__int64 t=*(__int64*)&Time.timer1_h-*(__int64*)&Time.timer0_h;
 	ticks_per_second=(__int64)((1000.0/(double)elapsed)*(double)t);	// Ticks per second
 	return unsigned((double)t/(double)(elapsed*1000));
+#endif
 }
 
 void CPUDetectClass::Init_Processor_Speed()
 {
 	if (!Has_RDTSC_Instruction()) {
 		ProcessorSpeed=0;
+		ProcessorTicksPerSecond=0;
+		InvProcessorTicksPerSecond=0;
 		return;
 	}
 
@@ -826,7 +833,9 @@ void CPUDetectClass::Init_CPUID_Instruction()
    // because CodeWarrior seems to have problems with
    // the command (huh?)
 
-#ifdef WIN32
+#ifdef __EMSCRIPTEN__
+	cpuid_available = 0;
+#elif defined(WIN32)
    __asm
    {
       mov cpuid_available, 0	// clear flag
@@ -899,7 +908,7 @@ void CPUDetectClass::Init_Processor_Features()
 
 void CPUDetectClass::Init_Memory()
 {
-#ifdef WIN32
+#if defined(WIN32) || defined(__EMSCRIPTEN__)
 
 	MEMORYSTATUS mem;
    GlobalMemoryStatus(&mem);
@@ -918,7 +927,7 @@ void CPUDetectClass::Init_Memory()
 void CPUDetectClass::Init_OS()
 {
 	OSVERSIONINFO os;
-#ifdef WIN32
+#if defined(WIN32) || defined(__EMSCRIPTEN__)
    os.dwOSVersionInfoSize = sizeof(os);
 	GetVersionEx(&os);
 
@@ -939,7 +948,15 @@ bool CPUDetectClass::CPUID(
 	unsigned& u_edx_,
 	unsigned cpuid_type)
 {
+	u_eax_=0;
+	u_ebx_=0;
+	u_ecx_=0;
+	u_edx_=0;
+
 	if (!Has_CPUID_Instruction()) return false;	// Most processors since 486 have CPUID...
+#ifdef __EMSCRIPTEN__
+	return false;
+#else
 
 	unsigned u_eax;
 	unsigned u_ebx;
@@ -981,6 +998,7 @@ bool CPUDetectClass::CPUID(
 	u_edx_=u_edx;
 
 	return true;
+#endif
 }
 
 #define SYSLOG(n) work.Format n ; CPUDetectClass::ProcessorLog+=work;
@@ -1002,9 +1020,9 @@ void CPUDetectClass::Init_Processor_Log()
 		(OSVersionBuildNumber&0xff000000)>>24,
 		(OSVersionBuildNumber&0xff0000)>>16,
 		(OSVersionBuildNumber&0xffff)));
-#ifdef WIN32
+#if defined(WIN32)
    SYSLOG(("OS-Info: %s\r\n", OSVersionExtraInfo));
-#elif defined(_UNIX)
+#elif defined(_UNIX) || defined(__EMSCRIPTEN__)
    SYSLOG(("OS-Info: %s\r\n", OSVersionExtraInfo.Peek_Buffer()));
 #endif
 
@@ -1017,9 +1035,9 @@ void CPUDetectClass::Init_Processor_Log()
 	case 2: cpu_type="Dual"; break;
 	case 3: cpu_type="*Intel Reserved*"; break;
 	}
-#ifdef WIN32
+#if defined(WIN32)
    SYSLOG(("Processor type: %s\r\n", cpu_type));
-#elif defined(_UNIX)
+#elif defined(_UNIX) || defined(__EMSCRIPTEN__)
    SYSLOG(("Processor type: %s\r\n", cpu_type.Peek_Buffer()));
 #endif
 
@@ -1068,7 +1086,7 @@ void CPUDetectClass::Init_Processor_Log()
 	}
 
 	if (CPUDetectClass::Get_L1_Instruction_Trace_Cache_Size()) {
-		SYSLOG(("L1 Instruction Trace Cache: %d way set associative, %dk µOPs\r\n",
+		SYSLOG(("L1 Instruction Trace Cache: %d way set associative, %dk uOPs\r\n",
 			CPUDetectClass::Get_L1_Instruction_Cache_Set_Associative(),
 			CPUDetectClass::Get_L1_Instruction_Cache_Size()/1024));
 	}
@@ -1098,10 +1116,12 @@ void CPUDetectClass::Init_Compact_Log()
 {
 	StringClass work(0,true);
 
-#ifdef WIN32
+#if defined(WIN32)
    TIME_ZONE_INFORMATION time_zone;
    GetTimeZoneInformation(&time_zone);
    COMPACTLOG(("%d\t", time_zone.Bias));  // get diff between local time and UTC
+#elif defined(__EMSCRIPTEN__)
+   COMPACTLOG(("0\t"));
 #elif defined(_UNIX)
    time_t t = time(NULL);
    localtime(&t);
@@ -1138,11 +1158,11 @@ public:
 		if (CPUDetectClass::Has_CPUID_Instruction()) {
 			CPUDetectClass::Init_Processor_Manufacturer();
 			CPUDetectClass::Init_Processor_Family();
-			CPUDetectClass::Init_Processor_String();
 			CPUDetectClass::Init_Processor_Features();
-			CPUDetectClass::Init_Memory();
-			CPUDetectClass::Init_OS();
 		}
+		CPUDetectClass::Init_Processor_String();
+		CPUDetectClass::Init_Memory();
+		CPUDetectClass::Init_OS();
 		CPUDetectClass::Init_Processor_Speed();
 
 		CPUDetectClass::Init_Processor_Log();

@@ -226,6 +226,9 @@ shares structure and follows behind.
 - [x] Consolidate the `mmsystem.h`/`timeGetTime`, `GetTickCount`, and
       `QueryPerformanceCounter` shims onto the browser `emscripten_get_now()`
       timing source, with harness state coverage for the Win32 timing surface.
+- [x] Route the browser `GlobalMemoryStatus` shim through Emscripten heap
+      size/max queries so original system-capability logs report the wasm
+      memory contract instead of zero-filled placeholders.
 - [ ] Replace the current browser `FastCriticalSectionClass` spin lock with a
       pthread-aware yield/wait path before enabling shared-memory wasm threads.
 - [ ] Continue the legacy enum-forward audit for the remaining original
@@ -346,6 +349,13 @@ shares structure and follows behind.
 - [x] `WWVegas/WWLib` system timer wrappers (`_timer.cpp`, `systimer.cpp`,
       `stimer.cpp`) compile against browser WinMM timing shims and
       smoke-test the legacy `FrameTimer`/`TickCount` globals.
+- [x] `WWVegas/WWLib` CPU detection/system log (`cpudetect.cpp`) compiles
+      under wasm and smoke-tests conservative browser reporting: CPUID, RDTSC,
+      SIMD, CPU MHz, and cache details unavailable; OS and memory values routed
+      through the browser Win32 shims.
+- [ ] Decide whether `CPUDetectClass` should expose browser
+      `hardwareConcurrency`/device-memory hints later, or keep reporting only
+      the conservative wasm capability contract.
 - [x] `WWVegas/WWLib` mutex and critical-section wrappers (`mutex.cpp`)
       compile against browser Win32 synchronization shims and smoke-test
       original `MutexClass`, `CriticalSectionClass`, and

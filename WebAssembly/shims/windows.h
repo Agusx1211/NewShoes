@@ -19,6 +19,7 @@
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
+#include <emscripten/heap.h>
 #endif
 
 #ifndef IN
@@ -820,6 +821,29 @@ static inline void GlobalMemoryStatus(MEMORYSTATUS *status)
 
 	std::memset(status, 0, sizeof(*status));
 	status->dwLength = sizeof(*status);
+#if defined(__EMSCRIPTEN__)
+	const std::size_t heap_size = emscripten_get_heap_size();
+	const std::size_t heap_max = emscripten_get_heap_max();
+	const uintptr_t *sbrk_ptr = emscripten_get_sbrk_ptr();
+	const std::size_t dynamic_top = sbrk_ptr != nullptr ? static_cast<std::size_t>(*sbrk_ptr) : 0;
+	const std::size_t physical_available = dynamic_top < heap_size ? heap_size - dynamic_top : 0;
+	const std::size_t virtual_total = heap_max > 0 ? heap_max : heap_size;
+	const std::size_t virtual_available = dynamic_top < virtual_total ? virtual_total - dynamic_top : physical_available;
+	const std::size_t dword_max = static_cast<std::size_t>(~static_cast<DWORD>(0));
+	const auto clamp_dword = [dword_max](std::size_t value) -> DWORD {
+		return static_cast<DWORD>(value > dword_max ? dword_max : value);
+	};
+
+	status->dwMemoryLoad = heap_size > 0
+		? static_cast<DWORD>((static_cast<std::uint64_t>(heap_size - physical_available) * 100ULL) / heap_size)
+		: 0;
+	status->dwTotalPhys = clamp_dword(heap_size);
+	status->dwAvailPhys = clamp_dword(physical_available);
+	status->dwTotalPageFile = clamp_dword(virtual_total);
+	status->dwAvailPageFile = clamp_dword(virtual_available);
+	status->dwTotalVirtual = clamp_dword(virtual_total);
+	status->dwAvailVirtual = clamp_dword(virtual_available);
+#endif
 }
 
 static inline HANDLE GetProcessHeap()
