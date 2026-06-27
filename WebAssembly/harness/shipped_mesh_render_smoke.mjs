@@ -28,9 +28,10 @@ const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
 const meshArchiveEntry = "Art\\W3D\\CINE_Moon.W3D";
-const meshRangeMountPath = "/range-probe/Art/W3D/CINE_Moon.W3D";
+const multiTextureMeshArchiveEntry = "Art\\W3D\\CBNukeC_DS.W3D";
 const textureArchiveEntry = "Art\\Textures\\cine_moon.dds";
-const textureRangeMountPath = "/range-probe/Art/Textures/cine_moon.dds";
+const multiTextureStage0ArchiveEntry = "Art\\Textures\\psblink.dds";
+const multiTextureStage1ArchiveEntry = "Art\\Textures\\psgrad.dds";
 const runtimeArchivePath = "/assets/runtime";
 const meshArchiveMemfsPath = `${runtimeArchivePath}/W3DZH.big`;
 const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
@@ -122,57 +123,76 @@ try {
     throw new Error(`cnc-port boot failed before W3DZH mount: ${JSON.stringify(bootResult)}`);
   }
 
-  const meshMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
-    url: archiveUrl,
-    path: meshRangeMountPath,
-    sourceArchive: archivePath,
-    entry: meshArchiveEntry,
-  });
-  if (!meshMountResult.ok
-      || meshMountResult.asset?.path !== meshRangeMountPath
-      || meshMountResult.asset?.archiveEntry !== meshArchiveEntry
-      || meshMountResult.asset?.offset !== 91765912
-      || meshMountResult.asset?.bytes !== 594
-      || meshMountResult.asset?.reader !== "browser fetch Range") {
-    throw new Error(`cine_moon.w3d mount failed: ${JSON.stringify(meshMountResult)}`);
-  }
-
-  const textureMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
-    url: textureArchiveUrl,
-    path: textureRangeMountPath,
-    sourceArchive: textureArchivePath,
-    entry: textureArchiveEntry,
-  });
-  if (!textureMountResult.ok
-      || textureMountResult.asset?.path !== textureRangeMountPath
-      || textureMountResult.asset?.archiveEntry !== textureArchiveEntry
-      || textureMountResult.asset?.offset !== 137149396
-      || textureMountResult.asset?.bytes !== 87536
-      || textureMountResult.asset?.reader !== "browser fetch Range") {
-    throw new Error(`cine_moon.dds mount failed: ${JSON.stringify(textureMountResult)}`);
-  }
-
-  const archiveMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountArchives", payload), {
+  const archiveMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
     path: runtimeArchivePath,
     archives: [
       {
         url: archiveUrl,
         name: "W3DZH.big",
-        expectedBytes: archiveStat.size,
+        expectedSourceBytes: archiveStat.size,
+        sourceArchive: archivePath,
+        entries: [
+          meshArchiveEntry,
+          multiTextureMeshArchiveEntry,
+        ],
       },
       {
         url: textureArchiveUrl,
         name: "TexturesZH.big",
-        expectedBytes: textureArchiveStat.size,
+        expectedSourceBytes: textureArchiveStat.size,
+        sourceArchive: textureArchivePath,
+        entries: [
+          textureArchiveEntry,
+          multiTextureStage0ArchiveEntry,
+          multiTextureStage1ArchiveEntry,
+        ],
       },
     ],
   });
+  const rangeMeshArchive = archiveMountResult.archiveSet?.archives?.[0];
+  const rangeTextureArchive = archiveMountResult.archiveSet?.archives?.[1];
+  const cineMoonMeshEntry = rangeMeshArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === meshArchiveEntry.toLowerCase());
+  const multiTextureMeshEntry = rangeMeshArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === multiTextureMeshArchiveEntry.toLowerCase());
+  const cineMoonTextureEntry = rangeTextureArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === textureArchiveEntry.toLowerCase());
+  const multiTextureStage0Entry = rangeTextureArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === multiTextureStage0ArchiveEntry.toLowerCase());
+  const multiTextureStage1Entry = rangeTextureArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === multiTextureStage1ArchiveEntry.toLowerCase());
   if (!archiveMountResult.ok
+      || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
       || archiveMountResult.archiveSet?.archiveCount !== 2
-      || archiveMountResult.archiveSet?.totalBytes !== archiveStat.size + textureArchiveStat.size
-      || archiveMountResult.archiveSet?.archives?.[0]?.path !== meshArchiveMemfsPath
-      || archiveMountResult.archiveSet?.archives?.[1]?.path !== textureArchiveMemfsPath
+      || archiveMountResult.archiveSet?.storage !== "range-backed-subset-big"
+      || archiveMountResult.archiveSet?.reader !== "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem"
+      || archiveMountResult.archiveSet?.sourceTotalBytes !== archiveStat.size + textureArchiveStat.size
+      || archiveMountResult.archiveSet?.totalBytes >= archiveMountResult.archiveSet?.sourceTotalBytes
+      || rangeMeshArchive?.path !== meshArchiveMemfsPath
+      || rangeMeshArchive?.storage !== "range-backed-subset-big"
+      || rangeMeshArchive?.reader !== "browser fetch Range -> synthesized BIG"
+      || rangeMeshArchive?.sourceBytes !== archiveStat.size
+      || rangeMeshArchive?.entryCount !== 2
+      || rangeTextureArchive?.path !== textureArchiveMemfsPath
+      || rangeTextureArchive?.storage !== "range-backed-subset-big"
+      || rangeTextureArchive?.reader !== "browser fetch Range -> synthesized BIG"
+      || rangeTextureArchive?.sourceBytes !== textureArchiveStat.size
+      || rangeTextureArchive?.entryCount !== 3
+      || archiveMountResult.archiveSet?.probes?.length !== 2
+      || archiveMountResult.archiveSet.probes.some((probe) => !probe.ok)
+      || cineMoonMeshEntry?.sourceOffset !== 91765912
+      || cineMoonMeshEntry?.bytes !== 594
+      || cineMoonMeshEntry?.reader !== "browser fetch Range"
+      || multiTextureMeshEntry?.bytes !== 8164
+      || multiTextureMeshEntry?.reader !== "browser fetch Range"
+      || cineMoonTextureEntry?.sourceOffset !== 137149396
+      || cineMoonTextureEntry?.bytes !== 87536
+      || cineMoonTextureEntry?.reader !== "browser fetch Range"
+      || multiTextureStage0Entry?.bytes <= 0
+      || multiTextureStage0Entry?.reader !== "browser fetch Range"
+      || multiTextureStage1Entry?.bytes <= 0
+      || multiTextureStage1Entry?.reader !== "browser fetch Range"
       || archiveMountResult.state?.archiveMount?.registered !== true
       || archiveMountResult.state?.archiveMount?.directory !== `${runtimeArchivePath}/`
       || archiveMountResult.state?.archiveMount?.fileMask !== "*.big"
@@ -399,22 +419,22 @@ try {
       mesh: {
         sourceArchive: archivePath,
         archiveUrl,
-        archiveEntry: meshMountResult.asset.archiveEntry,
-        offset: meshMountResult.asset.offset,
-        bytes: meshMountResult.asset.bytes,
-        indexedEntries: meshMountResult.asset.indexedEntries,
-        directoryBytes: meshMountResult.asset.directoryBytes,
-        mount: meshMountResult.asset,
+        archiveEntry: cineMoonMeshEntry.path,
+        offset: cineMoonMeshEntry.sourceOffset,
+        bytes: cineMoonMeshEntry.bytes,
+        indexedEntries: cineMoonMeshEntry.sourceIndexedEntries,
+        directoryBytes: cineMoonMeshEntry.sourceDirectoryBytes,
+        mount: rangeMeshArchive,
       },
       texture: {
         sourceArchive: textureArchivePath,
         archiveUrl: textureArchiveUrl,
-        archiveEntry: textureMountResult.asset.archiveEntry,
-        offset: textureMountResult.asset.offset,
-        bytes: textureMountResult.asset.bytes,
-        indexedEntries: textureMountResult.asset.indexedEntries,
-        directoryBytes: textureMountResult.asset.directoryBytes,
-        mount: textureMountResult.asset,
+        archiveEntry: cineMoonTextureEntry.path,
+        offset: cineMoonTextureEntry.sourceOffset,
+        bytes: cineMoonTextureEntry.bytes,
+        indexedEntries: cineMoonTextureEntry.sourceIndexedEntries,
+        directoryBytes: cineMoonTextureEntry.sourceDirectoryBytes,
+        mount: rangeTextureArchive,
       },
     },
     screenshots: {
@@ -427,7 +447,7 @@ try {
     multiTextureProbe: multiTextureRenderResult.probe,
     multiTextureBrowserProbe: multiTextureRenderResult.browserProbe,
     multiTextureDelta: multiTextureRenderResult.textureDelta,
-    reader: "runtime-owned Win32BIGFileSystem archives in MEMFS; browser Range entry probe kept separate",
+    reader: "browser Range subset BIGs registered through runtime-owned Win32BIGFileSystem",
     renderer: "WW3D::Render + browser D3D8/WebGL2 bridge",
   }, null, 2));
 } finally {

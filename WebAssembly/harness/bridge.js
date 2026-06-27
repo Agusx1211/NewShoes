@@ -3799,6 +3799,17 @@ function readBigUInt32BE(bytes, offset) {
     bytes[offset + 3];
 }
 
+function writeBigUInt32BE(bytes, offset, value) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new Error(`BIG archive integer out of range: ${value}`);
+  }
+
+  bytes[offset] = Math.floor(value / 0x1000000) & 0xff;
+  bytes[offset + 1] = Math.floor(value / 0x10000) & 0xff;
+  bytes[offset + 2] = Math.floor(value / 0x100) & 0xff;
+  bytes[offset + 3] = value & 0xff;
+}
+
 function appendBytes(left, right) {
   const combined = new Uint8Array(left.byteLength + right.byteLength);
   combined.set(left, 0);
@@ -3893,6 +3904,210 @@ async function extractBigEntryFromUrl(url, entryName) {
   }
 
   throw new Error(`${entryName} was not found in ${url}`);
+}
+
+function buildBigArchive(entries) {
+  const encoder = new TextEncoder();
+  const normalizedEntries = entries.map((entry) => {
+    const path = String(entry.path ?? "").replaceAll("/", "\\");
+    if (!path || path.includes("\0")) {
+      throw new Error(`Invalid BIG archive entry path: ${path}`);
+    }
+
+    const pathBytes = encoder.encode(path);
+    const bytes = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(entry.bytes ?? []);
+    return {
+      ...entry,
+      path,
+      pathBytes,
+      bytes,
+    };
+  });
+
+  const directoryBytes = normalizedEntries.reduce(
+    (sum, entry) => sum + 8 + entry.pathBytes.byteLength + 1,
+    0,
+  );
+  const dataStart = 0x10 + directoryBytes;
+  const totalBytes = dataStart + normalizedEntries.reduce(
+    (sum, entry) => sum + entry.bytes.byteLength,
+    0,
+  );
+  if (totalBytes > 0xffffffff) {
+    throw new Error(`Synthesized BIG archive is too large: ${totalBytes}`);
+  }
+
+  const archiveBytes = new Uint8Array(totalBytes);
+  archiveBytes.set([0x42, 0x49, 0x47, 0x46], 0); // BIGF
+  writeBigUInt32BE(archiveBytes, 4, totalBytes);
+  writeBigUInt32BE(archiveBytes, 8, normalizedEntries.length);
+  writeBigUInt32BE(archiveBytes, 12, 0);
+
+  let directoryCursor = 0x10;
+  let dataCursor = dataStart;
+  const manifest = [];
+  for (const entry of normalizedEntries) {
+    writeBigUInt32BE(archiveBytes, directoryCursor, dataCursor);
+    writeBigUInt32BE(archiveBytes, directoryCursor + 4, entry.bytes.byteLength);
+    archiveBytes.set(entry.pathBytes, directoryCursor + 8);
+    archiveBytes[directoryCursor + 8 + entry.pathBytes.byteLength] = 0;
+    archiveBytes.set(entry.bytes, dataCursor);
+    manifest.push({
+      path: entry.path,
+      bytes: entry.bytes.byteLength,
+      offset: dataCursor,
+      sourceOffset: entry.offset,
+      sourceArchive: entry.sourceArchive,
+      sourceIndexedEntries: entry.indexedEntries,
+      sourceDirectoryBytes: entry.directoryBytes,
+      reader: "browser fetch Range",
+    });
+    directoryCursor += 8 + entry.pathBytes.byteLength + 1;
+    dataCursor += entry.bytes.byteLength;
+  }
+
+  return {
+    bytes: archiveBytes,
+    entries: manifest,
+    directoryBytes,
+    dataStart,
+  };
+}
+
+async function mountRangeBackedArchiveSet(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountRangeBackedArchiveSet");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+
+  const archiveInputs = Array.isArray(payload.archives) ? payload.archives : [];
+  if (archiveInputs.length === 0) {
+    return { ok: false, command: "mountRangeBackedArchiveSet", error: "Missing archive list" };
+  }
+
+  const baseDirectory = normalizeAssetDirectory(String(payload.path ?? "/assets/runtime"));
+  if (!baseDirectory) {
+    return {
+      ok: false,
+      command: "mountRangeBackedArchiveSet",
+      error: `Archive directory must stay under /assets/: ${payload.path}`,
+    };
+  }
+
+  const archives = [];
+  const archiveProbes = [];
+  for (const input of archiveInputs) {
+    const archive = archivePathFromPayload(input, baseDirectory);
+    if (archive.error) {
+      return { ok: false, command: "mountRangeBackedArchiveSet", error: archive.error, archives };
+    }
+
+    const entryNames = Array.isArray(input.entries) ? input.entries : [];
+    if (entryNames.length === 0) {
+      return {
+        ok: false,
+        command: "mountRangeBackedArchiveSet",
+        error: `Missing range-backed entries for ${archive.name}`,
+        archives,
+      };
+    }
+
+    const entries = [];
+    try {
+      for (const entryName of entryNames) {
+        const entry = await extractBigEntryFromUrl(archive.url, entryName);
+        entries.push({
+          ...entry,
+          sourceArchive: String(input.sourceArchive ?? archive.url),
+        });
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        command: "mountRangeBackedArchiveSet",
+        error: error?.message ?? String(error),
+        archives,
+      };
+    }
+
+    let generated;
+    try {
+      generated = buildBigArchive(entries);
+      ensureMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(archive.memfsPath));
+      moduleResult.wasmModule.fs.writeFile(archive.memfsPath, generated.bytes);
+    } catch (error) {
+      return {
+        ok: false,
+        command: "mountRangeBackedArchiveSet",
+        error: error?.message ?? String(error),
+        archives,
+      };
+    }
+
+    const assetProbe = payload.verifyEach === false
+      ? null
+      : probeArchive(moduleResult.wasmModule, archive.memfsPath);
+    const mountedArchive = {
+      name: archive.name,
+      path: archive.memfsPath,
+      bytes: generated.bytes.byteLength,
+      sourceBytes: Number(input.expectedSourceBytes ?? input.sourceBytes ?? 0),
+      directoryBytes: generated.directoryBytes,
+      dataStart: generated.dataStart,
+      entries: generated.entries,
+      entryCount: generated.entries.length,
+      reader: "browser fetch Range -> synthesized BIG",
+      storage: "range-backed-subset-big",
+    };
+    archives.push(mountedArchive);
+    if (assetProbe) {
+      archiveProbes.push({
+        name: archive.name,
+        path: archive.memfsPath,
+        ok: Boolean(assetProbe.ok),
+        indexedFiles: assetProbe.indexedFiles,
+        sampleBytes: assetProbe.sampleBytes,
+      });
+    }
+  }
+
+  const probePath = `${baseDirectory}/*.big`;
+  const aggregateProbe = probeArchive(moduleResult.wasmModule, probePath);
+  rememberMountedArchives(archives);
+
+  const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
+  const ok = Boolean(aggregateProbe?.ok) && allArchiveProbesOk;
+  const totalBytes = archives.reduce((sum, archive) => sum + archive.bytes, 0);
+  const sourceTotalBytes = archives.reduce((sum, archive) => sum + archive.sourceBytes, 0);
+  const archiveSet = {
+    path: baseDirectory,
+    probePath,
+    archiveCount: archives.length,
+    totalBytes,
+    sourceTotalBytes,
+    archives,
+    probes: archiveProbes,
+    reader: "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem",
+    storage: "range-backed-subset-big",
+  };
+  if (ok) {
+    registerArchiveSet(moduleResult.wasmModule, archiveSet);
+  }
+
+  recordLog("range-backed archive set mounted", {
+    path: baseDirectory,
+    archiveCount: archives.length,
+    totalBytes,
+    sourceTotalBytes,
+    ok,
+  });
+
+  return {
+    ok,
+    command: "mountRangeBackedArchiveSet",
+    state: snapshotState(),
+    archiveSet,
+  };
 }
 
 async function mountBigArchiveEntry(payload = {}) {
@@ -4005,6 +4220,8 @@ async function rpc(command, payload = {}) {
       return mountArchive(payload);
     case "mountArchives":
       return mountArchives(payload);
+    case "mountRangeBackedArchiveSet":
+      return mountRangeBackedArchiveSet(payload);
     case "mountBigArchiveEntry":
       return mountBigArchiveEntry(payload);
     case "mountShippedMeshAsset":
