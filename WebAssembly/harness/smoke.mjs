@@ -1011,6 +1011,48 @@ try {
     throw new Error(`D3D8 textured quad probe failed: ${JSON.stringify(d3d8TexturedQuadResult)}`);
   }
 
+  const d3d8TextureMipChainResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureMipChainDraw"));
+  const mipCases = d3d8TextureMipChainResult.cases ?? [];
+  const mipCaseNames = mipCases.map((entry) => entry.probe?.caseName).join(",");
+  const mipCenters = mipCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const mipUsed = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.usedMipmaps).join(",");
+  const mipComplete = mipCases.map((entry) => entry.browserProbe?.texture0?.completeMipChain).join(",");
+  const mipGlMin = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.gl?.minFilter).join(",");
+  if (!d3d8TextureMipChainResult.ok
+      || mipCases.length !== 2
+      || mipCaseNames !== "IncompleteMipFallback,CompleteMipChain"
+      || mipCenters !== "255,0,0,255|0,0,255,255"
+      || mipUsed !== "false,true"
+      || mipComplete !== "false,true"
+      || mipGlMin !== "9728,9984"
+      || mipCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_mip_chain_draw_probe")
+      || mipCases.some((entry) => entry.probe?.calls?.createTexture !== 1)
+      || mipCases.some((entry) => entry.probe?.calls?.browserTextureBind !== 1)
+      || mipCases.some((entry) => entry.probe?.calls?.browserTextureRelease !== 1)
+      || mipCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 14)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.d3d?.mipFilter !== 1)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.requestedMipmaps !== true)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.supported !== true)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.levels !== 3)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.combiner?.opName !== "selectArg1")
+      || mipCases.some((entry) => entry.centerPixelOk !== true)
+      || mipCases[0]?.probe?.texture?.uploadedLevels !== 1
+      || mipCases[0]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0"
+      || mipCases[0]?.browserProbe?.texture0?.sampler?.fallbackReason !== "incomplete mip chain"
+      || mipCases[0]?.textureDelta?.updates !== 1
+      || mipCases[1]?.probe?.texture?.uploadedLevels !== 3
+      || mipCases[1]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0,1,2"
+      || mipCases[1]?.browserProbe?.texture0?.sampler?.fallbackReason !== null
+      || mipCases[1]?.textureDelta?.updates !== 3
+      || mipCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || mipCases.some((entry) => entry.textureDelta?.binds !== 1)
+      || mipCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)
+      || mipCases.some((entry) => entry.textureDelta?.releases !== 1)
+      || mipCases.some((entry) => entry.textureDelta?.samplerApplications !== 1)
+      || mipCases.some((entry) => entry.textureProbe?.live !== 0)) {
+    throw new Error(`D3D8 texture mip-chain probe failed: ${JSON.stringify(d3d8TextureMipChainResult)}`);
+  }
+
   const d3d8TextureCombinerResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureCombiner"));
   const combinerCases = d3d8TextureCombinerResult.cases ?? [];
   const combinerCaseNames = combinerCases.map((entry) => entry.probe?.caseName).join(",");

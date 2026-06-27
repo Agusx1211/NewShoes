@@ -2486,8 +2486,8 @@ shares structure and follows behind.
       browser-driven probe renders all three formats with point sampling and
       alpha blending where needed, and Playwright verifies center pixels,
       shader semantic modes, lifecycle deltas, and raw upload metadata. Real
-      DDS/DXT payloads, palette textures, mip chains, and multi-stage texture
-      sampling remain open.
+      DDS/DXT payloads, palette textures, asset-derived mip chains, and
+      multi-stage texture sampling remain open.
 - [x] Add the first real browser compressed-texture bridge for synthetic DXT
       payloads: the D3D8 shim now sizes and locks `DXT1`/`DXT3`/`DXT5`
       surfaces as 4x4 block-compressed data, rejects unsafe partial rect locks,
@@ -2498,6 +2498,22 @@ shares structure and follows behind.
       path, with Playwright center-pixel and lifecycle assertions. Real DDS
       asset loading, full mip chains, DXT2/DXT4 premultiplied-alpha policy, and
       block-aligned compressed sub-rect updates remain open.
+- [x] Prove the current stage-0 WebGL2 draw bridge handles D3D8 mip-chain
+      completeness correctly for synthetic uploaded textures. A new
+      browser-driven D3D8 mip-chain draw probe creates a three-level
+      `A8R8G8B8` texture, renders an incomplete level-0-only case that must
+      fall back to non-mip sampling, then renders a fully uploaded 4x4/2x2/1x1
+      chain with `D3DTEXF_POINT` mip filtering and minified UVs that visibly
+      sample the smallest mip. Playwright verifies center pixels, initialized
+      levels, `completeMipChain`, WebGL `NEAREST_MIPMAP_NEAREST` selection,
+      fallback metadata, and lifecycle deltas. Real DDS/DXT asset-derived mip
+      loading, generated mip policy, `D3DTSS_MAXMIPLEVEL`/`MIPMAPLODBIAS`
+      application, multi-stage sampling, and generalized texture declarations
+      remain open.
+- [ ] Apply captured D3D8 `D3DTSS_MAXMIPLEVEL` and `D3DTSS_MIPMAPLODBIAS`
+      sampler state in the WebGL2 texture bridge once complete mip chains are
+      available, and prove the LOD clamp/bias behavior through a focused
+      browser draw probe.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

@@ -2139,6 +2139,11 @@ function paintD3D8DrawIndexed(payload = {}) {
       id: texture0Id,
       ready: texture0Ready,
       sampled: canSampleTexture0,
+      levels: texture0Resource?.levels ?? 0,
+      initializedLevels: texture0Resource
+        ? Array.from(texture0Resource.initializedLevels).map((level) => Number(level)).sort((a, b) => a - b)
+        : [],
+      completeMipChain: textureHasCompleteMipChain(texture0Resource),
       texCoordIndex: texture0Coordinates.texCoordIndex,
       texCoordMode: texture0Coordinates.mode,
       texCoordModeName: texture0Coordinates.modeName,
@@ -2302,6 +2307,7 @@ async function loadWasmModule() {
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
+      probeD3D8TextureMipChainDraw: module.cwrap("cnc_port_probe_d3d8_texture_mip_chain_draw", "string", ["number"]),
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
@@ -3345,6 +3351,88 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureProbe,
           textureDelta,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TextureMipChainDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 texture mip-chain probe cannot run" };
+        }
+        const cases = [];
+        for (const caseId of [0, 1]) {
+          const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8TextureMipChainDraw(caseId));
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+            samplerApplications: (textureProbe?.samplerApplications ?? 0) -
+              (beforeTextures.samplerApplications ?? 0),
+          };
+          const expectedCenter = Array.isArray(probe.expectedCenter)
+            ? probe.expectedCenter
+            : [0, 0, 0, 255];
+          const expectedUploads = Number(probe.texture?.uploadedLevels ?? 0) >>> 0;
+          const expectedComplete = Boolean(probe.texture?.completeMipChain);
+          const expectedGlMin = expectedComplete ? gl.NEAREST_MIPMAP_NEAREST : gl.NEAREST;
+          const expectedFallback = expectedComplete ? null : "incomplete mip chain";
+          const centerPixelOk = browserProbe?.centerPixel
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 8);
+          const caseOk = Boolean(probe.ok)
+            && probe.source === "browser_d3d8_texture_mip_chain_draw_probe"
+            && probe.calls?.createTexture === 1
+            && probe.calls?.textureLockRect === expectedUploads
+            && probe.calls?.textureUnlockRect === expectedUploads
+            && probe.calls?.browserTextureUpdate === expectedUploads
+            && probe.calls?.browserTextureBind === 1
+            && probe.calls?.browserTextureRelease === 1
+            && probe.calls?.setTextureStageState === 14
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.ok === true
+            && browserProbe?.texture0?.id === probe.texture?.id
+            && browserProbe?.texture0?.format === D3DFMT_A8R8G8B8
+            && browserProbe?.texture0?.sampled === true
+            && browserProbe?.texture0?.levels === 3
+            && browserProbe?.texture0?.uploads === expectedUploads
+            && browserProbe?.texture0?.initializedLevels?.join(",") ===
+              probe.texture?.initializedLevels?.join(",")
+            && browserProbe?.texture0?.completeMipChain === expectedComplete
+            && browserProbe?.texture0?.sampler?.d3d?.minFilter === D3DTEXF_POINT
+            && browserProbe?.texture0?.sampler?.d3d?.magFilter === D3DTEXF_POINT
+            && browserProbe?.texture0?.sampler?.d3d?.mipFilter === D3DTEXF_POINT
+            && browserProbe?.texture0?.sampler?.completeMipChain === expectedComplete
+            && browserProbe?.texture0?.sampler?.requestedMipmaps === true
+            && browserProbe?.texture0?.sampler?.usedMipmaps === expectedComplete
+            && browserProbe?.texture0?.sampler?.fallbackReason === expectedFallback
+            && browserProbe?.texture0?.sampler?.gl?.minFilter === expectedGlMin
+            && browserProbe?.texture0?.combiner?.opName === "selectArg1"
+            && centerPixelOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === expectedUploads
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureDelta.samplerApplications === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureProbe,
+            textureDelta,
+            centerPixelOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
           state: snapshotState(),
         };
       }
