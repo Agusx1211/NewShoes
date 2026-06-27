@@ -6,6 +6,7 @@ const gl = canvas.getContext("webgl2", {
   stencil: false,
   preserveDrawingBuffer: true,
 });
+const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
@@ -29,6 +30,9 @@ const D3DFMT_X4R4G4B4 = 30;
 const D3DFMT_P8 = 41;
 const D3DFMT_L8 = 50;
 const D3DFMT_A8L8 = 51;
+const D3DFMT_DXT1 = 0x31545844;
+const D3DFMT_DXT3 = 0x33545844;
+const D3DFMT_DXT5 = 0x35545844;
 const GL_GREEN = 0x1904;
 const D3DZB_FALSE = 0;
 const D3DZB_TRUE = 1;
@@ -542,6 +546,51 @@ function d3d8TextureFormatInfo(format) {
         storage: "rg8-luminance-alpha",
         swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: GL_GREEN },
         semantic: "luminanceAlpha",
+      };
+    case D3DFMT_DXT1:
+      return s3tc ? {
+        d3dFormat,
+        supported: true,
+        compressed: true,
+        internalFormat: s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT,
+        format: 0,
+        type: 0,
+        storage: "dxt1",
+        blockBytes: 8,
+      } : {
+        d3dFormat,
+        supported: false,
+        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT1 upload",
+      };
+    case D3DFMT_DXT3:
+      return s3tc ? {
+        d3dFormat,
+        supported: true,
+        compressed: true,
+        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+        format: 0,
+        type: 0,
+        storage: "dxt3",
+        blockBytes: 16,
+      } : {
+        d3dFormat,
+        supported: false,
+        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT3 upload",
+      };
+    case D3DFMT_DXT5:
+      return s3tc ? {
+        d3dFormat,
+        supported: true,
+        compressed: true,
+        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT,
+        format: 0,
+        type: 0,
+        storage: "dxt5",
+        blockBytes: 16,
+      } : {
+        d3dFormat,
+        supported: false,
+        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT5 upload",
       };
     case D3DFMT_P8:
       return {
@@ -1125,8 +1174,22 @@ function updateD3D8Texture(payload = {}) {
     return 0;
   }
 
-  const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height);
-  const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
+  if (info.compressed && (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height)) {
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id,
+      level,
+      format,
+      reason: "compressed DXT sub-rectangle updates are not implemented",
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+
+  const convertedBytes = info.compressed
+    ? payload.bytes
+    : convertD3D8TextureBytes(format, payload.bytes, width, height);
+  const uploadBytes = info.compressed ? convertedBytes : d3d8TextureUploadView(info, convertedBytes);
   resource.storage = info.storage;
   resource.semantic = info.semantic || null;
   const levelKey = String(level);
@@ -1137,7 +1200,9 @@ function updateD3D8Texture(payload = {}) {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     if (!levelInitialized || levelFormat !== info.storage) {
-      if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
+      if (info.compressed) {
+        gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
+      } else if (x === 0 && y === 0 && width === levelSize.width && height === levelSize.height) {
         gl.texImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0,
           info.format, info.type, uploadBytes);
       } else {
@@ -1148,7 +1213,11 @@ function updateD3D8Texture(payload = {}) {
       resource.initializedLevels.add(levelKey);
       resource.levelFormats.set(levelKey, info.storage);
     } else {
-      gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
+      if (info.compressed) {
+        gl.compressedTexImage2D(gl.TEXTURE_2D, level, info.internalFormat, width, height, 0, uploadBytes);
+      } else {
+        gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
+      }
     }
     swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
@@ -1157,7 +1226,7 @@ function updateD3D8Texture(payload = {}) {
   d3d8TextureStats.updates += 1;
   let samplePixel = null;
   let legacySamplePixel = null;
-  if (level === 0) {
+  if (level === 0 && !info.compressed) {
     samplePixel = sampleD3D8TexturePixel(resource, x, y);
     if (samplePixel && info.semantic) {
       legacySamplePixel = decodeLegacyD3D8PixelFromRgba(samplePixel, info.semantic);
@@ -1172,6 +1241,8 @@ function updateD3D8Texture(payload = {}) {
     height,
     format,
     storage: info.storage,
+    compressed: Boolean(info.compressed),
+    blockBytes: Number(info.blockBytes ?? 0) >>> 0,
     semantic: info.semantic || null,
     swizzle: swizzleApplied,
     pitch: Number(payload.pitch ?? 0) >>> 0,
@@ -2236,6 +2307,7 @@ async function loadWasmModule() {
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
+      probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -3649,6 +3721,85 @@ async function rpc(command, payload = {}) {
           ok: cases.every((entry) => entry.ok),
           command,
           cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8DxtTextureDraw":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 DXT texture draw probe cannot run" };
+        }
+        const cases = [];
+        for (const caseId of [0, 1, 2]) {
+          clearCanvas({ rgba: [0, 0, 0, 255] });
+          harnessState.graphics = {
+            ...harnessState.graphics,
+            lastD3D8DrawIndexed: null,
+          };
+          const before = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8DxtTextureDraw(caseId));
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (before.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (before.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (before.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (before.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (before.releases ?? 0),
+            unsupportedUpdates: (textureProbe?.unsupportedUpdates ?? 0) - (before.unsupportedUpdates ?? 0),
+            samplerApplications: (textureProbe?.samplerApplications ?? 0) - (before.samplerApplications ?? 0),
+          };
+          const expectedCenter = Array.isArray(probe.expectedCenter)
+            ? probe.expectedCenter
+            : [0, 0, 0, 255];
+          const centerPixelOk = browserProbe?.centerPixel
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+          const lastUpdate = textureProbe?.lastUpdate ?? null;
+          const caseOk = Boolean(probe.ok)
+            && probe.source === "browser_d3d8_dxt_texture_draw_probe"
+            && probe.calls?.createTexture === 1
+            && probe.calls?.textureLockRect === 2
+            && probe.calls?.textureUnlockRect === 1
+            && probe.results?.partialLock !== 0
+            && probe.calls?.browserTextureUpdate === 1
+            && probe.calls?.browserTextureBind === 1
+            && probe.calls?.browserTextureRelease === 1
+            && probe.calls?.setTextureStageState === 14
+            && lastUpdate?.compressed === true
+            && lastUpdate?.blockBytes === probe.texture?.blockBytes
+            && lastUpdate?.byteSize === probe.texture?.byteSize
+            && lastUpdate?.convertedByteSize === probe.texture?.byteSize
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.ok === true
+            && browserProbe?.texture0?.id === probe.texture?.id
+            && browserProbe?.texture0?.format === probe.texture?.format
+            && browserProbe?.texture0?.sampled === true
+            && browserProbe?.texture0?.combiner?.supported === true
+            && browserProbe?.texture0?.sampler?.supported === true
+            && centerPixelOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === 1
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureDelta.unsupportedUpdates === 0
+            && textureDelta.samplerApplications === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureDelta,
+            lastUpdate,
+            centerPixelOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
+          s3tc: Boolean(s3tc),
           state: snapshotState(),
         };
       }

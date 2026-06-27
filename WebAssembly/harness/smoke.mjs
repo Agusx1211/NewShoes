@@ -1138,6 +1138,37 @@ try {
     throw new Error(`D3D8 legacy texture draw probe failed: ${JSON.stringify(d3d8LegacyTextureDrawResult)}`);
   }
 
+  const d3d8DxtTextureDrawResult = await page.evaluate(() => window.CnCPort.rpc("d3d8DxtTextureDraw"));
+  const dxtDrawCases = d3d8DxtTextureDrawResult.cases ?? [];
+  const dxtDrawNames = dxtDrawCases.map((entry) => entry.probe?.caseName).join(",");
+  const dxtDrawCenters = dxtDrawCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const dxtDrawBlocks = dxtDrawCases.map((entry) => entry.lastUpdate?.blockBytes).join(",");
+  if (!d3d8DxtTextureDrawResult.ok
+      || d3d8DxtTextureDrawResult.s3tc !== true
+      || dxtDrawCases.length !== 3
+      || dxtDrawNames !== "DXT1Red,DXT3AlphaRed,DXT5AlphaRed"
+      || dxtDrawCenters !== "255,0,0,255|136,0,0,255|128,0,0,255"
+      || dxtDrawBlocks !== "8,16,16"
+      || dxtDrawCases.some((entry) => entry.probe?.source !== "browser_d3d8_dxt_texture_draw_probe")
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.createTexture !== 1)
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.textureLockRect !== 2)
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.textureUnlockRect !== 1)
+      || dxtDrawCases.some((entry) => entry.probe?.results?.partialLock === 0)
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.browserTextureUpdate !== 1)
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.browserTextureBind !== 1)
+      || dxtDrawCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 14)
+      || dxtDrawCases.some((entry) => entry.lastUpdate?.compressed !== true)
+      || dxtDrawCases.some((entry) => entry.lastUpdate?.byteSize !== entry.probe?.texture?.byteSize)
+      || dxtDrawCases.some((entry) => entry.browserProbe?.texture0?.sampled !== true)
+      || dxtDrawCases.some((entry) => entry.browserProbe?.texture0?.combiner?.supported !== true)
+      || dxtDrawCases.some((entry) => entry.centerPixelOk !== true)
+      || dxtDrawCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || dxtDrawCases.some((entry) => entry.textureDelta?.updates !== 1)
+      || dxtDrawCases.some((entry) => entry.textureDelta?.unsupportedUpdates !== 0)
+      || dxtDrawCases.some((entry) => entry.textureDelta?.samplerApplications !== 1)) {
+    throw new Error(`D3D8 DXT texture draw probe failed: ${JSON.stringify(d3d8DxtTextureDrawResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

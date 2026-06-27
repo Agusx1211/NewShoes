@@ -52,13 +52,9 @@
 //   * BLOCK COMPRESSED (DDS/DXT): D3DFMT_DXT1/DXT3/DXT5 map to
 //     WEBGL_compressed_texture_s3tc extensions. Pitch is block-based, not
 //     row-based: bytes = ceil(w/4) * ceil(h/4) * blockSize (8 for DXT1,
-//     16 for DXT3/DXT5). The current shim's bytes_per_pixel() does NOT know
-//     about DXT (it returns 4 for the unknown-format default), so a DXT
-//     texture created through the shim today reports a row pitch of width*4
-//     and a wrong surface size. This smoke observes and records that gap so
-//     the full texture-upload bridge knows it cannot read DXT backing stores
-//     from the shim's CPU surface and must instead pull compressed blocks from
-//     the original DDS payload before calling compressedTexImage2D.
+//     16 for DXT3/DXT5). The shim's CPU surface now models that block pitch
+//     and level size directly so focused synthetic DXT blocks can flow through
+//     LockRect/UnlockRect into the browser compressed texture bridge.
 //
 // The test passes only if every format's CPU surface round-trips the recorded
 // dimensions/pitch/pointer arithmetic and the probe counters update as
@@ -116,7 +112,7 @@ enum GlEnum : int {
 // be expanded to RGBA8 because no matching GL packed type exists.
 struct TextureFormatMapping {
 	DWORD d3d_format;
-	int expected_bpp;       // bytes per pixel the shim's CPU surface uses
+	int expected_bpp;       // bytes per pixel; 0 for block-compressed formats
 	int gl_internalformat;
 	int gl_format;
 	int gl_type;
@@ -159,13 +155,13 @@ const TextureFormatMapping *lookup_mapping(DWORD d3d_format)
 		{ D3DFMT_P8, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE,
 			false, 0, false, true, false, true,
 			"8-bit palette index; no GL equivalent, decode through engine 256-entry ARGB palette before upload" },
-		{ D3DFMT_DXT1, 4, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, 0, 0,
+		{ D3DFMT_DXT1, 0, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, 0, 0,
 			true, 8, false, false, false, false,
 			"block compressed, 8 bytes per 4x4 block; upload via compressedTexImage2D" },
-		{ D3DFMT_DXT3, 4, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, 0, 0,
+		{ D3DFMT_DXT3, 0, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, 0, 0,
 			true, 16, false, false, false, false,
 			"block compressed, 16 bytes per 4x4 block; DXT2 is the premultiplied-alpha twin" },
-		{ D3DFMT_DXT5, 4, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, 0, 0,
+		{ D3DFMT_DXT5, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, 0, 0,
 			true, 16, false, false, false, false,
 			"block compressed, 16 bytes per 4x4 block; DXT4 is the premultiplied-alpha twin" },
 	};
@@ -382,12 +378,9 @@ int main()
 
 	// ----------------------------------------------------------------------
 	// 2. DXT (block-compressed) surface: CreateTexture through the shim
-	//    succeeds, but the shim's bytes_per_pixel() default does not model
-	//    block compression. Observe and record that the shim's reported level-0
-	//    pitch (width*4) and surface byte size do NOT match the real DXT block
-	//    pitch, so the full texture-upload bridge cannot consume the shim's
-	//    CPU surface for DXT data and must source compressed blocks directly
-	//    from the original DDS payload.
+	//    uses block-compressed pitch/size, LockRect exposes exactly the block
+	//    payload bytes, and partial rect locks are rejected until the browser
+	//    bridge grows safe block-aligned sub-rectangle uploads.
 	// ----------------------------------------------------------------------
 	struct DxtProbe {
 		D3DFORMAT d3d_format;
@@ -410,9 +403,6 @@ int main()
 		const UINT dxt_width = 8;
 		const UINT dxt_height = 8;
 		const UINT dxt_levels = 1;
-		// The shim accepts DXT formats (no format whitelist), so creation
-		// succeeds; we are observing the readiness gap, not asserting a
-		// failure.
 		if (!expect(SUCCEEDED(device->CreateTexture(dxt_width, dxt_height, dxt_levels, 0,
 				probe.d3d_format, D3DPOOL_MANAGED, &texture)),
 				"DXT CreateTexture failed (shim should accept block formats)") ||
@@ -427,35 +417,29 @@ int main()
 				"DXT level-0 dimensions mismatch");
 			expect(desc.Format == probe.d3d_format, "DXT level-0 format mismatch");
 
-			// The shim's bytes_per_pixel() default does not model block
-			// compression, so it reports the DXT surface as if it were a
-			// width*4 unpacked surface: Size = width * 4 * height. The real
-			// DXT level-0 byte size is ceil(w/4) * ceil(h/4) * blockBytes.
-			// For 8x8 this is 32 (DXT1) / 64 (DXT3, DXT5), but the shim
-			// reports 256 bytes in every case. This size mismatch is the
-			// reliable readiness-gap signal: the future upload bridge must
-			// source DXT bytes directly from the DDS payload, not from the
-			// shim's CPU surface.
-			const UINT shim_reported_size = desc.Size;
 			const UINT real_block_size =
 				dxt_level_bytes(dxt_width, dxt_height, probe.block_bytes);
-			expect(shim_reported_size == dxt_width * 4 * dxt_height,
-				"DXT shim surface size should be width*4*height (documented gap)");
-			expect(shim_reported_size != real_block_size,
-				"DXT shim surface size must NOT equal real block size; upload bridge must source DXT bytes from DDS payload");
+			expect(desc.Size == real_block_size,
+				"DXT shim surface size must match real block-compressed byte size");
 		}
 
 		D3DLOCKED_RECT locked_rect = {};
 		if (expect(SUCCEEDED(texture->LockRect(0, &locked_rect, nullptr, 0)),
 				"DXT LockRect failed")) {
-			// The shim still computes a row pitch = width * 4 for DXT because
-			// bytes_per_pixel() falls through to the 4-byte default. This pitch
-			// has no meaning for a block-compressed surface; record it as a
-			// known gap rather than a contract.
-			expect(static_cast<UINT>(locked_rect.Pitch) == dxt_width * 4,
-				"DXT shim pitch should be width*4 (documented gap)");
+			const UINT expected_pitch = ((dxt_width + 3) / 4) * static_cast<UINT>(probe.block_bytes);
+			expect(static_cast<UINT>(locked_rect.Pitch) == expected_pitch,
+				"DXT shim pitch must match block-compressed row byte count");
+			std::memset(locked_rect.pBits, 0x5a, dxt_level_bytes(dxt_width, dxt_height, probe.block_bytes));
 			expect(SUCCEEDED(texture->UnlockRect(0)), "DXT UnlockRect failed");
 		}
+		RECT partial_rect = {};
+		partial_rect.left = 0;
+		partial_rect.top = 0;
+		partial_rect.right = 2;
+		partial_rect.bottom = 2;
+		D3DLOCKED_RECT partial_locked = {};
+		expect(FAILED(texture->LockRect(0, &partial_locked, &partial_rect, 0)),
+			"DXT partial rect LockRect should be rejected until block-aligned subrect uploads are implemented");
 
 		texture->Release();
 	}
@@ -486,14 +470,15 @@ int main()
 	// must satisfy. The exact surface round-trip is already proven above; this
 	// JSON is the contract record, not an additional gate.
 	std::printf("{\"ok\":true,\"smoke\":\"d3d8-texture-upload-readiness\","
-		"\"note\":\"D3D8 texture surface round-trip + expected WebGL2 upload mapping spec; initial browser callbacks now cover uncompressed CPU textures.\","
+		"\"note\":\"D3D8 texture surface round-trip + expected WebGL2 upload mapping spec; browser callbacks now cover uncompressed CPU textures and synthetic DXT block textures.\","
 		"\"bridgeReady\":false,"
 		"\"bridgeGap\":["
-		"\"Only the harness stage-0 XYZNDUV draw path applies captured sampler state; fixed-function combiner emulation, multi-stage sampling, texture transforms, and generalized mip-chain handling are not wired yet\","
-		"\"Shim bytes_per_pixel() does not model DXT block compression; DXT backing stores cannot be consumed directly\","
+		"\"Only the harness stage-0 XYZNDUV draw path applies captured sampler state; multi-stage sampling and generalized mip-chain handling are not wired yet\","
+		"\"Real DDS/DXT asset payload loading and mip-chain upload remain open beyond the synthetic DXT block bridge\","
 		"\"A8R8G8B8/X8R8G8B8 require a B/R byte-swizzle on upload because WebGL2 has no GL_BGRA texImage2D\","
 		"\"A1R5G5B5/A4R4G4B4/P8 require CPU expansion/decode to RGBA8 before upload\","
-		"\"A8/L8/A8L8 require GL_R8/GL_RG8 plus a shader channel-reconstruction swizzle\"],"
+		"\"A8/L8/A8L8 require GL_R8/GL_RG8 plus a shader channel-reconstruction swizzle\","
+		"\"DXT partial rect updates remain rejected until block-aligned compressed sub-rectangle uploads are implemented\"],"
 		"\"formats\":[");
 
 	bool first_format = true;

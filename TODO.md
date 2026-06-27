@@ -2355,26 +2355,25 @@ shares structure and follows behind.
       per-format `LockRect` pitch, pixel write/read round-trip, sub-rect
       `pBits` offset, `GetSurfaceLevel` AddRef) for the runtime uncompressed
       formats (`A8R8G8B8`, `X8R8G8B8`, `R5G6B5`, `A1R5G5B5`, `A4R4G4B4`,
-      `A8`, `L8`, `A8L8`), observes the documented DXT readiness gap (the
-      shim's `bytes_per_pixel()` does not model block compression, so DXT
-      `GetLevelDesc` reports `Size = width*4*height` instead of the real
-      `ceil(w/4)*ceil(h/4)*blockBytes` and DXT backing stores cannot be
-      consumed directly), and emits a machine-readable D3D8→WebGL2 texture
-      format mapping spec (per-format GL internalformat/format/type, B/R
-      byte-swizzle for ARGB DWORD formats, RGBA8 expansion for the ARGB-MSB
-      16-bit/palette formats, GL_R8/GL_RG8 plus shader channel-reconstruction
-      swizzle for A8/L8/A8L8, and WEBGL_compressed_texture_s3tc targets with
-      block-byte sizing for DXT1/DXT3/DXT5) that the future real DDS/DXT→GL
-      texture upload task must satisfy.
+      `A8`, `L8`, `A8L8`), DXT block-compressed CPU surfaces (`DXT1`,
+      `DXT3`, `DXT5`) with `ceil(w/4)*ceil(h/4)*blockBytes` sizing and
+      partial-rect lock rejection, and emits a machine-readable D3D8→WebGL2
+      texture format mapping spec (per-format GL internalformat/format/type,
+      B/R byte-swizzle for ARGB DWORD formats, RGBA8 expansion for the
+      ARGB-MSB 16-bit/palette formats, GL_R8/GL_RG8 plus shader
+      channel-reconstruction swizzle for A8/L8/A8L8, and
+      WEBGL_compressed_texture_s3tc targets with block-byte sizing for
+      DXT1/DXT3/DXT5) that the future real DDS/DXT→GL texture upload task
+      must satisfy.
 - [x] Add the first browser WebGL2 texture-resource bridge for D3D8
       `CreateTexture` / `LockRect` / `UnlockRect` / `Release`, with stable
       browser texture IDs, dirty sub-rect row compaction, uncompressed
       D3D8-format byte conversion (`A8R8G8B8`, `X8R8G8B8`, RGB565, packed
       16-bit ARGB/XRGB, A8/L8/A8L8), explicit unsupported reporting for
-      palette/DXT formats, and Playwright harness coverage proving full and
+      palette formats, and Playwright harness coverage proving full and
       sub-rect uploads reach WebGL and sample back with correct B/R swizzle and
       XRGB opaque alpha. This still does not bind textures into the original
-      WW3D draw path or solve DDS/DXT payload upload.
+      WW3D draw path or solve real DDS/DXT asset payload upload.
 - [x] Add the first D3D8 `SetTexture` → browser WebGL2 bind route for uploaded
       2D textures, with native stage/id counters, null-bind handling, JS
       bound-stage tracking, release-time unbind cleanup, preserved WebGL active
@@ -2489,6 +2488,16 @@ shares structure and follows behind.
       shader semantic modes, lifecycle deltas, and raw upload metadata. Real
       DDS/DXT payloads, palette textures, mip chains, and multi-stage texture
       sampling remain open.
+- [x] Add the first real browser compressed-texture bridge for synthetic DXT
+      payloads: the D3D8 shim now sizes and locks `DXT1`/`DXT3`/`DXT5`
+      surfaces as 4x4 block-compressed data, rejects unsafe partial rect locks,
+      and the JS bridge maps them to `WEBGL_compressed_texture_s3tc`
+      `compressedTexImage2D` uploads. A new browser-driven D3D8 DXT draw probe
+      renders valid DXT1 opaque red, DXT3 explicit-alpha red, and DXT5
+      interpolated-alpha red blocks through the existing stage-0 textured draw
+      path, with Playwright center-pixel and lifecycle assertions. Real DDS
+      asset loading, full mip chains, DXT2/DXT4 premultiplied-alpha policy, and
+      block-aligned compressed sub-rect updates remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

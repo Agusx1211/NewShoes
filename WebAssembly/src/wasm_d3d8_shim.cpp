@@ -128,8 +128,18 @@ EM_JS(void, wasm_d3d8_browser_texture_update, (
 	const update_height = height >>> 0;
 	const compact_row_bytes = row_bytes >>> 0;
 	const source_pitch = pitch >>> 0;
-	const compact = new Uint8Array(compact_row_bytes * update_height);
-	for (let row = 0; row < update_height; ++row) {
+	const D3DFMT_DXT1 = 0x31545844;
+	const D3DFMT_DXT2 = 0x32545844;
+	const D3DFMT_DXT3 = 0x33545844;
+	const D3DFMT_DXT4 = 0x34545844;
+	const D3DFMT_DXT5 = 0x35545844;
+	const d3d_format = format >>> 0;
+	const compressed = d3d_format === D3DFMT_DXT1 || d3d_format === D3DFMT_DXT2 ||
+		d3d_format === D3DFMT_DXT3 || d3d_format === D3DFMT_DXT4 ||
+		d3d_format === D3DFMT_DXT5;
+	const compact_rows = compressed ? Math.ceil(update_height / 4) : update_height;
+	const compact = new Uint8Array(compact_row_bytes * compact_rows);
+	for (let row = 0; row < compact_rows; ++row) {
 		const source = data_ptr + (row * source_pitch);
 		const target = row * compact_row_bytes;
 		compact.set(Module.HEAPU8.subarray(source, source + compact_row_bytes), target);
@@ -137,7 +147,7 @@ EM_JS(void, wasm_d3d8_browser_texture_update, (
 	bridge({
 		id: texture_id >>> 0,
 		level: level >>> 0,
-		format: format >>> 0,
+		format: d3d_format,
 		x: x >>> 0,
 		y: y >>> 0,
 		width: update_width,
@@ -392,6 +402,58 @@ UINT bytes_per_pixel(D3DFORMAT format)
 	}
 }
 
+bool is_block_compressed_format(D3DFORMAT format)
+{
+	switch (format) {
+		case D3DFMT_DXT1:
+		case D3DFMT_DXT2:
+		case D3DFMT_DXT3:
+		case D3DFMT_DXT4:
+		case D3DFMT_DXT5:
+			return true;
+		default:
+			return false;
+	}
+}
+
+UINT block_bytes(D3DFORMAT format)
+{
+	switch (format) {
+		case D3DFMT_DXT1:
+			return 8;
+		case D3DFMT_DXT2:
+		case D3DFMT_DXT3:
+		case D3DFMT_DXT4:
+		case D3DFMT_DXT5:
+			return 16;
+		default:
+			return 0;
+	}
+}
+
+UINT block_count(UINT texels)
+{
+	return (texels + 3) / 4;
+}
+
+UINT texture_pitch(D3DFORMAT format, UINT width)
+{
+	if (is_block_compressed_format(format)) {
+		return block_count(width) * block_bytes(format);
+	}
+	return width * bytes_per_pixel(format);
+}
+
+UINT texture_storage_rows(D3DFORMAT format, UINT height)
+{
+	return is_block_compressed_format(format) ? block_count(height) : height;
+}
+
+UINT texture_level_size(D3DFORMAT format, UINT width, UINT height)
+{
+	return texture_pitch(format, width) * texture_storage_rows(format, height);
+}
+
 void identity_matrix(D3DMATRIX &matrix)
 {
 	std::memset(&matrix, 0, sizeof(matrix));
@@ -552,9 +614,9 @@ void browser_texture_create(UINT texture_id, UINT width, UINT height, UINT level
 	g_state.last_browser_texture_y = 0;
 	g_state.last_browser_texture_width = width;
 	g_state.last_browser_texture_height = height;
-	g_state.last_browser_texture_pitch = width * bytes_per_pixel(format);
+	g_state.last_browser_texture_pitch = texture_pitch(format, width);
 	g_state.last_browser_texture_row_bytes = g_state.last_browser_texture_pitch;
-	g_state.last_browser_texture_bytes = g_state.last_browser_texture_pitch * height;
+	g_state.last_browser_texture_bytes = texture_level_size(format, width, height);
 	g_state.last_browser_texture_levels = levels;
 	g_state.last_browser_texture_format = format;
 	g_state.last_browser_texture_usage = usage;
@@ -580,14 +642,16 @@ void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const
 	g_state.last_browser_texture_height = dirty.height;
 	g_state.last_browser_texture_pitch = dirty.pitch;
 	g_state.last_browser_texture_row_bytes = dirty.row_bytes;
-	g_state.last_browser_texture_bytes = dirty.row_bytes * dirty.height;
+	g_state.last_browser_texture_bytes =
+		dirty.row_bytes * texture_storage_rows(format, dirty.height);
 	g_state.last_browser_texture_levels = 0;
 	g_state.last_browser_texture_format = format;
 	g_state.last_browser_texture_usage = usage;
 	g_state.last_browser_texture_pool = 0;
 	g_state.last_browser_texture_lock_flags = dirty.lock_flags;
 	g_state.last_browser_texture_checksum =
-		checksum_texture_region(dirty.data, dirty.pitch, dirty.row_bytes, dirty.height);
+		checksum_texture_region(dirty.data, dirty.pitch, dirty.row_bytes,
+			texture_storage_rows(format, dirty.height));
 	wasm_d3d8_browser_texture_update(
 		texture_id,
 		level,
@@ -718,7 +782,7 @@ public:
 		D3DPOOL pool = D3DPOOL_DEFAULT) :
 		BrowserD3DResource(device)
 	{
-		const UINT pitch = width * bytes_per_pixel(format);
+		const UINT pitch = texture_pitch(format, width);
 		std::memset(&m_desc, 0, sizeof(m_desc));
 		m_desc.Format = format;
 		m_desc.Type = D3DRTYPE_SURFACE;
@@ -726,7 +790,7 @@ public:
 		m_desc.Pool = pool;
 		m_desc.Width = width;
 		m_desc.Height = height;
-		m_desc.Size = pitch * height;
+		m_desc.Size = texture_level_size(format, width, height);
 		m_desc.MultiSampleType = D3DMULTISAMPLE_NONE;
 		m_pitch = static_cast<int>(pitch);
 		m_pixels.resize(m_desc.Size);
@@ -777,9 +841,14 @@ public:
 			right = rect->right;
 			bottom = rect->bottom;
 		}
+		if (is_block_compressed_format(m_desc.Format) &&
+			(left != 0 || top != 0 || right != static_cast<int>(m_desc.Width) ||
+				bottom != static_cast<int>(m_desc.Height))) {
+			return E_FAIL;
+		}
 
 		locked_rect->Pitch = m_pitch;
-		locked_rect->pBits = m_pixels.data() + (top * m_pitch) + (left * bytes_per_pixel(m_desc.Format));
+		locked_rect->pBits = m_pixels.data() + texture_offset(static_cast<UINT>(left), static_cast<UINT>(top));
 		m_locked = true;
 		m_lock_flags = flags;
 		m_dirty_x = static_cast<UINT>(left);
@@ -797,14 +866,13 @@ public:
 			return E_FAIL;
 		}
 		if (dirty != nullptr && (m_lock_flags & (D3DLOCK_READONLY | D3DLOCK_NO_DIRTY_UPDATE)) == 0) {
-			dirty->data = m_pixels.data() + (m_dirty_y * m_pitch) +
-				(m_dirty_x * bytes_per_pixel(m_desc.Format));
+			dirty->data = m_pixels.data() + texture_offset(m_dirty_x, m_dirty_y);
 			dirty->x = m_dirty_x;
 			dirty->y = m_dirty_y;
 			dirty->width = m_dirty_width;
 			dirty->height = m_dirty_height;
 			dirty->pitch = static_cast<UINT>(m_pitch);
-			dirty->row_bytes = m_dirty_width * bytes_per_pixel(m_desc.Format);
+			dirty->row_bytes = texture_pitch(m_desc.Format, m_dirty_width);
 			dirty->lock_flags = m_lock_flags;
 		}
 		m_locked = false;
@@ -828,6 +896,15 @@ public:
 	}
 
 private:
+	UINT texture_offset(UINT left, UINT top) const
+	{
+		if (is_block_compressed_format(m_desc.Format)) {
+			return block_count(top) * static_cast<UINT>(m_pitch) +
+				block_count(left) * block_bytes(m_desc.Format);
+		}
+		return (top * static_cast<UINT>(m_pitch)) + (left * bytes_per_pixel(m_desc.Format));
+	}
+
 	ULONG m_ref_count = 1;
 	D3DSURFACE_DESC m_desc = {};
 	int m_pitch = 0;
