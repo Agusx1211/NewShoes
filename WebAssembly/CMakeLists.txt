@@ -5345,6 +5345,61 @@ target_link_options(ww3d2-shipped-mesh-loader-smoke PRIVATE
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
 
+add_executable(ww3d2-shipped-material-pass-smoke
+  tests/ww3d2_shipped_material_pass_smoke.cpp
+  src/wasm_win32_gdi_stub.cpp
+)
+
+set_target_properties(ww3d2-shipped-material-pass-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(ww3d2-shipped-material-pass-smoke PRIVATE
+  zh_ww3d2_compile_frontier
+  zh_browser_d3d8
+  zh_gameengine_common_core
+  zh_wwmath_lookup
+  zh_wwmath_core
+  zh_wwsaveload_full
+  zh_wwsaveload_core
+  zh_wwlib_file_ini
+  zh_wwlib_file_core
+  zh_wwlib_stream_core
+  zh_wwlib_string
+  zh_wwlib_refcount
+  zh_wwlib_containers
+  zh_wwlib_crc
+  zh_wwlib_random
+  zh_wwlib_thread
+  zh_wwlib_mutex
+  zh_wwlib_targa
+  zh_wwdebug_core
+  zh_compression_manager
+  zh_compression_eac
+)
+
+target_compile_options(ww3d2-shipped-material-pass-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(ww3d2-shipped-material-pass-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sNODERAWFS=1"
+  "SHELL:-sEXIT_RUNTIME=1"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_ww3d2_shipped_material_pass_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
+)
+
 add_executable(gameengine-common-core-smoke
   tests/gameengine_common_core_smoke.cpp
 )

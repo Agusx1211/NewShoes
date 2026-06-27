@@ -2749,13 +2749,25 @@ shares structure and follows behind.
             assets through the normal file/archive system, but final startup
             still needs display-owned WW3D file-factory lifetime and the open
             range-backed archive streaming path above.
-      - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
+      - [x] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture
             meshes, instead of the probe's geometry-chunk load plus
             `MeshModelClass::Set_Single_*` single-material install used to
             work around the single-material (`NumMaterials == 1`)
             `read_per_tri_materials` early-return in the legacy chunk path.
+            The `ww3d2-shipped-material-pass-smoke` loader target scans
+            W3DZH.big through `Win32BIGFileSystem` + `FileSystem`, selects
+            the smallest shipped mesh whose `W3D_CHUNK_MESH` payload carries
+            `W3D_CHUNK_MATERIAL_PASS` chunk(s) (preferring multi-pass then
+            multi-texture candidates, descending into `W3D_CHUNK_PRELIT_*`
+            wrappers), feeds it through `MeshClass::Load_W3D`, and asserts
+            the modern install path populated `CurMatDesc`: `Get_Pass_Count`
+            matches the parsed material-pass count, every pass has a vertex
+            material installed, multi-pass candidates install >= 2 passes,
+            and multi-texture candidates install a stage-1 texture. Rendering
+            of the selected mesh remains covered by the shipped mesh render
+            probe.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
