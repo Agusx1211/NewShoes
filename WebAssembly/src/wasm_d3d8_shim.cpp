@@ -923,6 +923,81 @@ public:
 		return true;
 	}
 
+	bool copy_rects_from(const BrowserD3DSurface &source, const RECT *source_rects, UINT rect_count,
+		const POINT *destination_points)
+	{
+		if (m_locked || source.is_locked() ||
+			m_desc.Format != source.desc().Format ||
+			is_block_compressed_format(m_desc.Format)) {
+			return false;
+		}
+
+		RECT whole_source = {};
+		whole_source.left = 0;
+		whole_source.top = 0;
+		whole_source.right = static_cast<LONG>(source.desc().Width);
+		whole_source.bottom = static_cast<LONG>(source.desc().Height);
+		if (source_rects == nullptr || rect_count == 0) {
+			source_rects = &whole_source;
+			rect_count = 1;
+		}
+
+		const UINT bytes_per_texel = bytes_per_pixel(m_desc.Format);
+		for (UINT index = 0; index < rect_count; ++index) {
+			const RECT &source_rect = source_rects[index];
+			if (source_rect.left < 0 || source_rect.top < 0 ||
+				source_rect.right < source_rect.left ||
+				source_rect.bottom < source_rect.top ||
+				static_cast<UINT>(source_rect.right) > source.desc().Width ||
+				static_cast<UINT>(source_rect.bottom) > source.desc().Height) {
+				return false;
+			}
+
+			const UINT width = static_cast<UINT>(source_rect.right - source_rect.left);
+			const UINT height = static_cast<UINT>(source_rect.bottom - source_rect.top);
+			const LONG destination_x = destination_points != nullptr ? destination_points[index].x : source_rect.left;
+			const LONG destination_y = destination_points != nullptr ? destination_points[index].y : source_rect.top;
+			if (destination_x < 0 || destination_y < 0 ||
+				static_cast<UINT>(destination_x) > m_desc.Width ||
+				static_cast<UINT>(destination_y) > m_desc.Height ||
+				width > m_desc.Width - static_cast<UINT>(destination_x) ||
+				height > m_desc.Height - static_cast<UINT>(destination_y)) {
+				return false;
+			}
+
+			const UINT row_bytes = width * bytes_per_texel;
+			for (UINT row = 0; row < height; ++row) {
+				const BYTE *source_row = source.m_pixels.data() +
+					source.texture_offset(static_cast<UINT>(source_rect.left),
+						static_cast<UINT>(source_rect.top) + row);
+				BYTE *destination_row = m_pixels.data() +
+					texture_offset(static_cast<UINT>(destination_x), static_cast<UINT>(destination_y) + row);
+				std::memcpy(destination_row, source_row, row_bytes);
+			}
+		}
+		return true;
+	}
+
+	void set_texture_owner(UINT texture_id, UINT level, D3DFORMAT format, DWORD usage)
+	{
+		m_owner_texture_id = texture_id;
+		m_owner_texture_level = level;
+		m_owner_texture_format = format;
+		m_owner_texture_usage = usage;
+	}
+
+	void upload_owned_texture() const
+	{
+		if (m_owner_texture_id == 0) {
+			return;
+		}
+		BrowserD3DTextureDirtyRegion dirty = full_dirty_region();
+		browser_texture_update(m_owner_texture_id, m_owner_texture_level, m_owner_texture_format,
+			dirty, m_owner_texture_usage);
+	}
+
+	UINT texture_owner_id() const { return m_owner_texture_id; }
+
 	BrowserD3DTextureDirtyRegion full_dirty_region() const
 	{
 		BrowserD3DTextureDirtyRegion dirty = {};
@@ -967,6 +1042,10 @@ private:
 	UINT m_dirty_y = 0;
 	UINT m_dirty_width = 0;
 	UINT m_dirty_height = 0;
+	UINT m_owner_texture_id = 0;
+	UINT m_owner_texture_level = 0;
+	D3DFORMAT m_owner_texture_format = D3DFMT_UNKNOWN;
+	DWORD m_owner_texture_usage = 0;
 };
 
 class BrowserD3DTexture final : public IDirect3DTexture8, private BrowserD3DResource
@@ -989,12 +1068,14 @@ public:
 			levels = 1;
 		}
 
+		m_browser_texture_id = allocate_browser_texture_id();
 		for (UINT level = 0; level < levels; ++level) {
 			BrowserD3DSurface *surface = new (std::nothrow) BrowserD3DSurface(
 				device, width, height, format, usage, pool);
 			if (surface == nullptr) {
 				break;
 			}
+			surface->set_texture_owner(m_browser_texture_id, level, format, usage);
 			m_levels.push_back(surface);
 			if (width > 1) {
 				width /= 2;
@@ -1006,7 +1087,6 @@ public:
 		m_usage = usage;
 		m_pool = pool;
 		m_format = format;
-		m_browser_texture_id = allocate_browser_texture_id();
 		m_last_lock_flags.resize(m_levels.size());
 	}
 
@@ -1607,9 +1687,38 @@ public:
 		}
 		return destination->copy_from(*source);
 	}
-	HRESULT CopyRects(IDirect3DSurface8 *, const RECT *, UINT, IDirect3DSurface8 *, const POINT *) override
+	HRESULT CopyRects(IDirect3DSurface8 *source_surface, const RECT *source_rects, UINT rect_count,
+		IDirect3DSurface8 *destination_surface, const POINT *destination_points) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (source_surface == nullptr || destination_surface == nullptr) {
+			return E_FAIL;
+		}
+
+		BrowserD3DSurface *source = static_cast<BrowserD3DSurface *>(source_surface);
+		BrowserD3DSurface *destination = static_cast<BrowserD3DSurface *>(destination_surface);
+		D3DSURFACE_DESC source_desc = {};
+		D3DSURFACE_DESC destination_desc = {};
+		if (FAILED(source->GetDesc(&source_desc)) ||
+			FAILED(destination->GetDesc(&destination_desc)) ||
+			source_desc.Format != destination_desc.Format) {
+			return E_FAIL;
+		}
+
+		const UINT effective_rect_count = (source_rects == nullptr || rect_count == 0) ? 1 : rect_count;
+		if (!destination->copy_rects_from(*source, source_rects, rect_count, destination_points)) {
+			return E_FAIL;
+		}
+		destination->upload_owned_texture();
+
+		++g_state.copy_rects_calls;
+		g_state.last_copy_rects_rect_count = effective_rect_count;
+		g_state.last_copy_rects_width = source_rects == nullptr || rect_count == 0 ?
+			source_desc.Width : static_cast<UINT>(source_rects[0].right - source_rects[0].left);
+		g_state.last_copy_rects_height = source_rects == nullptr || rect_count == 0 ?
+			source_desc.Height : static_cast<UINT>(source_rects[0].bottom - source_rects[0].top);
+		g_state.last_copy_rects_format = source_desc.Format;
+		g_state.last_copy_rects_uploaded_texture_id = destination->texture_owner_id();
+		return S_OK;
 	}
 	HRESULT ResourceManagerDiscardBytes(DWORD) override { return S_OK; }
 	UINT GetAvailableTextureMem() override { return 64 * 1024 * 1024; }

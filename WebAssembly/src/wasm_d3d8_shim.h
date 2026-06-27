@@ -38,6 +38,12 @@ struct WasmD3D8ShimState
 	UINT create_texture_calls;
 	UINT texture_lock_rect_calls;
 	UINT texture_unlock_rect_calls;
+	UINT copy_rects_calls;
+	UINT last_copy_rects_rect_count;
+	UINT last_copy_rects_width;
+	UINT last_copy_rects_height;
+	DWORD last_copy_rects_format;
+	UINT last_copy_rects_uploaded_texture_id;
 	UINT create_vertex_buffer_calls;
 	UINT create_index_buffer_calls;
 	UINT buffer_lock_calls;

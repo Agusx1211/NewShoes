@@ -1717,6 +1717,60 @@ function sampleCanvasPixel(x = 0, y = 0) {
   return Array.from(pixels);
 }
 
+function sampleCanvasRegion(rect = {}, threshold = 8) {
+  syncCanvasSize();
+  const canvasWidth = gl ? gl.drawingBufferWidth : canvas.width;
+  const canvasHeight = gl ? gl.drawingBufferHeight : canvas.height;
+  const left = Math.max(0, Math.min(canvasWidth, Math.floor(Number(rect.left ?? rect.x ?? 0))));
+  const top = Math.max(0, Math.min(canvasHeight, Math.floor(Number(rect.top ?? rect.y ?? 0))));
+  const right = Math.max(left, Math.min(canvasWidth, Math.ceil(Number(rect.right ?? (left + (rect.width ?? 0))))));
+  const bottom = Math.max(top, Math.min(canvasHeight, Math.ceil(Number(rect.bottom ?? (top + (rect.height ?? 0))))));
+  const width = right - left;
+  const height = bottom - top;
+  const result = {
+    left,
+    top,
+    right,
+    bottom,
+    width,
+    height,
+    pixelCount: width * height,
+    coloredPixelCount: 0,
+    maxComponent: 0,
+    brightestPixel: [0, 0, 0, 0],
+  };
+  if (width <= 0 || height <= 0) {
+    return result;
+  }
+
+  let data = null;
+  if (gl) {
+    data = new Uint8Array(width * height * 4);
+    const readY = Math.max(0, gl.drawingBufferHeight - bottom);
+    gl.readPixels(left, readY, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  } else if (fallbackContext) {
+    data = fallbackContext.getImageData(left, top, width, height).data;
+  } else {
+    return result;
+  }
+
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const pixel = [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
+    const maxComponent = Math.max(pixel[0], pixel[1], pixel[2]);
+    if (maxComponent > result.maxComponent) {
+      result.maxComponent = maxComponent;
+      result.brightestPixel = pixel;
+    }
+    if (maxComponent > threshold && pixel[3] > 0) {
+      result.coloredPixelCount += 1;
+    }
+  }
+  result.coverageRatio = result.pixelCount > 0
+    ? result.coloredPixelCount / result.pixelCount
+    : 0;
+  return result;
+}
+
 function pixelsApproximatelyEqual(left, right, tolerance = 1) {
   return left.length === right.length
     && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
@@ -3074,6 +3128,8 @@ async function loadWasmModule() {
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       probeWW3DRender2DTexturedQuad: module.cwrap(
         "cnc_port_probe_ww3d_render2d_textured_quad", "string", []),
+      probeWW3DRender2DSentence: module.cwrap(
+        "cnc_port_probe_ww3d_render2d_sentence", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
@@ -5272,6 +5328,63 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dRender2DSentence":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D Render2DSentence cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DRender2DSentence());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const virtualDrawRect = probe?.extents?.draw ?? {};
+        const scaleX = screenshot.width / 800;
+        const scaleY = screenshot.height / 600;
+        const drawRect = {
+          left: (virtualDrawRect.left ?? 0) * scaleX,
+          top: (virtualDrawRect.top ?? 0) * scaleY,
+          right: (virtualDrawRect.right ?? 0) * scaleX,
+          bottom: (virtualDrawRect.bottom ?? 0) * scaleY,
+        };
+        const textRegion = sampleCanvasRegion(drawRect, 8);
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.copyRects?.uploadedTextureId
+          && browserProbe?.texture0?.format === D3DFMT_A4R4G4B4
+          && (textRegion.coloredPixelCount ?? 0) > 16
+          && (textRegion.maxComponent ?? 0) > 32;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textRegion,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,

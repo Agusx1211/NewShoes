@@ -13,6 +13,10 @@ const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
+const ww3dRender2DSentenceCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-render2d-sentence-canvas.png",
+);
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
@@ -1453,6 +1457,54 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dRender2DCanvasScreenshot });
 
+  const render2DSentenceResult = await page.evaluate(() => window.CnCPort.rpc("ww3dRender2DSentence"));
+  if (!render2DSentenceResult.ok
+      || render2DSentenceResult.probe?.source !== "ww3d_render2d_sentence_probe"
+      || render2DSentenceResult.probe?.font?.created !== true
+      || (render2DSentenceResult.probe?.font?.charHeight ?? 0) <= 0
+      || render2DSentenceResult.probe?.results?.sentenceBuilt !== true
+      || render2DSentenceResult.probe?.results?.sentenceDrawn !== true
+      || render2DSentenceResult.probe?.results?.sentenceRendered !== true
+      || (render2DSentenceResult.probe?.extents?.text?.x ?? 0) <= 0
+      || (render2DSentenceResult.probe?.extents?.text?.y ?? 0) <= 0
+      || (render2DSentenceResult.probe?.calls?.copyRects ?? 0) < 1
+      || (render2DSentenceResult.probe?.calls?.browserTextureCreate ?? 0) < 1
+      || (render2DSentenceResult.probe?.calls?.browserTextureUpdate ?? 0) < 1
+      || (render2DSentenceResult.probe?.calls?.browserTextureBind ?? 0) < 1
+      || (render2DSentenceResult.probe?.calls?.browserBufferCreate ?? 0) < 2
+      || (render2DSentenceResult.probe?.calls?.browserBufferUpdate ?? 0) < 2
+      || render2DSentenceResult.probe?.copyRects?.format !== 26
+      || (render2DSentenceResult.probe?.copyRects?.uploadedTextureId ?? 0) <= 0
+      || render2DSentenceResult.probe?.draw?.primitiveType !== 4
+      || (render2DSentenceResult.probe?.draw?.vertexCount ?? 0) < 4
+      || (render2DSentenceResult.probe?.draw?.primitiveCount ?? 0) < 2
+      || render2DSentenceResult.probe?.draw?.vertexStride !== 44
+      || render2DSentenceResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || render2DSentenceResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || render2DSentenceResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || render2DSentenceResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || render2DSentenceResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || render2DSentenceResult.browserProbe?.vertexStride !== 44
+      || render2DSentenceResult.browserProbe?.usedPersistentBuffers !== true
+      || render2DSentenceResult.browserProbe?.usedTransforms !== true
+      || render2DSentenceResult.browserProbe?.usedIdentityClipSpace !== true
+      || render2DSentenceResult.browserProbe?.texture0?.id !==
+        render2DSentenceResult.probe?.copyRects?.uploadedTextureId
+      || render2DSentenceResult.browserProbe?.texture0?.ready !== true
+      || render2DSentenceResult.browserProbe?.texture0?.sampled !== true
+      || render2DSentenceResult.browserProbe?.texture0?.format !== 26
+      || render2DSentenceResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || render2DSentenceResult.browserProbe?.texture0?.sampler?.supported !== true
+      || (render2DSentenceResult.textRegion?.coloredPixelCount ?? 0) <= 16
+      || (render2DSentenceResult.textRegion?.maxComponent ?? 0) <= 32
+      || render2DSentenceResult.textureDelta?.creates < 1
+      || render2DSentenceResult.textureDelta?.updates < 1
+      || render2DSentenceResult.textureDelta?.binds < 1) {
+    throw new Error(`WW3D Render2DSentence text probe failed: ${JSON.stringify(render2DSentenceResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dRender2DSentenceCanvasScreenshot });
+
   const displayDrawImageResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayDrawImage"));
   if (!displayDrawImageResult.ok
       || displayDrawImageResult.probe?.source !== "ww3d_display_drawimage_probe"
@@ -1649,6 +1701,7 @@ try {
       d3d8ClearCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
+      ww3dRender2DSentenceCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       gdiFontCanvasScreenshot,

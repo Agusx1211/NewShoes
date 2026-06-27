@@ -2687,13 +2687,20 @@ shares structure and follows behind.
             cache entries. The Playwright `ww3dFontChars` RPC asserts positive
             original font metrics, glyph widths, ref ownership, and non-zero
             blit coverage from `Store_GDI_Char`.
-      - [ ] Wire `Render2DSentenceClass` text rendering through the browser
+      - [x] Wire `Render2DSentenceClass` text rendering through the browser
             GDI bridge and the existing D3D8/WebGL2 draw bridge end-to-end
             (font → glyph surface → `DX8Wrapper::_Copy_DX8_Rects` → texture →
-            `Render2DClass` textured quad), with a `DisplayString` text render
-            probe and Playwright screenshot coverage of visible glyphs. This
-            is the remaining work for the M4
-            "2D blits / Image/DisplayString text rendering" item below.
+            `Render2DClass` textured quad). The browser D3D8 shim now copies
+            same-format `CopyRects` surface pixels into texture-level surfaces
+            and uploads the destination texture; the
+            `cnc_port_probe_ww3d_render2d_sentence` export plus
+            `ww3dRender2DSentence` RPC render original
+            `Render2DSentenceClass` text (`ZEROHOUR`) through the real
+            `FontCharsClass` glyph path and verify visible glyph coverage in
+            `harness-smoke-ww3d-render2d-sentence-canvas.png`.
+      - [ ] Lift the proven `Render2DSentenceClass` text path into a focused
+            `W3DDisplayString` / `DisplayString` text render probe before
+            calling full Image/DisplayString text rendering complete.
       - [x] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
             the same `MeshClass::Load_W3D` + browser draw-bridge path instead
             of the synthetic in-memory quad: the browser harness mounts the
@@ -2832,8 +2839,11 @@ shares structure and follows behind.
              real canvas-backed glyphs and metrics. Node smoke targets keep the
              no-op stub.
        - [x] Drive the real `FontCharsClass` glyph cache through the bridge.
-       - [ ] Wire `Render2DSentenceClass` text → D3D8/WebGL2 textured quad
-             with a `DisplayString` screenshot probe.
+       - [x] Wire `Render2DSentenceClass` text → D3D8/WebGL2 textured quad
+             through `DX8Wrapper::_Copy_DX8_Rects`, with browser screenshot
+             coverage of visible glyphs.
+       - [ ] Add the `W3DDisplayString` / `DisplayString` screenshot probe on
+             top of the proven sentence renderer.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).

@@ -18,11 +18,13 @@
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
+#include "assetmgr.h"
 #include "boxrobj.h"
 #include "camera.h"
 #include "coltype.h"
 #include "rect.h"
 #include "render2d.h"
+#include "render2dsentence.h"
 #include "rinfo.h"
 #include "texture.h"
 #include "wasm_d3d8_shim.h"
@@ -39,6 +41,7 @@ namespace {
 std::string g_ww3d_aabox_probe_json;
 std::string g_ww3d_render2d_probe_json;
 std::string g_ww3d_display_drawimage_probe_json;
+std::string g_ww3d_render2d_sentence_probe_json;
 
 bool succeeded(int result)
 {
@@ -533,6 +536,267 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_textured_quad()
 
 	g_ww3d_render2d_probe_json = buffer;
 	return g_ww3d_render2d_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_sentence()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	const WCHAR text[] = L"ZEROHOUR";
+	const char *font_face = "Arial";
+	constexpr int point_size = 28;
+	constexpr unsigned long text_color = 0xffffffffUL;
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool used_existing_asset_manager = false;
+	bool asset_manager_created = false;
+	bool font_created = false;
+	bool sentence_built = false;
+	bool sentence_drawn = false;
+	bool sentence_rendered = false;
+	int refs_after_get = 0;
+	int char_height = 0;
+	float text_extent_x = 0.0f;
+	float text_extent_y = 0.0f;
+	float draw_left = 0.0f;
+	float draw_top = 0.0f;
+	float draw_right = 0.0f;
+	float draw_bottom = 0.0f;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	FontCharsClass *font = nullptr;
+
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		Render2DClass::Set_Screen_Resolution(RectClass(0.0f, 0.0f, 800.0f, 600.0f));
+
+		asset_manager = WW3DAssetManager::Get_Instance();
+		used_existing_asset_manager = asset_manager != nullptr;
+		if (asset_manager == nullptr) {
+			asset_manager = W3DNEW WW3DAssetManager();
+			asset_manager_created = asset_manager != nullptr;
+		}
+	}
+
+	if (asset_manager != nullptr) {
+		font = asset_manager->Get_FontChars(font_face, point_size, false);
+		font_created = font != nullptr;
+	}
+
+	if (font != nullptr) {
+		refs_after_get = font->Num_Refs();
+		char_height = font->Get_Char_Height();
+
+		{
+			Render2DSentenceClass sentence;
+			sentence.Set_Font(font);
+			font->Release_Ref();
+			font = nullptr;
+
+			sentence.Set_Texture_Size_Hint(128);
+			sentence.Set_Location(Vector2(300.0f, 260.0f));
+			const Vector2 text_extent = sentence.Get_Text_Extents(text);
+			text_extent_x = text_extent.X;
+			text_extent_y = text_extent.Y;
+			sentence.Build_Sentence(text, nullptr, nullptr);
+			sentence_built = true;
+			sentence.Draw_Sentence(text_color);
+			sentence_drawn = true;
+
+			const RectClass &draw_extents = sentence.Get_Draw_Extents();
+			draw_left = draw_extents.Left;
+			draw_top = draw_extents.Top;
+			draw_right = draw_extents.Right;
+			draw_bottom = draw_extents.Bottom;
+
+			begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(begin_render_result)) {
+				sentence.Render();
+				sentence_rendered = true;
+				end_render_result = WW3D::End_Render(false);
+			}
+		}
+	}
+
+	if (font != nullptr) {
+		font->Release_Ref();
+		font = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		WW3D::Shutdown();
+	}
+	if (asset_manager_created && asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		(asset_manager_created || used_existing_asset_manager) &&
+		font_created &&
+		refs_after_get >= 2 &&
+		char_height > 0 &&
+		text_extent_x > 0.0f &&
+		text_extent_y > 0.0f &&
+		draw_right > draw_left &&
+		draw_bottom > draw_top &&
+		sentence_built &&
+		sentence_drawn &&
+		succeeded(begin_render_result) &&
+		sentence_rendered &&
+		succeeded(end_render_result) &&
+		state->copy_rects_calls >= 1 &&
+		state->last_copy_rects_format == D3DFMT_A4R4G4B4 &&
+		state->last_copy_rects_uploaded_texture_id != 0 &&
+		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= 1 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->create_vertex_buffer_calls >= 1 &&
+		state->create_index_buffer_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_texture_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count >= 4 &&
+		state->last_draw_primitive_count >= 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_bytes >= 4 * 44 &&
+		state->last_draw_index_buffer_bytes >= 6 * 2 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[5600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_render2d_sentence_probe\","
+		"\"ok\":%s,"
+		"\"text\":\"ZEROHOUR\","
+		"\"font\":{\"face\":\"%s\",\"pointSize\":%d,\"created\":%s,"
+		"\"assetManagerCreated\":%s,\"usedExistingAssetManager\":%s,"
+		"\"refsAfterGet\":%d,\"charHeight\":%d},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"sentenceBuilt\":%s,\"sentenceDrawn\":%s,\"beginRender\":%d,"
+		"\"sentenceRendered\":%s,\"endRender\":%d},"
+		"\"extents\":{\"text\":{\"x\":%.2f,\"y\":%.2f},"
+		"\"draw\":{\"left\":%.2f,\"top\":%.2f,\"right\":%.2f,\"bottom\":%.2f}},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"copyRects\":%u,\"browserTextureCreate\":%u,"
+		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,"
+		"\"browserTextureRelease\":%u,\"createVertexBuffer\":%u,"
+		"\"createIndexBuffer\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"drawIndexed\":%u},"
+		"\"copyRects\":{\"rectCount\":%u,\"width\":%u,\"height\":%u,"
+		"\"format\":%u,\"uploadedTextureId\":%u},"
+		"\"texture\":{\"id\":%u,\"format\":%u,\"width\":%u,\"height\":%u,"
+		"\"checksum\":%lu,\"lastBindStage\":%u,\"lastBindId\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"vertexBytes\":%u,\"indexBytes\":%u,"
+		"\"indexFormat\":%d,\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu}]}}}",
+		bool_json(ok),
+		font_face,
+		point_size,
+		bool_json(font_created),
+		bool_json(asset_manager_created),
+		bool_json(used_existing_asset_manager),
+		refs_after_get,
+		char_height,
+		init_result,
+		set_device_result,
+		bool_json(sentence_built),
+		bool_json(sentence_drawn),
+		begin_render_result,
+		bool_json(sentence_rendered),
+		end_render_result,
+		static_cast<double>(text_extent_x),
+		static_cast<double>(text_extent_y),
+		static_cast<double>(draw_left),
+		static_cast<double>(draw_top),
+		static_cast<double>(draw_right),
+		static_cast<double>(draw_bottom),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->copy_rects_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->last_copy_rects_rect_count : 0,
+		state != nullptr ? state->last_copy_rects_width : 0,
+		state != nullptr ? state->last_copy_rects_height : 0,
+		static_cast<unsigned int>(state != nullptr ? state->last_copy_rects_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_copy_rects_uploaded_texture_id : 0,
+		state != nullptr ? state->last_copy_rects_uploaded_texture_id : 0,
+		static_cast<unsigned int>(D3DFMT_A4R4G4B4),
+		state != nullptr ? state->last_browser_texture_width : 0,
+		state != nullptr ? state->last_browser_texture_height : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_browser_texture_checksum : 0),
+		state != nullptr ? state->last_browser_texture_bind_stage : 0,
+		state != nullptr ? state->last_browser_texture_bind_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_bytes : 0,
+		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->alpha_blend_enable) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->src_blend) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->dest_blend) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLOROP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG1]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG2]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAOP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAARG1]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAARG2]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLOROP]) : 0);
+
+	g_ww3d_render2d_sentence_probe_json = buffer;
+	return g_ww3d_render2d_sentence_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
