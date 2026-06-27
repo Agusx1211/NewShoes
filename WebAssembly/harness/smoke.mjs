@@ -1082,11 +1082,13 @@ try {
   const combinerCaseNames = combinerCases.map((entry) => entry.probe?.caseName).join(",");
   const combinerCenters = combinerCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   if (!d3d8TextureCombinerResult.ok
-      || combinerCases.length !== 17
-      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor"
-      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255"
+      || combinerCases.length !== 19
+      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add,selectAlphaTexture,selectAlphaDiffuse,modulateAlpha,addAlpha,complementTexture,alphaReplicateTexture,alphaReplicateComplementTexture,complementAlphaTexture,alphaReplicateComplementDiffuse,selectTextureFactor,modulateTextureFactor,selectAlphaTextureFactor,alphaReplicateTextureFactor,multiplyAddColorArg0,multiplyAddAlphaArg0"
+      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255|128,0,0,255|64,0,0,255|96,0,0,255|64,0,0,255|0,255,255,255|64,64,64,255|191,191,191,255|191,0,0,255|191,191,191,255|32,64,128,255|128,0,0,255|64,0,0,255|128,128,128,255|255,64,64,255|128,0,0,255"
       || combinerCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_combiner_probe")
-      || combinerCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 14)
+      || combinerCases.some((entry) => entry.probe?.calls?.setTextureStageState !== entry.probe?.expectedStageStateCalls)
+      || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.colorArg0 !== entry.probe?.combiner?.colorArg0)
+      || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.alphaArg0 !== entry.probe?.combiner?.alphaArg0)
       || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.supported !== true)
       || combinerCases.some((entry) => entry.centerPixelOk !== true)
       || combinerCases.some((entry) => entry.textureDelta?.creates !== 1)
