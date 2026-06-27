@@ -1739,7 +1739,7 @@ shares structure and follows behind.
       residency, refactor exported archive/data probes to preserve an already
       initialized memory manager and restore resident globals without calling
       `shutdownMemoryManager()` out from under the bootstrap.
-- [ ] Convert the remaining focused setup/device probes (`GlobalData`,
+- [x] Convert the remaining focused setup/device probes (`GlobalData`,
       `FileSystem`, no-CD manager, GameNetwork) to preserve an already
       initialized memory manager before any of them are reused under
       runtime-owned bootstrap singleton residency.

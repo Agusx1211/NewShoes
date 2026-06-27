@@ -2,6 +2,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include "Common/GameMemory.h"
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
@@ -137,7 +139,7 @@ GameNetworkProbeResult probe_original_game_network()
 	result.attempted = true;
 	result.source = "GameEngine/GameNetwork";
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 	try {
 		result.command_ids_ok = probe_command_ids(result);
 		result.frame_data_ok = probe_frame_data(result);
@@ -151,7 +153,5 @@ GameNetworkProbeResult probe_original_game_network()
 	} catch (...) {
 		result.ok = false;
 	}
-	shutdownMemoryManager();
-
 	return result;
 }

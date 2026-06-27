@@ -2,6 +2,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include "Common/ArchiveFileSystem.h"
 #include "Common/CommandLine.h"
 #include "Common/FileSystem.h"
@@ -21,7 +23,7 @@ GlobalDataProbeResult probe_original_global_data()
 	result.attempted = true;
 	result.source = "GameEngine/Common/GlobalData.cpp";
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -84,8 +86,6 @@ GlobalDataProbeResult probe_original_global_data()
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
-	shutdownMemoryManager();
-
 	return result;
 }
 
@@ -95,7 +95,7 @@ CommandLineProbeResult probe_original_command_line()
 	result.attempted = true;
 	result.source = "GameEngine/Common/CommandLine.cpp";
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -180,8 +180,6 @@ CommandLineProbeResult probe_original_command_line()
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
-
-	shutdownMemoryManager();
 
 	return result;
 }

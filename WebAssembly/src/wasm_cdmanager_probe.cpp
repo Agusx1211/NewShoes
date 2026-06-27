@@ -2,6 +2,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include "Common/ArchiveFileSystem.h"
 #include "Common/CDManager.h"
 #include "Common/FileSystem.h"
@@ -20,7 +22,7 @@ CDManagerProbeResult probe_original_cd_manager()
 	result.attempted = true;
 	result.source = "Win32Device/Common/Win32CDManager.cpp";
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	CDManagerInterface *old_cd_manager = TheCDManager;
 	FileSystem *old_file_system = TheFileSystem;
@@ -60,8 +62,6 @@ CDManagerProbeResult probe_original_cd_manager()
 	TheFileSystem = old_file_system;
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
-
-	shutdownMemoryManager();
 
 	return result;
 }

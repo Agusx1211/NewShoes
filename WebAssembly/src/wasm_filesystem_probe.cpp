@@ -2,6 +2,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -159,7 +161,7 @@ FileSystemProbeResult probe_original_file_system(
 	result.source = "GameEngine/Common/System/FileSystem.cpp";
 	result.local_path = LOCAL_PATH;
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -203,8 +205,6 @@ FileSystemProbeResult probe_original_file_system(
 	if (name_key_generator != nullptr) {
 		delete name_key_generator;
 	}
-
-	shutdownMemoryManager();
 
 	return result;
 }
