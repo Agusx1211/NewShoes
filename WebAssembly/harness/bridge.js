@@ -412,7 +412,17 @@ function registerArchiveSet(wasmModule, archiveSet) {
 function virtualKeyFromEvent(event) {
   const code = String(event.code ?? "");
   const namedKeys = {
+    Backspace: 0x08,
+    Tab: 0x09,
     Enter: 0x0d,
+    ShiftLeft: 0x10,
+    ShiftRight: 0x10,
+    ControlLeft: 0x11,
+    ControlRight: 0x11,
+    AltLeft: 0x12,
+    AltRight: 0x12,
+    Escape: 0x1b,
+    Space: 0x20,
     Insert: 0x2d,
     Delete: 0x2e,
     ArrowLeft: 0x25,

@@ -644,6 +644,30 @@ target_compile_options(zh_wwlib_msgloop PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_keyboard STATIC
+  "${WWLIB_DIR}/keyboard.cpp"
+)
+
+target_include_directories(zh_wwlib_keyboard PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWDEBUG_DIR}"
+)
+
+target_compile_options(zh_wwlib_keyboard PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_keyboard PUBLIC
+  zh_wwlib_msgloop
+)
+
 add_library(zh_wwlib_guarded_legacy STATIC
   "${WWLIB_DIR}/Except.cpp"
   "${WWLIB_DIR}/point.cpp"
@@ -3613,6 +3637,7 @@ set_target_properties(wwlib-legacy-platform-smoke PROPERTIES
 )
 
 target_link_libraries(wwlib-legacy-platform-smoke PRIVATE
+  zh_wwlib_keyboard
   zh_wwlib_mono
   zh_wwlib_msgloop
 )

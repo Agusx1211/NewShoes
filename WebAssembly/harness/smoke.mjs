@@ -430,8 +430,40 @@ try {
 
     const wmKeyDown = 0x0100;
     const wmMouseMove = 0x0200;
+    const vkShift = 0x10;
+    const vkA = 0x41;
     const vkF6 = 0x75;
     const mouseMoveLParam = (34 << 16) | 12;
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "Shift+A keydown queue",
+    );
+    const browserTextKeyProbe = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
+    if (!browserTextKeyProbe.ok
+        || browserTextKeyProbe.probe.beforeCount !== 2
+        || browserTextKeyProbe.probe.peek?.message !== wmKeyDown
+        || browserTextKeyProbe.probe.peek?.wParam !== vkShift
+        || browserTextKeyProbe.probe.after?.message !== wmKeyDown
+        || browserTextKeyProbe.probe.after?.wParam !== vkA) {
+      throw new Error(`Browser text key mapping probe mismatch: ${JSON.stringify(browserTextKeyProbe)}`);
+    }
+    await page.keyboard.up("A");
+    await page.keyboard.up("Shift");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "Shift+A keyup queue",
+    );
+    const resetTextKeysResult = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetTextKeysResult.ok
+        || resetTextKeysResult.state.browserInput?.messageQueue?.count !== 0
+        || resetTextKeysResult.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Browser text key reset mismatch: ${JSON.stringify(resetTextKeysResult)}`);
+    }
+
     await page.evaluate(({ wmKeyDown, vkF6 }) => window.CnCPort.rpc("postMessage", {
       message: wmKeyDown,
       wParam: vkF6,

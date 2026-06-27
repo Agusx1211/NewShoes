@@ -45,6 +45,10 @@
 #define WINAPI
 #endif
 
+#ifndef CALLBACK
+#define CALLBACK WINAPI
+#endif
+
 #ifndef __stdcall
 #define __stdcall
 #endif
@@ -75,11 +79,13 @@ using HWND = void *;
 struct IDispatch;
 using LPDISPATCH = IDispatch *;
 using LONG = long;
+using LRESULT = LONG;
 using HRESULT = LONG;
 using WCHAR = wchar_t;
 using LPCSTR = const char *;
 using LPCWSTR = const WCHAR *;
 using LPCVOID = const void *;
+using PBYTE = BYTE *;
 using LPBYTE = BYTE *;
 using LPDWORD = DWORD *;
 using LPSTR = char *;
@@ -93,6 +99,7 @@ using VOID = void;
 using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
+using LPWORD = WORD *;
 using LPTHREAD_START_ROUTINE = DWORD (WINAPI *)(LPVOID);
 
 struct GUID
@@ -417,11 +424,15 @@ static inline double Win32PortNowMilliseconds()
 #define VK_LBUTTON 0x01
 #define VK_RBUTTON 0x02
 #define VK_MBUTTON 0x04
+#define VK_BACK 0x08
+#define VK_TAB 0x09
 #define VK_RETURN 0x0D
 #define VK_SHIFT 0x10
 #define VK_CONTROL 0x11
 #define VK_MENU 0x12
 #define VK_CAPITAL 0x14
+#define VK_ESCAPE 0x1B
+#define VK_SPACE 0x20
 #define VK_INSERT 0x2D
 #define VK_DELETE 0x2E
 #define VK_LEFT 0x25
@@ -438,6 +449,23 @@ static inline double Win32PortNowMilliseconds()
 #define VK_F12 0x7B
 #define VK_NUMLOCK 0x90
 #define VK_SCROLL 0x91
+#define VK_NUMPAD0 0x60
+#define VK_NUMPAD1 0x61
+#define VK_NUMPAD2 0x62
+#define VK_NUMPAD3 0x63
+#define VK_NUMPAD4 0x64
+#define VK_NUMPAD5 0x65
+#define VK_NUMPAD6 0x66
+#define VK_NUMPAD7 0x67
+#define VK_NUMPAD8 0x68
+#define VK_NUMPAD9 0x69
+#define VK_MULTIPLY 0x6A
+#define VK_ADD 0x6B
+#define VK_SEPARATOR 0x6C
+#define VK_SUBTRACT 0x6D
+#define VK_DECIMAL 0x6E
+#define VK_DIVIDE 0x6F
+#define MAPVK_VK_TO_VSC 0
 #define IDC_ARROW reinterpret_cast<LPCSTR>(32512)
 #define IDC_CROSS reinterpret_cast<LPCSTR>(32515)
 #define IDC_SIZEALL reinterpret_cast<LPCSTR>(32646)
@@ -1029,6 +1057,98 @@ static inline SHORT GetKeyState(int virtual_key)
 	return WasmWin32Input::PeekKeyState(virtual_key);
 }
 
+static inline BOOL GetKeyboardState(PBYTE key_state)
+{
+	if (key_state == nullptr) {
+		return FALSE;
+	}
+
+	std::memset(key_state, 0, 256);
+	for (int virtual_key = 0; virtual_key < 256; ++virtual_key) {
+		if (WasmWin32Input::key_down[virtual_key]) {
+			key_state[virtual_key] = static_cast<BYTE>(key_state[virtual_key] | 0x80);
+		}
+		if (WasmWin32Input::key_pressed_since_last_query[virtual_key]) {
+			key_state[virtual_key] = static_cast<BYTE>(key_state[virtual_key] | 0x01);
+		}
+	}
+	return TRUE;
+}
+
+static inline UINT MapVirtualKey(UINT code, UINT map_type)
+{
+	if (map_type == MAPVK_VK_TO_VSC) {
+		return code & 0xffU;
+	}
+	return code & 0xffU;
+}
+
+static inline char Win32PortShiftedDigit(UINT virtual_key)
+{
+	static const char shifted_digits[] = ")!@#$%^&*(";
+	if (virtual_key >= '0' && virtual_key <= '9') {
+		return shifted_digits[virtual_key - '0'];
+	}
+	return '\0';
+}
+
+static inline char Win32PortAsciiForVirtualKey(UINT virtual_key, bool shift, bool caps_lock)
+{
+	if (virtual_key >= 'A' && virtual_key <= 'Z') {
+		const bool uppercase = shift != caps_lock;
+		return static_cast<char>((uppercase ? 'A' : 'a') + (virtual_key - 'A'));
+	}
+	if (virtual_key >= '0' && virtual_key <= '9') {
+		return shift ? Win32PortShiftedDigit(virtual_key) : static_cast<char>('0' + (virtual_key - '0'));
+	}
+	if (virtual_key >= VK_NUMPAD0 && virtual_key <= VK_NUMPAD9) {
+		return static_cast<char>('0' + (virtual_key - VK_NUMPAD0));
+	}
+
+	switch (virtual_key) {
+		case VK_BACK: return '\b';
+		case VK_TAB: return '\t';
+		case VK_RETURN: return '\r';
+		case VK_ESCAPE: return static_cast<char>(0x1b);
+		case VK_SPACE: return ' ';
+		case VK_MULTIPLY: return '*';
+		case VK_ADD: return '+';
+		case VK_SEPARATOR: return ',';
+		case VK_SUBTRACT: return '-';
+		case VK_DECIMAL: return '.';
+		case VK_DIVIDE: return '/';
+		case 0xBA: return shift ? ':' : ';';
+		case 0xBB: return shift ? '+' : '=';
+		case 0xBC: return shift ? '<' : ',';
+		case 0xBD: return shift ? '_' : '-';
+		case 0xBE: return shift ? '>' : '.';
+		case 0xBF: return shift ? '?' : '/';
+		case 0xC0: return shift ? '~' : '`';
+		case 0xDB: return shift ? '{' : '[';
+		case 0xDC: return shift ? '|' : '\\';
+		case 0xDD: return shift ? '}' : ']';
+		case 0xDE: return shift ? '"' : '\'';
+		default: return '\0';
+	}
+}
+
+static inline int ToAscii(UINT virtual_key, UINT, PBYTE key_state, LPWORD translated, UINT)
+{
+	if (translated == nullptr) {
+		return 0;
+	}
+
+	const bool shift = key_state != nullptr && (key_state[VK_SHIFT] & 0x80) != 0;
+	const bool caps_lock = key_state != nullptr && (key_state[VK_CAPITAL] & 0x01) != 0;
+	const char ascii = Win32PortAsciiForVirtualKey(virtual_key & 0xffU, shift, caps_lock);
+	if (ascii == '\0') {
+		return 0;
+	}
+
+	translated[0] = static_cast<WORD>(static_cast<unsigned char>(ascii));
+	return 1;
+}
+
 static inline HWND SetCapture(HWND window)
 {
 	HWND previous = WasmWin32Input::capture_window;
@@ -1441,6 +1561,11 @@ static inline BOOL TranslateMessage(const MSG *)
 }
 
 static inline LONG DispatchMessage(const MSG *)
+{
+	return 0;
+}
+
+static inline LRESULT DefWindowProc(HWND, UINT, WPARAM, LPARAM)
 {
 	return 0;
 }

@@ -362,10 +362,14 @@ shares structure and follows behind.
       `PostQuitMessage`, with harness coverage proving DOM pointer/key events
       enqueue Win32 messages and `PM_NOREMOVE`/`PM_REMOVE` preserve FIFO
       semantics.
-- [ ] Finish original WWLib `keyboard.cpp` / Win32 engine message-loop
-      enablement on top of the browser-fed queue, including `MapVirtualKey` /
-      `ToAscii` character translation, double-click policy, and dispatch into
-      the original WndProc or keyboard intercept path.
+- [x] Compile original WWLib `keyboard.cpp` under wasm with `MapVirtualKey`,
+      `ToAscii`, and `GetKeyboardState` shims, and smoke-test
+      `Windows_Message_Handler()` feeding keyboard, mouse, and double-click
+      messages into the original `WWKeyboardClass` intercept path.
+- [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
+      queue, including full `TranslateMessage` / `DispatchMessage` routing into
+      the original `WndProc`, `WM_CHAR` / IME text paths, browser double-click
+      event policy, and original `Win32Mouse` delivery.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in
       browser builds or route through the harness/browser console before
       relying on it for runtime diagnostics.
