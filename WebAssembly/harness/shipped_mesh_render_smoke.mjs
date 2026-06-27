@@ -15,7 +15,18 @@ const shippedMeshScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-shipped-mesh-canvas.png",
 );
+const shippedMultiTextureMeshScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-shipped-multitexture-mesh-canvas.png",
+);
+const D3DFMT_DXT1 = 0x31545844;
+const D3DFMT_DXT3 = 0x33545844;
 const D3DFMT_DXT5 = 0x35545844;
+const D3DTOP_SELECTARG2 = 3;
+const D3DTOP_MODULATE = 4;
+const D3DTA_DIFFUSE = 0;
+const D3DTA_CURRENT = 1;
+const D3DTA_TEXTURE = 2;
 const meshArchiveEntry = "Art\\W3D\\CINE_Moon.W3D";
 const meshRangeMountPath = "/range-probe/Art/W3D/CINE_Moon.W3D";
 const textureArchiveEntry = "Art\\Textures\\cine_moon.dds";
@@ -41,6 +52,14 @@ function pixelLooksSyntheticRed(pixel) {
     && pixel[1] <= 80
     && pixel[2] <= 80
     && pixel[3] >= 200;
+}
+
+function isDxtFormat(format) {
+  return format === D3DFMT_DXT1 || format === D3DFMT_DXT3 || format === D3DFMT_DXT5;
+}
+
+function isDxtStorage(storage) {
+  return storage === "dxt1" || storage === "dxt3" || storage === "dxt5";
 }
 
 function withTimeout(promise, milliseconds, label) {
@@ -247,6 +266,131 @@ try {
 
   await page.locator("#viewport").screenshot({ path: shippedMeshScreenshot });
 
+  let multiTextureRenderResult;
+  try {
+    multiTextureRenderResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dShippedMultiTextureMesh", payload), {
+        archivePath: meshArchiveMemfsPath,
+        textureArchivePath: textureArchiveMemfsPath,
+      }),
+      30000,
+      "shipped same-pass multi-texture WW3D mesh render",
+    );
+  } catch (error) {
+    throw new Error(`shipped same-pass multi-texture WW3D mesh render crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+  if (!multiTextureRenderResult.ok
+      || multiTextureRenderResult.probe?.source !== "ww3d_shipped_multi_texture_mesh_probe"
+      || multiTextureRenderResult.probe?.mesh?.path !== "art\\w3d\\cbnukec_ds.w3d"
+      || multiTextureRenderResult.probe?.mesh?.name !== "CBNUKEC_DS.REDGLOW01"
+      || multiTextureRenderResult.probe?.mesh?.bytes !== 8164
+      || multiTextureRenderResult.probe?.mesh?.chunkIndex !== 1
+      || multiTextureRenderResult.probe?.mesh?.chunkLength !== 685
+      || multiTextureRenderResult.probe?.mesh?.vertices !== 4
+      || multiTextureRenderResult.probe?.mesh?.polygons !== 2
+      || multiTextureRenderResult.probe?.mesh?.passCount !== 1
+      || multiTextureRenderResult.probe?.mesh?.uvArrayCount < 2
+      || multiTextureRenderResult.probe?.mesh?.stage0HasUV !== true
+      || multiTextureRenderResult.probe?.mesh?.stage1HasUV !== true
+      || multiTextureRenderResult.probe?.archives?.mesh !== meshArchiveMemfsPath
+      || multiTextureRenderResult.probe?.archives?.texture !== textureArchiveMemfsPath
+      || multiTextureRenderResult.probe?.results?.runtimeAssetSystemInstalled !== true
+      || multiTextureRenderResult.probe?.results?.meshArchiveLoaded !== true
+      || multiTextureRenderResult.probe?.results?.texture0ArchiveLoaded !== true
+      || multiTextureRenderResult.probe?.results?.texture1ArchiveLoaded !== true
+      || multiTextureRenderResult.probe?.results?.textureFileFactoryInstalled !== true
+      || multiTextureRenderResult.probe?.results?.textureSimpleFactoryPathSet !== false
+      || multiTextureRenderResult.probe?.results?.meshLoaded !== true
+      || multiTextureRenderResult.probe?.results?.meshLoad !== 0
+      || multiTextureRenderResult.probe?.textures?.[0]?.name !== "psblink.tga"
+      || multiTextureRenderResult.probe?.textures?.[0]?.archiveEntry !== "art\\textures\\psblink.dds"
+      || multiTextureRenderResult.probe?.textures?.[0]?.registered !== true
+      || multiTextureRenderResult.probe?.textures?.[0]?.ddsAvailable !== true
+      || multiTextureRenderResult.probe?.textures?.[0]?.ddsLoaded !== true
+      || multiTextureRenderResult.probe?.textures?.[0]?.hasD3DSurface !== true
+      || multiTextureRenderResult.probe?.textures?.[0]?.levels <= 0
+      || multiTextureRenderResult.probe?.textures?.[0]?.uploadedLevels !==
+        multiTextureRenderResult.probe?.textures?.[0]?.levels
+      || !isDxtFormat(multiTextureRenderResult.probe?.textures?.[0]?.format)
+      || multiTextureRenderResult.probe?.textures?.[1]?.name !== "psgrad.tga"
+      || multiTextureRenderResult.probe?.textures?.[1]?.archiveEntry !== "art\\textures\\psgrad.dds"
+      || multiTextureRenderResult.probe?.textures?.[1]?.registered !== true
+      || multiTextureRenderResult.probe?.textures?.[1]?.ddsAvailable !== true
+      || multiTextureRenderResult.probe?.textures?.[1]?.ddsLoaded !== true
+      || multiTextureRenderResult.probe?.textures?.[1]?.hasD3DSurface !== true
+      || multiTextureRenderResult.probe?.textures?.[1]?.levels <= 0
+      || multiTextureRenderResult.probe?.textures?.[1]?.uploadedLevels !==
+        multiTextureRenderResult.probe?.textures?.[1]?.levels
+      || !isDxtFormat(multiTextureRenderResult.probe?.textures?.[1]?.format)
+      || multiTextureRenderResult.probe?.calls?.browserTextureCreate < 2
+      || multiTextureRenderResult.probe?.calls?.browserTextureUpdate <
+        multiTextureRenderResult.probe?.textures?.[0]?.levels +
+          multiTextureRenderResult.probe?.textures?.[1]?.levels
+      || multiTextureRenderResult.probe?.calls?.browserTextureBind < 2
+      || multiTextureRenderResult.probe?.calls?.setTexture < 2
+      || multiTextureRenderResult.probe?.calls?.setVertexShader < 1
+      || multiTextureRenderResult.probe?.calls?.drawIndexed < 1
+      || multiTextureRenderResult.probe?.draw?.primitiveType !== 4
+      || multiTextureRenderResult.probe?.draw?.vertexShaderFvf === 0
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[0]?.colorOp !== D3DTOP_MODULATE
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[0]?.colorArg1 !== D3DTA_TEXTURE
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[0]?.colorArg2 !== D3DTA_DIFFUSE
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[0]?.texCoordIndex !== 0
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.colorOp !== D3DTOP_MODULATE
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.colorArg1 !== D3DTA_TEXTURE
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.colorArg2 !== D3DTA_CURRENT
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.alphaOp !== D3DTOP_SELECTARG2
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.alphaArg2 !== D3DTA_CURRENT
+      || multiTextureRenderResult.probe?.renderState?.textureStages?.[1]?.texCoordIndex !== 1
+      || multiTextureRenderResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || multiTextureRenderResult.browserProbe?.usedPersistentBuffers !== true
+      || multiTextureRenderResult.browserProbe?.usedTransforms !== true
+      || multiTextureRenderResult.browserProbe?.vertexShaderFvf !==
+        multiTextureRenderResult.probe?.draw?.vertexShaderFvf
+      || multiTextureRenderResult.browserProbe?.vertexLayout?.source !== "fvf"
+      || multiTextureRenderResult.browserProbe?.texture0?.ready !== true
+      || multiTextureRenderResult.browserProbe?.texture0?.sampled !== true
+      || multiTextureRenderResult.browserProbe?.texture0?.texCoordSet !== 0
+      || multiTextureRenderResult.browserProbe?.texture0?.texCoordSupported !== true
+      || !isDxtStorage(multiTextureRenderResult.browserProbe?.texture0?.storage)
+      || multiTextureRenderResult.browserProbe?.texture0?.combiner?.textureAvailable !== true
+      || multiTextureRenderResult.browserProbe?.texture0?.combiner?.supported !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.ready !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.sampled !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.texCoordSet !== 1
+      || multiTextureRenderResult.browserProbe?.texture1?.texCoordSupported !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.textureTransformSupported !== true
+      || !isDxtStorage(multiTextureRenderResult.browserProbe?.texture1?.storage)
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.textureAvailable !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.supported !== true
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.colorOp !== D3DTOP_MODULATE
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.colorArg1 !== D3DTA_TEXTURE
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.colorArg2 !== D3DTA_CURRENT
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.alphaOp !== D3DTOP_SELECTARG2
+      || multiTextureRenderResult.browserProbe?.texture1?.combiner?.alphaArg2 !== D3DTA_CURRENT
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.textureAvailable !== true
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.supported !== true
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.colorOp !== D3DTOP_MODULATE
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.colorArg1 !== D3DTA_TEXTURE
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.colorArg2 !== D3DTA_CURRENT
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.alphaOp !== D3DTOP_SELECTARG2
+      || multiTextureRenderResult.browserProbe?.stage1Combiner?.alphaArg2 !== D3DTA_CURRENT
+      || Number(multiTextureRenderResult.browserProbe?.boundTextures?.["0"] ?? 0) === 0
+      || Number(multiTextureRenderResult.browserProbe?.boundTextures?.["1"] ?? 0) === 0
+      || Number(multiTextureRenderResult.browserProbe?.boundTextures?.["0"] ?? 0) ===
+        Number(multiTextureRenderResult.browserProbe?.boundTextures?.["1"] ?? 0)
+      || !pixelHasColor(multiTextureRenderResult.browserProbe?.centerPixel, 8)
+      || !pixelHasColor(multiTextureRenderResult.screenshot?.centerPixel, 8)
+      || multiTextureRenderResult.textureDelta?.creates < 2
+      || multiTextureRenderResult.textureDelta?.updates <
+        multiTextureRenderResult.probe?.textures?.[0]?.levels +
+          multiTextureRenderResult.probe?.textures?.[1]?.levels
+      || multiTextureRenderResult.textureDelta?.binds < 2) {
+    throw new Error(`shipped same-pass multi-texture WW3D mesh render failed: ${JSON.stringify(multiTextureRenderResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: shippedMultiTextureMeshScreenshot });
+
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
@@ -273,10 +417,16 @@ try {
         mount: textureMountResult.asset,
       },
     },
-    screenshot: shippedMeshScreenshot,
+    screenshots: {
+      shippedMesh: shippedMeshScreenshot,
+      shippedMultiTextureMesh: shippedMultiTextureMeshScreenshot,
+    },
     probe: renderResult.probe,
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
+    multiTextureProbe: multiTextureRenderResult.probe,
+    multiTextureBrowserProbe: multiTextureRenderResult.browserProbe,
+    multiTextureDelta: multiTextureRenderResult.textureDelta,
     reader: "runtime-owned Win32BIGFileSystem archives in MEMFS; browser Range entry probe kept separate",
     renderer: "WW3D::Render + browser D3D8/WebGL2 bridge",
   }, null, 2));

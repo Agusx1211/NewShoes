@@ -190,6 +190,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int vertex_byte_size,
 	unsigned int vertex_count,
 	unsigned int vertex_stride,
+	unsigned int vertex_shader_fvf,
 	unsigned int index_buffer_id,
 	unsigned int index_byte_offset,
 	unsigned int index_byte_size,
@@ -200,6 +201,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int view_ptr,
 	unsigned int projection_ptr,
 	unsigned int texture0_transform_ptr,
+	unsigned int texture1_transform_ptr,
 	unsigned int render_state_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
@@ -284,6 +286,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		vertexBytes: vertex_byte_size >>> 0,
 		vertexCount: vertex_count >>> 0,
 		vertexStride: vertex_stride >>> 0,
+		vertexShaderFvf: vertex_shader_fvf >>> 0,
 		indexBufferId: index_buffer_id >>> 0,
 		indexByteOffset: index_byte_offset >>> 0,
 		indexBytes: index_byte_size >>> 0,
@@ -295,6 +298,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			view: copyMatrix(view_ptr),
 			projection: copyMatrix(projection_ptr),
 			texture0: copyMatrix(texture0_transform_ptr),
+			texture1: copyMatrix(texture1_transform_ptr),
 		},
 		renderState: copyRenderState(render_state_ptr),
 	});
@@ -313,7 +317,7 @@ void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -367,6 +371,15 @@ void fill_caps(D3DCAPS8 &caps)
 		D3DPTFILTERCAPS_MIPFPOINT | D3DPTFILTERCAPS_MIPFLINEAR |
 		D3DPTFILTERCAPS_MAGFPOINT | D3DPTFILTERCAPS_MAGFLINEAR;
 	caps.TextureAddressCaps = D3DTADDRESS_WRAP | D3DTADDRESS_CLAMP | D3DTADDRESS_MIRROR;
+	caps.TextureOpCaps = D3DTEXOPCAPS_DISABLE | D3DTEXOPCAPS_SELECTARG1 |
+		D3DTEXOPCAPS_SELECTARG2 | D3DTEXOPCAPS_MODULATE |
+		D3DTEXOPCAPS_MODULATE2X | D3DTEXOPCAPS_MODULATE4X |
+		D3DTEXOPCAPS_ADD | D3DTEXOPCAPS_ADDSIGNED |
+		D3DTEXOPCAPS_ADDSIGNED2X | D3DTEXOPCAPS_SUBTRACT |
+		D3DTEXOPCAPS_ADDSMOOTH | D3DTEXOPCAPS_BLENDDIFFUSEALPHA |
+		D3DTEXOPCAPS_BLENDTEXTUREALPHA | D3DTEXOPCAPS_BLENDFACTORALPHA |
+		D3DTEXOPCAPS_BLENDCURRENTALPHA | D3DTEXOPCAPS_DOTPRODUCT3 |
+		D3DTEXOPCAPS_MULTIPLYADD | D3DTEXOPCAPS_LERP;
 	caps.MaxTextureWidth = 4096;
 	caps.MaxTextureHeight = 4096;
 	caps.MaxTextureRepeat = 4096;
@@ -497,6 +510,7 @@ constexpr UINT DRAW_TRANSFORM_WORLD = 1u << 0;
 constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
 constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
 constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE0 = 1u << 0;
+constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE1 = 1u << 1;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
 
@@ -719,10 +733,11 @@ UINT allocate_browser_texture_id()
 }
 
 void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id, UINT vertex_byte_offset,
-	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, UINT index_buffer_id, UINT index_byte_offset,
+	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, DWORD vertex_shader_fvf,
+	UINT index_buffer_id, UINT index_byte_offset,
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
-	const D3DMATRIX *texture0_transform,
+	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
 	const WasmD3D8DrawRenderState *render_state)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
@@ -736,6 +751,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		vertex_byte_size,
 		vertex_count,
 		vertex_stride,
+		vertex_shader_fvf,
 		index_buffer_id,
 		index_byte_offset,
 		index_byte_size,
@@ -746,6 +762,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(view_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture0_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)));
 }
 
@@ -1844,7 +1861,13 @@ public:
 	{
 		return D3DERR_NOTAVAILABLE;
 	}
-	HRESULT SetVertexShader(DWORD) override { return S_OK; }
+	HRESULT SetVertexShader(DWORD handle) override
+	{
+		++g_state.set_vertex_shader_calls;
+		g_state.last_set_vertex_shader = handle;
+		m_vertex_shader = handle;
+		return S_OK;
+	}
 	HRESULT DeleteVertexShader(DWORD) override { return S_OK; }
 	HRESULT SetVertexShaderConstant(DWORD, const void *, DWORD) override { return S_OK; }
 	HRESULT CreatePixelShader(const DWORD *, DWORD *) override { return D3DERR_NOTAVAILABLE; }
@@ -1908,12 +1931,14 @@ private:
 		g_state.last_draw_index_format = D3DFMT_UNKNOWN;
 		g_state.last_draw_vertex_buffer_id = 0;
 		g_state.last_draw_index_buffer_id = 0;
+		g_state.last_draw_vertex_shader = m_vertex_shader;
 		g_state.last_draw_transform_mask = 0;
 		g_state.last_draw_texture_transform_mask = 0;
 		identity_matrix(g_state.last_draw_world_transform);
 		identity_matrix(g_state.last_draw_view_transform);
 		identity_matrix(g_state.last_draw_projection_transform);
 		identity_matrix(g_state.last_draw_texture0_transform);
+		identity_matrix(g_state.last_draw_texture1_transform);
 		g_state.last_draw_render_state = {};
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
@@ -2068,6 +2093,8 @@ private:
 		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
 		capture_draw_texture_transform(D3DTS_TEXTURE0, DRAW_TEXTURE_TRANSFORM_STAGE0,
 			g_state.last_draw_texture0_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE1, DRAW_TEXTURE_TRANSFORM_STAGE1,
+			g_state.last_draw_texture1_transform);
 		capture_draw_render_state();
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
@@ -2081,6 +2108,7 @@ private:
 			vertex_bytes,
 			uploaded_vertex_count,
 			m_stream_source_stride,
+			m_vertex_shader,
 			indices->browser_buffer_id(),
 			index_offset,
 			index_bytes,
@@ -2091,6 +2119,7 @@ private:
 			&g_state.last_draw_view_transform,
 			&g_state.last_draw_projection_transform,
 			&g_state.last_draw_texture0_transform,
+			&g_state.last_draw_texture1_transform,
 			&g_state.last_draw_render_state);
 	}
 
@@ -2139,6 +2168,7 @@ private:
 	IDirect3DIndexBuffer8 *m_indices = nullptr;
 	UINT m_stream_source_stride = 0;
 	UINT m_indices_base_vertex_index = 0;
+	DWORD m_vertex_shader = 0;
 };
 
 class BrowserD3D8 final : public IDirect3D8

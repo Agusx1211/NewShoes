@@ -2770,7 +2770,7 @@ shares structure and follows behind.
             two-texture quad with red bound on stage 0 and blue bound on stage
             1, verifies the stage-1 combiner reads `D3DTA_TEXTURE` from the
             second sampler, and asserts a blue center pixel.
-      - [ ] Wire the same-pass multi-texture shipped mesh through browser
+      - [x] Wire the same-pass multi-texture shipped mesh through browser
             rendering once the WebGL draw bridge samples/applies multiple
             texture stages.
           - [x] Add the `cnc_port_probe_ww3d_multitexture_shipped_mesh` wasm
