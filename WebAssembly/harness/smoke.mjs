@@ -60,6 +60,39 @@ async function waitForBrowserInput(page, predicate, label) {
   throw new Error(`${label} browser input state not observed: ${JSON.stringify(result.state.browserInput)}`);
 }
 
+async function assertQueuedMessages(page, expectedMessages, label) {
+  for (let index = 0; index < expectedMessages.length; ++index) {
+    const expected = expectedMessages[index];
+    const result = await page.evaluate(() => window.CnCPort.rpc("messageQueueProbe"));
+    const probe = result.probe;
+    const removed = probe?.removed;
+    const expectedCount = expectedMessages.length - index;
+    const mismatches = [];
+
+    if (!result.ok || probe?.source !== "browser_win32_message_queue") {
+      mismatches.push("probe failed");
+    }
+    if (probe?.beforeCount !== expectedCount) {
+      mismatches.push(`beforeCount ${probe?.beforeCount} !== ${expectedCount}`);
+    }
+    if (probe?.afterRemoveCount !== expectedCount - 1) {
+      mismatches.push(`afterRemoveCount ${probe?.afterRemoveCount} !== ${expectedCount - 1}`);
+    }
+    if (removed?.message !== expected.message) {
+      mismatches.push(`message ${removed?.message} !== ${expected.message}`);
+    }
+    for (const field of ["wParam", "lParam"]) {
+      if (Object.prototype.hasOwnProperty.call(expected, field) && removed?.[field] !== expected[field]) {
+        mismatches.push(`${field} ${removed?.[field]} !== ${expected[field]}`);
+      }
+    }
+
+    if (mismatches.length > 0) {
+      throw new Error(`${label} queued message ${index} mismatch (${mismatches.join(", ")}): ${JSON.stringify(result)}`);
+    }
+  }
+}
+
 function assertWasmTiming(state, label) {
   const timing = state.timing;
   if (!timing?.ok || timing.source !== "emscripten_get_now") {
@@ -430,12 +463,21 @@ try {
 
     const wmKeyDown = 0x0100;
     const wmChar = 0x0102;
+    const wmImeStartComposition = 0x010d;
+    const wmImeEndComposition = 0x010e;
+    const wmImeComposition = 0x010f;
     const wmMouseMove = 0x0200;
     const wmLeftButtonDown = 0x0201;
+    const gcsCompStr = 0x0008;
+    const gcsResultStr = 0x0800;
     const vkShift = 0x10;
     const vkA = 0x41;
     const vkF6 = 0x75;
     const charA = 0x41;
+    const compositionDraft = "\u304b";
+    const compositionResult = "\u754c";
+    const compositionDraftChar = compositionDraft.charCodeAt(0);
+    const compositionResultChar = compositionResult.charCodeAt(0);
     const mouseMoveLParam = (34 << 16) | 12;
     await page.keyboard.down("Shift");
     await page.keyboard.down("A");
@@ -475,6 +517,25 @@ try {
         || resetTextKeysResult.state.browserInput?.messageQueue?.overflowed !== false) {
       throw new Error(`Browser text key reset mismatch: ${JSON.stringify(resetTextKeysResult)}`);
     }
+
+    await page.evaluate(({ compositionDraft, compositionResult }) => {
+      const viewport = document.querySelector("#viewport");
+      viewport.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      viewport.dispatchEvent(new CompositionEvent("compositionupdate", { data: compositionDraft }));
+      viewport.dispatchEvent(new CompositionEvent("compositionend", { data: compositionResult }));
+    }, { compositionDraft, compositionResult });
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 5,
+      "browser IME composition queue",
+    );
+    await assertQueuedMessages(page, [
+      { message: wmImeStartComposition, wParam: 0, lParam: 0 },
+      { message: wmImeComposition, wParam: compositionDraftChar, lParam: gcsCompStr },
+      { message: wmImeComposition, wParam: compositionResultChar, lParam: gcsResultStr },
+      { message: wmImeEndComposition, wParam: 0, lParam: 0 },
+      { message: wmChar, wParam: compositionResultChar, lParam: 0 },
+    ], "Browser IME composition");
 
     await page.evaluate(({ wmKeyDown, vkF6 }) => window.CnCPort.rpc("postMessage", {
       message: wmKeyDown,

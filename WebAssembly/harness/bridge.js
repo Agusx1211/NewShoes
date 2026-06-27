@@ -467,6 +467,9 @@ const win32Messages = Object.freeze({
   keyDown: 0x0100,
   keyUp: 0x0101,
   char: 0x0102,
+  imeStartComposition: 0x010d,
+  imeEndComposition: 0x010e,
+  imeComposition: 0x010f,
   mouseMove: 0x0200,
   leftButtonDown: 0x0201,
   leftButtonUp: 0x0202,
@@ -483,6 +486,11 @@ const win32Messages = Object.freeze({
 const win32ActivateStates = Object.freeze({
   inactive: 0,
   active: 1,
+});
+
+const win32ImeCompositionFlags = Object.freeze({
+  compositionString: 0x0008,
+  resultString: 0x0800,
 });
 
 const doubleClickPolicy = Object.freeze({
@@ -599,13 +607,20 @@ function wheelWParam(event) {
 }
 
 function win32CharCodeFromEvent(event) {
-  if (event.ctrlKey || event.metaKey || event.altKey) {
+  if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
     return -1;
   }
   if (typeof event.key !== "string" || event.key.length !== 1) {
     return -1;
   }
   return event.key.charCodeAt(0);
+}
+
+function lastUtf16CodeUnit(text) {
+  if (typeof text !== "string" || text.length === 0) {
+    return 0;
+  }
+  return text.charCodeAt(text.length - 1);
 }
 
 async function pushBrowserInputToWasm({
@@ -661,6 +676,24 @@ async function postBrowserMessageToWasm({
   )));
   harnessState.wasm = "loaded";
   return snapshotState();
+}
+
+async function postBrowserTextToWasm(text) {
+  if (typeof text !== "string" || text.length === 0) {
+    return snapshotState();
+  }
+
+  let state = null;
+  for (let index = 0; index < text.length; ++index) {
+    state = await postBrowserMessageToWasm({
+      message: win32Messages.char,
+      wParam: text.charCodeAt(index),
+    });
+    if (!state) {
+      return null;
+    }
+  }
+  return state;
 }
 
 async function resetBrowserInput() {
@@ -1032,6 +1065,40 @@ canvas.addEventListener("focus", () => {
 });
 canvas.addEventListener("blur", () => {
   void setBrowserWin32Focus(false);
+});
+canvas.addEventListener("compositionstart", () => {
+  void postBrowserMessageToWasm({
+    message: win32Messages.imeStartComposition,
+  });
+});
+canvas.addEventListener("compositionupdate", (event) => {
+  void postBrowserMessageToWasm({
+    message: win32Messages.imeComposition,
+    wParam: lastUtf16CodeUnit(event.data),
+    lParam: win32ImeCompositionFlags.compositionString,
+  });
+});
+canvas.addEventListener("compositionend", async (event) => {
+  const text = typeof event.data === "string" ? event.data : "";
+  if (text.length > 0) {
+    const compositionState = await postBrowserMessageToWasm({
+      message: win32Messages.imeComposition,
+      wParam: lastUtf16CodeUnit(text),
+      lParam: win32ImeCompositionFlags.resultString,
+    });
+    if (!compositionState) {
+      return;
+    }
+  }
+
+  const endState = await postBrowserMessageToWasm({
+    message: win32Messages.imeEndComposition,
+  });
+  if (!endState) {
+    return;
+  }
+
+  await postBrowserTextToWasm(text);
 });
 canvas.addEventListener("pointermove", (event) => {
   const point = canvasInputPointFromEvent(event);

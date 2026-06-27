@@ -400,9 +400,14 @@ shares structure and follows behind.
       `WM_ACTIVATEAPP`, `WM_ACTIVATE`, `WM_SETFOCUS`, and `WM_KILLFOCUS`
       messages, with Playwright coverage proving original `WndProc()` updates
       the Win32 mouse focus flag and D3D reset hook.
-- [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
-      queue, including IME composition text paths through the browser device
-      layer.
+- [x] Route browser DOM composition events through Win32
+      `WM_IME_STARTCOMPOSITION`, `WM_IME_COMPOSITION`,
+      `WM_IME_ENDCOMPOSITION`, and committed `WM_CHAR` messages, with
+      Playwright coverage proving the browser-fed queue preserves the IME
+      sequence and UTF-16 text payload.
+- [x] Finish Win32 engine message-loop enablement on top of the browser-fed
+      queue for keyboard, pointer, double-click, focus/activation, lifecycle,
+      and DOM composition text paths through the browser device layer.
 - [ ] Retire the browser-only narrow `Win32Mouse`/`Mouse` shim used by the
       `cnc-port` WndProc harness once the main executable can link the full
       original GameClient mouse/control-bar surface without duplicate command
