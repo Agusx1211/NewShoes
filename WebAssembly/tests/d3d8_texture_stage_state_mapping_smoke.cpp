@@ -4,9 +4,9 @@
 // notes/texture_stage_binding_plan.md) that records the D3D8 texture-stage
 // sampler/filter/address contract the engine sets through
 // `TextureFilterClass::Apply` and direct `Set_DX8_Texture_Stage_State` calls,
-// plus the expected D3D8 -> WebGL2 sampler mapping, WITHOUT touching the
-// WebGL2 draw bridge (WebAssembly/harness/bridge.js) or the shim itself
-// (WebAssembly/src/wasm_d3d8_shim.*).
+// plus the expected D3D8 -> WebGL2 sampler mapping. This expectations smoke
+// does not apply sampler state to the WebGL2 draw bridge; it records the
+// contract that the later sampler-translation slice must satisfy.
 //
 // It mirrors d3d8_render_state_mapping_smoke.cpp and d3d8_texture_upload_
 // readiness_smoke.cpp and does four things:
@@ -287,9 +287,9 @@ int main()
 
 	// -------------------------------------------------------------------------
 	// 2. Bring up the shim device purely to read its reported caps. We do NOT
-	//    exercise SetTextureStageState (it is a no-op in the current shim and
-	//    there is no GetTextureStageState to round-trip); the cap values are
-	//    the contract the local _Init_Filters replication keys off.
+	//    exercise SetTextureStageState here; d3d8-shim-smoke covers draw-time
+	//    capture, while this smoke records the caps contract the local
+	//    _Init_Filters replication keys off.
 	// -------------------------------------------------------------------------
 	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
 	if (!expect(d3d != nullptr, "Direct3DCreate8 returned null")) {
@@ -460,7 +460,7 @@ int main()
 
 	std::printf(
 		"{\"ok\":true,\"smoke\":\"d3d8-texture-stage-state-mapping\","
-		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping; shim and draw bridge unchanged.\","
+		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping; sampler application remains open.\","
 		"\"caps\":{\"textureFilterCaps\":%lu,\"textureAddressCaps\":%lu,\"maxAnisotropy\":%lu,"
 		"\"linearMin\":%s,\"linearMag\":%s,\"linearMip\":%s,\"anisotropicMin\":%s,\"anisotropicMag\":%s},"
 		"\"stage0Default\":{\"d3dMinFilter\":%u,\"d3dMagFilter\":%u,\"d3dMipFilter\":%u,"
