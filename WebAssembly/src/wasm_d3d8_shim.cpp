@@ -189,6 +189,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int world_ptr,
 	unsigned int view_ptr,
 	unsigned int projection_ptr,
+	unsigned int texture0_transform_ptr,
 	unsigned int render_state_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
@@ -282,6 +283,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			world: copyMatrix(world_ptr),
 			view: copyMatrix(view_ptr),
 			projection: copyMatrix(projection_ptr),
+			texture0: copyMatrix(texture0_transform_ptr),
 		},
 		renderState: copyRenderState(render_state_ptr),
 	});
@@ -300,7 +302,7 @@ void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -431,6 +433,7 @@ DWORD checksum_texture_region(const BYTE *data, UINT pitch, UINT row_bytes, UINT
 constexpr UINT DRAW_TRANSFORM_WORLD = 1u << 0;
 constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
 constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
+constexpr UINT DRAW_TEXTURE_TRANSFORM_STAGE0 = 1u << 0;
 constexpr UINT BROWSER_BUFFER_VERTEX = 1u;
 constexpr UINT BROWSER_BUFFER_INDEX = 2u;
 
@@ -654,6 +657,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, UINT index_buffer_id, UINT index_byte_offset,
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
+	const D3DMATRIX *texture0_transform,
 	const WasmD3D8DrawRenderState *render_state)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
@@ -676,6 +680,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(world_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(view_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture0_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)));
 }
 
@@ -1759,9 +1764,11 @@ private:
 		g_state.last_draw_vertex_buffer_id = 0;
 		g_state.last_draw_index_buffer_id = 0;
 		g_state.last_draw_transform_mask = 0;
+		g_state.last_draw_texture_transform_mask = 0;
 		identity_matrix(g_state.last_draw_world_transform);
 		identity_matrix(g_state.last_draw_view_transform);
 		identity_matrix(g_state.last_draw_projection_transform);
+		identity_matrix(g_state.last_draw_texture0_transform);
 		g_state.last_draw_render_state = {};
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
@@ -1913,6 +1920,8 @@ private:
 		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
 		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
 		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
+		capture_draw_texture_transform(D3DTS_TEXTURE0, DRAW_TEXTURE_TRANSFORM_STAGE0,
+			g_state.last_draw_texture0_transform);
 		capture_draw_render_state();
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
@@ -1935,6 +1944,7 @@ private:
 			&g_state.last_draw_world_transform,
 			&g_state.last_draw_view_transform,
 			&g_state.last_draw_projection_transform,
+			&g_state.last_draw_texture0_transform,
 			&g_state.last_draw_render_state);
 	}
 
@@ -1944,6 +1954,17 @@ private:
 		if (found != m_transforms.end()) {
 			destination = found->second;
 			g_state.last_draw_transform_mask |= mask_bit;
+		} else {
+			identity_matrix(destination);
+		}
+	}
+
+	void capture_draw_texture_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const
+	{
+		const auto found = m_transforms.find(state);
+		if (found != m_transforms.end()) {
+			destination = found->second;
+			g_state.last_draw_texture_transform_mask |= mask_bit;
 		} else {
 			identity_matrix(destination);
 		}

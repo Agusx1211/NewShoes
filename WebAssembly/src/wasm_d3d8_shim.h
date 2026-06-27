@@ -104,9 +104,11 @@ struct WasmD3D8ShimState
 	UINT last_draw_vertex_buffer_id;
 	UINT last_draw_index_buffer_id;
 	UINT last_draw_transform_mask;
+	UINT last_draw_texture_transform_mask;
 	D3DMATRIX last_draw_world_transform;
 	D3DMATRIX last_draw_view_transform;
 	D3DMATRIX last_draw_projection_transform;
+	D3DMATRIX last_draw_texture0_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
