@@ -9,6 +9,11 @@ Mouse *MouseCursor = nullptr;
 
 namespace {
 int intercept_calls = 0;
+int wnd_proc_calls = 0;
+HWND wnd_proc_last_window = nullptr;
+UINT wnd_proc_last_message = 0;
+WPARAM wnd_proc_last_wparam = 0;
+LPARAM wnd_proc_last_lparam = 0;
 WWKeyboardClass *active_keyboard = nullptr;
 
 bool expect(bool condition, const char *message)
@@ -24,6 +29,16 @@ bool count_intercepts(MSG &)
 {
 	++intercept_calls;
 	return false;
+}
+
+LRESULT CALLBACK smoke_wnd_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+	++wnd_proc_calls;
+	wnd_proc_last_window = window;
+	wnd_proc_last_message = message;
+	wnd_proc_last_wparam = wparam;
+	wnd_proc_last_lparam = lparam;
+	return 0x3456;
 }
 
 bool route_message_to_keyboard(MSG &message)
@@ -114,6 +129,57 @@ int main()
 		return 1;
 	}
 	Message_Intercept_Handler = nullptr;
+
+	WNDCLASS window_class = {};
+	window_class.lpfnWndProc = smoke_wnd_proc;
+	window_class.lpszClassName = "SmokeWindow";
+	if (!expect(RegisterClass(&window_class) != 0,
+			"RegisterClass should accept a smoke WndProc")) {
+		return 1;
+	}
+	HWND dispatch_window = CreateWindow(
+		"SmokeWindow",
+		"Smoke",
+		0,
+		0,
+		0,
+		320,
+		200,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr);
+	if (!expect(dispatch_window != nullptr,
+			"CreateWindow should return a faux HWND for registered classes")) {
+		return 1;
+	}
+	MSG direct_message = {dispatch_window, WM_USER + 7, 0x44, 0x55, 0, {0, 0}};
+	if (!expect(DispatchMessage(&direct_message) == 0x3456
+			&& wnd_proc_calls == 1
+			&& wnd_proc_last_window == dispatch_window
+			&& wnd_proc_last_message == WM_USER + 7
+			&& wnd_proc_last_wparam == 0x44
+			&& wnd_proc_last_lparam == 0x55,
+			"DispatchMessage should call the registered WndProc")) {
+		return 1;
+	}
+	if (!expect(PostMessage(dispatch_window, WM_USER + 8, 0x66, 0x77) == TRUE,
+			"PostMessage should queue registered-window messages")) {
+		return 1;
+	}
+	Windows_Message_Handler();
+	if (!expect(wnd_proc_calls == 2
+			&& wnd_proc_last_window == dispatch_window
+			&& wnd_proc_last_message == WM_USER + 8
+			&& wnd_proc_last_wparam == 0x66
+			&& wnd_proc_last_lparam == 0x77,
+			"Windows_Message_Handler should dispatch queued messages to WndProc")) {
+		return 1;
+	}
+	if (!expect(DestroyWindow(dispatch_window) == TRUE,
+			"DestroyWindow should remove faux HWND records")) {
+		return 1;
+	}
 
 	WasmWin32Input::Reset();
 	WWKeyboardClass keyboard;

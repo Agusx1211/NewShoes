@@ -66,10 +66,13 @@ using HKEY = void *;
 using HINSTANCE = void *;
 using HMODULE = HINSTANCE;
 using HBITMAP = void *;
+using HBRUSH = void *;
 using HDC = void *;
 using HCURSOR = void *;
 using HFONT = void *;
 using HGDIOBJ = void *;
+using HICON = void *;
+using HMENU = void *;
 using FARPROC = void (*)();
 using HACCEL = void *;
 using HRSRC = void *;
@@ -100,7 +103,9 @@ using WPARAM = std::uintptr_t;
 using LPARAM = std::intptr_t;
 using WORD = unsigned short;
 using LPWORD = WORD *;
+using ATOM = WORD;
 using LPTHREAD_START_ROUTINE = DWORD (WINAPI *)(LPVOID);
+using WNDPROC = LRESULT (CALLBACK *)(HWND, UINT, WPARAM, LPARAM);
 
 struct GUID
 {
@@ -229,6 +234,24 @@ struct MSG
 	DWORD time;
 	POINT pt;
 };
+
+struct WNDCLASSA
+{
+	UINT style;
+	WNDPROC lpfnWndProc;
+	int cbClsExtra;
+	int cbWndExtra;
+	HINSTANCE hInstance;
+	HICON hIcon;
+	HCURSOR hCursor;
+	HBRUSH hbrBackground;
+	LPCSTR lpszMenuName;
+	LPCSTR lpszClassName;
+};
+
+#ifndef WNDCLASS
+#define WNDCLASS WNDCLASSA
+#endif
 
 struct _EXCEPTION_POINTERS
 {
@@ -389,6 +412,10 @@ static inline double Win32PortNowMilliseconds()
 #define IDYES 6
 #define IDNO 7
 
+#define CS_HREDRAW 0x0002
+#define CS_VREDRAW 0x0001
+#define CS_DBLCLKS 0x0008
+#define HWND_TOP reinterpret_cast<HWND>(0)
 #define HWND_NOTOPMOST reinterpret_cast<HWND>(-2)
 #define HWND_TOPMOST reinterpret_cast<HWND>(-1)
 #define SWP_NOSIZE 0x0001
@@ -397,6 +424,8 @@ static inline double Win32PortNowMilliseconds()
 #define SW_HIDE 0
 #define SW_SHOW 5
 #define GWL_STYLE (-16)
+#define GWL_WNDPROC (-4)
+#define GWLP_WNDPROC GWL_WNDPROC
 
 #define DRIVE_UNKNOWN 0
 #define DRIVE_NO_ROOT_DIR 1
@@ -869,6 +898,22 @@ inline bool key_pressed_since_last_query[256] = {};
 inline MSG message_queue[256] = {};
 inline unsigned int message_queue_count = 0;
 inline bool message_queue_overflowed = false;
+struct WindowClassRecord
+{
+	LPCSTR name = nullptr;
+	WNDPROC procedure = nullptr;
+};
+struct WindowRecord
+{
+	HWND handle = nullptr;
+	LPCSTR class_name = nullptr;
+	WNDPROC procedure = nullptr;
+};
+inline WindowClassRecord window_classes[32] = {};
+inline unsigned int window_class_count = 0;
+inline WindowRecord windows[32] = {};
+inline unsigned int window_count = 0;
+inline std::uintptr_t next_window_handle = 0x10000;
 
 static inline bool IsValidKey(int virtual_key)
 {
@@ -984,6 +1029,115 @@ static inline bool QueueMessage(HWND window, UINT message, WPARAM w_param, LPARA
 	queued.pt = point != nullptr ? *point : cursor_position;
 	++message_queue_count;
 	return true;
+}
+
+static inline unsigned int WindowClassCapacity()
+{
+	return static_cast<unsigned int>(sizeof(window_classes) / sizeof(window_classes[0]));
+}
+
+static inline unsigned int WindowCapacity()
+{
+	return static_cast<unsigned int>(sizeof(windows) / sizeof(windows[0]));
+}
+
+static inline bool WindowClassNamesEqual(LPCSTR left, LPCSTR right)
+{
+	if (left == nullptr || right == nullptr) {
+		return left == right;
+	}
+	return std::strcmp(left, right) == 0;
+}
+
+static inline WindowClassRecord *FindWindowClass(LPCSTR class_name)
+{
+	for (unsigned int index = 0; index < window_class_count; ++index) {
+		if (WindowClassNamesEqual(window_classes[index].name, class_name)) {
+			return &window_classes[index];
+		}
+	}
+	return nullptr;
+}
+
+static inline ATOM RegisterWindowClass(const WNDCLASSA *window_class)
+{
+	if (window_class == nullptr || window_class->lpszClassName == nullptr) {
+		return 0;
+	}
+
+	if (WindowClassRecord *existing = FindWindowClass(window_class->lpszClassName)) {
+		existing->procedure = window_class->lpfnWndProc;
+		return static_cast<ATOM>((existing - window_classes) + 1);
+	}
+	if (window_class_count >= WindowClassCapacity()) {
+		return 0;
+	}
+
+	WindowClassRecord &record = window_classes[window_class_count];
+	record.name = window_class->lpszClassName;
+	record.procedure = window_class->lpfnWndProc;
+	++window_class_count;
+	return static_cast<ATOM>(window_class_count);
+}
+
+static inline WindowRecord *FindWindow(HWND window)
+{
+	for (unsigned int index = 0; index < window_count; ++index) {
+		if (windows[index].handle == window) {
+			return &windows[index];
+		}
+	}
+	return nullptr;
+}
+
+static inline HWND CreateWindowRecord(LPCSTR class_name)
+{
+	if (window_count >= WindowCapacity()) {
+		return nullptr;
+	}
+
+	WindowRecord &record = windows[window_count];
+	record.handle = reinterpret_cast<HWND>(next_window_handle++);
+	record.class_name = class_name;
+	if (WindowClassRecord *window_class = FindWindowClass(class_name)) {
+		record.procedure = window_class->procedure;
+	}
+	++window_count;
+	return record.handle;
+}
+
+static inline bool DestroyWindowRecord(HWND window)
+{
+	for (unsigned int index = 0; index < window_count; ++index) {
+		if (windows[index].handle != window) {
+			continue;
+		}
+		for (unsigned int tail = index; tail + 1 < window_count; ++tail) {
+			windows[tail] = windows[tail + 1];
+		}
+		windows[window_count - 1] = {};
+		--window_count;
+		return true;
+	}
+	return false;
+}
+
+static inline WNDPROC GetWindowProcedure(HWND window)
+{
+	if (WindowRecord *record = FindWindow(window)) {
+		return record->procedure;
+	}
+	return nullptr;
+}
+
+static inline WNDPROC SetWindowProcedure(HWND window, WNDPROC procedure)
+{
+	if (WindowRecord *record = FindWindow(window)) {
+		WNDPROC previous = record->procedure;
+		record->procedure = procedure;
+		return previous;
+	}
+	return nullptr;
 }
 
 static inline void Reset()
@@ -1185,13 +1339,82 @@ static inline HWND GetDesktopWindow()
 	return nullptr;
 }
 
+static inline ATOM RegisterClassA(const WNDCLASSA *window_class)
+{
+	return WasmWin32Input::RegisterWindowClass(window_class);
+}
+
+#ifndef RegisterClass
+#define RegisterClass RegisterClassA
+#endif
+
+static inline HWND CreateWindowExA(
+	DWORD,
+	LPCSTR class_name,
+	LPCSTR,
+	DWORD,
+	int,
+	int,
+	int,
+	int,
+	HWND,
+	HMENU,
+	HINSTANCE,
+	LPVOID)
+{
+	return WasmWin32Input::CreateWindowRecord(class_name);
+}
+
+static inline HWND CreateWindowA(
+	LPCSTR class_name,
+	LPCSTR window_name,
+	DWORD style,
+	int x,
+	int y,
+	int width,
+	int height,
+	HWND parent,
+	HMENU menu,
+	HINSTANCE instance,
+	LPVOID param)
+{
+	return CreateWindowExA(0, class_name, window_name, style, x, y, width, height, parent, menu, instance, param);
+}
+
+#ifndef CreateWindowEx
+#define CreateWindowEx CreateWindowExA
+#endif
+
+#ifndef CreateWindow
+#define CreateWindow CreateWindowA
+#endif
+
+static inline BOOL DestroyWindow(HWND window)
+{
+	return WasmWin32Input::DestroyWindowRecord(window) ? TRUE : FALSE;
+}
+
 static inline BOOL IsIconic(HWND)
 {
 	return FALSE;
 }
 
-static inline LONG GetWindowLong(HWND, int)
+static inline LONG GetWindowLong(HWND window, int index)
 {
+	if (index == GWL_WNDPROC || index == GWLP_WNDPROC) {
+		return static_cast<LONG>(reinterpret_cast<std::intptr_t>(WasmWin32Input::GetWindowProcedure(window)));
+	}
+	return 0;
+}
+
+static inline LONG SetWindowLong(HWND window, int index, LONG value)
+{
+	if (index == GWL_WNDPROC || index == GWLP_WNDPROC) {
+		WNDPROC previous = WasmWin32Input::SetWindowProcedure(
+			window,
+			reinterpret_cast<WNDPROC>(static_cast<std::intptr_t>(value)));
+		return static_cast<LONG>(reinterpret_cast<std::intptr_t>(previous));
+	}
 	return 0;
 }
 
@@ -1560,8 +1783,14 @@ static inline BOOL TranslateMessage(const MSG *)
 	return TRUE;
 }
 
-static inline LONG DispatchMessage(const MSG *)
+static inline LONG DispatchMessage(const MSG *message)
 {
+	if (message == nullptr) {
+		return 0;
+	}
+	if (WNDPROC procedure = WasmWin32Input::GetWindowProcedure(message->hwnd)) {
+		return static_cast<LONG>(procedure(message->hwnd, message->message, message->wParam, message->lParam));
+	}
 	return 0;
 }
 
