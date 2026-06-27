@@ -45,6 +45,22 @@ set(RNDSTRNG_PORT_SHIM "${WASM_SHIMS_DIR}/rndstrng_port.h")
 
 find_program(NODE_EXECUTABLE NAMES node nodejs REQUIRED)
 
+add_library(zh_browser_d3d8 STATIC
+  src/wasm_d3d8_shim.cpp
+)
+
+target_include_directories(zh_browser_d3d8 PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_options(zh_browser_d3d8 PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unused-parameter
+)
+
 add_library(zh_compression_eac STATIC
   "${COMPRESSION_EAC_DIR}/btreeabout.cpp"
   "${COMPRESSION_EAC_DIR}/btreedecode.cpp"
@@ -4809,6 +4825,33 @@ target_compile_options(ww3d2-light-render-smoke PRIVATE
 )
 
 target_link_options(ww3d2-light-render-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
+
+add_executable(d3d8-shim-smoke
+  tests/d3d8_shim_smoke.cpp
+)
+
+set_target_properties(d3d8-shim-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(d3d8-shim-smoke PRIVATE
+  zh_browser_d3d8
+)
+
+target_compile_options(d3d8-shim-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(d3d8-shim-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

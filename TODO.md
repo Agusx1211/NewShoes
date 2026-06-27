@@ -2230,6 +2230,12 @@ shares structure and follows behind.
 
 ### WW3D2 device bring-up
 - [ ] Map W3D render device init onto the WebGL2 context.
+- [x] Add a focused browser D3D8 runtime shim for `Direct3DCreate8`,
+      `CreateDevice`, surface descriptors, viewport state, `BeginScene`,
+      `Clear`, `EndScene`, and `Present`, with a wasm smoke proving the first
+      device-clear path can be observed through probe counters. This is a D3D8
+      factory/device slice only; original `DX8Wrapper::Init` still needs
+      target-scoped loader wiring and real WebGL2 draw calls.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
