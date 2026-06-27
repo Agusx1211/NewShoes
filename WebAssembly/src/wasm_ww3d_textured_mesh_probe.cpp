@@ -7,6 +7,7 @@
 #include "PreRTS.h"
 
 #include "Common/ArchiveFileSystem.h"
+#include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/LocalFileSystem.h"
@@ -27,6 +28,7 @@
 #include "vertmaterial.h"
 #include "w3d_file.h"
 #include "wasm_d3d8_shim.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 #include "W3DDevice/GameClient/W3DFileSystem.h"
 #include "ww3d.h"
@@ -46,25 +48,9 @@ constexpr const char *kProbeMeshTextureName = "probe_mesh_red.tga";
 constexpr unsigned int kProbeMeshTextureWidth = 2;
 constexpr unsigned int kProbeMeshTextureHeight = 2;
 constexpr const char *kShippedMeshPath = "art\\w3d\\cine_moon.w3d";
-constexpr const char *kShippedMeshFileSystemPath = "/Art/W3D/CINE_Moon.W3D";
 constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
 constexpr const char *kShippedMeshTextureArchiveEntry = "art\\textures\\cine_moon.dds";
-constexpr const char *kShippedMeshTexturePath = "/Art/Textures/cine_moon.dds";
-
-class EmptyArchiveFileSystem : public ArchiveFileSystem {
-public:
-	void init() override {}
-	void update() override {}
-	void reset() override {}
-	void postProcessLoad() override {}
-
-	ArchiveFile *openArchiveFile(const Char *) override { return nullptr; }
-	void closeArchiveFile(const Char *) override {}
-	void closeAllArchiveFiles() override {}
-	void closeAllFiles() override {}
-	Bool loadBigFilesFromDirectory(AsciiString, AsciiString, Bool = FALSE) override { return FALSE; }
-};
 
 bool succeeded(int result)
 {
@@ -119,40 +105,49 @@ std::string json_escape(const std::string &value)
 	return escaped;
 }
 
-bool mounted_file_exists(const char *path)
+void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
-	std::FILE *file = std::fopen(path, "rb");
-	if (file == nullptr) {
-		return false;
+	std::string normalized = archive_path != nullptr ? archive_path : "";
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash == std::string::npos) {
+		directory = "";
+		file_mask = normalized.c_str();
+		return;
 	}
 
-	std::fclose(file);
-	return true;
+	directory = normalized.substr(0, slash + 1).c_str();
+	file_mask = normalized.substr(slash + 1).c_str();
 }
 
-bool read_mounted_file(const char *path, std::vector<unsigned char> &data)
+bool read_game_file(const char *path, std::vector<unsigned char> &data)
 {
-	std::FILE *file = std::fopen(path, "rb");
+	if (TheFileSystem == nullptr) {
+		return false;
+	}
+
+	File *file = TheFileSystem->openFile(path, File::READ | File::BINARY);
 	if (file == nullptr) {
 		return false;
 	}
 
-	if (std::fseek(file, 0, SEEK_END) != 0) {
-		std::fclose(file);
-		return false;
-	}
-
-	const long size = std::ftell(file);
-	if (size <= 0 || std::fseek(file, 0, SEEK_SET) != 0) {
-		std::fclose(file);
+	const int size = file->size();
+	if (size <= 0) {
+		file->close();
 		return false;
 	}
 
 	data.assign(static_cast<std::size_t>(size), 0);
-	const std::size_t bytes_read = std::fread(data.data(), 1, data.size(), file);
-	const bool ok = bytes_read == data.size() && std::ferror(file) == 0;
-	std::fclose(file);
-	return ok;
+	const int bytes_read = file->read(data.data(), size);
+	file->close();
+
+	if (bytes_read != size) {
+		data.clear();
+		return false;
+	}
+
+	return true;
 }
 
 bool load_first_mesh_chunk(const std::vector<unsigned char> &data, MeshClass *mesh, int &load_result)
@@ -684,6 +679,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	std::vector<unsigned char> mesh_data;
 	std::string mesh_name;
 	std::string loaded_texture_name;
+	AsciiString mesh_archive_directory;
+	AsciiString mesh_archive_mask;
+	AsciiString texture_archive_directory;
+	AsciiString texture_archive_mask;
 	int vertices = 0;
 	int polygons = 0;
 	AABoxClass object_box(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 0.0f, 0.0f));
@@ -698,10 +697,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	FileFactoryClass *old_file_factory = _TheFileFactory;
 	W3DFileSystem *old_w3d_file_system = TheW3DFileSystem;
 	Win32LocalFileSystem local_file_system;
-	EmptyArchiveFileSystem archive_file_system;
+	Win32BIGFileSystem archive_file_system;
 	FileSystem file_system;
 	NameKeyGenerator name_key_generator;
 	W3DFileSystem *w3d_file_system = nullptr;
+
+	split_archive_path(archive_path, mesh_archive_directory, mesh_archive_mask);
+	split_archive_path(texture_archive_path, texture_archive_directory, texture_archive_mask);
 
 	if (succeeded(init_result)) {
 		asset_manager = W3DNEW WW3DAssetManager();
@@ -713,15 +715,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
-		mesh_archive_loaded = mounted_file_exists(kShippedMeshFileSystemPath);
-		texture_file_exists = mounted_file_exists(kShippedMeshTexturePath);
-		texture_archive_loaded = texture_file_exists;
 		TheLocalFileSystem = &local_file_system;
 		TheArchiveFileSystem = &archive_file_system;
 		TheFileSystem = &file_system;
 		TheNameKeyGenerator = &name_key_generator;
 		name_key_generator.init();
 		file_system.init();
+		if (mesh_archive_mask.isNotEmpty()) {
+			mesh_archive_loaded =
+				archive_file_system.loadBigFilesFromDirectory(mesh_archive_directory, mesh_archive_mask);
+		}
+		if (texture_archive_mask.isNotEmpty()) {
+			texture_archive_loaded =
+				archive_file_system.loadBigFilesFromDirectory(texture_archive_directory, texture_archive_mask);
+		}
+		texture_file_exists =
+			texture_archive_loaded &&
+			file_system.doesFileExist(kShippedMeshTextureArchiveEntry);
 		TheW3DFileSystem = new W3DFileSystem;
 		w3d_file_system = TheW3DFileSystem;
 		texture_file_factory_installed =
@@ -732,7 +742,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 			texture_dds_available = dds_file.Is_Available();
 		}
 		if (mesh_archive_loaded) {
-			file_read = read_mounted_file(kShippedMeshFileSystemPath, mesh_data);
+			file_read = read_game_file(kShippedMeshPath, mesh_data);
 		}
 	}
 
@@ -959,7 +969,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
-		"\"source\":\"original W3DFileSystem + TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures\"},"
+		"\"source\":\"original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from registered BIG archives\"},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
 		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"

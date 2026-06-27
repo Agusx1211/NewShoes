@@ -17,11 +17,12 @@ const shippedMeshScreenshot = resolve(
 );
 const D3DFMT_DXT5 = 0x35545844;
 const meshArchiveEntry = "Art\\W3D\\CINE_Moon.W3D";
-const meshMountPath = "/Art/W3D/CINE_Moon.W3D";
+const meshRangeMountPath = "/range-probe/Art/W3D/CINE_Moon.W3D";
 const textureArchiveEntry = "Art\\Textures\\cine_moon.dds";
-const textureMountPath = "/Art/Textures/cine_moon.dds";
-const meshSourceLabel = `W3DZH.big:${meshArchiveEntry}`;
-const textureSourceLabel = `TexturesZH.big:${textureArchiveEntry}`;
+const textureRangeMountPath = "/range-probe/Art/Textures/cine_moon.dds";
+const runtimeArchivePath = "/assets/runtime";
+const meshArchiveMemfsPath = `${runtimeArchivePath}/W3DZH.big`;
+const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -104,12 +105,12 @@ try {
 
   const meshMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
     url: archiveUrl,
-    path: meshMountPath,
+    path: meshRangeMountPath,
     sourceArchive: archivePath,
     entry: meshArchiveEntry,
   });
   if (!meshMountResult.ok
-      || meshMountResult.asset?.path !== meshMountPath
+      || meshMountResult.asset?.path !== meshRangeMountPath
       || meshMountResult.asset?.archiveEntry !== meshArchiveEntry
       || meshMountResult.asset?.offset !== 91765912
       || meshMountResult.asset?.bytes !== 594
@@ -119,12 +120,12 @@ try {
 
   const textureMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
     url: textureArchiveUrl,
-    path: textureMountPath,
+    path: textureRangeMountPath,
     sourceArchive: textureArchivePath,
     entry: textureArchiveEntry,
   });
   if (!textureMountResult.ok
-      || textureMountResult.asset?.path !== textureMountPath
+      || textureMountResult.asset?.path !== textureRangeMountPath
       || textureMountResult.asset?.archiveEntry !== textureArchiveEntry
       || textureMountResult.asset?.offset !== 137149396
       || textureMountResult.asset?.bytes !== 87536
@@ -132,13 +133,40 @@ try {
     throw new Error(`cine_moon.dds mount failed: ${JSON.stringify(textureMountResult)}`);
   }
 
+  const archiveMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountArchives", payload), {
+    path: runtimeArchivePath,
+    archives: [
+      {
+        url: archiveUrl,
+        name: "W3DZH.big",
+        expectedBytes: archiveStat.size,
+      },
+      {
+        url: textureArchiveUrl,
+        name: "TexturesZH.big",
+        expectedBytes: textureArchiveStat.size,
+      },
+    ],
+  });
+  if (!archiveMountResult.ok
+      || archiveMountResult.archiveSet?.path !== runtimeArchivePath
+      || archiveMountResult.archiveSet?.archiveCount !== 2
+      || archiveMountResult.archiveSet?.totalBytes !== archiveStat.size + textureArchiveStat.size
+      || archiveMountResult.archiveSet?.archives?.[0]?.path !== meshArchiveMemfsPath
+      || archiveMountResult.archiveSet?.archives?.[1]?.path !== textureArchiveMemfsPath
+      || archiveMountResult.state?.archiveMount?.registered !== true
+      || archiveMountResult.state?.archiveMount?.directory !== `${runtimeArchivePath}/`
+      || archiveMountResult.state?.archiveMount?.fileMask !== "*.big") {
+    throw new Error(`runtime W3D/texture archive registration failed: ${JSON.stringify(archiveMountResult)}`);
+  }
+
   let renderResult;
   try {
     renderResult = await withTimeout(
-      page.evaluate(() => window.CnCPort.rpc("ww3dShippedMesh", {
-        archivePath: "W3DZH.big:Art\\W3D\\CINE_Moon.W3D",
-        textureArchivePath: "TexturesZH.big:Art\\Textures\\cine_moon.dds",
-      })),
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dShippedMesh", payload), {
+        archivePath: meshArchiveMemfsPath,
+        textureArchivePath: textureArchiveMemfsPath,
+      }),
       30000,
       "shipped WW3D mesh render",
     );
@@ -152,8 +180,8 @@ try {
       || renderResult.probe?.mesh?.bytes !== 594
       || renderResult.probe?.mesh?.vertices !== 4
       || renderResult.probe?.mesh?.polygons !== 2
-      || renderResult.probe?.archives?.mesh !== meshSourceLabel
-      || renderResult.probe?.archives?.texture !== textureSourceLabel
+      || renderResult.probe?.archives?.mesh !== meshArchiveMemfsPath
+      || renderResult.probe?.archives?.texture !== textureArchiveMemfsPath
       || renderResult.probe?.results?.meshArchiveLoaded !== true
       || renderResult.probe?.results?.textureArchiveLoaded !== true
       || renderResult.probe?.results?.fileRead !== true
@@ -176,7 +204,7 @@ try {
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
       || renderResult.probe?.texture?.format !== D3DFMT_DXT5
       || renderResult.probe?.texture?.uploadFormat !== D3DFMT_DXT5
-      || renderResult.probe?.texture?.source !== "original W3DFileSystem + TextureClass::Init / TextureLoader foreground DDS path from mounted Art/Textures"
+      || renderResult.probe?.texture?.source !== "original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from registered BIG archives"
       || renderResult.probe?.draw?.primitiveType !== 4
       || renderResult.probe?.draw?.vertexCount !== 4
       || renderResult.probe?.draw?.primitiveCount !== 2
@@ -212,7 +240,8 @@ try {
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
-    archives: {
+    archiveSet: archiveMountResult.archiveSet,
+    rangeEntries: {
       mesh: {
         sourceArchive: archivePath,
         archiveUrl,
@@ -238,7 +267,7 @@ try {
     probe: renderResult.probe,
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
-    reader: "browser fetch Range + mounted MEMFS files",
+    reader: "registered Win32BIGFileSystem archives in MEMFS; browser Range entry probe kept separate",
     renderer: "WW3D::Render + browser D3D8/WebGL2 bridge",
   }, null, 2));
 } finally {

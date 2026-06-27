@@ -2721,11 +2721,26 @@ shares structure and follows behind.
             requests it by bare name, and asserts the original WWLib Targa path
             initializes a non-missing `TextureClass` plus a second request
             through the asset-manager texture hash.
-      - [ ] Replace the shipped mesh probe's focused `/art/textures/`
+      - [x] Replace the shipped mesh probe's focused `/art/textures/`
             `SimpleFileFactoryClass` search path setup with the original
-            W3DDevice file-factory / asset-path installation once browser
-            display/device startup owns WW3D asset lookup against the normal
-            file/archive system.
+            W3DDevice file-factory path. The probe now installs the original
+            `W3DFileSystem`, routes `cine_moon.tga` lookup through
+            `GameFileClass` / `FileSystem` / `Win32BIGFileSystem`, and the
+            harness asserts `_TheFileFactory` is the W3D file system while
+            the simple factory path is not changed.
+      - [x] Route the shipped mesh render smoke through registered runtime BIG
+            archives instead of focused `Art/...` MEMFS entry mounts. The
+            harness now registers full `W3DZH.big` and `TexturesZH.big` under
+            `/assets/runtime`, the probe loads them through
+            `Win32BIGFileSystem`, and `W3DFileSystem` resolves both
+            `art\w3d\cine_moon.w3d` and `art\textures\cine_moon.dds` through
+            the original `FileSystem` path before rendering the real texture.
+      - [ ] Move the probe-local `W3DFileSystem` / `FileSystem` setup into the
+            browser display/device startup path. The current smoke proves
+            full MEMFS-mounted runtime BIG archives can expose W3D and texture
+            assets through the normal file/archive system, but final startup
+            still needs shared ownership of those globals and the open
+            range-backed archive streaming path above.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture
