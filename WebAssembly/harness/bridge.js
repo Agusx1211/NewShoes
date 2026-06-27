@@ -10,6 +10,15 @@ const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
 let d3d8DrawProgram = null;
+const d3d8Buffers = new Map();
+const d3d8BufferStats = {
+  creates: 0,
+  updates: 0,
+  releases: 0,
+  lastCreate: null,
+  lastUpdate: null,
+  lastRelease: null,
+};
 
 const harnessState = {
   booted: false,
@@ -128,6 +137,147 @@ function normalizeRgba(payload = {}, fallback = [0, 0, 0, 255]) {
 
 function d3dColorFromRgba(rgba) {
   return (((rgba[3] << 24) >>> 0) | (rgba[0] << 16) | (rgba[1] << 8) | rgba[2]) >>> 0;
+}
+
+function d3d8BufferKindName(kind) {
+  switch (Number(kind) >>> 0) {
+    case 1:
+      return "vertex";
+    case 2:
+      return "index";
+    default:
+      return "unknown";
+  }
+}
+
+function d3d8BufferKey(kind, id) {
+  return `${d3d8BufferKindName(kind)}:${Number(id) >>> 0}`;
+}
+
+function d3d8BufferTarget(kind) {
+  if (!gl) {
+    return 0;
+  }
+  return d3d8BufferKindName(kind) === "index" ? gl.ELEMENT_ARRAY_BUFFER : gl.ARRAY_BUFFER;
+}
+
+function updateD3D8BufferSummary() {
+  let liveVertex = 0;
+  let liveIndex = 0;
+  for (const resource of d3d8Buffers.values()) {
+    if (resource.kindName === "vertex") {
+      liveVertex += 1;
+    } else if (resource.kindName === "index") {
+      liveIndex += 1;
+    }
+  }
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    d3d8Buffers: {
+      creates: d3d8BufferStats.creates,
+      updates: d3d8BufferStats.updates,
+      releases: d3d8BufferStats.releases,
+      liveVertex,
+      liveIndex,
+      lastCreate: d3d8BufferStats.lastCreate,
+      lastUpdate: d3d8BufferStats.lastUpdate,
+      lastRelease: d3d8BufferStats.lastRelease,
+    },
+  };
+}
+
+function createD3D8Buffer(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const kind = Number(payload.kind ?? 0) >>> 0;
+  const id = Number(payload.id ?? 0) >>> 0;
+  const byteSize = Number(payload.byteSize ?? 0) >>> 0;
+  const target = d3d8BufferTarget(kind);
+  if (id === 0 || byteSize === 0 || target === 0 || d3d8BufferKindName(kind) === "unknown") {
+    return 0;
+  }
+
+  const key = d3d8BufferKey(kind, id);
+  const existing = d3d8Buffers.get(key);
+  if (existing) {
+    gl.deleteBuffer(existing.buffer);
+  }
+
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(target, buffer);
+  gl.bufferData(target, byteSize, gl.DYNAMIC_DRAW);
+  const record = {
+    id,
+    kind,
+    kindName: d3d8BufferKindName(kind),
+    byteSize,
+    target,
+    buffer,
+    uploads: 0,
+  };
+  d3d8Buffers.set(key, record);
+  d3d8BufferStats.creates += 1;
+  d3d8BufferStats.lastCreate = { id, kind: record.kindName, byteSize };
+  updateD3D8BufferSummary();
+  return 1;
+}
+
+function updateD3D8Buffer(payload = {}) {
+  if (!gl || !(payload.bytes instanceof Uint8Array)) {
+    return 0;
+  }
+  const kind = Number(payload.kind ?? 0) >>> 0;
+  const id = Number(payload.id ?? 0) >>> 0;
+  const bytes = payload.bytes;
+  const key = d3d8BufferKey(kind, id);
+  let resource = d3d8Buffers.get(key);
+  if (!resource) {
+    if (!createD3D8Buffer({ kind, id, byteSize: bytes.byteLength })) {
+      return 0;
+    }
+    resource = d3d8Buffers.get(key);
+  }
+  if (!resource || bytes.byteLength === 0) {
+    return 0;
+  }
+
+  gl.bindBuffer(resource.target, resource.buffer);
+  if (bytes.byteLength > resource.byteSize) {
+    gl.bufferData(resource.target, bytes, gl.DYNAMIC_DRAW);
+    resource.byteSize = bytes.byteLength;
+  } else {
+    gl.bufferSubData(resource.target, 0, bytes);
+  }
+  resource.uploads += 1;
+  d3d8BufferStats.updates += 1;
+  d3d8BufferStats.lastUpdate = {
+    id,
+    kind: resource.kindName,
+    byteSize: bytes.byteLength,
+    uploads: resource.uploads,
+  };
+  updateD3D8BufferSummary();
+  return 1;
+}
+
+function releaseD3D8Buffer(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const kind = Number(payload.kind ?? 0) >>> 0;
+  const id = Number(payload.id ?? 0) >>> 0;
+  const key = d3d8BufferKey(kind, id);
+  const resource = d3d8Buffers.get(key);
+  if (!resource) {
+    return 0;
+  }
+  gl.deleteBuffer(resource.buffer);
+  d3d8Buffers.delete(key);
+  d3d8BufferStats.releases += 1;
+  d3d8BufferStats.lastRelease = { id, kind: resource.kindName };
+  updateD3D8BufferSummary();
+  return 1;
 }
 
 function sampleCanvasPixel(x = 0, y = 0) {
@@ -330,33 +480,6 @@ function d3dPrimitiveToGl(primitiveType) {
   }
 }
 
-function computePositionScale(vertexBytes, vertexCount, vertexStride) {
-  if (!(vertexBytes instanceof Uint8Array) || vertexStride < 12 || vertexCount <= 0) {
-    return 1;
-  }
-  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
-  let maxAbs = 1;
-  for (let index = 0; index < vertexCount; ++index) {
-    const offset = index * vertexStride;
-    if (offset + 12 > vertexBytes.byteLength) {
-      break;
-    }
-    const x = view.getFloat32(offset, true);
-    const y = view.getFloat32(offset + 4, true);
-    const z = view.getFloat32(offset + 8, true);
-    if (Number.isFinite(x)) {
-      maxAbs = Math.max(maxAbs, Math.abs(x));
-    }
-    if (Number.isFinite(y)) {
-      maxAbs = Math.max(maxAbs, Math.abs(y));
-    }
-    if (Number.isFinite(z)) {
-      maxAbs = Math.max(maxAbs, Math.abs(z));
-    }
-  }
-  return maxAbs * 1.35;
-}
-
 function pixelHasColor(pixel, threshold = 8) {
   return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
 }
@@ -372,13 +495,20 @@ function normalizeD3DMatrix(matrix) {
 }
 
 function paintD3D8DrawIndexed(payload = {}) {
-  const vertexBytes = payload.vertexBytes instanceof Uint8Array ? payload.vertexBytes : new Uint8Array();
-  const indexBytes = payload.indexBytes instanceof Uint8Array ? payload.indexBytes : new Uint8Array();
+  const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
+  const indexByteSize = Number(payload.indexBytes ?? 0) >>> 0;
+  const vertexBufferId = Number(payload.vertexBufferId ?? 0) >>> 0;
+  const indexBufferId = Number(payload.indexBufferId ?? 0) >>> 0;
+  const vertexByteOffset = Number(payload.vertexByteOffset ?? 0) >>> 0;
+  const indexByteOffset = Number(payload.indexByteOffset ?? 0) >>> 0;
   const vertexStride = Number(payload.vertexStride ?? 0) >>> 0;
   const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const glPrimitive = d3dPrimitiveToGl(payload.primitiveType);
+  const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
+  const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
+  const usePersistentBuffers = Boolean(vertexResource && indexResource);
   const world = normalizeD3DMatrix(payload.transforms?.world);
   const view = normalizeD3DMatrix(payload.transforms?.view);
   const projection = normalizeD3DMatrix(payload.transforms?.projection);
@@ -388,23 +518,20 @@ function paintD3D8DrawIndexed(payload = {}) {
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
 
-  if (gl && glPrimitive && vertexBytes.byteLength > 0 && indexBytes.byteLength > 0 &&
+  if (gl && glPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
-    const vertexBuffer = gl.createBuffer();
-    const indexBuffer = gl.createBuffer();
     gl.useProgram(bridgeProgram.program);
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.DEPTH_TEST);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, vertexBytes, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
-    gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, 0);
+    gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
     if (bridgeProgram.diffuse >= 0 && vertexStride >= 28) {
       gl.enableVertexAttribArray(bridgeProgram.diffuse);
-      gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true, vertexStride, 24);
+      gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true, vertexStride, vertexByteOffset + 24);
     }
-    gl.uniform1f(bridgeProgram.scale, computePositionScale(vertexBytes, vertexCount, vertexStride));
+    gl.uniform1f(bridgeProgram.scale, 1.0);
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
     if (useTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
@@ -414,11 +541,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniformMatrix4fv(bridgeProgram.view, false, view);
       gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
     }
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexBytes, gl.STATIC_DRAW);
-    gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
-    gl.deleteBuffer(indexBuffer);
-    gl.deleteBuffer(vertexBuffer);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
+    gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, indexByteOffset);
     refreshCanvasState();
     centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
     drawOk = pixelHasColor(centerPixel);
@@ -429,12 +553,17 @@ function paintD3D8DrawIndexed(payload = {}) {
     source: "browser_d3d8_draw_indexed",
     api: harnessState.graphics.api,
     primitiveType: Number(payload.primitiveType ?? 0),
-    vertexBytes: vertexBytes.byteLength,
+    vertexBufferId,
+    vertexByteOffset,
+    vertexBytes: vertexByteSize,
     vertexCount,
     vertexStride,
-    indexBytes: indexBytes.byteLength,
+    indexBufferId,
+    indexByteOffset,
+    indexBytes: indexByteSize,
     indexCount,
     indexSize,
+    usedPersistentBuffers: usePersistentBuffers,
     transformMask,
     usedTransforms: Boolean(useTransforms),
     centerPixel,
@@ -539,6 +668,9 @@ async function loadWasmModule() {
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,
+      cncPortD3D8BufferCreate: createD3D8Buffer,
+      cncPortD3D8BufferUpdate: updateD3D8Buffer,
+      cncPortD3D8BufferRelease: releaseD3D8Buffer,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
     });
 

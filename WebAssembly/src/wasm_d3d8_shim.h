@@ -16,6 +16,12 @@ struct WasmD3D8ShimState
 	UINT create_index_buffer_calls;
 	UINT buffer_lock_calls;
 	UINT buffer_unlock_calls;
+	UINT browser_buffer_create_calls;
+	UINT browser_buffer_update_calls;
+	UINT browser_buffer_release_calls;
+	UINT last_browser_buffer_kind;
+	UINT last_browser_buffer_id;
+	UINT last_browser_buffer_bytes;
 	UINT set_stream_source_calls;
 	UINT set_indices_calls;
 	UINT draw_primitive_calls;
@@ -38,6 +44,8 @@ struct WasmD3D8ShimState
 	UINT last_draw_index_buffer_bytes;
 	DWORD last_draw_index_buffer_checksum;
 	D3DFORMAT last_draw_index_format;
+	UINT last_draw_vertex_buffer_id;
+	UINT last_draw_index_buffer_id;
 	UINT last_draw_transform_mask;
 	D3DMATRIX last_draw_world_transform;
 	D3DMATRIX last_draw_view_transform;
