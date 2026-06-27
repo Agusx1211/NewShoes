@@ -3448,6 +3448,162 @@ async function mountArchives(payload = {}) {
   };
 }
 
+function readBigUInt32BE(bytes, offset) {
+  return bytes[offset] * 0x1000000 +
+    bytes[offset + 1] * 0x10000 +
+    bytes[offset + 2] * 0x100 +
+    bytes[offset + 3];
+}
+
+function appendBytes(left, right) {
+  const combined = new Uint8Array(left.byteLength + right.byteLength);
+  combined.set(left, 0);
+  combined.set(right, left.byteLength);
+  return combined;
+}
+
+async function fetchByteRange(url, start, end) {
+  const response = await fetch(url, {
+    headers: {
+      Range: `bytes=${start}-${end}`,
+    },
+  });
+  if (response.status !== 206) {
+    throw new Error(`Range fetch failed for ${url} ${start}-${end}: HTTP ${response.status}`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const expectedLength = end - start + 1;
+  if (bytes.byteLength !== expectedLength) {
+    throw new Error(`Range fetch length mismatch for ${url} ${start}-${end}: ${bytes.byteLength} != ${expectedLength}`);
+  }
+
+  return bytes;
+}
+
+async function extractBigEntryFromUrl(url, entryName) {
+  const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
+  if (!wanted) {
+    throw new Error("Missing BIG archive entry name");
+  }
+
+  const header = await fetchByteRange(url, 0, 15);
+  const magic = String.fromCharCode(...header.subarray(0, 4));
+  if (magic !== "BIGF") {
+    throw new Error(`${url} is not a BIGF archive`);
+  }
+
+  const count = readBigUInt32BE(header, 8);
+  if (count === 0 || count > 1000000) {
+    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
+  }
+
+  const decoder = new TextDecoder("ascii");
+  const directoryStart = 0x10;
+  const chunkSize = 64 * 1024;
+  let directoryBytes = new Uint8Array(0);
+  let cursor = 0;
+
+  const ensureDirectoryBytes = async (requiredLength) => {
+    while (directoryBytes.byteLength < requiredLength) {
+      const start = directoryStart + directoryBytes.byteLength;
+      const next = await fetchByteRange(url, start, start + chunkSize - 1);
+      if (next.byteLength === 0) {
+        throw new Error(`${url} ended before BIGF directory entry ${entryName}`);
+      }
+      directoryBytes = appendBytes(directoryBytes, next);
+    }
+  };
+
+  for (let index = 0; index < count; ++index) {
+    await ensureDirectoryBytes(cursor + 9);
+    const offset = readBigUInt32BE(directoryBytes, cursor);
+    const size = readBigUInt32BE(directoryBytes, cursor + 4);
+    const pathStart = cursor + 8;
+    let pathEnd = -1;
+    while (pathEnd < 0) {
+      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
+        if (directoryBytes[scan] === 0) {
+          pathEnd = scan;
+          break;
+        }
+      }
+      if (pathEnd < 0) {
+        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
+      }
+    }
+
+    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
+    cursor = pathEnd + 1;
+    if (path.replaceAll("/", "\\").toLowerCase() === wanted) {
+      const bytes = await fetchByteRange(url, offset, offset + size - 1);
+      return {
+        path,
+        offset,
+        size,
+        bytes,
+        directoryBytes: directoryBytes.byteLength,
+        indexedEntries: index + 1,
+      };
+    }
+  }
+
+  throw new Error(`${entryName} was not found in ${url}`);
+}
+
+async function mountBigArchiveEntry(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountBigArchiveEntry");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+
+  try {
+    const url = String(payload.url ?? "");
+    const mountPath = String(payload.path ?? "").replaceAll("\\", "/");
+    if (!url) {
+      throw new Error("Missing archive URL");
+    }
+    if (!mountPath.startsWith("/") ||
+        mountPath.split("/").some((part) => part === "." || part === "..")) {
+      throw new Error(`Invalid MEMFS mount path: ${mountPath}`);
+    }
+
+    const entry = await extractBigEntryFromUrl(url, payload.entry);
+    ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(mountPath));
+    moduleResult.wasmModule.fs.writeFile(mountPath, entry.bytes);
+    recordLog("BIG archive entry mounted", {
+      path: mountPath,
+      bytes: entry.size,
+      offset: entry.offset,
+      archiveEntry: entry.path,
+      sourceArchive: String(payload.sourceArchive ?? url),
+    });
+
+    return {
+      ok: true,
+      command: "mountBigArchiveEntry",
+      asset: {
+        path: mountPath,
+        sourceArchive: String(payload.sourceArchive ?? url),
+        archiveUrl: url,
+        archiveEntry: entry.path,
+        offset: entry.offset,
+        bytes: entry.size,
+        directoryBytes: entry.directoryBytes,
+        indexedEntries: entry.indexedEntries,
+        reader: "browser fetch Range",
+      },
+      state: snapshotState(),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      command: "mountBigArchiveEntry",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function mountShippedMeshAsset(payload = {}) {
   const moduleResult = await getWasmModuleForArchives("mountShippedMeshAsset");
   if (moduleResult.error) {
@@ -3505,6 +3661,8 @@ async function rpc(command, payload = {}) {
       return mountArchive(payload);
     case "mountArchives":
       return mountArchives(payload);
+    case "mountBigArchiveEntry":
+      return mountBigArchiveEntry(payload);
     case "mountShippedMeshAsset":
       return mountShippedMeshAsset(payload);
     case "startMainLoop":

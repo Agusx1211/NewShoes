@@ -17,9 +17,54 @@ function isInside(parent, child) {
   return path === "" || (!path.startsWith("..") && !path.startsWith(sep));
 }
 
+function commonHeaders(extra = {}) {
+  return {
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-embedder-policy": "require-corp",
+    ...extra,
+  };
+}
+
 function sendError(response, statusCode, message) {
-  response.writeHead(statusCode, { "content-type": "text/plain; charset=utf-8" });
+  response.writeHead(statusCode, commonHeaders({
+    "content-type": "text/plain; charset=utf-8",
+  }));
   response.end(message);
+}
+
+function parseRangeHeader(rangeHeader, fileSize) {
+  if (!rangeHeader) {
+    return null;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+  if (!match || (match[1] === "" && match[2] === "")) {
+    return false;
+  }
+
+  let start;
+  let end;
+  if (match[1] === "") {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) {
+      return false;
+    }
+    start = Math.max(0, fileSize - suffixLength);
+    end = fileSize - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? fileSize - 1 : Number(match[2]);
+  }
+
+  if (!Number.isSafeInteger(start) ||
+      !Number.isSafeInteger(end) ||
+      start < 0 ||
+      start >= fileSize ||
+      end < start) {
+    return false;
+  }
+
+  return { start, end: Math.min(end, fileSize - 1) };
 }
 
 export async function startStaticServer({ root, port = 0 } = {}) {
@@ -46,12 +91,33 @@ export async function startStaticServer({ root, port = 0 } = {}) {
         return;
       }
 
-      response.writeHead(200, {
+      const contentType = contentTypes.get(extname(requestedPath)) ?? "application/octet-stream";
+      const range = parseRangeHeader(request.headers.range, fileStat.size);
+      if (range === false) {
+        response.writeHead(416, commonHeaders({
+          "content-range": `bytes */${fileStat.size}`,
+        }));
+        response.end();
+        return;
+      }
+
+      if (range) {
+        const length = range.end - range.start + 1;
+        response.writeHead(206, commonHeaders({
+          "accept-ranges": "bytes",
+          "content-length": length,
+          "content-range": `bytes ${range.start}-${range.end}/${fileStat.size}`,
+          "content-type": contentType,
+        }));
+        createReadStream(requestedPath, { start: range.start, end: range.end }).pipe(response);
+        return;
+      }
+
+      response.writeHead(200, commonHeaders({
+        "accept-ranges": "bytes",
         "content-length": fileStat.size,
-        "content-type": contentTypes.get(extname(requestedPath)) ?? "application/octet-stream",
-        "cross-origin-opener-policy": "same-origin",
-        "cross-origin-embedder-policy": "require-corp",
-      });
+        "content-type": contentType,
+      }));
       createReadStream(requestedPath).pipe(response);
     } catch (error) {
       if (error?.code === "ENOENT") {

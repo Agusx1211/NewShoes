@@ -2690,10 +2690,20 @@ shares structure and follows behind.
             `harness-smoke-ww3d-shipped-mesh-canvas.png` has non-synthetic
             real texture color (`[204,191,163,255]`) while the browser draw
             state still reports the original 4-vertex/2-triangle mesh.
-      - [ ] Replace the shipped mesh render smoke's focused Node BIG-entry
+      - [x] Replace the shipped mesh render smoke's focused Node BIG-entry
             extraction with a browser-safe archive streaming or range-mount
             path once the port can expose large `W3DZH.big` / `TexturesZH.big`
-            archives without loading hundreds of megabytes into MEMFS.
+            archives without loading hundreds of megabytes into MEMFS. The
+            harness static server now supports HTTP byte ranges, the browser
+            bridge can fetch a BIGF header/directory in ranged chunks and mount
+            a single archive entry into MEMFS, and the shipped mesh render
+            smoke verifies browser-side range loads for
+            `Art\W3D\CINE_Moon.W3D` plus `Art\Textures\cine_moon.dds` before
+            rendering the real textured mesh screenshot.
+      - [ ] Generalize the browser range-backed BIG archive reader into the
+            original file/archive registration path so normal engine startup
+            can stream user-supplied runtime archives without focused harness
+            mounts or whole-archive MEMFS copies.
       - [ ] Bring the original `TextureClass::Init` / `TextureLoader`
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager

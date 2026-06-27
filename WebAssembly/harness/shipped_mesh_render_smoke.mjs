@@ -1,4 +1,4 @@
-import { access, mkdir, open, stat } from "node:fs/promises";
+import { access, mkdir, stat } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -17,9 +17,9 @@ const shippedMeshScreenshot = resolve(
 );
 const D3DFMT_DXT5 = 0x35545844;
 const meshArchiveEntry = "Art\\W3D\\CINE_Moon.W3D";
-const meshMountPath = "Art/W3D/CINE_Moon.W3D";
+const meshMountPath = "/Art/W3D/CINE_Moon.W3D";
 const textureArchiveEntry = "Art\\Textures\\cine_moon.dds";
-const textureMountPath = "Art/Textures/cine_moon.dds";
+const textureMountPath = "/art/textures/cine_moon.dds";
 const meshSourceLabel = `W3DZH.big:${meshArchiveEntry}`;
 const textureSourceLabel = `TexturesZH.big:${textureArchiveEntry}`;
 
@@ -42,66 +42,6 @@ function pixelLooksSyntheticRed(pixel) {
     && pixel[3] >= 200;
 }
 
-async function readExactly(handle, length, position) {
-  const buffer = Buffer.alloc(length);
-  let offset = 0;
-  while (offset < length) {
-    const { bytesRead } = await handle.read(buffer, offset, length - offset, position + offset);
-    if (bytesRead === 0) {
-      throw new Error(`unexpected EOF at ${position + offset}`);
-    }
-    offset += bytesRead;
-  }
-  return buffer;
-}
-
-async function readNullTerminatedAscii(handle, position) {
-  const bytes = [];
-  let cursor = position;
-  const one = Buffer.alloc(1);
-  for (;;) {
-    const { bytesRead } = await handle.read(one, 0, 1, cursor);
-    if (bytesRead !== 1) {
-      throw new Error(`unterminated BIG path at ${position}`);
-    }
-    cursor += 1;
-    if (one[0] === 0) {
-      return { text: Buffer.from(bytes).toString("ascii"), nextPosition: cursor };
-    }
-    bytes.push(one[0]);
-  }
-}
-
-async function extractBigEntry(archiveFile, entryName) {
-  const wanted = entryName.replaceAll("/", "\\").toLowerCase();
-  const handle = await open(archiveFile, "r");
-  try {
-    const header = await readExactly(handle, 16, 0);
-    if (header.toString("ascii", 0, 4) !== "BIGF") {
-      throw new Error(`${archiveFile} is not a BIGF archive`);
-    }
-
-    const count = header.readUInt32BE(8);
-    let position = 0x10;
-    for (let index = 0; index < count; ++index) {
-      const entryHeader = await readExactly(handle, 8, position);
-      position += 8;
-      const offset = entryHeader.readUInt32BE(0);
-      const size = entryHeader.readUInt32BE(4);
-      const path = await readNullTerminatedAscii(handle, position);
-      position = path.nextPosition;
-      if (path.text.replaceAll("/", "\\").toLowerCase() === wanted) {
-        const bytes = await readExactly(handle, size, offset);
-        return { path: path.text, offset, size, bytes: new Uint8Array(bytes) };
-      }
-    }
-  } finally {
-    await handle.close();
-  }
-
-  throw new Error(`${entryName} was not found in ${archiveFile}`);
-}
-
 if (!isInside(wasmRoot, archivePath)) {
   throw new Error(`archive must be inside ${wasmRoot}: ${archivePath}`);
 }
@@ -114,16 +54,16 @@ const archiveStat = await stat(archivePath);
 if (!archiveStat.isFile() || archiveStat.size <= 0) {
   throw new Error(`archive is not a readable file: ${archivePath}`);
 }
-const meshEntry = await extractBigEntry(archivePath, meshArchiveEntry);
 await access(textureArchivePath);
 const textureArchiveStat = await stat(textureArchivePath);
 if (!textureArchiveStat.isFile() || textureArchiveStat.size <= 0) {
   throw new Error(`texture archive is not a readable file: ${textureArchivePath}`);
 }
-const textureEntry = await extractBigEntry(textureArchivePath, textureArchiveEntry);
 
 await mkdir(screenshotDir, { recursive: true });
 
+const archiveRelativePath = relative(wasmRoot, archivePath).split(sep).join("/");
+const textureArchiveRelativePath = relative(wasmRoot, textureArchivePath).split(sep).join("/");
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 const browserEvents = [];
@@ -141,6 +81,8 @@ try {
     browserEvents.push({ type: "crash" });
   });
   const harnessUrl = new URL("harness/index.html", server.url).href;
+  const archiveUrl = new URL(archiveRelativePath, server.url).href;
+  const textureArchiveUrl = new URL(textureArchiveRelativePath, server.url).href;
 
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
@@ -152,27 +94,33 @@ try {
     throw new Error(`cnc-port boot failed before W3DZH mount: ${JSON.stringify(bootResult)}`);
   }
 
-  const meshMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountShippedMeshAsset", payload), {
+  const meshMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
+    url: archiveUrl,
     path: meshMountPath,
     sourceArchive: archivePath,
-    archiveEntry: meshEntry.path,
-    bytes: Array.from(meshEntry.bytes),
+    entry: meshArchiveEntry,
   });
   if (!meshMountResult.ok
-      || meshMountResult.asset?.path !== "/Art/W3D/CINE_Moon.W3D"
-      || meshMountResult.asset?.bytes !== meshEntry.size) {
+      || meshMountResult.asset?.path !== meshMountPath
+      || meshMountResult.asset?.archiveEntry !== meshArchiveEntry
+      || meshMountResult.asset?.offset !== 91765912
+      || meshMountResult.asset?.bytes !== 594
+      || meshMountResult.asset?.reader !== "browser fetch Range") {
     throw new Error(`cine_moon.w3d mount failed: ${JSON.stringify(meshMountResult)}`);
   }
 
-  const textureMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountShippedMeshAsset", payload), {
+  const textureMountResult = await page.evaluate((payload) => window.CnCPort.rpc("mountBigArchiveEntry", payload), {
+    url: textureArchiveUrl,
     path: textureMountPath,
     sourceArchive: textureArchivePath,
-    archiveEntry: textureEntry.path,
-    bytes: Array.from(textureEntry.bytes),
+    entry: textureArchiveEntry,
   });
   if (!textureMountResult.ok
-      || textureMountResult.asset?.path !== "/art/textures/cine_moon.dds"
-      || textureMountResult.asset?.bytes !== textureEntry.size) {
+      || textureMountResult.asset?.path !== textureMountPath
+      || textureMountResult.asset?.archiveEntry !== textureArchiveEntry
+      || textureMountResult.asset?.offset !== 137149396
+      || textureMountResult.asset?.bytes !== 87536
+      || textureMountResult.asset?.reader !== "browser fetch Range") {
     throw new Error(`cine_moon.dds mount failed: ${JSON.stringify(textureMountResult)}`);
   }
 
@@ -253,16 +201,22 @@ try {
     archives: {
       mesh: {
         sourceArchive: archivePath,
-        archiveEntry: meshEntry.path,
-        offset: meshEntry.offset,
-        bytes: meshEntry.size,
+        archiveUrl,
+        archiveEntry: meshMountResult.asset.archiveEntry,
+        offset: meshMountResult.asset.offset,
+        bytes: meshMountResult.asset.bytes,
+        indexedEntries: meshMountResult.asset.indexedEntries,
+        directoryBytes: meshMountResult.asset.directoryBytes,
         mount: meshMountResult.asset,
       },
       texture: {
         sourceArchive: textureArchivePath,
-        archiveEntry: textureEntry.path,
-        offset: textureEntry.offset,
-        bytes: textureEntry.size,
+        archiveUrl: textureArchiveUrl,
+        archiveEntry: textureMountResult.asset.archiveEntry,
+        offset: textureMountResult.asset.offset,
+        bytes: textureMountResult.asset.bytes,
+        indexedEntries: textureMountResult.asset.indexedEntries,
+        directoryBytes: textureMountResult.asset.directoryBytes,
         mount: textureMountResult.asset,
       },
     },
@@ -270,7 +224,7 @@ try {
     probe: renderResult.probe,
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
-    reader: "Node BIGF entry extraction + mounted MEMFS files",
+    reader: "browser fetch Range + mounted MEMFS files",
     renderer: "WW3D::Render + browser D3D8/WebGL2 bridge",
   }, null, 2));
 } finally {
