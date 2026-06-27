@@ -11,6 +11,7 @@ const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
+const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -127,6 +128,10 @@ function assertBrowserInputInitial(state, label) {
       || input.keys?.f6?.pressedSinceLastQuery !== false) {
     throw new Error(`${label} browser input initial state mismatch: ${JSON.stringify(input)}`);
   }
+}
+
+function pixelHasColor(pixel, threshold = 8) {
+  return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
 function assertWin32Timing(state, label, previous = null) {
@@ -850,6 +855,25 @@ try {
 
   await page.locator("#viewport").screenshot({ path: d3d8ClearCanvasScreenshot });
 
+  const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
+  // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
+  // 12 triangles, and 36 16-bit indices.
+  if (!aaBoxResult.ok
+      || aaBoxResult.probe?.source !== "ww3d_aabox_render_probe"
+      || aaBoxResult.probe?.calls?.drawIndexed < 1
+      || aaBoxResult.probe?.draw?.primitiveType !== 4
+      || aaBoxResult.probe?.draw?.vertexCount !== 8
+      || aaBoxResult.probe?.draw?.primitiveCount !== 12
+      || aaBoxResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || aaBoxResult.browserProbe?.vertexStride !== 44
+      || aaBoxResult.browserProbe?.indexCount !== 36
+      || !pixelHasColor(aaBoxResult.browserProbe?.centerPixel)
+      || !pixelHasColor(aaBoxResult.screenshot?.centerPixel)) {
+    throw new Error(`WW3D AABox WebGL2 draw probe failed: ${JSON.stringify(aaBoxResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dAABoxCanvasScreenshot });
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));
@@ -885,7 +909,13 @@ try {
   console.log(JSON.stringify({
     ok: true,
     url: harnessUrl,
-    screenshots: [desktopScreenshot, canvasScreenshot, clearCanvasScreenshot, d3d8ClearCanvasScreenshot],
+    screenshots: [
+      desktopScreenshot,
+      canvasScreenshot,
+      clearCanvasScreenshot,
+      d3d8ClearCanvasScreenshot,
+      ww3dAABoxCanvasScreenshot,
+    ],
     state: stateResult.state,
   }, null, 2));
 } finally {

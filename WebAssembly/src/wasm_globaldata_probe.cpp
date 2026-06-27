@@ -14,8 +14,9 @@
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
 // CommandLine.cpp references this W3D global even when the release parser table
-// cannot route to -FPUPreserve. Replace it when the original W3D runtime links.
-Int DX8Wrapper_PreserveFPU = 0;
+// cannot route to -FPUPreserve. The real W3D runtime provides a strong symbol
+// when linked; this weak fallback keeps focused non-render probes standalone.
+__attribute__((weak)) Int DX8Wrapper_PreserveFPU = 0;
 
 GlobalDataProbeResult probe_original_global_data()
 {

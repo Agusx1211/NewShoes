@@ -9,6 +9,7 @@ const gl = canvas.getContext("webgl2", {
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
+let d3d8DrawProgram = null;
 
 const harnessState = {
   booted: false,
@@ -235,6 +236,177 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
   return colorOk ? 1 : 0;
 }
 
+function compileShader(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const info = gl.getShaderInfoLog(shader);
+    gl.deleteShader(shader);
+    throw new Error(`D3D8 bridge shader compile failed: ${info}`);
+  }
+  return shader;
+}
+
+function ensureD3D8DrawProgram() {
+  if (!gl) {
+    return null;
+  }
+  if (d3d8DrawProgram) {
+    return d3d8DrawProgram;
+  }
+
+  const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
+    in vec3 aPosition;
+    in vec4 aDiffuseBgra;
+    uniform float uScale;
+    out vec4 vColor;
+    void main() {
+      gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+      vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
+    }
+  `);
+  const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
+    precision mediump float;
+    in vec4 vColor;
+    out vec4 fragColor;
+    void main() {
+      fragColor = vColor;
+    }
+  `);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  gl.deleteShader(vertexShader);
+  gl.deleteShader(fragmentShader);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`D3D8 bridge program link failed: ${info}`);
+  }
+
+  d3d8DrawProgram = {
+    program,
+    position: gl.getAttribLocation(program, "aPosition"),
+    diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
+    scale: gl.getUniformLocation(program, "uScale"),
+  };
+  return d3d8DrawProgram;
+}
+
+function d3dPrimitiveToGl(primitiveType) {
+  if (!gl) {
+    return 0;
+  }
+  switch (Number(primitiveType)) {
+    case 1:
+      return gl.POINTS;
+    case 2:
+      return gl.LINES;
+    case 3:
+      return gl.LINE_STRIP;
+    case 4:
+      return gl.TRIANGLES;
+    case 5:
+      return gl.TRIANGLE_STRIP;
+    case 6:
+      return gl.TRIANGLE_FAN;
+    default:
+      return 0;
+  }
+}
+
+function computePositionScale(vertexBytes, vertexCount, vertexStride) {
+  if (!(vertexBytes instanceof Uint8Array) || vertexStride < 12 || vertexCount <= 0) {
+    return 1;
+  }
+  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
+  let maxAbs = 1;
+  for (let index = 0; index < vertexCount; ++index) {
+    const offset = index * vertexStride;
+    if (offset + 12 > vertexBytes.byteLength) {
+      break;
+    }
+    const x = view.getFloat32(offset, true);
+    const y = view.getFloat32(offset + 4, true);
+    const z = view.getFloat32(offset + 8, true);
+    if (Number.isFinite(x)) {
+      maxAbs = Math.max(maxAbs, Math.abs(x));
+    }
+    if (Number.isFinite(y)) {
+      maxAbs = Math.max(maxAbs, Math.abs(y));
+    }
+    if (Number.isFinite(z)) {
+      maxAbs = Math.max(maxAbs, Math.abs(z));
+    }
+  }
+  return maxAbs * 1.35;
+}
+
+function pixelHasColor(pixel, threshold = 8) {
+  return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
+}
+
+function paintD3D8DrawIndexed(payload = {}) {
+  const vertexBytes = payload.vertexBytes instanceof Uint8Array ? payload.vertexBytes : new Uint8Array();
+  const indexBytes = payload.indexBytes instanceof Uint8Array ? payload.indexBytes : new Uint8Array();
+  const vertexStride = Number(payload.vertexStride ?? 0) >>> 0;
+  const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
+  const indexSize = Number(payload.indexSize ?? 0) >>> 0;
+  const indexCount = Number(payload.indexCount ?? 0) >>> 0;
+  const glPrimitive = d3dPrimitiveToGl(payload.primitiveType);
+  let drawOk = false;
+  syncCanvasSize();
+  let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+
+  if (gl && glPrimitive && vertexBytes.byteLength > 0 && indexBytes.byteLength > 0 &&
+      vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
+    const bridgeProgram = ensureD3D8DrawProgram();
+    const vertexBuffer = gl.createBuffer();
+    const indexBuffer = gl.createBuffer();
+    gl.useProgram(bridgeProgram.program);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.DEPTH_TEST);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexBytes, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(bridgeProgram.position);
+    gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, 0);
+    if (bridgeProgram.diffuse >= 0 && vertexStride >= 28) {
+      gl.enableVertexAttribArray(bridgeProgram.diffuse);
+      gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true, vertexStride, 24);
+    }
+    gl.uniform1f(bridgeProgram.scale, computePositionScale(vertexBytes, vertexCount, vertexStride));
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexBytes, gl.STATIC_DRAW);
+    gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+    gl.deleteBuffer(indexBuffer);
+    gl.deleteBuffer(vertexBuffer);
+    refreshCanvasState();
+    centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+    drawOk = pixelHasColor(centerPixel);
+  }
+
+  const probe = {
+    ok: drawOk,
+    source: "browser_d3d8_draw_indexed",
+    api: harnessState.graphics.api,
+    primitiveType: Number(payload.primitiveType ?? 0),
+    vertexBytes: vertexBytes.byteLength,
+    vertexCount,
+    vertexStride,
+    indexBytes: indexBytes.byteLength,
+    indexCount,
+    indexSize,
+    centerPixel,
+  };
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    lastD3D8DrawIndexed: probe,
+  };
+  return drawOk ? 1 : 0;
+}
+
 function paintBlackWindow() {
   clearCanvas({ rgba: [0, 0, 0, 255] });
 }
@@ -328,6 +500,7 @@ async function loadWasmModule() {
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,
+      cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
     });
 
     return {
@@ -355,6 +528,7 @@ async function loadWasmModule() {
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
+      probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -385,6 +559,7 @@ function snapshotCanvas() {
     width: canvas.width,
     height: canvas.height,
     topLeftPixel: sampleCanvasPixel(0, 0),
+    centerPixel: sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2)),
     dataUrl: canvas.toDataURL("image/png"),
   };
 }
@@ -1172,6 +1347,33 @@ async function rpc(command, payload = {}) {
           && Boolean(browserProbe?.ok)
           && browserProbe.clearColor?.join(",") === rgba.join(",")
           && screenshot.topLeftPixel.join(",") === rgba.join(",");
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dAABox":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D AABox cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DAABox());
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && pixelHasColor(browserProbe.centerPixel)
+          && pixelHasColor(screenshot.centerPixel);
         return {
           ok,
           command,
