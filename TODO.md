@@ -501,6 +501,11 @@ shares structure and follows behind.
       `wwmemlog.cpp`, `wwprofile.cpp`) compiles and smoke-tests profile tree
       recording, allocator accounting, and memory-log allocation/free counters
       under wasm.
+- [x] Extend the `WWVegas/WWDebug` profile/memory smoke to pin the browser
+      `_UNIX` memory-log contract: `MEM_COUNT` and the category name table
+      (`Texture`, `Renderer`) stay intact, current/peak category accounting
+      remains inert under `DISABLE_MEMLOG`, and `Enable_Memory_Log` toggles its
+      flag without charging categories unless `USE_MEMLOG` is defined.
 - [ ] Full `WWVegas/WWDebug` (`wwmemlog.cpp`, `wwprofile.cpp`) compiles and
       routes asserts/logs to the browser console/harness.
 - [x] Port original `WWVegas/WWDebug/wwprofile.cpp` for wasm or restore its
@@ -509,9 +514,16 @@ shares structure and follows behind.
       pulling unresolved profiling manager state.
 - [ ] Retire or narrow the current generic `wwprofile.h` no-op macro shim once
       all profile consumers link the original profiling manager target.
-- [ ] Decide whether the browser `_UNIX` build should keep original
+- [x] Decide whether the browser `_UNIX` build should keep original
       `wwmemlog.cpp` category tracking disabled or introduce a wasm-safe
-      thread-local memory-log mode.
+      thread-local memory-log mode. Decision: keep the original `_UNIX`
+      force-disable (`DISABLE_MEMLOG=1`, no per-allocation `MemoryLogStruct`
+      header, no category charging) — it is a debug-only feature the engine
+      does not rely on for correctness, and enabling it would add a 16-byte
+      header to every allocation in a single-threaded browser build. The
+      contract is now pinned by the `wwdebug-profile` smoke (category
+      count/names intact, current/peak accounting inert, enable flag
+      observable but non-charging without `USE_MEMLOG`).
 - [x] `WWVegas/WWSaveLoad` core persistence plumbing (`persistfactory.cpp`,
       `saveload.cpp`, `saveloadsubsystem.cpp`, `pointerremap.cpp`,
       `saveloadstatus.cpp`) compiles as a wasm static library for WWMath curve
