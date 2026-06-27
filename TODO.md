@@ -2594,7 +2594,10 @@ shares structure and follows behind.
       cull/front-face, depth test/write/func, blend func/op, shader-emulated
       alpha test uniforms, and color-write masks, with C++ state-capture smoke
       coverage plus Playwright harness assertions proving the rendered AABox
-      draw path uses the mapped GL state and still paints the canvas.
+      draw path uses the mapped GL state and still paints the canvas. The draw
+      bridge also detects Render2D identity-world/view/projection clip-space
+      submits and flips the GL cull face for D3D screen-space winding; the
+      Render2D and `W3DDisplay::drawImage` smokes assert that path.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.
@@ -2612,6 +2615,13 @@ shares structure and follows behind.
       buffers, and the browser D3D8/WebGL2 draw bridge, verified by
       `harness-smoke-ww3d-render2d-canvas.png` and red center-pixel sampling
       in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawImage` renders a synthetic raw-texture `Image`
+      through its real `Render2DClass` helper and the browser D3D8/WebGL2 draw
+      bridge, verified by `harness-smoke-ww3d-display-drawimage-canvas.png`
+      and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+      This proves the Image blit call path only; filename-backed mapped-image
+      loading, clipping/rotation variants, and `DisplayString` text rendering
+      remain open.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.

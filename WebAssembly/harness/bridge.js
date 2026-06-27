@@ -2098,6 +2098,19 @@ function normalizeD3DMatrix(matrix) {
   return new Float32Array(matrix);
 }
 
+function isIdentityD3DMatrix(matrix) {
+  if (!matrix || matrix.length !== 16) {
+    return false;
+  }
+  for (let index = 0; index < 16; ++index) {
+    const expected = index % 5 === 0 ? 1 : 0;
+    if (Math.abs(matrix[index] - expected) > 0.000001) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function defaultD3D8TextureStageValue(stage, state) {
   switch (Number(state) >>> 0) {
     case D3DTSS_COLOROP:
@@ -2268,10 +2281,12 @@ function d3dBlendOpToGl(blendOp) {
   }
 }
 
-function applyD3D8RenderState(renderState) {
+function applyD3D8RenderState(renderState, options = {}) {
   const state = normalizeD3D8RenderState(renderState);
   const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
-  const cullFace = state.cullMode === D3DCULL_CCW ? gl.FRONT : gl.BACK;
+  const cullFace = options.invertCullWinding
+    ? (state.cullMode === D3DCULL_CW ? gl.FRONT : gl.BACK)
+    : (state.cullMode === D3DCULL_CCW ? gl.FRONT : gl.BACK);
   const depthEnabled = state.zEnable === D3DZB_TRUE || state.zEnable === D3DZB_USEW;
   const depthFunc = d3dCmpToGl(state.zFunc);
   const blendEnabled = state.alphaBlendEnable !== 0;
@@ -2316,6 +2331,7 @@ function applyD3D8RenderState(renderState) {
       enabled: cullEnabled,
       frontFace: gl.CW,
       cullFace: cullEnabled ? cullFace : gl.BACK,
+      invertWinding: Boolean(options.invertCullWinding),
     },
     depth: {
       enabled: depthEnabled,
@@ -2358,6 +2374,13 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture0Transform = normalizeD3DMatrix(payload.transforms?.texture0);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
+  // Render2D emits already-normalized clip-space vertices under identity
+  // matrices; D3D's screen-space winding lands opposite WebGL's cull test.
+  const usesIdentityClipSpace =
+    useTransforms &&
+    isIdentityD3DMatrix(world) &&
+    isIdentityD3DMatrix(view) &&
+    isIdentityD3DMatrix(projection);
   const renderState = normalizeD3D8RenderState(payload.renderState);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
@@ -2381,7 +2404,9 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
-    appliedRenderState = applyD3D8RenderState(renderState);
+    appliedRenderState = applyD3D8RenderState(renderState, {
+      invertCullWinding: usesIdentityClipSpace,
+    });
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
@@ -2521,6 +2546,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedPersistentBuffers: usePersistentBuffers,
     transformMask,
     usedTransforms: Boolean(useTransforms),
+    usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
     appliedRenderState,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
@@ -2708,6 +2734,8 @@ async function loadWasmModule() {
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       probeWW3DRender2DTexturedQuad: module.cwrap(
         "cnc_port_probe_ww3d_render2d_textured_quad", "string", []),
+      probeWW3DDisplayDrawImage: module.cwrap(
+        "cnc_port_probe_ww3d_display_drawimage", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -4367,6 +4395,49 @@ async function rpc(command, payload = {}) {
           && Boolean(browserProbe?.ok)
           && browserProbe?.texture0?.sampled === true
           && browserProbe?.texture0?.id === probe?.texture?.id
+          && pixelLooksRed(browserProbe.centerPixel)
+          && pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayDrawImage":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay drawImage cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayDrawImage());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && probe?.image?.rawTexture === true
           && pixelLooksRed(browserProbe.centerPixel)
           && pixelLooksRed(screenshot.centerPixel);
         return {
