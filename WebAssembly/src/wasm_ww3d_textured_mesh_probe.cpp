@@ -27,10 +27,8 @@
 #include "texture.h"
 #include "vertmaterial.h"
 #include "w3d_file.h"
+#include "wasm_browser_device.h"
 #include "wasm_d3d8_shim.h"
-#include "Win32Device/Common/Win32BIGFileSystem.h"
-#include "Win32Device/Common/Win32LocalFileSystem.h"
-#include "W3DDevice/GameClient/W3DFileSystem.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -690,17 +688,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	WW3DAssetManager *asset_manager = nullptr;
 	MeshClass *mesh = nullptr;
 	CameraClass *camera = nullptr;
-	FileSystem *old_file_system = TheFileSystem;
-	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
-	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
-	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	FileFactoryClass *old_file_factory = _TheFileFactory;
-	W3DFileSystem *old_w3d_file_system = TheW3DFileSystem;
-	Win32LocalFileSystem local_file_system;
-	Win32BIGFileSystem archive_file_system;
-	FileSystem file_system;
-	NameKeyGenerator name_key_generator;
 	W3DFileSystem *w3d_file_system = nullptr;
+	BrowserDeviceScope device_scope;
 
 	split_archive_path(archive_path, mesh_archive_directory, mesh_archive_mask);
 	split_archive_path(texture_archive_path, texture_archive_directory, texture_archive_mask);
@@ -715,12 +704,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
-		TheLocalFileSystem = &local_file_system;
-		TheArchiveFileSystem = &archive_file_system;
-		TheFileSystem = &file_system;
-		TheNameKeyGenerator = &name_key_generator;
-		name_key_generator.init();
-		file_system.init();
+		// The browser display/device startup owner (mirrors W3DDisplay::init()
+		// file-system + W3DFileSystem ownership) is now the shared
+		// BrowserDeviceScope; the probe no longer installs/restores those
+		// globals inline.
+		Win32BIGFileSystem &archive_file_system = device_scope.archive_file_system();
+		FileSystem &file_system = device_scope.file_system();
 		if (mesh_archive_mask.isNotEmpty()) {
 			mesh_archive_loaded =
 				archive_file_system.loadBigFilesFromDirectory(mesh_archive_directory, mesh_archive_mask);
@@ -732,8 +721,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		texture_file_exists =
 			texture_archive_loaded &&
 			file_system.doesFileExist(kShippedMeshTextureArchiveEntry);
-		TheW3DFileSystem = new W3DFileSystem;
-		w3d_file_system = TheW3DFileSystem;
+		w3d_file_system = device_scope.install_w3d_file_system();
 		texture_file_factory_installed =
 			w3d_file_system != nullptr &&
 			_TheFileFactory == w3d_file_system;
@@ -842,17 +830,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		WW3D::Shutdown();
 	}
 
-	if (w3d_file_system != nullptr) {
-		delete w3d_file_system;
-		w3d_file_system = nullptr;
-	}
-	TheW3DFileSystem = old_w3d_file_system;
-	_TheFileFactory = old_file_factory;
-	name_key_generator.reset();
-	TheNameKeyGenerator = old_name_key_generator;
-	TheFileSystem = old_file_system;
-	TheArchiveFileSystem = old_archive_file_system;
-	TheLocalFileSystem = old_local_file_system;
+	// BrowserDeviceScope destructor tears down the W3DFileSystem, resets the
+	// name key generator, and restores the prior file-system / file-factory
+	// globals in the same order the probe used to inline.
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
