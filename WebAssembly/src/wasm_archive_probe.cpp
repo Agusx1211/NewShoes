@@ -8,6 +8,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include "Common/ArchiveFileSystem.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
@@ -1343,7 +1345,7 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	{
 		Win32LocalFileSystem local_file_system;
@@ -1449,8 +1451,6 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		TheArchiveFileSystem = nullptr;
 		TheLocalFileSystem = nullptr;
 	}
-
-	shutdownMemoryManager();
 
 	if (result.loaded && result.has_game_data_ini) {
 		copy_game_data_probe(probe_original_game_data_ini_load(archive_path), result);

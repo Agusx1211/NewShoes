@@ -9,6 +9,8 @@
 
 #include "PreRTS.h"
 
+#include "wasm_memory_manager_scope.h"
+
 #include "Common/ArchiveFileSystem.h"
 #include "Common/AcademyStats.h"
 #include "Common/AudioEventRTS.h"
@@ -1663,7 +1665,7 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -1725,7 +1727,6 @@ RealGameDataIniProbeResult probe_original_game_data_ini_load(const char *archive
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -1744,7 +1745,7 @@ RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path)
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -1841,7 +1842,6 @@ RealArmorIniProbeResult probe_original_armor_ini_load(const char *archive_path)
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -1861,7 +1861,7 @@ RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -1985,7 +1985,6 @@ RealDamageFXIniProbeResult probe_original_damage_fx_ini_load(const char *archive
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2004,7 +2003,7 @@ RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_pat
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -2108,7 +2107,6 @@ RealFXListIniProbeResult probe_original_fx_list_ini_load(const char *archive_pat
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2128,7 +2126,7 @@ RealObjectCreationListIniProbeResult probe_original_object_creation_list_ini_loa
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -2341,7 +2339,6 @@ RealObjectCreationListIniProbeResult probe_original_object_creation_list_ini_loa
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2361,7 +2358,7 @@ RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -2540,7 +2537,6 @@ RealWeaponIniProbeResult probe_original_weapon_ini_load(const char *archive_path
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2559,7 +2555,7 @@ RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_pat
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -2766,7 +2762,6 @@ RealAIDataIniProbeResult probe_original_ai_data_ini_load(const char *archive_pat
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2785,7 +2780,7 @@ RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archiv
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -2945,7 +2940,6 @@ RealLocomotorIniProbeResult probe_original_locomotor_ini_load(const char *archiv
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -2964,7 +2958,7 @@ RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_pa
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3070,7 +3064,6 @@ RealScienceIniProbeResult probe_original_science_ini_load(const char *archive_pa
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3090,7 +3083,7 @@ RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char 
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3273,7 +3266,6 @@ RealSpecialPowerIniProbeResult probe_original_special_power_ini_load(const char 
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3293,7 +3285,7 @@ RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const c
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3487,7 +3479,6 @@ RealPlayerTemplateIniProbeResult probe_original_player_template_ini_load(const c
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3506,7 +3497,7 @@ RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path)
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3602,7 +3593,6 @@ RealWaterIniProbeResult probe_original_water_ini_load(const char *archive_path)
 	}
 	restore_water_settings(old_water_settings);
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3621,7 +3611,7 @@ RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path)
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3707,7 +3697,6 @@ RealVideoIniProbeResult probe_original_video_ini_load(const char *archive_path)
 		TheLocalFileSystem = old_local_file_system;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3727,7 +3716,7 @@ RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *ar
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3849,7 +3838,6 @@ RealMultiplayerIniProbeResult probe_original_multiplayer_ini_load(const char *ar
 		delete multiplayer_settings_to_delete;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3868,7 +3856,7 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -3960,7 +3948,6 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 		delete terrain_types;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -3980,7 +3967,7 @@ RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char 
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4088,7 +4075,6 @@ RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char 
 		delete terrain_roads;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4107,7 +4093,7 @@ RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const ch
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4184,7 +4170,6 @@ RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const ch
 		delete draw_group_info;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4204,7 +4189,7 @@ RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *a
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4303,7 +4288,6 @@ RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *a
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4323,7 +4307,7 @@ RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(co
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4467,7 +4451,6 @@ RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(co
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4487,7 +4470,7 @@ RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path)
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4690,7 +4673,6 @@ RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path)
 	}
 
 	std::remove(CRATE_PROBE_INI_PATH);
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4709,7 +4691,7 @@ RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_pa
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -4834,7 +4816,6 @@ RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_pa
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -4854,7 +4835,7 @@ RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const cha
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -5034,7 +5015,6 @@ RealCommandButtonIniProbeResult probe_original_command_button_ini_load(const cha
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -5054,7 +5034,7 @@ RealCommandSetIniProbeResult probe_original_command_set_ini_load(const char *arc
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -5275,7 +5255,6 @@ RealCommandSetIniProbeResult probe_original_command_set_ini_load(const char *arc
 		delete name_key_generator;
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -5294,7 +5273,7 @@ RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_pa
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -5373,7 +5352,6 @@ RealWeatherIniProbeResult probe_original_weather_ini_load(const char *archive_pa
 		weather_setting_to_delete->deleteInstance();
 	}
 
-	shutdownMemoryManager();
 
 	return result;
 }
@@ -5392,7 +5370,7 @@ RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive
 		return result;
 	}
 
-	initMemoryManager();
+	ScopedOriginalMemoryManager memory_manager_scope;
 
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -5499,7 +5477,6 @@ RealMapCacheIniProbeResult probe_original_map_cache_ini_load(const char *archive
 	}
 	map_cache.clear();
 
-	shutdownMemoryManager();
 
 	return result;
 }
