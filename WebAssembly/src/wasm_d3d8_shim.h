@@ -27,7 +27,17 @@ struct WasmD3D8ShimState
 	UINT last_draw_start_index;
 	UINT last_draw_primitive_count;
 	UINT last_stream_source_stride;
+	UINT last_draw_stream_source_stride;
 	UINT last_indices_base_vertex_index;
+	UINT last_draw_vertex_buffer_length;
+	UINT last_draw_vertex_buffer_offset;
+	UINT last_draw_vertex_buffer_bytes;
+	DWORD last_draw_vertex_buffer_checksum;
+	UINT last_draw_index_buffer_length;
+	UINT last_draw_index_buffer_offset;
+	UINT last_draw_index_buffer_bytes;
+	DWORD last_draw_index_buffer_checksum;
+	D3DFORMAT last_draw_index_format;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;

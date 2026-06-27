@@ -91,6 +91,47 @@ UINT bytes_per_pixel(D3DFORMAT format)
 	}
 }
 
+DWORD checksum_bytes(const BYTE *data, UINT size)
+{
+	if (data == nullptr || size == 0) {
+		return 0;
+	}
+	DWORD hash = 2166136261u;
+	for (UINT index = 0; index < size; ++index) {
+		hash ^= data[index];
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+UINT checked_range_size(UINT length, UINT offset, UINT requested_size)
+{
+	if (offset > length) {
+		return 0;
+	}
+	const UINT available = length - offset;
+	return requested_size <= available ? requested_size : available;
+}
+
+UINT primitive_vertex_count(D3DPRIMITIVETYPE primitive_type, UINT primitive_count)
+{
+	switch (primitive_type) {
+		case D3DPT_POINTLIST:
+			return primitive_count;
+		case D3DPT_LINELIST:
+			return primitive_count * 2;
+		case D3DPT_LINESTRIP:
+			return primitive_count + 1;
+		case D3DPT_TRIANGLELIST:
+			return primitive_count * 3;
+		case D3DPT_TRIANGLESTRIP:
+		case D3DPT_TRIANGLEFAN:
+			return primitive_count + 2;
+		default:
+			return 0;
+	}
+}
+
 struct BrowserD3DResource
 {
 	explicit BrowserD3DResource(IDirect3DDevice8 *device) : m_device(device) {}
@@ -377,6 +418,17 @@ public:
 		return S_OK;
 	}
 
+	UINT length() const { return static_cast<UINT>(m_bytes.size()); }
+
+	DWORD checksum(UINT offset, UINT size) const
+	{
+		const UINT checked_size = checked_range_size(length(), offset, size);
+		if (checked_size == 0) {
+			return 0;
+		}
+		return checksum_bytes(m_bytes.data() + offset, checked_size);
+	}
+
 	ULONG AddRef() override { return ++m_ref_count; }
 
 	ULONG Release() override
@@ -396,9 +448,10 @@ private:
 class BrowserD3DIndexBuffer final : public IDirect3DIndexBuffer8, private BrowserD3DResource
 {
 public:
-	BrowserD3DIndexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, D3DFORMAT, D3DPOOL) :
+	BrowserD3DIndexBuffer(IDirect3DDevice8 *device, UINT length, DWORD, D3DFORMAT format, D3DPOOL) :
 		BrowserD3DResource(device),
-		m_bytes(length)
+		m_bytes(length),
+		m_format(format)
 	{
 	}
 
@@ -441,6 +494,19 @@ public:
 		return S_OK;
 	}
 
+	UINT length() const { return static_cast<UINT>(m_bytes.size()); }
+	D3DFORMAT format() const { return m_format; }
+	UINT index_size() const { return m_format == D3DFMT_INDEX32 ? 4 : 2; }
+
+	DWORD checksum(UINT offset, UINT size) const
+	{
+		const UINT checked_size = checked_range_size(length(), offset, size);
+		if (checked_size == 0) {
+			return 0;
+		}
+		return checksum_bytes(m_bytes.data() + offset, checked_size);
+	}
+
 	ULONG AddRef() override { return ++m_ref_count; }
 
 	ULONG Release() override
@@ -455,6 +521,7 @@ public:
 private:
 	ULONG m_ref_count = 1;
 	std::vector<BYTE> m_bytes;
+	D3DFORMAT m_format = D3DFMT_INDEX16;
 };
 
 class BrowserD3DDevice final : public IDirect3DDevice8
@@ -496,6 +563,14 @@ public:
 
 	~BrowserD3DDevice()
 	{
+		if (m_stream_source != nullptr) {
+			m_stream_source->Release();
+			m_stream_source = nullptr;
+		}
+		if (m_indices != nullptr) {
+			m_indices->Release();
+			m_indices = nullptr;
+		}
 		if (m_back_buffer != nullptr) {
 			m_back_buffer->Release();
 			m_back_buffer = nullptr;
@@ -764,6 +839,7 @@ public:
 		g_state.last_draw_primitive_type = primitive_type;
 		g_state.last_draw_start_vertex = start_vertex;
 		g_state.last_draw_primitive_count = primitive_count;
+		capture_bound_draw(start_vertex, primitive_vertex_count(primitive_type, primitive_count), 0, 0);
 		return S_OK;
 	}
 	HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, UINT min_index, UINT vertex_count,
@@ -775,6 +851,8 @@ public:
 		g_state.last_draw_vertex_count = vertex_count;
 		g_state.last_draw_start_index = start_index;
 		g_state.last_draw_primitive_count = primitive_count;
+		capture_bound_draw(min_index, vertex_count, start_index,
+			primitive_vertex_count(primitive_type, primitive_count));
 		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
@@ -798,16 +876,33 @@ public:
 	HRESULT SetPixelShader(DWORD) override { return S_OK; }
 	HRESULT DeletePixelShader(DWORD) override { return S_OK; }
 	HRESULT SetPixelShaderConstant(DWORD, const void *, DWORD) override { return S_OK; }
-	HRESULT SetStreamSource(UINT, IDirect3DVertexBuffer8 *, UINT stride) override
+	HRESULT SetStreamSource(UINT stream_number, IDirect3DVertexBuffer8 *stream_data, UINT stride) override
 	{
 		++g_state.set_stream_source_calls;
 		g_state.last_stream_source_stride = stride;
+		if (stream_number == 0) {
+			if (stream_data != nullptr) {
+				stream_data->AddRef();
+			}
+			if (m_stream_source != nullptr) {
+				m_stream_source->Release();
+			}
+			m_stream_source = stream_data;
+			m_stream_source_stride = stride;
+		}
 		return S_OK;
 	}
-	HRESULT SetIndices(IDirect3DIndexBuffer8 *, UINT base_vertex_index) override
+	HRESULT SetIndices(IDirect3DIndexBuffer8 *index_data, UINT base_vertex_index) override
 	{
 		++g_state.set_indices_calls;
 		g_state.last_indices_base_vertex_index = base_vertex_index;
+		if (index_data != nullptr) {
+			index_data->AddRef();
+		}
+		if (m_indices != nullptr) {
+			m_indices->Release();
+		}
+		m_indices = index_data;
 		return S_OK;
 	}
 
@@ -823,6 +918,46 @@ public:
 	}
 
 private:
+	void capture_bound_draw(UINT first_vertex, UINT vertex_count, UINT first_index, UINT index_count)
+	{
+		g_state.last_draw_vertex_buffer_length = 0;
+		g_state.last_draw_vertex_buffer_offset = 0;
+		g_state.last_draw_vertex_buffer_bytes = 0;
+		g_state.last_draw_vertex_buffer_checksum = 0;
+		g_state.last_draw_stream_source_stride = 0;
+		g_state.last_draw_index_buffer_length = 0;
+		g_state.last_draw_index_buffer_offset = 0;
+		g_state.last_draw_index_buffer_bytes = 0;
+		g_state.last_draw_index_buffer_checksum = 0;
+		g_state.last_draw_index_format = D3DFMT_UNKNOWN;
+
+		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
+			const BrowserD3DVertexBuffer *stream =
+				static_cast<const BrowserD3DVertexBuffer *>(m_stream_source);
+			const UINT offset = first_vertex * m_stream_source_stride;
+			const UINT requested_bytes = vertex_count * m_stream_source_stride;
+			const UINT captured_bytes = checked_range_size(stream->length(), offset, requested_bytes);
+			g_state.last_draw_stream_source_stride = m_stream_source_stride;
+			g_state.last_draw_vertex_buffer_length = stream->length();
+			g_state.last_draw_vertex_buffer_offset = offset;
+			g_state.last_draw_vertex_buffer_bytes = captured_bytes;
+			g_state.last_draw_vertex_buffer_checksum = stream->checksum(offset, captured_bytes);
+		}
+
+		if (m_indices != nullptr && index_count != 0) {
+			const BrowserD3DIndexBuffer *indices = static_cast<const BrowserD3DIndexBuffer *>(m_indices);
+			const UINT index_size = indices->index_size();
+			const UINT offset = first_index * index_size;
+			const UINT requested_bytes = index_count * index_size;
+			const UINT captured_bytes = checked_range_size(indices->length(), offset, requested_bytes);
+			g_state.last_draw_index_buffer_length = indices->length();
+			g_state.last_draw_index_buffer_offset = offset;
+			g_state.last_draw_index_buffer_bytes = captured_bytes;
+			g_state.last_draw_index_buffer_checksum = indices->checksum(offset, captured_bytes);
+			g_state.last_draw_index_format = indices->format();
+		}
+	}
+
 	HRESULT create_surface(UINT width, UINT height, D3DFORMAT format, DWORD usage, IDirect3DSurface8 **surface)
 	{
 		if (surface == nullptr) {
@@ -837,6 +972,9 @@ private:
 	D3DVIEWPORT8 m_viewport = {};
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
+	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
+	IDirect3DIndexBuffer8 *m_indices = nullptr;
+	UINT m_stream_source_stride = 0;
 };
 
 class BrowserD3D8 final : public IDirect3D8

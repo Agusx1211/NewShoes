@@ -2298,6 +2298,11 @@ shares structure and follows behind.
       in the smoke. This is still no-op D3D8 draw bookkeeping; texture-loader
       frame maintenance, real WebGL2 buffer uploads, shader/state mapping, and
       visible geometry remain open.
+- [x] Capture bridge-ready draw data from the browser D3D8 shim by retaining the
+      bound stream/index buffers, index format, draw byte ranges, and deterministic
+      checksums for the original AABox `DrawIndexedPrimitive` path. This proves
+      the WebGL2 upload path can read the actual WW3D-filled vertex/index backing
+      stores; it still does not create GL buffers or render visible geometry.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
