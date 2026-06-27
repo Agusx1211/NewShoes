@@ -758,10 +758,24 @@ public:
 		return S_OK;
 	}
 	HRESULT SetCurrentTexturePalette(UINT) override { return S_OK; }
-	HRESULT DrawPrimitive(D3DPRIMITIVETYPE, UINT, UINT) override { return D3DERR_NOTAVAILABLE; }
-	HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE, UINT, UINT, UINT, UINT) override
+	HRESULT DrawPrimitive(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT primitive_count) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		++g_state.draw_primitive_calls;
+		g_state.last_draw_primitive_type = primitive_type;
+		g_state.last_draw_start_vertex = start_vertex;
+		g_state.last_draw_primitive_count = primitive_count;
+		return S_OK;
+	}
+	HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, UINT min_index, UINT vertex_count,
+		UINT start_index, UINT primitive_count) override
+	{
+		++g_state.draw_indexed_primitive_calls;
+		g_state.last_draw_primitive_type = primitive_type;
+		g_state.last_draw_min_vertex_index = min_index;
+		g_state.last_draw_vertex_count = vertex_count;
+		g_state.last_draw_start_index = start_index;
+		g_state.last_draw_primitive_count = primitive_count;
+		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
 	HRESULT DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE, UINT, UINT, UINT, const void *, D3DFORMAT,
@@ -784,8 +798,18 @@ public:
 	HRESULT SetPixelShader(DWORD) override { return S_OK; }
 	HRESULT DeletePixelShader(DWORD) override { return S_OK; }
 	HRESULT SetPixelShaderConstant(DWORD, const void *, DWORD) override { return S_OK; }
-	HRESULT SetStreamSource(UINT, IDirect3DVertexBuffer8 *, UINT) override { return S_OK; }
-	HRESULT SetIndices(IDirect3DIndexBuffer8 *, UINT) override { return S_OK; }
+	HRESULT SetStreamSource(UINT, IDirect3DVertexBuffer8 *, UINT stride) override
+	{
+		++g_state.set_stream_source_calls;
+		g_state.last_stream_source_stride = stride;
+		return S_OK;
+	}
+	HRESULT SetIndices(IDirect3DIndexBuffer8 *, UINT base_vertex_index) override
+	{
+		++g_state.set_indices_calls;
+		g_state.last_indices_base_vertex_index = base_vertex_index;
+		return S_OK;
+	}
 
 	ULONG AddRef() override { return ++m_ref_count; }
 

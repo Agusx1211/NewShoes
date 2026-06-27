@@ -2290,6 +2290,14 @@ shares structure and follows behind.
       allocation/locking needed for device-dependent WW3D startup. This is
       wrapper-to-D3D-shim clear coverage only; vertex buffers, real WebGL2
       buffer uploads, texture uploads, and visible GL draws remain open.
+- [x] Drive an original in-memory `AABoxRenderObjClass` through
+      `WW3D::Begin_Render`, `WW3D::Render`, and `WW3D::End_Render`, with smoke
+      coverage proving the wrapper now reaches dynamic vertex/index-buffer
+      allocation, stream/index binding, and `DrawIndexedPrimitive` for a
+      triangle-list object render while thumbnail texture maintenance is disabled
+      in the smoke. This is still no-op D3D8 draw bookkeeping; texture-loader
+      frame maintenance, real WebGL2 buffer uploads, shader/state mapping, and
+      visible geometry remain open.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
