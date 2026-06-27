@@ -31,6 +31,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 constexpr const char DEFAULT_GAME_DATA_INI_PATH[] = "Data\\INI\\Default\\GameData.ini";
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
+constexpr const char CHALLENGE_MODE_INI_PATH[] = "Data\\INI\\ChallengeMode.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
 constexpr const char DEFAULT_FX_LIST_INI_PATH[] = "Data\\INI\\Default\\FXList.ini";
 constexpr const char FX_LIST_INI_PATH[] = "Data\\INI\\FXList.ini";
@@ -1295,6 +1296,64 @@ void copy_mapped_image_probe(const RealMappedImageIniProbeResult &mapped_image, 
 	result.mapped_image_watermark_china_rotated = mapped_image.watermark_china_rotated;
 }
 
+void copy_challenge_mode_probe(
+	const RealChallengeModeIniProbeResult &challenge_mode,
+	ArchiveProbeResult &result)
+{
+	result.challenge_mode_attempted = challenge_mode.attempted;
+	result.challenge_mode_ok = challenge_mode.ok;
+	result.challenge_mode_loaded_archives = challenge_mode.loaded_archives;
+	result.challenge_mode_file_exists = challenge_mode.file_exists;
+	result.challenge_mode_name_key_generator_loaded = challenge_mode.name_key_generator_loaded;
+	result.challenge_mode_mapped_images_loaded = challenge_mode.mapped_images_loaded;
+	result.challenge_mode_challenge_generals_loaded =
+		challenge_mode.challenge_generals_loaded;
+	result.challenge_mode_original_ini_load = challenge_mode.original_ini_load;
+	result.challenge_mode_bytes = challenge_mode.bytes;
+	result.challenge_mode_parsed_fields = challenge_mode.parsed_fields;
+	result.challenge_mode_mapped_image_count = challenge_mode.mapped_image_count;
+	result.challenge_mode_persona_count = challenge_mode.persona_count;
+	result.challenge_mode_enabled_persona_count = challenge_mode.enabled_persona_count;
+	result.challenge_mode_player_template_count = challenge_mode.player_template_count;
+	result.challenge_mode_source = challenge_mode.source;
+	result.challenge_mode_air_force_found = challenge_mode.air_force_found;
+	result.challenge_mode_air_force_starts_enabled =
+		challenge_mode.air_force_starts_enabled;
+	result.challenge_mode_air_force_player_template =
+		challenge_mode.air_force_player_template;
+	result.challenge_mode_air_force_bio_name = challenge_mode.air_force_bio_name;
+	result.challenge_mode_air_force_campaign = challenge_mode.air_force_campaign;
+	result.challenge_mode_air_force_portrait_left = challenge_mode.air_force_portrait_left;
+	result.challenge_mode_air_force_portrait_right =
+		challenge_mode.air_force_portrait_right;
+	result.challenge_mode_air_force_selection_sound =
+		challenge_mode.air_force_selection_sound;
+	result.challenge_mode_air_force_preview_sound = challenge_mode.air_force_preview_sound;
+	result.challenge_mode_air_force_name_sound = challenge_mode.air_force_name_sound;
+	result.challenge_mode_air_force_small_portrait_loaded =
+		challenge_mode.air_force_small_portrait_loaded;
+	result.challenge_mode_air_force_large_portrait_loaded =
+		challenge_mode.air_force_large_portrait_loaded;
+	result.challenge_mode_air_force_defeated_image_loaded =
+		challenge_mode.air_force_defeated_image_loaded;
+	result.challenge_mode_air_force_victorious_image_loaded =
+		challenge_mode.air_force_victorious_image_loaded;
+	result.challenge_mode_toxin_found = challenge_mode.toxin_found;
+	result.challenge_mode_toxin_starts_enabled = challenge_mode.toxin_starts_enabled;
+	result.challenge_mode_toxin_player_template = challenge_mode.toxin_player_template;
+	result.challenge_mode_toxin_campaign = challenge_mode.toxin_campaign;
+	result.challenge_mode_toxin_selection_sound = challenge_mode.toxin_selection_sound;
+	result.challenge_mode_disabled_slot_found = challenge_mode.disabled_slot_found;
+	result.challenge_mode_disabled_slot_starts_disabled =
+		challenge_mode.disabled_slot_starts_disabled;
+	result.challenge_mode_disabled_slot_campaign =
+		challenge_mode.disabled_slot_campaign;
+	result.challenge_mode_disabled_slot_selection_sound =
+		challenge_mode.disabled_slot_selection_sound;
+	result.challenge_mode_disabled_slot_small_portrait_loaded =
+		challenge_mode.disabled_slot_small_portrait_loaded;
+}
+
 void probe_original_game_text(ArchiveProbeResult &result)
 {
 	result.game_text_attempted = true;
@@ -1361,6 +1420,8 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_default_game_data_ini =
 				archive_file_system.doesFileExist(DEFAULT_GAME_DATA_INI_PATH);
 			result.has_armor_ini = archive_file_system.doesFileExist(ARMOR_INI_PATH);
+			result.has_challenge_mode_ini =
+				archive_file_system.doesFileExist(CHALLENGE_MODE_INI_PATH);
 			result.has_damage_fx_ini = archive_file_system.doesFileExist(DAMAGE_FX_INI_PATH);
 			result.has_default_fx_list_ini =
 				archive_file_system.doesFileExist(DEFAULT_FX_LIST_INI_PATH);
@@ -1525,6 +1586,10 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 		if (mapped_image.file_exists) {
 			result.ok = result.ok && result.mapped_image_ok;
 		}
+	}
+	if (result.loaded && result.has_challenge_mode_ini) {
+		copy_challenge_mode_probe(probe_original_challenge_mode_ini_load(archive_path), result);
+		result.ok = result.ok && result.challenge_mode_ok;
 	}
 	if (result.loaded && result.has_crate_ini) {
 		copy_crate_probe(probe_original_crate_ini_load(archive_path), result);

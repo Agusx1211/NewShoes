@@ -2822,6 +2822,7 @@ add_library(zh_gameengine_real_ini_runtime STATIC
   "${GAMEENGINE_COMMON_DIR}/System/ObjectStatusTypes.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/Upgrade.cpp"
   "${GAMEENGINE_COMMON_DIR}/TerrainTypes.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ChallengeGenerals.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/FXList.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ControlBar/ControlBarScheme.cpp"
@@ -2846,6 +2847,10 @@ add_library(zh_gameengine_real_ini_runtime STATIC
 
 set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/ParticleSys.cpp" PROPERTIES
   COMPILE_OPTIONS "-include;${WWVEGAS_PORT_SHIM};-include;${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
+)
+
+set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/GUI/ChallengeGenerals.cpp" PROPERTIES
+  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
 )
 
 target_compile_definitions(zh_gameengine_real_ini_runtime PRIVATE

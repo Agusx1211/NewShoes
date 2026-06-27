@@ -903,6 +903,55 @@ function assertMappedImageProbe(assetProbe, context) {
   }
 }
 
+function assertChallengeModeProbe(assetProbe, context) {
+  const challengeMode = assetProbe?.challengeMode;
+  const airForce = challengeMode?.airForce;
+  const toxin = challengeMode?.toxin;
+  const disabledSlot = challengeMode?.disabledSlot;
+  if (!assetProbe?.inizh?.challengeModeIni
+      || !challengeMode?.attempted
+      || !challengeMode.ok
+      || challengeMode.source !== "GameEngine/Common/INI.cpp::load + GameClient/GUI/ChallengeGenerals.cpp + mapped images"
+      || !challengeMode.loadedArchives
+      || !challengeMode.fileExists
+      || !challengeMode.nameKeyGeneratorLoaded
+      || !challengeMode.mappedImagesLoaded
+      || !challengeMode.challengeGeneralsLoaded
+      || !challengeMode.originalIniLoad
+      || challengeMode.bytes <= 10000
+      || challengeMode.parsedFields !== 28
+      || challengeMode.mappedImages !== 1186
+      || challengeMode.personas !== 12
+      || challengeMode.enabledPersonas !== 9
+      || challengeMode.playerTemplates !== 10
+      || !airForce?.found
+      || airForce.startsEnabled !== true
+      || airForce.playerTemplate !== "FactionAmericaAirForceGeneral"
+      || airForce.bioName !== "GUI:BioNameEntry_Pos0"
+      || airForce.campaign !== "CHALLENGE_0"
+      || airForce.portraitLeft !== "PortraitAirGenLeft"
+      || airForce.portraitRight !== "PortraitAirGenRight"
+      || airForce.selectionSound !== "Taunts_Grainger009"
+      || airForce.previewSound !== "Taunts_GCAnnouncer07"
+      || airForce.nameSound !== "Taunts_GCAnnouncer14"
+      || airForce.smallPortrait !== true
+      || airForce.largePortrait !== true
+      || airForce.defeatedImage !== true
+      || airForce.victoriousImage !== true
+      || !toxin?.found
+      || toxin.startsEnabled !== true
+      || toxin.playerTemplate !== "FactionGLAToxinGeneral"
+      || toxin.campaign !== "CHALLENGE_1"
+      || toxin.selectionSound !== "Taunts_Toxin015"
+      || !disabledSlot?.found
+      || disabledSlot.startsDisabled !== true
+      || disabledSlot.campaign !== "unimplemented"
+      || disabledSlot.selectionSound !== "none"
+      || disabledSlot.smallPortrait !== true) {
+    throw new Error(`${context} did not parse expected ChallengeMode.ini personas: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -1220,6 +1269,7 @@ function assertDataSummary(state, context, expectedStartupReady) {
     "controlBarScheme",
     "crate",
     "mappedImages",
+    "challengeMode",
     "specialPower",
     "playerTemplate",
     "multiplayer",
@@ -1257,6 +1307,7 @@ function assertDataSummary(state, context, expectedStartupReady) {
     crate: 34,
     drawGroupInfo: 0,
     mappedImages: 18,
+    challengeMode: 28,
     specialPower: 38,
     playerTemplate: 50,
     multiplayer: 22,
@@ -1288,6 +1339,7 @@ function assertDataSummary(state, context, expectedStartupReady) {
     mappedImageFiles: 14,
     mappedImages: 1186,
     crates: 7,
+    challengeGenerals: 12,
     specialPowers: 79,
     playerTemplates: 15,
     playerSides: 15,
@@ -1610,6 +1662,7 @@ try {
       || !assetProbe.inizh?.objectCreationListIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
+      || !assetProbe.inizh?.challengeModeIni
       || !assetProbe.inizh?.controlBarSchemeIni
       || !assetProbe.inizh?.defaultControlBarSchemeIni
       || !assetProbe.inizh?.crateIni
@@ -1642,6 +1695,7 @@ try {
   assertCrateProbe(assetProbe, "aggregate runtime archive probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
   assertMappedImageProbe(assetProbe, "aggregate runtime archive probe");
+  assertChallengeModeProbe(assetProbe, "aggregate runtime archive probe");
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -1715,6 +1769,7 @@ try {
   assertCrateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
   assertMappedImageProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertChallengeModeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");

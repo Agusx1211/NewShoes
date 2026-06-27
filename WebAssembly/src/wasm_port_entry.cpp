@@ -813,7 +813,7 @@ std::string build_win32_message_json(const MSG &message)
 
 std::string build_data_summary_json()
 {
-	char buffer[7600];
+	char buffer[8200];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"ok\":%s,\"startupReady\":%s,\"source\":\"assetProbe\","
 		"\"archives\":{\"indexedFiles\":%zu,\"sampleBytes\":%zu},"
@@ -822,6 +822,7 @@ std::string build_data_summary_json()
 		"\"locomotor\":%s,\"science\":%s,\"upgrade\":%s,"
 		"\"commandButton\":%s,\"commandSet\":%s,\"controlBarScheme\":%s,"
 		"\"crate\":%s,\"drawGroupInfo\":%s,\"mappedImages\":%s,"
+		"\"challengeMode\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,\"gameData\":%s,"
 		"\"water\":%s,\"weather\":%s,\"video\":%s,\"gameText\":%s,"
@@ -831,6 +832,7 @@ std::string build_data_summary_json()
 		"\"locomotor\":%zu,\"science\":%zu,\"upgrade\":%zu,"
 		"\"commandButton\":%zu,\"commandSet\":%zu,\"controlBarScheme\":%zu,"
 		"\"crate\":%zu,\"drawGroupInfo\":%zu,\"mappedImages\":%zu,"
+		"\"challengeMode\":%zu,"
 		"\"specialPower\":%zu,\"playerTemplate\":%zu,\"multiplayer\":%zu,"
 		"\"terrain\":%zu,\"terrainRoads\":%zu,\"gameData\":%zu,"
 		"\"water\":%zu,\"weather\":%zu,\"video\":%zu},"
@@ -840,6 +842,7 @@ std::string build_data_summary_json()
 		"\"focusedCommandButtons\":%zu,\"focusedCommandSets\":%zu,"
 		"\"commandSetButtons\":%zu,\"controlBarImages\":%zu,"
 		"\"mappedImageFiles\":%zu,\"mappedImages\":%zu,\"crates\":%zu,"
+		"\"challengeGenerals\":%zu,"
 		"\"specialPowers\":%zu,\"playerTemplates\":%zu,\"playerSides\":%zu,"
 		"\"multiplayerColors\":%zu,\"terrains\":%zu,\"roads\":%zu,"
 		"\"bridges\":%zu,\"waterSets\":%zu,\"videos\":%zu},"
@@ -867,6 +870,8 @@ std::string build_data_summary_json()
 			g_archive_probe.draw_group_info_ok ? "true" : "false",
 		g_archive_probe.mapped_image_attempted &&
 			g_archive_probe.mapped_image_ok ? "true" : "false",
+		g_archive_probe.challenge_mode_attempted &&
+			g_archive_probe.challenge_mode_ok ? "true" : "false",
 		startup_special_power_ready() ? "true" : "false",
 		startup_player_template_ready() ? "true" : "false",
 		startup_multiplayer_ready() ? "true" : "false",
@@ -893,6 +898,7 @@ std::string build_data_summary_json()
 		g_archive_probe.crate_parsed_fields,
 		g_archive_probe.draw_group_info_parsed_fields,
 		g_archive_probe.mapped_image_parsed_fields,
+		g_archive_probe.challenge_mode_parsed_fields,
 		g_archive_probe.special_power_parsed_fields,
 		g_archive_probe.player_template_parsed_fields,
 		g_archive_probe.multiplayer_parsed_fields,
@@ -916,6 +922,7 @@ std::string build_data_summary_json()
 		g_archive_probe.mapped_image_file_count,
 		g_archive_probe.mapped_image_count,
 		g_archive_probe.crate_template_count,
+		g_archive_probe.challenge_mode_persona_count,
 		g_archive_probe.special_power_count,
 		g_archive_probe.player_template_count,
 		g_archive_probe.player_template_side_count,
@@ -2348,6 +2355,99 @@ std::string build_mapped_image_probe_json()
 	return buffer;
 }
 
+std::string build_challenge_mode_probe_json()
+{
+	char buffer[5200];
+	const std::string source_json = json_escape(g_archive_probe.challenge_mode_source);
+	const std::string air_force_template_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_player_template);
+	const std::string air_force_bio_name_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_bio_name);
+	const std::string air_force_campaign_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_campaign);
+	const std::string air_force_portrait_left_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_portrait_left);
+	const std::string air_force_portrait_right_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_portrait_right);
+	const std::string air_force_selection_sound_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_selection_sound);
+	const std::string air_force_preview_sound_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_preview_sound);
+	const std::string air_force_name_sound_json =
+		json_escape(g_archive_probe.challenge_mode_air_force_name_sound);
+	const std::string toxin_template_json =
+		json_escape(g_archive_probe.challenge_mode_toxin_player_template);
+	const std::string toxin_campaign_json =
+		json_escape(g_archive_probe.challenge_mode_toxin_campaign);
+	const std::string toxin_selection_sound_json =
+		json_escape(g_archive_probe.challenge_mode_toxin_selection_sound);
+	const std::string disabled_campaign_json =
+		json_escape(g_archive_probe.challenge_mode_disabled_slot_campaign);
+	const std::string disabled_selection_sound_json =
+		json_escape(g_archive_probe.challenge_mode_disabled_slot_selection_sound);
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
+		"\"source\":\"%s\",\"loadedArchives\":%s,\"fileExists\":%s,"
+		"\"nameKeyGeneratorLoaded\":%s,\"mappedImagesLoaded\":%s,"
+		"\"challengeGeneralsLoaded\":%s,\"originalIniLoad\":%s,"
+		"\"parsedFields\":%zu,\"mappedImages\":%zu,"
+		"\"personas\":%zu,\"enabledPersonas\":%zu,\"playerTemplates\":%zu,"
+		"\"airForce\":{\"found\":%s,\"startsEnabled\":%s,"
+		"\"playerTemplate\":\"%s\",\"bioName\":\"%s\",\"campaign\":\"%s\","
+		"\"portraitLeft\":\"%s\",\"portraitRight\":\"%s\","
+		"\"selectionSound\":\"%s\",\"previewSound\":\"%s\","
+		"\"nameSound\":\"%s\",\"smallPortrait\":%s,\"largePortrait\":%s,"
+		"\"defeatedImage\":%s,\"victoriousImage\":%s},"
+		"\"toxin\":{\"found\":%s,\"startsEnabled\":%s,"
+		"\"playerTemplate\":\"%s\",\"campaign\":\"%s\","
+		"\"selectionSound\":\"%s\"},"
+		"\"disabledSlot\":{\"found\":%s,\"startsDisabled\":%s,"
+		"\"campaign\":\"%s\",\"selectionSound\":\"%s\","
+		"\"smallPortrait\":%s}}",
+		g_archive_probe.challenge_mode_attempted ? "true" : "false",
+		g_archive_probe.challenge_mode_ok ? "true" : "false",
+		g_archive_probe.challenge_mode_bytes,
+		source_json.c_str(),
+		g_archive_probe.challenge_mode_loaded_archives ? "true" : "false",
+		g_archive_probe.challenge_mode_file_exists ? "true" : "false",
+		g_archive_probe.challenge_mode_name_key_generator_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_mapped_images_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_challenge_generals_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_original_ini_load ? "true" : "false",
+		g_archive_probe.challenge_mode_parsed_fields,
+		g_archive_probe.challenge_mode_mapped_image_count,
+		g_archive_probe.challenge_mode_persona_count,
+		g_archive_probe.challenge_mode_enabled_persona_count,
+		g_archive_probe.challenge_mode_player_template_count,
+		g_archive_probe.challenge_mode_air_force_found ? "true" : "false",
+		g_archive_probe.challenge_mode_air_force_starts_enabled ? "true" : "false",
+		air_force_template_json.c_str(),
+		air_force_bio_name_json.c_str(),
+		air_force_campaign_json.c_str(),
+		air_force_portrait_left_json.c_str(),
+		air_force_portrait_right_json.c_str(),
+		air_force_selection_sound_json.c_str(),
+		air_force_preview_sound_json.c_str(),
+		air_force_name_sound_json.c_str(),
+		g_archive_probe.challenge_mode_air_force_small_portrait_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_air_force_large_portrait_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_air_force_defeated_image_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_air_force_victorious_image_loaded ? "true" : "false",
+		g_archive_probe.challenge_mode_toxin_found ? "true" : "false",
+		g_archive_probe.challenge_mode_toxin_starts_enabled ? "true" : "false",
+		toxin_template_json.c_str(),
+		toxin_campaign_json.c_str(),
+		toxin_selection_sound_json.c_str(),
+		g_archive_probe.challenge_mode_disabled_slot_found ? "true" : "false",
+		g_archive_probe.challenge_mode_disabled_slot_starts_disabled ? "true" : "false",
+		disabled_campaign_json.c_str(),
+		disabled_selection_sound_json.c_str(),
+		g_archive_probe.challenge_mode_disabled_slot_small_portrait_loaded ? "true" : "false");
+
+	return buffer;
+}
+
 std::string build_game_network_probe_json()
 {
 	char buffer[4000];
@@ -2497,6 +2597,7 @@ const char *write_state_json()
 	const std::string crate_probe_json = build_crate_probe_json();
 	const std::string draw_group_info_probe_json = build_draw_group_info_probe_json();
 	const std::string mapped_image_probe_json = build_mapped_image_probe_json();
+	const std::string challenge_mode_probe_json = build_challenge_mode_probe_json();
 	const std::string special_power_source_json =
 		json_escape(g_archive_probe.special_power_source);
 	const std::string special_power_daisy_cutter_required_science_json =
@@ -2661,7 +2762,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
-		"\"armorIni\":%s,\"damageFXIni\":%s,"
+		"\"armorIni\":%s,\"challengeModeIni\":%s,\"damageFXIni\":%s,"
 		"\"defaultFXListIni\":%s,\"fxListIni\":%s,"
 		"\"defaultObjectCreationListIni\":%s,\"objectCreationListIni\":%s,"
 		"\"defaultAIDataIni\":%s,\"aiDataIni\":%s,\"locomotorIni\":%s,"
@@ -2714,6 +2815,7 @@ const char *write_state_json()
 		"\"crate\":%s,"
 		"\"drawGroupInfo\":%s,"
 		"\"mappedImages\":%s,"
+		"\"challengeMode\":%s,"
 		"\"specialPower\":{\"attempted\":%s,\"ok\":%s,\"bytes\":%zu,"
 		"\"scienceBytes\":%zu,\"source\":\"%s\",\"loadedArchives\":%s,"
 		"\"fileExists\":%s,\"scienceFileExists\":%s,\"gameTextLoaded\":%s,"
@@ -2930,6 +3032,7 @@ const char *write_state_json()
 		g_archive_probe.has_default_game_data_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
 		g_archive_probe.has_armor_ini ? "true" : "false",
+		g_archive_probe.has_challenge_mode_ini ? "true" : "false",
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
 		g_archive_probe.has_default_fx_list_ini ? "true" : "false",
 		g_archive_probe.has_fx_list_ini ? "true" : "false",
@@ -3026,6 +3129,7 @@ const char *write_state_json()
 		crate_probe_json.c_str(),
 		draw_group_info_probe_json.c_str(),
 		mapped_image_probe_json.c_str(),
+		challenge_mode_probe_json.c_str(),
 		g_archive_probe.special_power_attempted ? "true" : "false",
 		g_archive_probe.special_power_ok ? "true" : "false",
 		g_archive_probe.special_power_bytes,

@@ -2032,6 +2032,14 @@ shares structure and follows behind.
       and require it for the Playwright `startupAssets.ready` state. This is a
       shipped map-cache load preflight only; live user-map scanning/rebuilds and
       full map loading remain open.
+- [x] Extend the wasm bootstrap archive preflight to load real
+      `Data\INI\ChallengeMode.ini` from `INIZH.big` through original
+      `Common/INI.cpp::load` and `GameClient/GUI/ChallengeGenerals.cpp`, expose
+      shipped general-challenge personas as `assetProbe.challengeMode`, and
+      cover the single-archive and registered runtime-archive browser smoke
+      paths. This is a focused challenge-persona data preflight only; the
+      challenge menu flow, campaign setup, and audio/video presentation remain
+      open.
 - [ ] Resolve the original `Data\INI\Rank.ini` startup dependency referenced by
       `GameEngine.cpp` / `RankInfoStore`: source the real asset, confirm an
       alternate shipped filename, or add the correct browser archive mapping,

@@ -688,6 +688,55 @@ function assertMappedImageProbe(assetProbe, context) {
   }
 }
 
+function assertChallengeModeProbe(assetProbe, context) {
+  const challengeMode = assetProbe?.challengeMode;
+  const airForce = challengeMode?.airForce;
+  const toxin = challengeMode?.toxin;
+  const disabledSlot = challengeMode?.disabledSlot;
+  if (!assetProbe?.inizh?.challengeModeIni
+      || !challengeMode?.attempted
+      || !challengeMode.ok
+      || challengeMode.source !== "GameEngine/Common/INI.cpp::load + GameClient/GUI/ChallengeGenerals.cpp + mapped images"
+      || !challengeMode.loadedArchives
+      || !challengeMode.fileExists
+      || !challengeMode.nameKeyGeneratorLoaded
+      || !challengeMode.mappedImagesLoaded
+      || !challengeMode.challengeGeneralsLoaded
+      || !challengeMode.originalIniLoad
+      || challengeMode.bytes <= 10000
+      || challengeMode.parsedFields !== 28
+      || challengeMode.mappedImages !== 1186
+      || challengeMode.personas !== 12
+      || challengeMode.enabledPersonas !== 9
+      || challengeMode.playerTemplates !== 10
+      || !airForce?.found
+      || airForce.startsEnabled !== true
+      || airForce.playerTemplate !== "FactionAmericaAirForceGeneral"
+      || airForce.bioName !== "GUI:BioNameEntry_Pos0"
+      || airForce.campaign !== "CHALLENGE_0"
+      || airForce.portraitLeft !== "PortraitAirGenLeft"
+      || airForce.portraitRight !== "PortraitAirGenRight"
+      || airForce.selectionSound !== "Taunts_Grainger009"
+      || airForce.previewSound !== "Taunts_GCAnnouncer07"
+      || airForce.nameSound !== "Taunts_GCAnnouncer14"
+      || airForce.smallPortrait !== true
+      || airForce.largePortrait !== true
+      || airForce.defeatedImage !== true
+      || airForce.victoriousImage !== true
+      || !toxin?.found
+      || toxin.startsEnabled !== true
+      || toxin.playerTemplate !== "FactionGLAToxinGeneral"
+      || toxin.campaign !== "CHALLENGE_1"
+      || toxin.selectionSound !== "Taunts_Toxin015"
+      || !disabledSlot?.found
+      || disabledSlot.startsDisabled !== true
+      || disabledSlot.campaign !== "unimplemented"
+      || disabledSlot.selectionSound !== "none"
+      || disabledSlot.smallPortrait !== true) {
+    throw new Error(`${context} did not parse expected ChallengeMode.ini personas: ${JSON.stringify(assetProbe)}`);
+  }
+}
+
 function assertWaterProbe(assetProbe, context) {
   const water = assetProbe?.water;
   if (!assetProbe?.inizh?.waterIni
@@ -938,6 +987,7 @@ try {
       || !assetProbe.inizh?.objectCreationListIni
       || !assetProbe.inizh?.commandButtonIni
       || !assetProbe.inizh?.commandSetIni
+      || !assetProbe.inizh?.challengeModeIni
       || !assetProbe.inizh?.controlBarSchemeIni
       || !assetProbe.inizh?.defaultControlBarSchemeIni
       || !assetProbe.inizh?.crateIni
@@ -969,6 +1019,7 @@ try {
   assertCrateProbe(assetProbe, "cnc-port INIZH probe");
   assertDrawGroupInfoProbeAbsent(assetProbe, "cnc-port INIZH probe");
   assertMappedImageProbe(assetProbe, "cnc-port INIZH probe");
+  assertChallengeModeProbe(assetProbe, "cnc-port INIZH probe");
   assertWaterProbe(assetProbe, "cnc-port INIZH probe");
   assertWeatherProbe(assetProbe, "cnc-port INIZH probe");
   assertVideoProbe(assetProbe, "cnc-port INIZH probe");

@@ -29,6 +29,7 @@
 #include "Common/TerrainTypes.h"
 #include "Common/Upgrade.h"
 #include "Common/WellKnownKeys.h"
+#include "GameClient/ChallengeGenerals.h"
 #include "GameClient/ControlBar.h"
 #include "GameClient/ControlBarScheme.h"
 #include "GameClient/DrawGroupInfo.h"
@@ -65,6 +66,7 @@ const StaticNameKey TheKey_InitialCameraPosition __attribute__((weak))("InitialC
 namespace {
 constexpr const char ARMOR_INI_PATH[] = "Data\\INI\\Armor.ini";
 constexpr const char DAMAGE_FX_INI_PATH[] = "Data\\INI\\DamageFX.ini";
+constexpr const char CHALLENGE_MODE_INI_PATH[] = "Data\\INI\\ChallengeMode.ini";
 constexpr const char PARTICLE_SYSTEM_INI_PATH[] = "Data\\INI\\ParticleSystem.ini";
 constexpr const char WEAPON_INI_PATH[] = "Data\\INI\\Weapon.ini";
 constexpr const char DEFAULT_OBJECT_CREATION_LIST_INI_PATH[] =
@@ -931,6 +933,39 @@ std::size_t count_verified_fields(const RealMappedImageIniProbeResult &result)
 		(result.watermark_china_width == 160 ? 1U : 0U) +
 		(result.watermark_china_height == 96 ? 1U : 0U) +
 		(result.watermark_china_rotated ? 1U : 0U);
+}
+
+std::size_t count_verified_fields(const RealChallengeModeIniProbeResult &result)
+{
+	return
+		(result.mapped_image_count == 1186 ? 1U : 0U) +
+		(result.persona_count == NUM_GENERALS ? 1U : 0U) +
+		(result.enabled_persona_count == 9 ? 1U : 0U) +
+		(result.player_template_count == 10 ? 1U : 0U) +
+		(result.air_force_found ? 1U : 0U) +
+		(result.air_force_starts_enabled ? 1U : 0U) +
+		(result.air_force_player_template == "FactionAmericaAirForceGeneral" ? 1U : 0U) +
+		(result.air_force_bio_name == "GUI:BioNameEntry_Pos0" ? 1U : 0U) +
+		(result.air_force_campaign == "CHALLENGE_0" ? 1U : 0U) +
+		(result.air_force_portrait_left == "PortraitAirGenLeft" ? 1U : 0U) +
+		(result.air_force_portrait_right == "PortraitAirGenRight" ? 1U : 0U) +
+		(result.air_force_selection_sound == "Taunts_Grainger009" ? 1U : 0U) +
+		(result.air_force_preview_sound == "Taunts_GCAnnouncer07" ? 1U : 0U) +
+		(result.air_force_name_sound == "Taunts_GCAnnouncer14" ? 1U : 0U) +
+		(result.air_force_small_portrait_loaded ? 1U : 0U) +
+		(result.air_force_large_portrait_loaded ? 1U : 0U) +
+		(result.air_force_defeated_image_loaded ? 1U : 0U) +
+		(result.air_force_victorious_image_loaded ? 1U : 0U) +
+		(result.toxin_found ? 1U : 0U) +
+		(result.toxin_starts_enabled ? 1U : 0U) +
+		(result.toxin_player_template == "FactionGLAToxinGeneral" ? 1U : 0U) +
+		(result.toxin_campaign == "CHALLENGE_1" ? 1U : 0U) +
+		(result.toxin_selection_sound == "Taunts_Toxin015" ? 1U : 0U) +
+		(result.disabled_slot_found ? 1U : 0U) +
+		(result.disabled_slot_starts_disabled ? 1U : 0U) +
+		(result.disabled_slot_campaign == "unimplemented" ? 1U : 0U) +
+		(result.disabled_slot_selection_sound == "none" ? 1U : 0U) +
+		(result.disabled_slot_small_portrait_loaded ? 1U : 0U);
 }
 
 std::size_t count_verified_fields(const RealControlBarSchemeIniProbeResult &result)
@@ -4288,6 +4323,160 @@ RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *a
 		delete name_key_generator;
 	}
 
+
+	return result;
+}
+
+RealChallengeModeIniProbeResult probe_original_challenge_mode_ini_load(const char *archive_path)
+{
+	RealChallengeModeIniProbeResult result;
+	result.attempted = true;
+	result.source =
+		"GameEngine/Common/INI.cpp::load + GameClient/GUI/ChallengeGenerals.cpp + mapped images";
+	result.archive_path = archive_path != nullptr ? archive_path : "";
+
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (archive_mask.isEmpty()) {
+		return result;
+	}
+
+	ScopedOriginalMemoryManager memory_manager_scope;
+
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	ChallengeGenerals *old_challenge_generals = TheChallengeGenerals;
+	GlobalData *old_global_data = TheWritableGlobalData;
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator *name_key_generator = nullptr;
+	ImageCollection *mapped_image_collection = nullptr;
+	ChallengeGenerals *challenge_generals = nullptr;
+
+	try {
+		TheLocalFileSystem = &local_file_system;
+		TheArchiveFileSystem = &archive_file_system;
+		TheFileSystem = &file_system;
+		TheWritableGlobalData = nullptr;
+
+		result.loaded_archives = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
+		if (result.loaded_archives) {
+			FileInfo file_info = {};
+			result.file_exists =
+				archive_file_system.getFileInfo(AsciiString(CHALLENGE_MODE_INI_PATH), &file_info) &&
+				file_info.sizeHigh == 0 &&
+				file_info.sizeLow > 0;
+			result.bytes = result.file_exists ? static_cast<std::size_t>(file_info.sizeLow) : 0U;
+
+			if (result.file_exists) {
+				name_key_generator = NEW NameKeyGenerator;
+				TheNameKeyGenerator = name_key_generator;
+				name_key_generator->init();
+				result.name_key_generator_loaded = true;
+
+				mapped_image_collection = NEW ImageCollection;
+				TheMappedImageCollection = mapped_image_collection;
+				mapped_image_collection->load(512);
+				result.mapped_images_loaded = true;
+				result.mapped_image_count = count_mapped_images(*mapped_image_collection);
+
+				challenge_generals = createChallengeGenerals();
+				TheChallengeGenerals = challenge_generals;
+				result.challenge_generals_loaded = challenge_generals != nullptr;
+
+				if (challenge_generals != nullptr) {
+					challenge_generals->init();
+					result.original_ini_load = true;
+
+					const GeneralPersona *personas = challenge_generals->getChallengeGenerals();
+					for (Int index = 0; index < NUM_GENERALS; ++index) {
+						const GeneralPersona &persona = personas[index];
+						if (persona.getBioName().isNotEmpty()) {
+							++result.persona_count;
+						}
+						if (persona.isStartingEnabled()) {
+							++result.enabled_persona_count;
+						}
+						if (persona.getPlayerTemplateName().isNotEmpty()) {
+							++result.player_template_count;
+						}
+					}
+
+					const GeneralPersona *air_force =
+						challenge_generals->getGeneralByTemplateName(AsciiString("FactionAmericaAirForceGeneral"));
+					result.air_force_found = air_force != nullptr;
+					if (air_force != nullptr) {
+						result.air_force_starts_enabled = air_force->isStartingEnabled();
+						result.air_force_player_template = air_force->getPlayerTemplateName().str();
+						result.air_force_bio_name = air_force->getBioName().str();
+						result.air_force_campaign = air_force->getCampaign().str();
+						result.air_force_portrait_left = air_force->getPortraitMovieLeftName().str();
+						result.air_force_portrait_right = air_force->getPortraitMovieRightName().str();
+						result.air_force_selection_sound = air_force->getSelectionSound().str();
+						result.air_force_preview_sound = air_force->getPreviewSound().str();
+						result.air_force_name_sound = air_force->getNameSound().str();
+						result.air_force_small_portrait_loaded = air_force->getBioPortraitSmall() != nullptr;
+						result.air_force_large_portrait_loaded = air_force->getBioPortraitLarge() != nullptr;
+						result.air_force_defeated_image_loaded = air_force->getImageDefeated() != nullptr;
+						result.air_force_victorious_image_loaded = air_force->getImageVictorious() != nullptr;
+					}
+
+					const GeneralPersona *toxin =
+						challenge_generals->getGeneralByTemplateName(AsciiString("FactionGLAToxinGeneral"));
+					result.toxin_found = toxin != nullptr;
+					if (toxin != nullptr) {
+						result.toxin_starts_enabled = toxin->isStartingEnabled();
+						result.toxin_player_template = toxin->getPlayerTemplateName().str();
+						result.toxin_campaign = toxin->getCampaign().str();
+						result.toxin_selection_sound = toxin->getSelectionSound().str();
+					}
+
+					const GeneralPersona &disabled_slot = personas[11];
+					result.disabled_slot_found = disabled_slot.getBioName().isNotEmpty();
+					result.disabled_slot_starts_disabled = !disabled_slot.isStartingEnabled();
+					result.disabled_slot_campaign = disabled_slot.getCampaign().str();
+					result.disabled_slot_selection_sound = disabled_slot.getSelectionSound().str();
+					result.disabled_slot_small_portrait_loaded =
+						disabled_slot.getBioPortraitSmall() != nullptr;
+
+					result.parsed_fields = count_verified_fields(result);
+					result.ok =
+						result.bytes > 10000 &&
+						result.name_key_generator_loaded &&
+						result.mapped_images_loaded &&
+						result.challenge_generals_loaded &&
+						result.original_ini_load &&
+						result.parsed_fields == 28;
+				}
+			}
+		}
+	} catch (...) {
+		result.ok = false;
+	}
+
+	TheWritableGlobalData = old_global_data;
+	TheChallengeGenerals = old_challenge_generals;
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+
+	if (challenge_generals != nullptr) {
+		delete challenge_generals;
+	}
+	if (mapped_image_collection != nullptr) {
+		delete mapped_image_collection;
+	}
+	if (name_key_generator != nullptr) {
+		delete name_key_generator;
+	}
 
 	return result;
 }

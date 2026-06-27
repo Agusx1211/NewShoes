@@ -628,6 +628,50 @@ struct RealMappedImageIniProbeResult
 	bool watermark_china_rotated = false;
 };
 
+struct RealChallengeModeIniProbeResult
+{
+	bool attempted = false;
+	bool ok = false;
+	bool loaded_archives = false;
+	bool file_exists = false;
+	bool name_key_generator_loaded = false;
+	bool mapped_images_loaded = false;
+	bool challenge_generals_loaded = false;
+	bool original_ini_load = false;
+	std::size_t bytes = 0;
+	std::size_t parsed_fields = 0;
+	std::size_t mapped_image_count = 0;
+	std::size_t persona_count = 0;
+	std::size_t enabled_persona_count = 0;
+	std::size_t player_template_count = 0;
+	std::string source;
+	std::string archive_path;
+	bool air_force_found = false;
+	bool air_force_starts_enabled = false;
+	std::string air_force_player_template;
+	std::string air_force_bio_name;
+	std::string air_force_campaign;
+	std::string air_force_portrait_left;
+	std::string air_force_portrait_right;
+	std::string air_force_selection_sound;
+	std::string air_force_preview_sound;
+	std::string air_force_name_sound;
+	bool air_force_small_portrait_loaded = false;
+	bool air_force_large_portrait_loaded = false;
+	bool air_force_defeated_image_loaded = false;
+	bool air_force_victorious_image_loaded = false;
+	bool toxin_found = false;
+	bool toxin_starts_enabled = false;
+	std::string toxin_player_template;
+	std::string toxin_campaign;
+	std::string toxin_selection_sound;
+	bool disabled_slot_found = false;
+	bool disabled_slot_starts_disabled = false;
+	std::string disabled_slot_campaign;
+	std::string disabled_slot_selection_sound;
+	bool disabled_slot_small_portrait_loaded = false;
+};
+
 struct RealControlBarSchemeIniProbeResult
 {
 	bool attempted = false;
@@ -1034,6 +1078,7 @@ RealTerrainIniProbeResult probe_original_terrain_ini_load(const char *archive_pa
 RealTerrainRoadsIniProbeResult probe_original_terrain_roads_ini_load(const char *archive_path);
 RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const char *archive_path);
 RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *archive_path);
+RealChallengeModeIniProbeResult probe_original_challenge_mode_ini_load(const char *archive_path);
 RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(const char *archive_path);
 RealCrateIniProbeResult probe_original_crate_ini_load(const char *archive_path);
 RealUpgradeIniProbeResult probe_original_upgrade_ini_load(const char *archive_path);
