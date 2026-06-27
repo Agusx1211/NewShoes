@@ -2382,10 +2382,21 @@ shares structure and follows behind.
       stage 0/1 binds, explicit null bind, and release cleanup. This still does
       not translate texture-stage combiner state, sampler state, or sample the
       bound texture in the draw shader.
-- [ ] Audit and match D3D8 `SetTexture` bound-resource lifetime/reference
+- [x] Audit and match D3D8 `SetTexture` bound-resource lifetime/reference
       semantics before relying on textures that remain bound across `Release`
       or device reset; the current browser bridge tracks texture IDs and
       release cleanup only.
+      *Implemented (GLM-5.2) at the C++ device seam: `BrowserD3DDevice::SetTexture`
+      now holds a device reference on the bound texture (AddRef on bind, Release
+      the previously-bound on rebind/null), and `~BrowserD3DDevice` Releases
+      every still-bound texture on teardown — matching the Microsoft
+      `IDirect3DDevice8::SetTexture` contract and the WW3D
+      `DX8Wrapper::Set_DX8_Texture`/`Invalidate_Cached_Render_States` shadow.
+      A texture still bound now survives the engine releasing its own handle.
+      Covered by `tests/d3d8_texture_lifetime_smoke.cpp`
+      (`npm run test:d3d8-texture-lifetime`). The JS-side WebGL texture-handle
+      release cleanup in `harness/bridge.js` is unchanged and remains covered
+      by the `d3d8TextureBind` Playwright RPC.*
 - [x] Add the first browser WebGL2 stage-0 textured draw path for uploaded and
       bound 2D textures through the existing persistent-buffer
       `DrawIndexedPrimitive` bridge, with a focused D3D8 textured-quad probe,

@@ -1274,6 +1274,16 @@ public:
 			m_indices->Release();
 			m_indices = nullptr;
 		}
+		// Release device-held references on all still-bound textures, matching
+		// the DX8 device-reset / teardown contract (see
+		// DX8Wrapper::Invalidate_Cached_Render_States).
+		for (auto &entry : m_bound_textures) {
+			if (entry.second != nullptr) {
+				entry.second->Release();
+			}
+		}
+		m_bound_textures.clear();
+		m_bound_texture_ids.clear();
 		if (m_back_buffer != nullptr) {
 			m_back_buffer->Release();
 			m_back_buffer = nullptr;
@@ -1593,9 +1603,23 @@ public:
 		g_state.last_set_texture_stage = stage;
 		g_state.last_set_texture_id = texture_id;
 		g_state.last_set_texture_type = texture_type;
-		if (texture_id == 0) {
+
+		// DX8 device-held reference contract: IDirect3DDevice8::SetTexture holds
+		// its own reference on the currently-bound texture. Binding a new texture
+		// Releases the previously-bound one (held by the device) and AddRefs the
+		// new one; binding NULL Releases the previously-bound one. This matches
+		// the original DX8Wrapper::Set_DX8_Texture shadow and Microsoft's DX8
+		// device contract, so a texture that is still bound is not destroyed
+		// when the engine releases its own handle, and device teardown unbinds.
+		auto previous = m_bound_textures.find(stage);
+		if (previous != m_bound_textures.end()) {
+			previous->second->Release();
+			m_bound_textures.erase(previous);
 			m_bound_texture_ids.erase(stage);
-		} else {
+		}
+		if (texture != nullptr) {
+			texture->AddRef();
+			m_bound_textures[stage] = texture;
 			m_bound_texture_ids[stage] = texture_id;
 		}
 		browser_texture_bind(stage, texture_id);
@@ -1927,6 +1951,7 @@ private:
 	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
 	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
 	std::map<DWORD, UINT> m_bound_texture_ids;
+	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;
