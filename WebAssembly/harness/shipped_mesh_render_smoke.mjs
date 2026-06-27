@@ -156,7 +156,13 @@ try {
       || archiveMountResult.archiveSet?.archives?.[1]?.path !== textureArchiveMemfsPath
       || archiveMountResult.state?.archiveMount?.registered !== true
       || archiveMountResult.state?.archiveMount?.directory !== `${runtimeArchivePath}/`
-      || archiveMountResult.state?.archiveMount?.fileMask !== "*.big") {
+      || archiveMountResult.state?.archiveMount?.fileMask !== "*.big"
+      || archiveMountResult.state?.browserRuntimeAssets?.installed !== true
+      || archiveMountResult.state?.browserRuntimeAssets?.fileSystemInitialized !== true
+      || archiveMountResult.state?.browserRuntimeAssets?.archiveLoaded !== true
+      || archiveMountResult.state?.browserRuntimeAssets?.w3dFileSystemInstalled !== true
+      || archiveMountResult.state?.browserRuntimeAssets?.directory !== `${runtimeArchivePath}/`
+      || archiveMountResult.state?.browserRuntimeAssets?.fileMask !== "*.big") {
     throw new Error(`runtime W3D/texture archive registration failed: ${JSON.stringify(archiveMountResult)}`);
   }
 
@@ -184,6 +190,7 @@ try {
       || renderResult.probe?.archives?.texture !== textureArchiveMemfsPath
       || renderResult.probe?.results?.meshArchiveLoaded !== true
       || renderResult.probe?.results?.textureArchiveLoaded !== true
+      || renderResult.probe?.results?.runtimeAssetSystemInstalled !== true
       || renderResult.probe?.results?.fileRead !== true
       || renderResult.probe?.results?.textureFileExists !== true
       || renderResult.probe?.results?.textureFileFactoryInstalled !== true
@@ -204,7 +211,10 @@ try {
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
       || renderResult.probe?.texture?.format !== D3DFMT_DXT5
       || renderResult.probe?.texture?.uploadFormat !== D3DFMT_DXT5
-      || renderResult.probe?.texture?.source !== "original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from registered BIG archives"
+      || renderResult.probe?.texture?.source !== "original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from runtime-owned registered BIG archives"
+      || renderResult.probe?.runtimeAssets?.installed !== true
+      || renderResult.probe?.runtimeAssets?.archiveLoaded !== true
+      || renderResult.probe?.runtimeAssets?.w3dFileSystemInstalled !== true
       || renderResult.probe?.draw?.primitiveType !== 4
       || renderResult.probe?.draw?.vertexCount !== 4
       || renderResult.probe?.draw?.primitiveCount !== 2
@@ -267,7 +277,7 @@ try {
     probe: renderResult.probe,
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
-    reader: "registered Win32BIGFileSystem archives in MEMFS; browser Range entry probe kept separate",
+    reader: "runtime-owned Win32BIGFileSystem archives in MEMFS; browser Range entry probe kept separate",
     renderer: "WW3D::Render + browser D3D8/WebGL2 bridge",
   }, null, 2));
 } finally {

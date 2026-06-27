@@ -2735,11 +2735,19 @@ shares structure and follows behind.
             `Win32BIGFileSystem`, and `W3DFileSystem` resolves both
             `art\w3d\cine_moon.w3d` and `art\textures\cine_moon.dds` through
             the original `FileSystem` path before rendering the real texture.
-      - [ ] Move the probe-local `W3DFileSystem` / `FileSystem` setup into the
-            browser display/device startup path. The current smoke proves
-            full MEMFS-mounted runtime BIG archives can expose W3D and texture
+      - [x] Lift the shipped mesh probe's local `W3DFileSystem` /
+            `FileSystem` / `Win32BIGFileSystem` setup into a shared browser
+            runtime asset owner. `mountArchives` now installs the original
+            local/archive/file-system/name-key globals and a runtime
+            `W3DFileSystem` for the registered BIG set, and the shipped mesh
+            smoke asserts that the render probe uses this runtime-owned path
+            instead of stack-local file-system objects.
+      - [ ] Hand runtime `W3DFileSystem` ownership over to the real
+            `W3DDisplay` / browser display startup path once full display
+            construction owns WW3D lifetime. The current smoke proves the
+            shared browser runtime archive owner can expose W3D and texture
             assets through the normal file/archive system, but final startup
-            still needs shared ownership of those globals and the open
+            still needs display-owned WW3D file-factory lifetime and the open
             range-backed archive streaming path above.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and

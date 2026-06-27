@@ -214,6 +214,7 @@ const harnessState = {
   commonDebugLog: null,
   assetProbe: null,
   archiveMount: null,
+  browserRuntimeAssets: null,
   startupAssets: null,
   dataSummary: null,
   originalEngineStartup: null,
@@ -2670,6 +2671,7 @@ function applyModuleState(moduleState) {
   harnessState.commonDebugLog = moduleState.commonDebugLog ?? null;
   harnessState.assetProbe = moduleState.assetProbe ?? null;
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
+  harnessState.browserRuntimeAssets = moduleState.browserRuntimeAssets ?? harnessState.browserRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
   harnessState.originalEngineStartup = moduleState.originalEngineStartup ?? harnessState.originalEngineStartup;
@@ -2801,6 +2803,7 @@ function snapshotState() {
     commonDebugLog: harnessState.commonDebugLog,
     assetProbe: harnessState.assetProbe,
     archiveMount: harnessState.archiveMount,
+    browserRuntimeAssets: harnessState.browserRuntimeAssets,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
     originalEngineStartup: harnessState.originalEngineStartup,

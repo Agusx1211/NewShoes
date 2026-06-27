@@ -5,6 +5,7 @@
 #include <string>
 
 #include "wasm_archive_probe.h"
+#include "wasm_browser_runtime_assets.h"
 #include "wasm_cdmanager_probe.h"
 #include "wasm_filesystem_probe.h"
 #include "wasm_gamenetwork_probe.h"
@@ -2751,6 +2752,7 @@ const char *write_state_json()
 		json_escape(g_archive_probe.game_text_csf_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
+	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
 	const std::string data_summary_json = build_data_summary_json();
@@ -2985,6 +2987,7 @@ const char *write_state_json()
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
 		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
+		"\"browserRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"fxList\":%s,\"science\":%s,"
@@ -3477,6 +3480,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_attempted ? "true" : "false",
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		g_archive_mount.boot_probe_indexed_file_count,
+		browser_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),
 		startup_asset_message_json.c_str(),
@@ -3637,6 +3641,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
 	g_archive_mount.boot_probe_attempted = false;
 	g_archive_mount.boot_probe_ok = false;
 	g_archive_mount.boot_probe_indexed_file_count = 0;
+	wasm_browser_runtime_assets_install_archive_set(
+		g_archive_mount.directory.c_str(),
+		g_archive_mount.file_mask.c_str());
 	std::printf("cnc-port: archive set directory=%s mask=%s count=%d bytes=%.0f\n",
 		g_archive_mount.directory.c_str(),
 		g_archive_mount.file_mask.c_str(),

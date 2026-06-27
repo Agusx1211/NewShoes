@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -6,17 +5,11 @@
 
 #include "PreRTS.h"
 
-#include "Common/ArchiveFileSystem.h"
-#include "Common/File.h"
-#include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
-#include "Common/LocalFileSystem.h"
-#include "Common/NameKeyGenerator.h"
 #include "assetmgr.h"
 #include "camera.h"
 #include "chunkio.h"
 #include "ddsfile.h"
-#include "ffactory.h"
 #include "formconv.h"
 #include "light.h"
 #include "lightenvironment.h"
@@ -27,10 +20,8 @@
 #include "texture.h"
 #include "vertmaterial.h"
 #include "w3d_file.h"
+#include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
-#include "Win32Device/Common/Win32BIGFileSystem.h"
-#include "Win32Device/Common/Win32LocalFileSystem.h"
-#include "W3DDevice/GameClient/W3DFileSystem.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -103,51 +94,6 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return escaped;
-}
-
-void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
-{
-	std::string normalized = archive_path != nullptr ? archive_path : "";
-	std::replace(normalized.begin(), normalized.end(), '\\', '/');
-
-	const std::size_t slash = normalized.find_last_of('/');
-	if (slash == std::string::npos) {
-		directory = "";
-		file_mask = normalized.c_str();
-		return;
-	}
-
-	directory = normalized.substr(0, slash + 1).c_str();
-	file_mask = normalized.substr(slash + 1).c_str();
-}
-
-bool read_game_file(const char *path, std::vector<unsigned char> &data)
-{
-	if (TheFileSystem == nullptr) {
-		return false;
-	}
-
-	File *file = TheFileSystem->openFile(path, File::READ | File::BINARY);
-	if (file == nullptr) {
-		return false;
-	}
-
-	const int size = file->size();
-	if (size <= 0) {
-		file->close();
-		return false;
-	}
-
-	data.assign(static_cast<std::size_t>(size), 0);
-	const int bytes_read = file->read(data.data(), size);
-	file->close();
-
-	if (bytes_read != size) {
-		data.clear();
-		return false;
-	}
-
-	return true;
 }
 
 bool load_first_mesh_chunk(const std::vector<unsigned char> &data, MeshClass *mesh, int &load_result)
@@ -660,6 +606,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	bool texture_dds_loaded = false;
 	bool texture_resolved = false;
 	bool texture_has_d3d_surface = false;
+	bool runtime_asset_system_installed = false;
 	bool texture_file_factory_installed = false;
 	bool texture_simple_factory_path_set = false;
 	bool mesh_chunk_found = false;
@@ -679,10 +626,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	std::vector<unsigned char> mesh_data;
 	std::string mesh_name;
 	std::string loaded_texture_name;
-	AsciiString mesh_archive_directory;
-	AsciiString mesh_archive_mask;
-	AsciiString texture_archive_directory;
-	AsciiString texture_archive_mask;
 	int vertices = 0;
 	int polygons = 0;
 	AABoxClass object_box(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 0.0f, 0.0f));
@@ -690,20 +633,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	WW3DAssetManager *asset_manager = nullptr;
 	MeshClass *mesh = nullptr;
 	CameraClass *camera = nullptr;
-	FileSystem *old_file_system = TheFileSystem;
-	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
-	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
-	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	FileFactoryClass *old_file_factory = _TheFileFactory;
-	W3DFileSystem *old_w3d_file_system = TheW3DFileSystem;
-	Win32LocalFileSystem local_file_system;
-	Win32BIGFileSystem archive_file_system;
-	FileSystem file_system;
-	NameKeyGenerator name_key_generator;
-	W3DFileSystem *w3d_file_system = nullptr;
-
-	split_archive_path(archive_path, mesh_archive_directory, mesh_archive_mask);
-	split_archive_path(texture_archive_path, texture_archive_directory, texture_archive_mask);
 
 	if (succeeded(init_result)) {
 		asset_manager = W3DNEW WW3DAssetManager();
@@ -715,34 +644,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
-		TheLocalFileSystem = &local_file_system;
-		TheArchiveFileSystem = &archive_file_system;
-		TheFileSystem = &file_system;
-		TheNameKeyGenerator = &name_key_generator;
-		name_key_generator.init();
-		file_system.init();
-		if (mesh_archive_mask.isNotEmpty()) {
-			mesh_archive_loaded =
-				archive_file_system.loadBigFilesFromDirectory(mesh_archive_directory, mesh_archive_mask);
-		}
-		if (texture_archive_mask.isNotEmpty()) {
-			texture_archive_loaded =
-				archive_file_system.loadBigFilesFromDirectory(texture_archive_directory, texture_archive_mask);
-		}
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_paths(archive_path, texture_archive_path);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		mesh_archive_loaded =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kShippedMeshPath);
 		texture_file_exists =
-			texture_archive_loaded &&
-			file_system.doesFileExist(kShippedMeshTextureArchiveEntry);
-		TheW3DFileSystem = new W3DFileSystem;
-		w3d_file_system = TheW3DFileSystem;
-		texture_file_factory_installed =
-			w3d_file_system != nullptr &&
-			_TheFileFactory == w3d_file_system;
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kShippedMeshTextureArchiveEntry);
+		texture_archive_loaded = texture_file_exists;
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
 		if (texture_file_exists) {
 			DDSFileClass dds_file(kShippedMeshTextureName, 0);
 			texture_dds_available = dds_file.Is_Available();
 		}
 		if (mesh_archive_loaded) {
-			file_read = read_game_file(kShippedMeshPath, mesh_data);
+			file_read = wasm_browser_runtime_assets_read_file(kShippedMeshPath, mesh_data);
 		}
 	}
 
@@ -842,18 +760,6 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		WW3D::Shutdown();
 	}
 
-	if (w3d_file_system != nullptr) {
-		delete w3d_file_system;
-		w3d_file_system = nullptr;
-	}
-	TheW3DFileSystem = old_w3d_file_system;
-	_TheFileFactory = old_file_factory;
-	name_key_generator.reset();
-	TheNameKeyGenerator = old_name_key_generator;
-	TheFileSystem = old_file_system;
-	TheArchiveFileSystem = old_archive_file_system;
-	TheLocalFileSystem = old_local_file_system;
-
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const WasmD3D8DrawRenderState *draw_state =
 		state != nullptr ? &state->last_draw_render_state : nullptr;
@@ -878,6 +784,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		asset_manager == nullptr &&
 		mesh_archive_loaded &&
 		texture_archive_loaded &&
+		runtime_asset_system_installed &&
 		file_read &&
 		texture_file_exists &&
 		texture_file_factory_installed &&
@@ -935,8 +842,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	const std::string mesh_name_json = json_escape(mesh_name);
 	const std::string texture_name_json = json_escape(loaded_texture_name);
 	const std::string texture_entry_json = json_escape(kShippedMeshTextureArchiveEntry);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[9000];
+	char buffer[10000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_shipped_mesh_probe\","
 		"\"ok\":%s,"
@@ -946,6 +854,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"objectBox\":{\"center\":[%.4f,%.4f,%.4f],"
 		"\"extent\":[%.4f,%.4f,%.4f]}},"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
 		"\"meshArchiveLoaded\":%s,\"textureArchiveLoaded\":%s,"
 		"\"fileRead\":%s,\"textureFileExists\":%s,"
 		"\"textureFileFactoryInstalled\":%s,"
@@ -969,7 +878,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
-		"\"source\":\"original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from registered BIG archives\"},"
+		"\"source\":\"original W3DFileSystem + Win32BIGFileSystem + TextureClass::Init / TextureLoader foreground DDS path from runtime-owned registered BIG archives\"},"
+		"\"runtimeAssets\":%s,"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
 		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"
@@ -1000,6 +910,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		object_box.Extent.Z,
 		init_result,
 		set_device_result,
+		bool_json(runtime_asset_system_installed),
 		bool_json(mesh_archive_loaded),
 		bool_json(texture_archive_loaded),
 		bool_json(file_read),
@@ -1050,6 +961,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 		texture_upload_height,
 		texture_upload_bytes,
 		static_cast<unsigned long>(texture_upload_checksum),
+		runtime_assets_json.c_str(),
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
 		state != nullptr ? state->last_draw_start_vertex : 0,
 		state != nullptr ? state->last_draw_min_vertex_index : 0,
