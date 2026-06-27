@@ -64,6 +64,7 @@ struct LoadedMaterialPassMesh
 	std::string mesh_path;
 	std::string mesh_name;
 	std::vector<std::string> texture_names;
+	std::vector<std::string> texture_slot_names;
 	int bytes = 0;
 	int mesh_chunk_index = -1;
 	uint32 mesh_chunk_length = 0;
@@ -80,6 +81,10 @@ struct LoadedMaterialPassMesh
 	int texture_stage_slots = 0;
 	int texture_array_slots = 0;
 	int uv_stage_slots = 0;
+	int same_pass_multitexture_passes = 0;
+	int max_texture_stages_in_pass = 0;
+	int max_uv_stages_in_pass = 0;
+	int first_same_pass_multitexture_pass = -1;
 	bool loaded = false;
 };
 
@@ -167,6 +172,11 @@ std::string json_string_array(const std::vector<std::string> &values)
 	}
 	json += "]";
 	return json;
+}
+
+bool string_vector_contains(const std::vector<std::string> &values, const char *expected)
+{
+	return std::find(values.begin(), values.end(), std::string(expected)) != values.end();
 }
 
 bool read_archive_file(FileSystem &file_system, const char *path, std::vector<unsigned char> &data)
@@ -299,6 +309,60 @@ void remember_texture_name(LoadedMaterialPassMesh &loaded, TextureClass *texture
 	}
 }
 
+void remember_texture_slot_name(
+	LoadedMaterialPassMesh &loaded,
+	int pass,
+	int stage,
+	TextureClass *texture)
+{
+	if (texture == nullptr || texture->Get_Texture_Name() == nullptr ||
+			texture->Get_Texture_Name()[0] == '\0') {
+		return;
+	}
+
+	char slot_prefix[32];
+	std::snprintf(slot_prefix, sizeof(slot_prefix), "p%ds%d:", pass, stage);
+	const std::string name =
+		std::string(slot_prefix) + static_cast<const char *>(texture->Get_Texture_Name());
+	if (std::find(loaded.texture_slot_names.begin(), loaded.texture_slot_names.end(), name) ==
+			loaded.texture_slot_names.end()) {
+		loaded.texture_slot_names.push_back(name);
+	}
+}
+
+bool record_texture_stage_names(
+	MeshModelClass &model,
+	int pass,
+	int stage,
+	LoadedMaterialPassMesh &loaded)
+{
+	bool has_texture = false;
+	TextureClass *single_texture = model.Peek_Single_Texture(pass, stage);
+	if (single_texture != nullptr) {
+		has_texture = true;
+		remember_texture_name(loaded, single_texture);
+		remember_texture_slot_name(loaded, pass, stage, single_texture);
+	}
+
+	if (model.Has_Texture_Array(pass, stage)) {
+		has_texture = true;
+		for (int polygon = 0; polygon < loaded.polygons; ++polygon) {
+			TextureClass *texture = model.Peek_Texture(polygon, pass, stage);
+			remember_texture_name(loaded, texture);
+			remember_texture_slot_name(loaded, pass, stage, texture);
+		}
+	} else if (single_texture == nullptr) {
+		TextureClass *texture = model.Peek_Texture(0, pass, stage);
+		if (texture != nullptr) {
+			has_texture = true;
+			remember_texture_name(loaded, texture);
+			remember_texture_slot_name(loaded, pass, stage, texture);
+		}
+	}
+
+	return has_texture;
+}
+
 bool summarize_material_pass_model(MeshClass &mesh, LoadedMaterialPassMesh &loaded)
 {
 	MeshModelClass *model = mesh.Peek_Model();
@@ -339,23 +403,38 @@ bool summarize_material_pass_model(MeshClass &mesh, LoadedMaterialPassMesh &load
 		}
 
 		bool has_texture_in_pass = false;
+		int texture_stages_in_pass = 0;
+		int uv_stages_in_pass = 0;
 		for (int stage = 0; stage < MeshMatDescClass::MAX_TEX_STAGES; ++stage) {
 			const bool has_texture_array = model->Has_Texture_Array(pass, stage);
-			TextureClass *texture = model->Peek_Texture(0, pass, stage);
-			if (texture != nullptr || has_texture_array) {
+			const bool has_texture = record_texture_stage_names(*model, pass, stage, loaded);
+			if (has_texture || has_texture_array) {
 				has_texture_in_pass = true;
 				++loaded.texture_stage_slots;
-				remember_texture_name(loaded, texture);
+				++texture_stages_in_pass;
 			}
 			if (has_texture_array) {
 				++loaded.texture_array_slots;
 			}
 			if (model->Get_UV_Array(pass, stage) != nullptr) {
 				++loaded.uv_stage_slots;
+				++uv_stages_in_pass;
 			}
 		}
 		if (has_texture_in_pass) {
 			++loaded.texture_passes_with_data;
+		}
+		if (texture_stages_in_pass > loaded.max_texture_stages_in_pass ||
+				(texture_stages_in_pass == loaded.max_texture_stages_in_pass &&
+					uv_stages_in_pass > loaded.max_uv_stages_in_pass)) {
+			loaded.max_texture_stages_in_pass = texture_stages_in_pass;
+			loaded.max_uv_stages_in_pass = uv_stages_in_pass;
+		}
+		if (texture_stages_in_pass >= 2) {
+			++loaded.same_pass_multitexture_passes;
+			if (loaded.first_same_pass_multitexture_pass < 0) {
+				loaded.first_same_pass_multitexture_pass = pass;
+			}
 		}
 	}
 
@@ -375,11 +454,25 @@ bool is_material_pass_probe_mesh(const LoadedMaterialPassMesh &loaded)
 		loaded.polygons > 0;
 }
 
+bool is_same_pass_multitexture_probe_mesh(const LoadedMaterialPassMesh &loaded)
+{
+	return loaded.loaded &&
+		loaded.same_pass_multitexture_passes >= 1 &&
+		loaded.max_texture_stages_in_pass >= 2 &&
+		loaded.max_uv_stages_in_pass >= 2 &&
+		loaded.texture_names.size() >= 2 &&
+		loaded.vertices > 0 &&
+		loaded.polygons > 0;
+}
+
+typedef bool (*MaterialPassMeshPredicate)(const LoadedMaterialPassMesh &loaded);
+
 bool load_material_pass_mesh_chunks(
 	ChunkLoadClass &cload,
 	const MeshCandidate &candidate,
 	int &mesh_chunk_index,
-	LoadedMaterialPassMesh &loaded)
+	LoadedMaterialPassMesh &loaded,
+	MaterialPassMeshPredicate accept_mesh)
 {
 	while (cload.Open_Chunk()) {
 		bool matched = false;
@@ -395,7 +488,7 @@ bool load_material_pass_mesh_chunks(
 				attempt.load_result = mesh->Load_W3D(cload);
 				attempt.loaded = attempt.load_result == WW3D_ERROR_OK;
 				if (attempt.loaded && summarize_material_pass_model(*mesh, attempt) &&
-						is_material_pass_probe_mesh(attempt)) {
+						accept_mesh(attempt)) {
 					loaded = attempt;
 					matched = true;
 				}
@@ -407,7 +500,8 @@ bool load_material_pass_mesh_chunks(
 				cload,
 				candidate,
 				mesh_chunk_index,
-				loaded);
+				loaded,
+				accept_mesh);
 		}
 
 		cload.Close_Chunk();
@@ -422,7 +516,8 @@ bool load_material_pass_mesh_chunks(
 bool load_material_pass_mesh_chunk(
 	const std::vector<unsigned char> &data,
 	const MeshCandidate &candidate,
-	LoadedMaterialPassMesh &loaded)
+	LoadedMaterialPassMesh &loaded,
+	MaterialPassMeshPredicate accept_mesh)
 {
 	RAMFileClass file(
 		const_cast<unsigned char *>(data.data()),
@@ -433,7 +528,12 @@ bool load_material_pass_mesh_chunk(
 
 	int mesh_chunk_index = 0;
 	ChunkLoadClass cload(&file);
-	const bool found = load_material_pass_mesh_chunks(cload, candidate, mesh_chunk_index, loaded);
+	const bool found = load_material_pass_mesh_chunks(
+		cload,
+		candidate,
+		mesh_chunk_index,
+		loaded,
+		accept_mesh);
 
 	file.Close();
 	return found;
@@ -517,7 +617,8 @@ bool load_smallest_shipped_mesh(
 bool load_smallest_material_pass_shipped_mesh(
 	const std::vector<MeshCandidate> &candidates,
 	FileSystem &file_system,
-	LoadedMaterialPassMesh &loaded)
+	LoadedMaterialPassMesh &loaded,
+	MaterialPassMeshPredicate accept_mesh)
 {
 	for (const MeshCandidate &candidate : candidates) {
 		std::vector<unsigned char> data;
@@ -526,7 +627,7 @@ bool load_smallest_material_pass_shipped_mesh(
 		}
 
 		LoadedMaterialPassMesh attempt;
-		if (load_material_pass_mesh_chunk(data, candidate, attempt)) {
+		if (load_material_pass_mesh_chunk(data, candidate, attempt, accept_mesh)) {
 			loaded = attempt;
 			return true;
 		}
@@ -553,6 +654,7 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 	LoadedMesh loaded;
 	loaded.archive_path = archive_path != nullptr ? archive_path : "";
 	LoadedMaterialPassMesh material_loaded;
+	LoadedMaterialPassMesh same_pass_loaded;
 	{
 		Win32LocalFileSystem local_file_system;
 		FileSystem file_system;
@@ -596,7 +698,8 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 			ok = expect(load_smallest_material_pass_shipped_mesh(
 					mesh_candidates,
 					file_system,
-					material_loaded),
+					material_loaded,
+					is_material_pass_probe_mesh),
 				"no shipped W3D mesh loaded through the modern material-pass path") && ok;
 			ok = expect(material_loaded.mesh_path == "art\\w3d\\exglsshd01.w3d",
 				"smallest material-pass multi-pass mesh candidate changed") && ok;
@@ -611,6 +714,47 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 				"material-pass mesh did not install per-pass texture-stage data") && ok;
 			ok = expect(material_loaded.uv_stage_slots >= 2,
 				"material-pass mesh did not install texture-stage UV data") && ok;
+			ok = expect(string_vector_contains(
+					material_loaded.texture_slot_names,
+					"p0s0:lakedusk.tga") &&
+					string_vector_contains(
+						material_loaded.texture_slot_names,
+						"p1s0:exglsshd.tga"),
+				"material-pass mesh texture-stage names mismatch") && ok;
+
+			ok = expect(load_smallest_material_pass_shipped_mesh(
+					mesh_candidates,
+					file_system,
+					same_pass_loaded,
+					is_same_pass_multitexture_probe_mesh),
+				"no shipped W3D mesh loaded with same-pass texture stage 0 and stage 1 data") && ok;
+			ok = expect(same_pass_loaded.mesh_path == "art\\w3d\\pablinkliteb.w3d",
+				"smallest same-pass multi-texture mesh candidate changed") && ok;
+			ok = expect(same_pass_loaded.mesh_name == "PABLINKLITEB.OBJECT01",
+				"same-pass multi-texture mesh name mismatch") && ok;
+			ok = expect(same_pass_loaded.bytes == 2436,
+				"same-pass multi-texture mesh byte size mismatch") && ok;
+			ok = expect(same_pass_loaded.mesh_chunk_index == 1,
+				"same-pass multi-texture mesh chunk index mismatch") && ok;
+			ok = expect(same_pass_loaded.mesh_chunk_length == 1163,
+				"same-pass multi-texture mesh chunk length mismatch") && ok;
+			ok = expect(same_pass_loaded.load_result == WW3D_ERROR_OK,
+				"same-pass multi-texture mesh load result mismatch") && ok;
+			ok = expect(same_pass_loaded.first_same_pass_multitexture_pass == 0,
+				"same-pass multi-texture mesh used an unexpected pass") && ok;
+			ok = expect(same_pass_loaded.same_pass_multitexture_passes >= 1 &&
+					same_pass_loaded.max_texture_stages_in_pass >= 2,
+				"same-pass multi-texture mesh did not expose both texture stages") && ok;
+			ok = expect(same_pass_loaded.max_uv_stages_in_pass >= 2 &&
+					same_pass_loaded.uv_stage_slots >= 2,
+				"same-pass multi-texture mesh did not expose both texture-stage UV arrays") && ok;
+			ok = expect(string_vector_contains(
+					same_pass_loaded.texture_slot_names,
+					"p0s0:psblink.tga") &&
+					string_vector_contains(
+						same_pass_loaded.texture_slot_names,
+						"p0s1:psgrad.tga"),
+				"same-pass multi-texture mesh texture-stage names mismatch") && ok;
 		}
 
 		if (asset_manager != nullptr) {
@@ -636,6 +780,12 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 	const std::string material_path_json = json_escape(material_loaded.mesh_path);
 	const std::string material_name_json = json_escape(material_loaded.mesh_name);
 	const std::string material_textures_json = json_string_array(material_loaded.texture_names);
+	const std::string material_texture_slots_json = json_string_array(material_loaded.texture_slot_names);
+	const std::string same_pass_path_json = json_escape(same_pass_loaded.mesh_path);
+	const std::string same_pass_name_json = json_escape(same_pass_loaded.mesh_name);
+	const std::string same_pass_textures_json = json_string_array(same_pass_loaded.texture_names);
+	const std::string same_pass_texture_slots_json =
+		json_string_array(same_pass_loaded.texture_slot_names);
 	std::printf("{\"ok\":true,\"smoke\":\"ww3d2-shipped-mesh-loader\","
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"loader\":\"MeshClass::Load_W3D\","
@@ -662,7 +812,30 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 		"\"materialPassTextureStageSlots\":%d,"
 		"\"materialPassTextureArraySlots\":%d,"
 		"\"materialPassUvStageSlots\":%d,"
+		"\"materialPassSamePassMultitexturePasses\":%d,"
+		"\"materialPassMaxTextureStagesInPass\":%d,"
+		"\"materialPassMaxUvStagesInPass\":%d,"
 		"\"materialPassTextureNames\":%s,"
+		"\"materialPassTextureSlotNames\":%s,"
+		"\"samePassMultitextureMeshPath\":\"%s\","
+		"\"samePassMultitextureMeshName\":\"%s\","
+		"\"samePassMultitextureBytes\":%d,"
+		"\"samePassMultitextureMeshChunkIndex\":%d,"
+		"\"samePassMultitextureMeshChunkLength\":%u,"
+		"\"samePassMultitextureLoadResult\":%d,"
+		"\"samePassMultitextureVertices\":%d,"
+		"\"samePassMultitexturePolygons\":%d,"
+		"\"samePassMultitexturePassCount\":%d,"
+		"\"samePassMultitextureUvArrayCount\":%d,"
+		"\"samePassMultitextureFirstPass\":%d,"
+		"\"samePassMultitexturePasses\":%d,"
+		"\"samePassMultitextureMaxTextureStagesInPass\":%d,"
+		"\"samePassMultitextureMaxUvStagesInPass\":%d,"
+		"\"samePassMultitextureTextureStageSlots\":%d,"
+		"\"samePassMultitextureTextureArraySlots\":%d,"
+		"\"samePassMultitextureUvStageSlots\":%d,"
+		"\"samePassMultitextureTextureNames\":%s,"
+		"\"samePassMultitextureTextureSlotNames\":%s,"
 		"\"source\":\"GeneralsMD shipped W3DZH.big\"}\n",
 		archive_json.c_str(),
 		mesh_candidate_count,
@@ -695,7 +868,30 @@ int run_ww3d2_shipped_mesh_loader_smoke_impl(const char *archive_path)
 		material_loaded.texture_stage_slots,
 		material_loaded.texture_array_slots,
 		material_loaded.uv_stage_slots,
-		material_textures_json.c_str());
+		material_loaded.same_pass_multitexture_passes,
+		material_loaded.max_texture_stages_in_pass,
+		material_loaded.max_uv_stages_in_pass,
+		material_textures_json.c_str(),
+		material_texture_slots_json.c_str(),
+		same_pass_path_json.c_str(),
+		same_pass_name_json.c_str(),
+		same_pass_loaded.bytes,
+		same_pass_loaded.mesh_chunk_index,
+		static_cast<unsigned int>(same_pass_loaded.mesh_chunk_length),
+		static_cast<int>(same_pass_loaded.load_result),
+		same_pass_loaded.vertices,
+		same_pass_loaded.polygons,
+		same_pass_loaded.pass_count,
+		same_pass_loaded.uv_array_count,
+		same_pass_loaded.first_same_pass_multitexture_pass,
+		same_pass_loaded.same_pass_multitexture_passes,
+		same_pass_loaded.max_texture_stages_in_pass,
+		same_pass_loaded.max_uv_stages_in_pass,
+		same_pass_loaded.texture_stage_slots,
+		same_pass_loaded.texture_array_slots,
+		same_pass_loaded.uv_stage_slots,
+		same_pass_textures_json.c_str(),
+		same_pass_texture_slots_json.c_str());
 	std::fflush(stdout);
 	return 0;
 }

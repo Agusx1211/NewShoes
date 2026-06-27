@@ -2758,10 +2758,16 @@ shares structure and follows behind.
             arrays, and the shipped texture names (`lakedusk.tga`,
             `exglsshd.tga`) instead of the legacy single-material
             `read_per_tri_materials` path used by `CINE_MOON`.
-      - [ ] Extend the material-pass loader/render coverage to a same-pass
-            multi-texture shipped mesh (stage 0 + stage 1 in one pass), then
-            wire that through browser rendering once the WebGL draw bridge
-            applies multiple texture stages.
+      - [x] Extend the material-pass loader coverage to a same-pass
+            multi-texture shipped mesh (stage 0 + stage 1 in one pass). The
+            shipped mesh loader smoke now loads
+            `art\w3d\pablinkliteb.w3d` / `PABLINKLITEB.OBJECT01` through the
+            original `MeshClass::Load_W3D` path and asserts that one material
+            pass exposes both `psblink.tga` on stage 0 and `psgrad.tga` on
+            stage 1, with separate texture-stage UV arrays.
+      - [ ] Wire the same-pass multi-texture shipped mesh through browser
+            rendering once the WebGL draw bridge samples/applies multiple
+            texture stages.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
