@@ -393,10 +393,12 @@ shares structure and follows behind.
 - [x] Map browser pointer double-click sequences to original
       `WM_*BUTTONDBLCLK` messages and prove the main harness pumps them through
       original `WndProc()` into the Win32 mouse double-click state.
+- [x] Dispatch `WM_CREATE` and `WM_DESTROY` from the browser Win32
+      `CreateWindow` / `DestroyWindow` shims, with message-pump and legacy
+      platform smoke coverage for the registered WndProc lifecycle path.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
-      queue, including `WM_CREATE` / `WM_DESTROY` lifecycle dispatch, IME
-      composition text paths, and focus/activation handling through the
-      browser device layer.
+      queue, including IME composition text paths and focus/activation handling
+      through the browser device layer.
 - [ ] Retire the browser-only narrow `Win32Mouse`/`Mouse` shim used by the
       `cnc-port` WndProc harness once the main executable can link the full
       original GameClient mouse/control-bar surface without duplicate command

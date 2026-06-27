@@ -153,9 +153,17 @@ int main()
 			"CreateWindow should return a faux HWND for registered classes")) {
 		return 1;
 	}
+	if (!expect(wnd_proc_calls == 1
+			&& wnd_proc_last_window == dispatch_window
+			&& wnd_proc_last_message == WM_CREATE
+			&& wnd_proc_last_wparam == 0
+			&& wnd_proc_last_lparam == 0,
+			"CreateWindow should synchronously dispatch WM_CREATE to registered WndProcs")) {
+		return 1;
+	}
 	MSG direct_message = {dispatch_window, WM_USER + 7, 0x44, 0x55, 0, {0, 0}};
 	if (!expect(DispatchMessage(&direct_message) == 0x3456
-			&& wnd_proc_calls == 1
+			&& wnd_proc_calls == 2
 			&& wnd_proc_last_window == dispatch_window
 			&& wnd_proc_last_message == WM_USER + 7
 			&& wnd_proc_last_wparam == 0x44
@@ -168,7 +176,7 @@ int main()
 		return 1;
 	}
 	Windows_Message_Handler();
-	if (!expect(wnd_proc_calls == 2
+	if (!expect(wnd_proc_calls == 3
 			&& wnd_proc_last_window == dispatch_window
 			&& wnd_proc_last_message == WM_USER + 8
 			&& wnd_proc_last_wparam == 0x66
@@ -178,6 +186,14 @@ int main()
 	}
 	if (!expect(DestroyWindow(dispatch_window) == TRUE,
 			"DestroyWindow should remove faux HWND records")) {
+		return 1;
+	}
+	if (!expect(wnd_proc_calls == 4
+			&& wnd_proc_last_window == dispatch_window
+			&& wnd_proc_last_message == WM_DESTROY
+			&& wnd_proc_last_wparam == 0
+			&& wnd_proc_last_lparam == 0,
+			"DestroyWindow should synchronously dispatch WM_DESTROY to registered WndProcs")) {
 		return 1;
 	}
 

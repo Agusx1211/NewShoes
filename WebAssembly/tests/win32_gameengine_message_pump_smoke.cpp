@@ -67,6 +67,17 @@ int main()
 	if (!expect(window != nullptr, "CreateWindow should return a shim window handle")) {
 		return 1;
 	}
+	if (!expect(g_dispatch_count == 1
+			&& g_seen_window == window
+			&& g_seen_message == WM_CREATE
+			&& g_seen_wparam == 0
+			&& g_seen_lparam == 0,
+			"CreateWindow should synchronously dispatch WM_CREATE to the registered WndProc")) {
+		return 1;
+	}
+	g_dispatch_count = 0;
+	g_seen_message = 0;
+	g_seen_message_time = 0;
 
 	POINT point = {17, 29};
 	if (!expect(WasmWin32Input::QueueMessage(window, WM_USER + 7, 0x55, 0x66, 12345, &point),
@@ -103,7 +114,19 @@ int main()
 		return 1;
 	}
 
-	DestroyWindow(window);
+	g_dispatch_count = 0;
+	g_seen_message = 0;
+	if (!expect(DestroyWindow(window) == TRUE, "DestroyWindow should remove the shim window handle")) {
+		return 1;
+	}
+	if (!expect(g_dispatch_count == 1
+			&& g_seen_window == window
+			&& g_seen_message == WM_DESTROY
+			&& g_seen_wparam == 0
+			&& g_seen_lparam == 0,
+			"DestroyWindow should synchronously dispatch WM_DESTROY to the registered WndProc")) {
+		return 1;
+	}
 	WasmWin32Input::Reset();
 
 	std::cout << "{\"ok\":true,\"library\":\"Win32GameEngine\",\"source\":\"GeneralsMD original\"}\n";

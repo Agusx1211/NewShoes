@@ -509,6 +509,8 @@ static inline double Win32PortNowMilliseconds()
 #define WM_SYSCOMMAND 0x0112
 #define WM_QUERYENDSESSION 0x0011
 #define WM_CLOSE 0x0010
+#define WM_CREATE 0x0001
+#define WM_DESTROY 0x0002
 #define WM_SETFOCUS 0x0007
 #define WM_KILLFOCUS 0x0008
 #define WM_SIZE 0x0005
@@ -1146,6 +1148,9 @@ static inline HWND CreateWindowRecord(LPCSTR class_name, int x = 0, int y = 0, i
 		record.procedure = window_class->procedure;
 	}
 	++window_count;
+	if (record.procedure != nullptr) {
+		record.procedure(record.handle, WM_CREATE, 0, 0);
+	}
 	return record.handle;
 }
 
@@ -1154,6 +1159,10 @@ static inline bool DestroyWindowRecord(HWND window)
 	for (unsigned int index = 0; index < window_count; ++index) {
 		if (windows[index].handle != window) {
 			continue;
+		}
+		WNDPROC procedure = windows[index].procedure;
+		if (procedure != nullptr) {
+			procedure(window, WM_DESTROY, 0, 0);
 		}
 		for (unsigned int tail = index; tail + 1 < window_count; ++tail) {
 			windows[tail] = windows[tail + 1];
