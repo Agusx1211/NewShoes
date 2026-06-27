@@ -22,6 +22,7 @@
 
 #include "windows.h"
 
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -114,10 +115,12 @@ inline int cnc_gdi_measure_js(const GdiFont &font, const WCHAR *text, int count,
 		const hook = Module.cncGdiMeasure;
 		if (typeof hook !== "function") return 0;
 		const face = UTF8ToString($0);
-		const textLen = $5;
+		const textPtr = $4 >>> 0;
+		const textLen = $5 | 0;
 		let str = "";
 		if (textLen > 0) {
-			const utf16 = new Uint16Array(HEAPU8.buffer, $4, textLen);
+			if (textPtr === 0) return 0;
+			const utf16 = new Uint16Array(HEAPU8.buffer, textPtr, textLen);
 			for (let i = 0; i < textLen; i++) str += String.fromCharCode(utf16[i]);
 		}
 		const r = hook(face, $1, $2, $3, str);
@@ -142,16 +145,13 @@ inline int cnc_gdi_rasterize_js(const GdiFont &font, WCHAR ch, int x, int y,
                                 COLORREF textColor, COLORREF bkColor,
                                 bool opaque)
 {
-	const WCHAR unit[2] = {ch, 0};
 	return EM_ASM_INT({
 		const hook = Module.cncGdiRasterizeGlyph;
 		if (typeof hook !== "function") return 0;
 		const face = UTF8ToString($0);
-		const code = HEAPU16[$7 >> 1];
-		return hook(face, $1, $2, $3, code, $4, $5, $8, $9, $10, $11, $12, $13, $14 ? 1 : 0, HEAPU8) ? 1 : 0;
+		return hook(face, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 ? 1 : 0, HEAPU8) ? 1 : 0;
 	}, font.faceName.c_str(), font.logicalHeight, font.weight, font.italic,
-	   x, y, static_cast<int>(0),
-	   reinterpret_cast<std::uintptr_t>(unit),
+	   static_cast<int>(ch), x, y,
 	   reinterpret_cast<std::uintptr_t>(bits), bmpW, bmpH, stride,
 	   static_cast<int>(textColor & 0xFFFFFFu), static_cast<int>(bkColor & 0xFFFFFFu),
 	   opaque ? 1 : 0);
@@ -463,9 +463,9 @@ BOOL ExtTextOutW(HDC dc, int x, int y, UINT options, const RECT *rect,
 		const int top = rect->top < 0 ? 0 : rect->top;
 		const int right = rect->right > bmp.width ? bmp.width : rect->right;
 		const int bottom = rect->bottom > bmp.height ? bmp.height : rect->bottom;
-		const std::uint8_t b = static_cast<std::uint8_t>(mem->bkColor & 0xFF);
+		const std::uint8_t b = static_cast<std::uint8_t>((mem->bkColor >> 16) & 0xFF);
 		const std::uint8_t g = static_cast<std::uint8_t>((mem->bkColor >> 8) & 0xFF);
-		const std::uint8_t r = static_cast<std::uint8_t>((mem->bkColor >> 16) & 0xFF);
+		const std::uint8_t r = static_cast<std::uint8_t>(mem->bkColor & 0xFF);
 		for (int row = top; row < bottom; ++row) {
 			std::uint8_t *p = bmp.pixels.data() + (static_cast<std::size_t>(row) * bmp.stride) + (static_cast<std::size_t>(left) * 3);
 			for (int col = left; col < right; ++col) {
