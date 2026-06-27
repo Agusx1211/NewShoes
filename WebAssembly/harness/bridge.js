@@ -98,6 +98,7 @@ const D3DTA_SELECTMASK = 0x0000000f;
 const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
+const D3DTA_TFACTOR = 3;
 const D3DTA_COMPLEMENT = 0x00000010;
 const D3DTA_ALPHAREPLICATE = 0x00000020;
 const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
@@ -797,6 +798,16 @@ function d3dDwordToFloat(value) {
   return Number.isFinite(decoded) ? decoded : 0.0;
 }
 
+function d3dColorToNormalizedRgba(value) {
+  const color = Number(value) >>> 0;
+  return [
+    ((color >>> 16) & 0xff) / 255,
+    ((color >>> 8) & 0xff) / 255,
+    (color & 0xff) / 255,
+    ((color >>> 24) & 0xff) / 255,
+  ];
+}
+
 function textureHasCompleteMipChain(resource) {
   if (!resource || resource.levels <= 1) {
     return false;
@@ -900,6 +911,8 @@ function d3dTextureCombinerArgBaseName(arg) {
       return "current";
     case D3DTA_TEXTURE:
       return "texture";
+    case D3DTA_TFACTOR:
+      return "textureFactor";
     default:
       return "unsupported";
   }
@@ -1594,6 +1607,7 @@ function ensureD3D8DrawProgram() {
     uniform sampler2D uTexture0;
     uniform float uTexture0LodBias;
     uniform int uTexture0Semantic;
+    uniform vec4 uTextureFactor;
     uniform int uStage0ColorOp;
     uniform int uStage0ColorArg1;
     uniform int uStage0ColorArg2;
@@ -1640,7 +1654,8 @@ function ensureD3D8DrawProgram() {
       }
       return rawSample;
     }
-    // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2.
+    // D3DTA_DIFFUSE == 0, D3DTA_CURRENT == 1, D3DTA_TEXTURE == 2,
+    // D3DTA_TFACTOR == 3.
     // D3DTA_COMPLEMENT == 0x10, D3DTA_ALPHAREPLICATE == 0x20.
     // Stage 0 CURRENT is the iterated diffuse color, matching the existing
     // stage-0 bridge contract.
@@ -1651,6 +1666,9 @@ function ensureD3D8DrawProgram() {
       }
       if (source == 2) {
         return textureColor;
+      }
+      if (source == 3) {
+        return uTextureFactor;
       }
       return currentColor;
     }
@@ -1751,6 +1769,7 @@ function ensureD3D8DrawProgram() {
     texture0: gl.getUniformLocation(program, "uTexture0"),
     texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
     texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
+    textureFactor: gl.getUniformLocation(program, "uTextureFactor"),
     stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
     stage0ColorArg1: gl.getUniformLocation(program, "uStage0ColorArg1"),
     stage0ColorArg2: gl.getUniformLocation(program, "uStage0ColorArg2"),
@@ -1904,6 +1923,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     colorWriteEnable: Number(renderState.colorWriteEnable ??
       (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
         D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)) >>> 0,
+    textureFactor: Number(renderState.textureFactor ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -2141,6 +2161,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.texture0Semantic) {
       gl.uniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
     }
+    if (bridgeProgram.textureFactor) {
+      gl.uniform4fv(bridgeProgram.textureFactor,
+        new Float32Array(d3dColorToNormalizedRgba(renderState.textureFactor)));
+    }
     if (bridgeProgram.stage0ColorOp) {
       gl.uniform1i(bridgeProgram.stage0ColorOp, renderState.textureStages[0].colorOp);
     }
@@ -2237,6 +2261,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
       combiner: appliedTexture0Combiner,
     },
+    textureFactor: renderState.textureFactor,
     centerPixel,
   };
   harnessState.graphics = {
@@ -3532,7 +3557,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 texture combiner probe cannot run" };
         }
         const cases = [];
-        for (let caseId = 0; caseId < 13; ++caseId) {
+        for (let caseId = 0; caseId < 17; ++caseId) {
           const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
           const probe = parseModuleState(wasmModule.probeD3D8TextureCombiner(caseId));
           const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -3563,6 +3588,8 @@ async function rpc(command, payload = {}) {
             && combiner.alphaOp === probe.combiner?.alphaOp
             && combiner.alphaArg1 === probe.combiner?.alphaArg1
             && combiner.alphaArg2 === probe.combiner?.alphaArg2
+            && browserProbe?.renderState?.textureFactor === probe.textureFactor
+            && browserProbe?.textureFactor === probe.textureFactor
             && combiner.supported === true
             && expectedStageStateCalls === 14
             && centerPixelOk

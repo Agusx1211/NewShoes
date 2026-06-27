@@ -218,7 +218,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 12;
+		const renderStateSlots = 13;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -273,6 +273,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			alphaFunc: state[9] >>> 0,
 			alphaRef: state[10] >>> 0,
 			colorWriteEnable: state[11] >>> 0,
+			textureFactor: state[12] >>> 0,
 			textureStages,
 		};
 	};
@@ -1963,6 +1964,7 @@ private:
 		state.color_write_enable = render_state_value(D3DRS_COLORWRITEENABLE,
 			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+		state.texture_factor = render_state_value(D3DRS_TEXTUREFACTOR, 0);
 		capture_draw_texture_stage_states();
 	}
 

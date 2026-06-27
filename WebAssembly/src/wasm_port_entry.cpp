@@ -5231,6 +5231,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 	DWORD diffuse = 0xffffffffUL;
 	BYTE texture_alpha = 0xff;
 	bool alpha_case = false;
+	DWORD texture_factor = 0xffffffffUL;
 	unsigned int expected_stage_state_calls = 14;
 	unsigned int expected_r = 255;
 	unsigned int expected_g = 0;
@@ -5383,6 +5384,50 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			expected_g = 191;
 			expected_b = 191;
 			break;
+		case 13:
+			case_name = "selectTextureFactor";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TFACTOR;
+			color_arg2 = D3DTA_TEXTURE;
+			texture_factor = 0xff204080UL;
+			diffuse = 0xff808080UL;
+			expected_r = 32;
+			expected_g = 64;
+			expected_b = 128;
+			break;
+		case 14:
+			case_name = "modulateTextureFactor";
+			color_op = D3DTOP_MODULATE;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_TFACTOR;
+			texture_factor = 0xff800000UL;
+			diffuse = 0xff808080UL;
+			expected_r = 128;
+			break;
+		case 15:
+			case_name = "selectAlphaTextureFactor";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			alpha_op = D3DTOP_SELECTARG1;
+			alpha_arg1 = D3DTA_TFACTOR;
+			alpha_arg2 = D3DTA_TEXTURE;
+			texture_factor = 0x40000000UL;
+			diffuse = 0xff808080UL;
+			alpha_case = true;
+			expected_r = 64;
+			break;
+		case 16:
+			case_name = "alphaReplicateTextureFactor";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE;
+			color_arg2 = D3DTA_TEXTURE;
+			texture_factor = 0x80204060UL;
+			diffuse = 0xff808080UL;
+			expected_r = 128;
+			expected_g = 128;
+			expected_b = 128;
+			break;
 		default:
 			known_case = false;
 			break;
@@ -5450,6 +5495,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		device->SetRenderState(D3DRS_COLORWRITEENABLE,
 			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+		device->SetRenderState(D3DRS_TEXTUREFACTOR, texture_factor);
 		texture_create_result = device->CreateTexture(2, 2, 1, 0,
 			D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture);
 		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -5573,6 +5619,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAOP] == alpha_op &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG1] == alpha_arg1 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ALPHAARG2] == alpha_arg2 &&
+		state->last_draw_render_state.texture_factor == texture_factor &&
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
 
 	char buffer[3072];
@@ -5581,7 +5628,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
 		"\"texture\":{\"id\":%u,\"format\":%u},"
 		"\"expectedCenter\":[%u,%u,%u,%u],"
-		"\"alphaCase\":%s,"
+		"\"alphaCase\":%s,\"textureFactor\":%lu,"
 		"\"combiner\":{\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
 		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
@@ -5603,6 +5650,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		expected_b,
 		expected_a,
 		alpha_case ? "true" : "false",
+		static_cast<unsigned long>(texture_factor),
 		static_cast<unsigned long>(color_op),
 		static_cast<unsigned long>(color_arg1),
 		static_cast<unsigned long>(color_arg2),

@@ -2466,12 +2466,18 @@ shares structure and follows behind.
       alpha-replication plus complement, and alpha complement through
       `SRCALPHA` blending, with Playwright center-pixel assertions proving the
       shader applies the modifiers.
+- [x] Apply captured `D3DRS_TEXTUREFACTOR` / `D3DTA_TFACTOR` as a source in the
+      current stage-0 WebGL2 fixed-function combiner path, including color
+      selection, texture-factor modulation, alpha selection through
+      `SRCALPHA` blending, and `ALPHAREPLICATE` on the texture factor. The
+      browser combiner probe now verifies the captured render-state value
+      reaches the shader and produces the expected center pixels.
 - [ ] Extend the fixed-function texture combiner bridge beyond the current
       stage-0 `DIFFUSE`/`CURRENT`/`TEXTURE` subset to cover original
-      terrain/render2d patterns that use `D3DTA_TFACTOR`, `COLORARG0` /
-      `ALPHAARG0`, `RESULTARG`, and additional ops such as `MULTIPLYADD`,
-      with focused browser probes before relying on terrain and grayscale 2D
-      image rendering.
+      terrain/render2d patterns that use `COLORARG0` / `ALPHAARG0`,
+      `RESULTARG`, `D3DTA_TEMP`, and additional ops such as `MULTIPLYADD` and
+      `DOTPRODUCT3`, with focused browser probes before relying on terrain and
+      grayscale 2D image rendering.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state

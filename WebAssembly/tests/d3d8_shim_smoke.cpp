@@ -754,7 +754,10 @@ int main()
 	}
 	dynamic_vertex_buffer->Release();
 
-	if (!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE)),
+	const DWORD texture_factor = 0x80402010UL;
+	if (!expect(SUCCEEDED(device->SetRenderState(D3DRS_TEXTUREFACTOR, texture_factor)),
+			"SetRenderState TEXTUREFACTOR failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE)),
 			"SetTextureStageState stage0 COLOROP failed") ||
 		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE)),
 			"SetTextureStageState stage0 COLORARG1 failed") ||
@@ -822,6 +825,8 @@ int main()
 			"indexed draw index checksum should be non-zero") ||
 		!expect(state->last_draw_index_format == D3DFMT_INDEX16,
 			"indexed draw index format mismatch") ||
+		!expect(state->last_draw_render_state.texture_factor == texture_factor,
+			"draw texture factor capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_MODULATE,
 			"draw texture stage0 COLOROP capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE,
@@ -878,7 +883,7 @@ int main()
 		expect(state->get_transform_calls == 2, "get_transform_calls count mismatch") &&
 		expect(state->set_viewport_calls == 1, "set_viewport_calls count mismatch") &&
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
-		expect(state->set_render_state_calls == 2, "set_render_state_calls count mismatch") &&
+		expect(state->set_render_state_calls == 3, "set_render_state_calls count mismatch") &&
 		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch") &&
 		expect(state->set_texture_stage_state_calls == 11,
 			"set_texture_stage_state_calls count mismatch") &&
