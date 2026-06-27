@@ -3054,7 +3054,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_probe_browser_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 

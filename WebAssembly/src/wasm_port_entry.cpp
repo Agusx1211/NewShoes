@@ -66,6 +66,7 @@ CDManagerProbeResult g_cd_manager_probe;
 FileSystemProbeResult g_file_system_probe;
 GameNetworkProbeResult g_game_network_probe;
 std::string g_state_json;
+std::string g_input_probe_json;
 
 struct ArchiveMountState
 {
@@ -753,6 +754,39 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return escaped;
+}
+
+std::string build_browser_input_json()
+{
+	char buffer[1800];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_win32_input_shim\","
+		"\"cursor\":{\"available\":%s,\"x\":%ld,\"y\":%ld},"
+		"\"cursorSet\":%s,\"capture\":%s,"
+		"\"keys\":{\"f5\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
+		"\"f6\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
+		"\"f7\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
+		"\"f8\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
+		"\"insert\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
+		"\"delete\":{\"down\":%s,\"pressedSinceLastQuery\":%s}}}",
+		WasmWin32Input::cursor_position_available ? "true" : "false",
+		WasmWin32Input::cursor_position.x,
+		WasmWin32Input::cursor_position.y,
+		WasmWin32Input::current_cursor != nullptr ? "true" : "false",
+		WasmWin32Input::capture_window != nullptr ? "true" : "false",
+		WasmWin32Input::key_down[VK_F5] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_F5] ? "true" : "false",
+		WasmWin32Input::key_down[VK_F6] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_F6] ? "true" : "false",
+		WasmWin32Input::key_down[VK_F7] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_F7] ? "true" : "false",
+		WasmWin32Input::key_down[VK_F8] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_F8] ? "true" : "false",
+		WasmWin32Input::key_down[VK_INSERT] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_INSERT] ? "true" : "false",
+		WasmWin32Input::key_down[VK_DELETE] ? "true" : "false",
+		WasmWin32Input::key_pressed_since_last_query[VK_DELETE] ? "true" : "false");
+	return buffer;
 }
 
 std::string build_data_summary_json()
@@ -2584,6 +2618,7 @@ const char *write_state_json()
 	const std::string cd_manager_source_json = json_escape(g_cd_manager_probe.source);
 	const std::string file_system_probe_json = build_file_system_probe_json();
 	const std::string game_network_probe_json = build_game_network_probe_json();
+	const std::string browser_input_json = build_browser_input_json();
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -2598,6 +2633,7 @@ const char *write_state_json()
 		"\"frequency\":%lld,\"bootQpc\":%lld,\"lastQpc\":%lld,"
 		"\"bootTimeGetTime\":%lu,\"lastTimeGetTime\":%lu,"
 		"\"bootTickCount\":%lu,\"lastTickCount\":%lu},"
+		"\"browserInput\":%s,"
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
@@ -2861,6 +2897,7 @@ const char *write_state_json()
 		static_cast<unsigned long>(g_last_time_get_time_ms),
 		static_cast<unsigned long>(g_boot_tick_count_ms),
 		static_cast<unsigned long>(g_last_tick_count_ms),
+		browser_input_json.c_str(),
 		g_archive_probe.attempted ? "true" : "false",
 		g_archive_probe.ok ? "true" : "false",
 		g_archive_probe.loaded ? "true" : "false",
@@ -3453,6 +3490,55 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
 		g_archive_mount.archive_count,
 		g_archive_mount.total_bytes);
 	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_browser_input(
+	int cursor_x,
+	int cursor_y,
+	int cursor_available,
+	int virtual_key,
+	int key_down)
+{
+	if (cursor_available) {
+		WasmWin32Input::SetCursorPosition(cursor_x, cursor_y);
+	}
+	if (virtual_key >= 0) {
+		WasmWin32Input::SetKeyState(virtual_key, key_down != 0);
+	}
+	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_browser_input()
+{
+	WasmWin32Input::Reset();
+	return write_state_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_input()
+{
+	POINT cursor = {0, 0};
+	const BOOL cursor_ok = GetCursorPos(&cursor);
+	ScreenToClient(nullptr, &cursor);
+	const SHORT f6_first = GetAsyncKeyState(VK_F6);
+	const SHORT f6_second = GetAsyncKeyState(VK_F6);
+	const SHORT delete_state = GetAsyncKeyState(VK_DELETE);
+
+	char buffer[700];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_win32_input_shim\","
+		"\"cursor\":{\"ok\":%s,\"x\":%ld,\"y\":%ld},"
+		"\"f6\":{\"first\":%u,\"second\":%u},"
+		"\"delete\":{\"state\":%u},"
+		"\"raw\":%s}",
+		cursor_ok ? "true" : "false",
+		cursor.x,
+		cursor.y,
+		static_cast<unsigned int>(static_cast<unsigned short>(f6_first)),
+		static_cast<unsigned int>(static_cast<unsigned short>(f6_second)),
+		static_cast<unsigned int>(static_cast<unsigned short>(delete_state)),
+		build_browser_input_json().c_str());
+	g_input_probe_json = buffer;
+	return g_input_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()

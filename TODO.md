@@ -1133,11 +1133,15 @@ shares structure and follows behind.
       mode, gamma, window-state, front-buffer screenshot/movie-capture, and
       Direct3D render paths with browser canvas/WebGL2/WebGPU behavior, then
       verify the original display loop through harness screenshots.
-- [ ] Replace the current no-op Win32 cursor compatibility helpers
-      (`GetCursorPos`, `SetCursor`, `ScreenToClient`, cursor-file loading) and
-      key-state helper (`GetAsyncKeyState`) with browser pointer/cursor/keyboard
-      state before relying on original `W3DMouse.cpp` runtime cursor behavior
-      or the original water-track editor path.
+- [x] Replace the current no-op Win32 cursor position/key-state compatibility
+      helpers with browser-fed state for `GetCursorPos`, `SetCursorPos`,
+      `SetCursor`, capture bookkeeping, `ScreenToClient`, and
+      `GetAsyncKeyState`, with harness coverage proving DOM pointer/F6 events
+      are visible through the Win32-style calls reached by W3D mouse and
+      water-track code.
+- [ ] Replace the remaining browser no-op cursor-file loading and cursor
+      presentation policy (`LoadCursorFromFile`, CSS cursor vs engine cursor)
+      before relying on original `W3DMouse.cpp` runtime cursor artwork.
 - [x] Resolve the `W3DVideoBuffer.cpp` header gap as a case-sensitive include
       mismatch: the source includes `W3DDevice/GameClient/W3DVideoBuffer.h`,
       while the checked-in original header is `W3DVideobuffer.h`; add the wasm

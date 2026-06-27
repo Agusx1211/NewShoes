@@ -22,6 +22,7 @@ const harnessState = {
   },
   timing: null,
   win32Timing: null,
+  browserInput: null,
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -176,6 +177,7 @@ function applyModuleState(moduleState) {
   harnessState.mainLoop = moduleState.mainLoop ?? harnessState.mainLoop;
   harnessState.timing = moduleState.timing ?? harnessState.timing;
   harnessState.win32Timing = moduleState.win32Timing ?? harnessState.win32Timing;
+  harnessState.browserInput = moduleState.browserInput ?? harnessState.browserInput;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.globalDataProbe = moduleState.globalDataProbe ?? null;
@@ -213,6 +215,13 @@ async function loadWasmModule() {
         "string",
         ["string", "string", "number", "number"],
       ),
+      setBrowserInput: module.cwrap(
+        "cnc_port_set_browser_input",
+        "string",
+        ["number", "number", "number", "number", "number"],
+      ),
+      resetBrowserInput: module.cwrap("cnc_port_reset_browser_input", "string", []),
+      probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
     };
@@ -258,6 +267,7 @@ function snapshotState() {
     win32Timing: harnessState.win32Timing,
     canvas: harnessState.canvas,
     graphics: harnessState.graphics,
+    browserInput: harnessState.browserInput,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     globalDataProbe: harnessState.globalDataProbe,
@@ -391,6 +401,90 @@ function registerArchiveSet(wasmModule, archiveSet) {
   )));
   harnessState.wasm = "loaded";
   return harnessState.archiveMount;
+}
+
+function virtualKeyFromEvent(event) {
+  const code = String(event.code ?? "");
+  const namedKeys = {
+    Enter: 0x0d,
+    Insert: 0x2d,
+    Delete: 0x2e,
+    ArrowLeft: 0x25,
+    ArrowUp: 0x26,
+    ArrowRight: 0x27,
+    ArrowDown: 0x28,
+    F5: 0x74,
+    F6: 0x75,
+    F7: 0x76,
+    F8: 0x77,
+    F9: 0x78,
+    F10: 0x79,
+    F11: 0x7a,
+    F12: 0x7b,
+  };
+  if (Object.prototype.hasOwnProperty.call(namedKeys, code)) {
+    return namedKeys[code];
+  }
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.charCodeAt(3);
+  }
+  if (/^Digit[0-9]$/.test(code)) {
+    return code.charCodeAt(5);
+  }
+  return -1;
+}
+
+function canvasInputPointFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+  const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+  const x = Math.max(0, Math.min(canvas.width - 1, Math.round((event.clientX - rect.left) * scaleX)));
+  const y = Math.max(0, Math.min(canvas.height - 1, Math.round((event.clientY - rect.top) * scaleY)));
+  return { x, y };
+}
+
+async function pushBrowserInputToWasm({
+  cursor = null,
+  virtualKey = -1,
+  keyDown = false,
+} = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const cursorAvailable = cursor ? 1 : 0;
+  const stateJson = wasmModule.setBrowserInput(
+    cursor?.x ?? 0,
+    cursor?.y ?? 0,
+    cursorAvailable,
+    virtualKey,
+    keyDown ? 1 : 0,
+  );
+  applyModuleState(parseModuleState(stateJson));
+  harnessState.wasm = "loaded";
+  return snapshotState();
+}
+
+async function resetBrowserInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+  applyModuleState(parseModuleState(wasmModule.resetBrowserInput()));
+  harnessState.wasm = "loaded";
+  return snapshotState();
+}
+
+async function probeBrowserInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+  const probe = parseModuleState(wasmModule.probeBrowserInput());
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
 }
 
 function rememberMountedArchives(archives) {
@@ -548,6 +642,34 @@ async function rpc(command, payload = {}) {
         syncStatus(`booted (${harnessState.runtime})`);
         return { ok: true, command, state: snapshotState() };
       }
+    case "setInput":
+      {
+        const state = await pushBrowserInputToWasm({
+          cursor: payload.cursor ?? null,
+          virtualKey: Number.isFinite(Number(payload.virtualKey)) ? Number(payload.virtualKey) : -1,
+          keyDown: Boolean(payload.keyDown),
+        });
+        if (!state) {
+          return { ok: false, command, error: "Wasm module unavailable; browser input cannot be updated" };
+        }
+        return { ok: true, command, state };
+      }
+    case "resetInput":
+      {
+        const state = await resetBrowserInput();
+        if (!state) {
+          return { ok: false, command, error: "Wasm module unavailable; browser input cannot be reset" };
+        }
+        return { ok: true, command, state };
+      }
+    case "inputProbe":
+      {
+        const probe = await probeBrowserInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; browser input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
     case "log":
       return { ok: true, command, entry: recordLog(payload.message ?? "", payload.data ?? null) };
     case "screenshot":
@@ -576,6 +698,34 @@ if (window.ResizeObserver) {
 } else {
   window.addEventListener("resize", () => paintBlackWindow());
 }
+
+canvas.tabIndex = 0;
+canvas.addEventListener("pointermove", (event) => {
+  void pushBrowserInputToWasm({ cursor: canvasInputPointFromEvent(event) });
+});
+canvas.addEventListener("pointerdown", (event) => {
+  canvas.focus();
+  void pushBrowserInputToWasm({ cursor: canvasInputPointFromEvent(event) });
+});
+window.addEventListener("keydown", (event) => {
+  const virtualKey = virtualKeyFromEvent(event);
+  if (virtualKey < 0) {
+    return;
+  }
+  event.preventDefault();
+  void pushBrowserInputToWasm({ virtualKey, keyDown: true });
+});
+window.addEventListener("keyup", (event) => {
+  const virtualKey = virtualKeyFromEvent(event);
+  if (virtualKey < 0) {
+    return;
+  }
+  event.preventDefault();
+  void pushBrowserInputToWasm({ virtualKey, keyDown: false });
+});
+window.addEventListener("blur", () => {
+  void resetBrowserInput();
+});
 
 window.CnCPort = {
   rpc,

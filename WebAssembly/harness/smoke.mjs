@@ -44,6 +44,22 @@ async function waitForMainLoopTicks(page, startingFrame, startingTicks, tickCoun
   throw new Error(`Main loop did not advance ${tickCount} ticks: ${JSON.stringify(result.state)}`);
 }
 
+async function waitForBrowserInput(page, predicate, label) {
+  const deadline = Date.now() + 2000;
+  let result = await page.evaluate(() => window.CnCPort.rpc("state"));
+
+  while (Date.now() < deadline) {
+    if (predicate(result.state.browserInput)) {
+      return result.state.browserInput;
+    }
+
+    await page.waitForTimeout(20);
+    result = await page.evaluate(() => window.CnCPort.rpc("state"));
+  }
+
+  throw new Error(`${label} browser input state not observed: ${JSON.stringify(result.state.browserInput)}`);
+}
+
 function assertWasmTiming(state, label) {
   const timing = state.timing;
   if (!timing?.ok || timing.source !== "emscripten_get_now") {
@@ -58,6 +74,21 @@ function assertWasmTiming(state, label) {
 
   if (timing.lastTickMs < timing.bootMs || timing.lastDeltaMs < 0) {
     throw new Error(`${label} timing is not monotonic: ${JSON.stringify(timing)}`);
+  }
+}
+
+function assertBrowserInputInitial(state, label) {
+  const input = state.browserInput;
+  if (!input || input.source !== "browser_win32_input_shim") {
+    throw new Error(`${label} browser input shim state missing: ${JSON.stringify(input)}`);
+  }
+
+  if (input.cursor?.available !== false
+      || input.cursor.x !== 0
+      || input.cursor.y !== 0
+      || input.keys?.f6?.down !== false
+      || input.keys?.f6?.pressedSinceLastQuery !== false) {
+    throw new Error(`${label} browser input initial state mismatch: ${JSON.stringify(input)}`);
   }
 }
 
@@ -326,6 +357,7 @@ try {
     assertCDManagerProbe(bootResult.state, "boot");
     assertFileSystemProbe(bootResult.state, "boot");
     assertGameNetworkProbe(bootResult.state, "boot");
+    assertBrowserInputInitial(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
@@ -342,6 +374,45 @@ try {
   if (bootResult.state.graphics.drawingBufferWidth !== 1280
       || bootResult.state.graphics.drawingBufferHeight !== 720) {
     throw new Error(`Unexpected initial WebGL2 drawing buffer: ${JSON.stringify(bootResult.state)}`);
+  }
+
+  if (expectWasm) {
+    const canvasBox = await page.locator("#viewport").boundingBox();
+    if (!canvasBox) {
+      throw new Error("Viewport canvas has no bounding box");
+    }
+    await page.mouse.move(canvasBox.x + 321, canvasBox.y + 123);
+    const inputAfterPointer = await waitForBrowserInput(
+      page,
+      (input) => input?.cursor?.available && input.cursor.x === 321 && input.cursor.y === 123,
+      "pointer move",
+    );
+    if (inputAfterPointer.keys?.f6?.down) {
+      throw new Error(`Pointer input should not mutate key state: ${JSON.stringify(inputAfterPointer)}`);
+    }
+
+    await page.keyboard.down("F6");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.keys?.f6?.down === true && input.keys.f6.pressedSinceLastQuery === true,
+      "F6 keydown",
+    );
+    const inputProbe = await page.evaluate(() => window.CnCPort.rpc("inputProbe"));
+    if (!inputProbe.ok
+        || !inputProbe.probe?.cursor?.ok
+        || inputProbe.probe.cursor.x !== 321
+        || inputProbe.probe.cursor.y !== 123
+        || inputProbe.probe.f6?.first !== 0x8001
+        || inputProbe.probe.f6?.second !== 0x8000) {
+      throw new Error(`Browser input probe did not observe Win32 cursor/key state: ${JSON.stringify(inputProbe)}`);
+    }
+
+    await page.keyboard.up("F6");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.keys?.f6?.down === false && input.keys.f6.pressedSinceLastQuery === false,
+      "F6 keyup",
+    );
   }
 
   const initialFrame = bootResult.state.frame;

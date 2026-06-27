@@ -412,10 +412,21 @@ static inline double Win32PortNowMilliseconds()
 #define VK_RETURN 0x0D
 #define VK_INSERT 0x2D
 #define VK_DELETE 0x2E
+#define VK_LEFT 0x25
+#define VK_UP 0x26
+#define VK_RIGHT 0x27
+#define VK_DOWN 0x28
 #define VK_F5 0x74
 #define VK_F6 0x75
 #define VK_F7 0x76
 #define VK_F8 0x77
+#define VK_F9 0x78
+#define VK_F10 0x79
+#define VK_F11 0x7A
+#define VK_F12 0x7B
+#define IDC_ARROW reinterpret_cast<LPCSTR>(32512)
+#define IDC_CROSS reinterpret_cast<LPCSTR>(32515)
+#define IDC_SIZEALL reinterpret_cast<LPCSTR>(32646)
 #define WM_USER 0x0400
 #define LOCALE_SYSTEM_DEFAULT 0x0800
 #define DATE_SHORTDATE 0x00000001
@@ -789,19 +800,81 @@ static inline BOOL SetWindowTextW(HWND, const wchar_t *)
 	return TRUE;
 }
 
-static inline HCURSOR LoadCursor(HINSTANCE, LPCSTR)
+namespace WasmWin32Input
 {
-	return nullptr;
+inline POINT cursor_position = {0, 0};
+inline bool cursor_position_available = false;
+inline HCURSOR current_cursor = nullptr;
+inline HWND capture_window = nullptr;
+inline bool key_down[256] = {};
+inline bool key_pressed_since_last_query[256] = {};
+
+static inline bool IsValidKey(int virtual_key)
+{
+	return virtual_key >= 0 && virtual_key < 256;
 }
 
-static inline HCURSOR LoadCursorFromFile(LPCSTR)
+static inline void SetCursorPosition(int x, int y)
 {
-	return nullptr;
+	cursor_position.x = x;
+	cursor_position.y = y;
+	cursor_position_available = true;
+}
+
+static inline void SetKeyState(int virtual_key, bool is_down)
+{
+	if (!IsValidKey(virtual_key)) {
+		return;
+	}
+
+	if (is_down && !key_down[virtual_key]) {
+		key_pressed_since_last_query[virtual_key] = true;
+	}
+	key_down[virtual_key] = is_down;
+}
+
+static inline SHORT GetKeyState(int virtual_key)
+{
+	if (!IsValidKey(virtual_key)) {
+		return 0;
+	}
+
+	SHORT state = key_down[virtual_key] ? static_cast<SHORT>(0x8000) : 0;
+	if (key_pressed_since_last_query[virtual_key]) {
+		state = static_cast<SHORT>(state | 0x0001);
+		key_pressed_since_last_query[virtual_key] = false;
+	}
+	return state;
+}
+
+static inline void Reset()
+{
+	cursor_position = {0, 0};
+	cursor_position_available = false;
+	current_cursor = nullptr;
+	capture_window = nullptr;
+	for (int index = 0; index < 256; ++index) {
+		key_down[index] = false;
+		key_pressed_since_last_query[index] = false;
+	}
+}
+}
+
+static inline HCURSOR LoadCursor(HINSTANCE, LPCSTR cursor_name)
+{
+	return reinterpret_cast<HCURSOR>(const_cast<char *>(cursor_name));
+}
+
+static inline HCURSOR LoadCursorFromFile(LPCSTR path)
+{
+	return reinterpret_cast<HCURSOR>(const_cast<char *>(path));
 }
 
 static inline HCURSOR SetCursor(HCURSOR cursor)
 {
-	return cursor;
+	HCURSOR previous = WasmWin32Input::current_cursor;
+	WasmWin32Input::current_cursor = cursor;
+	return previous;
 }
 
 static inline BOOL GetCursorPos(POINT *point)
@@ -810,13 +883,13 @@ static inline BOOL GetCursorPos(POINT *point)
 		return FALSE;
 	}
 
-	point->x = 0;
-	point->y = 0;
-	return FALSE;
+	*point = WasmWin32Input::cursor_position;
+	return WasmWin32Input::cursor_position_available ? TRUE : FALSE;
 }
 
-static inline BOOL SetCursorPos(int, int)
+static inline BOOL SetCursorPos(int x, int y)
 {
+	WasmWin32Input::SetCursorPosition(x, y);
 	return TRUE;
 }
 
@@ -830,9 +903,22 @@ static inline BOOL ClientToScreen(HWND, POINT *)
 	return TRUE;
 }
 
-static inline SHORT GetAsyncKeyState(int)
+static inline SHORT GetAsyncKeyState(int virtual_key)
 {
-	return 0;
+	return WasmWin32Input::GetKeyState(virtual_key);
+}
+
+static inline HWND SetCapture(HWND window)
+{
+	HWND previous = WasmWin32Input::capture_window;
+	WasmWin32Input::capture_window = window;
+	return previous;
+}
+
+static inline BOOL ReleaseCapture()
+{
+	WasmWin32Input::capture_window = nullptr;
+	return TRUE;
 }
 
 static inline BOOL GetWindowRect(HWND, RECT *rect)
