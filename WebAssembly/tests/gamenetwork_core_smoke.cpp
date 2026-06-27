@@ -1214,12 +1214,146 @@ bool exerciseUser()
 	second->deleteInstance();
 	return initial_ok && changed_ok && assigned_ok;
 }
+
+bool exerciseNetCommandListMerge()
+{
+	// appendList(NULL) and appendList(empty) must be no-ops.
+	NetCommandList *dest = newInstance(NetCommandList);
+	dest->init();
+	dest->appendList(NULL);
+	NetCommandList *empty_source = newInstance(NetCommandList);
+	empty_source->init();
+	dest->appendList(empty_source);
+	const bool null_append_ok = expect(dest->length() == 0, "NetCommandList empty append changed length");
+	empty_source->deleteInstance();
+	if (!null_append_ok) {
+		dest->deleteInstance();
+		return false;
+	}
+
+	// Destination seeded with one command; source carries a later command.
+	NetFrameCommandMsg *dest_msg = newInstance(NetFrameCommandMsg);
+	dest_msg->setPlayerID(2);
+	dest_msg->setID(10);
+	dest_msg->setExecutionFrame(110);
+	dest_msg->setCommandCount(1);
+	NetCommandRef *dest_ref = addAndRelease(*dest, dest_msg);
+	dest_ref->setRelay(0x11);
+
+	NetFrameCommandMsg *source_msg = newInstance(NetFrameCommandMsg);
+	source_msg->setPlayerID(2);
+	source_msg->setID(20);
+	source_msg->setExecutionFrame(120);
+	source_msg->setCommandCount(2);
+	NetCommandList *source = newInstance(NetCommandList);
+	source->init();
+	NetCommandRef *source_ref = addAndRelease(*source, source_msg);
+	source_ref->setRelay(0x22);
+
+	dest->appendList(source);
+	NetCommandRef *merged = dest->getFirstMessage();
+	const bool append_ok =
+		expect(dest->length() == 2, "NetCommandList append did not extend list") &&
+		expect(merged != nullptr && merged->getCommand()->getID() == 10 &&
+				merged->getRelay() == 0x11, "NetCommandList append lost destination head") &&
+		expect(merged->getNext() != nullptr &&
+				merged->getNext()->getCommand()->getID() == 20 &&
+				merged->getNext()->getRelay() == 0x22,
+			"NetCommandList append did not preserve ordering or relay") &&
+		expect(source->length() == 1, "NetCommandList append drained source list");
+
+	// Duplicates (same type/player/id) appended from another source must be rejected.
+	NetFrameCommandMsg *dup_msg = newInstance(NetFrameCommandMsg);
+	dup_msg->setPlayerID(2);
+	dup_msg->setID(10);
+	dup_msg->setExecutionFrame(110);
+	dup_msg->setCommandCount(1);
+	NetCommandList *dup_source = newInstance(NetCommandList);
+	dup_source->init();
+	addAndRelease(*dup_source, dup_msg);
+	dest->appendList(dup_source);
+	const bool duplicate_append_ok =
+		expect(dest->length() == 2, "NetCommandList append accepted duplicate command");
+	dup_source->deleteInstance();
+
+	// removeMessage unlinks (without freeing) head, middle, and tail refs.
+	NetFrameCommandMsg *third_msg = newInstance(NetFrameCommandMsg);
+	third_msg->setPlayerID(2);
+	third_msg->setID(30);
+	third_msg->setExecutionFrame(130);
+	third_msg->setCommandCount(3);
+	addAndRelease(*dest, third_msg);
+
+	const bool before_remove_ok = expect(dest->length() == 3, "NetCommandList did not hold three commands");
+	NetCommandRef *middle_ref = dest->getFirstMessage()->getNext();
+	dest->removeMessage(middle_ref);
+	const bool middle_remove_ok =
+		expect(dest->length() == 2, "NetCommandList remove did not drop middle length") &&
+		expect(middle_ref->getPrev() == nullptr && middle_ref->getNext() == nullptr,
+			"NetCommandList remove did not detach removed ref") &&
+		expect(dest->getFirstMessage() != nullptr &&
+				dest->getFirstMessage()->getCommand()->getID() == 10 &&
+				dest->getFirstMessage()->getNext() != nullptr &&
+				dest->getFirstMessage()->getNext()->getCommand()->getID() == 30,
+			"NetCommandList remove did not relink neighbors");
+	middle_ref->deleteInstance();
+
+	NetCommandRef *head_ref = dest->getFirstMessage();
+	dest->removeMessage(head_ref);
+	const bool head_remove_ok =
+		expect(dest->length() == 1, "NetCommandList remove did not drop head length") &&
+		expect(dest->getFirstMessage() != nullptr &&
+				dest->getFirstMessage()->getCommand()->getID() == 30,
+			"NetCommandList remove did not promote new head");
+	head_ref->deleteInstance();
+
+	NetCommandRef *tail_ref = dest->getFirstMessage();
+	dest->removeMessage(tail_ref);
+	const bool tail_remove_ok =
+		expect(dest->length() == 0, "NetCommandList remove did not drop final length") &&
+		expect(dest->getFirstMessage() == nullptr, "NetCommandList remove did not clear head");
+	tail_ref->deleteInstance();
+
+	// Message-based find must locate a matching command and miss an absent one.
+	NetFrameCommandMsg *find_msg = newInstance(NetFrameCommandMsg);
+	find_msg->setPlayerID(4);
+	find_msg->setID(777);
+	find_msg->setExecutionFrame(500);
+	find_msg->setCommandCount(0);
+	addAndRelease(*dest, find_msg);
+
+	NetFrameCommandMsg *probe_msg = newInstance(NetFrameCommandMsg);
+	probe_msg->setPlayerID(4);
+	probe_msg->setID(777);
+	probe_msg->setExecutionFrame(600);
+	NetCommandRef *found = dest->findMessage(probe_msg);
+	const bool find_msg_ok =
+		expect(found != nullptr && found->getCommand()->getID() == 777 &&
+				found->getCommand()->getPlayerID() == 4,
+			"NetCommandList findMessage(NetCommandMsg*) did not locate command");
+
+	NetFrameCommandMsg *absent_msg = newInstance(NetFrameCommandMsg);
+	absent_msg->setPlayerID(4);
+	absent_msg->setID(888);
+	const bool absent_ok = expect(dest->findMessage(absent_msg) == nullptr,
+		"NetCommandList findMessage(NetCommandMsg*) found absent command");
+
+	probe_msg->detach();
+	absent_msg->detach();
+	dest->reset();
+	dest->deleteInstance();
+	source->deleteInstance();
+
+	return null_append_ok && append_ok && duplicate_append_ok && before_remove_ok &&
+		middle_remove_ok && head_remove_ok && tail_remove_ok && find_msg_ok && absent_ok;
+}
 }
 
 int main()
 {
 	initMemoryManager();
 	const bool ok = exerciseNetworkUtil() && exerciseFrameData() && exerciseNetCommandList() &&
+		exerciseNetCommandListMerge() &&
 		exerciseNetPacketRoundTrip() && exerciseNetPacketWireFormat() && exerciseNetPacketAckRoundTrip() &&
 		exerciseNetPacketControlRoundTrip() && exerciseNetCommandWrapperList() && exerciseTransportQueue() &&
 		exerciseConnectionQueue() && exerciseConnectionRetry() && exerciseFileTransferPathHelpers() && exerciseFrameMetrics() &&
@@ -1230,6 +1364,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering and encrypted wire bytes, command lists, packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering and encrypted wire bytes, command lists (insert, merge via appendList, removeMessage, and message-based find), packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }
