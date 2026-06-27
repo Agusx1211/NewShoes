@@ -2264,6 +2264,17 @@ shares structure and follows behind.
       device-clear path can be observed through probe counters. This is a D3D8
       factory/device slice only; original `DX8Wrapper::Init` still needs
       target-scoped loader wiring and real WebGL2 draw calls.
+- [x] Extend the browser D3D8 shim smoke to cover the CPU-backed resource
+      surface: `CreateTexture` level-0 `GetLevelDesc`/`GetLevelCount`/descriptor
+      (size, format, type), `LockRect`/`UnlockRect` non-null `pBits` and
+      pitch plus sub-rect offset and out-of-range level rejection;
+      `CreateVertexBuffer`/`CreateIndexBuffer` `Lock`/`Unlock` with offset/size
+      and `size==0` whole-tail semantics plus oversized/out-of-range rejection;
+      and the matching `create_texture_calls`/`texture_*rect_calls`/
+      `create_*buffer_calls`/`buffer_*calls` probe counters. This is direct
+      D3D8 CPU-backed resource coverage only — there are no GL/WebGPU texture or
+      buffer uploads in the current shim; those wait for the real WebGL2 render
+      device.
 - [x] Wire original `WW3D2/dx8wrapper.cpp` D3D8 DLL loading through a
       target-scoped wasm loader hook, with smoke coverage proving
       `DX8Wrapper::Init` reaches `LoadLibrary("D3D8.DLL")`,
