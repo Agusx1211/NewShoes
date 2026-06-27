@@ -2851,6 +2851,17 @@ shares structure and follows behind.
        - [x] Add the `W3DDisplayString` / `DisplayString` screenshot probe on
              top of the proven sentence renderer.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
+      - [x] Add a focused original terrain tile render proof: the
+            `cnc_port_probe_ww3d_terrain_tile` export builds a small
+            `WorldHeightMap` using original height/tile storage, drives
+            `W3DTerrainBackground::setFlip` / `doPartialUpdate` /
+            `getFlatTexture` / `drawVisiblePolys`, and the Playwright
+            `ww3dTerrainTile` RPC verifies the resulting WebGL draw state,
+            texture upload, 32-byte `DX8_FVF_XYZDUV2` vertex layout, colored
+            canvas pixels, and
+            `harness-smoke-ww3d-terrain-tile-canvas.png`. Full
+            `FlatHeightMapRenderObjClass` scene/display ownership remains the
+            broader terrain item.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable

@@ -3134,6 +3134,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_string", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
+      probeWW3DTerrainTile: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_tile", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -5524,6 +5526,57 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.id === probe?.texture?.id
           && pixelLooksRed(browserProbe.centerPixel)
           && pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainTile":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D terrain tile cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainTile());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexStride === 32
+          && browserProbe?.vertexLayout?.source === "fvf"
+          && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
+          && browserProbe?.vertexShaderFvf !== 0
+          && (browserProbe?.vertexCount ?? 0) > 0
+          && (browserProbe?.indexCount ?? 0) > 0
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && pixelHasColor(browserProbe?.centerPixel, 8)
+          && pixelHasColor(screenshot?.centerPixel, 8);
         return {
           ok,
           command,

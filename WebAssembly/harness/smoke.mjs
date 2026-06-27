@@ -23,6 +23,7 @@ const ww3dDisplayStringCanvasScreenshot = resolve(
 );
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
+const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
@@ -1648,6 +1649,45 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dTexturedMeshCanvasScreenshot });
 
+  const terrainTileResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTerrainTile"));
+  if (!terrainTileResult.ok
+      || terrainTileResult.probe?.source !== "ww3d_terrain_tile_probe"
+      || terrainTileResult.probe?.results?.mapCreated !== true
+      || terrainTileResult.probe?.results?.tileCreated !== true
+      || terrainTileResult.probe?.results?.ownerCreated !== true
+      || terrainTileResult.probe?.results?.renderObjectCreated !== true
+      || terrainTileResult.probe?.terrain?.verticesPerSide !== 17
+      || terrainTileResult.probe?.terrain?.cellsPerSide !== 16
+      || terrainTileResult.probe?.terrain?.expectedFlatTextureSize !== 128
+      || terrainTileResult.probe?.calls?.browserTextureCreate < 1
+      || terrainTileResult.probe?.calls?.browserTextureUpdate < 1
+      || terrainTileResult.probe?.calls?.browserBufferCreate < 2
+      || terrainTileResult.probe?.calls?.browserBufferUpdate < 2
+      || terrainTileResult.probe?.calls?.setStreamSource < 1
+      || terrainTileResult.probe?.calls?.setIndices < 1
+      || terrainTileResult.probe?.calls?.drawIndexed < 1
+      || terrainTileResult.probe?.draw?.primitiveType !== 4
+      || terrainTileResult.probe?.draw?.vertexShaderFvf !== 578
+      || (terrainTileResult.probe?.draw?.vertexCount ?? 0) <= 0
+      || (terrainTileResult.probe?.draw?.primitiveCount ?? 0) <= 0
+      || terrainTileResult.probe?.draw?.vertexStride !== 32
+      || terrainTileResult.probe?.draw?.transformMask !== 7
+      || terrainTileResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || terrainTileResult.browserProbe?.usedPersistentBuffers !== true
+      || terrainTileResult.browserProbe?.usedTransforms !== true
+      || terrainTileResult.browserProbe?.vertexStride !== 32
+      || terrainTileResult.browserProbe?.vertexLayout?.source !== "fvf"
+      || terrainTileResult.browserProbe?.vertexShaderFvf !== terrainTileResult.probe?.draw?.vertexShaderFvf
+      || terrainTileResult.browserProbe?.renderState?.cullMode !== 1
+      || terrainTileResult.textureDelta?.creates < 1
+      || terrainTileResult.textureDelta?.updates < 1
+      || !pixelHasColor(terrainTileResult.browserProbe?.centerPixel, 8)
+      || !pixelHasColor(terrainTileResult.screenshot?.centerPixel, 8)) {
+    throw new Error(`WW3D terrain tile heightmap probe failed: ${JSON.stringify(terrainTileResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dTerrainTileCanvasScreenshot });
+
   const sourceAssetLoadResult = await page.evaluate(() => window.CnCPort.rpc("ww3dSourceAssetLoad"));
   if (!sourceAssetLoadResult.ok
       || sourceAssetLoadResult.probe?.source !== "ww3d_source_asset_load_probe"
@@ -1763,6 +1803,7 @@ try {
       ww3dDisplayStringCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
+      ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,
     ],
     state: stateResult.state,
