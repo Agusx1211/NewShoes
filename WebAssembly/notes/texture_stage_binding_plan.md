@@ -204,6 +204,14 @@ Ordered so each slice is independently testable via the harness screenshot path.
       `WebGLSampler`-per-stage cache keyed on the 6-tuple). Honor
       `_Init_Filters` value tables. Verify wrap/filter visually on a tiled 2D
       sprite.
+      *Expectations coverage added (GLM-5.2): `d3d8-texture-stage-state-mapping-smoke`
+      pins the DX8 enum wire values, replicates `_Init_Filters` against the
+      shim's reported caps (linear min/mag/mip, no anisotropic,
+      `MaxAnisotropy==1`), records the per-stage `_Min/_Mag/_Mip` tables for
+      NONE/FAST/BEST/DEFAULT under bilinear/trilinear/anisotropic modes, and
+      emits the canonical D3D8→WebGL2 sampler mapping spec (min/mip collapse,
+      address enum map, `MAXANISOTROPY` contract). The translation itself is
+      still open.)*
 - [ ] **S3 — `Apply_Render_State_Changes` texture flush wiring.** Ensure the
       deferred `render_state_changed` dirty bits actually drive S1/S2 on Draw,
       matching `dx8wrapper.cpp:2247` loop bounds

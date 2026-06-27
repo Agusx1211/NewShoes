@@ -2414,6 +2414,22 @@ shares structure and follows behind.
       `frontFace(GL_CW)`+`cullFace` cull table, ZENABLE/ZWRITE/ZFUNC depth
       table, blend factor/op table, shader-emulated alpha test, and
       color-write mask) that the future real GL-state mapping must satisfy.
+- [x] Add focused texture stage state / sampler *expectations* coverage
+      through the existing browser D3D8 shim (no shim or draw-bridge changes):
+      a new `d3d8-texture-stage-state-mapping-smoke` pins the canonical DX8
+      values of the `D3DTSS_*`, `D3DTADDRESS_*`, and `D3DTEXF_*` enumerations
+      fed into `Set_DX8_Texture_Stage_State`; replicates
+      `TextureFilterClass::_Init_Filters()` locally against the exact caps the
+      shim reports (linear min/mag/mip, no anisotropic, `MaxAnisotropy==1`,
+      wrap+clamp+mirror addressing), recording the per-stage `_Min/_Mag/_Mip`
+      filter tables for NONE/FAST/BEST/DEFAULT under bilinear/trilinear/
+      anisotropic modes; verifies the engine's `Apply()` address translation
+      (`TEXTURE_ADDRESS_REPEAT`/`CLAMP` → `D3DTADDRESS_WRAP`/`CLAMP`); and
+      emits a machine-readable D3D8→WebGL2 sampler mapping spec (the canonical
+      min/mip collapse into a single GL `TEXTURE_MIN_FILTER`, separate
+      `MAG_FILTER`, `WRAP`/`CLAMP`/`MIRROR`→GL wrap enums, `BORDER`/
+      `MIRRORONCE` flagged unsupported, `MAXANISOTROPY` contract) that the
+      future S2 sampler-translation task must satisfy.
 - [x] Apply the captured D3D8 render-state subset used by the current original
       AABox render path to the browser WebGL2 draw bridge, including
       cull/front-face, depth test/write/func, blend func/op, shader-emulated
