@@ -1051,6 +1051,35 @@ try {
     throw new Error(`D3D8 texcoord index probe failed: ${JSON.stringify(d3d8TexCoordIndexResult)}`);
   }
 
+  const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
+  const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
+  const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
+  const legacySamples = legacyPerFormat.map((entry) => (entry.browser?.samplePixel ?? []).join(",")).join("|");
+  const legacyDecoded = legacyPerFormat.map((entry) => (entry.browser?.legacySamplePixel ?? []).join(",")).join("|");
+  if (!d3d8LegacyTextureUploadResult.ok
+      || d3d8LegacyTextureUploadResult.probe?.source !== "browser_d3d8_legacy_texture_upload_probe"
+      || d3d8LegacyTextureUploadResult.probe?.calls?.createTexture !== 3
+      || d3d8LegacyTextureUploadResult.probe?.calls?.textureLockRect !== 3
+      || d3d8LegacyTextureUploadResult.probe?.calls?.textureUnlockRect !== 3
+      || d3d8LegacyTextureUploadResult.probe?.calls?.browserTextureCreate !== 3
+      || d3d8LegacyTextureUploadResult.probe?.calls?.browserTextureUpdate !== 3
+      || d3d8LegacyTextureUploadResult.probe?.calls?.browserTextureRelease !== 3
+      || legacyNames !== "A8,L8,A8L8"
+      || legacySamples !== "64,0,0,255|85,0,0,255|51,119,0,255"
+      || legacyDecoded !== "64|85|51,119"
+      || legacyPerFormat.some((entry) => entry.bytesPerPixel !== (entry.name === "A8L8" ? 2 : 1))
+      || legacyPerFormat.some((entry) => entry.pitch !== 2 * entry.bytesPerPixel)
+      || legacyPerFormat.some((entry) => entry.nativeOk !== true)
+      || legacyPerFormat.some((entry) => entry.samplePixelOk !== true)
+      || legacyPerFormat.some((entry) => entry.legacySampleOk !== true)
+      || legacyPerFormat.some((entry) => entry.browser?.swizzle?.semantic !== (entry.name === "A8L8" ? "luminanceAlpha" : entry.name === "L8" ? "luminance" : "alpha"))
+      || d3d8LegacyTextureUploadResult.browserDelta?.creates !== 3
+      || d3d8LegacyTextureUploadResult.browserDelta?.updates !== 3
+      || d3d8LegacyTextureUploadResult.browserDelta?.releases !== 3
+      || d3d8LegacyTextureUploadResult.browserProbe?.live !== 0) {
+    throw new Error(`D3D8 legacy texture upload probe failed: ${JSON.stringify(d3d8LegacyTextureUploadResult)}`);
+  }
+
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
   // 12 triangles, 36 16-bit indices, and captures world/view/projection

@@ -132,6 +132,7 @@ const d3d8TextureStats = {
   unsupportedUpdates: 0,
   samplerApplications: 0,
   live: 0,
+  legacyUploads: [],
   lastCreate: null,
   lastUpdate: null,
   lastSubrectUpdate: null,
@@ -501,6 +502,9 @@ function d3d8TextureFormatInfo(format) {
         storage: "rgb565",
       };
     case D3DFMT_A8:
+      // D3D8 fixed-function sampler contract for A8: RGB = 0, A = alpha.
+      // Stored in a single-channel GL_R8 texture with TEXTURE_SWIZZLE so the
+      // bound texture samples as (0,0,0,alpha) without shader edits.
       return {
         d3dFormat,
         supported: true,
@@ -508,8 +512,13 @@ function d3d8TextureFormatInfo(format) {
         format: gl.RED,
         type: gl.UNSIGNED_BYTE,
         storage: "r8-alpha",
+        swizzle: { r: gl.ZERO, g: gl.ZERO, b: gl.ZERO, a: gl.RED },
+        semantic: "alpha",
       };
     case D3DFMT_L8:
+      // D3D8 fixed-function sampler contract for L8: RGB = luminance,
+      // A = 1. Stored in a single-channel GL_R8 texture with TEXTURE_SWIZZLE
+      // so the bound texture samples as (L,L,L,1) without shader edits.
       return {
         d3dFormat,
         supported: true,
@@ -517,8 +526,14 @@ function d3d8TextureFormatInfo(format) {
         format: gl.RED,
         type: gl.UNSIGNED_BYTE,
         storage: "r8-luminance",
+        swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: gl.ONE },
+        semantic: "luminance",
       };
     case D3DFMT_A8L8:
+      // D3D8 fixed-function sampler contract for A8L8: RGB = luminance,
+      // A = alpha. Stored as GL_RG8 (R = luminance, G = alpha) with
+      // TEXTURE_SWIZZLE so the bound texture samples as (L,L,L,alpha)
+      // without shader edits.
       return {
         d3dFormat,
         supported: true,
@@ -526,6 +541,8 @@ function d3d8TextureFormatInfo(format) {
         format: gl.RG,
         type: gl.UNSIGNED_BYTE,
         storage: "rg8-luminance-alpha",
+        swizzle: { r: gl.RED, g: gl.RED, b: gl.RED, a: gl.GREEN },
+        semantic: "luminanceAlpha",
       };
     case D3DFMT_P8:
       return {
@@ -604,6 +621,65 @@ function d3d8TextureUploadView(info, bytes) {
   }
   const copy = new Uint8Array(bytes);
   return new Uint16Array(copy.buffer);
+}
+
+// Apply D3D8 fixed-function sampler semantics to a bound GL texture object
+// via TEXTURE_SWIZZLE_* for legacy single/dual-channel formats (A8/L8/A8L8).
+// This is upload/storage scope: it lets the existing stage-0 draw shader sample
+// the correct D3D8 RGBA without editing the combiner/texcoord shader. Applied
+// once per texture object (GL swizzle is per-object, not per-level), tracked on
+// the resource so a later rebind of a different format re-applies.
+function applyD3D8TextureSwizzleIfChanged(resource, info) {
+  if (!resource || !info?.swizzle) {
+    return null;
+  }
+  if (resource.swizzleStorage === info.storage) {
+    return resource.swizzleApplied || null;
+  }
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_R, info.swizzle.r);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_G, info.swizzle.g);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_B, info.swizzle.b);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_SWIZZLE_A, info.swizzle.a);
+  resource.swizzleStorage = info.storage;
+  resource.swizzleSemantic = info.semantic;
+  resource.swizzleApplied = {
+    r: info.swizzle.r,
+    g: info.swizzle.g,
+    b: info.swizzle.b,
+    a: info.swizzle.a,
+    semantic: info.semantic,
+    storage: info.storage,
+  };
+  return resource.swizzleApplied;
+}
+
+// Decode a raw-storage RGBA readback pixel (0..255 each) back into the D3D8
+// legacy format byte layout, matching the original D3DFMT_* storage so harness
+// probes can verify the upload preserves the source bytes.
+//
+// Note: WebGL readPixels reads the raw texture storage channels, NOT the
+// post-TEXTURE_SWIZZLE sample path. So for the R8/RG8 legacy textures the
+// stored bytes live in the R (and G) channels of the readback, independent of
+// the swizzle that reconstructs the D3D8 sampler RGBA for the draw shader:
+//   A8  (R8)    raw readback (alpha,0,0,1)  -> [alpha]
+//   L8  (R8)    raw readback (L,0,0,1)      -> [L]
+//   A8L8(RG8)   raw readback (L,alpha,0,1)  -> [L, alpha]
+function decodeLegacyD3D8PixelFromRgba(rgba, semantic) {
+  if (!Array.isArray(rgba) || rgba.length < 4) {
+    return null;
+  }
+  const r = rgba[0];
+  const g = rgba[1];
+  switch (semantic) {
+    case "alpha":
+      return [r];
+    case "luminance":
+      return [r];
+    case "luminanceAlpha":
+      return [r, g];
+    default:
+      return null;
+  }
 }
 
 function d3dTextureAddressToGl(address) {
@@ -923,6 +999,7 @@ function updateD3D8TextureSummary() {
       unsupportedUpdates: d3d8TextureStats.unsupportedUpdates,
       samplerApplications: d3d8TextureStats.samplerApplications,
       live: d3d8TextureStats.live,
+      legacyUploads: d3d8TextureStats.legacyUploads,
       boundTextures,
       lastCreate: d3d8TextureStats.lastCreate,
       lastUpdate: d3d8TextureStats.lastUpdate,
@@ -1037,6 +1114,7 @@ function updateD3D8Texture(payload = {}) {
   const levelKey = String(level);
   const levelInitialized = resource.initializedLevels.has(levelKey);
   const levelFormat = resource.levelFormats.get(levelKey);
+  let swizzleApplied = resource.swizzleApplied || null;
   withPreservedD3D8TextureUnit(() => {
     gl.bindTexture(gl.TEXTURE_2D, resource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -1054,10 +1132,22 @@ function updateD3D8Texture(payload = {}) {
     } else {
       gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, info.format, info.type, uploadBytes);
     }
+    swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
   });
 
   resource.uploads += 1;
   d3d8TextureStats.updates += 1;
+  // Sample the uploaded level-0 pixel through the GL framebuffer so the harness
+  // can verify the D3D8-format bytes round-trip. For legacy A8/L8/A8L8 formats
+  // the post-swizzle RGBA is decoded back to the D3D8 byte layout.
+  let samplePixel = null;
+  let legacySamplePixel = null;
+  if (level === 0) {
+    samplePixel = sampleD3D8TexturePixel(resource, x, y);
+    if (samplePixel && info.semantic) {
+      legacySamplePixel = decodeLegacyD3D8PixelFromRgba(samplePixel, info.semantic);
+    }
+  }
   d3d8TextureStats.lastUpdate = {
     id,
     level,
@@ -1067,6 +1157,8 @@ function updateD3D8Texture(payload = {}) {
     height,
     format,
     storage: info.storage,
+    semantic: info.semantic || null,
+    swizzle: swizzleApplied,
     pitch: Number(payload.pitch ?? 0) >>> 0,
     rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
     byteSize: payload.bytes.byteLength,
@@ -1074,8 +1166,25 @@ function updateD3D8Texture(payload = {}) {
     usage: Number(payload.usage ?? 0) >>> 0,
     lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
     uploads: resource.uploads,
-    samplePixel: level === 0 && info.storage === "rgba8" ? sampleD3D8TexturePixel(resource, x, y) : null,
+    samplePixel,
+    legacySamplePixel: level === 0 && info.semantic ? legacySamplePixel : null,
   };
+  if (level === 0 && info.semantic) {
+    d3d8TextureStats.legacyUploads.push({
+      id,
+      format,
+      storage: info.storage,
+      semantic: info.semantic,
+      swizzle: swizzleApplied,
+      width,
+      height,
+      samplePixel,
+      legacySamplePixel,
+    });
+    if (d3d8TextureStats.legacyUploads.length > 64) {
+      d3d8TextureStats.legacyUploads.shift();
+    }
+  }
   if (x !== 0 || y !== 0 || width !== levelSize.width || height !== levelSize.height) {
     d3d8TextureStats.lastSubrectUpdate = d3d8TextureStats.lastUpdate;
   }
@@ -2063,6 +2172,7 @@ async function loadWasmModule() {
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
+      probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -3219,6 +3329,83 @@ async function rpc(command, payload = {}) {
           ok: cases.every((entry) => entry.ok),
           command,
           cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8LegacyTextureUpload":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 legacy texture upload probe cannot run" };
+        }
+        const before = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8LegacyTextureUpload());
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const delta = {
+          creates: (textureProbe?.creates ?? 0) - (before.creates ?? 0),
+          updates: (textureProbe?.updates ?? 0) - (before.updates ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (before.releases ?? 0),
+        };
+        // Pair each native format entry with the matching bridge-side legacy
+        // upload readback (the most recent uploads of A8/L8/A8L8).
+        const probeFormats = Array.isArray(probe.formats) ? probe.formats : [];
+        const legacyUploads = Array.isArray(textureProbe?.legacyUploads)
+          ? textureProbe.legacyUploads.slice(-probeFormats.length)
+          : [];
+        const legacyByName = new Map(
+          legacyUploads.map((entry) => {
+            const name = entry.storage === "rg8-luminance-alpha" ? "A8L8"
+              : entry.storage === "r8-luminance" ? "L8"
+              : entry.storage === "r8-alpha" ? "A8"
+              : null;
+            return name ? [name, entry] : null;
+          }).filter(Boolean),
+        );
+        const perFormat = probeFormats.map((entry) => {
+          const browser = legacyByName.get(entry.name) ?? null;
+          const samplePixelOk = Array.isArray(browser?.samplePixel)
+            && browser.samplePixel.join(",") === (entry.expectedSampleRgba ?? []).join(",");
+          const legacySampleOk = Array.isArray(browser?.legacySamplePixel)
+            && browser.legacySamplePixel.slice(0, entry.expectedLegacySampleLen ?? 0).join(",")
+              === (entry.expectedLegacySample ?? []).slice(0, entry.expectedLegacySampleLen ?? 0).join(",");
+          return {
+            name: entry.name,
+            d3dFormat: entry.d3dFormat,
+            pitch: entry.pitch,
+            rowBytes: entry.rowBytes,
+            bytesPerPixel: entry.bytesPerPixel,
+            nativeOk: entry.create === 0 /* S_OK */
+              && entry.lock === 0
+              && entry.unlock === 0
+              && entry.pitch === 2 * entry.bytesPerPixel
+              && entry.rowBytes === 2 * entry.bytesPerPixel,
+            browser,
+            expectedSampleRgba: entry.expectedSampleRgba,
+            expectedLegacySample: entry.expectedLegacySample,
+            samplePixelOk,
+            legacySampleOk,
+          };
+        });
+        const ok = Boolean(probe.ok)
+          && probe.calls?.createTexture === 3
+          && probe.calls?.textureLockRect === 3
+          && probe.calls?.textureUnlockRect === 3
+          && probe.calls?.browserTextureCreate === 3
+          && probe.calls?.browserTextureUpdate === 3
+          && probe.calls?.browserTextureRelease === 3
+          && delta.creates === 3
+          && delta.updates === 3
+          && delta.releases === 3
+          && textureProbe?.live === 0
+          && perFormat.length === 3
+          && perFormat.every((entry) => entry.nativeOk && entry.samplePixelOk && entry.legacySampleOk);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe: textureProbe,
+          browserDelta: delta,
+          perFormat,
           state: snapshotState(),
         };
       }

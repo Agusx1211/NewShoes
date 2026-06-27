@@ -5514,6 +5514,216 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_legacy_texture_upload()
+{
+	// Exercises the A8/L8/A8L8 legacy single/dual-channel uncompressed texture
+	// formats end-to-end through the browser D3D8 device seam: CreateTexture,
+	// level-0 LockRect, byte write, UnlockRect, and the resulting browser upload
+	// capture. This is the native side of the M4 legacy texture upload/readback
+	// slice; the harness bridge reconstructs D3D8 fixed-function sampler semantics
+	// via TEXTURE_SWIZZLE on the WebGL side and decodes the readback bytes.
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	struct LegacyFormatProbe {
+		D3DFORMAT format;
+		const char *name;
+		UINT bytes_per_pixel;
+		BYTE pixel0_byte0;
+		BYTE pixel0_byte1;
+	};
+	const LegacyFormatProbe formats[] = {
+		{ D3DFMT_A8,   "A8",   1, 0x40, 0x00 },
+		{ D3DFMT_L8,   "L8",   1, 0x55, 0x00 },
+		{ D3DFMT_A8L8, "A8L8", 2, 0x33, 0x77 },
+	};
+
+	struct LegacyFormatResult {
+		const char *name;
+		DWORD d3d_format;
+		HRESULT create_result;
+		HRESULT lock_result;
+		HRESULT unlock_result;
+		UINT texture_id;
+		UINT width;
+		UINT height;
+		UINT pitch;
+		UINT row_bytes;
+		UINT bytes_per_pixel;
+		DWORD checksum;
+		int expected_sample_rgba[4]; // raw WebGL readback of the R8/RG8 storage
+		int expected_legacy_sample[2]; // decoded D3D8 source bytes (pixel 0,0)
+		int expected_legacy_sample_len;
+	};
+	LegacyFormatResult results[3] = {};
+
+	if (device != nullptr) {
+		for (int i = 0; i < 3; ++i) {
+			const LegacyFormatProbe &fp = formats[i];
+			LegacyFormatResult &out = results[i];
+			out.name = fp.name;
+			out.d3d_format = fp.format;
+			out.bytes_per_pixel = fp.bytes_per_pixel;
+
+			IDirect3DTexture8 *texture = nullptr;
+			out.create_result = device->CreateTexture(2, 2, 1, 0,
+				fp.format, D3DPOOL_MANAGED, &texture);
+			const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+			out.texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+			ok = ok && SUCCEEDED(out.create_result) && texture != nullptr && out.texture_id != 0;
+
+			if (texture != nullptr) {
+				D3DLOCKED_RECT locked_rect = {};
+				out.lock_result = texture->LockRect(0, &locked_rect, nullptr, 0);
+				if (SUCCEEDED(out.lock_result) && locked_rect.pBits != nullptr) {
+					std::memset(locked_rect.pBits, 0,
+						static_cast<std::size_t>(locked_rect.Pitch) * 2);
+					BYTE *pixel = static_cast<BYTE *>(locked_rect.pBits);
+					pixel[0] = fp.pixel0_byte0;
+					if (fp.bytes_per_pixel > 1) {
+						pixel[1] = fp.pixel0_byte1;
+					}
+				}
+				out.unlock_result = texture->UnlockRect(0);
+				const WasmD3D8ShimState *after = wasm_d3d8_get_state();
+				out.width = after != nullptr ? after->last_browser_texture_width : 0;
+				out.height = after != nullptr ? after->last_browser_texture_height : 0;
+				out.pitch = after != nullptr ? after->last_browser_texture_pitch : 0;
+				out.row_bytes = after != nullptr ? after->last_browser_texture_row_bytes : 0;
+				out.checksum = after != nullptr ? after->last_browser_texture_checksum : 0;
+				ok = ok && SUCCEEDED(out.lock_result) && SUCCEEDED(out.unlock_result)
+					&& out.width == 2 && out.height == 2
+					&& out.pitch == 2 * fp.bytes_per_pixel
+					&& out.row_bytes == 2 * fp.bytes_per_pixel;
+
+				// Raw WebGL readback of the R8/RG8 storage: R (and G) hold the
+				// stored byte(s), the remaining channels are 0 and alpha 255.
+				out.expected_sample_rgba[0] = fp.pixel0_byte0;
+				out.expected_sample_rgba[1] = fp.bytes_per_pixel > 1 ? fp.pixel0_byte1 : 0;
+				out.expected_sample_rgba[2] = 0;
+				out.expected_sample_rgba[3] = 255;
+				out.expected_legacy_sample[0] = fp.pixel0_byte0;
+				out.expected_legacy_sample[1] = fp.bytes_per_pixel > 1 ? fp.pixel0_byte1 : 0;
+				out.expected_legacy_sample_len = fp.bytes_per_pixel;
+
+				texture->Release();
+			}
+		}
+	}
+
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok
+		&& state != nullptr
+		&& state->direct3d_create_calls == 1
+		&& state->create_device_calls == 1
+		&& state->create_texture_calls == 3
+		&& state->texture_lock_rect_calls == 3
+		&& state->texture_unlock_rect_calls == 3
+		&& state->browser_texture_create_calls == 3
+		&& state->browser_texture_update_calls == 3
+		&& state->browser_texture_release_calls == 3;
+
+	char buffer[2600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_legacy_texture_upload_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,\"browserTextureRelease\":%u},"
+		"\"formats\":["
+		"{\"name\":\"%s\",\"d3dFormat\":%lu,\"create\":%ld,\"lock\":%ld,\"unlock\":%ld,"
+		"\"textureId\":%u,\"width\":%u,\"height\":%u,\"pitch\":%u,\"rowBytes\":%u,"
+		"\"bytesPerPixel\":%u,\"checksum\":%lu,"
+		"\"expectedSampleRgba\":[%d,%d,%d,%d],"
+		"\"expectedLegacySample\":[%d,%d],\"expectedLegacySampleLen\":%d},"
+		"{\"name\":\"%s\",\"d3dFormat\":%lu,\"create\":%ld,\"lock\":%ld,\"unlock\":%ld,"
+		"\"textureId\":%u,\"width\":%u,\"height\":%u,\"pitch\":%u,\"rowBytes\":%u,"
+		"\"bytesPerPixel\":%u,\"checksum\":%lu,"
+		"\"expectedSampleRgba\":[%d,%d,%d,%d],"
+		"\"expectedLegacySample\":[%d,%d],\"expectedLegacySampleLen\":%d},"
+		"{\"name\":\"%s\",\"d3dFormat\":%lu,\"create\":%ld,\"lock\":%ld,\"unlock\":%ld,"
+		"\"textureId\":%u,\"width\":%u,\"height\":%u,\"pitch\":%u,\"rowBytes\":%u,"
+		"\"bytesPerPixel\":%u,\"checksum\":%lu,"
+		"\"expectedSampleRgba\":[%d,%d,%d,%d],"
+		"\"expectedLegacySample\":[%d,%d],\"expectedLegacySampleLen\":%d}"
+		"],"
+		"\"semantics\":{"
+		"\"A8\":{\"samplerRgba\":\"(0,0,0,alpha)\",\"swizzle\":\"r=ZERO,g=ZERO,b=ZERO,a=RED\"},"
+		"\"L8\":{\"samplerRgba\":\"(L,L,L,1)\",\"swizzle\":\"r=RED,g=RED,b=RED,a=ONE\"},"
+		"\"A8L8\":{\"samplerRgba\":\"(L,L,L,alpha)\",\"swizzle\":\"r=RED,g=RED,b=RED,a=GREEN\"}}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		results[0].name, static_cast<unsigned long>(results[0].d3d_format),
+		static_cast<long>(results[0].create_result), static_cast<long>(results[0].lock_result),
+		static_cast<long>(results[0].unlock_result),
+		results[0].texture_id, results[0].width, results[0].height,
+		results[0].pitch, results[0].row_bytes, results[0].bytes_per_pixel,
+		static_cast<unsigned long>(results[0].checksum),
+		results[0].expected_sample_rgba[0], results[0].expected_sample_rgba[1],
+		results[0].expected_sample_rgba[2], results[0].expected_sample_rgba[3],
+		results[0].expected_legacy_sample[0], results[0].expected_legacy_sample[1],
+		results[0].expected_legacy_sample_len,
+		results[1].name, static_cast<unsigned long>(results[1].d3d_format),
+		static_cast<long>(results[1].create_result), static_cast<long>(results[1].lock_result),
+		static_cast<long>(results[1].unlock_result),
+		results[1].texture_id, results[1].width, results[1].height,
+		results[1].pitch, results[1].row_bytes, results[1].bytes_per_pixel,
+		static_cast<unsigned long>(results[1].checksum),
+		results[1].expected_sample_rgba[0], results[1].expected_sample_rgba[1],
+		results[1].expected_sample_rgba[2], results[1].expected_sample_rgba[3],
+		results[1].expected_legacy_sample[0], results[1].expected_legacy_sample[1],
+		results[1].expected_legacy_sample_len,
+		results[2].name, static_cast<unsigned long>(results[2].d3d_format),
+		static_cast<long>(results[2].create_result), static_cast<long>(results[2].lock_result),
+		static_cast<long>(results[2].unlock_result),
+		results[2].texture_id, results[2].width, results[2].height,
+		results[2].pitch, results[2].row_bytes, results[2].bytes_per_pixel,
+		static_cast<unsigned long>(results[2].checksum),
+		results[2].expected_sample_rgba[0], results[2].expected_sample_rgba[1],
+		results[2].expected_sample_rgba[2], results[2].expected_sample_rgba[3],
+		results[2].expected_legacy_sample[0], results[2].expected_legacy_sample[1],
+		results[2].expected_legacy_sample_len);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_state()
 {
 	return write_state_json();
