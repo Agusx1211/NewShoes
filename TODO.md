@@ -2765,6 +2765,11 @@ shares structure and follows behind.
             original `MeshClass::Load_W3D` path and asserts that one material
             pass exposes both `psblink.tga` on stage 0 and `psgrad.tga` on
             stage 1, with separate texture-stage UV arrays.
+      - [x] Teach the browser D3D8/WebGL draw bridge to sample a second bound
+            texture stage with UV1. The harness now renders a synthetic
+            two-texture quad with red bound on stage 0 and blue bound on stage
+            1, verifies the stage-1 combiner reads `D3DTA_TEXTURE` from the
+            second sampler, and asserts a blue center pixel.
       - [ ] Wire the same-pass multi-texture shipped mesh through browser
             rendering once the WebGL draw bridge samples/applies multiple
             texture stages.
