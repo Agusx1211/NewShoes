@@ -982,6 +982,13 @@ try {
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.gl?.wrapT !== 10497
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampler?.usedMipmaps !== false
       || d3d8TexturedQuadResult.textureProbe?.lastSampler?.textureId !== d3d8TexturedQuadResult.probe?.texture?.id
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.colorOp !== 4
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.colorArg1 !== 2
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.colorArg2 !== 0
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.arg1Name !== "texture"
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.arg2Name !== "diffuse"
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.combiner?.supported !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.id !== d3d8TexturedQuadResult.probe?.texture?.id
       || d3d8TexturedQuadResult.browserProbe?.texture0?.ready !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampled !== true
@@ -997,6 +1004,23 @@ try {
       || d3d8TexturedQuadResult.textureProbe?.live !== 0
       || Object.keys(d3d8TexturedQuadResult.textureProbe?.boundTextures ?? {}).length !== 0) {
     throw new Error(`D3D8 textured quad probe failed: ${JSON.stringify(d3d8TexturedQuadResult)}`);
+  }
+
+  const d3d8TextureCombinerResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureCombiner"));
+  const combinerCases = d3d8TextureCombinerResult.cases ?? [];
+  const combinerCaseNames = combinerCases.map((entry) => entry.probe?.caseName).join(",");
+  const combinerCenters = combinerCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  if (!d3d8TextureCombinerResult.ok
+      || combinerCases.length !== 4
+      || combinerCaseNames !== "selectTexture,selectDiffuse,modulate,add"
+      || combinerCenters !== "255,0,0,255|0,255,0,255|128,0,0,255|255,255,0,255"
+      || combinerCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_combiner_probe")
+      || combinerCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 11)
+      || combinerCases.some((entry) => entry.browserProbe?.texture0?.combiner?.supported !== true)
+      || combinerCases.some((entry) => entry.centerPixelOk !== true)
+      || combinerCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || combinerCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
+    throw new Error(`D3D8 texture combiner probe failed: ${JSON.stringify(d3d8TextureCombinerResult)}`);
   }
 
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));

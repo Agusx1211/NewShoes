@@ -84,7 +84,10 @@ const D3DTSS_ALPHAARG0 = 27;
 const D3DTSS_RESULTARG = 28;
 const D3DTOP_DISABLE = 1;
 const D3DTOP_SELECTARG1 = 2;
+const D3DTOP_SELECTARG2 = 3;
 const D3DTOP_MODULATE = 4;
+const D3DTOP_ADD = 7;
+const D3DTA_SELECTMASK = 0x0000000f;
 const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
@@ -735,6 +738,68 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
   return applied;
 }
 
+function d3dTextureCombinerOpName(op) {
+  switch (Number(op) >>> 0) {
+    case D3DTOP_DISABLE:
+      return "disable";
+    case D3DTOP_SELECTARG1:
+      return "selectArg1";
+    case D3DTOP_SELECTARG2:
+      return "selectArg2";
+    case D3DTOP_MODULATE:
+      return "modulate";
+    case D3DTOP_ADD:
+      return "add";
+    default:
+      return "unsupported";
+  }
+}
+
+function d3dTextureCombinerArgName(arg) {
+  switch ((Number(arg) >>> 0) & D3DTA_SELECTMASK) {
+    case D3DTA_DIFFUSE:
+      return "diffuse";
+    case D3DTA_CURRENT:
+      return "current";
+    case D3DTA_TEXTURE:
+      return "texture";
+    default:
+      return "unsupported";
+  }
+}
+
+function stage0TextureCombinerInfo(textureStage, canSampleTexture0) {
+  if (!textureStage) {
+    return null;
+  }
+  const colorOp = Number(textureStage.colorOp) >>> 0;
+  const colorArg1 = Number(textureStage.colorArg1) >>> 0;
+  const colorArg2 = Number(textureStage.colorArg2) >>> 0;
+  const colorArg1Base = colorArg1 & D3DTA_SELECTMASK;
+  const colorArg2Base = colorArg2 & D3DTA_SELECTMASK;
+  const supportedOp = colorOp === D3DTOP_DISABLE
+    || colorOp === D3DTOP_SELECTARG1
+    || colorOp === D3DTOP_SELECTARG2
+    || colorOp === D3DTOP_MODULATE
+    || colorOp === D3DTOP_ADD;
+  const supportedArg1 = colorArg1 === colorArg1Base && d3dTextureCombinerArgName(colorArg1) !== "unsupported";
+  const supportedArg2 = colorArg2 === colorArg2Base && d3dTextureCombinerArgName(colorArg2) !== "unsupported";
+  const needsTexture = colorArg1Base === D3DTA_TEXTURE || colorArg2Base === D3DTA_TEXTURE;
+  return {
+    stage: 0,
+    colorOp,
+    colorArg1,
+    colorArg2,
+    opName: d3dTextureCombinerOpName(colorOp),
+    arg1Name: d3dTextureCombinerArgName(colorArg1),
+    arg2Name: d3dTextureCombinerArgName(colorArg2),
+    supportsColorOp: supportedOp,
+    supportsColorArgs: supportedArg1 && supportedArg2,
+    textureAvailable: Boolean(canSampleTexture0),
+    supported: supportedOp && supportedArg1 && supportedArg2 && (!needsTexture || canSampleTexture0),
+  };
+}
+
 function withPreservedD3D8TextureUnit(callback) {
   if (!gl) {
     return null;
@@ -1206,6 +1271,9 @@ function ensureD3D8DrawProgram() {
     in vec2 vTexCoord0;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
+    uniform int uStage0ColorOp;
+    uniform int uStage0ColorArg1;
+    uniform int uStage0ColorArg2;
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
@@ -1234,11 +1302,39 @@ function ensureD3D8DrawProgram() {
       }
       return true;
     }
-    void main() {
-      vec4 color = vColor;
-      if (uUseTexture0) {
-        color *= texture(uTexture0, vTexCoord0);
+    vec4 d3dStage0Arg(int arg, vec4 textureColor, vec4 currentColor) {
+      int source = arg & 15;
+      if (source == 0 || source == 1) {
+        return currentColor;
       }
+      if (source == 2) {
+        return textureColor;
+      }
+      return currentColor;
+    }
+    vec4 d3dStage0Color(vec4 diffuseColor, vec4 textureColor) {
+      if (uStage0ColorOp == 1) {
+        return diffuseColor;
+      }
+      vec4 arg1 = d3dStage0Arg(uStage0ColorArg1, textureColor, diffuseColor);
+      vec4 arg2 = d3dStage0Arg(uStage0ColorArg2, textureColor, diffuseColor);
+      if (uStage0ColorOp == 2) {
+        return arg1;
+      }
+      if (uStage0ColorOp == 3) {
+        return arg2;
+      }
+      if (uStage0ColorOp == 4) {
+        return arg1 * arg2;
+      }
+      if (uStage0ColorOp == 7) {
+        return clamp(arg1 + arg2, 0.0, 1.0);
+      }
+      return diffuseColor;
+    }
+    void main() {
+      vec4 texture0Color = uUseTexture0 ? texture(uTexture0, vTexCoord0) : vec4(1.0);
+      vec4 color = d3dStage0Color(vColor, texture0Color);
       if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
       }
@@ -1269,6 +1365,9 @@ function ensureD3D8DrawProgram() {
     projection: gl.getUniformLocation(program, "uProjection"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
+    stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
+    stage0ColorArg1: gl.getUniformLocation(program, "uStage0ColorArg1"),
+    stage0ColorArg2: gl.getUniformLocation(program, "uStage0ColorArg2"),
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
@@ -1582,6 +1681,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const canSampleTexture0 = Boolean(
     texture0Ready && vertexStride >= D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE
   );
+  const appliedTexture0Combiner = stage0TextureCombinerInfo(renderState.textureStages[0], canSampleTexture0);
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
   let drawOk = false;
@@ -1627,6 +1727,15 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.texture0) {
       gl.uniform1i(bridgeProgram.texture0, 0);
+    }
+    if (bridgeProgram.stage0ColorOp) {
+      gl.uniform1i(bridgeProgram.stage0ColorOp, renderState.textureStages[0].colorOp);
+    }
+    if (bridgeProgram.stage0ColorArg1) {
+      gl.uniform1i(bridgeProgram.stage0ColorArg1, renderState.textureStages[0].colorArg1);
+    }
+    if (bridgeProgram.stage0ColorArg2) {
+      gl.uniform1i(bridgeProgram.stage0ColorArg2, renderState.textureStages[0].colorArg2);
     }
     if (canSampleTexture0) {
       const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
@@ -1686,6 +1795,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       format: texture0Resource?.format ?? 0,
       uploads: texture0Resource?.uploads ?? 0,
       sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
+      combiner: appliedTexture0Combiner,
     },
     centerPixel,
   };
@@ -1829,6 +1939,7 @@ async function loadWasmModule() {
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
+      probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -2833,6 +2944,13 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.sampler?.gl?.wrapT === gl.REPEAT
           && browserProbe?.texture0?.sampler?.usedMipmaps === false
           && textureProbe?.lastSampler?.textureId === probe.texture?.id
+          && browserProbe?.texture0?.combiner?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.texture0?.combiner?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture0?.combiner?.colorArg2 === D3DTA_DIFFUSE
+          && browserProbe?.texture0?.combiner?.opName === "modulate"
+          && browserProbe?.texture0?.combiner?.arg1Name === "texture"
+          && browserProbe?.texture0?.combiner?.arg2Name === "diffuse"
+          && browserProbe?.texture0?.combiner?.supported === true
           && browserProbe?.texture0?.id === probe.texture?.id
           && browserProbe?.texture0?.ready === true
           && browserProbe?.texture0?.sampled === true
@@ -2854,6 +2972,63 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureProbe,
           textureDelta,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TextureCombiner":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 texture combiner probe cannot run" };
+        }
+        const cases = [];
+        for (let caseId = 0; caseId < 4; ++caseId) {
+          const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8TextureCombiner(caseId));
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          };
+          const expectedCenter = probe.expectedCenter ?? [];
+          const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+            && expectedCenter.length === 4
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+          const combiner = browserProbe?.texture0?.combiner ?? {};
+          const caseOk = Boolean(probe.ok)
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.usedPersistentBuffers === true
+            && browserProbe?.texture0?.sampled === true
+            && browserProbe?.texture0?.id === probe.texture?.id
+            && browserProbe?.texture0?.sampler?.gl?.minFilter === gl.NEAREST
+            && browserProbe?.texture0?.sampler?.gl?.magFilter === gl.NEAREST
+            && combiner.colorOp === probe.combiner?.colorOp
+            && combiner.colorArg1 === probe.combiner?.colorArg1
+            && combiner.colorArg2 === probe.combiner?.colorArg2
+            && combiner.supported === true
+            && centerPixelOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === 1
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureDelta,
+            centerPixelOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
           state: snapshotState(),
         };
       }

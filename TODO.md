@@ -2420,6 +2420,15 @@ shares structure and follows behind.
       U, and `WRAP` V reach the bound GL texture. This still does not emulate
       fixed-function combiner ops, multi-stage sampling, texture transforms, or
       general mip-chain completeness.
+- [x] Add the first WebGL2 fixed-function texture combiner subset for the
+      current stage-0 draw bridge, applying captured `D3DTSS_COLOROP`,
+      `COLORARG1`, and `COLORARG2` for `DISABLE`, `SELECTARG1`,
+      `SELECTARG2`, `MODULATE`, and `ADD` over `DIFFUSE`/`CURRENT`/`TEXTURE`
+      arguments. A new browser-driven D3D8 combiner probe renders distinct
+      texture-select, diffuse-select, modulate, and add cases and verifies the
+      resulting center pixels through Playwright. Full multi-stage chaining,
+      alpha ops, argument modifiers, generated shader variants, texture
+      transforms, and non-stage-0 sampling remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
