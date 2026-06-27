@@ -369,10 +369,13 @@ shares structure and follows behind.
 - [x] Add minimal wasm `RegisterClass` / `CreateWindow` / `DispatchMessage`
       WndProc routing and smoke-test both direct dispatch and queued
       `Windows_Message_Handler()` delivery to a registered window procedure.
+- [x] Compile original `Win32Mouse.cpp` into a focused wasm target and
+      smoke-test its original Win32 message buffer translation for button,
+      double-click, move, and wheel events.
 - [ ] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue, including connecting the real game `WndProc`, `WM_CREATE` /
       `WM_DESTROY` lifecycle dispatch, `WM_CHAR` / IME text paths, browser
-      double-click event policy, and original `Win32Mouse` delivery.
+      double-click event policy, and real WndProc-to-`Win32Mouse` delivery.
 - [ ] Decide whether original WWLib mono debug output should remain dormant in
       browser builds or route through the harness/browser console before
       relying on it for runtime diagnostics.

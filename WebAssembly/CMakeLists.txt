@@ -2948,6 +2948,40 @@ target_link_libraries(zh_gameclient_utility PUBLIC
   zh_gameengine_common_core
 )
 
+add_library(zh_win32_mouse STATIC
+  "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/GameClient/Win32Mouse.cpp"
+)
+
+target_include_directories(zh_win32_mouse PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${MAIN_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWMATH_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_win32_mouse PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_libraries(zh_win32_mouse PUBLIC
+  zh_gameclient_utility
+)
+
 add_library(zh_gamenetwork_core STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/Connection.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/ConnectionManager.cpp"
@@ -4064,6 +4098,36 @@ target_compile_options(gameclient-utility-smoke PRIVATE
 )
 
 target_link_options(gameclient-utility-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(win32-mouse-smoke
+  tests/win32_mouse_smoke.cpp
+)
+
+set_target_properties(win32-mouse-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-mouse-smoke PRIVATE
+  zh_win32_mouse
+)
+
+target_compile_options(win32-mouse-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-mouse-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
