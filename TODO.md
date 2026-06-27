@@ -2507,13 +2507,16 @@ shares structure and follows behind.
       sample the smallest mip. Playwright verifies center pixels, initialized
       levels, `completeMipChain`, WebGL `NEAREST_MIPMAP_NEAREST` selection,
       fallback metadata, and lifecycle deltas. Real DDS/DXT asset-derived mip
-      loading, generated mip policy, `D3DTSS_MAXMIPLEVEL`/`MIPMAPLODBIAS`
-      application, multi-stage sampling, and generalized texture declarations
-      remain open.
-- [ ] Apply captured D3D8 `D3DTSS_MAXMIPLEVEL` and `D3DTSS_MIPMAPLODBIAS`
+      loading, generated mip policy, multi-stage sampling, and generalized
+      texture declarations remain open.
+- [x] Apply captured D3D8 `D3DTSS_MAXMIPLEVEL` and `D3DTSS_MIPMAPLODBIAS`
       sampler state in the WebGL2 texture bridge once complete mip chains are
       available, and prove the LOD clamp/bias behavior through a focused
-      browser draw probe.
+      browser draw probe. The bridge now maps `MAXMIPLEVEL` to
+      `TEXTURE_BASE_LEVEL`/`TEXTURE_MAX_LEVEL` around uploaded chains and
+      applies `MIPMAPLODBIAS` through the GLSL `texture(..., bias)` path, with
+      Playwright coverage for incomplete fallback, complete mip sampling,
+      base-level clamping, and positive bias selecting the smallest mip.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

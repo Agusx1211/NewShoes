@@ -1018,32 +1018,56 @@ try {
   const mipUsed = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.usedMipmaps).join(",");
   const mipComplete = mipCases.map((entry) => entry.browserProbe?.texture0?.completeMipChain).join(",");
   const mipGlMin = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.gl?.minFilter).join(",");
+  const mipBaseLevels = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.gl?.baseLevel).join(",");
+  const mipMaxLevels = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.gl?.maxLevel).join(",");
+  const mipBiases = mipCases.map((entry) => entry.browserProbe?.texture0?.sampler?.gl?.lodBias).join(",");
   if (!d3d8TextureMipChainResult.ok
-      || mipCases.length !== 2
-      || mipCaseNames !== "IncompleteMipFallback,CompleteMipChain"
-      || mipCenters !== "255,0,0,255|0,0,255,255"
-      || mipUsed !== "false,true"
-      || mipComplete !== "false,true"
-      || mipGlMin !== "9728,9984"
+      || mipCases.length !== 4
+      || mipCaseNames !== "IncompleteMipFallback,CompleteMipChain,MaxMipLevelBase,LodBiasSmallest"
+      || mipCenters !== "255,0,0,255|0,0,255,255|0,255,0,255|0,0,255,255"
+      || mipUsed !== "false,true,false,true"
+      || mipComplete !== "false,true,true,true"
+      || mipGlMin !== "9728,9984,9728,9984"
+      || mipBaseLevels !== "0,0,1,0"
+      || mipMaxLevels !== "0,2,2,2"
+      || mipBiases !== "0,0,0,12"
       || mipCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_mip_chain_draw_probe")
       || mipCases.some((entry) => entry.probe?.calls?.createTexture !== 1)
       || mipCases.some((entry) => entry.probe?.calls?.browserTextureBind !== 1)
       || mipCases.some((entry) => entry.probe?.calls?.browserTextureRelease !== 1)
-      || mipCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 14)
-      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.d3d?.mipFilter !== 1)
-      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.requestedMipmaps !== true)
+      || mipCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 16)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.d3d?.maxMipLevel !== entry.probe?.texture?.maxMipLevel)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.d3d?.mipMapLodBiasBits !== entry.probe?.texture?.mipMapLodBiasBits)
+      || mipCases.some((entry) => Math.abs(
+        (entry.browserProbe?.texture0?.sampler?.d3d?.mipMapLodBias ?? 0) -
+        (entry.probe?.texture?.mipMapLodBias ?? 0)) > 0.001)
       || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.supported !== true)
+      || mipCases.some((entry) => entry.browserProbe?.texture0?.sampler?.gl?.lodBiasSource !== "shader")
       || mipCases.some((entry) => entry.browserProbe?.texture0?.levels !== 3)
       || mipCases.some((entry) => entry.browserProbe?.texture0?.combiner?.opName !== "selectArg1")
       || mipCases.some((entry) => entry.centerPixelOk !== true)
       || mipCases[0]?.probe?.texture?.uploadedLevels !== 1
       || mipCases[0]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0"
+      || mipCases[0]?.browserProbe?.texture0?.sampler?.requestedMipmaps !== true
       || mipCases[0]?.browserProbe?.texture0?.sampler?.fallbackReason !== "incomplete mip chain"
       || mipCases[0]?.textureDelta?.updates !== 1
       || mipCases[1]?.probe?.texture?.uploadedLevels !== 3
       || mipCases[1]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0,1,2"
+      || mipCases[1]?.browserProbe?.texture0?.sampler?.requestedMipmaps !== true
       || mipCases[1]?.browserProbe?.texture0?.sampler?.fallbackReason !== null
       || mipCases[1]?.textureDelta?.updates !== 3
+      || mipCases[2]?.probe?.texture?.uploadedLevels !== 3
+      || mipCases[2]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0,1,2"
+      || mipCases[2]?.browserProbe?.texture0?.sampler?.d3d?.mipFilter !== 0
+      || mipCases[2]?.browserProbe?.texture0?.sampler?.requestedMipmaps !== false
+      || mipCases[2]?.browserProbe?.texture0?.sampler?.fallbackReason !== null
+      || mipCases[2]?.textureDelta?.updates !== 3
+      || mipCases[3]?.probe?.texture?.uploadedLevels !== 3
+      || mipCases[3]?.browserProbe?.texture0?.initializedLevels?.join(",") !== "0,1,2"
+      || mipCases[3]?.browserProbe?.texture0?.sampler?.d3d?.mipFilter !== 1
+      || mipCases[3]?.browserProbe?.texture0?.sampler?.requestedMipmaps !== true
+      || mipCases[3]?.browserProbe?.texture0?.sampler?.fallbackReason !== null
+      || mipCases[3]?.textureDelta?.updates !== 3
       || mipCases.some((entry) => entry.textureDelta?.creates !== 1)
       || mipCases.some((entry) => entry.textureDelta?.binds !== 1)
       || mipCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)

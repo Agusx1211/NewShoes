@@ -75,6 +75,13 @@ std::string g_state_json;
 std::string g_input_probe_json;
 std::string g_d3d8_probe_json;
 
+DWORD d3d8_float_bits(float value)
+{
+	DWORD bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
+
 struct ArchiveMountState
 {
 	bool registered = false;
@@ -4852,8 +4859,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 		float v1;
 	};
 
-	const bool complete_mip_chain = mip_case == 1;
-	if (mip_case > 1) {
+	const bool complete_mip_chain = mip_case != 0;
+	if (mip_case > 3) {
 		char error_buffer[256];
 		std::snprintf(error_buffer, sizeof(error_buffer),
 			"{\"source\":\"browser_d3d8_texture_mip_chain_draw_probe\","
@@ -4863,13 +4870,35 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 		return g_d3d8_probe_json.c_str();
 	}
 
-	const char *case_name = complete_mip_chain ? "CompleteMipChain" : "IncompleteMipFallback";
+	const char *case_name = "IncompleteMipFallback";
+	BYTE expected_r = 0xff;
+	BYTE expected_g = 0x00;
+	BYTE expected_b = 0x00;
+	float uv_extent = 1024.0f;
+	DWORD max_mip_level = 0;
+	float mip_lod_bias = 0.0f;
+	DWORD mip_filter = D3DTEXF_POINT;
+	if (mip_case == 1) {
+		case_name = "CompleteMipChain";
+		expected_r = 0x00;
+		expected_b = 0xff;
+	} else if (mip_case == 2) {
+		case_name = "MaxMipLevelBase";
+		expected_r = 0x00;
+		expected_g = 0xff;
+		uv_extent = 1.0f;
+		max_mip_level = 1;
+		mip_filter = D3DTEXF_NONE;
+	} else if (mip_case == 3) {
+		case_name = "LodBiasSmallest";
+		expected_r = 0x00;
+		expected_b = 0xff;
+		uv_extent = 1.0f;
+		mip_lod_bias = 12.0f;
+	}
 	const UINT uploaded_levels = complete_mip_chain ? 3 : 1;
 	const char *initialized_levels_json = complete_mip_chain ? "[0,1,2]" : "[0]";
-	const BYTE expected_r = complete_mip_chain ? 0x00 : 0xff;
-	const BYTE expected_g = 0x00;
-	const BYTE expected_b = complete_mip_chain ? 0xff : 0x00;
-	const float uv_extent = 1024.0f;
+	const DWORD mip_lod_bias_bits = d3d8_float_bits(mip_lod_bias);
 
 	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
 	IDirect3DDevice8 *device = nullptr;
@@ -5015,7 +5044,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 			{ 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE },
 			{ 0, D3DTSS_MINFILTER, D3DTEXF_POINT },
 			{ 0, D3DTSS_MAGFILTER, D3DTEXF_POINT },
-			{ 0, D3DTSS_MIPFILTER, D3DTEXF_POINT },
+			{ 0, D3DTSS_MIPFILTER, mip_filter },
+			{ 0, D3DTSS_MIPMAPLODBIAS, mip_lod_bias_bits },
+			{ 0, D3DTSS_MAXMIPLEVEL, max_mip_level },
 			{ 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP },
 			{ 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP },
 			{ 0, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU | 0 },
@@ -5083,9 +5114,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 		state->last_draw_index_buffer_id != 0 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_SELECTARG1 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
-		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MIPFILTER] == D3DTEXF_POINT;
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MIPFILTER] == mip_filter &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MIPMAPLODBIAS] == mip_lod_bias_bits &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MAXMIPLEVEL] == max_mip_level;
 
-	char buffer[4096];
+	char buffer[8192];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_d3d8_texture_mip_chain_draw_probe\","
 		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
@@ -5106,7 +5139,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
 		"\"setTextureStageState\":%u,\"drawIndexed\":%u},"
 		"\"texture\":{\"id\":%u,\"format\":%u,\"levels\":3,\"uploadedLevels\":%u,"
-		"\"completeMipChain\":%s,\"initializedLevels\":%s,\"uvExtent\":%.1f},"
+		"\"completeMipChain\":%s,\"initializedLevels\":%s,\"uvExtent\":%.1f,"
+		"\"mipFilter\":%lu,\"maxMipLevel\":%lu,\"mipMapLodBiasBits\":%lu,"
+		"\"mipMapLodBias\":%.1f},"
 		"\"expectedCenter\":[%u,%u,%u,255]}",
 		ok ? "true" : "false",
 		mip_case,
@@ -5155,6 +5190,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_mip_chain_draw(unsi
 		complete_mip_chain ? "true" : "false",
 		initialized_levels_json,
 		static_cast<double>(uv_extent),
+		static_cast<unsigned long>(mip_filter),
+		static_cast<unsigned long>(max_mip_level),
+		static_cast<unsigned long>(mip_lod_bias_bits),
+		static_cast<double>(mip_lod_bias),
 		static_cast<unsigned int>(expected_r),
 		static_cast<unsigned int>(expected_g),
 		static_cast<unsigned int>(expected_b));

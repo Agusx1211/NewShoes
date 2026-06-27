@@ -4,9 +4,8 @@
 // notes/texture_stage_binding_plan.md) that records the D3D8 texture-stage
 // sampler/filter/address contract the engine sets through
 // `TextureFilterClass::Apply` and direct `Set_DX8_Texture_Stage_State` calls,
-// plus the expected D3D8 -> WebGL2 sampler mapping. This expectations smoke
-// does not apply sampler state to the WebGL2 draw bridge; it records the
-// contract that the later sampler-translation slice must satisfy.
+// plus the expected D3D8 -> WebGL2 sampler mapping the current stage-0 draw
+// bridge applies for filter/address and LOD state.
 //
 // It mirrors d3d8_render_state_mapping_smoke.cpp and d3d8_texture_upload_
 // readiness_smoke.cpp and does four things:
@@ -29,10 +28,10 @@
 //
 //   3. Records the expected D3D8 -> WebGL2 sampler state mapping for the
 //      filter/address values produced above (D3DTEXF_* -> GL min/mag filter,
-//      D3DTADDRESS_* -> GL wrap S/T, D3DTSS_MAXANISOTROPY -> sampler
-//      MAX_ANISOTROPY) as a machine-readable JSON spec. The future S2 task
-//      (Translate TextureFilterClass::Apply -> gl.texParameter* / WebGLSampler
-//      cache) must satisfy this contract.
+//      D3DTADDRESS_* -> GL wrap S/T, D3DTSS_MAXMIPLEVEL -> GL texture base
+//      level, D3DTSS_MIPMAPLODBIAS -> shader texture bias, and
+//      D3DTSS_MAXANISOTROPY -> sampler MAX_ANISOTROPY) as a machine-readable
+//      JSON spec.
 //
 //   4. Verifies the shim's reported device caps match the capability
 //      assumptions the mapping logic uses (linear min/mag/mip supported, no
@@ -60,6 +59,12 @@
 //     WRAP / CLAMP. WebGL2 has separate TEXTURE_WRAP_S / TEXTURE_WRAP_T; the
 //     mapping is 1:1 per axis. D3DTADDRESS_MIRROR is reported as a device cap
 //     but never selected by TextureFilterClass::Apply.
+//
+//   * LOD CONTROLS: D3DTSS_MAXMIPLEVEL selects the most detailed mip level
+//     available for sampling, matching WebGL2 TEXTURE_BASE_LEVEL rather than
+//     TEXTURE_MAX_LOD. WebGL2 does not expose a core TEXTURE_LOD_BIAS texture
+//     parameter, so the browser bridge applies D3DTSS_MIPMAPLODBIAS through
+//     the fragment shader's texture(..., bias) overload.
 
 #include <cstdio>
 #include <cstring>
@@ -194,7 +199,9 @@ enum GlEnum : int {
 	GL_LINEAR_MIPMAP_LINEAR = 0x2703,
 	GL_REPEAT = 0x2901,
 	GL_CLAMP_TO_EDGE = 0x812F,
-	GL_MIRRORED_REPEAT = 0x8370
+	GL_MIRRORED_REPEAT = 0x8370,
+	GL_TEXTURE_BASE_LEVEL = 0x813C,
+	GL_TEXTURE_MAX_LEVEL = 0x813D
 };
 
 // D3DTEXF_* -> GL min/mag base filter. ANISOTROPIC is not supported by the
@@ -251,6 +258,8 @@ int main()
 	expect(D3DTSS_MINFILTER == 17, "D3DTSS_MINFILTER value mismatch");
 	expect(D3DTSS_MAGFILTER == 16, "D3DTSS_MAGFILTER value mismatch");
 	expect(D3DTSS_MIPFILTER == 18, "D3DTSS_MIPFILTER value mismatch");
+	expect(D3DTSS_MIPMAPLODBIAS == 19, "D3DTSS_MIPMAPLODBIAS value mismatch");
+	expect(D3DTSS_MAXMIPLEVEL == 20, "D3DTSS_MAXMIPLEVEL value mismatch");
 	expect(D3DTSS_ADDRESSU == 13, "D3DTSS_ADDRESSU value mismatch");
 	expect(D3DTSS_ADDRESSV == 14, "D3DTSS_ADDRESSV value mismatch");
 	expect(D3DTSS_ADDRESSW == 25, "D3DTSS_ADDRESSW value mismatch");
@@ -449,7 +458,7 @@ int main()
 
 	std::printf(
 		"{\"ok\":true,\"smoke\":\"d3d8-texture-stage-state-mapping\","
-		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping; sampler application remains open beyond the harness stage-0 draw path.\","
+		"\"note\":\"D3D8 TextureFilterClass::Apply / Set_DX8_Texture_Stage_State sampler contract + expected WebGL2 sampler mapping applied by the harness stage-0 draw path.\","
 		"\"caps\":{\"textureFilterCaps\":%lu,\"textureAddressCaps\":%lu,\"maxAnisotropy\":%lu,"
 		"\"linearMin\":%s,\"linearMag\":%s,\"linearMip\":%s,\"anisotropicMin\":%s,\"anisotropicMag\":%s},"
 		"\"stage0Default\":{\"d3dMinFilter\":%u,\"d3dMagFilter\":%u,\"d3dMipFilter\":%u,"
@@ -471,10 +480,18 @@ int main()
 		"{\"d3dMin\":\"LINEAR\",\"d3dMip\":\"POINT\",\"gl\":\"GL_LINEAR_MIPMAP_NEAREST\",\"glValue\":%d},"
 		"{\"d3dMin\":\"LINEAR\",\"d3dMip\":\"LINEAR\",\"gl\":\"GL_LINEAR_MIPMAP_LINEAR\",\"glValue\":%d},"
 		"{\"d3dMin\":\"POINT\",\"d3dMip\":\"LINEAR\",\"gl\":\"GL_NEAREST_MIPMAP_LINEAR\",\"glValue\":%d}],"
+		"\"lodControls\":["
+		"{\"d3dTss\":\"D3DTSS_MAXMIPLEVEL\",\"d3dTssValue\":%d,"
+		"\"gl\":\"GL_TEXTURE_BASE_LEVEL\",\"glValue\":%d,"
+		"\"pairedGl\":\"GL_TEXTURE_MAX_LEVEL\",\"pairedGlValue\":%d},"
+		"{\"d3dTss\":\"D3DTSS_MIPMAPLODBIAS\",\"d3dTssValue\":%d,"
+		"\"gl\":\"shader texture(..., bias)\",\"glValue\":-1}],"
 		"\"applyEmits\":["
 		"{\"d3dTss\":\"D3DTSS_MINFILTER\",\"d3dTssValue\":%d},"
 		"{\"d3dTss\":\"D3DTSS_MAGFILTER\",\"d3dTssValue\":%d},"
 		"{\"d3dTss\":\"D3DTSS_MIPFILTER\",\"d3dTssValue\":%d},"
+		"{\"d3dTss\":\"D3DTSS_MAXMIPLEVEL\",\"d3dTssValue\":\"most detailed sampled mip level\"},"
+		"{\"d3dTss\":\"D3DTSS_MIPMAPLODBIAS\",\"d3dTssValue\":\"float bits stored in DWORD\"},"
 		"{\"d3dTss\":\"D3DTSS_ADDRESSU\",\"d3dTssValue\":\"UAddrMode==REPEAT?WRAP:CLAMP\"},"
 		"{\"d3dTss\":\"D3DTSS_ADDRESSV\",\"d3dTssValue\":\"VAddrMode==REPEAT?WRAP:CLAMP\"}]}\n",
 		// caps
@@ -505,6 +522,9 @@ int main()
 		GL_LINEAR_MIPMAP_NEAREST,
 		GL_LINEAR_MIPMAP_LINEAR,
 		GL_NEAREST_MIPMAP_LINEAR,
+		// lod controls
+		D3DTSS_MAXMIPLEVEL, GL_TEXTURE_BASE_LEVEL, GL_TEXTURE_MAX_LEVEL,
+		D3DTSS_MIPMAPLODBIAS,
 		// apply emits
 		D3DTSS_MINFILTER, D3DTSS_MAGFILTER, D3DTSS_MIPFILTER);
 

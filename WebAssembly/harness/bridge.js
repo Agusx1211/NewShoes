@@ -82,6 +82,8 @@ const D3DTSS_ADDRESSV = 14;
 const D3DTSS_MAGFILTER = 16;
 const D3DTSS_MINFILTER = 17;
 const D3DTSS_MIPFILTER = 18;
+const D3DTSS_MIPMAPLODBIAS = 19;
+const D3DTSS_MAXMIPLEVEL = 20;
 const D3DTSS_TEXTURETRANSFORMFLAGS = 24;
 const D3DTSS_ADDRESSW = 25;
 const D3DTSS_COLORARG0 = 26;
@@ -121,6 +123,8 @@ const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
 const D3D8_XYZNDUV_TEXCOORD0_OFFSET = 28;
 const D3D8_XYZNDUV_TEXCOORD_STRIDE = 8;
 const D3D8_XYZNDUV_TEXCOORD_SETS = 2;
+const d3d8FloatBits = new ArrayBuffer(4);
+const d3d8FloatView = new DataView(d3d8FloatBits);
 const d3d8BufferStats = {
   creates: 0,
   updates: 0,
@@ -784,6 +788,12 @@ function d3dTextureMinFilterToGl(minFilter, mipFilter, hasCompleteMipChain) {
   };
 }
 
+function d3dDwordToFloat(value) {
+  d3d8FloatView.setUint32(0, Number(value) >>> 0, true);
+  const decoded = d3d8FloatView.getFloat32(0, true);
+  return Number.isFinite(decoded) ? decoded : 0.0;
+}
+
 function textureHasCompleteMipChain(resource) {
   if (!resource || resource.levels <= 1) {
     return false;
@@ -805,10 +815,19 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
   const mag = d3dTextureMagFilterToGl(textureStage.magFilter);
   const wrapS = d3dTextureAddressToGl(textureStage.addressU);
   const wrapT = d3dTextureAddressToGl(textureStage.addressV);
+  const levelCount = Math.max(1, Number(resource.levels ?? 1) >>> 0);
+  const highestLevel = levelCount - 1;
+  const requestedMaxMipLevel = Number(textureStage.maxMipLevel ?? 0) >>> 0;
+  const baseLevel = completeMipChain ? Math.min(requestedMaxMipLevel, highestLevel) : 0;
+  const maxLevel = completeMipChain ? Math.max(baseLevel, highestLevel) : 0;
+  const lodBiasBits = Number(textureStage.mipMapLodBias ?? 0) >>> 0;
+  const lodBias = d3dDwordToFloat(lodBiasBits);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min.value);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mag.value);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS.value);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT.value);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, baseLevel);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, maxLevel);
 
   const applied = {
     stage,
@@ -819,12 +838,19 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
       mipFilter: Number(textureStage.mipFilter) >>> 0,
       addressU: Number(textureStage.addressU) >>> 0,
       addressV: Number(textureStage.addressV) >>> 0,
+      maxMipLevel: requestedMaxMipLevel,
+      mipMapLodBiasBits: lodBiasBits,
+      mipMapLodBias: lodBias,
     },
     gl: {
       minFilter: min.value,
       magFilter: mag.value,
       wrapS: wrapS.value,
       wrapT: wrapT.value,
+      baseLevel,
+      maxLevel,
+      lodBias,
+      lodBiasSource: "shader",
     },
     names: {
       minFilter: min.name,
@@ -833,6 +859,7 @@ function applyD3D8TextureSamplerToBoundTexture(stage, textureStage, resource) {
       wrapT: wrapT.name,
     },
     completeMipChain,
+    maxMipLevelClamped: requestedMaxMipLevel !== baseLevel,
     usedMipmaps: min.usedMipmaps,
     requestedMipmaps: min.requestedMipmaps,
     fallbackReason: min.fallbackReason,
@@ -1540,6 +1567,7 @@ function ensureD3D8DrawProgram() {
     in vec2 vTexCoord0;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
+    uniform float uTexture0LodBias;
     uniform int uTexture0Semantic;
     uniform int uStage0ColorOp;
     uniform int uStage0ColorArg1;
@@ -1651,7 +1679,9 @@ function ensureD3D8DrawProgram() {
       return diffuseAlpha;
     }
     void main() {
-      vec4 texture0Color = uUseTexture0 ? d3dTexture0Sample(texture(uTexture0, vTexCoord0)) : vec4(1.0);
+      vec4 texture0Color = uUseTexture0
+        ? d3dTexture0Sample(texture(uTexture0, vTexCoord0, uTexture0LodBias))
+        : vec4(1.0);
       vec3 rgb = d3dStage0Color(vColor.rgb, texture0Color.rgb);
       float alpha = d3dStage0Alpha(vColor.a, texture0Color.a);
       vec4 color = vec4(rgb, alpha);
@@ -1687,6 +1717,7 @@ function ensureD3D8DrawProgram() {
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
+    texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
     texture0Semantic: gl.getUniformLocation(program, "uTexture0Semantic"),
     stage0ColorOp: gl.getUniformLocation(program, "uStage0ColorOp"),
     stage0ColorArg1: gl.getUniformLocation(program, "uStage0ColorArg1"),
@@ -1770,6 +1801,9 @@ function defaultD3D8TextureStageValue(stage, state) {
       return D3DTEXF_POINT;
     case D3DTSS_MIPFILTER:
       return D3DTEXF_NONE;
+    case D3DTSS_MIPMAPLODBIAS:
+    case D3DTSS_MAXMIPLEVEL:
+      return 0;
     case D3DTSS_TEXTURETRANSFORMFLAGS:
       return D3DTTFF_DISABLE;
     case D3DTSS_COLORARG0:
@@ -1805,9 +1839,9 @@ function normalizeD3D8TextureStageState(textureStage = {}, stageIndex = 0) {
     alphaArg0: value("alphaArg0", D3DTSS_ALPHAARG0),
     resultArg: value("resultArg", D3DTSS_RESULTARG),
     borderColor: Number(textureStage?.borderColor ?? 0) >>> 0,
-    maxMipLevel: Number(textureStage?.maxMipLevel ?? 0) >>> 0,
+    maxMipLevel: value("maxMipLevel", D3DTSS_MAXMIPLEVEL),
     maxAnisotropy: Number(textureStage?.maxAnisotropy ?? 1) >>> 0,
-    mipMapLodBias: Number(textureStage?.mipMapLodBias ?? 0) >>> 0,
+    mipMapLodBias: value("mipMapLodBias", D3DTSS_MIPMAPLODBIAS),
     bumpEnvMat00: Number(textureStage?.bumpEnvMat00 ?? 0) >>> 0,
     bumpEnvMat01: Number(textureStage?.bumpEnvMat01 ?? 0) >>> 0,
     bumpEnvMat10: Number(textureStage?.bumpEnvMat10 ?? 0) >>> 0,
@@ -2065,6 +2099,12 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.texture0) {
       gl.uniform1i(bridgeProgram.texture0, 0);
+    }
+    if (bridgeProgram.texture0LodBias) {
+      const texture0LodBias = canSampleTexture0
+        ? d3dDwordToFloat(renderState.textureStages[0].mipMapLodBias)
+        : 0.0;
+      gl.uniform1f(bridgeProgram.texture0LodBias, texture0LodBias);
     }
     if (bridgeProgram.texture0Semantic) {
       gl.uniform1i(bridgeProgram.texture0Semantic, texture0SemanticMode);
@@ -3361,7 +3401,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 texture mip-chain probe cannot run" };
         }
         const cases = [];
-        for (const caseId of [0, 1]) {
+        for (const caseId of [0, 1, 2, 3]) {
           const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
           const probe = parseModuleState(wasmModule.probeD3D8TextureMipChainDraw(caseId));
           const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -3380,8 +3420,18 @@ async function rpc(command, payload = {}) {
             : [0, 0, 0, 255];
           const expectedUploads = Number(probe.texture?.uploadedLevels ?? 0) >>> 0;
           const expectedComplete = Boolean(probe.texture?.completeMipChain);
-          const expectedGlMin = expectedComplete ? gl.NEAREST_MIPMAP_NEAREST : gl.NEAREST;
-          const expectedFallback = expectedComplete ? null : "incomplete mip chain";
+          const expectedMipFilter = Number(probe.texture?.mipFilter ?? 0) >>> 0;
+          const expectedRequestedMipmaps = expectedMipFilter !== D3DTEXF_NONE;
+          const expectedUsedMipmaps = expectedComplete && expectedRequestedMipmaps;
+          const expectedGlMin = expectedUsedMipmaps ? gl.NEAREST_MIPMAP_NEAREST : gl.NEAREST;
+          const expectedFallback = expectedRequestedMipmaps && !expectedComplete
+            ? "incomplete mip chain"
+            : null;
+          const expectedMaxMipLevel = Number(probe.texture?.maxMipLevel ?? 0) >>> 0;
+          const expectedBaseLevel = expectedComplete ? Math.min(expectedMaxMipLevel, 2) : 0;
+          const expectedMaxLevel = expectedComplete ? 2 : 0;
+          const expectedLodBias = Number(probe.texture?.mipMapLodBias ?? 0);
+          const sampler = browserProbe?.texture0?.sampler ?? {};
           const centerPixelOk = browserProbe?.centerPixel
             && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 8);
           const caseOk = Boolean(probe.ok)
@@ -3392,7 +3442,7 @@ async function rpc(command, payload = {}) {
             && probe.calls?.browserTextureUpdate === expectedUploads
             && probe.calls?.browserTextureBind === 1
             && probe.calls?.browserTextureRelease === 1
-            && probe.calls?.setTextureStageState === 14
+            && probe.calls?.setTextureStageState === 16
             && browserProbe?.source === "browser_d3d8_draw_indexed"
             && browserProbe?.ok === true
             && browserProbe?.texture0?.id === probe.texture?.id
@@ -3403,14 +3453,21 @@ async function rpc(command, payload = {}) {
             && browserProbe?.texture0?.initializedLevels?.join(",") ===
               probe.texture?.initializedLevels?.join(",")
             && browserProbe?.texture0?.completeMipChain === expectedComplete
-            && browserProbe?.texture0?.sampler?.d3d?.minFilter === D3DTEXF_POINT
-            && browserProbe?.texture0?.sampler?.d3d?.magFilter === D3DTEXF_POINT
-            && browserProbe?.texture0?.sampler?.d3d?.mipFilter === D3DTEXF_POINT
-            && browserProbe?.texture0?.sampler?.completeMipChain === expectedComplete
-            && browserProbe?.texture0?.sampler?.requestedMipmaps === true
-            && browserProbe?.texture0?.sampler?.usedMipmaps === expectedComplete
-            && browserProbe?.texture0?.sampler?.fallbackReason === expectedFallback
-            && browserProbe?.texture0?.sampler?.gl?.minFilter === expectedGlMin
+            && sampler.d3d?.minFilter === D3DTEXF_POINT
+            && sampler.d3d?.magFilter === D3DTEXF_POINT
+            && sampler.d3d?.mipFilter === expectedMipFilter
+            && sampler.d3d?.maxMipLevel === expectedMaxMipLevel
+            && sampler.d3d?.mipMapLodBiasBits === (Number(probe.texture?.mipMapLodBiasBits ?? 0) >>> 0)
+            && Math.abs((sampler.d3d?.mipMapLodBias ?? 0) - expectedLodBias) < 0.001
+            && sampler.completeMipChain === expectedComplete
+            && sampler.requestedMipmaps === expectedRequestedMipmaps
+            && sampler.usedMipmaps === expectedUsedMipmaps
+            && sampler.fallbackReason === expectedFallback
+            && sampler.gl?.minFilter === expectedGlMin
+            && sampler.gl?.baseLevel === expectedBaseLevel
+            && sampler.gl?.maxLevel === expectedMaxLevel
+            && Math.abs((sampler.gl?.lodBias ?? 0) - expectedLodBias) < 0.001
+            && sampler.gl?.lodBiasSource === "shader"
             && browserProbe?.texture0?.combiner?.opName === "selectArg1"
             && centerPixelOk
             && textureDelta.creates === 1
