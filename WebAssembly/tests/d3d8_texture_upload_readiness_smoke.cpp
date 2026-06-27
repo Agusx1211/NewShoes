@@ -489,7 +489,7 @@ int main()
 		"\"note\":\"D3D8 texture surface round-trip + expected WebGL2 upload mapping spec; initial browser callbacks now cover uncompressed CPU textures.\","
 		"\"bridgeReady\":false,"
 		"\"bridgeGap\":["
-		"\"Texture-stage combiner state and sampler state are not wired yet; draw shader sampling is currently limited to the harness stage-0 XYZNDUV path\","
+		"\"Texture-stage state is captured at draw time but sampler application and combiner emulation are not wired yet; draw shader sampling is currently limited to the harness stage-0 XYZNDUV path\","
 		"\"Shim bytes_per_pixel() does not model DXT block compression; DXT backing stores cannot be consumed directly\","
 		"\"A8R8G8B8/X8R8G8B8 require a B/R byte-swizzle on upload because WebGL2 has no GL_BGRA texImage2D\","
 		"\"A1R5G5B5/A4R4G4B4/P8 require CPU expansion/decode to RGBA8 before upload\","

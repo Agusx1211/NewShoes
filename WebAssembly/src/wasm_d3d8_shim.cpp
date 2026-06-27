@@ -207,7 +207,48 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const state = Module.HEAPU32.subarray(offset, offset + 12);
+		const renderStateSlots = 12;
+		const textureStageCount = 8;
+		const textureStageStateSlots = 29;
+		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
+		const copyTextureStage = (stage) => {
+			const stageOffset = offset + renderStateSlots + (stage * textureStageStateSlots);
+			const read = (slot) => Module.HEAPU32[stageOffset + slot] >>> 0;
+			return {
+				stage,
+				colorOp: read(1),
+				colorArg1: read(2),
+				colorArg2: read(3),
+				alphaOp: read(4),
+				alphaArg1: read(5),
+				alphaArg2: read(6),
+				bumpEnvMat00: read(7),
+				bumpEnvMat01: read(8),
+				bumpEnvMat10: read(9),
+				bumpEnvMat11: read(10),
+				texCoordIndex: read(11),
+				addressU: read(13),
+				addressV: read(14),
+				borderColor: read(15),
+				magFilter: read(16),
+				minFilter: read(17),
+				mipFilter: read(18),
+				mipMapLodBias: read(19),
+				maxMipLevel: read(20),
+				maxAnisotropy: read(21),
+				bumpEnvLScale: read(22),
+				bumpEnvLOffset: read(23),
+				textureTransformFlags: read(24),
+				addressW: read(25),
+				colorArg0: read(26),
+				alphaArg0: read(27),
+				resultArg: read(28),
+			};
+		};
+		const textureStages = [];
+		for (let stage = 0; stage < textureStageCount; ++stage) {
+			textureStages.push(copyTextureStage(stage));
+		}
 		return {
 			cullMode: state[0] >>> 0,
 			zEnable: state[1] >>> 0,
@@ -221,6 +262,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			alphaFunc: state[9] >>> 0,
 			alphaRef: state[10] >>> 0,
 			colorWriteEnable: state[11] >>> 0,
+			textureStages,
 		};
 	};
 	bridge({
@@ -1559,7 +1601,15 @@ public:
 		browser_texture_bind(stage, texture_id);
 		return S_OK;
 	}
-	HRESULT SetTextureStageState(DWORD, D3DTEXTURESTAGESTATETYPE, DWORD) override { return S_OK; }
+	HRESULT SetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE state, DWORD value) override
+	{
+		m_texture_stage_states[stage][state] = value;
+		++g_state.set_texture_stage_state_calls;
+		g_state.last_set_texture_stage_state_stage = stage;
+		g_state.last_set_texture_stage_state = state;
+		g_state.last_set_texture_stage_state_value = value;
+		return S_OK;
+	}
 	HRESULT ValidateDevice(DWORD *passes) override
 	{
 		if (passes != nullptr) {
@@ -1711,6 +1761,69 @@ private:
 		return found != m_render_states.end() ? found->second : default_value;
 	}
 
+	DWORD default_texture_stage_state_value(DWORD stage, UINT state) const
+	{
+		switch (state) {
+			case D3DTSS_COLOROP:
+				return stage == 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
+			case D3DTSS_COLORARG1:
+				return D3DTA_TEXTURE;
+			case D3DTSS_COLORARG2:
+				return D3DTA_CURRENT;
+			case D3DTSS_ALPHAOP:
+				return stage == 0 ? D3DTOP_SELECTARG1 : D3DTOP_DISABLE;
+			case D3DTSS_ALPHAARG1:
+				return D3DTA_TEXTURE;
+			case D3DTSS_ALPHAARG2:
+				return D3DTA_CURRENT;
+			case D3DTSS_TEXCOORDINDEX:
+				return stage;
+			case D3DTSS_ADDRESSU:
+			case D3DTSS_ADDRESSV:
+			case D3DTSS_ADDRESSW:
+				return D3DTADDRESS_WRAP;
+			case D3DTSS_MAGFILTER:
+			case D3DTSS_MINFILTER:
+				return D3DTEXF_POINT;
+			case D3DTSS_MIPFILTER:
+				return D3DTEXF_NONE;
+			case D3DTSS_MAXANISOTROPY:
+				return 1;
+			case D3DTSS_TEXTURETRANSFORMFLAGS:
+				return D3DTTFF_DISABLE;
+			case D3DTSS_COLORARG0:
+			case D3DTSS_ALPHAARG0:
+			case D3DTSS_RESULTARG:
+				return D3DTA_CURRENT;
+			default:
+				return 0;
+		}
+	}
+
+	DWORD texture_stage_state_value(DWORD stage, UINT state) const
+	{
+		const auto stage_found = m_texture_stage_states.find(stage);
+		if (stage_found != m_texture_stage_states.end()) {
+			const auto state_found =
+				stage_found->second.find(static_cast<D3DTEXTURESTAGESTATETYPE>(state));
+			if (state_found != stage_found->second.end()) {
+				return state_found->second;
+			}
+		}
+		return default_texture_stage_state_value(stage, state);
+	}
+
+	void capture_draw_texture_stage_states()
+	{
+		for (UINT stage = 0; stage < WASM_D3D8_TEXTURE_STAGE_COUNT; ++stage) {
+			WasmD3D8DrawTextureStageState &texture_stage =
+				g_state.last_draw_render_state.texture_stages[stage];
+			for (UINT state = 0; state < WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS; ++state) {
+				texture_stage.values[state] = texture_stage_state_value(stage, state);
+			}
+		}
+	}
+
 	void capture_draw_render_state()
 	{
 		WasmD3D8DrawRenderState &state = g_state.last_draw_render_state;
@@ -1728,6 +1841,7 @@ private:
 		state.color_write_enable = render_state_value(D3DRS_COLORWRITEENABLE,
 			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+		capture_draw_texture_stage_states();
 	}
 
 	void draw_bound_indexed_primitive(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
@@ -1811,6 +1925,7 @@ private:
 	D3DVIEWPORT8 m_viewport = {};
 	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
 	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
+	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;

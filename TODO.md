@@ -2395,6 +2395,13 @@ shares structure and follows behind.
       harness bridge slice only: no generalized FVF declaration decoding,
       sampler-state translation, texture-stage combiner mapping, multi-stage
       blending, or original textured mesh/menu rendering yet.
+- [x] Capture D3D8 `SetTextureStageState` writes through the current
+      `DrawIndexedPrimitive` bridge payload, including combiner arguments,
+      texture-coordinate index, address modes, and min/mag/mip filters for all
+      eight stages, with native D3D8 smoke coverage plus Playwright textured-quad
+      assertions proving stage 0/1 state reaches the browser draw probe. This is
+      observability only: GL sampler application, fixed-function combiner
+      emulation, and multi-stage blending remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new

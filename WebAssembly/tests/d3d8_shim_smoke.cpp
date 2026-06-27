@@ -243,6 +243,7 @@ int main()
 	const UINT tex_unlocks_before = state->texture_unlock_rect_calls;
 	const UINT texture_binds_before = state->set_texture_calls;
 	const UINT browser_texture_binds_before = state->browser_texture_bind_calls;
+	const UINT set_texture_stage_state_before = state->set_texture_stage_state_calls;
 	const UINT buf_locks_before = state->buffer_lock_calls;
 	const UINT buf_unlocks_before = state->buffer_unlock_calls;
 
@@ -753,6 +754,44 @@ int main()
 	}
 	dynamic_vertex_buffer->Release();
 
+	if (!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE)),
+			"SetTextureStageState stage0 COLOROP failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE)),
+			"SetTextureStageState stage0 COLORARG1 failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE)),
+			"SetTextureStageState stage0 COLORARG2 failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTEXF_LINEAR)),
+			"SetTextureStageState stage0 MINFILTER failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_MAGFILTER, D3DTEXF_POINT)),
+			"SetTextureStageState stage0 MAGFILTER failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_MIPFILTER, D3DTEXF_NONE)),
+			"SetTextureStageState stage0 MIPFILTER failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP)),
+			"SetTextureStageState stage0 ADDRESSU failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP)),
+			"SetTextureStageState stage0 ADDRESSV failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX, 0)),
+			"SetTextureStageState stage0 TEXCOORDINDEX failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE)),
+			"SetTextureStageState stage1 COLOROP failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX, 1)),
+			"SetTextureStageState stage1 TEXCOORDINDEX failed") ||
+		!expect(state->set_texture_stage_state_calls == set_texture_stage_state_before + 11,
+			"set_texture_stage_state_calls counter mismatch") ||
+		!expect(state->last_set_texture_stage_state_stage == 1,
+			"last_set_texture_stage_state_stage mismatch") ||
+		!expect(state->last_set_texture_stage_state == D3DTSS_TEXCOORDINDEX,
+			"last_set_texture_stage_state mismatch") ||
+		!expect(state->last_set_texture_stage_state_value == 1,
+			"last_set_texture_stage_state_value mismatch")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	const UINT draw_stride = 16;
 	const UINT draw_base_vertex = 2;
 	const UINT draw_min_index = 1;
@@ -782,7 +821,25 @@ int main()
 		!expect(state->last_draw_index_buffer_checksum != 0,
 			"indexed draw index checksum should be non-zero") ||
 		!expect(state->last_draw_index_format == D3DFMT_INDEX16,
-			"indexed draw index format mismatch")) {
+			"indexed draw index format mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_MODULATE,
+			"draw texture stage0 COLOROP capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE,
+			"draw texture stage0 COLORARG1 capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE,
+			"draw texture stage0 COLORARG2 capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_MINFILTER] == D3DTEXF_LINEAR,
+			"draw texture stage0 MINFILTER capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_MAGFILTER] == D3DTEXF_POINT,
+			"draw texture stage0 MAGFILTER capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_ADDRESSU] == D3DTADDRESS_CLAMP,
+			"draw texture stage0 ADDRESSU capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_ADDRESSV] == D3DTADDRESS_WRAP,
+			"draw texture stage0 ADDRESSV capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
+			"draw texture stage1 COLOROP capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXCOORDINDEX] == 1,
+			"draw texture stage1 TEXCOORDINDEX capture mismatch")) {
 		index_buffer->Release();
 		vertex_buffer->Release();
 		texture->Release();
@@ -823,6 +880,8 @@ int main()
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
 		expect(state->set_render_state_calls == 2, "set_render_state_calls count mismatch") &&
 		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch") &&
+		expect(state->set_texture_stage_state_calls == 11,
+			"set_texture_stage_state_calls count mismatch") &&
 		expect(state->browser_buffer_create_calls >= 2, "browser buffer create count mismatch") &&
 		expect(state->browser_buffer_update_calls >= 4, "browser buffer update count mismatch");
 

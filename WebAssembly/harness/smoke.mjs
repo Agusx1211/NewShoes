@@ -947,9 +947,30 @@ try {
       || d3d8TexturedQuadResult.probe?.calls?.createTexture !== 1
       || d3d8TexturedQuadResult.probe?.calls?.browserTextureUpdate !== 1
       || d3d8TexturedQuadResult.probe?.calls?.browserTextureBind !== 1
+      || d3d8TexturedQuadResult.probe?.calls?.setTextureStageState !== 11
       || d3d8TexturedQuadResult.probe?.calls?.drawIndexed !== 1
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.minFilter !== 2
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.magFilter !== 1
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.mipFilter !== 0
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.addressU !== 3
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[0]?.addressV !== 1
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || d3d8TexturedQuadResult.probe?.draw?.renderState?.textureStages?.[1]?.texCoordIndex !== 1
       || d3d8TexturedQuadResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || d3d8TexturedQuadResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.minFilter !== 2
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.magFilter !== 1
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.mipFilter !== 0
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.addressU !== 3
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[0]?.addressV !== 1
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || d3d8TexturedQuadResult.browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex !== 1
       || d3d8TexturedQuadResult.browserProbe?.texture0?.id !== d3d8TexturedQuadResult.probe?.texture?.id
       || d3d8TexturedQuadResult.browserProbe?.texture0?.ready !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampled !== true

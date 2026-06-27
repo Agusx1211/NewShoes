@@ -65,6 +65,36 @@ const D3DCOLORWRITEENABLE_RED = 1;
 const D3DCOLORWRITEENABLE_GREEN = 2;
 const D3DCOLORWRITEENABLE_BLUE = 4;
 const D3DCOLORWRITEENABLE_ALPHA = 8;
+const D3DTSS_COLOROP = 1;
+const D3DTSS_COLORARG1 = 2;
+const D3DTSS_COLORARG2 = 3;
+const D3DTSS_ALPHAOP = 4;
+const D3DTSS_ALPHAARG1 = 5;
+const D3DTSS_ALPHAARG2 = 6;
+const D3DTSS_TEXCOORDINDEX = 11;
+const D3DTSS_ADDRESSU = 13;
+const D3DTSS_ADDRESSV = 14;
+const D3DTSS_MAGFILTER = 16;
+const D3DTSS_MINFILTER = 17;
+const D3DTSS_MIPFILTER = 18;
+const D3DTSS_TEXTURETRANSFORMFLAGS = 24;
+const D3DTSS_ADDRESSW = 25;
+const D3DTSS_COLORARG0 = 26;
+const D3DTSS_ALPHAARG0 = 27;
+const D3DTSS_RESULTARG = 28;
+const D3DTOP_DISABLE = 1;
+const D3DTOP_SELECTARG1 = 2;
+const D3DTOP_MODULATE = 4;
+const D3DTA_DIFFUSE = 0;
+const D3DTA_CURRENT = 1;
+const D3DTA_TEXTURE = 2;
+const D3DTADDRESS_WRAP = 1;
+const D3DTADDRESS_CLAMP = 3;
+const D3DTEXF_NONE = 0;
+const D3DTEXF_POINT = 1;
+const D3DTEXF_LINEAR = 2;
+const D3DTTFF_DISABLE = 0;
+const D3D8_TEXTURE_STAGE_COUNT = 8;
 const D3D8_DIFFUSE_OFFSET = 24;
 const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
 // Matches WW3D2/dx8fvf.h VertexFormatXYZNDUV1/2: XYZ, normal, diffuse, UV0.
@@ -1145,6 +1175,83 @@ function normalizeD3DMatrix(matrix) {
   return new Float32Array(matrix);
 }
 
+function defaultD3D8TextureStageValue(stage, state) {
+  switch (Number(state) >>> 0) {
+    case D3DTSS_COLOROP:
+      return stage === 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
+    case D3DTSS_COLORARG1:
+      return D3DTA_TEXTURE;
+    case D3DTSS_COLORARG2:
+      return D3DTA_CURRENT;
+    case D3DTSS_ALPHAOP:
+      return stage === 0 ? D3DTOP_SELECTARG1 : D3DTOP_DISABLE;
+    case D3DTSS_ALPHAARG1:
+      return D3DTA_TEXTURE;
+    case D3DTSS_ALPHAARG2:
+      return D3DTA_CURRENT;
+    case D3DTSS_TEXCOORDINDEX:
+      return stage;
+    case D3DTSS_ADDRESSU:
+    case D3DTSS_ADDRESSV:
+    case D3DTSS_ADDRESSW:
+      return D3DTADDRESS_WRAP;
+    case D3DTSS_MAGFILTER:
+    case D3DTSS_MINFILTER:
+      return D3DTEXF_POINT;
+    case D3DTSS_MIPFILTER:
+      return D3DTEXF_NONE;
+    case D3DTSS_TEXTURETRANSFORMFLAGS:
+      return D3DTTFF_DISABLE;
+    case D3DTSS_COLORARG0:
+    case D3DTSS_ALPHAARG0:
+    case D3DTSS_RESULTARG:
+      return D3DTA_CURRENT;
+    default:
+      return 0;
+  }
+}
+
+function normalizeD3D8TextureStageState(textureStage = {}, stageIndex = 0) {
+  const stage = Number(textureStage?.stage ?? stageIndex) >>> 0;
+  const value = (key, state) =>
+    Number(textureStage?.[key] ?? defaultD3D8TextureStageValue(stage, state)) >>> 0;
+  return {
+    stage,
+    colorOp: value("colorOp", D3DTSS_COLOROP),
+    colorArg1: value("colorArg1", D3DTSS_COLORARG1),
+    colorArg2: value("colorArg2", D3DTSS_COLORARG2),
+    alphaOp: value("alphaOp", D3DTSS_ALPHAOP),
+    alphaArg1: value("alphaArg1", D3DTSS_ALPHAARG1),
+    alphaArg2: value("alphaArg2", D3DTSS_ALPHAARG2),
+    texCoordIndex: value("texCoordIndex", D3DTSS_TEXCOORDINDEX),
+    addressU: value("addressU", D3DTSS_ADDRESSU),
+    addressV: value("addressV", D3DTSS_ADDRESSV),
+    magFilter: value("magFilter", D3DTSS_MAGFILTER),
+    minFilter: value("minFilter", D3DTSS_MINFILTER),
+    mipFilter: value("mipFilter", D3DTSS_MIPFILTER),
+    textureTransformFlags: value("textureTransformFlags", D3DTSS_TEXTURETRANSFORMFLAGS),
+    addressW: value("addressW", D3DTSS_ADDRESSW),
+    colorArg0: value("colorArg0", D3DTSS_COLORARG0),
+    alphaArg0: value("alphaArg0", D3DTSS_ALPHAARG0),
+    resultArg: value("resultArg", D3DTSS_RESULTARG),
+    borderColor: Number(textureStage?.borderColor ?? 0) >>> 0,
+    maxMipLevel: Number(textureStage?.maxMipLevel ?? 0) >>> 0,
+    maxAnisotropy: Number(textureStage?.maxAnisotropy ?? 1) >>> 0,
+    mipMapLodBias: Number(textureStage?.mipMapLodBias ?? 0) >>> 0,
+    bumpEnvMat00: Number(textureStage?.bumpEnvMat00 ?? 0) >>> 0,
+    bumpEnvMat01: Number(textureStage?.bumpEnvMat01 ?? 0) >>> 0,
+    bumpEnvMat10: Number(textureStage?.bumpEnvMat10 ?? 0) >>> 0,
+    bumpEnvMat11: Number(textureStage?.bumpEnvMat11 ?? 0) >>> 0,
+    bumpEnvLScale: Number(textureStage?.bumpEnvLScale ?? 0) >>> 0,
+    bumpEnvLOffset: Number(textureStage?.bumpEnvLOffset ?? 0) >>> 0,
+  };
+}
+
+function normalizeD3D8TextureStages(textureStages) {
+  return Array.from({ length: D3D8_TEXTURE_STAGE_COUNT }, (_, stage) =>
+    normalizeD3D8TextureStageState(Array.isArray(textureStages) ? textureStages[stage] : null, stage));
+}
+
 function normalizeD3D8RenderState(renderState = {}) {
   return {
     cullMode: Number(renderState.cullMode ?? D3DCULL_CW) >>> 0,
@@ -1161,6 +1268,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     colorWriteEnable: Number(renderState.colorWriteEnable ??
       (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
         D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)) >>> 0,
+    textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
 
@@ -2541,6 +2649,27 @@ async function rpc(command, payload = {}) {
         const ok = Boolean(probe.ok)
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setTextureStageState === 11
+          && probe.draw?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MODULATE
+          && probe.draw?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && probe.draw?.renderState?.textureStages?.[0]?.colorArg2 === D3DTA_DIFFUSE
+          && probe.draw?.renderState?.textureStages?.[0]?.minFilter === D3DTEXF_LINEAR
+          && probe.draw?.renderState?.textureStages?.[0]?.magFilter === D3DTEXF_POINT
+          && probe.draw?.renderState?.textureStages?.[0]?.mipFilter === D3DTEXF_NONE
+          && probe.draw?.renderState?.textureStages?.[0]?.addressU === D3DTADDRESS_CLAMP
+          && probe.draw?.renderState?.textureStages?.[0]?.addressV === D3DTADDRESS_WRAP
+          && probe.draw?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
+          && probe.draw?.renderState?.textureStages?.[1]?.texCoordIndex === 1
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg2 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[0]?.minFilter === D3DTEXF_LINEAR
+          && browserProbe?.renderState?.textureStages?.[0]?.magFilter === D3DTEXF_POINT
+          && browserProbe?.renderState?.textureStages?.[0]?.mipFilter === D3DTEXF_NONE
+          && browserProbe?.renderState?.textureStages?.[0]?.addressU === D3DTADDRESS_CLAMP
+          && browserProbe?.renderState?.textureStages?.[0]?.addressV === D3DTADDRESS_WRAP
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
+          && browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex === 1
           && browserProbe?.texture0?.id === probe.texture?.id
           && browserProbe?.texture0?.ready === true
           && browserProbe?.texture0?.sampled === true

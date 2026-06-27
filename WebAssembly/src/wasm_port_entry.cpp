@@ -4517,6 +4517,27 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 		float v1;
 	};
 
+	struct TextureStageWrite
+	{
+		DWORD stage;
+		D3DTEXTURESTAGESTATETYPE state;
+		DWORD value;
+	};
+
+	const TextureStageWrite texture_stage_writes[] = {
+		{ 0, D3DTSS_COLOROP, D3DTOP_MODULATE },
+		{ 0, D3DTSS_COLORARG1, D3DTA_TEXTURE },
+		{ 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE },
+		{ 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR },
+		{ 0, D3DTSS_MAGFILTER, D3DTEXF_POINT },
+		{ 0, D3DTSS_MIPFILTER, D3DTEXF_NONE },
+		{ 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP },
+		{ 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP },
+		{ 0, D3DTSS_TEXCOORDINDEX, 0 },
+		{ 1, D3DTSS_COLOROP, D3DTOP_DISABLE },
+		{ 1, D3DTSS_TEXCOORDINDEX, 1 },
+	};
+
 	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
 	IDirect3DDevice8 *device = nullptr;
 	IDirect3DTexture8 *texture = nullptr;
@@ -4539,6 +4560,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 	HRESULT set_indices_result = E_FAIL;
 	HRESULT draw_result = E_FAIL;
 	UINT texture_id = 0;
+	UINT texture_stage_write_count = 0;
+	bool texture_stage_states_ok = false;
 
 	if (d3d != nullptr) {
 		D3DPRESENT_PARAMETERS parameters = {};
@@ -4639,11 +4662,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 	}
 
 	if (device != nullptr && texture != nullptr && vertex_buffer != nullptr && index_buffer != nullptr) {
+		texture_stage_states_ok = true;
+		for (UINT index = 0; index < sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]); ++index) {
+			const TextureStageWrite &write = texture_stage_writes[index];
+			const HRESULT result = device->SetTextureStageState(write.stage, write.state, write.value);
+			texture_stage_states_ok = texture_stage_states_ok && SUCCEEDED(result);
+			if (SUCCEEDED(result)) {
+				++texture_stage_write_count;
+			}
+		}
 		set_texture_result = device->SetTexture(0, texture);
 		set_stream_result = device->SetStreamSource(0, vertex_buffer, sizeof(TexturedQuadVertex));
 		set_indices_result = device->SetIndices(index_buffer, 0);
 		draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
-		ok = ok && SUCCEEDED(set_texture_result) && SUCCEEDED(set_stream_result) &&
+		ok = ok && texture_stage_states_ok && SUCCEEDED(set_texture_result) && SUCCEEDED(set_stream_result) &&
 			SUCCEEDED(set_indices_result) && SUCCEEDED(draw_result);
 	}
 
@@ -4683,15 +4715,35 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 		state->browser_buffer_update_calls == 2 &&
 		state->browser_buffer_release_calls == 2 &&
 		state->set_texture_calls == 1 &&
+		state->set_texture_stage_state_calls == texture_stage_write_count &&
+		state->last_set_texture_stage_state_stage == 1 &&
+		state->last_set_texture_stage_state == D3DTSS_TEXCOORDINDEX &&
+		state->last_set_texture_stage_state_value == 1 &&
 		state->draw_indexed_primitive_calls == 1 &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
 		state->last_draw_vertex_count == 4 &&
 		state->last_draw_primitive_count == 2 &&
 		state->last_draw_stream_source_stride == sizeof(TexturedQuadVertex) &&
 		state->last_draw_vertex_buffer_id != 0 &&
-		state->last_draw_index_buffer_id != 0;
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MINFILTER] == D3DTEXF_LINEAR &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_MAGFILTER] == D3DTEXF_POINT &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ADDRESSU] == D3DTADDRESS_CLAMP &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_ADDRESSV] == D3DTADDRESS_WRAP &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXCOORDINDEX] == 1;
 
-	char buffer[1900];
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+
+	char buffer[4096];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_d3d8_textured_quad_probe\","
 		"\"ok\":%s,"
@@ -4707,12 +4759,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
 		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
-		"\"browserBufferRelease\":%u,\"setTexture\":%u,\"drawIndexed\":%u},"
+		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"drawIndexed\":%u},"
 		"\"texture\":{\"id\":%u,\"format\":%u,\"expectedCenter\":[255,0,0,255]},"
 		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"indexBufferId\":%u,"
 		"\"renderState\":{\"cullMode\":%lu,\"zEnable\":%lu,"
-		"\"alphaBlendEnable\":%lu,\"colorWriteEnable\":%lu}}}",
+		"\"alphaBlendEnable\":%lu,\"colorWriteEnable\":%lu,"
+		"\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"minFilter\":%lu,\"magFilter\":%lu,\"mipFilter\":%lu,"
+		"\"addressU\":%lu,\"addressV\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
 		ok ? "true" : "false",
 		static_cast<long>(create_result),
 		static_cast<long>(clear_result),
@@ -4746,6 +4804,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 		state != nullptr ? state->browser_buffer_update_calls : 0,
 		state != nullptr ? state->browser_buffer_release_calls : 0,
 		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
 		state != nullptr ? state->draw_indexed_primitive_calls : 0,
 		texture_id,
 		static_cast<unsigned int>(D3DFMT_A8R8G8B8),
@@ -4758,7 +4817,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_textured_quad()
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.cull_mode) : 0,
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_enable) : 0,
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.alpha_blend_enable) : 0,
-		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0);
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLOROP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG1]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLORARG2]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_MINFILTER]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_MAGFILTER]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_MIPFILTER]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ADDRESSU]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ADDRESSV]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_TEXCOORDINDEX]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLOROP]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_TEXCOORDINDEX]) : 0);
 	g_d3d8_probe_json = buffer;
 	return g_d3d8_probe_json.c_str();
 }
