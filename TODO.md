@@ -1732,6 +1732,9 @@ shares structure and follows behind.
       no-CD `Win32CDManager` probes into `originalEngineStartup` setup/device
       readiness fields, while keeping `GameEngine::init()` blocked on missing
       startup assets and unimplemented browser renderer/audio/input devices.
+- [x] Mark `originalEngineStartup.originalSetup` as probe-only and not yet
+      runtime-owned, so the harness distinguishes focused setup validation from
+      durable singleton ownership by the real engine startup path.
 - [ ] Harness: boot → confirm engine reached init → screenshot (black is fine).
 
 ---

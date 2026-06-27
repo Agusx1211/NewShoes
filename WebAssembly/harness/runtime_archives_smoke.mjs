@@ -1341,6 +1341,8 @@ function assertOriginalEngineStartup(
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
       || startup.browserDeviceLayer?.browserGameEngine !== false
+      || startup.originalSetup?.probeOnly !== true
+      || startup.originalSetup?.runtimeOwned !== false
       || startup.originalSetup?.globalData !== expectedOriginalSetupReady
       || startup.originalSetup?.commandLine !== expectedOriginalSetupReady
       || startup.originalSetup?.cdManager !== expectedOriginalSetupReady
