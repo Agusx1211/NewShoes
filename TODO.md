@@ -2715,6 +2715,16 @@ shares structure and follows behind.
                   mesh. This proves range-backed bytes can enter through the
                   original archive path, but the general on-demand full-archive
                   streamer for normal startup remains open.
+            - [x] Add a focused browser smoke for range-backed runtime archive
+                  registration independent of rendering: it range-fetches
+                  `Data\INI\GameData.ini` and `Data\INI\Armor.ini` from the
+                  user-supplied `INIZH.big`, synthesizes a tiny valid
+                  `/assets/range-runtime/INIZH.big`, registers it through the
+                  runtime archive owner, and verifies the original
+                  `INI.cpp`/`Armor.cpp` parser probes consume those bytes via
+                  `Win32BIGFileSystem`. This locks the range-backed subset BIG
+                  path to startup-relevant data while the true on-demand
+                  full-archive streamer remains open.
       - [x] Bring the original `TextureClass::Init` / `TextureLoader`
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager
