@@ -98,7 +98,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int transform_mask,
 	unsigned int world_ptr,
 	unsigned int view_ptr,
-	unsigned int projection_ptr
+	unsigned int projection_ptr,
+	unsigned int render_state_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
@@ -110,6 +111,27 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		}
 		const offset = ptr >>> 2;
 		return Array.from(Module.HEAPF32.subarray(offset, offset + 16));
+	};
+	const copyRenderState = (ptr) => {
+		if (!ptr || !Module.HEAPU32) {
+			return null;
+		}
+		const offset = ptr >>> 2;
+		const state = Module.HEAPU32.subarray(offset, offset + 12);
+		return {
+			cullMode: state[0] >>> 0,
+			zEnable: state[1] >>> 0,
+			zWriteEnable: state[2] >>> 0,
+			zFunc: state[3] >>> 0,
+			alphaBlendEnable: state[4] >>> 0,
+			srcBlend: state[5] >>> 0,
+			destBlend: state[6] >>> 0,
+			blendOp: state[7] >>> 0,
+			alphaTestEnable: state[8] >>> 0,
+			alphaFunc: state[9] >>> 0,
+			alphaRef: state[10] >>> 0,
+			colorWriteEnable: state[11] >>> 0,
+		};
 	};
 	bridge({
 		primitiveType: primitive_type,
@@ -129,6 +151,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			view: copyMatrix(view_ptr),
 			projection: copyMatrix(projection_ptr),
 		},
+		renderState: copyRenderState(render_state_ptr),
 	});
 });
 #else
@@ -139,7 +162,7 @@ void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, u
 void wasm_d3d8_browser_buffer_release(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -358,7 +381,8 @@ UINT allocate_browser_buffer_id()
 void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id, UINT vertex_byte_offset,
 	UINT vertex_byte_size, UINT vertex_count, UINT vertex_stride, UINT index_buffer_id, UINT index_byte_offset,
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
-	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform)
+	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
+	const WasmD3D8DrawRenderState *render_state)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -379,7 +403,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		transform_mask,
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(world_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(view_transform)),
-		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)));
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)));
 }
 
 struct BrowserD3DResource
@@ -1307,6 +1332,7 @@ private:
 		identity_matrix(g_state.last_draw_world_transform);
 		identity_matrix(g_state.last_draw_view_transform);
 		identity_matrix(g_state.last_draw_projection_transform);
+		g_state.last_draw_render_state = {};
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
 			const BrowserD3DVertexBuffer *stream =
@@ -1335,6 +1361,31 @@ private:
 			g_state.last_draw_index_format = indices->format();
 			g_state.last_draw_index_buffer_id = indices->browser_buffer_id();
 		}
+	}
+
+	DWORD render_state_value(D3DRENDERSTATETYPE state, DWORD default_value) const
+	{
+		const auto found = m_render_states.find(state);
+		return found != m_render_states.end() ? found->second : default_value;
+	}
+
+	void capture_draw_render_state()
+	{
+		WasmD3D8DrawRenderState &state = g_state.last_draw_render_state;
+		state.cull_mode = render_state_value(D3DRS_CULLMODE, D3DCULL_CW);
+		state.z_enable = render_state_value(D3DRS_ZENABLE, D3DZB_TRUE);
+		state.z_write_enable = render_state_value(D3DRS_ZWRITEENABLE, TRUE);
+		state.z_func = render_state_value(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+		state.alpha_blend_enable = render_state_value(D3DRS_ALPHABLENDENABLE, FALSE);
+		state.src_blend = render_state_value(D3DRS_SRCBLEND, D3DBLEND_ONE);
+		state.dest_blend = render_state_value(D3DRS_DESTBLEND, D3DBLEND_ZERO);
+		state.blend_op = render_state_value(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+		state.alpha_test_enable = render_state_value(D3DRS_ALPHATESTENABLE, FALSE);
+		state.alpha_func = render_state_value(D3DRS_ALPHAFUNC, D3DCMP_LESSEQUAL);
+		state.alpha_ref = render_state_value(D3DRS_ALPHAREF, 0);
+		state.color_write_enable = render_state_value(D3DRS_COLORWRITEENABLE,
+			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
 	}
 
 	void draw_bound_indexed_primitive(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
@@ -1368,6 +1419,7 @@ private:
 		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
 		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
 		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
+		capture_draw_render_state();
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
 			return;
@@ -1388,7 +1440,8 @@ private:
 			g_state.last_draw_transform_mask,
 			&g_state.last_draw_world_transform,
 			&g_state.last_draw_view_transform,
-			&g_state.last_draw_projection_transform);
+			&g_state.last_draw_projection_transform,
+			&g_state.last_draw_render_state);
 	}
 
 	void capture_draw_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const

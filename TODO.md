@@ -2360,6 +2360,12 @@ shares structure and follows behind.
       `frontFace(GL_CW)`+`cullFace` cull table, ZENABLE/ZWRITE/ZFUNC depth
       table, blend factor/op table, shader-emulated alpha test, and
       color-write mask) that the future real GL-state mapping must satisfy.
+- [x] Apply the captured D3D8 render-state subset used by the current original
+      AABox render path to the browser WebGL2 draw bridge, including
+      cull/front-face, depth test/write/func, blend func/op, shader-emulated
+      alpha test uniforms, and color-write masks, with C++ state-capture smoke
+      coverage plus Playwright harness assertions proving the rendered AABox
+      draw path uses the mapped GL state and still paints the canvas.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

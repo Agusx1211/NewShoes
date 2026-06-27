@@ -914,6 +914,43 @@ try {
       || aaBoxResult.browserProbe?.indexBufferId <= 0
       || aaBoxResult.browserProbe?.usedPersistentBuffers !== true
       || aaBoxResult.browserProbe?.usedTransforms !== true
+      || aaBoxResult.probe?.draw?.renderState?.cullMode !== 2
+      || aaBoxResult.probe?.draw?.renderState?.zEnable !== 1
+      || aaBoxResult.probe?.draw?.renderState?.zWriteEnable !== 0
+      || aaBoxResult.probe?.draw?.renderState?.zFunc !== 4
+      || aaBoxResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || aaBoxResult.probe?.draw?.renderState?.srcBlend !== 5
+      || aaBoxResult.probe?.draw?.renderState?.destBlend !== 6
+      || aaBoxResult.probe?.draw?.renderState?.blendOp !== 1
+      || aaBoxResult.probe?.draw?.renderState?.alphaTestEnable !== 0
+      || aaBoxResult.probe?.draw?.renderState?.alphaFunc !== 4
+      || aaBoxResult.probe?.draw?.renderState?.colorWriteEnable !== 15
+      || aaBoxResult.browserProbe?.renderState?.cullMode !== 2
+      || aaBoxResult.browserProbe?.renderState?.zEnable !== 1
+      || aaBoxResult.browserProbe?.renderState?.zWriteEnable !== 0
+      || aaBoxResult.browserProbe?.renderState?.zFunc !== 4
+      || aaBoxResult.browserProbe?.renderState?.alphaBlendEnable !== 1
+      || aaBoxResult.browserProbe?.renderState?.srcBlend !== 5
+      || aaBoxResult.browserProbe?.renderState?.destBlend !== 6
+      || aaBoxResult.browserProbe?.renderState?.blendOp !== 1
+      || aaBoxResult.browserProbe?.renderState?.alphaTestEnable !== 0
+      || aaBoxResult.browserProbe?.renderState?.alphaFunc !== 4
+      || aaBoxResult.browserProbe?.renderState?.colorWriteEnable !== 15
+      || aaBoxResult.browserProbe?.appliedRenderState?.cull?.enabled !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.cull?.frontFace !== 2304
+      || aaBoxResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1029
+      || aaBoxResult.browserProbe?.appliedRenderState?.depth?.enabled !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.depth?.mask !== false
+      || aaBoxResult.browserProbe?.appliedRenderState?.depth?.func !== 515
+      || aaBoxResult.browserProbe?.appliedRenderState?.blend?.enabled !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.blend?.src !== 770
+      || aaBoxResult.browserProbe?.appliedRenderState?.blend?.dest !== 771
+      || aaBoxResult.browserProbe?.appliedRenderState?.blend?.equation !== 32774
+      || aaBoxResult.browserProbe?.appliedRenderState?.alphaTest?.enabled !== false
+      || aaBoxResult.browserProbe?.appliedRenderState?.colorWrite?.r !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.colorWrite?.g !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.colorWrite?.b !== true
+      || aaBoxResult.browserProbe?.appliedRenderState?.colorWrite?.a !== true
       || aaBoxResult.state?.graphics?.d3d8Buffers?.creates < 2
       || aaBoxResult.state?.graphics?.d3d8Buffers?.updates < 2
       || !pixelHasColor(aaBoxResult.browserProbe?.centerPixel)

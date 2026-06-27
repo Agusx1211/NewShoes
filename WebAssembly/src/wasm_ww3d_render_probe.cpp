@@ -108,7 +108,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		state->last_draw_index_buffer_id != 0 &&
 		(state->last_draw_transform_mask & 7u) == 7u;
 
-	char buffer[2200];
+	char buffer[3200];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_aabox_render_probe\","
 		"\"ok\":%s,"
@@ -125,7 +125,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		"\"vertexBufferId\":%u,\"vertexOffset\":%u,\"vertexBytes\":%u,"
 		"\"vertexChecksum\":%lu,\"indexBufferId\":%u,\"indexOffset\":%u,"
 		"\"indexBytes\":%u,\"indexChecksum\":%lu,\"indexFormat\":%d,"
-		"\"transformMask\":%u}}",
+		"\"transformMask\":%u,"
+		"\"renderState\":{\"cullMode\":%lu,\"zEnable\":%lu,"
+		"\"zWriteEnable\":%lu,\"zFunc\":%lu,\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"blendOp\":%lu,"
+		"\"alphaTestEnable\":%lu,\"alphaFunc\":%lu,\"alphaRef\":%lu,"
+		"\"colorWriteEnable\":%lu}}}",
 		bool_json(ok),
 		init_result,
 		set_device_result,
@@ -162,7 +167,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_index_buffer_checksum : 0),
 		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
-		state != nullptr ? state->last_draw_transform_mask : 0);
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.cull_mode : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_enable : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_write_enable : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_func : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.alpha_blend_enable : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.src_blend : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.dest_blend : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.blend_op : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.alpha_test_enable : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.alpha_func : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.alpha_ref : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.color_write_enable : 0));
 
 	g_ww3d_aabox_probe_json = buffer;
 	if (succeeded(init_result)) {

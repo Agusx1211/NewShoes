@@ -145,7 +145,31 @@ int main()
 		expect(state->browser_buffer_update_calls >= 2,
 			"AABox render did not update browser buffers") &&
 		expect((state->last_draw_transform_mask & 7u) == 7u,
-			"AABox render did not capture world/view/projection transforms");
+			"AABox render did not capture world/view/projection transforms") &&
+		expect(state->last_draw_render_state.cull_mode == D3DCULL_CW,
+			"AABox render did not capture the DX8Wrapper cull mode") &&
+		expect(state->last_draw_render_state.z_enable == D3DZB_TRUE,
+			"AABox render did not capture ZENABLE") &&
+		expect(state->last_draw_render_state.z_write_enable == FALSE,
+			"AABox render did not capture ZWRITEENABLE") &&
+		expect(state->last_draw_render_state.z_func == D3DCMP_LESSEQUAL,
+			"AABox render did not capture ZFUNC") &&
+		expect(state->last_draw_render_state.alpha_blend_enable == TRUE,
+			"AABox render did not capture ALPHABLENDENABLE") &&
+		expect(state->last_draw_render_state.src_blend == D3DBLEND_SRCALPHA,
+			"AABox render did not capture SRCBLEND") &&
+		expect(state->last_draw_render_state.dest_blend == D3DBLEND_INVSRCALPHA,
+			"AABox render did not capture DESTBLEND") &&
+		expect(state->last_draw_render_state.blend_op == D3DBLENDOP_ADD,
+			"AABox render did not capture BLENDOP") &&
+		expect(state->last_draw_render_state.alpha_test_enable == FALSE,
+			"AABox render did not capture ALPHATESTENABLE") &&
+		expect(state->last_draw_render_state.alpha_func == D3DCMP_LESSEQUAL,
+			"AABox render did not capture ALPHAFUNC") &&
+		expect(state->last_draw_render_state.color_write_enable ==
+				(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+					D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA),
+			"AABox render did not capture COLORWRITEENABLE");
 
 	WW3D::Shutdown();
 

@@ -15,6 +15,42 @@ const D3DUSAGE_WRITEONLY = 0x00000008;
 const D3DUSAGE_DYNAMIC = 0x00000200;
 const D3DLOCK_DISCARD = 0x00002000;
 const D3DLOCK_NOOVERWRITE = 0x00001000;
+const D3DZB_FALSE = 0;
+const D3DZB_TRUE = 1;
+const D3DZB_USEW = 2;
+const D3DBLEND_ZERO = 1;
+const D3DBLEND_ONE = 2;
+const D3DBLEND_SRCCOLOR = 3;
+const D3DBLEND_INVSRCCOLOR = 4;
+const D3DBLEND_SRCALPHA = 5;
+const D3DBLEND_INVSRCALPHA = 6;
+const D3DBLEND_DESTALPHA = 7;
+const D3DBLEND_INVDESTALPHA = 8;
+const D3DBLEND_DESTCOLOR = 9;
+const D3DBLEND_INVDESTCOLOR = 10;
+const D3DBLEND_SRCALPHASAT = 11;
+const D3DBLEND_BOTHSRCALPHA = 12;
+const D3DBLEND_BOTHINVSRCALPHA = 13;
+const D3DBLENDOP_ADD = 1;
+const D3DBLENDOP_SUBTRACT = 2;
+const D3DBLENDOP_REVSUBTRACT = 3;
+const D3DBLENDOP_MIN = 4;
+const D3DBLENDOP_MAX = 5;
+const D3DCMP_NEVER = 1;
+const D3DCMP_LESS = 2;
+const D3DCMP_EQUAL = 3;
+const D3DCMP_LESSEQUAL = 4;
+const D3DCMP_GREATER = 5;
+const D3DCMP_NOTEQUAL = 6;
+const D3DCMP_GREATEREQUAL = 7;
+const D3DCMP_ALWAYS = 8;
+const D3DCULL_NONE = 1;
+const D3DCULL_CW = 2;
+const D3DCULL_CCW = 3;
+const D3DCOLORWRITEENABLE_RED = 1;
+const D3DCOLORWRITEENABLE_GREEN = 2;
+const D3DCOLORWRITEENABLE_BLUE = 4;
+const D3DCOLORWRITEENABLE_ALPHA = 8;
 const d3d8BufferStats = {
   creates: 0,
   updates: 0,
@@ -486,8 +522,38 @@ function ensureD3D8DrawProgram() {
   const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
     precision mediump float;
     in vec4 vColor;
+    uniform bool uAlphaTestEnabled;
+    uniform int uAlphaFunc;
+    uniform float uAlphaRef;
     out vec4 fragColor;
+    bool d3dAlphaCompare(float value, float reference) {
+      if (uAlphaFunc == 1) {
+        return false;
+      }
+      if (uAlphaFunc == 2) {
+        return value < reference;
+      }
+      if (uAlphaFunc == 3) {
+        return value == reference;
+      }
+      if (uAlphaFunc == 4) {
+        return value <= reference;
+      }
+      if (uAlphaFunc == 5) {
+        return value > reference;
+      }
+      if (uAlphaFunc == 6) {
+        return value != reference;
+      }
+      if (uAlphaFunc == 7) {
+        return value >= reference;
+      }
+      return true;
+    }
     void main() {
+      if (uAlphaTestEnabled && !d3dAlphaCompare(vColor.a, uAlphaRef)) {
+        discard;
+      }
       fragColor = vColor;
     }
   `);
@@ -512,6 +578,9 @@ function ensureD3D8DrawProgram() {
     world: gl.getUniformLocation(program, "uWorld"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
+    alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
+    alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
+    alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
   };
   return d3d8DrawProgram;
 }
@@ -552,6 +621,163 @@ function normalizeD3DMatrix(matrix) {
   return new Float32Array(matrix);
 }
 
+function normalizeD3D8RenderState(renderState = {}) {
+  return {
+    cullMode: Number(renderState.cullMode ?? D3DCULL_CW) >>> 0,
+    zEnable: Number(renderState.zEnable ?? D3DZB_TRUE) >>> 0,
+    zWriteEnable: Number(renderState.zWriteEnable ?? 1) >>> 0,
+    zFunc: Number(renderState.zFunc ?? D3DCMP_LESSEQUAL) >>> 0,
+    alphaBlendEnable: Number(renderState.alphaBlendEnable ?? 0) >>> 0,
+    srcBlend: Number(renderState.srcBlend ?? D3DBLEND_ONE) >>> 0,
+    destBlend: Number(renderState.destBlend ?? D3DBLEND_ZERO) >>> 0,
+    blendOp: Number(renderState.blendOp ?? D3DBLENDOP_ADD) >>> 0,
+    alphaTestEnable: Number(renderState.alphaTestEnable ?? 0) >>> 0,
+    alphaFunc: Number(renderState.alphaFunc ?? D3DCMP_LESSEQUAL) >>> 0,
+    alphaRef: Number(renderState.alphaRef ?? 0) >>> 0,
+    colorWriteEnable: Number(renderState.colorWriteEnable ??
+      (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+        D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)) >>> 0,
+  };
+}
+
+function d3dCmpToGl(compareFunc) {
+  switch (Number(compareFunc) >>> 0) {
+    case D3DCMP_NEVER:
+      return gl.NEVER;
+    case D3DCMP_LESS:
+      return gl.LESS;
+    case D3DCMP_EQUAL:
+      return gl.EQUAL;
+    case D3DCMP_LESSEQUAL:
+      return gl.LEQUAL;
+    case D3DCMP_GREATER:
+      return gl.GREATER;
+    case D3DCMP_NOTEQUAL:
+      return gl.NOTEQUAL;
+    case D3DCMP_GREATEREQUAL:
+      return gl.GEQUAL;
+    case D3DCMP_ALWAYS:
+    default:
+      return gl.ALWAYS;
+  }
+}
+
+function d3dBlendFactorToGl(blendFactor) {
+  switch (Number(blendFactor) >>> 0) {
+    case D3DBLEND_ZERO:
+      return gl.ZERO;
+    case D3DBLEND_ONE:
+      return gl.ONE;
+    case D3DBLEND_SRCCOLOR:
+      return gl.SRC_COLOR;
+    case D3DBLEND_INVSRCCOLOR:
+      return gl.ONE_MINUS_SRC_COLOR;
+    case D3DBLEND_SRCALPHA:
+    case D3DBLEND_BOTHSRCALPHA:
+      return gl.SRC_ALPHA;
+    case D3DBLEND_INVSRCALPHA:
+    case D3DBLEND_BOTHINVSRCALPHA:
+      return gl.ONE_MINUS_SRC_ALPHA;
+    case D3DBLEND_DESTALPHA:
+      return gl.DST_ALPHA;
+    case D3DBLEND_INVDESTALPHA:
+      return gl.ONE_MINUS_DST_ALPHA;
+    case D3DBLEND_DESTCOLOR:
+      return gl.DST_COLOR;
+    case D3DBLEND_INVDESTCOLOR:
+      return gl.ONE_MINUS_DST_COLOR;
+    case D3DBLEND_SRCALPHASAT:
+      return gl.SRC_ALPHA_SATURATE;
+    default:
+      return gl.ONE;
+  }
+}
+
+function d3dBlendOpToGl(blendOp) {
+  switch (Number(blendOp) >>> 0) {
+    case D3DBLENDOP_SUBTRACT:
+      return gl.FUNC_SUBTRACT;
+    case D3DBLENDOP_REVSUBTRACT:
+      return gl.FUNC_REVERSE_SUBTRACT;
+    case D3DBLENDOP_MIN:
+      return gl.MIN;
+    case D3DBLENDOP_MAX:
+      return gl.MAX;
+    case D3DBLENDOP_ADD:
+    default:
+      return gl.FUNC_ADD;
+  }
+}
+
+function applyD3D8RenderState(renderState) {
+  const state = normalizeD3D8RenderState(renderState);
+  const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
+  const cullFace = state.cullMode === D3DCULL_CCW ? gl.FRONT : gl.BACK;
+  const depthEnabled = state.zEnable === D3DZB_TRUE || state.zEnable === D3DZB_USEW;
+  const depthFunc = d3dCmpToGl(state.zFunc);
+  const blendEnabled = state.alphaBlendEnable !== 0;
+  const srcBlend = d3dBlendFactorToGl(state.srcBlend);
+  const destBlend = d3dBlendFactorToGl(state.destBlend);
+  const blendEquation = d3dBlendOpToGl(state.blendOp);
+  const colorMask = {
+    r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
+    g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
+    b: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_BLUE),
+    a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
+  };
+
+  gl.frontFace(gl.CW);
+  if (cullEnabled) {
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(cullFace);
+  } else {
+    gl.disable(gl.CULL_FACE);
+  }
+
+  if (depthEnabled) {
+    gl.enable(gl.DEPTH_TEST);
+  } else {
+    gl.disable(gl.DEPTH_TEST);
+  }
+  gl.depthMask(state.zWriteEnable !== 0);
+  gl.depthFunc(depthFunc);
+
+  if (blendEnabled) {
+    gl.enable(gl.BLEND);
+  } else {
+    gl.disable(gl.BLEND);
+  }
+  gl.blendFunc(srcBlend, destBlend);
+  gl.blendEquation(blendEquation);
+  gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a);
+
+  return {
+    d3d: state,
+    cull: {
+      enabled: cullEnabled,
+      frontFace: gl.CW,
+      cullFace: cullEnabled ? cullFace : gl.BACK,
+    },
+    depth: {
+      enabled: depthEnabled,
+      mask: state.zWriteEnable !== 0,
+      func: depthFunc,
+    },
+    blend: {
+      enabled: blendEnabled,
+      src: srcBlend,
+      dest: destBlend,
+      equation: blendEquation,
+    },
+    alphaTest: {
+      enabled: state.alphaTestEnable !== 0,
+      func: d3dCmpToGl(state.alphaFunc),
+      ref: (state.alphaRef & 0xff) / 255,
+    },
+    colorWrite: colorMask,
+  };
+}
+
 function paintD3D8DrawIndexed(payload = {}) {
   const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
   const indexByteSize = Number(payload.indexBytes ?? 0) >>> 0;
@@ -572,6 +798,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const projection = normalizeD3DMatrix(payload.transforms?.projection);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
+  const renderState = normalizeD3D8RenderState(payload.renderState);
+  let appliedRenderState = null;
   let drawOk = false;
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -580,8 +808,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
-    gl.disable(gl.CULL_FACE);
-    gl.disable(gl.DEPTH_TEST);
+    appliedRenderState = applyD3D8RenderState(renderState);
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
@@ -598,6 +825,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniformMatrix4fv(bridgeProgram.world, false, world);
       gl.uniformMatrix4fv(bridgeProgram.view, false, view);
       gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+    }
+    if (bridgeProgram.alphaTestEnabled) {
+      gl.uniform1i(bridgeProgram.alphaTestEnabled, appliedRenderState.alphaTest.enabled ? 1 : 0);
+    }
+    if (bridgeProgram.alphaFunc) {
+      gl.uniform1i(bridgeProgram.alphaFunc, renderState.alphaFunc);
+    }
+    if (bridgeProgram.alphaRef) {
+      gl.uniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaTest.ref);
     }
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
     gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, indexByteOffset);
@@ -624,6 +860,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedPersistentBuffers: usePersistentBuffers,
     transformMask,
     usedTransforms: Boolean(useTransforms),
+    renderState,
+    appliedRenderState,
     centerPixel,
   };
   harnessState.graphics = {

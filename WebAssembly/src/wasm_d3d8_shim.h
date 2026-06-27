@@ -2,6 +2,22 @@
 
 #include "d3d8.h"
 
+struct WasmD3D8DrawRenderState
+{
+	DWORD cull_mode;
+	DWORD z_enable;
+	DWORD z_write_enable;
+	DWORD z_func;
+	DWORD alpha_blend_enable;
+	DWORD src_blend;
+	DWORD dest_blend;
+	DWORD blend_op;
+	DWORD alpha_test_enable;
+	DWORD alpha_func;
+	DWORD alpha_ref;
+	DWORD color_write_enable;
+};
+
 struct WasmD3D8ShimState
 {
 	UINT direct3d_create_calls;
@@ -53,6 +69,7 @@ struct WasmD3D8ShimState
 	D3DMATRIX last_draw_world_transform;
 	D3DMATRIX last_draw_view_transform;
 	D3DMATRIX last_draw_projection_transform;
+	WasmD3D8DrawRenderState last_draw_render_state;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
