@@ -2704,11 +2704,31 @@ shares structure and follows behind.
             original file/archive registration path so normal engine startup
             can stream user-supplied runtime archives without focused harness
             mounts or whole-archive MEMFS copies.
-      - [ ] Bring the original `TextureClass::Init` / `TextureLoader`
+      - [x] Bring the original `TextureClass::Init` / `TextureLoader`
             foreground and background filename-loading path online for browser
             wasm so real texture probes can use the normal asset-manager
             request flow instead of pre-registering a manually uploaded
-            `TextureClass`.
+            `TextureClass`. Under the Emscripten/D3D8-shim build
+            `ThreadClass::_Get_Current_Thread_ID()` and
+            `DX8Wrapper::_Get_Main_Thread_ID()` both resolve to `0`, so
+            `TextureLoader::Is_DX8_Thread()` is always true and
+            `WW3DAssetManager::Get_Texture(name)` constructs
+            `TextureClass(name, NULL, ...)`, which (with thumbnails disabled)
+            runs `TextureClass::Init` ->
+            `TextureLoader::Request_Foreground_Loading` -> `Finish_Load`
+            inline, with no background loader thread required. The new Node
+            `ww3d2-texture-loader-smoke` stages a 4x4 TGA in MEMFS, requests it
+            by bare name, and asserts the original WWLib Targa decode produces
+            an initialized `TextureClass` with a DX8 surface at the source
+            dimensions (not the 128x128 MissingTexture fallback) plus a second
+            request resolving through the asset-manager texture hash. The
+            remaining piece before the shipped mesh probe can drop its manual
+            upload is file-factory path resolution for `_TheFileFactory` (the
+            default `SimpleFileFactoryClass` is Windows-backslash path based;
+            the engine normally overrides it with `W3DFileSystem` routing
+            through `TheFileSystem`/BIG archives), which depends on the
+            browser range-backed BIG reader generalizing into normal engine
+            startup.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture
