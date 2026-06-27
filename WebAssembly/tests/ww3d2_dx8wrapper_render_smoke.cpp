@@ -135,7 +135,9 @@ int main()
 		expect(state->last_draw_index_buffer_bytes == state->last_draw_primitive_count * 3 * sizeof(WORD),
 			"AABox render index byte range mismatch") &&
 		expect(state->last_draw_index_buffer_checksum != 0,
-			"AABox render index byte checksum missing");
+			"AABox render index byte checksum missing") &&
+		expect((state->last_draw_transform_mask & 7u) == 7u,
+			"AABox render did not capture world/view/projection transforms");
 
 	WW3D::Shutdown();
 
@@ -146,7 +148,7 @@ int main()
 	std::printf("{\"ok\":true,\"smoke\":\"ww3d2-dx8wrapper-render\","
 		"\"createDevice\":%u,\"createTexture\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"drawIndexed\":%u,\"vertexBytes\":%u,"
-		"\"indexBytes\":%u,\"clear\":%u,\"present\":%u}\n",
+		"\"indexBytes\":%u,\"transformMask\":%u,\"clear\":%u,\"present\":%u}\n",
 		state->create_device_calls,
 		state->create_texture_calls,
 		state->create_index_buffer_calls,
@@ -154,6 +156,7 @@ int main()
 		state->draw_indexed_primitive_calls,
 		state->last_draw_vertex_buffer_bytes,
 		state->last_draw_index_buffer_bytes,
+		state->last_draw_transform_mask,
 		state->clear_calls,
 		state->present_calls);
 	return 0;

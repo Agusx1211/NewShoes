@@ -857,16 +857,20 @@ try {
 
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));
   // AABoxRenderObjClass uses VertexFormatXYZNDUV2: 8 vertices at stride 44,
-  // 12 triangles, and 36 16-bit indices.
+  // 12 triangles, 36 16-bit indices, and captures world/view/projection
+  // transforms before the browser WebGL2 draw.
   if (!aaBoxResult.ok
       || aaBoxResult.probe?.source !== "ww3d_aabox_render_probe"
       || aaBoxResult.probe?.calls?.drawIndexed < 1
+      || aaBoxResult.probe?.calls?.setTransform < 3
       || aaBoxResult.probe?.draw?.primitiveType !== 4
       || aaBoxResult.probe?.draw?.vertexCount !== 8
       || aaBoxResult.probe?.draw?.primitiveCount !== 12
+      || aaBoxResult.probe?.draw?.transformMask !== 7
       || aaBoxResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || aaBoxResult.browserProbe?.vertexStride !== 44
       || aaBoxResult.browserProbe?.indexCount !== 36
+      || aaBoxResult.browserProbe?.usedTransforms !== true
       || !pixelHasColor(aaBoxResult.browserProbe?.centerPixel)
       || !pixelHasColor(aaBoxResult.screenshot?.centerPixel)) {
     throw new Error(`WW3D AABox WebGL2 draw probe failed: ${JSON.stringify(aaBoxResult)}`);

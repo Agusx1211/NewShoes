@@ -38,6 +38,10 @@ struct WasmD3D8ShimState
 	UINT last_draw_index_buffer_bytes;
 	DWORD last_draw_index_buffer_checksum;
 	D3DFORMAT last_draw_index_format;
+	UINT last_draw_transform_mask;
+	D3DMATRIX last_draw_world_transform;
+	D3DMATRIX last_draw_view_transform;
+	D3DMATRIX last_draw_projection_transform;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;

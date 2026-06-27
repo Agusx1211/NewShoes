@@ -2320,6 +2320,13 @@ shares structure and follows behind.
       path paints visible untextured geometry. This is a first bridge proof only;
       persistent GL buffer ownership, textures, fixed-function state, matrices,
       and shader translation remain open.
+- [x] Forward the original D3D world/view/projection transform state captured at
+      `DrawIndexedPrimitive` into the browser WebGL2 draw shader, with the
+      original AABox render probe and Playwright harness proving the three
+      transform matrices are captured (`transformMask == 7`) and used by the
+      draw bridge. This applies the current fixed-function transform path for
+      untextured AABox geometry only; full matrix stack, viewport/camera, and
+      scene coverage remain open.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
@@ -2333,7 +2340,8 @@ shares structure and follows behind.
       top-left pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Single untextured AABox/debug geometry renders from the original WW3D
       render path, verified by `harness-smoke-ww3d-aabox-canvas.png` and
-      center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+      center-pixel sampling plus transform-use assertions in
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
