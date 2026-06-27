@@ -453,6 +453,9 @@ shares structure and follows behind.
       smoke-test the original `VoxelDrawer`, `UnitDrawer`, `TerrainDrawer`,
       `AnimDrawer`, `NormalDrawer`, and `IsometricDrawer` definitions under
       wasm.
+- [x] `WWVegas/WWLib` legacy font metrics (`wwfont.cpp`) compile and
+      smoke-test original FONTMAKE-style width, height, line-width, and
+      spacing calculations under wasm.
 - [x] `WWVegas/WWLib` platform compatibility helpers (`data.cpp`,
       `rcfile.cpp`, `registry.cpp`) compile and smoke-test legacy data loading,
       raw CPS-style uncompression, and current browser no-resource/no-registry
@@ -463,6 +466,8 @@ shares structure and follows behind.
 - [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
       (`convert.cpp`, `dsurface.cpp`) after the browser `DSurface`/pixel-format
       abstraction is defined, instead of stubbing draw behavior.
+- [ ] Add a render-backed `WWFontClass::Print` smoke once the original
+      `ConvertClass`/`DSurface` pixel conversion path is available under wasm.
 - [x] Port original WWLib MPU/RDTSC timing helpers (`mpu.cpp`) to the final
       browser timing/CPU-detection contract without preserving x86 inline
       assembly.

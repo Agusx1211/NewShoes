@@ -942,6 +942,30 @@ target_compile_options(zh_wwlib_convert_globals PRIVATE
   -Wno-unused-parameter
 )
 
+add_library(zh_wwlib_font STATIC
+  "${WWLIB_DIR}/wwfont.cpp"
+)
+
+target_include_directories(zh_wwlib_font PUBLIC
+  "${WASM_SHIMS_DIR}"
+  "${WWLIB_DIR}"
+)
+
+target_compile_options(zh_wwlib_font PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-reorder-ctor
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_wwlib_font PUBLIC
+  zh_wwlib_convert_globals
+)
+
 add_library(zh_wwlib_md5 STATIC
   "${WWLIB_DIR}/md5.cpp"
 )
@@ -3598,6 +3622,35 @@ target_compile_options(wwlib-convert-globals-smoke PRIVATE
 )
 
 target_link_options(wwlib-convert-globals-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+)
+
+add_executable(wwlib-font-smoke
+  tests/wwlib_font_smoke.cpp
+)
+
+set_target_properties(wwlib-font-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(wwlib-font-smoke PRIVATE
+  zh_wwlib_font
+)
+
+target_compile_options(wwlib-font-smoke PRIVATE
+  -include "${WWVEGAS_PORT_SHIM}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-keyword-macro
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+)
+
+target_link_options(wwlib-font-smoke PRIVATE
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"
