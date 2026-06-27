@@ -2664,10 +2664,24 @@ shares structure and follows behind.
             font/`Render2DSentenceClass` path; they currently only satisfy
             the linker for the asset-manager font code path and are not
             reached by the renderer probes.
-      - [ ] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
-            the same `MeshClass::Load_W3D` + browser draw-bridge path once
-            the asset pipeline can fetch and hand real W3D mesh chunks to the
-            engine, instead of the synthetic in-memory quad.
+      - [x] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
+            the same `MeshClass::Load_W3D` + browser draw-bridge path instead
+            of the synthetic in-memory quad: the browser harness mounts
+            user-supplied `W3DZH.big` into MEMFS, the wasm probe opens
+            `art\w3d\cine_moon.w3d` through `Win32BIGFileSystem`, loads
+            `CINE_MOON` through `MeshClass::Load_W3D`, frames its original
+            4-vertex/2-triangle shipped geometry from the object-space bounds,
+            and verifies `WW3D::Render` reaches the browser D3D8/WebGL2 draw
+            bridge with persistent buffers, transforms, texture sampling, red
+            center pixels, and
+            `harness-smoke-ww3d-shipped-mesh-canvas.png`. The probe registers
+            a synthetic red texture under the original `cine_moon.tga` texture
+            name for deterministic pixel checks; real texture archive fetch and
+            upload remain open.
+      - [ ] Fetch and upload the real `cine_moon.tga` texture bytes from
+            user-supplied texture archives for the shipped mesh render probe,
+            replacing the synthetic red texture while preserving screenshot
+            and browser draw-state assertions.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture
