@@ -2348,6 +2348,24 @@ shares structure and follows behind.
       proving static/stream usage choices plus dynamic discard orphaning in
       WebGL.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
+- [x] Add focused texture upload *expectations* coverage through the
+      existing browser D3D8 shim (no shim or draw-bridge changes): a new
+      `d3d8-texture-upload-readiness-smoke` records the per-format texture
+      surface round-trip (`CreateTexture`, mip-level dimension halving,
+      per-format `LockRect` pitch, pixel write/read round-trip, sub-rect
+      `pBits` offset, `GetSurfaceLevel` AddRef) for the runtime uncompressed
+      formats (`A8R8G8B8`, `X8R8G8B8`, `R5G6B5`, `A1R5G5B5`, `A4R4G4B4`,
+      `A8`, `L8`, `A8L8`), observes the documented DXT readiness gap (the
+      shim's `bytes_per_pixel()` does not model block compression, so DXT
+      `GetLevelDesc` reports `Size = width*4*height` instead of the real
+      `ceil(w/4)*ceil(h/4)*blockBytes` and DXT backing stores cannot be
+      consumed directly), and emits a machine-readable D3D8→WebGL2 texture
+      format mapping spec (per-format GL internalformat/format/type, B/R
+      byte-swizzle for ARGB DWORD formats, RGBA8 expansion for the ARGB-MSB
+      16-bit/palette formats, GL_R8/GL_RG8 plus shader channel-reconstruction
+      swizzle for A8/L8/A8L8, and WEBGL_compressed_texture_s3tc targets with
+      block-byte sizing for DXT1/DXT3/DXT5) that the future real DDS/DXT→GL
+      texture upload task must satisfy.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
