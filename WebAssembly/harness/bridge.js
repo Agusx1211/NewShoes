@@ -2739,7 +2739,7 @@ async function loadWasmModule() {
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
-        "cnc_port_probe_ww3d_shipped_mesh", "string", ["string"]),
+        "cnc_port_probe_ww3d_shipped_mesh", "string", ["string", "string"]),
       probeWW3DSourceAssetLoad: module.cwrap(
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
       initOriginalWndProcInput: module.cwrap(
@@ -2847,6 +2847,21 @@ function ensureMemfsDirectory(fs, path) {
 
   let current = "";
   for (const part of directory.split("/").filter(Boolean)) {
+    current += `/${part}`;
+    try {
+      fs.mkdir(current);
+    } catch {
+      // Existing directories are fine; a later write/probe will surface real failures.
+    }
+  }
+}
+
+function ensureFixedMemfsDirectory(fs, path) {
+  let current = "";
+  for (const part of String(path).split("/").filter(Boolean)) {
+    if (part === "." || part === "..") {
+      throw new Error(`Invalid fixed MEMFS directory: ${path}`);
+    }
     current += `/${part}`;
     try {
       fs.mkdir(current);
@@ -3433,6 +3448,53 @@ async function mountArchives(payload = {}) {
   };
 }
 
+async function mountShippedMeshAsset(payload = {}) {
+  const moduleResult = await getWasmModuleForArchives("mountShippedMeshAsset");
+  if (moduleResult.error) {
+    return { ok: false, command: moduleResult.command, error: moduleResult.error };
+  }
+
+  const requestedPath = String(payload.path ?? "").replaceAll("\\", "/");
+  const mountPaths = new Map([
+    ["Art/W3D/CINE_Moon.W3D", "/Art/W3D/CINE_Moon.W3D"],
+    ["Art/Textures/cine_moon.dds", "/art/textures/cine_moon.dds"],
+  ]);
+  const path = mountPaths.get(requestedPath);
+  if (!path) {
+    return {
+      ok: false,
+      command: "mountShippedMeshAsset",
+      error: `Unsupported shipped mesh asset path: ${requestedPath}`,
+    };
+  }
+
+  const rawBytes = payload.bytes;
+  const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes ?? []);
+  if (bytes.byteLength === 0) {
+    return { ok: false, command: "mountShippedMeshAsset", error: "Missing asset bytes" };
+  }
+
+  ensureFixedMemfsDirectory(moduleResult.wasmModule.fs, parentDirectory(path));
+  moduleResult.wasmModule.fs.writeFile(path, bytes);
+  recordLog("shipped mesh asset mounted", {
+    path,
+    bytes: bytes.byteLength,
+    sourceArchive: String(payload.sourceArchive ?? ""),
+  });
+
+  return {
+    ok: true,
+    command: "mountShippedMeshAsset",
+    asset: {
+      path,
+      sourceArchive: String(payload.sourceArchive ?? ""),
+      archiveEntry: requestedPath,
+      bytes: bytes.byteLength,
+    },
+    state: snapshotState(),
+  };
+}
+
 async function rpc(command, payload = {}) {
   switch (command) {
     case "boot":
@@ -3443,6 +3505,8 @@ async function rpc(command, payload = {}) {
       return mountArchive(payload);
     case "mountArchives":
       return mountArchives(payload);
+    case "mountShippedMeshAsset":
+      return mountShippedMeshAsset(payload);
     case "startMainLoop":
       {
         const wasmModule = await wasmModulePromise;
@@ -4506,13 +4570,17 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; shipped WW3D mesh cannot render" };
         }
         const archivePath = String(payload.archivePath ?? "/assets/runtime/W3DZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime/TexturesZH.big");
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
           lastD3D8DrawIndexed: null,
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
-        const probe = parseModuleState(wasmModule.probeWW3DShippedMesh(archivePath));
+        const probe = parseModuleState(wasmModule.probeWW3DShippedMesh(
+          archivePath,
+          textureArchivePath,
+        ));
         const textureAfter = harnessState.graphics.d3d8Textures ?? null;
         const screenshot = snapshotCanvas();
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -4529,8 +4597,10 @@ async function rpc(command, payload = {}) {
           && Boolean(browserProbe?.ok)
           && browserProbe?.texture0?.sampled === true
           && browserProbe?.texture0?.id === probe?.texture?.id
-          && pixelLooksRed(browserProbe.centerPixel)
-          && pixelLooksRed(screenshot.centerPixel);
+          && pixelHasColor(browserProbe.centerPixel, 16)
+          && pixelHasColor(screenshot.centerPixel, 16)
+          && !pixelLooksRed(browserProbe.centerPixel)
+          && !pixelLooksRed(screenshot.centerPixel);
         return {
           ok,
           command,

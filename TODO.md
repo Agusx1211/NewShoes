@@ -2652,9 +2652,8 @@ shares structure and follows behind.
             loadable mesh (`art\w3d\cine_moon.w3d`), and asserts
             `MeshClass::Load_W3D` produces the original `CINE_MOON` model
             with 4 vertices, 2 triangles, and the `cine_moon.tga` texture
-            reference. This is loader-only coverage; rendering the shipped
-            mesh through the browser draw bridge and fetching its real texture
-            from user archives remain open.
+            reference. This is loader-only coverage; later completed items
+            cover browser rendering and real texture upload for this mesh.
       - [ ] Replace the probe's no-op browser stubs for the Win32 GDI
             functions declared in the `windows.h` shim
             (`CreateFont`, `CreateCompatibleDC`, `CreateDIBSection`,
@@ -2666,9 +2665,9 @@ shares structure and follows behind.
             reached by the renderer probes.
       - [x] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
             the same `MeshClass::Load_W3D` + browser draw-bridge path instead
-            of the synthetic in-memory quad: the browser harness mounts
-            user-supplied `W3DZH.big` into MEMFS, the wasm probe opens
-            `art\w3d\cine_moon.w3d` through `Win32BIGFileSystem`, loads
+            of the synthetic in-memory quad: the browser harness mounts the
+            user-supplied `art\w3d\cine_moon.w3d` bytes into MEMFS, the wasm
+            probe reads those bytes into a `RAMFileClass`, loads
             `CINE_MOON` through `MeshClass::Load_W3D`, frames its original
             4-vertex/2-triangle shipped geometry from the object-space bounds,
             and verifies `WW3D::Render` reaches the browser D3D8/WebGL2 draw
@@ -2676,12 +2675,30 @@ shares structure and follows behind.
             center pixels, and
             `harness-smoke-ww3d-shipped-mesh-canvas.png`. The probe registers
             a synthetic red texture under the original `cine_moon.tga` texture
-            name for deterministic pixel checks; real texture archive fetch and
-            upload remain open.
-      - [ ] Fetch and upload the real `cine_moon.tga` texture bytes from
+            name for deterministic pixel checks; the follow-up item below
+            replaces that synthetic texture with the shipped DDS texture.
+      - [x] Fetch and upload the real `cine_moon.tga` texture bytes from
             user-supplied texture archives for the shipped mesh render probe,
             replacing the synthetic red texture while preserving screenshot
-            and browser draw-state assertions.
+            and browser draw-state assertions. The harness now extracts
+            `Art\W3D\CINE_Moon.W3D` from `W3DZH.big` and
+            `Art\Textures\cine_moon.dds` from `TexturesZH.big`, mounts those
+            two user-supplied entries into MEMFS, lets original `DDSFileClass`
+            resolve the material's `cine_moon.tga` reference to the shipped
+            DXT5 DDS, uploads all 7 mip levels through the D3D8 texture
+            lock/unlock bridge, and verifies
+            `harness-smoke-ww3d-shipped-mesh-canvas.png` has non-synthetic
+            real texture color (`[204,191,163,255]`) while the browser draw
+            state still reports the original 4-vertex/2-triangle mesh.
+      - [ ] Replace the shipped mesh render smoke's focused Node BIG-entry
+            extraction with a browser-safe archive streaming or range-mount
+            path once the port can expose large `W3DZH.big` / `TexturesZH.big`
+            archives without loading hundreds of megabytes into MEMFS.
+      - [ ] Bring the original `TextureClass::Init` / `TextureLoader`
+            foreground and background filename-loading path online for browser
+            wasm so real texture probes can use the normal asset-manager
+            request flow instead of pre-registering a manually uploaded
+            `TextureClass`.
       - [ ] Exercise the original modern `W3D_CHUNK_MATERIAL_PASS` material
             install path (per-pass vertex-material/shader/texture ids and
             texture-stage texcoords) for real multi-pass / multi-texture

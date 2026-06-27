@@ -6,16 +6,13 @@
 
 #include "PreRTS.h"
 
-#include "Common/ArchiveFileSystem.h"
-#include "Common/File.h"
-#include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
-#include "Common/LocalFileSystem.h"
-#include "Win32Device/Common/Win32BIGFileSystem.h"
-#include "Win32Device/Common/Win32LocalFileSystem.h"
 #include "assetmgr.h"
 #include "camera.h"
 #include "chunkio.h"
+#include "ddsfile.h"
+#include "ffactory.h"
+#include "formconv.h"
 #include "light.h"
 #include "lightenvironment.h"
 #include "mesh.h"
@@ -43,10 +40,12 @@ constexpr const char *kProbeMeshTextureName = "probe_mesh_red.tga";
 constexpr unsigned int kProbeMeshTextureWidth = 2;
 constexpr unsigned int kProbeMeshTextureHeight = 2;
 constexpr const char *kShippedMeshPath = "art\\w3d\\cine_moon.w3d";
+constexpr const char *kShippedMeshFileSystemPath = "/Art/W3D/CINE_Moon.W3D";
 constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
-constexpr unsigned int kShippedMeshTextureWidth = 2;
-constexpr unsigned int kShippedMeshTextureHeight = 2;
+constexpr const char *kShippedMeshTextureArchiveEntry = "art\\textures\\cine_moon.dds";
+constexpr const char *kShippedMeshTexturePath = "/art/textures/cine_moon.dds";
+constexpr const char *kShippedMeshTextureFactoryPath = "/art/textures/cine_moon.tga";
 
 bool succeeded(int result)
 {
@@ -101,73 +100,40 @@ std::string json_escape(const std::string &value)
 	return escaped;
 }
 
-void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
+bool mounted_file_exists(const char *path)
 {
-	std::string normalized = archive_path != nullptr ? archive_path : "";
-	std::replace(normalized.begin(), normalized.end(), '\\', '/');
-
-	const std::size_t slash = normalized.find_last_of('/');
-	if (slash == std::string::npos) {
-		directory = "";
-		file_mask = normalized.c_str();
-		return;
-	}
-
-	directory = normalized.substr(0, slash + 1).c_str();
-	file_mask = normalized.substr(slash + 1).c_str();
-}
-
-bool read_archive_file(FileSystem &file_system, const char *path, std::vector<unsigned char> &data)
-{
-	FileInfo info = {};
-	if (!file_system.getFileInfo(AsciiString(path), &info) || info.sizeHigh != 0 || info.sizeLow <= 0) {
-		return false;
-	}
-
-	File *file = file_system.openFile(path, File::READ | File::BINARY);
+	std::FILE *file = std::fopen(path, "rb");
 	if (file == nullptr) {
 		return false;
 	}
 
-	data.assign(static_cast<std::size_t>(info.sizeLow), 0);
-	const Int bytes_read = file->read(data.data(), info.sizeLow);
-	file->close();
-	return bytes_read == info.sizeLow;
+	std::fclose(file);
+	return true;
 }
 
-bool read_shipped_mesh_bytes(
-	const char *archive_path,
-	std::vector<unsigned char> &data,
-	bool &archive_loaded,
-	bool &file_read)
+bool read_mounted_file(const char *path, std::vector<unsigned char> &data)
 {
-	AsciiString archive_directory;
-	AsciiString archive_mask;
-	split_archive_path(archive_path, archive_directory, archive_mask);
-	if (archive_mask.isEmpty()) {
+	std::FILE *file = std::fopen(path, "rb");
+	if (file == nullptr) {
 		return false;
 	}
 
-	FileSystem *old_file_system = TheFileSystem;
-	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
-	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
-
-	Win32LocalFileSystem local_file_system;
-	FileSystem file_system;
-	Win32BIGFileSystem archive_file_system;
-	TheLocalFileSystem = &local_file_system;
-	TheArchiveFileSystem = &archive_file_system;
-	TheFileSystem = &file_system;
-
-	archive_loaded = archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask);
-	if (archive_loaded) {
-		file_read = read_archive_file(file_system, kShippedMeshPath, data);
+	if (std::fseek(file, 0, SEEK_END) != 0) {
+		std::fclose(file);
+		return false;
 	}
 
-	TheFileSystem = old_file_system;
-	TheArchiveFileSystem = old_archive_file_system;
-	TheLocalFileSystem = old_local_file_system;
-	return archive_loaded && file_read;
+	const long size = std::ftell(file);
+	if (size <= 0 || std::fseek(file, 0, SEEK_SET) != 0) {
+		std::fclose(file);
+		return false;
+	}
+
+	data.assign(static_cast<std::size_t>(size), 0);
+	const std::size_t bytes_read = std::fread(data.data(), 1, data.size(), file);
+	const bool ok = bytes_read == data.size() && std::ferror(file) == 0;
+	std::fclose(file);
+	return ok;
 }
 
 bool load_first_mesh_chunk(const std::vector<unsigned char> &data, MeshClass *mesh, int &load_result)
@@ -656,7 +622,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 	return g_ww3d_textured_mesh_probe_json.c_str();
 }
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *archive_path)
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
+	const char *archive_path,
+	const char *texture_archive_path)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -667,15 +635,29 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 	int render_result = WW3D_ERROR_GENERIC;
 	int end_render_result = WW3D_ERROR_GENERIC;
 	int load_result = WW3D_ERROR_GENERIC;
-	bool archive_loaded = false;
+	bool mesh_archive_loaded = false;
+	bool texture_archive_loaded = false;
 	bool file_read = false;
+	bool texture_file_exists = false;
 	bool texture_registered = false;
+	bool texture_dds_available = false;
+	bool texture_dds_loaded = false;
+	bool texture_resolved = false;
+	bool texture_has_d3d_surface = false;
 	bool mesh_chunk_found = false;
 	bool mesh_loaded = false;
-	HRESULT texture_create_result = E_FAIL;
-	HRESULT texture_lock_result = E_FAIL;
-	HRESULT texture_unlock_result = E_FAIL;
+	HRESULT texture_level_desc_result = E_FAIL;
 	UINT texture_id = 0;
+	UINT texture_width = 0;
+	UINT texture_height = 0;
+	UINT texture_levels = 0;
+	DWORD texture_format = D3DFMT_UNKNOWN;
+	DWORD texture_upload_format = D3DFMT_UNKNOWN;
+	UINT texture_upload_width = 0;
+	UINT texture_upload_height = 0;
+	UINT texture_upload_bytes = 0;
+	DWORD texture_upload_checksum = 0;
+	UINT texture_uploaded_levels = 0;
 	std::vector<unsigned char> mesh_data;
 	std::string mesh_name;
 	std::string loaded_texture_name;
@@ -698,38 +680,78 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
+		mesh_archive_loaded = mounted_file_exists(kShippedMeshFileSystemPath);
+		texture_file_exists = mounted_file_exists(kShippedMeshTexturePath);
+		texture_archive_loaded = texture_file_exists;
+		if (mesh_archive_loaded) {
+			file_read = read_mounted_file(kShippedMeshFileSystemPath, mesh_data);
+		}
 
-		texture = NEW_REF(TextureClass, (
-			kShippedMeshTextureWidth,
-			kShippedMeshTextureHeight,
-			WW3D_FORMAT_A8R8G8B8,
-			MIP_LEVELS_1));
+		if (texture_file_exists) {
+			DDSFileClass dds_file(kShippedMeshTextureFactoryPath, 0);
+			texture_dds_available = dds_file.Is_Available();
+			texture_dds_loaded = texture_dds_available && dds_file.Load();
+			if (texture_dds_loaded) {
+				texture_width = dds_file.Get_Width(0);
+				texture_height = dds_file.Get_Height(0);
+				texture_levels = dds_file.Get_Mip_Level_Count();
+				texture_format = WW3DFormat_To_D3DFormat(dds_file.Get_Format());
+				texture = NEW_REF(TextureClass, (
+					texture_width,
+					texture_height,
+					dds_file.Get_Format(),
+					static_cast<MipCountType>(texture_levels)));
 
-		if (texture != nullptr && texture->Peek_D3D_Texture() != nullptr) {
-			texture->Set_Texture_Name(kShippedMeshTextureName);
-			texture_create_result = D3D_OK;
+				if (texture != nullptr && texture->Peek_D3D_Texture() != nullptr) {
+					texture->Set_Texture_Name(kShippedMeshTextureName);
+					texture_has_d3d_surface = true;
+					for (UINT level = 0; level < texture_levels; ++level) {
+						D3DSURFACE_DESC surface_desc = {};
+						D3DLOCKED_RECT locked_rect = {};
+						if (SUCCEEDED(texture->Peek_D3D_Texture()->GetLevelDesc(level, &surface_desc)) &&
+								SUCCEEDED(texture->Peek_D3D_Texture()->LockRect(level, &locked_rect, nullptr, 0))) {
+							if (locked_rect.pBits != nullptr) {
+								dds_file.Copy_Level_To_Surface(
+									level,
+									D3DFormat_To_WW3DFormat(surface_desc.Format),
+									surface_desc.Width,
+									surface_desc.Height,
+									static_cast<unsigned char *>(locked_rect.pBits),
+									locked_rect.Pitch);
+								++texture_uploaded_levels;
+							}
+							texture->Peek_D3D_Texture()->UnlockRect(level);
+						}
+					}
 
-			D3DLOCKED_RECT locked_rect = {};
-			texture_lock_result = texture->Peek_D3D_Texture()->LockRect(0, &locked_rect, nullptr, 0);
-			if (SUCCEEDED(texture_lock_result) && locked_rect.pBits != nullptr) {
-				fill_argb_texture_red(
-					locked_rect,
-					kShippedMeshTextureWidth,
-					kShippedMeshTextureHeight);
+					D3DSURFACE_DESC texture_desc = {};
+					texture_level_desc_result = texture->Peek_D3D_Texture()->GetLevelDesc(0, &texture_desc);
+					if (SUCCEEDED(texture_level_desc_result)) {
+						texture_width = texture_desc.Width;
+						texture_height = texture_desc.Height;
+						texture_format = texture_desc.Format;
+					}
+
+					texture->Add_Ref();
+					asset_manager->Texture_Hash().Insert(kShippedMeshTextureName, texture);
+					texture_registered =
+						asset_manager->Texture_Hash().Get(kShippedMeshTextureName) == texture;
+
+					const WasmD3D8ShimState *texture_state = wasm_d3d8_get_state();
+					if (texture_state != nullptr) {
+						texture_id = texture_state->last_browser_texture_id;
+						texture_upload_format = texture_state->last_browser_texture_format;
+						texture_upload_width = texture_state->last_browser_texture_width;
+						texture_upload_height = texture_state->last_browser_texture_height;
+						texture_upload_bytes = texture_state->last_browser_texture_bytes;
+						texture_upload_checksum = texture_state->last_browser_texture_checksum;
+					}
+				}
 			}
-			texture_unlock_result = texture->Peek_D3D_Texture()->UnlockRect(0);
-
-			texture->Add_Ref();
-			asset_manager->Texture_Hash().Insert(kShippedMeshTextureName, texture);
-			texture_registered = asset_manager->Texture_Hash().Get(kShippedMeshTextureName) == texture;
-
-			const WasmD3D8ShimState *state = wasm_d3d8_get_state();
-			texture_id = state != nullptr ? state->last_browser_texture_id : 0;
 		}
 	}
 
-	if (texture_registered &&
-			read_shipped_mesh_bytes(archive_path, mesh_data, archive_loaded, file_read)) {
+	if (file_read && texture_registered) {
 		mesh = NEW_REF(MeshClass, ());
 		if (mesh != nullptr) {
 			mesh_chunk_found = load_first_mesh_chunk(mesh_data, mesh, load_result);
@@ -743,14 +765,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		vertices = static_cast<int>(model->Get_Vertex_Count());
 		polygons = static_cast<int>(model->Get_Polygon_Count());
 		TextureClass *loaded_texture = model->Peek_Single_Texture(0, 0);
-		if (loaded_texture != nullptr && loaded_texture->Get_Texture_Name() != nullptr) {
-			loaded_texture_name = loaded_texture->Get_Texture_Name();
+		texture_resolved = loaded_texture != nullptr;
+		if (texture_resolved) {
+			if (loaded_texture->Get_Texture_Name() != nullptr) {
+				loaded_texture_name = loaded_texture->Get_Texture_Name();
+			}
 		}
 
 		mesh->Get_Obj_Space_Bounding_Box(object_box);
 		frame_mesh_in_front_of_camera(*mesh, object_box);
-
-		model->Set_Single_Texture(texture, 0, 0);
 
 		ShaderClass shader;
 		shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
@@ -820,9 +843,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		succeeded(init_result) &&
 		succeeded(set_device_result) &&
 		asset_manager == nullptr &&
-		archive_loaded &&
+		mesh_archive_loaded &&
+		texture_archive_loaded &&
 		file_read &&
+		texture_file_exists &&
 		texture_registered &&
+		texture_dds_available &&
+		texture_dds_loaded &&
+		texture_resolved &&
+		texture_has_d3d_surface &&
 		mesh_chunk_found &&
 		mesh_loaded &&
 		succeeded(begin_render_result) &&
@@ -834,10 +863,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		vertices == 4 &&
 		polygons == 2 &&
 		texture_id != 0 &&
+		(texture_format == D3DFMT_DXT1 ||
+			texture_format == D3DFMT_DXT3 ||
+			texture_format == D3DFMT_DXT5) &&
+		texture_width > 0 &&
+		texture_height > 0 &&
+		texture_levels > 0 &&
+		texture_uploaded_levels == texture_levels &&
 		state->create_device_calls >= 1 &&
 		state->create_vertex_buffer_calls >= 1 &&
 		state->create_index_buffer_calls >= 1 &&
 		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= texture_levels &&
 		state->set_texture_calls >= 1 &&
 		state->browser_texture_bind_calls >= 1 &&
 		state->set_stream_source_calls >= 1 &&
@@ -857,23 +894,29 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
 
 	const std::string archive_json = json_escape(archive_path != nullptr ? archive_path : "");
+	const std::string texture_archive_json =
+		json_escape(texture_archive_path != nullptr ? texture_archive_path : "");
 	const std::string mesh_path_json = json_escape(kShippedMeshPath);
 	const std::string mesh_name_json = json_escape(mesh_name);
 	const std::string texture_name_json = json_escape(loaded_texture_name);
+	const std::string texture_entry_json = json_escape(kShippedMeshTextureArchiveEntry);
 
-	char buffer[7200];
+	char buffer[9000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_shipped_mesh_probe\","
 		"\"ok\":%s,"
-		"\"archive\":\"%s\","
+		"\"archives\":{\"mesh\":\"%s\",\"texture\":\"%s\"},"
 		"\"mesh\":{\"path\":\"%s\",\"name\":\"%s\",\"bytes\":%u,"
 		"\"vertices\":%d,\"polygons\":%d,"
 		"\"objectBox\":{\"center\":[%.4f,%.4f,%.4f],"
 		"\"extent\":[%.4f,%.4f,%.4f]}},"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
-		"\"archiveLoaded\":%s,\"fileRead\":%s,"
-		"\"textureCreate\":%ld,\"textureLock\":%ld,\"textureUnlock\":%ld,"
-		"\"textureRegistered\":%s,\"meshChunkFound\":%s,\"meshLoad\":%d,"
+		"\"meshArchiveLoaded\":%s,\"textureArchiveLoaded\":%s,"
+		"\"fileRead\":%s,\"textureFileExists\":%s,"
+		"\"textureRegistered\":%s,\"textureDDSAvailable\":%s,"
+		"\"textureDDSLoaded\":%s,\"textureResolved\":%s,"
+		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
+		"\"meshChunkFound\":%s,\"meshLoad\":%d,"
 		"\"meshLoaded\":%s,\"beginRender\":%d,\"render\":%d,\"endRender\":%d},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
@@ -885,8 +928,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		"\"setIndices\":%u,\"drawIndexed\":%u,\"setTransform\":%u,"
 		"\"clear\":%u,\"present\":%u},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
-		"\"width\":%u,\"height\":%u,\"expectedCenter\":[255,0,0,255],"
-		"\"source\":\"synthetic red texture registered under shipped texture name\"},"
+		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
+		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
+		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
+		"\"checksum\":%lu},"
+		"\"source\":\"original DDS loaded by DDSFileClass from mounted Art/Textures path\"},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,"
 		"\"minVertexIndex\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"vertexBufferId\":%u,\"vertexOffset\":%u,"
@@ -903,6 +949,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}",
 		bool_json(ok),
 		archive_json.c_str(),
+		texture_archive_json.c_str(),
 		mesh_path_json.c_str(),
 		mesh_name_json.c_str(),
 		static_cast<unsigned int>(mesh_data.size()),
@@ -916,12 +963,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		object_box.Extent.Z,
 		init_result,
 		set_device_result,
-		bool_json(archive_loaded),
+		bool_json(mesh_archive_loaded),
+		bool_json(texture_archive_loaded),
 		bool_json(file_read),
-		static_cast<long>(texture_create_result),
-		static_cast<long>(texture_lock_result),
-		static_cast<long>(texture_unlock_result),
+		bool_json(texture_file_exists),
 		bool_json(texture_registered),
+		bool_json(texture_dds_available),
+		bool_json(texture_dds_loaded),
+		bool_json(texture_resolved),
+		bool_json(texture_has_d3d_surface),
+		static_cast<long>(texture_level_desc_result),
 		bool_json(mesh_chunk_found),
 		load_result,
 		bool_json(mesh_loaded),
@@ -949,8 +1000,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(const char *ar
 		state != nullptr ? state->present_calls : 0,
 		texture_id,
 		texture_name_json.c_str(),
-		kShippedMeshTextureWidth,
-		kShippedMeshTextureHeight,
+		texture_entry_json.c_str(),
+		texture_width,
+		texture_height,
+		texture_levels,
+		texture_uploaded_levels,
+		static_cast<unsigned long>(texture_format),
+		static_cast<unsigned long>(texture_upload_format),
+		texture_upload_width,
+		texture_upload_height,
+		texture_upload_bytes,
+		static_cast<unsigned long>(texture_upload_checksum),
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
 		state != nullptr ? state->last_draw_start_vertex : 0,
 		state != nullptr ? state->last_draw_min_vertex_index : 0,
