@@ -117,6 +117,9 @@ int main()
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const bool state_ok =
 		expect(state->direct3d_create_calls == 1, "Direct3DCreate8 call count mismatch") &&
+		expect(state->load_library_calls == 0, "LoadLibrary call count mismatch") &&
+		expect(state->get_proc_address_calls == 0, "GetProcAddress call count mismatch") &&
+		expect(state->free_library_calls == 0, "FreeLibrary call count mismatch") &&
 		expect(state->create_device_calls == 1, "CreateDevice call count mismatch") &&
 		expect(state->begin_scene_calls == 1, "BeginScene call count mismatch") &&
 		expect(state->clear_calls == 1, "Clear call count mismatch") &&
