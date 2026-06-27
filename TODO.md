@@ -2461,6 +2461,15 @@ shares structure and follows behind.
       RGB and alpha combiner independence, argument modifiers, multi-stage
       chaining, generated shader variants, texture transforms, and
       non-stage-0 sampling remain open.
+- [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
+      in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
+      layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state
+      instead of always sampling UV0. A new browser-driven D3D8 texcoord probe
+      renders the same quad through UV0 and UV1 against a red/blue texture and
+      verifies distinct center pixels plus selected offsets through Playwright.
+      Camera-space generated coordinates, projected coordinates, texture
+      transform matrices, non-stage-0 texture coordinates, and generalized FVF
+      declaration decoding remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
