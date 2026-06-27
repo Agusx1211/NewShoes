@@ -2906,6 +2906,112 @@ function applyModuleState(moduleState) {
   harnessState.originalEngineStartup = moduleState.originalEngineStartup ?? harnessState.originalEngineStartup;
 }
 
+// ---- Win32 GDI font/surface browser bridge ----------------------------------
+// Backs the original WW3D FontCharsClass / Render2DSentenceClass text path.
+// The C++ side (wasm_win32_gdi_browser.cpp) calls these synchronous hooks via
+// EM_ASM; they rasterize glyphs through a Canvas 2D context and write BGR
+// pixels back into the wasm DIB-section buffer.
+let gdiCanvas = null;
+let gdiCtx = null;
+
+function gdiEnsureContext() {
+  if (gdiCtx) {
+    return gdiCtx;
+  }
+  gdiCanvas = document.createElement("canvas");
+  gdiCtx = gdiCanvas.getContext("2d", { willReadFrequently: true });
+  return gdiCtx;
+}
+
+function gdiFontCss(face, logicalHeight, weight, italic) {
+  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
+  const wght = weight || 400;
+  const ital = italic ? "italic " : "";
+  const family = face && face.length ? JSON.stringify(String(face)) : "Arial";
+  return `${ital}${wght} ${px}px ${family}`;
+}
+
+function gdiCssColor(rgb) {
+  const v = rgb >>> 0;
+  const r = v & 0xff;
+  const g = (v >> 8) & 0xff;
+  const b = (v >> 16) & 0xff;
+  return `rgb(${r},${g},${b})`;
+}
+
+// Measure: synchronous canvas.measureText + fontBoundingBox metrics.  Returns
+// {width,height,ascent,overhang} in device pixels.  overhang is left at 0
+// because canvas TextMetrics exposes no direct equivalent; the original
+// FontCharsClass zeroes overhang for the Generals/Arial path regardless.
+function cncGdiMeasure(face, logicalHeight, weight, italic, str) {
+  const ctx = gdiEnsureContext();
+  if (!ctx || typeof str !== "string" || str.length === 0) {
+    return null;
+  }
+  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
+  const m = ctx.measureText(str);
+  const px = Math.max(1, Math.abs((logicalHeight | 0) || 16));
+  const ascent = Math.ceil(m.fontBoundingBoxAscent || (px * 0.8));
+  const descent = Math.ceil(m.fontBoundingBoxDescent || (px * 0.2));
+  const width = Math.ceil(m.width);
+  return { width, height: ascent + descent, ascent, overhang: 0 };
+}
+
+// Rasterize one UTF-16 code unit at (x,y) honoring ETO_OPAQUE.  Writes 24bpp
+// BGR, DWORD-padded stride, top-down into the wasm heap at bitsPtr.
+function cncGdiRasterizeGlyph(
+  face,
+  logicalHeight,
+  weight,
+  italic,
+  code,
+  x,
+  y,
+  bitsPtr,
+  bmpW,
+  bmpH,
+  stride,
+  textColorRgb,
+  bkColorRgb,
+  opaque,
+  heapu8,
+) {
+  const ctx = gdiEnsureContext();
+  if (!ctx || bmpW <= 0 || bmpH <= 0 || stride < bmpW * 3) {
+    return false;
+  }
+  if (!(heapu8 instanceof Uint8Array)) {
+    return false;
+  }
+  if (gdiCanvas.width !== bmpW) {
+    gdiCanvas.width = bmpW;
+  }
+  if (gdiCanvas.height !== bmpH) {
+    gdiCanvas.height = bmpH;
+  }
+  ctx.font = gdiFontCss(face, logicalHeight, weight, italic);
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  if (opaque) {
+    ctx.fillStyle = gdiCssColor(bkColorRgb);
+    ctx.fillRect(0, 0, bmpW, bmpH);
+  }
+  ctx.fillStyle = gdiCssColor(textColorRgb);
+  ctx.fillText(String.fromCharCode(code), x, y);
+  const img = ctx.getImageData(0, 0, bmpW, bmpH).data;
+  for (let row = 0; row < bmpH; row++) {
+    let dst = (bitsPtr | 0) + row * stride;
+    const srcRow = row * bmpW * 4;
+    for (let col = 0; col < bmpW; col++) {
+      const s = srcRow + col * 4;
+      heapu8[dst++] = img[s + 2]; // B
+      heapu8[dst++] = img[s + 1]; // G
+      heapu8[dst++] = img[s + 0]; // R
+    }
+  }
+  return true;
+}
+
 async function loadWasmModule() {
   try {
     const moduleExports = await import("../dist/cnc-port.js");
@@ -2923,6 +3029,8 @@ async function loadWasmModule() {
       cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8TextureBind: bindD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
+      cncGdiMeasure,
+      cncGdiRasterizeGlyph,
     });
 
     return {
@@ -2983,6 +3091,7 @@ async function loadWasmModule() {
       ),
       pumpOriginalWndProcInput: module.cwrap("cnc_port_pump_original_wndproc_input", "string", []),
       probeOriginalWndProcInput: module.cwrap("cnc_port_probe_original_wndproc_input", "string", []),
+      probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
     };
@@ -5184,6 +5293,24 @@ async function rpc(command, payload = {}) {
         }
       }
       return { ok: true, command, state: snapshotState(), logs: [...harnessState.logs] };
+    case "gdiFontProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; GDI font bridge cannot run" };
+        }
+        const pointSize = Math.max(8, Math.min(72, Number(payload.pointSize ?? 16)));
+        const face = String(payload.face ?? "Arial");
+        const probe = parseModuleState(wasmModule.probeGdiFont(pointSize, face));
+        const ok = Boolean(probe.ok)
+          && probe.rasterizerInstalled === true
+          && probe.rasterized === true
+          && probe.metricsReported === true
+          && probe.measureReported === true
+          && (probe.glyphCoverage ?? 0) > 0
+          && (probe.fontHeight ?? 0) > 0;
+        return { ok, command, probe, state: snapshotState() };
+      }
     default:
       return { ok: false, command, error: `Unknown harness command: ${command}` };
   }

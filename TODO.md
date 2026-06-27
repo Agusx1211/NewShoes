@@ -2654,15 +2654,43 @@ shares structure and follows behind.
             with 4 vertices, 2 triangles, and the `cine_moon.tga` texture
             reference. This is loader-only coverage; later completed items
             cover browser rendering and real texture upload for this mesh.
-      - [ ] Replace the probe's no-op browser stubs for the Win32 GDI
+      - [x] Replace the probe's no-op browser stubs for the Win32 GDI
             functions declared in the `windows.h` shim
             (`CreateFont`, `CreateCompatibleDC`, `CreateDIBSection`,
             `SelectObject`, `DeleteObject`, `SetBkColor`, `SetTextColor`,
-            `GetTextMetrics`, `GetDC`, `ReleaseDC`, `DeleteDC`) with a real
-            browser font/surface bridge before relying on the original WW3D
-            font/`Render2DSentenceClass` path; they currently only satisfy
-            the linker for the asset-manager font code path and are not
-            reached by the renderer probes.
+            `GetTextMetrics`, `GetDC`, `ReleaseDC`, `DeleteDC`, plus the
+            previously-stub-only `ExtTextOutW`/`GetTextExtentPoint32W`) with a
+            real browser font/surface bridge (GLM-5.2). A new
+            `WebAssembly/src/wasm_win32_gdi_browser.cpp` translation unit owns
+            the single browser-target definition of those entry points: a real
+            GDI state machine (fonts / DCs / 24bpp BI_RGB top-down DIB sections
+            with GDI DWORD-padded strides and CPU-accessible pixel buffers) plus
+            synchronous Emscripten EM_ASM hooks (`Module.cncGdiMeasure`,
+            `Module.cncGdiRasterizeGlyph`) installed by `harness/bridge.js`
+            that rasterize glyphs through a Canvas 2D context and write BGR
+            pixels back into the wasm DIB buffer. The original
+            `FontCharsClass` / `Render2DSentenceClass` GDI call sequence is
+            reused unmodified; only the platform/device dependency is ported.
+            Covered by the `cnc_port_probe_gdi_font` export, the `gdiFontProbe`
+            RPC, and Playwright `EXPECT_WASM=1 node harness/smoke.mjs` coverage
+            proving the bridge rasterizes real glyphs (non-zero coverage,
+            plausible canvas-derived metrics) via
+            `artifacts/screenshots/harness-smoke-gdi-font-canvas.png`. The node
+            smoke targets keep the no-op `wasm_win32_gdi_stub.cpp` so the
+            asset-manager font compile path still links without a browser.
+      - [ ] Drive the original `FontCharsClass::Initialize_GDI_Font` +
+            `Store_GDI_Char` through the new browser GDI bridge (not just the
+            standalone `cnc_port_probe_gdi_font` mirror) once the focused
+            smoke can stand up a `WW3DAssetManager::Get_FontChars` request
+            without the full WW3D display/device singleton; this proves the
+            real original font cache builds glyphs through the canvas bridge.
+      - [ ] Wire `Render2DSentenceClass` text rendering through the browser
+            GDI bridge and the existing D3D8/WebGL2 draw bridge end-to-end
+            (font → glyph surface → `DX8Wrapper::_Copy_DX8_Rects` → texture →
+            `Render2DClass` textured quad), with a `DisplayString` text render
+            probe and Playwright screenshot coverage of visible glyphs. This
+            is the remaining work for the M4
+            "2D blits / Image/DisplayString text rendering" item below.
       - [x] Drive a real shipped `.w3d` mesh asset (from `W3DZH.big`) through
             the same `MeshClass::Load_W3D` + browser draw-bridge path instead
             of the synthetic in-memory quad: the browser harness mounts the
@@ -2774,6 +2802,14 @@ shares structure and follows behind.
             rendering once the WebGL draw bridge samples/applies multiple
             texture stages.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
+       - [x] (GLM-5.2) Browser Win32 GDI font/surface bridge implemented
+             (see the M4 WW3D2 device bring-up section above); the GDI entry
+             points the original `FontCharsClass` rasterizes through now produce
+             real canvas-backed glyphs and metrics. Node smoke targets keep the
+             no-op stub.
+       - [ ] Drive the real `FontCharsClass` glyph cache through the bridge.
+       - [ ] Wire `Render2DSentenceClass` text → D3D8/WebGL2 textured quad
+             with a `DisplayString` screenshot probe.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).

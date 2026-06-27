@@ -15,6 +15,7 @@ const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aab
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
+const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -1556,6 +1557,33 @@ try {
     throw new Error(`WW3D source asset load probe failed: ${JSON.stringify(sourceAssetLoadResult)}`);
   }
 
+  const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
+    pointSize: 24,
+    face: "Arial",
+  }));
+  if (!gdiFontProbeResult.ok
+      || gdiFontProbeResult.probe?.rasterizerInstalled !== true
+      || gdiFontProbeResult.probe?.rasterized !== true
+      || gdiFontProbeResult.probe?.fontCreated !== true
+      || gdiFontProbeResult.probe?.bitmapAllocated !== true
+      || gdiFontProbeResult.probe?.metricsReported !== true
+      || gdiFontProbeResult.probe?.measureReported !== true
+      || (gdiFontProbeResult.probe?.fontHeight ?? 0) <= 0
+      || (gdiFontProbeResult.probe?.measureCx ?? 0) <= 0
+      || (gdiFontProbeResult.probe?.glyphCoverage ?? 0) <= 0
+      || (gdiFontProbeResult.probe?.bitmapBytes ?? 0) <= 0) {
+    throw new Error(`GDI font bridge probe failed: ${JSON.stringify(gdiFontProbeResult)}`);
+  }
+  // The white-on-black glyph rasterization must leave non-background samples.
+  // Blue channel of the first pixel of the last drawn cell: background fill is
+  // black (0) and any coverage of 'M' should leave the cell mostly painted.
+  if ((gdiFontProbeResult.probe?.totalPixels ?? 0) <= 0
+      || (gdiFontProbeResult.probe?.glyphCoverage ?? 0) < (gdiFontProbeResult.probe?.totalPixels ?? 0) * 0.001) {
+    throw new Error(`GDI font bridge produced no glyph coverage: ${JSON.stringify(gdiFontProbeResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: gdiFontCanvasScreenshot });
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));
@@ -1600,6 +1628,7 @@ try {
       ww3dRender2DCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
+      gdiFontCanvasScreenshot,
     ],
     state: stateResult.state,
   }, null, 2));
