@@ -283,7 +283,7 @@ int main()
 
 	// ZFUNC across the comparison set; record one representative mapping.
 	set_state(D3DRS_ZFUNC, D3DCMP_LESSEQUAL, "SetRenderState ZFUNC LESSEQUAL failed");
-	const int zfunc_gl = map_cmp_func(D3DCMP_LESSEQUAL);
+	expect(map_cmp_func(D3DCMP_LESSEQUAL) == GL_LEQUAL, "LESSEQUAL maps to GL_LEQUAL");
 	set_state(D3DRS_ZFUNC, D3DCMP_ALWAYS, "SetRenderState ZFUNC ALWAYS failed");
 	expect(map_cmp_func(D3DCMP_ALWAYS) == GL_ALWAYS, "ALWAYS maps to GL_ALWAYS");
 
