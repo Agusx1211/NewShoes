@@ -118,6 +118,118 @@ int main()
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 
 	// ---------------------------------------------------------------------------
+	// Fixed-function transform / viewport / render-state coverage. The shim
+	// stores the matrices and render states CPU-side so Set/Get round-trip and
+	// are observable through the probe counters and last-value fields. No GL
+	// state is written yet; this exercises state bookkeeping only.
+	// ---------------------------------------------------------------------------
+
+	const UINT set_transform_before = state->set_transform_calls;
+	const UINT get_transform_before = state->get_transform_calls;
+	const UINT set_render_state_before = state->set_render_state_calls;
+	const UINT get_render_state_before = state->get_render_state_calls;
+
+	D3DMATRIX view_matrix = {};
+	view_matrix.m[0][0] = 1.0f; view_matrix.m[0][1] = 2.0f; view_matrix.m[0][2] = 3.0f; view_matrix.m[0][3] = 4.0f;
+	view_matrix.m[1][0] = 5.0f; view_matrix.m[1][1] = 6.0f; view_matrix.m[1][2] = 7.0f; view_matrix.m[1][3] = 8.0f;
+	view_matrix.m[2][0] = 9.0f; view_matrix.m[2][1] = 10.0f; view_matrix.m[2][2] = 11.0f; view_matrix.m[2][3] = 12.0f;
+	view_matrix.m[3][0] = 13.0f; view_matrix.m[3][1] = 14.0f; view_matrix.m[3][2] = 15.0f; view_matrix.m[3][3] = 16.0f;
+
+	D3DMATRIX projection_matrix = {};
+	projection_matrix.m[0][0] = 0.1f;
+	projection_matrix.m[1][1] = 0.2f;
+	projection_matrix.m[2][2] = 0.3f;
+	projection_matrix.m[3][3] = 0.4f;
+
+	if (!expect(SUCCEEDED(device->SetTransform(D3DTS_VIEW, &view_matrix)), "SetTransform VIEW failed") ||
+		!expect(SUCCEEDED(device->SetTransform(D3DTS_PROJECTION, &projection_matrix)),
+			"SetTransform PROJECTION failed") ||
+		!expect(state->set_transform_calls == set_transform_before + 2,
+			"set_transform_calls counter mismatch") ||
+		!expect(state->last_set_transform_state == D3DTS_PROJECTION,
+			"last_set_transform_state mismatch") ||
+		!expect(near(state->last_set_transform_matrix.m[0][0], 0.1f),
+			"last_set_transform_matrix mismatch") ||
+		!expect(near(state->last_set_transform_matrix.m[3][3], 0.4f),
+			"last_set_transform_matrix diagonal mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	D3DMATRIX readback_matrix = {};
+	if (!expect(SUCCEEDED(device->GetTransform(D3DTS_VIEW, &readback_matrix)), "GetTransform VIEW failed") ||
+		!expect(near(readback_matrix.m[0][0], 1.0f), "GetTransform VIEW element mismatch") ||
+		!expect(near(readback_matrix.m[1][2], 7.0f), "GetTransform VIEW element mismatch") ||
+		!expect(state->get_transform_calls == get_transform_before + 1,
+			"get_transform_calls counter mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	// An unset transform state defaults to identity and still reports through
+	// the get counter / last-get field.
+	D3DMATRIX texture_matrix = {};
+	if (!expect(SUCCEEDED(device->GetTransform(D3DTS_TEXTURE0, &texture_matrix)),
+			"GetTransform TEXTURE0 failed") ||
+		!expect(near(texture_matrix.m[0][0], 1.0f) && near(texture_matrix.m[1][1], 1.0f) &&
+			near(texture_matrix.m[2][2], 1.0f) && near(texture_matrix.m[3][3], 1.0f),
+			"unset transform should default to identity") ||
+		!expect(near(texture_matrix.m[0][1], 0.0f), "identity transform has non-zero off-diagonal") ||
+		!expect(state->get_transform_calls == get_transform_before + 2,
+			"get_transform_calls counter mismatch after identity read") ||
+		!expect(state->last_get_transform_state == D3DTS_TEXTURE0,
+			"last_get_transform_state mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	// Viewport set/get round-trip observability. The viewport was set above; a
+	// fresh GetViewport must echo the stored values and bump the get counter.
+	D3DVIEWPORT8 readback_viewport = {};
+	if (!expect(SUCCEEDED(device->GetViewport(&readback_viewport)), "GetViewport round-trip failed") ||
+		!expect(readback_viewport.X == 4 && readback_viewport.Y == 8 &&
+			readback_viewport.Width == 320 && readback_viewport.Height == 180,
+			"GetViewport round-trip value mismatch") ||
+		!expect(near(readback_viewport.MinZ, 0.25f) && near(readback_viewport.MaxZ, 0.75f),
+			"GetViewport round-trip depth range mismatch") ||
+		!expect(state->get_viewport_calls == 2, "get_viewport_calls counter mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	if (!expect(SUCCEEDED(device->SetRenderState(D3DRS_ZENABLE, 1)), "SetRenderState ZENABLE failed") ||
+		!expect(SUCCEEDED(device->SetRenderState(D3DRS_CULLMODE, 3)), "SetRenderState CULLMODE failed") ||
+		!expect(state->set_render_state_calls == set_render_state_before + 2,
+			"set_render_state_calls counter mismatch") ||
+		!expect(state->last_set_render_state == D3DRS_CULLMODE, "last_set_render_state mismatch") ||
+		!expect(state->last_set_render_state_value == 3, "last_set_render_state_value mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	DWORD zenable_value = 0;
+	DWORD fog_value = 0;
+	if (!expect(SUCCEEDED(device->GetRenderState(D3DRS_ZENABLE, &zenable_value)),
+			"GetRenderState ZENABLE failed") ||
+		!expect(zenable_value == 1, "GetRenderState ZENABLE value mismatch") ||
+		!expect(SUCCEEDED(device->GetRenderState(D3DRS_FOGENABLE, &fog_value)),
+			"GetRenderState FOGENABLE failed") ||
+		!expect(fog_value == 0, "unset render state should default to 0") ||
+		!expect(state->get_render_state_calls == get_render_state_before + 2,
+			"get_render_state_calls counter mismatch") ||
+		!expect(state->last_get_render_state == D3DRS_FOGENABLE,
+			"last_get_render_state mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	// ---------------------------------------------------------------------------
 	// CPU-backed D3D8 resource coverage (texture / vertex buffer / index buffer).
 	// These resources are backed by host-side std::vector buffers in the shim;
 	// this exercises Lock/Unlock, descriptor, and pitch contracts only. There
@@ -406,7 +518,13 @@ int main()
 		expect(state->depth_stencil_format == D3DFMT_D24S8, "depth-stencil state mismatch") &&
 		expect(state->viewport.X == 4 && state->viewport.Y == 8 &&
 			state->viewport.Width == 320 && state->viewport.Height == 180,
-			"viewport state mismatch");
+			"viewport state mismatch") &&
+		expect(state->set_transform_calls == 2, "set_transform_calls count mismatch") &&
+		expect(state->get_transform_calls == 2, "get_transform_calls count mismatch") &&
+		expect(state->set_viewport_calls == 1, "set_viewport_calls count mismatch") &&
+		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
+		expect(state->set_render_state_calls == 2, "set_render_state_calls count mismatch") &&
+		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch");
 
 	device->Release();
 	d3d->Release();

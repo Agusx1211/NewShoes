@@ -51,6 +51,18 @@ struct WasmD3D8ShimState
 	D3DFORMAT back_buffer_format;
 	D3DFORMAT depth_stencil_format;
 	D3DVIEWPORT8 viewport;
+	UINT set_transform_calls;
+	UINT get_transform_calls;
+	UINT set_viewport_calls;
+	UINT get_viewport_calls;
+	UINT set_render_state_calls;
+	UINT get_render_state_calls;
+	D3DTRANSFORMSTATETYPE last_set_transform_state;
+	D3DTRANSFORMSTATETYPE last_get_transform_state;
+	D3DMATRIX last_set_transform_matrix;
+	D3DRENDERSTATETYPE last_set_render_state;
+	D3DRENDERSTATETYPE last_get_render_state;
+	DWORD last_set_render_state_value;
 };
 
 extern "C" void wasm_d3d8_reset_state();

@@ -3,6 +3,7 @@
 #include "D3dx8core.h"
 
 #include <cstring>
+#include <map>
 #include <new>
 #include <vector>
 
@@ -89,6 +90,15 @@ UINT bytes_per_pixel(D3DFORMAT format)
 		default:
 			return 4;
 	}
+}
+
+void identity_matrix(D3DMATRIX &matrix)
+{
+	std::memset(&matrix, 0, sizeof(matrix));
+	matrix.m[0][0] = 1.0f;
+	matrix.m[1][1] = 1.0f;
+	matrix.m[2][2] = 1.0f;
+	matrix.m[3][3] = 1.0f;
 }
 
 DWORD checksum_bytes(const BYTE *data, UINT size)
@@ -793,8 +803,32 @@ public:
 		return S_OK;
 	}
 
-	HRESULT SetTransform(D3DTRANSFORMSTATETYPE, const D3DMATRIX *) override { return S_OK; }
-	HRESULT GetTransform(D3DTRANSFORMSTATETYPE, D3DMATRIX *) override { return D3DERR_NOTAVAILABLE; }
+	HRESULT SetTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX *matrix) override
+	{
+		if (matrix == nullptr) {
+			return E_FAIL;
+		}
+		m_transforms[state] = *matrix;
+		++g_state.set_transform_calls;
+		g_state.last_set_transform_state = state;
+		g_state.last_set_transform_matrix = *matrix;
+		return S_OK;
+	}
+	HRESULT GetTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) override
+	{
+		if (matrix == nullptr) {
+			return E_FAIL;
+		}
+		const auto found = m_transforms.find(state);
+		if (found != m_transforms.end()) {
+			*matrix = found->second;
+		} else {
+			identity_matrix(*matrix);
+		}
+		++g_state.get_transform_calls;
+		g_state.last_get_transform_state = state;
+		return S_OK;
+	}
 	HRESULT MultiplyTransform(D3DTRANSFORMSTATETYPE, const D3DMATRIX *) override { return S_OK; }
 
 	HRESULT SetViewport(const D3DVIEWPORT8 *viewport) override
@@ -804,6 +838,7 @@ public:
 		}
 		m_viewport = *viewport;
 		g_state.viewport = m_viewport;
+		++g_state.set_viewport_calls;
 		return S_OK;
 	}
 
@@ -813,6 +848,7 @@ public:
 			return E_FAIL;
 		}
 		*viewport = m_viewport;
+		++g_state.get_viewport_calls;
 		return S_OK;
 	}
 
@@ -821,8 +857,25 @@ public:
 	HRESULT SetLight(DWORD, const D3DLIGHT8 *) override { return S_OK; }
 	HRESULT LightEnable(DWORD, BOOL) override { return S_OK; }
 	HRESULT SetClipPlane(DWORD, const float *) override { return S_OK; }
-	HRESULT SetRenderState(D3DRENDERSTATETYPE, DWORD) override { return S_OK; }
-	HRESULT GetRenderState(D3DRENDERSTATETYPE, DWORD *) override { return D3DERR_NOTAVAILABLE; }
+	HRESULT SetRenderState(D3DRENDERSTATETYPE state, DWORD value) override
+	{
+		m_render_states[state] = value;
+		++g_state.set_render_state_calls;
+		g_state.last_set_render_state = state;
+		g_state.last_set_render_state_value = value;
+		return S_OK;
+	}
+	HRESULT GetRenderState(D3DRENDERSTATETYPE state, DWORD *value) override
+	{
+		if (value == nullptr) {
+			return E_FAIL;
+		}
+		const auto found = m_render_states.find(state);
+		*value = found != m_render_states.end() ? found->second : 0;
+		++g_state.get_render_state_calls;
+		g_state.last_get_render_state = state;
+		return S_OK;
+	}
 	HRESULT SetTexture(DWORD, IDirect3DBaseTexture8 *) override { return S_OK; }
 	HRESULT SetTextureStageState(DWORD, D3DTEXTURESTAGESTATETYPE, DWORD) override { return S_OK; }
 	HRESULT ValidateDevice(DWORD *passes) override
@@ -970,6 +1023,8 @@ private:
 	ULONG m_ref_count = 1;
 	D3DPRESENT_PARAMETERS m_parameters = {};
 	D3DVIEWPORT8 m_viewport = {};
+	std::map<D3DTRANSFORMSTATETYPE, D3DMATRIX> m_transforms;
+	std::map<D3DRENDERSTATETYPE, DWORD> m_render_states;
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;

@@ -2275,6 +2275,12 @@ shares structure and follows behind.
       D3D8 CPU-backed resource coverage only — there are no GL/WebGPU texture or
       buffer uploads in the current shim; those wait for the real WebGL2 render
       device.
+- [x] Store D3D8 fixed-function state in the browser shim for
+      `SetTransform`/`GetTransform`, `SetViewport`/`GetViewport`, and basic
+      `SetRenderState`/`GetRenderState`, with focused smoke coverage for
+      matrix round-trips, identity defaults, viewport readback, render-state
+      defaults, and probe counters. This is CPU-side state bookkeeping only;
+      it does not yet apply those states to WebGL2.
 - [x] Wire original `WW3D2/dx8wrapper.cpp` D3D8 DLL loading through a
       target-scoped wasm loader hook, with smoke coverage proving
       `DX8Wrapper::Init` reaches `LoadLibrary("D3D8.DLL")`,
