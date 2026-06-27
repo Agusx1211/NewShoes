@@ -12,6 +12,7 @@ const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
+const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -1311,6 +1312,55 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dAABoxCanvasScreenshot });
 
+  const render2DResult = await page.evaluate(() => window.CnCPort.rpc("ww3dRender2DTexturedQuad"));
+  if (!render2DResult.ok
+      || render2DResult.probe?.source !== "ww3d_render2d_textured_quad_probe"
+      || render2DResult.probe?.calls?.drawIndexed < 1
+      || render2DResult.probe?.calls?.browserTextureCreate < 1
+      || render2DResult.probe?.calls?.browserTextureUpdate < 1
+      || render2DResult.probe?.calls?.browserTextureBind < 2
+      || render2DResult.probe?.calls?.browserTextureRelease < 1
+      || render2DResult.probe?.calls?.browserBufferCreate < 2
+      || render2DResult.probe?.calls?.browserBufferUpdate < 2
+      || render2DResult.probe?.draw?.primitiveType !== 4
+      || render2DResult.probe?.draw?.vertexCount !== 4
+      || render2DResult.probe?.draw?.primitiveCount !== 2
+      || render2DResult.probe?.draw?.vertexStride !== 44
+      || render2DResult.probe?.draw?.vertexBufferId <= 0
+      || render2DResult.probe?.draw?.indexBufferId <= 0
+      || render2DResult.probe?.draw?.transformMask !== 7
+      || render2DResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || render2DResult.probe?.draw?.renderState?.srcBlend !== 5
+      || render2DResult.probe?.draw?.renderState?.destBlend !== 6
+      || render2DResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || render2DResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || render2DResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || render2DResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || render2DResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || render2DResult.browserProbe?.vertexStride !== 44
+      || render2DResult.browserProbe?.indexCount !== 6
+      || render2DResult.browserProbe?.usedPersistentBuffers !== true
+      || render2DResult.browserProbe?.usedTransforms !== true
+      || render2DResult.browserProbe?.texture0?.id !== render2DResult.probe?.texture?.id
+      || render2DResult.browserProbe?.texture0?.ready !== true
+      || render2DResult.browserProbe?.texture0?.sampled !== true
+      || render2DResult.browserProbe?.texture0?.texCoordOffset !== 28
+      || render2DResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || render2DResult.browserProbe?.texture0?.combiner?.arg1Name !== "texture"
+      || render2DResult.browserProbe?.texture0?.combiner?.arg2Name !== "diffuse"
+      || render2DResult.browserProbe?.texture0?.combiner?.supported !== true
+      || render2DResult.browserProbe?.texture0?.sampler?.supported !== true
+      || !pixelLooksRed(render2DResult.browserProbe?.centerPixel)
+      || !pixelLooksRed(render2DResult.screenshot?.centerPixel)
+      || render2DResult.textureDelta?.creates < 1
+      || render2DResult.textureDelta?.updates < 1
+      || render2DResult.textureDelta?.binds < 1
+      || render2DResult.textureDelta?.releases < 1) {
+    throw new Error(`WW3D Render2D textured quad probe failed: ${JSON.stringify(render2DResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dRender2DCanvasScreenshot });
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));
@@ -1352,6 +1402,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
+      ww3dRender2DCanvasScreenshot,
     ],
     state: stateResult.state,
   }, null, 2));

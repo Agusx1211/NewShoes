@@ -2293,3 +2293,24 @@ HRESULT D3DXCreateCubeTexture(
 	}
 	return device->CreateCubeTexture(edge_length, levels, usage, format, pool, texture);
 }
+
+HRESULT D3DXCreateVolumeTexture(
+	IDirect3DDevice8 *device,
+	UINT width,
+	UINT height,
+	UINT depth,
+	UINT levels,
+	DWORD usage,
+	D3DFORMAT format,
+	D3DPOOL pool,
+	IDirect3DVolumeTexture8 **texture)
+{
+	if (texture == nullptr) {
+		return E_FAIL;
+	}
+	*texture = nullptr;
+	if (device == nullptr) {
+		return E_FAIL;
+	}
+	return device->CreateVolumeTexture(width, height, depth, levels, usage, format, pool, texture);
+}

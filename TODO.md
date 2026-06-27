@@ -2348,6 +2348,10 @@ shares structure and follows behind.
       proving static/stream usage choices plus dynamic discard orphaning in
       WebGL.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
+- [ ] Implement real browser D3D8 volume texture resources and
+      `D3DXCreateVolumeTexture` upload/bind behavior if the original W3D asset
+      path reaches `VolumeTextureClass`; the current wasm shim only links the
+      D3DX entry point and returns the device's unsupported result.
 - [x] Add focused texture upload *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
       `d3d8-texture-upload-readiness-smoke` records the per-format texture
@@ -2592,6 +2596,11 @@ shares structure and follows behind.
       render path, verified by `harness-smoke-ww3d-aabox-canvas.png` and
       center-pixel sampling plus transform-use assertions in
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `Render2DClass` textured quad/blit renders through
+      `TextureClass`, `DX8Wrapper::Set_Texture`, dynamic WW3D vertex/index
+      buffers, and the browser D3D8/WebGL2 draw bridge, verified by
+      `harness-smoke-ww3d-render2d-canvas.png` and red center-pixel sampling
+      in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
