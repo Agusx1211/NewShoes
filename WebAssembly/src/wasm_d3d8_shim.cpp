@@ -2,7 +2,9 @@
 
 #include "D3dx8core.h"
 
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <new>
 #include <vector>
@@ -28,8 +30,35 @@ EM_JS(void, wasm_d3d8_browser_clear_target, (unsigned int flags, unsigned int co
 		stencil >>> 0,
 	);
 });
+EM_JS(void, wasm_d3d8_browser_draw_indexed, (
+	int primitive_type,
+	unsigned int vertex_ptr,
+	unsigned int vertex_byte_size,
+	unsigned int vertex_count,
+	unsigned int vertex_stride,
+	unsigned int index_ptr,
+	unsigned int index_byte_size,
+	unsigned int index_count,
+	unsigned int index_size
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
+	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
+		return;
+	}
+	bridge({
+		primitiveType: primitive_type,
+		vertexBytes: Module.HEAPU8.slice(vertex_ptr, vertex_ptr + vertex_byte_size),
+		vertexCount: vertex_count >>> 0,
+		vertexStride: vertex_stride >>> 0,
+		indexBytes: Module.HEAPU8.slice(index_ptr, index_ptr + index_byte_size),
+		indexCount: index_count >>> 0,
+		indexSize: index_size >>> 0,
+	});
+});
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
+void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -174,6 +203,26 @@ void browser_clear_target(DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 		static_cast<unsigned int>(color),
 		static_cast<double>(z),
 		static_cast<unsigned int>(stencil));
+}
+
+void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, const BYTE *vertex_data, UINT vertex_byte_size,
+	UINT vertex_count, UINT vertex_stride, const BYTE *index_data, UINT index_byte_size, UINT index_count,
+	UINT index_size)
+{
+	if (vertex_data == nullptr || vertex_byte_size == 0 || index_data == nullptr || index_byte_size == 0 ||
+		index_count == 0 || vertex_stride == 0) {
+		return;
+	}
+	wasm_d3d8_browser_draw_indexed(
+		static_cast<int>(primitive_type),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(vertex_data)),
+		vertex_byte_size,
+		vertex_count,
+		vertex_stride,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(index_data)),
+		index_byte_size,
+		index_count,
+		index_size);
 }
 
 struct BrowserD3DResource
@@ -463,6 +512,7 @@ public:
 	}
 
 	UINT length() const { return static_cast<UINT>(m_bytes.size()); }
+	const BYTE *data() const { return m_bytes.data(); }
 
 	DWORD checksum(UINT offset, UINT size) const
 	{
@@ -539,6 +589,7 @@ public:
 	}
 
 	UINT length() const { return static_cast<UINT>(m_bytes.size()); }
+	const BYTE *data() const { return m_bytes.data(); }
 	D3DFORMAT format() const { return m_format; }
 	UINT index_size() const { return m_format == D3DFMT_INDEX32 ? 4 : 2; }
 
@@ -943,6 +994,8 @@ public:
 		g_state.last_draw_primitive_count = primitive_count;
 		capture_bound_draw(m_indices_base_vertex_index + min_index, vertex_count, start_index,
 			primitive_vertex_count(primitive_type, primitive_count));
+		draw_bound_indexed_primitive(primitive_type, m_indices_base_vertex_index, min_index, vertex_count,
+			start_index, primitive_vertex_count(primitive_type, primitive_count));
 		return S_OK;
 	}
 	HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE, UINT, const void *, UINT) override { return D3DERR_NOTAVAILABLE; }
@@ -1047,6 +1100,51 @@ private:
 			g_state.last_draw_index_buffer_checksum = indices->checksum(offset, captured_bytes);
 			g_state.last_draw_index_format = indices->format();
 		}
+	}
+
+	void draw_bound_indexed_primitive(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
+		UINT vertex_count, UINT first_index, UINT index_count)
+	{
+		if (m_stream_source == nullptr || m_indices == nullptr || m_stream_source_stride == 0 || index_count == 0) {
+			return;
+		}
+
+		const BrowserD3DVertexBuffer *stream = static_cast<const BrowserD3DVertexBuffer *>(m_stream_source);
+		const BrowserD3DIndexBuffer *indices = static_cast<const BrowserD3DIndexBuffer *>(m_indices);
+		if (min_vertex_index > std::numeric_limits<UINT>::max() - vertex_count) {
+			return;
+		}
+
+		// Keep the D3D index buffer bytes unchanged for this first browser bridge.
+		// Upload from BaseVertexIndex and include the MinVertexIndex range so raw
+		// D3D indices still address the intended vertices in WebGL.
+		const UINT uploaded_vertex_count = min_vertex_index + vertex_count;
+		if (base_vertex_index > std::numeric_limits<UINT>::max() / m_stream_source_stride ||
+				uploaded_vertex_count > std::numeric_limits<UINT>::max() / m_stream_source_stride) {
+			return;
+		}
+		const UINT vertex_offset = base_vertex_index * m_stream_source_stride;
+		const UINT requested_vertex_bytes = uploaded_vertex_count * m_stream_source_stride;
+		const UINT vertex_bytes = checked_range_size(stream->length(), vertex_offset, requested_vertex_bytes);
+		const UINT index_size = indices->index_size();
+		const UINT index_offset = first_index * index_size;
+		const UINT requested_index_bytes = index_count * index_size;
+		const UINT index_bytes = checked_range_size(indices->length(), index_offset, requested_index_bytes);
+
+		if (vertex_bytes == 0 || index_bytes == 0) {
+			return;
+		}
+
+		browser_draw_indexed(
+			primitive_type,
+			stream->data() + vertex_offset,
+			vertex_bytes,
+			uploaded_vertex_count,
+			m_stream_source_stride,
+			indices->data() + index_offset,
+			index_bytes,
+			index_count,
+			index_size);
 	}
 
 	HRESULT create_surface(UINT width, UINT height, D3DFORMAT format, DWORD usage, IDirect3DSurface8 **surface)

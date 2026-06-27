@@ -2313,6 +2313,13 @@ shares structure and follows behind.
       WebGL2 context through the Emscripten module callback, with a wasm-exported
       D3D8 clear probe and Playwright screenshot/pixel coverage proving the
       actual `IDirect3DDevice8::Clear` path paints the canvas.
+- [x] Upload the current indexed draw's original WW3D-filled vertex/index byte
+      ranges to temporary WebGL2 buffers from the browser D3D8 shim, with a
+      wasm-exported original `AABoxRenderObjClass` render probe and Playwright
+      screenshot/center-pixel coverage proving the real `DrawIndexedPrimitive`
+      path paints visible untextured geometry. This is a first bridge proof only;
+      persistent GL buffer ownership, textures, fixed-function state, matrices,
+      and shader translation remain open.
 - [ ] Vertex/index buffer abstraction → GL buffers.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
@@ -2324,6 +2331,9 @@ shares structure and follows behind.
 - [x] Clear to a color (prove the GL path works) through the browser D3D8
       `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and
       top-left pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Single untextured AABox/debug geometry renders from the original WW3D
+      render path, verified by `harness-smoke-ww3d-aabox-canvas.png` and
+      center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [ ] 2D blits / `Image`/`DisplayString` text rendering.
 - [ ] Single textured mesh renders.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.

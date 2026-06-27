@@ -3384,6 +3384,7 @@ add_executable(cnc-port
   src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
   src/wasm_wndproc_probe.cpp
+  src/wasm_ww3d_render_probe.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
 
@@ -3422,6 +3423,7 @@ target_include_directories(cnc-port PRIVATE
 )
 
 target_link_libraries(cnc-port PRIVATE
+  zh_ww3d2_compile_frontier
   zh_gameengine_real_ini_runtime
   zh_gameengine_globaldata_runtime
   zh_gameengine_common_core
@@ -3432,6 +3434,24 @@ target_link_libraries(cnc-port PRIVATE
   zh_winmain_wndproc_browser
   zh_win32_gameengine_message_pump
   zh_gamenetwork_core
+  zh_wwmath_lookup
+  zh_wwmath_core
+  zh_wwsaveload_full
+  zh_wwsaveload_core
+  zh_wwlib_file_ini
+  zh_wwlib_file_core
+  zh_wwlib_stream_core
+  zh_wwlib_string
+  zh_wwlib_refcount
+  zh_wwlib_containers
+  zh_wwlib_crc
+  zh_wwlib_random
+  zh_wwlib_thread
+  zh_wwlib_mutex
+  zh_wwlib_targa
+  zh_wwdebug_profile
+  zh_compression_manager
+  zh_compression_eac
 )
 
 target_link_options(cnc-port PRIVATE
@@ -3447,7 +3467,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_ww3d_aabox','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 

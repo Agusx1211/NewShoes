@@ -4,7 +4,7 @@
 #include "Common/StackDump.h"
 #include "Common/SystemInfo.h"
 
-bool DX8Wrapper_IsWindowed = true;
+__attribute__((weak)) bool DX8Wrapper_IsWindowed = true;
 char g_cnc_port_app_prefix[] = "";
 char *gAppPrefix = g_cnc_port_app_prefix;
 extern const Bool TheSystemIsUnicode = FALSE;
