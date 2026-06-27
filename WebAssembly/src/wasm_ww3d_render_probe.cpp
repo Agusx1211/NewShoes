@@ -95,14 +95,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
+		state->set_transform_calls >= 3 &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
 		state->last_draw_vertex_count == 8 &&
 		state->last_draw_primitive_count == 12 &&
 		state->last_draw_vertex_buffer_bytes > 0 &&
 		state->last_draw_index_buffer_bytes > 0 &&
-		state->last_draw_index_format == D3DFMT_INDEX16;
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		(state->last_draw_transform_mask & 7u) == 7u;
 
-	char buffer[1500];
+	char buffer[1700];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_aabox_render_probe\","
 		"\"ok\":%s,"
@@ -110,11 +112,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		"\"render\":%d,\"endRender\":%d,\"allocated\":%s},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"setStreamSource\":%u,\"setIndices\":%u,"
-		"\"drawIndexed\":%u,\"clear\":%u,\"present\":%u},"
+		"\"drawIndexed\":%u,\"setTransform\":%u,\"lastTransformState\":%d,"
+		"\"clear\":%u,\"present\":%u},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,\"minVertexIndex\":%u,"
 		"\"vertexCount\":%u,\"primitiveCount\":%u,\"vertexStride\":%u,"
 		"\"vertexBytes\":%u,\"vertexChecksum\":%lu,\"indexBytes\":%u,"
-		"\"indexChecksum\":%lu,\"indexFormat\":%d}}",
+		"\"indexChecksum\":%lu,\"indexFormat\":%d,\"transformMask\":%u}}",
 		bool_json(ok),
 		init_result,
 		set_device_result,
@@ -129,6 +132,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		state != nullptr ? state->set_stream_source_calls : 0,
 		state != nullptr ? state->set_indices_calls : 0,
 		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_set_transform_state : D3DTS_FORCE_DWORD),
 		state != nullptr ? state->clear_calls : 0,
 		state != nullptr ? state->present_calls : 0,
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
@@ -141,7 +146,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_buffer_checksum : 0),
 		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_index_buffer_checksum : 0),
-		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN));
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0);
 
 	g_ww3d_aabox_probe_json = buffer;
 	if (succeeded(init_result)) {

@@ -39,12 +39,23 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int index_ptr,
 	unsigned int index_byte_size,
 	unsigned int index_count,
-	unsigned int index_size
+	unsigned int index_size,
+	unsigned int transform_mask,
+	unsigned int world_ptr,
+	unsigned int view_ptr,
+	unsigned int projection_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
 		return;
 	}
+	const copyMatrix = (ptr) => {
+		if (!ptr || !Module.HEAPF32) {
+			return null;
+		}
+		const offset = ptr >>> 2;
+		return Array.from(Module.HEAPF32.subarray(offset, offset + 16));
+	};
 	bridge({
 		primitiveType: primitive_type,
 		vertexBytes: Module.HEAPU8.slice(vertex_ptr, vertex_ptr + vertex_byte_size),
@@ -53,12 +64,18 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		indexBytes: Module.HEAPU8.slice(index_ptr, index_ptr + index_byte_size),
 		indexCount: index_count >>> 0,
 		indexSize: index_size >>> 0,
+		transformMask: transform_mask >>> 0,
+		transforms: {
+			world: copyMatrix(world_ptr),
+			view: copyMatrix(view_ptr),
+			projection: copyMatrix(projection_ptr),
+		},
 	});
 });
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -168,6 +185,10 @@ DWORD checksum_bytes(const BYTE *data, UINT size)
 	return hash;
 }
 
+constexpr UINT DRAW_TRANSFORM_WORLD = 1u << 0;
+constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
+constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
+
 UINT checked_range_size(UINT length, UINT offset, UINT requested_size)
 {
 	if (offset > length) {
@@ -207,7 +228,8 @@ void browser_clear_target(DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 
 void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, const BYTE *vertex_data, UINT vertex_byte_size,
 	UINT vertex_count, UINT vertex_stride, const BYTE *index_data, UINT index_byte_size, UINT index_count,
-	UINT index_size)
+	UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform, const D3DMATRIX *view_transform,
+	const D3DMATRIX *projection_transform)
 {
 	if (vertex_data == nullptr || vertex_byte_size == 0 || index_data == nullptr || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -222,7 +244,11 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, const BYTE *vertex_da
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(index_data)),
 		index_byte_size,
 		index_count,
-		index_size);
+		index_size,
+		transform_mask,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(world_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(view_transform)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)));
 }
 
 struct BrowserD3DResource
@@ -1074,6 +1100,10 @@ private:
 		g_state.last_draw_index_buffer_bytes = 0;
 		g_state.last_draw_index_buffer_checksum = 0;
 		g_state.last_draw_index_format = D3DFMT_UNKNOWN;
+		g_state.last_draw_transform_mask = 0;
+		identity_matrix(g_state.last_draw_world_transform);
+		identity_matrix(g_state.last_draw_view_transform);
+		identity_matrix(g_state.last_draw_projection_transform);
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
 			const BrowserD3DVertexBuffer *stream =
@@ -1130,6 +1160,9 @@ private:
 		const UINT index_offset = first_index * index_size;
 		const UINT requested_index_bytes = index_count * index_size;
 		const UINT index_bytes = checked_range_size(indices->length(), index_offset, requested_index_bytes);
+		capture_draw_transform(D3DTS_WORLD, DRAW_TRANSFORM_WORLD, g_state.last_draw_world_transform);
+		capture_draw_transform(D3DTS_VIEW, DRAW_TRANSFORM_VIEW, g_state.last_draw_view_transform);
+		capture_draw_transform(D3DTS_PROJECTION, DRAW_TRANSFORM_PROJECTION, g_state.last_draw_projection_transform);
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
 			return;
@@ -1144,7 +1177,22 @@ private:
 			indices->data() + index_offset,
 			index_bytes,
 			index_count,
-			index_size);
+			index_size,
+			g_state.last_draw_transform_mask,
+			&g_state.last_draw_world_transform,
+			&g_state.last_draw_view_transform,
+			&g_state.last_draw_projection_transform);
+	}
+
+	void capture_draw_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const
+	{
+		const auto found = m_transforms.find(state);
+		if (found != m_transforms.end()) {
+			destination = found->second;
+			g_state.last_draw_transform_mask |= mask_bit;
+		} else {
+			identity_matrix(destination);
+		}
 	}
 
 	HRESULT create_surface(UINT width, UINT height, D3DFORMAT format, DWORD usage, IDirect3DSurface8 **surface)

@@ -260,9 +260,18 @@ function ensureD3D8DrawProgram() {
     in vec3 aPosition;
     in vec4 aDiffuseBgra;
     uniform float uScale;
+    uniform bool uUseTransforms;
+    uniform mat4 uWorld;
+    uniform mat4 uView;
+    uniform mat4 uProjection;
     out vec4 vColor;
     void main() {
-      gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+      if (uUseTransforms) {
+        vec4 d3dClip = uProjection * uView * uWorld * vec4(aPosition, 1.0);
+        gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+      } else {
+        gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+      }
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
     }
   `);
@@ -291,6 +300,10 @@ function ensureD3D8DrawProgram() {
     position: gl.getAttribLocation(program, "aPosition"),
     diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
     scale: gl.getUniformLocation(program, "uScale"),
+    useTransforms: gl.getUniformLocation(program, "uUseTransforms"),
+    world: gl.getUniformLocation(program, "uWorld"),
+    view: gl.getUniformLocation(program, "uView"),
+    projection: gl.getUniformLocation(program, "uProjection"),
   };
   return d3d8DrawProgram;
 }
@@ -348,6 +361,16 @@ function pixelHasColor(pixel, threshold = 8) {
   return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
 }
 
+function normalizeD3DMatrix(matrix) {
+  if (!Array.isArray(matrix) || matrix.length !== 16) {
+    return null;
+  }
+  if (!matrix.every(Number.isFinite)) {
+    return null;
+  }
+  return new Float32Array(matrix);
+}
+
 function paintD3D8DrawIndexed(payload = {}) {
   const vertexBytes = payload.vertexBytes instanceof Uint8Array ? payload.vertexBytes : new Uint8Array();
   const indexBytes = payload.indexBytes instanceof Uint8Array ? payload.indexBytes : new Uint8Array();
@@ -356,6 +379,11 @@ function paintD3D8DrawIndexed(payload = {}) {
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
   const glPrimitive = d3dPrimitiveToGl(payload.primitiveType);
+  const world = normalizeD3DMatrix(payload.transforms?.world);
+  const view = normalizeD3DMatrix(payload.transforms?.view);
+  const projection = normalizeD3DMatrix(payload.transforms?.projection);
+  const transformMask = Number(payload.transformMask ?? 0) >>> 0;
+  const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
   let drawOk = false;
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -377,6 +405,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true, vertexStride, 24);
     }
     gl.uniform1f(bridgeProgram.scale, computePositionScale(vertexBytes, vertexCount, vertexStride));
+    gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
+    if (useTransforms) {
+      // Direct3D stores row-vector matrices row-major; WebGL interprets this
+      // memory as column-major, giving the transpose needed for GLSL
+      // column-vector multiplication.
+      gl.uniformMatrix4fv(bridgeProgram.world, false, world);
+      gl.uniformMatrix4fv(bridgeProgram.view, false, view);
+      gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
+    }
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexBytes, gl.STATIC_DRAW);
     gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
@@ -398,6 +435,8 @@ function paintD3D8DrawIndexed(payload = {}) {
     indexBytes: indexBytes.byteLength,
     indexCount,
     indexSize,
+    transformMask,
+    usedTransforms: Boolean(useTransforms),
     centerPixel,
   };
   harnessState.graphics = {
