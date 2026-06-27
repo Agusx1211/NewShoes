@@ -58,6 +58,31 @@ bool expectLittleEndian32(const UnsignedByte *bytes, UnsignedInt value, const ch
 		message);
 }
 
+UnsignedInt littleEndianWordAt(const UnsignedByte *bytes)
+{
+	return static_cast<UnsignedInt>(bytes[0]) |
+		(static_cast<UnsignedInt>(bytes[1]) << 8) |
+		(static_cast<UnsignedInt>(bytes[2]) << 16) |
+		(static_cast<UnsignedInt>(bytes[3]) << 24);
+}
+
+bool expectBigEndian32(const UnsignedByte *bytes, UnsignedInt value, const char *message)
+{
+	return expect(bytes[0] == static_cast<UnsignedByte>((value >> 24) & 0xff) &&
+			bytes[1] == static_cast<UnsignedByte>((value >> 16) & 0xff) &&
+			bytes[2] == static_cast<UnsignedByte>((value >> 8) & 0xff) &&
+			bytes[3] == static_cast<UnsignedByte>(value & 0xff),
+		message);
+}
+
+bool expectEncryptedTransportWord(const TransportMessage &encrypted, const TransportMessage &decoded,
+	Int offset, UnsignedInt mask, const char *message)
+{
+	const auto *wire = reinterpret_cast<const UnsignedByte *>(&encrypted);
+	const auto *plain = reinterpret_cast<const UnsignedByte *>(&decoded);
+	return expectBigEndian32(wire + offset, littleEndianWordAt(plain + offset) ^ mask, message);
+}
+
 class InspectableConnection : public Connection
 {
 public:
@@ -880,10 +905,19 @@ bool exerciseTransportQueue()
 			"Transport accepted oversized packet");
 
 	const bool queued = transport.queueSend(0x01020304u, 1234, payload, sizeof(payload));
-	TransportMessage decoded = transport.m_outBuffer[0];
+	const TransportMessage encrypted = transport.m_outBuffer[0];
+	TransportMessage decoded = encrypted;
 	decryptTransportMessage(decoded);
+	const auto *wire = reinterpret_cast<const UnsignedByte *>(&encrypted);
 	const bool first_ok =
 		expect(queued, "Transport did not queue packet") &&
+		expect(sizeof(TransportMessageHeader) == 6, "Transport header packing changed") &&
+		expectEncryptedTransportWord(encrypted, decoded, 0, 0x0000fadeu,
+			"Transport encrypted CRC word byte order changed") &&
+		expectEncryptedTransportWord(encrypted, decoded, 4, 0x0000fdffu,
+			"Transport encrypted magic/payload word byte order changed") &&
+		expect(wire[8] == payload[2] && wire[9] == payload[3] && wire[10] == payload[4],
+			"Transport trailing payload encryption contract changed") &&
 		expect(decoded.length == static_cast<Int>(sizeof(payload)), "Transport queued length changed") &&
 		expect(decoded.addr == 0x01020304u, "Transport queued address changed") &&
 		expect(decoded.port == 1234, "Transport queued port changed") &&
@@ -1196,6 +1230,6 @@ int main()
 		return 1;
 	}
 
-	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering, command lists, packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
+	std::printf("{\"ok\":true,\"library\":\"GameNetwork/core\",\"compiled\":\"Connection,ConnectionManager,DisconnectManager,DownloadManager,FileTransfer,FirewallHelper,FrameData,FrameDataManager,FrameMetrics,GameInfo,GameMessageParser,GSConfig,GUIUtil,LANAPI,LANAPICallbacks,LANAPIhandlers,LANGameInfo,NetCommandList,NetCommandMsg,NetCommandRef,NetCommandWrapperList,NetMessageStream,NetPacket,NetworkUtil,Transport,udp,User\",\"covered\":\"connection send/ack queues and retry gating, transport packet buffering and encrypted wire bytes, command lists, packet round-trips and wire byte order, ack/control command values, wrapper chunk reassembly, file-transfer path helpers, and FrameMetrics init/reset/cushion behavior\",\"source\":\"GeneralsMD original\"}\n");
 	return 0;
 }

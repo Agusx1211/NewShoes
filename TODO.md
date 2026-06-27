@@ -1702,6 +1702,11 @@ shares structure and follows behind.
       GameNetwork core archive and smoke-test direct transport queue rejection,
       encrypted packet header/payload/CRC preservation, full-queue behavior, and
       connection packet buffering before raw UDP flushing.
+- [x] Add endian-sensitive smoke coverage for original `Transport::queueSend`
+      encrypted wire bytes under wasm, proving the packet CRC word, packed
+      magic-plus-payload word, and trailing non-word payload bytes follow the
+      original XOR-plus-`htonl` transport contract before browser WebSocket /
+      WebRTC re-targeting.
 - [x] Compile original `GameNetwork/Transport.cpp`, `IPEnumeration.cpp`, and
       `udp.cpp` after adding the browser-safe WinSock compile surface and
       preserving the original UDP/transport logic for the later WebSocket/WebRTC
