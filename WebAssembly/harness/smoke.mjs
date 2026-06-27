@@ -1481,6 +1481,25 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dTexturedMeshCanvasScreenshot });
 
+  const sourceAssetLoadResult = await page.evaluate(() => window.CnCPort.rpc("ww3dSourceAssetLoad"));
+  if (!sourceAssetLoadResult.ok
+      || sourceAssetLoadResult.probe?.source !== "ww3d_source_asset_load_probe"
+      || sourceAssetLoadResult.probe?.asset?.name !== "ShatterPlanes0.w3d"
+      || sourceAssetLoadResult.probe?.asset?.bytes !== 2444
+      || sourceAssetLoadResult.probe?.inventory?.fileOpened !== true
+      || sourceAssetLoadResult.probe?.inventory?.chunksScanned < 1
+      || sourceAssetLoadResult.probe?.inventory?.hierarchyChunksSeen < 1
+      || sourceAssetLoadResult.probe?.inventory?.hmodelChunksSeen !== 0
+      || sourceAssetLoadResult.probe?.inventory?.firstHierarchyDepth < 1
+      || sourceAssetLoadResult.probe?.inventory?.firstHierarchyLength <= 0
+      || sourceAssetLoadResult.probe?.hierarchy?.loaded !== true
+      || sourceAssetLoadResult.probe?.hierarchy?.load !== 0
+      || sourceAssetLoadResult.probe?.hierarchy?.name !== "SHATTERPLANES0"
+      || sourceAssetLoadResult.probe?.hierarchy?.pivots !== 22
+      || sourceAssetLoadResult.probe?.hierarchy?.firstBone !== "ROOTTRANSFORM") {
+    throw new Error(`WW3D source asset load probe failed: ${JSON.stringify(sourceAssetLoadResult)}`);
+  }
+
   const resetClearResult = await page.evaluate(() => window.CnCPort.rpc("clearCanvas", {
     rgba: [0, 0, 0, 255],
   }));

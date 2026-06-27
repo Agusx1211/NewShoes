@@ -2656,6 +2656,28 @@ add_custom_target(zh_wwshade_shader_headers
   DEPENDS ${WWSHADE_SHADER_CODE_HEADERS}
 )
 
+set(WW3D_REQUIRED_ASSETS_DIR "${WWVEGAS_DIR}/WW3D2/RequiredAssets")
+set(WW3D_SOURCE_ASSET "${WW3D_REQUIRED_ASSETS_DIR}/ShatterPlanes0.w3d")
+set(WW3D_SOURCE_ASSET_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/ww3d_assets")
+set(WW3D_SOURCE_ASSET_HEADER "${WW3D_SOURCE_ASSET_GENERATED_DIR}/shatterplanes0_w3d.h")
+
+add_custom_command(
+  OUTPUT "${WW3D_SOURCE_ASSET_HEADER}"
+  COMMAND "${NODE_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_binary_header.mjs"
+    "${WW3D_SOURCE_ASSET}"
+    "${WW3D_SOURCE_ASSET_HEADER}"
+    "kShatterPlanes0W3d"
+  DEPENDS
+    "${WW3D_SOURCE_ASSET}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_binary_header.mjs"
+  VERBATIM
+)
+
+add_custom_target(cnc_port_ww3d_asset_headers
+  DEPENDS "${WW3D_SOURCE_ASSET_HEADER}"
+)
+
 add_library(zh_wwshade_compile_frontier STATIC
   "${WWSHADE_DIR}/shd6bumpdiff.cpp"
   "${WWSHADE_DIR}/shd6bumpspec.cpp"
@@ -3446,6 +3468,7 @@ add_executable(cnc-port
   src/wasm_wndproc_probe.cpp
   src/wasm_win32_gdi_stub.cpp
   src/wasm_ww3d_render_probe.cpp
+  src/wasm_ww3d_source_asset_probe.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
@@ -3454,6 +3477,8 @@ set_target_properties(cnc-port PROPERTIES
   OUTPUT_NAME "cnc-port"
   SUFFIX ".js"
 )
+
+add_dependencies(cnc-port cnc_port_ww3d_asset_headers)
 
 set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-iquote${WINMAIN_WNDPROC_SHIMS_DIR};-iquote${WIN32_MOUSE_BROWSER_SHIMS_DIR};-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
@@ -3477,6 +3502,7 @@ target_compile_options(cnc-port PRIVATE
 )
 
 target_include_directories(cnc-port PRIVATE
+  "${WW3D_SOURCE_ASSET_GENERATED_DIR}"
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
@@ -3530,7 +3556,7 @@ target_link_options(cnc-port PRIVATE
   "SHELL:-sTOTAL_STACK=1048576"
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sDISABLE_EXCEPTION_CATCHING=0"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_cnc_port_boot','_cnc_port_frame','_cnc_port_start_main_loop','_cnc_port_stop_main_loop','_cnc_port_probe_archive','_cnc_port_register_archive_set','_cnc_port_set_browser_input','_cnc_port_reset_browser_input','_cnc_port_post_browser_message','_cnc_port_probe_browser_message_queue','_cnc_port_probe_browser_input','_cnc_port_probe_d3d8_clear','_cnc_port_probe_d3d8_buffer_dirty','_cnc_port_probe_d3d8_buffer_hints','_cnc_port_probe_d3d8_texture_upload','_cnc_port_probe_d3d8_texture_bind','_cnc_port_probe_d3d8_textured_quad','_cnc_port_probe_d3d8_texture_mip_chain_draw','_cnc_port_probe_d3d8_texture_combiner','_cnc_port_probe_d3d8_texcoord_index','_cnc_port_probe_d3d8_texture_transform','_cnc_port_probe_d3d8_legacy_texture_upload','_cnc_port_probe_d3d8_legacy_texture_draw','_cnc_port_probe_d3d8_dxt_texture_draw','_cnc_port_probe_ww3d_aabox','_cnc_port_probe_ww3d_render2d_textured_quad','_cnc_port_probe_ww3d_display_drawimage','_cnc_port_probe_ww3d_textured_mesh','_cnc_port_probe_ww3d_source_asset_load','_cnc_port_init_original_wndproc_input','_cnc_port_pump_original_wndproc_input','_cnc_port_probe_original_wndproc_input','_cnc_port_state']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['cwrap','FS']"
 )
 

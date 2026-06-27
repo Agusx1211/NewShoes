@@ -2635,6 +2635,16 @@ shares structure and follows behind.
       - [x] Add the `cnc_port_probe_ww3d_textured_mesh` wasm export,
             `ww3dTexturedMesh` bridge RPC, and Playwright smoke coverage
             analogous to the AABox and Render2D probes.
+      - [x] Load a real source-tree WW3D required asset through the original
+            W3D hierarchy parser in browser wasm: `ShatterPlanes0.w3d` is
+            embedded from
+            `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/RequiredAssets`
+            at build time, the probe recursively scans original W3D chunks,
+            loads the `W3D_CHUNK_HIERARCHY` through `HTreeClass::Load_W3D`,
+            and the Playwright harness asserts file bytes, chunk discovery,
+            hierarchy name, root bone, and pivot count. This asset contains no
+            `W3D_CHUNK_HMODEL` or `W3D_CHUNK_MESH`; real source/shipped model
+            and mesh parsing/rendering remain open.
       - [ ] Replace the probe's no-op browser stubs for the Win32 GDI
             functions declared in the `windows.h` shim
             (`CreateFont`, `CreateCompatibleDC`, `CreateDIBSection`,

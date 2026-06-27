@@ -2738,6 +2738,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
+      probeWW3DSourceAssetLoad: module.cwrap(
+        "cnc_port_probe_ww3d_source_asset_load", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -4492,6 +4494,20 @@ async function rpc(command, payload = {}) {
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dSourceAssetLoad":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D source asset cannot load" };
+        }
+        const probe = parseModuleState(wasmModule.probeWW3DSourceAssetLoad());
+        return {
+          ok: Boolean(probe.ok),
+          command,
+          probe,
           state: snapshotState(),
         };
       }
