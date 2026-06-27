@@ -1051,6 +1051,29 @@ try {
     throw new Error(`D3D8 texcoord index probe failed: ${JSON.stringify(d3d8TexCoordIndexResult)}`);
   }
 
+  const d3d8TextureTransformResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureTransform"));
+  const textureTransformCases = d3d8TextureTransformResult.cases ?? [];
+  const textureTransformCaseNames = textureTransformCases.map((entry) => entry.probe?.caseName).join(",");
+  const textureTransformCenters = textureTransformCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const textureTransformFlags = textureTransformCases.map((entry) => entry.browserProbe?.texture0?.textureTransformFlags).join(",");
+  const textureTransformApplied = textureTransformCases.map((entry) => entry.browserProbe?.texture0?.textureTransformApplied).join(",");
+  if (!d3d8TextureTransformResult.ok
+      || textureTransformCases.length !== 2
+      || textureTransformCaseNames !== "disable,count2TranslateU"
+      || textureTransformCenters !== "255,0,0,255|0,0,255,255"
+      || textureTransformFlags !== "0,2"
+      || textureTransformApplied !== "false,true"
+      || textureTransformCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_transform_probe")
+      || textureTransformCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 12)
+      || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.texCoordModeName !== "passthru")
+      || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.textureTransformSupported !== true)
+      || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.texCoordSupported !== true)
+      || textureTransformCases.some((entry) => entry.centerPixelOk !== true)
+      || textureTransformCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || textureTransformCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
+    throw new Error(`D3D8 texture transform probe failed: ${JSON.stringify(d3d8TextureTransformResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
@@ -1070,6 +1093,7 @@ try {
       || legacyPerFormat.some((entry) => entry.bytesPerPixel !== (entry.name === "A8L8" ? 2 : 1))
       || legacyPerFormat.some((entry) => entry.pitch !== 2 * entry.bytesPerPixel)
       || legacyPerFormat.some((entry) => entry.nativeOk !== true)
+      || legacyPerFormat.some((entry) => entry.swizzleOk !== true)
       || legacyPerFormat.some((entry) => entry.samplePixelOk !== true)
       || legacyPerFormat.some((entry) => entry.legacySampleOk !== true)
       || legacyPerFormat.some((entry) => entry.browser?.swizzle?.semantic !== (entry.name === "A8L8" ? "luminanceAlpha" : entry.name === "L8" ? "luminance" : "alpha"))

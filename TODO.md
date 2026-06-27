@@ -2470,6 +2470,15 @@ shares structure and follows behind.
       Camera-space generated coordinates, projected coordinates, texture
       transform matrices, non-stage-0 texture coordinates, and generalized FVF
       declaration decoding remain open.
+- [x] Apply captured stage-0 `D3DTS_TEXTURE0` transform matrices for the
+      current WebGL2 textured draw bridge when `D3DTSS_TEXTURETRANSFORMFLAGS`
+      is exactly `D3DTTFF_COUNT2` and the texture coordinates are passthrough
+      XYZNDUV UVs. A new browser-driven D3D8 texture-transform probe renders
+      disabled and translated-U cases against a red/blue texture, verifying
+      distinct center pixels, transform metadata, and `D3DTTFF_COUNT2` coverage
+      through Playwright. COUNT1/3/4, projected coordinates, camera-space
+      generated coordinates, non-stage-0 transforms, and generalized FVF
+      declaration decoding remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
