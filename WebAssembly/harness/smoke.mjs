@@ -992,7 +992,12 @@ try {
       || d3d8TexturedQuadResult.browserProbe?.texture0?.id !== d3d8TexturedQuadResult.probe?.texture?.id
       || d3d8TexturedQuadResult.browserProbe?.texture0?.ready !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.sampled !== true
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordIndex !== 0
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordModeName !== "passthru"
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordSet !== 0
       || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordOffset !== 28
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.textureTransformFlags !== 0
+      || d3d8TexturedQuadResult.browserProbe?.texture0?.texCoordSupported !== true
       || d3d8TexturedQuadResult.browserProbe?.texture0?.format !== 21
       || d3d8TexturedQuadResult.browserProbe?.boundTextures?.["0"] !== d3d8TexturedQuadResult.probe?.texture?.id
       || !pixelLooksRed(d3d8TexturedQuadResult.browserProbe?.centerPixel)
@@ -1021,6 +1026,29 @@ try {
       || combinerCases.some((entry) => entry.textureDelta?.creates !== 1)
       || combinerCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
     throw new Error(`D3D8 texture combiner probe failed: ${JSON.stringify(d3d8TextureCombinerResult)}`);
+  }
+
+  const d3d8TexCoordIndexResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TexCoordIndex"));
+  const texCoordCases = d3d8TexCoordIndexResult.cases ?? [];
+  const texCoordCaseNames = texCoordCases.map((entry) => entry.probe?.caseName).join(",");
+  const texCoordCenters = texCoordCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const texCoordSets = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordSet).join(",");
+  const texCoordOffsets = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordOffset).join(",");
+  if (!d3d8TexCoordIndexResult.ok
+      || texCoordCases.length !== 2
+      || texCoordCaseNames !== "uv0,uv1"
+      || texCoordCenters !== "255,0,0,255|0,0,255,255"
+      || texCoordSets !== "0,1"
+      || texCoordOffsets !== "28,36"
+      || texCoordCases.some((entry) => entry.probe?.source !== "browser_d3d8_texcoord_index_probe")
+      || texCoordCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 12)
+      || texCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordModeName !== "passthru")
+      || texCoordCases.some((entry) => entry.browserProbe?.texture0?.textureTransformFlags !== 0)
+      || texCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordSupported !== true)
+      || texCoordCases.some((entry) => entry.centerPixelOk !== true)
+      || texCoordCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || texCoordCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
+    throw new Error(`D3D8 texcoord index probe failed: ${JSON.stringify(d3d8TexCoordIndexResult)}`);
   }
 
   const aaBoxResult = await page.evaluate(() => window.CnCPort.rpc("ww3dAABox"));

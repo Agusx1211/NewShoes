@@ -91,6 +91,9 @@ const D3DTA_SELECTMASK = 0x0000000f;
 const D3DTA_DIFFUSE = 0;
 const D3DTA_CURRENT = 1;
 const D3DTA_TEXTURE = 2;
+const D3DTSS_TCI_PASSTHRU = 0x00000000;
+const D3DTSS_TCI_COORDINDEX_MASK = 0x0000ffff;
+const D3DTSS_TCI_MODE_MASK = 0xffff0000;
 const D3DTADDRESS_WRAP = 1;
 const D3DTADDRESS_MIRROR = 2;
 const D3DTADDRESS_CLAMP = 3;
@@ -106,7 +109,8 @@ const D3D8_DIFFUSE_OFFSET = 24;
 const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
 // Matches WW3D2/dx8fvf.h VertexFormatXYZNDUV1/2: XYZ, normal, diffuse, UV0.
 const D3D8_XYZNDUV_TEXCOORD0_OFFSET = 28;
-const D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE = D3D8_XYZNDUV_TEXCOORD0_OFFSET + 8;
+const D3D8_XYZNDUV_TEXCOORD_STRIDE = 8;
+const D3D8_XYZNDUV_TEXCOORD_SETS = 2;
 const d3d8BufferStats = {
   creates: 0,
   updates: 0,
@@ -766,6 +770,45 @@ function d3dTextureCombinerArgName(arg) {
     default:
       return "unsupported";
   }
+}
+
+function d3dTextureCoordinateModeName(mode) {
+  switch (Number(mode) >>> 0) {
+    case D3DTSS_TCI_PASSTHRU:
+      return "passthru";
+    case 0x00010000:
+      return "cameraSpaceNormal";
+    case 0x00020000:
+      return "cameraSpacePosition";
+    case 0x00030000:
+      return "cameraSpaceReflectionVector";
+    default:
+      return "unsupported";
+  }
+}
+
+function stage0TextureCoordinateInfo(textureStage, vertexStride) {
+  const texCoordIndex = Number(textureStage?.texCoordIndex ?? 0) >>> 0;
+  const mode = texCoordIndex & D3DTSS_TCI_MODE_MASK;
+  const coordSet = texCoordIndex & D3DTSS_TCI_COORDINDEX_MASK;
+  const textureTransformFlags = Number(textureStage?.textureTransformFlags ?? D3DTTFF_DISABLE) >>> 0;
+  const texCoordOffset = D3D8_XYZNDUV_TEXCOORD0_OFFSET +
+    (coordSet * D3D8_XYZNDUV_TEXCOORD_STRIDE);
+  const passthru = mode === D3DTSS_TCI_PASSTHRU;
+  const coordSetAvailable = coordSet < D3D8_XYZNDUV_TEXCOORD_SETS &&
+    (Number(vertexStride) >>> 0) >= texCoordOffset + D3D8_XYZNDUV_TEXCOORD_STRIDE;
+  const transformSupported = textureTransformFlags === D3DTTFF_DISABLE;
+  return {
+    stage: 0,
+    texCoordIndex,
+    mode,
+    modeName: d3dTextureCoordinateModeName(mode),
+    coordSet,
+    offset: coordSetAvailable ? texCoordOffset : null,
+    textureTransformFlags,
+    transformSupported,
+    supported: passthru && coordSetAvailable && transformSupported,
+  };
 }
 
 function stage0TextureCombinerInfo(textureStage, canSampleTexture0) {
@@ -1678,9 +1721,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
   const texture0Ready = Boolean(texture0Resource?.initializedLevels?.has("0"));
-  const canSampleTexture0 = Boolean(
-    texture0Ready && vertexStride >= D3D8_XYZNDUV_TEXCOORD0_MIN_STRIDE
-  );
+  const texture0Coordinates = stage0TextureCoordinateInfo(renderState.textureStages[0], vertexStride);
+  const canSampleTexture0 = Boolean(texture0Ready && texture0Coordinates.supported);
   const appliedTexture0Combiner = stage0TextureCombinerInfo(renderState.textureStages[0], canSampleTexture0);
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
@@ -1707,7 +1749,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttribPointer(bridgeProgram.texCoord0, 2, gl.FLOAT, false,
-        vertexStride, vertexByteOffset + D3D8_XYZNDUV_TEXCOORD0_OFFSET);
+        vertexStride, vertexByteOffset + texture0Coordinates.offset);
     } else if (bridgeProgram.texCoord0 >= 0) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttrib2f(bridgeProgram.texCoord0, 0, 0);
@@ -1789,7 +1831,13 @@ function paintD3D8DrawIndexed(payload = {}) {
       id: texture0Id,
       ready: texture0Ready,
       sampled: canSampleTexture0,
-      texCoordOffset: canSampleTexture0 ? D3D8_XYZNDUV_TEXCOORD0_OFFSET : null,
+      texCoordIndex: texture0Coordinates.texCoordIndex,
+      texCoordMode: texture0Coordinates.mode,
+      texCoordModeName: texture0Coordinates.modeName,
+      texCoordSet: texture0Coordinates.coordSet,
+      texCoordOffset: canSampleTexture0 ? texture0Coordinates.offset : null,
+      textureTransformFlags: texture0Coordinates.textureTransformFlags,
+      texCoordSupported: texture0Coordinates.supported,
       width: texture0Resource?.width ?? 0,
       height: texture0Resource?.height ?? 0,
       format: texture0Resource?.format ?? 0,
@@ -1940,6 +1988,7 @@ async function loadWasmModule() {
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
+      probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
@@ -2954,7 +3003,12 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.id === probe.texture?.id
           && browserProbe?.texture0?.ready === true
           && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.texCoordIndex === 0
+          && browserProbe?.texture0?.texCoordModeName === "passthru"
+          && browserProbe?.texture0?.texCoordSet === 0
           && browserProbe?.texture0?.texCoordOffset === D3D8_XYZNDUV_TEXCOORD0_OFFSET
+          && browserProbe?.texture0?.textureTransformFlags === D3DTTFF_DISABLE
+          && browserProbe?.texture0?.texCoordSupported === true
           && browserProbe?.texture0?.format === D3DFMT_A8R8G8B8
           && browserProbe?.boundTextures?.["0"] === probe.texture?.id
           && pixelLooksRed(browserProbe?.centerPixel)
@@ -3010,6 +3064,63 @@ async function rpc(command, payload = {}) {
             && combiner.colorArg1 === probe.combiner?.colorArg1
             && combiner.colorArg2 === probe.combiner?.colorArg2
             && combiner.supported === true
+            && centerPixelOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === 1
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureDelta,
+            centerPixelOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TexCoordIndex":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 texcoord index probe cannot run" };
+        }
+        const cases = [];
+        for (let caseId = 0; caseId < 2; ++caseId) {
+          const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8TexCoordIndex(caseId));
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          };
+          const expectedCenter = probe.expectedCenter ?? [];
+          const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+            && expectedCenter.length === 4
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+          const texture0 = browserProbe?.texture0 ?? {};
+          const caseOk = Boolean(probe.ok)
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.usedPersistentBuffers === true
+            && browserProbe?.texture0?.sampled === true
+            && texture0.id === probe.texture?.id
+            && texture0.texCoordIndex === probe.texcoord?.index
+            && texture0.texCoordModeName === "passthru"
+            && texture0.texCoordSet === probe.texcoord?.set
+            && texture0.texCoordOffset === probe.texcoord?.expectedOffset
+            && texture0.textureTransformFlags === probe.texcoord?.textureTransformFlags
+            && texture0.texCoordSupported === true
             && centerPixelOk
             && textureDelta.creates === 1
             && textureDelta.updates === 1
