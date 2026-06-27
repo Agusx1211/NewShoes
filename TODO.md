@@ -2397,6 +2397,21 @@ shares structure and follows behind.
       (`npm run test:d3d8-texture-lifetime`). The JS-side WebGL texture-handle
       release cleanup in `harness/bridge.js` is unchanged and remains covered
       by the `d3d8TextureBind` Playwright RPC.*
+      *Hardened (GLM-5.2) the raw same-pointer rebind edge
+      (`device->SetTexture(stage, sameTexture)` called repeatedly). The
+      unconditional Release-then-AddRef path was fragile when the device-held
+      reference was the only remaining reference (engine already released its
+      handle): the mid-call `Release` would drop the last reference, destroy
+      the object, and the subsequent `AddRef`/vtable lookup touched freed
+      memory (observed as a wasm `table index is out of bounds` trap without
+      the fix). Added the same-pointer early-return at the top of
+      `BrowserD3DDevice::SetTexture`, mirroring the original
+      `DX8Wrapper::Set_DX8_Texture` (`if (Textures[stage]==texture) return;`)
+      and D3D8 device semantics. Extended `d3d8_texture_lifetime_smoke.cpp`
+      with a section that repeatedly rebinds the same pointer (true no-op:
+      refcount and `set_texture_calls`/`browser_texture_bind_calls` unchanged)
+      and exercises the critical device-only-held-reference rebind that would
+      UAF without the guard.*
 - [x] Add the first browser WebGL2 stage-0 textured draw path for uploaded and
       bound 2D textures through the existing persistent-buffer
       `DrawIndexedPrimitive` bridge, with a focused D3D8 textured-quad probe,
