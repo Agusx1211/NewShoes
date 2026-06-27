@@ -2442,8 +2442,25 @@ shares structure and follows behind.
       arguments. A new browser-driven D3D8 combiner probe renders distinct
       texture-select, diffuse-select, modulate, and add cases and verifies the
       resulting center pixels through Playwright. Full multi-stage chaining,
-      alpha ops, argument modifiers, generated shader variants, texture
-      transforms, and non-stage-0 sampling remain open.
+      argument modifiers, generated shader variants, texture transforms, and
+      non-stage-0 sampling remain open.
+- [x] Add the stage-0 D3D8 alpha texture combiner subset for the current
+      WebGL2 draw bridge, splitting the fragment shader into separate RGB
+      (`D3DTSS_COLOROP`/`COLORARG1`/`COLORARG2`) and alpha
+      (`D3DTSS_ALPHAOP`/`ALPHAARG1`/`ALPHAARG2`) paths for `DISABLE`,
+      `SELECTARG1`, `SELECTARG2`, `MODULATE`, and `ADD` over
+      `DIFFUSE`/`CURRENT`/`TEXTURE` arguments, matching D3D8 fixed-function
+      texture-stage semantics (color and alpha ops are independent). The
+      existing browser-driven D3D8 combiner probe is extended with four
+      alpha-combiner cases (`selectAlphaTexture`, `selectAlphaDiffuse`,
+      `modulateAlpha`, `addAlpha`) that drive the alpha output through
+      non-trivial texture/diffuse alpha values and verify the result through
+      alpha blending (`SRCALPHA`/`INVSRCALPHA`) against an opaque black clear,
+      since the WebGL canvas is itself opaque (`alpha:false`). Playwright
+      harness coverage proves each alpha op produces the expected center pixel.
+      RGB and alpha combiner independence, argument modifiers, multi-stage
+      chaining, generated shader variants, texture transforms, and
+      non-stage-0 sampling remain open.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [x] Add focused render-state mapping *expectations* coverage through the
       existing browser D3D8 shim (no shim or draw-bridge changes): a new
