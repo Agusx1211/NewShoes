@@ -191,7 +191,99 @@ int main()
 	}
 
 	// -------------------------------------------------------------------------
-	// 5. Device teardown Releases every still-bound texture. Bind B on two
+	// 5. Same-pointer rebind is a no-op (mirrors DX8Wrapper::Set_DX8_Texture
+	//    `if (Textures[stage]==texture) return;` and D3D8 device semantics).
+	//    Repeated SetTexture(stage, samePtr) must NOT change the refcount and
+	//    must NOT re-record a bind. This also covers the critical UAF edge:
+	//    when the device-held reference is the ONLY remaining reference, the
+	//    unconditional Release-then-AddRef path would drop the last reference
+	//    mid-call (destroying the object) and then AddRef freed memory. The
+	//    early-return must keep the object alive across the rebind.
+	// -------------------------------------------------------------------------
+	IDirect3DTexture8 *texture_c = nullptr;
+	if (!expect(SUCCEEDED(device->CreateTexture(16, 16, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+			&texture_c)),
+			"CreateTexture C failed")) {
+		texture_b->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	const UINT rebind_binds_before = state->set_texture_calls;
+	const UINT rebind_browser_binds_before = state->browser_texture_bind_calls;
+
+	// Bind C on stage 0: engine handle (1) + device (1) = 2.
+	if (!expect(SUCCEEDED(device->SetTexture(0, texture_c)), "SetTexture(stage0, C) failed")) {
+		texture_c->Release();
+		texture_b->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	const ULONG c_ref_after_bind = texture_c->AddRef() - 1;
+	texture_c->Release();
+	expect(c_ref_after_bind == 2, "texture C must be at refcount 2 after first bind (1->2)");
+
+	// Re-bind the SAME pointer several times. Must be a true no-op: refcount
+	// unchanged, no extra set_texture_calls, no extra browser_texture_bind.
+	for (int i = 0; i < 3; ++i) {
+		if (!expect(SUCCEEDED(device->SetTexture(0, texture_c)),
+				"same-pointer SetTexture(stage0, C) must succeed")) {
+			texture_c->Release();
+			texture_b->Release();
+			device->Release();
+			d3d->Release();
+			return 1;
+		}
+	}
+	const ULONG c_ref_after_rebind = texture_c->AddRef() - 1;
+	texture_c->Release();
+	expect(c_ref_after_rebind == 2,
+			"same-pointer rebind must be a no-op and leave refcount unchanged (2)");
+	expect(state->set_texture_calls == rebind_binds_before + 1,
+			"same-pointer rebind must not increment set_texture_calls (early-return)");
+	expect(state->browser_texture_bind_calls == rebind_browser_binds_before + 1,
+			"same-pointer rebind must not re-issue browser_texture_bind (early-return)");
+
+	// CRITICAL UAF EDGE: drop the engine handle while C is still bound. The
+	// device-held reference is now the ONLY reference (refcount 2 -> 1), but
+	// the pointer variable still resolves to valid memory because the device
+	// keeps the object alive. Re-binding that same pointer must NOT Release
+	// the device-held reference mid-call (which would destroy C and then
+	// AddRef freed memory). The early-return must keep C alive.
+	texture_c->Release(); // engine handle dropped; device still holds C (refcount 1)
+	const ULONG c_ref_device_only = texture_c->AddRef() - 1; // valid: device keeps C alive
+	texture_c->Release();
+	expect(c_ref_device_only == 1,
+			"after engine handle release, device-held reference must keep C alive (2->1)");
+
+	if (!expect(SUCCEEDED(device->SetTexture(0, texture_c)),
+			"same-pointer rebind with only device-held reference must succeed without UAF")) {
+		// Clean up the still-bound device-held reference before aborting.
+		device->SetTexture(0, nullptr);
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+	// C must STILL be alive at refcount 1 (the rebind was a no-op). If the
+	// old Release-then-AddRef path had run, C would have been destroyed and
+	// this dereference would be a use-after-free.
+	const ULONG c_ref_after_device_only_rebind = texture_c->AddRef() - 1;
+	texture_c->Release();
+	expect(c_ref_after_device_only_rebind == 1,
+			"same-pointer rebind must not drop the device-held reference (C still alive at 1)");
+
+	// Clean up C: unbind via NULL Releases the device-held reference (1 -> 0,
+	// clean destroy). texture_c pointer is now stale; do not touch it after.
+	if (!expect(SUCCEEDED(device->SetTexture(0, nullptr)),
+			"SetTexture(stage0, NULL) to release device-held C failed")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	// -------------------------------------------------------------------------
+	// 6. Device teardown Releases every still-bound texture. Bind B on two
 	//    stages, then destroy the device; B must end at refcount 1 (only the
 	//    engine handle remains) with no leak and no UAF.
 	// -------------------------------------------------------------------------
@@ -234,6 +326,7 @@ int main()
 		"\"contract\":{"
 		"\"bindAddRefs\":true,\"rebindReleasesPrevious\":true,"
 		"\"nullUnbindReleases\":true,\"boundSurvivesEngineRelease\":true,"
+		"\"samePointerRebindIsNoOp\":true,"
 		"\"deviceTeardownReleasesAllStages\":true},"
 		"\"counters\":{\"setTextureCalls\":%u}}\n",
 		state->set_texture_calls - binds_before);

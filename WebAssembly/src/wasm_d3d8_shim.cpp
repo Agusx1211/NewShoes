@@ -1587,6 +1587,20 @@ public:
 	}
 	HRESULT SetTexture(DWORD stage, IDirect3DBaseTexture8 *texture) override
 	{
+		// Same-pointer early-return, mirroring the original
+		// DX8Wrapper::Set_DX8_Texture (`if (Textures[stage]==texture) return;`)
+		// and D3D8 device semantics: rebinding the texture that is already
+		// bound on this stage is a no-op. The unconditional Release-then-AddRef
+		// below would otherwise drop the device-held reference mid-call when it
+		// is the only remaining reference (engine already released its handle),
+		// destroying the object and then AddRef'ing freed memory (use-after-free).
+		{
+			auto already_bound = m_bound_textures.find(stage);
+			if (already_bound != m_bound_textures.end() && already_bound->second == texture) {
+				return S_OK;
+			}
+		}
+
 		UINT texture_id = 0;
 		D3DRESOURCETYPE texture_type = D3DRTYPE_FORCE_DWORD;
 		if (texture != nullptr) {
