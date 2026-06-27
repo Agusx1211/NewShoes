@@ -2995,6 +2995,7 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/DrawGroupInfo.cpp" PRO
 add_executable(cnc-port
   src/wasm_archive_probe.cpp
   src/wasm_cdmanager_probe.cpp
+  src/wasm_gamenetwork_probe.cpp
   src/wasm_port_entry.cpp
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"
 )
@@ -3036,6 +3037,7 @@ target_link_libraries(cnc-port PRIVATE
   zh_gameclient_text
   zh_gameengine_debug_runtime
   zh_wwdebug_core
+  zh_gamenetwork_core
 )
 
 target_link_options(cnc-port PRIVATE

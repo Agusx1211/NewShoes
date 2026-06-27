@@ -5,6 +5,7 @@
 
 #include "wasm_archive_probe.h"
 #include "wasm_cdmanager_probe.h"
+#include "wasm_gamenetwork_probe.h"
 #include "wasm_globaldata_probe.h"
 
 #include "Common/Debug.h"
@@ -61,6 +62,7 @@ ArchiveProbeResult g_archive_probe;
 GlobalDataProbeResult g_global_data_probe;
 CommandLineProbeResult g_command_line_probe;
 CDManagerProbeResult g_cd_manager_probe;
+GameNetworkProbeResult g_game_network_probe;
 std::string g_state_json;
 
 struct ArchiveMountState
@@ -246,6 +248,14 @@ void run_original_cd_manager_probe()
 	std::printf("cnc-port: cdmanager probe ok=%d drives=%d\n",
 		g_cd_manager_probe.ok ? 1 : 0,
 		g_cd_manager_probe.drive_count);
+}
+
+void run_original_game_network_probe()
+{
+	g_game_network_probe = probe_original_game_network();
+	std::printf("cnc-port: gamenetwork probe ok=%d packetLength=%d\n",
+		g_game_network_probe.ok ? 1 : 0,
+		g_game_network_probe.packet_length);
 }
 
 void probe_registered_archive_set_for_boot()
@@ -2151,6 +2161,50 @@ std::string build_mapped_image_probe_json()
 	return buffer;
 }
 
+std::string build_game_network_probe_json()
+{
+	char buffer[4000];
+	const std::string source_json = json_escape(g_game_network_probe.source);
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
+		"\"commandIds\":{\"ok\":%s,\"first\":%u,\"second\":%u,"
+		"\"maxFramesAhead\":%d,\"minRunAhead\":%d,\"frameDataLength\":%d,"
+		"\"framesToKeep\":%d},"
+		"\"frameData\":{\"ok\":%s,\"frame\":%d,\"frameCommandCount\":%d,"
+		"\"readyState\":%d},"
+		"\"frameDataManager\":{\"ok\":%s,\"quitFrame\":%d,"
+		"\"readyState\":%d},"
+		"\"packetRoundTrip\":{\"ok\":%s,\"length\":%d,\"commands\":%d,"
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d}}",
+		source_json.c_str(),
+		g_game_network_probe.attempted ? "true" : "false",
+		g_game_network_probe.ok ? "true" : "false",
+		g_game_network_probe.command_ids_ok ? "true" : "false",
+		g_game_network_probe.first_command_id,
+		g_game_network_probe.second_command_id,
+		g_game_network_probe.max_frames_ahead,
+		g_game_network_probe.min_run_ahead,
+		g_game_network_probe.frame_data_length,
+		g_game_network_probe.frames_to_keep,
+		g_game_network_probe.frame_data_ok ? "true" : "false",
+		g_game_network_probe.frame,
+		g_game_network_probe.frame_command_count,
+		g_game_network_probe.frame_ready_state,
+		g_game_network_probe.frame_data_manager_ok ? "true" : "false",
+		g_game_network_probe.manager_quit_frame,
+		g_game_network_probe.manager_ready_state,
+		g_game_network_probe.packet_round_trip_ok ? "true" : "false",
+		g_game_network_probe.packet_length,
+		g_game_network_probe.packet_command_count,
+		g_game_network_probe.packet_relay,
+		g_game_network_probe.packet_execution_frame,
+		g_game_network_probe.packet_player_id,
+		g_game_network_probe.packet_command_id,
+		g_game_network_probe.packet_frame_command_count);
+	return buffer;
+}
+
 void ensure_booted()
 {
 	if (!g_booted) {
@@ -2163,6 +2217,7 @@ void ensure_booted()
 		run_original_global_data_probe();
 		run_original_command_line_probe();
 		run_original_cd_manager_probe();
+		run_original_game_network_probe();
 		probe_registered_archive_set_for_boot();
 		log_boot_state();
 	}
@@ -2347,6 +2402,7 @@ const char *write_state_json()
 		json_escape(g_global_data_probe.shell_map_name);
 	const std::string command_line_source_json = json_escape(g_command_line_probe.source);
 	const std::string cd_manager_source_json = json_escape(g_cd_manager_probe.source);
+	const std::string game_network_probe_json = build_game_network_probe_json();
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -2598,6 +2654,7 @@ const char *write_state_json()
 		"\"cdManagerProbe\":{\"source\":\"%s\",\"attempted\":%s,\"ok\":%s,"
 		"\"created\":%s,\"initialized\":%s,\"driveCount\":%d,"
 		"\"noCdDrives\":%s},"
+		"\"gameNetworkProbe\":%s,"
 		"\"debugProbe\":{\"source\":\"WWVegas/WWDebug/wwdebug.cpp\","
 		"\"handlersInstalled\":%s,\"ok\":%s,\"messageCount\":%d,"
 		"\"information\":%d,\"warnings\":%d,\"errors\":%d,\"asserts\":%d,"
@@ -3129,6 +3186,7 @@ const char *write_state_json()
 		g_cd_manager_probe.initialized ? "true" : "false",
 		g_cd_manager_probe.drive_count,
 		g_cd_manager_probe.no_cd_drives ? "true" : "false",
+		game_network_probe_json.c_str(),
 		g_debug_handlers_installed ? "true" : "false",
 		g_debug_probe_ok ? "true" : "false",
 		g_debug_message_count,

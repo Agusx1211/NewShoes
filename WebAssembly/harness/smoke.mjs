@@ -170,6 +170,45 @@ function assertCDManagerProbe(state, label) {
   }
 }
 
+function assertGameNetworkProbe(state, label) {
+  const probe = state.gameNetworkProbe;
+  if (!probe?.ok || probe.source !== "GameEngine/GameNetwork") {
+    throw new Error(`${label} GameNetwork probe missing: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.commandIds?.ok
+      || probe.commandIds.maxFramesAhead !== 128
+      || probe.commandIds.minRunAhead !== 10
+      || probe.commandIds.frameDataLength !== 258
+      || probe.commandIds.framesToKeep !== 65) {
+    throw new Error(`${label} GameNetwork command-id constants changed: ${JSON.stringify(probe)}`);
+  }
+
+  if (!probe.frameData?.ok
+      || probe.frameData.frame !== 77
+      || probe.frameData.frameCommandCount !== 0
+      || probe.frameData.readyState !== 2) {
+    throw new Error(`${label} GameNetwork FrameData state mismatch: ${JSON.stringify(probe.frameData)}`);
+  }
+
+  if (!probe.frameDataManager?.ok
+      || probe.frameDataManager.quitFrame !== 42
+      || probe.frameDataManager.readyState !== 2) {
+    throw new Error(`${label} GameNetwork FrameDataManager state mismatch: ${JSON.stringify(probe.frameDataManager)}`);
+  }
+
+  if (!probe.packetRoundTrip?.ok
+      || probe.packetRoundTrip.length <= 0
+      || probe.packetRoundTrip.commands !== 1
+      || probe.packetRoundTrip.relay !== 15
+      || probe.packetRoundTrip.executionFrame !== 1234
+      || probe.packetRoundTrip.playerId !== 3
+      || probe.packetRoundTrip.commandId !== 42
+      || probe.packetRoundTrip.frameCommandCount !== 5) {
+    throw new Error(`${label} GameNetwork packet round-trip mismatch: ${JSON.stringify(probe.packetRoundTrip)}`);
+  }
+}
+
 function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
@@ -251,12 +290,14 @@ try {
     assertGlobalDataProbe(bootResult.state, "boot");
     assertCommandLineProbe(bootResult.state, "boot");
     assertCDManagerProbe(bootResult.state, "boot");
+    assertGameNetworkProbe(bootResult.state, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: globaldata probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: commandline probe ok=1");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: cdmanager probe ok=1");
+    await assertHarnessLog(page, "wasm stdout", "cnc-port: gamenetwork probe ok=1");
     await assertHarnessLog(page, "wasm stderr", "cnc-port debuglog frame=1");
   }
   if (bootResult.state.graphics?.api !== "webgl2" || !bootResult.state.graphics?.ok) {

@@ -1542,6 +1542,9 @@ shares structure and follows behind.
 - [x] Link and smoke-test the original GameNetwork utility/frame slice with
       command-id/type policy checks and empty frame readiness through
       `FrameData`/`FrameDataManager`, plus pooled `User` value behavior.
+- [x] Expose the original GameNetwork utility/frame slice through the main
+      `cnc-port` browser harness state, covering command IDs, frame readiness,
+      and packet round-trip parsing without opening raw sockets.
 - [x] Compile original `GameNetwork/FrameMetrics.cpp` after extending the
       temporary wasm `Common/GlobalData.h` surface with original network
       history fields/defaults and fixing its legacy MSVC loop-scope assumption.
