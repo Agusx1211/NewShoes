@@ -68,6 +68,29 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+bool color_value_equal(const D3DCOLORVALUE &left, const D3DCOLORVALUE &right)
+{
+	return left.r == right.r && left.g == right.g && left.b == right.b && left.a == right.a;
+}
+
+bool material_equal(const D3DMATERIAL8 &left, const D3DMATERIAL8 &right)
+{
+	return color_value_equal(left.Diffuse, right.Diffuse) &&
+		color_value_equal(left.Ambient, right.Ambient) &&
+		color_value_equal(left.Specular, right.Specular) &&
+		color_value_equal(left.Emissive, right.Emissive) &&
+		left.Power == right.Power;
+}
+
+bool draw_material_equal(const WasmD3D8DrawMaterial &left, const D3DMATERIAL8 &right)
+{
+	return color_value_equal(left.diffuse, right.Diffuse) &&
+		color_value_equal(left.ambient, right.Ambient) &&
+		color_value_equal(left.specular, right.Specular) &&
+		color_value_equal(left.emissive, right.Emissive) &&
+		left.power == right.Power;
+}
+
 // Expected GL symbolic mapping. These are intentionally plain integers (not GL
 // headers) so the test stays dependency-free and the recorded spec stays
 // stable; they mirror the WebGL2 / OpenGL ES 3.0 symbolic enum values.
@@ -225,6 +248,8 @@ int main()
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const UINT set_before = state->set_render_state_calls;
 	const UINT get_before = state->get_render_state_calls;
+	const UINT set_material_before = state->set_material_calls;
+	const UINT get_material_before = state->get_material_calls;
 
 	// Helper lambdas to keep the per-state checks compact.
 	auto set_state = [&](D3DRENDERSTATETYPE rs, DWORD value, const char *label) {
@@ -361,6 +386,28 @@ int main()
 		"AMBIENT round-trip");
 
 	// ----------------------------------------------------------------------
+	// 8. D3DMATERIAL8 storage/readback for the fixed-function material path.
+	// ----------------------------------------------------------------------
+	D3DMATERIAL8 material = {};
+	material.Diffuse = { 0.25f, 0.5f, 0.75f, 1.0f };
+	material.Ambient = { 0.125f, 0.25f, 0.5f, 1.0f };
+	material.Specular = { 0.75f, 0.625f, 0.5f, 1.0f };
+	material.Emissive = { 0.0625f, 0.125f, 0.1875f, 1.0f };
+	material.Power = 8.0f;
+	D3DMATERIAL8 material_readback = {};
+	expect(SUCCEEDED(device->SetMaterial(&material)), "SetMaterial failed");
+	expect(SUCCEEDED(device->GetMaterial(&material_readback)), "GetMaterial failed");
+	expect(material_equal(material_readback, material), "D3DMATERIAL8 round-trip mismatch");
+	expect(state->set_material_calls == set_material_before + 1,
+		"set_material_calls counter mismatch");
+	expect(state->get_material_calls == get_material_before + 1,
+		"get_material_calls counter mismatch");
+	expect(draw_material_equal(state->last_set_material, material),
+		"last_set_material mismatch");
+	expect(draw_material_equal(state->last_get_material, material),
+		"last_get_material mismatch");
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
 	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite,shade,lighting/ambient
@@ -418,9 +465,14 @@ int main()
 		"{\"d3dShadeMode\":%d,\"name\":\"phong\",\"webgl\":{\"useFlatVarying\":false,\"note\":\"not used by current original sources\"}}],"
 		"\"lighting\":{\"d3dLightingEnable\":1,\"browserDescriptor\":{\"enabled\":true}},"
 		"\"ambient\":{\"d3dAmbient\":%lu,\"rgba\":[%0.6f,%0.6f,%0.6f,%0.6f]},"
+		"\"material\":{\"diffuse\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"ambient\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"specular\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"emissive\":[%0.6f,%0.6f,%0.6f,%0.6f],\"power\":%0.6f},"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
-		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u}}\n",
+		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u,"
+		"\"setMaterial\":%u,\"getMaterial\":%u}}\n",
 		// cull spec entries
 		D3DCULL_NONE, cull_none.front_face, cull_none.cull_face, cull_none.enabled,
 		D3DCULL_CW,   cull_cw.front_face,   cull_cw.cull_face,   cull_cw.enabled,
@@ -446,6 +498,23 @@ int main()
 		static_cast<double>((ambient_color >> 8) & 0xff) / 255.0,
 		static_cast<double>(ambient_color & 0xff) / 255.0,
 		static_cast<double>((ambient_color >> 24) & 0xff) / 255.0,
+		static_cast<double>(material.Diffuse.r),
+		static_cast<double>(material.Diffuse.g),
+		static_cast<double>(material.Diffuse.b),
+		static_cast<double>(material.Diffuse.a),
+		static_cast<double>(material.Ambient.r),
+		static_cast<double>(material.Ambient.g),
+		static_cast<double>(material.Ambient.b),
+		static_cast<double>(material.Ambient.a),
+		static_cast<double>(material.Specular.r),
+		static_cast<double>(material.Specular.g),
+		static_cast<double>(material.Specular.b),
+		static_cast<double>(material.Specular.a),
+		static_cast<double>(material.Emissive.r),
+		static_cast<double>(material.Emissive.g),
+		static_cast<double>(material.Emissive.b),
+		static_cast<double>(material.Emissive.a),
+		static_cast<double>(material.Power),
 		// color write spec
 		static_cast<unsigned long>(color_write_all),
 		(color_write_all & D3DCOLORWRITEENABLE_RED) ? "true" : "false",
@@ -454,7 +523,9 @@ int main()
 		(color_write_all & D3DCOLORWRITEENABLE_ALPHA) ? "true" : "false",
 		// counters
 		state->set_render_state_calls,
-		state->get_render_state_calls);
+		state->get_render_state_calls,
+		state->set_material_calls,
+		state->get_material_calls);
 
 	return 0;
 }

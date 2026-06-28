@@ -293,7 +293,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int projection_ptr,
 	unsigned int texture0_transform_ptr,
 	unsigned int texture1_transform_ptr,
-	unsigned int render_state_ptr
+	unsigned int render_state_ptr,
+	unsigned int material_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
 	if (typeof bridge !== "function" || typeof Module === "undefined") {
@@ -389,6 +390,20 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			textureStages,
 		};
 	};
+	const copyMaterial = (ptr) => {
+		if (!ptr || !Module.HEAPF32) {
+			return null;
+		}
+		const offset = ptr >>> 2;
+		const copyColor = (base) => Array.from(Module.HEAPF32.subarray(offset + base, offset + base + 4));
+		return {
+			diffuse: copyColor(0),
+			ambient: copyColor(4),
+			specular: copyColor(8),
+			emissive: copyColor(12),
+			power: Module.HEAPF32[offset + 16],
+		};
+	};
 	bridge({
 		primitiveType: primitive_type,
 		vertexBufferId: vertex_buffer_id >>> 0,
@@ -411,6 +426,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			texture1: copyMatrix(texture1_transform_ptr),
 		},
 		renderState: copyRenderState(render_state_ptr),
+		material: copyMaterial(material_ptr),
 	});
 });
 #else
@@ -427,7 +443,7 @@ void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -590,6 +606,28 @@ void identity_matrix(D3DMATRIX &matrix)
 	matrix.m[1][1] = 1.0f;
 	matrix.m[2][2] = 1.0f;
 	matrix.m[3][3] = 1.0f;
+}
+
+D3DMATERIAL8 default_d3d8_material()
+{
+	D3DMATERIAL8 material = {};
+	material.Diffuse = { 1.0f, 1.0f, 1.0f, 1.0f };
+	material.Ambient = { 1.0f, 1.0f, 1.0f, 1.0f };
+	material.Specular = { 0.0f, 0.0f, 0.0f, 0.0f };
+	material.Emissive = { 0.0f, 0.0f, 0.0f, 0.0f };
+	material.Power = 1.0f;
+	return material;
+}
+
+WasmD3D8DrawMaterial draw_material_from_d3d(const D3DMATERIAL8 &material)
+{
+	WasmD3D8DrawMaterial draw_material = {};
+	draw_material.diffuse = material.Diffuse;
+	draw_material.ambient = material.Ambient;
+	draw_material.specular = material.Specular;
+	draw_material.emissive = material.Emissive;
+	draw_material.power = material.Power;
+	return draw_material;
 }
 
 DWORD checksum_bytes(const BYTE *data, UINT size)
@@ -974,7 +1012,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
-	const WasmD3D8DrawRenderState *render_state)
+	const WasmD3D8DrawRenderState *render_state, const WasmD3D8DrawMaterial *material)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -999,7 +1037,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(projection_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture0_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
-		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)));
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)));
 }
 
 struct BrowserD3DResource
@@ -2436,8 +2475,26 @@ public:
 		return S_OK;
 	}
 
-	HRESULT SetMaterial(const D3DMATERIAL8 *) override { return S_OK; }
-	HRESULT GetMaterial(D3DMATERIAL8 *) override { return D3DERR_NOTAVAILABLE; }
+	HRESULT SetMaterial(const D3DMATERIAL8 *material) override
+	{
+		if (material == nullptr) {
+			return E_FAIL;
+		}
+		m_material = *material;
+		++g_state.set_material_calls;
+		g_state.last_set_material = draw_material_from_d3d(m_material);
+		return S_OK;
+	}
+	HRESULT GetMaterial(D3DMATERIAL8 *material) override
+	{
+		if (material == nullptr) {
+			return E_FAIL;
+		}
+		*material = m_material;
+		++g_state.get_material_calls;
+		g_state.last_get_material = draw_material_from_d3d(m_material);
+		return S_OK;
+	}
 	HRESULT SetLight(DWORD, const D3DLIGHT8 *) override { return S_OK; }
 	HRESULT LightEnable(DWORD, BOOL) override { return S_OK; }
 	HRESULT SetClipPlane(DWORD, const float *) override { return S_OK; }
@@ -2653,6 +2710,7 @@ private:
 		identity_matrix(g_state.last_draw_texture0_transform);
 		identity_matrix(g_state.last_draw_texture1_transform);
 		g_state.last_draw_render_state = {};
+		g_state.last_draw_material = draw_material_from_d3d(m_material);
 
 		if (m_stream_source != nullptr && m_stream_source_stride != 0) {
 			const BrowserD3DVertexBuffer *stream =
@@ -2792,6 +2850,11 @@ private:
 		capture_draw_texture_stage_states();
 	}
 
+	void capture_draw_material()
+	{
+		g_state.last_draw_material = draw_material_from_d3d(m_material);
+	}
+
 	void draw_bound_indexed_primitive(D3DPRIMITIVETYPE primitive_type, UINT base_vertex_index, UINT min_vertex_index,
 		UINT vertex_count, UINT first_index, UINT index_count)
 	{
@@ -2828,6 +2891,7 @@ private:
 		capture_draw_texture_transform(D3DTS_TEXTURE1, DRAW_TEXTURE_TRANSFORM_STAGE1,
 			g_state.last_draw_texture1_transform);
 		capture_draw_render_state();
+		capture_draw_material();
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
 			return;
@@ -2852,7 +2916,8 @@ private:
 			&g_state.last_draw_projection_transform,
 			&g_state.last_draw_texture0_transform,
 			&g_state.last_draw_texture1_transform,
-			&g_state.last_draw_render_state);
+			&g_state.last_draw_render_state,
+			&g_state.last_draw_material);
 	}
 
 	void capture_draw_transform(D3DTRANSFORMSTATETYPE state, UINT mask_bit, D3DMATRIX &destination) const
@@ -2894,6 +2959,7 @@ private:
 	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
+	D3DMATERIAL8 m_material = default_d3d8_material();
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
 	IDirect3DVertexBuffer8 *m_stream_source = nullptr;

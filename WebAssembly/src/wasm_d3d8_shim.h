@@ -47,6 +47,15 @@ struct WasmD3D8DrawRenderState
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 
+struct WasmD3D8DrawMaterial
+{
+	D3DCOLORVALUE diffuse;
+	D3DCOLORVALUE ambient;
+	D3DCOLORVALUE specular;
+	D3DCOLORVALUE emissive;
+	float power;
+};
+
 struct WasmD3D8ShimState
 {
 	UINT direct3d_create_calls;
@@ -146,6 +155,7 @@ struct WasmD3D8ShimState
 	D3DMATRIX last_draw_texture0_transform;
 	D3DMATRIX last_draw_texture1_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
+	WasmD3D8DrawMaterial last_draw_material;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
@@ -165,12 +175,16 @@ struct WasmD3D8ShimState
 	UINT get_viewport_calls;
 	UINT set_render_state_calls;
 	UINT get_render_state_calls;
+	UINT set_material_calls;
+	UINT get_material_calls;
 	D3DTRANSFORMSTATETYPE last_set_transform_state;
 	D3DTRANSFORMSTATETYPE last_get_transform_state;
 	D3DMATRIX last_set_transform_matrix;
 	D3DRENDERSTATETYPE last_set_render_state;
 	D3DRENDERSTATETYPE last_get_render_state;
 	DWORD last_set_render_state_value;
+	WasmD3D8DrawMaterial last_set_material;
+	WasmD3D8DrawMaterial last_get_material;
 };
 
 extern "C" void wasm_d3d8_reset_state();

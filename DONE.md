@@ -2272,6 +2272,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       metadata and ARGB-decoded RGBA, and a focused probe sets lighting false
       with ambient `0xff405060`. Playwright verifies captured state,
       descriptor decoding, persistent buffers, and the green center pixel.
+- [x] Add D3D8 `SetMaterial` / `GetMaterial` storage and per-draw
+      `D3DMATERIAL8` capture to the browser draw bridge. The shim now keeps a
+      WW3D-compatible default material, records material set/get counters,
+      exposes the current material as a separate draw payload next to render
+      state, and the JS bridge normalizes diffuse, ambient, specular,
+      emissive, and power descriptors. A focused probe verifies readback,
+      captured material values, persistent buffers, and the green center pixel.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8

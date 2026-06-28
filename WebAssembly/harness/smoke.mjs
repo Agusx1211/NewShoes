@@ -266,6 +266,13 @@ function pixelsApproximatelyEqual(left, right, tolerance = 1) {
     && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
 }
 
+function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
+}
+
 function pixelLooksRed(pixel) {
   return Array.isArray(pixel)
     && pixel[0] >= 180
@@ -3142,6 +3149,27 @@ try {
       || d3d8LightingAmbientResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
       || d3d8LightingAmbientResult.centerPixelOk !== true) {
     throw new Error(`D3D8 lighting/ambient probe failed: ${JSON.stringify(d3d8LightingAmbientResult)}`);
+  }
+
+  const d3d8MaterialResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Material"));
+  const expectedMaterial = d3d8MaterialResult.probe?.material ?? {};
+  const browserMaterial = d3d8MaterialResult.browserProbe?.material ?? {};
+  if (!d3d8MaterialResult.ok
+      || d3d8MaterialResult.probe?.source !== "browser_d3d8_material_probe"
+      || d3d8MaterialResult.probe?.calls?.setMaterial !== 1
+      || d3d8MaterialResult.probe?.calls?.getMaterial !== 1
+      || d3d8MaterialResult.probe?.calls?.drawIndexed !== 1
+      || d3d8MaterialResult.browserProbe?.renderState?.lighting !== 0
+      || d3d8MaterialResult.materialOk !== true
+      || d3d8MaterialResult.appliedMaterialOk !== true
+      || !floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse)
+      || !floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient)
+      || !floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular)
+      || !floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive)
+      || Math.abs((browserMaterial.power ?? 0) - (expectedMaterial.power ?? 0)) > 0.00001
+      || d3d8MaterialResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8MaterialResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 material probe failed: ${JSON.stringify(d3d8MaterialResult)}`);
   }
 
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));

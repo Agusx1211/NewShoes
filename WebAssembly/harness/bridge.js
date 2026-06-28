@@ -929,6 +929,36 @@ function d3dColorToNormalizedRgba(value) {
   ];
 }
 
+const DEFAULT_D3D8_MATERIAL = {
+  diffuse: [1, 1, 1, 1],
+  ambient: [1, 1, 1, 1],
+  specular: [0, 0, 0, 0],
+  emissive: [0, 0, 0, 0],
+  power: 1,
+};
+
+function normalizeD3D8ColorValue(value, fallback) {
+  const source = Array.isArray(value)
+    ? value
+    : [value?.r, value?.g, value?.b, value?.a];
+  return [0, 1, 2, 3].map((index) => {
+    const component = Number(source[index] ?? fallback[index]);
+    return Number.isFinite(component) ? component : fallback[index];
+  });
+}
+
+function normalizeD3D8Material(material = {}) {
+  const source = material ?? {};
+  const power = Number(source.power ?? DEFAULT_D3D8_MATERIAL.power);
+  return {
+    diffuse: normalizeD3D8ColorValue(source.diffuse, DEFAULT_D3D8_MATERIAL.diffuse),
+    ambient: normalizeD3D8ColorValue(source.ambient, DEFAULT_D3D8_MATERIAL.ambient),
+    specular: normalizeD3D8ColorValue(source.specular, DEFAULT_D3D8_MATERIAL.specular),
+    emissive: normalizeD3D8ColorValue(source.emissive, DEFAULT_D3D8_MATERIAL.emissive),
+    power: Number.isFinite(power) ? power : DEFAULT_D3D8_MATERIAL.power,
+  };
+}
+
 function textureHasCompleteMipChain(resource) {
   if (!resource || resource.levels <= 1) {
     return false;
@@ -3498,6 +3528,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(view) &&
     isIdentityD3DMatrix(projection);
   const renderState = normalizeD3D8RenderState(payload.renderState);
+  const material = normalizeD3D8Material(payload.material);
   const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
@@ -3815,7 +3846,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedTransforms: Boolean(useTransforms),
     usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
+    material,
     appliedRenderState,
+    appliedMaterial: material,
     fillMode: appliedFillMode,
     shadeMode: appliedShadeMode,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
@@ -4174,6 +4207,7 @@ async function loadWasmModule() {
       probeD3D8ZBias: module.cwrap("cnc_port_probe_d3d8_z_bias", "string", []),
       probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
+      probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -7077,6 +7111,60 @@ async function rpc(command, payload = {}) {
           browserProbe,
           centerPixelOk,
           ambientRgbaOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8Material":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 material probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8Material());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const appliedMaterial = normalizeD3D8Material(browserProbe?.appliedMaterial);
+        const vectorOk = (left, right) => Array.isArray(left)
+          && Array.isArray(right)
+          && left.length === right.length
+          && left.every((component, index) => Math.abs(component - right[index]) < 0.00001);
+        const materialOk =
+          vectorOk(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          vectorOk(browserMaterial.ambient, expectedMaterial.ambient) &&
+          vectorOk(browserMaterial.specular, expectedMaterial.specular) &&
+          vectorOk(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const appliedMaterialOk =
+          vectorOk(appliedMaterial.diffuse, expectedMaterial.diffuse) &&
+          vectorOk(appliedMaterial.ambient, expectedMaterial.ambient) &&
+          vectorOk(appliedMaterial.specular, expectedMaterial.specular) &&
+          vectorOk(appliedMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(appliedMaterial.power - expectedMaterial.power) < 0.00001;
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.getMaterial === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 6
+          && browserProbe?.renderState?.lighting === 0
+          && materialOk
+          && appliedMaterialOk
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          appliedMaterialOk,
+          centerPixelOk,
           state: snapshotState(),
         };
       }
