@@ -4606,6 +4606,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       texCoordModeName: texture0Coordinates.modeName,
       texCoordSet: texture0Coordinates.coordSet,
       texCoordOffset: canSampleTexture0 ? texture0Coordinates.offset : null,
+      texCoordComponents: texture0Coordinates.components,
       textureTransformFlags: texture0Coordinates.textureTransformFlags,
       textureTransformModeName: texture0Coordinates.textureTransformModeName,
       textureTransformSupported: texture0Coordinates.transformSupported,
@@ -4636,6 +4637,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       texCoordModeName: texture1Coordinates.modeName,
       texCoordSet: texture1Coordinates.coordSet,
       texCoordOffset: canSampleTexture1 ? texture1Coordinates.offset : null,
+      texCoordComponents: texture1Coordinates.components,
       textureTransformFlags: texture1Coordinates.textureTransformFlags,
       textureTransformModeName: texture1Coordinates.textureTransformModeName,
       textureTransformSupported: texture1Coordinates.transformSupported,
@@ -4943,6 +4945,7 @@ async function loadWasmModule() {
       probeD3D8TextureMipChainDraw: module.cwrap("cnc_port_probe_d3d8_texture_mip_chain_draw", "string", ["number"]),
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
+      probeD3D8FvfTexCoordSizes: module.cwrap("cnc_port_probe_d3d8_fvf_texcoord_sizes", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
       probeD3D8Stage1TextureTransform: module.cwrap("cnc_port_probe_d3d8_stage1_texture_transform", "string", []),
       probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
@@ -7674,6 +7677,79 @@ async function rpc(command, payload = {}) {
             && texture0.texCoordSet === probe.texcoord?.set
             && texture0.texCoordOffset === probe.texcoord?.expectedOffset
             && texture0.textureTransformFlags === probe.texcoord?.textureTransformFlags
+            && texture0.texCoordSupported === true
+            && centerPixelOk
+            && textureDelta.creates === 1
+            && textureDelta.updates === 1
+            && textureDelta.binds === 1
+            && textureDelta.releaseUnbinds === 1
+            && textureDelta.releases === 1
+            && textureProbe?.live === 0;
+          cases.push({
+            ok: caseOk,
+            probe,
+            browserProbe,
+            textureDelta,
+            centerPixelOk,
+          });
+        }
+        return {
+          ok: cases.every((entry) => entry.ok),
+          command,
+          cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8FvfTexCoordSizes":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 FVF texcoord-size probe cannot run" };
+        }
+        const cases = [];
+        for (let caseId = 0; caseId < 2; ++caseId) {
+          const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+          const probe = parseModuleState(wasmModule.probeD3D8FvfTexCoordSizes(caseId));
+          const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+          const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+          const textureDelta = {
+            creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+            updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+            binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+            releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+            releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          };
+          const expectedCenter = probe.expectedCenter ?? [];
+          const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+            && expectedCenter.length === 4
+            && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+          const texture0 = browserProbe?.texture0 ?? {};
+          const vertexLayout = browserProbe?.vertexLayout ?? {};
+          const selectedTexCoord = Array.isArray(vertexLayout.texCoords)
+            ? vertexLayout.texCoords[probe.texcoord?.set]
+            : null;
+          const caseOk = Boolean(probe.ok)
+            && browserProbe?.source === "browser_d3d8_draw_indexed"
+            && browserProbe?.usedPersistentBuffers === true
+            && browserProbe?.vertexShaderFvf === probe.fvf?.vertexShaderFvf
+            && vertexLayout.source === "fvf"
+            && vertexLayout.computedStride === probe.fvf?.expectedVertexSize
+            && vertexLayout.stride === probe.fvf?.vertexStride
+            && vertexLayout.texCoords?.length === probe.fvf?.expectedTexCoordCount
+            && selectedTexCoord?.offset === probe.texcoord?.expectedOffset
+            && selectedTexCoord?.components === probe.texcoord?.expectedComponents
+            && selectedTexCoord?.available === true
+            && texture0.sampled === true
+            && texture0.id === probe.texture?.id
+            && texture0.texCoordIndex === probe.texcoord?.index
+            && texture0.texCoordModeName === "passthru"
+            && texture0.texCoordSet === probe.texcoord?.set
+            && texture0.texCoordOffset === probe.texcoord?.expectedOffset
+            && texture0.texCoordComponents === probe.texcoord?.expectedComponents
+            && texture0.textureTransformFlags === probe.texcoord?.textureTransformFlags
+            && texture0.textureTransformModeName === "disable"
+            && texture0.textureTransformSupported === true
+            && texture0.textureTransformApplied === false
             && texture0.texCoordSupported === true
             && centerPixelOk
             && textureDelta.creates === 1

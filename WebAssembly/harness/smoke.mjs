@@ -15,6 +15,10 @@ const d3d8TwoTextureAlphaCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-two-texture-alpha-canvas.png",
 );
+const d3d8FvfTexCoordSizesCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-fvf-texcoord-sizes-canvas.png",
+);
 const d3d8Stage1TextureTransformCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-stage1-texture-transform-canvas.png",
@@ -3236,6 +3240,48 @@ try {
     throw new Error(`D3D8 texcoord index probe failed: ${JSON.stringify(d3d8TexCoordIndexResult)}`);
   }
 
+  const d3d8FvfTexCoordSizesResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8FvfTexCoordSizes"));
+  const fvfTexCoordCases = d3d8FvfTexCoordSizesResult.cases ?? [];
+  const fvfTexCoordCaseNames = fvfTexCoordCases.map((entry) => entry.probe?.caseName).join(",");
+  const fvfTexCoordCenters = fvfTexCoordCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
+  const fvfTexCoordSets = fvfTexCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordSet).join(",");
+  const fvfTexCoordOffsets = fvfTexCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordOffset).join(",");
+  const fvfTexCoordComponents = fvfTexCoordCases
+    .map((entry) => entry.browserProbe?.texture0?.texCoordComponents)
+    .join(",");
+  const fvfTexCoordStrides = fvfTexCoordCases.map((entry) => entry.browserProbe?.vertexLayout?.computedStride).join(",");
+  if (!d3d8FvfTexCoordSizesResult.ok
+      || fvfTexCoordCases.length !== 2
+      || fvfTexCoordCaseNames !== "uv1After3Duv0,uv2After1D4D"
+      || fvfTexCoordCenters !== "0,0,255,255|0,0,255,255"
+      || fvfTexCoordSets !== "1,2"
+      || fvfTexCoordOffsets !== "28,36"
+      || fvfTexCoordComponents !== "2,2"
+      || fvfTexCoordStrides !== "36,44"
+      || fvfTexCoordCases.some((entry) => entry.probe?.source !== "browser_d3d8_fvf_texcoord_sizes_probe")
+      || fvfTexCoordCases.some((entry) => entry.probe?.calls?.setVertexShader !== 1)
+      || fvfTexCoordCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 12)
+      || fvfTexCoordCases.some((entry) => entry.browserProbe?.vertexLayout?.source !== "fvf")
+      || fvfTexCoordCases.some((entry) =>
+        entry.browserProbe?.vertexLayout?.texCoords?.length !== entry.probe?.fvf?.expectedTexCoordCount)
+      || fvfTexCoordCases.some((entry) =>
+        entry.browserProbe?.vertexLayout?.texCoords?.[entry.probe?.texcoord?.set]?.offset !==
+          entry.probe?.texcoord?.expectedOffset)
+      || fvfTexCoordCases.some((entry) =>
+        entry.browserProbe?.vertexLayout?.texCoords?.[entry.probe?.texcoord?.set]?.components !==
+          entry.probe?.texcoord?.expectedComponents)
+      || fvfTexCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordModeName !== "passthru")
+      || fvfTexCoordCases.some((entry) => entry.browserProbe?.texture0?.textureTransformFlags !== 0)
+      || fvfTexCoordCases.some((entry) => entry.browserProbe?.texture0?.textureTransformApplied !== false)
+      || fvfTexCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordSupported !== true)
+      || fvfTexCoordCases.some((entry) => entry.centerPixelOk !== true)
+      || fvfTexCoordCases.some((entry) => entry.textureDelta?.creates !== 1)
+      || fvfTexCoordCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
+    throw new Error(`D3D8 FVF texcoord-size probe failed: ${JSON.stringify(d3d8FvfTexCoordSizesResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8FvfTexCoordSizesCanvasScreenshot });
+
   const d3d8TextureTransformResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureTransform"));
   const textureTransformCases = d3d8TextureTransformResult.cases ?? [];
   const textureTransformCaseNames = textureTransformCases.map((entry) => entry.probe?.caseName).join(",");
@@ -5533,6 +5579,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       d3d8TwoTextureAlphaCanvasScreenshot,
+      d3d8FvfTexCoordSizesCanvasScreenshot,
       d3d8Stage1TextureTransformCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,

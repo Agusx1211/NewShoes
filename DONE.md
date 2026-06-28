@@ -2130,8 +2130,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       renders the same quad through UV0 and UV1 against a red/blue texture and
       verifies distinct center pixels plus selected offsets through Playwright.
       Camera-space generated coordinates, projected coordinates, texture
-      transform matrices, non-stage-0 texture coordinates, and generalized FVF
-      declaration decoding remain open.
+      transform matrices, non-stage-0 texture coordinates, non-FVF vertex
+      declarations, and broader position/blend FVF variants remain open.
+- [x] Prove variable-size FVF texture-coordinate decoding through the browser
+      WebGL2 draw bridge instead of only through header math. A D3D8 probe now
+      renders `D3DFVF_TEX2` with a 3D UV0 followed by 2D UV1 and `D3DFVF_TEX3`
+      with 1D UV0, 4D UV1, and 2D UV2; both cases sample a red/blue texture
+      from the later 2D coordinate set and verify blue center pixels only if
+      the bridge computes the selected offsets (`28` and `36`) from
+      `D3DFVF_TEXCOORDSIZE*` metadata. Playwright captures
+      `harness-smoke-d3d8-fvf-texcoord-sizes-canvas.png`.
 - [x] Apply captured stage-0 `D3DTS_TEXTURE0` transform matrices for the
       current WebGL2 textured draw bridge when `D3DTSS_TEXTURETRANSFORMFLAGS`
       is exactly `D3DTTFF_COUNT2` and the texture coordinates are passthrough
@@ -2139,8 +2147,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       disabled and translated-U cases against a red/blue texture, verifying
       distinct center pixels, transform metadata, and `D3DTTFF_COUNT2` coverage
       through Playwright. COUNT1/3/4, projected coordinates, camera-space
-      generated coordinates, and generalized FVF declaration decoding remain
-      open.
+      generated coordinates, non-FVF vertex declarations, and broader
+      position/blend FVF variants remain open.
 - [x] Apply captured stage-1 `D3DTS_TEXTURE1` transform matrices for the
       current WebGL2 two-texture draw bridge. A browser-driven D3D8 probe now
       binds red stage-0 and red/blue stage-1 textures, enables

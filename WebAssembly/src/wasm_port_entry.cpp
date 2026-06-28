@@ -7564,6 +7564,347 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fvf_texcoord_sizes(unsigned int fvf_case)
+{
+	wasm_d3d8_reset_state();
+
+	struct Vertex3DThen2D
+	{
+		float x;
+		float y;
+		float z;
+		DWORD diffuse;
+		float u0;
+		float v0;
+		float q0;
+		float u1;
+		float v1;
+	};
+
+	struct Vertex1DThen4DThen2D
+	{
+		float x;
+		float y;
+		float z;
+		DWORD diffuse;
+		float u0;
+		float u1;
+		float v1;
+		float p1;
+		float q1;
+		float u2;
+		float v2;
+	};
+
+	struct TextureStageWrite
+	{
+		DWORD stage;
+		D3DTEXTURESTAGESTATETYPE state;
+		DWORD value;
+	};
+
+	const Vertex3DThen2D vertices_3d_2d[4] = {
+		{ -0.75f, -0.75f, 0.0f, 0xffffffffUL, 0.25f, 0.5f, 0.0f, 0.75f, 0.5f },
+		{  0.75f, -0.75f, 0.0f, 0xffffffffUL, 0.25f, 0.5f, 0.0f, 0.75f, 0.5f },
+		{  0.75f,  0.75f, 0.0f, 0xffffffffUL, 0.25f, 0.5f, 0.0f, 0.75f, 0.5f },
+		{ -0.75f,  0.75f, 0.0f, 0xffffffffUL, 0.25f, 0.5f, 0.0f, 0.75f, 0.5f },
+	};
+	const Vertex1DThen4DThen2D vertices_1d_4d_2d[4] = {
+		{ -0.75f, -0.75f, 0.0f, 0xffffffffUL, 0.125f, 0.25f, 0.5f, 0.75f, 0.0f, 0.75f, 0.5f },
+		{  0.75f, -0.75f, 0.0f, 0xffffffffUL, 0.125f, 0.25f, 0.5f, 0.75f, 0.0f, 0.75f, 0.5f },
+		{  0.75f,  0.75f, 0.0f, 0xffffffffUL, 0.125f, 0.25f, 0.5f, 0.75f, 0.0f, 0.75f, 0.5f },
+		{ -0.75f,  0.75f, 0.0f, 0xffffffffUL, 0.125f, 0.25f, 0.5f, 0.75f, 0.0f, 0.75f, 0.5f },
+	};
+	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
+
+	const char *case_name = "unknown";
+	DWORD vertex_fvf = 0;
+	DWORD texcoord_index = D3DTSS_TCI_PASSTHRU;
+	const void *vertex_data = nullptr;
+	UINT vertex_data_size = 0;
+	UINT vertex_stride = 0;
+	UINT expected_offset = 0;
+	UINT expected_components = 2;
+	UINT expected_texcoord_count = 0;
+	bool known_case = true;
+	switch (fvf_case) {
+		case 0:
+			case_name = "uv1After3Duv0";
+			vertex_fvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2 |
+				D3DFVF_TEXCOORDSIZE3(0) | D3DFVF_TEXCOORDSIZE2(1);
+			texcoord_index = D3DTSS_TCI_PASSTHRU | 1;
+			vertex_data = vertices_3d_2d;
+			vertex_data_size = sizeof(vertices_3d_2d);
+			vertex_stride = sizeof(Vertex3DThen2D);
+			expected_offset = 28;
+			expected_texcoord_count = 2;
+			break;
+		case 1:
+			case_name = "uv2After1D4D";
+			vertex_fvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX3 |
+				D3DFVF_TEXCOORDSIZE1(0) | D3DFVF_TEXCOORDSIZE4(1) |
+				D3DFVF_TEXCOORDSIZE2(2);
+			texcoord_index = D3DTSS_TCI_PASSTHRU | 2;
+			vertex_data = vertices_1d_4d_2d;
+			vertex_data_size = sizeof(vertices_1d_4d_2d);
+			vertex_stride = sizeof(Vertex1DThen4DThen2D);
+			expected_offset = 36;
+			expected_texcoord_count = 3;
+			break;
+		default:
+			known_case = false;
+			break;
+	}
+
+	if (!known_case) {
+		char buffer[256];
+		std::snprintf(buffer, sizeof(buffer),
+			"{\"source\":\"browser_d3d8_fvf_texcoord_sizes_probe\",\"ok\":false,"
+			"\"caseId\":%u,\"error\":\"unknown FVF texcoord size case\"}",
+			fvf_case);
+		g_d3d8_probe_json = buffer;
+		return g_d3d8_probe_json.c_str();
+	}
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DTexture8 *texture = nullptr;
+	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	const UINT d3dx_vertex_size = D3DXGetFVFVertexSize(vertex_fvf);
+	bool ok = d3d != nullptr && vertex_data != nullptr && d3dx_vertex_size == vertex_stride;
+	HRESULT create_result = E_FAIL;
+	HRESULT clear_result = E_FAIL;
+	HRESULT texture_create_result = E_FAIL;
+	HRESULT texture_lock_result = E_FAIL;
+	HRESULT texture_unlock_result = E_FAIL;
+	HRESULT vertex_create_result = E_FAIL;
+	HRESULT vertex_lock_result = E_FAIL;
+	HRESULT vertex_unlock_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_texture_result = E_FAIL;
+	HRESULT set_vertex_shader_result = E_FAIL;
+	HRESULT set_stream_result = E_FAIL;
+	HRESULT set_indices_result = E_FAIL;
+	HRESULT draw_result = E_FAIL;
+	UINT texture_id = 0;
+	UINT texture_stage_write_count = 0;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		clear_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			0xff000000UL, 1.0f, 0);
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE,
+			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
+		texture_create_result = device->CreateTexture(2, 2, 1, 0,
+			D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		ok = ok && SUCCEEDED(clear_result) &&
+			SUCCEEDED(texture_create_result) && texture != nullptr && texture_id != 0;
+	}
+
+	ok = fill_two_column_argb_texture(
+		texture,
+		0xffff0000UL,
+		0xff0000ffUL,
+		texture_lock_result,
+		texture_unlock_result) && ok;
+
+	if (device != nullptr) {
+		vertex_create_result = device->CreateVertexBuffer(vertex_data_size, D3DUSAGE_WRITEONLY, 0,
+			D3DPOOL_MANAGED, &vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_MANAGED, &index_buffer);
+		ok = ok && SUCCEEDED(vertex_create_result) && vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+
+	if (vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		vertex_lock_result = vertex_buffer->Lock(0, vertex_data_size, &data, 0);
+		if (SUCCEEDED(vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, vertex_data, vertex_data_size);
+		}
+		vertex_unlock_result = vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(vertex_lock_result) && SUCCEEDED(vertex_unlock_result);
+	}
+
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(0, sizeof(indices), &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memcpy(data, indices, sizeof(indices));
+		}
+		index_unlock_result = index_buffer->Unlock();
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result);
+	}
+
+	if (device != nullptr && texture != nullptr && vertex_buffer != nullptr && index_buffer != nullptr) {
+		const TextureStageWrite texture_stage_writes[] = {
+			{ 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1 },
+			{ 0, D3DTSS_COLORARG1, D3DTA_TEXTURE },
+			{ 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1 },
+			{ 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE },
+			{ 0, D3DTSS_MINFILTER, D3DTEXF_POINT },
+			{ 0, D3DTSS_MAGFILTER, D3DTEXF_POINT },
+			{ 0, D3DTSS_MIPFILTER, D3DTEXF_NONE },
+			{ 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP },
+			{ 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP },
+			{ 0, D3DTSS_TEXCOORDINDEX, texcoord_index },
+			{ 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE },
+			{ 1, D3DTSS_COLOROP, D3DTOP_DISABLE },
+		};
+		for (UINT index = 0; index < sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]); ++index) {
+			const TextureStageWrite &write = texture_stage_writes[index];
+			if (SUCCEEDED(device->SetTextureStageState(write.stage, write.state, write.value))) {
+				++texture_stage_write_count;
+			}
+		}
+		set_texture_result = device->SetTexture(0, texture);
+		set_vertex_shader_result = device->SetVertexShader(vertex_fvf);
+		set_stream_result = device->SetStreamSource(0, vertex_buffer, vertex_stride);
+		set_indices_result = device->SetIndices(index_buffer, 0);
+		draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+		ok = ok && texture_stage_write_count == sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]) &&
+			SUCCEEDED(set_texture_result) && SUCCEEDED(set_vertex_shader_result) &&
+			SUCCEEDED(set_stream_result) && SUCCEEDED(set_indices_result) && SUCCEEDED(draw_result);
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (vertex_buffer != nullptr) {
+		vertex_buffer->Release();
+	}
+	if (texture != nullptr) {
+		texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_texture_calls == 1 &&
+		state->browser_texture_create_calls == 1 &&
+		state->browser_texture_update_calls == 1 &&
+		state->browser_texture_bind_calls == 1 &&
+		state->browser_texture_release_calls == 1 &&
+		state->browser_buffer_create_calls == 2 &&
+		state->browser_buffer_update_calls == 2 &&
+		state->browser_buffer_release_calls == 2 &&
+		state->set_texture_calls == 1 &&
+		state->set_vertex_shader_calls == 1 &&
+		state->last_set_vertex_shader == vertex_fvf &&
+		state->set_texture_stage_state_calls == texture_stage_write_count &&
+		state->draw_indexed_primitive_calls == 1 &&
+		state->last_draw_stream_source_stride == vertex_stride &&
+		state->last_draw_vertex_shader == vertex_fvf &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_SELECTARG1 &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXCOORDINDEX] == texcoord_index &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_DISABLE &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[4096];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_fvf_texcoord_sizes_probe\","
+		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
+		"\"texture\":{\"id\":%u,\"format\":%u},"
+		"\"expectedCenter\":[0,0,255,255],"
+		"\"fvf\":{\"vertexShaderFvf\":%lu,\"vertexStride\":%u,"
+		"\"d3dxVertexSize\":%u,\"expectedVertexSize\":%u,"
+		"\"texCoordCount\":%u,\"expectedTexCoordCount\":%u},"
+		"\"texcoord\":{\"index\":%lu,\"set\":%u,\"expectedOffset\":%u,"
+		"\"expectedComponents\":%u,\"textureTransformFlags\":%lu},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
+		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
+		"\"setTexture\":%u,\"setVertexShader\":%u,\"setTextureStageState\":%u,"
+		"\"drawIndexed\":%u},"
+		"\"results\":{\"create\":%ld,\"clear\":%ld,\"textureCreate\":%ld,"
+		"\"textureLock\":%ld,\"textureUnlock\":%ld,\"vertexCreate\":%ld,"
+		"\"vertexLock\":%ld,\"vertexUnlock\":%ld,\"indexCreate\":%ld,"
+		"\"indexLock\":%ld,\"indexUnlock\":%ld,\"setTexture\":%ld,"
+		"\"setVertexShader\":%ld,\"setStream\":%ld,\"setIndices\":%ld,\"draw\":%ld}}",
+		ok ? "true" : "false",
+		fvf_case,
+		case_name,
+		texture_id,
+		static_cast<unsigned int>(D3DFMT_A8R8G8B8),
+		static_cast<unsigned long>(vertex_fvf),
+		vertex_stride,
+		d3dx_vertex_size,
+		vertex_stride,
+		expected_texcoord_count,
+		expected_texcoord_count,
+		static_cast<unsigned long>(texcoord_index),
+		static_cast<unsigned int>(texcoord_index & 0xffffU),
+		expected_offset,
+		expected_components,
+		static_cast<unsigned long>(D3DTTFF_DISABLE),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		static_cast<long>(create_result),
+		static_cast<long>(clear_result),
+		static_cast<long>(texture_create_result),
+		static_cast<long>(texture_lock_result),
+		static_cast<long>(texture_unlock_result),
+		static_cast<long>(vertex_create_result),
+		static_cast<long>(vertex_lock_result),
+		static_cast<long>(vertex_unlock_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_texture_result),
+		static_cast<long>(set_vertex_shader_result),
+		static_cast<long>(set_stream_result),
+		static_cast<long>(set_indices_result),
+		static_cast<long>(draw_result));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned int transform_case)
 {
 	wasm_d3d8_reset_state();
