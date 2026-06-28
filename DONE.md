@@ -1622,6 +1622,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       harness-visible startup device JSON, including the exact Miles call order,
       source line anchors, Web Audio target, and compile-only `Mss.H` shim
       blockers behind `createAudioManager`.
+- [x] Document the verified Miles audio device frontier in
+      `SOURCE_INVENTORY.md`, preserving that Miles/WWAudio remain
+      compile-only and inert until real Web Audio scheduling, decoding, handle
+      ownership, and harness-observable playback exist.
 ---
 
 ## M3 — File / data subsystem (real data)
