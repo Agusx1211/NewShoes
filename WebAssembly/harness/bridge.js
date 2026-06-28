@@ -4909,6 +4909,7 @@ async function loadWasmModule() {
       probeD3D8MultiDirectionalLight: module.cwrap("cnc_port_probe_d3d8_multi_directional_light", "string", []),
       probeD3D8SpecularLight: module.cwrap("cnc_port_probe_d3d8_specular_light", "string", []),
       probeD3D8PointLight: module.cwrap("cnc_port_probe_d3d8_point_light", "string", []),
+      probeD3D8SpotLight: module.cwrap("cnc_port_probe_d3d8_spot_light", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
@@ -8217,6 +8218,99 @@ async function rpc(command, payload = {}) {
           },
           leftPixelOk,
           rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8SpotLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 spot-light probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8SpotLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedOutside = probe.expectedOutside ?? [0, 0, 0, 255];
+        const expectedInside = probe.expectedInside ?? [255, 255, 255, 255];
+        const outsidePixel = sampleCanvasPixel(Math.floor(canvas.width * 0.85), Math.floor(canvas.height / 2));
+        const insidePixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const outsidePixelOk = pixelsApproximatelyEqual(outsidePixel, expectedOutside, 2);
+        const insidePixelOk = pixelsApproximatelyEqual(insidePixel, expectedInside, 3);
+        const expectedLight = normalizeD3D8Light(probe.light, 0);
+        const capturedLight = normalizeD3D8Light(browserProbe?.lights?.[0], 0);
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.fixedFunctionLights?.[0] ?? {};
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive);
+        const lightConeOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_SPOT &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.position, expectedLight.position) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction) &&
+          Math.abs(capturedLight.range - expectedLight.range) < 0.00001 &&
+          Math.abs(capturedLight.falloff - expectedLight.falloff) < 0.00001 &&
+          Math.abs(capturedLight.attenuation0 - expectedLight.attenuation0) < 0.00001 &&
+          Math.abs(capturedLight.attenuation1 - expectedLight.attenuation1) < 0.00001 &&
+          Math.abs(capturedLight.attenuation2 - expectedLight.attenuation2) < 0.00001 &&
+          Math.abs(capturedLight.theta - expectedLight.theta) < 0.00001 &&
+          Math.abs(capturedLight.phi - expectedLight.phi) < 0.00001 &&
+          Math.abs(capturedLight.theta - capturedLight.phi) < 0.00001;
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          selectedLight.type === D3DLIGHT_SPOT &&
+          floatVectorApproximatelyEqual(selectedLight.position, expectedLight.position) &&
+          floatVectorApproximatelyEqual(selectedLight.direction, expectedLight.direction) &&
+          Math.abs((selectedLight.range ?? 0) - expectedLight.range) < 0.00001 &&
+          Math.abs((selectedLight.falloff ?? 0) - expectedLight.falloff) < 0.00001 &&
+          Math.abs((selectedLight.attenuation0 ?? 0) - expectedLight.attenuation0) < 0.00001 &&
+          Math.abs((selectedLight.attenuation1 ?? 0) - expectedLight.attenuation1) < 0.00001 &&
+          Math.abs((selectedLight.attenuation2 ?? 0) - expectedLight.attenuation2) < 0.00001 &&
+          Math.abs((selectedLight.theta ?? 0) - expectedLight.theta) < 0.00001 &&
+          Math.abs((selectedLight.phi ?? 0) - expectedLight.phi) < 0.00001;
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.fixedFunctionLightSupported === true
+          && appliedLighting.fixedFunctionLightCount === 1
+          && appliedLighting.directionalLightSupported === false
+          && appliedLighting.directionalLightCount === 0
+          && selectedLightOk
+          && materialOk
+          && lightConeOk
+          && outsidePixelOk
+          && insidePixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          lightConeOk,
+          selectedLightOk,
+          spotLightPixels: {
+            outside: outsidePixel,
+            inside: insidePixel,
+          },
+          outsidePixelOk,
+          insidePixelOk,
           state: snapshotState(),
         };
       }

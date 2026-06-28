@@ -2342,9 +2342,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with linear attenuation, draws a far quad and a near quad, verifies the
       raw point-light payload plus selected shader light list, and Playwright
       confirms the far gray and near white samples with
-      `harness-smoke-d3d8-point-light-canvas.png`. Spot cone proof, broader
-      original W3D point-light attenuation variants, off-axis/transformed
-      specular fidelity, and broader material-source behavior remain open.
+      `harness-smoke-d3d8-point-light-canvas.png`. Broader original W3D
+      point-light attenuation variants, spot cone/falloff variants,
+      off-axis/transformed specular fidelity, and broader material-source
+      behavior remained open at that point.
+- [x] Add a focused fixed-function D3D8 spot-light hard-cone proof. The
+      native/browser probe exports `cnc_port_probe_d3d8_spot_light`, sets a
+      `D3DLIGHT_SPOT` with captured position, direction, range, falloff,
+      attenuation, `Theta`, and `Phi`, and draws one quad outside the cone plus
+      one quad inside the cone. The harness RPC verifies the raw spot-light
+      payload, selected fixed-function shader light, material state, and black
+      outside / white inside canvas samples, with Playwright saving
+      `harness-smoke-d3d8-spot-light-canvas.png`. Smooth spot
+      penumbra/falloff variants, broader point-light attenuation variants,
+      off-axis/transformed specular fidelity, and broader material-source
+      behavior remain open.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and
