@@ -636,11 +636,6 @@ shares structure and follows behind.
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
 
-## Future experiments
-
-- [ ] Revisit the LLM-player harness after M6 playable skirmish is online; keep
-      design notes and deferred sub-tasks in `IDEAS.md` until then.
-
 ## Cross-cutting: project hygiene
 
 - [ ] Keep `PROJECT.md`, `TODO.md`, and `DONE.md` updated as milestones move.
