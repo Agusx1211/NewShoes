@@ -51,18 +51,29 @@ const requiredStartupPaths = [
 function usage() {
   return [
     "usage: node tools/inventory_startup_archives.mjs [assets-dir]",
-    "                  [--expect-current-zh] [--strict]",
+    "                  [--expect-current-zh] [--strict] [--require-base-startup]",
     "",
     "Indexes BIGF archives and reports original GameEngine.cpp startup file coverage.",
     "",
-    "  --expect-current-zh  Self-check the JSON shape against the current Zero Hour",
-    "                       runtime archive set.",
-    "  --strict             Fail (nonzero exit, ok=false) when any required startup",
-    "                       file is missing for a reason other than an optional base",
-    "                       Generals archive (INI.big/English.big) being absent.",
-    "                       Missing files solely because those optional archives are",
-    "                       absent are tolerated, so the current Zero Hour-only set",
-    "                       (no INI.big) stays green under --strict.",
+    "  --expect-current-zh     Self-check the JSON shape against the current Zero",
+    "                          Hour runtime archive set.",
+    "  --strict                Fail (nonzero exit, ok=false) when any required",
+    "                          startup file is missing for a reason other than an",
+    "                          optional base Generals archive (INI.big/English.big)",
+    "                          being absent. Missing files solely because those",
+    "                          optional archives are absent are tolerated, so the",
+    "                          current Zero Hour-only set (no INI.big) stays green",
+    "                          under --strict.",
+    "  --require-base-startup  Bounded verification mode that proves the current",
+    "                          startup-file blocker when the optional base Generals",
+    "                          startup archives are supplied. Fails nonzero",
+    "                          (ok=false) when any optional base startup archive is",
+    "                          absent or incomplete, i.e. when the base startup INI",
+    "                          files (Data\\INI\\Default\\*.ini, Rank.ini,",
+    "                          CommandMap.ini) are not all available. Use this to",
+    "                          verify a base-Generals asset set instead of the",
+    "                          Zero Hour-only set. Current Zero Hour-only assets",
+    "                          fail under this mode by design.",
   ].join("\n");
 }
 
@@ -79,12 +90,15 @@ function parseArgs(argv) {
   let assetsDir = null;
   let expectCurrentZh = false;
   let strict = false;
+  let requireBaseStartup = false;
 
   for (const arg of argv) {
     if (arg === "--expect-current-zh") {
       expectCurrentZh = true;
     } else if (arg === "--strict") {
       strict = true;
+    } else if (arg === "--require-base-startup") {
+      requireBaseStartup = true;
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -98,7 +112,12 @@ function parseArgs(argv) {
   const resolvedAssetsDir = assetsDir === null
     ? resolve(wasmRoot, "artifacts/real-assets")
     : resolve(process.cwd(), assetsDir);
-  return { assetsDir: resolvedAssetsDir, expectCurrentZh, strict };
+  return {
+    assetsDir: resolvedAssetsDir,
+    expectCurrentZh,
+    strict,
+    requireBaseStartup,
+  };
 }
 
 async function readExact(file, position, length, context) {
@@ -235,6 +254,10 @@ function expectedBaseArchiveForPath(normalizedPath) {
     : "INI.big";
 }
 
+function pathExistsInArchive(byPath, normalizedPath, archiveName) {
+  return (byPath.get(normalizedPath) ?? []).some((entry) => entry.archive === archiveName);
+}
+
 function classifyMissingPath(path, presentBaseArchiveNames) {
   const normalizedPath = normalizeEntryPath(path);
   if (baseArchiveStartupPaths.has(normalizedPath)) {
@@ -314,6 +337,45 @@ function buildInventory(assetsDir, archives) {
   });
 
   const sortedCandidateArchives = [...candidateArchives].sort();
+
+  // Base Generals startup-archive readiness: each optional base archive must
+  // be present AND supply every base startup file it owns. This lets a CI
+  // bounded-verification mode prove the current startup-file blocker when
+  // INI.big/English.big are supplied, separately from the Zero Hour-only
+  // --strict contract.
+  const baseArchiveReadiness = optionalBaseArchives.map((name) => {
+    const expectedFiles = [...baseArchiveStartupPaths]
+      .filter((path) => expectedBaseArchiveForPath(path) === name)
+      .sort();
+    const present = presentArchiveNames.has(name);
+    const missingStartupFiles = present
+      ? expectedFiles.filter((path) => !pathExistsInArchive(byPath, path, name))
+      : expectedFiles.slice();
+    return {
+      name,
+      present,
+      expectedStartupFileCount: expectedFiles.length,
+      foundStartupFileCount: expectedFiles.length - missingStartupFiles.length,
+      missingStartupFiles,
+      complete: present && missingStartupFiles.length === 0,
+    };
+  });
+
+  const baseArchiveStartupReady = baseArchiveReadiness.every(
+    (archive) => archive.complete,
+  );
+  const missingBaseFiles = baseArchiveReadiness.flatMap((archive) => {
+    const reason = archive.present
+      ? "missingFromBaseArchive"
+      : "optionalBaseArchiveAbsent";
+    return archive.missingStartupFiles.map((path) => ({
+      path,
+      expectedSource: archive.name,
+      reason,
+      sourceAbsent: !archive.present,
+    }));
+  });
+
   return {
     ok: true,
     allRequiredFound: missing.length === 0,
@@ -326,6 +388,9 @@ function buildInventory(assetsDir, archives) {
       entryCount: archive.entryCount,
     })),
     optionalBaseArchives: optionalBaseArchiveState,
+    baseArchiveReadiness,
+    baseArchiveStartupReady,
+    missingBaseFiles,
     requiredFiles,
     objectIniFiles: {
       count: objectIniEntries.length,
@@ -379,6 +444,31 @@ function assertShapeForCurrentZh(inventory) {
       inventory.missingDetails.some((entry) => entry.reason !== "optionalBaseArchiveAbsent")) {
     failures.push("current Zero Hour-only missing startup files should all be optional base archive gaps");
   }
+  if (!Array.isArray(inventory.baseArchiveReadiness) ||
+      inventory.baseArchiveReadiness.length !== optionalBaseArchives.length) {
+    failures.push("baseArchiveReadiness must cover every optional base archive");
+  } else {
+    for (const readiness of inventory.baseArchiveReadiness) {
+      if (readiness.present) {
+        failures.push(`current Zero Hour-only inventory should not mount ${readiness.name}`);
+      }
+      if (readiness.complete) {
+        failures.push(`current Zero Hour-only ${readiness.name} should not be complete`);
+      }
+      if (readiness.expectedStartupFileCount !== readiness.missingStartupFiles.length ||
+          readiness.foundStartupFileCount !== 0) {
+        failures.push(`absent ${readiness.name} should report zero found startup files`);
+      }
+    }
+  }
+  if (inventory.baseArchiveStartupReady !== false) {
+    failures.push("baseArchiveStartupReady must be false on the current Zero Hour-only set");
+  }
+  const missingBaseFileCount = inventory.baseArchiveReadiness
+    .reduce((sum, readiness) => sum + readiness.missingStartupFiles.length, 0);
+  if (inventory.missingBaseFiles?.length !== missingBaseFileCount) {
+    failures.push("missingBaseFiles should mirror every base archive readiness gap");
+  }
 
   if (failures.length > 0) {
     throw new Error(`Current Zero Hour asset inventory self-check failed: ${failures.join("; ")}`);
@@ -386,7 +476,7 @@ function assertShapeForCurrentZh(inventory) {
 }
 
 async function main() {
-  const { assetsDir, expectCurrentZh, strict } = parseArgs(process.argv.slice(2));
+  const { assetsDir, expectCurrentZh, strict, requireBaseStartup } = parseArgs(process.argv.slice(2));
   const archivePaths = await findBigArchives(assetsDir);
   const archives = [];
 
@@ -416,6 +506,40 @@ async function main() {
         `Strict startup-archive inventory failed: ${realGaps.length} required ` +
         `startup file(s) missing despite their source archives being present: ` +
         realGaps.map((entry) => entry.path).join(", "),
+      );
+    }
+  }
+  if (requireBaseStartup) {
+    // Bounded verification: prove the current base-startup blocker. Fail when
+    // any optional base startup archive is absent or incomplete, so a supplied
+    // base Generals asset set must actually satisfy every base startup file.
+    const absent = inventory.baseArchiveReadiness
+      .filter((archive) => !archive.present)
+      .map((archive) => archive.name);
+    const incomplete = inventory.baseArchiveReadiness
+      .filter((archive) => archive.present && !archive.complete)
+      .flatMap((archive) =>
+        archive.missingStartupFiles.map((path) => ({ archive: archive.name, path })));
+    if (!inventory.baseArchiveStartupReady) {
+      inventory.ok = false;
+      inventory.requireBaseStartupFailures = {
+        absent,
+        incomplete,
+      };
+      const parts = [];
+      if (absent.length > 0) {
+        parts.push(
+          `absent base startup archive(s): ${absent.join(", ")}`,
+        );
+      }
+      if (incomplete.length > 0) {
+        parts.push(
+          `incomplete base startup archive(s) missing ` +
+          `${incomplete.map((entry) => entry.path).join(", ")}`,
+        );
+      }
+      fail(
+        `Required base startup-archive verification failed: ${parts.join("; ")}`,
       );
     }
   }

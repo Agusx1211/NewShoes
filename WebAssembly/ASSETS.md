@@ -142,6 +142,26 @@ Pass `--strict` to fail only on `missingFromBaseArchive` or `missing`. The
 current Zero Hour-only set stays green under `--strict` because its remaining
 default/startup INI gaps are classified as optional base archive absence.
 
+Pass `--require-base-startup` to run the bounded verification mode that proves
+the current startup-file blocker when the optional base Generals startup
+archives are supplied. It fails nonzero (`ok=false`) when any optional base
+startup archive is absent or incomplete. The JSON exposes:
+
+- `baseArchiveReadiness` — per optional base archive (`INI.big`, `English.big`):
+  `present`, `expectedStartupFileCount`, `foundStartupFileCount`,
+  `missingStartupFiles`, and `complete` (present and supplying every owned
+  base startup file).
+- `baseArchiveStartupReady` — boolean; true only when every optional base
+  startup archive is present and complete.
+- `missingBaseFiles` — every startup file missing from its owning optional base
+  archive, with `expectedSource`, `reason`, and `sourceAbsent`.
+- `requireBaseStartupFailures` — on failure under `--require-base-startup`,
+  `{ absent: [...], incomplete: [{ archive, path }] }`.
+
+The current Zero Hour-only assets fail under `--require-base-startup` by
+design, because `INI.big` / `English.big` are not mounted; use this mode to
+verify a supplied base-Generals asset set instead.
+
 This is the current runtime archive set from the installer media, not yet the
 minimum boot set. The exact boot-minimum list must be proven after the original
 engine startup and file-system paths are linked into wasm.

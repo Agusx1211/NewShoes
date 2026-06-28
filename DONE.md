@@ -37,6 +37,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       from a present source archive or from the Zero Hour runtime set itself.
       Current Zero Hour-only assets remain strict-clean because the remaining
       default/startup INI gaps are expected from absent base `INI.big`.
+- [x] Add a bounded `--require-base-startup` verification mode to the startup
+      archive inventory tool so agents can prove the current startup-file
+      blocker when the optional base Generals startup archives
+      (`INI.big`/`English.big`) are supplied. It fails nonzero (`ok=false`)
+      when any optional base startup archive is absent or incomplete, while
+      preserving the existing `--strict` behavior for Zero Hour-only assets.
+      The JSON now exposes `baseArchiveReadiness` (per archive `present`,
+      expected/found/missing startup file counts, `complete`),
+      `baseArchiveStartupReady`, owner-specific `missingBaseFiles`, and, on
+      failure, `requireBaseStartupFailures`. Current Zero Hour-only assets fail
+      under the new mode by design (no `INI.big`/`English.big` mounted).
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.
