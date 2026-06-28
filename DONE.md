@@ -2301,6 +2301,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       fixed-function lighting yet. A focused probe sets non-default source
       choices, verifies the per-draw descriptor, persistent buffers, and the
       green center pixel with lighting disabled.
+- [x] Add D3D8 user clip-plane capture and browser shader clipping to the
+      WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
+      exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and
+      the JS bridge discards fragments outside enabled planes while preserving
+      the disabled-by-default path. A focused probe draws a green quad across
+      plane 0, verifies the captured native/browser plane state, samples black
+      left and green right pixels, and screenshots
+      `harness-smoke-d3d8-clip-plane-canvas.png`.
 - [x] Replace the generic unset `GetRenderState` zero fallback with the same
       per-state D3D8 defaults used by the current draw-capture subset. Direct
       queries now return non-zero defaults such as `COLORVERTEX`,

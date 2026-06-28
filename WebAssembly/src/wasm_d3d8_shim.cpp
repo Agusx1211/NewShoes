@@ -319,6 +319,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int texture0_transform_ptr,
 	unsigned int texture1_transform_ptr,
 	unsigned int render_state_ptr,
+	unsigned int clip_planes_ptr,
 	unsigned int material_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
@@ -337,7 +338,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 37;
+		const renderStateSlots = 39;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -417,8 +418,22 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			specularMaterialSource: state[34] >>> 0,
 			ambientMaterialSource: state[35] >>> 0,
 			emissiveMaterialSource: state[36] >>> 0,
+			clipping: state[37] >>> 0,
+			clipPlaneEnable: state[38] >>> 0,
 			textureStages,
 		};
+	};
+	const copyClipPlanes = (ptr) => {
+		if (!ptr || !Module.HEAPF32) {
+			return null;
+		}
+		const offset = ptr >>> 2;
+		const planes = [];
+		for (let index = 0; index < 6; ++index) {
+			const base = offset + index * 4;
+			planes.push(Array.from(Module.HEAPF32.subarray(base, base + 4)));
+		}
+		return planes;
 	};
 	const copyMaterial = (ptr) => {
 		if (!ptr || !Module.HEAPF32) {
@@ -456,6 +471,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			texture1: copyMatrix(texture1_transform_ptr),
 		},
 		renderState: copyRenderState(render_state_ptr),
+		clipPlanes: copyClipPlanes(clip_planes_ptr),
 		material: copyMaterial(material_ptr),
 	});
 });
@@ -475,7 +491,7 @@ void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
 #endif
 
 namespace {
@@ -547,6 +563,7 @@ void fill_caps(D3DCAPS8 &caps)
 	caps.MaxTextureBlendStages = 8;
 	caps.MaxSimultaneousTextures = 8;
 	caps.MaxActiveLights = 8;
+	caps.MaxUserClipPlanes = WASM_D3D8_CLIP_PLANE_COUNT;
 	caps.MaxStreams = 8;
 	caps.MaxStreamStride = 255;
 	caps.MaxPrimitiveCount = 65535;
@@ -1057,7 +1074,8 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	UINT index_byte_size, UINT index_count, UINT index_size, UINT transform_mask, const D3DMATRIX *world_transform,
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
-	const WasmD3D8DrawRenderState *render_state, const WasmD3D8DrawMaterial *material)
+	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
+	const WasmD3D8DrawMaterial *material)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -1083,6 +1101,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture0_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(clip_planes)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)));
 }
 
@@ -2574,7 +2593,17 @@ public:
 	}
 	HRESULT SetLight(DWORD, const D3DLIGHT8 *) override { return S_OK; }
 	HRESULT LightEnable(DWORD, BOOL) override { return S_OK; }
-	HRESULT SetClipPlane(DWORD, const float *) override { return S_OK; }
+	HRESULT SetClipPlane(DWORD index, const float *plane) override
+	{
+		if (plane == nullptr || index >= WASM_D3D8_CLIP_PLANE_COUNT) {
+			return E_FAIL;
+		}
+		std::memcpy(m_clip_planes[index], plane, sizeof(m_clip_planes[index]));
+		++g_state.set_clip_plane_calls;
+		g_state.last_set_clip_plane_index = index;
+		std::memcpy(g_state.last_set_clip_plane, plane, sizeof(g_state.last_set_clip_plane));
+		return S_OK;
+	}
 	HRESULT SetRenderState(D3DRENDERSTATETYPE state, DWORD value) override
 	{
 		m_render_states[state] = value;
@@ -2871,6 +2900,10 @@ private:
 				return D3DFOG_LINEAR;
 			case D3DRS_RANGEFOGENABLE:
 				return FALSE;
+			case D3DRS_CLIPPING:
+				return TRUE;
+			case D3DRS_CLIPPLANEENABLE:
+				return 0;
 			case D3DRS_FILLMODE:
 				return D3DFILL_SOLID;
 			case D3DRS_ZBIAS:
@@ -3004,6 +3037,9 @@ private:
 		state.specular_material_source = render_state_value(D3DRS_SPECULARMATERIALSOURCE);
 		state.ambient_material_source = render_state_value(D3DRS_AMBIENTMATERIALSOURCE);
 		state.emissive_material_source = render_state_value(D3DRS_EMISSIVEMATERIALSOURCE);
+		state.clipping = render_state_value(D3DRS_CLIPPING);
+		state.clip_plane_enable = render_state_value(D3DRS_CLIPPLANEENABLE);
+		std::memcpy(g_state.last_draw_clip_planes, m_clip_planes, sizeof(g_state.last_draw_clip_planes));
 		capture_draw_texture_stage_states();
 	}
 
@@ -3074,6 +3110,7 @@ private:
 			&g_state.last_draw_texture0_transform,
 			&g_state.last_draw_texture1_transform,
 			&g_state.last_draw_render_state,
+			&g_state.last_draw_clip_planes[0][0],
 			&g_state.last_draw_material);
 	}
 
@@ -3116,6 +3153,7 @@ private:
 	std::map<DWORD, std::map<D3DTEXTURESTAGESTATETYPE, DWORD>> m_texture_stage_states;
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
+	float m_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
 	D3DMATERIAL8 m_material = default_d3d8_material();
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;

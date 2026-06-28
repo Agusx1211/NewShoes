@@ -11,6 +11,7 @@ const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
+const d3d8ClipPlaneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clip-plane-canvas.png");
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3186,6 +3187,32 @@ try {
     throw new Error(`D3D8 shade-mode probe failed: ${JSON.stringify(d3d8ShadeModeResult)}`);
   }
 
+  const d3d8ClipPlaneResult = await page.evaluate(() => window.CnCPort.rpc("d3d8ClipPlane"));
+  const expectedClipPlane = d3d8ClipPlaneResult.probe?.clipPlane?.plane ?? [1, 0, 0, 0];
+  if (!d3d8ClipPlaneResult.ok
+      || d3d8ClipPlaneResult.probe?.source !== "browser_d3d8_clip_plane_probe"
+      || d3d8ClipPlaneResult.probe?.calls?.setClipPlane !== 1
+      || d3d8ClipPlaneResult.probe?.calls?.drawIndexed !== 1
+      || d3d8ClipPlaneResult.probe?.draw?.renderState?.clipping !== 1
+      || d3d8ClipPlaneResult.probe?.draw?.renderState?.clipPlaneEnable !== 1
+      || !floatVectorApproximatelyEqual(d3d8ClipPlaneResult.probe?.draw?.capturedPlane, expectedClipPlane)
+      || d3d8ClipPlaneResult.browserProbe?.renderState?.clipping !== 1
+      || d3d8ClipPlaneResult.browserProbe?.renderState?.clipPlaneEnable !== 1
+      || !floatVectorApproximatelyEqual(d3d8ClipPlaneResult.browserProbe?.clipPlanes?.[0], expectedClipPlane)
+      || d3d8ClipPlaneResult.browserProbe?.appliedRenderState?.clipPlanes?.enabled !== true
+      || d3d8ClipPlaneResult.browserProbe?.appliedRenderState?.clipPlanes?.mask !== 1
+      || d3d8ClipPlaneResult.browserProbe?.appliedRenderState?.clipPlanes?.enabledIndices?.join(",") !== "0"
+      || !floatVectorApproximatelyEqual(
+        d3d8ClipPlaneResult.browserProbe?.appliedRenderState?.clipPlanes?.planes?.[0],
+        expectedClipPlane)
+      || d3d8ClipPlaneResult.leftPixelOk !== true
+      || d3d8ClipPlaneResult.rightPixelOk !== true
+      || !pixelLooksBlack(d3d8ClipPlaneResult.clipPixels?.left)
+      || !pixelLooksGreen(d3d8ClipPlaneResult.clipPixels?.right)) {
+    throw new Error(`D3D8 clip-plane probe failed: ${JSON.stringify(d3d8ClipPlaneResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8ClipPlaneCanvasScreenshot });
+
   const d3d8LightingAmbientResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LightingAmbient"));
   if (!d3d8LightingAmbientResult.ok
       || d3d8LightingAmbientResult.probe?.source !== "browser_d3d8_lighting_ambient_probe"
@@ -4352,6 +4379,7 @@ try {
       canvasScreenshot,
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
+      d3d8ClipPlaneCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

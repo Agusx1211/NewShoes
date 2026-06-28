@@ -454,7 +454,7 @@ shares structure and follows behind.
       cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog/
       fill-mode/z-bias/shade-mode, lighting/ambient capture, and
       `D3DMATERIAL8` material capture/material-source descriptor coverage,
-      including fixed-function lighting shader behavior, clip state, and other
+      including fixed-function lighting shader behavior and other
       W3D draw states → GL/shader state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline

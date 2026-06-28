@@ -4,6 +4,7 @@
 
 constexpr UINT WASM_D3D8_TEXTURE_STAGE_COUNT = 8;
 constexpr UINT WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS = static_cast<UINT>(D3DTSS_RESULTARG) + 1;
+constexpr UINT WASM_D3D8_CLIP_PLANE_COUNT = 6;
 
 struct WasmD3D8DrawTextureStageState
 {
@@ -49,6 +50,8 @@ struct WasmD3D8DrawRenderState
 	DWORD specular_material_source;
 	DWORD ambient_material_source;
 	DWORD emissive_material_source;
+	DWORD clipping;
+	DWORD clip_plane_enable;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 
@@ -160,6 +163,7 @@ struct WasmD3D8ShimState
 	D3DMATRIX last_draw_texture0_transform;
 	D3DMATRIX last_draw_texture1_transform;
 	WasmD3D8DrawRenderState last_draw_render_state;
+	float last_draw_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4];
 	WasmD3D8DrawMaterial last_draw_material;
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
@@ -178,6 +182,7 @@ struct WasmD3D8ShimState
 	UINT get_transform_calls;
 	UINT set_viewport_calls;
 	UINT get_viewport_calls;
+	UINT set_clip_plane_calls;
 	UINT set_render_state_calls;
 	UINT get_render_state_calls;
 	UINT set_material_calls;
@@ -188,6 +193,8 @@ struct WasmD3D8ShimState
 	D3DRENDERSTATETYPE last_set_render_state;
 	D3DRENDERSTATETYPE last_get_render_state;
 	DWORD last_set_render_state_value;
+	DWORD last_set_clip_plane_index;
+	float last_set_clip_plane[4];
 	WasmD3D8DrawMaterial last_set_material;
 	WasmD3D8DrawMaterial last_get_material;
 };

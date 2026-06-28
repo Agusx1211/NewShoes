@@ -143,6 +143,7 @@ const D3DTA_TEMP = 5;
 const D3DTA_COMPLEMENT = 0x00000010;
 const D3DTA_ALPHAREPLICATE = 0x00000020;
 const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
+const D3D8_CLIP_PLANE_COUNT = 6;
 const D3DTSS_TCI_PASSTHRU = 0x00000000;
 const D3DTSS_TCI_COORDINDEX_MASK = 0x0000ffff;
 const D3DTSS_TCI_MODE_MASK = 0xffff0000;
@@ -2340,6 +2341,13 @@ function pixelsApproximatelyEqual(left, right, tolerance = 1) {
     && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
 }
 
+function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
+}
+
 function paintCanvasRgba(rgba) {
   syncCanvasSize();
   if (gl) {
@@ -2467,11 +2475,15 @@ function ensureD3D8DrawProgram() {
     flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
     out vec2 vTexCoord1;
+    out vec4 vClipPosition;
     out float vFogDepth;
     out float vFogRangeDistance;
     void main() {
-      vec4 viewPosition = uView * uWorld * vec4(aPosition, 1.0);
+      vec4 worldPosition = vec4(aPosition, 1.0);
+      vec4 viewPosition = worldPosition;
       if (uUseTransforms) {
+        worldPosition = uWorld * vec4(aPosition, 1.0);
+        viewPosition = uView * worldPosition;
         vec4 d3dClip = uProjection * viewPosition;
         gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
         vFogDepth = max(viewPosition.z, 0.0);
@@ -2482,6 +2494,7 @@ function ensureD3D8DrawProgram() {
         vFogRangeDistance = 0.0;
       }
       gl_Position.z -= uDepthBias * gl_Position.w;
+      vClipPosition = worldPosition;
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
       vFlatColor = vColor;
       if (uUseTexture0Transform) {
@@ -2504,8 +2517,11 @@ function ensureD3D8DrawProgram() {
     flat in vec4 vFlatColor;
     in vec2 vTexCoord0;
     in vec2 vTexCoord1;
+    in vec4 vClipPosition;
     in float vFogDepth;
     in float vFogRangeDistance;
+    uniform int uClipPlaneMask;
+    uniform vec4 uClipPlanes[6];
     uniform bool uUseFlatShade;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
@@ -2772,6 +2788,11 @@ function ensureD3D8DrawProgram() {
       return d3dApplyAlphaOp(uStage1AlphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
     }
     void main() {
+      for (int index = 0; index < 6; ++index) {
+        if ((uClipPlaneMask & (1 << index)) != 0 && dot(uClipPlanes[index], vClipPosition) < 0.0) {
+          discard;
+        }
+      }
       vec4 texture0Color = uUseTexture0
         ? d3dTextureSample(texture(uTexture0, vTexCoord0, uTexture0LodBias), uTexture0Semantic)
         : vec4(1.0);
@@ -2824,6 +2845,8 @@ function ensureD3D8DrawProgram() {
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
+    clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
+    clipPlanes: gl.getUniformLocation(program, "uClipPlanes[0]"),
     useFlatShade: gl.getUniformLocation(program, "uUseFlatShade"),
     useTexture0Transform: gl.getUniformLocation(program, "uUseTexture0Transform"),
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
@@ -3447,6 +3470,44 @@ function normalizeD3D8TextureStages(textureStages) {
     normalizeD3D8TextureStageState(Array.isArray(textureStages) ? textureStages[stage] : null, stage));
 }
 
+function normalizeD3D8ClipPlanes(clipPlanes) {
+  return Array.from({ length: D3D8_CLIP_PLANE_COUNT }, (_, planeIndex) => {
+    const source = Array.isArray(clipPlanes) ? clipPlanes[planeIndex] : null;
+    return Array.from({ length: 4 }, (_, component) => {
+      const value = Number(Array.isArray(source) ? source[component] : 0);
+      return Number.isFinite(value) ? value : 0;
+    });
+  });
+}
+
+function flattenD3D8ClipPlanes(clipPlanes) {
+  const flat = new Float32Array(D3D8_CLIP_PLANE_COUNT * 4);
+  for (let planeIndex = 0; planeIndex < D3D8_CLIP_PLANE_COUNT; ++planeIndex) {
+    for (let component = 0; component < 4; ++component) {
+      flat[planeIndex * 4 + component] = clipPlanes[planeIndex]?.[component] ?? 0;
+    }
+  }
+  return flat;
+}
+
+function d3d8ClipPlaneMask(renderState) {
+  return renderState.clipping !== 0
+    ? (renderState.clipPlaneEnable & ((1 << D3D8_CLIP_PLANE_COUNT) - 1))
+    : 0;
+}
+
+function d3d8ClipPlaneInfo(renderState, clipPlanes) {
+  const mask = d3d8ClipPlaneMask(renderState);
+  return {
+    enabled: mask !== 0,
+    clipping: renderState.clipping,
+    mask,
+    enabledIndices: Array.from({ length: D3D8_CLIP_PLANE_COUNT }, (_, index) => index)
+      .filter((index) => (mask & (1 << index)) !== 0),
+    planes: clipPlanes.map((plane) => plane.slice()),
+  };
+}
+
 function normalizeD3D8RenderState(renderState = {}) {
   return {
     cullMode: Number(renderState.cullMode ?? D3DCULL_CW) >>> 0,
@@ -3488,6 +3549,8 @@ function normalizeD3D8RenderState(renderState = {}) {
     specularMaterialSource: Number(renderState.specularMaterialSource ?? D3DMCS_COLOR2) >>> 0,
     ambientMaterialSource: Number(renderState.ambientMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
     emissiveMaterialSource: Number(renderState.emissiveMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
+    clipping: Number(renderState.clipping ?? 1) >>> 0,
+    clipPlaneEnable: Number(renderState.clipPlaneEnable ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3772,6 +3835,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     isIdentityD3DMatrix(view) &&
     isIdentityD3DMatrix(projection);
   const renderState = normalizeD3D8RenderState(payload.renderState);
+  const clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
   const material = normalizeD3D8Material(payload.material);
   const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
@@ -3822,6 +3886,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedRenderState = applyD3D8RenderState(renderState, {
       invertCullWinding: usesIdentityClipSpace,
     });
+    appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
     const fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
       payload.primitiveType,
@@ -3870,6 +3935,12 @@ function paintD3D8DrawIndexed(payload = {}) {
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
     if (bridgeProgram.depthBias) {
       gl.uniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
+    }
+    if (bridgeProgram.clipPlaneMask) {
+      gl.uniform1i(bridgeProgram.clipPlaneMask, appliedRenderState.clipPlanes.mask);
+    }
+    if (bridgeProgram.clipPlanes) {
+      gl.uniform4fv(bridgeProgram.clipPlanes, flattenD3D8ClipPlanes(clipPlanes));
     }
     if (bridgeProgram.useFlatShade) {
       gl.uniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
@@ -4093,6 +4164,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedTransforms: Boolean(useTransforms),
     usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
+    clipPlanes,
     material,
     appliedRenderState,
     appliedMaterial: material,
@@ -4455,6 +4527,7 @@ async function loadWasmModule() {
       probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
       probeD3D8ZBias: module.cwrap("cnc_port_probe_d3d8_z_bias", "string", []),
       probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
+      probeD3D8ClipPlane: module.cwrap("cnc_port_probe_d3d8_clip_plane", "string", []),
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
@@ -7354,6 +7427,52 @@ async function rpc(command, payload = {}) {
           browserProbe,
           centerPixelOk,
           firstVertexFlatPath,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8ClipPlane":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 clip-plane probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8ClipPlane());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const clipPlane = probe.clipPlane?.plane ?? [1, 0, 0, 0];
+        const browserClipPlane = browserProbe?.clipPlanes?.[0] ?? null;
+        const appliedClipPlane = browserProbe?.appliedRenderState?.clipPlanes?.planes?.[0] ?? null;
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [0, 255, 0, 255];
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setClipPlane === 1
+          && probe.calls?.drawIndexed === 1
+          && probe.draw?.renderState?.clipping === 1
+          && probe.draw?.renderState?.clipPlaneEnable === 1
+          && floatVectorApproximatelyEqual(probe.draw?.capturedPlane, clipPlane)
+          && browserProbe?.renderState?.clipping === 1
+          && browserProbe?.renderState?.clipPlaneEnable === 1
+          && browserProbe?.appliedRenderState?.clipPlanes?.enabled === true
+          && browserProbe?.appliedRenderState?.clipPlanes?.mask === 1
+          && browserProbe?.appliedRenderState?.clipPlanes?.enabledIndices?.join(",") === "0"
+          && floatVectorApproximatelyEqual(browserClipPlane, clipPlane)
+          && floatVectorApproximatelyEqual(appliedClipPlane, clipPlane)
+          && pixelsApproximatelyEqual(leftPixel, expectedLeft, 2)
+          && pixelsApproximatelyEqual(rightPixel, expectedRight, 2);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          clipPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk: pixelsApproximatelyEqual(leftPixel, expectedLeft, 2),
+          rightPixelOk: pixelsApproximatelyEqual(rightPixel, expectedRight, 2),
           state: snapshotState(),
         };
       }
