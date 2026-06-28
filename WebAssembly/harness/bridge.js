@@ -2220,6 +2220,7 @@ function ensureD3D8DrawProgram() {
     uniform mat4 uWorld;
     uniform mat4 uView;
     uniform mat4 uProjection;
+    uniform float uDepthBias;
     uniform bool uUseTexture0Transform;
     uniform mat4 uTexture0Transform;
     uniform bool uUseTexture1Transform;
@@ -2241,6 +2242,7 @@ function ensureD3D8DrawProgram() {
         vFogDepth = 0.0;
         vFogRangeDistance = 0.0;
       }
+      gl_Position.z -= uDepthBias * gl_Position.w;
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
       if (uUseTexture0Transform) {
         vec4 d3dTexCoord0 = uTexture0Transform * vec4(aTexCoord0, 0.0, 1.0);
@@ -2578,6 +2580,7 @@ function ensureD3D8DrawProgram() {
     world: gl.getUniformLocation(program, "uWorld"),
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
+    depthBias: gl.getUniformLocation(program, "uDepthBias"),
     useTexture0Transform: gl.getUniformLocation(program, "uUseTexture0Transform"),
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
@@ -2675,6 +2678,16 @@ function d3dFillModeName(fillMode) {
     default:
       return "unknown";
   }
+}
+
+function d3d8DepthBiasInfo(zBias) {
+  const raw = Number(zBias ?? 0) >>> 0;
+  const clamped = Math.max(0, Math.min(15, raw));
+  return {
+    raw,
+    clamped,
+    ndc: clamped / 65536.0,
+  };
 }
 
 function d3dPrimitiveIsTriangle(primitiveType) {
@@ -3011,6 +3024,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     fogVertexMode: Number(renderState.fogVertexMode ?? D3DFOG_LINEAR) >>> 0,
     rangeFogEnable: Number(renderState.rangeFogEnable ?? 0) >>> 0,
     fillMode: Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0,
+    zBias: Number(renderState.zBias ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3132,6 +3146,7 @@ function applyD3D8RenderState(renderState, options = {}) {
     Number.isFinite(fogEnd) &&
     fogEnd > fogStart;
   const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
+  const depthBias = d3d8DepthBiasInfo(state.zBias);
   const colorMask = {
     r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
     g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
@@ -3187,6 +3202,7 @@ function applyD3D8RenderState(renderState, options = {}) {
       enabled: depthEnabled,
       mask: state.zWriteEnable !== 0,
       func: depthFunc,
+      bias: depthBias,
     },
     blend: {
       enabled: blendEnabled,
@@ -3340,6 +3356,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     gl.uniform1f(bridgeProgram.scale, 1.0);
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
+    if (bridgeProgram.depthBias) {
+      gl.uniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
+    }
     if (useTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
       // memory as column-major, giving the transpose needed for GLSL
@@ -3905,6 +3924,7 @@ async function loadWasmModule() {
       probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
       probeD3D8FogState: module.cwrap("cnc_port_probe_d3d8_fog_state", "string", []),
       probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
+      probeD3D8ZBias: module.cwrap("cnc_port_probe_d3d8_z_bias", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -6666,6 +6686,49 @@ async function rpc(command, payload = {}) {
           && fillMode.sourceTriangleCount === 2
           && fillMode.drawIndexCount === 12
           && fillMode.drawIndexByteOffset === 0
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8ZBias":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 z-bias probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8ZBias());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const renderState = browserProbe?.renderState ?? {};
+        const depth = browserProbe?.appliedRenderState?.depth ?? {};
+        const depthBias = depth.bias ?? {};
+        const caseOk = Boolean(probe.ok)
+          && gl?.getContextAttributes()?.depth === true
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.drawIndexed === 2
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 6
+          && renderState.zBias === probe.zBias?.biased
+          && renderState.zFunc === D3DCMP_LESS
+          && renderState.zEnable === D3DZB_TRUE
+          && renderState.zWriteEnable === 1
+          && depth.enabled === true
+          && depth.mask === true
+          && depth.func === gl.LESS
+          && depthBias.raw === probe.zBias?.biased
+          && depthBias.clamped === probe.zBias?.biased
+          && typeof depthBias.ndc === "number"
+          && depthBias.ndc > 0
           && centerPixelOk;
         return {
           ok: caseOk,

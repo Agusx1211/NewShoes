@@ -40,6 +40,7 @@ struct WasmD3D8DrawRenderState
 	DWORD fog_vertex_mode;
 	DWORD range_fog_enable;
 	DWORD fill_mode;
+	DWORD z_bias;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

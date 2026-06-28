@@ -8100,6 +8100,265 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
+{
+	wasm_d3d8_reset_state();
+
+	struct TexturedQuadVertex
+	{
+		float x;
+		float y;
+		float z;
+		float nx;
+		float ny;
+		float nz;
+		DWORD diffuse;
+		float u0;
+		float v0;
+		float u1;
+		float v1;
+	};
+	static_assert(sizeof(TexturedQuadVertex) == 44, "TexturedQuadVertex must match XYZNDUV2 stride");
+
+	const TexturedQuadVertex base_vertices[4] = {
+		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 1.0f, 0.0f, 1.0f },
+	};
+	const TexturedQuadVertex biased_vertices[4] = {
+		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 1.0f, 0.0f, 1.0f },
+	};
+	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
+	const DWORD full_color_write =
+		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
+	const DWORD base_z_bias = 0;
+	const DWORD biased_z_bias = 8;
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVertexBuffer8 *base_vertex_buffer = nullptr;
+	IDirect3DVertexBuffer8 *biased_vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT clear_result = E_FAIL;
+	HRESULT base_vertex_create_result = E_FAIL;
+	HRESULT base_vertex_lock_result = E_FAIL;
+	HRESULT base_vertex_unlock_result = E_FAIL;
+	HRESULT biased_vertex_create_result = E_FAIL;
+	HRESULT biased_vertex_lock_result = E_FAIL;
+	HRESULT biased_vertex_unlock_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_indices_result = E_FAIL;
+	HRESULT set_stream_base_result = E_FAIL;
+	HRESULT set_stream_biased_result = E_FAIL;
+	HRESULT set_base_z_bias_result = E_FAIL;
+	HRESULT set_biased_z_bias_result = E_FAIL;
+	HRESULT base_draw_result = E_FAIL;
+	HRESULT biased_draw_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		clear_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			0xff000000UL, 1.0f, 0);
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_ZENABLE, D3DZB_TRUE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
+		device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, full_color_write);
+		ok = ok && SUCCEEDED(clear_result);
+	}
+
+	if (device != nullptr) {
+		base_vertex_create_result = device->CreateVertexBuffer(sizeof(base_vertices),
+			D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &base_vertex_buffer);
+		biased_vertex_create_result = device->CreateVertexBuffer(sizeof(biased_vertices),
+			D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &biased_vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_MANAGED, &index_buffer);
+		ok = ok && SUCCEEDED(base_vertex_create_result) && base_vertex_buffer != nullptr &&
+			SUCCEEDED(biased_vertex_create_result) && biased_vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+
+	if (base_vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		base_vertex_lock_result = base_vertex_buffer->Lock(0, sizeof(base_vertices), &data, 0);
+		if (SUCCEEDED(base_vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, base_vertices, sizeof(base_vertices));
+		}
+		base_vertex_unlock_result = base_vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(base_vertex_lock_result) && SUCCEEDED(base_vertex_unlock_result);
+	}
+
+	if (biased_vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		biased_vertex_lock_result = biased_vertex_buffer->Lock(0, sizeof(biased_vertices), &data, 0);
+		if (SUCCEEDED(biased_vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, biased_vertices, sizeof(biased_vertices));
+		}
+		biased_vertex_unlock_result = biased_vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(biased_vertex_lock_result) && SUCCEEDED(biased_vertex_unlock_result);
+	}
+
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(0, sizeof(indices), &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memcpy(data, indices, sizeof(indices));
+		}
+		index_unlock_result = index_buffer->Unlock();
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result);
+	}
+
+	if (device != nullptr && base_vertex_buffer != nullptr && biased_vertex_buffer != nullptr &&
+			index_buffer != nullptr) {
+		set_indices_result = device->SetIndices(index_buffer, 0);
+		set_base_z_bias_result = device->SetRenderState(D3DRS_ZBIAS, base_z_bias);
+		set_stream_base_result = device->SetStreamSource(0, base_vertex_buffer, sizeof(TexturedQuadVertex));
+		base_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+
+		device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESS);
+		set_biased_z_bias_result = device->SetRenderState(D3DRS_ZBIAS, biased_z_bias);
+		set_stream_biased_result = device->SetStreamSource(0, biased_vertex_buffer, sizeof(TexturedQuadVertex));
+		biased_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+
+		ok = ok && SUCCEEDED(set_indices_result) && SUCCEEDED(set_base_z_bias_result) &&
+			SUCCEEDED(set_stream_base_result) && SUCCEEDED(base_draw_result) &&
+			SUCCEEDED(set_biased_z_bias_result) && SUCCEEDED(set_stream_biased_result) &&
+			SUCCEEDED(biased_draw_result);
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (biased_vertex_buffer != nullptr) {
+		biased_vertex_buffer->Release();
+	}
+	if (base_vertex_buffer != nullptr) {
+		base_vertex_buffer->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->clear_calls == 1 &&
+		state->create_vertex_buffer_calls == 2 &&
+		state->create_index_buffer_calls == 1 &&
+		state->buffer_lock_calls == 3 &&
+		state->buffer_unlock_calls == 3 &&
+		state->browser_buffer_create_calls == 3 &&
+		state->browser_buffer_update_calls == 3 &&
+		state->browser_buffer_release_calls == 3 &&
+		state->draw_indexed_primitive_calls == 2 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == sizeof(TexturedQuadVertex) &&
+		state->last_draw_render_state.z_enable == D3DZB_TRUE &&
+		state->last_draw_render_state.z_write_enable == TRUE &&
+		state->last_draw_render_state.z_func == D3DCMP_LESS &&
+		state->last_draw_render_state.z_bias == biased_z_bias &&
+		state->last_draw_render_state.cull_mode == D3DCULL_NONE &&
+		state->last_draw_render_state.color_write_enable == full_color_write;
+
+	char buffer[4096];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_z_bias_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"clear\":%ld,"
+		"\"baseVertexCreate\":%ld,\"baseVertexLock\":%ld,\"baseVertexUnlock\":%ld,"
+		"\"biasedVertexCreate\":%ld,\"biasedVertexLock\":%ld,\"biasedVertexUnlock\":%ld,"
+		"\"indexCreate\":%ld,\"indexLock\":%ld,\"indexUnlock\":%ld,"
+		"\"setIndices\":%ld,\"setStreamBase\":%ld,\"setStreamBiased\":%ld,"
+		"\"setBaseZBias\":%ld,\"setBiasedZBias\":%ld,\"baseDraw\":%ld,\"biasedDraw\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"clear\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"bufferLock\":%u,\"bufferUnlock\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setRenderState\":%u,\"drawIndexed\":%u},"
+		"\"zBias\":{\"base\":%lu,\"biased\":%lu,\"captured\":%lu},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"zEnable\":%lu,\"zWriteEnable\":%lu,\"zFunc\":%lu,"
+		"\"colorWriteEnable\":%lu},"
+		"\"expectedCenter\":[0,255,0,255]}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(clear_result),
+		static_cast<long>(base_vertex_create_result),
+		static_cast<long>(base_vertex_lock_result),
+		static_cast<long>(base_vertex_unlock_result),
+		static_cast<long>(biased_vertex_create_result),
+		static_cast<long>(biased_vertex_lock_result),
+		static_cast<long>(biased_vertex_unlock_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_indices_result),
+		static_cast<long>(set_stream_base_result),
+		static_cast<long>(set_stream_biased_result),
+		static_cast<long>(set_base_z_bias_result),
+		static_cast<long>(set_biased_z_bias_result),
+		static_cast<long>(base_draw_result),
+		static_cast<long>(biased_draw_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->buffer_lock_calls : 0,
+		state != nullptr ? state->buffer_unlock_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_render_state_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		static_cast<unsigned long>(base_z_bias),
+		static_cast<unsigned long>(biased_z_bias),
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_bias) : 0,
+		state != nullptr ? static_cast<unsigned int>(state->last_draw_primitive_type) : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_enable) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_write_enable) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_func) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_legacy_texture_upload()
 {
 	wasm_d3d8_reset_state();

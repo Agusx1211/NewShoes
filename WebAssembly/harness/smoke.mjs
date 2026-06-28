@@ -3097,6 +3097,23 @@ try {
     throw new Error(`D3D8 fill-mode probe failed: ${JSON.stringify(d3d8FillModeResult)}`);
   }
 
+  const d3d8ZBiasResult = await page.evaluate(() => window.CnCPort.rpc("d3d8ZBias"));
+  if (!d3d8ZBiasResult.ok
+      || d3d8ZBiasResult.probe?.source !== "browser_d3d8_z_bias_probe"
+      || d3d8ZBiasResult.probe?.calls?.drawIndexed !== 2
+      || d3d8ZBiasResult.browserProbe?.renderState?.zBias !== 8
+      || d3d8ZBiasResult.browserProbe?.renderState?.zFunc !== 2
+      || d3d8ZBiasResult.browserProbe?.renderState?.zEnable !== 1
+      || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.enabled !== true
+      || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.func !== 513
+      || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.raw !== 8
+      || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.clamped !== 8
+      || !(d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.ndc > 0)
+      || d3d8ZBiasResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8ZBiasResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 z-bias probe failed: ${JSON.stringify(d3d8ZBiasResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

@@ -2250,6 +2250,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       captured wireframe state, the generated 12 line indices from two
       triangles, and the green center pixel that only appears when the
       wireframe edges render.
+- [x] Add D3D8 `D3DRS_ZBIAS` capture and shader depth-bias emulation to the
+      browser draw bridge. The shim now carries the z-bias render state in the
+      draw payload, the WebGL2 vertex shader shifts clip-space depth for
+      positive D3D bias values so both triangles and wireframe line draws move
+      toward the camera, and a focused two-pass depth probe draws a red quad
+      first, then proves a green same-depth quad with `D3DCMP_LESS` only wins
+      after `ZBIAS=8` is applied. Playwright verifies the captured state, GL
+      depth function, clamped bias metadata, and green center pixel.
+
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8
       `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and
