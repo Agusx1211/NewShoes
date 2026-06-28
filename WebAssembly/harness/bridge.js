@@ -5190,6 +5190,8 @@ async function loadWasmModule() {
         "cnc_port_probe_edge_mapper_apply", "string", []),
       probeEnvironmentMapperApply: module.cwrap(
         "cnc_port_probe_environment_mapper_apply", "string", []),
+      probeGridEnvironmentMapperApply: module.cwrap(
+        "cnc_port_probe_grid_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
         "cnc_port_probe_matrixmapper_apply", "string", []),
       probeScreenMapperApply: module.cwrap(
@@ -12307,6 +12309,71 @@ async function rpc(command, payload = {}) {
           && probe?.transform?.row3Ok === true
           && probe?.callDeltas?.transform === 1
           && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "gridEnvironmentMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; grid environment mapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeGridEnvironmentMapperApply());
+        const classic = probe?.cases?.classic;
+        const reflection = probe?.cases?.reflection;
+        const caseOk = (
+          gridCase,
+          expectedClass,
+          expectedStage,
+          expectedOffset,
+          expectedTexCoord,
+        ) =>
+          gridCase?.ok === true
+          && gridCase?.class === expectedClass
+          && gridCase?.stage === expectedStage
+          && gridCase?.gridWidthLog2 === 2
+          && gridCase?.lastFrame === 16
+          && gridCase?.offset === expectedOffset
+          && gridCase?.mapperCreated === true
+          && gridCase?.mapperIdOk === true
+          && gridCase?.needsNormalsOk === true
+          && gridCase?.timeVariantOk === true
+          && gridCase?.stageOk === true
+          && gridCase?.applyCalled === true
+          && gridCase?.texCoordIndex === expectedTexCoord
+          && gridCase?.textureTransformFlags === D3DTTFF_COUNT2
+          && gridCase?.transform?.state === gridCase?.transform?.expectedState
+          && gridCase?.transform?.rowsOk === true
+          && gridCase?.transform?.row0Ok === true
+          && gridCase?.transform?.row1Ok === true
+          && gridCase?.transform?.row2Ok === true
+          && gridCase?.transform?.row3Ok === true
+          && gridCase?.callDeltas?.transform === 1
+          && gridCase?.callDeltas?.textureStageState === 2;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "grid_environment_mapper_apply_probe"
+          && caseOk(
+            classic,
+            "GridClassicEnvironmentMapperClass",
+            1,
+            5,
+            D3DTSS_TCI_CAMERASPACENORMAL,
+          )
+          && caseOk(
+            reflection,
+            "GridEnvironmentMapperClass",
+            1,
+            10,
+            D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR,
+          );
         return {
           ok,
           command,

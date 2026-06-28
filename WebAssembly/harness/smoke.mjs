@@ -5656,6 +5656,42 @@ try {
     );
   }
 
+  const gridEnvironmentMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("gridEnvironmentMapperApply"));
+  const gridClassic = gridEnvironmentMapperApplyResult.probe?.cases?.classic;
+  const gridReflection = gridEnvironmentMapperApplyResult.probe?.cases?.reflection;
+  const gridCaseOk = (gridCase, expectedClass, expectedStage, expectedOffset, expectedTexCoord) =>
+    gridCase?.ok === true
+    && gridCase?.class === expectedClass
+    && gridCase?.stage === expectedStage
+    && gridCase?.gridWidthLog2 === 2
+    && gridCase?.lastFrame === 16
+    && gridCase?.offset === expectedOffset
+    && gridCase?.mapperCreated === true
+    && gridCase?.mapperIdOk === true
+    && gridCase?.needsNormalsOk === true
+    && gridCase?.timeVariantOk === true
+    && gridCase?.stageOk === true
+    && gridCase?.applyCalled === true
+    && gridCase?.texCoordIndex === expectedTexCoord
+    && gridCase?.textureTransformFlags === 2
+    && gridCase?.transform?.state === gridCase?.transform?.expectedState
+    && gridCase?.transform?.rowsOk === true
+    && gridCase?.transform?.row0Ok === true
+    && gridCase?.transform?.row1Ok === true
+    && gridCase?.transform?.row2Ok === true
+    && gridCase?.transform?.row3Ok === true
+    && gridCase?.callDeltas?.transform === 1
+    && gridCase?.callDeltas?.textureStageState === 2;
+  if (!gridEnvironmentMapperApplyResult.ok
+      || gridEnvironmentMapperApplyResult.probe?.source !== "grid_environment_mapper_apply_probe"
+      || !gridCaseOk(gridClassic, "GridClassicEnvironmentMapperClass", 1, 5, 0x00010000)
+      || !gridCaseOk(gridReflection, "GridEnvironmentMapperClass", 1, 10, 0x00030000)) {
+    throw new Error(
+      `Grid environment mapper apply probe failed: ${JSON.stringify(gridEnvironmentMapperApplyResult)}`,
+    );
+  }
+
   const wsEnvironmentMapperApplyResult =
       await page.evaluate(() => window.CnCPort.rpc("wsEnvironmentMapperApply"));
   const wsClassic = wsEnvironmentMapperApplyResult.probe?.cases?.classic;
