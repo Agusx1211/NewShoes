@@ -5186,6 +5186,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_font_chars", "string", ["number", "string", "number"]),
       probeClassicEnvironmentMapperApply: module.cwrap(
         "cnc_port_probe_classic_environment_mapper_apply", "string", []),
+      probeEdgeMapperApply: module.cwrap(
+        "cnc_port_probe_edge_mapper_apply", "string", []),
       probeEnvironmentMapperApply: module.cwrap(
         "cnc_port_probe_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
@@ -12196,6 +12198,48 @@ async function rpc(command, payload = {}) {
           && probe?.transform?.row3Ok === true
           && probe?.callDeltas?.transform === 1
           && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "edgeMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; EdgeMapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeEdgeMapperApply());
+        const normal = probe?.cases?.normal;
+        const reflect = probe?.cases?.reflect;
+        const caseOk = (edgeCase, expectedStage, expectedTexCoord) =>
+          edgeCase?.ok === true
+          && edgeCase?.stage === expectedStage
+          && edgeCase?.mapperCreated === true
+          && edgeCase?.mapperIdOk === true
+          && edgeCase?.needsNormalsOk === true
+          && edgeCase?.timeVariantOk === true
+          && edgeCase?.applyCalled === true
+          && edgeCase?.texCoordIndex === expectedTexCoord
+          && edgeCase?.textureTransformFlags === D3DTTFF_COUNT2
+          && edgeCase?.transform?.state === edgeCase?.transform?.expectedState
+          && edgeCase?.transform?.rowsOk === true
+          && edgeCase?.transform?.row0Ok === true
+          && edgeCase?.transform?.row1Ok === true
+          && edgeCase?.transform?.row2Ok === true
+          && edgeCase?.transform?.row3Ok === true
+          && edgeCase?.callDeltas?.transform === 1
+          && edgeCase?.callDeltas?.textureStageState === 2;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "edge_mapper_apply_probe"
+          && caseOk(normal, 1, D3DTSS_TCI_CAMERASPACENORMAL)
+          && caseOk(reflect, 1, D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
         return {
           ok,
           command,

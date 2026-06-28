@@ -5603,6 +5603,37 @@ try {
     );
   }
 
+  const edgeMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("edgeMapperApply"));
+  const edgeNormal = edgeMapperApplyResult.probe?.cases?.normal;
+  const edgeReflect = edgeMapperApplyResult.probe?.cases?.reflect;
+  const edgeCaseOk = (edgeCase, expectedStage, expectedTexCoord) =>
+    edgeCase?.ok === true
+    && edgeCase?.stage === expectedStage
+    && edgeCase?.mapperCreated === true
+    && edgeCase?.mapperIdOk === true
+    && edgeCase?.needsNormalsOk === true
+    && edgeCase?.timeVariantOk === true
+    && edgeCase?.applyCalled === true
+    && edgeCase?.texCoordIndex === expectedTexCoord
+    && edgeCase?.textureTransformFlags === 2
+    && edgeCase?.transform?.state === edgeCase?.transform?.expectedState
+    && edgeCase?.transform?.rowsOk === true
+    && edgeCase?.transform?.row0Ok === true
+    && edgeCase?.transform?.row1Ok === true
+    && edgeCase?.transform?.row2Ok === true
+    && edgeCase?.transform?.row3Ok === true
+    && edgeCase?.callDeltas?.transform === 1
+    && edgeCase?.callDeltas?.textureStageState === 2;
+  if (!edgeMapperApplyResult.ok
+      || edgeMapperApplyResult.probe?.source !== "edge_mapper_apply_probe"
+      || !edgeCaseOk(edgeNormal, 1, 0x00010000)
+      || !edgeCaseOk(edgeReflect, 1, 0x00030000)) {
+    throw new Error(
+      `EdgeMapper apply probe failed: ${JSON.stringify(edgeMapperApplyResult)}`,
+    );
+  }
+
   const environmentMapperApplyResult =
       await page.evaluate(() => window.CnCPort.rpc("environmentMapperApply"));
   if (!environmentMapperApplyResult.ok
