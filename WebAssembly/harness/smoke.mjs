@@ -5564,6 +5564,23 @@ try {
     throw new Error(`WWShade cubemap apply probe failed: ${JSON.stringify(wwshadeCubeMapApplyResult)}`);
   }
 
+  const matrixMapperApplyResult = await page.evaluate(() => window.CnCPort.rpc("matrixMapperApply"));
+  if (!matrixMapperApplyResult.ok
+      || matrixMapperApplyResult.probe?.source !== "matrixmapper_apply_probe"
+      || matrixMapperApplyResult.probe?.results?.applyCalled !== true
+      || matrixMapperApplyResult.probe?.results?.stage !== 1
+      || matrixMapperApplyResult.probe?.textureStage?.texCoordIndex !== 0x00020000
+      || matrixMapperApplyResult.probe?.textureStage?.textureTransformFlags !== (256 | 3)
+      || matrixMapperApplyResult.probe?.transform?.state !== matrixMapperApplyResult.probe?.transform?.expectedState
+      || matrixMapperApplyResult.probe?.transform?.perspectiveRowsOk !== true
+      || matrixMapperApplyResult.probe?.transform?.row0Ok !== true
+      || matrixMapperApplyResult.probe?.transform?.row1Ok !== true
+      || matrixMapperApplyResult.probe?.transform?.row2FromRow3Ok !== true
+      || matrixMapperApplyResult.probe?.callDeltas?.transform !== 1
+      || matrixMapperApplyResult.probe?.callDeltas?.textureStageState !== 2) {
+    throw new Error(`MatrixMapper apply probe failed: ${JSON.stringify(matrixMapperApplyResult)}`);
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",

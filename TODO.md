@@ -498,9 +498,8 @@ shares structure and follows behind.
       those dependencies are owned, not weak-faked.
 - [ ] Extend the focused browser generated texture-coordinate support into
       original W3D mapper users: camera-space normal/reflection/position
-      `D3DTSS_TEXCOORDINDEX` in `WW3D2/mapper.cpp`,
-      `WW3D2/matrixmapper.cpp`, water projection, and terrain projection,
-      including full stage mapping and original
+      `D3DTSS_TEXCOORDINDEX` in `WW3D2/mapper.cpp`, water projection, and
+      terrain projection, including full stage mapping and original
       `D3DTTFF_PROJECTED | D3DTTFF_COUNT3` camera-space position paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable

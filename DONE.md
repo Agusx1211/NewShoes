@@ -2188,6 +2188,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       stage-0 `D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR`, the
       `DX8_FVF_XYZNDCUBEMAP` FVF, stage combiner state, material sources,
       material values, and D3D8 shim call deltas.
+- [x] Prove the original `MatrixMapperClass::Apply` perspective-projection
+      path against the browser D3D8 state bridge. `cnc_port_probe_matrixmapper_apply()`
+      constructs a real ref-counted `MatrixMapperClass`, configures a deterministic
+      `ViewToTexture` transform, calls the original
+      `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp`
+      `Apply()` method, and the Playwright smoke verifies stage-1
+      `D3DTSS_TCI_CAMERASPACEPOSITION`,
+      `D3DTTFF_PROJECTED | D3DTTFF_COUNT3`, the texture transform state, and the
+      three perspective rows emitted by the original branch.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8

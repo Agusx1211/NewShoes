@@ -5184,6 +5184,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
       probeWW3DFontChars: module.cwrap(
         "cnc_port_probe_ww3d_font_chars", "string", ["number", "string", "number"]),
+      probeMatrixMapperApply: module.cwrap(
+        "cnc_port_probe_matrixmapper_apply", "string", []),
       probeWWShadeCubeMapApply: module.cwrap(
         "cnc_port_probe_wwshade_cubemap_apply", "string", []),
       initOriginalWndProcInput: module.cwrap(
@@ -12129,6 +12131,33 @@ async function rpc(command, payload = {}) {
           && (probe?.callDeltas?.renderState ?? 0) >= 6
           && probe?.callDeltas?.vertexShader === 1
           && probe?.callDeltas?.material === 1;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "matrixMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MatrixMapper apply cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeMatrixMapperApply());
+        const ok = Boolean(probe.ok)
+          && probe?.source === "matrixmapper_apply_probe"
+          && probe?.results?.applyCalled === true
+          && probe?.results?.stage === 1
+          && probe?.textureStage?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+          && probe?.textureStage?.textureTransformFlags === (D3DTTFF_PROJECTED | D3DTTFF_COUNT3)
+          && probe?.transform?.state === probe?.transform?.expectedState
+          && probe?.transform?.perspectiveRowsOk === true
+          && probe?.transform?.row0Ok === true
+          && probe?.transform?.row1Ok === true
+          && probe?.transform?.row2FromRow3Ok === true
+          && probe?.callDeltas?.transform === 1
+          && probe?.callDeltas?.textureStageState === 2;
         return {
           ok,
           command,
