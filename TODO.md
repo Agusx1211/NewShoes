@@ -2627,6 +2627,12 @@ shares structure and follows behind.
       `D3DBLEND_ONE`/`D3DBLEND_ONE` render-state assertions, texture sampling,
       red center-pixel sampling, and black outside-quad sampling in
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawImage` `DRAW_IMAGE_SOLID` mode now drives the
+      display-owned no-alpha-blend Render2D branch, verified by
+      `harness-smoke-ww3d-display-drawimage-solid-canvas.png`,
+      `D3DBLEND_ONE`/`D3DBLEND_ZERO` render-state assertions, a low-alpha red
+      texture drawn over a blue clear, red center-pixel sampling, and blue
+      outside-quad sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Original `W3DDisplay::drawImage` also resolves a filename-backed `Image`
       through `Render2DClass::Set_Texture(const char*)`,
       `WW3DAssetManager::Get_Texture`, `TextureClass::Apply`, and the runtime
