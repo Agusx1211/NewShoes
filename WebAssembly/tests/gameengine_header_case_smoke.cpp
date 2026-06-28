@@ -104,6 +104,27 @@ int main()
 	if (D3DXGetFVFVertexSize(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1) != 32) {
 		return 1;
 	}
+	// D3D8 FVF texcoord-size macros encode the documented 2-bit component sizes
+	// packed into bits 16..31, two bits per texture-coordinate set.
+	if (D3DFVF_TEXCOORDSIZE1(0) != 0x00030000L || D3DFVF_TEXCOORDSIZE2(0) != 0x00000000L ||
+	    D3DFVF_TEXCOORDSIZE3(0) != 0x00010000L || D3DFVF_TEXCOORDSIZE4(0) != 0x00020000L) {
+		return 1;
+	}
+	if (D3DFVF_TEXCOORDSIZE1(1) != 0x000c0000L || D3DFVF_TEXCOORDSIZE2(1) != 0x00000000L ||
+	    D3DFVF_TEXCOORDSIZE3(1) != 0x00040000L || D3DFVF_TEXCOORDSIZE4(1) != 0x00080000L) {
+		return 1;
+	}
+	// Mixed texture layout: position + diffuse + 3D texcoord0 + 1D texcoord1.
+	// 3 floats (XYZ) + 1 DWORD (DIFFUSE) + 3 floats (tex0) + 1 float (tex1) = 32 bytes.
+	if (D3DXGetFVFVertexSize(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX2 |
+	        D3DFVF_TEXCOORDSIZE3(0) | D3DFVF_TEXCOORDSIZE1(1)) != 32) {
+		return 1;
+	}
+	// 4D texcoord exercises the coord_size == 2 path:
+	// 3 floats (XYZ) + 4 floats (tex0) = 28 bytes.
+	if (D3DXGetFVFVertexSize(D3DFVF_XYZ | D3DFVF_TEX1 | D3DFVF_TEXCOORDSIZE4(0)) != 28) {
+		return 1;
+	}
 	if (d3dx_translation._41 != 1.0f || d3dx_translation._42 != 2.0f || d3dx_translation._43 != 3.0f) {
 		return 1;
 	}
