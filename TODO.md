@@ -3026,7 +3026,7 @@ shares structure and follows behind.
       `MessageStream`.
 - [x] Extend the focused real Mouse stream-message proof to cover drag and
       wheel `MSG_RAW_MOUSE_*` output before wiring GUI translator delivery.
-- [ ] Add a separate real engine Mouse probe, not the current browser
+- [x] Add a separate real engine Mouse probe, not the current browser
       `Win32Mouse`/`Mouse` shim, that wires `TheMouse == TheWin32Mouse`,
       supplies the required `TheMessageStream` / keyboard / frame globals,
       drives original `Mouse::update()` and `Mouse::createStreamMessages()`,
@@ -3060,6 +3060,10 @@ shares structure and follows behind.
       - [x] Make the original Mouse stream probe JSON type-aware so drag,
             wheel, button, and modifier arguments are exposed through semantic
             fields instead of mixed generic `integer1` / `integer2` slots.
+      - [ ] Promote the browser-backed frame-owned `Mouse` path from
+            disabled-by-default harness opt-in to the final default gameplay
+            input owner once the real engine `MessageStream` / `CommandList`
+            lifecycle is no longer probe-owned.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
       - [x] Add a focused browser harness proof that DOM `Shift+A`
             keydown/keyup events queue Win32 `WM_KEY*`/`WM_CHAR` messages,
