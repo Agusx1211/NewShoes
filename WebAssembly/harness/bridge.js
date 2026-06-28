@@ -246,6 +246,7 @@ const harnessState = {
   dataSummary: null,
   originalEngineStartup: null,
   originalWndProcInput: null,
+  originalGuiMouseInput: null,
   originalKeyboardInput: null,
   mountedArchives: [],
   logs: [],
@@ -3269,6 +3270,8 @@ async function loadWasmModule() {
       ),
       pumpOriginalWndProcInput: module.cwrap("cnc_port_pump_original_wndproc_input", "string", []),
       probeOriginalWndProcInput: module.cwrap("cnc_port_probe_original_wndproc_input", "string", []),
+      probeOriginalGuiMouseStream: module.cwrap(
+        "cnc_port_probe_original_gui_mouse_stream", "string", []),
       probeOriginalCursorVisibility: module.cwrap(
         "cnc_port_probe_original_cursor_visibility", "string", ["number"]),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
@@ -3997,6 +4000,19 @@ async function probeOriginalWndProcInput() {
   return probe;
 }
 
+async function probeOriginalGuiMouseStream() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalGuiMouseStream());
+  harnessState.originalGuiMouseInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
 async function probeOriginalCursorVisibility({ visible = true } = {}) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
@@ -4702,6 +4718,14 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalWndProcInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalGuiMouseStreamProbe":
+      {
+        const probe = await probeOriginalGuiMouseStream();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original GUI mouse stream cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }

@@ -1072,6 +1072,43 @@ try {
       throw new Error(`Original WndProc did not feed Win32Mouse: ${JSON.stringify(originalWndProcProbe)}`);
     }
 
+    const resetBeforeGuiMouseStream = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetBeforeGuiMouseStream.ok
+        || resetBeforeGuiMouseStream.state.browserInput?.messageQueue?.count !== 0
+        || resetBeforeGuiMouseStream.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Browser GUI mouse-stream reset mismatch: ${JSON.stringify(resetBeforeGuiMouseStream)}`);
+    }
+
+    const guiMouseLParam = (95 << 16) | 120;
+    await page.evaluate(({ wmLeftButtonDown, guiMouseLParam }) => window.CnCPort.rpc("postMessage", {
+      message: wmLeftButtonDown,
+      wParam: 0,
+      lParam: guiMouseLParam,
+      point: { x: 120, y: 95 },
+    }), { wmLeftButtonDown, guiMouseLParam });
+
+    const guiMouseStreamProbe = await page.evaluate(() => window.CnCPort.rpc("originalGuiMouseStreamProbe"));
+    if (!guiMouseStreamProbe.ok
+        || guiMouseStreamProbe.probe?.ok !== true
+        || guiMouseStreamProbe.probe.queue?.before !== 1
+        || guiMouseStreamProbe.probe.queue?.pumped !== 1
+        || guiMouseStreamProbe.probe.queue?.afterPump !== 0
+        || guiMouseStreamProbe.probe.mouse?.win32Attached !== true
+        || guiMouseStreamProbe.probe.mouse?.streamAttached !== true
+        || guiMouseStreamProbe.probe.mouse?.eventsThisFrame !== 1
+        || guiMouseStreamProbe.probe.streamBefore?.count !== 2
+        || guiMouseStreamProbe.probe.streamBefore?.rawPosition !== true
+        || guiMouseStreamProbe.probe.streamBefore?.rawLeftDown !== true
+        || guiMouseStreamProbe.probe.window?.mousePos !== 1
+        || guiMouseStreamProbe.probe.window?.leftDown !== 1
+        || guiMouseStreamProbe.probe.window?.leftDownX !== 120
+        || guiMouseStreamProbe.probe.window?.leftDownY !== 95
+        || guiMouseStreamProbe.probe.window?.grabbed !== true
+        || guiMouseStreamProbe.probe.streamRemaining !== 0
+        || guiMouseStreamProbe.probe.commandListRemaining !== 0) {
+      throw new Error(`Browser GUI mouse stream did not reach original WindowTranslator/GameWindowManager: ${JSON.stringify(guiMouseStreamProbe)}`);
+    }
+
     await page.mouse.move(canvasBox.x + 111, canvasBox.y + 88);
     const resetBeforePointerCapture = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
     if (!resetBeforePointerCapture.ok

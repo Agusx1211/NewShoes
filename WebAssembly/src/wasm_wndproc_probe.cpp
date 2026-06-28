@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #ifdef __EMSCRIPTEN__
@@ -45,10 +46,30 @@ public:
 	bool isLostFocus() const { return m_lostFocus; }
 	bool isVisibleForProbe() const { return m_visible; }
 	MouseCursor currentWin32Cursor() const { return m_currentWin32Cursor; }
+	Int eventsThisFrameForProbe() const { return m_eventsThisFrame; }
+	UnsignedInt inputFrameForProbe() const { return m_inputFrame; }
 
 	void ensureArrowCursorResource()
 	{
 		cursorResources[Mouse::ARROW][0] = LoadCursor(nullptr, "arrow");
+	}
+
+	void prepareStreamProbe(int width, int height)
+	{
+		std::memset(m_eventBuffer, 0, sizeof(m_eventBuffer));
+		m_nextFreeIndex = 0;
+		m_nextGetIndex = 0;
+		std::memset(m_mouseEvents, 0, sizeof(m_mouseEvents));
+		std::memset(&m_currMouse, 0, sizeof(m_currMouse));
+		std::memset(&m_prevMouse, 0, sizeof(m_prevMouse));
+		m_minX = 0;
+		m_minY = 0;
+		m_maxX = width > 0 ? width - 1 : 799;
+		m_maxY = height > 0 ? height - 1 : 599;
+		m_inputFrame = 0;
+		m_deadInputFrame = 0;
+		m_eventsThisFrame = 0;
+		m_inputMovesAbsolute = TRUE;
 	}
 };
 
@@ -226,6 +247,31 @@ void Reset_D3D_Device(bool active)
 void cnc_port_service_original_wndproc_messages()
 {
 	service_original_wndproc_messages();
+}
+
+void cnc_port_prepare_original_wndproc_mouse_stream(int width, int height)
+{
+	if (!g_original_wndproc_ready) {
+		ensure_original_wndproc_input_window(width, height);
+	}
+	if (g_original_wndproc_ready && TheWin32Mouse == &g_browser_mouse) {
+		g_browser_mouse.prepareStreamProbe(width, height);
+	}
+}
+
+Bool cnc_port_original_wndproc_mouse_stream_attached()
+{
+	return TheWin32Mouse == &g_browser_mouse;
+}
+
+UnsignedInt cnc_port_original_wndproc_mouse_stream_input_frame()
+{
+	return g_browser_mouse.inputFrameForProbe();
+}
+
+Int cnc_port_original_wndproc_mouse_stream_events_this_frame()
+{
+	return g_browser_mouse.eventsThisFrameForProbe();
 }
 
 extern "C" {

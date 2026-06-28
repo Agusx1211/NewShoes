@@ -3123,6 +3123,12 @@ shares structure and follows behind.
             `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` are consumed by
             `WindowTranslator` / `GameWindowManager` instead of reaching
             `TheCommandList`.
+      - [x] Add a browser harness proof for the same original GUI path:
+            a browser-queued Win32 left-button message is pumped through
+            original `WinMain.cpp::WndProc`, folded by original `Win32Mouse`
+            / `Mouse::createStreamMessages()`, and consumed by
+            `WindowTranslator` / `GameWindowManager` with screenshot-capable
+            harness coverage still passing.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).
