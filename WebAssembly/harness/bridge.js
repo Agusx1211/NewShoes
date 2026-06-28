@@ -2281,6 +2281,14 @@ function pixelLooksRed(pixel) {
     && pixel[3] >= 200;
 }
 
+function pixelLooksGreen(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] <= 80
+    && pixel[1] >= 180
+    && pixel[2] <= 80
+    && pixel[3] >= 200;
+}
+
 function normalizeD3DMatrix(matrix) {
   if (!Array.isArray(matrix) || matrix.length !== 16) {
     return null;
@@ -3137,6 +3145,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_string", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
+      probeWW3DDisplayFillRect: module.cwrap(
+        "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tile", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
@@ -5594,6 +5604,42 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureDelta,
           textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayFillRect":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay fill rect cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayFillRect());
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_fillrect_probe"
+          && probe?.display?.path === "W3DDisplay::drawFillRect"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 6
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksGreen(browserProbe.centerPixel)
+          && pixelLooksGreen(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
           screenshot,
           state: snapshotState(),
         };

@@ -2622,6 +2622,12 @@ shares structure and follows behind.
       This proves the Image blit call path only; filename-backed mapped-image
       loading, clipping/rotation variants, and `DisplayString` text rendering
       remain open.
+- [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
+      through the display-owned `Render2DClass` helper without using the
+      raw-storage-unsafe virtual size setters, verified by
+      `harness-smoke-ww3d-display-fillrect-canvas.png`, disabled texture
+      sampling, and green center-pixel sampling in
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Single textured mesh renders. A minimal single-textured W3D mesh (a
       camera-facing two-triangle quad) is built in memory through the original
       `ChunkSaveClass`/W3D chunk format, loaded through the original
