@@ -26,6 +26,7 @@ const ww3dDisplayStringCanvasScreenshot = resolve(
 );
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dDisplayFillRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-fillrect-canvas.png");
+const ww3dDisplayLineCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-line-canvas.png");
 const ww3dDisplayOpenRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-openrect-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
@@ -1786,6 +1787,46 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayFillRectCanvasScreenshot });
 
+  const displayLineResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayLine"));
+  if (!displayLineResult.ok
+      || displayLineResult.probe?.source !== "ww3d_display_line_probe"
+      || displayLineResult.probe?.results?.displayAllocated !== true
+      || displayLineResult.probe?.results?.displaySetup !== true
+      || displayLineResult.probe?.results?.drawLineCalled !== true
+      || displayLineResult.probe?.display?.path !== "W3DDisplay::drawLine"
+      || displayLineResult.probe?.calls?.drawIndexed < 1
+      || displayLineResult.probe?.calls?.browserBufferCreate < 2
+      || displayLineResult.probe?.calls?.browserBufferUpdate < 2
+      || displayLineResult.probe?.draw?.primitiveType !== 4
+      || displayLineResult.probe?.draw?.vertexCount !== 4
+      || displayLineResult.probe?.draw?.primitiveCount !== 2
+      || displayLineResult.probe?.draw?.vertexStride !== 44
+      || displayLineResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayLineResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 3
+      || displayLineResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayLineResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayLineResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || displayLineResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayLineResult.browserProbe?.ok !== true
+      || displayLineResult.browserProbe?.usedPersistentBuffers !== true
+      || displayLineResult.browserProbe?.usedTransforms !== true
+      || displayLineResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayLineResult.browserProbe?.vertexCount !== 4
+      || displayLineResult.browserProbe?.vertexStride !== 44
+      || displayLineResult.browserProbe?.indexCount !== 6
+      || displayLineResult.browserProbe?.texture0?.sampled === true
+      || !pixelLooksGreen(displayLineResult.browserProbe?.centerPixel)
+      || !pixelLooksGreen(displayLineResult.screenshot?.centerPixel)
+      || !pixelLooksGreen(displayLineResult.linePixels?.center)
+      || !pixelLooksBlack(displayLineResult.linePixels?.above)
+      || !pixelLooksBlack(displayLineResult.linePixels?.below)
+      || !pixelLooksBlack(displayLineResult.linePixels?.leftOutside)
+      || !pixelLooksBlack(displayLineResult.linePixels?.rightOutside)) {
+    throw new Error(`WW3DDisplay line probe failed: ${JSON.stringify(displayLineResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayLineCanvasScreenshot });
+
   const displayOpenRectResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayOpenRect"));
   if (!displayOpenRectResult.ok
       || displayOpenRectResult.probe?.source !== "ww3d_display_openrect_probe"
@@ -2019,6 +2060,7 @@ try {
       ww3dDisplayStringCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dDisplayFillRectCanvasScreenshot,
+      ww3dDisplayLineCanvasScreenshot,
       ww3dDisplayOpenRectCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,

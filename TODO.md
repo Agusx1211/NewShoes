@@ -2662,6 +2662,11 @@ shares structure and follows behind.
       `harness-smoke-ww3d-display-fillrect-canvas.png`, disabled texture
       sampling, and green center-pixel sampling in
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawLine` now drives the display-owned
+      `Render2DClass::Add_Line` path as a single untextured line quad,
+      verified by `harness-smoke-ww3d-display-line-canvas.png`, disabled
+      texture sampling, green center-pixel sampling, and black outside-line
+      pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Original `W3DDisplay::drawOpenRect` now drives the display-owned
       `Render2DClass::Add_Outline`/`Add_Line` path as four untextured quads,
       verified by `harness-smoke-ww3d-display-openrect-canvas.png`, disabled
