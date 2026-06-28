@@ -3071,9 +3071,16 @@ shares structure and follows behind.
             `RM_WINDOWS` vs `RM_W3D`, `setCursor(NONE)` and
             `setVisibility(false)` clear the browser Win32 cursor handle, and
             the lost-focus short-circuit preserves the last OS cursor handle.
-      - [ ] Extend cursor rendering verification into the browser harness so
-            CSS cursor visibility and any future engine-drawn cursor pixels are
-            checked with screenshots.
+      - [x] Extend cursor rendering verification into the browser harness for
+            the OS/CSS cursor path: a focused RPC drives the original
+            `Win32Mouse::setVisibility` / `setCursor` path, the original
+            `WndProc` `WM_SETCURSOR` branch re-applies `ARROW`, the JS bridge
+            maps the browser Win32 cursor handle to canvas `cursor: default`
+            vs `cursor: none`, and the Playwright smoke captures
+            `harness-smoke-cursor-css-canvas.png`.
+      - [ ] Extend cursor rendering verification for future engine-drawn
+            `RM_W3D` cursor pixels once W3D cursor textures are rendered by the
+            normal display path.
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
