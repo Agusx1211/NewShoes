@@ -144,12 +144,10 @@ struct BranchResult
 };
 
 // Drive one world-space environment mapper through the full Apply() contract
-// and return the observed device state for the branch summary. axis_label and
-// expected_tci/mapper_id are passed in so the branch metadata checks stay
-// class-specific.
+// and return the observed device state for the branch summary.
 template <typename MapperType>
 BranchResult run_branch(MapperType *mapper, int stage, DWORD expected_tci,
-	int expected_mapper_id, const char *axis_label)
+	int expected_mapper_id)
 {
 	BranchResult result = {};
 	result.expected_tex_coord_index = expected_tci;
@@ -165,7 +163,7 @@ BranchResult run_branch(MapperType *mapper, int stage, DWORD expected_tci,
 		"Mapper_ID must match the class-specific WS environment mapper ID");
 	check(mapper->Needs_Normals() == true,
 		"world-space environment mapper must request normals");
-	check(mapper->Get_Stage() == static_cast<unsigned int>(stage),
+	check(mapper->Get_Stage() == stage,
 		"Get_Stage must report the construction stage");
 
 	// Install the deterministic non-identity view so the inverse-view
@@ -255,8 +253,6 @@ BranchResult run_branch(MapperType *mapper, int stage, DWORD expected_tci,
 	result.matrix_match = matrix_match;
 	check(matrix_match, "texture transform matrix must match transpose(Calculate_Texture_Matrix)");
 
-	(void)axis_label; // captured in the JSON summary via the branch name
-
 	return result;
 }
 
@@ -293,7 +289,7 @@ int main()
 	BranchResult classic_branch = {};
 	if (classic_mapper != nullptr) {
 		classic_branch = run_branch(classic_mapper, kStage, D3DTSS_TCI_CAMERASPACENORMAL,
-			TextureMapperClass::MAPPER_ID_WS_CLASSIC_ENVIRONMENT, "X");
+			TextureMapperClass::MAPPER_ID_WS_CLASSIC_ENVIRONMENT);
 		classic_mapper->Release_Ref();
 	}
 
@@ -308,7 +304,7 @@ int main()
 	BranchResult env_branch = {};
 	if (env_mapper != nullptr) {
 		env_branch = run_branch(env_mapper, kStage, D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR,
-			TextureMapperClass::MAPPER_ID_WS_ENVIRONMENT, "Y");
+			TextureMapperClass::MAPPER_ID_WS_ENVIRONMENT);
 		env_mapper->Release_Ref();
 	}
 

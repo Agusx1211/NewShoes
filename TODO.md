@@ -499,13 +499,13 @@ shares structure and follows behind.
 - [ ] Extend the focused browser generated texture-coordinate support into
       remaining original W3D mapper users beyond the direct
       `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`,
-      `EdgeMapperClass`, and `MatrixMapperClass` / `ScreenMapperClass` proofs:
-      the remaining world-space and grid environment mapper classes
-      (`WSClassicEnvironmentMapperClass`, `WSEnvironmentMapperClass`,
-      `GridClassicEnvironmentMapperClass`, `GridEnvironmentMapperClass`,
+      `EdgeMapperClass`, `WSClassicEnvironmentMapperClass`,
+      `WSEnvironmentMapperClass`, and `MatrixMapperClass` /
+      `ScreenMapperClass` proofs: the remaining grid environment mapper classes
+      (`GridClassicEnvironmentMapperClass`, `GridEnvironmentMapperClass`,
       `GridWSClassicEnvironmentMapperClass`, `GridWSEnvironmentMapperClass`),
-      water projection, and terrain projection, including full stage mapping for
-      original generated-coordinate paths.
+      water projection, and terrain projection, including full stage mapping
+      for original generated-coordinate paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /

@@ -2242,6 +2242,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `edge-mapper-apply-smoke.cjs` independently covers the same two branches
       through the Node wasm D3D8 shim with deterministic `VPerSec=0` /
       `VStart` inputs.
+- [x] Prove the original `WSClassicEnvironmentMapperClass::Apply` and
+      `WSEnvironmentMapperClass::Apply` paths against both the browser D3D8
+      state bridge and a native Node smoke. The browser
+      `cnc_port_probe_ws_environment_mapper_apply()` drives real stage-1
+      mappers on axis X and axis Y, installs a non-identity view transform so
+      `WSEnvMapperClass::Calculate_Texture_Matrix()` exercises the inverse-view
+      multiplication path, calls the original
+      `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/mapper.cpp` `Apply()`
+      methods, and verifies class-specific mapper IDs, `Needs_Normals()`,
+      non-time-variant stage ownership, normal versus reflection
+      `TEXCOORDINDEX`, `D3DTTFF_COUNT2`, all four matrix rows, and D3D8 shim
+      call deltas. `ws-environment-mapper-apply-smoke.cjs` independently covers
+      the same two original classes through the Node wasm D3D8 shim.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8
