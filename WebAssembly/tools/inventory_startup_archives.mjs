@@ -48,12 +48,26 @@ const requiredStartupPaths = [
   "Data\\INI\\Video.ini",
 ];
 
+const audioStartupPaths = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Music.ini",
+  "Data\\INI\\Default\\SoundEffects.ini",
+  "Data\\INI\\SoundEffects.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+  "Data\\INI\\Voice.ini",
+  "Data\\INI\\MiscAudio.ini",
+];
+
 function usage() {
   return [
     "usage: node tools/inventory_startup_archives.mjs [assets-dir]",
-    "                  [--expect-current-zh] [--strict] [--require-base-startup]",
+    "                  [--expect-current-zh] [--strict]",
+    "                  [--require-base-startup] [--require-audio-startup]",
     "",
-    "Indexes BIGF archives and reports original GameEngine.cpp startup file coverage.",
+    "Indexes BIGF archives and reports original startup file coverage.",
     "",
     "  --expect-current-zh     Self-check the JSON shape against the current Zero",
     "                          Hour runtime archive set.",
@@ -74,6 +88,11 @@ function usage() {
     "                          verify a base-Generals asset set instead of the",
     "                          Zero Hour-only set. Current Zero Hour-only assets",
     "                          fail under this mode by design.",
+    "  --require-audio-startup Bounded verification mode for the",
+    "                          AudioManager::init audio INI preflight. Fails",
+    "                          nonzero (ok=false) when any audio startup INI is",
+    "                          absent. Current Zero Hour-only assets fail under",
+    "                          this mode by design.",
   ].join("\n");
 }
 
@@ -91,6 +110,7 @@ function parseArgs(argv) {
   let expectCurrentZh = false;
   let strict = false;
   let requireBaseStartup = false;
+  let requireAudioStartup = false;
 
   for (const arg of argv) {
     if (arg === "--expect-current-zh") {
@@ -99,6 +119,8 @@ function parseArgs(argv) {
       strict = true;
     } else if (arg === "--require-base-startup") {
       requireBaseStartup = true;
+    } else if (arg === "--require-audio-startup") {
+      requireAudioStartup = true;
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -117,6 +139,7 @@ function parseArgs(argv) {
     expectCurrentZh,
     strict,
     requireBaseStartup,
+    requireAudioStartup,
   };
 }
 
@@ -375,6 +398,18 @@ function buildInventory(assetsDir, archives) {
       sourceAbsent: !archive.present,
     }));
   });
+  const audioStartupFiles = audioStartupPaths.map((path) => {
+    const archivesForPath = byPath.get(normalizeEntryPath(path)) ?? [];
+    return {
+      path,
+      found: archivesForPath.length > 0,
+      archives: archivesForPath,
+    };
+  });
+  const missingAudioStartupFiles = audioStartupFiles
+    .filter((entry) => !entry.found)
+    .map((entry) => entry.path);
+  const audioStartupReady = missingAudioStartupFiles.length === 0;
 
   return {
     ok: true,
@@ -391,6 +426,10 @@ function buildInventory(assetsDir, archives) {
     baseArchiveReadiness,
     baseArchiveStartupReady,
     missingBaseFiles,
+    audioStartupSource: "GameAudio.cpp::AudioManager::init",
+    audioStartupReady,
+    audioStartupFiles,
+    missingAudioStartupFiles,
     requiredFiles,
     objectIniFiles: {
       count: objectIniEntries.length,
@@ -469,6 +508,45 @@ function assertShapeForCurrentZh(inventory) {
   if (inventory.missingBaseFiles?.length !== missingBaseFileCount) {
     failures.push("missingBaseFiles should mirror every base archive readiness gap");
   }
+  const expectedCurrentAudioPresence = new Map([
+    ["Data\\INI\\AudioSettings.ini", false],
+    ["Data\\INI\\Default\\Music.ini", false],
+    ["Data\\INI\\Music.ini", true],
+    ["Data\\INI\\Default\\SoundEffects.ini", true],
+    ["Data\\INI\\SoundEffects.ini", true],
+    ["Data\\INI\\Default\\Speech.ini", false],
+    ["Data\\INI\\Speech.ini", true],
+    ["Data\\INI\\Default\\Voice.ini", false],
+    ["Data\\INI\\Voice.ini", true],
+    ["Data\\INI\\MiscAudio.ini", true],
+  ]);
+  if (inventory.audioStartupSource !== "GameAudio.cpp::AudioManager::init") {
+    failures.push("audioStartupSource should anchor AudioManager::init");
+  }
+  if (inventory.audioStartupReady !== false) {
+    failures.push("audioStartupReady must be false on the current Zero Hour-only set");
+  }
+  if (!Array.isArray(inventory.audioStartupFiles) ||
+      inventory.audioStartupFiles.length !== expectedCurrentAudioPresence.size) {
+    failures.push("audioStartupFiles must cover every AudioManager::init startup INI");
+  } else {
+    for (const [path, expectedFound] of expectedCurrentAudioPresence.entries()) {
+      const entry = inventory.audioStartupFiles.find((candidate) => candidate.path === path);
+      if (!entry) {
+        failures.push(`audioStartupFiles missing ${path}`);
+      } else if (entry.found !== expectedFound) {
+        failures.push(`audio startup ${path} expected found=${expectedFound} but got ${entry.found}`);
+      } else if (expectedFound && !entry.archives.some((archive) => archive.archive === "INIZH.big")) {
+        failures.push(`audio startup ${path} should come from INIZH.big in the current set`);
+      }
+    }
+  }
+  const expectedMissingAudio = [...expectedCurrentAudioPresence.entries()]
+    .filter(([, found]) => !found)
+    .map(([path]) => path);
+  if (JSON.stringify(inventory.missingAudioStartupFiles) !== JSON.stringify(expectedMissingAudio)) {
+    failures.push("missingAudioStartupFiles should report the current absent audio startup INIs in source order");
+  }
 
   if (failures.length > 0) {
     throw new Error(`Current Zero Hour asset inventory self-check failed: ${failures.join("; ")}`);
@@ -476,7 +554,13 @@ function assertShapeForCurrentZh(inventory) {
 }
 
 async function main() {
-  const { assetsDir, expectCurrentZh, strict, requireBaseStartup } = parseArgs(process.argv.slice(2));
+  const {
+    assetsDir,
+    expectCurrentZh,
+    strict,
+    requireBaseStartup,
+    requireAudioStartup,
+  } = parseArgs(process.argv.slice(2));
   const archivePaths = await findBigArchives(assetsDir);
   const archives = [];
 
@@ -542,6 +626,16 @@ async function main() {
         `Required base startup-archive verification failed: ${parts.join("; ")}`,
       );
     }
+  }
+  if (requireAudioStartup && !inventory.audioStartupReady) {
+    inventory.ok = false;
+    inventory.requireAudioStartupFailures = inventory.missingAudioStartupFiles.map((path) => ({
+      path,
+    }));
+    fail(
+      `Required audio startup-archive verification failed: missing ` +
+      `${inventory.missingAudioStartupFiles.join(", ")}`,
+    );
   }
   console.log(JSON.stringify(inventory, null, 2));
 }

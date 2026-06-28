@@ -48,6 +48,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `baseArchiveStartupReady`, owner-specific `missingBaseFiles`, and, on
       failure, `requireBaseStartupFailures`. Current Zero Hour-only assets fail
       under the new mode by design (no `INI.big`/`English.big` mounted).
+- [x] Extend the startup archive inventory with source-ordered
+      `AudioManager::init` audio INI coverage and a bounded
+      `--require-audio-startup` mode. The current Zero Hour-only assets now
+      report shipped `Music.ini`, `SoundEffects.ini`, `Speech.ini`, `Voice.ini`,
+      `MiscAudio.ini`, and `Default\SoundEffects.ini` entries in `INIZH.big`,
+      while failing the new mode on the absent `AudioSettings.ini`,
+      `Default\Music.ini`, `Default\Speech.ini`, and `Default\Voice.ini`.
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.

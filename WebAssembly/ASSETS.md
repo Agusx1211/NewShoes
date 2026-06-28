@@ -162,6 +162,15 @@ The current Zero Hour-only assets fail under `--require-base-startup` by
 design, because `INI.big` / `English.big` are not mounted; use this mode to
 verify a supplied base-Generals asset set instead.
 
+The same inventory also reports `AudioManager::init` startup INI coverage via
+`audioStartupFiles`, `audioStartupReady`, and `missingAudioStartupFiles`.
+Pass `--require-audio-startup` to fail nonzero (`ok=false`) when any of those
+audio startup INIs are absent. The current Zero Hour-only set has the shipped
+`Music.ini`, `SoundEffects.ini`, `Speech.ini`, `Voice.ini`, `MiscAudio.ini`,
+and `Default\SoundEffects.ini` entries in `INIZH.big`, but still lacks
+`AudioSettings.ini`, `Default\Music.ini`, `Default\Speech.ini`, and
+`Default\Voice.ini`.
+
 This is the current runtime archive set from the installer media, not yet the
 minimum boot set. The exact boot-minimum list must be proven after the original
 engine startup and file-system paths are linked into wasm.
