@@ -3189,6 +3189,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_openrect", "string", []),
       probeWW3DDisplayRectClock: module.cwrap(
         "cnc_port_probe_ww3d_display_rectclock", "string", []),
+      probeWW3DDisplayRemainingRectClock: module.cwrap(
+        "cnc_port_probe_ww3d_display_remaining_rectclock", "string", []),
       probeWW3DTerrainTile: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tile", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
@@ -6264,6 +6266,61 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           clockPixels,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayRemainingRectClock":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay remaining rect clock cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayRemainingRectClock());
+        const remainingClockPixels = {
+          topLeft: sampleVirtualCanvasPixel(350, 290),
+          bottomLeft: sampleVirtualCanvasPixel(350, 340),
+          leftSeam: sampleVirtualCanvasPixel(399, 300),
+          topRight: sampleVirtualCanvasPixel(450, 290),
+          bottomRight: sampleVirtualCanvasPixel(450, 340),
+          rightSeam: sampleVirtualCanvasPixel(401, 300),
+          outsideLeft: sampleVirtualCanvasPixel(290, 300),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          remainingClockPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_remaining_rectclock_probe"
+          && probe?.display?.path === "W3DDisplay::drawRemainingRectClock"
+          && probe?.display?.clock?.percent === 50
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 10
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 12
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksRed(remainingClockPixels.topLeft)
+          && pixelLooksRed(remainingClockPixels.bottomLeft)
+          && pixelLooksRed(remainingClockPixels.leftSeam)
+          && pixelLooksBlack(remainingClockPixels.topRight)
+          && pixelLooksBlack(remainingClockPixels.bottomRight)
+          && pixelLooksBlack(remainingClockPixels.rightSeam)
+          && pixelLooksBlack(remainingClockPixels.outsideLeft);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          remainingClockPixels,
           screenshot,
           state: snapshotState(),
         };

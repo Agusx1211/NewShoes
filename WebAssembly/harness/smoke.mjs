@@ -36,6 +36,10 @@ const ww3dDisplayRectClockCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-display-rectclock-canvas.png",
 );
+const ww3dDisplayRemainingRectClockCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-remaining-rectclock-canvas.png",
+);
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
@@ -1966,6 +1970,46 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayRectClockCanvasScreenshot });
 
+  const displayRemainingRectClockResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayRemainingRectClock"));
+  if (!displayRemainingRectClockResult.ok
+      || displayRemainingRectClockResult.probe?.source !== "ww3d_display_remaining_rectclock_probe"
+      || displayRemainingRectClockResult.probe?.results?.displayAllocated !== true
+      || displayRemainingRectClockResult.probe?.results?.displaySetup !== true
+      || displayRemainingRectClockResult.probe?.results?.drawRemainingRectClockCalled !== true
+      || displayRemainingRectClockResult.probe?.display?.path !== "W3DDisplay::drawRemainingRectClock"
+      || displayRemainingRectClockResult.probe?.display?.clock?.percent !== 50
+      || displayRemainingRectClockResult.probe?.calls?.drawIndexed < 1
+      || displayRemainingRectClockResult.probe?.calls?.browserBufferCreate < 2
+      || displayRemainingRectClockResult.probe?.calls?.browserBufferUpdate < 2
+      || displayRemainingRectClockResult.probe?.draw?.primitiveType !== 4
+      || displayRemainingRectClockResult.probe?.draw?.vertexCount !== 10
+      || displayRemainingRectClockResult.probe?.draw?.primitiveCount !== 4
+      || displayRemainingRectClockResult.probe?.draw?.vertexStride !== 44
+      || displayRemainingRectClockResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayRemainingRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 3
+      || displayRemainingRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayRemainingRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayRemainingRectClockResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || displayRemainingRectClockResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayRemainingRectClockResult.browserProbe?.usedPersistentBuffers !== true
+      || displayRemainingRectClockResult.browserProbe?.usedTransforms !== true
+      || displayRemainingRectClockResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayRemainingRectClockResult.browserProbe?.vertexCount !== 10
+      || displayRemainingRectClockResult.browserProbe?.vertexStride !== 44
+      || displayRemainingRectClockResult.browserProbe?.indexCount !== 12
+      || displayRemainingRectClockResult.browserProbe?.texture0?.sampled === true
+      || !pixelLooksRed(displayRemainingRectClockResult.remainingClockPixels?.topLeft)
+      || !pixelLooksRed(displayRemainingRectClockResult.remainingClockPixels?.bottomLeft)
+      || !pixelLooksRed(displayRemainingRectClockResult.remainingClockPixels?.leftSeam)
+      || !pixelLooksBlack(displayRemainingRectClockResult.remainingClockPixels?.topRight)
+      || !pixelLooksBlack(displayRemainingRectClockResult.remainingClockPixels?.bottomRight)
+      || !pixelLooksBlack(displayRemainingRectClockResult.remainingClockPixels?.rightSeam)
+      || !pixelLooksBlack(displayRemainingRectClockResult.remainingClockPixels?.outsideLeft)) {
+    throw new Error(`WW3DDisplay remaining rect clock probe failed: ${JSON.stringify(displayRemainingRectClockResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayRemainingRectClockCanvasScreenshot });
+
   const texturedMeshResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTexturedMesh"));
   if (!texturedMeshResult.ok
       || texturedMeshResult.probe?.source !== "ww3d_textured_mesh_probe"
@@ -2165,6 +2209,7 @@ try {
       ww3dDisplayLineGradientCanvasScreenshot,
       ww3dDisplayOpenRectCanvasScreenshot,
       ww3dDisplayRectClockCanvasScreenshot,
+      ww3dDisplayRemainingRectClockCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,
