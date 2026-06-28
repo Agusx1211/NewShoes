@@ -2258,6 +2258,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       first, then proves a green same-depth quad with `D3DCMP_LESS` only wins
       after `ZBIAS=8` is applied. Playwright verifies the captured state, GL
       depth function, clamped bias metadata, and green center pixel.
+- [x] Add D3D8 `D3DRS_SHADEMODE` capture and flat-shade emulation to the
+      browser draw bridge. The shim now carries shade mode in the draw payload,
+      the WebGL2 shader keeps both smooth and `flat` diffuse varyings, and the
+      bridge uses first-vertex provoking when available or rotates indexed
+      triangle draws into a temporary element buffer so D3D `D3DSHADE_FLAT`
+      uses the original first vertex. A focused probe draws a red-first,
+      blue-rest triangle and Playwright verifies the captured flat state,
+      first-vertex flat path, and red center pixel.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8

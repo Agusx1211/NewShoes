@@ -3114,6 +3114,22 @@ try {
     throw new Error(`D3D8 z-bias probe failed: ${JSON.stringify(d3d8ZBiasResult)}`);
   }
 
+  const d3d8ShadeModeResult = await page.evaluate(() => window.CnCPort.rpc("d3d8ShadeMode"));
+  if (!d3d8ShadeModeResult.ok
+      || d3d8ShadeModeResult.probe?.source !== "browser_d3d8_shade_mode_probe"
+      || d3d8ShadeModeResult.probe?.calls?.drawIndexed !== 1
+      || d3d8ShadeModeResult.browserProbe?.renderState?.shadeMode !== 1
+      || d3d8ShadeModeResult.browserProbe?.appliedRenderState?.shadeMode?.name !== "flat"
+      || d3d8ShadeModeResult.browserProbe?.shadeMode?.modeName !== "flat"
+      || d3d8ShadeModeResult.browserProbe?.shadeMode?.usesFlatShader !== true
+      || d3d8ShadeModeResult.browserProbe?.shadeMode?.glPrimitiveName !== "triangles"
+      || d3d8ShadeModeResult.browserProbe?.shadeMode?.drawIndexCount !== 3
+      || d3d8ShadeModeResult.firstVertexFlatPath !== true
+      || d3d8ShadeModeResult.browserProbe?.centerPixel?.join(",") !== "255,0,0,255"
+      || d3d8ShadeModeResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 shade-mode probe failed: ${JSON.stringify(d3d8ShadeModeResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

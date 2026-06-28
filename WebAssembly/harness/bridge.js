@@ -7,6 +7,7 @@ const gl = canvas.getContext("webgl2", {
   preserveDrawingBuffer: true,
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
+const provokingVertex = gl ? gl.getExtension("WEBGL_provoking_vertex") : null;
 const fallbackContext = gl ? null : canvas.getContext("2d", { alpha: false });
 const stateNode = document.querySelector("#state");
 const framesNode = document.querySelector("#frames");
@@ -75,6 +76,9 @@ const D3DCOLORWRITEENABLE_ALPHA = 8;
 const D3DFILL_POINT = 1;
 const D3DFILL_WIREFRAME = 2;
 const D3DFILL_SOLID = 3;
+const D3DSHADE_FLAT = 1;
+const D3DSHADE_GOURAUD = 2;
+const D3DSHADE_PHONG = 3;
 const D3DPT_POINTLIST = 1;
 const D3DPT_LINELIST = 2;
 const D3DPT_LINESTRIP = 3;
@@ -2226,6 +2230,7 @@ function ensureD3D8DrawProgram() {
     uniform bool uUseTexture1Transform;
     uniform mat4 uTexture1Transform;
     out vec4 vColor;
+    flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
     out vec2 vTexCoord1;
     out float vFogDepth;
@@ -2244,6 +2249,7 @@ function ensureD3D8DrawProgram() {
       }
       gl_Position.z -= uDepthBias * gl_Position.w;
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
+      vFlatColor = vColor;
       if (uUseTexture0Transform) {
         vec4 d3dTexCoord0 = uTexture0Transform * vec4(aTexCoord0, 0.0, 1.0);
         vTexCoord0 = d3dTexCoord0.xy;
@@ -2261,10 +2267,12 @@ function ensureD3D8DrawProgram() {
   const fragmentShader = compileShader(gl.FRAGMENT_SHADER, `#version 300 es
     precision mediump float;
     in vec4 vColor;
+    flat in vec4 vFlatColor;
     in vec2 vTexCoord0;
     in vec2 vTexCoord1;
     in float vFogDepth;
     in float vFogRangeDistance;
+    uniform bool uUseFlatShade;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
     uniform float uTexture0LodBias;
@@ -2536,15 +2544,16 @@ function ensureD3D8DrawProgram() {
       vec4 texture1Color = uUseTexture1
         ? d3dTextureSample(texture(uTexture1, vTexCoord1, uTexture1LodBias), uTexture1Semantic)
         : vec4(1.0);
+      vec4 diffuseColor = uUseFlatShade ? vFlatColor : vColor;
       vec4 stage0ComputedColor = vec4(
-        d3dStage0Color(vColor, texture0Color, vec4(0.0)),
-        d3dStage0Alpha(vColor, texture0Color, vec4(0.0))
+        d3dStage0Color(diffuseColor, texture0Color, vec4(0.0)),
+        d3dStage0Alpha(diffuseColor, texture0Color, vec4(0.0))
       );
-      vec4 stage0CurrentColor = uStage0ResultArg == 5 ? vColor : stage0ComputedColor;
+      vec4 stage0CurrentColor = uStage0ResultArg == 5 ? diffuseColor : stage0ComputedColor;
       vec4 stage0TempColor = uStage0ResultArg == 5 ? stage0ComputedColor : vec4(0.0);
       vec4 color = vec4(
-        d3dStage1Color(vColor, texture1Color, stage0CurrentColor, stage0TempColor),
-        d3dStage1Alpha(vColor, texture1Color, stage0CurrentColor, stage0TempColor)
+        d3dStage1Color(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor),
+        d3dStage1Alpha(diffuseColor, texture1Color, stage0CurrentColor, stage0TempColor)
       );
       if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
@@ -2581,6 +2590,7 @@ function ensureD3D8DrawProgram() {
     view: gl.getUniformLocation(program, "uView"),
     projection: gl.getUniformLocation(program, "uProjection"),
     depthBias: gl.getUniformLocation(program, "uDepthBias"),
+    useFlatShade: gl.getUniformLocation(program, "uUseFlatShade"),
     useTexture0Transform: gl.getUniformLocation(program, "uUseTexture0Transform"),
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
@@ -2680,6 +2690,19 @@ function d3dFillModeName(fillMode) {
   }
 }
 
+function d3dShadeModeName(shadeMode) {
+  switch (Number(shadeMode) >>> 0) {
+    case D3DSHADE_FLAT:
+      return "flat";
+    case D3DSHADE_GOURAUD:
+      return "gouraud";
+    case D3DSHADE_PHONG:
+      return "phong";
+    default:
+      return "unknown";
+  }
+}
+
 function d3d8DepthBiasInfo(zBias) {
   const raw = Number(zBias ?? 0) >>> 0;
   const clamped = Math.max(0, Math.min(15, raw));
@@ -2710,6 +2733,78 @@ function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
       (indexBytes[absolute + 3] << 24)) >>> 0;
   }
   return null;
+}
+
+function buildD3D8FlatShadeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
+  const indexBytes = indexResource?.bytes;
+  const requiredByteSize = indexByteOffset + indexCount * indexSize;
+  if (!(indexBytes instanceof Uint8Array)) {
+    return { supported: false, reason: "missingIndexMirror" };
+  }
+  if (requiredByteSize > indexBytes.byteLength) {
+    return { supported: false, reason: "indexRangeOutOfBounds" };
+  }
+
+  const triangles = [];
+  let sourceTriangleCount = 0;
+  const addTriangle = (a, b, c, first) => {
+    if (a === null || b === null || c === null || a === b || b === c || c === a) {
+      return;
+    }
+    if (first === a) {
+      triangles.push(b, c, a);
+    } else if (first === b) {
+      triangles.push(c, a, b);
+    } else {
+      triangles.push(a, b, c);
+    }
+    sourceTriangleCount += 1;
+  };
+  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
+  switch (Number(primitiveType) >>> 0) {
+    case D3DPT_TRIANGLELIST:
+      for (let index = 0; index + 2 < indexCount; index += 3) {
+        const a = readIndex(index);
+        const b = readIndex(index + 1);
+        const c = readIndex(index + 2);
+        addTriangle(a, b, c, a);
+      }
+      break;
+    case D3DPT_TRIANGLESTRIP:
+      for (let index = 0; index + 2 < indexCount; ++index) {
+        const a = readIndex(index);
+        const b = readIndex(index + 1);
+        const c = readIndex(index + 2);
+        if ((index & 1) === 0) {
+          addTriangle(a, b, c, a);
+        } else {
+          addTriangle(b, a, c, a);
+        }
+      }
+      break;
+    case D3DPT_TRIANGLEFAN:
+      for (let index = 1; index + 1 < indexCount; ++index) {
+        const a = readIndex(0);
+        const b = readIndex(index);
+        const c = readIndex(index + 1);
+        addTriangle(a, b, c, b);
+      }
+      break;
+    default:
+      return { supported: false, reason: "nonTrianglePrimitive" };
+  }
+
+  if (triangles.length === 0) {
+    return { supported: false, reason: "emptyFlatShadeTriangles" };
+  }
+  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
+  return {
+    supported: true,
+    triangleIndices: new IndexArray(triangles),
+    generatedIndexCount: triangles.length,
+    sourceTriangleCount,
+    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
+  };
 }
 
 function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
@@ -2821,6 +2916,94 @@ function createD3D8FillModeDrawInfo(renderState, primitiveType, indexResource, i
   return info;
 }
 
+function hasD3D8FirstVertexConventionExtension() {
+  return Boolean(provokingVertex &&
+      typeof provokingVertex.provokingVertexWEBGL === "function" &&
+      typeof provokingVertex.FIRST_VERTEX_CONVENTION_WEBGL === "number" &&
+      typeof provokingVertex.LAST_VERTEX_CONVENTION_WEBGL === "number");
+}
+
+function setD3D8FirstVertexConvention(enabled) {
+  if (!hasD3D8FirstVertexConventionExtension()) {
+    return false;
+  }
+  if (enabled) {
+    provokingVertex.provokingVertexWEBGL(provokingVertex.FIRST_VERTEX_CONVENTION_WEBGL);
+  } else {
+    provokingVertex.provokingVertexWEBGL(provokingVertex.LAST_VERTEX_CONVENTION_WEBGL);
+  }
+  return true;
+}
+
+function createD3D8ShadeModeDrawInfo(
+  renderState,
+  primitiveType,
+  indexResource,
+  indexByteOffset,
+  indexCount,
+  indexSize,
+  fillModeDraw,
+) {
+  const mode = Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0;
+  const flat = mode === D3DSHADE_FLAT;
+  const info = {
+    mode,
+    modeName: d3dShadeModeName(mode),
+    flat,
+    gouraud: mode === D3DSHADE_GOURAUD,
+    phongRequested: mode === D3DSHADE_PHONG,
+    usesFlatShader: flat,
+    usesFirstVertexConvention: false,
+    rotatedIndexBuffer: false,
+    temporaryIndexBuffer: false,
+    glPrimitive: fillModeDraw.glPrimitive,
+    glPrimitiveName: fillModeDraw.glPrimitiveName,
+    drawIndexCount: fillModeDraw.drawIndexCount,
+    drawIndexByteOffset: fillModeDraw.drawIndexByteOffset,
+    generatedIndexCount: 0,
+    sourceTriangleCount: 0,
+    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
+    supported: fillModeDraw.supported,
+    fallbackReason: fillModeDraw.fallbackReason,
+  };
+
+  if (!info.supported || !flat) {
+    return info;
+  }
+
+  if (fillModeDraw.temporaryIndexBuffer || !d3dPrimitiveIsTriangle(primitiveType)) {
+    return info;
+  }
+
+  if (hasD3D8FirstVertexConventionExtension()) {
+    info.usesFirstVertexConvention = true;
+    return info;
+  }
+
+  const flatShade = buildD3D8FlatShadeIndices(
+    indexResource,
+    indexByteOffset,
+    indexCount,
+    indexSize,
+    primitiveType,
+  );
+  info.supported = flatShade.supported;
+  info.fallbackReason = flatShade.supported ? null : flatShade.reason;
+  info.generatedIndexCount = flatShade.generatedIndexCount ?? 0;
+  info.sourceTriangleCount = flatShade.sourceTriangleCount ?? 0;
+  info.indexTypeName = flatShade.indexTypeName ?? info.indexTypeName;
+  if (flatShade.supported) {
+    info.glPrimitive = gl.TRIANGLES;
+    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
+    info.drawIndexCount = flatShade.generatedIndexCount;
+    info.drawIndexByteOffset = 0;
+    info.triangleIndices = flatShade.triangleIndices;
+    info.rotatedIndexBuffer = true;
+    info.temporaryIndexBuffer = true;
+  }
+  return info;
+}
+
 function d3d8FillModeProbeInfo(fillModeDraw) {
   if (!fillModeDraw) {
     return null;
@@ -2841,6 +3024,31 @@ function d3d8FillModeProbeInfo(fillModeDraw) {
     wireframe: fillModeDraw.wireframe,
     supported: fillModeDraw.supported,
     fallbackReason: fillModeDraw.fallbackReason,
+  };
+}
+
+function d3d8ShadeModeProbeInfo(shadeModeDraw) {
+  if (!shadeModeDraw) {
+    return null;
+  }
+  return {
+    mode: shadeModeDraw.mode,
+    modeName: shadeModeDraw.modeName,
+    flat: shadeModeDraw.flat,
+    gouraud: shadeModeDraw.gouraud,
+    phongRequested: shadeModeDraw.phongRequested,
+    usesFlatShader: shadeModeDraw.usesFlatShader,
+    usesFirstVertexConvention: shadeModeDraw.usesFirstVertexConvention,
+    rotatedIndexBuffer: shadeModeDraw.rotatedIndexBuffer,
+    temporaryIndexBuffer: shadeModeDraw.temporaryIndexBuffer,
+    glPrimitiveName: shadeModeDraw.glPrimitiveName,
+    drawIndexCount: shadeModeDraw.drawIndexCount,
+    drawIndexByteOffset: shadeModeDraw.drawIndexByteOffset,
+    generatedIndexCount: shadeModeDraw.generatedIndexCount,
+    sourceTriangleCount: shadeModeDraw.sourceTriangleCount,
+    indexTypeName: shadeModeDraw.indexTypeName,
+    supported: shadeModeDraw.supported,
+    fallbackReason: shadeModeDraw.fallbackReason,
   };
 }
 
@@ -3025,6 +3233,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     rangeFogEnable: Number(renderState.rangeFogEnable ?? 0) >>> 0,
     fillMode: Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0,
     zBias: Number(renderState.zBias ?? 0) >>> 0,
+    shadeMode: Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3238,6 +3447,13 @@ function applyD3D8RenderState(renderState, options = {}) {
       mode: state.fillMode,
       name: d3dFillModeName(state.fillMode),
     },
+    shadeMode: {
+      mode: state.shadeMode,
+      name: d3dShadeModeName(state.shadeMode),
+      flat: state.shadeMode === D3DSHADE_FLAT,
+      gouraud: state.shadeMode === D3DSHADE_GOURAUD,
+      phongRequested: state.shadeMode === D3DSHADE_PHONG,
+    },
     colorWrite: colorMask,
   };
 }
@@ -3308,6 +3524,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedTexture0Sampler = null;
   let appliedTexture1Sampler = null;
   let appliedFillMode = null;
+  let appliedShadeMode = null;
   let drawOk = false;
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
@@ -3326,6 +3543,15 @@ function paintD3D8DrawIndexed(payload = {}) {
       indexByteOffset,
       indexCount,
       indexSize,
+    );
+    const shadeModeDraw = createD3D8ShadeModeDrawInfo(
+      renderState,
+      payload.primitiveType,
+      indexResource,
+      indexByteOffset,
+      indexCount,
+      indexSize,
+      fillModeDraw,
     );
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
@@ -3358,6 +3584,9 @@ function paintD3D8DrawIndexed(payload = {}) {
     gl.uniform1i(bridgeProgram.useTransforms, useTransforms ? 1 : 0);
     if (bridgeProgram.depthBias) {
       gl.uniform1f(bridgeProgram.depthBias, appliedRenderState.depth.bias.ndc);
+    }
+    if (bridgeProgram.useFlatShade) {
+      gl.uniform1i(bridgeProgram.useFlatShade, shadeModeDraw.usesFlatShader ? 1 : 0);
     }
     if (useTransforms) {
       // Direct3D stores row-vector matrices row-major; WebGL interprets this
@@ -3512,39 +3741,47 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fogEnd) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
+    const temporaryIndices = fillModeDraw.lineIndices ?? shadeModeDraw.triangleIndices ?? null;
     let temporaryIndexBuffer = null;
+    let restoreProvokingVertex = false;
     try {
-      if (fillModeDraw.supported &&
-          (fillModeDraw.lineIndices instanceof Uint16Array ||
-            fillModeDraw.lineIndices instanceof Uint32Array)) {
+      if (shadeModeDraw.usesFirstVertexConvention) {
+        restoreProvokingVertex = setD3D8FirstVertexConvention(true);
+      }
+      if (shadeModeDraw.supported &&
+          (temporaryIndices instanceof Uint16Array || temporaryIndices instanceof Uint32Array)) {
         temporaryIndexBuffer = gl.createBuffer();
         if (temporaryIndexBuffer) {
           gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, temporaryIndexBuffer);
-          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, fillModeDraw.lineIndices, gl.STREAM_DRAW);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, temporaryIndices, gl.STREAM_DRAW);
         } else {
-          fillModeDraw.supported = false;
-          fillModeDraw.fallbackReason = "temporaryIndexBufferCreateFailed";
+          shadeModeDraw.supported = false;
+          shadeModeDraw.fallbackReason = "temporaryIndexBufferCreateFailed";
         }
       } else {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
       }
       appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
-      if (fillModeDraw.supported) {
+      appliedShadeMode = d3d8ShadeModeProbeInfo(shadeModeDraw);
+      if (fillModeDraw.supported && shadeModeDraw.supported) {
         gl.drawElements(
-          fillModeDraw.glPrimitive,
-          fillModeDraw.drawIndexCount,
+          shadeModeDraw.glPrimitive,
+          shadeModeDraw.drawIndexCount,
           indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
-          fillModeDraw.drawIndexByteOffset,
+          shadeModeDraw.drawIndexByteOffset,
         );
       }
     } finally {
+      if (restoreProvokingVertex) {
+        setD3D8FirstVertexConvention(false);
+      }
       if (temporaryIndexBuffer) {
         gl.deleteBuffer(temporaryIndexBuffer);
       }
     }
     refreshCanvasState();
     centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
-    drawOk = fillModeDraw.supported && pixelHasColor(centerPixel);
+    drawOk = fillModeDraw.supported && shadeModeDraw.supported && pixelHasColor(centerPixel);
   }
 
   const probe = {
@@ -3571,6 +3808,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     renderState,
     appliedRenderState,
     fillMode: appliedFillMode,
+    shadeMode: appliedShadeMode,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
     texture0: {
       id: texture0Id,
@@ -3925,6 +4163,7 @@ async function loadWasmModule() {
       probeD3D8FogState: module.cwrap("cnc_port_probe_d3d8_fog_state", "string", []),
       probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
       probeD3D8ZBias: module.cwrap("cnc_port_probe_d3d8_z_bias", "string", []),
+      probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -6736,6 +6975,54 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8ShadeMode":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 shade-mode probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8ShadeMode());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2)
+          && pixelLooksRed(browserProbe.centerPixel);
+        const renderState = browserProbe?.renderState ?? {};
+        const appliedShadeMode = browserProbe?.appliedRenderState?.shadeMode ?? {};
+        const shadeMode = browserProbe?.shadeMode ?? {};
+        const firstVertexFlatPath = shadeMode.usesFirstVertexConvention === true ||
+          (shadeMode.rotatedIndexBuffer === true && shadeMode.temporaryIndexBuffer === true);
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 3
+          && renderState.shadeMode === D3DSHADE_FLAT
+          && appliedShadeMode.mode === D3DSHADE_FLAT
+          && appliedShadeMode.name === "flat"
+          && appliedShadeMode.flat === true
+          && shadeMode.mode === D3DSHADE_FLAT
+          && shadeMode.modeName === "flat"
+          && shadeMode.flat === true
+          && shadeMode.usesFlatShader === true
+          && shadeMode.supported === true
+          && shadeMode.glPrimitiveName === "triangles"
+          && shadeMode.drawIndexCount === 3
+          && shadeMode.drawIndexByteOffset === 0
+          && firstVertexFlatPath
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          centerPixelOk,
+          firstVertexFlatPath,
           state: snapshotState(),
         };
       }

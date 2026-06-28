@@ -332,15 +332,29 @@ int main()
 		"COLORWRITEENABLE all round-trip");
 
 	// ----------------------------------------------------------------------
+	// 6. SHADEMODE across the fixed-function D3D values.
+	// ----------------------------------------------------------------------
+	set_state(D3DRS_SHADEMODE, D3DSHADE_FLAT, "SetRenderState SHADEMODE FLAT failed");
+	expect_last(D3DRS_SHADEMODE, D3DSHADE_FLAT);
+	set_state(D3DRS_SHADEMODE, D3DSHADE_GOURAUD, "SetRenderState SHADEMODE GOURAUD failed");
+	expect_last(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
+	set_state(D3DRS_SHADEMODE, D3DSHADE_PHONG, "SetRenderState SHADEMODE PHONG failed");
+	expect_last(D3DRS_SHADEMODE, D3DSHADE_PHONG);
+
+	DWORD shade = 0;
+	expect(SUCCEEDED(device->GetRenderState(D3DRS_SHADEMODE, &shade)) && shade == D3DSHADE_PHONG,
+		"SHADEMODE PHONG round-trip");
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite,shade
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_COLORWRITEENABLE,
-		"last_set_render_state mismatch after color-write");
-	expect(state->last_set_render_state_value == color_write_all,
-		"last_set_render_state_value mismatch after color-write");
+	expect(state->last_set_render_state == D3DRS_SHADEMODE,
+		"last_set_render_state mismatch after shade-mode");
+	expect(state->last_set_render_state_value == D3DSHADE_PHONG,
+		"last_set_render_state_value mismatch after shade-mode");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
@@ -367,7 +381,7 @@ int main()
 	// record, not an additional gate.
 	std::printf(
 		"{\"ok\":true,\"smoke\":\"d3d8-render-state-mapping\","
-		"\"note\":\"D3D8 fixed-function render-state round-trip + expected WebGL2 mapping spec; shim and draw bridge unchanged.\","
+		"\"note\":\"D3D8 fixed-function render-state round-trip + expected WebGL2 mapping spec.\","
 		"\"cull\":["
 		"{\"d3dCullMode\":%d,\"gl\":{\"frontFace\":%d,\"cullFace\":%d,\"enabled\":%d}},"
 		"{\"d3dCullMode\":%d,\"gl\":{\"frontFace\":%d,\"cullFace\":%d,\"enabled\":%d}},"
@@ -383,6 +397,10 @@ int main()
 		"\"d3dAlphaFunc\":%d,\"glAlphaFunc\":%d,\"d3dAlphaRef\":128},"
 		"\"blend\":{\"d3dAlphaBlendEnable\":1,\"d3dSrcBlend\":%d,\"glSrcBlend\":%d,"
 		"\"d3dDestBlend\":%d,\"glDestBlend\":%d,\"d3dBlendOp\":%d,\"glBlendEquation\":%d},"
+		"\"shadeMode\":["
+		"{\"d3dShadeMode\":%d,\"name\":\"flat\",\"webgl\":{\"useFlatVarying\":true,\"firstVertexConvention\":true}},"
+		"{\"d3dShadeMode\":%d,\"name\":\"gouraud\",\"webgl\":{\"useFlatVarying\":false}},"
+		"{\"d3dShadeMode\":%d,\"name\":\"phong\",\"webgl\":{\"useFlatVarying\":false,\"note\":\"not used by current original sources\"}}],"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
 		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u}}\n",
@@ -403,6 +421,9 @@ int main()
 		D3DBLEND_SRCALPHA, src_gl,
 		D3DBLEND_INVSRCALPHA, dst_gl,
 		D3DBLENDOP_ADD, op_gl,
+		D3DSHADE_FLAT,
+		D3DSHADE_GOURAUD,
+		D3DSHADE_PHONG,
 		// color write spec
 		static_cast<unsigned long>(color_write_all),
 		(color_write_all & D3DCOLORWRITEENABLE_RED) ? "true" : "false",
