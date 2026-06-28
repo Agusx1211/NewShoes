@@ -22,6 +22,7 @@
 extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 extern "C" void cnc_port_win32_service_windows_os_message_pump();
 extern HWND ApplicationHWnd;
+extern HCURSOR cursorResources[Mouse::NUM_MOUSE_CURSORS][MAX_2D_CURSOR_DIRECTIONS];
 
 HINSTANCE ApplicationHInstance = NULL;
 Bool ApplicationIsWindowed = TRUE;
@@ -42,7 +43,13 @@ public:
 	using Win32Mouse::getMouseEvent;
 
 	bool isLostFocus() const { return m_lostFocus; }
+	bool isVisibleForProbe() const { return m_visible; }
 	MouseCursor currentWin32Cursor() const { return m_currentWin32Cursor; }
+
+	void ensureArrowCursorResource()
+	{
+		cursorResources[Mouse::ARROW][0] = LoadCursor(nullptr, "arrow");
+	}
 };
 
 BrowserWin32Mouse g_browser_mouse;
@@ -179,7 +186,8 @@ const char *write_original_wndproc_json()
 		"\"ready\":%s,\"registered\":%s,\"windowCreated\":%s,"
 		"\"window\":%lu,\"messageQueue\":{\"count\":%u,\"overflowed\":%s},"
 		"\"pump\":{\"calls\":%u,\"lastPumped\":%u,\"messagesPumped\":%u},"
-		"\"mouse\":{\"attached\":%s,\"lostFocus\":%s,\"currentCursor\":%d,"
+		"\"mouse\":{\"attached\":%s,\"lostFocus\":%s,\"visible\":%s,"
+		"\"currentCursor\":%d,\"browserCursorSet\":%s,"
 		"\"events\":%u,\"lastProbeDrained\":%u,\"lastEvent\":%s},"
 		"\"keyboard\":{\"quitPosts\":%u,\"lastQuitExitCode\":%d},"
 		"\"resetD3D\":{\"calls\":%d,\"lastActive\":%s}}",
@@ -194,7 +202,9 @@ const char *write_original_wndproc_json()
 		g_original_wndproc_messages_pumped,
 		bool_json(TheWin32Mouse == &g_browser_mouse),
 		bool_json(g_browser_mouse.isLostFocus()),
+		bool_json(g_browser_mouse.isVisibleForProbe()),
 		static_cast<int>(g_browser_mouse.currentWin32Cursor()),
+		bool_json(WasmWin32Input::current_cursor != nullptr),
 		g_original_wndproc_mouse_events,
 		g_original_wndproc_last_probe_drained,
 		mouse_event_json.c_str(),
@@ -235,6 +245,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_pump_original_wndproc_input()
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_wndproc_input()
 {
 	drain_mouse_events();
+	return write_original_wndproc_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_cursor_visibility(int visible)
+{
+	ensure_original_wndproc_input_window(0, 0);
+	if (g_original_wndproc_ready) {
+		g_browser_mouse.ensureArrowCursorResource();
+		g_browser_mouse.setVisibility(visible ? TRUE : FALSE);
+		g_browser_mouse.setCursor(Mouse::ARROW);
+	}
 	return write_original_wndproc_json();
 }
 }

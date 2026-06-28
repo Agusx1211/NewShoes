@@ -197,6 +197,12 @@ const harnessState = {
   timing: null,
   win32Timing: null,
   browserInput: null,
+  browserCursor: {
+    source: "browser_win32_cursor_css",
+    cursorSet: null,
+    css: canvas.style.cursor || "auto",
+    visible: true,
+  },
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -2928,6 +2934,29 @@ function syncStatus(label = harnessState.booted ? "booted" : "idle") {
   framesNode.textContent = String(harnessState.frame);
 }
 
+function syncBrowserCursor(input = harnessState.browserInput) {
+  if (!input) {
+    const css = canvas.style.cursor || "auto";
+    harnessState.browserCursor = {
+      source: "browser_win32_cursor_css",
+      cursorSet: null,
+      css,
+      visible: css !== "none",
+    };
+    return;
+  }
+
+  const cursorSet = Boolean(input.cursorSet);
+  const css = cursorSet ? "default" : "none";
+  canvas.style.cursor = css;
+  harnessState.browserCursor = {
+    source: "browser_win32_cursor_css",
+    cursorSet,
+    css,
+    visible: cursorSet,
+  };
+}
+
 function recordLog(message, data = null) {
   const entry = {
     frame: harnessState.frame,
@@ -2987,6 +3016,7 @@ function applyModuleState(moduleState) {
   harnessState.timing = moduleState.timing ?? harnessState.timing;
   harnessState.win32Timing = moduleState.win32Timing ?? harnessState.win32Timing;
   harnessState.browserInput = moduleState.browserInput ?? harnessState.browserInput;
+  syncBrowserCursor(harnessState.browserInput);
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.globalDataProbe = moduleState.globalDataProbe ?? null;
@@ -3226,6 +3256,8 @@ async function loadWasmModule() {
       ),
       pumpOriginalWndProcInput: module.cwrap("cnc_port_pump_original_wndproc_input", "string", []),
       probeOriginalWndProcInput: module.cwrap("cnc_port_probe_original_wndproc_input", "string", []),
+      probeOriginalCursorVisibility: module.cwrap(
+        "cnc_port_probe_original_cursor_visibility", "string", ["number"]),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
       probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
@@ -3269,6 +3301,7 @@ function snapshotState() {
     canvas: harnessState.canvas,
     graphics: harnessState.graphics,
     browserInput: harnessState.browserInput,
+    browserCursor: harnessState.browserCursor,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     globalDataProbe: harnessState.globalDataProbe,
@@ -3835,6 +3868,19 @@ async function probeOriginalWndProcInput() {
   }
 
   const probe = parseModuleState(wasmModule.probeOriginalWndProcInput());
+  harnessState.originalWndProcInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function probeOriginalCursorVisibility({ visible = true } = {}) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalCursorVisibility(visible ? 1 : 0));
   harnessState.originalWndProcInput = probe;
   applyModuleState(parseModuleState(wasmModule.state()));
   harnessState.wasm = "loaded";
@@ -4509,6 +4555,16 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalWndProcInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalCursorVisibilityProbe":
+      {
+        const probe = await probeOriginalCursorVisibility({
+          visible: payload.visible !== false,
+        });
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original cursor visibility cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }

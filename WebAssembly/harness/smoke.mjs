@@ -55,6 +55,7 @@ const ww3dDisplayRemainingRectClockCanvasScreenshot = resolve(
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
+const cursorCanvasScreenshot = resolve(screenshotDir, "harness-smoke-cursor-css-canvas.png");
 const expectWasm = process.env.EXPECT_WASM === "1";
 
 await mkdir(screenshotDir, { recursive: true });
@@ -573,6 +574,7 @@ try {
     const wmImeStartComposition = 0x010d;
     const wmImeEndComposition = 0x010e;
     const wmImeComposition = 0x010f;
+    const wmSetCursor = 0x0020;
     const wmMouseMove = 0x0200;
     const wmLeftButtonDown = 0x0201;
     const gcsCompStr = 0x0008;
@@ -586,6 +588,7 @@ try {
     const keyStateLShift = 0x0010;
     const keyA = 0x1e;
     const keyLShift = 0x2a;
+    const mouseCursorArrow = 2;
     const compositionDraft = "\u304b";
     const compositionResult = "\u754c";
     const compositionDraftChar = compositionDraft.charCodeAt(0);
@@ -758,6 +761,57 @@ try {
         || !originalWndProcInit.probe.windowCreated
         || !originalWndProcInit.probe.mouse?.attached) {
       throw new Error(`Original WndProc input did not initialize: ${JSON.stringify(originalWndProcInit)}`);
+    }
+
+    const originalCursorVisible = await page.evaluate(() => window.CnCPort.rpc(
+      "originalCursorVisibilityProbe",
+      { visible: true },
+    ));
+    if (!originalCursorVisible.ok
+        || !originalCursorVisible.probe?.mouse?.visible
+        || originalCursorVisible.probe.mouse.currentCursor !== mouseCursorArrow
+        || originalCursorVisible.probe.mouse.browserCursorSet !== true
+        || originalCursorVisible.state.browserInput?.cursorSet !== true
+        || originalCursorVisible.state.browserCursor?.css !== "default"
+        || originalCursorVisible.state.browserCursor?.visible !== true) {
+      throw new Error(`Original cursor visible probe did not expose a browser cursor: ${JSON.stringify(originalCursorVisible)}`);
+    }
+
+    await page.evaluate(({ wmSetCursor }) => window.CnCPort.rpc("postMessage", {
+      message: wmSetCursor,
+      wParam: 0,
+      lParam: 0,
+    }), { wmSetCursor });
+    const browserSetCursorPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    const visibleCursorCss = await page.locator("#viewport").evaluate((viewport) =>
+      getComputedStyle(viewport).cursor);
+    if (!browserSetCursorPump.ok
+        || browserSetCursorPump.probe.pump?.lastPumped !== 1
+        || browserSetCursorPump.probe.mouse?.currentCursor !== mouseCursorArrow
+        || browserSetCursorPump.probe.mouse?.browserCursorSet !== true
+        || browserSetCursorPump.state.browserInput?.cursorSet !== true
+        || browserSetCursorPump.state.browserCursor?.css !== "default"
+        || browserSetCursorPump.state.browserCursor?.visible !== true
+        || visibleCursorCss !== "default") {
+      throw new Error(`Original WM_SETCURSOR did not apply browser CSS cursor: ${JSON.stringify({ browserSetCursorPump, visibleCursorCss })}`);
+    }
+    await page.locator("#viewport").screenshot({ path: cursorCanvasScreenshot });
+
+    const originalCursorHidden = await page.evaluate(() => window.CnCPort.rpc(
+      "originalCursorVisibilityProbe",
+      { visible: false },
+    ));
+    const hiddenCursorCss = await page.locator("#viewport").evaluate((viewport) =>
+      getComputedStyle(viewport).cursor);
+    if (!originalCursorHidden.ok
+        || originalCursorHidden.probe?.mouse?.visible !== false
+        || originalCursorHidden.probe.mouse.currentCursor !== mouseCursorArrow
+        || originalCursorHidden.probe.mouse.browserCursorSet !== false
+        || originalCursorHidden.state.browserInput?.cursorSet !== false
+        || originalCursorHidden.state.browserCursor?.css !== "none"
+        || originalCursorHidden.state.browserCursor?.visible !== false
+        || hiddenCursorCss !== "none") {
+      throw new Error(`Original cursor hidden probe did not apply CSS cursor:none: ${JSON.stringify({ originalCursorHidden, hiddenCursorCss })}`);
     }
 
     const resetD3DCallsBeforeFocus = originalWndProcInit.probe.resetD3D?.calls ?? 0;
@@ -2508,6 +2562,7 @@ try {
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,
+      cursorCanvasScreenshot,
     ],
     state: stateResult.state,
   }, null, 2));
