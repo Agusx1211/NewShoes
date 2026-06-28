@@ -500,12 +500,11 @@ shares structure and follows behind.
       remaining original W3D mapper users beyond the direct
       `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`,
       `EdgeMapperClass`, `WSClassicEnvironmentMapperClass`,
-      `WSEnvironmentMapperClass`, and `MatrixMapperClass` /
-      `ScreenMapperClass` proofs: the remaining grid world-space environment
-      mapper classes (`GridWSClassicEnvironmentMapperClass`,
-      `GridWSEnvironmentMapperClass`),
-      water projection, and terrain projection, including full stage mapping
-      for original generated-coordinate paths.
+      `WSEnvironmentMapperClass`, `GridClassicEnvironmentMapperClass`,
+      `GridEnvironmentMapperClass`, `GridWSClassicEnvironmentMapperClass`,
+      `GridWSEnvironmentMapperClass`, and `MatrixMapperClass` /
+      `ScreenMapperClass` proofs: water projection and terrain projection,
+      including full stage mapping for original generated-coordinate paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
