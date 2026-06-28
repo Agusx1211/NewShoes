@@ -5603,6 +5603,28 @@ try {
     );
   }
 
+  const environmentMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("environmentMapperApply"));
+  if (!environmentMapperApplyResult.ok
+      || environmentMapperApplyResult.probe?.source !== "environment_mapper_apply_probe"
+      || environmentMapperApplyResult.probe?.results?.applyCalled !== true
+      || environmentMapperApplyResult.probe?.results?.stage !== 1
+      || environmentMapperApplyResult.probe?.textureStage?.texCoordIndex !== 0x00030000
+      || environmentMapperApplyResult.probe?.textureStage?.textureTransformFlags !== 2
+      || environmentMapperApplyResult.probe?.transform?.state
+          !== environmentMapperApplyResult.probe?.transform?.expectedState
+      || environmentMapperApplyResult.probe?.transform?.rowsOk !== true
+      || environmentMapperApplyResult.probe?.transform?.row0Ok !== true
+      || environmentMapperApplyResult.probe?.transform?.row1Ok !== true
+      || environmentMapperApplyResult.probe?.transform?.row2Ok !== true
+      || environmentMapperApplyResult.probe?.transform?.row3Ok !== true
+      || environmentMapperApplyResult.probe?.callDeltas?.transform !== 1
+      || environmentMapperApplyResult.probe?.callDeltas?.textureStageState !== 2) {
+    throw new Error(
+      `EnvironmentMapper apply probe failed: ${JSON.stringify(environmentMapperApplyResult)}`,
+    );
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",
