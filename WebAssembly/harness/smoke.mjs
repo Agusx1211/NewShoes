@@ -72,6 +72,10 @@ const d3d8LitSpecularMaterialSourceCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-lit-specular-material-source-canvas.png",
 );
+const d3d8LitEmissiveColor2MaterialSourceCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-lit-emissive-color2-material-source-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -4099,6 +4103,93 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8LitSpecularMaterialSourceCanvasScreenshot });
 
+  const d3d8LitEmissiveColor2MaterialSourceResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8LitEmissiveColor2MaterialSource"));
+  const litEmissiveColor2Sources =
+    d3d8LitEmissiveColor2MaterialSourceResult.probe?.materialSources ?? {};
+  const litEmissiveColor2AppliedSources =
+    d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.appliedRenderState?.materialSources ?? {};
+  const litEmissiveColor2Layout =
+    d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.vertexLayout ?? {};
+  const litEmissiveColor2Fvf =
+    d3d8LitEmissiveColor2MaterialSourceResult.probe?.draw?.vertexShaderFvf ?? 0;
+  const expectedLitEmissiveColor2Left =
+    d3d8LitEmissiveColor2MaterialSourceResult.probe?.expectedLeft ?? [255, 0, 0, 255];
+  const expectedLitEmissiveColor2Right =
+    d3d8LitEmissiveColor2MaterialSourceResult.probe?.expectedRight ?? [0, 0, 255, 255];
+  if (!d3d8LitEmissiveColor2MaterialSourceResult.ok
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.source !==
+        "browser_d3d8_lit_emissive_color2_material_source_probe"
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.setRenderState !== 13
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.setMaterial !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.setLight !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.lightEnable !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.setVertexShader !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.probe?.calls?.drawIndexed !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.ambient !==
+        d3d8LitEmissiveColor2MaterialSourceResult.probe?.sceneAmbient
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.colorVertex !==
+        litEmissiveColor2Sources.colorVertex
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.diffuseMaterialSource !==
+        litEmissiveColor2Sources.diffuse
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.specularMaterialSource !==
+        litEmissiveColor2Sources.specular
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.ambientMaterialSource !==
+        litEmissiveColor2Sources.ambient
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.emissiveMaterialSource !==
+        litEmissiveColor2Sources.emissive
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.renderState?.specularEnable !== 0
+      || litEmissiveColor2AppliedSources.colorVertex?.enabled !== true
+      || litEmissiveColor2AppliedSources.diffuse?.name !== "material"
+      || litEmissiveColor2AppliedSources.specular?.name !== "material"
+      || litEmissiveColor2AppliedSources.ambient?.name !== "material"
+      || litEmissiveColor2AppliedSources.emissive?.name !== "color2"
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.vertexShaderFvf !== litEmissiveColor2Fvf
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.vertexStride !== 48
+      || litEmissiveColor2Layout.source !== "fvf"
+      || litEmissiveColor2Layout.stride !== 48
+      || litEmissiveColor2Layout.computedStride !== 48
+      || litEmissiveColor2Layout.normalOffset !== 12
+      || litEmissiveColor2Layout.diffuseOffset !== 24
+      || litEmissiveColor2Layout.specularOffset !== 28
+      || litEmissiveColor2Layout.texCoords?.[0]?.offset !== 32
+      || litEmissiveColor2Layout.texCoords?.[1]?.offset !== 40
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.fixedFunctionLightSupported !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.fixedFunctionLightCount !== 1
+      || d3d8LitEmissiveColor2MaterialSourceResult.sourceValueOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.appliedSourcesOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.materialOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.lightOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.selectedLightOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.vertexLayoutOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.emissiveColor2ShapeOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.leftPixelOk !== true
+      || d3d8LitEmissiveColor2MaterialSourceResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8LitEmissiveColor2MaterialSourceResult.litEmissiveColor2MaterialSourcePixels?.left,
+        expectedLitEmissiveColor2Left,
+        4,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8LitEmissiveColor2MaterialSourceResult.litEmissiveColor2MaterialSourcePixels?.right,
+        expectedLitEmissiveColor2Right,
+        4,
+      )) {
+    throw new Error(
+      `D3D8 lit emissive COLOR2 material-source probe failed: ${
+        JSON.stringify(d3d8LitEmissiveColor2MaterialSourceResult)
+      }`,
+    );
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8LitEmissiveColor2MaterialSourceCanvasScreenshot });
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
@@ -5221,6 +5312,7 @@ try {
       d3d8SpotFalloffCanvasScreenshot,
       d3d8LitMaterialSourcesCanvasScreenshot,
       d3d8LitSpecularMaterialSourceCanvasScreenshot,
+      d3d8LitEmissiveColor2MaterialSourceCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

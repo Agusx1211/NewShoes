@@ -2397,6 +2397,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       This is D3D8 parity coverage; original WW3D `VertexMaterialClass::Apply`
       actively drives diffuse/ambient/emissive sources but does not set
       `D3DRS_SPECULARMATERIALSOURCE`.
+- [x] Add a focused lit fixed-function D3D8 emissive `COLOR2` material-source
+      proof. The native/browser probe
+      `cnc_port_probe_d3d8_lit_emissive_color2_material_source` uses a
+      fixed-function FVF with `D3DFVF_SPECULAR`, 48-byte
+      XYZ/normal/diffuse/specular/UV0/UV1 vertices, and
+      `SetVertexShader(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE |
+      D3DFVF_SPECULAR | D3DFVF_TEX2)` so the browser draw bridge decodes the
+      `COLOR2` stream at specular offset 28. It sets
+      `COLORVERTEX=TRUE`, keeps diffuse/specular/ambient material sources on
+      `MATERIAL`, sources `D3DRS_EMISSIVEMATERIALSOURCE` from
+      `D3DMCS_COLOR2`, and verifies red/blue emissive-only pixels plus FVF
+      layout metadata through Playwright with
+      `harness-smoke-d3d8-lit-emissive-color2-material-source-canvas.png`.
 - [x] Add a focused fixed-function D3D8 point-light attenuation path. The
       WebGL2 draw bridge now selects enabled point, spot, and directional
       lights into the fixed-function shader uniform set, preserves each
