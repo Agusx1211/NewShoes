@@ -5196,6 +5196,8 @@ async function loadWasmModule() {
         "cnc_port_probe_grid_ws_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
         "cnc_port_probe_matrixmapper_apply", "string", []),
+      probeProjectionStateApply: module.cwrap(
+        "cnc_port_probe_projection_state_apply", "string", []),
       probeScreenMapperApply: module.cwrap(
         "cnc_port_probe_screen_mapper_apply", "string", []),
       probeWSEnvironmentMapperApply: module.cwrap(
@@ -12311,6 +12313,46 @@ async function rpc(command, payload = {}) {
           && probe?.transform?.row3Ok === true
           && probe?.callDeltas?.transform === 1
           && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "projectionStateApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; projection state apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeProjectionStateApply());
+        const terrain = probe?.cases?.terrain;
+        const water = probe?.cases?.water;
+        const caseOk = (projectionCase, expectedStage, expectedState) =>
+          projectionCase?.ok === true
+          && projectionCase?.stage === expectedStage
+          && projectionCase?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+          && projectionCase?.textureTransformFlags === D3DTTFF_COUNT2
+          && projectionCase?.addressU === D3DTADDRESS_WRAP
+          && projectionCase?.addressV === D3DTADDRESS_WRAP
+          && projectionCase?.transform?.state === expectedState
+          && projectionCase?.transform?.state === projectionCase?.transform?.expectedState
+          && projectionCase?.transform?.rowsOk === true
+          && projectionCase?.transform?.row0Ok === true
+          && projectionCase?.transform?.row1Ok === true
+          && projectionCase?.transform?.row2Ok === true
+          && projectionCase?.transform?.row3Ok === true
+          && projectionCase?.callDeltas?.transform === 1
+          && projectionCase?.callDeltas?.textureStageState === 4;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "projection_state_apply_probe"
+          && caseOk(terrain, 0, 16)
+          && caseOk(water, 2, 18);
         return {
           ok,
           command,

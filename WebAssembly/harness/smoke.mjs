@@ -5810,6 +5810,35 @@ try {
     );
   }
 
+  const projectionStateApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("projectionStateApply"));
+  const terrainProjection = projectionStateApplyResult.probe?.cases?.terrain;
+  const waterProjection = projectionStateApplyResult.probe?.cases?.water;
+  const projectionCaseOk = (projectionCase, expectedStage, expectedTransformState) =>
+    projectionCase?.ok === true
+    && projectionCase?.stage === expectedStage
+    && projectionCase?.texCoordIndex === 0x00020000
+    && projectionCase?.textureTransformFlags === 2
+    && projectionCase?.addressU === 1
+    && projectionCase?.addressV === 1
+    && projectionCase?.transform?.state === expectedTransformState
+    && projectionCase?.transform?.state === projectionCase?.transform?.expectedState
+    && projectionCase?.transform?.rowsOk === true
+    && projectionCase?.transform?.row0Ok === true
+    && projectionCase?.transform?.row1Ok === true
+    && projectionCase?.transform?.row2Ok === true
+    && projectionCase?.transform?.row3Ok === true
+    && projectionCase?.callDeltas?.transform === 1
+    && projectionCase?.callDeltas?.textureStageState === 4;
+  if (!projectionStateApplyResult.ok
+      || projectionStateApplyResult.probe?.source !== "projection_state_apply_probe"
+      || !projectionCaseOk(terrainProjection, 0, 16)
+      || !projectionCaseOk(waterProjection, 2, 18)) {
+    throw new Error(
+      `Projection state apply probe failed: ${JSON.stringify(projectionStateApplyResult)}`,
+    );
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",

@@ -2285,6 +2285,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       independently covers the same two original classes through the Node wasm
       D3D8 shim while also proving the `Last=0` default expansion to the 4x4
       grid frame count.
+- [x] Extend the focused browser generated texture-coordinate support into the
+      remaining original terrain and water projection generated-coordinate
+      state paths. `cnc_port_probe_projection_state_apply()` mirrors the
+      original `TerrainShader2Stage::set(pass=2)` noise projection sequence
+      from
+      `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DShaderManager.cpp`
+      on stage 0 and the original water-noise projection sequence from
+      `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/Water/W3DWater.cpp`
+      on stage 2, then the Playwright smoke verifies
+      `D3DTSS_TCI_CAMERASPACEPOSITION`, `D3DTTFF_COUNT2`, wrap addressing,
+      texture-transform targets `D3DTS_TEXTURE0` / `D3DTS_TEXTURE2`, matrix
+      rows, and D3D8 shim call deltas. `water-projection-state-smoke.cjs`
+      independently validates the water stage-1/stage-2 state and
+      `D3DTS_TEXTURE2` transform through the native Node D3D8 shim.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8

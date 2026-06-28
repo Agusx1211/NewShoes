@@ -496,15 +496,11 @@ shares structure and follows behind.
       `TheNetwork`, etc.). `setDisplayMode()` also needs a real
       `TheTacticalView` resize path. Keep this as a focused probe once
       those dependencies are owned, not weak-faked.
-- [ ] Extend the focused browser generated texture-coordinate support into
-      remaining original W3D mapper users beyond the direct
-      `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`,
-      `EdgeMapperClass`, `WSClassicEnvironmentMapperClass`,
-      `WSEnvironmentMapperClass`, `GridClassicEnvironmentMapperClass`,
-      `GridEnvironmentMapperClass`, `GridWSClassicEnvironmentMapperClass`,
-      `GridWSEnvironmentMapperClass`, and `MatrixMapperClass` /
-      `ScreenMapperClass` proofs: water projection and terrain projection,
-      including full stage mapping for original generated-coordinate paths.
+- [ ] Replace the focused terrain/water projection generated-coordinate state
+      mirrors with direct `W3DShaderManager::setShader` and
+      `WaterRenderObjClass` call-path probes once those renderer surfaces are
+      linked into the browser runtime without broad compile-frontier-only
+      dependencies.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
