@@ -3110,6 +3110,13 @@ shares structure and follows behind.
             `RM_W3D` cursor pixels once W3D cursor textures are rendered by the
             normal display path.
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
+      - [x] Add a focused original GUI input proof:
+            `gamewindow-input-smoke` builds a real `MessageStream` with
+            `WindowTranslator`, routes
+            `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` into original
+            `GameWindowManager::winProcessMouseEvent`, verifies a concrete
+            `GameWindow` receives `GWM_LEFT_DOWN`, and proves the handled raw
+            input is destroyed instead of reaching `TheCommandList`.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).
