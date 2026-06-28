@@ -7927,12 +7927,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 	const char *case_name = "unknown";
 	const char *transform_mode_name = "disable";
 	DWORD texture_transform_flags = D3DTTFF_DISABLE;
+	unsigned int transform_component_count = 0;
 	float expected_translation_u = 0.0f;
+	float expected_translation_z = 0.0f;
+	float expected_projected_divisor = 1.0f;
 	unsigned int expected_r = 255;
 	unsigned int expected_g = 0;
 	unsigned int expected_b = 0;
 	unsigned int expected_a = 255;
 	bool transform_applied = false;
+	bool transform_projected = false;
 	bool known_case = true;
 	switch (transform_case) {
 		case 0:
@@ -7942,10 +7946,44 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 			case_name = "count2TranslateU";
 			transform_mode_name = "count2";
 			texture_transform_flags = D3DTTFF_COUNT2;
+			transform_component_count = 2;
 			expected_translation_u = 0.5f;
 			expected_r = 0;
 			expected_b = 255;
 			transform_applied = true;
+			break;
+		case 2:
+			case_name = "count3TranslateU";
+			transform_mode_name = "count3";
+			texture_transform_flags = D3DTTFF_COUNT3;
+			transform_component_count = 3;
+			expected_translation_u = 0.5f;
+			expected_r = 0;
+			expected_b = 255;
+			transform_applied = true;
+			break;
+		case 3:
+			case_name = "count4TranslateU";
+			transform_mode_name = "count4";
+			texture_transform_flags = D3DTTFF_COUNT4;
+			transform_component_count = 4;
+			expected_translation_u = 0.5f;
+			expected_r = 0;
+			expected_b = 255;
+			transform_applied = true;
+			break;
+		case 4:
+			case_name = "projectedCount3TranslateU";
+			transform_mode_name = "count3Projected";
+			texture_transform_flags = D3DTTFF_PROJECTED | D3DTTFF_COUNT3;
+			transform_component_count = 3;
+			expected_translation_u = 0.125f;
+			expected_translation_z = 0.5f;
+			expected_projected_divisor = 0.5f;
+			expected_r = 0;
+			expected_b = 255;
+			transform_applied = true;
+			transform_projected = true;
 			break;
 		default:
 			known_case = false;
@@ -8106,6 +8144,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 				texture_transform.m[index][index] = 1.0f;
 			}
 			texture_transform.m[3][0] = expected_translation_u;
+			texture_transform.m[3][2] = expected_translation_z;
 			set_transform_result = device->SetTransform(D3DTS_TEXTURE0, &texture_transform);
 		}
 		set_texture_result = device->SetTexture(0, texture);
@@ -8153,6 +8192,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 		state->draw_indexed_primitive_calls == 1 &&
 		state->last_draw_texture_transform_mask == expected_transform_mask &&
 		state->last_draw_texture0_transform.m[3][0] == expected_translation_u &&
+		state->last_draw_texture0_transform.m[3][2] == expected_translation_z &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_SELECTARG1 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXCOORDINDEX] == 0 &&
@@ -8160,7 +8200,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 			texture_transform_flags &&
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
 
-	char buffer[4096];
+	char buffer[5120];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_d3d8_texture_transform_probe\","
 		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
@@ -8169,7 +8209,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 		"\"texcoord\":{\"index\":0,\"set\":0,\"expectedOffset\":28,"
 		"\"textureTransformFlags\":%lu},"
 		"\"transform\":{\"modeName\":\"%s\",\"mask\":%u,\"expectedMask\":%u,"
-		"\"translationU\":%.3f,\"expectedTranslationU\":%.3f,\"applied\":%s},"
+		"\"componentCount\":%u,\"projected\":%s,"
+		"\"translationU\":%.3f,\"expectedTranslationU\":%.3f,"
+		"\"translationZ\":%.3f,\"expectedTranslationZ\":%.3f,"
+		"\"projectedDivisor\":%.3f,\"expectedProjectedDivisor\":%.3f,"
+		"\"applied\":%s},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
 		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
@@ -8192,8 +8236,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 		transform_mode_name,
 		state != nullptr ? state->last_draw_texture_transform_mask : 0,
 		expected_transform_mask,
+		transform_component_count,
+		transform_projected ? "true" : "false",
 		state != nullptr ? static_cast<double>(state->last_draw_texture0_transform.m[3][0]) : 0.0,
 		static_cast<double>(expected_translation_u),
+		state != nullptr ? static_cast<double>(state->last_draw_texture0_transform.m[3][2]) : 0.0,
+		static_cast<double>(expected_translation_z),
+		transform_projected && state != nullptr ?
+			static_cast<double>(state->last_draw_texture0_transform.m[3][2]) : 1.0,
+		static_cast<double>(expected_projected_divisor),
 		transform_applied ? "true" : "false",
 		state != nullptr ? state->direct3d_create_calls : 0,
 		state != nullptr ? state->create_device_calls : 0,

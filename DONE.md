@@ -2149,6 +2149,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       through Playwright. COUNT1/3/4, projected coordinates, camera-space
       generated coordinates, non-FVF vertex declarations, and broader
       position/blend FVF variants remain open.
+- [x] Extend the stage-0 WebGL2 texture-transform bridge beyond
+      `D3DTTFF_COUNT2` for passthrough 2D texture sampling. The bridge now
+      decodes transform component counts and the projected flag, applies
+      non-projected `D3DTTFF_COUNT3`/`COUNT4` by sampling the transformed XY
+      components, and supports `D3DTTFF_PROJECTED | D3DTTFF_COUNT3` by dividing
+      XY by the transformed third component. The browser-driven D3D8 probe now
+      renders disabled, COUNT2, COUNT3, COUNT4, and projected COUNT3 cases
+      against a red/blue texture, verifies the sampled center pixels plus
+      decoded metadata through Playwright, and captures
+      `harness-smoke-d3d8-texture-transform-canvas.png`. Plain COUNT1,
+      projected COUNT4, camera-space generated coordinates, non-FVF vertex
+      declarations, and broader position/blend FVF variants remain open.
 - [x] Apply captured stage-1 `D3DTS_TEXTURE1` transform matrices for the
       current WebGL2 two-texture draw bridge. A browser-driven D3D8 probe now
       binds red stage-0 and red/blue stage-1 textures, enables

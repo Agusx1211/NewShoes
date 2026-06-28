@@ -19,6 +19,10 @@ const d3d8FvfTexCoordSizesCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-fvf-texcoord-sizes-canvas.png",
 );
+const d3d8TextureTransformCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-texture-transform-canvas.png",
+);
 const d3d8Stage1TextureTransformCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-stage1-texture-transform-canvas.png",
@@ -3287,23 +3291,38 @@ try {
   const textureTransformCaseNames = textureTransformCases.map((entry) => entry.probe?.caseName).join(",");
   const textureTransformCenters = textureTransformCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   const textureTransformFlags = textureTransformCases.map((entry) => entry.browserProbe?.texture0?.textureTransformFlags).join(",");
+  const textureTransformModes = textureTransformCases.map((entry) => entry.browserProbe?.texture0?.textureTransformModeName).join(",");
+  const textureTransformComponentCounts = textureTransformCases.map((entry) =>
+    entry.browserProbe?.texture0?.textureTransformComponentCount).join(",");
+  const textureTransformProjected = textureTransformCases.map((entry) =>
+    entry.browserProbe?.texture0?.textureTransformProjected).join(",");
   const textureTransformApplied = textureTransformCases.map((entry) => entry.browserProbe?.texture0?.textureTransformApplied).join(",");
   if (!d3d8TextureTransformResult.ok
-      || textureTransformCases.length !== 2
-      || textureTransformCaseNames !== "disable,count2TranslateU"
-      || textureTransformCenters !== "255,0,0,255|0,0,255,255"
-      || textureTransformFlags !== "0,2"
-      || textureTransformApplied !== "false,true"
+      || textureTransformCases.length !== 5
+      || textureTransformCaseNames !==
+        "disable,count2TranslateU,count3TranslateU,count4TranslateU,projectedCount3TranslateU"
+      || textureTransformCenters !==
+        "255,0,0,255|0,0,255,255|0,0,255,255|0,0,255,255|0,0,255,255"
+      || textureTransformFlags !== "0,2,3,4,259"
+      || textureTransformModes !== "disable,count2,count3,count4,count3Projected"
+      || textureTransformComponentCounts !== "0,2,3,4,3"
+      || textureTransformProjected !== "false,false,false,false,true"
+      || textureTransformApplied !== "false,true,true,true,true"
       || textureTransformCases.some((entry) => entry.probe?.source !== "browser_d3d8_texture_transform_probe")
       || textureTransformCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 12)
       || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.texCoordModeName !== "passthru")
       || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.textureTransformSupported !== true)
+      || textureTransformCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformComponentCount !== entry.probe?.transform?.componentCount)
+      || textureTransformCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformProjected !== Boolean(entry.probe?.transform?.projected))
       || textureTransformCases.some((entry) => entry.browserProbe?.texture0?.texCoordSupported !== true)
       || textureTransformCases.some((entry) => entry.centerPixelOk !== true)
       || textureTransformCases.some((entry) => entry.textureDelta?.creates !== 1)
       || textureTransformCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
     throw new Error(`D3D8 texture transform probe failed: ${JSON.stringify(d3d8TextureTransformResult)}`);
   }
+  await page.locator("#viewport").screenshot({ path: d3d8TextureTransformCanvasScreenshot });
 
   const d3d8Stage1TextureTransformResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8Stage1TextureTransform"));
@@ -5580,6 +5599,7 @@ try {
       d3d8ClearCanvasScreenshot,
       d3d8TwoTextureAlphaCanvasScreenshot,
       d3d8FvfTexCoordSizesCanvasScreenshot,
+      d3d8TextureTransformCanvasScreenshot,
       d3d8Stage1TextureTransformCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,
