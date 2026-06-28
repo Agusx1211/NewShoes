@@ -5538,6 +5538,32 @@ try {
     throw new Error(`WW3D source asset load probe failed: ${JSON.stringify(sourceAssetLoadResult)}`);
   }
 
+  const wwshadeCubeMapApplyResult = await page.evaluate(() => window.CnCPort.rpc("wwshadeCubeMapApply"));
+  if (!wwshadeCubeMapApplyResult.ok
+      || wwshadeCubeMapApplyResult.probe?.source !== "wwshade_cubemap_apply_probe"
+      || wwshadeCubeMapApplyResult.probe?.results?.applyCalled !== true
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage0?.texCoordIndex !== 0x00030000
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage0?.colorArg1 !== 2
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage0?.colorOp !== 4
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage0?.colorArg2 !== 0
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage0?.alphaOp !== 4
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage1?.colorOp !== 1
+      || wwshadeCubeMapApplyResult.probe?.textureStages?.stage1?.alphaOp !== 1
+      || wwshadeCubeMapApplyResult.probe?.renderState?.lighting !== 1
+      || wwshadeCubeMapApplyResult.probe?.renderState?.specularEnable !== 1
+      || wwshadeCubeMapApplyResult.probe?.renderState?.ambientMaterialSource !== 0
+      || wwshadeCubeMapApplyResult.probe?.renderState?.diffuseMaterialSource !== 0
+      || wwshadeCubeMapApplyResult.probe?.renderState?.specularMaterialSource !== 0
+      || wwshadeCubeMapApplyResult.probe?.renderState?.emissiveMaterialSource !== 0
+      || wwshadeCubeMapApplyResult.probe?.vertexShader?.fvf !== wwshadeCubeMapApplyResult.probe?.vertexShader?.expected
+      || wwshadeCubeMapApplyResult.probe?.material?.ok !== true
+      || (wwshadeCubeMapApplyResult.probe?.callDeltas?.textureStageState ?? 0) < 7
+      || (wwshadeCubeMapApplyResult.probe?.callDeltas?.renderState ?? 0) < 6
+      || wwshadeCubeMapApplyResult.probe?.callDeltas?.vertexShader !== 1
+      || wwshadeCubeMapApplyResult.probe?.callDeltas?.material !== 1) {
+    throw new Error(`WWShade cubemap apply probe failed: ${JSON.stringify(wwshadeCubeMapApplyResult)}`);
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",

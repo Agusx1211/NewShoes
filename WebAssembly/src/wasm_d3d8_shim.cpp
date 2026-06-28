@@ -2774,6 +2774,14 @@ public:
 		g_state.last_set_texture_stage_state_value = value;
 		return S_OK;
 	}
+	HRESULT GetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE state, DWORD *value) override
+	{
+		if (value == nullptr) {
+			return E_FAIL;
+		}
+		*value = texture_stage_state_value(stage, state);
+		return S_OK;
+	}
 	HRESULT ValidateDevice(DWORD *passes) override
 	{
 		if (passes != nullptr) {

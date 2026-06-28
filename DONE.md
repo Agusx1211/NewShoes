@@ -2180,6 +2180,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Playwright, and captures
       `harness-smoke-d3d8-generated-texcoord-canvas.png`. Original W3D mapper,
       water, and terrain call-site integration remains open.
+- [x] Prove the original WWShade cubemap apply path against the browser D3D8
+      state bridge. `cnc_port_probe_wwshade_cubemap_apply()` constructs the
+      original `ShdCubeMapDefClass` / `Shd6CubeMapClass`, creates the real
+      `WW3DAssetManager` prerequisite when needed, calls
+      `Shd6CubeMapClass::Apply_Shared`, and the Playwright smoke verifies
+      stage-0 `D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR`, the
+      `DX8_FVF_XYZNDCUBEMAP` FVF, stage combiner state, material sources,
+      material values, and D3D8 shim call deltas.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8
