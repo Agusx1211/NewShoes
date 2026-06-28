@@ -602,8 +602,10 @@ try {
     const keyStateUp = 0x0001;
     const keyStateDown = 0x0002;
     const keyStateLShift = 0x0010;
+    const keyStateAutoRepeat = 0x0100;
     const keyA = 0x1e;
     const keyLShift = 0x2a;
+    const keyLost = 0xff;
     const mouseCursorArrow = 2;
     const compositionDraft = "\u304b";
     const compositionResult = "\u754c";
@@ -647,6 +649,18 @@ try {
         || resetTextKeysResult.state.browserInput?.messageQueue?.count !== 0
         || resetTextKeysResult.state.browserInput?.messageQueue?.overflowed !== false) {
       throw new Error(`Browser text key reset mismatch: ${JSON.stringify(resetTextKeysResult)}`);
+    }
+
+    const initialOriginalKeyboardReset = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!initialOriginalKeyboardReset.ok
+        || initialOriginalKeyboardReset.probe?.source !== "browser_original_keyboard_reset"
+        || initialOriginalKeyboardReset.probe?.inputFrame !== 0
+        || initialOriginalKeyboardReset.probe?.modifiers !== 0
+        || initialOriginalKeyboardReset.probe?.keyStatus?.aDown !== false
+        || initialOriginalKeyboardReset.probe?.keyStatus?.leftShiftDown !== false
+        || initialOriginalKeyboardReset.probe?.focusLost?.pending !== false) {
+      throw new Error(`Original Keyboard probe reset did not clear state: ${JSON.stringify(initialOriginalKeyboardReset)}`);
     }
 
     await page.keyboard.down("Shift");
@@ -705,6 +719,161 @@ try {
         || resetOriginalKeyboardResult.state.browserInput?.messageQueue?.count !== 0
         || resetOriginalKeyboardResult.state.browserInput?.messageQueue?.overflowed !== false) {
       throw new Error(`Original Keyboard probe reset mismatch: ${JSON.stringify(resetOriginalKeyboardResult)}`);
+    }
+    const resetOriginalKeyboardState = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetOriginalKeyboardState.ok
+        || resetOriginalKeyboardState.probe?.inputFrame !== 0
+        || resetOriginalKeyboardState.probe?.modifiers !== 0
+        || resetOriginalKeyboardState.probe?.keyStatus?.aDown !== false
+        || resetOriginalKeyboardState.probe?.keyStatus?.leftShiftDown !== false) {
+      throw new Error(`Original Keyboard state reset mismatch: ${JSON.stringify(resetOriginalKeyboardState)}`);
+    }
+
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "original Keyboard A repeat seed queue",
+    );
+    const repeatSeedProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    const repeatSeedMessages = repeatSeedProbe.probe?.stream?.messages ?? [];
+    if (!repeatSeedProbe.ok
+        || repeatSeedProbe.probe?.ok !== true
+        || repeatSeedProbe.probe?.queue?.before !== 2
+        || repeatSeedProbe.probe?.queue?.drained !== 2
+        || repeatSeedProbe.probe?.queue?.ignored !== 1
+        || repeatSeedProbe.probe?.inputFrame !== 1
+        || repeatSeedProbe.probe?.stream?.count !== 1
+        || repeatSeedMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || repeatSeedMessages[0]?.key !== keyA
+        || (repeatSeedMessages[0]?.state & keyStateDown) === 0
+        || (repeatSeedMessages[0]?.state & keyStateAutoRepeat) !== 0
+        || repeatSeedProbe.probe?.keyStatus?.aDown !== true) {
+      throw new Error(`DOM A did not seed original Keyboard repeat state: ${JSON.stringify(repeatSeedProbe)}`);
+    }
+
+    for (let frame = 0; frame < 10; ++frame) {
+      const quietRepeatProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+      if (!quietRepeatProbe.ok
+          || quietRepeatProbe.probe?.ok !== true
+          || quietRepeatProbe.probe?.queue?.before !== 0
+          || quietRepeatProbe.probe?.queue?.drained !== 0
+          || quietRepeatProbe.probe?.stream?.count !== 0
+          || quietRepeatProbe.probe?.inputFrame !== frame + 2
+          || quietRepeatProbe.probe?.keyStatus?.aDown !== true) {
+        throw new Error(`Original Keyboard repeated before delay frame ${frame}: ${JSON.stringify(quietRepeatProbe)}`);
+      }
+    }
+
+    const repeatProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    const repeatMessages = repeatProbe.probe?.stream?.messages ?? [];
+    if (!repeatProbe.ok
+        || repeatProbe.probe?.ok !== true
+        || repeatProbe.probe?.inputFrame !== 12
+        || repeatProbe.probe?.stream?.count !== 1
+        || repeatMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || repeatMessages[0]?.key !== keyA
+        || (repeatMessages[0]?.state & keyStateDown) === 0
+        || (repeatMessages[0]?.state & keyStateAutoRepeat) === 0
+        || repeatProbe.probe?.keyStatus?.aDown !== true) {
+      throw new Error(`Original Keyboard autorepeat did not fire after delay: ${JSON.stringify(repeatProbe)}`);
+    }
+
+    await page.keyboard.up("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "original Keyboard A repeat release queue",
+    );
+    const resetRepeatInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetRepeatInput.ok
+        || resetRepeatInput.state.browserInput?.messageQueue?.count !== 0
+        || resetRepeatInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard repeat cleanup reset mismatch: ${JSON.stringify(resetRepeatInput)}`);
+    }
+    const resetRepeatKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetRepeatKeyboard.ok
+        || resetRepeatKeyboard.probe?.inputFrame !== 0
+        || resetRepeatKeyboard.probe?.keyStatus?.aDown !== false) {
+      throw new Error(`Original Keyboard repeat state cleanup mismatch: ${JSON.stringify(resetRepeatKeyboard)}`);
+    }
+
+    await page.locator("#viewport").focus();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard focus-loss setup queue",
+    );
+    const resetFocusSetupInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFocusSetupInput.ok
+        || resetFocusSetupInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFocusSetupInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard focus setup reset mismatch: ${JSON.stringify(resetFocusSetupInput)}`);
+    }
+    const resetFocusSetupKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFocusSetupKeyboard.ok
+        || resetFocusSetupKeyboard.probe?.inputFrame !== 0
+        || resetFocusSetupKeyboard.probe?.modifiers !== 0) {
+      throw new Error(`Original Keyboard focus setup state reset mismatch: ${JSON.stringify(resetFocusSetupKeyboard)}`);
+    }
+
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard focus-loss held-key queue",
+    );
+    const focusHeldProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    if (!focusHeldProbe.ok
+        || focusHeldProbe.probe?.ok !== true
+        || focusHeldProbe.probe?.stream?.count !== 2
+        || focusHeldProbe.probe?.keyStatus?.aDown !== true
+        || focusHeldProbe.probe?.keyStatus?.leftShiftDown !== true
+        || (focusHeldProbe.probe?.modifiers & keyStateLShift) === 0) {
+      throw new Error(`Original Keyboard focus-loss setup did not hold Shift+A: ${JSON.stringify(focusHeldProbe)}`);
+    }
+
+    await page.evaluate(() => document.querySelector("#viewport").blur());
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard focus-loss blur queue",
+    );
+    const focusLostProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    const focusLostEvents = focusLostProbe.probe?.events ?? [];
+    if (!focusLostProbe.ok
+        || focusLostProbe.probe?.ok !== true
+        || focusLostProbe.probe?.queue?.drained !== 0
+        || focusLostProbe.probe?.focusLost?.pendingBefore !== true
+        || focusLostProbe.probe?.focusLost?.delivered !== true
+        || focusLostProbe.probe?.stream?.count !== 0
+        || focusLostProbe.probe?.keyStatus?.aDown !== false
+        || focusLostProbe.probe?.keyStatus?.leftShiftDown !== false
+        || focusLostProbe.probe?.modifiers !== 0
+        || !focusLostEvents.some((event) => event.focusLost === true && event.engineKey === keyLost)) {
+      throw new Error(`Browser blur did not deliver original Keyboard KEY_LOST reset: ${JSON.stringify(focusLostProbe)}`);
+    }
+
+    await page.keyboard.up("A");
+    await page.keyboard.up("Shift");
+    const resetFocusLostInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFocusLostInput.ok
+        || resetFocusLostInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFocusLostInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard focus-loss cleanup reset mismatch: ${JSON.stringify(resetFocusLostInput)}`);
+    }
+    const resetFocusLostKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFocusLostKeyboard.ok
+        || resetFocusLostKeyboard.probe?.inputFrame !== 0
+        || resetFocusLostKeyboard.probe?.modifiers !== 0
+        || resetFocusLostKeyboard.probe?.keyStatus?.aDown !== false
+        || resetFocusLostKeyboard.probe?.keyStatus?.leftShiftDown !== false) {
+      throw new Error(`Original Keyboard focus-loss state cleanup mismatch: ${JSON.stringify(resetFocusLostKeyboard)}`);
     }
 
     await page.evaluate(({ compositionDraft, compositionResult }) => {
@@ -1134,6 +1303,14 @@ try {
         || browserRefocusPump.probe.resetD3D?.lastActive !== true
         || browserRefocusPump.probe.mouse?.lostFocus !== false) {
       throw new Error(`Browser refocus did not reactivate original WndProc state: ${JSON.stringify(browserRefocusPump)}`);
+    }
+    const resetWndProcFocusKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetWndProcFocusKeyboard.ok
+        || resetWndProcFocusKeyboard.probe?.focusLost?.pending !== false
+        || resetWndProcFocusKeyboard.probe?.modifiers !== 0
+        || resetWndProcFocusKeyboard.probe?.keyStatus?.aDown !== false) {
+      throw new Error(`Browser WndProc focus cleanup left original Keyboard state dirty: ${JSON.stringify(resetWndProcFocusKeyboard)}`);
     }
   }
 

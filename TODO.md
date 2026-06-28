@@ -3057,6 +3057,19 @@ shares structure and follows behind.
       - [ ] Extend the browser-backed `Keyboard` bridge beyond the focused
             proof with repeat timing, focus-loss reset semantics, and normal
             frame ownership once the broader input loop is ready.
+            - [x] Add a browser harness proof that repeated
+                  `originalKeyboardInputProbe` frames preserve a held DOM key
+                  across empty Win32 queues and produce the original
+                  `KEY_STATE_AUTOREPEAT` stream message after
+                  `Keyboard::KEY_REPEAT_DELAY`.
+            - [x] Add browser blur -> original `KEY_LOST` delivery for the
+                  browser-backed `Keyboard`, proving `resetKeys()` clears
+                  held-key state and folded modifiers without emitting raw key
+                  stream messages.
+            - [ ] Move the browser-backed `Keyboard::update()` /
+                  `createStreamMessages()` call out of the focused probe and
+                  into the normal per-frame input loop once that loop owns the
+                  real `MessageStream` lifecycle.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the

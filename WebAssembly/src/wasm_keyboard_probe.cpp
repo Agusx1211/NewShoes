@@ -25,6 +25,7 @@ struct BrowserKeyboardEvent
 	UnsignedByte engineKey = KEY_NONE;
 	UnsignedShort state = KEY_STATE_NONE;
 	bool mapped = false;
+	bool focusLost = false;
 };
 
 const char *bool_json(bool value)
@@ -150,8 +151,20 @@ public:
 		m_next = 0;
 		m_eventCount = 0;
 		m_ignored = 0;
+		m_focusLostDelivered = false;
 
 		unsigned int drained = 0;
+
+		if (m_focusLostPending) {
+			BrowserKeyboardEvent event;
+			event.engineKey = KEY_LOST;
+			event.mapped = true;
+			event.focusLost = true;
+			appendEvent(event);
+			m_focusLostPending = false;
+			m_focusLostDelivered = true;
+		}
+
 		MSG message = {};
 		while (PeekMessage(&message, nullptr, WM_KEYDOWN, WM_SYSKEYUP, PM_REMOVE)) {
 			++drained;
@@ -166,22 +179,30 @@ public:
 				event.state = KEY_STATE_UP;
 			}
 			event.mapped = event.engineKey != KEY_NONE && event.state != KEY_STATE_NONE;
-			if (m_eventCount < MAX_EVENTS) {
-				m_events[m_eventCount++] = event;
-			}
-
-			if (!event.mapped || m_scriptCount >= MAX_SCRIPT_KEYS) {
-				++m_ignored;
-				continue;
-			}
-
-			KeyboardIO &key = m_script[m_scriptCount++];
-			key.key = event.engineKey;
-			key.status = KeyboardIO::STATUS_UNUSED;
-			key.state = event.state;
-			key.sequence = 0;
+			appendEvent(event);
 		}
 		return drained;
+	}
+
+	void queueFocusLost()
+	{
+		ensureInitialized();
+		m_focusLostPending = true;
+		++m_focusLostQueuedCount;
+	}
+
+	void resetProbeState()
+	{
+		ensureInitialized();
+		resetKeys();
+		m_scriptCount = 0;
+		m_next = 0;
+		m_eventCount = 0;
+		m_ignored = 0;
+		m_focusLostPending = false;
+		m_focusLostDelivered = false;
+		m_focusLostQueuedCount = 0;
+		m_inputFrame = 0;
 	}
 
 	Bool getCapsState() override { return FALSE; }
@@ -189,6 +210,11 @@ public:
 	unsigned int eventCount() const { return m_eventCount; }
 	unsigned int ignoredCount() const { return m_ignored; }
 	const BrowserKeyboardEvent &eventAt(unsigned int index) const { return m_events[index]; }
+	bool focusLostPending() const { return m_focusLostPending; }
+	bool focusLostDelivered() const { return m_focusLostDelivered; }
+	unsigned int focusLostQueuedCount() const { return m_focusLostQueuedCount; }
+	UnsignedInt inputFrame() const { return m_inputFrame; }
+	Bool keyDown(UnsignedByte key) { return getKeyStateBit(key, KEY_STATE_DOWN); }
 
 protected:
 	void getKey(KeyboardIO *key) override
@@ -207,6 +233,24 @@ protected:
 private:
 	enum { MAX_SCRIPT_KEYS = 32, MAX_EVENTS = 32 };
 
+	void appendEvent(const BrowserKeyboardEvent &event)
+	{
+		if (m_eventCount < MAX_EVENTS) {
+			m_events[m_eventCount++] = event;
+		}
+
+		if (!event.mapped || m_scriptCount >= MAX_SCRIPT_KEYS) {
+			++m_ignored;
+			return;
+		}
+
+		KeyboardIO &key = m_script[m_scriptCount++];
+		key.key = event.engineKey;
+		key.status = KeyboardIO::STATUS_UNUSED;
+		key.state = event.state;
+		key.sequence = 0;
+	}
+
 	bool m_initialized = false;
 	KeyboardIO m_script[MAX_SCRIPT_KEYS] = {};
 	unsigned int m_scriptCount = 0;
@@ -214,6 +258,9 @@ private:
 	BrowserKeyboardEvent m_events[MAX_EVENTS] = {};
 	unsigned int m_eventCount = 0;
 	unsigned int m_ignored = 0;
+	bool m_focusLostPending = false;
+	bool m_focusLostDelivered = false;
+	unsigned int m_focusLostQueuedCount = 0;
 };
 
 BrowserKeyboard g_browser_keyboard;
@@ -239,13 +286,14 @@ std::string build_browser_keyboard_events_json(const BrowserKeyboard &keyboard)
 		char buffer[220];
 		std::snprintf(buffer, sizeof(buffer),
 			"%s{\"message\":%u,\"virtualKey\":%lu,\"engineKey\":%u,"
-			"\"state\":%u,\"mapped\":%s}",
+			"\"state\":%u,\"mapped\":%s,\"focusLost\":%s}",
 			index == 0 ? "" : ",",
 			event.message,
 			static_cast<unsigned long>(event.virtualKey),
 			event.engineKey,
 			event.state,
-			bool_json(event.mapped));
+			bool_json(event.mapped),
+			bool_json(event.focusLost));
 		json += buffer;
 	}
 	json += "]";
@@ -306,6 +354,7 @@ const char *probe_original_keyboard_stream()
 	TheKeyboard = &g_browser_keyboard;
 
 	const unsigned int before_count = WasmWin32Input::message_queue_count;
+	const bool focus_lost_pending_before = g_browser_keyboard.focusLostPending();
 	const unsigned int drained = g_browser_keyboard.loadQueuedKeyMessages();
 	g_browser_keyboard.update();
 	g_browser_keyboard.createStreamMessages();
@@ -313,7 +362,7 @@ const char *probe_original_keyboard_stream()
 	const unsigned int stream_count = count_game_messages(first);
 	const std::string events_json = build_browser_keyboard_events_json(g_browser_keyboard);
 	const std::string stream_json = build_original_keyboard_stream_json(first);
-	const bool ok = drained > 0 && stream_count > 0;
+	const bool ok = !WasmWin32Input::message_queue_overflowed;
 
 	char buffer[12000];
 	std::snprintf(buffer, sizeof(buffer),
@@ -321,9 +370,12 @@ const char *probe_original_keyboard_stream()
 		"\"ok\":%s,\"keyboardAttached\":%s,"
 		"\"queue\":{\"before\":%u,\"drained\":%u,\"ignored\":%u,\"remaining\":%u,"
 		"\"overflowed\":%s},"
+		"\"focusLost\":{\"pendingBefore\":%s,\"delivered\":%s,\"queuedCount\":%u},"
+		"\"inputFrame\":%u,"
 		"\"events\":%s,"
 		"\"stream\":{\"count\":%u,\"messages\":%s},"
-		"\"modifiers\":%d}",
+		"\"modifiers\":%d,"
+		"\"keyStatus\":{\"aDown\":%s,\"leftShiftDown\":%s}}",
 		bool_json(ok),
 		bool_json(TheKeyboard == &g_browser_keyboard),
 		before_count,
@@ -331,15 +383,55 @@ const char *probe_original_keyboard_stream()
 		g_browser_keyboard.ignoredCount(),
 		WasmWin32Input::message_queue_count,
 		bool_json(WasmWin32Input::message_queue_overflowed),
+		bool_json(focus_lost_pending_before),
+		bool_json(g_browser_keyboard.focusLostDelivered()),
+		g_browser_keyboard.focusLostQueuedCount(),
+		g_browser_keyboard.inputFrame(),
 		events_json.c_str(),
 		stream_count,
 		stream_json.c_str(),
-		g_browser_keyboard.getModifierFlags());
+		g_browser_keyboard.getModifierFlags(),
+		bool_json(g_browser_keyboard.keyDown(KEY_A)),
+		bool_json(g_browser_keyboard.keyDown(KEY_LSHIFT)));
 	g_original_keyboard_json = buffer;
 
 	TheKeyboard = old_keyboard;
 	TheMessageStream = old_message_stream;
 	TheWritableGlobalData = old_global_data;
+	return g_original_keyboard_json.c_str();
+}
+
+const char *reset_original_keyboard_stream()
+{
+	g_browser_keyboard.resetProbeState();
+
+	char buffer[500];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_original_keyboard_reset\","
+		"\"ok\":true,\"inputFrame\":%u,\"modifiers\":%d,"
+		"\"focusLost\":{\"pending\":%s,\"queuedCount\":%u},"
+		"\"keyStatus\":{\"aDown\":%s,\"leftShiftDown\":%s}}",
+		g_browser_keyboard.inputFrame(),
+		g_browser_keyboard.getModifierFlags(),
+		bool_json(g_browser_keyboard.focusLostPending()),
+		g_browser_keyboard.focusLostQueuedCount(),
+		bool_json(g_browser_keyboard.keyDown(KEY_A)),
+		bool_json(g_browser_keyboard.keyDown(KEY_LSHIFT)));
+	g_original_keyboard_json = buffer;
+	return g_original_keyboard_json.c_str();
+}
+
+const char *queue_original_keyboard_focus_lost()
+{
+	g_browser_keyboard.queueFocusLost();
+
+	char buffer[400];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_original_keyboard_focus_lost\","
+		"\"ok\":true,\"pending\":%s,\"queuedCount\":%u}",
+		bool_json(g_browser_keyboard.focusLostPending()),
+		g_browser_keyboard.focusLostQueuedCount());
+	g_original_keyboard_json = buffer;
 	return g_original_keyboard_json.c_str();
 }
 
@@ -350,6 +442,16 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_keyboard_input()
 {
 	return probe_original_keyboard_stream();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_original_keyboard_input()
+{
+	return reset_original_keyboard_stream();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_queue_original_keyboard_focus_lost()
+{
+	return queue_original_keyboard_focus_lost();
 }
 
 }

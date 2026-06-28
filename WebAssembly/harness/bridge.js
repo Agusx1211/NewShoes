@@ -3272,6 +3272,12 @@ async function loadWasmModule() {
       probeOriginalCursorVisibility: module.cwrap(
         "cnc_port_probe_original_cursor_visibility", "string", ["number"]),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
+      resetOriginalKeyboardInput: module.cwrap("cnc_port_reset_original_keyboard_input", "string", []),
+      queueOriginalKeyboardFocusLost: module.cwrap(
+        "cnc_port_queue_original_keyboard_focus_lost",
+        "string",
+        [],
+      ),
       probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
@@ -3903,6 +3909,10 @@ async function setBrowserWin32Focus(active) {
     if (!resetState) {
       return null;
     }
+    const keyboardFocusLost = await queueOriginalKeyboardFocusLost();
+    if (!keyboardFocusLost) {
+      return null;
+    }
   }
 
   const messages = active ? [
@@ -4009,6 +4019,30 @@ async function probeOriginalKeyboardInput() {
   const probe = parseModuleState(wasmModule.probeOriginalKeyboardInput());
   harnessState.originalKeyboardInput = probe;
   applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function resetOriginalKeyboardInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.resetOriginalKeyboardInput());
+  harnessState.originalKeyboardInput = probe;
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function queueOriginalKeyboardFocusLost() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.queueOriginalKeyboardFocusLost());
+  harnessState.originalKeyboardInput = probe;
   harnessState.wasm = "loaded";
   return probe;
 }
@@ -4686,6 +4720,14 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalKeyboardInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original Keyboard input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "resetOriginalKeyboardInputProbe":
+      {
+        const probe = await resetOriginalKeyboardInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard input cannot be reset" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }
