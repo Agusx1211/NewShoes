@@ -3017,6 +3017,15 @@ shares structure and follows behind.
       buffer is consumed, and folds the buffered event with original
       `Mouse::processMouseEvent()` into `MouseIO` status. This does not yet
       prove `Mouse::createStreamMessages()` / GUI delivery.
+- [x] Focused real Mouse stream-message proof: the standalone wasm
+      `win32-mouse-smoke` initializes the original memory pools plus
+      `TheMessageStream`, a minimal concrete `Keyboard`, and shimmed
+      `GlobalData`, then calls real `Mouse::createStreamMessages()` and
+      verifies `MSG_RAW_MOUSE_POSITION` plus
+      `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` arguments from the original
+      `MessageStream`.
+- [ ] Extend the focused real Mouse stream-message proof to cover drag and
+      wheel `MSG_RAW_MOUSE_*` output before wiring GUI translator delivery.
 - [ ] Add a separate real engine Mouse probe, not the current browser
       `Win32Mouse`/`Mouse` shim, that wires `TheMouse == TheWin32Mouse`,
       supplies the required `TheMessageStream` / keyboard / frame globals,

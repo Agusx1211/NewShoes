@@ -3,9 +3,11 @@
 
 #include <windows.h>
 
+#include "Common/GameMemory.h"
+#include "Common/GlobalData.h"
+#include "Common/MessageStream.h"
+#include "GameClient/Keyboard.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
-
-class GlobalData;
 
 HINSTANCE ApplicationHInstance = nullptr;
 HWND ApplicationHWnd = nullptr;
@@ -49,6 +51,21 @@ public:
 	}
 };
 
+class SmokeKeyboard : public Keyboard
+{
+public:
+	Bool getCapsState() override { return FALSE; }
+
+protected:
+	void getKey(KeyboardIO *key) override
+	{
+		key->key = KEY_NONE;
+		key->status = KeyboardIO::STATUS_UNUSED;
+		key->state = KEY_STATE_NONE;
+		key->sequence = 0;
+	}
+};
+
 bool expect(bool condition, const char *message)
 {
 	if (!condition) {
@@ -61,6 +78,87 @@ bool expect(bool condition, const char *message)
 LPARAM make_mouse_lparam(int x, int y)
 {
 	return MAKELPARAM(x, y);
+}
+
+bool expect_pixel_arg(GameMessage *message, Int index, Int x, Int y, const char *label)
+{
+	if (!expect(message->getArgumentDataType(index) == ARGUMENTDATATYPE_PIXEL, label)) {
+		return false;
+	}
+	const ICoord2D pixel = message->getArgument(index)->pixel;
+	return expect(pixel.x == x && pixel.y == y, label);
+}
+
+bool expect_integer_arg(GameMessage *message, Int index, Int value, const char *label)
+{
+	if (!expect(message->getArgumentDataType(index) == ARGUMENTDATATYPE_INTEGER, label)) {
+		return false;
+	}
+	return expect(message->getArgument(index)->integer == value, label);
+}
+
+bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
+{
+	bool ok = true;
+	initMemoryManager();
+	{
+		GlobalData globalData;
+		SmokeKeyboard keyboard;
+		MessageStream stream;
+
+		GlobalData *oldGlobalData = TheGlobalData;
+		Keyboard *oldKeyboard = TheKeyboard;
+		MessageStream *oldMessageStream = TheMessageStream;
+		TheGlobalData = &globalData;
+		TheKeyboard = &keyboard;
+		TheMessageStream = &stream;
+
+		mouse.prepareEngineUpdateProbe(800, 600);
+		mouse.addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(345, 67), 901);
+		mouse.update();
+		mouse.createStreamMessages();
+
+		GameMessage *position = stream.getFirstMessage();
+		GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+		ok = expect(position != nullptr, "Mouse::createStreamMessages should append a raw position message") && ok;
+		ok = expect(leftDown != nullptr, "Mouse::createStreamMessages should append a left-button message") && ok;
+		ok = expect(leftDown == nullptr || leftDown->next() == nullptr,
+			"Mouse::createStreamMessages should only append position and left-button messages for one left-down event") && ok;
+
+		if (position != nullptr) {
+			ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+				"first stream message should be MSG_RAW_MOUSE_POSITION") && ok;
+			ok = expect(position->getArgumentCount() == 2,
+				"raw position message should carry position and modifiers") && ok;
+			ok = expect(position->getPlayerIndex() == -1,
+				"early wasm input message should use invalid player index before PlayerList exists") && ok;
+			ok = expect_pixel_arg(position, 0, 0, 0,
+				"raw position message should use the current mouse position before event folding") && ok;
+			ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+				"raw position message should include keyboard modifier flags") && ok;
+		}
+
+		if (leftDown != nullptr) {
+			ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+				"second stream message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+			ok = expect(leftDown->getArgumentCount() == 3,
+				"left-button message should carry position, modifiers, and timestamp") && ok;
+			ok = expect(leftDown->getPlayerIndex() == -1,
+				"left-button message should use invalid player index before PlayerList exists") && ok;
+			ok = expect_pixel_arg(leftDown, 0, 345, 67,
+				"left-button message should carry folded Win32 mouse coordinates") && ok;
+			ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+				"left-button message should include keyboard modifier flags") && ok;
+			ok = expect_integer_arg(leftDown, 2, 901,
+				"left-button message should carry the Win32 event timestamp") && ok;
+		}
+
+		TheMessageStream = oldMessageStream;
+		TheKeyboard = oldKeyboard;
+		TheGlobalData = oldGlobalData;
+	}
+	shutdownMemoryManager();
+	return ok;
 }
 
 } // namespace
@@ -178,7 +276,11 @@ int main()
 		return 1;
 	}
 
+	if (!exercise_mouse_stream_messages(mouse)) {
+		return 1;
+	}
+
 	TheWin32Mouse = nullptr;
-	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent/createStreamMessages\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

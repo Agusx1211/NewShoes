@@ -59,7 +59,13 @@ CommandList *TheCommandList = NULL;
  */
 GameMessage::GameMessage( GameMessage::Type type ) 
 { 
+#ifdef __EMSCRIPTEN__
+	// Browser probes can append raw input before the real PlayerList exists.
+	Player *localPlayer = ThePlayerList ? ThePlayerList->getLocalPlayer() : NULL;
+	m_playerIndex = localPlayer ? localPlayer->getPlayerIndex() : PLAYER_INDEX_INVALID;
+#else
 	m_playerIndex = ThePlayerList->getLocalPlayer()->getPlayerIndex();
+#endif
 	m_type = type; 
 	m_argList = NULL;
 	m_argTail = NULL;
