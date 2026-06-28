@@ -6,6 +6,7 @@
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/MessageStream.h"
+#include "GameClient/GameClient.h"
 #include "GameClient/Keyboard.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 
@@ -14,6 +15,54 @@ HWND ApplicationHWnd = nullptr;
 GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 Win32Mouse *TheWin32Mouse = nullptr;
+GameClient *TheGameClient = nullptr;
+
+// Keep this focused input smoke from extracting full GameClient.cpp, which owns
+// shell/control-bar/GameSpy dependencies that this target does not exercise.
+GameClient::GameClient() :
+	m_frame(0),
+	m_drawableList(nullptr),
+	m_nextDrawableID(static_cast<DrawableID>(1)),
+	m_numTranslators(0),
+	m_commandTranslator(nullptr),
+	m_renderedObjectCount(0)
+{
+	for (Int index = 0; index < MAX_CLIENT_TRANSLATORS; ++index) {
+		m_translators[index] = TRANSLATOR_ID_INVALID;
+	}
+	m_drawableVector.clear();
+}
+
+GameClient::~GameClient() = default;
+
+void GameClient::init() {}
+void GameClient::update() {}
+void GameClient::reset() {}
+void GameClient::registerDrawable(Drawable *) {}
+void GameClient::addDrawableToLookupTable(Drawable *) {}
+void GameClient::removeDrawableFromLookupTable(Drawable *) {}
+GameMessage::Type GameClient::evaluateContextCommand(Drawable *,
+	const Coord3D *,
+	CommandTranslator::CommandEvaluateType)
+{
+	return GameMessage::MSG_INVALID;
+}
+void GameClient::removeFromRayEffects(Drawable *) {}
+void GameClient::getRayEffectData(Drawable *, RayEffectData *) {}
+Bool GameClient::loadMap(AsciiString) { return FALSE; }
+void GameClient::unloadMap(AsciiString) {}
+void GameClient::iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *) {}
+void GameClient::destroyDrawable(Drawable *) {}
+void GameClient::setTimeOfDay(TimeOfDay) {}
+void GameClient::selectDrawablesInGroup(Int) {}
+void GameClient::assignSelectedDrawablesToGroup(Int) {}
+void GameClient::addTextBearingDrawable(Drawable *) {}
+void GameClient::releaseShadows() {}
+void GameClient::allocateShadows() {}
+void GameClient::preloadAssets(TimeOfDay) {}
+void GameClient::crc(Xfer *) {}
+void GameClient::xfer(Xfer *) {}
+void GameClient::loadPostProcess() {}
 
 namespace {
 
@@ -66,6 +115,64 @@ protected:
 		key->state = KEY_STATE_NONE;
 		key->sequence = 0;
 	}
+};
+
+class SmokeGameClient : public GameClient
+{
+public:
+	void init() override {}
+	void postProcessLoad() override {}
+	void reset() override {}
+	void update() override {}
+	void draw() override {}
+	void setFrame(UnsignedInt frame) override { m_frame = frame; }
+	void registerDrawable(Drawable *) override {}
+	Drawable *findDrawableByID(const DrawableID) override { return nullptr; }
+	Drawable *firstDrawable() override { return nullptr; }
+	GameMessage::Type evaluateContextCommand(Drawable *,
+		const Coord3D *,
+		CommandTranslator::CommandEvaluateType) override { return GameMessage::MSG_INVALID; }
+	void removeFromRayEffects(Drawable *) override {}
+	void getRayEffectData(Drawable *, RayEffectData *) override {}
+	void createRayEffectByTemplate(const Coord3D *, const Coord3D *, const ThingTemplate *) override {}
+	void addScorch(const Coord3D *, Real, Scorches) override {}
+	Bool loadMap(AsciiString) override { return FALSE; }
+	void unloadMap(AsciiString) override {}
+	void iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *) override {}
+	Drawable *friend_createDrawable(const ThingTemplate *, DrawableStatus = DRAWABLE_STATUS_NONE) override
+	{
+		return nullptr;
+	}
+	void destroyDrawable(Drawable *) override {}
+	void setTimeOfDay(TimeOfDay) override {}
+	void selectDrawablesInGroup(Int) override {}
+	void assignSelectedDrawablesToGroup(Int) override {}
+	UnsignedInt getFrame() override { return m_frame; }
+	void setTeamColor(Int, Int, Int) override {}
+	void adjustLOD(Int) override {}
+	void releaseShadows() override {}
+	void allocateShadows() override {}
+	void preloadAssets(TimeOfDay) override {}
+	Drawable *getDrawableList() override { return nullptr; }
+	void notifyTerrainObjectMoved(Object *) override {}
+
+private:
+	Display *createGameDisplay() override { return nullptr; }
+	InGameUI *createInGameUI() override { return nullptr; }
+	GameWindowManager *createWindowManager() override { return nullptr; }
+	FontLibrary *createFontLibrary() override { return nullptr; }
+	DisplayStringManager *createDisplayStringManager() override { return nullptr; }
+	VideoPlayerInterface *createVideoPlayer() override { return nullptr; }
+	TerrainVisual *createTerrainVisual() override { return nullptr; }
+	Keyboard *createKeyboard() override { return nullptr; }
+	Mouse *createMouse() override { return nullptr; }
+	SnowManager *createSnowManager() override { return nullptr; }
+	void setFrameRate(Real) override {}
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
 };
 
 bool expect(bool condition, const char *message)
@@ -444,6 +551,89 @@ bool exercise_engine_global_mouse_stream_messages(SmokeWin32Mouse &mouse)
 	return ok;
 }
 
+bool exercise_engine_global_mouse_with_gameclient_frame_source(SmokeWin32Mouse &mouse)
+{
+	bool ok = true;
+	{
+		GlobalData globalData;
+		SmokeKeyboard keyboard;
+		SmokeGameClient gameClient;
+
+		GlobalData *oldGlobalData = TheGlobalData;
+		Keyboard *oldKeyboard = TheKeyboard;
+		MessageStream *oldMessageStream = TheMessageStream;
+		Mouse *oldMouse = TheMouse;
+		Win32Mouse *oldWin32Mouse = TheWin32Mouse;
+		GameClient *oldGameClient = TheGameClient;
+
+		TheGlobalData = &globalData;
+		TheKeyboard = &keyboard;
+		TheMouse = &mouse;
+		TheWin32Mouse = &mouse;
+		TheGameClient = &gameClient;
+		TheGameClient->setFrame(4321);
+
+		ok = expect(TheGameClient->getFrame() == 4321,
+			"non-null GameClient frame source should be available through TheGameClient") && ok;
+
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			TheWin32Mouse->addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(210, 65), 1030);
+			TheMouse->UPDATE();
+			TheMouse->createStreamMessages();
+
+			ok = expect(TheGameClient != nullptr && TheGameClient->getFrame() == 4321,
+				"mouse stream creation should preserve the non-null GameClient frame source") && ok;
+			ok = expect(mouse.inputFrame() == 1 && mouse.eventsThisFrame() == 1,
+				"non-null GameClient mouse probe should still drive Mouse::update through TheMouse") && ok;
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+			ok = expect(position != nullptr,
+				"non-null GameClient mouse probe should include a raw position message") && ok;
+			ok = expect(leftDown != nullptr,
+				"non-null GameClient mouse probe should include a left-down message") && ok;
+			ok = expect(leftDown == nullptr || leftDown->next() == nullptr,
+				"non-null GameClient mouse probe should only append position and left-down messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"non-null GameClient mouse first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getPlayerIndex() == -1,
+					"non-null GameClient early input message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"non-null GameClient position message should use pre-fold position") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"non-null GameClient position message should include keyboard modifier flags") && ok;
+			}
+
+			if (leftDown != nullptr) {
+				ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+					"non-null GameClient mouse second message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+				ok = expect(leftDown->getPlayerIndex() == -1,
+					"non-null GameClient left-down message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(leftDown, 0, 210, 65,
+					"non-null GameClient left-down message should carry folded Win32 coordinates") && ok;
+				ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+					"non-null GameClient left-down message should include keyboard modifier flags") && ok;
+				ok = expect_integer_arg(leftDown, 2, 1030,
+					"non-null GameClient left-down message should carry the Win32 timestamp") && ok;
+			}
+		}
+
+		TheGameClient = oldGameClient;
+		TheMessageStream = oldMessageStream;
+		TheWin32Mouse = oldWin32Mouse;
+		TheMouse = oldMouse;
+		TheKeyboard = oldKeyboard;
+		TheGlobalData = oldGlobalData;
+	}
+	return ok;
+}
+
 } // namespace
 
 int main()
@@ -564,12 +754,15 @@ int main()
 	if (streamMessagesOk) {
 		streamMessagesOk = exercise_engine_global_mouse_stream_messages(mouse);
 	}
+	if (streamMessagesOk) {
+		streamMessagesOk = exercise_engine_global_mouse_with_gameclient_frame_source(mouse);
+	}
 	shutdownMemoryManager();
 	if (!streamMessagesOk) {
 		return 1;
 	}
 
 	TheWin32Mouse = nullptr;
-	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent/createStreamMessages and engine-global mouse singleton delivery\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent/createStreamMessages, engine-global mouse singleton delivery, and non-null GameClient frame-source coexistence\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

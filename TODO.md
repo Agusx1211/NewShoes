@@ -3038,7 +3038,7 @@ shares structure and follows behind.
             `TheMouse`, and verifies button, drag, and wheel `MSG_RAW_MOUSE_*`
             output using the original `Win32Mouse` fallback when
             `TheGameClient` is not initialized.
-      - [ ] Extend the engine-global Mouse proof with a non-null original
+      - [x] Extend the engine-global Mouse proof with a non-null original
             `TheGameClient` frame source once minimal GameClient ownership is
             available without constructing the full GUI/display subsystem.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
@@ -3246,6 +3246,10 @@ shares structure and follows behind.
 - [ ] Net-sync regression (two clients, assert no desync).
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
+- [ ] Fix the plain `node harness/smoke.mjs` WW3D statistics teardown crash:
+      the non-`EXPECT_WASM=1` path currently hits a wasm memory access
+      out-of-bounds in `Record_Texture_End()` / `Debug_Statistics::End_Statistics()`,
+      while `EXPECT_WASM=1 node harness/smoke.mjs` passes.
 
 ## Cross-cutting: project hygiene
 
