@@ -5025,6 +5025,36 @@ target_link_options(win32-keyboard-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(win32-keyboard-focus-repeat-smoke
+  tests/win32_keyboard_focus_repeat_smoke.cpp
+)
+
+set_target_properties(win32-keyboard-focus-repeat-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-keyboard-focus-repeat-smoke PRIVATE
+  zh_gameclient_utility
+)
+
+target_compile_options(win32-keyboard-focus-repeat-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-keyboard-focus-repeat-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(win32-gameengine-message-pump-smoke
   tests/win32_gameengine_message_pump_smoke.cpp
 )

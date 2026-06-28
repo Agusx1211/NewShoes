@@ -3048,6 +3048,12 @@ shares structure and follows behind.
             codes, feed a browser-backed concrete `Keyboard`, and verify real
             `Keyboard::update()` / `createStreamMessages()` output on the
             original `MessageStream`.
+      - [x] Add a focused standalone original Keyboard focus-loss/repeat proof:
+            `win32-keyboard-focus-repeat-smoke` drives `KEY_LOST` through
+            original `Keyboard::updateKeys()` / `resetKeys()` and held-key
+            frames through `checkKeyRepeat()`, verifying cleared cached key
+            state/modifiers plus `KEY_STATE_AUTOREPEAT` stream output before
+            wiring those semantics into browser frame ownership.
       - [ ] Extend the browser-backed `Keyboard` bridge beyond the focused
             proof with repeat timing, focus-loss reset semantics, and normal
             frame ownership once the broader input loop is ready.
