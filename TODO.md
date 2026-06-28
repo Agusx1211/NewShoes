@@ -3287,7 +3287,7 @@ shares structure and follows behind.
       the non-`EXPECT_WASM=1` path currently hits a wasm memory access
       out-of-bounds in `Record_Texture_End()` / `Debug_Statistics::End_Statistics()`,
       while `EXPECT_WASM=1 node harness/smoke.mjs` passes.
-- [ ] Make the original frame-owner reset RPCs safe as the first
+- [x] Make the original frame-owner reset RPCs safe as the first
       original-memory-manager users after boot; minimal scripts that call
       `resetOriginalKeyboardFrameInput` or `resetOriginalMouseFrameInput`
       immediately after `boot` currently trip a wasm memory-pool free during

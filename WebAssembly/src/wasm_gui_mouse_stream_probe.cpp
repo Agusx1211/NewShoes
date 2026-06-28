@@ -27,6 +27,7 @@ void cnc_port_prepare_original_wndproc_mouse_stream(int width, int height);
 Bool cnc_port_original_wndproc_mouse_stream_attached();
 UnsignedInt cnc_port_original_wndproc_mouse_stream_input_frame();
 Int cnc_port_original_wndproc_mouse_stream_events_this_frame();
+extern "C" void cnc_port_ensure_original_keyboard_frame_input_owner();
 extern "C" GlobalData *cnc_port_original_frame_input_global_data();
 
 extern Win32Mouse *TheWin32Mouse;
@@ -356,6 +357,7 @@ void build_original_mouse_stream_json(GameMessage *first, char *json, std::size_
 
 void ensure_frame_mouse_owner()
 {
+	cnc_port_ensure_original_keyboard_frame_input_owner();
 	if (!isMemoryManagerOfficiallyInited()) {
 		initMemoryManager();
 	}
@@ -585,8 +587,13 @@ const char *set_original_mouse_frame_input_enabled(bool enabled)
 
 const char *reset_original_mouse_frame_input()
 {
+	const bool had_frame_owner = g_frame_mouse_initialized;
 	ensure_frame_mouse_owner();
-	clear_frame_mouse_messages();
+	if (had_frame_owner) {
+		clear_frame_mouse_messages();
+	} else {
+		reset_frame_mouse_gui_state();
+	}
 	cnc_port_prepare_original_wndproc_mouse_stream(4096, 4096);
 	g_frame_mouse_last_ran = false;
 	g_frame_mouse_ticks = 0;

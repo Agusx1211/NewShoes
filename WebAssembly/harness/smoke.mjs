@@ -471,14 +471,59 @@ async function assertHarnessLog(page, message, textSubstring) {
   }
 }
 
+async function assertFreshFrameOwnerReset(browser, harnessUrl, command, expectedSource) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  try {
+    await page.goto(harnessUrl, { waitUntil: "networkidle" });
+    await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
+
+    const bootResult = await page.evaluate((source) => window.CnCPort.rpc("boot", {
+      source,
+    }), `${command} first-reset smoke`);
+    if (!bootResult.ok || !bootResult.state.booted || bootResult.state.wasm !== "loaded") {
+      throw new Error(`${command} first-reset boot failed: ${JSON.stringify(bootResult)}`);
+    }
+
+    const resetResult = await page.evaluate((resetCommand) =>
+      window.CnCPort.rpc(resetCommand), command);
+    if (!resetResult.ok
+        || resetResult.probe?.source !== expectedSource
+        || resetResult.probe?.initialized !== true
+        || resetResult.probe?.lastRan !== false
+        || resetResult.probe?.stream?.count !== 0
+        || resetResult.probe?.commandList?.countAfterPropagate !== 0
+        || resetResult.state?.booted !== true) {
+      throw new Error(`${command} first reset mismatch: ${JSON.stringify(resetResult)}`);
+    }
+  } finally {
+    await page.close();
+  }
+}
+
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 
 try {
   browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
   const harnessUrl = new URL("harness/index.html", server.url).href;
+
+  if (expectWasm) {
+    await assertFreshFrameOwnerReset(
+      browser,
+      harnessUrl,
+      "resetOriginalKeyboardFrameInput",
+      "browser_original_keyboard_frame_input",
+    );
+    await assertFreshFrameOwnerReset(
+      browser,
+      harnessUrl,
+      "resetOriginalMouseFrameInput",
+      "browser_original_mouse_frame_input",
+    );
+  }
+
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));

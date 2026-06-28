@@ -193,6 +193,14 @@ public:
 		m_inputFrame = 0;
 	}
 
+	void warmFrameOwner()
+	{
+		ensureInitialized();
+		beginLoad();
+		update();
+		createStreamMessages();
+	}
+
 	Bool getCapsState() override { return FALSE; }
 
 	unsigned int eventCount() const { return m_eventCount; }
@@ -290,9 +298,10 @@ std::string g_original_keyboard_json;
 GlobalData *g_frame_keyboard_global_data = nullptr;
 MessageStream *g_frame_keyboard_message_stream = nullptr;
 CommandList *g_frame_keyboard_command_list = nullptr;
-std::string g_frame_keyboard_json;
+char g_frame_keyboard_json[16000] = "{}";
 bool g_frame_keyboard_enabled = false;
 bool g_frame_keyboard_initialized = false;
+bool g_frame_keyboard_stream_warmed = false;
 bool g_frame_keyboard_last_ran = false;
 unsigned int g_frame_keyboard_ticks = 0;
 unsigned int g_frame_keyboard_last_primary_remaining_before = 0;
@@ -305,8 +314,8 @@ unsigned int g_frame_keyboard_last_stream_count = 0;
 unsigned int g_frame_keyboard_last_command_count = 0;
 bool g_frame_keyboard_last_focus_lost_pending_before = false;
 bool g_frame_keyboard_last_focus_lost_delivered = false;
-std::string g_frame_keyboard_last_events_json = "[]";
-std::string g_frame_keyboard_last_stream_json = "[]";
+char g_frame_keyboard_last_events_json[8000] = "[]";
+char g_frame_keyboard_last_stream_json[8000] = "[]";
 
 const char *raw_key_message_name(GameMessage::Type type)
 {
@@ -382,6 +391,14 @@ unsigned int count_game_messages(GameMessage *first)
 	return count;
 }
 
+void copy_frame_keyboard_json(char *destination, std::size_t destination_size, const char *source)
+{
+	if (destination_size == 0) {
+		return;
+	}
+	std::snprintf(destination, destination_size, "%s", source != nullptr ? source : "[]");
+}
+
 GlobalData *ensure_frame_keyboard_global_data()
 {
 	if (!isMemoryManagerOfficiallyInited()) {
@@ -393,9 +410,34 @@ GlobalData *ensure_frame_keyboard_global_data()
 	return g_frame_keyboard_global_data;
 }
 
+void warm_frame_keyboard_stream()
+{
+	if (g_frame_keyboard_stream_warmed) {
+		return;
+	}
+
+	GlobalData global_data;
+	MessageStream stream;
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	MessageStream *old_message_stream = TheMessageStream;
+	Keyboard *old_keyboard = TheKeyboard;
+	TheWritableGlobalData = &global_data;
+	TheMessageStream = &stream;
+	TheKeyboard = &g_browser_keyboard;
+
+	g_browser_keyboard.warmFrameOwner();
+
+	TheKeyboard = old_keyboard;
+	TheMessageStream = old_message_stream;
+	TheWritableGlobalData = old_global_data;
+	g_frame_keyboard_stream_warmed = true;
+}
+
 void ensure_frame_keyboard_owner()
 {
 	ensure_frame_keyboard_global_data();
+	warm_frame_keyboard_stream();
 	if (g_frame_keyboard_message_stream == nullptr) {
 		g_frame_keyboard_message_stream = new MessageStream;
 		g_frame_keyboard_message_stream->init();
@@ -432,8 +474,7 @@ void clear_frame_keyboard_messages()
 
 const char *write_frame_keyboard_json()
 {
-	char buffer[16000];
-	std::snprintf(buffer, sizeof(buffer),
+	std::snprintf(g_frame_keyboard_json, sizeof(g_frame_keyboard_json),
 		"{\"source\":\"browser_original_keyboard_frame_input\","
 		"\"enabled\":%s,\"initialized\":%s,\"lastRan\":%s,"
 		"\"ticks\":%u,"
@@ -470,15 +511,14 @@ const char *write_frame_keyboard_json()
 		bool_json(g_frame_keyboard_last_focus_lost_delivered),
 		g_browser_keyboard.focusLostQueuedCount(),
 		g_browser_keyboard.inputFrame(),
-		g_frame_keyboard_last_events_json.c_str(),
+		g_frame_keyboard_last_events_json,
 		g_frame_keyboard_last_stream_count,
-		g_frame_keyboard_last_stream_json.c_str(),
+		g_frame_keyboard_last_stream_json,
 		g_frame_keyboard_last_command_count,
 		g_browser_keyboard.getModifierFlags(),
 		bool_json(g_browser_keyboard.keyDown(KEY_A)),
 		bool_json(g_browser_keyboard.keyDown(KEY_LSHIFT)));
-	g_frame_keyboard_json = buffer;
-	return g_frame_keyboard_json.c_str();
+	return g_frame_keyboard_json;
 }
 
 void update_original_keyboard_frame_input()
@@ -513,8 +553,16 @@ void update_original_keyboard_frame_input()
 
 	GameMessage *first = g_frame_keyboard_message_stream->getFirstMessage();
 	g_frame_keyboard_last_stream_count = count_game_messages(first);
-	g_frame_keyboard_last_events_json = build_browser_keyboard_events_json(g_browser_keyboard);
-	g_frame_keyboard_last_stream_json = build_original_keyboard_stream_json(first);
+	const std::string events_json = build_browser_keyboard_events_json(g_browser_keyboard);
+	const std::string stream_json = build_original_keyboard_stream_json(first);
+	copy_frame_keyboard_json(
+		g_frame_keyboard_last_events_json,
+		sizeof(g_frame_keyboard_last_events_json),
+		events_json.c_str());
+	copy_frame_keyboard_json(
+		g_frame_keyboard_last_stream_json,
+		sizeof(g_frame_keyboard_last_stream_json),
+		stream_json.c_str());
 	g_frame_keyboard_last_ignored = g_browser_keyboard.ignoredCount();
 	g_frame_keyboard_last_mirror_remaining = WasmWin32Input::keyboard_message_queue_count;
 	g_frame_keyboard_last_primary_remaining_after = WasmWin32Input::message_queue_count;
@@ -539,7 +587,7 @@ const char *set_original_keyboard_frame_input_enabled(bool enabled)
 		ensure_frame_keyboard_owner();
 	}
 	write_frame_keyboard_json();
-	return g_frame_keyboard_json.c_str();
+	return g_frame_keyboard_json;
 }
 
 const char *reset_original_keyboard_frame_input()
@@ -564,10 +612,16 @@ const char *reset_original_keyboard_frame_input()
 	g_frame_keyboard_last_command_count = 0;
 	g_frame_keyboard_last_focus_lost_pending_before = false;
 	g_frame_keyboard_last_focus_lost_delivered = false;
-	g_frame_keyboard_last_events_json = "[]";
-	g_frame_keyboard_last_stream_json = "[]";
+	copy_frame_keyboard_json(
+		g_frame_keyboard_last_events_json,
+		sizeof(g_frame_keyboard_last_events_json),
+		"[]");
+	copy_frame_keyboard_json(
+		g_frame_keyboard_last_stream_json,
+		sizeof(g_frame_keyboard_last_stream_json),
+		"[]");
 	write_frame_keyboard_json();
-	return g_frame_keyboard_json.c_str();
+	return g_frame_keyboard_json;
 }
 
 const char *probe_original_keyboard_stream()
@@ -731,6 +785,11 @@ const char *queue_original_keyboard_focus_lost()
 } // namespace
 
 extern "C" {
+
+void cnc_port_ensure_original_keyboard_frame_input_owner()
+{
+	ensure_frame_keyboard_owner();
+}
 
 GlobalData *cnc_port_original_frame_input_global_data()
 {
