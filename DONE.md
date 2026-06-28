@@ -2279,6 +2279,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       state, and the JS bridge normalizes diffuse, ambient, specular,
       emissive, and power descriptors. A focused probe verifies readback,
       captured material values, persistent buffers, and the green center pixel.
+- [x] Add D3D8 material-source render-state capture to the browser draw bridge.
+      The draw payload now includes `D3DRS_COLORVERTEX` plus diffuse,
+      specular, ambient, and emissive `D3DMATERIALCOLORSOURCE` values, while
+      the JS bridge exposes readable descriptor names without implementing
+      fixed-function lighting yet. A focused probe sets non-default source
+      choices, verifies the per-draw descriptor, persistent buffers, and the
+      green center pixel with lighting disabled.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8

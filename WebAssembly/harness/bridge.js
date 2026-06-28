@@ -73,6 +73,9 @@ const D3DCOLORWRITEENABLE_RED = 1;
 const D3DCOLORWRITEENABLE_GREEN = 2;
 const D3DCOLORWRITEENABLE_BLUE = 4;
 const D3DCOLORWRITEENABLE_ALPHA = 8;
+const D3DMCS_MATERIAL = 0;
+const D3DMCS_COLOR1 = 1;
+const D3DMCS_COLOR2 = 2;
 const D3DFILL_POINT = 1;
 const D3DFILL_WIREFRAME = 2;
 const D3DFILL_SOLID = 3;
@@ -2733,6 +2736,19 @@ function d3dShadeModeName(shadeMode) {
   }
 }
 
+function d3dMaterialSourceName(source) {
+  switch (Number(source) >>> 0) {
+    case D3DMCS_MATERIAL:
+      return "material";
+    case D3DMCS_COLOR1:
+      return "color1";
+    case D3DMCS_COLOR2:
+      return "color2";
+    default:
+      return "unknown";
+  }
+}
+
 function d3d8DepthBiasInfo(zBias) {
   const raw = Number(zBias ?? 0) >>> 0;
   const clamped = Math.max(0, Math.min(15, raw));
@@ -3266,6 +3282,11 @@ function normalizeD3D8RenderState(renderState = {}) {
     shadeMode: Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0,
     lighting: Number(renderState.lighting ?? 1) >>> 0,
     ambient: Number(renderState.ambient ?? 0) >>> 0,
+    colorVertex: Number(renderState.colorVertex ?? 1) >>> 0,
+    diffuseMaterialSource: Number(renderState.diffuseMaterialSource ?? D3DMCS_COLOR1) >>> 0,
+    specularMaterialSource: Number(renderState.specularMaterialSource ?? D3DMCS_COLOR2) >>> 0,
+    ambientMaterialSource: Number(renderState.ambientMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
+    emissiveMaterialSource: Number(renderState.emissiveMaterialSource ?? D3DMCS_MATERIAL) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3492,6 +3513,28 @@ function applyD3D8RenderState(renderState, options = {}) {
     ambient: {
       color: state.ambient,
       rgba: d3dColorToNormalizedRgba(state.ambient),
+    },
+    materialSources: {
+      colorVertex: {
+        enabled: state.colorVertex !== 0,
+        value: state.colorVertex,
+      },
+      diffuse: {
+        source: state.diffuseMaterialSource,
+        name: d3dMaterialSourceName(state.diffuseMaterialSource),
+      },
+      specular: {
+        source: state.specularMaterialSource,
+        name: d3dMaterialSourceName(state.specularMaterialSource),
+      },
+      ambient: {
+        source: state.ambientMaterialSource,
+        name: d3dMaterialSourceName(state.ambientMaterialSource),
+      },
+      emissive: {
+        source: state.emissiveMaterialSource,
+        name: d3dMaterialSourceName(state.emissiveMaterialSource),
+      },
     },
     colorWrite: colorMask,
   };
@@ -4208,6 +4251,7 @@ async function loadWasmModule() {
       probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
+      probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -7164,6 +7208,60 @@ async function rpc(command, payload = {}) {
           browserProbe,
           materialOk,
           appliedMaterialOk,
+          centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8MaterialSources":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 material-source probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8MaterialSources());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const expectedSources = probe.materialSources ?? {};
+        const renderState = browserProbe?.renderState ?? {};
+        const appliedSources = browserProbe?.appliedRenderState?.materialSources ?? {};
+        const sourceValueOk =
+          renderState.colorVertex === expectedSources.colorVertex &&
+          renderState.diffuseMaterialSource === expectedSources.diffuse &&
+          renderState.specularMaterialSource === expectedSources.specular &&
+          renderState.ambientMaterialSource === expectedSources.ambient &&
+          renderState.emissiveMaterialSource === expectedSources.emissive;
+        const appliedSourcesOk =
+          appliedSources.colorVertex?.enabled === (expectedSources.colorVertex !== 0) &&
+          appliedSources.colorVertex?.value === expectedSources.colorVertex &&
+          appliedSources.diffuse?.source === expectedSources.diffuse &&
+          appliedSources.diffuse?.name === d3dMaterialSourceName(expectedSources.diffuse) &&
+          appliedSources.specular?.source === expectedSources.specular &&
+          appliedSources.specular?.name === d3dMaterialSourceName(expectedSources.specular) &&
+          appliedSources.ambient?.source === expectedSources.ambient &&
+          appliedSources.ambient?.name === d3dMaterialSourceName(expectedSources.ambient) &&
+          appliedSources.emissive?.source === expectedSources.emissive &&
+          appliedSources.emissive?.name === d3dMaterialSourceName(expectedSources.emissive);
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState === 11
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 6
+          && renderState.lighting === 0
+          && sourceValueOk
+          && appliedSourcesOk
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          sourceValueOk,
+          appliedSourcesOk,
           centerPixelOk,
           state: snapshotState(),
         };

@@ -44,6 +44,11 @@ struct WasmD3D8DrawRenderState
 	DWORD shade_mode;
 	DWORD lighting;
 	DWORD ambient;
+	DWORD color_vertex;
+	DWORD diffuse_material_source;
+	DWORD specular_material_source;
+	DWORD ambient_material_source;
+	DWORD emissive_material_source;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

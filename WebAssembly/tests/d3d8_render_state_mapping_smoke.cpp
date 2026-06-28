@@ -408,15 +408,38 @@ int main()
 		"last_get_material mismatch");
 
 	// ----------------------------------------------------------------------
+	// 9. Material-source render states used by the fixed-function lighting path.
+	// ----------------------------------------------------------------------
+	const DWORD color_vertex = FALSE;
+	const DWORD diffuse_source = D3DMCS_MATERIAL;
+	const DWORD specular_source = D3DMCS_MATERIAL;
+	const DWORD ambient_source = D3DMCS_COLOR2;
+	const DWORD emissive_source = D3DMCS_COLOR1;
+	set_state(D3DRS_COLORVERTEX, color_vertex, "SetRenderState COLORVERTEX failed");
+	expect_last(D3DRS_COLORVERTEX, color_vertex);
+	set_state(D3DRS_DIFFUSEMATERIALSOURCE, diffuse_source,
+		"SetRenderState DIFFUSEMATERIALSOURCE failed");
+	expect_last(D3DRS_DIFFUSEMATERIALSOURCE, diffuse_source);
+	set_state(D3DRS_SPECULARMATERIALSOURCE, specular_source,
+		"SetRenderState SPECULARMATERIALSOURCE failed");
+	expect_last(D3DRS_SPECULARMATERIALSOURCE, specular_source);
+	set_state(D3DRS_AMBIENTMATERIALSOURCE, ambient_source,
+		"SetRenderState AMBIENTMATERIALSOURCE failed");
+	expect_last(D3DRS_AMBIENTMATERIALSOURCE, ambient_source);
+	set_state(D3DRS_EMISSIVEMATERIALSOURCE, emissive_source,
+		"SetRenderState EMISSIVEMATERIALSOURCE failed");
+	expect_last(D3DRS_EMISSIVEMATERIALSOURCE, emissive_source);
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite,shade,lighting/ambient
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5;
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_AMBIENT,
-		"last_set_render_state mismatch after ambient");
-	expect(state->last_set_render_state_value == ambient_color,
-		"last_set_render_state_value mismatch after ambient");
+	expect(state->last_set_render_state == D3DRS_EMISSIVEMATERIALSOURCE,
+		"last_set_render_state mismatch after material sources");
+	expect(state->last_set_render_state_value == emissive_source,
+		"last_set_render_state_value mismatch after material sources");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
@@ -469,6 +492,8 @@ int main()
 		"\"ambient\":[%0.6f,%0.6f,%0.6f,%0.6f],"
 		"\"specular\":[%0.6f,%0.6f,%0.6f,%0.6f],"
 		"\"emissive\":[%0.6f,%0.6f,%0.6f,%0.6f],\"power\":%0.6f},"
+		"\"materialSources\":{\"colorVertex\":%lu,"
+		"\"diffuse\":%lu,\"specular\":%lu,\"ambient\":%lu,\"emissive\":%lu},"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
 		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u,"
@@ -515,6 +540,11 @@ int main()
 		static_cast<double>(material.Emissive.b),
 		static_cast<double>(material.Emissive.a),
 		static_cast<double>(material.Power),
+		static_cast<unsigned long>(color_vertex),
+		static_cast<unsigned long>(diffuse_source),
+		static_cast<unsigned long>(specular_source),
+		static_cast<unsigned long>(ambient_source),
+		static_cast<unsigned long>(emissive_source),
 		// color write spec
 		static_cast<unsigned long>(color_write_all),
 		(color_write_all & D3DCOLORWRITEENABLE_RED) ? "true" : "false",

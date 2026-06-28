@@ -3172,6 +3172,31 @@ try {
     throw new Error(`D3D8 material probe failed: ${JSON.stringify(d3d8MaterialResult)}`);
   }
 
+  const d3d8MaterialSourcesResult = await page.evaluate(() => window.CnCPort.rpc("d3d8MaterialSources"));
+  const materialSources = d3d8MaterialSourcesResult.probe?.materialSources ?? {};
+  const appliedSources = d3d8MaterialSourcesResult.browserProbe?.appliedRenderState?.materialSources ?? {};
+  if (!d3d8MaterialSourcesResult.ok
+      || d3d8MaterialSourcesResult.probe?.source !== "browser_d3d8_material_sources_probe"
+      || d3d8MaterialSourcesResult.probe?.calls?.setRenderState !== 11
+      || d3d8MaterialSourcesResult.probe?.calls?.drawIndexed !== 1
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.lighting !== 0
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.colorVertex !== materialSources.colorVertex
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.diffuseMaterialSource !== materialSources.diffuse
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.specularMaterialSource !== materialSources.specular
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.ambientMaterialSource !== materialSources.ambient
+      || d3d8MaterialSourcesResult.browserProbe?.renderState?.emissiveMaterialSource !== materialSources.emissive
+      || appliedSources.colorVertex?.enabled !== false
+      || appliedSources.diffuse?.name !== "material"
+      || appliedSources.specular?.name !== "material"
+      || appliedSources.ambient?.name !== "color2"
+      || appliedSources.emissive?.name !== "color1"
+      || d3d8MaterialSourcesResult.sourceValueOk !== true
+      || d3d8MaterialSourcesResult.appliedSourcesOk !== true
+      || d3d8MaterialSourcesResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8MaterialSourcesResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 material-source probe failed: ${JSON.stringify(d3d8MaterialSourcesResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

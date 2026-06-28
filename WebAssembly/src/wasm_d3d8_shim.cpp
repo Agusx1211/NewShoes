@@ -312,7 +312,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 32;
+		const renderStateSlots = 37;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -387,6 +387,11 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			shadeMode: state[29] >>> 0,
 			lighting: state[30] >>> 0,
 			ambient: state[31] >>> 0,
+			colorVertex: state[32] >>> 0,
+			diffuseMaterialSource: state[33] >>> 0,
+			specularMaterialSource: state[34] >>> 0,
+			ambientMaterialSource: state[35] >>> 0,
+			emissiveMaterialSource: state[36] >>> 0,
 			textureStages,
 		};
 	};
@@ -2847,6 +2852,11 @@ private:
 		state.shade_mode = render_state_value(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
 		state.lighting = render_state_value(D3DRS_LIGHTING, TRUE);
 		state.ambient = render_state_value(D3DRS_AMBIENT, 0);
+		state.color_vertex = render_state_value(D3DRS_COLORVERTEX, TRUE);
+		state.diffuse_material_source = render_state_value(D3DRS_DIFFUSEMATERIALSOURCE, D3DMCS_COLOR1);
+		state.specular_material_source = render_state_value(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_COLOR2);
+		state.ambient_material_source = render_state_value(D3DRS_AMBIENTMATERIALSOURCE, D3DMCS_MATERIAL);
+		state.emissive_material_source = render_state_value(D3DRS_EMISSIVEMATERIALSOURCE, D3DMCS_MATERIAL);
 		capture_draw_texture_stage_states();
 	}
 
