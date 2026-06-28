@@ -1613,6 +1613,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioManager::init` audio INI load order and line anchors from
       `GameAudio.cpp`, keeping the harness-visible `audioStartupFiles` contract
       tied to original source facts instead of hand-maintained JSON.
+- [x] Add `npm run verify:miles-audio-device-frontier`, a source verifier for
+      the next audio device startup frontier: `MilesAudioManager::init` line
+      anchors, `AudioManager::init` → `openDevice` → `AIL_set_file_callbacks`
+      ordering, `openDevice` Miles call ordering, header declarations, and the
+      current compile-only `Mss.H` shim surface.
 ---
 
 ## M3 — File / data subsystem (real data)
