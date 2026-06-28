@@ -2619,8 +2619,8 @@ shares structure and follows behind.
       through its real `Render2DClass` helper and the browser D3D8/WebGL2 draw
       bridge, verified by `harness-smoke-ww3d-display-drawimage-canvas.png`
       and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
-      This proves the Image blit call path only; clipping variants and broader
-      UI image rendering remain open.
+      This proves the Image blit call path only; broader UI image rendering
+      remains open.
 - [x] Original `W3DDisplay::drawImage` also resolves a filename-backed `Image`
       through `Render2DClass::Set_Texture(const char*)`,
       `WW3DAssetManager::Get_Texture`, `TextureClass::Apply`, and the runtime
@@ -2642,6 +2642,12 @@ shares structure and follows behind.
       `WW3DAssetManager`/`TextureClass::Init`/runtime `W3DFileSystem`, and
       screenshots the real TGA-backed blit at
       `harness-smoke-ww3d-display-mapped-image-canvas.png`.
+- [x] Original `W3DDisplay::drawImage` clipping is now covered on the same real
+      mapped-image path: the browser smoke applies `W3DDisplay::setClipRegion`
+      to the parsed `WatermarkChina` image, verifies the original
+      rotated-image clipped UV slice, disables clipping after the draw, samples
+      a colored center pixel plus black outside-clip pixels, and screenshots
+      `harness-smoke-ww3d-display-mapped-image-clip-canvas.png`.
 - [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
       through the display-owned `Render2DClass` helper without using the
       raw-storage-unsafe virtual size setters, verified by

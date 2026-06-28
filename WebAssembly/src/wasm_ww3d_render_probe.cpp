@@ -52,6 +52,7 @@ std::string g_ww3d_scene_camera_probe_json;
 std::string g_ww3d_display_drawimage_probe_json;
 std::string g_ww3d_display_drawimage_file_probe_json;
 std::string g_ww3d_display_mapped_image_probe_json;
+std::string g_ww3d_display_mapped_image_clip_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_render2d_sentence_probe_json;
 std::string g_ww3d_display_string_probe_json;
@@ -2057,9 +2058,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 	return g_ww3d_display_drawimage_file_probe_json.c_str();
 }
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
+const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	const char *ini_archive_path,
-	const char *texture_archive_path)
+	const char *texture_archive_path,
+	bool use_clip)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -2093,6 +2095,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 	bool texture_has_d3d_surface = false;
 	bool display_allocated = false;
 	bool display_setup = false;
+	bool clip_region_set = false;
+	bool clip_enabled_before_draw = false;
+	bool clip_disabled_after_draw = false;
 	bool drawimage_called = false;
 	std::size_t mapped_image_count = 0;
 	UnsignedInt image_status = 0;
@@ -2118,6 +2123,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 	DWORD texture_upload_checksum = 0;
 	std::string image_filename;
 	std::string loaded_texture_name;
+
+	const Int draw_left = 320;
+	const Int draw_top = 252;
+	const Int draw_right = 480;
+	const Int draw_bottom = 348;
+	const Int clip_left = 360;
+	const Int clip_top = 276;
+	const Int clip_right = 440;
+	const Int clip_bottom = 324;
+	float expected_clipped_uv_left = 0.0f;
+	float expected_clipped_uv_top = 0.0f;
+	float expected_clipped_uv_right = 0.0f;
+	float expected_clipped_uv_bottom = 0.0f;
 
 	WW3DAssetManager *asset_manager = nullptr;
 	ImageCollection *mapped_image_collection = nullptr;
@@ -2179,6 +2197,28 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 				image_uv_hi_y = image_uv->hi.y;
 				image_width = image->getImageWidth();
 				image_height = image->getImageHeight();
+				const float draw_width = static_cast<float>(draw_right - draw_left);
+				const float draw_height = static_cast<float>(draw_bottom - draw_top);
+				if (draw_width > 0.0f && draw_height > 0.0f) {
+					const float uv_width = image_uv_hi_x - image_uv_lo_x;
+					const float uv_height = image_uv_hi_y - image_uv_lo_y;
+					const float clipped_left_percent =
+						static_cast<float>(clip_left - draw_left) / draw_width;
+					const float clipped_right_percent =
+						static_cast<float>(clip_right - draw_left) / draw_width;
+					const float clipped_top_percent =
+						static_cast<float>(clip_top - draw_top) / draw_height;
+					const float clipped_bottom_percent =
+						static_cast<float>(clip_bottom - draw_top) / draw_height;
+					expected_clipped_uv_top =
+						image_uv_lo_y + (uv_height * clipped_left_percent);
+					expected_clipped_uv_bottom =
+						image_uv_lo_y + (uv_height * clipped_right_percent);
+					expected_clipped_uv_right =
+						image_uv_hi_x - (uv_width * clipped_top_percent);
+					expected_clipped_uv_left =
+						image_uv_hi_x - (uv_width * clipped_bottom_percent);
+				}
 			}
 		}
 	}
@@ -2205,15 +2245,25 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 	}
 
 	if (display_setup && mapped_image_found) {
-		const Int start_x = 320;
-		const Int start_y = 252;
-		const Int end_x = start_x + image_width;
-		const Int end_y = start_y + image_height;
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
-			display->W3DDisplay::drawImage(image, start_x, start_y, end_x, end_y, 0xffffffffUL,
+			if (use_clip) {
+				IRegion2D clip_region = {};
+				clip_region.lo.x = clip_left;
+				clip_region.lo.y = clip_top;
+				clip_region.hi.x = clip_right;
+				clip_region.hi.y = clip_bottom;
+				display->W3DDisplay::setClipRegion(&clip_region);
+				clip_region_set = true;
+				clip_enabled_before_draw = display->W3DDisplay::isClippingEnabled();
+			}
+			display->W3DDisplay::drawImage(image, draw_left, draw_top, draw_right, draw_bottom, 0xffffffffUL,
 				Display::DRAW_IMAGE_ALPHA);
 			drawimage_called = true;
+			if (use_clip) {
+				display->W3DDisplay::enableClipping(FALSE);
+				clip_disabled_after_draw = !display->W3DDisplay::isClippingEnabled();
+			}
 			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
 			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
 			end_render_result = WW3D::End_Render(false);
@@ -2313,6 +2363,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		display_allocated &&
 		display_setup &&
 		succeeded(begin_render_result) &&
+		(!use_clip || (clip_region_set && clip_enabled_before_draw && clip_disabled_after_draw)) &&
 		drawimage_called &&
 		succeeded(end_render_result) &&
 		equals_ignore_ascii_case(loaded_texture_name, image_filename) &&
@@ -2356,10 +2407,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 	const std::string texture_entry_json = json_escape(kMappedImageProbeTextureArchiveEntry);
 	const std::string image_name_json = json_escape(kMappedImageProbeName);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+	const char *source_name = use_clip ?
+		"ww3d_display_mapped_image_clip_probe" :
+		"ww3d_display_mapped_image_probe";
 
-	char buffer[12000];
+	char buffer[14000];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_display_mapped_image_probe\","
+		"{\"source\":\"%s\","
 		"\"ok\":%s,"
 		"\"archives\":{\"ini\":\"%s\",\"texture\":\"%s\"},"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
@@ -2374,6 +2428,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		"\"textureLoaded\":%s,\"textureHasD3DSurface\":%s,"
 		"\"textureLevelDesc\":%ld,\"displayAllocated\":%s,"
 		"\"displaySetup\":%s,\"beginRender\":%d,"
+		"\"clipRegionSet\":%s,\"clipEnabledBeforeDraw\":%s,"
+		"\"clipDisabledAfterDraw\":%s,"
 		"\"drawImageCalled\":%s,\"endRender\":%d},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
@@ -2398,13 +2454,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		"\"primitiveCount\":%u,\"vertexStride\":%u,"
 		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
 		"\"indexFormat\":%d,\"transformMask\":%u,"
-		"\"screenRect\":{\"left\":320,\"top\":252,\"right\":480,\"bottom\":348},"
+		"\"screenRect\":{\"left\":%d,\"top\":%d,\"right\":%d,\"bottom\":%d},"
+		"\"clip\":{\"enabled\":%s,\"set\":%s,\"enabledBeforeDraw\":%s,"
+		"\"disabledAfterDraw\":%s,"
+		"\"rect\":{\"left\":%d,\"top\":%d,\"right\":%d,\"bottom\":%d},"
+		"\"width\":%d,\"height\":%d,"
+		"\"expectedRotatedUV\":{\"left\":%.6f,\"top\":%.6f,"
+		"\"right\":%.6f,\"bottom\":%.6f}},"
 		"\"renderState\":{\"alphaBlendEnable\":%lu,"
 		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
 		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
 		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu,"
 		"\"texCoordIndex\":%lu},"
 		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
+		source_name,
 		bool_json(ok),
 		ini_archive_json.c_str(),
 		texture_archive_json.c_str(),
@@ -2431,6 +2494,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		bool_json(display_allocated),
 		bool_json(display_setup),
 		begin_render_result,
+		bool_json(clip_region_set),
+		bool_json(clip_enabled_before_draw),
+		bool_json(clip_disabled_after_draw),
 		bool_json(drawimage_called),
 		end_render_result,
 		state != nullptr ? state->create_device_calls : 0,
@@ -2485,6 +2551,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		state != nullptr ? state->last_draw_index_buffer_id : 0,
 		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
 		state != nullptr ? state->last_draw_transform_mask : 0,
+		draw_left,
+		draw_top,
+		draw_right,
+		draw_bottom,
+		bool_json(use_clip),
+		bool_json(clip_region_set),
+		bool_json(clip_enabled_before_draw),
+		bool_json(clip_disabled_after_draw),
+		clip_left,
+		clip_top,
+		clip_right,
+		clip_bottom,
+		clip_right - clip_left,
+		clip_bottom - clip_top,
+		static_cast<double>(expected_clipped_uv_left),
+		static_cast<double>(expected_clipped_uv_top),
+		static_cast<double>(expected_clipped_uv_right),
+		static_cast<double>(expected_clipped_uv_bottom),
 		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
 		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
 		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
@@ -2498,8 +2582,31 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
 		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
 
-	g_ww3d_display_mapped_image_probe_json = buffer;
-	return g_ww3d_display_mapped_image_probe_json.c_str();
+	std::string &probe_json = use_clip ?
+		g_ww3d_display_mapped_image_clip_probe_json :
+		g_ww3d_display_mapped_image_probe_json;
+	probe_json = buffer;
+	return probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
+	const char *ini_archive_path,
+	const char *texture_archive_path)
+{
+	return cnc_port_probe_ww3d_display_mapped_image_internal(
+		ini_archive_path,
+		texture_archive_path,
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image_clip(
+	const char *ini_archive_path,
+	const char *texture_archive_path)
+{
+	return cnc_port_probe_ww3d_display_mapped_image_internal(
+		ini_archive_path,
+		texture_archive_path,
+		true);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_fillrect()

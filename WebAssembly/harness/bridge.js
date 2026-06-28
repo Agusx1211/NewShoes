@@ -1717,6 +1717,16 @@ function sampleCanvasPixel(x = 0, y = 0) {
   return Array.from(pixels);
 }
 
+function sampleVirtualCanvasPixel(x = 0, y = 0, virtualWidth = 800, virtualHeight = 600) {
+  syncCanvasSize();
+  const canvasWidth = gl ? gl.drawingBufferWidth : canvas.width;
+  const canvasHeight = gl ? gl.drawingBufferHeight : canvas.height;
+  return sampleCanvasPixel(
+    Math.floor((Number(x) / virtualWidth) * canvasWidth),
+    Math.floor((Number(y) / virtualHeight) * canvasHeight),
+  );
+}
+
 function sampleCanvasRegion(rect = {}, threshold = 8) {
   syncCanvasSize();
   const canvasWidth = gl ? gl.drawingBufferWidth : canvas.width;
@@ -3149,6 +3159,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_drawimage_file", "string", ["string"]),
       probeWW3DDisplayMappedImage: module.cwrap(
         "cnc_port_probe_ww3d_display_mapped_image", "string", ["string", "string"]),
+      probeWW3DDisplayMappedImageClip: module.cwrap(
+        "cnc_port_probe_ww3d_display_mapped_image_clip", "string", ["string", "string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
@@ -5752,6 +5764,126 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayMappedImageClip":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; clipped mapped-image WW3DDisplay drawImage cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "/assets/runtime-mapped-image-clip/INIZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime-mapped-image-clip/EnglishZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayMappedImageClip(
+          iniArchivePath,
+          textureArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const clipPixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          outsideLeft: sampleVirtualCanvasPixel(340, 300),
+          outsideTop: sampleVirtualCanvasPixel(400, 264),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const expectedUv = probe?.draw?.clip?.expectedRotatedUV ?? {};
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_mapped_image_clip_probe"
+          && probe?.image?.name === "WatermarkChina"
+          && probe?.image?.filename === "SCShellUserInterface512_001.tga"
+          && probe?.image?.rawTexture === false
+          && probe?.image?.status === 1
+          && probe?.image?.rotated === true
+          && probe?.image?.textureWidth === 512
+          && probe?.image?.textureHeight === 512
+          && probe?.image?.width === 160
+          && probe?.image?.height === 96
+          && probe?.results?.mappedCollectionLoaded === true
+          && probe?.results?.mappedImages === 1186
+          && probe?.results?.texturePreloaded === true
+          && probe?.results?.textureLoaded === true
+          && probe?.results?.textureResolved === true
+          && probe?.results?.textureHasD3DSurface === true
+          && probe?.results?.clipRegionSet === true
+          && probe?.results?.clipEnabledBeforeDraw === true
+          && probe?.results?.clipDisabledAfterDraw === true
+          && String(probe?.texture?.name ?? "").toLowerCase() ===
+            String(probe?.image?.filename ?? "").toLowerCase()
+          && probe?.texture?.archiveEntry === "Data\\English\\Art\\Textures\\SCShellUserInterface512_001.tga"
+          && probe?.texture?.width === 512
+          && probe?.texture?.height === 512
+          && probe?.texture?.levels > 0
+          && probe?.texture?.uploadedLevels === probe?.texture?.levels
+          && probe?.runtimeAssets?.installed === true
+          && probe?.runtimeAssets?.archiveLoaded === true
+          && probe?.runtimeAssets?.w3dFileSystemInstalled === true
+          && probe?.draw?.primitiveType === 4
+          && probe?.draw?.vertexCount === 6
+          && probe?.draw?.primitiveCount === 2
+          && probe?.draw?.screenRect?.left === 320
+          && probe?.draw?.screenRect?.top === 252
+          && probe?.draw?.screenRect?.right === 480
+          && probe?.draw?.screenRect?.bottom === 348
+          && probe?.draw?.clip?.enabled === true
+          && probe?.draw?.clip?.set === true
+          && probe?.draw?.clip?.enabledBeforeDraw === true
+          && probe?.draw?.clip?.disabledAfterDraw === true
+          && probe?.draw?.clip?.rect?.left === 360
+          && probe?.draw?.clip?.rect?.top === 276
+          && probe?.draw?.clip?.rect?.right === 440
+          && probe?.draw?.clip?.rect?.bottom === 324
+          && probe?.draw?.clip?.width === 80
+          && probe?.draw?.clip?.height === 48
+          && Math.abs((expectedUv.left ?? 0) - (415 / 512)) < 0.00001
+          && Math.abs((expectedUv.top ?? 0) - (41 / 512)) < 0.00001
+          && Math.abs((expectedUv.right ?? 0) - (463 / 512)) < 0.00001
+          && Math.abs((expectedUv.bottom ?? 0) - (121 / 512)) < 0.00001
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.primitiveType === 4
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.combiner?.supported === true
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg2 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
+          && pixelHasColor(clipPixels.center, 8)
+          && !pixelHasColor(clipPixels.outsideLeft, 8)
+          && !pixelHasColor(clipPixels.outsideTop, 8)
+          && pixelHasColor(screenshot.centerPixel, 8)
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= probe?.texture?.levels
+          && textureDelta.binds >= 1;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          clipPixels,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
