@@ -581,6 +581,11 @@ try {
     const vkA = 0x41;
     const vkF6 = 0x75;
     const charA = 0x41;
+    const keyStateUp = 0x0001;
+    const keyStateDown = 0x0002;
+    const keyStateLShift = 0x0010;
+    const keyA = 0x1e;
+    const keyLShift = 0x2a;
     const compositionDraft = "\u304b";
     const compositionResult = "\u754c";
     const compositionDraftChar = compositionDraft.charCodeAt(0);
@@ -623,6 +628,64 @@ try {
         || resetTextKeysResult.state.browserInput?.messageQueue?.count !== 0
         || resetTextKeysResult.state.browserInput?.messageQueue?.overflowed !== false) {
       throw new Error(`Browser text key reset mismatch: ${JSON.stringify(resetTextKeysResult)}`);
+    }
+
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard Shift+A queue",
+    );
+    const originalKeyboardDownProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    const keyboardDownMessages = originalKeyboardDownProbe.probe?.stream?.messages ?? [];
+    if (!originalKeyboardDownProbe.ok
+        || originalKeyboardDownProbe.probe?.source !== "browser_original_keyboard_stream"
+        || originalKeyboardDownProbe.probe?.ok !== true
+        || originalKeyboardDownProbe.probe?.keyboardAttached !== true
+        || originalKeyboardDownProbe.probe?.queue?.before !== 3
+        || originalKeyboardDownProbe.probe?.queue?.drained !== 3
+        || originalKeyboardDownProbe.probe?.queue?.ignored !== 1
+        || originalKeyboardDownProbe.probe?.stream?.count !== 2
+        || keyboardDownMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || keyboardDownMessages[0]?.key !== keyLShift
+        || (keyboardDownMessages[0]?.state & keyStateDown) === 0
+        || (keyboardDownMessages[0]?.state & keyStateLShift) === 0
+        || keyboardDownMessages[1]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || keyboardDownMessages[1]?.key !== keyA
+        || (keyboardDownMessages[1]?.state & keyStateDown) === 0
+        || (keyboardDownMessages[1]?.state & keyStateLShift) === 0
+        || (originalKeyboardDownProbe.probe?.modifiers & keyStateLShift) === 0) {
+      throw new Error(`DOM Shift+A did not reach original Keyboard stream: ${JSON.stringify(originalKeyboardDownProbe)}`);
+    }
+
+    await page.keyboard.up("A");
+    await page.keyboard.up("Shift");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "original Keyboard Shift+A release queue",
+    );
+    const originalKeyboardUpProbe = await page.evaluate(() => window.CnCPort.rpc("originalKeyboardInputProbe"));
+    const keyboardUpMessages = originalKeyboardUpProbe.probe?.stream?.messages ?? [];
+    if (!originalKeyboardUpProbe.ok
+        || originalKeyboardUpProbe.probe?.ok !== true
+        || originalKeyboardUpProbe.probe?.queue?.drained !== 2
+        || originalKeyboardUpProbe.probe?.stream?.count !== 2
+        || keyboardUpMessages[0]?.typeName !== "MSG_RAW_KEY_UP"
+        || keyboardUpMessages[0]?.key !== keyA
+        || (keyboardUpMessages[0]?.state & keyStateUp) === 0
+        || keyboardUpMessages[1]?.typeName !== "MSG_RAW_KEY_UP"
+        || keyboardUpMessages[1]?.key !== keyLShift
+        || (keyboardUpMessages[1]?.state & keyStateUp) === 0) {
+      throw new Error(`DOM Shift+A release did not reach original Keyboard stream: ${JSON.stringify(originalKeyboardUpProbe)}`);
+    }
+
+    const resetOriginalKeyboardResult = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetOriginalKeyboardResult.ok
+        || resetOriginalKeyboardResult.state.browserInput?.messageQueue?.count !== 0
+        || resetOriginalKeyboardResult.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard probe reset mismatch: ${JSON.stringify(resetOriginalKeyboardResult)}`);
     }
 
     await page.evaluate(({ compositionDraft, compositionResult }) => {

@@ -25,7 +25,7 @@ extern HWND ApplicationHWnd;
 
 HINSTANCE ApplicationHInstance = NULL;
 Bool ApplicationIsWindowed = TRUE;
-Keyboard *TheKeyboard __attribute__((weak)) = NULL;
+extern Keyboard *TheKeyboard;
 IMEManagerInterface *TheIMEManager __attribute__((weak)) = NULL;
 Mouse *TheMouse __attribute__((weak)) = NULL;
 Win32Mouse *TheWin32Mouse = NULL;

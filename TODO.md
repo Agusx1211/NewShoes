@@ -3042,6 +3042,15 @@ shares structure and follows behind.
             `TheGameClient` frame source once minimal GameClient ownership is
             available without constructing the full GUI/display subsystem.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
+      - [x] Add a focused browser harness proof that DOM `Shift+A`
+            keydown/keyup events queue Win32 `WM_KEY*`/`WM_CHAR` messages,
+            translate browser `VK_*` values to original `KEY_*`/`DIK_*`
+            codes, feed a browser-backed concrete `Keyboard`, and verify real
+            `Keyboard::update()` / `createStreamMessages()` output on the
+            original `MessageStream`.
+      - [ ] Extend the browser-backed `Keyboard` bridge beyond the focused
+            proof with repeat timing, focus-loss reset semantics, and normal
+            frame ownership once the broader input loop is ready.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the
