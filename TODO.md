@@ -3057,7 +3057,7 @@ shares structure and follows behind.
             smoke proves raw pre-propagation mouse stream snapshots are consumed
             into `GWM_LEFT_DOWN`, `GWM_LEFT_DRAG`, `GWM_LEFT_UP`, and
             `GWM_WHEEL_UP` with `CommandList` drain semantics.
-      - [ ] Make the original Mouse stream probe JSON type-aware so drag,
+      - [x] Make the original Mouse stream probe JSON type-aware so drag,
             wheel, button, and modifier arguments are exposed through semantic
             fields instead of mixed generic `integer1` / `integer2` slots.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).

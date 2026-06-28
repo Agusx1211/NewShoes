@@ -153,7 +153,7 @@ ProbeGameWindowManager *g_frame_mouse_window_manager = nullptr;
 ProbeGameWindow *g_frame_mouse_window = nullptr;
 GuiInputCapture g_frame_mouse_capture;
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_window_storage[sizeof(ProbeGameWindow)];
-char g_frame_mouse_json[7000] = "{}";
+char g_frame_mouse_json[12000] = "{}";
 bool g_frame_mouse_enabled = false;
 bool g_frame_mouse_initialized = false;
 bool g_frame_mouse_gui_attached = false;
@@ -167,7 +167,7 @@ UnsignedInt g_frame_mouse_last_input_frame = 0;
 Int g_frame_mouse_last_events_this_frame = 0;
 bool g_frame_mouse_last_win32_attached = false;
 bool g_frame_mouse_last_stream_attached = false;
-char g_frame_mouse_last_stream_json[3000] = "[]";
+char g_frame_mouse_last_stream_json[8000] = "[]";
 
 const char *bool_json(bool value)
 {
@@ -306,6 +306,97 @@ int integer_arg(GameMessage *message, Int index)
 			: 0;
 }
 
+bool raw_mouse_has_position(GameMessage::Type type)
+{
+	switch (type) {
+		case GameMessage::MSG_RAW_MOUSE_POSITION:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DRAG:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_UP:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DRAG:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DRAG:
+		case GameMessage::MSG_RAW_MOUSE_WHEEL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool raw_mouse_has_modifiers(GameMessage::Type type)
+{
+	return raw_mouse_has_position(type);
+}
+
+bool raw_mouse_has_timestamp(GameMessage::Type type)
+{
+	switch (type) {
+		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_UP:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool raw_mouse_has_drag_delta(GameMessage::Type type)
+{
+	switch (type) {
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DRAG:
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DRAG:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DRAG:
+			return true;
+		default:
+			return false;
+	}
+}
+
+bool raw_mouse_has_wheel_clicks(GameMessage::Type type)
+{
+	return type == GameMessage::MSG_RAW_MOUSE_WHEEL;
+}
+
+int raw_mouse_modifiers(GameMessage *message)
+{
+	if (message == nullptr || !raw_mouse_has_modifiers(message->getType())) {
+		return -1;
+	}
+
+	if (raw_mouse_has_drag_delta(message->getType())
+		|| raw_mouse_has_wheel_clicks(message->getType())) {
+		return integer_arg(message, 2);
+	}
+
+	return integer_arg(message, 1);
+}
+
+int raw_mouse_timestamp(GameMessage *message)
+{
+	return message != nullptr && raw_mouse_has_timestamp(message->getType())
+		? integer_arg(message, 2)
+		: -1;
+}
+
+int raw_mouse_wheel_clicks(GameMessage *message)
+{
+	return message != nullptr && raw_mouse_has_wheel_clicks(message->getType())
+		? integer_arg(message, 1)
+		: 0;
+}
+
 void append_json_fragment(char *json, std::size_t json_size, std::size_t &used, const char *fragment)
 {
 	if (used >= json_size) {
@@ -333,14 +424,25 @@ void build_original_mouse_stream_json(GameMessage *first, char *json, std::size_
 	append_json_fragment(json, json_size, used, "[");
 	unsigned int count = 0;
 	for (GameMessage *message = first; message != nullptr && count < 16; message = message->next()) {
-		char buffer[420];
+		const GameMessage::Type type = message->getType();
+		const bool has_position = raw_mouse_has_position(type);
+		const bool has_modifiers = raw_mouse_has_modifiers(type);
+		const bool has_timestamp = raw_mouse_has_timestamp(type);
+		const bool has_drag_delta = raw_mouse_has_drag_delta(type);
+		const bool has_wheel_clicks = raw_mouse_has_wheel_clicks(type);
+		char buffer[900];
 		std::snprintf(buffer, sizeof(buffer),
 			"%s{\"type\":%d,\"typeName\":\"%s\",\"argumentCount\":%u,"
 			"\"playerIndex\":%d,\"x\":%d,\"y\":%d,\"deltaX\":%d,\"deltaY\":%d,"
-			"\"integer1\":%d,\"integer2\":%d}",
+			"\"integer1\":%d,\"integer2\":%d,"
+			"\"hasPosition\":%s,\"positionX\":%d,\"positionY\":%d,"
+			"\"hasModifiers\":%s,\"modifiers\":%d,"
+			"\"hasTimestamp\":%s,\"timestamp\":%d,"
+			"\"hasDragDelta\":%s,\"dragDeltaX\":%d,\"dragDeltaY\":%d,"
+			"\"hasWheelClicks\":%s,\"wheelClicks\":%d}",
 			count == 0 ? "" : ",",
-			static_cast<int>(message->getType()),
-			raw_mouse_message_name(message->getType()),
+			static_cast<int>(type),
+			raw_mouse_message_name(type),
 			message->getArgumentCount(),
 			message->getPlayerIndex(),
 			pixel_arg_x(message, 0),
@@ -348,7 +450,19 @@ void build_original_mouse_stream_json(GameMessage *first, char *json, std::size_
 			pixel_arg_x(message, 1),
 			pixel_arg_y(message, 1),
 			integer_arg(message, 1),
-			integer_arg(message, 2));
+			integer_arg(message, 2),
+			bool_json(has_position),
+			has_position ? pixel_arg_x(message, 0) : -1,
+			has_position ? pixel_arg_y(message, 0) : -1,
+			bool_json(has_modifiers),
+			raw_mouse_modifiers(message),
+			bool_json(has_timestamp),
+			raw_mouse_timestamp(message),
+			bool_json(has_drag_delta),
+			has_drag_delta ? pixel_arg_x(message, 1) : 0,
+			has_drag_delta ? pixel_arg_y(message, 1) : 0,
+			bool_json(has_wheel_clicks),
+			raw_mouse_wheel_clicks(message));
 		append_json_fragment(json, json_size, used, buffer);
 		++count;
 	}

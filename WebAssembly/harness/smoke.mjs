@@ -173,6 +173,70 @@ function assertWasmTiming(state, label) {
   }
 }
 
+function assertOriginalMouseSemanticMessage(message, expected, label) {
+  const mismatches = [];
+  const hasExpectedPositionX = Object.prototype.hasOwnProperty.call(expected, "positionX");
+  const hasExpectedPositionY = Object.prototype.hasOwnProperty.call(expected, "positionY");
+  const hasDragDelta = Object.prototype.hasOwnProperty.call(expected, "dragDeltaX")
+    || Object.prototype.hasOwnProperty.call(expected, "dragDeltaY");
+  const hasWheelClicks = Object.prototype.hasOwnProperty.call(expected, "wheelClicks");
+  const hasTimestamp = expected.hasTimestamp === true;
+
+  if (!message) {
+    throw new Error(`${label} raw mouse stream message missing`);
+  }
+  if (message.hasPosition !== true) {
+    mismatches.push(`hasPosition ${message.hasPosition} !== true`);
+  }
+  if (message.hasPosition === true && message.positionX !== message.x) {
+    mismatches.push(`positionX ${message.positionX} !== legacy x ${message.x}`);
+  }
+  if (message.hasPosition === true && message.positionY !== message.y) {
+    mismatches.push(`positionY ${message.positionY} !== legacy y ${message.y}`);
+  }
+  if (hasExpectedPositionX && message.positionX !== expected.positionX) {
+    mismatches.push(`positionX ${message.positionX} !== ${expected.positionX}`);
+  }
+  if (hasExpectedPositionY && message.positionY !== expected.positionY) {
+    mismatches.push(`positionY ${message.positionY} !== ${expected.positionY}`);
+  }
+  if (message.hasModifiers !== true) {
+    mismatches.push(`hasModifiers ${message.hasModifiers} !== true`);
+  }
+  if (message.modifiers !== (expected.modifiers ?? 0)) {
+    mismatches.push(`modifiers ${message.modifiers} !== ${expected.modifiers ?? 0}`);
+  }
+  if (message.hasTimestamp !== hasTimestamp) {
+    mismatches.push(`hasTimestamp ${message.hasTimestamp} !== ${hasTimestamp}`);
+  }
+  if (hasTimestamp) {
+    if (!Number.isFinite(message.timestamp) || message.timestamp < 0) {
+      mismatches.push(`timestamp ${message.timestamp} is not a non-negative number`);
+    }
+  } else if (message.timestamp !== -1) {
+    mismatches.push(`timestamp ${message.timestamp} !== -1`);
+  }
+  if (message.hasDragDelta !== hasDragDelta) {
+    mismatches.push(`hasDragDelta ${message.hasDragDelta} !== ${hasDragDelta}`);
+  }
+  if (message.dragDeltaX !== (hasDragDelta ? expected.dragDeltaX : 0)) {
+    mismatches.push(`dragDeltaX ${message.dragDeltaX} !== ${hasDragDelta ? expected.dragDeltaX : 0}`);
+  }
+  if (message.dragDeltaY !== (hasDragDelta ? expected.dragDeltaY : 0)) {
+    mismatches.push(`dragDeltaY ${message.dragDeltaY} !== ${hasDragDelta ? expected.dragDeltaY : 0}`);
+  }
+  if (message.hasWheelClicks !== hasWheelClicks) {
+    mismatches.push(`hasWheelClicks ${message.hasWheelClicks} !== ${hasWheelClicks}`);
+  }
+  if (message.wheelClicks !== (hasWheelClicks ? expected.wheelClicks : 0)) {
+    mismatches.push(`wheelClicks ${message.wheelClicks} !== ${hasWheelClicks ? expected.wheelClicks : 0}`);
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(`${label} raw mouse semantic fields mismatch (${mismatches.join(", ")}): ${JSON.stringify(message)}`);
+  }
+}
+
 function assertBrowserInputInitial(state, label) {
   const input = state.browserInput;
   if (!input || input.source !== "browser_win32_input_shim") {
@@ -1980,6 +2044,16 @@ try {
     const frameMouseLeftDownMessage = frameMouseDownMessages.find(
       (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN",
     );
+    assertOriginalMouseSemanticMessage(
+      frameMousePositionMessage,
+      {},
+      "Original Mouse frame-owned position",
+    );
+    assertOriginalMouseSemanticMessage(
+      frameMouseLeftDownMessage,
+      { positionX: frameMouseX, positionY: frameMouseY, hasTimestamp: true },
+      "Original Mouse frame-owned left down",
+    );
     if (!frameMouseProbeResult.ok
         || frameMouseDownProbe?.source !== "browser_original_mouse_frame_input"
         || frameMouseDownProbe?.ok !== true
@@ -2033,6 +2107,16 @@ try {
     const frameMouseDragMessage = frameMouseDragMessages.find(
       (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_DRAG",
     );
+    assertOriginalMouseSemanticMessage(
+      frameMouseDragMessage,
+      {
+        positionX: frameMouseDragX,
+        positionY: frameMouseDragY,
+        dragDeltaX: frameMouseDragX - frameMouseX,
+        dragDeltaY: frameMouseDragY - frameMouseY,
+      },
+      "Original Mouse frame-owned left drag",
+    );
     if (!frameMouseDragProbeResult.ok
         || frameMouseDragProbe?.enabled !== true
         || frameMouseDragProbe?.lastRan !== true
@@ -2080,6 +2164,11 @@ try {
     const frameMouseUpMessages = frameMouseUpProbe?.stream?.messages ?? [];
     const frameMouseUpMessage = frameMouseUpMessages.find(
       (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_UP",
+    );
+    assertOriginalMouseSemanticMessage(
+      frameMouseUpMessage,
+      { positionX: frameMouseDragX, positionY: frameMouseDragY, hasTimestamp: true },
+      "Original Mouse frame-owned left up",
     );
     if (!frameMouseUpProbeResult.ok
         || frameMouseUpProbe?.enabled !== true
@@ -2151,6 +2240,11 @@ try {
     const frameMouseWheelMessage = frameMouseWheelMessages.find(
       (message) => message.typeName === "MSG_RAW_MOUSE_WHEEL",
     );
+    assertOriginalMouseSemanticMessage(
+      frameMouseWheelMessage,
+      { positionX: frameMouseWheelX, positionY: frameMouseWheelY, wheelClicks: 1 },
+      "Original Mouse frame-owned wheel",
+    );
     if (!frameMouseWheelProbeResult.ok
         || frameMouseWheelProbe?.enabled !== true
         || frameMouseWheelProbe?.lastRan !== true
@@ -2174,7 +2268,6 @@ try {
         || frameMouseWheelProbe?.gui?.grabbed !== false
         || frameMouseWheelMessage?.x !== frameMouseWheelX
         || frameMouseWheelMessage?.y !== frameMouseWheelY
-        || frameMouseWheelMessage?.integer1 !== 1
         || frameMouseWheel.state.browserInput?.messageQueue?.count !== 0
         || frameMouseWheelProbeResult.state.browserInput?.messageQueue?.count !== 0) {
       throw new Error(`Original Mouse frame-owned wheel did not run through tick_frame: ${JSON.stringify({ frameMouseWheel, frameMouseWheelProbeResult })}`);
