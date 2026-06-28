@@ -23,6 +23,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Verify `tools/extract_zh_big_sample.sh` extracts INIZH.big (needs `7z`).
 - [x] Extract the inventoried Zero Hour runtime BIG set (INIZH, W3DZH, AudioZH,
       TexturesZH, MapsZH, SpeechZH, language archives, etc.) and document it.
+- [x] Add a startup archive inventory tool for the original `GameEngine.cpp`
+      boot paths. `npm run inventory:startup-archives` parses the current
+      `artifacts/real-assets/*.big` set with the original mixed BIGF endian
+      contract, indexes 12,199 files across 17 archives, reports
+      `INIZH.big`, `EnglishZH.big`, `W3DEnglishZH.big`, and `MapsZH.big` as the
+      current startup-path candidate archives, and records the remaining absent
+      default INI / `Rank.ini` / `CommandMap.ini` gaps without treating missing
+      assets as tool failures.
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.

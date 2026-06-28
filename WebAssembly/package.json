@@ -7,6 +7,7 @@
     "clean:wasm": "bash tools/clean_wasm.sh",
     "extract:real-big": "bash tools/extract_zh_big_sample.sh",
     "extract:runtime-archives": "bash tools/extract_zh_runtime_archives.sh",
+    "inventory:startup-archives": "node tools/inventory_startup_archives.mjs artifacts/real-assets --expect-current-zh",
     "verify:assets": "node tools/verify_real_assets.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",

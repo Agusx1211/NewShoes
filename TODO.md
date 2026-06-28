@@ -19,8 +19,13 @@ shares structure and follows behind.
 ## M0 — Build skeleton & asset pipeline
 
 ### Asset pipeline
-- [ ] Prove the exact minimum archive set required to boot through the original
-      engine startup path.
+- [ ] Resolve the remaining startup-file gaps reported by
+      `npm run inventory:startup-archives` before declaring the exact minimum
+      original boot archive set. The current extracted Zero Hour runtime
+      archive candidates for known startup paths are `INIZH.big`,
+      `EnglishZH.big`, `W3DEnglishZH.big`, and `MapsZH.big`, but default INI
+      files, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` are still
+      absent from the indexed asset set.
 
 ---
 

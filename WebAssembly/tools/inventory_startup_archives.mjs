@@ -1,0 +1,325 @@
+import { open, readdir, stat } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const toolDir = dirname(fileURLToPath(import.meta.url));
+const wasmRoot = resolve(toolDir, "..");
+
+const requiredStartupPaths = [
+  "Data\\INI\\Default\\GameData.ini",
+  "Data\\INI\\GameData.ini",
+  "Data\\INI\\Default\\Water.ini",
+  "Data\\INI\\Water.ini",
+  "Data\\INI\\Default\\Weather.ini",
+  "Data\\INI\\Weather.ini",
+  "Data\\English\\Generals.csf",
+  "Data\\INI\\Default\\Science.ini",
+  "Data\\INI\\Science.ini",
+  "Data\\INI\\Default\\Multiplayer.ini",
+  "Data\\INI\\multiplayer.ini",
+  "Data\\INI\\Default\\Terrain.ini",
+  "Data\\INI\\Terrain.ini",
+  "Data\\INI\\Default\\Roads.ini",
+  "Data\\INI\\Roads.ini",
+  "Data\\INI\\Rank.ini",
+  "Data\\INI\\Default\\PlayerTemplate.ini",
+  "Data\\INI\\PlayerTemplate.ini",
+  "Data\\INI\\Default\\FXList.ini",
+  "Data\\INI\\FXList.ini",
+  "Data\\INI\\Weapon.ini",
+  "Data\\INI\\Default\\ObjectCreationList.ini",
+  "Data\\INI\\ObjectCreationList.ini",
+  "Data\\INI\\Locomotor.ini",
+  "Data\\INI\\Default\\SpecialPower.ini",
+  "Data\\INI\\SpecialPower.ini",
+  "Data\\INI\\DamageFX.ini",
+  "Data\\INI\\Armor.ini",
+  "Data\\INI\\Default\\Object.ini",
+  "Data\\INI\\Object\\*.ini",
+  "Data\\INI\\Default\\Upgrade.ini",
+  "Data\\INI\\Upgrade.ini",
+  "Data\\INI\\Default\\AIData.ini",
+  "Data\\INI\\Default\\Crate.ini",
+  "Data\\INI\\Crate.ini",
+  "Data\\English\\CommandMap.ini",
+  "Data\\INI\\CommandMap.ini",
+  "Maps\\MapCache.ini",
+  "Data\\INI\\Default\\Video.ini",
+  "Data\\INI\\Video.ini",
+];
+
+function usage() {
+  return [
+    "usage: node tools/inventory_startup_archives.mjs [assets-dir] [--expect-current-zh]",
+    "",
+    "Indexes BIGF archives and reports original GameEngine.cpp startup file coverage.",
+  ].join("\n");
+}
+
+function normalizeEntryPath(path) {
+  return String(path ?? "").replaceAll("/", "\\").toLowerCase();
+}
+
+function fail(message) {
+  console.error(message);
+  process.exitCode = 1;
+}
+
+function parseArgs(argv) {
+  let assetsDir = null;
+  let expectCurrentZh = false;
+
+  for (const arg of argv) {
+    if (arg === "--expect-current-zh") {
+      expectCurrentZh = true;
+    } else if (arg === "--help" || arg === "-h") {
+      console.log(usage());
+      process.exit(0);
+    } else if (assetsDir === null) {
+      assetsDir = arg;
+    } else {
+      throw new Error(`Unexpected argument: ${arg}`);
+    }
+  }
+
+  const resolvedAssetsDir = assetsDir === null
+    ? resolve(wasmRoot, "artifacts/real-assets")
+    : resolve(process.cwd(), assetsDir);
+  return { assetsDir: resolvedAssetsDir, expectCurrentZh };
+}
+
+async function readExact(file, position, length, context) {
+  const buffer = Buffer.alloc(length);
+  const { bytesRead } = await file.read(buffer, 0, length, position);
+  if (bytesRead !== length) {
+    throw new Error(`${context}: expected ${length} bytes at ${position}, read ${bytesRead}`);
+  }
+  return buffer;
+}
+
+async function readBigDirectory(bigPath) {
+  const file = await open(bigPath, "r");
+  try {
+    const fileStat = await file.stat();
+    const header = await readExact(file, 0, 16, bigPath);
+    if (header.toString("ascii", 0, 4) !== "BIGF") {
+      throw new Error(`Not a BIGF archive: ${bigPath}`);
+    }
+
+    // Original Win32BIGFileSystem reads this size directly into an Int on
+    // little-endian x86, then byte-swaps only the file count and directory
+    // entry offset/size fields.
+    const archiveSize = header.readUInt32LE(4);
+    const entryCount = header.readUInt32BE(8);
+    if (archiveSize > fileStat.size) {
+      throw new Error(`BIGF header size exceeds file size for ${bigPath}: ${archiveSize} > ${fileStat.size}`);
+    }
+    if (entryCount > 1000000) {
+      throw new Error(`Unreasonable BIGF entry count in ${bigPath}: ${entryCount}`);
+    }
+
+    const chunkSize = 64 * 1024;
+    let directory = Buffer.alloc(0);
+    let cursor = 0;
+
+    async function ensureDirectoryBytes(requiredLength) {
+      while (directory.length < requiredLength) {
+        const start = 0x10 + directory.length;
+        const remaining = fileStat.size - start;
+        if (remaining <= 0) {
+          throw new Error(`BIGF directory ended early in ${bigPath}`);
+        }
+        const length = Math.min(chunkSize, remaining);
+        const next = await readExact(file, start, length, bigPath);
+        directory = Buffer.concat([directory, next]);
+      }
+    }
+
+    const entries = [];
+    for (let index = 0; index < entryCount; ++index) {
+      await ensureDirectoryBytes(cursor + 9);
+      const offset = directory.readUInt32BE(cursor);
+      const size = directory.readUInt32BE(cursor + 4);
+      const pathStart = cursor + 8;
+      let pathEnd = directory.indexOf(0, pathStart);
+      while (pathEnd < 0) {
+        await ensureDirectoryBytes(directory.length + 1);
+        pathEnd = directory.indexOf(0, pathStart);
+      }
+
+      const path = directory.toString("ascii", pathStart, pathEnd);
+      if (offset + size > fileStat.size) {
+        throw new Error(`BIGF entry extends past archive end in ${bigPath}: ${path}`);
+      }
+      entries.push({ path, normalizedPath: normalizeEntryPath(path), size, offset });
+      cursor = pathEnd + 1;
+    }
+
+    return { archiveSize, entryCount, entries };
+  } finally {
+    await file.close();
+  }
+}
+
+async function findBigArchives(assetsDir) {
+  const dirStat = await stat(assetsDir);
+  if (!dirStat.isDirectory()) {
+    throw new Error(`Assets path is not a directory: ${assetsDir}`);
+  }
+
+  const entries = await readdir(assetsDir);
+  const archivePaths = [];
+  for (const entry of entries) {
+    if (!entry.toLowerCase().endsWith(".big")) {
+      continue;
+    }
+    const archivePath = resolve(assetsDir, entry);
+    const archiveStat = await stat(archivePath);
+    if (archiveStat.isFile()) {
+      archivePaths.push(archivePath);
+    }
+  }
+
+  return archivePaths.sort((left, right) => basename(left).localeCompare(basename(right)));
+}
+
+function archiveRecord(archive, entry) {
+  return {
+    archive: archive.name,
+    path: entry.path,
+    size: entry.size,
+    offset: entry.offset,
+  };
+}
+
+function buildInventory(assetsDir, archives) {
+  const byPath = new Map();
+  const objectIniEntries = [];
+  let indexedFiles = 0;
+
+  for (const archive of archives) {
+    indexedFiles += archive.entries.length;
+    for (const entry of archive.entries) {
+      if (!byPath.has(entry.normalizedPath)) {
+        byPath.set(entry.normalizedPath, []);
+      }
+      byPath.get(entry.normalizedPath).push(archiveRecord(archive, entry));
+      if (entry.normalizedPath.startsWith("data\\ini\\object\\") &&
+          entry.normalizedPath.endsWith(".ini")) {
+        objectIniEntries.push(archiveRecord(archive, entry));
+      }
+    }
+  }
+
+  objectIniEntries.sort((left, right) =>
+    left.archive.localeCompare(right.archive) || left.path.localeCompare(right.path));
+
+  const candidateArchives = new Set();
+  const missing = [];
+  const requiredFiles = requiredStartupPaths.map((path) => {
+    let archivesForPath = [];
+    if (path === "Data\\INI\\Object\\*.ini") {
+      archivesForPath = objectIniEntries.slice(0, 20);
+    } else {
+      archivesForPath = byPath.get(normalizeEntryPath(path)) ?? [];
+    }
+
+    const found = archivesForPath.length > 0;
+    if (found) {
+      for (const archive of archivesForPath) {
+        candidateArchives.add(archive.archive);
+      }
+    } else {
+      missing.push(path);
+    }
+
+    return { path, found, archives: archivesForPath };
+  });
+
+  const sortedCandidateArchives = [...candidateArchives].sort();
+  return {
+    ok: true,
+    allRequiredFound: missing.length === 0,
+    assetsDir,
+    archiveCount: archives.length,
+    indexedFiles,
+    archives: archives.map((archive) => ({
+      name: archive.name,
+      size: archive.size,
+      entryCount: archive.entryCount,
+    })),
+    requiredFiles,
+    objectIniFiles: {
+      count: objectIniEntries.length,
+      examples: objectIniEntries.slice(0, 20),
+    },
+    missing,
+    candidateArchives: sortedCandidateArchives,
+    candidateArchiveCount: sortedCandidateArchives.length,
+  };
+}
+
+function assertShapeForCurrentZh(inventory) {
+  const requiredByPath = new Map(inventory.requiredFiles.map((entry) => [entry.path, entry]));
+  const gameData = requiredByPath.get("Data\\INI\\GameData.ini");
+  const armor = requiredByPath.get("Data\\INI\\Armor.ini");
+  const defaultGameData = requiredByPath.get("Data\\INI\\Default\\GameData.ini");
+  const rank = requiredByPath.get("Data\\INI\\Rank.ini");
+
+  const failures = [];
+  if (inventory.archiveCount <= 0) {
+    failures.push("expected at least one BIG archive");
+  }
+  if (inventory.indexedFiles <= 0) {
+    failures.push("expected indexed BIG entries");
+  }
+  if (!inventory.candidateArchives.includes("INIZH.big")) {
+    failures.push("expected INIZH.big to be a candidate startup archive");
+  }
+  if (!gameData?.found || !gameData.archives.some((entry) => entry.archive === "INIZH.big")) {
+    failures.push("expected Data\\INI\\GameData.ini in INIZH.big");
+  }
+  if (!armor?.found || !armor.archives.some((entry) => entry.archive === "INIZH.big")) {
+    failures.push("expected Data\\INI\\Armor.ini in INIZH.big");
+  }
+  if (defaultGameData && !defaultGameData.found &&
+      !inventory.missing.includes("Data\\INI\\Default\\GameData.ini")) {
+    failures.push("missing default GameData.ini was not reported");
+  }
+  if (rank && !rank.found && !inventory.missing.includes("Data\\INI\\Rank.ini")) {
+    failures.push("missing Rank.ini was not reported");
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Current Zero Hour asset inventory self-check failed: ${failures.join("; ")}`);
+  }
+}
+
+async function main() {
+  const { assetsDir, expectCurrentZh } = parseArgs(process.argv.slice(2));
+  const archivePaths = await findBigArchives(assetsDir);
+  const archives = [];
+
+  for (const archivePath of archivePaths) {
+    const directory = await readBigDirectory(archivePath);
+    archives.push({
+      name: basename(archivePath),
+      path: archivePath,
+      size: directory.archiveSize,
+      entryCount: directory.entryCount,
+      entries: directory.entries,
+    });
+  }
+
+  const inventory = buildInventory(assetsDir, archives);
+  if (expectCurrentZh) {
+    assertShapeForCurrentZh(inventory);
+  }
+  console.log(JSON.stringify(inventory, null, 2));
+}
+
+try {
+  await main();
+} catch (error) {
+  fail(error?.stack ?? error?.message ?? String(error));
+}
