@@ -168,6 +168,33 @@ int main()
 		return 1;
 	}
 
+	D3DMATRIX view_scale = {};
+	view_scale.m[0][0] = 2.0f;
+	view_scale.m[1][1] = 3.0f;
+	view_scale.m[2][2] = 4.0f;
+	view_scale.m[3][3] = 1.0f;
+	if (!expect(SUCCEEDED(device->MultiplyTransform(D3DTS_VIEW, &view_scale)),
+			"MultiplyTransform VIEW failed") ||
+		!expect(state->set_transform_calls == set_transform_before + 2,
+			"MultiplyTransform should not increment SetTransform counter")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	if (!expect(SUCCEEDED(device->GetTransform(D3DTS_VIEW, &readback_matrix)),
+			"GetTransform VIEW after MultiplyTransform failed") ||
+		!expect(near(readback_matrix.m[0][0], 2.0f),
+			"GetTransform VIEW after MultiplyTransform element mismatch") ||
+		!expect(near(readback_matrix.m[1][2], 21.0f),
+			"GetTransform VIEW after MultiplyTransform row mismatch") ||
+		!expect(state->get_transform_calls == get_transform_before + 2,
+			"get_transform_calls counter mismatch after MultiplyTransform")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	// An unset transform state defaults to identity and still reports through
 	// the get counter / last-get field.
 	D3DMATRIX texture_matrix = {};
@@ -177,10 +204,26 @@ int main()
 			near(texture_matrix.m[2][2], 1.0f) && near(texture_matrix.m[3][3], 1.0f),
 			"unset transform should default to identity") ||
 		!expect(near(texture_matrix.m[0][1], 0.0f), "identity transform has non-zero off-diagonal") ||
-		!expect(state->get_transform_calls == get_transform_before + 2,
+		!expect(state->get_transform_calls == get_transform_before + 3,
 			"get_transform_calls counter mismatch after identity read") ||
 		!expect(state->last_get_transform_state == D3DTS_TEXTURE0,
 			"last_get_transform_state mismatch")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
+	D3DMATRIX texture_multiplier = {};
+	texture_multiplier.m[0][0] = 1.0f;
+	texture_multiplier.m[1][1] = 1.0f;
+	texture_multiplier.m[2][2] = 1.0f;
+	texture_multiplier.m[3][3] = 1.0f;
+	texture_multiplier.m[3][0] = 0.375f;
+	texture_multiplier.m[3][1] = 0.625f;
+	if (!expect(SUCCEEDED(device->MultiplyTransform(D3DTS_TEXTURE1, &texture_multiplier)),
+			"MultiplyTransform TEXTURE1 failed") ||
+		!expect(state->set_transform_calls == set_transform_before + 2,
+			"identity MultiplyTransform should not increment SetTransform counter")) {
 		device->Release();
 		d3d->Release();
 		return 1;
@@ -950,6 +993,14 @@ int main()
 			"indexed draw index checksum should be non-zero") ||
 		!expect(state->last_draw_index_format == D3DFMT_INDEX16,
 			"indexed draw index format mismatch") ||
+		!expect((state->last_draw_transform_mask & 2u) != 0 &&
+			near(state->last_draw_view_transform.m[0][0], 2.0f) &&
+			near(state->last_draw_view_transform.m[1][2], 21.0f),
+			"indexed draw view transform capture mismatch after MultiplyTransform") ||
+		!expect((state->last_draw_texture_transform_mask & 2u) != 0 &&
+			near(state->last_draw_texture1_transform.m[3][0], 0.375f) &&
+			near(state->last_draw_texture1_transform.m[3][1], 0.625f),
+			"indexed draw texture transform capture mismatch after MultiplyTransform") ||
 		!expect(state->last_draw_render_state.texture_factor == texture_factor,
 			"draw texture factor capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_MODULATE,
@@ -1005,7 +1056,7 @@ int main()
 			state->viewport.Width == 320 && state->viewport.Height == 180,
 			"viewport state mismatch") &&
 		expect(state->set_transform_calls == 2, "set_transform_calls count mismatch") &&
-		expect(state->get_transform_calls == 2, "get_transform_calls count mismatch") &&
+		expect(state->get_transform_calls == 3, "get_transform_calls count mismatch") &&
 		expect(state->set_viewport_calls == 1, "set_viewport_calls count mismatch") &&
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
 		expect(state->set_render_state_calls == 3, "set_render_state_calls count mismatch") &&

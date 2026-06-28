@@ -1884,6 +1884,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       matrix round-trips, identity defaults, viewport readback, render-state
       defaults, and probe counters. This is CPU-side state bookkeeping only;
       it does not yet apply those states to WebGL2.
+- [x] Implement D3D8 `MultiplyTransform` state mutation in the browser shim
+      instead of returning success without changing the transform table. The
+      shim now left-multiplies the supplied matrix against the current
+      transform, uses identity for unset transform slots, and focused smoke
+      coverage verifies `GetTransform` readback plus draw-captured view and
+      texture transform matrices before the WebGL2 bridge consumes them.
 - [x] Wire original `WW3D2/dx8wrapper.cpp` D3D8 DLL loading through a
       target-scoped wasm loader hook, with smoke coverage proving
       `DX8Wrapper::Init` reaches `LoadLibrary("D3D8.DLL")`,

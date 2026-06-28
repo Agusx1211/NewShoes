@@ -613,6 +613,19 @@ void identity_matrix(D3DMATRIX &matrix)
 	matrix.m[3][3] = 1.0f;
 }
 
+D3DMATRIX multiply_matrix(const D3DMATRIX &left, const D3DMATRIX &right)
+{
+	D3DMATRIX result = {};
+	for (int row = 0; row < 4; ++row) {
+		for (int column = 0; column < 4; ++column) {
+			for (int index = 0; index < 4; ++index) {
+				result.m[row][column] += left.m[row][index] * right.m[index][column];
+			}
+		}
+	}
+	return result;
+}
+
 D3DMATERIAL8 default_d3d8_material()
 {
 	D3DMATERIAL8 material = {};
@@ -2457,7 +2470,21 @@ public:
 		g_state.last_get_transform_state = state;
 		return S_OK;
 	}
-	HRESULT MultiplyTransform(D3DTRANSFORMSTATETYPE, const D3DMATRIX *) override { return S_OK; }
+	HRESULT MultiplyTransform(D3DTRANSFORMSTATETYPE state, const D3DMATRIX *matrix) override
+	{
+		if (matrix == nullptr) {
+			return E_FAIL;
+		}
+		D3DMATRIX current = {};
+		const auto found = m_transforms.find(state);
+		if (found != m_transforms.end()) {
+			current = found->second;
+		} else {
+			identity_matrix(current);
+		}
+		m_transforms[state] = multiply_matrix(*matrix, current);
+		return S_OK;
+	}
 
 	HRESULT SetViewport(const D3DVIEWPORT8 *viewport) override
 	{
