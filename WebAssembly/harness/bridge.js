@@ -76,6 +76,7 @@ const D3DCOLORWRITEENABLE_ALPHA = 8;
 const D3DMCS_MATERIAL = 0;
 const D3DMCS_COLOR1 = 1;
 const D3DMCS_COLOR2 = 2;
+const D3DLIGHT_DIRECTIONAL = 3;
 const D3DFILL_POINT = 1;
 const D3DFILL_WIREFRAME = 2;
 const D3DFILL_SOLID = 3;
@@ -163,6 +164,7 @@ const D3DTTFF_COUNT3 = 3;
 const D3DTTFF_COUNT4 = 4;
 const D3DTTFF_PROJECTED = 256;
 const D3D8_TEXTURE_STAGE_COUNT = 8;
+const D3D8_LIGHT_COUNT = 8;
 const D3DFVF_XYZ = 0x002;
 const D3DFVF_XYZRHW = 0x004;
 const D3DFVF_XYZB4 = 0x008;
@@ -171,6 +173,8 @@ const D3DFVF_DIFFUSE = 0x040;
 const D3DFVF_SPECULAR = 0x080;
 const D3DFVF_TEXCOUNT_MASK = 0xf00;
 const D3DFVF_TEXCOUNT_SHIFT = 8;
+const D3D8_NORMAL_OFFSET = 12;
+const D3D8_NORMAL_MIN_STRIDE = D3D8_NORMAL_OFFSET + 12;
 const D3D8_DIFFUSE_OFFSET = 24;
 const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
 // Matches WW3D2/dx8fvf.h VertexFormatXYZNDUV1/2: XYZ, normal, diffuse, UV0/UV1.
@@ -1164,6 +1168,41 @@ function normalizeD3D8Material(material = {}) {
   };
 }
 
+function normalizeD3D8Vector3(value, fallback = [0, 0, 0]) {
+  const source = Array.isArray(value)
+    ? value
+    : [value?.x, value?.y, value?.z];
+  return [0, 1, 2].map((index) => {
+    const component = Number(source[index] ?? fallback[index]);
+    return Number.isFinite(component) ? component : fallback[index];
+  });
+}
+
+function normalizeD3D8Light(light = {}, index = 0) {
+  return {
+    index: Number(light?.index ?? index) >>> 0,
+    type: Number(light?.type ?? 0) >>> 0,
+    enabled: Number(light?.enabled ?? 0) !== 0,
+    diffuse: normalizeD3D8ColorValue(light?.diffuse, [0, 0, 0, 1]),
+    specular: normalizeD3D8ColorValue(light?.specular, [0, 0, 0, 1]),
+    ambient: normalizeD3D8ColorValue(light?.ambient, [0, 0, 0, 1]),
+    position: normalizeD3D8Vector3(light?.position),
+    direction: normalizeD3D8Vector3(light?.direction, [0, 0, 1]),
+    range: finiteNumber(light?.range, 0),
+    falloff: finiteNumber(light?.falloff, 0),
+    attenuation0: finiteNumber(light?.attenuation0, 0),
+    attenuation1: finiteNumber(light?.attenuation1, 0),
+    attenuation2: finiteNumber(light?.attenuation2, 0),
+    theta: finiteNumber(light?.theta, 0),
+    phi: finiteNumber(light?.phi, 0),
+  };
+}
+
+function normalizeD3D8Lights(lights) {
+  return Array.from({ length: D3D8_LIGHT_COUNT }, (_, index) =>
+    normalizeD3D8Light(Array.isArray(lights) ? lights[index] : null, index));
+}
+
 function textureHasCompleteMipChain(resource) {
   if (!resource || resource.levels <= 1) {
     return false;
@@ -1468,6 +1507,7 @@ function d3d8LegacyVertexLayoutInfo(vertexStride) {
     stride,
     positionOffset: 0,
     positionComponents: 3,
+    normalOffset: stride >= D3D8_NORMAL_MIN_STRIDE ? D3D8_NORMAL_OFFSET : null,
     diffuseOffset: stride >= D3D8_DIFFUSE_MIN_STRIDE ? D3D8_DIFFUSE_OFFSET : null,
     specularOffset: null,
     texCoords: Array.from({ length: D3D8_XYZNDUV_TEXCOORD_SETS }, (_, coordSet) => {
@@ -1503,6 +1543,9 @@ function d3d8VertexLayoutInfo(fvf, vertexStride) {
     offset += 3 * 4;
   }
 
+  const normalOffset = (normalizedFvf & D3DFVF_NORMAL) === D3DFVF_NORMAL
+    ? offset
+    : null;
   if ((normalizedFvf & D3DFVF_NORMAL) === D3DFVF_NORMAL) {
     offset += 3 * 4;
   }
@@ -1540,6 +1583,7 @@ function d3d8VertexLayoutInfo(fvf, vertexStride) {
     stride,
     positionOffset: 0,
     positionComponents,
+    normalOffset: normalOffset !== null && stride >= normalOffset + 3 * 4 ? normalOffset : null,
     diffuseOffset: diffuseOffset !== null && stride >= diffuseOffset + 4 ? diffuseOffset : null,
     specularOffset: specularOffset !== null && stride >= specularOffset + 4 ? specularOffset : null,
     texCoords,
@@ -2458,6 +2502,7 @@ function ensureD3D8DrawProgram() {
 
   const vertexShader = compileShader(gl.VERTEX_SHADER, `#version 300 es
     in vec3 aPosition;
+    in vec3 aNormal;
     in vec4 aDiffuseBgra;
     in vec2 aTexCoord0;
     in vec2 aTexCoord1;
@@ -2471,6 +2516,20 @@ function ensureD3D8DrawProgram() {
     uniform mat4 uTexture0Transform;
     uniform bool uUseTexture1Transform;
     uniform mat4 uTexture1Transform;
+    uniform bool uLightingEnabled;
+    uniform bool uColorVertexEnabled;
+    uniform vec4 uSceneAmbient;
+    uniform vec4 uMaterialDiffuse;
+    uniform vec4 uMaterialAmbient;
+    uniform vec4 uMaterialEmissive;
+    uniform int uDiffuseMaterialSource;
+    uniform int uAmbientMaterialSource;
+    uniform int uEmissiveMaterialSource;
+    uniform bool uLight0Enabled;
+    uniform int uLight0Type;
+    uniform vec4 uLight0Diffuse;
+    uniform vec4 uLight0Ambient;
+    uniform vec3 uLight0Direction;
     out vec4 vColor;
     flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
@@ -2478,11 +2537,37 @@ function ensureD3D8DrawProgram() {
     out vec4 vClipPosition;
     out float vFogDepth;
     out float vFogRangeDistance;
+    vec4 d3dMaterialSourceColor(int source, vec4 materialColor, vec4 color1) {
+      if (!uColorVertexEnabled) {
+        return materialColor;
+      }
+      if (source == 1) {
+        return color1;
+      }
+      return materialColor;
+    }
+    vec4 d3dApplyLighting(vec4 color1, vec3 normal) {
+      vec4 diffuseMaterial = d3dMaterialSourceColor(uDiffuseMaterialSource, uMaterialDiffuse, color1);
+      vec4 ambientMaterial = d3dMaterialSourceColor(uAmbientMaterialSource, uMaterialAmbient, color1);
+      vec4 emissiveMaterial = d3dMaterialSourceColor(uEmissiveMaterialSource, uMaterialEmissive, color1);
+      vec3 litRgb = emissiveMaterial.rgb + ambientMaterial.rgb * uSceneAmbient.rgb;
+      if (uLight0Enabled && uLight0Type == 3) {
+        vec3 lightVector = -uLight0Direction;
+        vec3 lightDirection = length(lightVector) > 0.000001 ? normalize(lightVector) : vec3(0.0, 0.0, 1.0);
+        vec3 unitNormal = length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0);
+        float diffuseAmount = max(dot(unitNormal, lightDirection), 0.0);
+        litRgb += ambientMaterial.rgb * uLight0Ambient.rgb;
+        litRgb += diffuseMaterial.rgb * uLight0Diffuse.rgb * diffuseAmount;
+      }
+      return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
+    }
     void main() {
       vec4 worldPosition = vec4(aPosition, 1.0);
       vec4 viewPosition = worldPosition;
+      vec3 worldNormal = aNormal;
       if (uUseTransforms) {
         worldPosition = uWorld * vec4(aPosition, 1.0);
+        worldNormal = mat3(uWorld) * aNormal;
         viewPosition = uView * worldPosition;
         vec4 d3dClip = uProjection * viewPosition;
         gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
@@ -2495,7 +2580,8 @@ function ensureD3D8DrawProgram() {
       }
       gl_Position.z -= uDepthBias * gl_Position.w;
       vClipPosition = worldPosition;
-      vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
+      vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
+      vColor = uLightingEnabled ? d3dApplyLighting(color1, worldNormal) : color1;
       vFlatColor = vColor;
       if (uUseTexture0Transform) {
         vec4 d3dTexCoord0 = uTexture0Transform * vec4(aTexCoord0, 0.0, 1.0);
@@ -2836,6 +2922,7 @@ function ensureD3D8DrawProgram() {
   d3d8DrawProgram = {
     program,
     position: gl.getAttribLocation(program, "aPosition"),
+    normal: gl.getAttribLocation(program, "aNormal"),
     diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
     texCoord0: gl.getAttribLocation(program, "aTexCoord0"),
     texCoord1: gl.getAttribLocation(program, "aTexCoord1"),
@@ -2852,6 +2939,20 @@ function ensureD3D8DrawProgram() {
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
+    lightingEnabled: gl.getUniformLocation(program, "uLightingEnabled"),
+    colorVertexEnabled: gl.getUniformLocation(program, "uColorVertexEnabled"),
+    sceneAmbient: gl.getUniformLocation(program, "uSceneAmbient"),
+    materialDiffuse: gl.getUniformLocation(program, "uMaterialDiffuse"),
+    materialAmbient: gl.getUniformLocation(program, "uMaterialAmbient"),
+    materialEmissive: gl.getUniformLocation(program, "uMaterialEmissive"),
+    diffuseMaterialSource: gl.getUniformLocation(program, "uDiffuseMaterialSource"),
+    ambientMaterialSource: gl.getUniformLocation(program, "uAmbientMaterialSource"),
+    emissiveMaterialSource: gl.getUniformLocation(program, "uEmissiveMaterialSource"),
+    light0Enabled: gl.getUniformLocation(program, "uLight0Enabled"),
+    light0Type: gl.getUniformLocation(program, "uLight0Type"),
+    light0Diffuse: gl.getUniformLocation(program, "uLight0Diffuse"),
+    light0Ambient: gl.getUniformLocation(program, "uLight0Ambient"),
+    light0Direction: gl.getUniformLocation(program, "uLight0Direction"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
     texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
@@ -3837,6 +3938,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const renderState = normalizeD3D8RenderState(payload.renderState);
   const clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
   const material = normalizeD3D8Material(payload.material);
+  const lights = normalizeD3D8Lights(payload.lights);
+  const directionalLight = lights.find((light) => light.enabled && light.type === D3DLIGHT_DIRECTIONAL) ?? null;
   const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
@@ -3887,6 +3990,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       invertCullWinding: usesIdentityClipSpace,
     });
     appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
+    appliedRenderState.lighting = {
+      ...appliedRenderState.lighting,
+      shaderEnabled: appliedRenderState.lighting.enabled && Boolean(directionalLight),
+      directionalLightSupported: Boolean(directionalLight),
+      firstDirectionalLight: directionalLight,
+    };
     const fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
       payload.primitiveType,
@@ -3907,6 +4016,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
+    if (bridgeProgram.normal >= 0 && vertexLayout.normalOffset !== null) {
+      gl.enableVertexAttribArray(bridgeProgram.normal);
+      gl.vertexAttribPointer(bridgeProgram.normal, 3, gl.FLOAT, false,
+        vertexStride, vertexByteOffset + vertexLayout.normalOffset);
+    } else if (bridgeProgram.normal >= 0) {
+      gl.disableVertexAttribArray(bridgeProgram.normal);
+      gl.vertexAttrib3f(bridgeProgram.normal, 0, 0, 1);
+    }
     if (bridgeProgram.diffuse >= 0 && vertexLayout.diffuseOffset !== null) {
       gl.enableVertexAttribArray(bridgeProgram.diffuse);
       gl.vertexAttribPointer(bridgeProgram.diffuse, 4, gl.UNSIGNED_BYTE, true,
@@ -3966,6 +4083,52 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.texture1Transform && canSampleTexture1 && texture1Coordinates.transformApplied) {
       gl.uniformMatrix4fv(bridgeProgram.texture1Transform, false, texture1Transform);
+    }
+    if (bridgeProgram.lightingEnabled) {
+      gl.uniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
+    }
+    if (bridgeProgram.colorVertexEnabled) {
+      gl.uniform1i(bridgeProgram.colorVertexEnabled,
+        appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
+    }
+    if (bridgeProgram.sceneAmbient) {
+      gl.uniform4fv(bridgeProgram.sceneAmbient, new Float32Array(appliedRenderState.ambient.rgba));
+    }
+    if (bridgeProgram.materialDiffuse) {
+      gl.uniform4fv(bridgeProgram.materialDiffuse, new Float32Array(material.diffuse));
+    }
+    if (bridgeProgram.materialAmbient) {
+      gl.uniform4fv(bridgeProgram.materialAmbient, new Float32Array(material.ambient));
+    }
+    if (bridgeProgram.materialEmissive) {
+      gl.uniform4fv(bridgeProgram.materialEmissive, new Float32Array(material.emissive));
+    }
+    if (bridgeProgram.diffuseMaterialSource) {
+      gl.uniform1i(bridgeProgram.diffuseMaterialSource, renderState.diffuseMaterialSource);
+    }
+    if (bridgeProgram.ambientMaterialSource) {
+      gl.uniform1i(bridgeProgram.ambientMaterialSource, renderState.ambientMaterialSource);
+    }
+    if (bridgeProgram.emissiveMaterialSource) {
+      gl.uniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
+    }
+    if (bridgeProgram.light0Enabled) {
+      gl.uniform1i(bridgeProgram.light0Enabled, directionalLight ? 1 : 0);
+    }
+    if (bridgeProgram.light0Type) {
+      gl.uniform1i(bridgeProgram.light0Type, directionalLight?.type ?? 0);
+    }
+    if (bridgeProgram.light0Diffuse) {
+      gl.uniform4fv(bridgeProgram.light0Diffuse,
+        new Float32Array(directionalLight?.diffuse ?? [0, 0, 0, 1]));
+    }
+    if (bridgeProgram.light0Ambient) {
+      gl.uniform4fv(bridgeProgram.light0Ambient,
+        new Float32Array(directionalLight?.ambient ?? [0, 0, 0, 1]));
+    }
+    if (bridgeProgram.light0Direction) {
+      gl.uniform3fv(bridgeProgram.light0Direction,
+        new Float32Array(directionalLight?.direction ?? [0, 0, 1]));
     }
     if (bridgeProgram.useTexture0) {
       gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
@@ -4165,6 +4328,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
     clipPlanes,
+    lights,
     material,
     appliedRenderState,
     appliedMaterial: material,
@@ -4529,6 +4693,7 @@ async function loadWasmModule() {
       probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
       probeD3D8ClipPlane: module.cwrap("cnc_port_probe_d3d8_clip_plane", "string", []),
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
+      probeD3D8DirectionalLight: module.cwrap("cnc_port_probe_d3d8_directional_light", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
@@ -7517,6 +7682,72 @@ async function rpc(command, payload = {}) {
           browserProbe,
           centerPixelOk,
           ambientRgbaOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8DirectionalLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 directional-light probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8DirectionalLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [0, 255, 0, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 2);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 2);
+        const capturedLight = browserProbe?.lights?.[0] ?? {};
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const expectedLight = probe.light ?? {};
+        const lightDirectionOk = floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction);
+        const lightDiffuseOk = floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse);
+        const material = normalizeD3D8Material(browserProbe?.material);
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const materialOk =
+          floatVectorApproximatelyEqual(material.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(material.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(material.emissive, expectedMaterial.emissive);
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && capturedLight.enabled === true
+          && capturedLight.type === D3DLIGHT_DIRECTIONAL
+          && lightDiffuseOk
+          && lightDirectionOk
+          && materialOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          lightDiffuseOk,
+          lightDirectionOk,
+          materialOk,
+          lightPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
           state: snapshotState(),
         };
       }

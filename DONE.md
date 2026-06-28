@@ -2296,11 +2296,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       captured material values, persistent buffers, and the green center pixel.
 - [x] Add D3D8 material-source render-state capture to the browser draw bridge.
       The draw payload now includes `D3DRS_COLORVERTEX` plus diffuse,
-      specular, ambient, and emissive `D3DMATERIALCOLORSOURCE` values, while
-      the JS bridge exposes readable descriptor names without implementing
-      fixed-function lighting yet. A focused probe sets non-default source
-      choices, verifies the per-draw descriptor, persistent buffers, and the
-      green center pixel with lighting disabled.
+      specular, ambient, and emissive `D3DMATERIALCOLORSOURCE` values, and
+      that slice exposed readable descriptor names before shader lighting was
+      added. A focused probe sets non-default source choices, verifies the
+      per-draw descriptor, persistent buffers, and the green center pixel with
+      lighting disabled.
+- [x] Add the first browser fixed-function D3D8 lighting shader path for a
+      supported directional light. The shim now stores `SetLight` /
+      `LightEnable` state, carries an eight-light draw payload, exposes legacy
+      and FVF normal offsets to the WebGL2 vertex shader, and applies material
+      diffuse/ambient/emissive plus scene ambient and the first enabled
+      directional diffuse light when that supported light is present. A focused
+      native/browser probe draws adjacent quads with opposite normals and
+      Playwright verifies black left and green right pixels plus
+      `harness-smoke-d3d8-directional-light-canvas.png`. Broader fixed-function
+      lighting remains open for multiple lights, point/spot attenuation,
+      specular, and full material-source behavior.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and

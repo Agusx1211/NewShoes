@@ -5,6 +5,7 @@
 constexpr UINT WASM_D3D8_TEXTURE_STAGE_COUNT = 8;
 constexpr UINT WASM_D3D8_TEXTURE_STAGE_STATE_SLOTS = static_cast<UINT>(D3DTSS_RESULTARG) + 1;
 constexpr UINT WASM_D3D8_CLIP_PLANE_COUNT = 6;
+constexpr UINT WASM_D3D8_LIGHT_COUNT = 8;
 
 struct WasmD3D8DrawTextureStageState
 {
@@ -62,6 +63,24 @@ struct WasmD3D8DrawMaterial
 	D3DCOLORVALUE specular;
 	D3DCOLORVALUE emissive;
 	float power;
+};
+
+struct WasmD3D8DrawLight
+{
+	DWORD type;
+	DWORD enabled;
+	D3DCOLORVALUE diffuse;
+	D3DCOLORVALUE specular;
+	D3DCOLORVALUE ambient;
+	D3DVECTOR position;
+	D3DVECTOR direction;
+	float range;
+	float falloff;
+	float attenuation0;
+	float attenuation1;
+	float attenuation2;
+	float theta;
+	float phi;
 };
 
 struct WasmD3D8ShimState
@@ -165,6 +184,7 @@ struct WasmD3D8ShimState
 	WasmD3D8DrawRenderState last_draw_render_state;
 	float last_draw_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4];
 	WasmD3D8DrawMaterial last_draw_material;
+	WasmD3D8DrawLight last_draw_lights[WASM_D3D8_LIGHT_COUNT];
 	UINT begin_scene_calls;
 	UINT end_scene_calls;
 	UINT clear_calls;
@@ -187,6 +207,8 @@ struct WasmD3D8ShimState
 	UINT get_render_state_calls;
 	UINT set_material_calls;
 	UINT get_material_calls;
+	UINT set_light_calls;
+	UINT light_enable_calls;
 	D3DTRANSFORMSTATETYPE last_set_transform_state;
 	D3DTRANSFORMSTATETYPE last_get_transform_state;
 	D3DMATRIX last_set_transform_matrix;
@@ -197,6 +219,10 @@ struct WasmD3D8ShimState
 	float last_set_clip_plane[4];
 	WasmD3D8DrawMaterial last_set_material;
 	WasmD3D8DrawMaterial last_get_material;
+	DWORD last_set_light_index;
+	DWORD last_light_enable_index;
+	BOOL last_light_enable_value;
+	WasmD3D8DrawLight last_set_light;
 };
 
 extern "C" void wasm_d3d8_reset_state();

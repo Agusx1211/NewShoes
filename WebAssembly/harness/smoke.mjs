@@ -12,6 +12,10 @@ const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
 const d3d8ClipPlaneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clip-plane-canvas.png");
+const d3d8DirectionalLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-directional-light-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3227,6 +3231,33 @@ try {
     throw new Error(`D3D8 lighting/ambient probe failed: ${JSON.stringify(d3d8LightingAmbientResult)}`);
   }
 
+  const d3d8DirectionalLightResult = await page.evaluate(() => window.CnCPort.rpc("d3d8DirectionalLight"));
+  if (!d3d8DirectionalLightResult.ok
+      || d3d8DirectionalLightResult.probe?.source !== "browser_d3d8_directional_light_probe"
+      || d3d8DirectionalLightResult.probe?.calls?.setLight !== 1
+      || d3d8DirectionalLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8DirectionalLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8DirectionalLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8DirectionalLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8DirectionalLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8DirectionalLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8DirectionalLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8DirectionalLightResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.firstDirectionalLight?.index !== 0
+      || d3d8DirectionalLightResult.lightDiffuseOk !== true
+      || d3d8DirectionalLightResult.lightDirectionOk !== true
+      || d3d8DirectionalLightResult.materialOk !== true
+      || d3d8DirectionalLightResult.leftPixelOk !== true
+      || d3d8DirectionalLightResult.rightPixelOk !== true
+      || !pixelLooksBlack(d3d8DirectionalLightResult.lightPixels?.left)
+      || !pixelLooksGreen(d3d8DirectionalLightResult.lightPixels?.right)) {
+    throw new Error(`D3D8 directional-light probe failed: ${JSON.stringify(d3d8DirectionalLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8DirectionalLightCanvasScreenshot });
+
   const d3d8MaterialResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Material"));
   const expectedMaterial = d3d8MaterialResult.probe?.material ?? {};
   const browserMaterial = d3d8MaterialResult.browserProbe?.material ?? {};
@@ -4380,6 +4411,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
+      d3d8DirectionalLightCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

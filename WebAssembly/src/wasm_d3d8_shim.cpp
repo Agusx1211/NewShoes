@@ -320,6 +320,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 	unsigned int texture1_transform_ptr,
 	unsigned int render_state_ptr,
 	unsigned int clip_planes_ptr,
+	unsigned int lights_ptr,
 	unsigned int material_ptr
 ), {
 	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8DrawIndexed : null;
@@ -435,6 +436,40 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		}
 		return planes;
 	};
+	const copyLights = (ptr) => {
+		if (!ptr || !Module.HEAPU32 || !Module.HEAPF32) {
+			return null;
+		}
+		const lightCount = 8;
+		const lightStrideSlots = 27;
+		const u32Offset = ptr >>> 2;
+		const f32Offset = ptr >>> 2;
+		const copyColor = (base) => Array.from(Module.HEAPF32.subarray(base, base + 4));
+		const copyVector = (base) => Array.from(Module.HEAPF32.subarray(base, base + 3));
+		const lights = [];
+		for (let index = 0; index < lightCount; ++index) {
+			const baseU32 = u32Offset + index * lightStrideSlots;
+			const baseF32 = f32Offset + index * lightStrideSlots;
+			lights.push({
+				index,
+				type: Module.HEAPU32[baseU32] >>> 0,
+				enabled: Module.HEAPU32[baseU32 + 1] >>> 0,
+				diffuse: copyColor(baseF32 + 2),
+				specular: copyColor(baseF32 + 6),
+				ambient: copyColor(baseF32 + 10),
+				position: copyVector(baseF32 + 14),
+				direction: copyVector(baseF32 + 17),
+				range: Module.HEAPF32[baseF32 + 20],
+				falloff: Module.HEAPF32[baseF32 + 21],
+				attenuation0: Module.HEAPF32[baseF32 + 22],
+				attenuation1: Module.HEAPF32[baseF32 + 23],
+				attenuation2: Module.HEAPF32[baseF32 + 24],
+				theta: Module.HEAPF32[baseF32 + 25],
+				phi: Module.HEAPF32[baseF32 + 26],
+			});
+		}
+		return lights;
+	};
 	const copyMaterial = (ptr) => {
 		if (!ptr || !Module.HEAPF32) {
 			return null;
@@ -472,6 +507,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 		},
 		renderState: copyRenderState(render_state_ptr),
 		clipPlanes: copyClipPlanes(clip_planes_ptr),
+		lights: copyLights(lights_ptr),
 		material: copyMaterial(material_ptr),
 	});
 });
@@ -491,10 +527,14 @@ void wasm_d3d8_browser_texture_release(unsigned int) {}
 void wasm_d3d8_browser_texture_bind(unsigned int, unsigned int) {}
 void wasm_d3d8_browser_draw_indexed(int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
-	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int) {}
+	unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+	unsigned int) {}
 #endif
 
 namespace {
+
+static_assert(sizeof(WasmD3D8DrawLight) == 108,
+	"WasmD3D8DrawLight memory layout must match bridge.js copyLights");
 
 WasmD3D8ShimState g_state = {};
 int g_d3d8_module = 0;
@@ -690,6 +730,26 @@ WasmD3D8DrawMaterial draw_material_from_d3d(const D3DMATERIAL8 &material)
 	draw_material.emissive = material.Emissive;
 	draw_material.power = material.Power;
 	return draw_material;
+}
+
+WasmD3D8DrawLight draw_light_from_d3d(const D3DLIGHT8 &light, BOOL enabled)
+{
+	WasmD3D8DrawLight draw_light = {};
+	draw_light.type = static_cast<DWORD>(light.Type);
+	draw_light.enabled = enabled ? TRUE : FALSE;
+	draw_light.diffuse = light.Diffuse;
+	draw_light.specular = light.Specular;
+	draw_light.ambient = light.Ambient;
+	draw_light.position = light.Position;
+	draw_light.direction = light.Direction;
+	draw_light.range = light.Range;
+	draw_light.falloff = light.Falloff;
+	draw_light.attenuation0 = light.Attenuation0;
+	draw_light.attenuation1 = light.Attenuation1;
+	draw_light.attenuation2 = light.Attenuation2;
+	draw_light.theta = light.Theta;
+	draw_light.phi = light.Phi;
+	return draw_light;
 }
 
 DWORD checksum_bytes(const BYTE *data, UINT size)
@@ -1075,7 +1135,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 	const D3DMATRIX *view_transform, const D3DMATRIX *projection_transform,
 	const D3DMATRIX *texture0_transform, const D3DMATRIX *texture1_transform,
 	const WasmD3D8DrawRenderState *render_state, const float *clip_planes,
-	const WasmD3D8DrawMaterial *material)
+	const WasmD3D8DrawLight *lights, const WasmD3D8DrawMaterial *material)
 {
 	if (vertex_buffer_id == 0 || vertex_byte_size == 0 || index_buffer_id == 0 || index_byte_size == 0 ||
 		index_count == 0 || vertex_stride == 0) {
@@ -1102,6 +1162,7 @@ void browser_draw_indexed(D3DPRIMITIVETYPE primitive_type, UINT vertex_buffer_id
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(texture1_transform)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(render_state)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(clip_planes)),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(lights)),
 		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(material)));
 }
 
@@ -2591,8 +2652,28 @@ public:
 		g_state.last_get_material = draw_material_from_d3d(m_material);
 		return S_OK;
 	}
-	HRESULT SetLight(DWORD, const D3DLIGHT8 *) override { return S_OK; }
-	HRESULT LightEnable(DWORD, BOOL) override { return S_OK; }
+	HRESULT SetLight(DWORD index, const D3DLIGHT8 *light) override
+	{
+		if (light == nullptr || index >= WASM_D3D8_LIGHT_COUNT) {
+			return E_FAIL;
+		}
+		m_lights[index] = *light;
+		++g_state.set_light_calls;
+		g_state.last_set_light_index = index;
+		g_state.last_set_light = draw_light_from_d3d(*light, m_light_enabled[index]);
+		return S_OK;
+	}
+	HRESULT LightEnable(DWORD index, BOOL enable) override
+	{
+		if (index >= WASM_D3D8_LIGHT_COUNT) {
+			return E_FAIL;
+		}
+		m_light_enabled[index] = enable ? TRUE : FALSE;
+		++g_state.light_enable_calls;
+		g_state.last_light_enable_index = index;
+		g_state.last_light_enable_value = m_light_enabled[index];
+		return S_OK;
+	}
 	HRESULT SetClipPlane(DWORD index, const float *plane) override
 	{
 		if (plane == nullptr || index >= WASM_D3D8_CLIP_PLANE_COUNT) {
@@ -3040,6 +3121,9 @@ private:
 		state.clipping = render_state_value(D3DRS_CLIPPING);
 		state.clip_plane_enable = render_state_value(D3DRS_CLIPPLANEENABLE);
 		std::memcpy(g_state.last_draw_clip_planes, m_clip_planes, sizeof(g_state.last_draw_clip_planes));
+		for (UINT index = 0; index < WASM_D3D8_LIGHT_COUNT; ++index) {
+			g_state.last_draw_lights[index] = draw_light_from_d3d(m_lights[index], m_light_enabled[index]);
+		}
 		capture_draw_texture_stage_states();
 	}
 
@@ -3111,6 +3195,7 @@ private:
 			&g_state.last_draw_texture1_transform,
 			&g_state.last_draw_render_state,
 			&g_state.last_draw_clip_planes[0][0],
+			g_state.last_draw_lights,
 			&g_state.last_draw_material);
 	}
 
@@ -3154,6 +3239,8 @@ private:
 	std::map<DWORD, UINT> m_bound_texture_ids;
 	std::map<DWORD, IDirect3DBaseTexture8 *> m_bound_textures;
 	float m_clip_planes[WASM_D3D8_CLIP_PLANE_COUNT][4] = {};
+	D3DLIGHT8 m_lights[WASM_D3D8_LIGHT_COUNT] = {};
+	BOOL m_light_enabled[WASM_D3D8_LIGHT_COUNT] = {};
 	D3DMATERIAL8 m_material = default_d3d8_material();
 	IDirect3DSurface8 *m_back_buffer = nullptr;
 	IDirect3DSurface8 *m_depth_stencil = nullptr;
