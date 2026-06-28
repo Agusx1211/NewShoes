@@ -2818,6 +2818,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       two-texture quad with red bound on stage 0 and blue bound on stage
       1, verifies the stage-1 combiner reads `D3DTA_TEXTURE` from the
       second sampler, and asserts a blue center pixel.
+- [x] Add a browser-verified terrain-style stage-1 alpha texture proof.
+      The D3D8 probe now renders a red stage-0 texture with a white
+      50%-alpha stage-1 texture using the original terrain two-texture
+      fallback combiner shape (`stage0 SELECTARG1 texture`,
+      `stage1 MODULATE texture/current`, and `stage1 alpha SELECTARG1 texture`)
+      and `SRCALPHA/INVSRCALPHA` blending. The harness asserts
+      the D3D/WebGL blend mapping, stage-1 alpha texture availability,
+      sampler state, a half-red center pixel, and captures
+      `harness-smoke-d3d8-two-texture-alpha-canvas.png`.
 - [x] Wire the same-pass multi-texture shipped mesh through browser
       rendering once the WebGL draw bridge samples/applies multiple
       texture stages.

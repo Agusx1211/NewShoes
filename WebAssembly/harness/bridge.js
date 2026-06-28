@@ -4939,6 +4939,7 @@ async function loadWasmModule() {
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TwoTextureQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_quad", "string", []),
+      probeD3D8TwoTextureAlphaQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_alpha_quad", "string", []),
       probeD3D8TextureMipChainDraw: module.cwrap("cnc_port_probe_d3d8_texture_mip_chain_draw", "string", ["number"]),
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
@@ -7334,6 +7335,107 @@ async function rpc(command, payload = {}) {
             D3D8_XYZNDUV_TEXCOORD0_OFFSET + D3D8_XYZNDUV_TEXCOORD_STRIDE
           && browserProbe?.texture1?.combiner?.colorOp === D3DTOP_SELECTARG1
           && browserProbe?.texture1?.combiner?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture1?.combiner?.supported === true
+          && browserProbe?.stage1Combiner?.textureAvailable === true
+          && browserProbe?.stage1Combiner?.supported === true
+          && browserProbe?.texture1?.sampler?.gl?.minFilter === gl.NEAREST
+          && browserProbe?.texture1?.sampler?.gl?.magFilter === gl.NEAREST
+          && browserProbe?.boundTextures?.["0"] === probe.textures?.stage0?.id
+          && browserProbe?.boundTextures?.["1"] === probe.textures?.stage1?.id
+          && centerPixelOk
+          && textureDelta.creates === 2
+          && textureDelta.updates === 2
+          && textureDelta.binds === 2
+          && textureDelta.releaseUnbinds === 2
+          && textureDelta.releases === 2
+          && textureDelta.samplerApplications === 2
+          && textureProbe?.live === 0
+          && Object.keys(textureProbe?.boundTextures ?? {}).length === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureProbe,
+          textureDelta,
+          centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8TwoTextureAlphaQuad":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 two-texture alpha quad probe cannot run" };
+        }
+        const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8TwoTextureAlphaQuad());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const textureDelta = {
+          creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+          updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+          binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+          releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          samplerApplications: (textureProbe?.samplerApplications ?? 0) -
+            (beforeTextures.samplerApplications ?? 0),
+        };
+        const expectedCenter = probe.textures?.stage1?.expectedCenter ?? [128, 0, 0, 255];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel) &&
+          pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 3);
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState === 7
+          && probe.calls?.createTexture === 2
+          && probe.calls?.browserTextureUpdate === 2
+          && probe.calls?.browserTextureBind === 2
+          && probe.calls?.setTexture === 2
+          && probe.calls?.setTextureStageState === 21
+          && probe.calls?.drawIndexed === 1
+          && probe.draw?.renderState?.alphaBlendEnable === 1
+          && probe.draw?.renderState?.srcBlend === D3DBLEND_SRCALPHA
+          && probe.draw?.renderState?.destBlend === D3DBLEND_INVSRCALPHA
+          && browserProbe?.renderState?.alphaBlendEnable === 1
+          && browserProbe?.renderState?.srcBlend === D3DBLEND_SRCALPHA
+          && browserProbe?.renderState?.destBlend === D3DBLEND_INVSRCALPHA
+          && browserProbe?.appliedRenderState?.blend?.enabled === true
+          && browserProbe?.appliedRenderState?.blend?.src === gl.SRC_ALPHA
+          && browserProbe?.appliedRenderState?.blend?.dest === gl.ONE_MINUS_SRC_ALPHA
+          && browserProbe?.appliedRenderState?.blend?.equation === gl.FUNC_ADD
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.alphaArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.texCoordIndex === 0
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorArg2 === D3DTA_CURRENT
+          && browserProbe?.renderState?.textureStages?.[1]?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[1]?.alphaArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex === 1
+          && browserProbe?.texture0?.id === probe.textures?.stage0?.id
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.texCoordSet === 0
+          && browserProbe?.texture0?.texCoordOffset === D3D8_XYZNDUV_TEXCOORD0_OFFSET
+          && browserProbe?.texture0?.combiner?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.texture0?.combiner?.alphaArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture0?.sampler?.gl?.minFilter === gl.NEAREST
+          && browserProbe?.texture0?.sampler?.gl?.magFilter === gl.NEAREST
+          && browserProbe?.texture1?.id === probe.textures?.stage1?.id
+          && browserProbe?.texture1?.ready === true
+          && browserProbe?.texture1?.sampled === true
+          && browserProbe?.texture1?.texCoordSet === 1
+          && browserProbe?.texture1?.texCoordOffset ===
+            D3D8_XYZNDUV_TEXCOORD0_OFFSET + D3D8_XYZNDUV_TEXCOORD_STRIDE
+          && browserProbe?.texture1?.combiner?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.texture1?.combiner?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture1?.combiner?.colorArg2 === D3DTA_CURRENT
+          && browserProbe?.texture1?.combiner?.alphaOp === D3DTOP_SELECTARG1
+          && browserProbe?.texture1?.combiner?.alphaArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture1?.combiner?.textureAvailable === true
           && browserProbe?.texture1?.combiner?.supported === true
           && browserProbe?.stage1Combiner?.textureAvailable === true
           && browserProbe?.stage1Combiner?.supported === true

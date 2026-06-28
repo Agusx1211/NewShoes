@@ -11,6 +11,10 @@ const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
 const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clear-canvas.png");
+const d3d8TwoTextureAlphaCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-two-texture-alpha-canvas.png",
+);
 const d3d8ClipPlaneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clip-plane-canvas.png");
 const d3d8DirectionalLightCanvasScreenshot = resolve(
   screenshotDir,
@@ -3028,6 +3032,88 @@ try {
     throw new Error(`D3D8 two-texture quad probe failed: ${JSON.stringify(d3d8TwoTextureQuadResult)}`);
   }
 
+  const d3d8TwoTextureAlphaResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TwoTextureAlphaQuad"));
+  const d3d8TwoTextureAlphaExpectedCenter =
+    d3d8TwoTextureAlphaResult.probe?.textures?.stage1?.expectedCenter ?? [128, 0, 0, 255];
+  if (!d3d8TwoTextureAlphaResult.ok
+      || d3d8TwoTextureAlphaResult.probe?.source !== "browser_d3d8_two_texture_alpha_quad_probe"
+      || d3d8TwoTextureAlphaResult.probe?.calls?.setRenderState !== 7
+      || d3d8TwoTextureAlphaResult.probe?.calls?.createTexture !== 2
+      || d3d8TwoTextureAlphaResult.probe?.calls?.browserTextureUpdate !== 2
+      || d3d8TwoTextureAlphaResult.probe?.calls?.browserTextureBind !== 2
+      || d3d8TwoTextureAlphaResult.probe?.calls?.setTexture !== 2
+      || d3d8TwoTextureAlphaResult.probe?.calls?.setTextureStageState !== 21
+      || d3d8TwoTextureAlphaResult.probe?.calls?.drawIndexed !== 1
+      || d3d8TwoTextureAlphaResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || d3d8TwoTextureAlphaResult.probe?.draw?.renderState?.srcBlend !== 5
+      || d3d8TwoTextureAlphaResult.probe?.draw?.renderState?.destBlend !== 6
+      || d3d8TwoTextureAlphaResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || d3d8TwoTextureAlphaResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.alphaBlendEnable !== 1
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.srcBlend !== 5
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.destBlend !== 6
+      || d3d8TwoTextureAlphaResult.browserProbe?.appliedRenderState?.blend?.enabled !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.appliedRenderState?.blend?.src !== 770
+      || d3d8TwoTextureAlphaResult.browserProbe?.appliedRenderState?.blend?.dest !== 771
+      || d3d8TwoTextureAlphaResult.browserProbe?.appliedRenderState?.blend?.equation !== 32774
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[0]?.colorOp !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[0]?.alphaOp !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[0]?.alphaArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[0]?.texCoordIndex !== 0
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.colorOp !== 4
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.colorArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.colorArg2 !== 1
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.alphaOp !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.alphaArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.renderState?.textureStages?.[1]?.texCoordIndex !== 1
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.id !==
+        d3d8TwoTextureAlphaResult.probe?.textures?.stage0?.id
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.sampled !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.texCoordSet !== 0
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.texCoordOffset !== 28
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.combiner?.alphaOp !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.combiner?.alphaArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.sampler?.gl?.minFilter !== 9728
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture0?.sampler?.gl?.magFilter !== 9728
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.id !==
+        d3d8TwoTextureAlphaResult.probe?.textures?.stage1?.id
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.sampled !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.texCoordSet !== 1
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.texCoordOffset !== 36
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.colorOp !== 4
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.colorArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.colorArg2 !== 1
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.alphaOp !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.alphaArg1 !== 2
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.textureAvailable !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.combiner?.supported !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.stage1Combiner?.textureAvailable !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.stage1Combiner?.supported !== true
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.sampler?.gl?.minFilter !== 9728
+      || d3d8TwoTextureAlphaResult.browserProbe?.texture1?.sampler?.gl?.magFilter !== 9728
+      || d3d8TwoTextureAlphaResult.browserProbe?.boundTextures?.["0"] !==
+        d3d8TwoTextureAlphaResult.probe?.textures?.stage0?.id
+      || d3d8TwoTextureAlphaResult.browserProbe?.boundTextures?.["1"] !==
+        d3d8TwoTextureAlphaResult.probe?.textures?.stage1?.id
+      || !pixelsApproximatelyEqual(
+        d3d8TwoTextureAlphaResult.browserProbe?.centerPixel,
+        d3d8TwoTextureAlphaExpectedCenter,
+        3,
+      )
+      || d3d8TwoTextureAlphaResult.centerPixelOk !== true
+      || d3d8TwoTextureAlphaResult.textureDelta?.creates !== 2
+      || d3d8TwoTextureAlphaResult.textureDelta?.updates !== 2
+      || d3d8TwoTextureAlphaResult.textureDelta?.binds !== 2
+      || d3d8TwoTextureAlphaResult.textureDelta?.releaseUnbinds !== 2
+      || d3d8TwoTextureAlphaResult.textureDelta?.releases !== 2
+      || d3d8TwoTextureAlphaResult.textureDelta?.samplerApplications !== 2
+      || d3d8TwoTextureAlphaResult.textureProbe?.live !== 0
+      || Object.keys(d3d8TwoTextureAlphaResult.textureProbe?.boundTextures ?? {}).length !== 0) {
+    throw new Error(`D3D8 two-texture alpha quad probe failed: ${JSON.stringify(d3d8TwoTextureAlphaResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8TwoTextureAlphaCanvasScreenshot });
+
   const d3d8TextureMipChainResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureMipChainDraw"));
   const mipCases = d3d8TextureMipChainResult.cases ?? [];
   const mipCaseNames = mipCases.map((entry) => entry.probe?.caseName).join(",");
@@ -5387,6 +5473,7 @@ try {
       canvasScreenshot,
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
+      d3d8TwoTextureAlphaCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,
       d3d8MultiDirectionalLightCanvasScreenshot,
