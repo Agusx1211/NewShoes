@@ -311,7 +311,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 13;
+		const renderStateSlots = 21;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -367,6 +367,14 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			alphaRef: state[10] >>> 0,
 			colorWriteEnable: state[11] >>> 0,
 			textureFactor: state[12] >>> 0,
+			stencilEnable: state[13] >>> 0,
+			stencilFail: state[14] >>> 0,
+			stencilZFail: state[15] >>> 0,
+			stencilPass: state[16] >>> 0,
+			stencilFunc: state[17] >>> 0,
+			stencilRef: state[18] >>> 0,
+			stencilMask: state[19] >>> 0,
+			stencilWriteMask: state[20] >>> 0,
 			textureStages,
 		};
 	};
@@ -2751,6 +2759,14 @@ private:
 			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
 		state.texture_factor = render_state_value(D3DRS_TEXTUREFACTOR, 0);
+		state.stencil_enable = render_state_value(D3DRS_STENCILENABLE, FALSE);
+		state.stencil_fail = render_state_value(D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
+		state.stencil_z_fail = render_state_value(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP);
+		state.stencil_pass = render_state_value(D3DRS_STENCILPASS, D3DSTENCILOP_KEEP);
+		state.stencil_func = render_state_value(D3DRS_STENCILFUNC, D3DCMP_ALWAYS);
+		state.stencil_ref = render_state_value(D3DRS_STENCILREF, 0);
+		state.stencil_mask = render_state_value(D3DRS_STENCILMASK, 0xffffffffUL);
+		state.stencil_write_mask = render_state_value(D3DRS_STENCILWRITEMASK, 0xffffffffUL);
 		capture_draw_texture_stage_states();
 	}
 

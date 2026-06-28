@@ -25,6 +25,14 @@ struct WasmD3D8DrawRenderState
 	DWORD alpha_ref;
 	DWORD color_write_enable;
 	DWORD texture_factor;
+	DWORD stencil_enable;
+	DWORD stencil_fail;
+	DWORD stencil_z_fail;
+	DWORD stencil_pass;
+	DWORD stencil_func;
+	DWORD stencil_ref;
+	DWORD stencil_mask;
+	DWORD stencil_write_mask;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

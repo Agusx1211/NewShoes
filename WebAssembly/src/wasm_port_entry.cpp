@@ -7375,6 +7375,275 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_transform(unsigned 
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_stencil_state()
+{
+	wasm_d3d8_reset_state();
+
+	struct TexturedQuadVertex
+	{
+		float x;
+		float y;
+		float z;
+		float nx;
+		float ny;
+		float nz;
+		DWORD diffuse;
+		float u0;
+		float v0;
+		float u1;
+		float v1;
+	};
+	static_assert(sizeof(TexturedQuadVertex) == 44, "TexturedQuadVertex must match XYZNDUV2 stride");
+
+	const TexturedQuadVertex stencil_vertices[4] = {
+		{ -0.35f, -0.35f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  0.35f, -0.35f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.35f,  0.35f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{ -0.35f,  0.35f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 1.0f, 0.0f, 1.0f },
+	};
+	const TexturedQuadVertex color_vertices[4] = {
+		{ -0.85f, -0.85f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  0.85f, -0.85f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.85f,  0.85f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{ -0.85f,  0.85f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 1.0f, 0.0f, 1.0f },
+	};
+	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
+	const DWORD full_color_write =
+		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
+	const DWORD stencil_ref = 7;
+	const DWORD stencil_mask = 0xff;
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVertexBuffer8 *stencil_vertex_buffer = nullptr;
+	IDirect3DVertexBuffer8 *color_vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT clear_result = E_FAIL;
+	HRESULT stencil_vertex_create_result = E_FAIL;
+	HRESULT stencil_vertex_lock_result = E_FAIL;
+	HRESULT stencil_vertex_unlock_result = E_FAIL;
+	HRESULT color_vertex_create_result = E_FAIL;
+	HRESULT color_vertex_lock_result = E_FAIL;
+	HRESULT color_vertex_unlock_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_stream_stencil_result = E_FAIL;
+	HRESULT set_stream_color_result = E_FAIL;
+	HRESULT set_indices_result = E_FAIL;
+	HRESULT stencil_draw_result = E_FAIL;
+	HRESULT color_draw_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		clear_result = device->Clear(0, nullptr,
+			D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL,
+			0xff000000UL, 1.0f, 0);
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		ok = ok && SUCCEEDED(clear_result);
+	}
+
+	if (device != nullptr) {
+		stencil_vertex_create_result = device->CreateVertexBuffer(sizeof(stencil_vertices),
+			D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &stencil_vertex_buffer);
+		color_vertex_create_result = device->CreateVertexBuffer(sizeof(color_vertices),
+			D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &color_vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_MANAGED, &index_buffer);
+		ok = ok && SUCCEEDED(stencil_vertex_create_result) && stencil_vertex_buffer != nullptr &&
+			SUCCEEDED(color_vertex_create_result) && color_vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+
+	if (stencil_vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		stencil_vertex_lock_result = stencil_vertex_buffer->Lock(0, sizeof(stencil_vertices), &data, 0);
+		if (SUCCEEDED(stencil_vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, stencil_vertices, sizeof(stencil_vertices));
+		}
+		stencil_vertex_unlock_result = stencil_vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(stencil_vertex_lock_result) && SUCCEEDED(stencil_vertex_unlock_result);
+	}
+
+	if (color_vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		color_vertex_lock_result = color_vertex_buffer->Lock(0, sizeof(color_vertices), &data, 0);
+		if (SUCCEEDED(color_vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, color_vertices, sizeof(color_vertices));
+		}
+		color_vertex_unlock_result = color_vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(color_vertex_lock_result) && SUCCEEDED(color_vertex_unlock_result);
+	}
+
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(0, sizeof(indices), &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memcpy(data, indices, sizeof(indices));
+		}
+		index_unlock_result = index_buffer->Unlock();
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result);
+	}
+
+	if (device != nullptr && stencil_vertex_buffer != nullptr && color_vertex_buffer != nullptr &&
+			index_buffer != nullptr) {
+		set_indices_result = device->SetIndices(index_buffer, 0);
+		device->SetRenderState(D3DRS_STENCILENABLE, TRUE);
+		device->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_ALWAYS);
+		device->SetRenderState(D3DRS_STENCILREF, stencil_ref);
+		device->SetRenderState(D3DRS_STENCILMASK, stencil_mask);
+		device->SetRenderState(D3DRS_STENCILWRITEMASK, stencil_mask);
+		device->SetRenderState(D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
+		device->SetRenderState(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP);
+		device->SetRenderState(D3DRS_STENCILPASS, D3DSTENCILOP_REPLACE);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, 0);
+		set_stream_stencil_result = device->SetStreamSource(0, stencil_vertex_buffer, sizeof(TexturedQuadVertex));
+		stencil_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+
+		device->SetRenderState(D3DRS_STENCILFUNC, D3DCMP_EQUAL);
+		device->SetRenderState(D3DRS_STENCILPASS, D3DSTENCILOP_KEEP);
+		device->SetRenderState(D3DRS_STENCILWRITEMASK, 0);
+		device->SetRenderState(D3DRS_COLORWRITEENABLE, full_color_write);
+		set_stream_color_result = device->SetStreamSource(0, color_vertex_buffer, sizeof(TexturedQuadVertex));
+		color_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
+
+		ok = ok && SUCCEEDED(set_indices_result) && SUCCEEDED(set_stream_stencil_result) &&
+			SUCCEEDED(stencil_draw_result) && SUCCEEDED(set_stream_color_result) &&
+			SUCCEEDED(color_draw_result);
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (color_vertex_buffer != nullptr) {
+		color_vertex_buffer->Release();
+	}
+	if (stencil_vertex_buffer != nullptr) {
+		stencil_vertex_buffer->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->clear_calls == 1 &&
+		state->last_clear_flags == (D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL) &&
+		state->create_vertex_buffer_calls == 2 &&
+		state->create_index_buffer_calls == 1 &&
+		state->buffer_lock_calls == 3 &&
+		state->buffer_unlock_calls == 3 &&
+		state->browser_buffer_create_calls == 3 &&
+		state->browser_buffer_update_calls == 3 &&
+		state->browser_buffer_release_calls == 3 &&
+		state->draw_indexed_primitive_calls == 2 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == sizeof(TexturedQuadVertex) &&
+		state->last_draw_render_state.stencil_enable == TRUE &&
+		state->last_draw_render_state.stencil_func == D3DCMP_EQUAL &&
+		state->last_draw_render_state.stencil_ref == stencil_ref &&
+		state->last_draw_render_state.stencil_mask == stencil_mask &&
+		state->last_draw_render_state.stencil_write_mask == 0 &&
+		state->last_draw_render_state.stencil_fail == D3DSTENCILOP_KEEP &&
+		state->last_draw_render_state.stencil_z_fail == D3DSTENCILOP_KEEP &&
+		state->last_draw_render_state.stencil_pass == D3DSTENCILOP_KEEP &&
+		state->last_draw_render_state.color_write_enable == full_color_write;
+
+	char buffer[4096];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_stencil_state_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"clear\":%ld,"
+		"\"stencilVertexCreate\":%ld,\"stencilVertexLock\":%ld,\"stencilVertexUnlock\":%ld,"
+		"\"colorVertexCreate\":%ld,\"colorVertexLock\":%ld,\"colorVertexUnlock\":%ld,"
+		"\"indexCreate\":%ld,\"indexLock\":%ld,\"indexUnlock\":%ld,"
+		"\"setIndices\":%ld,\"setStreamStencil\":%ld,\"stencilDraw\":%ld,"
+		"\"setStreamColor\":%ld,\"colorDraw\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"clear\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"bufferLock\":%u,\"bufferUnlock\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setRenderState\":%u,\"drawIndexed\":%u},"
+		"\"stencil\":{\"enable\":%lu,\"func\":%lu,\"ref\":%lu,\"mask\":%lu,"
+		"\"writeMask\":%lu,\"fail\":%lu,\"zFail\":%lu,\"pass\":%lu},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"colorWriteEnable\":%lu},"
+		"\"expectedCenter\":[0,255,0,255],\"expectedCorner\":[0,0,0,255]}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(clear_result),
+		static_cast<long>(stencil_vertex_create_result),
+		static_cast<long>(stencil_vertex_lock_result),
+		static_cast<long>(stencil_vertex_unlock_result),
+		static_cast<long>(color_vertex_create_result),
+		static_cast<long>(color_vertex_lock_result),
+		static_cast<long>(color_vertex_unlock_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_indices_result),
+		static_cast<long>(set_stream_stencil_result),
+		static_cast<long>(stencil_draw_result),
+		static_cast<long>(set_stream_color_result),
+		static_cast<long>(color_draw_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->buffer_lock_calls : 0,
+		state != nullptr ? state->buffer_unlock_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_render_state_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_enable) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_func) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_ref) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_mask) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_write_mask) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_fail) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_z_fail) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.stencil_pass) : 0,
+		state != nullptr ? static_cast<unsigned int>(state->last_draw_primitive_type) : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_legacy_texture_upload()
 {
 	wasm_d3d8_reset_state();

@@ -3,7 +3,7 @@ const gl = canvas.getContext("webgl2", {
   alpha: false,
   antialias: false,
   depth: true,
-  stencil: false,
+  stencil: true,
   preserveDrawingBuffer: true,
 });
 const s3tc = gl ? gl.getExtension("WEBGL_compressed_texture_s3tc") : null;
@@ -72,6 +72,14 @@ const D3DCOLORWRITEENABLE_RED = 1;
 const D3DCOLORWRITEENABLE_GREEN = 2;
 const D3DCOLORWRITEENABLE_BLUE = 4;
 const D3DCOLORWRITEENABLE_ALPHA = 8;
+const D3DSTENCILOP_KEEP = 1;
+const D3DSTENCILOP_ZERO = 2;
+const D3DSTENCILOP_REPLACE = 3;
+const D3DSTENCILOP_INCRSAT = 4;
+const D3DSTENCILOP_DECRSAT = 5;
+const D3DSTENCILOP_INVERT = 6;
+const D3DSTENCILOP_INCR = 7;
+const D3DSTENCILOP_DECR = 8;
 const D3DTSS_COLOROP = 1;
 const D3DTSS_COLORARG1 = 2;
 const D3DTSS_COLORARG2 = 3;
@@ -2125,6 +2133,7 @@ function paintD3D8Clear(flags, red, green, blue, alpha, z, stencil) {
       clearBits |= gl.DEPTH_BUFFER_BIT;
     }
     if ((clearFlags & 0x4) !== 0 && gl.getContextAttributes()?.stencil) {
+      gl.stencilMask(0xffffffff);
       gl.clearStencil(stencil >>> 0);
       clearBits |= gl.STENCIL_BUFFER_BIT;
     }
@@ -2751,6 +2760,14 @@ function normalizeD3D8RenderState(renderState = {}) {
       (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
         D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA)) >>> 0,
     textureFactor: Number(renderState.textureFactor ?? 0) >>> 0,
+    stencilEnable: Number(renderState.stencilEnable ?? 0) >>> 0,
+    stencilFail: Number(renderState.stencilFail ?? D3DSTENCILOP_KEEP) >>> 0,
+    stencilZFail: Number(renderState.stencilZFail ?? D3DSTENCILOP_KEEP) >>> 0,
+    stencilPass: Number(renderState.stencilPass ?? D3DSTENCILOP_KEEP) >>> 0,
+    stencilFunc: Number(renderState.stencilFunc ?? D3DCMP_ALWAYS) >>> 0,
+    stencilRef: Number(renderState.stencilRef ?? 0) >>> 0,
+    stencilMask: Number(renderState.stencilMask ?? 0xffffffff) >>> 0,
+    stencilWriteMask: Number(renderState.stencilWriteMask ?? 0xffffffff) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -2824,6 +2841,28 @@ function d3dBlendOpToGl(blendOp) {
   }
 }
 
+function d3dStencilOpToGl(stencilOp) {
+  switch (Number(stencilOp) >>> 0) {
+    case D3DSTENCILOP_ZERO:
+      return gl.ZERO;
+    case D3DSTENCILOP_REPLACE:
+      return gl.REPLACE;
+    case D3DSTENCILOP_INCRSAT:
+      return gl.INCR;
+    case D3DSTENCILOP_DECRSAT:
+      return gl.DECR;
+    case D3DSTENCILOP_INVERT:
+      return gl.INVERT;
+    case D3DSTENCILOP_INCR:
+      return gl.INCR_WRAP;
+    case D3DSTENCILOP_DECR:
+      return gl.DECR_WRAP;
+    case D3DSTENCILOP_KEEP:
+    default:
+      return gl.KEEP;
+  }
+}
+
 function applyD3D8RenderState(renderState, options = {}) {
   const state = normalizeD3D8RenderState(renderState);
   const cullEnabled = state.cullMode === D3DCULL_CW || state.cullMode === D3DCULL_CCW;
@@ -2836,6 +2875,12 @@ function applyD3D8RenderState(renderState, options = {}) {
   const srcBlend = d3dBlendFactorToGl(state.srcBlend);
   const destBlend = d3dBlendFactorToGl(state.destBlend);
   const blendEquation = d3dBlendOpToGl(state.blendOp);
+  const stencilAvailable = Boolean(gl.getContextAttributes()?.stencil);
+  const stencilEnabled = stencilAvailable && state.stencilEnable !== 0;
+  const stencilFunc = d3dCmpToGl(state.stencilFunc);
+  const stencilFail = d3dStencilOpToGl(state.stencilFail);
+  const stencilZFail = d3dStencilOpToGl(state.stencilZFail);
+  const stencilPass = d3dStencilOpToGl(state.stencilPass);
   const colorMask = {
     r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
     g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
@@ -2867,6 +2912,17 @@ function applyD3D8RenderState(renderState, options = {}) {
   gl.blendFunc(srcBlend, destBlend);
   gl.blendEquation(blendEquation);
   gl.colorMask(colorMask.r, colorMask.g, colorMask.b, colorMask.a);
+  if (stencilEnabled) {
+    gl.enable(gl.STENCIL_TEST);
+    gl.stencilFunc(stencilFunc, state.stencilRef, state.stencilMask);
+    gl.stencilOp(stencilFail, stencilZFail, stencilPass);
+    gl.stencilMask(state.stencilWriteMask);
+  } else {
+    gl.disable(gl.STENCIL_TEST);
+    gl.stencilFunc(gl.ALWAYS, 0, 0xffffffff);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    gl.stencilMask(0xffffffff);
+  }
 
   return {
     d3d: state,
@@ -2886,6 +2942,17 @@ function applyD3D8RenderState(renderState, options = {}) {
       src: srcBlend,
       dest: destBlend,
       equation: blendEquation,
+    },
+    stencil: {
+      available: stencilAvailable,
+      enabled: stencilEnabled,
+      func: stencilFunc,
+      fail: stencilFail,
+      zFail: stencilZFail,
+      pass: stencilPass,
+      ref: state.stencilRef,
+      mask: state.stencilMask,
+      writeMask: state.stencilWriteMask,
     },
     alphaTest: {
       enabled: state.alphaTestEnable !== 0,
@@ -3519,6 +3586,7 @@ async function loadWasmModule() {
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
+      probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -6158,6 +6226,54 @@ async function rpc(command, payload = {}) {
           ok: cases.every((entry) => entry.ok),
           command,
           cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8StencilState":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 stencil-state probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8StencilState());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const cornerPixel = sampleCanvasPixel(16, 16);
+        const expectedCenter = probe.expectedCenter ?? [];
+        const expectedCorner = probe.expectedCorner ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const cornerPixelOk = Array.isArray(cornerPixel)
+          && expectedCorner.length === 4
+          && pixelsApproximatelyEqual(cornerPixel, expectedCorner, 2);
+        const stencil = browserProbe?.appliedRenderState?.stencil ?? {};
+        const caseOk = Boolean(probe.ok)
+          && gl?.getContextAttributes()?.stencil === true
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.renderState?.stencilEnable === probe.stencil?.enable
+          && browserProbe?.renderState?.stencilFunc === probe.stencil?.func
+          && browserProbe?.renderState?.stencilRef === probe.stencil?.ref
+          && browserProbe?.renderState?.stencilMask === probe.stencil?.mask
+          && browserProbe?.renderState?.stencilWriteMask === probe.stencil?.writeMask
+          && browserProbe?.renderState?.stencilPass === probe.stencil?.pass
+          && stencil.available === true
+          && stencil.enabled === true
+          && stencil.func === gl.EQUAL
+          && stencil.pass === gl.KEEP
+          && stencil.ref === probe.stencil?.ref
+          && stencil.mask === probe.stencil?.mask
+          && stencil.writeMask === probe.stencil?.writeMask
+          && centerPixelOk
+          && cornerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          cornerPixel,
+          centerPixelOk,
+          cornerPixelOk,
           state: snapshotState(),
         };
       }

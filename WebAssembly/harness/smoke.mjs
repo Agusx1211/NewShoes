@@ -3044,6 +3044,26 @@ try {
     throw new Error(`D3D8 texture transform probe failed: ${JSON.stringify(d3d8TextureTransformResult)}`);
   }
 
+  const d3d8StencilStateResult = await page.evaluate(() => window.CnCPort.rpc("d3d8StencilState"));
+  if (!d3d8StencilStateResult.ok
+      || d3d8StencilStateResult.probe?.source !== "browser_d3d8_stencil_state_probe"
+      || d3d8StencilStateResult.probe?.calls?.drawIndexed !== 2
+      || d3d8StencilStateResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8StencilStateResult.cornerPixel?.join(",") !== "0,0,0,255"
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilEnable !== 1
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilFunc !== 3
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilRef !== 7
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilMask !== 255
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilWriteMask !== 0
+      || d3d8StencilStateResult.browserProbe?.renderState?.stencilPass !== 1
+      || d3d8StencilStateResult.browserProbe?.appliedRenderState?.stencil?.available !== true
+      || d3d8StencilStateResult.browserProbe?.appliedRenderState?.stencil?.enabled !== true
+      || d3d8StencilStateResult.browserProbe?.appliedRenderState?.stencil?.ref !== 7
+      || d3d8StencilStateResult.centerPixelOk !== true
+      || d3d8StencilStateResult.cornerPixelOk !== true) {
+    throw new Error(`D3D8 stencil-state probe failed: ${JSON.stringify(d3d8StencilStateResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

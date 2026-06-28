@@ -2219,6 +2219,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       bridge also detects Render2D identity-world/view/projection clip-space
       submits and flips the GL cull face for D3D screen-space winding; the
       Render2D and `W3DDisplay::drawImage` smokes assert that path.
+- [x] Add the first D3D8 stencil render-state bridge to the browser WebGL2
+      draw path. The shim now captures `D3DRS_STENCILENABLE`,
+      `STENCILFUNC`, `STENCILREF`, `STENCILMASK`, `STENCILWRITEMASK`, and
+      `STENCILFAIL`/`STENCILZFAIL`/`STENCILPASS` into the draw payload, the
+      harness requests a stencil buffer and maps the D3D compare/op state to
+      `gl.stencilFunc`/`gl.stencilOp`/`gl.stencilMask`, and a focused probe
+      writes stencil through a color-masked central quad before drawing a full
+      green quad through an `EQUAL` stencil test. Playwright verifies the
+      center pixel turns green while a corner remains black, catching both
+      missing stencil writes and accidentally disabled stencil tests. Broader
+      W3D player-color, occlusion, and projected-shadow stencil flows remain
+      open until the original scene/shadow renderer paths are harness-driven.
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8
       `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and
