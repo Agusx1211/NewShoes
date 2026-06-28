@@ -52,6 +52,10 @@ const d3d8SpotFalloffCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-falloff-canvas.png",
 );
+const d3d8LitMaterialSourcesCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-lit-material-sources-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3713,6 +3717,68 @@ try {
     throw new Error(`D3D8 material-source probe failed: ${JSON.stringify(d3d8MaterialSourcesResult)}`);
   }
 
+  const d3d8LitMaterialSourcesResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8LitMaterialSources"));
+  const litMaterialSources = d3d8LitMaterialSourcesResult.probe?.materialSources ?? {};
+  const litAppliedSources = d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.materialSources ?? {};
+  const expectedLitLeft = d3d8LitMaterialSourcesResult.probe?.expectedLeft ?? [192, 0, 0, 255];
+  const expectedLitRight = d3d8LitMaterialSourcesResult.probe?.expectedRight ?? [0, 192, 0, 255];
+  if (!d3d8LitMaterialSourcesResult.ok
+      || d3d8LitMaterialSourcesResult.probe?.source !== "browser_d3d8_lit_material_sources_probe"
+      || d3d8LitMaterialSourcesResult.probe?.calls?.setRenderState !== 13
+      || d3d8LitMaterialSourcesResult.probe?.calls?.setMaterial !== 1
+      || d3d8LitMaterialSourcesResult.probe?.calls?.setLight !== 1
+      || d3d8LitMaterialSourcesResult.probe?.calls?.lightEnable !== 1
+      || d3d8LitMaterialSourcesResult.probe?.calls?.drawIndexed !== 1
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.ambient !==
+        d3d8LitMaterialSourcesResult.probe?.sceneAmbient
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.colorVertex !== litMaterialSources.colorVertex
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.diffuseMaterialSource !==
+        litMaterialSources.diffuse
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.specularMaterialSource !==
+        litMaterialSources.specular
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.ambientMaterialSource !==
+        litMaterialSources.ambient
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.emissiveMaterialSource !==
+        litMaterialSources.emissive
+      || d3d8LitMaterialSourcesResult.browserProbe?.renderState?.specularEnable !== 0
+      || litAppliedSources.colorVertex?.enabled !== true
+      || litAppliedSources.diffuse?.name !== "color1"
+      || litAppliedSources.specular?.name !== "material"
+      || litAppliedSources.ambient?.name !== "color1"
+      || litAppliedSources.emissive?.name !== "material"
+      || d3d8LitMaterialSourcesResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8LitMaterialSourcesResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8LitMaterialSourcesResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported !== true
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightCount !== 1
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8LitMaterialSourcesResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 1
+      || d3d8LitMaterialSourcesResult.sourceValueOk !== true
+      || d3d8LitMaterialSourcesResult.appliedSourcesOk !== true
+      || d3d8LitMaterialSourcesResult.materialOk !== true
+      || d3d8LitMaterialSourcesResult.lightOk !== true
+      || d3d8LitMaterialSourcesResult.selectedLightOk !== true
+      || d3d8LitMaterialSourcesResult.litColor1ShapeOk !== true
+      || d3d8LitMaterialSourcesResult.leftPixelOk !== true
+      || d3d8LitMaterialSourcesResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8LitMaterialSourcesResult.litMaterialSourcePixels?.left,
+        expectedLitLeft,
+        3,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8LitMaterialSourcesResult.litMaterialSourcePixels?.right,
+        expectedLitRight,
+        3,
+      )) {
+    throw new Error(`D3D8 lit material-source probe failed: ${JSON.stringify(d3d8LitMaterialSourcesResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8LitMaterialSourcesCanvasScreenshot });
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
@@ -4830,6 +4896,7 @@ try {
       d3d8PointMixedLightCanvasScreenshot,
       d3d8SpotLightCanvasScreenshot,
       d3d8SpotFalloffCanvasScreenshot,
+      d3d8LitMaterialSourcesCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

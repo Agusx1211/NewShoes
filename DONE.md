@@ -2341,8 +2341,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       The JS bridge exposes `d3d8SpecularOffAxisLight`, verifies raw and
       selected light direction/specular state, material power/source state,
       and black/white sampled pixels, with Playwright saving
-      `harness-smoke-d3d8-specular-offaxis-light-canvas.png`. Transformed
-      specular fidelity and broader lit material-source behavior remain open.
+      `harness-smoke-d3d8-specular-offaxis-light-canvas.png`. At that point,
+      transformed specular fidelity and broader lit material-source behavior
+      remained open.
+- [x] Add a focused lit fixed-function D3D8 material-source `COLOR1` proof.
+      The native/browser probe `cnc_port_probe_d3d8_lit_material_sources`
+      sets `COLORVERTEX=TRUE`, uses vertex diffuse colors as both the diffuse
+      and ambient material sources, keeps material diffuse/ambient/emissive
+      black, and lights adjacent red/green quads with scene ambient plus a
+      directional light. The JS bridge exposes `d3d8LitMaterialSources`,
+      verifies captured and applied material-source descriptors, light/material
+      state, and sampled red/green pixels, with Playwright saving
+      `harness-smoke-d3d8-lit-material-sources-canvas.png`. Emissive `COLOR1`,
+      `COLOR2`, and specular-source variants remain open.
 - [x] Add a focused fixed-function D3D8 point-light attenuation path. The
       WebGL2 draw bridge now selects enabled point, spot, and directional
       lights into the fixed-function shader uniform set, preserves each
