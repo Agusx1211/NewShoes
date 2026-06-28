@@ -479,6 +479,24 @@ int main()
 	expect_last(D3DRS_LOCALVIEWER, TRUE);
 
 	// ----------------------------------------------------------------------
+	// 10. SetVertexShader with a fixed-function FVF: the shim must record the
+	//     handle verbatim and bump the dedicated counter. This smoke performs
+	//     no draw, so last_draw_vertex_shader must remain unset (0); recording
+	//     that fact here pins the contract for the future draw-bearing proof.
+	// ----------------------------------------------------------------------
+	const UINT set_vertex_shader_before = state->set_vertex_shader_calls;
+	const DWORD fvf_xyz_normal_diff_spec_tex2 =
+		D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX2;
+	expect(SUCCEEDED(device->SetVertexShader(fvf_xyz_normal_diff_spec_tex2)),
+		"SetVertexShader fixed-function FVF failed");
+	expect(state->set_vertex_shader_calls == set_vertex_shader_before + 1,
+		"set_vertex_shader_calls counter mismatch");
+	expect(state->last_set_vertex_shader == fvf_xyz_normal_diff_spec_tex2,
+		"last_set_vertex_shader FVF mismatch");
+	expect(state->last_draw_vertex_shader == 0,
+		"last_draw_vertex_shader should remain 0 without a draw");
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
 	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2;
