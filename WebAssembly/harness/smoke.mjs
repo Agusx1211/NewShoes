@@ -27,6 +27,10 @@ const ww3dDisplayStringCanvasScreenshot = resolve(
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dDisplayFillRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-fillrect-canvas.png");
 const ww3dDisplayLineCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-line-canvas.png");
+const ww3dDisplayLineGradientCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-line-gradient-canvas.png",
+);
 const ww3dDisplayOpenRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-openrect-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
@@ -151,6 +155,14 @@ function assertBrowserInputInitial(state, label) {
 
 function pixelHasColor(pixel, threshold = 8) {
   return Array.isArray(pixel) && pixel.slice(0, 3).some((component) => component > threshold);
+}
+
+function pixelsApproximatelyEqual(left, right, tolerance = 1) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === 4
+    && right.length === 4
+    && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
 }
 
 function pixelLooksRed(pixel) {
@@ -1827,6 +1839,51 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayLineCanvasScreenshot });
 
+  const displayLineGradientResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayLineGradient"));
+  const expectedGradientLeft = displayLineGradientResult.probe?.draw?.expectedLeft ?? [241, 0, 14, 255];
+  const expectedGradientCenter = displayLineGradientResult.probe?.draw?.expectedCenter ?? [128, 0, 128, 255];
+  const expectedGradientRight = displayLineGradientResult.probe?.draw?.expectedRight ?? [14, 0, 241, 255];
+  if (!displayLineGradientResult.ok
+      || displayLineGradientResult.probe?.source !== "ww3d_display_line_gradient_probe"
+      || displayLineGradientResult.probe?.results?.displayAllocated !== true
+      || displayLineGradientResult.probe?.results?.displaySetup !== true
+      || displayLineGradientResult.probe?.results?.drawLineGradientCalled !== true
+      || displayLineGradientResult.probe?.display?.path !== "W3DDisplay::drawLine(two-color)"
+      || displayLineGradientResult.probe?.calls?.drawIndexed < 1
+      || displayLineGradientResult.probe?.calls?.browserBufferCreate < 2
+      || displayLineGradientResult.probe?.calls?.browserBufferUpdate < 2
+      || displayLineGradientResult.probe?.draw?.primitiveType !== 4
+      || displayLineGradientResult.probe?.draw?.vertexCount !== 4
+      || displayLineGradientResult.probe?.draw?.primitiveCount !== 2
+      || displayLineGradientResult.probe?.draw?.vertexStride !== 44
+      || displayLineGradientResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayLineGradientResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 3
+      || displayLineGradientResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayLineGradientResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayLineGradientResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || displayLineGradientResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayLineGradientResult.browserProbe?.ok !== true
+      || displayLineGradientResult.browserProbe?.usedPersistentBuffers !== true
+      || displayLineGradientResult.browserProbe?.usedTransforms !== true
+      || displayLineGradientResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayLineGradientResult.browserProbe?.vertexCount !== 4
+      || displayLineGradientResult.browserProbe?.vertexStride !== 44
+      || displayLineGradientResult.browserProbe?.indexCount !== 6
+      || displayLineGradientResult.browserProbe?.texture0?.sampled === true
+      || !pixelsApproximatelyEqual(displayLineGradientResult.browserProbe?.centerPixel, expectedGradientCenter, 16)
+      || !pixelsApproximatelyEqual(displayLineGradientResult.screenshot?.centerPixel, expectedGradientCenter, 16)
+      || !pixelsApproximatelyEqual(displayLineGradientResult.gradientPixels?.left, expectedGradientLeft, 16)
+      || !pixelsApproximatelyEqual(displayLineGradientResult.gradientPixels?.center, expectedGradientCenter, 16)
+      || !pixelsApproximatelyEqual(displayLineGradientResult.gradientPixels?.right, expectedGradientRight, 16)
+      || !pixelLooksBlack(displayLineGradientResult.gradientPixels?.above)
+      || !pixelLooksBlack(displayLineGradientResult.gradientPixels?.below)
+      || !pixelLooksBlack(displayLineGradientResult.gradientPixels?.leftOutside)
+      || !pixelLooksBlack(displayLineGradientResult.gradientPixels?.rightOutside)) {
+    throw new Error(`WW3DDisplay gradient line probe failed: ${JSON.stringify(displayLineGradientResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayLineGradientCanvasScreenshot });
+
   const displayOpenRectResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayOpenRect"));
   if (!displayOpenRectResult.ok
       || displayOpenRectResult.probe?.source !== "ww3d_display_openrect_probe"
@@ -2061,6 +2118,7 @@ try {
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dDisplayFillRectCanvasScreenshot,
       ww3dDisplayLineCanvasScreenshot,
+      ww3dDisplayLineGradientCanvasScreenshot,
       ww3dDisplayOpenRectCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,

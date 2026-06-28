@@ -56,6 +56,7 @@ std::string g_ww3d_display_mapped_image_clip_probe_json;
 std::string g_ww3d_display_mapped_image_unrotated_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_display_line_probe_json;
+std::string g_ww3d_display_line_gradient_probe_json;
 std::string g_ww3d_display_openrect_probe_json;
 std::string g_ww3d_render2d_sentence_probe_json;
 std::string g_ww3d_display_string_probe_json;
@@ -3002,6 +3003,167 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()
 
 	g_ww3d_display_line_probe_json = buffer;
 	return g_ww3d_display_line_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line_gradient()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool draw_line_gradient_called = false;
+
+	ProbeW3DDisplayStorage display_storage;
+	W3DDisplay *display = nullptr;
+
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		display = display_storage.prepare_for_2d_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
+	}
+
+	if (display_setup) {
+		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			display->W3DDisplay::drawLine(220, 300, 580, 300, 16.0f,
+				0xffff0000UL, 0xff0000ffUL);
+			draw_line_gradient_called = true;
+			end_render_result = WW3D::End_Render(false);
+		}
+	}
+
+	display_storage.release_probe_renderer();
+
+	if (succeeded(init_result)) {
+		WW3D::Shutdown();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		display_allocated &&
+		display_setup &&
+		succeeded(begin_render_result) &&
+		draw_line_gradient_called &&
+		succeeded(end_render_result) &&
+		state->create_device_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_texture_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_SELECTARG2 &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[4800];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_display_line_gradient_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"displayAllocated\":%s,\"displaySetup\":%s,"
+		"\"beginRender\":%d,\"drawLineGradientCalled\":%s,"
+		"\"endRender\":%d},"
+		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
+		"\"windowed\":%s,\"path\":\"W3DDisplay::drawLine(two-color)\","
+		"\"line\":{\"startX\":220,\"startY\":300,"
+		"\"endX\":580,\"endY\":300,\"width\":16,"
+		"\"color1\":%lu,\"color2\":%lu}},"
+		"\"calls\":{\"createDevice\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
+		"\"setTexture\":%u,\"setTextureStageState\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"expectedLeft\":[241,0,14,255],"
+		"\"expectedCenter\":[128,0,128,255],"
+		"\"expectedRight\":[14,0,241,255],"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,"
+		"\"colorArg2\":%lu,\"alphaOp\":%lu,\"alphaArg1\":%lu,"
+		"\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
+		bool_json(ok),
+		init_result,
+		set_device_result,
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		begin_render_result,
+		bool_json(draw_line_gradient_called),
+		end_render_result,
+		display != nullptr ? display->m_width : 0,
+		display != nullptr ? display->m_height : 0,
+		display != nullptr ? display->m_bitDepth : 0,
+		bool_json(display != nullptr && display->m_windowed == TRUE),
+		static_cast<unsigned long>(0xffff0000UL),
+		static_cast<unsigned long>(0xff0000ffUL),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
+
+	g_ww3d_display_line_gradient_probe_json = buffer;
+	return g_ww3d_display_line_gradient_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_openrect()

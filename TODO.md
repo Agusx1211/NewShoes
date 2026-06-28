@@ -2667,6 +2667,13 @@ shares structure and follows behind.
       verified by `harness-smoke-ww3d-display-line-canvas.png`, disabled
       texture sampling, green center-pixel sampling, and black outside-line
       pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original two-color `W3DDisplay::drawLine` now drives the display-owned
+      `Render2DClass::Add_Line` / `Add_Quad_HGradient` path as a single
+      untextured gradient line quad, verified by
+      `harness-smoke-ww3d-display-line-gradient-canvas.png`, disabled texture
+      sampling, red-biased left / purple center / blue-biased right pixel
+      sampling, and black outside-line pixel sampling in
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Original `W3DDisplay::drawOpenRect` now drives the display-owned
       `Render2DClass::Add_Outline`/`Add_Line` path as four untextured quads,
       verified by `harness-smoke-ww3d-display-openrect-canvas.png`, disabled

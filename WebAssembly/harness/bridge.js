@@ -3183,6 +3183,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
+      probeWW3DDisplayLineGradient: module.cwrap(
+        "cnc_port_probe_ww3d_display_line_gradient", "string", []),
       probeWW3DDisplayOpenRect: module.cwrap(
         "cnc_port_probe_ww3d_display_openrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
@@ -6095,6 +6097,66 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           linePixels,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayLineGradient":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay gradient line cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayLineGradient());
+        const expectedLeft = probe?.draw?.expectedLeft ?? [241, 0, 14, 255];
+        const expectedCenter = probe?.draw?.expectedCenter ?? [128, 0, 128, 255];
+        const expectedRight = probe?.draw?.expectedRight ?? [14, 0, 241, 255];
+        const gradientPixels = {
+          left: sampleVirtualCanvasPixel(240, 300),
+          center: sampleVirtualCanvasPixel(400, 300),
+          right: sampleVirtualCanvasPixel(560, 300),
+          above: sampleVirtualCanvasPixel(400, 284),
+          below: sampleVirtualCanvasPixel(400, 316),
+          leftOutside: sampleVirtualCanvasPixel(200, 300),
+          rightOutside: sampleVirtualCanvasPixel(600, 300),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          gradientPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_line_gradient_probe"
+          && probe?.display?.path === "W3DDisplay::drawLine(two-color)"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 6
+          && browserProbe?.texture0?.sampled !== true
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 16)
+          && pixelsApproximatelyEqual(screenshot.centerPixel, expectedCenter, 16)
+          && pixelsApproximatelyEqual(gradientPixels.left, expectedLeft, 16)
+          && pixelsApproximatelyEqual(gradientPixels.center, expectedCenter, 16)
+          && pixelsApproximatelyEqual(gradientPixels.right, expectedRight, 16)
+          && pixelLooksBlack(gradientPixels.above)
+          && pixelLooksBlack(gradientPixels.below)
+          && pixelLooksBlack(gradientPixels.leftOutside)
+          && pixelLooksBlack(gradientPixels.rightOutside);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          gradientPixels,
           screenshot,
           state: snapshotState(),
         };
