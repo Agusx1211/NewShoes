@@ -215,6 +215,21 @@ DepthGlState map_depth(DWORD zenable, DWORD zwrite, DWORD zfunc)
 	return out;
 }
 
+// Fixed-function vertex layout used by the SetVertexShader FVF draw proof:
+// D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_SPECULAR | D3DFVF_TEX2.
+// This is the COLOR2/specular vertex layout a future W3D fixed-function path
+// must feed DrawIndexedPrimitive with; pinning the 48-byte stride here keeps
+// the draw-capture contract honest.
+struct FvfDrawVertex {
+	float x, y, z;
+	float nx, ny, nz;
+	D3DCOLOR diffuse;
+	D3DCOLOR specular;
+	float u0, v0, u1, v1;
+};
+static_assert(sizeof(FvfDrawVertex) == 48,
+	"COLOR2/specular FVF vertex (XYZ|NORMAL|DIFFUSE|SPECULAR|TEX2) must be 48 bytes");
+
 } // namespace
 
 int main()
@@ -479,10 +494,13 @@ int main()
 	expect_last(D3DRS_LOCALVIEWER, TRUE);
 
 	// ----------------------------------------------------------------------
-	// 10. SetVertexShader with a fixed-function FVF: the shim must record the
-	//     handle verbatim and bump the dedicated counter. This smoke performs
-	//     no draw, so last_draw_vertex_shader must remain unset (0); recording
-	//     that fact here pins the contract for the future draw-bearing proof.
+	// 10. SetVertexShader with a fixed-function FVF, then a tiny indexed draw
+	//     that proves draw capture records the active FVF and the 48-byte
+	//     stride needed by the future COLOR2/specular vertex layout
+	//     (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_SPECULAR |
+	//      D3DFVF_TEX2). The shim must record the FVF handle verbatim, bump
+	//     the dedicated counter, and after the draw reflect the FVF + stride
+	//     in the draw-capture fields.
 	// ----------------------------------------------------------------------
 	const UINT set_vertex_shader_before = state->set_vertex_shader_calls;
 	const DWORD fvf_xyz_normal_diff_spec_tex2 =
@@ -493,8 +511,60 @@ int main()
 		"set_vertex_shader_calls counter mismatch");
 	expect(state->last_set_vertex_shader == fvf_xyz_normal_diff_spec_tex2,
 		"last_set_vertex_shader FVF mismatch");
-	expect(state->last_draw_vertex_shader == 0,
-		"last_draw_vertex_shader should remain 0 without a draw");
+
+	// Build a 3-vertex COLOR2/specular triangle with a matching 3-index buffer,
+	// bind it at the 48-byte stride, and issue one indexed triangle so the draw
+	// capture records the active FVF + stride.
+	const FvfDrawVertex vertices[3] = {
+		{ -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 0.5f, 1.0f, 0.5f, 1.0f },
+	};
+	const UINT vertex_stride = sizeof(FvfDrawVertex);
+	expect(vertex_stride == 48, "vertex stride must be 48 bytes");
+
+	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
+	expect(SUCCEEDED(device->CreateVertexBuffer(sizeof(vertices), D3DUSAGE_WRITEONLY,
+			fvf_xyz_normal_diff_spec_tex2, D3DPOOL_DEFAULT, &vertex_buffer)),
+		"CreateVertexBuffer for COLOR2/specular FVF failed");
+	BYTE *vb_data = nullptr;
+	expect(SUCCEEDED(vertex_buffer->Lock(0, 0, &vb_data, 0)), "vertex buffer Lock failed");
+	std::memcpy(vb_data, vertices, sizeof(vertices));
+	expect(SUCCEEDED(vertex_buffer->Unlock()), "vertex buffer Unlock failed");
+
+	const uint16_t indices[3] = { 0, 1, 2 };
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	expect(SUCCEEDED(device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_DEFAULT, &index_buffer)),
+		"CreateIndexBuffer for COLOR2/specular draw failed");
+	BYTE *ib_data = nullptr;
+	expect(SUCCEEDED(index_buffer->Lock(0, 0, &ib_data, 0)), "index buffer Lock failed");
+	std::memcpy(ib_data, indices, sizeof(indices));
+	expect(SUCCEEDED(index_buffer->Unlock()), "index buffer Unlock failed");
+
+	expect(SUCCEEDED(device->SetStreamSource(0, vertex_buffer, vertex_stride)),
+		"SetStreamSource with 48-byte COLOR2/specular stride failed");
+	expect(SUCCEEDED(device->SetIndices(index_buffer, 0)), "SetIndices failed");
+
+	const UINT draw_indexed_before = state->draw_indexed_primitive_calls;
+	expect(SUCCEEDED(device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 3, 0, 1)),
+		"DrawIndexedPrimitive for COLOR2/specular FVF failed");
+
+	expect(state->draw_indexed_primitive_calls == draw_indexed_before + 1,
+		"draw_indexed_primitive_calls should advance by 1");
+	expect(state->last_draw_vertex_shader == fvf_xyz_normal_diff_spec_tex2,
+		"last_draw_vertex_shader must record the active FVF after the draw");
+	expect(state->last_draw_stream_source_stride == 48,
+		"last_draw_stream_source_stride must be 48 for COLOR2/specular FVF");
+	expect(state->last_draw_vertex_count == 3,
+		"last_draw_vertex_count must be 3");
+	expect(state->last_draw_primitive_count == 1,
+		"last_draw_primitive_count must be 1");
+	expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
+		"last_draw_primitive_type must be D3DPT_TRIANGLELIST");
+
+	index_buffer->Release();
+	vertex_buffer->Release();
 
 	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
@@ -562,6 +632,8 @@ int main()
 		"\"diffuse\":%lu,\"specular\":%lu,\"ambient\":%lu,\"emissive\":%lu},"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
+		"\"fvf\":{\"vertexShaderFvf\":%lu,\"vertexStride\":%u,"
+		"\"note\":\"COLOR2/specular fixed-function (XYZ|NORMAL|DIFFUSE|SPECULAR|TEX2)\"},"
 		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u,"
 		"\"setMaterial\":%u,\"getMaterial\":%u}}\n",
 		// cull spec entries
@@ -617,6 +689,9 @@ int main()
 		(color_write_all & D3DCOLORWRITEENABLE_GREEN) ? "true" : "false",
 		(color_write_all & D3DCOLORWRITEENABLE_BLUE) ? "true" : "false",
 		(color_write_all & D3DCOLORWRITEENABLE_ALPHA) ? "true" : "false",
+		// fvf / stride
+		static_cast<unsigned long>(fvf_xyz_normal_diff_spec_tex2),
+		vertex_stride,
 		// counters
 		state->set_render_state_calls,
 		state->get_render_state_calls,
