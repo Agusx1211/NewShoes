@@ -382,7 +382,7 @@ unsigned int count_game_messages(GameMessage *first)
 	return count;
 }
 
-void ensure_frame_keyboard_owner()
+GlobalData *ensure_frame_keyboard_global_data()
 {
 	if (!isMemoryManagerOfficiallyInited()) {
 		initMemoryManager();
@@ -390,6 +390,12 @@ void ensure_frame_keyboard_owner()
 	if (g_frame_keyboard_global_data == nullptr) {
 		g_frame_keyboard_global_data = new GlobalData;
 	}
+	return g_frame_keyboard_global_data;
+}
+
+void ensure_frame_keyboard_owner()
+{
+	ensure_frame_keyboard_global_data();
 	if (g_frame_keyboard_message_stream == nullptr) {
 		g_frame_keyboard_message_stream = new MessageStream;
 		g_frame_keyboard_message_stream->init();
@@ -725,6 +731,11 @@ const char *queue_original_keyboard_focus_lost()
 } // namespace
 
 extern "C" {
+
+GlobalData *cnc_port_original_frame_input_global_data()
+{
+	return ensure_frame_keyboard_global_data();
+}
 
 void cnc_port_update_original_keyboard_frame_input()
 {

@@ -3041,6 +3041,12 @@ shares structure and follows behind.
       - [x] Extend the engine-global Mouse proof with a non-null original
             `TheGameClient` frame source once minimal GameClient ownership is
             available without constructing the full GUI/display subsystem.
+      - [x] Add a disabled-by-default normal `tick_frame()` Mouse owner that
+            reuses the original WndProc-fed `Win32Mouse` buffer, runs original
+            `Mouse::UPDATE()` / `createStreamMessages()` against a persistent
+            frame-owned `MessageStream` / `CommandList`, and verifies raw
+            `MSG_RAW_MOUSE_*` output through the browser harness while GUI
+            translation remains in the focused probe.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
       - [x] Add a focused browser harness proof that DOM `Shift+A`
             keydown/keyup events queue Win32 `WM_KEY*`/`WM_CHAR` messages,

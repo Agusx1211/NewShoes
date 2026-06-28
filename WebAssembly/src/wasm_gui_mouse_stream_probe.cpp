@@ -11,6 +11,7 @@
 #include "Win32Device/GameClient/Win32Mouse.h"
 #include "wasm_memory_manager_scope.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <string>
 
@@ -25,6 +26,7 @@ void cnc_port_prepare_original_wndproc_mouse_stream(int width, int height);
 Bool cnc_port_original_wndproc_mouse_stream_attached();
 UnsignedInt cnc_port_original_wndproc_mouse_stream_input_frame();
 Int cnc_port_original_wndproc_mouse_stream_events_this_frame();
+extern "C" GlobalData *cnc_port_original_frame_input_global_data();
 
 extern Win32Mouse *TheWin32Mouse;
 
@@ -134,6 +136,24 @@ protected:
 };
 
 std::string g_original_gui_mouse_stream_json;
+GlobalData *g_frame_mouse_global_data = nullptr;
+ProbeKeyboard *g_frame_mouse_keyboard = nullptr;
+MessageStream *g_frame_mouse_message_stream = nullptr;
+CommandList *g_frame_mouse_command_list = nullptr;
+char g_frame_mouse_json[5000] = "{}";
+bool g_frame_mouse_enabled = false;
+bool g_frame_mouse_initialized = false;
+bool g_frame_mouse_last_ran = false;
+unsigned int g_frame_mouse_ticks = 0;
+unsigned int g_frame_mouse_last_queue_before = 0;
+unsigned int g_frame_mouse_last_queue_after = 0;
+unsigned int g_frame_mouse_last_stream_count = 0;
+unsigned int g_frame_mouse_last_command_count = 0;
+UnsignedInt g_frame_mouse_last_input_frame = 0;
+Int g_frame_mouse_last_events_this_frame = 0;
+bool g_frame_mouse_last_win32_attached = false;
+bool g_frame_mouse_last_stream_attached = false;
+char g_frame_mouse_last_stream_json[3000] = "[]";
 
 const char *bool_json(bool value)
 {
@@ -189,9 +209,285 @@ const char *raw_mouse_message_name(GameMessage::Type type)
 			return "MSG_RAW_MOUSE_POSITION";
 		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN:
 			return "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN";
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK:
+			return "MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK";
+		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP:
+			return "MSG_RAW_MOUSE_LEFT_BUTTON_UP";
+		case GameMessage::MSG_RAW_MOUSE_LEFT_DRAG:
+			return "MSG_RAW_MOUSE_LEFT_DRAG";
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN:
+			return "MSG_RAW_MOUSE_MIDDLE_BUTTON_DOWN";
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK:
+			return "MSG_RAW_MOUSE_MIDDLE_DOUBLE_CLICK";
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_BUTTON_UP:
+			return "MSG_RAW_MOUSE_MIDDLE_BUTTON_UP";
+		case GameMessage::MSG_RAW_MOUSE_MIDDLE_DRAG:
+			return "MSG_RAW_MOUSE_MIDDLE_DRAG";
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:
+			return "MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN";
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK:
+			return "MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK";
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP:
+			return "MSG_RAW_MOUSE_RIGHT_BUTTON_UP";
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DRAG:
+			return "MSG_RAW_MOUSE_RIGHT_DRAG";
+		case GameMessage::MSG_RAW_MOUSE_WHEEL:
+			return "MSG_RAW_MOUSE_WHEEL";
 		default:
 			return "OTHER";
 	}
+}
+
+int pixel_arg_x(GameMessage *message, Int index)
+{
+	return message != nullptr
+		&& index >= 0
+		&& message->getArgumentCount() > index
+		&& message->getArgumentDataType(index) == ARGUMENTDATATYPE_PIXEL
+			? message->getArgument(index)->pixel.x
+			: -1;
+}
+
+int pixel_arg_y(GameMessage *message, Int index)
+{
+	return message != nullptr
+		&& index >= 0
+		&& message->getArgumentCount() > index
+		&& message->getArgumentDataType(index) == ARGUMENTDATATYPE_PIXEL
+			? message->getArgument(index)->pixel.y
+			: -1;
+}
+
+int integer_arg(GameMessage *message, Int index)
+{
+	return message != nullptr
+		&& index >= 0
+		&& message->getArgumentCount() > index
+		&& message->getArgumentDataType(index) == ARGUMENTDATATYPE_INTEGER
+			? message->getArgument(index)->integer
+			: 0;
+}
+
+void append_json_fragment(char *json, std::size_t json_size, std::size_t &used, const char *fragment)
+{
+	if (used >= json_size) {
+		return;
+	}
+
+	const int written = std::snprintf(json + used, json_size - used, "%s", fragment);
+	if (written <= 0) {
+		return;
+	}
+
+	const std::size_t remaining = json_size - used;
+	used += static_cast<std::size_t>(written) < remaining
+		? static_cast<std::size_t>(written)
+		: remaining - 1;
+}
+
+void build_original_mouse_stream_json(GameMessage *first, char *json, std::size_t json_size)
+{
+	if (json_size == 0) {
+		return;
+	}
+
+	std::size_t used = 0;
+	append_json_fragment(json, json_size, used, "[");
+	unsigned int count = 0;
+	for (GameMessage *message = first; message != nullptr && count < 16; message = message->next()) {
+		char buffer[420];
+		std::snprintf(buffer, sizeof(buffer),
+			"%s{\"type\":%d,\"typeName\":\"%s\",\"argumentCount\":%u,"
+			"\"playerIndex\":%d,\"x\":%d,\"y\":%d,\"deltaX\":%d,\"deltaY\":%d,"
+			"\"integer1\":%d,\"integer2\":%d}",
+			count == 0 ? "" : ",",
+			static_cast<int>(message->getType()),
+			raw_mouse_message_name(message->getType()),
+			message->getArgumentCount(),
+			message->getPlayerIndex(),
+			pixel_arg_x(message, 0),
+			pixel_arg_y(message, 0),
+			pixel_arg_x(message, 1),
+			pixel_arg_y(message, 1),
+			integer_arg(message, 1),
+			integer_arg(message, 2));
+		append_json_fragment(json, json_size, used, buffer);
+		++count;
+	}
+	append_json_fragment(json, json_size, used, "]");
+}
+
+void ensure_frame_mouse_owner()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+	if (g_frame_mouse_global_data == nullptr) {
+		g_frame_mouse_global_data = cnc_port_original_frame_input_global_data();
+	}
+	if (g_frame_mouse_keyboard == nullptr) {
+		g_frame_mouse_keyboard = new ProbeKeyboard;
+	}
+	if (g_frame_mouse_message_stream == nullptr) {
+		g_frame_mouse_message_stream = new MessageStream;
+		g_frame_mouse_message_stream->init();
+	}
+	if (g_frame_mouse_command_list == nullptr) {
+		g_frame_mouse_command_list = new CommandList;
+		g_frame_mouse_command_list->init();
+	}
+	if (!g_frame_mouse_initialized) {
+		cnc_port_prepare_original_wndproc_mouse_stream(4096, 4096);
+	}
+	g_frame_mouse_initialized = true;
+}
+
+void clear_frame_mouse_messages()
+{
+	if (!g_frame_mouse_initialized) {
+		return;
+	}
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	MessageStream *old_message_stream = TheMessageStream;
+	CommandList *old_command_list = TheCommandList;
+	if (TheWritableGlobalData == nullptr) {
+		TheWritableGlobalData = g_frame_mouse_global_data;
+	}
+	TheMessageStream = g_frame_mouse_message_stream;
+	TheCommandList = g_frame_mouse_command_list;
+	if (g_frame_mouse_message_stream->getFirstMessage() != nullptr) {
+		g_frame_mouse_message_stream->propagateMessages();
+	}
+	g_frame_mouse_command_list->reset();
+	TheCommandList = old_command_list;
+	TheMessageStream = old_message_stream;
+	TheWritableGlobalData = old_global_data;
+}
+
+const char *write_frame_mouse_json()
+{
+	const bool ok = !g_frame_mouse_enabled
+		|| !g_frame_mouse_last_ran
+		|| (g_frame_mouse_last_win32_attached && g_frame_mouse_last_stream_attached);
+	std::snprintf(g_frame_mouse_json, sizeof(g_frame_mouse_json),
+		"{\"source\":\"browser_original_mouse_frame_input\","
+		"\"ok\":%s,\"enabled\":%s,\"initialized\":%s,\"lastRan\":%s,"
+		"\"ticks\":%u,"
+		"\"lifecycle\":{\"messageStream\":\"frame-owned\","
+		"\"commandList\":\"frame-owned\","
+		"\"memoryManager\":\"persistent\","
+		"\"promotedToTickFrame\":true},"
+		"\"queue\":{\"primaryRemainingBefore\":%u,"
+		"\"primaryRemainingAfter\":%u,\"primaryOverflowed\":%s},"
+		"\"mouse\":{\"win32Attached\":%s,\"streamAttached\":%s,"
+		"\"inputFrame\":%u,\"eventsThisFrame\":%d},"
+		"\"stream\":{\"count\":%u,\"messages\":%s},"
+		"\"commandList\":{\"countAfterPropagate\":%u},"
+		"\"modifiers\":%d}",
+		bool_json(ok),
+		bool_json(g_frame_mouse_enabled),
+		bool_json(g_frame_mouse_initialized),
+		bool_json(g_frame_mouse_last_ran),
+		g_frame_mouse_ticks,
+		g_frame_mouse_last_queue_before,
+		g_frame_mouse_last_queue_after,
+		bool_json(WasmWin32Input::message_queue_overflowed),
+		bool_json(g_frame_mouse_last_win32_attached),
+		bool_json(g_frame_mouse_last_stream_attached),
+		g_frame_mouse_last_input_frame,
+		g_frame_mouse_last_events_this_frame,
+		g_frame_mouse_last_stream_count,
+		g_frame_mouse_last_stream_json,
+		g_frame_mouse_last_command_count,
+		g_frame_mouse_keyboard != nullptr ? g_frame_mouse_keyboard->getModifierFlags() : 0);
+	return g_frame_mouse_json;
+}
+
+void update_original_mouse_frame_input()
+{
+	if (!g_frame_mouse_enabled) {
+		g_frame_mouse_last_ran = false;
+		write_frame_mouse_json();
+		return;
+	}
+
+	ensure_frame_mouse_owner();
+	g_frame_mouse_last_ran = true;
+	++g_frame_mouse_ticks;
+	g_frame_mouse_last_queue_before = WasmWin32Input::message_queue_count;
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	Keyboard *old_keyboard = TheKeyboard;
+	CommandList *old_command_list = TheCommandList;
+	MessageStream *old_message_stream = TheMessageStream;
+	Mouse *old_mouse = TheMouse;
+	if (TheWritableGlobalData == nullptr) {
+		TheWritableGlobalData = g_frame_mouse_global_data;
+	}
+	TheKeyboard = g_frame_mouse_keyboard;
+	TheCommandList = g_frame_mouse_command_list;
+	TheMessageStream = g_frame_mouse_message_stream;
+	TheMouse = TheWin32Mouse;
+
+	if (TheMouse != nullptr) {
+		TheMouse->UPDATE();
+		TheMouse->createStreamMessages();
+	}
+
+	GameMessage *first = g_frame_mouse_message_stream->getFirstMessage();
+	g_frame_mouse_last_stream_count = count_game_messages(first);
+	build_original_mouse_stream_json(
+		first,
+		g_frame_mouse_last_stream_json,
+		sizeof(g_frame_mouse_last_stream_json));
+	g_frame_mouse_last_queue_after = WasmWin32Input::message_queue_count;
+	g_frame_mouse_last_win32_attached = cnc_port_original_wndproc_mouse_stream_attached();
+	g_frame_mouse_last_stream_attached = TheMouse == static_cast<Mouse *>(TheWin32Mouse);
+	g_frame_mouse_last_input_frame = cnc_port_original_wndproc_mouse_stream_input_frame();
+	g_frame_mouse_last_events_this_frame = cnc_port_original_wndproc_mouse_stream_events_this_frame();
+
+	g_frame_mouse_message_stream->propagateMessages();
+	g_frame_mouse_last_command_count =
+		count_game_messages(g_frame_mouse_command_list->getFirstMessage());
+	g_frame_mouse_command_list->reset();
+
+	TheMouse = old_mouse;
+	TheMessageStream = old_message_stream;
+	TheCommandList = old_command_list;
+	TheKeyboard = old_keyboard;
+	TheWritableGlobalData = old_global_data;
+	write_frame_mouse_json();
+}
+
+const char *set_original_mouse_frame_input_enabled(bool enabled)
+{
+	g_frame_mouse_enabled = enabled;
+	if (enabled) {
+		ensure_frame_mouse_owner();
+	}
+	write_frame_mouse_json();
+	return g_frame_mouse_json;
+}
+
+const char *reset_original_mouse_frame_input()
+{
+	ensure_frame_mouse_owner();
+	clear_frame_mouse_messages();
+	cnc_port_prepare_original_wndproc_mouse_stream(4096, 4096);
+	g_frame_mouse_last_ran = false;
+	g_frame_mouse_ticks = 0;
+	g_frame_mouse_last_queue_before = 0;
+	g_frame_mouse_last_queue_after = 0;
+	g_frame_mouse_last_stream_count = 0;
+	g_frame_mouse_last_command_count = 0;
+	g_frame_mouse_last_input_frame = cnc_port_original_wndproc_mouse_stream_input_frame();
+	g_frame_mouse_last_events_this_frame = cnc_port_original_wndproc_mouse_stream_events_this_frame();
+	g_frame_mouse_last_win32_attached = cnc_port_original_wndproc_mouse_stream_attached();
+	g_frame_mouse_last_stream_attached = false;
+	std::snprintf(g_frame_mouse_last_stream_json, sizeof(g_frame_mouse_last_stream_json), "[]");
+	write_frame_mouse_json();
+	return g_frame_mouse_json;
 }
 
 const char *probe_original_gui_mouse_stream()
@@ -328,6 +624,26 @@ const char *probe_original_gui_mouse_stream()
 } // namespace
 
 extern "C" {
+
+void cnc_port_update_original_mouse_frame_input()
+{
+	update_original_mouse_frame_input();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_original_mouse_frame_input_enabled(int enabled)
+{
+	return set_original_mouse_frame_input_enabled(enabled != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_original_mouse_frame_input()
+{
+	return reset_original_mouse_frame_input();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_mouse_frame_input()
+{
+	return write_frame_mouse_json();
+}
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_gui_mouse_stream()
 {

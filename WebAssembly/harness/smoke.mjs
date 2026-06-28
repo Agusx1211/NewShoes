@@ -1856,6 +1856,122 @@ try {
         || disableFrameOwnerAfterKeyboard.probe?.lastRan !== false) {
       throw new Error(`Original Keyboard frame-owned input cleanup disable mismatch: ${JSON.stringify(disableFrameOwnerAfterKeyboard)}`);
     }
+
+    const resetFrameOwnerMouseInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameOwnerMouseInput.ok
+        || resetFrameOwnerMouseInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameOwnerMouseInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Mouse frame-owned input reset mismatch: ${JSON.stringify(resetFrameOwnerMouseInput)}`);
+    }
+    const disableFrameOwnerMouse = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalMouseFrameInput", { enabled: false }));
+    if (!disableFrameOwnerMouse.ok
+        || disableFrameOwnerMouse.probe?.source !== "browser_original_mouse_frame_input"
+        || disableFrameOwnerMouse.probe?.enabled !== false) {
+      throw new Error(`Original Mouse frame-owned input did not disable cleanly: ${JSON.stringify(disableFrameOwnerMouse)}`);
+    }
+    const resetFrameOwnerMouse = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalMouseFrameInput"));
+    if (!resetFrameOwnerMouse.ok
+        || resetFrameOwnerMouse.probe?.source !== "browser_original_mouse_frame_input"
+        || resetFrameOwnerMouse.probe?.enabled !== false
+        || resetFrameOwnerMouse.probe?.initialized !== true
+        || resetFrameOwnerMouse.probe?.lastRan !== false
+        || resetFrameOwnerMouse.probe?.ticks !== 0
+        || resetFrameOwnerMouse.probe?.stream?.count !== 0
+        || resetFrameOwnerMouse.probe?.mouse?.win32Attached !== true) {
+      throw new Error(`Original Mouse frame-owned state reset mismatch: ${JSON.stringify(resetFrameOwnerMouse)}`);
+    }
+    const enableFrameOwnerMouse = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalMouseFrameInput", { enabled: true }));
+    if (!enableFrameOwnerMouse.ok
+        || enableFrameOwnerMouse.probe?.ok !== true
+        || enableFrameOwnerMouse.probe?.enabled !== true
+        || enableFrameOwnerMouse.probe?.initialized !== true
+        || enableFrameOwnerMouse.probe?.lastRan !== false
+        || enableFrameOwnerMouse.probe?.ticks !== 0
+        || enableFrameOwnerMouse.probe?.lifecycle?.messageStream !== "frame-owned"
+        || enableFrameOwnerMouse.probe?.lifecycle?.commandList !== "frame-owned"
+        || enableFrameOwnerMouse.probe?.lifecycle?.promotedToTickFrame !== true) {
+      throw new Error(`Original Mouse frame-owned input did not enable: ${JSON.stringify(enableFrameOwnerMouse)}`);
+    }
+
+    const frameMouseX = 456;
+    const frameMouseY = 123;
+    await page.mouse.move(canvasBox.x + frameMouseX, canvasBox.y + frameMouseY);
+    await page.mouse.down();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "original Mouse frame-owned move/down queue",
+    );
+    const frameMouseDown = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    if (!frameMouseDown.ok) {
+      throw new Error(`Original Mouse frame-owned frame RPC failed: ${JSON.stringify(frameMouseDown)}`);
+    }
+    const frameMouseProbeResult = await page.evaluate(() =>
+      window.CnCPort.rpc("originalMouseFrameInputProbe"));
+    const frameMouseDownProbe = frameMouseProbeResult.probe;
+    const frameMouseDownMessages = frameMouseDownProbe?.stream?.messages ?? [];
+    const frameMousePositionMessage = frameMouseDownMessages.find(
+      (message) => message.typeName === "MSG_RAW_MOUSE_POSITION",
+    );
+    const frameMouseLeftDownMessage = frameMouseDownMessages.find(
+      (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN",
+    );
+    if (!frameMouseProbeResult.ok
+        || frameMouseDownProbe?.source !== "browser_original_mouse_frame_input"
+        || frameMouseDownProbe?.ok !== true
+        || frameMouseDownProbe?.enabled !== true
+        || frameMouseDownProbe?.initialized !== true
+        || frameMouseDownProbe?.lastRan !== true
+        || frameMouseDownProbe?.ticks !== 1
+        || frameMouseDownProbe?.lifecycle?.promotedToTickFrame !== true
+        || frameMouseDownProbe?.queue?.primaryRemainingBefore !== 0
+        || frameMouseDownProbe?.queue?.primaryRemainingAfter !== 0
+        || frameMouseDownProbe?.mouse?.win32Attached !== true
+        || frameMouseDownProbe?.mouse?.streamAttached !== true
+        || frameMouseDownProbe?.mouse?.inputFrame !== 1
+        || (frameMouseDownProbe?.mouse?.eventsThisFrame ?? 0) < 1
+        || frameMouseDownProbe?.stream?.count < 2
+        || frameMouseDownProbe?.commandList?.countAfterPropagate !== frameMouseDownProbe?.stream?.count
+        || !frameMousePositionMessage
+        || frameMouseLeftDownMessage?.x !== frameMouseX
+        || frameMouseLeftDownMessage?.y !== frameMouseY
+        || frameMouseDown.state.browserInput?.messageQueue?.count !== 0
+        || frameMouseProbeResult.state.browserInput?.messageQueue?.count !== 0) {
+      throw new Error(`Original Mouse frame-owned down did not run through tick_frame: ${JSON.stringify({ frameMouseDown, frameMouseProbeResult })}`);
+    }
+
+    await page.mouse.up();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "original Mouse frame-owned cleanup up queue",
+    );
+    const resetFrameOwnerMouseAfterInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameOwnerMouseAfterInput.ok
+        || resetFrameOwnerMouseAfterInput.state.browserInput?.messageQueue?.count !== 0) {
+      throw new Error(`Original Mouse frame-owned input cleanup mismatch: ${JSON.stringify(resetFrameOwnerMouseAfterInput)}`);
+    }
+    const resetFrameOwnerAfterMouse = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalMouseFrameInput"));
+    if (!resetFrameOwnerAfterMouse.ok
+        || resetFrameOwnerAfterMouse.probe?.ticks !== 0
+        || resetFrameOwnerAfterMouse.probe?.lastRan !== false
+        || resetFrameOwnerAfterMouse.probe?.stream?.count !== 0
+        || resetFrameOwnerAfterMouse.probe?.mouse?.win32Attached !== true) {
+      throw new Error(`Original Mouse frame-owned mouse cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterMouse)}`);
+    }
+    const disableFrameOwnerAfterMouse = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalMouseFrameInput", { enabled: false }));
+    if (!disableFrameOwnerAfterMouse.ok
+        || disableFrameOwnerAfterMouse.probe?.enabled !== false
+        || disableFrameOwnerAfterMouse.probe?.lastRan !== false) {
+      throw new Error(`Original Mouse frame-owned input cleanup disable mismatch: ${JSON.stringify(disableFrameOwnerAfterMouse)}`);
+    }
   }
 
   const frameBaseline = await page.evaluate(() => window.CnCPort.rpc("state"));

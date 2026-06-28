@@ -29,6 +29,7 @@ extern HWND ApplicationHWnd;
 
 extern "C" void cnc_port_update_original_keyboard_frame_input();
 extern "C" const char *cnc_port_probe_original_keyboard_frame_input();
+extern "C" void cnc_port_update_original_mouse_frame_input();
 
 void cnc_port_service_original_wndproc_messages();
 
@@ -2590,6 +2591,7 @@ void tick_frame()
 		++g_frame;
 		cnc_port_service_original_wndproc_messages();
 		cnc_port_update_original_keyboard_frame_input();
+		cnc_port_update_original_mouse_frame_input();
 		record_tick_time();
 	}
 }
