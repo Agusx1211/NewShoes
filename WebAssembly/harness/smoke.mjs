@@ -20,6 +20,10 @@ const d3d8MultiDirectionalLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-multi-directional-light-canvas.png",
 );
+const d3d8SpecularLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-specular-light-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3299,6 +3303,44 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8MultiDirectionalLightCanvasScreenshot });
 
+  const d3d8SpecularLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8SpecularLight"));
+  const expectedSpecularLeft = d3d8SpecularLightResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedSpecularRight = d3d8SpecularLightResult.probe?.expectedRight ?? [255, 255, 255, 255];
+  if (!d3d8SpecularLightResult.ok
+      || d3d8SpecularLightResult.probe?.source !== "browser_d3d8_specular_light_probe"
+      || d3d8SpecularLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8SpecularLightResult.probe?.calls?.setLight !== 1
+      || d3d8SpecularLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8SpecularLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8SpecularLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8SpecularLightResult.browserProbe?.renderState?.specularEnable !== 1
+      || d3d8SpecularLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8SpecularLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8SpecularLightResult.browserProbe?.renderState?.specularMaterialSource !== 0
+      || d3d8SpecularLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8SpecularLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8SpecularLightResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.enabled !== true
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.sourceName !== "material"
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 1
+      || d3d8SpecularLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[0]?.index !== 0
+      || d3d8SpecularLightResult.materialOk !== true
+      || d3d8SpecularLightResult.lightSpecularOk !== true
+      || d3d8SpecularLightResult.selectedLightOk !== true
+      || d3d8SpecularLightResult.appliedSpecularOk !== true
+      || d3d8SpecularLightResult.leftPixelOk !== true
+      || d3d8SpecularLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(d3d8SpecularLightResult.specularPixels?.left, expectedSpecularLeft, 2)
+      || !pixelsApproximatelyEqual(d3d8SpecularLightResult.specularPixels?.right, expectedSpecularRight, 2)
+      || !pixelLooksBlack(d3d8SpecularLightResult.specularPixels?.left)) {
+    throw new Error(`D3D8 specular-light probe failed: ${JSON.stringify(d3d8SpecularLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8SpecularLightCanvasScreenshot });
+
   const d3d8MaterialResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Material"));
   const expectedMaterial = d3d8MaterialResult.probe?.material ?? {};
   const browserMaterial = d3d8MaterialResult.browserProbe?.material ?? {};
@@ -4454,6 +4496,7 @@ try {
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,
       d3d8MultiDirectionalLightCanvasScreenshot,
+      d3d8SpecularLightCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

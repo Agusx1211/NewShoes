@@ -339,7 +339,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 39;
+		const renderStateSlots = 40;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -421,6 +421,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			emissiveMaterialSource: state[36] >>> 0,
 			clipping: state[37] >>> 0,
 			clipPlaneEnable: state[38] >>> 0,
+			specularEnable: state[39] >>> 0,
 			textureStages,
 		};
 	};
@@ -2971,6 +2972,7 @@ private:
 			case D3DRS_STENCILWRITEMASK:
 				return 0xffffffffUL;
 			case D3DRS_FOGENABLE:
+			case D3DRS_SPECULARENABLE:
 				return FALSE;
 			case D3DRS_FOGCOLOR:
 			case D3DRS_FOGSTART:
@@ -3120,6 +3122,7 @@ private:
 		state.emissive_material_source = render_state_value(D3DRS_EMISSIVEMATERIALSOURCE);
 		state.clipping = render_state_value(D3DRS_CLIPPING);
 		state.clip_plane_enable = render_state_value(D3DRS_CLIPPLANEENABLE);
+		state.specular_enable = render_state_value(D3DRS_SPECULARENABLE);
 		std::memcpy(g_state.last_draw_clip_planes, m_clip_planes, sizeof(g_state.last_draw_clip_planes));
 		for (UINT index = 0; index < WASM_D3D8_LIGHT_COUNT; ++index) {
 			g_state.last_draw_lights[index] = draw_light_from_d3d(m_lights[index], m_light_enabled[index]);

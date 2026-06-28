@@ -2322,6 +2322,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       slots, verifies the raw light payload plus selected shader light list,
       and Playwright confirms black left and magenta right pixels with
       `harness-smoke-d3d8-multi-directional-light-canvas.png`.
+- [x] Add a focused fixed-function D3D8 specular lighting path for the
+      aligned directional-light case. The shim now captures
+      `D3DRS_SPECULARENABLE`, the WebGL2 bridge uploads material
+      specular/power plus directional light specular colors, and the vertex
+      shader adds a gated half-vector specular contribution. A focused
+      native/browser probe draws black diffuse/ambient quads with opposite
+      normals and verifies that only the front-facing quad turns white from
+      specular, with Playwright saving
+      `harness-smoke-d3d8-specular-light-canvas.png`. Point/spot attenuation,
+      off-axis/transformed specular fidelity, and broader material-source
+      behavior remain open.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and

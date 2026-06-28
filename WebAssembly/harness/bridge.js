@@ -2528,6 +2528,7 @@ function ensureD3D8DrawProgram() {
     in vec3 aPosition;
     in vec3 aNormal;
     in vec4 aDiffuseBgra;
+    in vec4 aSpecularBgra;
     in vec2 aTexCoord0;
     in vec2 aTexCoord1;
     uniform float uScale;
@@ -2541,16 +2542,21 @@ function ensureD3D8DrawProgram() {
     uniform bool uUseTexture1Transform;
     uniform mat4 uTexture1Transform;
     uniform bool uLightingEnabled;
+    uniform bool uSpecularEnabled;
     uniform bool uColorVertexEnabled;
     uniform vec4 uSceneAmbient;
     uniform vec4 uMaterialDiffuse;
     uniform vec4 uMaterialAmbient;
+    uniform vec4 uMaterialSpecular;
     uniform vec4 uMaterialEmissive;
+    uniform float uMaterialPower;
     uniform int uDiffuseMaterialSource;
+    uniform int uSpecularMaterialSource;
     uniform int uAmbientMaterialSource;
     uniform int uEmissiveMaterialSource;
     uniform int uDirectionalLightCount;
     uniform vec4 uDirectionalLightDiffuse[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
+    uniform vec4 uDirectionalLightSpecular[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
     uniform vec4 uDirectionalLightAmbient[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
     uniform vec3 uDirectionalLightDirection[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
     out vec4 vColor;
@@ -2560,21 +2566,28 @@ function ensureD3D8DrawProgram() {
     out vec4 vClipPosition;
     out float vFogDepth;
     out float vFogRangeDistance;
-    vec4 d3dMaterialSourceColor(int source, vec4 materialColor, vec4 color1) {
+    vec4 d3dMaterialSourceColor(int source, vec4 materialColor, vec4 color1, vec4 color2) {
       if (!uColorVertexEnabled) {
         return materialColor;
       }
       if (source == 1) {
         return color1;
       }
+      if (source == 2) {
+        return color2;
+      }
       return materialColor;
     }
-    vec4 d3dApplyLighting(vec4 color1, vec3 normal) {
-      vec4 diffuseMaterial = d3dMaterialSourceColor(uDiffuseMaterialSource, uMaterialDiffuse, color1);
-      vec4 ambientMaterial = d3dMaterialSourceColor(uAmbientMaterialSource, uMaterialAmbient, color1);
-      vec4 emissiveMaterial = d3dMaterialSourceColor(uEmissiveMaterialSource, uMaterialEmissive, color1);
+    vec4 d3dApplyLighting(vec4 color1, vec4 color2, vec3 normal, vec3 viewDirection) {
+      vec4 diffuseMaterial = d3dMaterialSourceColor(uDiffuseMaterialSource, uMaterialDiffuse, color1, color2);
+      vec4 specularMaterial = d3dMaterialSourceColor(uSpecularMaterialSource, uMaterialSpecular, color1, color2);
+      vec4 ambientMaterial = d3dMaterialSourceColor(uAmbientMaterialSource, uMaterialAmbient, color1, color2);
+      vec4 emissiveMaterial = d3dMaterialSourceColor(uEmissiveMaterialSource, uMaterialEmissive, color1, color2);
       vec3 litRgb = emissiveMaterial.rgb + ambientMaterial.rgb * uSceneAmbient.rgb;
       vec3 unitNormal = length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0);
+      vec3 unitViewDirection = length(viewDirection) > 0.000001
+        ? normalize(viewDirection)
+        : vec3(0.0, 0.0, 1.0);
       for (int index = 0; index < ${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}; ++index) {
         if (index >= uDirectionalLightCount) {
           break;
@@ -2584,6 +2597,14 @@ function ensureD3D8DrawProgram() {
         float diffuseAmount = max(dot(unitNormal, lightDirection), 0.0);
         litRgb += ambientMaterial.rgb * uDirectionalLightAmbient[index].rgb;
         litRgb += diffuseMaterial.rgb * uDirectionalLightDiffuse[index].rgb * diffuseAmount;
+        if (uSpecularEnabled && diffuseAmount > 0.0) {
+          vec3 halfSource = lightDirection + unitViewDirection;
+          vec3 halfVector = length(halfSource) > 0.000001 ? normalize(halfSource) : unitNormal;
+          float specularDot = max(dot(unitNormal, halfVector), 0.0);
+          float specularPower = max(uMaterialPower, 0.0);
+          float specularAmount = specularPower == 0.0 ? 1.0 : pow(specularDot, specularPower);
+          litRgb += specularMaterial.rgb * uDirectionalLightSpecular[index].rgb * specularAmount;
+        }
       }
       return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
     }
@@ -2591,10 +2612,15 @@ function ensureD3D8DrawProgram() {
       vec4 worldPosition = vec4(aPosition, 1.0);
       vec4 viewPosition = worldPosition;
       vec3 worldNormal = aNormal;
+      vec3 viewDirection = vec3(0.0, 0.0, 1.0);
       if (uUseTransforms) {
         worldPosition = uWorld * vec4(aPosition, 1.0);
         worldNormal = mat3(uWorld) * aNormal;
         viewPosition = uView * worldPosition;
+        vec4 cameraWorld = inverse(uView) * vec4(0.0, 0.0, 0.0, 1.0);
+        vec3 cameraPosition = cameraWorld.xyz / max(abs(cameraWorld.w), 0.000001);
+        vec3 worldToCamera = cameraPosition - worldPosition.xyz;
+        viewDirection = length(worldToCamera) > 0.000001 ? normalize(worldToCamera) : viewDirection;
         vec4 d3dClip = uProjection * viewPosition;
         gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
         vFogDepth = max(viewPosition.z, 0.0);
@@ -2607,7 +2633,8 @@ function ensureD3D8DrawProgram() {
       gl_Position.z -= uDepthBias * gl_Position.w;
       vClipPosition = worldPosition;
       vec4 color1 = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
-      vColor = uLightingEnabled ? d3dApplyLighting(color1, worldNormal) : color1;
+      vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g, aSpecularBgra.r, aSpecularBgra.a);
+      vColor = uLightingEnabled ? d3dApplyLighting(color1, color2, worldNormal, viewDirection) : color1;
       vFlatColor = vColor;
       if (uUseTexture0Transform) {
         vec4 d3dTexCoord0 = uTexture0Transform * vec4(aTexCoord0, 0.0, 1.0);
@@ -2950,6 +2977,7 @@ function ensureD3D8DrawProgram() {
     position: gl.getAttribLocation(program, "aPosition"),
     normal: gl.getAttribLocation(program, "aNormal"),
     diffuse: gl.getAttribLocation(program, "aDiffuseBgra"),
+    specular: gl.getAttribLocation(program, "aSpecularBgra"),
     texCoord0: gl.getAttribLocation(program, "aTexCoord0"),
     texCoord1: gl.getAttribLocation(program, "aTexCoord1"),
     scale: gl.getUniformLocation(program, "uScale"),
@@ -2966,16 +2994,21 @@ function ensureD3D8DrawProgram() {
     useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
     lightingEnabled: gl.getUniformLocation(program, "uLightingEnabled"),
+    specularEnabled: gl.getUniformLocation(program, "uSpecularEnabled"),
     colorVertexEnabled: gl.getUniformLocation(program, "uColorVertexEnabled"),
     sceneAmbient: gl.getUniformLocation(program, "uSceneAmbient"),
     materialDiffuse: gl.getUniformLocation(program, "uMaterialDiffuse"),
     materialAmbient: gl.getUniformLocation(program, "uMaterialAmbient"),
+    materialSpecular: gl.getUniformLocation(program, "uMaterialSpecular"),
     materialEmissive: gl.getUniformLocation(program, "uMaterialEmissive"),
+    materialPower: gl.getUniformLocation(program, "uMaterialPower"),
     diffuseMaterialSource: gl.getUniformLocation(program, "uDiffuseMaterialSource"),
+    specularMaterialSource: gl.getUniformLocation(program, "uSpecularMaterialSource"),
     ambientMaterialSource: gl.getUniformLocation(program, "uAmbientMaterialSource"),
     emissiveMaterialSource: gl.getUniformLocation(program, "uEmissiveMaterialSource"),
     directionalLightCount: gl.getUniformLocation(program, "uDirectionalLightCount"),
     directionalLightDiffuse: gl.getUniformLocation(program, "uDirectionalLightDiffuse[0]"),
+    directionalLightSpecular: gl.getUniformLocation(program, "uDirectionalLightSpecular[0]"),
     directionalLightAmbient: gl.getUniformLocation(program, "uDirectionalLightAmbient[0]"),
     directionalLightDirection: gl.getUniformLocation(program, "uDirectionalLightDirection[0]"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
@@ -3669,6 +3702,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     zBias: Number(renderState.zBias ?? 0) >>> 0,
     shadeMode: Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0,
     lighting: Number(renderState.lighting ?? 1) >>> 0,
+    specularEnable: Number(renderState.specularEnable ?? 0) >>> 0,
     ambient: Number(renderState.ambient ?? 0) >>> 0,
     colorVertex: Number(renderState.colorVertex ?? 1) >>> 0,
     diffuseMaterialSource: Number(renderState.diffuseMaterialSource ?? D3DMCS_COLOR1) >>> 0,
@@ -4019,6 +4053,13 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedRenderState.lighting = {
       ...appliedRenderState.lighting,
       shaderEnabled: appliedRenderState.lighting.enabled && directionalLights.length > 0,
+      specular: {
+        enabled: renderState.specularEnable !== 0,
+        material: material.specular.slice(),
+        power: material.power,
+        source: renderState.specularMaterialSource,
+        sourceName: d3dMaterialSourceName(renderState.specularMaterialSource),
+      },
       directionalLightSupported: directionalLights.length > 0,
       directionalLightCount: directionalLights.length,
       directionalLights,
@@ -4059,6 +4100,14 @@ function paintD3D8DrawIndexed(payload = {}) {
     } else if (bridgeProgram.diffuse >= 0) {
       gl.disableVertexAttribArray(bridgeProgram.diffuse);
       gl.vertexAttrib4f(bridgeProgram.diffuse, 1, 1, 1, 1);
+    }
+    if (bridgeProgram.specular >= 0 && vertexLayout.specularOffset !== null) {
+      gl.enableVertexAttribArray(bridgeProgram.specular);
+      gl.vertexAttribPointer(bridgeProgram.specular, 4, gl.UNSIGNED_BYTE, true,
+        vertexStride, vertexByteOffset + vertexLayout.specularOffset);
+    } else if (bridgeProgram.specular >= 0) {
+      gl.disableVertexAttribArray(bridgeProgram.specular);
+      gl.vertexAttrib4f(bridgeProgram.specular, 0, 0, 0, 1);
     }
     if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord0);
@@ -4115,6 +4164,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.lightingEnabled) {
       gl.uniform1i(bridgeProgram.lightingEnabled, appliedRenderState.lighting.shaderEnabled ? 1 : 0);
     }
+    if (bridgeProgram.specularEnabled) {
+      gl.uniform1i(bridgeProgram.specularEnabled,
+        appliedRenderState.lighting.specular.enabled ? 1 : 0);
+    }
     if (bridgeProgram.colorVertexEnabled) {
       gl.uniform1i(bridgeProgram.colorVertexEnabled,
         appliedRenderState.materialSources.colorVertex.enabled ? 1 : 0);
@@ -4128,11 +4181,20 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.materialAmbient) {
       gl.uniform4fv(bridgeProgram.materialAmbient, new Float32Array(material.ambient));
     }
+    if (bridgeProgram.materialSpecular) {
+      gl.uniform4fv(bridgeProgram.materialSpecular, new Float32Array(material.specular));
+    }
     if (bridgeProgram.materialEmissive) {
       gl.uniform4fv(bridgeProgram.materialEmissive, new Float32Array(material.emissive));
     }
+    if (bridgeProgram.materialPower) {
+      gl.uniform1f(bridgeProgram.materialPower, material.power);
+    }
     if (bridgeProgram.diffuseMaterialSource) {
       gl.uniform1i(bridgeProgram.diffuseMaterialSource, renderState.diffuseMaterialSource);
+    }
+    if (bridgeProgram.specularMaterialSource) {
+      gl.uniform1i(bridgeProgram.specularMaterialSource, renderState.specularMaterialSource);
     }
     if (bridgeProgram.ambientMaterialSource) {
       gl.uniform1i(bridgeProgram.ambientMaterialSource, renderState.ambientMaterialSource);
@@ -4146,6 +4208,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.directionalLightDiffuse) {
       gl.uniform4fv(bridgeProgram.directionalLightDiffuse,
         flattenD3D8LightColor(directionalLights, "diffuse"));
+    }
+    if (bridgeProgram.directionalLightSpecular) {
+      gl.uniform4fv(bridgeProgram.directionalLightSpecular,
+        flattenD3D8LightColor(directionalLights, "specular"));
     }
     if (bridgeProgram.directionalLightAmbient) {
       gl.uniform4fv(bridgeProgram.directionalLightAmbient,
@@ -4720,6 +4786,7 @@ async function loadWasmModule() {
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
       probeD3D8DirectionalLight: module.cwrap("cnc_port_probe_d3d8_directional_light", "string", []),
       probeD3D8MultiDirectionalLight: module.cwrap("cnc_port_probe_d3d8_multi_directional_light", "string", []),
+      probeD3D8SpecularLight: module.cwrap("cnc_port_probe_d3d8_specular_light", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
@@ -7853,6 +7920,95 @@ async function rpc(command, payload = {}) {
           selectedLightsOk,
           materialOk,
           lightPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8SpecularLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 specular-light probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8SpecularLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [255, 255, 255, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 2);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 2);
+        const expectedLight = probe.light ?? {};
+        const capturedLight = browserProbe?.lights?.[0] ?? {};
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.directionalLights?.[0] ?? {};
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const appliedSpecular = appliedLighting.specular ?? {};
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const lightSpecularOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction);
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          floatVectorApproximatelyEqual(selectedLight.specular, expectedLight.specular);
+        const appliedSpecularOk =
+          appliedSpecular.enabled === true &&
+          appliedSpecular.source === 0 &&
+          appliedSpecular.sourceName === "material" &&
+          floatVectorApproximatelyEqual(appliedSpecular.material, expectedMaterial.specular) &&
+          Math.abs((appliedSpecular.power ?? 0) - expectedMaterial.power) < 0.00001;
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState >= 13
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.specularEnable === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && browserProbe?.renderState?.specularMaterialSource === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && selectedLightOk
+          && appliedSpecularOk
+          && materialOk
+          && lightSpecularOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          lightSpecularOk,
+          selectedLightOk,
+          appliedSpecularOk,
+          specularPixels: {
             left: leftPixel,
             right: rightPixel,
           },

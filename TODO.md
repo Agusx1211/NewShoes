@@ -455,8 +455,10 @@ shares structure and follows behind.
       fill-mode/z-bias/shade-mode, lighting/ambient capture, and
       `D3DMATERIAL8` material capture/material-source descriptor coverage,
       including fixed-function lighting beyond enabled directional
-      diffuse+ambient lights (point/spot attenuation, specular, and broader
-      material-source behavior) and other W3D draw states → GL/shader state.
+      diffuse+ambient lights (point/spot attenuation, off-axis/transformed
+      specular fidelity beyond the verified aligned directional path, and
+      broader material-source behavior) and other W3D draw states →
+      GL/shader state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline
       rendering in real scenes; the first bridge expands indexed triangle
