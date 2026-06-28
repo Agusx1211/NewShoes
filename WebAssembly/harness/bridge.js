@@ -4972,6 +4972,8 @@ async function loadWasmModule() {
       probeD3D8LitMaterialSources: module.cwrap("cnc_port_probe_d3d8_lit_material_sources", "string", []),
       probeD3D8LitSpecularMaterialSource: module.cwrap(
         "cnc_port_probe_d3d8_lit_specular_material_source", "string", []),
+      probeD3D8LitEmissiveColor1MaterialSource: module.cwrap(
+        "cnc_port_probe_d3d8_lit_emissive_color1_material_source", "string", []),
       probeD3D8LitEmissiveColor2MaterialSource: module.cwrap(
         "cnc_port_probe_d3d8_lit_emissive_color2_material_source", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
@@ -9626,6 +9628,152 @@ async function rpc(command, payload = {}) {
           appliedSpecularOk,
           litSpecularSourceShapeOk,
           litSpecularMaterialSourcePixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8LitEmissiveColor1MaterialSource":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 lit emissive COLOR1 material-source probe cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8LitEmissiveColor1MaterialSource());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [255, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [0, 255, 0, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 4);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 4);
+        const expectedSources = probe.materialSources ?? {};
+        const renderState = browserProbe?.renderState ?? {};
+        const appliedSources = browserProbe?.appliedRenderState?.materialSources ?? {};
+        const expectedFvf = probe.draw?.vertexShaderFvf ??
+          (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2);
+        const sourceValueOk =
+          renderState.colorVertex === expectedSources.colorVertex &&
+          renderState.diffuseMaterialSource === expectedSources.diffuse &&
+          renderState.specularMaterialSource === expectedSources.specular &&
+          renderState.ambientMaterialSource === expectedSources.ambient &&
+          renderState.emissiveMaterialSource === expectedSources.emissive;
+        const appliedSourcesOk =
+          appliedSources.colorVertex?.enabled === (expectedSources.colorVertex !== 0) &&
+          appliedSources.colorVertex?.value === expectedSources.colorVertex &&
+          appliedSources.diffuse?.source === expectedSources.diffuse &&
+          appliedSources.diffuse?.name === d3dMaterialSourceName(expectedSources.diffuse) &&
+          appliedSources.specular?.source === expectedSources.specular &&
+          appliedSources.specular?.name === d3dMaterialSourceName(expectedSources.specular) &&
+          appliedSources.ambient?.source === expectedSources.ambient &&
+          appliedSources.ambient?.name === d3dMaterialSourceName(expectedSources.ambient) &&
+          appliedSources.emissive?.source === expectedSources.emissive &&
+          appliedSources.emissive?.name === d3dMaterialSourceName(expectedSources.emissive);
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const expectedLight = normalizeD3D8Light(probe.light, 0);
+        const capturedLight = normalizeD3D8Light(browserProbe?.lights?.[0], 0);
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.fixedFunctionLights?.[0] ?? {};
+        const vertexLayout = browserProbe?.vertexLayout ?? {};
+        const lightOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction);
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          selectedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(selectedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(selectedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(selectedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(selectedLight.direction, expectedLight.direction);
+        const vertexLayoutOk =
+          browserProbe?.vertexShaderFvf === expectedFvf &&
+          (browserProbe?.vertexShaderFvf & D3DFVF_SPECULAR) === 0 &&
+          vertexLayout.source === "fvf" &&
+          vertexLayout.fvf === expectedFvf &&
+          vertexLayout.stride === 44 &&
+          vertexLayout.computedStride === 44 &&
+          vertexLayout.normalOffset === 12 &&
+          vertexLayout.diffuseOffset === 24 &&
+          vertexLayout.specularOffset === null &&
+          vertexLayout.texCoords?.[0]?.offset === 28 &&
+          vertexLayout.texCoords?.[1]?.offset === 36;
+        const emissiveColor1ShapeOk =
+          Array.isArray(leftPixel) &&
+          Array.isArray(rightPixel) &&
+          leftPixel[0] >= 240 &&
+          leftPixel[1] <= 15 &&
+          leftPixel[2] <= 15 &&
+          rightPixel[0] <= 15 &&
+          rightPixel[1] >= 240 &&
+          rightPixel[2] <= 15 &&
+          leftPixel[3] >= 200 &&
+          rightPixel[3] >= 200;
+        const caseOk = Boolean(probe.ok)
+          && probe.source === "browser_d3d8_lit_emissive_color1_material_source_probe"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState === 13
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.setVertexShader === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexStride === 44
+          && renderState.lighting === 1
+          && renderState.ambient === probe.sceneAmbient
+          && renderState.specularEnable === 0
+          && expectedSources.emissive === D3DMCS_COLOR1
+          && appliedSources.emissive?.name === "color1"
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.fixedFunctionLightSupported === true
+          && appliedLighting.fixedFunctionLightCount === 1
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.directionalLights?.[0]?.index === 0
+          && sourceValueOk
+          && appliedSourcesOk
+          && materialOk
+          && lightOk
+          && selectedLightOk
+          && vertexLayoutOk
+          && emissiveColor1ShapeOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          sourceValueOk,
+          appliedSourcesOk,
+          materialOk,
+          lightOk,
+          selectedLightOk,
+          vertexLayoutOk,
+          emissiveColor1ShapeOk,
+          litEmissiveColor1MaterialSourcePixels: {
             left: leftPixel,
             right: rightPixel,
           },
