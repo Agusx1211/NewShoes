@@ -14,11 +14,14 @@ const GAMEENGINE_CPP = "GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp"
 const WINMAIN_CPP = "GeneralsMD/Code/Main/WinMain.cpp";
 const WIN32GAMEENGINE_H =
   "GeneralsMD/Code/GameEngineDevice/Include/Win32Device/Common/Win32GameEngine.h";
+const GAMEAUDIO_CPP =
+  "GeneralsMD/Code/GameEngine/Source/Common/Audio/GameAudio.cpp";
 
 const sourcePaths = {
   gameEngineCpp: resolve(repoRoot, GAMEENGINE_CPP),
   winMainCpp: resolve(repoRoot, WINMAIN_CPP),
   win32GameEngineHeader: resolve(repoRoot, WIN32GAMEENGINE_H),
+  gameAudioCpp: resolve(repoRoot, GAMEAUDIO_CPP),
 };
 
 const REQUIRED_INIT_ORDER = [
@@ -189,6 +192,43 @@ const KNOWN_FACTORY_MAPPINGS = {
   createAudioManager: { expected: "MilesAudioManager", expectedLine: 105 },
 };
 
+const AUDIO_STARTUP_LOADS = [
+  {
+    key: "audioSettingsIni",
+    path: "Data\\INI\\AudioSettings.ini",
+    expectedLine: 219,
+  },
+  {
+    key: "defaultMusicIni",
+    path: "Data\\INI\\Default\\Music.ini",
+    expectedLine: 221,
+  },
+  { key: "musicIni", path: "Data\\INI\\Music.ini", expectedLine: 222 },
+  {
+    key: "defaultSoundEffectsIni",
+    path: "Data\\INI\\Default\\SoundEffects.ini",
+    expectedLine: 224,
+  },
+  {
+    key: "soundEffectsIni",
+    path: "Data\\INI\\SoundEffects.ini",
+    expectedLine: 225,
+  },
+  {
+    key: "defaultSpeechIni",
+    path: "Data\\INI\\Default\\Speech.ini",
+    expectedLine: 227,
+  },
+  { key: "speechIni", path: "Data\\INI\\Speech.ini", expectedLine: 228 },
+  {
+    key: "defaultVoiceIni",
+    path: "Data\\INI\\Default\\Voice.ini",
+    expectedLine: 230,
+  },
+  { key: "voiceIni", path: "Data\\INI\\Voice.ini", expectedLine: 231 },
+  { key: "miscAudioIni", path: "Data\\INI\\MiscAudio.ini", expectedLine: 234 },
+];
+
 function readText(path, label, errors) {
   try {
     return readFileSync(path, "utf8");
@@ -238,6 +278,10 @@ function lineOfOffset(text, offset) {
   return line;
 }
 
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function scanInitMarkers(cppText, errors) {
   const body = findFunctionBody(
     cppText,
@@ -274,6 +318,44 @@ function scanInitMarkers(cppText, errors) {
       line,
       ok: line === entry.expectedLine,
       ...(pattern ? { pattern } : {}),
+    };
+  });
+}
+
+function scanAudioStartupLoads(audioText, errors) {
+  const body = findFunctionBody(
+    audioText,
+    /\bvoid\s+AudioManager\s*::\s*init\s*\(\s*\)/g
+  );
+  if (!body) {
+    errors.push(`${GAMEAUDIO_CPP}: AudioManager::init() body not found`);
+    return [];
+  }
+
+  const bodyStartLine = lineOfOffset(audioText, body.bodyOffset);
+  const bodyLines = body.body.split(/\r?\n/);
+  let searchStart = 0;
+  return AUDIO_STARTUP_LOADS.map((entry) => {
+    const sourcePathLiteral = entry.path.replaceAll("\\", "\\\\");
+    const loadPattern = new RegExp(
+      `\\bini\\.load\\s*\\(\\s*AsciiString\\s*\\(\\s*"${escapeRegExp(sourcePathLiteral)}"\\s*\\)`
+    );
+    let line = null;
+
+    for (let i = searchStart; i < bodyLines.length; i += 1) {
+      if (loadPattern.test(bodyLines[i])) {
+        line = bodyStartLine + i;
+        searchStart = i + 1;
+        break;
+      }
+    }
+
+    return {
+      key: entry.key,
+      path: entry.path,
+      expectedLine: entry.expectedLine,
+      line,
+      ok: line === entry.expectedLine,
     };
   });
 }
@@ -414,6 +496,35 @@ function addFactoryMappingErrors(factoryMappings, errors) {
   }
 }
 
+function addAudioStartupErrors(audioStartupLoads, errors) {
+  let orderOk = true;
+  let previousLine = -1;
+
+  for (const entry of audioStartupLoads) {
+    if (entry.line === null) {
+      errors.push(`${GAMEAUDIO_CPP}: missing audio startup load ${entry.path}`);
+      orderOk = false;
+      continue;
+    }
+
+    if (entry.line !== entry.expectedLine) {
+      errors.push(
+        `${GAMEAUDIO_CPP}: ${entry.path} expected line ${entry.expectedLine} but found ${entry.line}`
+      );
+    }
+
+    if (entry.line < previousLine) {
+      errors.push(
+        `${GAMEAUDIO_CPP}: audio startup order violation at ${entry.path} line ${entry.line}`
+      );
+      orderOk = false;
+    }
+    previousLine = entry.line;
+  }
+
+  return orderOk && audioStartupLoads.every((entry) => entry.line !== null);
+}
+
 function main() {
   const errors = [];
   const cppText = readText(sourcePaths.gameEngineCpp, GAMEENGINE_CPP, errors);
@@ -423,8 +534,10 @@ function main() {
     WIN32GAMEENGINE_H,
     errors
   );
+  const audioText = readText(sourcePaths.gameAudioCpp, GAMEAUDIO_CPP, errors);
 
   const initOrder = cppText ? scanInitMarkers(cppText, errors) : [];
+  const audioStartupLoads = audioText ? scanAudioStartupLoads(audioText, errors) : [];
   const createGameEngine = winMainText
     ? scanCreateGameEngine(winMainText)
     : {
@@ -444,10 +557,14 @@ function main() {
   if (headerText) {
     addFactoryMappingErrors(factoryMappings, errors);
   }
+  const audioStartupOrderOk = audioText
+    ? addAudioStartupErrors(audioStartupLoads, errors)
+    : false;
 
   const ok =
     errors.length === 0 &&
     orderOk &&
+    audioStartupOrderOk &&
     createGameEngine.ok &&
     Object.values(factoryMappings).every((mapping) => mapping.ok);
 
@@ -457,11 +574,14 @@ function main() {
       gameEngineCpp: GAMEENGINE_CPP,
       winMainCpp: WINMAIN_CPP,
       win32GameEngineHeader: WIN32GAMEENGINE_H,
+      gameAudioCpp: GAMEAUDIO_CPP,
     },
     createGameEngine,
     initOrder,
     factoryMappings,
+    audioStartupLoads,
     orderOk,
+    audioStartupOrderOk,
     errors,
   };
 

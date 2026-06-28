@@ -1602,6 +1602,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and `Default\SoundEffects.ini`, while `AudioSettings.ini` and the other
       default audio INIs remain absent until the base Generals startup archives
       are supplied.
+- [x] Extend `npm run verify:gameengine-startup-order` to source-check the
+      `AudioManager::init` audio INI load order and line anchors from
+      `GameAudio.cpp`, keeping the harness-visible `audioStartupFiles` contract
+      tied to original source facts instead of hand-maintained JSON.
 ---
 
 ## M3 — File / data subsystem (real data)
