@@ -10,11 +10,11 @@
 #include "GameClient/IMEManager.h"
 #include "GameClient/Mouse.h"
 #include "GameLogic/GameLogic.h"
-#include "Win32Device/Common/Win32GameEngine.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 #include "WinMain.h"
 
 extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+extern "C" void cnc_port_win32_service_windows_os_message_pump();
 extern Bool ApplicationIsWindowed;
 extern DWORD TheMessageTime;
 
@@ -66,9 +66,7 @@ bool pump_one(HWND window, UINT message, WPARAM wparam, LPARAM lparam, DWORD tim
 		return false;
 	}
 
-	alignas(Win32GameEngine) unsigned char engine_storage[sizeof(Win32GameEngine)] = {};
-	auto *engine = reinterpret_cast<Win32GameEngine *>(engine_storage);
-	engine->Win32GameEngine::serviceWindowsOS();
+	cnc_port_win32_service_windows_os_message_pump();
 	return true;
 }
 } // namespace

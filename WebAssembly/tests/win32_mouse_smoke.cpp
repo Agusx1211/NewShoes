@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cstring>
 
 #include <windows.h>
 
@@ -18,6 +19,34 @@ class SmokeWin32Mouse : public Win32Mouse
 {
 public:
 	using Win32Mouse::getMouseEvent;
+
+	void prepareEngineUpdateProbe(int width, int height)
+	{
+		std::memset(m_eventBuffer, 0, sizeof(m_eventBuffer));
+		m_nextFreeIndex = 0;
+		m_nextGetIndex = 0;
+		std::memset(m_mouseEvents, 0, sizeof(m_mouseEvents));
+		std::memset(&m_currMouse, 0, sizeof(m_currMouse));
+		std::memset(&m_prevMouse, 0, sizeof(m_prevMouse));
+		m_minX = 0;
+		m_minY = 0;
+		m_maxX = width > 0 ? width - 1 : 799;
+		m_maxY = height > 0 ? height - 1 : 599;
+		m_inputFrame = 0;
+		m_deadInputFrame = 0;
+		m_eventsThisFrame = 0;
+		m_inputMovesAbsolute = TRUE;
+	}
+
+	Int eventsThisFrame() const { return m_eventsThisFrame; }
+	UnsignedInt inputFrame() const { return m_inputFrame; }
+
+	void processBufferedEvents()
+	{
+		for (Int index = 0; index < m_eventsThisFrame; ++index) {
+			processMouseEvent(index);
+		}
+	}
 };
 
 bool expect(bool condition, const char *message)
@@ -122,7 +151,34 @@ int main()
 		return 1;
 	}
 
+	mouse.prepareEngineUpdateProbe(800, 600);
+	mouse.addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(234, 56), 900);
+	mouse.update();
+	if (!expect(mouse.inputFrame() == 1 && mouse.eventsThisFrame() == 1,
+			"real Mouse::update should advance the input frame and drain one Win32Mouse event")) {
+		return 1;
+	}
+	event = {};
+	if (!expect(mouse.getMouseEvent(&event, FALSE) == MOUSE_NONE,
+			"real Mouse::update should consume the Win32Mouse device buffer")) {
+		return 1;
+	}
+	mouse.processBufferedEvents();
+	const MouseIO *status = mouse.getMouseStatus();
+	if (!expect(status->pos.x == 234
+			&& status->pos.y == 56
+			&& status->deltaPos.x == 234
+			&& status->deltaPos.y == 56
+			&& status->time == 900
+			&& status->wheelPos == 0
+			&& status->leftState == MBS_Down
+			&& status->leftEvent != MOUSE_EVENT_NONE
+			&& status->leftFrame == 1,
+			"real Mouse::processMouseEvent should fold the buffered left-button event into MouseIO status")) {
+		return 1;
+	}
+
 	TheWin32Mouse = nullptr;
-	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

@@ -3010,6 +3010,13 @@ shares structure and follows behind.
       the application window bounds and feeds `Win32Mouse::addWin32Event`, and
       the wasm harness observes `Win32Mouse::translateEvent` producing the
       expected `MouseIO::wheelPos` and canvas-relative position.
+- [x] Focused real Mouse update proof: the standalone wasm `win32-mouse-smoke`
+      links original `GameClient/Input/Mouse.cpp` plus original
+      `Win32Mouse.cpp`, queues a Win32 left-button event, calls real
+      `Mouse::update()` through `Win32Mouse::update()`, verifies the device
+      buffer is consumed, and folds the buffered event with original
+      `Mouse::processMouseEvent()` into `MouseIO` status. This does not yet
+      prove `Mouse::createStreamMessages()` / GUI delivery.
 - [ ] Add a separate real engine Mouse probe, not the current browser
       `Win32Mouse`/`Mouse` shim, that wires `TheMouse == TheWin32Mouse`,
       supplies the required `TheMessageStream` / keyboard / frame globals,
