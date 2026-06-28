@@ -2890,6 +2890,14 @@ shares structure and follows behind.
             transform capture, colored pixels, and
             `harness-smoke-ww3d-display-scene-canvas.png`. Full
             `W3DDisplay::init()` / shell-map rendering remains open.
+      - [ ] Add a vtable-safe original `W3DDisplay::setWidth` / `setHeight`
+            or `setDisplayMode()` proof. Raw storage is not enough because the
+            original setters call virtual `getWidth()` / `getHeight()`;
+            placement-new construction currently retains the full `W3DDisplay`
+            vtable/link surface (`TheDisplayStringManager`, `TheInGameUI`,
+            `TheNetwork`, etc.). `setDisplayMode()` also needs a real
+            `TheTacticalView` resize path. Keep this as a focused probe once
+            those dependencies are owned, not weak-faked.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
