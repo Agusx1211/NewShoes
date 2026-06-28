@@ -5581,6 +5581,28 @@ try {
     throw new Error(`MatrixMapper apply probe failed: ${JSON.stringify(matrixMapperApplyResult)}`);
   }
 
+  const classicEnvironmentMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("classicEnvironmentMapperApply"));
+  if (!classicEnvironmentMapperApplyResult.ok
+      || classicEnvironmentMapperApplyResult.probe?.source !== "classic_environment_mapper_apply_probe"
+      || classicEnvironmentMapperApplyResult.probe?.results?.applyCalled !== true
+      || classicEnvironmentMapperApplyResult.probe?.results?.stage !== 1
+      || classicEnvironmentMapperApplyResult.probe?.textureStage?.texCoordIndex !== 0x00010000
+      || classicEnvironmentMapperApplyResult.probe?.textureStage?.textureTransformFlags !== 2
+      || classicEnvironmentMapperApplyResult.probe?.transform?.state
+          !== classicEnvironmentMapperApplyResult.probe?.transform?.expectedState
+      || classicEnvironmentMapperApplyResult.probe?.transform?.rowsOk !== true
+      || classicEnvironmentMapperApplyResult.probe?.transform?.row0Ok !== true
+      || classicEnvironmentMapperApplyResult.probe?.transform?.row1Ok !== true
+      || classicEnvironmentMapperApplyResult.probe?.transform?.row2Ok !== true
+      || classicEnvironmentMapperApplyResult.probe?.transform?.row3Ok !== true
+      || classicEnvironmentMapperApplyResult.probe?.callDeltas?.transform !== 1
+      || classicEnvironmentMapperApplyResult.probe?.callDeltas?.textureStageState !== 2) {
+    throw new Error(
+      `ClassicEnvironmentMapper apply probe failed: ${JSON.stringify(classicEnvironmentMapperApplyResult)}`,
+    );
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",

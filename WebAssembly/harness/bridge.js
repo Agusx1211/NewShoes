@@ -5184,6 +5184,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
       probeWW3DFontChars: module.cwrap(
         "cnc_port_probe_ww3d_font_chars", "string", ["number", "string", "number"]),
+      probeClassicEnvironmentMapperApply: module.cwrap(
+        "cnc_port_probe_classic_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
         "cnc_port_probe_matrixmapper_apply", "string", []),
       probeWWShadeCubeMapApply: module.cwrap(
@@ -12156,6 +12158,38 @@ async function rpc(command, payload = {}) {
           && probe?.transform?.row0Ok === true
           && probe?.transform?.row1Ok === true
           && probe?.transform?.row2FromRow3Ok === true
+          && probe?.callDeltas?.transform === 1
+          && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "classicEnvironmentMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; ClassicEnvironmentMapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeClassicEnvironmentMapperApply());
+        const ok = Boolean(probe.ok)
+          && probe?.source === "classic_environment_mapper_apply_probe"
+          && probe?.results?.applyCalled === true
+          && probe?.results?.stage === 1
+          && probe?.textureStage?.texCoordIndex === D3DTSS_TCI_CAMERASPACENORMAL
+          && probe?.textureStage?.textureTransformFlags === D3DTTFF_COUNT2
+          && probe?.transform?.state === probe?.transform?.expectedState
+          && probe?.transform?.rowsOk === true
+          && probe?.transform?.row0Ok === true
+          && probe?.transform?.row1Ok === true
+          && probe?.transform?.row2Ok === true
+          && probe?.transform?.row3Ok === true
           && probe?.callDeltas?.transform === 1
           && probe?.callDeltas?.textureStageState === 2;
         return {
