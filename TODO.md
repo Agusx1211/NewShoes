@@ -459,10 +459,9 @@ shares structure and follows behind.
       hard-cone and quadratic mid-penumbra falloff proofs, broader original
       W3D point-light attenuation variants beyond the verified linear and
       pure quadratic point-light proofs plus the verified finite-range clip
-      and mixed coefficient proofs, `D3DRS_LOCALVIEWER`
-      variants beyond the verified aligned/off-axis/transformed directional
-      specular paths, and lit material-source variants beyond the verified
-      diffuse/ambient `COLOR1` path) and other W3D draw states → GL/shader
+      and mixed coefficient proofs, lit material-source variants beyond the
+      verified diffuse/ambient `COLOR1` path, and other fixed-function
+      lighting/render-state variants) and other W3D draw states → GL/shader
       state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline

@@ -2365,8 +2365,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `cnc_port_probe_d3d8_normalize_normals` draws a scaled-world diffuse
       control quad with the default false state beside a normalized true
       quad, and Playwright verifies gray/white sampled pixels with
-      `harness-smoke-d3d8-normalize-normals-canvas.png`. `D3DRS_LOCALVIEWER`
-      remains open.
+      `harness-smoke-d3d8-normalize-normals-canvas.png`.
+- [x] Add a focused D3D8 `D3DRS_LOCALVIEWER` proof. The shim now captures the
+      state with the D3D default of `TRUE`, the browser draw bridge carries it
+      as `renderState.localViewer`, and the fixed-function specular shader
+      switches between camera-relative and orthogonal view directions. The
+      native/browser probe `cnc_port_probe_d3d8_local_viewer` draws a dark
+      camera-relative specular control quad beside a white orthogonal-viewer
+      quad, and Playwright verifies the black/white samples with
+      `harness-smoke-d3d8-local-viewer-canvas.png`.
 - [x] Add a focused lit fixed-function D3D8 material-source `COLOR1` proof.
       The native/browser probe `cnc_port_probe_d3d8_lit_material_sources`
       sets `COLORVERTEX=TRUE`, uses vertex diffuse colors as both the diffuse

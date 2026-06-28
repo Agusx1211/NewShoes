@@ -36,6 +36,10 @@ const d3d8NormalizeNormalsCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-normalize-normals-canvas.png",
 );
+const d3d8LocalViewerCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-local-viewer-canvas.png",
+);
 const d3d8PointLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-light-canvas.png",
@@ -3590,6 +3594,81 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8NormalizeNormalsCanvasScreenshot });
 
+  const d3d8LocalViewerResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8LocalViewer"));
+  const expectedLocalViewerLeft =
+    d3d8LocalViewerResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedLocalViewerRight =
+    d3d8LocalViewerResult.probe?.expectedRight ?? [255, 255, 255, 255];
+  if (!d3d8LocalViewerResult.ok
+      || d3d8LocalViewerResult.probe?.source !== "browser_d3d8_local_viewer_probe"
+      || d3d8LocalViewerResult.probe?.calls?.setTransform !== 3
+      || d3d8LocalViewerResult.probe?.calls?.setMaterial !== 1
+      || d3d8LocalViewerResult.probe?.calls?.setLight !== 1
+      || d3d8LocalViewerResult.probe?.calls?.lightEnable !== 1
+      || d3d8LocalViewerResult.probe?.calls?.drawIndexed !== 2
+      || d3d8LocalViewerResult.probe?.localViewerStates?.trueDraw !== 1
+      || d3d8LocalViewerResult.probe?.localViewerStates?.falseDraw !== 0
+      || d3d8LocalViewerResult.probe?.transforms?.mask !== 7
+      || d3d8LocalViewerResult.probe?.draw?.vertexCount !== 4
+      || d3d8LocalViewerResult.probe?.draw?.primitiveCount !== 2
+      || d3d8LocalViewerResult.probe?.draw?.localViewer !== 0
+      || d3d8LocalViewerResult.browserProbe?.transformMask !== 7
+      || d3d8LocalViewerResult.browserProbe?.usedTransforms !== true
+      || d3d8LocalViewerResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8LocalViewerResult.browserProbe?.renderState?.specularEnable !== 1
+      || d3d8LocalViewerResult.browserProbe?.renderState?.normalizeNormals !== 1
+      || d3d8LocalViewerResult.browserProbe?.renderState?.localViewer !== 0
+      || d3d8LocalViewerResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8LocalViewerResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8LocalViewerResult.browserProbe?.renderState?.specularMaterialSource !== 0
+      || d3d8LocalViewerResult.browserProbe?.vertexCount !== 8
+      || d3d8LocalViewerResult.browserProbe?.indexCount !== 6
+      || d3d8LocalViewerResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8LocalViewerResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8LocalViewerResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.normalizeNormals?.enabled !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.localViewer?.enabled !== false
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.viewDirection?.source !== "orthogonal"
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.viewDirection?.localViewer !== false
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.source !== "inverseTransposeWorld"
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.inverseTransposeWorld !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.normalizeNormals !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightSupported !== true
+      || d3d8LocalViewerResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightCount !== 1
+      || d3d8LocalViewerResult.materialOk !== true
+      || d3d8LocalViewerResult.lightSpecularOk !== true
+      || d3d8LocalViewerResult.selectedLightOk !== true
+      || d3d8LocalViewerResult.appliedSpecularOk !== true
+      || d3d8LocalViewerResult.transformOk !== true
+      || d3d8LocalViewerResult.localViewerStatesOk !== true
+      || d3d8LocalViewerResult.normalTransformOk !== true
+      || d3d8LocalViewerResult.localViewerOk !== true
+      || d3d8LocalViewerResult.localViewerShapeOk !== true
+      || d3d8LocalViewerResult.leftPixelOk !== true
+      || d3d8LocalViewerResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8LocalViewerResult.localViewerPixels?.left,
+        expectedLocalViewerLeft,
+        5,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8LocalViewerResult.localViewerPixels?.right,
+        expectedLocalViewerRight,
+        4,
+      )
+      || !pixelLooksBlack(d3d8LocalViewerResult.localViewerPixels?.left, 5)) {
+    throw new Error(`D3D8 local-viewer probe failed: ${JSON.stringify(d3d8LocalViewerResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8LocalViewerCanvasScreenshot });
+
   const d3d8PointLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8PointLight"));
   const expectedPointLeft = d3d8PointLightResult.probe?.expectedLeft ?? [128, 128, 128, 255];
@@ -5051,6 +5130,7 @@ try {
       d3d8SpecularOffAxisLightCanvasScreenshot,
       d3d8SpecularTransformedLightCanvasScreenshot,
       d3d8NormalizeNormalsCanvasScreenshot,
+      d3d8LocalViewerCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
       d3d8PointRangeLightCanvasScreenshot,

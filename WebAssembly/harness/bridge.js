@@ -2595,6 +2595,7 @@ function ensureD3D8DrawProgram() {
     uniform bool uLightingEnabled;
     uniform bool uSpecularEnabled;
     uniform bool uNormalizeNormals;
+    uniform bool uLocalViewer;
     uniform bool uColorVertexEnabled;
     uniform vec4 uSceneAmbient;
     uniform vec4 uMaterialDiffuse;
@@ -2724,8 +2725,15 @@ function ensureD3D8DrawProgram() {
         viewPosition = uView * worldPosition;
         vec4 cameraWorld = inverse(uView) * vec4(0.0, 0.0, 0.0, 1.0);
         vec3 cameraPosition = cameraWorld.xyz / max(abs(cameraWorld.w), 0.000001);
+        vec4 cameraForwardWorld = inverse(uView) * vec4(0.0, 0.0, 1.0, 0.0);
+        vec3 orthogonalViewDirection = length(cameraForwardWorld.xyz) > 0.000001
+          ? normalize(cameraForwardWorld.xyz)
+          : viewDirection;
         vec3 worldToCamera = cameraPosition - worldPosition.xyz;
-        viewDirection = length(worldToCamera) > 0.000001 ? normalize(worldToCamera) : viewDirection;
+        vec3 localViewDirection = length(worldToCamera) > 0.000001
+          ? normalize(worldToCamera)
+          : orthogonalViewDirection;
+        viewDirection = uLocalViewer ? localViewDirection : orthogonalViewDirection;
         vec4 d3dClip = uProjection * viewPosition;
         gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
         vFogDepth = max(viewPosition.z, 0.0);
@@ -3101,6 +3109,7 @@ function ensureD3D8DrawProgram() {
     lightingEnabled: gl.getUniformLocation(program, "uLightingEnabled"),
     specularEnabled: gl.getUniformLocation(program, "uSpecularEnabled"),
     normalizeNormals: gl.getUniformLocation(program, "uNormalizeNormals"),
+    localViewer: gl.getUniformLocation(program, "uLocalViewer"),
     colorVertexEnabled: gl.getUniformLocation(program, "uColorVertexEnabled"),
     sceneAmbient: gl.getUniformLocation(program, "uSceneAmbient"),
     materialDiffuse: gl.getUniformLocation(program, "uMaterialDiffuse"),
@@ -3814,6 +3823,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     lighting: Number(renderState.lighting ?? 1) >>> 0,
     specularEnable: Number(renderState.specularEnable ?? 0) >>> 0,
     normalizeNormals: Number(renderState.normalizeNormals ?? 0) >>> 0,
+    localViewer: Number(renderState.localViewer ?? 1) >>> 0,
     ambient: Number(renderState.ambient ?? 0) >>> 0,
     colorVertex: Number(renderState.colorVertex ?? 1) >>> 0,
     diffuseMaterialSource: Number(renderState.diffuseMaterialSource ?? D3DMCS_COLOR1) >>> 0,
@@ -4048,6 +4058,10 @@ function applyD3D8RenderState(renderState, options = {}) {
         enabled: state.normalizeNormals !== 0,
         value: state.normalizeNormals,
       },
+      localViewer: {
+        enabled: state.localViewer !== 0,
+        value: state.localViewer,
+      },
     },
     ambient: {
       color: state.ambient,
@@ -4174,6 +4188,10 @@ function paintD3D8DrawIndexed(payload = {}) {
         inverseTransposeWorld: Boolean(useTransforms),
         normalizeNormals: renderState.normalizeNormals !== 0,
       },
+      viewDirection: {
+        source: renderState.localViewer !== 0 ? "cameraRelative" : "orthogonal",
+        localViewer: renderState.localViewer !== 0,
+      },
       specular: {
         enabled: renderState.specularEnable !== 0,
         material: material.specular.slice(),
@@ -4295,6 +4313,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.normalizeNormals) {
       gl.uniform1i(bridgeProgram.normalizeNormals,
         appliedRenderState.lighting.normalizeNormals.enabled ? 1 : 0);
+    }
+    if (bridgeProgram.localViewer) {
+      gl.uniform1i(bridgeProgram.localViewer,
+        appliedRenderState.lighting.localViewer.enabled ? 1 : 0);
     }
     if (bridgeProgram.colorVertexEnabled) {
       gl.uniform1i(bridgeProgram.colorVertexEnabled,
@@ -4936,6 +4958,8 @@ async function loadWasmModule() {
         "cnc_port_probe_d3d8_specular_transformed_light", "string", []),
       probeD3D8NormalizeNormals: module.cwrap(
         "cnc_port_probe_d3d8_normalize_normals", "string", []),
+      probeD3D8LocalViewer: module.cwrap(
+        "cnc_port_probe_d3d8_local_viewer", "string", []),
       probeD3D8PointLight: module.cwrap("cnc_port_probe_d3d8_point_light", "string", []),
       probeD3D8PointQuadraticLight: module.cwrap("cnc_port_probe_d3d8_point_quadratic_light", "string", []),
       probeD3D8PointRangeLight: module.cwrap("cnc_port_probe_d3d8_point_range_light", "string", []),
@@ -8515,6 +8539,141 @@ async function rpc(command, payload = {}) {
           normalTransformOk,
           normalizedShapeOk,
           normalizeNormalPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8LocalViewer":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 local-viewer probe cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8LocalViewer());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [255, 255, 255, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 5);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 4);
+        const expectedLight = normalizeD3D8Light(probe.light, 0);
+        const capturedLight = normalizeD3D8Light(browserProbe?.lights?.[0], 0);
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.directionalLights?.[0] ?? {};
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const normalTransform = appliedLighting.normalTransform ?? {};
+        const viewDirection = appliedLighting.viewDirection ?? {};
+        const appliedSpecular = appliedLighting.specular ?? {};
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const lightSpecularOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction);
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          floatVectorApproximatelyEqual(selectedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(selectedLight.direction, expectedLight.direction);
+        const appliedSpecularOk =
+          appliedSpecular.enabled === true &&
+          appliedSpecular.source === 0 &&
+          appliedSpecular.sourceName === "material" &&
+          floatVectorApproximatelyEqual(appliedSpecular.material, expectedMaterial.specular) &&
+          Math.abs((appliedSpecular.power ?? 0) - expectedMaterial.power) < 0.00001;
+        const transformOk =
+          browserProbe?.transformMask === 7 &&
+          browserProbe?.usedTransforms === true &&
+          probe.calls?.setTransform === 3 &&
+          probe.transforms?.mask === 7;
+        const localViewerStatesOk =
+          probe.localViewerStates?.trueDraw === 1 &&
+          probe.localViewerStates?.falseDraw === 0;
+        const normalTransformOk =
+          normalTransform.source === "inverseTransposeWorld" &&
+          normalTransform.inverseTransposeWorld === true &&
+          normalTransform.normalizeNormals === true;
+        const localViewerOk =
+          browserProbe?.renderState?.localViewer === 0 &&
+          appliedLighting.localViewer?.enabled === false &&
+          viewDirection.localViewer === false &&
+          viewDirection.source === "orthogonal";
+        const localViewerShapeOk = pixelLooksBlack(leftPixel, 5)
+          && Array.isArray(rightPixel)
+          && rightPixel[0] >= 240
+          && rightPixel[1] >= 240
+          && rightPixel[2] >= 240
+          && rightPixel[3] >= 200;
+        const caseOk = Boolean(probe.ok)
+          && probe.source === "browser_d3d8_local_viewer_probe"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState >= 16
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 2
+          && probe.draw?.vertexCount === 4
+          && probe.draw?.primitiveCount === 2
+          && probe.draw?.localViewer === 0
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 6
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.specularEnable === 1
+          && browserProbe?.renderState?.normalizeNormals === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && browserProbe?.renderState?.specularMaterialSource === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.normalizeNormals?.enabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && selectedLightOk
+          && appliedSpecularOk
+          && materialOk
+          && lightSpecularOk
+          && transformOk
+          && localViewerStatesOk
+          && normalTransformOk
+          && localViewerOk
+          && localViewerShapeOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          lightSpecularOk,
+          selectedLightOk,
+          appliedSpecularOk,
+          transformOk,
+          localViewerStatesOk,
+          normalTransformOk,
+          localViewerOk,
+          localViewerShapeOk,
+          localViewerPixels: {
             left: leftPixel,
             right: rightPixel,
           },

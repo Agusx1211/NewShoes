@@ -339,7 +339,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 41;
+		const renderStateSlots = 42;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -423,6 +423,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			clipPlaneEnable: state[38] >>> 0,
 			specularEnable: state[39] >>> 0,
 			normalizeNormals: state[40] >>> 0,
+			localViewer: state[41] >>> 0,
 			textureStages,
 		};
 	};
@@ -2997,6 +2998,8 @@ private:
 				return D3DSHADE_GOURAUD;
 			case D3DRS_LIGHTING:
 				return TRUE;
+			case D3DRS_LOCALVIEWER:
+				return TRUE;
 			case D3DRS_AMBIENT:
 				return 0;
 			case D3DRS_COLORVERTEX:
@@ -3126,6 +3129,7 @@ private:
 		state.clip_plane_enable = render_state_value(D3DRS_CLIPPLANEENABLE);
 		state.specular_enable = render_state_value(D3DRS_SPECULARENABLE);
 		state.normalize_normals = render_state_value(D3DRS_NORMALIZENORMALS);
+		state.local_viewer = render_state_value(D3DRS_LOCALVIEWER);
 		std::memcpy(g_state.last_draw_clip_planes, m_clip_planes, sizeof(g_state.last_draw_clip_planes));
 		for (UINT index = 0; index < WASM_D3D8_LIGHT_COUNT; ++index) {
 			g_state.last_draw_lights[index] = draw_light_from_d3d(m_lights[index], m_light_enabled[index]);

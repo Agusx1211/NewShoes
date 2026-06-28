@@ -310,6 +310,7 @@ int main()
 	expect_default(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_COLOR2,
 		"GetRenderState SPECULARMATERIALSOURCE default failed");
 	expect_default(D3DRS_NORMALIZENORMALS, FALSE, "GetRenderState NORMALIZENORMALS default failed");
+	expect_default(D3DRS_LOCALVIEWER, TRUE, "GetRenderState LOCALVIEWER default failed");
 
 	// ----------------------------------------------------------------------
 	// 1. CULLMODE across all three D3D values.
@@ -472,17 +473,21 @@ int main()
 	expect_last(D3DRS_NORMALIZENORMALS, TRUE);
 	set_state(D3DRS_NORMALIZENORMALS, FALSE, "SetRenderState NORMALIZENORMALS FALSE failed");
 	expect_last(D3DRS_NORMALIZENORMALS, FALSE);
+	set_state(D3DRS_LOCALVIEWER, FALSE, "SetRenderState LOCALVIEWER FALSE failed");
+	expect_last(D3DRS_LOCALVIEWER, FALSE);
+	set_state(D3DRS_LOCALVIEWER, TRUE, "SetRenderState LOCALVIEWER TRUE failed");
+	expect_last(D3DRS_LOCALVIEWER, TRUE);
 
 	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2;
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2;
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_NORMALIZENORMALS,
-		"last_set_render_state mismatch after NORMALIZENORMALS");
-	expect(state->last_set_render_state_value == FALSE,
-		"last_set_render_state_value mismatch after NORMALIZENORMALS");
+	expect(state->last_set_render_state == D3DRS_LOCALVIEWER,
+		"last_set_render_state mismatch after LOCALVIEWER");
+	expect(state->last_set_render_state_value == TRUE,
+		"last_set_render_state_value mismatch after LOCALVIEWER");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
