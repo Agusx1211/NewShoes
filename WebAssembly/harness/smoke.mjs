@@ -33,6 +33,10 @@ const ww3dDisplayDrawImageSolidCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-display-drawimage-solid-canvas.png",
 );
+const ww3dDisplayDrawImageGrayscaleCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-drawimage-grayscale-canvas.png",
+);
 const ww3dDisplayFillRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-fillrect-canvas.png");
 const ww3dDisplayLineCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-line-canvas.png");
 const ww3dDisplayLineGradientCanvasScreenshot = resolve(
@@ -1897,6 +1901,76 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayDrawImageSolidCanvasScreenshot });
 
+  const displayDrawImageGrayscaleResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayDrawImageGrayscale"));
+  const expectedGrayscaleCenter = [117, 117, 117, 255];
+  if (!displayDrawImageGrayscaleResult.ok
+      || displayDrawImageGrayscaleResult.probe?.source !== "ww3d_display_drawimage_grayscale_probe"
+      || displayDrawImageGrayscaleResult.probe?.results?.displayAllocated !== true
+      || displayDrawImageGrayscaleResult.probe?.results?.displaySetup !== true
+      || displayDrawImageGrayscaleResult.probe?.results?.imageConfigured !== true
+      || displayDrawImageGrayscaleResult.probe?.results?.drawImageCalled !== true
+      || displayDrawImageGrayscaleResult.probe?.display?.path !== "W3DDisplay::drawImage"
+      || displayDrawImageGrayscaleResult.probe?.display?.mode !== "DRAW_IMAGE_GRAYSCALE"
+      || displayDrawImageGrayscaleResult.probe?.texture?.expectedSource?.join(",") !== "64,128,192,255"
+      || displayDrawImageGrayscaleResult.probe?.texture?.expectedCenter?.join(",") !== "117,117,117,255"
+      || displayDrawImageGrayscaleResult.probe?.image?.rawTexture !== true
+      || displayDrawImageGrayscaleResult.probe?.image?.status !== 2
+      || displayDrawImageGrayscaleResult.probe?.image?.width !== 200
+      || displayDrawImageGrayscaleResult.probe?.image?.height !== 160
+      || displayDrawImageGrayscaleResult.probe?.calls?.drawIndexed < 1
+      || displayDrawImageGrayscaleResult.probe?.calls?.setTextureStageState < 7
+      || displayDrawImageGrayscaleResult.probe?.calls?.browserTextureCreate < 1
+      || displayDrawImageGrayscaleResult.probe?.calls?.browserTextureUpdate < 1
+      || displayDrawImageGrayscaleResult.probe?.calls?.browserTextureBind < 2
+      || displayDrawImageGrayscaleResult.probe?.calls?.browserTextureRelease < 1
+      || displayDrawImageGrayscaleResult.probe?.draw?.primitiveType !== 4
+      || displayDrawImageGrayscaleResult.probe?.draw?.vertexCount !== 4
+      || displayDrawImageGrayscaleResult.probe?.draw?.primitiveCount !== 2
+      || displayDrawImageGrayscaleResult.probe?.draw?.vertexStride !== 44
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.alphaBlendEnable !== 0
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.srcBlend !== 2
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.destBlend !== 1
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureFactor !== 0x80a5ca8e
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 25
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg0 !== 35
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 35
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 24
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[1]?.colorArg1 !== 1
+      || displayDrawImageGrayscaleResult.probe?.draw?.renderState?.textureStages?.[1]?.colorArg2 !== 3
+      || displayDrawImageGrayscaleResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayDrawImageGrayscaleResult.browserProbe?.usedPersistentBuffers !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.usedTransforms !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.renderState?.alphaBlendEnable !== 0
+      || displayDrawImageGrayscaleResult.browserProbe?.renderState?.srcBlend !== 2
+      || displayDrawImageGrayscaleResult.browserProbe?.renderState?.destBlend !== 1
+      || displayDrawImageGrayscaleResult.browserProbe?.renderState?.textureFactor !== 0x80a5ca8e
+      || displayDrawImageGrayscaleResult.browserProbe?.textureFactor !== 0x80a5ca8e
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.id !== displayDrawImageGrayscaleResult.probe?.texture?.id
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.ready !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.sampled !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.combiner?.opName !== "multiplyAdd"
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.combiner?.colorArg0 !== 35
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.combiner?.colorArg1 !== 2
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.combiner?.colorArg2 !== 35
+      || displayDrawImageGrayscaleResult.browserProbe?.texture0?.combiner?.supported !== true
+      || displayDrawImageGrayscaleResult.browserProbe?.stage1Combiner?.opName !== "dotProduct3"
+      || displayDrawImageGrayscaleResult.browserProbe?.stage1Combiner?.colorArg1 !== 1
+      || displayDrawImageGrayscaleResult.browserProbe?.stage1Combiner?.colorArg2 !== 3
+      || displayDrawImageGrayscaleResult.browserProbe?.stage1Combiner?.supported !== true
+      || !pixelsApproximatelyEqual(displayDrawImageGrayscaleResult.browserProbe?.centerPixel, expectedGrayscaleCenter, 2)
+      || !pixelsApproximatelyEqual(displayDrawImageGrayscaleResult.grayscalePixels?.center, expectedGrayscaleCenter, 2)
+      || !pixelLooksBlack(displayDrawImageGrayscaleResult.grayscalePixels?.outside)
+      || displayDrawImageGrayscaleResult.textureDelta?.creates < 1
+      || displayDrawImageGrayscaleResult.textureDelta?.updates < 1
+      || displayDrawImageGrayscaleResult.textureDelta?.binds < 1
+      || displayDrawImageGrayscaleResult.textureDelta?.releases < 1) {
+    throw new Error(`WW3DDisplay grayscale drawImage probe failed: ${JSON.stringify(displayDrawImageGrayscaleResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayDrawImageGrayscaleCanvasScreenshot });
+
   const displayFillRectResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayFillRect"));
   if (!displayFillRectResult.ok
       || displayFillRectResult.probe?.source !== "ww3d_display_fillrect_probe"
@@ -2329,6 +2403,7 @@ try {
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dDisplayDrawImageAdditiveCanvasScreenshot,
       ww3dDisplayDrawImageSolidCanvasScreenshot,
+      ww3dDisplayDrawImageGrayscaleCanvasScreenshot,
       ww3dDisplayFillRectCanvasScreenshot,
       ww3dDisplayLineCanvasScreenshot,
       ww3dDisplayLineGradientCanvasScreenshot,

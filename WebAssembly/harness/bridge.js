@@ -3184,6 +3184,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_drawimage_additive", "string", []),
       probeWW3DDisplayDrawImageSolid: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage_solid", "string", []),
+      probeWW3DDisplayDrawImageGrayscale: module.cwrap(
+        "cnc_port_probe_ww3d_display_drawimage_grayscale", "string", []),
       probeWW3DDisplayDrawImageFile: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage_file", "string", ["string"]),
       probeWW3DDisplayMappedImage: module.cwrap(
@@ -5785,6 +5787,89 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           solidPixels,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayDrawImageGrayscale":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; grayscale WW3DDisplay drawImage cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayDrawImageGrayscale());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const grayscalePixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          outside: sampleVirtualCanvasPixel(250, 200),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          grayscalePixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const expectedCenter = [117, 117, 117, 255];
+        const grayscaleFactor = 0x80a5ca8e;
+        const grayscaleAlphaFactor = D3DTA_TFACTOR | D3DTA_ALPHAREPLICATE;
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_drawimage_grayscale_probe"
+          && probe?.display?.path === "W3DDisplay::drawImage"
+          && probe?.display?.mode === "DRAW_IMAGE_GRAYSCALE"
+          && probe?.draw?.renderState?.alphaBlendEnable === 0
+          && probe?.draw?.renderState?.srcBlend === D3DBLEND_ONE
+          && probe?.draw?.renderState?.destBlend === D3DBLEND_ZERO
+          && probe?.draw?.renderState?.textureFactor === grayscaleFactor
+          && probe?.draw?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MULTIPLYADD
+          && probe?.draw?.renderState?.textureStages?.[0]?.colorArg0 === grayscaleAlphaFactor
+          && probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 === grayscaleAlphaFactor
+          && probe?.draw?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DOTPRODUCT3
+          && probe?.draw?.renderState?.textureStages?.[1]?.colorArg1 === D3DTA_CURRENT
+          && probe?.draw?.renderState?.textureStages?.[1]?.colorArg2 === D3DTA_TFACTOR
+          && browserProbe?.renderState?.alphaBlendEnable === 0
+          && browserProbe?.renderState?.srcBlend === D3DBLEND_ONE
+          && browserProbe?.renderState?.destBlend === D3DBLEND_ZERO
+          && browserProbe?.renderState?.textureFactor === grayscaleFactor
+          && browserProbe?.textureFactor === grayscaleFactor
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && browserProbe?.texture0?.combiner?.colorOp === D3DTOP_MULTIPLYADD
+          && browserProbe?.texture0?.combiner?.colorArg0 === grayscaleAlphaFactor
+          && browserProbe?.texture0?.combiner?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture0?.combiner?.colorArg2 === grayscaleAlphaFactor
+          && browserProbe?.texture0?.combiner?.supported === true
+          && browserProbe?.stage1Combiner?.colorOp === D3DTOP_DOTPRODUCT3
+          && browserProbe?.stage1Combiner?.colorArg1 === D3DTA_CURRENT
+          && browserProbe?.stage1Combiner?.colorArg2 === D3DTA_TFACTOR
+          && browserProbe?.stage1Combiner?.supported === true
+          && probe?.image?.rawTexture === true
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2)
+          && pixelsApproximatelyEqual(grayscalePixels.center, expectedCenter, 2)
+          && pixelLooksBlack(grayscalePixels.outside);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          grayscalePixels,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
