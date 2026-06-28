@@ -2241,6 +2241,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       pixel and the decoded fog state, covering the render-state path used by
       `DX8Wrapper::Set_Fog` / `ShaderClass` before the original scene fog
       flows are fully harness-driven.
+- [x] Add D3D8 fill-mode capture and WebGL2 wireframe emulation to the browser
+      draw bridge. The shim now carries `D3DRS_FILLMODE` in the draw payload,
+      the bridge keeps CPU-side D3D buffer byte mirrors so indexed triangle
+      draws can expand `D3DFILL_WIREFRAME` into temporary `gl.LINES` element
+      buffers, and a focused probe draws a green indexed diamond whose
+      wireframe includes center-crossing edges. Playwright verifies the
+      captured wireframe state, the generated 12 line indices from two
+      triangles, and the green center pixel that only appears when the
+      wireframe edges render.
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8
       `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and

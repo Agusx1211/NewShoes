@@ -72,6 +72,15 @@ const D3DCOLORWRITEENABLE_RED = 1;
 const D3DCOLORWRITEENABLE_GREEN = 2;
 const D3DCOLORWRITEENABLE_BLUE = 4;
 const D3DCOLORWRITEENABLE_ALPHA = 8;
+const D3DFILL_POINT = 1;
+const D3DFILL_WIREFRAME = 2;
+const D3DFILL_SOLID = 3;
+const D3DPT_POINTLIST = 1;
+const D3DPT_LINELIST = 2;
+const D3DPT_LINESTRIP = 3;
+const D3DPT_TRIANGLELIST = 4;
+const D3DPT_TRIANGLESTRIP = 5;
+const D3DPT_TRIANGLEFAN = 6;
 const D3DSTENCILOP_KEEP = 1;
 const D3DSTENCILOP_ZERO = 2;
 const D3DSTENCILOP_REPLACE = 3;
@@ -434,6 +443,7 @@ function createD3D8Buffer(payload = {}) {
     byteSize,
     target,
     buffer,
+    bytes: new Uint8Array(byteSize),
     d3dUsage: usageInfo.d3dUsage,
     dynamic: usageInfo.dynamic,
     writeOnly: usageInfo.writeOnly,
@@ -494,6 +504,17 @@ function updateD3D8Buffer(payload = {}) {
     gl.bufferData(resource.target, resource.byteSize, resource.glUsage);
     orphaned = true;
   }
+  if (!(resource.bytes instanceof Uint8Array)) {
+    resource.bytes = new Uint8Array(resource.byteSize);
+  } else if (resource.bytes.byteLength < resource.byteSize) {
+    const mirror = new Uint8Array(resource.byteSize);
+    mirror.set(resource.bytes.subarray(0, Math.min(resource.bytes.byteLength, mirror.byteLength)));
+    resource.bytes = mirror;
+  }
+  if (resource.dynamic && (lockFlags & D3DLOCK_DISCARD)) {
+    resource.bytes.fill(0);
+  }
+  resource.bytes.set(bytes, byteOffset);
   gl.bufferSubData(resource.target, byteOffset, bytes);
   resource.uploads += 1;
   d3d8BufferStats.updates += 1;
@@ -2604,21 +2625,210 @@ function d3dPrimitiveToGl(primitiveType) {
     return 0;
   }
   switch (Number(primitiveType)) {
-    case 1:
+    case D3DPT_POINTLIST:
       return gl.POINTS;
-    case 2:
+    case D3DPT_LINELIST:
       return gl.LINES;
-    case 3:
+    case D3DPT_LINESTRIP:
       return gl.LINE_STRIP;
-    case 4:
+    case D3DPT_TRIANGLELIST:
       return gl.TRIANGLES;
-    case 5:
+    case D3DPT_TRIANGLESTRIP:
       return gl.TRIANGLE_STRIP;
-    case 6:
+    case D3DPT_TRIANGLEFAN:
       return gl.TRIANGLE_FAN;
     default:
       return 0;
   }
+}
+
+function glPrimitiveName(primitive) {
+  if (!gl) {
+    return "unknown";
+  }
+  switch (primitive) {
+    case gl.POINTS:
+      return "points";
+    case gl.LINES:
+      return "lines";
+    case gl.LINE_STRIP:
+      return "lineStrip";
+    case gl.TRIANGLES:
+      return "triangles";
+    case gl.TRIANGLE_STRIP:
+      return "triangleStrip";
+    case gl.TRIANGLE_FAN:
+      return "triangleFan";
+    default:
+      return "unknown";
+  }
+}
+
+function d3dFillModeName(fillMode) {
+  switch (Number(fillMode) >>> 0) {
+    case D3DFILL_POINT:
+      return "point";
+    case D3DFILL_WIREFRAME:
+      return "wireframe";
+    case D3DFILL_SOLID:
+      return "solid";
+    default:
+      return "unknown";
+  }
+}
+
+function d3dPrimitiveIsTriangle(primitiveType) {
+  const type = Number(primitiveType) >>> 0;
+  return type === D3DPT_TRIANGLELIST || type === D3DPT_TRIANGLESTRIP || type === D3DPT_TRIANGLEFAN;
+}
+
+function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
+  const absolute = byteOffset + index * indexSize;
+  if (!(indexBytes instanceof Uint8Array) || absolute + indexSize > indexBytes.byteLength) {
+    return null;
+  }
+  if (indexSize === 2) {
+    return indexBytes[absolute] | (indexBytes[absolute + 1] << 8);
+  }
+  if (indexSize === 4) {
+    return (indexBytes[absolute] |
+      (indexBytes[absolute + 1] << 8) |
+      (indexBytes[absolute + 2] << 16) |
+      (indexBytes[absolute + 3] << 24)) >>> 0;
+  }
+  return null;
+}
+
+function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
+  const indexBytes = indexResource?.bytes;
+  const requiredByteSize = indexByteOffset + indexCount * indexSize;
+  if (!(indexBytes instanceof Uint8Array)) {
+    return { supported: false, reason: "missingIndexMirror" };
+  }
+  if (requiredByteSize > indexBytes.byteLength) {
+    return { supported: false, reason: "indexRangeOutOfBounds" };
+  }
+
+  const edges = [];
+  let sourceTriangleCount = 0;
+  const addTriangle = (a, b, c) => {
+    if (a === null || b === null || c === null || a === b || b === c || c === a) {
+      return;
+    }
+    edges.push(a, b, b, c, c, a);
+    sourceTriangleCount += 1;
+  };
+  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
+  switch (Number(primitiveType) >>> 0) {
+    case D3DPT_TRIANGLELIST:
+      for (let index = 0; index + 2 < indexCount; index += 3) {
+        addTriangle(readIndex(index), readIndex(index + 1), readIndex(index + 2));
+      }
+      break;
+    case D3DPT_TRIANGLESTRIP:
+      for (let index = 0; index + 2 < indexCount; ++index) {
+        addTriangle(readIndex(index), readIndex(index + 1), readIndex(index + 2));
+      }
+      break;
+    case D3DPT_TRIANGLEFAN:
+      for (let index = 1; index + 1 < indexCount; ++index) {
+        addTriangle(readIndex(0), readIndex(index), readIndex(index + 1));
+      }
+      break;
+    default:
+      return { supported: false, reason: "nonTrianglePrimitive" };
+  }
+
+  if (edges.length === 0) {
+    return { supported: false, reason: "emptyWireframe" };
+  }
+  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
+  return {
+    supported: true,
+    lineIndices: new IndexArray(edges),
+    generatedIndexCount: edges.length,
+    sourceTriangleCount,
+    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
+  };
+}
+
+function createD3D8FillModeDrawInfo(renderState, primitiveType, indexResource, indexByteOffset, indexCount, indexSize) {
+  const mode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
+  const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
+  const info = {
+    mode,
+    modeName: d3dFillModeName(mode),
+    requestedPrimitiveType: Number(primitiveType ?? 0) >>> 0,
+    originalPrimitiveName: glPrimitiveName(baseGlPrimitive),
+    glPrimitive: baseGlPrimitive,
+    glPrimitiveName: glPrimitiveName(baseGlPrimitive),
+    drawIndexCount: indexCount,
+    drawIndexByteOffset: indexByteOffset,
+    generatedIndexCount: 0,
+    sourceTriangleCount: 0,
+    indexTypeName: indexSize === 4 ? "uint32" : "uint16",
+    temporaryIndexBuffer: false,
+    pointFill: false,
+    wireframe: false,
+    supported: baseGlPrimitive !== 0,
+    fallbackReason: baseGlPrimitive !== 0 ? null : "unsupportedPrimitive",
+  };
+
+  if (!info.supported) {
+    return info;
+  }
+  if (mode === D3DFILL_POINT) {
+    info.pointFill = true;
+    info.glPrimitive = gl.POINTS;
+    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
+    return info;
+  }
+  if (mode !== D3DFILL_WIREFRAME) {
+    return info;
+  }
+  if (!d3dPrimitiveIsTriangle(primitiveType)) {
+    return info;
+  }
+
+  const wireframe = buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType);
+  info.wireframe = true;
+  info.supported = wireframe.supported;
+  info.fallbackReason = wireframe.supported ? null : wireframe.reason;
+  info.generatedIndexCount = wireframe.generatedIndexCount ?? 0;
+  info.sourceTriangleCount = wireframe.sourceTriangleCount ?? 0;
+  info.indexTypeName = wireframe.indexTypeName ?? info.indexTypeName;
+  if (wireframe.supported) {
+    info.glPrimitive = gl.LINES;
+    info.glPrimitiveName = glPrimitiveName(info.glPrimitive);
+    info.drawIndexCount = wireframe.generatedIndexCount;
+    info.drawIndexByteOffset = 0;
+    info.lineIndices = wireframe.lineIndices;
+    info.temporaryIndexBuffer = true;
+  }
+  return info;
+}
+
+function d3d8FillModeProbeInfo(fillModeDraw) {
+  if (!fillModeDraw) {
+    return null;
+  }
+  return {
+    mode: fillModeDraw.mode,
+    modeName: fillModeDraw.modeName,
+    requestedPrimitiveType: fillModeDraw.requestedPrimitiveType,
+    originalPrimitiveName: fillModeDraw.originalPrimitiveName,
+    glPrimitiveName: fillModeDraw.glPrimitiveName,
+    drawIndexCount: fillModeDraw.drawIndexCount,
+    drawIndexByteOffset: fillModeDraw.drawIndexByteOffset,
+    generatedIndexCount: fillModeDraw.generatedIndexCount,
+    sourceTriangleCount: fillModeDraw.sourceTriangleCount,
+    indexTypeName: fillModeDraw.indexTypeName,
+    temporaryIndexBuffer: fillModeDraw.temporaryIndexBuffer,
+    pointFill: fillModeDraw.pointFill,
+    wireframe: fillModeDraw.wireframe,
+    supported: fillModeDraw.supported,
+    fallbackReason: fillModeDraw.fallbackReason,
+  };
 }
 
 function pixelHasColor(pixel, threshold = 8) {
@@ -2800,6 +3010,7 @@ function normalizeD3D8RenderState(renderState = {}) {
     fogEnd: Number(renderState.fogEnd ?? D3D_FLOAT_ONE_BITS) >>> 0,
     fogVertexMode: Number(renderState.fogVertexMode ?? D3DFOG_LINEAR) >>> 0,
     rangeFogEnable: Number(renderState.rangeFogEnable ?? 0) >>> 0,
+    fillMode: Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3007,6 +3218,10 @@ function applyD3D8RenderState(renderState, options = {}) {
       vertexMode: state.fogVertexMode,
       rangeEnabled: state.rangeFogEnable !== 0,
     },
+    fillMode: {
+      mode: state.fillMode,
+      name: d3dFillModeName(state.fillMode),
+    },
     colorWrite: colorMask,
   };
 }
@@ -3023,7 +3238,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const vertexCount = Number(payload.vertexCount ?? 0) >>> 0;
   const indexSize = Number(payload.indexSize ?? 0) >>> 0;
   const indexCount = Number(payload.indexCount ?? 0) >>> 0;
-  const glPrimitive = d3dPrimitiveToGl(payload.primitiveType);
+  const baseGlPrimitive = d3dPrimitiveToGl(payload.primitiveType);
   const vertexResource = d3d8Buffers.get(d3d8BufferKey(1, vertexBufferId));
   const indexResource = d3d8Buffers.get(d3d8BufferKey(2, indexBufferId));
   const usePersistentBuffers = Boolean(vertexResource && indexResource);
@@ -3076,17 +3291,26 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
   let appliedTexture1Sampler = null;
+  let appliedFillMode = null;
   let drawOk = false;
   syncCanvasSize();
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
 
-  if (gl && glPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
+  if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
     appliedRenderState = applyD3D8RenderState(renderState, {
       invertCullWinding: usesIdentityClipSpace,
     });
+    const fillModeDraw = createD3D8FillModeDrawInfo(
+      renderState,
+      payload.primitiveType,
+      indexResource,
+      indexByteOffset,
+      indexCount,
+      indexSize,
+    );
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexResource.buffer);
     gl.enableVertexAttribArray(bridgeProgram.position);
     gl.vertexAttribPointer(bridgeProgram.position, 3, gl.FLOAT, false, vertexStride, vertexByteOffset);
@@ -3269,11 +3493,39 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.fogEnd) {
       gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
-    gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, indexByteOffset);
+    let temporaryIndexBuffer = null;
+    try {
+      if (fillModeDraw.supported &&
+          (fillModeDraw.lineIndices instanceof Uint16Array ||
+            fillModeDraw.lineIndices instanceof Uint32Array)) {
+        temporaryIndexBuffer = gl.createBuffer();
+        if (temporaryIndexBuffer) {
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, temporaryIndexBuffer);
+          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, fillModeDraw.lineIndices, gl.STREAM_DRAW);
+        } else {
+          fillModeDraw.supported = false;
+          fillModeDraw.fallbackReason = "temporaryIndexBufferCreateFailed";
+        }
+      } else {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
+      }
+      appliedFillMode = d3d8FillModeProbeInfo(fillModeDraw);
+      if (fillModeDraw.supported) {
+        gl.drawElements(
+          fillModeDraw.glPrimitive,
+          fillModeDraw.drawIndexCount,
+          indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
+          fillModeDraw.drawIndexByteOffset,
+        );
+      }
+    } finally {
+      if (temporaryIndexBuffer) {
+        gl.deleteBuffer(temporaryIndexBuffer);
+      }
+    }
     refreshCanvasState();
     centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
-    drawOk = pixelHasColor(centerPixel);
+    drawOk = fillModeDraw.supported && pixelHasColor(centerPixel);
   }
 
   const probe = {
@@ -3299,6 +3551,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     usedIdentityClipSpace: Boolean(usesIdentityClipSpace),
     renderState,
     appliedRenderState,
+    fillMode: appliedFillMode,
     boundTextures: Object.fromEntries(d3d8BoundTextures),
     texture0: {
       id: texture0Id,
@@ -3651,6 +3904,7 @@ async function loadWasmModule() {
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
       probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
       probeD3D8FogState: module.cwrap("cnc_port_probe_d3d8_fog_state", "string", []),
+      probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -6370,6 +6624,48 @@ async function rpc(command, payload = {}) {
           && fog.rangeEnabled === false
           && Math.abs((fog.start ?? -1) - (probe.fog?.start ?? -1)) < 0.00001
           && Math.abs((fog.end ?? -1) - (probe.fog?.end ?? -1)) < 0.00001
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          centerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8FillMode":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 fill-mode probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8FillMode());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const appliedFillMode = browserProbe?.appliedRenderState?.fillMode ?? {};
+        const fillMode = browserProbe?.fillMode ?? {};
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 6
+          && browserProbe?.renderState?.fillMode === D3DFILL_WIREFRAME
+          && appliedFillMode.mode === D3DFILL_WIREFRAME
+          && appliedFillMode.name === "wireframe"
+          && fillMode.mode === D3DFILL_WIREFRAME
+          && fillMode.modeName === "wireframe"
+          && fillMode.supported === true
+          && fillMode.wireframe === true
+          && fillMode.temporaryIndexBuffer === true
+          && fillMode.glPrimitiveName === "lines"
+          && fillMode.generatedIndexCount === 12
+          && fillMode.sourceTriangleCount === 2
+          && fillMode.drawIndexCount === 12
+          && fillMode.drawIndexByteOffset === 0
           && centerPixelOk;
         return {
           ok: caseOk,

@@ -311,7 +311,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 27;
+		const renderStateSlots = 28;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -381,6 +381,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			fogEnd: state[24] >>> 0,
 			fogVertexMode: state[25] >>> 0,
 			rangeFogEnable: state[26] >>> 0,
+			fillMode: state[27] >>> 0,
 			textureStages,
 		};
 	};
@@ -2779,6 +2780,7 @@ private:
 		state.fog_end = render_state_value(D3DRS_FOGEND, 0x3f800000UL);
 		state.fog_vertex_mode = render_state_value(D3DRS_FOGVERTEXMODE, D3DFOG_LINEAR);
 		state.range_fog_enable = render_state_value(D3DRS_RANGEFOGENABLE, FALSE);
+		state.fill_mode = render_state_value(D3DRS_FILLMODE, D3DFILL_SOLID);
 		capture_draw_texture_stage_states();
 	}
 

@@ -449,9 +449,14 @@ shares structure and follows behind.
       `VolumeTextureClass` beyond the verified uncompressed
       `D3DXCreateVolumeTexture` / `LockBox` / `SetTexture` path.
 - [ ] Remaining D3D8 render-state mapping beyond the current
-      cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog
-      coverage, including fill mode, shade mode, lighting/material state,
+      cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog/
+      fill-mode coverage, including shade mode, lighting/material state,
       bias/clip state, and other W3D draw states → GL/shader state.
+- [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
+      depth-bias behavior before relying on W3D extra-pass selection/outline
+      rendering in real scenes; the first bridge expands indexed triangle
+      edges directly and verifies line rendering, but does not cull hidden
+      triangle edges or map `D3DRS_ZBIAS` yet.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

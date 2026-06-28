@@ -3080,6 +3080,23 @@ try {
     throw new Error(`D3D8 fog-state probe failed: ${JSON.stringify(d3d8FogStateResult)}`);
   }
 
+  const d3d8FillModeResult = await page.evaluate(() => window.CnCPort.rpc("d3d8FillMode"));
+  if (!d3d8FillModeResult.ok
+      || d3d8FillModeResult.probe?.source !== "browser_d3d8_fill_mode_probe"
+      || d3d8FillModeResult.probe?.calls?.drawIndexed !== 1
+      || d3d8FillModeResult.browserProbe?.renderState?.fillMode !== 2
+      || d3d8FillModeResult.browserProbe?.appliedRenderState?.fillMode?.name !== "wireframe"
+      || d3d8FillModeResult.browserProbe?.fillMode?.modeName !== "wireframe"
+      || d3d8FillModeResult.browserProbe?.fillMode?.wireframe !== true
+      || d3d8FillModeResult.browserProbe?.fillMode?.temporaryIndexBuffer !== true
+      || d3d8FillModeResult.browserProbe?.fillMode?.glPrimitiveName !== "lines"
+      || d3d8FillModeResult.browserProbe?.fillMode?.generatedIndexCount !== 12
+      || d3d8FillModeResult.browserProbe?.fillMode?.sourceTriangleCount !== 2
+      || d3d8FillModeResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8FillModeResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 fill-mode probe failed: ${JSON.stringify(d3d8FillModeResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
