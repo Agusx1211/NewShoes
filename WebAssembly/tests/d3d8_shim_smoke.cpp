@@ -988,6 +988,50 @@ int main()
 		return 1;
 	}
 
+	// ---------------------------------------------------------------------------
+	// Focused D3DTSS_TEXTURETRANSFORMFLAGS coverage. The shim stores every
+	// texture-stage state slot (including index D3DTSS_TEXTURETRANSFORMFLAGS)
+	// and replays it through capture_draw_texture_stage_states at draw time, so
+	// the COUNT1/COUNT3/COUNT4 transform-flag values round-trip through the
+	// probe counters/last-value fields and are reflected in the draw-captured
+	// texture stage state. This CPU-only device exposes no
+	// GetTextureStageState, so readback is verified through the public probe
+	// state here and through the draw capture below.
+	// ---------------------------------------------------------------------------
+	if (!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT1)),
+			"SetTextureStageState stage0 TEXTURETRANSFORMFLAGS COUNT1 failed") ||
+		!expect(state->last_set_texture_stage_state_stage == 0,
+			"last_set_texture_stage_state_stage mismatch after COUNT1") ||
+		!expect(state->last_set_texture_stage_state == D3DTSS_TEXTURETRANSFORMFLAGS,
+			"last_set_texture_stage_state mismatch after COUNT1") ||
+		!expect(state->last_set_texture_stage_state_value == D3DTTFF_COUNT1,
+			"last_set_texture_stage_state_value mismatch after COUNT1") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT3)),
+			"SetTextureStageState stage0 TEXTURETRANSFORMFLAGS COUNT3 failed") ||
+		!expect(state->last_set_texture_stage_state_value == D3DTTFF_COUNT3,
+			"last_set_texture_stage_state_value mismatch after COUNT3") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT4)),
+			"SetTextureStageState stage1 TEXTURETRANSFORMFLAGS COUNT4 failed") ||
+		!expect(state->last_set_texture_stage_state_stage == 1,
+			"last_set_texture_stage_state_stage mismatch after COUNT4") ||
+		!expect(state->last_set_texture_stage_state_value == D3DTTFF_COUNT4,
+			"last_set_texture_stage_state_value mismatch after COUNT4") ||
+		// Final draw-time flags: stage0 -> COUNT3 and stage1 -> COUNT3 so the
+		// draw capture below can prove these values are recorded verbatim.
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT3)),
+			"SetTextureStageState stage0 final TEXTURETRANSFORMFLAGS COUNT3 failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_COUNT3)),
+			"SetTextureStageState stage1 final TEXTURETRANSFORMFLAGS COUNT3 failed") ||
+		!expect(state->set_texture_stage_state_calls == set_texture_stage_state_before + 11 + 5,
+			"set_texture_stage_state_calls counter mismatch after transform flag sets")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	const UINT draw_stride = 16;
 	const UINT draw_base_vertex = 2;
 	const UINT draw_min_index = 1;
@@ -1045,7 +1089,11 @@ int main()
 		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
 			"draw texture stage1 COLOROP capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXCOORDINDEX] == 1,
-			"draw texture stage1 TEXCOORDINDEX capture mismatch")) {
+			"draw texture stage1 TEXCOORDINDEX capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT3,
+			"draw texture stage0 TEXTURETRANSFORMFLAGS capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT3,
+			"draw texture stage1 TEXTURETRANSFORMFLAGS capture mismatch")) {
 		index_buffer->Release();
 		vertex_buffer->Release();
 		texture->Release();
@@ -1086,7 +1134,7 @@ int main()
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
 		expect(state->set_render_state_calls == 3, "set_render_state_calls count mismatch") &&
 		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch") &&
-		expect(state->set_texture_stage_state_calls == 11,
+		expect(state->set_texture_stage_state_calls == 16,
 			"set_texture_stage_state_calls count mismatch") &&
 		expect(state->browser_buffer_create_calls >= 2, "browser buffer create count mismatch") &&
 		expect(state->browser_buffer_update_calls >= 4, "browser buffer update count mismatch");
