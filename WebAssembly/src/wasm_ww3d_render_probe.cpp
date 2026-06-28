@@ -36,6 +36,7 @@
 #include "texture.h"
 #include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
+#include "wasm_ww3d_probe_lifetime.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -456,7 +457,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 
 	g_ww3d_aabox_probe_json = buffer;
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 	return g_ww3d_aabox_probe_json.c_str();
 }
@@ -624,7 +625,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_scene_camera()
 
 	g_ww3d_scene_camera_probe_json = buffer;
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 	return g_ww3d_scene_camera_probe_json.c_str();
 }
@@ -699,7 +700,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_textured_quad()
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -972,7 +973,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_render2d_sentence()
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 	if (asset_manager_created && asset_manager != nullptr) {
 		delete asset_manager;
@@ -1256,7 +1257,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_string()
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 	if (asset_manager_created && asset_manager != nullptr) {
 		delete asset_manager;
@@ -1561,7 +1562,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
 	REF_PTR_RELEASE(texture);
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
@@ -1852,7 +1853,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_additive(
 	REF_PTR_RELEASE(texture);
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
@@ -2145,7 +2146,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_solid()
 	REF_PTR_RELEASE(texture);
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
@@ -2438,7 +2439,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_grayscale
 	REF_PTR_RELEASE(texture);
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
@@ -2830,7 +2831,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	if (global_data_installed) {
@@ -3311,7 +3312,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -3660,7 +3661,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_fillrect()
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -3813,7 +3814,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -3969,7 +3970,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line_gradient()
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -4129,7 +4130,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_openrect()
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -4285,7 +4286,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_rectclock()
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -4441,7 +4442,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_remaining_rectclock
 	display_storage.release_probe_renderer();
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();

@@ -2780,5 +2780,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       immediately after `boot` currently trip a wasm memory-pool free during
       the bridge's full-state refresh, while the full `EXPECT_WASM=1`
       smoke passes because earlier original probes initialize that state.
+- [x] Fix the plain `node harness/smoke.mjs` WW3D statistics teardown crash by
+      making focused WW3D probes mirror `W3DDisplay` statistics cleanup before
+      `WW3D::Shutdown()`. Verified with `npm run build:wasm`,
+      `node harness/smoke.mjs`, and `EXPECT_WASM=1 node harness/smoke.mjs`.
 
 ## Cross-cutting: project hygiene

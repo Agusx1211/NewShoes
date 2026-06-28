@@ -25,6 +25,7 @@
 #include "shader.h"
 #include "vertmaterial.h"
 #include "wasm_d3d8_shim.h"
+#include "wasm_ww3d_probe_lifetime.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -467,7 +468,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 	TheTerrainRenderObject = old_terrain_render_object;
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheWritableGlobalData = old_global_data;

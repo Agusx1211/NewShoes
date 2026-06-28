@@ -22,6 +22,7 @@
 #include "w3d_file.h"
 #include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
+#include "wasm_ww3d_probe_lifetime.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -548,7 +549,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -871,7 +872,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -1273,7 +1274,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_multi_texture_mesh(
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();

@@ -36,6 +36,7 @@
 #include "W3DDevice/GameClient/W3DShroud.h"
 #include "W3DDevice/GameClient/W3DTreeBuffer.h"
 #include "wasm_d3d8_shim.h"
+#include "wasm_ww3d_probe_lifetime.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -414,7 +415,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 	REF_PTR_RELEASE(scene);
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheParticleSystemManager = old_particle_system_manager;
@@ -678,7 +679,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_scene()
 	}
 
 	if (succeeded(init_result)) {
-		WW3D::Shutdown();
+		wasm_shutdown_ww3d_probe();
 	}
 
 	TheParticleSystemManager = old_particle_system_manager;
