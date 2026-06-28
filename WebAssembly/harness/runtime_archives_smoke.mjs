@@ -1407,12 +1407,25 @@ function assertOriginalEngineStartup(
   const frontier = startup.deviceFactoryFrontier;
   const entries = frontier?.entries ?? [];
   const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
+  const audioFiles = frontier?.audioStartupFiles;
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
       || frontier.nextRequired !== expectedNextRequired
       || frontier.firstUnownedInitFactory !== "createAudioManager"
       || frontier.firstUnownedInitLine !== 434
+      || audioFiles?.source !== "GameAudio.cpp::AudioManager::init"
+      || audioFiles?.ready !== false
+      || audioFiles?.audioSettingsIni !== false
+      || audioFiles?.defaultMusicIni !== false
+      || audioFiles?.musicIni !== true
+      || audioFiles?.defaultSoundEffectsIni !== true
+      || audioFiles?.soundEffectsIni !== true
+      || audioFiles?.defaultSpeechIni !== false
+      || audioFiles?.speechIni !== true
+      || audioFiles?.defaultVoiceIni !== false
+      || audioFiles?.voiceIni !== true
+      || audioFiles?.miscAudioIni !== true
       || frontier.fileSystemReady !== (expectedFileSystemReadiness.local && expectedFileSystemReadiness.archive)
       || frontier.startupFilesReady !== (expectedStatus === "browser_device_layer_pending")
       || frontier.setupReady !== expectedOriginalSetupReady

@@ -81,6 +81,16 @@ constexpr const char DEFAULT_WEATHER_INI_PATH[] = "Data\\INI\\Default\\Weather.i
 constexpr const char WEATHER_INI_PATH[] = "Data\\INI\\Weather.ini";
 constexpr const char COMMAND_MAP_INI_PATH[] = "Data\\INI\\CommandMap.ini";
 constexpr const char ENGLISH_COMMAND_MAP_INI_PATH[] = "Data\\English\\CommandMap.ini";
+constexpr const char AUDIO_SETTINGS_INI_PATH[] = "Data\\INI\\AudioSettings.ini";
+constexpr const char DEFAULT_MUSIC_INI_PATH[] = "Data\\INI\\Default\\Music.ini";
+constexpr const char MUSIC_INI_PATH[] = "Data\\INI\\Music.ini";
+constexpr const char DEFAULT_SOUND_EFFECTS_INI_PATH[] = "Data\\INI\\Default\\SoundEffects.ini";
+constexpr const char SOUND_EFFECTS_INI_PATH[] = "Data\\INI\\SoundEffects.ini";
+constexpr const char DEFAULT_SPEECH_INI_PATH[] = "Data\\INI\\Default\\Speech.ini";
+constexpr const char SPEECH_INI_PATH[] = "Data\\INI\\Speech.ini";
+constexpr const char DEFAULT_VOICE_INI_PATH[] = "Data\\INI\\Default\\Voice.ini";
+constexpr const char VOICE_INI_PATH[] = "Data\\INI\\Voice.ini";
+constexpr const char MISC_AUDIO_INI_PATH[] = "Data\\INI\\MiscAudio.ini";
 
 void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
 {
@@ -1491,6 +1501,23 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 			result.has_command_map_ini = archive_file_system.doesFileExist(COMMAND_MAP_INI_PATH);
 			result.has_english_command_map_ini =
 				archive_file_system.doesFileExist(ENGLISH_COMMAND_MAP_INI_PATH);
+			result.has_audio_settings_ini =
+				archive_file_system.doesFileExist(AUDIO_SETTINGS_INI_PATH);
+			result.has_default_music_ini =
+				archive_file_system.doesFileExist(DEFAULT_MUSIC_INI_PATH);
+			result.has_music_ini = archive_file_system.doesFileExist(MUSIC_INI_PATH);
+			result.has_default_sound_effects_ini =
+				archive_file_system.doesFileExist(DEFAULT_SOUND_EFFECTS_INI_PATH);
+			result.has_sound_effects_ini =
+				archive_file_system.doesFileExist(SOUND_EFFECTS_INI_PATH);
+			result.has_default_speech_ini =
+				archive_file_system.doesFileExist(DEFAULT_SPEECH_INI_PATH);
+			result.has_speech_ini = archive_file_system.doesFileExist(SPEECH_INI_PATH);
+			result.has_default_voice_ini =
+				archive_file_system.doesFileExist(DEFAULT_VOICE_INI_PATH);
+			result.has_voice_ini = archive_file_system.doesFileExist(VOICE_INI_PATH);
+			result.has_misc_audio_ini =
+				archive_file_system.doesFileExist(MISC_AUDIO_INI_PATH);
 			result.has_generals_csf = archive_file_system.doesFileExist("Data\\English\\Generals.csf");
 
 			FilenameList object_ini_files;

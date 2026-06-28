@@ -1584,6 +1584,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WinMain.cpp` `CreateGameEngine` mapping, and inline `Win32GameEngine`
       factory mappings against the line numbers and concrete classes exposed by
       the startup frontier.
+- [x] Extend the startup frontier with the `AudioManager::init` audio INI
+      preflight behind the first unowned `createAudioManager` factory. The
+      harness now proves the current Zero Hour archive set has shipped
+      `Music.ini`, `SoundEffects.ini`, `Speech.ini`, `Voice.ini`, `MiscAudio.ini`,
+      and `Default\SoundEffects.ini`, while `AudioSettings.ini` and the other
+      default audio INIs remain absent until the base Generals startup archives
+      are supplied.
 ---
 
 ## M3 — File / data subsystem (real data)

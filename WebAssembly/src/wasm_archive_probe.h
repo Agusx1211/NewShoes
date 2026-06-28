@@ -54,6 +54,16 @@ struct ArchiveProbeResult
 	bool has_english_command_map_ini = false;
 	bool has_video_ini = false;
 	bool has_default_video_ini = false;
+	bool has_audio_settings_ini = false;
+	bool has_default_music_ini = false;
+	bool has_music_ini = false;
+	bool has_default_sound_effects_ini = false;
+	bool has_sound_effects_ini = false;
+	bool has_default_speech_ini = false;
+	bool has_speech_ini = false;
+	bool has_default_voice_ini = false;
+	bool has_voice_ini = false;
+	bool has_misc_audio_ini = false;
 	std::size_t object_ini_file_count = 0;
 	bool armor_attempted = false;
 	bool armor_ok = false;

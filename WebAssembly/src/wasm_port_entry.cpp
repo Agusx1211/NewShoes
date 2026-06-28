@@ -1141,6 +1141,21 @@ bool base_ini_startup_files_ready()
 		g_archive_probe.has_default_video_ini;
 }
 
+bool audio_startup_files_ready()
+{
+	return g_archive_probe.loaded &&
+		g_archive_probe.has_audio_settings_ini &&
+		g_archive_probe.has_default_music_ini &&
+		g_archive_probe.has_music_ini &&
+		g_archive_probe.has_default_sound_effects_ini &&
+		g_archive_probe.has_sound_effects_ini &&
+		g_archive_probe.has_default_speech_ini &&
+		g_archive_probe.has_speech_ini &&
+		g_archive_probe.has_default_voice_ini &&
+		g_archive_probe.has_voice_ini &&
+		g_archive_probe.has_misc_audio_ini;
+}
+
 void append_missing_json_path(std::string &json, bool &first, bool present, const char *path)
 {
 	if (present) {
@@ -1345,6 +1360,7 @@ const char *build_device_factory_frontier_json()
 		g_file_system_probe.local_ok &&
 		g_file_system_probe.archive_ok;
 	const bool startup_files_ready = original_engine_startup_files_ready();
+	const bool audio_files_ready = audio_startup_files_ready();
 	const char *next_required = "startupAssets";
 	if (startup_assets_ready() && !startup_files_ready) {
 		next_required = "startupFiles";
@@ -1375,6 +1391,13 @@ const char *build_device_factory_frontier_json()
 		"\"createGameLogic\":\"W3DGameLogic\","
 		"\"createRadar\":\"W3DRadar\","
 		"\"createWebBrowser\":\"CComObject<W3DWebBrowser>\"},"
+		"\"audioStartupFiles\":{\"source\":\"GameAudio.cpp::AudioManager::init\","
+		"\"ready\":%s,\"audioSettingsIni\":%s,"
+		"\"defaultMusicIni\":%s,\"musicIni\":%s,"
+		"\"defaultSoundEffectsIni\":%s,\"soundEffectsIni\":%s,"
+		"\"defaultSpeechIni\":%s,\"speechIni\":%s,"
+		"\"defaultVoiceIni\":%s,\"voiceIni\":%s,"
+		"\"miscAudioIni\":%s},"
 		"\"entries\":["
 		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_engine\"},"
 		"{\"order\":2,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
@@ -1393,6 +1416,17 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":15,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"}"
 		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"setupReady\":%s}",
 		next_required,
+		json_bool(audio_files_ready),
+		json_bool(g_archive_probe.has_audio_settings_ini),
+		json_bool(g_archive_probe.has_default_music_ini),
+		json_bool(g_archive_probe.has_music_ini),
+		json_bool(g_archive_probe.has_default_sound_effects_ini),
+		json_bool(g_archive_probe.has_sound_effects_ini),
+		json_bool(g_archive_probe.has_default_speech_ini),
+		json_bool(g_archive_probe.has_speech_ini),
+		json_bool(g_archive_probe.has_default_voice_ini),
+		json_bool(g_archive_probe.has_voice_ini),
+		json_bool(g_archive_probe.has_misc_audio_ini),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.archive_ok),
