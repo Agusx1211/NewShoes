@@ -2151,6 +2151,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       fallback metadata, and lifecycle deltas. Real DDS/DXT asset-derived mip
       loading, generated mip policy, multi-stage sampling, and generalized
       texture declarations remain open.
+- [x] Implement the initial browser-backed D3D8 volume texture path:
+      `D3DXCreateVolumeTexture` / `CreateVolumeTexture` now create WebGL2
+      `TEXTURE_3D` resources, `GetLevelDesc` / `GetVolumeLevel` expose the
+      CPU-backed volume levels, `LockBox` / `UnlockBox` upload full volumes and
+      dirty sub-boxes with row/slice pitch accounting, and `SetTexture` can
+      bind/unbind volume textures. Verified by the browser
+      `d3d8VolumeTextureUpload` RPC plus `npm run build:wasm`,
+      `node harness/smoke.mjs`, and
+      `EXPECT_WASM=1 node harness/smoke.mjs`. Compressed volume DDS uploads and
+      shader sampling remain open follow-ups.
 - [x] Apply captured D3D8 `D3DTSS_MAXMIPLEVEL` and `D3DTSS_MIPMAPLODBIAS`
       sampler state in the WebGL2 texture bridge once complete mip chains are
       available, and prove the LOD clamp/bias behavior through a focused

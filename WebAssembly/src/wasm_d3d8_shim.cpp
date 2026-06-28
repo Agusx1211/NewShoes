@@ -159,6 +159,97 @@ EM_JS(void, wasm_d3d8_browser_texture_update, (
 		bytes: compact,
 	});
 });
+EM_JS(void, wasm_d3d8_browser_volume_texture_create, (
+	unsigned int texture_id,
+	unsigned int width,
+	unsigned int height,
+	unsigned int depth,
+	unsigned int levels,
+	unsigned int format,
+	unsigned int usage,
+	unsigned int pool
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8VolumeTextureCreate : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		id: texture_id >>> 0,
+		width: width >>> 0,
+		height: height >>> 0,
+		depth: depth >>> 0,
+		levels: levels >>> 0,
+		format: format >>> 0,
+		usage: usage >>> 0,
+		pool: pool >>> 0,
+	});
+});
+EM_JS(void, wasm_d3d8_browser_volume_texture_update, (
+	unsigned int texture_id,
+	unsigned int level,
+	unsigned int format,
+	unsigned int x,
+	unsigned int y,
+	unsigned int z,
+	unsigned int width,
+	unsigned int height,
+	unsigned int depth,
+	unsigned int row_pitch,
+	unsigned int slice_pitch,
+	unsigned int row_bytes,
+	unsigned int data_ptr,
+	unsigned int usage,
+	unsigned int lock_flags
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8VolumeTextureUpdate : null;
+	if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
+		return;
+	}
+	const update_width = width >>> 0;
+	const update_height = height >>> 0;
+	const update_depth = depth >>> 0;
+	const compact_row_bytes = row_bytes >>> 0;
+	const source_row_pitch = row_pitch >>> 0;
+	const source_slice_pitch = slice_pitch >>> 0;
+	const D3DFMT_DXT1 = 0x31545844;
+	const D3DFMT_DXT2 = 0x32545844;
+	const D3DFMT_DXT3 = 0x33545844;
+	const D3DFMT_DXT4 = 0x34545844;
+	const D3DFMT_DXT5 = 0x35545844;
+	const d3d_format = format >>> 0;
+	const compressed = d3d_format === D3DFMT_DXT1 || d3d_format === D3DFMT_DXT2 ||
+		d3d_format === D3DFMT_DXT3 || d3d_format === D3DFMT_DXT4 ||
+		d3d_format === D3DFMT_DXT5;
+	const compact_rows = compressed ? Math.ceil(update_height / 4) : update_height;
+	const compact_slice_bytes = compact_row_bytes * compact_rows;
+	const compact = new Uint8Array(compact_slice_bytes * update_depth);
+	for (let slice = 0; slice < update_depth; ++slice) {
+		const source_slice = data_ptr + (slice * source_slice_pitch);
+		const target_slice = slice * compact_slice_bytes;
+		for (let row = 0; row < compact_rows; ++row) {
+			const source = source_slice + (row * source_row_pitch);
+			const target = target_slice + (row * compact_row_bytes);
+			compact.set(Module.HEAPU8.subarray(source, source + compact_row_bytes), target);
+		}
+	}
+	bridge({
+		id: texture_id >>> 0,
+		level: level >>> 0,
+		format: d3d_format,
+		x: x >>> 0,
+		y: y >>> 0,
+		z: z >>> 0,
+		width: update_width,
+		height: update_height,
+		depth: update_depth,
+		rowPitch: source_row_pitch,
+		slicePitch: source_slice_pitch,
+		rowBytes: compact_row_bytes,
+		usage: usage >>> 0,
+		lockFlags: lock_flags >>> 0,
+		bytes: compact,
+	});
+});
 EM_JS(void, wasm_d3d8_browser_texture_release, (
 	unsigned int texture_id
 ), {
@@ -468,6 +559,11 @@ UINT texture_level_size(D3DFORMAT format, UINT width, UINT height)
 	return texture_pitch(format, width) * texture_storage_rows(format, height);
 }
 
+UINT texture_volume_level_size(D3DFORMAT format, UINT width, UINT height, UINT depth)
+{
+	return texture_level_size(format, width, height) * depth;
+}
+
 void identity_matrix(D3DMATRIX &matrix)
 {
 	std::memset(&matrix, 0, sizeof(matrix));
@@ -506,6 +602,27 @@ DWORD checksum_texture_region(const BYTE *data, UINT pitch, UINT row_bytes, UINT
 	return hash;
 }
 
+DWORD checksum_texture_volume_region(const BYTE *data, UINT row_pitch, UINT slice_pitch, UINT row_bytes,
+	UINT height, UINT depth)
+{
+	if (data == nullptr || row_pitch == 0 || slice_pitch == 0 || row_bytes == 0 || height == 0 ||
+		depth == 0) {
+		return 0;
+	}
+	DWORD hash = 2166136261u;
+	for (UINT slice = 0; slice < depth; ++slice) {
+		const BYTE *slice_data = data + (slice * slice_pitch);
+		for (UINT row = 0; row < height; ++row) {
+			const BYTE *row_data = slice_data + (row * row_pitch);
+			for (UINT column = 0; column < row_bytes; ++column) {
+				hash ^= row_data[column];
+				hash *= 16777619u;
+			}
+		}
+	}
+	return hash;
+}
+
 constexpr UINT DRAW_TRANSFORM_WORLD = 1u << 0;
 constexpr UINT DRAW_TRANSFORM_VIEW = 1u << 1;
 constexpr UINT DRAW_TRANSFORM_PROJECTION = 1u << 2;
@@ -522,6 +639,21 @@ struct BrowserD3DTextureDirtyRegion
 	UINT width = 0;
 	UINT height = 0;
 	UINT pitch = 0;
+	UINT row_bytes = 0;
+	DWORD lock_flags = 0;
+};
+
+struct BrowserD3DVolumeTextureDirtyRegion
+{
+	const BYTE *data = nullptr;
+	UINT x = 0;
+	UINT y = 0;
+	UINT z = 0;
+	UINT width = 0;
+	UINT height = 0;
+	UINT depth = 0;
+	UINT row_pitch = 0;
+	UINT slice_pitch = 0;
 	UINT row_bytes = 0;
 	DWORD lock_flags = 0;
 };
@@ -627,10 +759,13 @@ void browser_texture_create(UINT texture_id, UINT width, UINT height, UINT level
 	g_state.last_browser_texture_level = 0;
 	g_state.last_browser_texture_x = 0;
 	g_state.last_browser_texture_y = 0;
+	g_state.last_browser_texture_z = 0;
 	g_state.last_browser_texture_width = width;
 	g_state.last_browser_texture_height = height;
+	g_state.last_browser_texture_depth = 1;
 	g_state.last_browser_texture_pitch = texture_pitch(format, width);
 	g_state.last_browser_texture_row_bytes = g_state.last_browser_texture_pitch;
+	g_state.last_browser_texture_slice_pitch = texture_level_size(format, width, height);
 	g_state.last_browser_texture_bytes = texture_level_size(format, width, height);
 	g_state.last_browser_texture_levels = levels;
 	g_state.last_browser_texture_format = format;
@@ -639,6 +774,34 @@ void browser_texture_create(UINT texture_id, UINT width, UINT height, UINT level
 	g_state.last_browser_texture_lock_flags = 0;
 	g_state.last_browser_texture_checksum = 0;
 	wasm_d3d8_browser_texture_create(texture_id, width, height, levels, format, usage, pool);
+}
+
+void browser_volume_texture_create(UINT texture_id, UINT width, UINT height, UINT depth, UINT levels,
+	D3DFORMAT format, DWORD usage, D3DPOOL pool)
+{
+	if (texture_id == 0 || width == 0 || height == 0 || depth == 0 || levels == 0) {
+		return;
+	}
+	++g_state.browser_texture_create_calls;
+	g_state.last_browser_texture_id = texture_id;
+	g_state.last_browser_texture_level = 0;
+	g_state.last_browser_texture_x = 0;
+	g_state.last_browser_texture_y = 0;
+	g_state.last_browser_texture_z = 0;
+	g_state.last_browser_texture_width = width;
+	g_state.last_browser_texture_height = height;
+	g_state.last_browser_texture_depth = depth;
+	g_state.last_browser_texture_pitch = texture_pitch(format, width);
+	g_state.last_browser_texture_row_bytes = g_state.last_browser_texture_pitch;
+	g_state.last_browser_texture_slice_pitch = texture_level_size(format, width, height);
+	g_state.last_browser_texture_bytes = texture_volume_level_size(format, width, height, depth);
+	g_state.last_browser_texture_levels = levels;
+	g_state.last_browser_texture_format = format;
+	g_state.last_browser_texture_usage = usage;
+	g_state.last_browser_texture_pool = pool;
+	g_state.last_browser_texture_lock_flags = 0;
+	g_state.last_browser_texture_checksum = 0;
+	wasm_d3d8_browser_volume_texture_create(texture_id, width, height, depth, levels, format, usage, pool);
 }
 
 void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const BrowserD3DTextureDirtyRegion &dirty,
@@ -653,10 +816,14 @@ void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const
 	g_state.last_browser_texture_level = level;
 	g_state.last_browser_texture_x = dirty.x;
 	g_state.last_browser_texture_y = dirty.y;
+	g_state.last_browser_texture_z = 0;
 	g_state.last_browser_texture_width = dirty.width;
 	g_state.last_browser_texture_height = dirty.height;
+	g_state.last_browser_texture_depth = 1;
 	g_state.last_browser_texture_pitch = dirty.pitch;
 	g_state.last_browser_texture_row_bytes = dirty.row_bytes;
+	g_state.last_browser_texture_slice_pitch =
+		dirty.pitch * texture_storage_rows(format, dirty.height);
 	g_state.last_browser_texture_bytes =
 		dirty.row_bytes * texture_storage_rows(format, dirty.height);
 	g_state.last_browser_texture_levels = 0;
@@ -682,6 +849,53 @@ void browser_texture_update(UINT texture_id, UINT level, D3DFORMAT format, const
 		dirty.lock_flags);
 }
 
+void browser_volume_texture_update(UINT texture_id, UINT level, D3DFORMAT format,
+	const BrowserD3DVolumeTextureDirtyRegion &dirty, DWORD usage)
+{
+	if (texture_id == 0 || dirty.data == nullptr || dirty.width == 0 || dirty.height == 0 ||
+		dirty.depth == 0 || dirty.row_pitch == 0 || dirty.slice_pitch == 0 || dirty.row_bytes == 0) {
+		return;
+	}
+	++g_state.browser_texture_update_calls;
+	g_state.last_browser_texture_id = texture_id;
+	g_state.last_browser_texture_level = level;
+	g_state.last_browser_texture_x = dirty.x;
+	g_state.last_browser_texture_y = dirty.y;
+	g_state.last_browser_texture_z = dirty.z;
+	g_state.last_browser_texture_width = dirty.width;
+	g_state.last_browser_texture_height = dirty.height;
+	g_state.last_browser_texture_depth = dirty.depth;
+	g_state.last_browser_texture_pitch = dirty.row_pitch;
+	g_state.last_browser_texture_row_bytes = dirty.row_bytes;
+	g_state.last_browser_texture_slice_pitch = dirty.slice_pitch;
+	g_state.last_browser_texture_bytes =
+		dirty.row_bytes * texture_storage_rows(format, dirty.height) * dirty.depth;
+	g_state.last_browser_texture_levels = 0;
+	g_state.last_browser_texture_format = format;
+	g_state.last_browser_texture_usage = usage;
+	g_state.last_browser_texture_pool = 0;
+	g_state.last_browser_texture_lock_flags = dirty.lock_flags;
+	g_state.last_browser_texture_checksum =
+		checksum_texture_volume_region(dirty.data, dirty.row_pitch, dirty.slice_pitch, dirty.row_bytes,
+			texture_storage_rows(format, dirty.height), dirty.depth);
+	wasm_d3d8_browser_volume_texture_update(
+		texture_id,
+		level,
+		format,
+		dirty.x,
+		dirty.y,
+		dirty.z,
+		dirty.width,
+		dirty.height,
+		dirty.depth,
+		dirty.row_pitch,
+		dirty.slice_pitch,
+		dirty.row_bytes,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(dirty.data)),
+		usage,
+		dirty.lock_flags);
+}
+
 void browser_texture_release(UINT texture_id)
 {
 	if (texture_id == 0) {
@@ -692,10 +906,13 @@ void browser_texture_release(UINT texture_id)
 	g_state.last_browser_texture_level = 0;
 	g_state.last_browser_texture_x = 0;
 	g_state.last_browser_texture_y = 0;
+	g_state.last_browser_texture_z = 0;
 	g_state.last_browser_texture_width = 0;
 	g_state.last_browser_texture_height = 0;
+	g_state.last_browser_texture_depth = 0;
 	g_state.last_browser_texture_pitch = 0;
 	g_state.last_browser_texture_row_bytes = 0;
+	g_state.last_browser_texture_slice_pitch = 0;
 	g_state.last_browser_texture_bytes = 0;
 	g_state.last_browser_texture_levels = 0;
 	g_state.last_browser_texture_format = D3DFMT_UNKNOWN;
@@ -1048,6 +1265,175 @@ private:
 	DWORD m_owner_texture_usage = 0;
 };
 
+class BrowserD3DVolume final : public IDirect3DVolume8, private BrowserD3DResource
+{
+public:
+	BrowserD3DVolume(IDirect3DDevice8 *device, UINT width, UINT height, UINT depth, D3DFORMAT format,
+		DWORD usage, D3DPOOL pool = D3DPOOL_DEFAULT) :
+		BrowserD3DResource(device)
+	{
+		const UINT row_pitch = texture_pitch(format, width);
+		const UINT slice_pitch = texture_level_size(format, width, height);
+		std::memset(&m_desc, 0, sizeof(m_desc));
+		m_desc.Format = format;
+		m_desc.Type = D3DRTYPE_VOLUME;
+		m_desc.Usage = usage;
+		m_desc.Pool = pool;
+		m_desc.Width = width;
+		m_desc.Height = height;
+		m_desc.Depth = depth;
+		m_desc.Size = texture_volume_level_size(format, width, height, depth);
+		m_row_pitch = static_cast<int>(row_pitch);
+		m_slice_pitch = static_cast<int>(slice_pitch);
+		m_pixels.resize(m_desc.Size);
+	}
+
+	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
+	HRESULT SetPrivateData(const GUID &guid, const void *data, DWORD size, DWORD flags) override
+	{
+		return BrowserD3DResource::SetPrivateData(guid, data, size, flags);
+	}
+	HRESULT GetPrivateData(const GUID &guid, void *data, DWORD *size) override
+	{
+		return BrowserD3DResource::GetPrivateData(guid, data, size);
+	}
+	HRESULT FreePrivateData(const GUID &guid) override { return BrowserD3DResource::FreePrivateData(guid); }
+	DWORD SetPriority(DWORD priority) override { return BrowserD3DResource::SetPriority(priority); }
+	DWORD GetPriority() override { return BrowserD3DResource::GetPriority(); }
+	void PreLoad() override { BrowserD3DResource::PreLoad(); }
+	D3DRESOURCETYPE GetType() override { return D3DRTYPE_VOLUME; }
+
+	HRESULT GetDesc(D3DVOLUME_DESC *desc) override
+	{
+		if (desc == nullptr) {
+			return E_FAIL;
+		}
+		*desc = m_desc;
+		return S_OK;
+	}
+
+	HRESULT LockBox(D3DLOCKED_BOX *locked_box, const D3DBOX *box, DWORD flags)
+	{
+		if (locked_box == nullptr || m_pixels.empty() || m_locked) {
+			return E_FAIL;
+		}
+
+		UINT left = 0;
+		UINT top = 0;
+		UINT right = m_desc.Width;
+		UINT bottom = m_desc.Height;
+		UINT front = 0;
+		UINT back = m_desc.Depth;
+		if (box != nullptr) {
+			if (box->Right < box->Left || box->Bottom < box->Top || box->Back < box->Front ||
+				box->Right > m_desc.Width || box->Bottom > m_desc.Height || box->Back > m_desc.Depth) {
+				return E_FAIL;
+			}
+			left = box->Left;
+			top = box->Top;
+			right = box->Right;
+			bottom = box->Bottom;
+			front = box->Front;
+			back = box->Back;
+		}
+		if (is_block_compressed_format(m_desc.Format) &&
+			(left != 0 || top != 0 || front != 0 || right != m_desc.Width ||
+				bottom != m_desc.Height || back != m_desc.Depth)) {
+			return E_FAIL;
+		}
+
+		locked_box->RowPitch = m_row_pitch;
+		locked_box->SlicePitch = m_slice_pitch;
+		locked_box->pBits = m_pixels.data() + texture_offset(left, top, front);
+		m_locked = true;
+		m_lock_flags = flags;
+		m_dirty_x = left;
+		m_dirty_y = top;
+		m_dirty_z = front;
+		m_dirty_width = right - left;
+		m_dirty_height = bottom - top;
+		m_dirty_depth = back - front;
+		return S_OK;
+	}
+
+	HRESULT unlock_and_capture(BrowserD3DVolumeTextureDirtyRegion *dirty)
+	{
+		if (!m_locked) {
+			return E_FAIL;
+		}
+		if (dirty != nullptr && (m_lock_flags & (D3DLOCK_READONLY | D3DLOCK_NO_DIRTY_UPDATE)) == 0) {
+			dirty->data = m_pixels.data() + texture_offset(m_dirty_x, m_dirty_y, m_dirty_z);
+			dirty->x = m_dirty_x;
+			dirty->y = m_dirty_y;
+			dirty->z = m_dirty_z;
+			dirty->width = m_dirty_width;
+			dirty->height = m_dirty_height;
+			dirty->depth = m_dirty_depth;
+			dirty->row_pitch = static_cast<UINT>(m_row_pitch);
+			dirty->slice_pitch = static_cast<UINT>(m_slice_pitch);
+			dirty->row_bytes = texture_pitch(m_desc.Format, m_dirty_width);
+			dirty->lock_flags = m_lock_flags;
+		}
+		m_locked = false;
+		m_lock_flags = 0;
+		m_dirty_x = 0;
+		m_dirty_y = 0;
+		m_dirty_z = 0;
+		m_dirty_width = 0;
+		m_dirty_height = 0;
+		m_dirty_depth = 0;
+		return S_OK;
+	}
+
+	bool is_locked() const { return m_locked; }
+
+	const D3DVOLUME_DESC &desc() const { return m_desc; }
+
+	const BYTE *pixels() const { return m_pixels.data(); }
+
+	UINT row_pitch() const { return static_cast<UINT>(m_row_pitch); }
+
+	UINT slice_pitch() const { return static_cast<UINT>(m_slice_pitch); }
+
+	ULONG AddRef() override { return ++m_ref_count; }
+
+	ULONG Release() override
+	{
+		const ULONG ref_count = --m_ref_count;
+		if (ref_count == 0) {
+			delete this;
+		}
+		return ref_count;
+	}
+
+private:
+	UINT texture_offset(UINT left, UINT top, UINT front) const
+	{
+		if (is_block_compressed_format(m_desc.Format)) {
+			return front * static_cast<UINT>(m_slice_pitch) +
+				block_count(top) * static_cast<UINT>(m_row_pitch) +
+				block_count(left) * block_bytes(m_desc.Format);
+		}
+		return front * static_cast<UINT>(m_slice_pitch) +
+			top * static_cast<UINT>(m_row_pitch) +
+			left * bytes_per_pixel(m_desc.Format);
+	}
+
+	ULONG m_ref_count = 1;
+	D3DVOLUME_DESC m_desc = {};
+	int m_row_pitch = 0;
+	int m_slice_pitch = 0;
+	std::vector<unsigned char> m_pixels;
+	bool m_locked = false;
+	DWORD m_lock_flags = 0;
+	UINT m_dirty_x = 0;
+	UINT m_dirty_y = 0;
+	UINT m_dirty_z = 0;
+	UINT m_dirty_width = 0;
+	UINT m_dirty_height = 0;
+	UINT m_dirty_depth = 0;
+};
+
 class BrowserD3DTexture final : public IDirect3DTexture8, private BrowserD3DResource
 {
 public:
@@ -1228,6 +1614,184 @@ private:
 	ULONG m_ref_count = 1;
 	DWORD m_lod = 0;
 	std::vector<BrowserD3DSurface *> m_levels;
+	std::vector<DWORD> m_last_lock_flags;
+	DWORD m_usage = 0;
+	D3DPOOL m_pool = D3DPOOL_DEFAULT;
+	D3DFORMAT m_format = D3DFMT_A8R8G8B8;
+	UINT m_browser_texture_id = 0;
+	bool m_browser_texture_created = false;
+};
+
+class BrowserD3DVolumeTexture final : public IDirect3DVolumeTexture8, private BrowserD3DResource
+{
+public:
+	BrowserD3DVolumeTexture(IDirect3DDevice8 *device, UINT width, UINT height, UINT depth, UINT levels,
+		DWORD usage, D3DFORMAT format, D3DPOOL pool) :
+		BrowserD3DResource(device)
+	{
+		if (width == 0) {
+			width = 1;
+		}
+		if (height == 0) {
+			height = 1;
+		}
+		if (depth == 0) {
+			depth = 1;
+		}
+		if (format == D3DFMT_UNKNOWN) {
+			format = D3DFMT_A8R8G8B8;
+		}
+		if (levels == 0) {
+			levels = 1;
+		}
+
+		m_browser_texture_id = allocate_browser_texture_id();
+		for (UINT level = 0; level < levels; ++level) {
+			BrowserD3DVolume *volume = new (std::nothrow) BrowserD3DVolume(
+				device, width, height, depth, format, usage, pool);
+			if (volume == nullptr) {
+				break;
+			}
+			m_levels.push_back(volume);
+			if (width > 1) {
+				width /= 2;
+			}
+			if (height > 1) {
+				height /= 2;
+			}
+			if (depth > 1) {
+				depth /= 2;
+			}
+		}
+		m_usage = usage;
+		m_pool = pool;
+		m_format = format;
+		m_last_lock_flags.resize(m_levels.size());
+	}
+
+	~BrowserD3DVolumeTexture()
+	{
+		if (m_browser_texture_created) {
+			browser_texture_release(m_browser_texture_id);
+		}
+		for (BrowserD3DVolume *volume : m_levels) {
+			volume->Release();
+		}
+	}
+
+	bool is_valid() const { return !m_levels.empty(); }
+
+	HRESULT GetDevice(IDirect3DDevice8 **device) override { return BrowserD3DResource::GetDevice(device); }
+	HRESULT SetPrivateData(const GUID &guid, const void *data, DWORD size, DWORD flags) override
+	{
+		return BrowserD3DResource::SetPrivateData(guid, data, size, flags);
+	}
+	HRESULT GetPrivateData(const GUID &guid, void *data, DWORD *size) override
+	{
+		return BrowserD3DResource::GetPrivateData(guid, data, size);
+	}
+	HRESULT FreePrivateData(const GUID &guid) override { return BrowserD3DResource::FreePrivateData(guid); }
+	DWORD SetPriority(DWORD priority) override { return BrowserD3DResource::SetPriority(priority); }
+	DWORD GetPriority() override { return BrowserD3DResource::GetPriority(); }
+	void PreLoad() override { BrowserD3DResource::PreLoad(); }
+	D3DRESOURCETYPE GetType() override { return D3DRTYPE_VOLUMETEXTURE; }
+
+	DWORD SetLOD(DWORD lod) override
+	{
+		const DWORD previous = m_lod;
+		m_lod = lod;
+		return previous;
+	}
+
+	DWORD GetLOD() override { return m_lod; }
+	DWORD GetLevelCount() override { return static_cast<DWORD>(m_levels.size()); }
+
+	HRESULT GetLevelDesc(UINT level, D3DVOLUME_DESC *desc) override
+	{
+		if (level >= m_levels.size() || desc == nullptr) {
+			return E_FAIL;
+		}
+		return m_levels[level]->GetDesc(desc);
+	}
+
+	HRESULT GetVolumeLevel(UINT level, IDirect3DVolume8 **volume) override
+	{
+		if (level >= m_levels.size() || volume == nullptr) {
+			return E_FAIL;
+		}
+		m_levels[level]->AddRef();
+		*volume = m_levels[level];
+		return S_OK;
+	}
+
+	HRESULT LockBox(UINT level, D3DLOCKED_BOX *locked_volume, const D3DBOX *box, DWORD flags) override
+	{
+		if (level >= m_levels.size()) {
+			return E_FAIL;
+		}
+		++g_state.texture_lock_box_calls;
+		HRESULT result = m_levels[level]->LockBox(locked_volume, box, flags);
+		if (SUCCEEDED(result) && level < m_last_lock_flags.size()) {
+			m_last_lock_flags[level] = flags;
+		}
+		return result;
+	}
+
+	HRESULT UnlockBox(UINT level) override
+	{
+		if (level >= m_levels.size()) {
+			return E_FAIL;
+		}
+		++g_state.texture_unlock_box_calls;
+		BrowserD3DVolumeTextureDirtyRegion dirty = {};
+		if (level < m_last_lock_flags.size()) {
+			dirty.lock_flags = m_last_lock_flags[level];
+		}
+		HRESULT result = m_levels[level]->unlock_and_capture(&dirty);
+		if (level < m_last_lock_flags.size()) {
+			m_last_lock_flags[level] = 0;
+		}
+		if (SUCCEEDED(result)) {
+			browser_volume_texture_update(m_browser_texture_id, level, m_format, dirty, m_usage);
+		}
+		return result;
+	}
+
+	UINT browser_texture_id() const { return m_browser_texture_id; }
+
+	D3DFORMAT format() const { return m_format; }
+
+	D3DPOOL pool() const { return m_pool; }
+
+	void create_browser_texture()
+	{
+		if (m_browser_texture_created || m_levels.empty()) {
+			return;
+		}
+		D3DVOLUME_DESC desc = {};
+		if (FAILED(m_levels[0]->GetDesc(&desc))) {
+			return;
+		}
+		browser_volume_texture_create(m_browser_texture_id, desc.Width, desc.Height, desc.Depth,
+			static_cast<UINT>(m_levels.size()), m_format, m_usage, m_pool);
+		m_browser_texture_created = true;
+	}
+
+	ULONG AddRef() override { return ++m_ref_count; }
+
+	ULONG Release() override
+	{
+		const ULONG ref_count = --m_ref_count;
+		if (ref_count == 0) {
+			delete this;
+		}
+		return ref_count;
+	}
+
+private:
+	ULONG m_ref_count = 1;
+	DWORD m_lod = 0;
+	std::vector<BrowserD3DVolume *> m_levels;
 	std::vector<DWORD> m_last_lock_flags;
 	DWORD m_usage = 0;
 	D3DPOOL m_pool = D3DPOOL_DEFAULT;
@@ -1602,10 +2166,26 @@ public:
 		++g_state.create_texture_calls;
 		return S_OK;
 	}
-	HRESULT CreateVolumeTexture(UINT, UINT, UINT, UINT, DWORD, D3DFORMAT, D3DPOOL,
-		IDirect3DVolumeTexture8 **) override
+	HRESULT CreateVolumeTexture(UINT width, UINT height, UINT depth, UINT levels, DWORD usage, D3DFORMAT format,
+		D3DPOOL pool, IDirect3DVolumeTexture8 **texture) override
 	{
-		return D3DERR_NOTAVAILABLE;
+		if (texture == nullptr) {
+			return E_FAIL;
+		}
+		*texture = new (std::nothrow) BrowserD3DVolumeTexture(
+			this, width, height, depth, levels, usage, format, pool);
+		if (*texture == nullptr) {
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		BrowserD3DVolumeTexture *browser_texture = static_cast<BrowserD3DVolumeTexture *>(*texture);
+		if (!browser_texture->is_valid()) {
+			browser_texture->Release();
+			*texture = nullptr;
+			return D3DERR_OUTOFVIDEOMEMORY;
+		}
+		browser_texture->create_browser_texture();
+		++g_state.create_volume_texture_calls;
+		return S_OK;
 	}
 	HRESULT CreateCubeTexture(UINT, UINT, DWORD, D3DFORMAT, D3DPOOL, IDirect3DCubeTexture8 **) override
 	{
@@ -1881,12 +2461,17 @@ public:
 		D3DRESOURCETYPE texture_type = D3DRTYPE_FORCE_DWORD;
 		if (texture != nullptr) {
 			texture_type = texture->GetType();
-			if (texture_type != D3DRTYPE_TEXTURE) {
+			if (texture_type == D3DRTYPE_TEXTURE) {
+				BrowserD3DTexture *browser_texture =
+					static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(texture));
+				texture_id = browser_texture->browser_texture_id();
+			} else if (texture_type == D3DRTYPE_VOLUMETEXTURE) {
+				BrowserD3DVolumeTexture *browser_texture =
+					static_cast<BrowserD3DVolumeTexture *>(static_cast<IDirect3DVolumeTexture8 *>(texture));
+				texture_id = browser_texture->browser_texture_id();
+			} else {
 				return E_FAIL;
 			}
-			BrowserD3DTexture *browser_texture =
-				static_cast<BrowserD3DTexture *>(static_cast<IDirect3DTexture8 *>(texture));
-			texture_id = browser_texture->browser_texture_id();
 		}
 
 		++g_state.set_texture_calls;

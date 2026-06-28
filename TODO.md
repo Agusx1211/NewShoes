@@ -444,10 +444,10 @@ shares structure and follows behind.
 ### WW3D2 device bring-up
 - [ ] Map W3D render device init onto the WebGL2 context.
 - [ ] Texture upload: DDS/DXT decode (or transcode) → GL textures; mipmaps.
-- [ ] Implement real browser D3D8 volume texture resources and
-      `D3DXCreateVolumeTexture` upload/bind behavior if the original W3D asset
-      path reaches `VolumeTextureClass`; the current wasm shim only links the
-      D3DX entry point and returns the device's unsupported result.
+- [ ] Extend browser D3D8 volume texture support to compressed DDS volume
+      uploads and shader sampling if original W3D assets exercise
+      `VolumeTextureClass` beyond the verified uncompressed
+      `D3DXCreateVolumeTexture` / `LockBox` / `SetTexture` path.
 - [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.

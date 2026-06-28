@@ -36,8 +36,11 @@ struct WasmD3D8ShimState
 	UINT free_library_calls;
 	UINT create_device_calls;
 	UINT create_texture_calls;
+	UINT create_volume_texture_calls;
 	UINT texture_lock_rect_calls;
 	UINT texture_unlock_rect_calls;
+	UINT texture_lock_box_calls;
+	UINT texture_unlock_box_calls;
 	UINT copy_rects_calls;
 	UINT last_copy_rects_rect_count;
 	UINT last_copy_rects_width;
@@ -65,10 +68,13 @@ struct WasmD3D8ShimState
 	UINT last_browser_texture_level;
 	UINT last_browser_texture_x;
 	UINT last_browser_texture_y;
+	UINT last_browser_texture_z;
 	UINT last_browser_texture_width;
 	UINT last_browser_texture_height;
+	UINT last_browser_texture_depth;
 	UINT last_browser_texture_pitch;
 	UINT last_browser_texture_row_bytes;
+	UINT last_browser_texture_slice_pitch;
 	UINT last_browser_texture_bytes;
 	UINT last_browser_texture_levels;
 	DWORD last_browser_texture_format;

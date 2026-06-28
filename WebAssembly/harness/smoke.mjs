@@ -2731,6 +2731,41 @@ try {
     throw new Error(`D3D8 texture upload probe failed: ${JSON.stringify(d3d8TextureUploadResult)}`);
   }
 
+  const d3d8VolumeTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8VolumeTextureUpload"));
+  if (!d3d8VolumeTextureUploadResult.ok
+      || d3d8VolumeTextureUploadResult.probe?.source !== "browser_d3d8_volume_texture_upload_probe"
+      || d3d8VolumeTextureUploadResult.probe?.calls?.createVolumeTexture !== 1
+      || d3d8VolumeTextureUploadResult.probe?.calls?.textureLockBox !== 3
+      || d3d8VolumeTextureUploadResult.probe?.calls?.textureUnlockBox !== 3
+      || d3d8VolumeTextureUploadResult.probe?.calls?.browserTextureCreate !== 1
+      || d3d8VolumeTextureUploadResult.probe?.calls?.browserTextureUpdate !== 3
+      || d3d8VolumeTextureUploadResult.probe?.calls?.browserTextureRelease !== 1
+      || d3d8VolumeTextureUploadResult.probe?.calls?.browserTextureBind !== 2
+      || d3d8VolumeTextureUploadResult.browserDelta?.creates !== 1
+      || d3d8VolumeTextureUploadResult.browserDelta?.updates !== 3
+      || d3d8VolumeTextureUploadResult.browserDelta?.binds !== 1
+      || d3d8VolumeTextureUploadResult.browserDelta?.unbinds !== 1
+      || d3d8VolumeTextureUploadResult.browserDelta?.unsupportedUpdates !== 0
+      || d3d8VolumeTextureUploadResult.browserProbe?.live !== 0
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastCreate?.type !== "volume"
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastCreate?.depth !== 4
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastSubrectUpdate?.x !== 1
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastSubrectUpdate?.y !== 1
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastSubrectUpdate?.z !== 1
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastSubrectUpdate?.depth !== 2
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastSubrectUpdate?.slicePitch !== 64
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.level !== 1
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.type !== "volume"
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.depth !== 2
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.slicePitch !== 16
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.byteSize !== 32
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastUpdate?.convertedByteSize !== 32
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastBind?.stage !== 2
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastBind?.id !== 0
+      || d3d8VolumeTextureUploadResult.browserProbe?.lastBind?.nullBind !== true) {
+    throw new Error(`D3D8 volume texture upload probe failed: ${JSON.stringify(d3d8VolumeTextureUploadResult)}`);
+  }
+
   const d3d8TextureBindResult = await page.evaluate(() => window.CnCPort.rpc("d3d8TextureBind"));
   if (!d3d8TextureBindResult.ok
       || d3d8TextureBindResult.probe?.source !== "browser_d3d8_texture_bind_probe"

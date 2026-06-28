@@ -12,6 +12,7 @@
 #include "wasm_globaldata_probe.h"
 #include "wasm_d3d8_shim.h"
 
+#include "D3dx8core.h"
 #include "Common/Debug.h"
 #include "Common/RandomValue.h"
 #include "GameLogic/LogicRandomValue.h"
@@ -4386,6 +4387,315 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_upload()
 		xrgb_update_width,
 		xrgb_update_height,
 		static_cast<unsigned long>(xrgb_update_checksum));
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_volume_texture_upload()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVolumeTexture8 *texture = nullptr;
+	IDirect3DVolume8 *volume = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT volume_create_result = E_FAIL;
+	HRESULT level0_desc_result = E_FAIL;
+	HRESULT level1_desc_result = E_FAIL;
+	HRESULT volume_level_result = E_FAIL;
+	HRESULT volume_desc_result = E_FAIL;
+	HRESULT full_lock_result = E_FAIL;
+	HRESULT full_unlock_result = E_FAIL;
+	HRESULT subbox_lock_result = E_FAIL;
+	HRESULT subbox_unlock_result = E_FAIL;
+	HRESULT level1_lock_result = E_FAIL;
+	HRESULT level1_unlock_result = E_FAIL;
+	HRESULT bind_result = E_FAIL;
+	HRESULT null_bind_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	UINT texture_id = 0;
+	UINT create_depth = 0;
+	if (device != nullptr) {
+		volume_create_result = D3DXCreateVolumeTexture(device, 4, 4, 4, 2, 0,
+			D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+		create_depth = state != nullptr ? state->last_browser_texture_depth : 0;
+		ok = ok && SUCCEEDED(volume_create_result) && texture != nullptr &&
+			texture_id != 0 && create_depth == 4;
+	}
+
+	DWORD level_count = texture != nullptr ? texture->GetLevelCount() : 0;
+	DWORD previous_lod = 0;
+	DWORD current_lod = 0;
+	D3DVOLUME_DESC level0_desc = {};
+	D3DVOLUME_DESC level1_desc = {};
+	D3DVOLUME_DESC volume_desc = {};
+	if (texture != nullptr) {
+		previous_lod = texture->SetLOD(1);
+		current_lod = texture->GetLOD();
+		texture->SetLOD(0);
+		level0_desc_result = texture->GetLevelDesc(0, &level0_desc);
+		level1_desc_result = texture->GetLevelDesc(1, &level1_desc);
+		volume_level_result = texture->GetVolumeLevel(0, &volume);
+		if (volume != nullptr) {
+			volume_desc_result = volume->GetDesc(&volume_desc);
+		}
+		ok = ok && level_count == 2 && previous_lod == 0 && current_lod == 1 &&
+			SUCCEEDED(level0_desc_result) && SUCCEEDED(level1_desc_result) &&
+			SUCCEEDED(volume_level_result) && SUCCEEDED(volume_desc_result) &&
+			level0_desc.Width == 4 && level0_desc.Height == 4 && level0_desc.Depth == 4 &&
+			level1_desc.Width == 2 && level1_desc.Height == 2 && level1_desc.Depth == 2 &&
+			volume_desc.Type == D3DRTYPE_VOLUME;
+	}
+
+	auto write_pixel = [](BYTE *pixel, BYTE blue, BYTE green, BYTE red, BYTE alpha) {
+		pixel[0] = blue;
+		pixel[1] = green;
+		pixel[2] = red;
+		pixel[3] = alpha;
+	};
+
+	UINT full_row_pitch = 0;
+	UINT full_slice_pitch = 0;
+	UINT full_width = 0;
+	UINT full_height = 0;
+	UINT full_depth = 0;
+	UINT full_row_bytes = 0;
+	DWORD full_checksum = 0;
+	if (texture != nullptr) {
+		D3DLOCKED_BOX locked_box = {};
+		full_lock_result = texture->LockBox(0, &locked_box, nullptr, 0);
+		if (SUCCEEDED(full_lock_result) && locked_box.pBits != nullptr) {
+			std::memset(locked_box.pBits, 0, static_cast<std::size_t>(locked_box.SlicePitch) * 4);
+			write_pixel(static_cast<BYTE *>(locked_box.pBits), 0x22, 0x44, 0x66, 0x88);
+		}
+		full_unlock_result = texture->UnlockBox(0);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		full_row_pitch = state != nullptr ? state->last_browser_texture_pitch : 0;
+		full_slice_pitch = state != nullptr ? state->last_browser_texture_slice_pitch : 0;
+		full_width = state != nullptr ? state->last_browser_texture_width : 0;
+		full_height = state != nullptr ? state->last_browser_texture_height : 0;
+		full_depth = state != nullptr ? state->last_browser_texture_depth : 0;
+		full_row_bytes = state != nullptr ? state->last_browser_texture_row_bytes : 0;
+		full_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(full_lock_result) && SUCCEEDED(full_unlock_result) &&
+			full_width == 4 && full_height == 4 && full_depth == 4 &&
+			full_row_pitch == 16 && full_slice_pitch == 64 && full_row_bytes == 16;
+	}
+
+	UINT subbox_x = 0;
+	UINT subbox_y = 0;
+	UINT subbox_z = 0;
+	UINT subbox_width = 0;
+	UINT subbox_height = 0;
+	UINT subbox_depth = 0;
+	UINT subbox_row_pitch = 0;
+	UINT subbox_slice_pitch = 0;
+	UINT subbox_row_bytes = 0;
+	DWORD subbox_checksum = 0;
+	if (texture != nullptr) {
+		D3DBOX box = {};
+		box.Left = 1;
+		box.Top = 1;
+		box.Right = 2;
+		box.Bottom = 3;
+		box.Front = 1;
+		box.Back = 3;
+		D3DLOCKED_BOX locked_box = {};
+		subbox_lock_result = texture->LockBox(0, &locked_box, &box, 0);
+		if (SUCCEEDED(subbox_lock_result) && locked_box.pBits != nullptr) {
+			BYTE *base = static_cast<BYTE *>(locked_box.pBits);
+			write_pixel(base, 0x10, 0x20, 0x30, 0x40);
+			write_pixel(base + locked_box.RowPitch, 0x11, 0x21, 0x31, 0x41);
+			write_pixel(base + locked_box.SlicePitch, 0x12, 0x22, 0x32, 0x42);
+			write_pixel(base + locked_box.SlicePitch + locked_box.RowPitch, 0x13, 0x23, 0x33, 0x43);
+		}
+		subbox_unlock_result = texture->UnlockBox(0);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		subbox_x = state != nullptr ? state->last_browser_texture_x : 0;
+		subbox_y = state != nullptr ? state->last_browser_texture_y : 0;
+		subbox_z = state != nullptr ? state->last_browser_texture_z : 0;
+		subbox_width = state != nullptr ? state->last_browser_texture_width : 0;
+		subbox_height = state != nullptr ? state->last_browser_texture_height : 0;
+		subbox_depth = state != nullptr ? state->last_browser_texture_depth : 0;
+		subbox_row_pitch = state != nullptr ? state->last_browser_texture_pitch : 0;
+		subbox_slice_pitch = state != nullptr ? state->last_browser_texture_slice_pitch : 0;
+		subbox_row_bytes = state != nullptr ? state->last_browser_texture_row_bytes : 0;
+		subbox_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(subbox_lock_result) && SUCCEEDED(subbox_unlock_result) &&
+			subbox_x == 1 && subbox_y == 1 && subbox_z == 1 &&
+			subbox_width == 1 && subbox_height == 2 && subbox_depth == 2 &&
+			subbox_row_pitch == 16 && subbox_slice_pitch == 64 && subbox_row_bytes == 4;
+	}
+
+	UINT level1_row_pitch = 0;
+	UINT level1_slice_pitch = 0;
+	UINT level1_width = 0;
+	UINT level1_height = 0;
+	UINT level1_depth = 0;
+	UINT level1_row_bytes = 0;
+	DWORD level1_checksum = 0;
+	if (texture != nullptr) {
+		D3DLOCKED_BOX locked_box = {};
+		level1_lock_result = texture->LockBox(1, &locked_box, nullptr, 0);
+		if (SUCCEEDED(level1_lock_result) && locked_box.pBits != nullptr) {
+			std::memset(locked_box.pBits, 0, static_cast<std::size_t>(locked_box.SlicePitch) * 2);
+			write_pixel(static_cast<BYTE *>(locked_box.pBits), 0x05, 0x06, 0x07, 0xff);
+		}
+		level1_unlock_result = texture->UnlockBox(1);
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		level1_row_pitch = state != nullptr ? state->last_browser_texture_pitch : 0;
+		level1_slice_pitch = state != nullptr ? state->last_browser_texture_slice_pitch : 0;
+		level1_width = state != nullptr ? state->last_browser_texture_width : 0;
+		level1_height = state != nullptr ? state->last_browser_texture_height : 0;
+		level1_depth = state != nullptr ? state->last_browser_texture_depth : 0;
+		level1_row_bytes = state != nullptr ? state->last_browser_texture_row_bytes : 0;
+		level1_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		ok = ok && SUCCEEDED(level1_lock_result) && SUCCEEDED(level1_unlock_result) &&
+			level1_width == 2 && level1_height == 2 && level1_depth == 2 &&
+			level1_row_pitch == 8 && level1_slice_pitch == 16 && level1_row_bytes == 8;
+	}
+
+	if (device != nullptr && texture != nullptr) {
+		bind_result = device->SetTexture(2, texture);
+		null_bind_result = device->SetTexture(2, nullptr);
+		ok = ok && SUCCEEDED(bind_result) && SUCCEEDED(null_bind_result);
+	}
+
+	if (volume != nullptr) {
+		volume->Release();
+	}
+	if (texture != nullptr) {
+		texture->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->create_volume_texture_calls == 1 &&
+		state->texture_lock_box_calls == 3 &&
+		state->texture_unlock_box_calls == 3 &&
+		state->browser_texture_create_calls == 1 &&
+		state->browser_texture_update_calls == 3 &&
+		state->browser_texture_release_calls == 1 &&
+		state->set_texture_calls == 2 &&
+		state->browser_texture_bind_calls == 2;
+
+	char buffer[3400];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_volume_texture_upload_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"volumeCreate\":%ld,"
+		"\"level0Desc\":%ld,\"level1Desc\":%ld,\"volumeLevel\":%ld,\"volumeDesc\":%ld,"
+		"\"fullLock\":%ld,\"fullUnlock\":%ld,\"subboxLock\":%ld,\"subboxUnlock\":%ld,"
+		"\"level1Lock\":%ld,\"level1Unlock\":%ld,\"bind\":%ld,\"nullBind\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createVolumeTexture\":%u,"
+		"\"textureLockBox\":%u,\"textureUnlockBox\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,\"browserTextureRelease\":%u,"
+		"\"setTexture\":%u,\"browserTextureBind\":%u},"
+		"\"texture\":{\"id\":%u,\"levels\":%lu,\"previousLod\":%lu,\"currentLod\":%lu,"
+		"\"level0\":{\"width\":%u,\"height\":%u,\"depth\":%u,\"size\":%u},"
+		"\"level1\":{\"width\":%u,\"height\":%u,\"depth\":%u,\"size\":%u},"
+		"\"volume\":{\"type\":%u,\"width\":%u,\"height\":%u,\"depth\":%u}},"
+		"\"fullUpdate\":{\"width\":%u,\"height\":%u,\"depth\":%u,"
+		"\"rowPitch\":%u,\"slicePitch\":%u,\"rowBytes\":%u,\"checksum\":%lu},"
+		"\"subboxUpdate\":{\"x\":%u,\"y\":%u,\"z\":%u,\"width\":%u,\"height\":%u,\"depth\":%u,"
+		"\"rowPitch\":%u,\"slicePitch\":%u,\"rowBytes\":%u,\"checksum\":%lu},"
+		"\"level1Update\":{\"width\":%u,\"height\":%u,\"depth\":%u,"
+		"\"rowPitch\":%u,\"slicePitch\":%u,\"rowBytes\":%u,\"checksum\":%lu}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(volume_create_result),
+		static_cast<long>(level0_desc_result),
+		static_cast<long>(level1_desc_result),
+		static_cast<long>(volume_level_result),
+		static_cast<long>(volume_desc_result),
+		static_cast<long>(full_lock_result),
+		static_cast<long>(full_unlock_result),
+		static_cast<long>(subbox_lock_result),
+		static_cast<long>(subbox_unlock_result),
+		static_cast<long>(level1_lock_result),
+		static_cast<long>(level1_unlock_result),
+		static_cast<long>(bind_result),
+		static_cast<long>(null_bind_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_volume_texture_calls : 0,
+		state != nullptr ? state->texture_lock_box_calls : 0,
+		state != nullptr ? state->texture_unlock_box_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		texture_id,
+		static_cast<unsigned long>(level_count),
+		static_cast<unsigned long>(previous_lod),
+		static_cast<unsigned long>(current_lod),
+		level0_desc.Width,
+		level0_desc.Height,
+		level0_desc.Depth,
+		level0_desc.Size,
+		level1_desc.Width,
+		level1_desc.Height,
+		level1_desc.Depth,
+		level1_desc.Size,
+		static_cast<unsigned int>(volume_desc.Type),
+		volume_desc.Width,
+		volume_desc.Height,
+		volume_desc.Depth,
+		full_width,
+		full_height,
+		full_depth,
+		full_row_pitch,
+		full_slice_pitch,
+		full_row_bytes,
+		static_cast<unsigned long>(full_checksum),
+		subbox_x,
+		subbox_y,
+		subbox_z,
+		subbox_width,
+		subbox_height,
+		subbox_depth,
+		subbox_row_pitch,
+		subbox_slice_pitch,
+		subbox_row_bytes,
+		static_cast<unsigned long>(subbox_checksum),
+		level1_width,
+		level1_height,
+		level1_depth,
+		level1_row_pitch,
+		level1_slice_pitch,
+		level1_row_bytes,
+		static_cast<unsigned long>(level1_checksum));
 	g_d3d8_probe_json = buffer;
 	return g_d3d8_probe_json.c_str();
 }

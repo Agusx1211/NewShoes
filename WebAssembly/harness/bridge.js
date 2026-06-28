@@ -525,11 +525,13 @@ function releaseD3D8Buffer(payload = {}) {
 function d3d8TextureLevelSize(resource, level) {
   let width = resource.width;
   let height = resource.height;
+  let depth = resource.depth ?? 1;
   for (let index = 0; index < level; ++index) {
     width = Math.max(1, width >> 1);
     height = Math.max(1, height >> 1);
+    depth = Math.max(1, depth >> 1);
   }
-  return { width, height };
+  return { width, height, depth };
 }
 
 function scale5(value) {
@@ -663,9 +665,9 @@ function d3d8TextureFormatInfo(format) {
   }
 }
 
-function convertD3D8TextureBytes(format, bytes, width, height) {
+function convertD3D8TextureBytes(format, bytes, width, height, depth = 1) {
   const d3dFormat = Number(format ?? 0) >>> 0;
-  const pixelCount = width * height;
+  const pixelCount = width * height * depth;
   if (d3dFormat === D3DFMT_A8R8G8B8 || d3dFormat === D3DFMT_X8R8G8B8) {
     const output = new Uint8Array(pixelCount * 4);
     for (let pixel = 0; pixel < pixelCount; ++pixel) {
@@ -1357,23 +1359,31 @@ function d3d8TextureSemanticMode(resource) {
   }
 }
 
-function withPreservedD3D8TextureUnit(callback) {
+function withPreservedD3D8TextureBinding(target, callback) {
   if (!gl) {
     return null;
   }
   const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
   gl.activeTexture(gl.TEXTURE0);
-  const previousTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+  const binding = target === gl.TEXTURE_3D ? gl.TEXTURE_BINDING_3D : gl.TEXTURE_BINDING_2D;
+  const previousTexture = gl.getParameter(binding);
   try {
     return callback();
   } finally {
-    gl.bindTexture(gl.TEXTURE_2D, previousTexture);
+    gl.bindTexture(target, previousTexture);
     gl.activeTexture(previousActiveTexture);
   }
 }
 
+function withPreservedD3D8TextureUnit(callback) {
+  if (!gl) {
+    return null;
+  }
+  return withPreservedD3D8TextureBinding(gl.TEXTURE_2D, callback);
+}
+
 function sampleD3D8TexturePixel(resource, x, y) {
-  if (!gl || !resource?.texture) {
+  if (!gl || !resource?.texture || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D) {
     return null;
   }
   const framebuffer = gl.createFramebuffer();
@@ -1463,6 +1473,9 @@ function createD3D8Texture(payload = {}) {
     usage: Number(payload.usage ?? 0) >>> 0,
     pool: Number(payload.pool ?? 0) >>> 0,
     texture,
+    target: gl.TEXTURE_2D,
+    type: "2d",
+    depth: 1,
     initializedLevels: new Set(),
     levelFormats: new Map(),
     uploads: 0,
@@ -1474,8 +1487,72 @@ function createD3D8Texture(payload = {}) {
     id,
     width,
     height,
+    depth: resource.depth,
     levels,
     format,
+    type: resource.type,
+    usage: resource.usage,
+    pool: resource.pool,
+  };
+  updateD3D8TextureSummary();
+  return 1;
+}
+
+function createD3D8VolumeTexture(payload = {}) {
+  if (!gl) {
+    return 0;
+  }
+  const id = Number(payload.id ?? 0) >>> 0;
+  const width = Number(payload.width ?? 0) >>> 0;
+  const height = Number(payload.height ?? 0) >>> 0;
+  const depth = Number(payload.depth ?? 0) >>> 0;
+  const levels = Math.max(1, Number(payload.levels ?? 1) >>> 0);
+  const format = Number(payload.format ?? 0) >>> 0;
+  if (id === 0 || width === 0 || height === 0 || depth === 0) {
+    return 0;
+  }
+
+  const existing = d3d8Textures.get(id);
+  if (existing) {
+    gl.deleteTexture(existing.texture);
+  }
+
+  const texture = gl.createTexture();
+  withPreservedD3D8TextureBinding(gl.TEXTURE_3D, () => {
+    gl.bindTexture(gl.TEXTURE_3D, texture);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  });
+  const resource = {
+    id,
+    width,
+    height,
+    depth,
+    levels,
+    format,
+    usage: Number(payload.usage ?? 0) >>> 0,
+    pool: Number(payload.pool ?? 0) >>> 0,
+    texture,
+    target: gl.TEXTURE_3D,
+    type: "volume",
+    initializedLevels: new Set(),
+    levelFormats: new Map(),
+    uploads: 0,
+    samplerState: null,
+  };
+  d3d8Textures.set(id, resource);
+  d3d8TextureStats.creates += 1;
+  d3d8TextureStats.lastCreate = {
+    id,
+    width,
+    height,
+    depth,
+    levels,
+    format,
+    type: resource.type,
     usage: resource.usage,
     pool: resource.pool,
   };
@@ -1501,7 +1578,8 @@ function updateD3D8Texture(payload = {}) {
     }
     resource = d3d8Textures.get(id);
   }
-  if (!resource || width === 0 || height === 0 || level >= resource.levels) {
+  if (!resource || (resource.target ?? gl.TEXTURE_2D) !== gl.TEXTURE_2D ||
+      width === 0 || height === 0 || level >= resource.levels) {
     return 0;
   }
 
@@ -1627,6 +1705,139 @@ function updateD3D8Texture(payload = {}) {
   return 1;
 }
 
+function updateD3D8VolumeTexture(payload = {}) {
+  if (!gl || !(payload.bytes instanceof Uint8Array)) {
+    return 0;
+  }
+  const id = Number(payload.id ?? 0) >>> 0;
+  const level = Number(payload.level ?? 0) >>> 0;
+  const x = Number(payload.x ?? 0) >>> 0;
+  const y = Number(payload.y ?? 0) >>> 0;
+  const z = Number(payload.z ?? 0) >>> 0;
+  const width = Number(payload.width ?? 0) >>> 0;
+  const height = Number(payload.height ?? 0) >>> 0;
+  const depth = Number(payload.depth ?? 0) >>> 0;
+  const format = Number(payload.format ?? 0) >>> 0;
+  let resource = d3d8Textures.get(id);
+  if (!resource) {
+    if (!createD3D8VolumeTexture({
+      id,
+      width,
+      height,
+      depth,
+      levels: level + 1,
+      format,
+      usage: payload.usage,
+    })) {
+      return 0;
+    }
+    resource = d3d8Textures.get(id);
+  }
+  if (!resource || resource.target !== gl.TEXTURE_3D ||
+      width === 0 || height === 0 || depth === 0 || level >= resource.levels) {
+    return 0;
+  }
+
+  const info = d3d8TextureFormatInfo(format);
+  if (!info.supported) {
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id,
+      level,
+      format,
+      type: resource.type,
+      reason: info.reason,
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+  if (info.compressed) {
+    d3d8TextureStats.unsupportedUpdates += 1;
+    d3d8TextureStats.lastUnsupported = {
+      id,
+      level,
+      format,
+      type: resource.type,
+      reason: "compressed volume texture updates are not implemented",
+    };
+    updateD3D8TextureSummary();
+    return 0;
+  }
+
+  const levelSize = d3d8TextureLevelSize(resource, level);
+  if (x + width > levelSize.width || y + height > levelSize.height || z + depth > levelSize.depth) {
+    return 0;
+  }
+
+  const convertedBytes = convertD3D8TextureBytes(format, payload.bytes, width, height, depth);
+  const uploadBytes = d3d8TextureUploadView(info, convertedBytes);
+  resource.storage = info.storage;
+  resource.semantic = info.semantic || null;
+  const levelKey = String(level);
+  const levelInitialized = resource.initializedLevels.has(levelKey);
+  const levelFormat = resource.levelFormats.get(levelKey);
+  let swizzleApplied = resource.swizzleApplied || null;
+  withPreservedD3D8TextureBinding(gl.TEXTURE_3D, () => {
+    gl.bindTexture(gl.TEXTURE_3D, resource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    if (!levelInitialized || levelFormat !== info.storage) {
+      if (x === 0 && y === 0 && z === 0 &&
+          width === levelSize.width && height === levelSize.height && depth === levelSize.depth) {
+        gl.texImage3D(gl.TEXTURE_3D, level, info.internalFormat, width, height, depth, 0,
+          info.format, info.type, uploadBytes);
+      } else {
+        gl.texImage3D(gl.TEXTURE_3D, level, info.internalFormat,
+          levelSize.width, levelSize.height, levelSize.depth, 0, info.format, info.type, null);
+        gl.texSubImage3D(gl.TEXTURE_3D, level, x, y, z, width, height, depth,
+          info.format, info.type, uploadBytes);
+      }
+      resource.initializedLevels.add(levelKey);
+      resource.levelFormats.set(levelKey, info.storage);
+    } else {
+      gl.texSubImage3D(gl.TEXTURE_3D, level, x, y, z, width, height, depth,
+        info.format, info.type, uploadBytes);
+    }
+    swizzleApplied = applyD3D8TextureSwizzleIfChanged(resource, info);
+  });
+
+  resource.uploads += 1;
+  d3d8TextureStats.updates += 1;
+  d3d8TextureStats.lastUpdate = {
+    id,
+    level,
+    x,
+    y,
+    z,
+    width,
+    height,
+    depth,
+    format,
+    storage: info.storage,
+    type: resource.type,
+    compressed: false,
+    blockBytes: 0,
+    semantic: info.semantic || null,
+    swizzle: swizzleApplied,
+    pitch: Number(payload.rowPitch ?? 0) >>> 0,
+    rowPitch: Number(payload.rowPitch ?? 0) >>> 0,
+    rowBytes: Number(payload.rowBytes ?? 0) >>> 0,
+    slicePitch: Number(payload.slicePitch ?? 0) >>> 0,
+    byteSize: payload.bytes.byteLength,
+    convertedByteSize: convertedBytes.byteLength,
+    usage: Number(payload.usage ?? 0) >>> 0,
+    lockFlags: Number(payload.lockFlags ?? 0) >>> 0,
+    uploads: resource.uploads,
+    samplePixel: null,
+    legacySamplePixel: null,
+  };
+  if (x !== 0 || y !== 0 || z !== 0 ||
+      width !== levelSize.width || height !== levelSize.height || depth !== levelSize.depth) {
+    d3d8TextureStats.lastSubrectUpdate = d3d8TextureStats.lastUpdate;
+  }
+  updateD3D8TextureSummary();
+  return 1;
+}
+
 function releaseD3D8Texture(payload = {}) {
   if (!gl) {
     return 0;
@@ -1636,12 +1847,13 @@ function releaseD3D8Texture(payload = {}) {
   if (!resource) {
     return 0;
   }
+  const target = resource.target ?? gl.TEXTURE_2D;
   const releasedBindings = [];
   for (const [stage, textureId] of d3d8BoundTextures.entries()) {
     if (textureId === id) {
       const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
       gl.activeTexture(gl.TEXTURE0 + stage);
-      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindTexture(target, null);
       gl.activeTexture(previousActiveTexture);
       d3d8BoundTextures.delete(stage);
       releasedBindings.push(stage);
@@ -1654,7 +1866,7 @@ function releaseD3D8Texture(payload = {}) {
     d3d8TextureStats.releaseUnbinds += releasedBindings.length;
     d3d8TextureStats.lastReleaseUnbind = { id, stages: releasedBindings };
   }
-  d3d8TextureStats.lastRelease = { id, releasedBindings };
+  d3d8TextureStats.lastRelease = { id, type: resource.type || "2d", depth: resource.depth ?? 1, releasedBindings };
   updateD3D8TextureSummary();
   return 1;
 }
@@ -1682,6 +1894,7 @@ function bindD3D8Texture(payload = {}) {
   gl.activeTexture(gl.TEXTURE0 + stage);
   if (id === 0) {
     gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindTexture(gl.TEXTURE_3D, null);
     gl.activeTexture(previousActiveTexture);
     d3d8BoundTextures.delete(stage);
     d3d8TextureStats.unbinds += 1;
@@ -1709,7 +1922,14 @@ function bindD3D8Texture(payload = {}) {
     return 0;
   }
 
-  gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+  const target = resource.target ?? gl.TEXTURE_2D;
+  if (target === gl.TEXTURE_3D) {
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindTexture(gl.TEXTURE_3D, resource.texture);
+  } else {
+    gl.bindTexture(gl.TEXTURE_3D, null);
+    gl.bindTexture(gl.TEXTURE_2D, resource.texture);
+  }
   gl.activeTexture(previousActiveTexture);
   d3d8BoundTextures.set(stage, id);
   d3d8TextureStats.binds += 1;
@@ -1720,8 +1940,10 @@ function bindD3D8Texture(payload = {}) {
     nullBind: false,
     width: resource.width,
     height: resource.height,
+    depth: resource.depth ?? 1,
     levels: resource.levels,
     format: resource.format,
+    type: resource.type || "2d",
     uploads: resource.uploads,
   };
   updateD3D8TextureSummary();
@@ -2648,10 +2870,14 @@ function paintD3D8DrawIndexed(payload = {}) {
   const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
-  const texture0Ready = Boolean(texture0Resource?.initializedLevels?.has("0"));
+  const texture0Ready = Boolean(
+    (texture0Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+    texture0Resource?.initializedLevels?.has("0"));
   const texture1Id = Number(d3d8BoundTextures.get(1) ?? 0) >>> 0;
   const texture1Resource = texture1Id !== 0 ? d3d8Textures.get(texture1Id) : null;
-  const texture1Ready = Boolean(texture1Resource?.initializedLevels?.has("0"));
+  const texture1Ready = Boolean(
+    (texture1Resource?.target ?? gl?.TEXTURE_2D) === gl?.TEXTURE_2D &&
+    texture1Resource?.initializedLevels?.has("0"));
   const texture0Coordinates = textureStageCoordinateInfo(
     renderState.textureStages[0],
     0,
@@ -3176,6 +3402,8 @@ async function loadWasmModule() {
       cncPortD3D8BufferRelease: releaseD3D8Buffer,
       cncPortD3D8TextureCreate: createD3D8Texture,
       cncPortD3D8TextureUpdate: updateD3D8Texture,
+      cncPortD3D8VolumeTextureCreate: createD3D8VolumeTexture,
+      cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
       cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8TextureBind: bindD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
@@ -3211,6 +3439,7 @@ async function loadWasmModule() {
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
+      probeD3D8VolumeTextureUpload: module.cwrap("cnc_port_probe_d3d8_volume_texture_upload", "string", []),
       probeD3D8TextureBind: module.cwrap("cnc_port_probe_d3d8_texture_bind", "string", []),
       probeD3D8TexturedQuad: module.cwrap("cnc_port_probe_d3d8_textured_quad", "string", []),
       probeD3D8TwoTextureQuad: module.cwrap("cnc_port_probe_d3d8_two_texture_quad", "string", []),
@@ -5287,6 +5516,75 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8VolumeTextureUpload":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 volume texture upload probe cannot run" };
+        }
+        const before = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8VolumeTextureUpload());
+        const browserProbe = harnessState.graphics.d3d8Textures ?? null;
+        const delta = {
+          creates: (browserProbe?.creates ?? 0) - (before.creates ?? 0),
+          updates: (browserProbe?.updates ?? 0) - (before.updates ?? 0),
+          binds: (browserProbe?.binds ?? 0) - (before.binds ?? 0),
+          unbinds: (browserProbe?.unbinds ?? 0) - (before.unbinds ?? 0),
+          releaseUnbinds: (browserProbe?.releaseUnbinds ?? 0) - (before.releaseUnbinds ?? 0),
+          releases: (browserProbe?.releases ?? 0) - (before.releases ?? 0),
+          unsupportedUpdates: (browserProbe?.unsupportedUpdates ?? 0) - (before.unsupportedUpdates ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe.source === "browser_d3d8_volume_texture_upload_probe"
+          && probe.calls?.createVolumeTexture === 1
+          && probe.calls?.textureLockBox === 3
+          && probe.calls?.textureUnlockBox === 3
+          && probe.calls?.browserTextureCreate === 1
+          && probe.calls?.browserTextureUpdate === 3
+          && probe.calls?.browserTextureRelease === 1
+          && probe.calls?.browserTextureBind === 2
+          && delta.creates === 1
+          && delta.updates === 3
+          && delta.binds === 1
+          && delta.unbinds === 1
+          && delta.releaseUnbinds === 0
+          && delta.releases === 1
+          && delta.unsupportedUpdates === 0
+          && browserProbe?.live === 0
+          && browserProbe?.lastCreate?.type === "volume"
+          && browserProbe?.lastCreate?.depth === 4
+          && browserProbe?.lastSubrectUpdate?.type === "volume"
+          && browserProbe?.lastSubrectUpdate?.x === 1
+          && browserProbe?.lastSubrectUpdate?.y === 1
+          && browserProbe?.lastSubrectUpdate?.z === 1
+          && browserProbe?.lastSubrectUpdate?.width === 1
+          && browserProbe?.lastSubrectUpdate?.height === 2
+          && browserProbe?.lastSubrectUpdate?.depth === 2
+          && browserProbe?.lastSubrectUpdate?.rowPitch === 16
+          && browserProbe?.lastSubrectUpdate?.slicePitch === 64
+          && browserProbe?.lastSubrectUpdate?.rowBytes === 4
+          && browserProbe?.lastUpdate?.type === "volume"
+          && browserProbe?.lastUpdate?.level === 1
+          && browserProbe?.lastUpdate?.width === 2
+          && browserProbe?.lastUpdate?.height === 2
+          && browserProbe?.lastUpdate?.depth === 2
+          && browserProbe?.lastUpdate?.rowPitch === 8
+          && browserProbe?.lastUpdate?.slicePitch === 16
+          && browserProbe?.lastUpdate?.byteSize === 32
+          && browserProbe?.lastUpdate?.convertedByteSize === 32
+          && browserProbe?.lastBind?.stage === 2
+          && browserProbe?.lastBind?.id === 0
+          && browserProbe?.lastBind?.nullBind === true
+          && browserProbe?.lastRelease?.type === "volume";
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          browserDelta: delta,
           state: snapshotState(),
         };
       }
