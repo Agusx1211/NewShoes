@@ -2880,6 +2880,16 @@ shares structure and follows behind.
             WebGL buffers, transform capture, colored pixels, and
             `harness-smoke-ww3d-rts-scene-canvas.png`. Full `W3DDisplay`
             shell-map ownership remains open.
+      - [x] Add a focused original `W3DDisplay` static-scene ownership proof:
+            `cnc_port_probe_ww3d_display_scene` installs real
+            `W3DDisplay::m_3DScene` / `m_2DScene` / `m_3DInterfaceScene`
+            ownership, applies `W3DDisplay::setTimeOfDay` to a real
+            `LightClass`, renders an `AABoxRenderObjClass` through
+            `WW3D::Render(W3DDisplay::m_3DScene, camera)`, and the Playwright
+            `ww3dDisplayScene` RPC verifies persistent WebGL buffers,
+            transform capture, colored pixels, and
+            `harness-smoke-ww3d-display-scene-canvas.png`. Full
+            `W3DDisplay::init()` / shell-map rendering remains open.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /

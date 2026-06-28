@@ -14,6 +14,7 @@ const d3d8ClearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-cle
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
+const ww3dDisplaySceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-scene-canvas.png");
 const ww3dRender2DCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-render2d-canvas.png");
 const ww3dRender2DSentenceCanvasScreenshot = resolve(
   screenshotDir,
@@ -1480,6 +1481,51 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dRTSSceneCanvasScreenshot });
 
+  const displaySceneResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayScene"));
+  if (!displaySceneResult.ok
+      || displaySceneResult.probe?.source !== "ww3d_display_scene_probe"
+      || displaySceneResult.probe?.display?.path !== "W3DDisplay::m_3DScene"
+      || displaySceneResult.probe?.display?.width !== 800
+      || displaySceneResult.probe?.display?.height !== 600
+      || displaySceneResult.probe?.display?.bitDepth !== 32
+      || displaySceneResult.probe?.display?.windowed !== true
+      || displaySceneResult.probe?.scene?.type !== "RTS3DScene"
+      || displaySceneResult.probe?.scene?.path !== "WW3D::Render(W3DDisplay::m_3DScene,camera)"
+      || displaySceneResult.probe?.scene?.shadowFlushes < 2
+      || displaySceneResult.probe?.scene?.particleFlushes < 1
+      || displaySceneResult.probe?.results?.displayPrepared !== true
+      || displaySceneResult.probe?.results?.sceneOwned !== true
+      || displaySceneResult.probe?.results?.sceneCreated !== true
+      || displaySceneResult.probe?.results?.scene2DCreated !== true
+      || displaySceneResult.probe?.results?.interfaceSceneCreated !== true
+      || displaySceneResult.probe?.results?.lightCreated !== true
+      || displaySceneResult.probe?.results?.timeOfDayApplied !== true
+      || displaySceneResult.probe?.results?.cameraCreated !== true
+      || displaySceneResult.probe?.results?.renderObjectCreated !== true
+      || displaySceneResult.probe?.results?.objectAdded !== true
+      || displaySceneResult.probe?.results?.objectVisibleAfterRender !== true
+      || displaySceneResult.probe?.calls?.drawIndexed < 1
+      || displaySceneResult.probe?.calls?.browserBufferCreate < 2
+      || displaySceneResult.probe?.calls?.browserBufferUpdate < 2
+      || displaySceneResult.probe?.calls?.setTransform < 3
+      || displaySceneResult.probe?.draw?.primitiveType !== 4
+      || displaySceneResult.probe?.draw?.vertexCount !== 8
+      || displaySceneResult.probe?.draw?.primitiveCount !== 12
+      || displaySceneResult.probe?.draw?.vertexBufferId <= 0
+      || displaySceneResult.probe?.draw?.indexBufferId <= 0
+      || displaySceneResult.probe?.draw?.transformMask !== 7
+      || displaySceneResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displaySceneResult.browserProbe?.vertexStride !== 44
+      || displaySceneResult.browserProbe?.indexCount !== 36
+      || displaySceneResult.browserProbe?.usedPersistentBuffers !== true
+      || displaySceneResult.browserProbe?.usedTransforms !== true
+      || !pixelHasColor(displaySceneResult.browserProbe?.centerPixel)
+      || !pixelHasColor(displaySceneResult.screenshot?.centerPixel)) {
+    throw new Error(`WW3DDisplay scene probe failed: ${JSON.stringify(displaySceneResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplaySceneCanvasScreenshot });
+
   const render2DResult = await page.evaluate(() => window.CnCPort.rpc("ww3dRender2DTexturedQuad"));
   if (!render2DResult.ok
       || render2DResult.probe?.source !== "ww3d_render2d_textured_quad_probe"
@@ -1870,6 +1916,7 @@ try {
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,
+      ww3dDisplaySceneCanvasScreenshot,
       ww3dRender2DCanvasScreenshot,
       ww3dRender2DSentenceCanvasScreenshot,
       ww3dDisplayStringCanvasScreenshot,
