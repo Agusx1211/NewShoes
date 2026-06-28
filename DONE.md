@@ -3307,6 +3307,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## M7 — Audio (Miles → Web Audio)
 
+- [x] Expose a harness-visible `audioRuntimeAssets` readiness surface that
+      proves the registered runtime archive set includes the Zero Hour audio,
+      speech, and music BIG payloads (`AudioZH.big`, `AudioEnglishZH.big`,
+      `SpeechZH.big`, `SpeechEnglishZH.big`, `MusicZH.big`, `Music.big`)
+      while still reporting the browser Web Audio device/runtime as not ready.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

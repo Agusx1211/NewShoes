@@ -1210,6 +1210,31 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
   }
 }
 
+function assertAudioRuntimeAssets(state, context) {
+  const audioAssets = state.audioRuntimeAssets;
+  if (!audioAssets
+      || audioAssets.source !== "runtime BIG archive manifest"
+      || audioAssets.ready !== true
+      || audioAssets.browserAudioDevice !== false
+      || audioAssets.webAudioRuntime !== false
+      || audioAssets.nextRequired !== "browserAudioDevice") {
+    throw new Error(`${context} audio runtime asset state mismatch: ${JSON.stringify(audioAssets)}`);
+  }
+
+  for (const key of [
+    "audioZH",
+    "audioEnglishZH",
+    "speechZH",
+    "speechEnglishZH",
+    "musicZH",
+    "music",
+  ]) {
+    if (audioAssets.required?.[key] !== true) {
+      throw new Error(`${context} audio runtime archive ${key} missing: ${JSON.stringify(audioAssets)}`);
+    }
+  }
+}
+
 function assertFileSystemProbe(state, context) {
   const probe = state.fileSystemProbe;
   if (!probe?.ok || probe.source !== "GameEngine/Common/System/FileSystem.cpp") {
@@ -1806,6 +1831,7 @@ try {
   assertVideoProbe(assetProbe, "aggregate runtime archive probe");
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
   assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
+  assertAudioRuntimeAssets(mountResult.state, "runtime archive preload");
   assertOriginalEngineStartup(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
   if (mountResult.state.mountedArchives?.length !== archives.length) {
@@ -1899,6 +1925,7 @@ try {
   assertVideoProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
+  assertAudioRuntimeAssets(bootResult.state, "runtime archive boot");
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
   if (hasBaseIniArchive) {
@@ -1924,6 +1951,7 @@ try {
     archiveMount,
     bootArchiveMount,
     startupAssets: bootResult.state.startupAssets,
+    audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,
     bootFrame: bootResult.state.frame,

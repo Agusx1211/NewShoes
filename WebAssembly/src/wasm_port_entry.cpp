@@ -858,6 +858,32 @@ bool find_mounted_base_archive(
 	return false;
 }
 
+bool archive_manifest_matches_archive(
+	const std::string &mount_name,
+	const std::string &source_name,
+	const char *expected)
+{
+	const std::string normalized_mount = normalize_archive_manifest_name(mount_name);
+	const std::string normalized_source = normalize_archive_manifest_name(source_name);
+	const std::string normalized_expected = normalize_archive_manifest_name(expected);
+	return normalized_source == normalized_expected ||
+		normalized_mount == normalized_expected;
+}
+
+bool archive_payload_mounted(const char *expected)
+{
+	for (std::size_t index = 0; index < g_archive_mount.archive_names.size(); ++index) {
+		const std::string &candidate_mount = g_archive_mount.archive_names[index];
+		const std::string candidate_source = index < g_archive_mount.archive_source_names.size()
+			? g_archive_mount.archive_source_names[index]
+			: candidate_mount;
+		if (archive_manifest_matches_archive(candidate_mount, candidate_source, expected)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 std::string build_string_vector_json(const std::vector<std::string> &values)
 {
 	std::string json = "[";
@@ -871,6 +897,48 @@ std::string build_string_vector_json(const std::vector<std::string> &values)
 	}
 	json += "]";
 	return json;
+}
+
+bool audio_payload_archives_ready()
+{
+	return g_archive_mount.registered &&
+		archive_payload_mounted("AudioZH.big") &&
+		archive_payload_mounted("AudioEnglishZH.big") &&
+		archive_payload_mounted("SpeechZH.big") &&
+		archive_payload_mounted("SpeechEnglishZH.big") &&
+		archive_payload_mounted("MusicZH.big") &&
+		archive_payload_mounted("Music.big");
+}
+
+std::string build_audio_runtime_assets_json()
+{
+	char buffer[1600];
+	const bool audio_zh = archive_payload_mounted("AudioZH.big");
+	const bool audio_english_zh = archive_payload_mounted("AudioEnglishZH.big");
+	const bool speech_zh = archive_payload_mounted("SpeechZH.big");
+	const bool speech_english_zh = archive_payload_mounted("SpeechEnglishZH.big");
+	const bool music_zh = archive_payload_mounted("MusicZH.big");
+	const bool music = archive_payload_mounted("Music.big");
+	const bool ready = audio_payload_archives_ready();
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"runtime BIG archive manifest\","
+		"\"ready\":%s,\"browserAudioDevice\":false,"
+		"\"webAudioRuntime\":false,"
+		"\"nextRequired\":\"%s\","
+		"\"required\":{\"audioZH\":%s,\"audioEnglishZH\":%s,"
+		"\"speechZH\":%s,\"speechEnglishZH\":%s,"
+		"\"musicZH\":%s,\"music\":%s}}",
+		ready ? "true" : "false",
+		ready ? "browserAudioDevice" : "audioPayloadArchives",
+		audio_zh ? "true" : "false",
+		audio_english_zh ? "true" : "false",
+		speech_zh ? "true" : "false",
+		speech_english_zh ? "true" : "false",
+		music_zh ? "true" : "false",
+		music ? "true" : "false");
+
+	return buffer;
 }
 
 std::string build_nullable_string_json(const std::string &value, bool present)
@@ -3021,6 +3089,7 @@ const char *write_state_json()
 	const std::string archive_mount_source_names_json =
 		build_string_vector_json(g_archive_mount.archive_source_names);
 	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
+	const std::string audio_runtime_assets_json = build_audio_runtime_assets_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
 	const std::string data_summary_json = build_data_summary_json();
@@ -3260,6 +3329,7 @@ const char *write_state_json()
 		"\"archives\":%s,\"sourceArchives\":%s,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"browserRuntimeAssets\":%s,"
+		"\"audioRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
 		"\"required\":{\"inizh\":%s,\"armor\":%s,\"damageFX\":%s,\"fxList\":%s,\"science\":%s,"
@@ -3756,6 +3826,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		g_archive_mount.boot_probe_indexed_file_count,
 		browser_runtime_assets_json.c_str(),
+		audio_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),
 		startup_asset_message_json.c_str(),

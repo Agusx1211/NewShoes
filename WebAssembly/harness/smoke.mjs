@@ -608,6 +608,31 @@ function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   }
 }
 
+function assertAudioRuntimeAssets(state, label, expectedReady) {
+  const audioAssets = state.audioRuntimeAssets;
+  if (!audioAssets
+      || audioAssets.source !== "runtime BIG archive manifest"
+      || audioAssets.ready !== expectedReady
+      || audioAssets.browserAudioDevice !== false
+      || audioAssets.webAudioRuntime !== false
+      || audioAssets.nextRequired !== (expectedReady ? "browserAudioDevice" : "audioPayloadArchives")) {
+    throw new Error(`${label} audio runtime asset state mismatch: ${JSON.stringify(audioAssets)}`);
+  }
+
+  for (const key of [
+    "audioZH",
+    "audioEnglishZH",
+    "speechZH",
+    "speechEnglishZH",
+    "musicZH",
+    "music",
+  ]) {
+    if (audioAssets.required?.[key] !== expectedReady) {
+      throw new Error(`${label} audio runtime archive ${key} mismatch: ${JSON.stringify(audioAssets)}`);
+    }
+  }
+}
+
 function assertOriginalEngineStartup(state, label, expectedStatus) {
   const startup = state.originalEngineStartup;
   if (!startup
@@ -799,6 +824,7 @@ try {
   }
   if (expectWasm) {
     assertStartupAssets(bootResult.state, "boot", "missing_runtime_archives");
+    assertAudioRuntimeAssets(bootResult.state, "boot", false);
     assertOriginalEngineStartup(bootResult.state, "boot", "missing_runtime_archives");
     assertWasmTiming(bootResult.state, "boot");
     assertWin32Timing(bootResult.state, "boot");
