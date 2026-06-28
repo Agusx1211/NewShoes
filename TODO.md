@@ -3001,6 +3001,11 @@ shares structure and follows behind.
 ## M5 — Input & UI
 
 - [ ] Mouse: Pointer events → engine `Mouse`/`W3DMouse` (move, buttons, wheel).
+- [x] Focused browser mouse-wheel proof: a DOM wheel event queues
+      `WM_MOUSEWHEEL`, the original `WinMain.cpp::WndProc` filters it through
+      the application window bounds and feeds `Win32Mouse::addWin32Event`, and
+      the wasm harness observes `Win32Mouse::translateEvent` producing the
+      expected `MouseIO::wheelPos` and canvas-relative position.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through

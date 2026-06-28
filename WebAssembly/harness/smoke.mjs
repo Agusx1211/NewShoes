@@ -848,7 +848,39 @@ try {
       throw new Error(`Browser double-click release did not feed Win32Mouse: ${JSON.stringify(browserDoubleClickReleaseProbe)}`);
     }
 
-    const resetD3DCallsBeforeBlur = browserDoubleClickReleaseProbe.probe.resetD3D?.calls ?? 0;
+    await page.mouse.move(canvasBox.x + 345, canvasBox.y + 67);
+    const resetBeforeWheel = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetBeforeWheel.ok
+        || resetBeforeWheel.state.browserInput?.messageQueue?.count !== 0
+        || resetBeforeWheel.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Browser wheel reset mismatch: ${JSON.stringify(resetBeforeWheel)}`);
+    }
+
+    await page.mouse.wheel(0, -120);
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "browser mouse wheel queue",
+    );
+    const browserWheelPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!browserWheelPump.ok
+        || browserWheelPump.probe.pump?.lastPumped !== 1
+        || browserWheelPump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Browser mouse wheel did not pump through original WndProc: ${JSON.stringify(browserWheelPump)}`);
+    }
+    const browserWheelProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const browserWheelEvent = browserWheelProbe.probe?.mouse?.lastEvent;
+    if (!browserWheelProbe.ok
+        || browserWheelProbe.probe.mouse?.lastProbeDrained !== 1
+        || browserWheelEvent?.pos?.x !== 345
+        || browserWheelEvent?.pos?.y !== 67
+        || browserWheelEvent?.wheelPos !== 120
+        || browserWheelEvent?.left?.state !== "up"
+        || browserWheelEvent?.left?.frame !== 0) {
+      throw new Error(`Browser mouse wheel did not feed Win32Mouse: ${JSON.stringify(browserWheelProbe)}`);
+    }
+
+    const resetD3DCallsBeforeBlur = browserWheelProbe.probe.resetD3D?.calls ?? 0;
     await page.evaluate(() => document.querySelector("#viewport").blur());
     await waitForBrowserInput(
       page,
