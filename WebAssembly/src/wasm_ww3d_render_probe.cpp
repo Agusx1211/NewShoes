@@ -53,6 +53,7 @@ std::string g_ww3d_display_drawimage_probe_json;
 std::string g_ww3d_display_drawimage_file_probe_json;
 std::string g_ww3d_display_mapped_image_probe_json;
 std::string g_ww3d_display_mapped_image_clip_probe_json;
+std::string g_ww3d_display_mapped_image_unrotated_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_render2d_sentence_probe_json;
 std::string g_ww3d_display_string_probe_json;
@@ -65,6 +66,71 @@ constexpr const char *kMappedImageProbeTextureArchiveEntry =
 	"Data\\English\\Art\\Textures\\SCShellUserInterface512_001.tga";
 constexpr const char *kMappedImageProbeSampleIni =
 	"Data\\INI\\MappedImages\\TextureSize_512\\SCShellUserInterface512.INI";
+constexpr const char *kUnrotatedMappedImageProbeName = "SAChinook_L";
+constexpr const char *kUnrotatedMappedImageProbeTextureName = "SAUserInterface512_001.tga";
+constexpr const char *kUnrotatedMappedImageProbeTextureArchiveEntry =
+	"Data\\English\\Art\\Textures\\SAUserInterface512_001.tga";
+constexpr const char *kUnrotatedMappedImageProbeSampleIni =
+	"Data\\INI\\MappedImages\\TextureSize_512\\SAUserInterface512.INI";
+constexpr const char *kMappedImageTextureSource =
+	"ImageCollection::load mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+constexpr const char *kUnrotatedMappedImageTextureSource =
+	"ImageCollection::load non-rotated mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+
+struct MappedImageDrawProbeSpec
+{
+	const char *source_name;
+	const char *image_name;
+	const char *texture_name;
+	const char *texture_archive_entry;
+	const char *sample_ini;
+	const char *texture_source;
+	UnsignedInt expected_status;
+	bool expected_rotated;
+	Int expected_width;
+	Int expected_height;
+	UINT expected_vertex_count;
+	Int draw_left;
+	Int draw_top;
+	Int draw_right;
+	Int draw_bottom;
+};
+
+constexpr MappedImageDrawProbeSpec kMappedImageProbeSpec = {
+	"ww3d_display_mapped_image_probe",
+	kMappedImageProbeName,
+	kMappedImageProbeTextureName,
+	kMappedImageProbeTextureArchiveEntry,
+	kMappedImageProbeSampleIni,
+	kMappedImageTextureSource,
+	IMAGE_STATUS_ROTATED_90_CLOCKWISE,
+	true,
+	160,
+	96,
+	6,
+	320,
+	252,
+	480,
+	348,
+};
+
+constexpr MappedImageDrawProbeSpec kUnrotatedMappedImageProbeSpec = {
+	"ww3d_display_mapped_image_unrotated_probe",
+	kUnrotatedMappedImageProbeName,
+	kUnrotatedMappedImageProbeTextureName,
+	kUnrotatedMappedImageProbeTextureArchiveEntry,
+	kUnrotatedMappedImageProbeSampleIni,
+	kUnrotatedMappedImageTextureSource,
+	IMAGE_STATUS_NONE,
+	false,
+	120,
+	96,
+	4,
+	340,
+	252,
+	460,
+	348,
+};
 
 bool succeeded(int result)
 {
@@ -2061,6 +2127,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_file(
 const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	const char *ini_archive_path,
 	const char *texture_archive_path,
+	const MappedImageDrawProbeSpec &spec,
 	bool use_clip)
 {
 	initMemoryManager();
@@ -2124,10 +2191,10 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	std::string image_filename;
 	std::string loaded_texture_name;
 
-	const Int draw_left = 320;
-	const Int draw_top = 252;
-	const Int draw_right = 480;
-	const Int draw_bottom = 348;
+	const Int draw_left = spec.draw_left;
+	const Int draw_top = spec.draw_top;
+	const Int draw_right = spec.draw_right;
+	const Int draw_bottom = spec.draw_bottom;
 	const Int clip_left = 360;
 	const Int clip_top = 276;
 	const Int clip_right = 440;
@@ -2165,10 +2232,10 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
 		mapped_ini_exists =
 			runtime_asset_system_installed &&
-			wasm_browser_runtime_assets_file_exists(kMappedImageProbeSampleIni);
+			wasm_browser_runtime_assets_file_exists(spec.sample_ini);
 		texture_file_exists =
 			runtime_asset_system_installed &&
-			wasm_browser_runtime_assets_file_exists(kMappedImageProbeTextureArchiveEntry);
+			wasm_browser_runtime_assets_file_exists(spec.texture_archive_entry);
 		texture_archive_loaded = texture_file_exists;
 	}
 
@@ -2180,7 +2247,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 			mapped_image_collection->load(512);
 			mapped_collection_loaded = true;
 			mapped_image_count = count_mapped_images(*mapped_image_collection);
-			image = mapped_image_collection->findImageByName(AsciiString(kMappedImageProbeName));
+			image = mapped_image_collection->findImageByName(AsciiString(spec.image_name));
 			mapped_image_found = image != nullptr;
 			if (mapped_image_found) {
 				image_status = image->getStatus();
@@ -2347,14 +2414,14 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		mapped_collection_loaded &&
 		mapped_image_count == 1186 &&
 		mapped_image_found &&
-		mapped_image_rotated &&
+		mapped_image_rotated == spec.expected_rotated &&
 		!image_raw_texture &&
-		image_status == IMAGE_STATUS_ROTATED_90_CLOCKWISE &&
-		image_filename == kMappedImageProbeTextureName &&
+		image_status == spec.expected_status &&
+		image_filename == spec.texture_name &&
 		image_texture_width == 512 &&
 		image_texture_height == 512 &&
-		image_width == 160 &&
-		image_height == 96 &&
+		image_width == spec.expected_width &&
+		image_height == spec.expected_height &&
 		texture_preloaded &&
 		texture_registered &&
 		texture_resolved &&
@@ -2382,7 +2449,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		state->set_texture_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
-		state->last_draw_vertex_count == 6 &&
+		state->last_draw_vertex_count == spec.expected_vertex_count &&
 		state->last_draw_primitive_count == 2 &&
 		state->last_draw_stream_source_stride == 44 &&
 		state->last_draw_vertex_buffer_id != 0 &&
@@ -2404,12 +2471,13 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		json_escape(texture_archive_path != nullptr ? texture_archive_path : "");
 	const std::string image_filename_json = json_escape(image_filename);
 	const std::string texture_name_json = json_escape(loaded_texture_name);
-	const std::string texture_entry_json = json_escape(kMappedImageProbeTextureArchiveEntry);
-	const std::string image_name_json = json_escape(kMappedImageProbeName);
+	const std::string texture_entry_json = json_escape(spec.texture_archive_entry);
+	const std::string image_name_json = json_escape(spec.image_name);
+	const std::string texture_source_json = json_escape(spec.texture_source);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const char *source_name = use_clip ?
 		"ww3d_display_mapped_image_clip_probe" :
-		"ww3d_display_mapped_image_probe";
+		spec.source_name;
 
 	char buffer[14000];
 	std::snprintf(buffer, sizeof(buffer),
@@ -2444,7 +2512,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		"\"levels\":%u,\"uploadedLevels\":%u,\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
-		"\"source\":\"ImageCollection::load mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
+		"\"source\":\"%s\"},"
 		"\"runtimeAssets\":%s,"
 		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\",\"rawTexture\":%s,"
 		"\"status\":%u,\"rotated\":%s,\"textureWidth\":%d,\"textureHeight\":%d,"
@@ -2529,6 +2597,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		texture_upload_height,
 		texture_upload_bytes,
 		static_cast<unsigned long>(texture_upload_checksum),
+		texture_source_json.c_str(),
 		runtime_assets_json.c_str(),
 		image_name_json.c_str(),
 		image_filename_json.c_str(),
@@ -2582,11 +2651,14 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
 		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
 
-	std::string &probe_json = use_clip ?
-		g_ww3d_display_mapped_image_clip_probe_json :
-		g_ww3d_display_mapped_image_probe_json;
-	probe_json = buffer;
-	return probe_json.c_str();
+	std::string *probe_json = &g_ww3d_display_mapped_image_probe_json;
+	if (use_clip) {
+		probe_json = &g_ww3d_display_mapped_image_clip_probe_json;
+	} else if (&spec == &kUnrotatedMappedImageProbeSpec) {
+		probe_json = &g_ww3d_display_mapped_image_unrotated_probe_json;
+	}
+	*probe_json = buffer;
+	return probe_json->c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
@@ -2596,6 +2668,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image(
 	return cnc_port_probe_ww3d_display_mapped_image_internal(
 		ini_archive_path,
 		texture_archive_path,
+		kMappedImageProbeSpec,
 		false);
 }
 
@@ -2606,7 +2679,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image_clip(
 	return cnc_port_probe_ww3d_display_mapped_image_internal(
 		ini_archive_path,
 		texture_archive_path,
+		kMappedImageProbeSpec,
 		true);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image_unrotated(
+	const char *ini_archive_path,
+	const char *texture_archive_path)
+{
+	return cnc_port_probe_ww3d_display_mapped_image_internal(
+		ini_archive_path,
+		texture_archive_path,
+		kUnrotatedMappedImageProbeSpec,
+		false);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_fillrect()

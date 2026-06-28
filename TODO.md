@@ -2648,6 +2648,14 @@ shares structure and follows behind.
       rotated-image clipped UV slice, disables clipping after the draw, samples
       a colored center pixel plus black outside-clip pixels, and screenshots
       `harness-smoke-ww3d-display-mapped-image-clip-canvas.png`.
+- [x] Original `W3DDisplay::drawImage` non-rotated mapped-image UVs are now
+      covered through the same real `ImageCollection::load(512)` path: the
+      browser smoke range-fetches `SAUserInterface512.INI` and
+      `SAUserInterface512_001.tga`, verifies `SAChinook_L`
+      (`IMAGE_STATUS_NONE`, 120x96, UVs 367/512..487/512 and 393/512..489/512),
+      pins the exact INI/TGA source offsets, draws the atlas slice through
+      `W3DDisplay::drawImage`, and screenshots
+      `harness-smoke-ww3d-display-mapped-image-unrotated-canvas.png`.
 - [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
       through the display-owned `Render2DClass` helper without using the
       raw-storage-unsafe virtual size setters, verified by
