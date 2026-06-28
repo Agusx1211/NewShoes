@@ -5190,6 +5190,8 @@ async function loadWasmModule() {
         "cnc_port_probe_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
         "cnc_port_probe_matrixmapper_apply", "string", []),
+      probeScreenMapperApply: module.cwrap(
+        "cnc_port_probe_screen_mapper_apply", "string", []),
       probeWWShadeCubeMapApply: module.cwrap(
         "cnc_port_probe_wwshade_cubemap_apply", "string", []),
       initOriginalWndProcInput: module.cwrap(
@@ -12218,6 +12220,39 @@ async function rpc(command, payload = {}) {
           && probe?.results?.stage === 1
           && probe?.textureStage?.texCoordIndex === D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR
           && probe?.textureStage?.textureTransformFlags === D3DTTFF_COUNT2
+          && probe?.transform?.state === probe?.transform?.expectedState
+          && probe?.transform?.rowsOk === true
+          && probe?.transform?.row0Ok === true
+          && probe?.transform?.row1Ok === true
+          && probe?.transform?.row2Ok === true
+          && probe?.transform?.row3Ok === true
+          && probe?.callDeltas?.transform === 1
+          && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "screenMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; ScreenMapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeScreenMapperApply());
+        const ok = Boolean(probe.ok)
+          && probe?.source === "screen_mapper_apply_probe"
+          && probe?.results?.applyCalled === true
+          && probe?.results?.stage === 1
+          && probe?.results?.mapperIdOk === true
+          && probe?.textureStage?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+          && probe?.textureStage?.textureTransformFlags === (D3DTTFF_PROJECTED | D3DTTFF_COUNT3)
           && probe?.transform?.state === probe?.transform?.expectedState
           && probe?.transform?.rowsOk === true
           && probe?.transform?.row0Ok === true

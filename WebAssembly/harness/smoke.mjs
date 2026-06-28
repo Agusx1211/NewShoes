@@ -5625,6 +5625,29 @@ try {
     );
   }
 
+  const screenMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("screenMapperApply"));
+  if (!screenMapperApplyResult.ok
+      || screenMapperApplyResult.probe?.source !== "screen_mapper_apply_probe"
+      || screenMapperApplyResult.probe?.results?.applyCalled !== true
+      || screenMapperApplyResult.probe?.results?.stage !== 1
+      || screenMapperApplyResult.probe?.results?.mapperIdOk !== true
+      || screenMapperApplyResult.probe?.textureStage?.texCoordIndex !== 0x00020000
+      || screenMapperApplyResult.probe?.textureStage?.textureTransformFlags !== (256 | 3)
+      || screenMapperApplyResult.probe?.transform?.state
+          !== screenMapperApplyResult.probe?.transform?.expectedState
+      || screenMapperApplyResult.probe?.transform?.rowsOk !== true
+      || screenMapperApplyResult.probe?.transform?.row0Ok !== true
+      || screenMapperApplyResult.probe?.transform?.row1Ok !== true
+      || screenMapperApplyResult.probe?.transform?.row2Ok !== true
+      || screenMapperApplyResult.probe?.transform?.row3Ok !== true
+      || screenMapperApplyResult.probe?.callDeltas?.transform !== 1
+      || screenMapperApplyResult.probe?.callDeltas?.textureStageState !== 2) {
+    throw new Error(
+      `ScreenMapper apply probe failed: ${JSON.stringify(screenMapperApplyResult)}`,
+    );
+  }
+
   const gdiFontProbeResult = await page.evaluate(() => window.CnCPort.rpc("gdiFontProbe", {
     pointSize: 24,
     face: "Arial",
