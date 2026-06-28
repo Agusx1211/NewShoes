@@ -3024,7 +3024,7 @@ shares structure and follows behind.
       verifies `MSG_RAW_MOUSE_POSITION` plus
       `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` arguments from the original
       `MessageStream`.
-- [ ] Extend the focused real Mouse stream-message proof to cover drag and
+- [x] Extend the focused real Mouse stream-message proof to cover drag and
       wheel `MSG_RAW_MOUSE_*` output before wiring GUI translator delivery.
 - [ ] Add a separate real engine Mouse probe, not the current browser
       `Win32Mouse`/`Mouse` shim, that wires `TheMouse == TheWin32Mouse`,

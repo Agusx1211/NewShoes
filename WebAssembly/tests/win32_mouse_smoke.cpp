@@ -104,53 +104,154 @@ bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
 	{
 		GlobalData globalData;
 		SmokeKeyboard keyboard;
-		MessageStream stream;
 
 		GlobalData *oldGlobalData = TheGlobalData;
 		Keyboard *oldKeyboard = TheKeyboard;
 		MessageStream *oldMessageStream = TheMessageStream;
 		TheGlobalData = &globalData;
 		TheKeyboard = &keyboard;
-		TheMessageStream = &stream;
 
-		mouse.prepareEngineUpdateProbe(800, 600);
-		mouse.addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(345, 67), 901);
-		mouse.update();
-		mouse.createStreamMessages();
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
 
-		GameMessage *position = stream.getFirstMessage();
-		GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
-		ok = expect(position != nullptr, "Mouse::createStreamMessages should append a raw position message") && ok;
-		ok = expect(leftDown != nullptr, "Mouse::createStreamMessages should append a left-button message") && ok;
-		ok = expect(leftDown == nullptr || leftDown->next() == nullptr,
-			"Mouse::createStreamMessages should only append position and left-button messages for one left-down event") && ok;
+			mouse.prepareEngineUpdateProbe(800, 600);
+			mouse.addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(345, 67), 901);
+			mouse.update();
+			mouse.createStreamMessages();
 
-		if (position != nullptr) {
-			ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
-				"first stream message should be MSG_RAW_MOUSE_POSITION") && ok;
-			ok = expect(position->getArgumentCount() == 2,
-				"raw position message should carry position and modifiers") && ok;
-			ok = expect(position->getPlayerIndex() == -1,
-				"early wasm input message should use invalid player index before PlayerList exists") && ok;
-			ok = expect_pixel_arg(position, 0, 0, 0,
-				"raw position message should use the current mouse position before event folding") && ok;
-			ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
-				"raw position message should include keyboard modifier flags") && ok;
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+			ok = expect(position != nullptr, "Mouse::createStreamMessages should append a raw position message") && ok;
+			ok = expect(leftDown != nullptr, "Mouse::createStreamMessages should append a left-button message") && ok;
+			ok = expect(leftDown == nullptr || leftDown->next() == nullptr,
+				"Mouse::createStreamMessages should only append position and left-button messages for one left-down event") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"first stream message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"raw position message should carry position and modifiers") && ok;
+				ok = expect(position->getPlayerIndex() == -1,
+					"early wasm input message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"raw position message should use the current mouse position before event folding") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"raw position message should include keyboard modifier flags") && ok;
+			}
+
+			if (leftDown != nullptr) {
+				ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+					"second stream message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+				ok = expect(leftDown->getArgumentCount() == 3,
+					"left-button message should carry position, modifiers, and timestamp") && ok;
+				ok = expect(leftDown->getPlayerIndex() == -1,
+					"left-button message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(leftDown, 0, 345, 67,
+					"left-button message should carry folded Win32 mouse coordinates") && ok;
+				ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+					"left-button message should include keyboard modifier flags") && ok;
+				ok = expect_integer_arg(leftDown, 2, 901,
+					"left-button message should carry the Win32 event timestamp") && ok;
+			}
 		}
 
-		if (leftDown != nullptr) {
-			ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
-				"second stream message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
-			ok = expect(leftDown->getArgumentCount() == 3,
-				"left-button message should carry position, modifiers, and timestamp") && ok;
-			ok = expect(leftDown->getPlayerIndex() == -1,
-				"left-button message should use invalid player index before PlayerList exists") && ok;
-			ok = expect_pixel_arg(leftDown, 0, 345, 67,
-				"left-button message should carry folded Win32 mouse coordinates") && ok;
-			ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
-				"left-button message should include keyboard modifier flags") && ok;
-			ok = expect_integer_arg(leftDown, 2, 901,
-				"left-button message should carry the Win32 event timestamp") && ok;
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			mouse.addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(100, 120), 910);
+			mouse.addWin32Event(WM_MOUSEMOVE, 0, make_mouse_lparam(130, 150), 911);
+			mouse.update();
+			mouse.createStreamMessages();
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+			GameMessage *leftDrag = leftDown != nullptr ? leftDown->next() : nullptr;
+			ok = expect(position != nullptr, "drag stream should include a raw position message") && ok;
+			ok = expect(leftDown != nullptr, "drag stream should include a left-down message") && ok;
+			ok = expect(leftDrag != nullptr, "drag stream should include a left-drag message") && ok;
+			ok = expect(leftDrag == nullptr || leftDrag->next() == nullptr,
+				"drag stream should only append position, left-down, and left-drag messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"drag stream first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"drag stream raw position should carry position and modifiers") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"drag stream raw position should use the current mouse position before event folding") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"drag stream raw position should include keyboard modifier flags") && ok;
+			}
+
+			if (leftDown != nullptr) {
+				ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+					"drag stream second message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+				ok = expect(leftDown->getArgumentCount() == 3,
+					"drag stream left-down should carry position, modifiers, and timestamp") && ok;
+				ok = expect_pixel_arg(leftDown, 0, 100, 120,
+					"drag stream left-down should carry the down coordinates") && ok;
+				ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+					"drag stream left-down should include keyboard modifier flags") && ok;
+				ok = expect_integer_arg(leftDown, 2, 910,
+					"drag stream left-down should carry the Win32 event timestamp") && ok;
+			}
+
+			if (leftDrag != nullptr) {
+				ok = expect(leftDrag->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_DRAG,
+					"drag stream third message should be MSG_RAW_MOUSE_LEFT_DRAG") && ok;
+				ok = expect(leftDrag->getArgumentCount() == 3,
+					"left-drag message should carry position, delta, and modifiers") && ok;
+				ok = expect_pixel_arg(leftDrag, 0, 130, 150,
+					"left-drag message should carry the moved coordinates") && ok;
+				ok = expect_pixel_arg(leftDrag, 1, 30, 30,
+					"left-drag message should carry the folded mouse delta") && ok;
+				ok = expect_integer_arg(leftDrag, 2, KEY_STATE_NONE,
+					"left-drag message should include keyboard modifier flags") && ok;
+			}
+		}
+
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			mouse.addWin32Event(WM_MOUSEWHEEL, MAKELPARAM(0, 240), make_mouse_lparam(220, 240), 920);
+			mouse.update();
+			mouse.createStreamMessages();
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *wheel = position != nullptr ? position->next() : nullptr;
+			ok = expect(position != nullptr, "wheel stream should include a raw position message") && ok;
+			ok = expect(wheel != nullptr, "wheel stream should include a wheel message") && ok;
+			ok = expect(wheel == nullptr || wheel->next() == nullptr,
+				"wheel stream should only append position and wheel messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"wheel stream first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"wheel stream raw position should carry position and modifiers") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"wheel stream raw position should use the current mouse position before event folding") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"wheel stream raw position should include keyboard modifier flags") && ok;
+			}
+
+			if (wheel != nullptr) {
+				ok = expect(wheel->getType() == GameMessage::MSG_RAW_MOUSE_WHEEL,
+					"wheel stream second message should be MSG_RAW_MOUSE_WHEEL") && ok;
+				ok = expect(wheel->getArgumentCount() == 3,
+					"wheel message should carry position, wheel clicks, and modifiers") && ok;
+				ok = expect_pixel_arg(wheel, 0, 220, 240,
+					"wheel message should carry folded Win32 wheel coordinates") && ok;
+				ok = expect_integer_arg(wheel, 1, 2,
+					"wheel message should carry wheel delta divided by 120") && ok;
+				ok = expect_integer_arg(wheel, 2, KEY_STATE_NONE,
+					"wheel message should include keyboard modifier flags") && ok;
+			}
 		}
 
 		TheMessageStream = oldMessageStream;
