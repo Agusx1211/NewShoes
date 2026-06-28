@@ -3032,6 +3032,15 @@ shares structure and follows behind.
       drives original `Mouse::update()` and `Mouse::createStreamMessages()`,
       and smoke-tests `MSG_RAW_MOUSE_*` output for button, drag, and wheel
       input.
+      - [x] Add the engine-global fallback-frame proof: the standalone
+            `win32-mouse-smoke` now wires `TheMouse == TheWin32Mouse`, drives
+            original `Mouse::UPDATE()` / `createStreamMessages()` through
+            `TheMouse`, and verifies button, drag, and wheel `MSG_RAW_MOUSE_*`
+            output using the original `Win32Mouse` fallback when
+            `TheGameClient` is not initialized.
+      - [ ] Extend the engine-global Mouse proof with a non-null original
+            `TheGameClient` frame source once minimal GameClient ownership is
+            available without constructing the full GUI/display subsystem.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through

@@ -22,6 +22,8 @@ class SmokeWin32Mouse : public Win32Mouse
 public:
 	using Win32Mouse::getMouseEvent;
 
+	// Full Win32Mouse::init() still owns display-string/font dependencies; this
+	// probe resets only the original input fields needed by update/stream output.
 	void prepareEngineUpdateProbe(int width, int height)
 	{
 		std::memset(m_eventBuffer, 0, sizeof(m_eventBuffer));
@@ -100,7 +102,6 @@ bool expect_integer_arg(GameMessage *message, Int index, Int value, const char *
 bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
 {
 	bool ok = true;
-	initMemoryManager();
 	{
 		GlobalData globalData;
 		SmokeKeyboard keyboard;
@@ -258,7 +259,188 @@ bool exercise_mouse_stream_messages(SmokeWin32Mouse &mouse)
 		TheKeyboard = oldKeyboard;
 		TheGlobalData = oldGlobalData;
 	}
-	shutdownMemoryManager();
+	return ok;
+}
+
+bool exercise_engine_global_mouse_stream_messages(SmokeWin32Mouse &mouse)
+{
+	bool ok = true;
+	{
+		GlobalData globalData;
+		SmokeKeyboard keyboard;
+
+		GlobalData *oldGlobalData = TheGlobalData;
+		Keyboard *oldKeyboard = TheKeyboard;
+		MessageStream *oldMessageStream = TheMessageStream;
+		Mouse *oldMouse = TheMouse;
+		Win32Mouse *oldWin32Mouse = TheWin32Mouse;
+
+		TheGlobalData = &globalData;
+		TheKeyboard = &keyboard;
+		TheMouse = &mouse;
+		TheWin32Mouse = &mouse;
+
+		ok = expect(TheMouse == static_cast<Mouse *>(TheWin32Mouse),
+			"engine-global mouse probe should wire TheMouse and TheWin32Mouse to the same Win32Mouse") && ok;
+
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			TheWin32Mouse->addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(345, 67), 1001);
+			TheMouse->UPDATE();
+			TheMouse->createStreamMessages();
+
+			ok = expect(mouse.inputFrame() == 1 && mouse.eventsThisFrame() == 1,
+				"engine-global left-down probe should drive Mouse::update through TheMouse") && ok;
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+			ok = expect(position != nullptr, "engine-global left-down probe should include a raw position message") && ok;
+			ok = expect(leftDown != nullptr, "engine-global left-down probe should include a left-down message") && ok;
+			ok = expect(leftDown == nullptr || leftDown->next() == nullptr,
+				"engine-global left-down probe should only append position and left-down messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"engine-global left-down first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"engine-global left-down position message should carry position and modifiers") && ok;
+				ok = expect(position->getPlayerIndex() == -1,
+					"engine-global early input message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"engine-global left-down position message should use pre-fold position") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"engine-global left-down position message should include keyboard modifier flags") && ok;
+			}
+
+			if (leftDown != nullptr) {
+				ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+					"engine-global left-down second message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+				ok = expect(leftDown->getArgumentCount() == 3,
+					"engine-global left-down message should carry position, modifiers, and timestamp") && ok;
+				ok = expect(leftDown->getPlayerIndex() == -1,
+					"engine-global left-down message should use invalid player index before PlayerList exists") && ok;
+				ok = expect_pixel_arg(leftDown, 0, 345, 67,
+					"engine-global left-down message should carry folded Win32 coordinates") && ok;
+				ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+					"engine-global left-down message should include keyboard modifier flags") && ok;
+				ok = expect_integer_arg(leftDown, 2, 1001,
+					"engine-global left-down message should carry the Win32 timestamp") && ok;
+			}
+		}
+
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			TheWin32Mouse->addWin32Event(WM_LBUTTONDOWN, 0, make_mouse_lparam(120, 140), 1010);
+			TheWin32Mouse->addWin32Event(WM_MOUSEMOVE, 0, make_mouse_lparam(150, 175), 1011);
+			TheMouse->UPDATE();
+			TheMouse->createStreamMessages();
+
+			ok = expect(mouse.inputFrame() == 1 && mouse.eventsThisFrame() == 2,
+				"engine-global drag probe should drive Mouse::update through TheMouse") && ok;
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *leftDown = position != nullptr ? position->next() : nullptr;
+			GameMessage *leftDrag = leftDown != nullptr ? leftDown->next() : nullptr;
+			ok = expect(position != nullptr, "engine-global drag probe should include a raw position message") && ok;
+			ok = expect(leftDown != nullptr, "engine-global drag probe should include a left-down message") && ok;
+			ok = expect(leftDrag != nullptr, "engine-global drag probe should include a left-drag message") && ok;
+			ok = expect(leftDrag == nullptr || leftDrag->next() == nullptr,
+				"engine-global drag probe should only append position, left-down, and drag messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"engine-global drag first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"engine-global drag position message should carry position and modifiers") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"engine-global drag position message should use pre-fold position") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"engine-global drag position message should include keyboard modifier flags") && ok;
+			}
+
+			if (leftDown != nullptr) {
+				ok = expect(leftDown->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN,
+					"engine-global drag second message should be MSG_RAW_MOUSE_LEFT_BUTTON_DOWN") && ok;
+				ok = expect(leftDown->getArgumentCount() == 3,
+					"engine-global drag left-down message should carry position, modifiers, and timestamp") && ok;
+				ok = expect_pixel_arg(leftDown, 0, 120, 140,
+					"engine-global drag left-down message should carry the down coordinates") && ok;
+				ok = expect_integer_arg(leftDown, 1, KEY_STATE_NONE,
+					"engine-global drag left-down message should include keyboard modifier flags") && ok;
+				ok = expect_integer_arg(leftDown, 2, 1010,
+					"engine-global drag left-down message should carry the Win32 timestamp") && ok;
+			}
+
+			if (leftDrag != nullptr) {
+				ok = expect(leftDrag->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_DRAG,
+					"engine-global drag third message should be MSG_RAW_MOUSE_LEFT_DRAG") && ok;
+				ok = expect(leftDrag->getArgumentCount() == 3,
+					"engine-global left-drag message should carry position, delta, and modifiers") && ok;
+				ok = expect_pixel_arg(leftDrag, 0, 150, 175,
+					"engine-global left-drag message should carry the moved coordinates") && ok;
+				ok = expect_pixel_arg(leftDrag, 1, 30, 35,
+					"engine-global left-drag message should carry the folded mouse delta") && ok;
+				ok = expect_integer_arg(leftDrag, 2, KEY_STATE_NONE,
+					"engine-global left-drag message should include keyboard modifier flags") && ok;
+			}
+		}
+
+		{
+			MessageStream stream;
+			TheMessageStream = &stream;
+
+			mouse.prepareEngineUpdateProbe(800, 600);
+			TheWin32Mouse->addWin32Event(WM_MOUSEWHEEL, MAKELPARAM(0, 240), make_mouse_lparam(220, 240), 1020);
+			TheMouse->UPDATE();
+			TheMouse->createStreamMessages();
+
+			ok = expect(mouse.inputFrame() == 1 && mouse.eventsThisFrame() == 1,
+				"engine-global wheel probe should drive Mouse::update through TheMouse") && ok;
+
+			GameMessage *position = stream.getFirstMessage();
+			GameMessage *wheel = position != nullptr ? position->next() : nullptr;
+			ok = expect(position != nullptr, "engine-global wheel probe should include a raw position message") && ok;
+			ok = expect(wheel != nullptr, "engine-global wheel probe should include a wheel message") && ok;
+			ok = expect(wheel == nullptr || wheel->next() == nullptr,
+				"engine-global wheel probe should only append position and wheel messages") && ok;
+
+			if (position != nullptr) {
+				ok = expect(position->getType() == GameMessage::MSG_RAW_MOUSE_POSITION,
+					"engine-global wheel first message should be MSG_RAW_MOUSE_POSITION") && ok;
+				ok = expect(position->getArgumentCount() == 2,
+					"engine-global wheel position message should carry position and modifiers") && ok;
+				ok = expect_pixel_arg(position, 0, 0, 0,
+					"engine-global wheel position message should use pre-fold position") && ok;
+				ok = expect_integer_arg(position, 1, KEY_STATE_NONE,
+					"engine-global wheel position message should include keyboard modifier flags") && ok;
+			}
+
+			if (wheel != nullptr) {
+				ok = expect(wheel->getType() == GameMessage::MSG_RAW_MOUSE_WHEEL,
+					"engine-global wheel second message should be MSG_RAW_MOUSE_WHEEL") && ok;
+				ok = expect(wheel->getArgumentCount() == 3,
+					"engine-global wheel message should carry position, wheel clicks, and modifiers") && ok;
+				ok = expect_pixel_arg(wheel, 0, 220, 240,
+					"engine-global wheel message should carry folded Win32 wheel coordinates") && ok;
+				ok = expect_integer_arg(wheel, 1, 2,
+					"engine-global wheel message should carry wheel delta divided by 120") && ok;
+				ok = expect_integer_arg(wheel, 2, KEY_STATE_NONE,
+					"engine-global wheel message should include keyboard modifier flags") && ok;
+			}
+		}
+
+		TheMessageStream = oldMessageStream;
+		TheWin32Mouse = oldWin32Mouse;
+		TheMouse = oldMouse;
+		TheKeyboard = oldKeyboard;
+		TheGlobalData = oldGlobalData;
+	}
 	return ok;
 }
 
@@ -377,11 +559,17 @@ int main()
 		return 1;
 	}
 
-	if (!exercise_mouse_stream_messages(mouse)) {
+	initMemoryManager();
+	bool streamMessagesOk = exercise_mouse_stream_messages(mouse);
+	if (streamMessagesOk) {
+		streamMessagesOk = exercise_engine_global_mouse_stream_messages(mouse);
+	}
+	shutdownMemoryManager();
+	if (!streamMessagesOk) {
 		return 1;
 	}
 
 	TheWin32Mouse = nullptr;
-	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent/createStreamMessages\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"Win32Mouse\",\"covered\":\"Win32Mouse translation plus real Mouse::update/processMouseEvent/createStreamMessages and engine-global mouse singleton delivery\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
