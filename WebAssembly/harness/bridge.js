@@ -189,6 +189,11 @@ const d3d8BufferStats = {
   lastUpdate: null,
   lastRelease: null,
 };
+let d3d8ViewportState = null;
+const d3d8ViewportStats = {
+  sets: 0,
+  applications: 0,
+};
 const d3d8TextureStats = {
   creates: 0,
   updates: 0,
@@ -327,9 +332,205 @@ function syncCanvasSize() {
     canvas.height = displaySize.height;
   }
   if (gl) {
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    restoreFullCanvasViewport();
   }
   refreshCanvasState(displaySize);
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function clampNumber(value, min, max, fallback) {
+  return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
+}
+
+function currentDrawingBufferSize() {
+  return {
+    width: gl ? gl.drawingBufferWidth : canvas.width,
+    height: gl ? gl.drawingBufferHeight : canvas.height,
+  };
+}
+
+function restoreFullCanvasViewport() {
+  if (!gl) {
+    return;
+  }
+  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.depthRange(0, 1);
+}
+
+function defaultD3D8Viewport() {
+  const drawingBuffer = currentDrawingBufferSize();
+  return {
+    x: 0,
+    y: 0,
+    width: drawingBuffer.width,
+    height: drawingBuffer.height,
+    minZ: 0,
+    maxZ: 1,
+  };
+}
+
+function normalizeD3D8Viewport(payload = {}) {
+  const drawingBuffer = currentDrawingBufferSize();
+  const bufferWidth = Math.max(0, drawingBuffer.width);
+  const bufferHeight = Math.max(0, drawingBuffer.height);
+  const requested = {
+    x: Math.trunc(finiteNumber(payload.x, 0)),
+    y: Math.trunc(finiteNumber(payload.y, 0)),
+    width: Math.trunc(finiteNumber(payload.width, bufferWidth)),
+    height: Math.trunc(finiteNumber(payload.height, bufferHeight)),
+    minZ: finiteNumber(payload.minZ, 0),
+    maxZ: finiteNumber(payload.maxZ, 1),
+    targetWidth: Math.trunc(finiteNumber(payload.targetWidth, payload.width ?? bufferWidth)),
+    targetHeight: Math.trunc(finiteNumber(payload.targetHeight, payload.height ?? bufferHeight)),
+  };
+  const targetWidth = Math.max(1, requested.targetWidth);
+  const targetHeight = Math.max(1, requested.targetHeight);
+  const x = Math.max(0, Math.min(targetWidth, requested.x));
+  const y = Math.max(0, Math.min(targetHeight, requested.y));
+  const width = Math.max(0, Math.min(Math.max(0, requested.width), targetWidth - x));
+  const height = Math.max(0, Math.min(Math.max(0, requested.height), targetHeight - y));
+  const minZ = clampNumber(requested.minZ, 0, 1, 0);
+  const maxZ = Math.max(minZ, clampNumber(requested.maxZ, 0, 1, 1));
+  const d3d = { x, y, width, height, minZ, maxZ };
+  const scaleX = bufferWidth / targetWidth;
+  const scaleY = bufferHeight / targetHeight;
+  const glX = Math.round(x * scaleX);
+  const glTop = Math.round(y * scaleY);
+  const glWidth = Math.round(width * scaleX);
+  const glHeight = Math.round(height * scaleY);
+  const glViewport = {
+    x: glX,
+    y: Math.max(0, bufferHeight - glTop - glHeight),
+    width: glWidth,
+    height: glHeight,
+    minZ,
+    maxZ,
+  };
+  return {
+    requested,
+    d3d,
+    gl: glViewport,
+    renderTarget: {
+      width: targetWidth,
+      height: targetHeight,
+      scaleX,
+      scaleY,
+    },
+    drawingBuffer,
+    clipped: requested.x !== x ||
+      requested.y !== y ||
+      requested.width !== width ||
+      requested.height !== height ||
+      requested.minZ !== minZ ||
+      requested.maxZ !== maxZ,
+  };
+}
+
+function viewportArraysEqual(left, right, tolerance = 0) {
+  return Array.isArray(left) &&
+    Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
+}
+
+function expectedD3D8ViewportGlBox(d3dViewport = {}, renderTarget = {}, drawingBuffer = {}) {
+  const targetWidth = Math.max(1, Math.trunc(finiteNumber(renderTarget.width, d3dViewport.width ?? 1)));
+  const targetHeight = Math.max(1, Math.trunc(finiteNumber(renderTarget.height, d3dViewport.height ?? 1)));
+  const bufferWidth = Math.max(0, Math.trunc(finiteNumber(drawingBuffer.width, 0)));
+  const bufferHeight = Math.max(0, Math.trunc(finiteNumber(drawingBuffer.height, 0)));
+  const scaleX = bufferWidth / targetWidth;
+  const scaleY = bufferHeight / targetHeight;
+  const x = Math.round(finiteNumber(d3dViewport.x, 0) * scaleX);
+  const top = Math.round(finiteNumber(d3dViewport.y, 0) * scaleY);
+  const width = Math.round(finiteNumber(d3dViewport.width, 0) * scaleX);
+  const height = Math.round(finiteNumber(d3dViewport.height, 0) * scaleY);
+  return [x, Math.max(0, bufferHeight - top - height), width, height];
+}
+
+function applyD3D8Viewport(reason = "draw") {
+  const viewport = normalizeD3D8Viewport(d3d8ViewportState ?? defaultD3D8Viewport());
+  d3d8ViewportStats.applications += 1;
+  if (!gl) {
+    const probe = {
+      ok: false,
+      source: "browser_d3d8_viewport",
+      api: harnessState.graphics?.api ?? "2d-fallback",
+      reason,
+      sets: d3d8ViewportStats.sets,
+      applications: d3d8ViewportStats.applications,
+      requested: viewport.requested,
+      d3d: viewport.d3d,
+      gl: viewport.gl,
+      renderTarget: viewport.renderTarget,
+      drawingBuffer: viewport.drawingBuffer,
+      scissorEnabled: false,
+    };
+    harnessState.graphics = {
+      ...harnessState.graphics,
+      d3d8Viewport: probe,
+    };
+    return probe;
+  }
+
+  gl.viewport(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height);
+  gl.depthRange(viewport.gl.minZ, viewport.gl.maxZ);
+
+  const actualViewport = Array.from(gl.getParameter(gl.VIEWPORT));
+  const actualScissor = Array.from(gl.getParameter(gl.SCISSOR_BOX));
+  const actualDepthRange = Array.from(gl.getParameter(gl.DEPTH_RANGE));
+  const expectedBox = [viewport.gl.x, viewport.gl.y, viewport.gl.width, viewport.gl.height];
+  const expectedDepth = [viewport.gl.minZ, viewport.gl.maxZ];
+  const scissorEnabled = gl.isEnabled(gl.SCISSOR_TEST);
+  const probe = {
+    ok: viewportArraysEqual(actualViewport, expectedBox) &&
+      viewportArraysEqual(actualScissor, expectedBox) &&
+      viewportArraysEqual(actualDepthRange, expectedDepth, 0.00001) &&
+      scissorEnabled,
+    source: "browser_d3d8_viewport",
+    api: harnessState.graphics?.api ?? "webgl2",
+    reason,
+    sets: d3d8ViewportStats.sets,
+    applications: d3d8ViewportStats.applications,
+    requested: viewport.requested,
+    d3d: viewport.d3d,
+    gl: viewport.gl,
+    renderTarget: viewport.renderTarget,
+    actual: {
+      viewport: actualViewport,
+      scissor: actualScissor,
+      depthRange: actualDepthRange,
+    },
+    drawingBuffer: viewport.drawingBuffer,
+    clipped: viewport.clipped,
+    scissorEnabled,
+  };
+  harnessState.graphics = {
+    ...harnessState.graphics,
+    d3d8Viewport: probe,
+  };
+  return probe;
+}
+
+function setD3D8Viewport(payload = {}) {
+  d3d8ViewportStats.sets += 1;
+  d3d8ViewportState = {
+    x: Number(payload.x ?? 0) >>> 0,
+    y: Number(payload.y ?? 0) >>> 0,
+    width: Number(payload.width ?? 0) >>> 0,
+    height: Number(payload.height ?? 0) >>> 0,
+    minZ: finiteNumber(payload.minZ, 0),
+    maxZ: finiteNumber(payload.maxZ, 1),
+    targetWidth: Number(payload.targetWidth ?? payload.width ?? 0) >>> 0,
+    targetHeight: Number(payload.targetHeight ?? payload.height ?? 0) >>> 0,
+  };
+  return applyD3D8Viewport("set");
 }
 
 function clampColorByte(value, fallback) {
@@ -3603,6 +3804,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture1SemanticMode = canSampleTexture1 ? d3d8TextureSemanticMode(texture1Resource) : 0;
   const appliedTexture0Combiner = textureStageCombinerInfo(renderState.textureStages[0], 0, canSampleTexture0);
   const appliedStage1Combiner = textureStageCombinerInfo(renderState.textureStages[1], 1, canSampleTexture1);
+  let appliedViewport = null;
   let appliedRenderState = null;
   let appliedTexture0Sampler = null;
   let appliedTexture1Sampler = null;
@@ -3610,6 +3812,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedShadeMode = null;
   let drawOk = false;
   syncCanvasSize();
+  appliedViewport = applyD3D8Viewport("draw");
   let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
 
   if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
@@ -3871,6 +4074,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     ok: drawOk,
     source: "browser_d3d8_draw_indexed",
     api: harnessState.graphics.api,
+    viewport: appliedViewport,
     primitiveType: Number(payload.primitiveType ?? 0),
     vertexBufferId,
     vertexByteOffset,
@@ -4194,6 +4398,7 @@ async function loadWasmModule() {
       print: (text) => recordLog("wasm stdout", { text: String(text) }),
       printErr: (text) => recordLog("wasm stderr", { text: String(text) }),
       cncPortD3D8Clear: paintD3D8Clear,
+      cncPortD3D8SetViewport: setD3D8Viewport,
       cncPortD3D8BufferCreate: createD3D8Buffer,
       cncPortD3D8BufferUpdate: updateD3D8Buffer,
       cncPortD3D8BufferRelease: releaseD3D8Buffer,
@@ -4233,6 +4438,7 @@ async function loadWasmModule() {
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
+      probeD3D8Viewport: module.cwrap("cnc_port_probe_d3d8_viewport", "string", []),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
       probeD3D8BufferHints: module.cwrap("cnc_port_probe_d3d8_buffer_hints", "string", []),
       probeD3D8TextureUpload: module.cwrap("cnc_port_probe_d3d8_texture_upload", "string", []),
@@ -6240,6 +6446,43 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "d3d8Viewport":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 viewport probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8Viewport());
+        const browserProbe = harnessState.graphics.d3d8Viewport ?? null;
+        const d3dViewport = probe.viewport ?? {};
+        const expectedGlBox = expectedD3D8ViewportGlBox(
+          d3dViewport,
+          browserProbe?.renderTarget,
+          browserProbe?.drawingBuffer,
+        );
+        const expectedDepth = [d3dViewport.minZ ?? 0, d3dViewport.maxZ ?? 1];
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_viewport"
+          && browserProbe?.reason === "set"
+          && browserProbe?.ok === true
+          && browserProbe?.d3d?.x === d3dViewport.x
+          && browserProbe?.d3d?.y === d3dViewport.y
+          && browserProbe?.d3d?.width === d3dViewport.width
+          && browserProbe?.d3d?.height === d3dViewport.height
+          && Math.abs((browserProbe?.d3d?.minZ ?? -1) - expectedDepth[0]) < 0.00001
+          && Math.abs((browserProbe?.d3d?.maxZ ?? -1) - expectedDepth[1]) < 0.00001
+          && viewportArraysEqual(browserProbe?.actual?.viewport, expectedGlBox)
+          && viewportArraysEqual(browserProbe?.actual?.scissor, expectedGlBox)
+          && viewportArraysEqual(browserProbe?.actual?.depthRange, expectedDepth, 0.00001)
+          && browserProbe?.scissorEnabled === true;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          state: snapshotState(),
+        };
+      }
     case "d3d8BufferDirty":
       {
         const wasmModule = await wasmModulePromise;
@@ -7588,6 +7831,13 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(wasmModule.probeWW3DSceneCamera());
         const screenshot = snapshotCanvas();
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const cameraViewport = probe.viewport ?? {};
+        const drawViewport = browserProbe?.viewport ?? null;
+        const expectedViewportBox = expectedD3D8ViewportGlBox(
+          cameraViewport,
+          drawViewport?.renderTarget,
+          drawViewport?.drawingBuffer,
+        );
         const ok = Boolean(probe.ok)
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.ok === true
@@ -7595,6 +7845,23 @@ async function rpc(command, payload = {}) {
           && browserProbe?.usedTransforms === true
           && browserProbe?.vertexStride === 44
           && browserProbe?.indexCount === 36
+          && (probe.calls?.setViewport ?? 0) >= 1
+          && cameraViewport.x === 0
+          && cameraViewport.y === 0
+          && cameraViewport.width > 0
+          && cameraViewport.height > 0
+          && Math.abs((cameraViewport.minZ ?? -1) - 0) < 0.00001
+          && Math.abs((cameraViewport.maxZ ?? -1) - 1) < 0.00001
+          && drawViewport?.source === "browser_d3d8_viewport"
+          && drawViewport?.reason === "draw"
+          && drawViewport?.ok === true
+          && drawViewport?.d3d?.x === cameraViewport.x
+          && drawViewport?.d3d?.y === cameraViewport.y
+          && drawViewport?.d3d?.width === cameraViewport.width
+          && drawViewport?.d3d?.height === cameraViewport.height
+          && viewportArraysEqual(drawViewport?.actual?.viewport, expectedViewportBox)
+          && viewportArraysEqual(drawViewport?.actual?.scissor, expectedViewportBox)
+          && viewportArraysEqual(drawViewport?.actual?.depthRange, [0, 1], 0.00001)
           && pixelHasColor(browserProbe.centerPixel)
           && pixelHasColor(screenshot.centerPixel);
         return {

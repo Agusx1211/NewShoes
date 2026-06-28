@@ -3863,6 +3863,113 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_clear(std::uint32_t clear_c
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_viewport()
+{
+	wasm_d3d8_reset_state();
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT set_result = E_FAIL;
+	HRESULT get_result = E_FAIL;
+	D3DVIEWPORT8 requested = {};
+	D3DVIEWPORT8 observed = {};
+
+	requested.X = 32;
+	requested.Y = 48;
+	requested.Width = 320;
+	requested.Height = 180;
+	requested.MinZ = 0.25f;
+	requested.MaxZ = 0.75f;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 800;
+		parameters.BackBufferHeight = 600;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		set_result = device->SetViewport(&requested);
+		get_result = device->GetViewport(&observed);
+		ok = ok &&
+			SUCCEEDED(set_result) &&
+			SUCCEEDED(get_result) &&
+			observed.X == requested.X &&
+			observed.Y == requested.Y &&
+			observed.Width == requested.Width &&
+			observed.Height == requested.Height &&
+			observed.MinZ == requested.MinZ &&
+			observed.MaxZ == requested.MaxZ;
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->set_viewport_calls == 1 &&
+		state->get_viewport_calls == 1 &&
+		state->viewport.X == requested.X &&
+		state->viewport.Y == requested.Y &&
+		state->viewport.Width == requested.Width &&
+		state->viewport.Height == requested.Height &&
+		state->viewport.MinZ == requested.MinZ &&
+		state->viewport.MaxZ == requested.MaxZ;
+
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	char buffer[1300];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_viewport_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"setViewport\":%ld,\"getViewport\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,"
+		"\"setViewport\":%u,\"getViewport\":%u},"
+		"\"viewport\":{\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u,"
+		"\"minZ\":%.3f,\"maxZ\":%.3f},"
+		"\"observed\":{\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u,"
+		"\"minZ\":%.3f,\"maxZ\":%.3f}}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(set_result),
+		static_cast<long>(get_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->set_viewport_calls : 0,
+		state != nullptr ? state->get_viewport_calls : 0,
+		static_cast<unsigned int>(requested.X),
+		static_cast<unsigned int>(requested.Y),
+		static_cast<unsigned int>(requested.Width),
+		static_cast<unsigned int>(requested.Height),
+		requested.MinZ,
+		requested.MaxZ,
+		static_cast<unsigned int>(observed.X),
+		static_cast<unsigned int>(observed.Y),
+		static_cast<unsigned int>(observed.Width),
+		static_cast<unsigned int>(observed.Height),
+		observed.MinZ,
+		observed.MaxZ);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_buffer_dirty()
 {
 	wasm_d3d8_reset_state();

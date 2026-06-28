@@ -273,6 +273,22 @@ function floatVectorApproximatelyEqual(left, right, tolerance = 0.00001) {
     && left.every((component, index) => Math.abs(component - right[index]) <= tolerance);
 }
 
+function expectedD3D8ViewportGlBox(d3dViewport = {}, browserViewport = {}) {
+  const renderTarget = browserViewport.renderTarget ?? {};
+  const drawingBuffer = browserViewport.drawingBuffer ?? {};
+  const targetWidth = Math.max(1, Math.trunc(Number(renderTarget.width ?? d3dViewport.width ?? 1)));
+  const targetHeight = Math.max(1, Math.trunc(Number(renderTarget.height ?? d3dViewport.height ?? 1)));
+  const bufferWidth = Math.max(0, Math.trunc(Number(drawingBuffer.width ?? 0)));
+  const bufferHeight = Math.max(0, Math.trunc(Number(drawingBuffer.height ?? 0)));
+  const scaleX = bufferWidth / targetWidth;
+  const scaleY = bufferHeight / targetHeight;
+  const x = Math.round(Number(d3dViewport.x ?? 0) * scaleX);
+  const top = Math.round(Number(d3dViewport.y ?? 0) * scaleY);
+  const width = Math.round(Number(d3dViewport.width ?? 0) * scaleX);
+  const height = Math.round(Number(d3dViewport.height ?? 0) * scaleY);
+  return [x, Math.max(0, bufferHeight - top - height), width, height];
+}
+
 function pixelLooksRed(pixel) {
   return Array.isArray(pixel)
     && pixel[0] >= 180
@@ -2679,6 +2695,39 @@ try {
 
   await page.locator("#viewport").screenshot({ path: d3d8ClearCanvasScreenshot });
 
+  const d3d8ViewportResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Viewport"));
+  const expectedD3D8ViewportBox = expectedD3D8ViewportGlBox(
+    d3d8ViewportResult.probe?.viewport,
+    d3d8ViewportResult.browserProbe,
+  );
+  if (!d3d8ViewportResult.ok
+      || d3d8ViewportResult.probe?.source !== "browser_d3d8_viewport_probe"
+      || d3d8ViewportResult.probe?.calls?.setViewport !== 1
+      || d3d8ViewportResult.probe?.calls?.getViewport !== 1
+      || d3d8ViewportResult.probe?.viewport?.x !== 32
+      || d3d8ViewportResult.probe?.viewport?.y !== 48
+      || d3d8ViewportResult.probe?.viewport?.width !== 320
+      || d3d8ViewportResult.probe?.viewport?.height !== 180
+      || Math.abs((d3d8ViewportResult.probe?.viewport?.minZ ?? 0) - 0.25) > 0.00001
+      || Math.abs((d3d8ViewportResult.probe?.viewport?.maxZ ?? 0) - 0.75) > 0.00001
+      || d3d8ViewportResult.browserProbe?.source !== "browser_d3d8_viewport"
+      || d3d8ViewportResult.browserProbe?.reason !== "set"
+      || d3d8ViewportResult.browserProbe?.d3d?.x !== 32
+      || d3d8ViewportResult.browserProbe?.d3d?.y !== 48
+      || d3d8ViewportResult.browserProbe?.d3d?.width !== 320
+      || d3d8ViewportResult.browserProbe?.d3d?.height !== 180
+      || d3d8ViewportResult.browserProbe?.renderTarget?.width !== 800
+      || d3d8ViewportResult.browserProbe?.renderTarget?.height !== 600
+      || d3d8ViewportResult.browserProbe?.gl?.x !== expectedD3D8ViewportBox[0]
+      || d3d8ViewportResult.browserProbe?.gl?.y !== expectedD3D8ViewportBox[1]
+      || d3d8ViewportResult.browserProbe?.gl?.width !== expectedD3D8ViewportBox[2]
+      || d3d8ViewportResult.browserProbe?.gl?.height !== expectedD3D8ViewportBox[3]
+      || Math.abs((d3d8ViewportResult.browserProbe?.gl?.minZ ?? 0) - 0.25) > 0.00001
+      || Math.abs((d3d8ViewportResult.browserProbe?.gl?.maxZ ?? 0) - 0.75) > 0.00001
+      || d3d8ViewportResult.browserProbe?.scissorEnabled !== true) {
+    throw new Error(`D3D8 viewport bridge probe failed: ${JSON.stringify(d3d8ViewportResult)}`);
+  }
+
   const d3d8BufferDirtyResult = await page.evaluate(() => window.CnCPort.rpc("d3d8BufferDirty"));
   if (!d3d8BufferDirtyResult.ok
       || d3d8BufferDirtyResult.probe?.source !== "browser_d3d8_buffer_dirty_probe"
@@ -3368,6 +3417,9 @@ try {
   await page.locator("#viewport").screenshot({ path: ww3dAABoxCanvasScreenshot });
 
   const sceneCameraResult = await page.evaluate(() => window.CnCPort.rpc("ww3dSceneCamera"));
+  const sceneViewport = sceneCameraResult.probe?.viewport ?? {};
+  const sceneBrowserViewport = sceneCameraResult.browserProbe?.viewport ?? {};
+  const expectedSceneViewportBox = expectedD3D8ViewportGlBox(sceneViewport, sceneBrowserViewport);
   if (!sceneCameraResult.ok
       || sceneCameraResult.probe?.source !== "ww3d_scene_camera_probe"
       || sceneCameraResult.probe?.results?.cameraCreated !== true
@@ -3378,6 +3430,13 @@ try {
       || sceneCameraResult.probe?.calls?.browserBufferCreate < 2
       || sceneCameraResult.probe?.calls?.browserBufferUpdate < 2
       || sceneCameraResult.probe?.calls?.setTransform < 3
+      || sceneCameraResult.probe?.calls?.setViewport < 1
+      || sceneViewport.x !== 0
+      || sceneViewport.y !== 0
+      || sceneViewport.width <= 0
+      || sceneViewport.height <= 0
+      || Math.abs((sceneViewport.minZ ?? -1) - 0) > 0.00001
+      || Math.abs((sceneViewport.maxZ ?? -1) - 1) > 0.00001
       || sceneCameraResult.probe?.draw?.primitiveType !== 4
       || sceneCameraResult.probe?.draw?.vertexCount !== 8
       || sceneCameraResult.probe?.draw?.primitiveCount !== 12
@@ -3394,6 +3453,20 @@ try {
       || sceneCameraResult.browserProbe?.renderState?.zWriteEnable !== 0
       || sceneCameraResult.browserProbe?.renderState?.zFunc !== 4
       || sceneCameraResult.browserProbe?.renderState?.alphaBlendEnable !== 1
+      || sceneBrowserViewport.source !== "browser_d3d8_viewport"
+      || sceneBrowserViewport.reason !== "draw"
+      || sceneBrowserViewport.d3d?.x !== sceneViewport.x
+      || sceneBrowserViewport.d3d?.y !== sceneViewport.y
+      || sceneBrowserViewport.d3d?.width !== sceneViewport.width
+      || sceneBrowserViewport.d3d?.height !== sceneViewport.height
+      || sceneBrowserViewport.renderTarget?.width <= 0
+      || sceneBrowserViewport.renderTarget?.height <= 0
+      || sceneBrowserViewport.gl?.x !== expectedSceneViewportBox[0]
+      || sceneBrowserViewport.gl?.y !== expectedSceneViewportBox[1]
+      || sceneBrowserViewport.gl?.width !== expectedSceneViewportBox[2]
+      || sceneBrowserViewport.gl?.height !== expectedSceneViewportBox[3]
+      || Math.abs((sceneBrowserViewport.gl?.minZ ?? -1) - 0) > 0.00001
+      || Math.abs((sceneBrowserViewport.gl?.maxZ ?? -1) - 1) > 0.00001
       || !pixelHasColor(sceneCameraResult.browserProbe?.centerPixel)
       || !pixelHasColor(sceneCameraResult.screenshot?.centerPixel)) {
     throw new Error(`WW3D scene/camera probe failed: ${JSON.stringify(sceneCameraResult)}`);

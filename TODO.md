@@ -464,10 +464,6 @@ shares structure and follows behind.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.
-- [ ] Route D3D8 `SetViewport` from the browser shim into WebGL2
-      `gl.viewport` / `gl.scissor` / `gl.depthRange`, then harness-test a
-      sub-rect viewport with non-default `MinZ` / `MaxZ` and the original
-      `CameraClass::Apply` full-screen path.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [ ] Generalize the browser range-backed BIG archive reader into the

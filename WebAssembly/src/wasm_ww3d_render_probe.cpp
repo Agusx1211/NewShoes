@@ -548,7 +548,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_scene_camera()
 		state->last_draw_index_format == D3DFMT_INDEX16 &&
 		(state->last_draw_transform_mask & 7u) == 7u;
 
-	char buffer[3400];
+	char buffer[3900];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_scene_camera_probe\","
 		"\"ok\":%s,"
@@ -558,8 +558,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_scene_camera()
 		"\"calls\":{\"createDevice\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"setStreamSource\":%u,\"setIndices\":%u,"
 		"\"drawIndexed\":%u,\"setTransform\":%u,\"lastTransformState\":%d,"
+		"\"setViewport\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
 		"\"browserBufferRelease\":%u,\"clear\":%u,\"present\":%u},"
+		"\"viewport\":{\"x\":%u,\"y\":%u,\"width\":%u,\"height\":%u,"
+		"\"minZ\":%.3f,\"maxZ\":%.3f},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,\"minVertexIndex\":%u,"
 		"\"vertexCount\":%u,\"primitiveCount\":%u,\"vertexStride\":%u,"
 		"\"vertexBufferId\":%u,\"vertexOffset\":%u,\"vertexBytes\":%u,"
@@ -589,11 +592,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_scene_camera()
 		state != nullptr ? state->draw_indexed_primitive_calls : 0,
 		state != nullptr ? state->set_transform_calls : 0,
 		static_cast<int>(state != nullptr ? state->last_set_transform_state : D3DTS_FORCE_DWORD),
+		state != nullptr ? state->set_viewport_calls : 0,
 		state != nullptr ? state->browser_buffer_create_calls : 0,
 		state != nullptr ? state->browser_buffer_update_calls : 0,
 		state != nullptr ? state->browser_buffer_release_calls : 0,
 		state != nullptr ? state->clear_calls : 0,
 		state != nullptr ? state->present_calls : 0,
+		static_cast<unsigned int>(state != nullptr ? state->viewport.X : 0),
+		static_cast<unsigned int>(state != nullptr ? state->viewport.Y : 0),
+		static_cast<unsigned int>(state != nullptr ? state->viewport.Width : 0),
+		static_cast<unsigned int>(state != nullptr ? state->viewport.Height : 0),
+		state != nullptr ? state->viewport.MinZ : 0.0f,
+		state != nullptr ? state->viewport.MaxZ : 0.0f,
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
 		state != nullptr ? state->last_draw_start_vertex : 0,
 		state != nullptr ? state->last_draw_min_vertex_index : 0,

@@ -30,6 +30,31 @@ EM_JS(void, wasm_d3d8_browser_clear_target, (unsigned int flags, unsigned int co
 		stencil >>> 0,
 	);
 });
+EM_JS(void, wasm_d3d8_browser_set_viewport, (
+	unsigned int x,
+	unsigned int y,
+	unsigned int width,
+	unsigned int height,
+	double min_z,
+	double max_z,
+	unsigned int target_width,
+	unsigned int target_height
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortD3D8SetViewport : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		x: x >>> 0,
+		y: y >>> 0,
+		width: width >>> 0,
+		height: height >>> 0,
+		minZ: min_z,
+		maxZ: max_z,
+		targetWidth: target_width >>> 0,
+		targetHeight: target_height >>> 0,
+	});
+});
 EM_JS(void, wasm_d3d8_browser_buffer_create, (
 	unsigned int kind,
 	unsigned int buffer_id,
@@ -436,6 +461,8 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 });
 #else
 void wasm_d3d8_browser_clear_target(unsigned int, unsigned int, double, unsigned int) {}
+void wasm_d3d8_browser_set_viewport(unsigned int, unsigned int, unsigned int, unsigned int, double, double,
+	unsigned int, unsigned int) {}
 void wasm_d3d8_browser_buffer_create(unsigned int, unsigned int, unsigned int, unsigned int) {}
 void wasm_d3d8_browser_buffer_update(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
 	unsigned int) {}
@@ -2135,6 +2162,15 @@ public:
 		g_state.back_buffer_format = m_parameters.BackBufferFormat;
 		g_state.depth_stencil_format = m_parameters.AutoDepthStencilFormat;
 		g_state.viewport = m_viewport;
+		wasm_d3d8_browser_set_viewport(
+			m_viewport.X,
+			m_viewport.Y,
+			m_viewport.Width,
+			m_viewport.Height,
+			m_viewport.MinZ,
+			m_viewport.MaxZ,
+			m_parameters.BackBufferWidth,
+			m_parameters.BackBufferHeight);
 	}
 
 	~BrowserD3DDevice()
@@ -2494,6 +2530,15 @@ public:
 		m_viewport = *viewport;
 		g_state.viewport = m_viewport;
 		++g_state.set_viewport_calls;
+		wasm_d3d8_browser_set_viewport(
+			m_viewport.X,
+			m_viewport.Y,
+			m_viewport.Width,
+			m_viewport.Height,
+			m_viewport.MinZ,
+			m_viewport.MaxZ,
+			m_parameters.BackBufferWidth,
+			m_parameters.BackBufferHeight);
 		return S_OK;
 	}
 

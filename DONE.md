@@ -1890,6 +1890,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       transform, uses identity for unset transform slots, and focused smoke
       coverage verifies `GetTransform` readback plus draw-captured view and
       texture transform matrices before the WebGL2 bridge consumes them.
+- [x] Route D3D8 `SetViewport` from the browser shim into the WebGL2 bridge.
+      The JS side now scales D3D render-target coordinates into the current
+      drawing buffer, applies `gl.viewport`, `gl.scissor`, and `gl.depthRange`,
+      reapplies that state before D3D indexed draws, and restores full-canvas
+      GL state for generic harness clears/snapshots. A focused
+      `d3d8Viewport` RPC proves a sub-rect viewport with non-default
+      `MinZ`/`MaxZ`, and the Playwright scene/camera smoke proves original
+      `CameraClass::Apply` reaches the browser viewport bridge through the real
+      WW3D render path.
 - [x] Wire original `WW3D2/dx8wrapper.cpp` D3D8 DLL loading through a
       target-scoped wasm loader hook, with smoke coverage proving
       `DX8Wrapper::Init` reaches `LoadLibrary("D3D8.DLL")`,
