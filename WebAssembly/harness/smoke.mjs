@@ -68,6 +68,10 @@ const d3d8LitMaterialSourcesCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-lit-material-sources-canvas.png",
 );
+const d3d8LitSpecularMaterialSourceCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-lit-specular-material-source-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -4017,6 +4021,84 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8LitMaterialSourcesCanvasScreenshot });
 
+  const d3d8LitSpecularMaterialSourceResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8LitSpecularMaterialSource"));
+  const litSpecularMaterialSources = d3d8LitSpecularMaterialSourceResult.probe?.materialSources ?? {};
+  const litSpecularAppliedSources =
+    d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.materialSources ?? {};
+  const expectedLitSpecularLeft =
+    d3d8LitSpecularMaterialSourceResult.probe?.expectedLeft ?? [255, 0, 0, 255];
+  const expectedLitSpecularRight =
+    d3d8LitSpecularMaterialSourceResult.probe?.expectedRight ?? [0, 255, 0, 255];
+  if (!d3d8LitSpecularMaterialSourceResult.ok
+      || d3d8LitSpecularMaterialSourceResult.probe?.source !==
+        "browser_d3d8_lit_specular_material_source_probe"
+      || d3d8LitSpecularMaterialSourceResult.probe?.calls?.setRenderState !== 13
+      || d3d8LitSpecularMaterialSourceResult.probe?.calls?.setMaterial !== 1
+      || d3d8LitSpecularMaterialSourceResult.probe?.calls?.setLight !== 1
+      || d3d8LitSpecularMaterialSourceResult.probe?.calls?.lightEnable !== 1
+      || d3d8LitSpecularMaterialSourceResult.probe?.calls?.drawIndexed !== 1
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.ambient !==
+        d3d8LitSpecularMaterialSourceResult.probe?.sceneAmbient
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.colorVertex !==
+        litSpecularMaterialSources.colorVertex
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.diffuseMaterialSource !==
+        litSpecularMaterialSources.diffuse
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.specularMaterialSource !==
+        litSpecularMaterialSources.specular
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.ambientMaterialSource !==
+        litSpecularMaterialSources.ambient
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.emissiveMaterialSource !==
+        litSpecularMaterialSources.emissive
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.renderState?.specularEnable !== 1
+      || litSpecularAppliedSources.colorVertex?.enabled !== true
+      || litSpecularAppliedSources.diffuse?.name !== "material"
+      || litSpecularAppliedSources.specular?.name !== "color1"
+      || litSpecularAppliedSources.ambient?.name !== "material"
+      || litSpecularAppliedSources.emissive?.name !== "material"
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.specular
+        ?.enabled !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting?.specular
+        ?.sourceName !== "color1"
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.fixedFunctionLightSupported !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.fixedFunctionLightCount !== 1
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightSupported !== true
+      || d3d8LitSpecularMaterialSourceResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightCount !== 1
+      || d3d8LitSpecularMaterialSourceResult.sourceValueOk !== true
+      || d3d8LitSpecularMaterialSourceResult.appliedSourcesOk !== true
+      || d3d8LitSpecularMaterialSourceResult.materialOk !== true
+      || d3d8LitSpecularMaterialSourceResult.lightOk !== true
+      || d3d8LitSpecularMaterialSourceResult.selectedLightOk !== true
+      || d3d8LitSpecularMaterialSourceResult.appliedSpecularOk !== true
+      || d3d8LitSpecularMaterialSourceResult.litSpecularSourceShapeOk !== true
+      || d3d8LitSpecularMaterialSourceResult.leftPixelOk !== true
+      || d3d8LitSpecularMaterialSourceResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8LitSpecularMaterialSourceResult.litSpecularMaterialSourcePixels?.left,
+        expectedLitSpecularLeft,
+        4,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8LitSpecularMaterialSourceResult.litSpecularMaterialSourcePixels?.right,
+        expectedLitSpecularRight,
+        4,
+      )) {
+    throw new Error(
+      `D3D8 lit specular material-source probe failed: ${JSON.stringify(d3d8LitSpecularMaterialSourceResult)}`,
+    );
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8LitSpecularMaterialSourceCanvasScreenshot });
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");
@@ -5138,6 +5220,7 @@ try {
       d3d8SpotLightCanvasScreenshot,
       d3d8SpotFalloffCanvasScreenshot,
       d3d8LitMaterialSourcesCanvasScreenshot,
+      d3d8LitSpecularMaterialSourceCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

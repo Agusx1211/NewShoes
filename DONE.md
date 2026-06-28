@@ -2382,8 +2382,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       directional light. The JS bridge exposes `d3d8LitMaterialSources`,
       verifies captured and applied material-source descriptors, light/material
       state, and sampled red/green pixels, with Playwright saving
-      `harness-smoke-d3d8-lit-material-sources-canvas.png`. Emissive `COLOR1`,
-      `COLOR2`, and specular-source variants remain open.
+      `harness-smoke-d3d8-lit-material-sources-canvas.png`. Emissive `COLOR1`
+      and `COLOR2` variants remained open.
+- [x] Add a focused lit fixed-function D3D8 specular material-source proof.
+      The native/browser probe
+      `cnc_port_probe_d3d8_lit_specular_material_source` sets
+      `COLORVERTEX=TRUE`, keeps diffuse/ambient/emissive material sources
+      black, enables specular, and sources `D3DRS_SPECULARMATERIALSOURCE`
+      from `D3DMCS_COLOR1` so vertex diffuse colors are the only visible
+      contribution. The JS bridge exposes `d3d8LitSpecularMaterialSource`,
+      verifies captured/applied material-source descriptors plus specular
+      light/material state, and Playwright verifies red/green sampled pixels
+      with `harness-smoke-d3d8-lit-specular-material-source-canvas.png`.
+      This is D3D8 parity coverage; original WW3D `VertexMaterialClass::Apply`
+      actively drives diffuse/ambient/emissive sources but does not set
+      `D3DRS_SPECULARMATERIALSOURCE`.
 - [x] Add a focused fixed-function D3D8 point-light attenuation path. The
       WebGL2 draw bridge now selects enabled point, spot, and directional
       lights into the fixed-function shader uniform set, preserves each
