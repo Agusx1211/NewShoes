@@ -227,6 +227,7 @@ const harnessState = {
   dataSummary: null,
   originalEngineStartup: null,
   originalWndProcInput: null,
+  originalKeyboardInput: null,
   mountedArchives: [],
   logs: [],
 };
@@ -3225,6 +3226,7 @@ async function loadWasmModule() {
       ),
       pumpOriginalWndProcInput: module.cwrap("cnc_port_pump_original_wndproc_input", "string", []),
       probeOriginalWndProcInput: module.cwrap("cnc_port_probe_original_wndproc_input", "string", []),
+      probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
       probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
@@ -3283,6 +3285,7 @@ function snapshotState() {
     dataSummary: harnessState.dataSummary,
     originalEngineStartup: harnessState.originalEngineStartup,
     originalWndProcInput: harnessState.originalWndProcInput,
+    originalKeyboardInput: harnessState.originalKeyboardInput,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
@@ -3431,14 +3434,38 @@ function virtualKeyFromEvent(event) {
     ControlRight: 0x11,
     AltLeft: 0x12,
     AltRight: 0x12,
+    CapsLock: 0x14,
     Escape: 0x1b,
     Space: 0x20,
+    PageUp: 0x21,
+    PageDown: 0x22,
+    End: 0x23,
+    Home: 0x24,
     Insert: 0x2d,
     Delete: 0x2e,
     ArrowLeft: 0x25,
     ArrowUp: 0x26,
     ArrowRight: 0x27,
     ArrowDown: 0x28,
+    Numpad0: 0x60,
+    Numpad1: 0x61,
+    Numpad2: 0x62,
+    Numpad3: 0x63,
+    Numpad4: 0x64,
+    Numpad5: 0x65,
+    Numpad6: 0x66,
+    Numpad7: 0x67,
+    Numpad8: 0x68,
+    Numpad9: 0x69,
+    NumpadMultiply: 0x6a,
+    NumpadAdd: 0x6b,
+    NumpadSubtract: 0x6d,
+    NumpadDecimal: 0x6e,
+    NumpadDivide: 0x6f,
+    F1: 0x70,
+    F2: 0x71,
+    F3: 0x72,
+    F4: 0x73,
     F5: 0x74,
     F6: 0x75,
     F7: 0x76,
@@ -3447,6 +3474,17 @@ function virtualKeyFromEvent(event) {
     F10: 0x79,
     F11: 0x7a,
     F12: 0x7b,
+    Semicolon: 0xba,
+    Equal: 0xbb,
+    Comma: 0xbc,
+    Minus: 0xbd,
+    Period: 0xbe,
+    Slash: 0xbf,
+    Backquote: 0xc0,
+    BracketLeft: 0xdb,
+    Backslash: 0xdc,
+    BracketRight: 0xdd,
+    Quote: 0xde,
   };
   if (Object.prototype.hasOwnProperty.call(namedKeys, code)) {
     return namedKeys[code];
@@ -3798,6 +3836,19 @@ async function probeOriginalWndProcInput() {
 
   const probe = parseModuleState(wasmModule.probeOriginalWndProcInput());
   harnessState.originalWndProcInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function probeOriginalKeyboardInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalKeyboardInput());
+  harnessState.originalKeyboardInput = probe;
   applyModuleState(parseModuleState(wasmModule.state()));
   harnessState.wasm = "loaded";
   return probe;
@@ -4458,6 +4509,14 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalWndProcInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original WndProc input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalKeyboardInputProbe":
+      {
+        const probe = await probeOriginalKeyboardInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard input cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }
