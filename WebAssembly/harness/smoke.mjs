@@ -15,6 +15,10 @@ const d3d8TwoTextureAlphaCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-two-texture-alpha-canvas.png",
 );
+const d3d8Stage1TextureTransformCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-stage1-texture-transform-canvas.png",
+);
 const d3d8ClipPlaneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-d3d8-clip-plane-canvas.png");
 const d3d8DirectionalLightCanvasScreenshot = resolve(
   screenshotDir,
@@ -3255,6 +3259,61 @@ try {
     throw new Error(`D3D8 texture transform probe failed: ${JSON.stringify(d3d8TextureTransformResult)}`);
   }
 
+  const d3d8Stage1TextureTransformResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8Stage1TextureTransform"));
+  if (!d3d8Stage1TextureTransformResult.ok
+      || d3d8Stage1TextureTransformResult.probe?.source !==
+        "browser_d3d8_stage1_texture_transform_probe"
+      || d3d8Stage1TextureTransformResult.probe?.calls?.createTexture !== 2
+      || d3d8Stage1TextureTransformResult.probe?.calls?.browserTextureUpdate !== 2
+      || d3d8Stage1TextureTransformResult.probe?.calls?.browserTextureBind !== 2
+      || d3d8Stage1TextureTransformResult.probe?.calls?.setTexture !== 2
+      || d3d8Stage1TextureTransformResult.probe?.calls?.setTransform !== 1
+      || d3d8Stage1TextureTransformResult.probe?.calls?.setTextureStageState !== 22
+      || d3d8Stage1TextureTransformResult.probe?.calls?.drawIndexed !== 1
+      || d3d8Stage1TextureTransformResult.probe?.transform?.mask !== 2
+      || d3d8Stage1TextureTransformResult.probe?.transform?.expectedMask !== 2
+      || Math.abs(
+        (d3d8Stage1TextureTransformResult.probe?.transform?.translationU ?? 0) -
+        (d3d8Stage1TextureTransformResult.probe?.transform?.expectedTranslationU ?? 0)) > 0.0001
+      || d3d8Stage1TextureTransformResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || d3d8Stage1TextureTransformResult.browserProbe?.usedPersistentBuffers !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.sampled !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.id !==
+        d3d8Stage1TextureTransformResult.probe?.textures?.stage0?.id
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.texCoordSet !== 0
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.texCoordOffset !== 28
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.textureTransformFlags !== 0
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.textureTransformModeName !== "disable"
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture0?.textureTransformApplied !== false
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.sampled !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.id !==
+        d3d8Stage1TextureTransformResult.probe?.textures?.stage1?.id
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.texCoordSet !== 1
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.texCoordOffset !== 36
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.textureTransformFlags !== 2
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.textureTransformModeName !== "count2"
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.textureTransformApplied !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.combiner?.colorOp !== 2
+      || d3d8Stage1TextureTransformResult.browserProbe?.texture1?.combiner?.colorArg1 !== 2
+      || d3d8Stage1TextureTransformResult.browserProbe?.stage1Combiner?.textureAvailable !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.stage1Combiner?.supported !== true
+      || d3d8Stage1TextureTransformResult.centerPixelOk !== true
+      || d3d8Stage1TextureTransformResult.texture1TranslationOk !== true
+      || d3d8Stage1TextureTransformResult.browserProbe?.centerPixel?.join(",") !== "0,0,255,255"
+      || d3d8Stage1TextureTransformResult.textureDelta?.creates !== 2
+      || d3d8Stage1TextureTransformResult.textureDelta?.updates !== 2
+      || d3d8Stage1TextureTransformResult.textureDelta?.binds !== 2
+      || d3d8Stage1TextureTransformResult.textureDelta?.releaseUnbinds !== 2
+      || d3d8Stage1TextureTransformResult.textureDelta?.releases !== 2
+      || d3d8Stage1TextureTransformResult.textureDelta?.samplerApplications !== 2
+      || d3d8Stage1TextureTransformResult.textureProbe?.live !== 0) {
+    throw new Error(
+      `D3D8 stage-1 texture transform probe failed: ${JSON.stringify(d3d8Stage1TextureTransformResult)}`,
+    );
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8Stage1TextureTransformCanvasScreenshot });
+
   const d3d8StencilStateResult = await page.evaluate(() => window.CnCPort.rpc("d3d8StencilState"));
   if (!d3d8StencilStateResult.ok
       || d3d8StencilStateResult.probe?.source !== "browser_d3d8_stencil_state_probe"
@@ -5474,6 +5533,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       d3d8TwoTextureAlphaCanvasScreenshot,
+      d3d8Stage1TextureTransformCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,
       d3d8MultiDirectionalLightCanvasScreenshot,

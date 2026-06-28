@@ -2139,8 +2139,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       disabled and translated-U cases against a red/blue texture, verifying
       distinct center pixels, transform metadata, and `D3DTTFF_COUNT2` coverage
       through Playwright. COUNT1/3/4, projected coordinates, camera-space
-      generated coordinates, non-stage-0 transforms, and generalized FVF
-      declaration decoding remain open.
+      generated coordinates, and generalized FVF declaration decoding remain
+      open.
+- [x] Apply captured stage-1 `D3DTS_TEXTURE1` transform matrices for the
+      current WebGL2 two-texture draw bridge. A browser-driven D3D8 probe now
+      binds red stage-0 and red/blue stage-1 textures, enables
+      `D3DTSS_TEXTURETRANSFORMFLAGS=D3DTTFF_COUNT2` only on stage 1, sets a
+      `D3DTS_TEXTURE1` U translation, and verifies the transformed UV1 sample
+      turns the center pixel blue while texture 0 remains untransformed.
+      Playwright captures
+      `harness-smoke-d3d8-stage1-texture-transform-canvas.png`.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8

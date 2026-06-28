@@ -4944,6 +4944,7 @@ async function loadWasmModule() {
       probeD3D8TextureCombiner: module.cwrap("cnc_port_probe_d3d8_texture_combiner", "string", ["number"]),
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
+      probeD3D8Stage1TextureTransform: module.cwrap("cnc_port_probe_d3d8_stage1_texture_transform", "string", []),
       probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
       probeD3D8FogState: module.cwrap("cnc_port_probe_d3d8_fog_state", "string", []),
       probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
@@ -7754,6 +7755,103 @@ async function rpc(command, payload = {}) {
           ok: cases.every((entry) => entry.ok),
           command,
           cases,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8Stage1TextureTransform":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 stage-1 texture transform probe cannot run" };
+        }
+        const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeD3D8Stage1TextureTransform());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureProbe = harnessState.graphics.d3d8Textures ?? null;
+        const textureDelta = {
+          creates: (textureProbe?.creates ?? 0) - (beforeTextures.creates ?? 0),
+          updates: (textureProbe?.updates ?? 0) - (beforeTextures.updates ?? 0),
+          binds: (textureProbe?.binds ?? 0) - (beforeTextures.binds ?? 0),
+          releaseUnbinds: (textureProbe?.releaseUnbinds ?? 0) - (beforeTextures.releaseUnbinds ?? 0),
+          releases: (textureProbe?.releases ?? 0) - (beforeTextures.releases ?? 0),
+          samplerApplications: (textureProbe?.samplerApplications ?? 0) -
+            (beforeTextures.samplerApplications ?? 0),
+        };
+        const expectedCenter = probe.expectedCenter ?? [0, 0, 255, 255];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const texture0 = browserProbe?.texture0 ?? {};
+        const texture1 = browserProbe?.texture1 ?? {};
+        const texture1Matrix = Array.isArray(texture1.textureTransformMatrix)
+          ? texture1.textureTransformMatrix
+          : [];
+        const texture1TranslationOk = Math.abs(
+          Number(texture1Matrix[12] ?? 0) - Number(probe.transform?.expectedTranslationU ?? 0),
+        ) <= 0.0001;
+        const ok = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.createTexture === 2
+          && probe.calls?.browserTextureUpdate === 2
+          && probe.calls?.browserTextureBind === 2
+          && probe.calls?.setTexture === 2
+          && probe.calls?.setTransform === 1
+          && probe.calls?.setTextureStageState === 22
+          && probe.calls?.drawIndexed === 1
+          && probe.transform?.mask === probe.transform?.expectedMask
+          && probe.transform?.expectedMask === 2
+          && Math.abs((probe.transform?.translationU ?? 0) -
+            (probe.transform?.expectedTranslationU ?? 0)) <= 0.0001
+          && browserProbe?.renderState?.textureStages?.[0]?.textureTransformFlags === D3DTTFF_DISABLE
+          && browserProbe?.renderState?.textureStages?.[1]?.textureTransformFlags === D3DTTFF_COUNT2
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_SELECTARG1
+          && browserProbe?.renderState?.textureStages?.[1]?.colorArg1 === D3DTA_TEXTURE
+          && texture0.id === probe.textures?.stage0?.id
+          && texture0.ready === true
+          && texture0.sampled === true
+          && texture0.texCoordIndex === probe.texcoord?.stage0?.index
+          && texture0.texCoordModeName === "passthru"
+          && texture0.texCoordSet === probe.texcoord?.stage0?.set
+          && texture0.texCoordOffset === probe.texcoord?.stage0?.expectedOffset
+          && texture0.textureTransformFlags === probe.texcoord?.stage0?.textureTransformFlags
+          && texture0.textureTransformModeName === "disable"
+          && texture0.textureTransformSupported === true
+          && texture0.textureTransformApplied === false
+          && texture0.texCoordSupported === true
+          && texture1.id === probe.textures?.stage1?.id
+          && texture1.ready === true
+          && texture1.sampled === true
+          && texture1.texCoordIndex === probe.texcoord?.stage1?.index
+          && texture1.texCoordModeName === "passthru"
+          && texture1.texCoordSet === probe.texcoord?.stage1?.set
+          && texture1.texCoordOffset === probe.texcoord?.stage1?.expectedOffset
+          && texture1.textureTransformFlags === probe.texcoord?.stage1?.textureTransformFlags
+          && texture1.textureTransformModeName === probe.transform?.modeName
+          && texture1.textureTransformSupported === true
+          && texture1.textureTransformApplied === true
+          && texture1.texCoordSupported === true
+          && texture1TranslationOk
+          && browserProbe?.stage1Combiner?.textureAvailable === true
+          && browserProbe?.stage1Combiner?.supported === true
+          && centerPixelOk
+          && textureDelta.creates === 2
+          && textureDelta.updates === 2
+          && textureDelta.binds === 2
+          && textureDelta.releaseUnbinds === 2
+          && textureDelta.releases === 2
+          && textureDelta.samplerApplications === 2
+          && textureProbe?.live === 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe,
+          centerPixelOk,
+          texture1TranslationOk,
           state: snapshotState(),
         };
       }
