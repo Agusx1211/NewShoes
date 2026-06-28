@@ -81,7 +81,7 @@ CommandLineProbeResult g_command_line_probe;
 CDManagerProbeResult g_cd_manager_probe;
 FileSystemProbeResult g_file_system_probe;
 GameNetworkProbeResult g_game_network_probe;
-std::string g_state_json;
+char g_state_json[256000] = {};
 std::string g_input_probe_json;
 std::string g_d3d8_probe_json;
 
@@ -1329,14 +1329,91 @@ const char *original_engine_startup_message()
 	return "Original startup data is present; real browser GameEngine device factories must be implemented before init can run.";
 }
 
-std::string build_original_engine_startup_json()
+const char *json_bool(bool value)
 {
-	char buffer[22000];
+	return value ? "true" : "false";
+}
+
+const char *build_device_factory_frontier_json()
+{
+	static char buffer[9000];
+	const bool setup_ready =
+		g_global_data_probe.ok &&
+		g_command_line_probe.ok &&
+		g_cd_manager_probe.ok;
+	const bool file_system_ready =
+		g_file_system_probe.local_ok &&
+		g_file_system_probe.archive_ok;
+	const bool startup_files_ready = original_engine_startup_files_ready();
+	const char *next_required = "startupAssets";
+	if (startup_assets_ready() && !startup_files_ready) {
+		next_required = "startupFiles";
+	} else if (startup_assets_ready() && startup_files_ready && !setup_ready) {
+		next_required = "originalSetupResidency";
+	} else if (startup_assets_ready() && startup_files_ready && setup_ready) {
+		next_required = "CreateGameEngine";
+	}
+
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"GameEngine.cpp::init + WinMain.cpp::CreateGameEngine + Win32GameEngine.h\","
+		"\"probeOnly\":true,\"ready\":false,"
+		"\"nextRequired\":\"%s\","
+		"\"firstUnownedInitFactory\":\"createAudioManager\","
+		"\"firstUnownedInitLine\":434,"
+		"\"sourceFiles\":{\"gameEngineInit\":\"GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp\","
+		"\"winMainFactory\":\"GeneralsMD/Code/Main/WinMain.cpp\","
+		"\"win32Factories\":\"GeneralsMD/Code/GameEngineDevice/Include/Win32Device/Common/Win32GameEngine.h\"},"
+		"\"factoryMappings\":{\"CreateGameEngine\":\"Win32GameEngine\","
+		"\"createLocalFileSystem\":\"Win32LocalFileSystem\","
+		"\"createArchiveFileSystem\":\"Win32BIGFileSystem\","
+		"\"createAudioManager\":\"MilesAudioManager\","
+		"\"createFunctionLexicon\":\"W3DFunctionLexicon\","
+		"\"createModuleFactory\":\"W3DModuleFactory\","
+		"\"createParticleSystemManager\":\"W3DParticleSystemManager\","
+		"\"createThingFactory\":\"W3DThingFactory\","
+		"\"createGameClient\":\"W3DGameClient\","
+		"\"createGameLogic\":\"W3DGameLogic\","
+		"\"createRadar\":\"W3DRadar\","
+		"\"createWebBrowser\":\"CComObject<W3DWebBrowser>\"},"
+		"\"entries\":["
+		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_engine\"},"
+		"{\"order\":2,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":3,\"line\":342,\"subsystem\":\"TheLocalFileSystem\",\"factory\":\"createLocalFileSystem\",\"originalConcrete\":\"Win32LocalFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":4,\"line\":353,\"subsystem\":\"TheArchiveFileSystem\",\"factory\":\"createArchiveFileSystem\",\"originalConcrete\":\"Win32BIGFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":5,\"line\":363,\"subsystem\":\"StartupData\",\"factory\":\"default_and_shipped_ini_loads\",\"originalConcrete\":\"Original INI stores\",\"ready\":%s,\"called\":true,\"status\":\"blocked_until_base_ini_archive_ready\"},"
+		"{\"order\":6,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":7,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
+		"{\"order\":8,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":9,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":10,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
+		"{\"order\":11,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
+		"{\"order\":12,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
+		"{\"order\":13,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
+		"{\"order\":14,\"line\":510,\"subsystem\":\"TheRadar\",\"factory\":\"createRadar\",\"originalConcrete\":\"W3DRadar\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_radar_renderer\"},"
+		"{\"order\":15,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"}"
+		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"setupReady\":%s}",
+		next_required,
+		json_bool(g_file_system_probe.local_ok),
+		json_bool(g_file_system_probe.local_ok),
+		json_bool(g_file_system_probe.archive_ok),
+		json_bool(startup_data_probes_ready() && startup_files_ready),
+		json_bool(g_cd_manager_probe.ok),
+		json_bool(file_system_ready),
+		json_bool(startup_files_ready),
+		json_bool(setup_ready));
+
+	return buffer;
+}
+
+const char *build_original_engine_startup_json()
+{
+	static char buffer[36000];
 	const std::string status_json = json_escape(original_engine_startup_status());
 	const std::string message_json = json_escape(original_engine_startup_message());
 	const std::string missing_files_json =
 		build_missing_original_engine_startup_files_json();
 	const std::string base_ini_startup_json = build_base_ini_startup_files_json();
+	const char *device_factory_frontier_json = build_device_factory_frontier_json();
 
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"ok\":false,\"source\":\"GameEngine/Common/GameEngine.cpp::init\","
@@ -1371,7 +1448,8 @@ std::string build_original_engine_startup_json()
 		"\"gameClient\":false,\"moduleFactory\":false,"
 		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
 		"\"webBrowser\":false,\"particleSystemManager\":false,"
-		"\"audioManager\":false,\"display\":false,\"input\":false}}",
+		"\"audioManager\":false,\"display\":false,\"input\":false},"
+		"\"deviceFactoryFrontier\":%s}",
 		status_json.c_str(),
 		message_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
@@ -1424,7 +1502,8 @@ std::string build_original_engine_startup_json()
 		g_cd_manager_probe.ok ? "true" : "false",
 		g_cd_manager_probe.ok ? "true" : "false",
 		g_file_system_probe.local_ok ? "true" : "false",
-		g_file_system_probe.archive_ok ? "true" : "false");
+		g_file_system_probe.archive_ok ? "true" : "false",
+		device_factory_frontier_json);
 
 	return buffer;
 }
@@ -2723,7 +2802,6 @@ void main_loop_tick()
 
 const char *write_state_json()
 {
-	char buffer[256000];
 	const std::string archive_path_json = json_escape(g_archive_probe.archive_path);
 	const std::string armor_source_json = json_escape(g_archive_probe.armor_source);
 	const std::string damage_fx_probe_json = build_damage_fx_probe_json();
@@ -2884,7 +2962,7 @@ const char *write_state_json()
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
 	const std::string data_summary_json = build_data_summary_json();
-	const std::string original_engine_startup_json = build_original_engine_startup_json();
+	const char *original_engine_startup_json = build_original_engine_startup_json();
 	const std::string global_data_source_json = json_escape(g_global_data_probe.source);
 	const std::string global_data_user_data_path_json =
 		json_escape(g_global_data_probe.user_data_path);
@@ -2902,7 +2980,7 @@ const char *write_state_json()
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
 	const std::string common_debug_log_last_message_json =
 		json_escape(g_common_debug_log_last_message);
-	std::snprintf(buffer, sizeof(buffer),
+	std::snprintf(g_state_json, sizeof(g_state_json),
 		"{\"booted\":%s,\"frame\":%u,\"module\":\"wasm-port-bootstrap\","
 		"\"mainLoop\":{\"running\":%s,\"fps\":%d,\"ticks\":%u},"
 		"\"timing\":{\"source\":\"emscripten_get_now\",\"ok\":%s,"
@@ -3649,7 +3727,7 @@ const char *write_state_json()
 		startup_game_text_ready() ? "true" : "false",
 		startup_map_cache_ready() ? "true" : "false",
 		data_summary_json.c_str(),
-		original_engine_startup_json.c_str(),
+		original_engine_startup_json,
 		ORIGINAL_CORE_PROBE_SEED,
 		g_original_logic_random_value,
 		g_original_logic_seed_crc,
@@ -3714,8 +3792,7 @@ const char *write_state_json()
 		g_common_debug_log_flags,
 		(g_common_debug_log_flags & DEBUG_FLAG_LOG_TO_CONSOLE) != 0 ? "true" : "false",
 		common_debug_log_last_message_json.c_str());
-	g_state_json = buffer;
-	return g_state_json.c_str();
+	return g_state_json;
 }
 }
 

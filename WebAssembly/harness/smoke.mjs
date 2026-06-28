@@ -618,6 +618,30 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
     throw new Error(`${label} original engine startup state mismatch: ${JSON.stringify(startup)}`);
   }
 
+  const frontier = startup.deviceFactoryFrontier;
+  const entries = frontier?.entries ?? [];
+  const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
+  if (!frontier
+      || frontier.probeOnly !== true
+      || frontier.ready !== false
+      || frontier.nextRequired !== "startupAssets"
+      || frontier.firstUnownedInitFactory !== "createAudioManager"
+      || frontier.firstUnownedInitLine !== 434
+      || frontier.fileSystemReady !== false
+      || frontier.startupFilesReady !== false
+      || frontier.setupReady !== true
+      || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
+      || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
+      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("createLocalFileSystem")?.line !== 342
+      || byFactory.get("createArchiveFileSystem")?.line !== 353
+      || byFactory.get("createAudioManager")?.line !== 434
+      || byFactory.get("createAudioManager")?.ready !== false
+      || byFactory.get("createWebBrowser")?.called !== false) {
+    throw new Error(`${label} startup device frontier mismatch: ${JSON.stringify(frontier)}`);
+  }
+
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
       || startup.originalSetup?.probeOnly !== true

@@ -1573,6 +1573,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       diagnostic that distinguishes the current Zero Hour-only archive preflight
       from the base Generals `INI.big` startup/default INI files still required
       by original `GameEngine.cpp`, without marking engine startup ready.
+- [x] Expose a harness-verified `originalEngineStartup.deviceFactoryFrontier`
+      contract sourced from the original startup order: `CreateGameEngine`
+      maps to `Win32GameEngine`, the current first unowned init factory is
+      `createAudioManager` at `GameEngine.cpp:434`, and later W3D/audio/client/
+      logic/radar factories remain explicit probe-only blockers until browser
+      replacements exist.
+- [x] Add `npm run verify:gameengine-startup-order`, a pure Node source
+      verifier that checks the original `GameEngine.cpp` init order,
+      `WinMain.cpp` `CreateGameEngine` mapping, and inline `Win32GameEngine`
+      factory mappings against the line numbers and concrete classes exposed by
+      the startup frontier.
 ---
 
 ## M3 — File / data subsystem (real data)

@@ -1399,6 +1399,41 @@ function assertOriginalEngineStartup(
     throw new Error(`${context} original engine startup header mismatch: ${JSON.stringify(startup)}`);
   }
 
+  const expectedNextRequired = expectedStatus === "browser_device_layer_pending"
+    ? "CreateGameEngine"
+    : expectedStatus === "missing_startup_files"
+      ? "startupFiles"
+      : "startupAssets";
+  const frontier = startup.deviceFactoryFrontier;
+  const entries = frontier?.entries ?? [];
+  const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
+  if (!frontier
+      || frontier.probeOnly !== true
+      || frontier.ready !== false
+      || frontier.nextRequired !== expectedNextRequired
+      || frontier.firstUnownedInitFactory !== "createAudioManager"
+      || frontier.firstUnownedInitLine !== 434
+      || frontier.fileSystemReady !== (expectedFileSystemReadiness.local && expectedFileSystemReadiness.archive)
+      || frontier.startupFilesReady !== (expectedStatus === "browser_device_layer_pending")
+      || frontier.setupReady !== expectedOriginalSetupReady
+      || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
+      || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
+      || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
+      || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
+      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("createLocalFileSystem")?.line !== 342
+      || byFactory.get("createArchiveFileSystem")?.line !== 353
+      || byFactory.get("createAudioManager")?.line !== 434
+      || byFactory.get("createAudioManager")?.ready !== false
+      || byFactory.get("createThingFactory")?.line !== 482
+      || byFactory.get("createGameClient")?.line !== 493
+      || byFactory.get("createGameLogic")?.line !== 505
+      || byFactory.get("createRadar")?.line !== 510
+      || byFactory.get("createWebBrowser")?.called !== false) {
+    throw new Error(`${context} device factory frontier mismatch: ${JSON.stringify(frontier)}`);
+  }
+
   if (startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.createGameEngine !== false
       || startup.browserDeviceLayer?.browserGameEngine !== false
