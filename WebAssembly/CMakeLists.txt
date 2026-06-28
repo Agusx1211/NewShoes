@@ -5064,7 +5064,7 @@ set_target_properties(gamewindow-input-smoke PROPERTIES
 )
 
 target_link_libraries(gamewindow-input-smoke PRIVATE
-  zh_gameclient_utility
+  zh_win32_mouse
 )
 
 target_compile_options(gamewindow-input-smoke PRIVATE

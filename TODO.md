@@ -3117,6 +3117,12 @@ shares structure and follows behind.
             `GameWindowManager::winProcessMouseEvent`, verifies a concrete
             `GameWindow` receives `GWM_LEFT_DOWN`, and proves the handled raw
             input is destroyed instead of reaching `TheCommandList`.
+      - [x] Extend the focused original GUI input proof through original
+            `Win32Mouse` / `Mouse::createStreamMessages()` output so
+            Mouse-created `MSG_RAW_MOUSE_POSITION` and
+            `MSG_RAW_MOUSE_LEFT_BUTTON_DOWN` are consumed by
+            `WindowTranslator` / `GameWindowManager` instead of reaching
+            `TheCommandList`.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).
