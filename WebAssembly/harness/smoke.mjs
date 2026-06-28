@@ -32,6 +32,10 @@ const ww3dDisplayLineGradientCanvasScreenshot = resolve(
   "harness-smoke-ww3d-display-line-gradient-canvas.png",
 );
 const ww3dDisplayOpenRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-openrect-canvas.png");
+const ww3dDisplayRectClockCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-rectclock-canvas.png",
+);
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
@@ -1922,6 +1926,46 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayOpenRectCanvasScreenshot });
 
+  const displayRectClockResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayRectClock"));
+  if (!displayRectClockResult.ok
+      || displayRectClockResult.probe?.source !== "ww3d_display_rectclock_probe"
+      || displayRectClockResult.probe?.results?.displayAllocated !== true
+      || displayRectClockResult.probe?.results?.displaySetup !== true
+      || displayRectClockResult.probe?.results?.drawRectClockCalled !== true
+      || displayRectClockResult.probe?.display?.path !== "W3DDisplay::drawRectClock"
+      || displayRectClockResult.probe?.display?.clock?.percent !== 88
+      || displayRectClockResult.probe?.calls?.drawIndexed < 1
+      || displayRectClockResult.probe?.calls?.browserBufferCreate < 2
+      || displayRectClockResult.probe?.calls?.browserBufferUpdate < 2
+      || displayRectClockResult.probe?.draw?.primitiveType !== 4
+      || displayRectClockResult.probe?.draw?.vertexCount !== 14
+      || displayRectClockResult.probe?.draw?.primitiveCount !== 6
+      || displayRectClockResult.probe?.draw?.vertexStride !== 44
+      || displayRectClockResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 3
+      || displayRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayRectClockResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayRectClockResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || displayRectClockResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayRectClockResult.browserProbe?.ok !== true
+      || displayRectClockResult.browserProbe?.usedPersistentBuffers !== true
+      || displayRectClockResult.browserProbe?.usedTransforms !== true
+      || displayRectClockResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayRectClockResult.browserProbe?.vertexCount !== 14
+      || displayRectClockResult.browserProbe?.vertexStride !== 44
+      || displayRectClockResult.browserProbe?.indexCount !== 18
+      || displayRectClockResult.browserProbe?.texture0?.sampled === true
+      || !pixelLooksGreen(displayRectClockResult.clockPixels?.rightHalf)
+      || !pixelLooksGreen(displayRectClockResult.clockPixels?.bottomLeft)
+      || !pixelLooksGreen(displayRectClockResult.clockPixels?.topLeftTriangle)
+      || !pixelLooksBlack(displayRectClockResult.clockPixels?.topLeftGap)
+      || !pixelLooksBlack(displayRectClockResult.clockPixels?.outsideLeft)
+      || !pixelLooksBlack(displayRectClockResult.clockPixels?.outsideBottom)) {
+    throw new Error(`WW3DDisplay rect clock probe failed: ${JSON.stringify(displayRectClockResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayRectClockCanvasScreenshot });
+
   const texturedMeshResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTexturedMesh"));
   if (!texturedMeshResult.ok
       || texturedMeshResult.probe?.source !== "ww3d_textured_mesh_probe"
@@ -2120,6 +2164,7 @@ try {
       ww3dDisplayLineCanvasScreenshot,
       ww3dDisplayLineGradientCanvasScreenshot,
       ww3dDisplayOpenRectCanvasScreenshot,
+      ww3dDisplayRectClockCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,

@@ -2679,6 +2679,12 @@ shares structure and follows behind.
       verified by `harness-smoke-ww3d-display-openrect-canvas.png`, disabled
       texture sampling, yellow border-pixel sampling, and black center-pixel
       sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawRectClock` now drives the display-owned
+      `Render2DClass::Add_Rect`/`Add_Tri` clock-fill path for the percent-88
+      branch, verified by `harness-smoke-ww3d-display-rectclock-canvas.png`,
+      disabled texture sampling, 14-vertex/6-triangle draw counts, green
+      filled-region pixel sampling, and black unfilled/outside pixel sampling
+      in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Single textured mesh renders. A minimal single-textured W3D mesh (a
       camera-facing two-triangle quad) is built in memory through the original
       `ChunkSaveClass`/W3D chunk format, loaded through the original

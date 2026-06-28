@@ -3187,6 +3187,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_line_gradient", "string", []),
       probeWW3DDisplayOpenRect: module.cwrap(
         "cnc_port_probe_ww3d_display_openrect", "string", []),
+      probeWW3DDisplayRectClock: module.cwrap(
+        "cnc_port_probe_ww3d_display_rectclock", "string", []),
       probeWW3DTerrainTile: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tile", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
@@ -6208,6 +6210,60 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           borderPixels,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayRectClock":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay rect clock cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayRectClock());
+        const clockPixels = {
+          rightHalf: sampleVirtualCanvasPixel(450, 250),
+          bottomLeft: sampleVirtualCanvasPixel(350, 350),
+          topLeftTriangle: sampleVirtualCanvasPixel(330, 280),
+          topLeftGap: sampleVirtualCanvasPixel(360, 250),
+          outsideLeft: sampleVirtualCanvasPixel(290, 300),
+          outsideBottom: sampleVirtualCanvasPixel(400, 390),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          clockPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_rectclock_probe"
+          && probe?.display?.path === "W3DDisplay::drawRectClock"
+          && probe?.display?.clock?.percent === 88
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 14
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 18
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksGreen(clockPixels.rightHalf)
+          && pixelLooksGreen(clockPixels.bottomLeft)
+          && pixelLooksGreen(clockPixels.topLeftTriangle)
+          && pixelLooksBlack(clockPixels.topLeftGap)
+          && pixelLooksBlack(clockPixels.outsideLeft)
+          && pixelLooksBlack(clockPixels.outsideBottom);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          clockPixels,
           screenshot,
           state: snapshotState(),
         };
