@@ -2222,6 +2222,8 @@ try {
 
     const frameMouseButtonX = 64;
     const frameMouseButtonY = 48;
+    const frameMouseButtonStyle = 0x00000401; // GWS_PUSH_BUTTON | GWS_MOUSE_TRACK.
+    const frameMouseButtonEnabledStatus = 0x00000008; // WIN_STATUS_ENABLED.
     await page.mouse.move(canvasBox.x + frameMouseButtonX, canvasBox.y + frameMouseButtonY);
     await page.mouse.down();
     await waitForBrowserInput(
@@ -2367,6 +2369,13 @@ try {
         || namedFrameMouseWidget?.rect?.height !== 32
         || namedFrameMouseWidget?.point?.x !== frameMouseButtonX
         || namedFrameMouseWidget?.point?.y !== frameMouseButtonY
+        || namedFrameMouseDownProbe?.gui?.buttonName !== "frameMouseProbeButton"
+        || namedFrameMouseDownProbe?.gui?.buttonNameMatches !== true
+        || namedFrameMouseDownProbe?.gui?.buttonStyle !== frameMouseButtonStyle
+        || (namedFrameMouseDownProbe?.gui?.buttonStatus & frameMouseButtonEnabledStatus) !== frameMouseButtonEnabledStatus
+        || namedFrameMouseDownProbe?.gui?.buttonClickX !== frameMouseButtonX
+        || namedFrameMouseDownProbe?.gui?.buttonClickY !== frameMouseButtonY
+        || namedFrameMouseDownProbe?.gui?.buttonClickInside !== true
         || namedFrameMouseWidgetClick.down?.postQueueCount !== 2
         || namedFrameMouseWidgetClick.down?.frameQueueCount !== 0
         || namedFrameMouseWidgetClick.up?.postQueueCount !== 1
@@ -2380,6 +2389,13 @@ try {
         || namedFrameMouseUpProbe?.enabled !== true
         || namedFrameMouseUpProbe?.lastRan !== true
         || namedFrameMouseUpProbe?.commandList?.countAfterPropagate !== 0
+        || namedFrameMouseUpProbe?.gui?.buttonName !== "frameMouseProbeButton"
+        || namedFrameMouseUpProbe?.gui?.buttonNameMatches !== true
+        || namedFrameMouseUpProbe?.gui?.buttonStyle !== frameMouseButtonStyle
+        || (namedFrameMouseUpProbe?.gui?.buttonStatus & frameMouseButtonEnabledStatus) !== frameMouseButtonEnabledStatus
+        || namedFrameMouseUpProbe?.gui?.buttonClickX !== frameMouseButtonX
+        || namedFrameMouseUpProbe?.gui?.buttonClickY !== frameMouseButtonY
+        || namedFrameMouseUpProbe?.gui?.buttonClickInside !== true
         || namedFrameMouseUpProbe?.gui?.buttonSelected !== 1
         || namedFrameMouseUpProbe?.gui?.buttonSelectedX !== frameMouseButtonX
         || namedFrameMouseUpProbe?.gui?.buttonSelectedY !== frameMouseButtonY

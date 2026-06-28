@@ -4171,14 +4171,20 @@ function originalMouseFrameWidgetFromProbe(probe, name) {
   const y = Number(gui.buttonY);
   const width = Number(gui.buttonWidth);
   const height = Number(gui.buttonHeight);
+  const clickX = Number(gui.buttonClickX);
+  const clickY = Number(gui.buttonClickY);
   if (gui.buttonReady !== true
       || gui.buttonName !== name
+      || gui.buttonNameMatches !== true
       || !Number.isFinite(x)
       || !Number.isFinite(y)
       || !Number.isFinite(width)
       || !Number.isFinite(height)
+      || !Number.isFinite(clickX)
+      || !Number.isFinite(clickY)
       || width <= 0
-      || height <= 0) {
+      || height <= 0
+      || gui.buttonClickInside !== true) {
     return {
       error: `Original mouse frame widget is not ready: ${name}`,
       knownWidgets: [...originalMouseFrameWidgetNames],
@@ -4190,8 +4196,8 @@ function originalMouseFrameWidgetFromProbe(probe, name) {
     kind: "GadgetPushButton",
     rect: { x, y, width, height },
     point: {
-      x: x + Math.floor(width / 3),
-      y: y + Math.floor(height / 2),
+      x: clickX,
+      y: clickY,
     },
   };
 }

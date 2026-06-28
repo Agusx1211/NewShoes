@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <new>
 #include <string>
 
@@ -180,6 +181,7 @@ constexpr Int FRAME_MOUSE_BUTTON_X = 32;
 constexpr Int FRAME_MOUSE_BUTTON_Y = 32;
 constexpr Int FRAME_MOUSE_BUTTON_WIDTH = 96;
 constexpr Int FRAME_MOUSE_BUTTON_HEIGHT = 32;
+constexpr const char *FRAME_MOUSE_BUTTON_NAME = "frameMouseProbeButton";
 
 const char *bool_json(bool value)
 {
@@ -550,6 +552,7 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_button->winSetPosition(FRAME_MOUSE_BUTTON_X, FRAME_MOUSE_BUTTON_Y);
 		g_frame_mouse_button->winSetSize(FRAME_MOUSE_BUTTON_WIDTH, FRAME_MOUSE_BUTTON_HEIGHT);
 		g_frame_mouse_button->winGetInstanceData()->m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
+		g_frame_mouse_button->winGetInstanceData()->m_decoratedNameString = FRAME_MOUSE_BUTTON_NAME;
 		g_frame_mouse_button->winSetOwner(g_frame_mouse_window);
 		g_frame_mouse_button->winSetSystemFunc(GadgetPushButtonSystem);
 		g_frame_mouse_button->winSetInputFunc(GadgetPushButtonInput);
@@ -618,6 +621,32 @@ void clear_frame_mouse_messages()
 
 const char *write_frame_mouse_json()
 {
+	const bool button_ready = g_frame_mouse_button != nullptr;
+	const char *button_name = FRAME_MOUSE_BUTTON_NAME;
+	Int button_x = 0;
+	Int button_y = 0;
+	Int button_width = 0;
+	Int button_height = 0;
+	Int button_click_x = 0;
+	Int button_click_y = 0;
+	UnsignedInt button_status = 0;
+	UnsignedInt button_style = 0;
+	bool button_name_matches = false;
+	bool button_click_inside = false;
+	if (button_ready) {
+		WinInstanceData *button_data = g_frame_mouse_button->winGetInstanceData();
+		if (button_data != nullptr && button_data->m_decoratedNameString.isNotEmpty()) {
+			button_name = button_data->m_decoratedNameString.str();
+		}
+		g_frame_mouse_button->winGetScreenPosition(&button_x, &button_y);
+		g_frame_mouse_button->winGetSize(&button_width, &button_height);
+		button_click_x = button_x + button_width / 3;
+		button_click_y = button_y + button_height / 2;
+		button_status = g_frame_mouse_button->winGetStatus();
+		button_style = g_frame_mouse_button->winGetStyle();
+		button_name_matches = std::strcmp(button_name, FRAME_MOUSE_BUTTON_NAME) == 0;
+		button_click_inside = g_frame_mouse_button->winPointInWindow(button_click_x, button_click_y);
+	}
 	const bool ok = !g_frame_mouse_enabled
 		|| !g_frame_mouse_last_ran
 		|| (g_frame_mouse_last_win32_attached && g_frame_mouse_last_stream_attached);
@@ -638,9 +667,12 @@ const char *write_frame_mouse_json()
 		"\"modifiers\":%d,"
 		"\"gui\":{\"attached\":%s,\"windowReady\":%s,"
 		"\"buttonReady\":%s,"
-		"\"buttonName\":\"frameMouseProbeButton\","
+		"\"buttonName\":\"%s\",\"buttonNameMatches\":%s,"
+		"\"buttonStatus\":%u,\"buttonStyle\":%u,"
 		"\"buttonX\":%d,\"buttonY\":%d,"
 		"\"buttonWidth\":%d,\"buttonHeight\":%d,"
+		"\"buttonClickX\":%d,\"buttonClickY\":%d,"
+		"\"buttonClickInside\":%s,"
 		"\"mousePos\":%d,\"leftDown\":%d,\"leftUp\":%d,"
 		"\"leftDrag\":%d,\"entering\":%d,\"wheelUp\":%d,"
 		"\"wheelDown\":%d,\"wheel\":%d,\"lastMessage\":%d,"
@@ -668,11 +700,18 @@ const char *write_frame_mouse_json()
 		g_frame_mouse_keyboard != nullptr ? g_frame_mouse_keyboard->getModifierFlags() : 0,
 		bool_json(g_frame_mouse_gui_attached),
 		bool_json(g_frame_mouse_window_manager != nullptr && g_frame_mouse_window != nullptr),
-		bool_json(g_frame_mouse_button != nullptr),
-		FRAME_MOUSE_BUTTON_X,
-		FRAME_MOUSE_BUTTON_Y,
-		FRAME_MOUSE_BUTTON_WIDTH,
-		FRAME_MOUSE_BUTTON_HEIGHT,
+		bool_json(button_ready),
+		button_name,
+		bool_json(button_name_matches),
+		button_status,
+		button_style,
+		button_x,
+		button_y,
+		button_width,
+		button_height,
+		button_click_x,
+		button_click_y,
+		bool_json(button_click_inside),
 		g_frame_mouse_capture.mousePosCount,
 		g_frame_mouse_capture.leftDownCount,
 		g_frame_mouse_capture.leftUpCount,

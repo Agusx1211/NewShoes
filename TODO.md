@@ -3198,6 +3198,11 @@ shares structure and follows behind.
             Win32 mouse messages, steps the original frame-owned Mouse path,
             and verifies `GBM_SELECTED` without raw messages reaching
             `TheCommandList`.
+      - [x] Move the first named widget's target metadata onto the live
+            original `GameWindow`: the probe now reports its decorated name,
+            style/status, `winGetScreenPosition` / `winGetSize` rect, and
+            C++-derived interior click point, and the bridge rejects stale or
+            outside-window target metadata before queueing Win32 messages.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---
