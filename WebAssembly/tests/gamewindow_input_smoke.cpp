@@ -7,6 +7,7 @@
 #include "Common/GlobalData.h"
 #include "Common/MessageStream.h"
 #include "Common/SubsystemInterface.h"
+#include "GameClient/Gadget.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Keyboard.h"
@@ -61,6 +62,13 @@ struct InputCapture
 	ICoord2D leftDownMouse = { 0, 0 };
 };
 
+struct ButtonCapture
+{
+	Int selectedCount = 0;
+	GameWindow *selectedWindow = nullptr;
+	ICoord2D selectedMouse = { 0, 0 };
+};
+
 class SmokeGameWindow : public GameWindow
 {
 	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeGameWindow, "SmokeGameWindow", 1, 1)
@@ -99,6 +107,7 @@ public:
 	GameWinDrawFunc getStaticTextDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getTextEntryImageDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getTextEntryDrawFunc() override { return getDefaultDraw(); }
+	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
 };
 
 class SmokeWin32Mouse : public Win32Mouse
@@ -183,9 +192,40 @@ WindowMsgHandledType capture_input(GameWindow *window,
 	return MSG_IGNORED;
 }
 
+WindowMsgHandledType capture_button_owner_system(GameWindow *window,
+	UnsignedInt msg,
+	WindowMsgData mData1,
+	WindowMsgData mData2)
+{
+	ButtonCapture *capture = static_cast<ButtonCapture *>(window->winGetUserData());
+	if (capture == nullptr) {
+		return MSG_IGNORED;
+	}
+
+	if (msg == GBM_SELECTED) {
+		capture->selectedCount++;
+		capture->selectedWindow = reinterpret_cast<GameWindow *>(mData1);
+		capture->selectedMouse.x = LOLONGTOSHORT(mData2);
+		capture->selectedMouse.y = HILONGTOSHORT(mData2);
+		return MSG_HANDLED;
+	}
+
+	return MSG_IGNORED;
+}
+
 GameMessage *append_left_down(MessageStream &stream, Int x, Int y, Int modifiers, UnsignedInt timestamp)
 {
 	GameMessage *message = stream.appendMessage(GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN);
+	const ICoord2D pixel = { x, y };
+	message->appendPixelArgument(pixel);
+	message->appendIntegerArgument(modifiers);
+	message->appendTimestampArgument(timestamp);
+	return message;
+}
+
+GameMessage *append_left_up(MessageStream &stream, Int x, Int y, Int modifiers, UnsignedInt timestamp)
+{
+	GameMessage *message = stream.appendMessage(GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP);
 	const ICoord2D pixel = { x, y };
 	message->appendPixelArgument(pixel);
 	message->appendIntegerArgument(modifiers);
@@ -253,6 +293,88 @@ bool exercise_window_translator_click()
 		"handled raw mouse message should not reach the command list") && ok;
 
 	manager.winDestroy(window);
+	manager.update();
+
+	TheWin32Mouse = oldWin32Mouse;
+	TheMouse = oldMouse;
+	TheWindowManager = oldWindowManager;
+	TheMessageStream = oldMessageStream;
+	TheCommandList = oldCommandList;
+	TheGlobalData = oldGlobalData;
+
+	return ok;
+}
+
+bool exercise_push_button_widget_click()
+{
+	bool ok = true;
+
+	GlobalData globalData;
+	CommandList commandList;
+	MessageStream stream;
+	SmokeGameWindowManager manager;
+	SmokeWin32Mouse mouse;
+
+	GlobalData *oldGlobalData = TheGlobalData;
+	CommandList *oldCommandList = TheCommandList;
+	MessageStream *oldMessageStream = TheMessageStream;
+	GameWindowManager *oldWindowManager = TheWindowManager;
+	Mouse *oldMouse = TheMouse;
+	Win32Mouse *oldWin32Mouse = TheWin32Mouse;
+
+	TheGlobalData = &globalData;
+	TheCommandList = &commandList;
+	TheMessageStream = &stream;
+	TheWindowManager = &manager;
+	TheMouse = &mouse;
+	TheWin32Mouse = &mouse;
+
+	SmokeGameWindow *owner = static_cast<SmokeGameWindow *>(manager.allocateNewWindow());
+	ButtonCapture capture;
+	owner->winSetUserData(&capture);
+	owner->winSetSystemFunc(capture_button_owner_system);
+	owner->winSetStatus(WIN_STATUS_ENABLED);
+	owner->winSetPosition(0, 0);
+	owner->winSetSize(220, 160);
+	manager.linkWindow(owner);
+
+	WinInstanceData buttonInstData;
+	buttonInstData.m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
+	GameWindow *button = manager.gogoGadgetPushButton(owner,
+		WIN_STATUS_ENABLED,
+		20,
+		20,
+		90,
+		32,
+		&buttonInstData,
+		nullptr,
+		FALSE);
+
+	ok = expect(button != nullptr,
+		"original GameWindowManager should create a GadgetPushButton child window") && ok;
+	if (button != nullptr) {
+		stream.attachTranslator(new WindowTranslator, 100);
+		append_left_down(stream, 42, 36, KEY_STATE_NONE, 6000);
+		append_left_up(stream, 42, 36, KEY_STATE_NONE, 6001);
+		stream.propagateMessages();
+
+		ok = expect(capture.selectedCount == 1,
+			"GadgetPushButtonInput should send exactly one GBM_SELECTED to its owner for a down/up click") && ok;
+		ok = expect(capture.selectedWindow == button,
+			"GBM_SELECTED should identify the clicked GadgetPushButton as its source window") && ok;
+		ok = expect(capture.selectedMouse.x == 42 && capture.selectedMouse.y == 36,
+			"GBM_SELECTED should carry the original packed click coordinates from WindowTranslator") && ok;
+		ok = expect(BitTest(button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+			"GadgetPushButtonInput should clear transient selected state after the left-button release") && ok;
+		ok = expect(manager.winGetGrabWindow() == nullptr,
+			"GameWindowManager should release the push button grab after GWM_LEFT_UP") && ok;
+		ok = expect(stream.getFirstMessage() == nullptr,
+			"handled push-button raw mouse messages should be destroyed by MessageStream propagation") && ok;
+		ok = expect(commandList.getFirstMessage() == nullptr,
+			"handled push-button raw mouse messages should not reach the command list") && ok;
+	}
+
+	manager.winDestroy(owner);
 	manager.update();
 
 	TheWin32Mouse = oldWin32Mouse;
@@ -366,6 +488,7 @@ int main()
 {
 	initMemoryManager();
 	const bool ok = exercise_window_translator_click()
+		&& exercise_push_button_widget_click()
 		&& exercise_mouse_stream_to_window_translator_click();
 	shutdownMemoryManager();
 
@@ -373,6 +496,6 @@ int main()
 		return 1;
 	}
 
-	std::cout << "{\"ok\":true,\"library\":\"GameWindow\",\"covered\":\"Win32Mouse Mouse::createStreamMessages to MessageStream WindowTranslator and original GameWindowManager click dispatch\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"GameWindow\",\"covered\":\"Win32Mouse Mouse::createStreamMessages to MessageStream WindowTranslator original GameWindowManager click dispatch and GadgetPushButton GBM_SELECTED\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

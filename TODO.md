@@ -3175,6 +3175,14 @@ shares structure and follows behind.
             / `Mouse::createStreamMessages()`, and consumed by
             `WindowTranslator` / `GameWindowManager` with screenshot-capable
             harness coverage still passing.
+      - [x] Add a focused original widget click proof:
+            `gamewindow-input-smoke` now creates a real
+            `GadgetPushButton` through original
+            `GameWindowManager::gogoGadgetPushButton`, routes raw
+            left-down/up messages through `WindowTranslator`, and verifies
+            original `GadgetPushButtonInput` sends exactly one `GBM_SELECTED`
+            to its owner while consuming the raw messages before
+            `TheCommandList`.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).
