@@ -54,6 +54,7 @@ struct WasmD3D8DrawRenderState
 	DWORD clipping;
 	DWORD clip_plane_enable;
 	DWORD specular_enable;
+	DWORD normalize_normals;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

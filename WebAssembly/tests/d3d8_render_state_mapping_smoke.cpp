@@ -309,6 +309,7 @@ int main()
 		"GetRenderState DIFFUSEMATERIALSOURCE default failed");
 	expect_default(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_COLOR2,
 		"GetRenderState SPECULARMATERIALSOURCE default failed");
+	expect_default(D3DRS_NORMALIZENORMALS, FALSE, "GetRenderState NORMALIZENORMALS default failed");
 
 	// ----------------------------------------------------------------------
 	// 1. CULLMODE across all three D3D values.
@@ -467,17 +468,21 @@ int main()
 	set_state(D3DRS_EMISSIVEMATERIALSOURCE, emissive_source,
 		"SetRenderState EMISSIVEMATERIALSOURCE failed");
 	expect_last(D3DRS_EMISSIVEMATERIALSOURCE, emissive_source);
+	set_state(D3DRS_NORMALIZENORMALS, TRUE, "SetRenderState NORMALIZENORMALS TRUE failed");
+	expect_last(D3DRS_NORMALIZENORMALS, TRUE);
+	set_state(D3DRS_NORMALIZENORMALS, FALSE, "SetRenderState NORMALIZENORMALS FALSE failed");
+	expect_last(D3DRS_NORMALIZENORMALS, FALSE);
 
 	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5;
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2;
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_EMISSIVEMATERIALSOURCE,
-		"last_set_render_state mismatch after material sources");
-	expect(state->last_set_render_state_value == emissive_source,
-		"last_set_render_state_value mismatch after material sources");
+	expect(state->last_set_render_state == D3DRS_NORMALIZENORMALS,
+		"last_set_render_state mismatch after NORMALIZENORMALS");
+	expect(state->last_set_render_state_value == FALSE,
+		"last_set_render_state_value mismatch after NORMALIZENORMALS");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 

@@ -32,6 +32,10 @@ const d3d8SpecularTransformedLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-specular-transformed-light-canvas.png",
 );
+const d3d8NormalizeNormalsCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-normalize-normals-canvas.png",
+);
 const d3d8PointLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-light-canvas.png",
@@ -3458,6 +3462,7 @@ try {
       || d3d8SpecularTransformedLightResult.browserProbe?.usedTransforms !== true
       || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.lighting !== 1
       || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.specularEnable !== 1
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.normalizeNormals !== 1
       || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.ambient !== 0
       || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.colorVertex !== 0
       || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.specularMaterialSource !== 0
@@ -3477,6 +3482,8 @@ try {
         ?.source !== "inverseTransposeWorld"
       || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
         ?.inverseTransposeWorld !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.normalizeNormals !== true
       || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
         ?.directionalLightSupported !== true
       || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
@@ -3513,6 +3520,75 @@ try {
     );
   }
   await page.locator("#viewport").screenshot({ path: d3d8SpecularTransformedLightCanvasScreenshot });
+
+  const d3d8NormalizeNormalsResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8NormalizeNormals"));
+  const expectedNormalizeNormalsLeft =
+    d3d8NormalizeNormalsResult.probe?.expectedLeft ?? [128, 128, 128, 255];
+  const expectedNormalizeNormalsRight =
+    d3d8NormalizeNormalsResult.probe?.expectedRight ?? [255, 255, 255, 255];
+  if (!d3d8NormalizeNormalsResult.ok
+      || d3d8NormalizeNormalsResult.probe?.source !== "browser_d3d8_normalize_normals_probe"
+      || d3d8NormalizeNormalsResult.probe?.calls?.setTransform !== 3
+      || d3d8NormalizeNormalsResult.probe?.calls?.setMaterial !== 1
+      || d3d8NormalizeNormalsResult.probe?.calls?.setLight !== 1
+      || d3d8NormalizeNormalsResult.probe?.calls?.lightEnable !== 1
+      || d3d8NormalizeNormalsResult.probe?.calls?.drawIndexed !== 2
+      || d3d8NormalizeNormalsResult.probe?.normalStates?.falseDraw !== 0
+      || d3d8NormalizeNormalsResult.probe?.normalStates?.trueDraw !== 1
+      || d3d8NormalizeNormalsResult.probe?.transforms?.mask !== 7
+      || Math.abs((d3d8NormalizeNormalsResult.probe?.transforms?.worldScaleZ ?? 0) - 2) > 0.00001
+      || d3d8NormalizeNormalsResult.probe?.draw?.vertexCount !== 4
+      || d3d8NormalizeNormalsResult.probe?.draw?.primitiveCount !== 2
+      || d3d8NormalizeNormalsResult.probe?.draw?.normalizeNormals !== 1
+      || d3d8NormalizeNormalsResult.browserProbe?.transformMask !== 7
+      || d3d8NormalizeNormalsResult.browserProbe?.usedTransforms !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.normalizeNormals !== 1
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.specularEnable !== 0
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8NormalizeNormalsResult.browserProbe?.renderState?.diffuseMaterialSource !== 0
+      || d3d8NormalizeNormalsResult.browserProbe?.vertexCount !== 8
+      || d3d8NormalizeNormalsResult.browserProbe?.indexCount !== 6
+      || d3d8NormalizeNormalsResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8NormalizeNormalsResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.lights?.[0]?.type !== 3
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.normalizeNormals?.enabled !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.source !== "inverseTransposeWorld"
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.inverseTransposeWorld !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.normalizeNormals !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightSupported !== true
+      || d3d8NormalizeNormalsResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightCount !== 1
+      || d3d8NormalizeNormalsResult.materialOk !== true
+      || d3d8NormalizeNormalsResult.lightDiffuseOk !== true
+      || d3d8NormalizeNormalsResult.selectedLightOk !== true
+      || d3d8NormalizeNormalsResult.transformOk !== true
+      || d3d8NormalizeNormalsResult.normalStatesOk !== true
+      || d3d8NormalizeNormalsResult.normalTransformOk !== true
+      || d3d8NormalizeNormalsResult.normalizedShapeOk !== true
+      || d3d8NormalizeNormalsResult.leftPixelOk !== true
+      || d3d8NormalizeNormalsResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8NormalizeNormalsResult.normalizeNormalPixels?.left,
+        expectedNormalizeNormalsLeft,
+        8,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8NormalizeNormalsResult.normalizeNormalPixels?.right,
+        expectedNormalizeNormalsRight,
+        3,
+      )) {
+    throw new Error(`D3D8 normalize-normals probe failed: ${JSON.stringify(d3d8NormalizeNormalsResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8NormalizeNormalsCanvasScreenshot });
 
   const d3d8PointLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8PointLight"));
@@ -4974,6 +5050,7 @@ try {
       d3d8SpecularLightCanvasScreenshot,
       d3d8SpecularOffAxisLightCanvasScreenshot,
       d3d8SpecularTransformedLightCanvasScreenshot,
+      d3d8NormalizeNormalsCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
       d3d8PointRangeLightCanvasScreenshot,
