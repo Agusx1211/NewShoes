@@ -3047,6 +3047,12 @@ shares structure and follows behind.
             frame-owned `MessageStream` / `CommandList`, and verifies raw
             `MSG_RAW_MOUSE_*` output through the browser harness while GUI
             translation remains in the focused probe.
+      - [x] Extend the normal `tick_frame()` Mouse owner browser proof to cover
+            held-button `MSG_RAW_MOUSE_LEFT_DRAG` delta output and
+            `MSG_RAW_MOUSE_WHEEL` spin output across reset frame-owner state.
+      - [ ] Make the original Mouse stream probe JSON type-aware so drag,
+            wheel, button, and modifier arguments are exposed through semantic
+            fields instead of mixed generic `integer1` / `integer2` slots.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
       - [x] Add a focused browser harness proof that DOM `Shift+A`
             keydown/keyup events queue Win32 `WM_KEY*`/`WM_CHAR` messages,
