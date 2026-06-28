@@ -1032,6 +1032,67 @@ int main()
 		return 1;
 	}
 
+	// ---------------------------------------------------------------------------
+	// Focused D3DTSS_TEXCOORDINDEX generated-coordinate coverage. The original
+	// D3D8 W3D mappers (camera-space normal / position / reflection vector) encode
+	// the coordinate source in the high bits of the D3DTSS_TEXCOORDINDEX value
+	// (D3DTSS_TCI_* | coordinate set index). The shim stores these DWORD values
+	// verbatim and replays them through capture_draw_texture_stage_states at
+	// draw time, so each generated-coordinate variant round-trips through the
+	// probe last-value fields and is reflected in the draw-captured texture
+	// stage state. The final values are chosen so the draw capture below proves
+	// both a zero-coordinate-set generated source and a nonzero-coordinate-set
+	// generated source are recorded verbatim.
+	// ---------------------------------------------------------------------------
+	if (!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX,
+				D3DTSS_TCI_CAMERASPACENORMAL | 0)),
+			"SetTextureStageState stage0 TEXCOORDINDEX CAMERASPACENORMAL|0 failed") ||
+		!expect(state->last_set_texture_stage_state_stage == 0,
+			"last_set_texture_stage_state_stage mismatch after CAMERASPACENORMAL|0") ||
+		!expect(state->last_set_texture_stage_state == D3DTSS_TEXCOORDINDEX,
+			"last_set_texture_stage_state mismatch after CAMERASPACENORMAL|0") ||
+		!expect(state->last_set_texture_stage_state_value == (D3DTSS_TCI_CAMERASPACENORMAL | 0),
+			"last_set_texture_stage_state_value mismatch after CAMERASPACENORMAL|0") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX,
+				D3DTSS_TCI_CAMERASPACEPOSITION | 0)),
+			"SetTextureStageState stage1 TEXCOORDINDEX CAMERASPACEPOSITION|0 failed") ||
+		!expect(state->last_set_texture_stage_state_stage == 1,
+			"last_set_texture_stage_state_stage mismatch after CAMERASPACEPOSITION|0") ||
+		!expect(state->last_set_texture_stage_state_value == (D3DTSS_TCI_CAMERASPACEPOSITION | 0),
+			"last_set_texture_stage_state_value mismatch after CAMERASPACEPOSITION|0") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX,
+				D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR | 0)),
+			"SetTextureStageState stage0 TEXCOORDINDEX CAMERASPACEREFLECTIONVECTOR|0 failed") ||
+		!expect(state->last_set_texture_stage_state_value ==
+				(D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR | 0),
+			"last_set_texture_stage_state_value mismatch after CAMERASPACEREFLECTIONVECTOR|0") ||
+		// Final draw-time TEXCOORDINDEX values: stage0 -> CAMERASPACENORMAL|0
+		// (zero coordinate set, generated source) and stage1 ->
+		// CAMERASPACEPOSITION|1 (nonzero coordinate set variant) so the draw
+		// capture below can prove generated-coordinate index values are
+		// recorded verbatim across both stages and a nonzero coordinate set.
+		!expect(SUCCEEDED(device->SetTextureStageState(0, D3DTSS_TEXCOORDINDEX,
+				D3DTSS_TCI_CAMERASPACENORMAL | 0)),
+			"SetTextureStageState stage0 final TEXCOORDINDEX CAMERASPACENORMAL|0 failed") ||
+		!expect(SUCCEEDED(device->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX,
+				D3DTSS_TCI_CAMERASPACEPOSITION | 1)),
+			"SetTextureStageState stage1 final TEXCOORDINDEX CAMERASPACEPOSITION|1 failed") ||
+		!expect(state->last_set_texture_stage_state_stage == 1,
+			"last_set_texture_stage_state_stage mismatch after final CAMERASPACEPOSITION|1") ||
+		!expect(state->last_set_texture_stage_state == D3DTSS_TEXCOORDINDEX,
+			"last_set_texture_stage_state mismatch after final CAMERASPACEPOSITION|1") ||
+		!expect(state->last_set_texture_stage_state_value == (D3DTSS_TCI_CAMERASPACEPOSITION | 1),
+			"last_set_texture_stage_state_value mismatch after final CAMERASPACEPOSITION|1") ||
+		!expect(state->set_texture_stage_state_calls == set_texture_stage_state_before + 11 + 5 + 5,
+			"set_texture_stage_state_calls counter mismatch after generated TEXCOORDINDEX sets")) {
+		index_buffer->Release();
+		vertex_buffer->Release();
+		texture->Release();
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	const UINT draw_stride = 16;
 	const UINT draw_base_vertex = 2;
 	const UINT draw_min_index = 1;
@@ -1088,8 +1149,12 @@ int main()
 			"draw texture stage0 ADDRESSV capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
 			"draw texture stage1 COLOROP capture mismatch") ||
-		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXCOORDINDEX] == 1,
-			"draw texture stage1 TEXCOORDINDEX capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXCOORDINDEX] ==
+				(D3DTSS_TCI_CAMERASPACENORMAL | 0),
+			"draw texture stage0 TEXCOORDINDEX generated CAMERASPACENORMAL|0 capture mismatch") ||
+		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXCOORDINDEX] ==
+				(D3DTSS_TCI_CAMERASPACEPOSITION | 1),
+			"draw texture stage1 TEXCOORDINDEX generated CAMERASPACEPOSITION|1 capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT3,
 			"draw texture stage0 TEXTURETRANSFORMFLAGS capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[1].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT3,
@@ -1134,7 +1199,7 @@ int main()
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
 		expect(state->set_render_state_calls == 3, "set_render_state_calls count mismatch") &&
 		expect(state->get_render_state_calls == 2, "get_render_state_calls count mismatch") &&
-		expect(state->set_texture_stage_state_calls == 16,
+		expect(state->set_texture_stage_state_calls == 21,
 			"set_texture_stage_state_calls count mismatch") &&
 		expect(state->browser_buffer_create_calls >= 2, "browser buffer create count mismatch") &&
 		expect(state->browser_buffer_update_calls >= 4, "browser buffer update count mismatch");
