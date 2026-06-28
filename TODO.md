@@ -3084,6 +3084,10 @@ shares structure and follows behind.
                         `CommandList`, with browser harness proof that Escape
                         still reaches original `WndProc` while the mirrored
                         `KEY_ESC` reaches the frame-owned `Keyboard` stream.
+                  - [x] Extend the normal `tick_frame()` keyboard owner proof
+                        to cover held-key autorepeat across empty browser
+                        queues and browser blur -> original `KEY_LOST` reset
+                        semantics while the frame-owned path is enabled.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the

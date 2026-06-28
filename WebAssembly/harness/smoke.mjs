@@ -1690,6 +1690,141 @@ try {
         || frameKeyboardUp.state.browserInput?.keyboardMessageQueue?.count !== 0) {
       throw new Error(`Original Keyboard frame-owned Escape keyup did not run through tick_frame: ${JSON.stringify(frameKeyboardUp)}`);
     }
+
+    const resetFrameOwnerRepeatInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameOwnerRepeatInput.ok
+        || resetFrameOwnerRepeatInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameOwnerRepeatInput.state.browserInput?.keyboardMessageQueue?.count !== 0) {
+      throw new Error(`Original Keyboard frame-owned repeat input reset mismatch: ${JSON.stringify(resetFrameOwnerRepeatInput)}`);
+    }
+    const resetFrameOwnerRepeatKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardFrameInput"));
+    if (!resetFrameOwnerRepeatKeyboard.ok
+        || resetFrameOwnerRepeatKeyboard.probe?.enabled !== true
+        || resetFrameOwnerRepeatKeyboard.probe?.ticks !== 0
+        || resetFrameOwnerRepeatKeyboard.probe?.keyStatus?.aDown !== false) {
+      throw new Error(`Original Keyboard frame-owned repeat keyboard reset mismatch: ${JSON.stringify(resetFrameOwnerRepeatKeyboard)}`);
+    }
+
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2
+        && input?.keyboardMessageQueue?.count >= 2,
+      "original Keyboard frame-owned A repeat seed queues",
+    );
+    const frameKeyboardRepeatSeed = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    const frameKeyboardRepeatSeedProbe = frameKeyboardRepeatSeed.state.originalKeyboardFrameInput;
+    const frameKeyboardRepeatSeedMessages = frameKeyboardRepeatSeedProbe?.stream?.messages ?? [];
+    if (!frameKeyboardRepeatSeed.ok
+        || frameKeyboardRepeatSeedProbe?.enabled !== true
+        || frameKeyboardRepeatSeedProbe?.lastRan !== true
+        || frameKeyboardRepeatSeedProbe?.ticks !== 1
+        || frameKeyboardRepeatSeedProbe?.inputFrame !== 1
+        || frameKeyboardRepeatSeedProbe?.queue?.primaryRemainingBefore !== 0
+        || frameKeyboardRepeatSeedProbe?.queue?.primaryRemainingAfter !== 0
+        || frameKeyboardRepeatSeedProbe?.queue?.mirrorBefore !== 2
+        || frameKeyboardRepeatSeedProbe?.queue?.mirrorDrained !== 2
+        || frameKeyboardRepeatSeedProbe?.queue?.mirrorRemaining !== 0
+        || frameKeyboardRepeatSeedProbe?.queue?.ignored !== 1
+        || frameKeyboardRepeatSeedProbe?.stream?.count !== 1
+        || frameKeyboardRepeatSeedProbe?.commandList?.countAfterPropagate !== 1
+        || frameKeyboardRepeatSeedMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || frameKeyboardRepeatSeedMessages[0]?.key !== keyA
+        || (frameKeyboardRepeatSeedMessages[0]?.state & keyStateDown) === 0
+        || (frameKeyboardRepeatSeedMessages[0]?.state & keyStateAutoRepeat) !== 0
+        || frameKeyboardRepeatSeedProbe?.keyStatus?.aDown !== true
+        || frameKeyboardRepeatSeed.state.browserInput?.messageQueue?.count !== 0
+        || frameKeyboardRepeatSeed.state.browserInput?.keyboardMessageQueue?.count !== 0) {
+      throw new Error(`Original Keyboard frame-owned repeat seed did not run through tick_frame: ${JSON.stringify(frameKeyboardRepeatSeed)}`);
+    }
+
+    for (let frame = 0; frame < 10; ++frame) {
+      const quietFrameKeyboardRepeat = await page.evaluate(() => window.CnCPort.rpc("frame", {
+        count: 1,
+      }));
+      const quietFrameKeyboardRepeatProbe = quietFrameKeyboardRepeat.state.originalKeyboardFrameInput;
+      if (!quietFrameKeyboardRepeat.ok
+          || quietFrameKeyboardRepeatProbe?.enabled !== true
+          || quietFrameKeyboardRepeatProbe?.lastRan !== true
+          || quietFrameKeyboardRepeatProbe?.ticks !== frame + 2
+          || quietFrameKeyboardRepeatProbe?.inputFrame !== frame + 2
+          || quietFrameKeyboardRepeatProbe?.queue?.mirrorBefore !== 0
+          || quietFrameKeyboardRepeatProbe?.queue?.mirrorDrained !== 0
+          || quietFrameKeyboardRepeatProbe?.queue?.ignored !== 0
+          || quietFrameKeyboardRepeatProbe?.stream?.count !== 0
+          || quietFrameKeyboardRepeatProbe?.commandList?.countAfterPropagate !== 0
+          || quietFrameKeyboardRepeatProbe?.keyStatus?.aDown !== true) {
+        throw new Error(`Original Keyboard frame-owned repeated before delay frame ${frame}: ${JSON.stringify(quietFrameKeyboardRepeat)}`);
+      }
+    }
+
+    const frameKeyboardRepeat = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    const frameKeyboardRepeatProbe = frameKeyboardRepeat.state.originalKeyboardFrameInput;
+    const frameKeyboardRepeatMessages = frameKeyboardRepeatProbe?.stream?.messages ?? [];
+    if (!frameKeyboardRepeat.ok
+        || frameKeyboardRepeatProbe?.enabled !== true
+        || frameKeyboardRepeatProbe?.lastRan !== true
+        || frameKeyboardRepeatProbe?.ticks !== 12
+        || frameKeyboardRepeatProbe?.inputFrame !== 12
+        || frameKeyboardRepeatProbe?.queue?.mirrorBefore !== 0
+        || frameKeyboardRepeatProbe?.queue?.mirrorDrained !== 0
+        || frameKeyboardRepeatProbe?.queue?.ignored !== 0
+        || frameKeyboardRepeatProbe?.stream?.count !== 1
+        || frameKeyboardRepeatProbe?.commandList?.countAfterPropagate !== 1
+        || frameKeyboardRepeatMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || frameKeyboardRepeatMessages[0]?.key !== keyA
+        || (frameKeyboardRepeatMessages[0]?.state & keyStateDown) === 0
+        || (frameKeyboardRepeatMessages[0]?.state & keyStateAutoRepeat) === 0
+        || frameKeyboardRepeatProbe?.keyStatus?.aDown !== true) {
+      throw new Error(`Original Keyboard frame-owned autorepeat did not run through tick_frame: ${JSON.stringify(frameKeyboardRepeat)}`);
+    }
+
+    await page.evaluate(() => document.querySelector("#viewport").blur());
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard frame-owned focus-loss blur queue",
+    );
+    const frameKeyboardFocusLost = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    const frameKeyboardFocusLostProbe = frameKeyboardFocusLost.state.originalKeyboardFrameInput;
+    const frameKeyboardFocusLostEvents = frameKeyboardFocusLostProbe?.events ?? [];
+    if (!frameKeyboardFocusLost.ok
+        || frameKeyboardFocusLostProbe?.enabled !== true
+        || frameKeyboardFocusLostProbe?.lastRan !== true
+        || frameKeyboardFocusLostProbe?.ticks !== 13
+        || frameKeyboardFocusLostProbe?.inputFrame !== 13
+        || frameKeyboardFocusLostProbe?.queue?.primaryRemainingBefore !== 0
+        || frameKeyboardFocusLostProbe?.queue?.primaryRemainingAfter !== 0
+        || frameKeyboardFocusLostProbe?.queue?.mirrorBefore !== 0
+        || frameKeyboardFocusLostProbe?.queue?.mirrorDrained !== 0
+        || frameKeyboardFocusLostProbe?.queue?.mirrorRemaining !== 0
+        || frameKeyboardFocusLostProbe?.focusLost?.pendingBefore !== true
+        || frameKeyboardFocusLostProbe?.focusLost?.delivered !== true
+        || frameKeyboardFocusLostProbe?.stream?.count !== 0
+        || frameKeyboardFocusLostProbe?.commandList?.countAfterPropagate !== 0
+        || frameKeyboardFocusLostProbe?.keyStatus?.aDown !== false
+        || frameKeyboardFocusLostProbe?.keyStatus?.leftShiftDown !== false
+        || frameKeyboardFocusLostProbe?.modifiers !== 0
+        || frameKeyboardFocusLost.state.browserInput?.messageQueue?.count !== 0
+        || frameKeyboardFocusLost.state.browserInput?.keyboardMessageQueue?.count !== 0
+        || !frameKeyboardFocusLostEvents.some((event) => event.focusLost === true && event.engineKey === keyLost)) {
+      throw new Error(`Original Keyboard frame-owned focus loss did not run through tick_frame: ${JSON.stringify(frameKeyboardFocusLost)}`);
+    }
+
+    await page.keyboard.up("A");
+    await page.locator("#viewport").focus();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard frame-owned focus-loss cleanup queue",
+    );
     const resetFrameOwnerAfterInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
     if (!resetFrameOwnerAfterInput.ok
         || resetFrameOwnerAfterInput.state.browserInput?.messageQueue?.count !== 0
@@ -1704,6 +1839,15 @@ try {
         || resetFrameOwnerAfterKeyboard.probe?.stream?.count !== 0
         || resetFrameOwnerAfterKeyboard.probe?.queue?.mirrorRemaining !== 0) {
       throw new Error(`Original Keyboard frame-owned keyboard cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterKeyboard)}`);
+    }
+    const resetFrameOwnerSharedAfterKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFrameOwnerSharedAfterKeyboard.ok
+        || resetFrameOwnerSharedAfterKeyboard.probe?.inputFrame !== 0
+        || resetFrameOwnerSharedAfterKeyboard.probe?.focusLost?.pending !== false
+        || resetFrameOwnerSharedAfterKeyboard.probe?.modifiers !== 0
+        || resetFrameOwnerSharedAfterKeyboard.probe?.keyStatus?.aDown !== false) {
+      throw new Error(`Original Keyboard frame-owned shared cleanup mismatch: ${JSON.stringify(resetFrameOwnerSharedAfterKeyboard)}`);
     }
     const disableFrameOwnerAfterKeyboard = await page.evaluate(() =>
       window.CnCPort.rpc("setOriginalKeyboardFrameInput", { enabled: false }));
