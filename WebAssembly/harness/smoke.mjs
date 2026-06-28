@@ -26,6 +26,7 @@ const ww3dDisplayStringCanvasScreenshot = resolve(
 );
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
 const ww3dDisplayFillRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-fillrect-canvas.png");
+const ww3dDisplayOpenRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-openrect-canvas.png");
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
@@ -164,6 +165,22 @@ function pixelLooksGreen(pixel) {
     && pixel[0] <= 80
     && pixel[1] >= 180
     && pixel[2] <= 80
+    && pixel[3] >= 200;
+}
+
+function pixelLooksYellow(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] >= 180
+    && pixel[1] >= 180
+    && pixel[2] <= 80
+    && pixel[3] >= 200;
+}
+
+function pixelLooksBlack(pixel, threshold = 8) {
+  return Array.isArray(pixel)
+    && pixel[0] <= threshold
+    && pixel[1] <= threshold
+    && pixel[2] <= threshold
     && pixel[3] >= 200;
 }
 
@@ -1769,6 +1786,44 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayFillRectCanvasScreenshot });
 
+  const displayOpenRectResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayOpenRect"));
+  if (!displayOpenRectResult.ok
+      || displayOpenRectResult.probe?.source !== "ww3d_display_openrect_probe"
+      || displayOpenRectResult.probe?.results?.displayAllocated !== true
+      || displayOpenRectResult.probe?.results?.displaySetup !== true
+      || displayOpenRectResult.probe?.results?.drawOpenRectCalled !== true
+      || displayOpenRectResult.probe?.display?.path !== "W3DDisplay::drawOpenRect"
+      || displayOpenRectResult.probe?.calls?.drawIndexed < 1
+      || displayOpenRectResult.probe?.calls?.browserBufferCreate < 2
+      || displayOpenRectResult.probe?.calls?.browserBufferUpdate < 2
+      || displayOpenRectResult.probe?.draw?.primitiveType !== 4
+      || displayOpenRectResult.probe?.draw?.vertexCount !== 16
+      || displayOpenRectResult.probe?.draw?.primitiveCount !== 8
+      || displayOpenRectResult.probe?.draw?.vertexStride !== 44
+      || displayOpenRectResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayOpenRectResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 3
+      || displayOpenRectResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayOpenRectResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayOpenRectResult.probe?.draw?.renderState?.textureStages?.[1]?.colorOp !== 1
+      || displayOpenRectResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayOpenRectResult.browserProbe?.usedPersistentBuffers !== true
+      || displayOpenRectResult.browserProbe?.usedTransforms !== true
+      || displayOpenRectResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayOpenRectResult.browserProbe?.vertexCount !== 16
+      || displayOpenRectResult.browserProbe?.vertexStride !== 44
+      || displayOpenRectResult.browserProbe?.indexCount !== 24
+      || displayOpenRectResult.browserProbe?.texture0?.sampled === true
+      || !pixelLooksYellow(displayOpenRectResult.borderPixels?.left)
+      || !pixelLooksYellow(displayOpenRectResult.borderPixels?.top)
+      || !pixelLooksYellow(displayOpenRectResult.borderPixels?.right)
+      || !pixelLooksYellow(displayOpenRectResult.borderPixels?.bottom)
+      || !pixelLooksBlack(displayOpenRectResult.borderPixels?.center)
+      || !pixelLooksBlack(displayOpenRectResult.screenshot?.centerPixel)) {
+    throw new Error(`WW3DDisplay open rect probe failed: ${JSON.stringify(displayOpenRectResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayOpenRectCanvasScreenshot });
+
   const texturedMeshResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTexturedMesh"));
   if (!texturedMeshResult.ok
       || texturedMeshResult.probe?.source !== "ww3d_textured_mesh_probe"
@@ -1964,6 +2019,7 @@ try {
       ww3dDisplayStringCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
       ww3dDisplayFillRectCanvasScreenshot,
+      ww3dDisplayOpenRectCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,

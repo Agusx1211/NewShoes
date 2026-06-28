@@ -2299,6 +2299,22 @@ function pixelLooksGreen(pixel) {
     && pixel[3] >= 200;
 }
 
+function pixelLooksYellow(pixel) {
+  return Array.isArray(pixel)
+    && pixel[0] >= 180
+    && pixel[1] >= 180
+    && pixel[2] <= 80
+    && pixel[3] >= 200;
+}
+
+function pixelLooksBlack(pixel, threshold = 8) {
+  return Array.isArray(pixel)
+    && pixel[0] <= threshold
+    && pixel[1] <= threshold
+    && pixel[2] <= threshold
+    && pixel[3] >= 200;
+}
+
 function normalizeD3DMatrix(matrix) {
   if (!Array.isArray(matrix) || matrix.length !== 16) {
     return null;
@@ -3165,6 +3181,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_mapped_image_unrotated", "string", ["string", "string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
+      probeWW3DDisplayOpenRect: module.cwrap(
+        "cnc_port_probe_ww3d_display_openrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tile", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
@@ -6022,6 +6040,57 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayOpenRect":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay open rect cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayOpenRect());
+        const borderPixels = {
+          left: sampleVirtualCanvasPixel(301, 300),
+          top: sampleVirtualCanvasPixel(400, 221),
+          right: sampleVirtualCanvasPixel(500, 300),
+          bottom: sampleVirtualCanvasPixel(400, 380),
+          center: sampleVirtualCanvasPixel(400, 300),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          borderPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_openrect_probe"
+          && probe?.display?.path === "W3DDisplay::drawOpenRect"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 16
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 24
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksYellow(borderPixels.left)
+          && pixelLooksYellow(borderPixels.top)
+          && pixelLooksYellow(borderPixels.right)
+          && pixelLooksYellow(borderPixels.bottom)
+          && pixelLooksBlack(borderPixels.center)
+          && pixelLooksBlack(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          borderPixels,
           screenshot,
           state: snapshotState(),
         };

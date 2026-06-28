@@ -2662,6 +2662,11 @@ shares structure and follows behind.
       `harness-smoke-ww3d-display-fillrect-canvas.png`, disabled texture
       sampling, and green center-pixel sampling in
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Original `W3DDisplay::drawOpenRect` now drives the display-owned
+      `Render2DClass::Add_Outline`/`Add_Line` path as four untextured quads,
+      verified by `harness-smoke-ww3d-display-openrect-canvas.png`, disabled
+      texture sampling, yellow border-pixel sampling, and black center-pixel
+      sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Single textured mesh renders. A minimal single-textured W3D mesh (a
       camera-facing two-triangle quad) is built in memory through the original
       `ChunkSaveClass`/W3D chunk format, loaded through the original
