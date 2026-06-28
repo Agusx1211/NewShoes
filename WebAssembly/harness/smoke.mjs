@@ -25,6 +25,10 @@ const ww3dDisplayStringCanvasScreenshot = resolve(
   "harness-smoke-ww3d-display-string-canvas.png",
 );
 const ww3dDisplayDrawImageCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-drawimage-canvas.png");
+const ww3dDisplayDrawImageAdditiveCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-display-drawimage-additive-canvas.png",
+);
 const ww3dDisplayFillRectCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-fillrect-canvas.png");
 const ww3dDisplayLineCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-display-line-canvas.png");
 const ww3dDisplayLineGradientCanvasScreenshot = resolve(
@@ -1774,6 +1778,58 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dDisplayDrawImageCanvasScreenshot });
 
+  const displayDrawImageAdditiveResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayDrawImageAdditive"));
+  if (!displayDrawImageAdditiveResult.ok
+      || displayDrawImageAdditiveResult.probe?.source !== "ww3d_display_drawimage_additive_probe"
+      || displayDrawImageAdditiveResult.probe?.results?.displayAllocated !== true
+      || displayDrawImageAdditiveResult.probe?.results?.displaySetup !== true
+      || displayDrawImageAdditiveResult.probe?.results?.imageConfigured !== true
+      || displayDrawImageAdditiveResult.probe?.results?.drawImageCalled !== true
+      || displayDrawImageAdditiveResult.probe?.display?.path !== "W3DDisplay::drawImage"
+      || displayDrawImageAdditiveResult.probe?.display?.mode !== "DRAW_IMAGE_ADDITIVE"
+      || displayDrawImageAdditiveResult.probe?.image?.rawTexture !== true
+      || displayDrawImageAdditiveResult.probe?.image?.status !== 2
+      || displayDrawImageAdditiveResult.probe?.image?.width !== 200
+      || displayDrawImageAdditiveResult.probe?.image?.height !== 160
+      || displayDrawImageAdditiveResult.probe?.calls?.drawIndexed < 1
+      || displayDrawImageAdditiveResult.probe?.calls?.browserTextureCreate < 1
+      || displayDrawImageAdditiveResult.probe?.calls?.browserTextureUpdate < 1
+      || displayDrawImageAdditiveResult.probe?.calls?.browserTextureBind < 2
+      || displayDrawImageAdditiveResult.probe?.calls?.browserTextureRelease < 1
+      || displayDrawImageAdditiveResult.probe?.draw?.primitiveType !== 4
+      || displayDrawImageAdditiveResult.probe?.draw?.vertexCount !== 4
+      || displayDrawImageAdditiveResult.probe?.draw?.primitiveCount !== 2
+      || displayDrawImageAdditiveResult.probe?.draw?.vertexStride !== 44
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.alphaBlendEnable !== 1
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.srcBlend !== 2
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.destBlend !== 2
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.textureStages?.[0]?.colorOp !== 4
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg1 !== 2
+      || displayDrawImageAdditiveResult.probe?.draw?.renderState?.textureStages?.[0]?.colorArg2 !== 0
+      || displayDrawImageAdditiveResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || displayDrawImageAdditiveResult.browserProbe?.usedPersistentBuffers !== true
+      || displayDrawImageAdditiveResult.browserProbe?.usedTransforms !== true
+      || displayDrawImageAdditiveResult.browserProbe?.usedIdentityClipSpace !== true
+      || displayDrawImageAdditiveResult.browserProbe?.renderState?.srcBlend !== 2
+      || displayDrawImageAdditiveResult.browserProbe?.renderState?.destBlend !== 2
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.id !== displayDrawImageAdditiveResult.probe?.texture?.id
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.ready !== true
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.sampled !== true
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.combiner?.opName !== "modulate"
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.combiner?.supported !== true
+      || displayDrawImageAdditiveResult.browserProbe?.texture0?.sampler?.supported !== true
+      || !pixelLooksRed(displayDrawImageAdditiveResult.browserProbe?.centerPixel)
+      || !pixelLooksRed(displayDrawImageAdditiveResult.additivePixels?.center)
+      || !pixelLooksBlack(displayDrawImageAdditiveResult.additivePixels?.outside)
+      || displayDrawImageAdditiveResult.textureDelta?.creates < 1
+      || displayDrawImageAdditiveResult.textureDelta?.updates < 1
+      || displayDrawImageAdditiveResult.textureDelta?.binds < 1
+      || displayDrawImageAdditiveResult.textureDelta?.releases < 1) {
+    throw new Error(`WW3DDisplay additive drawImage probe failed: ${JSON.stringify(displayDrawImageAdditiveResult)}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: ww3dDisplayDrawImageAdditiveCanvasScreenshot });
+
   const displayFillRectResult = await page.evaluate(() => window.CnCPort.rpc("ww3dDisplayFillRect"));
   if (!displayFillRectResult.ok
       || displayFillRectResult.probe?.source !== "ww3d_display_fillrect_probe"
@@ -2204,6 +2260,7 @@ try {
       ww3dRender2DSentenceCanvasScreenshot,
       ww3dDisplayStringCanvasScreenshot,
       ww3dDisplayDrawImageCanvasScreenshot,
+      ww3dDisplayDrawImageAdditiveCanvasScreenshot,
       ww3dDisplayFillRectCanvasScreenshot,
       ww3dDisplayLineCanvasScreenshot,
       ww3dDisplayLineGradientCanvasScreenshot,

@@ -2621,6 +2621,12 @@ shares structure and follows behind.
       and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
       This proves the Image blit call path only; broader UI image rendering
       remains open.
+- [x] Original `W3DDisplay::drawImage` `DRAW_IMAGE_ADDITIVE` mode now drives
+      the display-owned additive Render2D branch, verified by
+      `harness-smoke-ww3d-display-drawimage-additive-canvas.png`,
+      `D3DBLEND_ONE`/`D3DBLEND_ONE` render-state assertions, texture sampling,
+      red center-pixel sampling, and black outside-quad sampling in
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Original `W3DDisplay::drawImage` also resolves a filename-backed `Image`
       through `Render2DClass::Set_Texture(const char*)`,
       `WW3DAssetManager::Get_Texture`, `TextureClass::Apply`, and the runtime

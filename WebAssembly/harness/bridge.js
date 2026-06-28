@@ -3171,6 +3171,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_string", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
+      probeWW3DDisplayDrawImageAdditive: module.cwrap(
+        "cnc_port_probe_ww3d_display_drawimage_additive", "string", []),
       probeWW3DDisplayDrawImageFile: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage_file", "string", ["string"]),
       probeWW3DDisplayMappedImage: module.cwrap(
@@ -5652,6 +5654,65 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayDrawImageAdditive":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; additive WW3DDisplay drawImage cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayDrawImageAdditive());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const additivePixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          outside: sampleVirtualCanvasPixel(250, 200),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          additivePixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_drawimage_additive_probe"
+          && probe?.display?.path === "W3DDisplay::drawImage"
+          && probe?.display?.mode === "DRAW_IMAGE_ADDITIVE"
+          && probe?.draw?.renderState?.srcBlend === D3DBLEND_ONE
+          && probe?.draw?.renderState?.destBlend === D3DBLEND_ONE
+          && browserProbe?.renderState?.srcBlend === D3DBLEND_ONE
+          && browserProbe?.renderState?.destBlend === D3DBLEND_ONE
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && probe?.image?.rawTexture === true
+          && pixelLooksRed(browserProbe.centerPixel)
+          && pixelLooksRed(additivePixels.center)
+          && pixelLooksBlack(additivePixels.outside);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          additivePixels,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
