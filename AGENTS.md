@@ -96,6 +96,8 @@ and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
   validated, grouped by milestone.
 - `DONE.md` — completed checklist history, grouped by the same milestones.
   Search it when you need to verify that related work was already handled.
+- `IDEAS.md` — deferred experiments and longer design notes that should not
+  bloat the active checklist until they become current work.
 
 **Every agent must, every time:**
 
@@ -106,6 +108,9 @@ and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
   all of `DONE.md` by default unless broad history is genuinely needed.
 - **Always add any future TODO you encounter to `TODO.md`** if it isn't already
   listed — new tasks, tests, edge cases, risks, follow-ups.
+- Put speculative future designs and non-current idea dumps in `IDEAS.md`,
+  then promote only the next concrete action into `TODO.md` when it becomes
+  active work.
 - As you complete work, move the item from `TODO.md` to `DONE.md` as `[x]`
   instead of leaving completed entries in `TODO.md`. Remember: nothing
   rendering-related is done until the harness proves it (see above).

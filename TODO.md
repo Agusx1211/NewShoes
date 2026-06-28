@@ -4,6 +4,8 @@ Open, living checklist for porting C&C Generals: Zero Hour to WebAssembly.
 Grouped by milestone (see `PROJECT.md`). `[ ]` = not started or still in
 progress. Completed checklist history lives in `DONE.md` so agents can load the
 active plan cheaply and search the completed history only when needed.
+Deferred experiments and longer design notes live in `IDEAS.md`; promote only
+the next concrete action here when they become current work.
 
 Keep it honest: nothing rendering-related is "done" until the **harness boots
 the build and a screenshot or state check proves it** (see `AGENTS.md` "Don't
@@ -631,6 +633,11 @@ shares structure and follows behind.
 - [ ] Net-sync regression (two clients, assert no desync).
 - [ ] CI runs build + harness smoke + screenshot diffs on every change.
 - [ ] Document how to run the harness and interpret failures.
+
+## Future experiments
+
+- [ ] Revisit the LLM-player harness after M6 playable skirmish is online; keep
+      design notes and deferred sub-tasks in `IDEAS.md` until then.
 
 ## Cross-cutting: project hygiene
 
