@@ -1618,6 +1618,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       anchors, `AudioManager::init` → `openDevice` → `AIL_set_file_callbacks`
       ordering, `openDevice` Miles call ordering, header declarations, and the
       current compile-only `Mss.H` shim surface.
+- [x] Feed the verified `MilesAudioManager::init/openDevice` frontier into the
+      harness-visible startup device JSON, including the exact Miles call order,
+      source line anchors, Web Audio target, and compile-only `Mss.H` shim
+      blockers behind `createAudioManager`.
 ---
 
 ## M3 — File / data subsystem (real data)

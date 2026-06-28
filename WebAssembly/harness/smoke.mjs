@@ -622,6 +622,8 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
   const entries = frontier?.entries ?? [];
   const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
   const audioFiles = frontier?.audioStartupFiles;
+  const milesAudio = frontier?.milesAudioDeviceFrontier;
+  const milesCalls = milesAudio?.openDeviceCalls ?? [];
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
@@ -640,6 +642,39 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || audioFiles?.defaultVoiceIni !== false
       || audioFiles?.voiceIni !== false
       || audioFiles?.miscAudioIni !== false
+      || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
+      || milesAudio?.ready !== false
+      || milesAudio?.compileOnly !== true
+      || milesAudio?.browserTarget !== "Web Audio"
+      || milesAudio?.nextRequired !== "audioStartupFiles"
+      || milesAudio?.initLine !== 444
+      || milesAudio?.audioManagerInitLine !== 446
+      || milesAudio?.openDeviceCallLine !== 454
+      || milesAudio?.fileCallbacksLine !== 458
+      || milesAudio?.openDeviceLine !== 1444
+      || milesAudio?.mssShim?.compileOnly !== true
+      || milesAudio?.mssShim?.AIL_startup !== true
+      || milesAudio?.mssShim?.AIL_shutdown !== true
+      || milesAudio?.mssShim?.AIL_quick_startup !== true
+      || milesAudio?.mssShim?.AIL_quick_handles !== true
+      || milesAudio?.mssShim?.AIL_set_file_callbacks !== true
+      || milesCalls.length !== 8
+      || milesCalls[0]?.call !== "AIL_set_redist_directory"
+      || milesCalls[0]?.line !== 1450
+      || milesCalls[1]?.call !== "AIL_startup"
+      || milesCalls[1]?.line !== 1451
+      || milesCalls[2]?.call !== "AIL_quick_startup"
+      || milesCalls[2]?.line !== 1458
+      || milesCalls[3]?.call !== "AIL_quick_handles"
+      || milesCalls[3]?.line !== 1461
+      || milesCalls[4]?.call !== "buildProviderList"
+      || milesCalls[4]?.line !== 1464
+      || milesCalls[5]?.call !== "selectProvider"
+      || milesCalls[5]?.line !== 1470
+      || milesCalls[6]?.call !== "refreshCachedVariables"
+      || milesCalls[6]?.line !== 1473
+      || milesCalls[7]?.call !== "initDelayFilter"
+      || milesCalls[7]?.line !== 1479
       || frontier.fileSystemReady !== false
       || frontier.startupFilesReady !== false
       || frontier.setupReady !== true

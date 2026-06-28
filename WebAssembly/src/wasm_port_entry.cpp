@@ -1351,7 +1351,7 @@ const char *json_bool(bool value)
 
 const char *build_device_factory_frontier_json()
 {
-	static char buffer[9000];
+	static char buffer[14000];
 	const bool setup_ready =
 		g_global_data_probe.ok &&
 		g_command_line_probe.ok &&
@@ -1398,6 +1398,33 @@ const char *build_device_factory_frontier_json()
 		"\"defaultSpeechIni\":%s,\"speechIni\":%s,"
 		"\"defaultVoiceIni\":%s,\"voiceIni\":%s,"
 		"\"miscAudioIni\":%s},"
+		"\"milesAudioDeviceFrontier\":{\"source\":\"MilesAudioManager.cpp::init/openDevice + Mss.H\","
+		"\"sourceFiles\":{\"milesAudioManager\":\"GeneralsMD/Code/GameEngineDevice/Source/MilesAudioDevice/MilesAudioManager.cpp\","
+		"\"milesAudioHeader\":\"GeneralsMD/Code/GameEngineDevice/Include/MilesAudioDevice/MilesAudioManager.h\","
+		"\"mssShim\":\"WebAssembly/shims/Mss.H\"},"
+		"\"ready\":false,\"compileOnly\":true,"
+		"\"browserTarget\":\"Web Audio\","
+		"\"nextRequired\":\"%s\","
+		"\"initLine\":444,"
+		"\"audioManagerInitLine\":446,"
+		"\"openDeviceCallLine\":454,"
+		"\"fileCallbacksLine\":458,"
+		"\"openDeviceLine\":1444,"
+		"\"mssShim\":{\"compileOnly\":true,"
+		"\"AIL_startup\":true,"
+		"\"AIL_shutdown\":true,"
+		"\"AIL_quick_startup\":true,"
+		"\"AIL_quick_handles\":true,"
+		"\"AIL_set_file_callbacks\":true},"
+		"\"openDeviceCalls\":["
+		"{\"order\":1,\"line\":1450,\"call\":\"AIL_set_redist_directory\",\"ready\":false,\"status\":\"miles_redist_path_no_browser_runtime\"},"
+		"{\"order\":2,\"line\":1451,\"call\":\"AIL_startup\",\"ready\":false,\"status\":\"needs_web_audio_context_lifecycle\"},"
+		"{\"order\":3,\"line\":1458,\"call\":\"AIL_quick_startup\",\"ready\":false,\"status\":\"needs_web_audio_device_startup\"},"
+		"{\"order\":4,\"line\":1461,\"call\":\"AIL_quick_handles\",\"ready\":false,\"status\":\"needs_browser_audio_handle_contract\"},"
+		"{\"order\":5,\"line\":1464,\"call\":\"buildProviderList\",\"ready\":false,\"status\":\"needs_browser_provider_enumeration\"},"
+		"{\"order\":6,\"line\":1470,\"call\":\"selectProvider\",\"ready\":false,\"status\":\"needs_browser_provider_selection\"},"
+		"{\"order\":7,\"line\":1473,\"call\":\"refreshCachedVariables\",\"ready\":false,\"status\":\"blocked_until_audio_device_exists\"},"
+		"{\"order\":8,\"line\":1479,\"call\":\"initDelayFilter\",\"ready\":false,\"status\":\"needs_browser_audio_filter_contract\"}]},"
 		"\"entries\":["
 		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_engine\"},"
 		"{\"order\":2,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
@@ -1427,6 +1454,7 @@ const char *build_device_factory_frontier_json()
 		json_bool(g_archive_probe.has_default_voice_ini),
 		json_bool(g_archive_probe.has_voice_ini),
 		json_bool(g_archive_probe.has_misc_audio_ini),
+		audio_files_ready ? "browserAudioDevice" : "audioStartupFiles",
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.archive_ok),
