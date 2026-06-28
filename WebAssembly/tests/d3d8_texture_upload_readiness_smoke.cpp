@@ -49,12 +49,13 @@
 //   * PALETTE: D3DFMT_P8 has no GL equivalent; it must be decoded through the
 //     engine's 256-entry ARGB palette to RGBA8 on the CPU before upload.
 //
-//   * BLOCK COMPRESSED (DDS/DXT): D3DFMT_DXT1/DXT3/DXT5 map to
+//   * BLOCK COMPRESSED (DDS/DXT): D3DFMT_DXT1/DXT2/DXT3/DXT4/DXT5 map to
 //     WEBGL_compressed_texture_s3tc extensions. Pitch is block-based, not
 //     row-based: bytes = ceil(w/4) * ceil(h/4) * blockSize (8 for DXT1,
-//     16 for DXT3/DXT5). The shim's CPU surface now models that block pitch
-//     and level size directly so focused synthetic DXT blocks can flow through
-//     LockRect/UnlockRect into the browser compressed texture bridge.
+//     16 for DXT2/DXT3/DXT4/DXT5). The shim's CPU surface now models that
+//     block pitch and level size directly so focused synthetic DXT blocks can
+//     flow through LockRect/UnlockRect into the browser compressed texture
+//     bridge.
 //
 // The test passes only if every format's CPU surface round-trips the recorded
 // dimensions/pitch/pointer arithmetic and the probe counters update as
@@ -117,7 +118,7 @@ struct TextureFormatMapping {
 	int gl_format;
 	int gl_type;
 	bool compressed;        // DXT-style block format
-	int block_bytes;        // 0 for uncompressed; 8 (DXT1) / 16 (DXT3,DXT5)
+	int block_bytes;        // 0 for uncompressed; 8 (DXT1) / 16 (DXT2-DXT5)
 	bool byte_swizzle;      // upload must byte-swap channels
 	bool expand_to_rgba8;   // upload must expand to RGBA8
 	bool alpha_force_opaque;// X-variant: alpha must be forced to 0xFF
@@ -158,12 +159,18 @@ const TextureFormatMapping *lookup_mapping(DWORD d3d_format)
 		{ D3DFMT_DXT1, 0, GL_COMPRESSED_RGB_S3TC_DXT1_EXT, 0, 0,
 			true, 8, false, false, false, false,
 			"block compressed, 8 bytes per 4x4 block; upload via compressedTexImage2D" },
+		{ D3DFMT_DXT2, 0, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, 0, 0,
+			true, 16, false, false, false, false,
+			"block compressed, 16 bytes per 4x4 block; premultiplied-alpha twin using DXT3 block layout/WebGL target" },
 		{ D3DFMT_DXT3, 0, GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, 0, 0,
 			true, 16, false, false, false, false,
-			"block compressed, 16 bytes per 4x4 block; DXT2 is the premultiplied-alpha twin" },
+			"block compressed, 16 bytes per 4x4 block; explicit alpha upload via compressedTexImage2D" },
+		{ D3DFMT_DXT4, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, 0, 0,
+			true, 16, false, false, false, false,
+			"block compressed, 16 bytes per 4x4 block; premultiplied-alpha twin using DXT5 block layout/WebGL target" },
 		{ D3DFMT_DXT5, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, 0, 0,
 			true, 16, false, false, false, false,
-			"block compressed, 16 bytes per 4x4 block; DXT4 is the premultiplied-alpha twin" },
+			"block compressed, 16 bytes per 4x4 block; interpolated alpha upload via compressedTexImage2D" },
 	};
 	for (const TextureFormatMapping &entry : table) {
 		if (entry.d3d_format == d3d_format) {
@@ -388,7 +395,9 @@ int main()
 	};
 	const DxtProbe dxt_formats[] = {
 		{ D3DFMT_DXT1, 8 },
+		{ D3DFMT_DXT2, 16 },
 		{ D3DFMT_DXT3, 16 },
+		{ D3DFMT_DXT4, 16 },
 		{ D3DFMT_DXT5, 16 },
 	};
 
@@ -485,7 +494,7 @@ int main()
 	const DWORD all_formats[] = {
 		D3DFMT_A8R8G8B8, D3DFMT_X8R8G8B8, D3DFMT_R5G6B5, D3DFMT_A1R5G5B5,
 		D3DFMT_A4R4G4B4, D3DFMT_A8, D3DFMT_L8, D3DFMT_A8L8, D3DFMT_P8,
-		D3DFMT_DXT1, D3DFMT_DXT3, D3DFMT_DXT5,
+		D3DFMT_DXT1, D3DFMT_DXT2, D3DFMT_DXT3, D3DFMT_DXT4, D3DFMT_DXT5,
 	};
 	for (DWORD fmt : all_formats) {
 		const TextureFormatMapping *mapping = lookup_mapping(fmt);

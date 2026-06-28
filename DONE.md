@@ -2140,6 +2140,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       path, with Playwright center-pixel and lifecycle assertions. Real DDS
       asset loading, full mip chains, DXT2/DXT4 premultiplied-alpha policy, and
       block-aligned compressed sub-rect updates remain open.
+- [x] Resolve the synthetic DXT2/DXT4 browser policy: the JS bridge now accepts
+      DXT2/DXT4 uploads by aliasing them to the WebGL S3TC DXT3/DXT5 targets
+      while preserving their original storage labels and premultiplied-alpha
+      metadata for harness inspection. The D3D8 DXT draw probe now renders
+      DXT2 and DXT4 red-alpha blocks beside the existing DXT1/DXT3/DXT5 cases,
+      and the C++ texture-readiness smoke records DXT2/DXT4 in its explicit
+      D3D8-to-WebGL mapping spec. Real DDS asset loading, full mip chains, and
+      block-aligned compressed sub-rect updates remain open.
 - [x] Prove the current stage-0 WebGL2 draw bridge handles D3D8 mip-chain
       completeness correctly for synthetic uploaded textures. A new
       browser-driven D3D8 mip-chain draw probe creates a three-level

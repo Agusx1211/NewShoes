@@ -7933,6 +7933,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_dxt_texture_draw(unsigned i
 			alpha_blend = TRUE;
 			expected_r = 128;
 			break;
+		case 3:
+			case_name = "DXT2PremultipliedAlphaRed";
+			texture_format = D3DFMT_DXT2;
+			block_bytes = 16;
+			alpha_blend = TRUE;
+			expected_r = 136;
+			break;
+		case 4:
+			case_name = "DXT4PremultipliedAlphaRed";
+			texture_format = D3DFMT_DXT4;
+			block_bytes = 16;
+			alpha_blend = TRUE;
+			expected_r = 128;
+			break;
 		default:
 			known_case = false;
 			break;
@@ -8034,12 +8048,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_dxt_texture_draw(unsigned i
 			BYTE *block = static_cast<BYTE *>(locked_rect.pBits);
 			std::memset(block, 0, block_bytes);
 			UINT color_offset = 0;
-			if (texture_format == D3DFMT_DXT3) {
+			if (texture_format == D3DFMT_DXT2 || texture_format == D3DFMT_DXT3) {
 				for (UINT index = 0; index < 8; ++index) {
 					block[index] = 0x88;
 				}
 				color_offset = 8;
-			} else if (texture_format == D3DFMT_DXT5) {
+			} else if (texture_format == D3DFMT_DXT4 || texture_format == D3DFMT_DXT5) {
 				block[0] = 0x80;
 				block[1] = 0x00;
 				color_offset = 8;

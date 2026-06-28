@@ -31,7 +31,9 @@ const D3DFMT_P8 = 41;
 const D3DFMT_L8 = 50;
 const D3DFMT_A8L8 = 51;
 const D3DFMT_DXT1 = 0x31545844;
+const D3DFMT_DXT2 = 0x32545844;
 const D3DFMT_DXT3 = 0x33545844;
+const D3DFMT_DXT4 = 0x34545844;
 const D3DFMT_DXT5 = 0x35545844;
 const GL_GREEN = 0x1904;
 const D3DZB_FALSE = 0;
@@ -620,6 +622,23 @@ function d3d8TextureFormatInfo(format) {
         supported: false,
         reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT1 upload",
       };
+    case D3DFMT_DXT2:
+      return s3tc ? {
+        d3dFormat,
+        supported: true,
+        compressed: true,
+        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT,
+        format: 0,
+        type: 0,
+        storage: "dxt2",
+        aliasedStorage: "dxt3",
+        premultipliedAlpha: true,
+        blockBytes: 16,
+      } : {
+        d3dFormat,
+        supported: false,
+        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT2 upload",
+      };
     case D3DFMT_DXT3:
       return s3tc ? {
         d3dFormat,
@@ -634,6 +653,23 @@ function d3d8TextureFormatInfo(format) {
         d3dFormat,
         supported: false,
         reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT3 upload",
+      };
+    case D3DFMT_DXT4:
+      return s3tc ? {
+        d3dFormat,
+        supported: true,
+        compressed: true,
+        internalFormat: s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT,
+        format: 0,
+        type: 0,
+        storage: "dxt4",
+        aliasedStorage: "dxt5",
+        premultipliedAlpha: true,
+        blockBytes: 16,
+      } : {
+        d3dFormat,
+        supported: false,
+        reason: "WEBGL_compressed_texture_s3tc is unavailable for DXT4 upload",
       };
     case D3DFMT_DXT5:
       return s3tc ? {
@@ -1668,6 +1704,8 @@ function updateD3D8Texture(payload = {}) {
     height,
     format,
     storage: info.storage,
+    aliasedStorage: info.aliasedStorage || null,
+    premultipliedAlpha: Boolean(info.premultipliedAlpha),
     compressed: Boolean(info.compressed),
     blockBytes: Number(info.blockBytes ?? 0) >>> 0,
     semantic: info.semantic || null,
@@ -6287,7 +6325,10 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 DXT texture draw probe cannot run" };
         }
         const cases = [];
-        for (const caseId of [0, 1, 2]) {
+        const expectedStorage = ["dxt1", "dxt3", "dxt5", "dxt2", "dxt4"];
+        const expectedAliasedStorage = [null, null, null, "dxt3", "dxt5"];
+        const expectedPremultipliedAlpha = [false, false, false, true, true];
+        for (const caseId of [0, 1, 2, 3, 4]) {
           clearCanvas({ rgba: [0, 0, 0, 255] });
           harnessState.graphics = {
             ...harnessState.graphics,
@@ -6323,6 +6364,9 @@ async function rpc(command, payload = {}) {
             && probe.calls?.browserTextureRelease === 1
             && probe.calls?.setTextureStageState === 14
             && lastUpdate?.compressed === true
+            && lastUpdate?.storage === expectedStorage[caseId]
+            && (lastUpdate?.aliasedStorage ?? null) === expectedAliasedStorage[caseId]
+            && lastUpdate?.premultipliedAlpha === expectedPremultipliedAlpha[caseId]
             && lastUpdate?.blockBytes === probe.texture?.blockBytes
             && lastUpdate?.byteSize === probe.texture?.byteSize
             && lastUpdate?.convertedByteSize === probe.texture?.byteSize

@@ -3109,12 +3109,18 @@ try {
   const dxtDrawNames = dxtDrawCases.map((entry) => entry.probe?.caseName).join(",");
   const dxtDrawCenters = dxtDrawCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   const dxtDrawBlocks = dxtDrawCases.map((entry) => entry.lastUpdate?.blockBytes).join(",");
+  const dxtDrawStorages = dxtDrawCases.map((entry) => entry.lastUpdate?.storage).join(",");
+  const dxtDrawAliases = dxtDrawCases.map((entry) => entry.lastUpdate?.aliasedStorage ?? "").join(",");
+  const dxtDrawPremultipliedAlpha = dxtDrawCases.map((entry) => entry.lastUpdate?.premultipliedAlpha === true ? "1" : "0").join(",");
   if (!d3d8DxtTextureDrawResult.ok
       || d3d8DxtTextureDrawResult.s3tc !== true
-      || dxtDrawCases.length !== 3
-      || dxtDrawNames !== "DXT1Red,DXT3AlphaRed,DXT5AlphaRed"
-      || dxtDrawCenters !== "255,0,0,255|136,0,0,255|128,0,0,255"
-      || dxtDrawBlocks !== "8,16,16"
+      || dxtDrawCases.length !== 5
+      || dxtDrawNames !== "DXT1Red,DXT3AlphaRed,DXT5AlphaRed,DXT2PremultipliedAlphaRed,DXT4PremultipliedAlphaRed"
+      || dxtDrawCenters !== "255,0,0,255|136,0,0,255|128,0,0,255|136,0,0,255|128,0,0,255"
+      || dxtDrawBlocks !== "8,16,16,16,16"
+      || dxtDrawStorages !== "dxt1,dxt3,dxt5,dxt2,dxt4"
+      || dxtDrawAliases !== ",,,dxt3,dxt5"
+      || dxtDrawPremultipliedAlpha !== "0,0,0,1,1"
       || dxtDrawCases.some((entry) => entry.probe?.source !== "browser_d3d8_dxt_texture_draw_probe")
       || dxtDrawCases.some((entry) => entry.probe?.calls?.createTexture !== 1)
       || dxtDrawCases.some((entry) => entry.probe?.calls?.textureLockRect !== 2)
