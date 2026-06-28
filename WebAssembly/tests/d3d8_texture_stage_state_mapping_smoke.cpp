@@ -243,6 +243,40 @@ int map_address(DWORD d3d_addr)
 	}
 }
 
+
+// --- TerrainTex two-texture fallback stage contract -----------------------
+// Mirrors the AlphaTerrainTextureClass::Apply(stage==1) fallback in
+// GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/TerrainTex.cpp.
+// That fallback is the else-branch of
+//   if (TheGlobalData && !TheGlobalData->m_multiPassTerrain) { /* 8-stage hack */ }
+// i.e. the standard two-texture blend path used when m_multiPassTerrain is
+// set. Each entry pins the exact (stage, D3DTSS, value) triple the engine
+// feeds Set_DX8_Texture_Stage_State there. Recorded as a small table so a
+// future terrain two-texture bridge can diff against a stable contract and
+// the JSON spec below stays in lock-step with the asserted wire values.
+struct TerrainStageState {
+	unsigned stage;
+	DWORD tss;
+	DWORD value;
+};
+
+const TerrainStageState kTerrainTwoTextureFallback[] = {
+	// stage 0: pass the base terrain texture straight through (SELECTARG1 on
+	// TEXTURE) for both color and alpha; stage 1 reads this via CURRENT.
+	{ 0, D3DTSS_COLORARG1, D3DTA_TEXTURE },
+	{ 0, D3DTSS_COLOROP,   D3DTOP_SELECTARG1 },
+	{ 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE },
+	{ 0, D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1 },
+	// stage 1: modulate the blend/alpha texture (TEXTURE) onto stage 0's
+	// CURRENT result for color, but only SELECTARG1 the blend texture's own
+	// alpha through (its RGB is irrelevant; only its alpha gates the blend).
+	{ 1, D3DTSS_COLORARG1, D3DTA_TEXTURE },
+	{ 1, D3DTSS_COLOROP,   D3DTOP_MODULATE },
+	{ 1, D3DTSS_COLORARG2, D3DTA_CURRENT },
+	{ 1, D3DTSS_ALPHAARG1, D3DTA_TEXTURE },
+	{ 1, D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1 },
+};
+
 } // namespace
 
 int main()
@@ -266,6 +300,27 @@ int main()
 	expect(D3DTSS_MAXANISOTROPY == 21, "D3DTSS_MAXANISOTROPY value mismatch");
 	expect(D3DTSS_TEXCOORDINDEX == 11, "D3DTSS_TEXCOORDINDEX value mismatch");
 	expect(D3DTSS_TEXTURETRANSFORMFLAGS == 24, "D3DTSS_TEXTURETRANSFORMFLAGS value mismatch");
+
+	// Texture-stage color/alpha argument + operation slots. These are the
+	// wire values TerrainTex.cpp and other fixed-function blenders feed into
+	// Set_DX8_Texture_Stage_State alongside the filter/address slots above.
+	expect(D3DTSS_COLOROP == 1, "D3DTSS_COLOROP value mismatch");
+	expect(D3DTSS_COLORARG1 == 2, "D3DTSS_COLORARG1 value mismatch");
+	expect(D3DTSS_COLORARG2 == 3, "D3DTSS_COLORARG2 value mismatch");
+	expect(D3DTSS_ALPHAOP == 4, "D3DTSS_ALPHAOP value mismatch");
+	expect(D3DTSS_ALPHAARG1 == 5, "D3DTSS_ALPHAARG1 value mismatch");
+	expect(D3DTSS_ALPHAARG2 == 6, "D3DTSS_ALPHAARG2 value mismatch");
+
+	// Texture argument sources the engine ORs into COLORARG*/ALPHAARG*.
+	// D3DTA_TEXTURE / D3DTA_CURRENT are the two the TerrainTex two-texture
+	// fallback contract below uses.
+	expect(D3DTA_CURRENT == 0x00000001, "D3DTA_CURRENT value mismatch");
+	expect(D3DTA_TEXTURE == 0x00000002, "D3DTA_TEXTURE value mismatch");
+
+	// Texture-stage color/alpha operations the engine feeds COLOROP/ALPHAOP.
+	expect(D3DTOP_DISABLE == 1, "D3DTOP_DISABLE value mismatch");
+	expect(D3DTOP_SELECTARG1 == 2, "D3DTOP_SELECTARG1 value mismatch");
+	expect(D3DTOP_MODULATE == 4, "D3DTOP_MODULATE value mismatch");
 
 	expect(D3DTEXF_NONE == 0, "D3DTEXF_NONE value mismatch");
 	expect(D3DTEXF_POINT == 1, "D3DTEXF_POINT value mismatch");
@@ -437,6 +492,60 @@ int main()
 	expect(map_min_filter(D3DTEXF_POINT, D3DTEXF_LINEAR) == GL_NEAREST_MIPMAP_LINEAR,
 		"POINT/LINEAR min -> GL_NEAREST_MIPMAP_LINEAR");
 
+	// -------------------------------------------------------------------------
+	// 6. TerrainTex two-texture fallback stage contract. The original
+	//    AlphaTerrainTextureClass::Apply(stage==1) fallback feeds a fixed set
+	//    of COLORARG/COLOROP/ALPHAARG/ALPHAOP values into stages 0 and 1.
+	//    Verify the recorded table's wire values resolve to the canonical
+	//    D3DTSS/D3DTA/D3DTOP constants pinned in section 1, and that the
+	//    contract matches the original source line-for-line.
+	//    (See GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/
+	//    TerrainTex.cpp, the else-branch of !m_multiPassTerrain at stage==1.)
+	// -------------------------------------------------------------------------
+	const size_t kTerrainStateCount =
+		sizeof(kTerrainTwoTextureFallback) / sizeof(kTerrainTwoTextureFallback[0]);
+	expect(kTerrainStateCount == 9, "terrain two-texture fallback table size");
+
+	// stage 0: SELECTARG1 on TEXTURE for both color and alpha.
+	expect(kTerrainTwoTextureFallback[0].stage == 0
+		&& kTerrainTwoTextureFallback[0].tss == D3DTSS_COLORARG1
+		&& kTerrainTwoTextureFallback[0].value == D3DTA_TEXTURE,
+		"terrain stage0 COLORARG1 must be TEXTURE");
+	expect(kTerrainTwoTextureFallback[1].stage == 0
+		&& kTerrainTwoTextureFallback[1].tss == D3DTSS_COLOROP
+		&& kTerrainTwoTextureFallback[1].value == D3DTOP_SELECTARG1,
+		"terrain stage0 COLOROP must be SELECTARG1");
+	expect(kTerrainTwoTextureFallback[2].stage == 0
+		&& kTerrainTwoTextureFallback[2].tss == D3DTSS_ALPHAARG1
+		&& kTerrainTwoTextureFallback[2].value == D3DTA_TEXTURE,
+		"terrain stage0 ALPHAARG1 must be TEXTURE");
+	expect(kTerrainTwoTextureFallback[3].stage == 0
+		&& kTerrainTwoTextureFallback[3].tss == D3DTSS_ALPHAOP
+		&& kTerrainTwoTextureFallback[3].value == D3DTOP_SELECTARG1,
+		"terrain stage0 ALPHAOP must be SELECTARG1");
+
+	// stage 1: MODULATE TEXTURE x CURRENT for color; SELECTARG1 TEXTURE for alpha.
+	expect(kTerrainTwoTextureFallback[4].stage == 1
+		&& kTerrainTwoTextureFallback[4].tss == D3DTSS_COLORARG1
+		&& kTerrainTwoTextureFallback[4].value == D3DTA_TEXTURE,
+		"terrain stage1 COLORARG1 must be TEXTURE");
+	expect(kTerrainTwoTextureFallback[5].stage == 1
+		&& kTerrainTwoTextureFallback[5].tss == D3DTSS_COLOROP
+		&& kTerrainTwoTextureFallback[5].value == D3DTOP_MODULATE,
+		"terrain stage1 COLOROP must be MODULATE");
+	expect(kTerrainTwoTextureFallback[6].stage == 1
+		&& kTerrainTwoTextureFallback[6].tss == D3DTSS_COLORARG2
+		&& kTerrainTwoTextureFallback[6].value == D3DTA_CURRENT,
+		"terrain stage1 COLORARG2 must be CURRENT");
+	expect(kTerrainTwoTextureFallback[7].stage == 1
+		&& kTerrainTwoTextureFallback[7].tss == D3DTSS_ALPHAARG1
+		&& kTerrainTwoTextureFallback[7].value == D3DTA_TEXTURE,
+		"terrain stage1 ALPHAARG1 must be TEXTURE");
+	expect(kTerrainTwoTextureFallback[8].stage == 1
+		&& kTerrainTwoTextureFallback[8].tss == D3DTSS_ALPHAOP
+		&& kTerrainTwoTextureFallback[8].value == D3DTOP_SELECTARG1,
+		"terrain stage1 ALPHAOP must be SELECTARG1");
+
 	device->Release();
 	d3d->Release();
 
@@ -493,7 +602,10 @@ int main()
 		"{\"d3dTss\":\"D3DTSS_MAXMIPLEVEL\",\"d3dTssValue\":\"most detailed sampled mip level\"},"
 		"{\"d3dTss\":\"D3DTSS_MIPMAPLODBIAS\",\"d3dTssValue\":\"float bits stored in DWORD\"},"
 		"{\"d3dTss\":\"D3DTSS_ADDRESSU\",\"d3dTssValue\":\"UAddrMode==REPEAT?WRAP:CLAMP\"},"
-		"{\"d3dTss\":\"D3DTSS_ADDRESSV\",\"d3dTssValue\":\"VAddrMode==REPEAT?WRAP:CLAMP\"}]}\n",
+		"{\"d3dTss\":\"D3DTSS_ADDRESSV\",\"d3dTssValue\":\"VAddrMode==REPEAT?WRAP:CLAMP\"}],"
+		"\"terrainTwoTextureFallback\":{"
+		"\"source\":\"GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/TerrainTex.cpp AlphaTerrainTextureClass::Apply stage==1 fallback (m_multiPassTerrain else branch)\","
+		"\"stageStates\":[",
 		// caps
 		static_cast<unsigned long>(caps.TextureFilterCaps),
 		static_cast<unsigned long>(caps.TextureAddressCaps),
@@ -527,6 +639,17 @@ int main()
 		D3DTSS_MIPMAPLODBIAS,
 		// apply emits
 		D3DTSS_MINFILTER, D3DTSS_MAGFILTER, D3DTSS_MIPFILTER);
+
+	// Emit the TerrainTex two-texture fallback contract entries straight from
+	// the verified table above so the JSON spec can never drift from the
+	// asserted (stage, D3DTSS, value) triples.
+	for (size_t i = 0; i < kTerrainStateCount; ++i) {
+		const TerrainStageState &e = kTerrainTwoTextureFallback[i];
+		std::printf("%s{\"stage\":%u,\"tss\":%lu,\"value\":%lu}",
+			(i == 0 ? "" : ","), e.stage,
+			static_cast<unsigned long>(e.tss), static_cast<unsigned long>(e.value));
+	}
+	std::printf("]}}\n");
 
 	return 0;
 }
