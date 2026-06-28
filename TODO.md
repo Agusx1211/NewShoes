@@ -3039,6 +3039,13 @@ shares structure and follows behind.
       wasm harness observes the original `VK_ESCAPE` branch posting
       `WM_QUIT` via `PostQuitMessage(0)`. This proves the WndProc key path only;
       full DirectInput/`Keyboard` event delivery for gameplay remains open.
+- [x] Focused real Keyboard stream-message proof: the standalone wasm
+      `win32-keyboard-smoke` links original
+      `GameClient/Input/Keyboard.cpp`, feeds scripted device events through a
+      minimal concrete `Keyboard`, drives original
+      `Keyboard::update()` / `updateKeys()` / `createStreamMessages()`, and
+      verifies `MSG_RAW_KEY_DOWN`, `MSG_RAW_KEY_UP`, and left-shift modifier
+      folding on the original `MessageStream`.
 - [ ] Pointer lock / capture behavior where needed.
 - [ ] Cursor rendering (engine-drawn cursor vs CSS cursor).
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
