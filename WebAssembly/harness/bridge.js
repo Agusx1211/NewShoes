@@ -4154,6 +4154,188 @@ async function probeOriginalMouseFrameInput() {
   return probe;
 }
 
+const originalMouseFrameWidgetNames = Object.freeze([
+  "frameMouseProbeButton",
+]);
+
+function originalMouseFrameWidgetFromProbe(probe, name) {
+  if (!originalMouseFrameWidgetNames.includes(name)) {
+    return {
+      error: `Unknown original mouse frame widget: ${name}`,
+      knownWidgets: [...originalMouseFrameWidgetNames],
+    };
+  }
+
+  const gui = probe?.gui ?? {};
+  const x = Number(gui.buttonX);
+  const y = Number(gui.buttonY);
+  const width = Number(gui.buttonWidth);
+  const height = Number(gui.buttonHeight);
+  if (gui.buttonReady !== true
+      || gui.buttonName !== name
+      || !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0) {
+    return {
+      error: `Original mouse frame widget is not ready: ${name}`,
+      knownWidgets: [...originalMouseFrameWidgetNames],
+    };
+  }
+
+  return {
+    name,
+    kind: "GadgetPushButton",
+    rect: { x, y, width, height },
+    point: {
+      x: x + Math.floor(width / 3),
+      y: y + Math.floor(height / 2),
+    },
+  };
+}
+
+async function clickOriginalMouseFrameWidget(payload = {}) {
+  const name = String(payload.name ?? "frameMouseProbeButton");
+  if (!originalMouseFrameWidgetNames.includes(name)) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      error: `Unknown original mouse frame widget: ${name}`,
+      knownWidgets: [...originalMouseFrameWidgetNames],
+      state: snapshotState(),
+    };
+  }
+
+  let beforeProbe = await probeOriginalMouseFrameInput();
+  if (!beforeProbe?.initialized || !beforeProbe?.gui?.buttonReady) {
+    beforeProbe = await resetOriginalMouseFrameInput();
+  }
+  if (!beforeProbe) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      error: "Wasm module unavailable; original Mouse frame input cannot be probed",
+      state: snapshotState(),
+    };
+  }
+  if (beforeProbe.enabled !== true) {
+    beforeProbe = await setOriginalMouseFrameInputEnabled(true);
+  }
+
+  const widget = originalMouseFrameWidgetFromProbe(beforeProbe, name);
+  if (widget.error) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      error: widget.error,
+      knownWidgets: widget.knownWidgets,
+      probe: beforeProbe,
+      state: snapshotState(),
+    };
+  }
+
+  const point = widget.point;
+  const lParam = win32PointLParam(point);
+  const selectedBefore = Number(beforeProbe.gui?.buttonSelected ?? 0);
+
+  const movePostState = await postBrowserMessageToWasm({
+    message: win32Messages.mouseMove,
+    lParam,
+    point,
+  });
+  const downPostState = await postBrowserMessageToWasm({
+    message: win32Messages.leftButtonDown,
+    lParam,
+    point,
+  });
+  if (!movePostState || !downPostState) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      widget,
+      error: "Wasm module unavailable; original Mouse frame button down cannot be queued",
+      state: snapshotState(),
+    };
+  }
+
+  await stepFrames({ count: 1 });
+  const downProbe = await probeOriginalMouseFrameInput();
+  const downFrameQueueCount = harnessState.browserInput?.messageQueue?.count ?? null;
+
+  const upPostState = await postBrowserMessageToWasm({
+    message: win32Messages.leftButtonUp,
+    lParam,
+    point,
+  });
+  if (!upPostState) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      widget,
+      error: "Wasm module unavailable; original Mouse frame button up cannot be queued",
+      state: snapshotState(),
+    };
+  }
+
+  await stepFrames({ count: 1 });
+  const upProbe = await probeOriginalMouseFrameInput();
+  const upFrameQueueCount = harnessState.browserInput?.messageQueue?.count ?? null;
+  const downMessages = downProbe?.stream?.messages ?? [];
+  const upMessages = upProbe?.stream?.messages ?? [];
+  const selectedAfter = Number(upProbe?.gui?.buttonSelected ?? 0);
+  const ok = Boolean(
+    downProbe?.enabled === true
+      && downProbe?.lastRan === true
+      && downProbe?.commandList?.countAfterPropagate === 0
+      && downProbe?.gui?.buttonGrabbed === true
+      && downProbe?.gui?.buttonSelected === selectedBefore
+      && downMessages.some((message) =>
+        message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN"
+        && message.x === point.x
+        && message.y === point.y)
+      && upProbe?.enabled === true
+      && upProbe?.lastRan === true
+      && upProbe?.commandList?.countAfterPropagate === 0
+      && upProbe?.gui?.buttonGrabbed === false
+      && upProbe?.gui?.buttonSelectedSourceMatches === true
+      && upProbe?.gui?.buttonSelectedX === point.x
+      && upProbe?.gui?.buttonSelectedY === point.y
+      && selectedAfter === selectedBefore + 1
+      && upMessages.some((message) =>
+        message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_UP"
+        && message.x === point.x
+        && message.y === point.y)
+      && harnessState.browserInput?.messageQueue?.count === 0
+  );
+
+  return {
+    ok,
+    command: "clickOriginalMouseFrameWidget",
+    name,
+    widget,
+    selectedBefore,
+    selectedAfter,
+    down: {
+      postQueueCount: downPostState.browserInput?.messageQueue?.count ?? null,
+      frameQueueCount: downFrameQueueCount,
+      probe: downProbe,
+    },
+    up: {
+      postQueueCount: upPostState.browserInput?.messageQueue?.count ?? null,
+      frameQueueCount: upFrameQueueCount,
+      probe: upProbe,
+    },
+    state: snapshotState(),
+  };
+}
+
 async function resetOriginalKeyboardInput() {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
@@ -4918,6 +5100,8 @@ async function rpc(command, payload = {}) {
         }
         return { ok: true, command, probe, state: snapshotState() };
       }
+    case "clickOriginalMouseFrameWidget":
+      return clickOriginalMouseFrameWidget(payload);
     case "resetOriginalKeyboardInputProbe":
       {
         const probe = await resetOriginalKeyboardInput();

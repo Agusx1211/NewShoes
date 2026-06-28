@@ -3192,6 +3192,12 @@ shares structure and follows behind.
             `GBM_SELECTED` while the raw messages stay out of `TheCommandList`.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
+      - [x] Add a first named original-GUI click RPC:
+            `clickOriginalMouseFrameWidget("frameMouseProbeButton")` resolves
+            the frame-owned `GadgetPushButton` from probe geometry, queues
+            Win32 mouse messages, steps the original frame-owned Mouse path,
+            and verifies `GBM_SELECTED` without raw messages reaching
+            `TheCommandList`.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

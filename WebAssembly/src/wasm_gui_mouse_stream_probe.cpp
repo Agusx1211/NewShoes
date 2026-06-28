@@ -638,6 +638,9 @@ const char *write_frame_mouse_json()
 		"\"modifiers\":%d,"
 		"\"gui\":{\"attached\":%s,\"windowReady\":%s,"
 		"\"buttonReady\":%s,"
+		"\"buttonName\":\"frameMouseProbeButton\","
+		"\"buttonX\":%d,\"buttonY\":%d,"
+		"\"buttonWidth\":%d,\"buttonHeight\":%d,"
 		"\"mousePos\":%d,\"leftDown\":%d,\"leftUp\":%d,"
 		"\"leftDrag\":%d,\"entering\":%d,\"wheelUp\":%d,"
 		"\"wheelDown\":%d,\"wheel\":%d,\"lastMessage\":%d,"
@@ -666,6 +669,10 @@ const char *write_frame_mouse_json()
 		bool_json(g_frame_mouse_gui_attached),
 		bool_json(g_frame_mouse_window_manager != nullptr && g_frame_mouse_window != nullptr),
 		bool_json(g_frame_mouse_button != nullptr),
+		FRAME_MOUSE_BUTTON_X,
+		FRAME_MOUSE_BUTTON_Y,
+		FRAME_MOUSE_BUTTON_WIDTH,
+		FRAME_MOUSE_BUTTON_HEIGHT,
 		g_frame_mouse_capture.mousePosCount,
 		g_frame_mouse_capture.leftDownCount,
 		g_frame_mouse_capture.leftUpCount,

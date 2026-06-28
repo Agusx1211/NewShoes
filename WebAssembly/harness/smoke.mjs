@@ -2325,6 +2325,89 @@ try {
       throw new Error(`Original Mouse frame-owned GadgetPushButton cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterButton)}`);
     }
 
+    const missingFrameMouseWidgetClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickOriginalMouseFrameWidget", { name: "missingFrameMouseWidget" }));
+    if (missingFrameMouseWidgetClick.ok !== false
+        || !String(missingFrameMouseWidgetClick.error ?? "").includes("Unknown original mouse frame widget")
+        || !missingFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeButton")) {
+      throw new Error(`Original Mouse named widget click did not reject an unknown widget: ${JSON.stringify(missingFrameMouseWidgetClick)}`);
+    }
+
+    const namedFrameMouseWidgetClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickOriginalMouseFrameWidget", { name: "frameMouseProbeButton" }));
+    const namedFrameMouseWidget = namedFrameMouseWidgetClick.widget;
+    const namedFrameMouseDownProbe = namedFrameMouseWidgetClick.down?.probe;
+    const namedFrameMouseUpProbe = namedFrameMouseWidgetClick.up?.probe;
+    const namedFrameMouseDownMessages = namedFrameMouseDownProbe?.stream?.messages ?? [];
+    const namedFrameMouseUpMessages = namedFrameMouseUpProbe?.stream?.messages ?? [];
+    const namedFrameMouseLeftDownMessage = namedFrameMouseDownMessages.find(
+      (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN",
+    );
+    const namedFrameMouseLeftUpMessage = namedFrameMouseUpMessages.find(
+      (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_UP",
+    );
+    assertOriginalMouseSemanticMessage(
+      namedFrameMouseLeftDownMessage,
+      { positionX: frameMouseButtonX, positionY: frameMouseButtonY, hasTimestamp: true },
+      "Original Mouse named frame widget left down",
+    );
+    assertOriginalMouseSemanticMessage(
+      namedFrameMouseLeftUpMessage,
+      { positionX: frameMouseButtonX, positionY: frameMouseButtonY, hasTimestamp: true },
+      "Original Mouse named frame widget left up",
+    );
+    if (!namedFrameMouseWidgetClick.ok
+        || namedFrameMouseWidgetClick.name !== "frameMouseProbeButton"
+        || namedFrameMouseWidgetClick.selectedBefore !== 0
+        || namedFrameMouseWidgetClick.selectedAfter !== 1
+        || namedFrameMouseWidget?.kind !== "GadgetPushButton"
+        || namedFrameMouseWidget?.rect?.x !== 32
+        || namedFrameMouseWidget?.rect?.y !== 32
+        || namedFrameMouseWidget?.rect?.width !== 96
+        || namedFrameMouseWidget?.rect?.height !== 32
+        || namedFrameMouseWidget?.point?.x !== frameMouseButtonX
+        || namedFrameMouseWidget?.point?.y !== frameMouseButtonY
+        || namedFrameMouseWidgetClick.down?.postQueueCount !== 2
+        || namedFrameMouseWidgetClick.down?.frameQueueCount !== 0
+        || namedFrameMouseWidgetClick.up?.postQueueCount !== 1
+        || namedFrameMouseWidgetClick.up?.frameQueueCount !== 0
+        || namedFrameMouseDownProbe?.enabled !== true
+        || namedFrameMouseDownProbe?.lastRan !== true
+        || namedFrameMouseDownProbe?.commandList?.countAfterPropagate !== 0
+        || namedFrameMouseDownProbe?.gui?.buttonSelected !== 0
+        || namedFrameMouseDownProbe?.gui?.buttonGrabbed !== true
+        || namedFrameMouseDownProbe?.gui?.grabbed !== false
+        || namedFrameMouseUpProbe?.enabled !== true
+        || namedFrameMouseUpProbe?.lastRan !== true
+        || namedFrameMouseUpProbe?.commandList?.countAfterPropagate !== 0
+        || namedFrameMouseUpProbe?.gui?.buttonSelected !== 1
+        || namedFrameMouseUpProbe?.gui?.buttonSelectedX !== frameMouseButtonX
+        || namedFrameMouseUpProbe?.gui?.buttonSelectedY !== frameMouseButtonY
+        || namedFrameMouseUpProbe?.gui?.buttonSelectedSourceMatches !== true
+        || namedFrameMouseUpProbe?.gui?.buttonGrabbed !== false
+        || namedFrameMouseUpProbe?.gui?.grabbed !== false
+        || namedFrameMouseLeftDownMessage?.x !== frameMouseButtonX
+        || namedFrameMouseLeftDownMessage?.y !== frameMouseButtonY
+        || namedFrameMouseLeftUpMessage?.x !== frameMouseButtonX
+        || namedFrameMouseLeftUpMessage?.y !== frameMouseButtonY
+        || namedFrameMouseWidgetClick.state?.browserInput?.messageQueue?.count !== 0) {
+      throw new Error(`Original Mouse named frame widget click did not route through the original button path: ${JSON.stringify(namedFrameMouseWidgetClick)}`);
+    }
+
+    const resetFrameOwnerAfterNamedButton = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalMouseFrameInput"));
+    if (!resetFrameOwnerAfterNamedButton.ok
+        || resetFrameOwnerAfterNamedButton.probe?.ticks !== 0
+        || resetFrameOwnerAfterNamedButton.probe?.lastRan !== false
+        || resetFrameOwnerAfterNamedButton.probe?.stream?.count !== 0
+        || resetFrameOwnerAfterNamedButton.probe?.mouse?.win32Attached !== true
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonReady !== true
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonSelected !== 0
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonGrabbed !== false
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.grabbed !== false) {
+      throw new Error(`Original Mouse named frame widget cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterNamedButton)}`);
+    }
+
     const frameMouseWheelX = 345;
     const frameMouseWheelY = 67;
     await page.mouse.move(canvasBox.x + frameMouseWheelX, canvasBox.y + frameMouseWheelY);
