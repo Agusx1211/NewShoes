@@ -42,6 +42,8 @@ struct WasmD3D8DrawRenderState
 	DWORD fill_mode;
 	DWORD z_bias;
 	DWORD shade_mode;
+	DWORD lighting;
+	DWORD ambient;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

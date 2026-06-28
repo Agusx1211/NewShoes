@@ -3234,6 +3234,8 @@ function normalizeD3D8RenderState(renderState = {}) {
     fillMode: Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0,
     zBias: Number(renderState.zBias ?? 0) >>> 0,
     shadeMode: Number(renderState.shadeMode ?? D3DSHADE_GOURAUD) >>> 0,
+    lighting: Number(renderState.lighting ?? 1) >>> 0,
+    ambient: Number(renderState.ambient ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -3453,6 +3455,13 @@ function applyD3D8RenderState(renderState, options = {}) {
       flat: state.shadeMode === D3DSHADE_FLAT,
       gouraud: state.shadeMode === D3DSHADE_GOURAUD,
       phongRequested: state.shadeMode === D3DSHADE_PHONG,
+    },
+    lighting: {
+      enabled: state.lighting !== 0,
+    },
+    ambient: {
+      color: state.ambient,
+      rgba: d3dColorToNormalizedRgba(state.ambient),
     },
     colorWrite: colorMask,
   };
@@ -4164,6 +4173,7 @@ async function loadWasmModule() {
       probeD3D8FillMode: module.cwrap("cnc_port_probe_d3d8_fill_mode", "string", []),
       probeD3D8ZBias: module.cwrap("cnc_port_probe_d3d8_z_bias", "string", []),
       probeD3D8ShadeMode: module.cwrap("cnc_port_probe_d3d8_shade_mode", "string", []),
+      probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -7023,6 +7033,50 @@ async function rpc(command, payload = {}) {
           browserProbe,
           centerPixelOk,
           firstVertexFlatPath,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8LightingAmbient":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 lighting/ambient probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8LightingAmbient());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const renderState = browserProbe?.renderState ?? {};
+        const lighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const ambient = browserProbe?.appliedRenderState?.ambient ?? {};
+        const ambientRgba = ambient.rgba ?? [];
+        const expectedAmbient = probe.lightingAmbient?.ambient ?? 0xff405060;
+        const expectedAmbientRgba = d3dColorToNormalizedRgba(expectedAmbient);
+        const ambientRgbaOk = Array.isArray(ambientRgba)
+          && ambientRgba.length === 4
+          && ambientRgba.every((component, index) =>
+            Math.abs(component - expectedAmbientRgba[index]) < 0.00001);
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.indexCount === 6
+          && renderState.lighting === 0
+          && renderState.ambient === expectedAmbient
+          && lighting.enabled === false
+          && ambient.color === expectedAmbient
+          && ambientRgbaOk
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          centerPixelOk,
+          ambientRgbaOk,
           state: snapshotState(),
         };
       }

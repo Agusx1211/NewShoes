@@ -2266,6 +2266,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       uses the original first vertex. A focused probe draws a red-first,
       blue-rest triangle and Playwright verifies the captured flat state,
       first-vertex flat path, and red center pixel.
+- [x] Add D3D8 `D3DRS_LIGHTING` / `D3DRS_AMBIENT` capture to the browser draw
+      bridge. The shim now carries the lighting flag and packed ambient color
+      in the draw payload, the JS bridge normalizes them into descriptor
+      metadata and ARGB-decoded RGBA, and a focused probe sets lighting false
+      with ambient `0xff405060`. Playwright verifies captured state,
+      descriptor decoding, persistent buffers, and the green center pixel.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8

@@ -3130,6 +3130,20 @@ try {
     throw new Error(`D3D8 shade-mode probe failed: ${JSON.stringify(d3d8ShadeModeResult)}`);
   }
 
+  const d3d8LightingAmbientResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LightingAmbient"));
+  if (!d3d8LightingAmbientResult.ok
+      || d3d8LightingAmbientResult.probe?.source !== "browser_d3d8_lighting_ambient_probe"
+      || d3d8LightingAmbientResult.probe?.calls?.drawIndexed !== 1
+      || d3d8LightingAmbientResult.browserProbe?.renderState?.lighting !== 0
+      || d3d8LightingAmbientResult.browserProbe?.renderState?.ambient !== 0xff405060
+      || d3d8LightingAmbientResult.browserProbe?.appliedRenderState?.lighting?.enabled !== false
+      || d3d8LightingAmbientResult.browserProbe?.appliedRenderState?.ambient?.color !== 0xff405060
+      || d3d8LightingAmbientResult.ambientRgbaOk !== true
+      || d3d8LightingAmbientResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
+      || d3d8LightingAmbientResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 lighting/ambient probe failed: ${JSON.stringify(d3d8LightingAmbientResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

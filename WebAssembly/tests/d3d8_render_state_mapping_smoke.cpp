@@ -346,15 +346,30 @@ int main()
 		"SHADEMODE PHONG round-trip");
 
 	// ----------------------------------------------------------------------
+	// 7. LIGHTING flag and packed AMBIENT color.
+	// ----------------------------------------------------------------------
+	set_state(D3DRS_LIGHTING, FALSE, "SetRenderState LIGHTING FALSE failed");
+	expect_last(D3DRS_LIGHTING, FALSE);
+	set_state(D3DRS_LIGHTING, TRUE, "SetRenderState LIGHTING TRUE failed");
+	expect_last(D3DRS_LIGHTING, TRUE);
+	const DWORD ambient_color = 0xff405060UL;
+	set_state(D3DRS_AMBIENT, ambient_color, "SetRenderState AMBIENT failed");
+	expect_last(D3DRS_AMBIENT, ambient_color);
+
+	DWORD ambient = 0;
+	expect(SUCCEEDED(device->GetRenderState(D3DRS_AMBIENT, &ambient)) && ambient == ambient_color,
+		"AMBIENT round-trip");
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite,shade
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3; // cull,zenable,zwrite,zfunc,blend(4),blendop2,alpha(3),colorwrite,shade,lighting/ambient
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_SHADEMODE,
-		"last_set_render_state mismatch after shade-mode");
-	expect(state->last_set_render_state_value == D3DSHADE_PHONG,
-		"last_set_render_state_value mismatch after shade-mode");
+	expect(state->last_set_render_state == D3DRS_AMBIENT,
+		"last_set_render_state mismatch after ambient");
+	expect(state->last_set_render_state_value == ambient_color,
+		"last_set_render_state_value mismatch after ambient");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
@@ -401,6 +416,8 @@ int main()
 		"{\"d3dShadeMode\":%d,\"name\":\"flat\",\"webgl\":{\"useFlatVarying\":true,\"firstVertexConvention\":true}},"
 		"{\"d3dShadeMode\":%d,\"name\":\"gouraud\",\"webgl\":{\"useFlatVarying\":false}},"
 		"{\"d3dShadeMode\":%d,\"name\":\"phong\",\"webgl\":{\"useFlatVarying\":false,\"note\":\"not used by current original sources\"}}],"
+		"\"lighting\":{\"d3dLightingEnable\":1,\"browserDescriptor\":{\"enabled\":true}},"
+		"\"ambient\":{\"d3dAmbient\":%lu,\"rgba\":[%0.6f,%0.6f,%0.6f,%0.6f]},"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
 		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u}}\n",
@@ -424,6 +441,11 @@ int main()
 		D3DSHADE_FLAT,
 		D3DSHADE_GOURAUD,
 		D3DSHADE_PHONG,
+		static_cast<unsigned long>(ambient_color),
+		static_cast<double>((ambient_color >> 16) & 0xff) / 255.0,
+		static_cast<double>((ambient_color >> 8) & 0xff) / 255.0,
+		static_cast<double>(ambient_color & 0xff) / 255.0,
+		static_cast<double>((ambient_color >> 24) & 0xff) / 255.0,
 		// color write spec
 		static_cast<unsigned long>(color_write_all),
 		(color_write_all & D3DCOLORWRITEENABLE_RED) ? "true" : "false",

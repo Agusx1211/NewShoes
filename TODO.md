@@ -452,8 +452,9 @@ shares structure and follows behind.
       `D3DXCreateVolumeTexture` / `LockBox` / `SetTexture` path.
 - [ ] Remaining D3D8 render-state mapping beyond the current
       cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog/
-      fill-mode/z-bias/shade-mode coverage, including lighting/material state,
-      clip state, and other W3D draw states → GL/shader state.
+      fill-mode/z-bias/shade-mode and lighting/ambient capture coverage,
+      including material state, fixed-function lighting shader behavior, clip
+      state, and other W3D draw states → GL/shader state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline
       rendering in real scenes; the first bridge expands indexed triangle
