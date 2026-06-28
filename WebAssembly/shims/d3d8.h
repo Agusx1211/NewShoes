@@ -653,6 +653,7 @@ struct IDirect3DDevice8
 	virtual HRESULT GetRenderState(D3DRENDERSTATETYPE state, DWORD *value) = 0;
 	virtual HRESULT SetTexture(DWORD stage, IDirect3DBaseTexture8 *texture) = 0;
 	virtual HRESULT SetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE state, DWORD value) = 0;
+	virtual HRESULT GetTextureStageState(DWORD stage, D3DTEXTURESTAGESTATETYPE state, DWORD *value) = 0;
 	virtual HRESULT ValidateDevice(DWORD *passes) = 0;
 	virtual HRESULT SetCurrentTexturePalette(UINT palette) = 0;
 	virtual HRESULT DrawPrimitive(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT primitive_count) = 0;
