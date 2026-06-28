@@ -92,15 +92,21 @@ and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
 
 - `PROJECT.md` — broad outline of the whole port: architecture, the
   device-layer mapping, milestones, and known hard problems.
-- `TODO.md` — exhaustive checklist of everything to be done, tested, and
+- `TODO.md` — open checklist of everything still to be done, tested, and
   validated, grouped by milestone.
+- `DONE.md` — completed checklist history, grouped by the same milestones.
+  Search it when you need to verify that related work was already handled.
 
 **Every agent must, every time:**
 
-- **Read `PROJECT.md` and `TODO.md` first** and **check the done items** so you
-  build on existing progress instead of redoing it.
+- **Read `PROJECT.md` and `TODO.md` first** so you build from the current open
+  plan instead of guessing.
+- **Search `DONE.md` for related completed work before implementing in an
+  area**, so you build on existing progress instead of redoing it. Do not load
+  all of `DONE.md` by default unless broad history is genuinely needed.
 - **Always add any future TODO you encounter to `TODO.md`** if it isn't already
   listed — new tasks, tests, edge cases, risks, follow-ups.
-- Tick items off (`[ ]` → `[x]`) as you complete them, and remember: nothing
+- As you complete work, move the item from `TODO.md` to `DONE.md` as `[x]`
+  instead of leaving completed entries in `TODO.md`. Remember: nothing
   rendering-related is done until the harness proves it (see above).
 - Commit your work using short but descriptive commits. Sign it with your provider + model (granular, include subversion) name as author.

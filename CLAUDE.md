@@ -30,7 +30,10 @@ it and a screenshot or state check proves it works. See `AGENTS.md`.
 ## Plan & checklist
 
 `PROJECT.md` is the broad outline (architecture, milestones, risks). `TODO.md`
-is the exhaustive checklist of what must be built, tested, and validated.
-**Always** read both before starting work: check what's already done so you
-don't redo it, and pick up from there. **Always** add any new TODO you discover
-to `TODO.md` if it isn't already listed, and tick items off as you finish them.
+is the open checklist of what must still be built, tested, and validated.
+`DONE.md` holds completed checklist history. **Always** read `PROJECT.md` and
+`TODO.md` before starting work, then search `DONE.md` for related completed
+work before implementing in an area so you don't redo it. **Always** add any
+new TODO you discover to `TODO.md` if it isn't already listed. As you finish
+items, move them from `TODO.md` to `DONE.md` as `[x]`; do not leave completed
+items in `TODO.md`.
