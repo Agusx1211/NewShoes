@@ -3050,6 +3050,13 @@ shares structure and follows behind.
       - [x] Extend the normal `tick_frame()` Mouse owner browser proof to cover
             held-button `MSG_RAW_MOUSE_LEFT_DRAG` delta output and
             `MSG_RAW_MOUSE_WHEEL` spin output across reset frame-owner state.
+      - [x] Promote GUI `WindowTranslator` delivery into the normal
+            `tick_frame()` Mouse owner: the frame-owned `MessageStream` keeps a
+            persistent original `WindowTranslator` plus a persistent probe
+            `GameWindowManager` / full-canvas `GameWindow`, and the browser
+            smoke proves raw pre-propagation mouse stream snapshots are consumed
+            into `GWM_LEFT_DOWN`, `GWM_LEFT_DRAG`, `GWM_LEFT_UP`, and
+            `GWM_WHEEL_UP` with `CommandList` drain semantics.
       - [ ] Make the original Mouse stream probe JSON type-aware so drag,
             wheel, button, and modifier arguments are exposed through semantic
             fields instead of mixed generic `integer1` / `integer2` slots.
@@ -3280,6 +3287,12 @@ shares structure and follows behind.
       the non-`EXPECT_WASM=1` path currently hits a wasm memory access
       out-of-bounds in `Record_Texture_End()` / `Debug_Statistics::End_Statistics()`,
       while `EXPECT_WASM=1 node harness/smoke.mjs` passes.
+- [ ] Make the original frame-owner reset RPCs safe as the first
+      original-memory-manager users after boot; minimal scripts that call
+      `resetOriginalKeyboardFrameInput` or `resetOriginalMouseFrameInput`
+      immediately after `boot` currently trip a wasm memory-pool free during
+      the bridge's full-state refresh, while the full `EXPECT_WASM=1`
+      smoke passes because earlier original probes initialize that state.
 
 ## Cross-cutting: project hygiene
 

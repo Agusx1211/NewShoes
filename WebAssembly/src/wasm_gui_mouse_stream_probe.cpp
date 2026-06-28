@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <new>
 #include <string>
 
 #ifdef __EMSCRIPTEN__
@@ -73,11 +74,18 @@ namespace {
 struct GuiInputCapture
 {
 	Int leftDownCount = 0;
+	Int leftUpCount = 0;
+	Int leftDragCount = 0;
 	Int mousePosCount = 0;
 	Int enteringCount = 0;
+	Int wheelUpCount = 0;
+	Int wheelDownCount = 0;
 	GameWindowMessage lastMessage = GWM_NONE;
 	ICoord2D lastMouse = { 0, 0 };
 	ICoord2D leftDownMouse = { 0, 0 };
+	ICoord2D leftUpMouse = { 0, 0 };
+	ICoord2D leftDragMouse = { 0, 0 };
+	ICoord2D wheelMouse = { 0, 0 };
 };
 
 class ProbeGameWindow : public GameWindow
@@ -140,9 +148,14 @@ GlobalData *g_frame_mouse_global_data = nullptr;
 ProbeKeyboard *g_frame_mouse_keyboard = nullptr;
 MessageStream *g_frame_mouse_message_stream = nullptr;
 CommandList *g_frame_mouse_command_list = nullptr;
-char g_frame_mouse_json[5000] = "{}";
+ProbeGameWindowManager *g_frame_mouse_window_manager = nullptr;
+ProbeGameWindow *g_frame_mouse_window = nullptr;
+GuiInputCapture g_frame_mouse_capture;
+alignas(ProbeGameWindow) unsigned char g_frame_mouse_window_storage[sizeof(ProbeGameWindow)];
+char g_frame_mouse_json[7000] = "{}";
 bool g_frame_mouse_enabled = false;
 bool g_frame_mouse_initialized = false;
+bool g_frame_mouse_gui_attached = false;
 bool g_frame_mouse_last_ran = false;
 unsigned int g_frame_mouse_ticks = 0;
 unsigned int g_frame_mouse_last_queue_before = 0;
@@ -187,6 +200,30 @@ WindowMsgHandledType capture_gui_input(GameWindow *window,
 	if (msg == GWM_LEFT_DOWN) {
 		++capture->leftDownCount;
 		capture->leftDownMouse = capture->lastMouse;
+		return MSG_HANDLED;
+	}
+
+	if (msg == GWM_LEFT_UP) {
+		++capture->leftUpCount;
+		capture->leftUpMouse = capture->lastMouse;
+		return MSG_HANDLED;
+	}
+
+	if (msg == GWM_LEFT_DRAG) {
+		++capture->leftDragCount;
+		capture->leftDragMouse = capture->lastMouse;
+		return MSG_HANDLED;
+	}
+
+	if (msg == GWM_WHEEL_UP) {
+		++capture->wheelUpCount;
+		capture->wheelMouse = capture->lastMouse;
+		return MSG_HANDLED;
+	}
+
+	if (msg == GWM_WHEEL_DOWN) {
+		++capture->wheelDownCount;
+		capture->wheelMouse = capture->lastMouse;
 		return MSG_HANDLED;
 	}
 
@@ -336,10 +373,42 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_command_list = new CommandList;
 		g_frame_mouse_command_list->init();
 	}
+	if (g_frame_mouse_window_manager == nullptr) {
+		g_frame_mouse_window_manager = new ProbeGameWindowManager;
+	}
+	if (g_frame_mouse_window == nullptr) {
+		GameWindowManager *old_window_manager = TheWindowManager;
+		TheWindowManager = g_frame_mouse_window_manager;
+		// GameWindow construction reads TheWindowManager defaults; keep this
+		// persistent frame window outside the pooled transient window path.
+		g_frame_mouse_window = ::new (static_cast<void *>(&g_frame_mouse_window_storage[0])) ProbeGameWindow;
+		g_frame_mouse_window->winSetUserData(&g_frame_mouse_capture);
+		g_frame_mouse_window->winSetInputFunc(capture_gui_input);
+		g_frame_mouse_window->winSetStatus(WIN_STATUS_ENABLED);
+		g_frame_mouse_window->winSetPosition(0, 0);
+		g_frame_mouse_window->winSetSize(4096, 4096);
+		g_frame_mouse_window_manager->linkWindow(g_frame_mouse_window);
+		TheWindowManager = old_window_manager;
+	}
+	if (!g_frame_mouse_gui_attached) {
+		g_frame_mouse_message_stream->attachTranslator(new WindowTranslator, 100);
+		g_frame_mouse_gui_attached = true;
+	}
 	if (!g_frame_mouse_initialized) {
 		cnc_port_prepare_original_wndproc_mouse_stream(4096, 4096);
 	}
 	g_frame_mouse_initialized = true;
+}
+
+void reset_frame_mouse_gui_state()
+{
+	g_frame_mouse_capture = GuiInputCapture();
+	if (g_frame_mouse_window_manager != nullptr) {
+		if (g_frame_mouse_window != nullptr) {
+			g_frame_mouse_window_manager->winRelease(g_frame_mouse_window);
+		}
+		g_frame_mouse_window_manager->winSetGrabWindow(nullptr);
+	}
 }
 
 void clear_frame_mouse_messages()
@@ -349,20 +418,30 @@ void clear_frame_mouse_messages()
 	}
 
 	GlobalData *old_global_data = TheWritableGlobalData;
+	Keyboard *old_keyboard = TheKeyboard;
 	MessageStream *old_message_stream = TheMessageStream;
 	CommandList *old_command_list = TheCommandList;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Mouse *old_mouse = TheMouse;
 	if (TheWritableGlobalData == nullptr) {
 		TheWritableGlobalData = g_frame_mouse_global_data;
 	}
+	TheKeyboard = g_frame_mouse_keyboard;
 	TheMessageStream = g_frame_mouse_message_stream;
 	TheCommandList = g_frame_mouse_command_list;
+	TheWindowManager = g_frame_mouse_window_manager;
+	TheMouse = TheWin32Mouse;
 	if (g_frame_mouse_message_stream->getFirstMessage() != nullptr) {
 		g_frame_mouse_message_stream->propagateMessages();
 	}
 	g_frame_mouse_command_list->reset();
+	TheMouse = old_mouse;
+	TheWindowManager = old_window_manager;
 	TheCommandList = old_command_list;
 	TheMessageStream = old_message_stream;
+	TheKeyboard = old_keyboard;
 	TheWritableGlobalData = old_global_data;
+	reset_frame_mouse_gui_state();
 }
 
 const char *write_frame_mouse_json()
@@ -384,7 +463,14 @@ const char *write_frame_mouse_json()
 		"\"inputFrame\":%u,\"eventsThisFrame\":%d},"
 		"\"stream\":{\"count\":%u,\"messages\":%s},"
 		"\"commandList\":{\"countAfterPropagate\":%u},"
-		"\"modifiers\":%d}",
+		"\"modifiers\":%d,"
+		"\"gui\":{\"attached\":%s,\"windowReady\":%s,"
+		"\"mousePos\":%d,\"leftDown\":%d,\"leftUp\":%d,"
+		"\"leftDrag\":%d,\"entering\":%d,\"wheelUp\":%d,"
+		"\"wheelDown\":%d,\"wheel\":%d,\"lastMessage\":%d,"
+		"\"lastX\":%d,\"lastY\":%d,\"leftDownX\":%d,\"leftDownY\":%d,"
+		"\"leftUpX\":%d,\"leftUpY\":%d,\"leftDragX\":%d,\"leftDragY\":%d,"
+		"\"wheelX\":%d,\"wheelY\":%d,\"grabbed\":%s}}",
 		bool_json(ok),
 		bool_json(g_frame_mouse_enabled),
 		bool_json(g_frame_mouse_initialized),
@@ -400,7 +486,31 @@ const char *write_frame_mouse_json()
 		g_frame_mouse_last_stream_count,
 		g_frame_mouse_last_stream_json,
 		g_frame_mouse_last_command_count,
-		g_frame_mouse_keyboard != nullptr ? g_frame_mouse_keyboard->getModifierFlags() : 0);
+		g_frame_mouse_keyboard != nullptr ? g_frame_mouse_keyboard->getModifierFlags() : 0,
+		bool_json(g_frame_mouse_gui_attached),
+		bool_json(g_frame_mouse_window_manager != nullptr && g_frame_mouse_window != nullptr),
+		g_frame_mouse_capture.mousePosCount,
+		g_frame_mouse_capture.leftDownCount,
+		g_frame_mouse_capture.leftUpCount,
+		g_frame_mouse_capture.leftDragCount,
+		g_frame_mouse_capture.enteringCount,
+		g_frame_mouse_capture.wheelUpCount,
+		g_frame_mouse_capture.wheelDownCount,
+		g_frame_mouse_capture.wheelUpCount + g_frame_mouse_capture.wheelDownCount,
+		static_cast<int>(g_frame_mouse_capture.lastMessage),
+		g_frame_mouse_capture.lastMouse.x,
+		g_frame_mouse_capture.lastMouse.y,
+		g_frame_mouse_capture.leftDownMouse.x,
+		g_frame_mouse_capture.leftDownMouse.y,
+		g_frame_mouse_capture.leftUpMouse.x,
+		g_frame_mouse_capture.leftUpMouse.y,
+		g_frame_mouse_capture.leftDragMouse.x,
+		g_frame_mouse_capture.leftDragMouse.y,
+		g_frame_mouse_capture.wheelMouse.x,
+		g_frame_mouse_capture.wheelMouse.y,
+		bool_json(
+			g_frame_mouse_window_manager != nullptr &&
+			g_frame_mouse_window_manager->winGetGrabWindow() == g_frame_mouse_window));
 	return g_frame_mouse_json;
 }
 
@@ -421,6 +531,7 @@ void update_original_mouse_frame_input()
 	Keyboard *old_keyboard = TheKeyboard;
 	CommandList *old_command_list = TheCommandList;
 	MessageStream *old_message_stream = TheMessageStream;
+	GameWindowManager *old_window_manager = TheWindowManager;
 	Mouse *old_mouse = TheMouse;
 	if (TheWritableGlobalData == nullptr) {
 		TheWritableGlobalData = g_frame_mouse_global_data;
@@ -428,6 +539,7 @@ void update_original_mouse_frame_input()
 	TheKeyboard = g_frame_mouse_keyboard;
 	TheCommandList = g_frame_mouse_command_list;
 	TheMessageStream = g_frame_mouse_message_stream;
+	TheWindowManager = g_frame_mouse_window_manager;
 	TheMouse = TheWin32Mouse;
 
 	if (TheMouse != nullptr) {
@@ -453,6 +565,7 @@ void update_original_mouse_frame_input()
 	g_frame_mouse_command_list->reset();
 
 	TheMouse = old_mouse;
+	TheWindowManager = old_window_manager;
 	TheMessageStream = old_message_stream;
 	TheCommandList = old_command_list;
 	TheKeyboard = old_keyboard;
@@ -485,6 +598,7 @@ const char *reset_original_mouse_frame_input()
 	g_frame_mouse_last_events_this_frame = cnc_port_original_wndproc_mouse_stream_events_this_frame();
 	g_frame_mouse_last_win32_attached = cnc_port_original_wndproc_mouse_stream_attached();
 	g_frame_mouse_last_stream_attached = false;
+	reset_frame_mouse_gui_state();
 	std::snprintf(g_frame_mouse_last_stream_json, sizeof(g_frame_mouse_last_stream_json), "[]");
 	write_frame_mouse_json();
 	return g_frame_mouse_json;

@@ -1879,7 +1879,14 @@ try {
         || resetFrameOwnerMouse.probe?.lastRan !== false
         || resetFrameOwnerMouse.probe?.ticks !== 0
         || resetFrameOwnerMouse.probe?.stream?.count !== 0
-        || resetFrameOwnerMouse.probe?.mouse?.win32Attached !== true) {
+        || resetFrameOwnerMouse.probe?.mouse?.win32Attached !== true
+        || resetFrameOwnerMouse.probe?.gui?.attached !== true
+        || resetFrameOwnerMouse.probe?.gui?.windowReady !== true
+        || resetFrameOwnerMouse.probe?.gui?.leftDown !== 0
+        || resetFrameOwnerMouse.probe?.gui?.leftUp !== 0
+        || resetFrameOwnerMouse.probe?.gui?.leftDrag !== 0
+        || resetFrameOwnerMouse.probe?.gui?.wheel !== 0
+        || resetFrameOwnerMouse.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned state reset mismatch: ${JSON.stringify(resetFrameOwnerMouse)}`);
     }
     const enableFrameOwnerMouse = await page.evaluate(() =>
@@ -1892,10 +1899,17 @@ try {
         || enableFrameOwnerMouse.probe?.ticks !== 0
         || enableFrameOwnerMouse.probe?.lifecycle?.messageStream !== "frame-owned"
         || enableFrameOwnerMouse.probe?.lifecycle?.commandList !== "frame-owned"
-        || enableFrameOwnerMouse.probe?.lifecycle?.promotedToTickFrame !== true) {
+        || enableFrameOwnerMouse.probe?.lifecycle?.promotedToTickFrame !== true
+        || enableFrameOwnerMouse.probe?.gui?.attached !== true
+        || enableFrameOwnerMouse.probe?.gui?.windowReady !== true
+        || enableFrameOwnerMouse.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned input did not enable: ${JSON.stringify(enableFrameOwnerMouse)}`);
     }
 
+    const GWM_LEFT_DOWN = 5;
+    const GWM_LEFT_UP = 6;
+    const GWM_LEFT_DRAG = 8;
+    const GWM_WHEEL_UP = 19;
     const frameMouseX = 456;
     const frameMouseY = 123;
     await page.mouse.move(canvasBox.x + frameMouseX, canvasBox.y + frameMouseY);
@@ -1936,7 +1950,15 @@ try {
         || frameMouseDownProbe?.mouse?.inputFrame !== 1
         || (frameMouseDownProbe?.mouse?.eventsThisFrame ?? 0) < 1
         || frameMouseDownProbe?.stream?.count < 2
-        || frameMouseDownProbe?.commandList?.countAfterPropagate !== frameMouseDownProbe?.stream?.count
+        || frameMouseDownProbe?.commandList?.countAfterPropagate !== 0
+        || frameMouseDownProbe?.gui?.attached !== true
+        || frameMouseDownProbe?.gui?.windowReady !== true
+        || frameMouseDownProbe?.gui?.mousePos < 1
+        || frameMouseDownProbe?.gui?.leftDown !== 1
+        || frameMouseDownProbe?.gui?.leftDownX !== frameMouseX
+        || frameMouseDownProbe?.gui?.leftDownY !== frameMouseY
+        || frameMouseDownProbe?.gui?.lastMessage !== GWM_LEFT_DOWN
+        || frameMouseDownProbe?.gui?.grabbed !== true
         || !frameMousePositionMessage
         || frameMouseLeftDownMessage?.x !== frameMouseX
         || frameMouseLeftDownMessage?.y !== frameMouseY
@@ -1977,7 +1999,15 @@ try {
         || frameMouseDragProbe?.mouse?.inputFrame !== 2
         || (frameMouseDragProbe?.mouse?.eventsThisFrame ?? 0) < 1
         || frameMouseDragProbe?.stream?.count < 2
-        || frameMouseDragProbe?.commandList?.countAfterPropagate !== frameMouseDragProbe?.stream?.count
+        || frameMouseDragProbe?.commandList?.countAfterPropagate !== 0
+        || frameMouseDragProbe?.gui?.attached !== true
+        || frameMouseDragProbe?.gui?.windowReady !== true
+        || frameMouseDragProbe?.gui?.leftDown !== 1
+        || frameMouseDragProbe?.gui?.leftDrag !== 1
+        || frameMouseDragProbe?.gui?.leftDragX !== frameMouseDragX
+        || frameMouseDragProbe?.gui?.leftDragY !== frameMouseDragY
+        || frameMouseDragProbe?.gui?.lastMessage !== GWM_LEFT_DRAG
+        || frameMouseDragProbe?.gui?.grabbed !== true
         || frameMouseDragMessage?.x !== frameMouseDragX
         || frameMouseDragMessage?.y !== frameMouseDragY
         || frameMouseDragMessage?.deltaX !== frameMouseDragX - frameMouseX
@@ -1993,10 +2023,45 @@ try {
       (input) => input?.messageQueue?.count >= 1,
       "original Mouse frame-owned cleanup up queue",
     );
-    const resetFrameOwnerMouseAfterInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
-    if (!resetFrameOwnerMouseAfterInput.ok
-        || resetFrameOwnerMouseAfterInput.state.browserInput?.messageQueue?.count !== 0) {
-      throw new Error(`Original Mouse frame-owned input cleanup mismatch: ${JSON.stringify(resetFrameOwnerMouseAfterInput)}`);
+    const frameMouseUp = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    if (!frameMouseUp.ok) {
+      throw new Error(`Original Mouse frame-owned up frame RPC failed: ${JSON.stringify(frameMouseUp)}`);
+    }
+    const frameMouseUpProbeResult = await page.evaluate(() =>
+      window.CnCPort.rpc("originalMouseFrameInputProbe"));
+    const frameMouseUpProbe = frameMouseUpProbeResult.probe;
+    const frameMouseUpMessages = frameMouseUpProbe?.stream?.messages ?? [];
+    const frameMouseUpMessage = frameMouseUpMessages.find(
+      (message) => message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_UP",
+    );
+    if (!frameMouseUpProbeResult.ok
+        || frameMouseUpProbe?.enabled !== true
+        || frameMouseUpProbe?.lastRan !== true
+        || frameMouseUpProbe?.ticks !== 3
+        || frameMouseUpProbe?.queue?.primaryRemainingBefore !== 0
+        || frameMouseUpProbe?.queue?.primaryRemainingAfter !== 0
+        || frameMouseUpProbe?.mouse?.win32Attached !== true
+        || frameMouseUpProbe?.mouse?.streamAttached !== true
+        || frameMouseUpProbe?.mouse?.inputFrame !== 3
+        || (frameMouseUpProbe?.mouse?.eventsThisFrame ?? 0) < 1
+        || frameMouseUpProbe?.stream?.count < 2
+        || frameMouseUpProbe?.commandList?.countAfterPropagate !== 0
+        || frameMouseUpProbe?.gui?.attached !== true
+        || frameMouseUpProbe?.gui?.windowReady !== true
+        || frameMouseUpProbe?.gui?.leftDown !== 1
+        || frameMouseUpProbe?.gui?.leftDrag !== 1
+        || frameMouseUpProbe?.gui?.leftUp !== 1
+        || frameMouseUpProbe?.gui?.leftUpX !== frameMouseDragX
+        || frameMouseUpProbe?.gui?.leftUpY !== frameMouseDragY
+        || frameMouseUpProbe?.gui?.lastMessage !== GWM_LEFT_UP
+        || frameMouseUpProbe?.gui?.grabbed !== false
+        || frameMouseUpMessage?.x !== frameMouseDragX
+        || frameMouseUpMessage?.y !== frameMouseDragY
+        || frameMouseUp.state.browserInput?.messageQueue?.count !== 0
+        || frameMouseUpProbeResult.state.browserInput?.messageQueue?.count !== 0) {
+      throw new Error(`Original Mouse frame-owned up did not run through tick_frame: ${JSON.stringify({ frameMouseUp, frameMouseUpProbeResult })}`);
     }
     const resetFrameOwnerAfterMouse = await page.evaluate(() =>
       window.CnCPort.rpc("resetOriginalMouseFrameInput"));
@@ -2004,7 +2069,12 @@ try {
         || resetFrameOwnerAfterMouse.probe?.ticks !== 0
         || resetFrameOwnerAfterMouse.probe?.lastRan !== false
         || resetFrameOwnerAfterMouse.probe?.stream?.count !== 0
-        || resetFrameOwnerAfterMouse.probe?.mouse?.win32Attached !== true) {
+        || resetFrameOwnerAfterMouse.probe?.mouse?.win32Attached !== true
+        || resetFrameOwnerAfterMouse.probe?.gui?.attached !== true
+        || resetFrameOwnerAfterMouse.probe?.gui?.leftDown !== 0
+        || resetFrameOwnerAfterMouse.probe?.gui?.leftUp !== 0
+        || resetFrameOwnerAfterMouse.probe?.gui?.leftDrag !== 0
+        || resetFrameOwnerAfterMouse.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned mouse cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterMouse)}`);
     }
 
@@ -2047,7 +2117,16 @@ try {
         || frameMouseWheelProbe?.mouse?.inputFrame !== 1
         || (frameMouseWheelProbe?.mouse?.eventsThisFrame ?? 0) < 1
         || frameMouseWheelProbe?.stream?.count < 2
-        || frameMouseWheelProbe?.commandList?.countAfterPropagate !== frameMouseWheelProbe?.stream?.count
+        || frameMouseWheelProbe?.commandList?.countAfterPropagate !== 0
+        || frameMouseWheelProbe?.gui?.attached !== true
+        || frameMouseWheelProbe?.gui?.windowReady !== true
+        || frameMouseWheelProbe?.gui?.wheelUp !== 1
+        || frameMouseWheelProbe?.gui?.wheelDown !== 0
+        || frameMouseWheelProbe?.gui?.wheel !== 1
+        || frameMouseWheelProbe?.gui?.wheelX !== frameMouseWheelX
+        || frameMouseWheelProbe?.gui?.wheelY !== frameMouseWheelY
+        || frameMouseWheelProbe?.gui?.lastMessage !== GWM_WHEEL_UP
+        || frameMouseWheelProbe?.gui?.grabbed !== false
         || frameMouseWheelMessage?.x !== frameMouseWheelX
         || frameMouseWheelMessage?.y !== frameMouseWheelY
         || frameMouseWheelMessage?.integer1 !== 1
@@ -2062,7 +2141,10 @@ try {
         || resetFrameOwnerAfterWheel.probe?.ticks !== 0
         || resetFrameOwnerAfterWheel.probe?.lastRan !== false
         || resetFrameOwnerAfterWheel.probe?.stream?.count !== 0
-        || resetFrameOwnerAfterWheel.probe?.mouse?.win32Attached !== true) {
+        || resetFrameOwnerAfterWheel.probe?.mouse?.win32Attached !== true
+        || resetFrameOwnerAfterWheel.probe?.gui?.attached !== true
+        || resetFrameOwnerAfterWheel.probe?.gui?.wheel !== 0
+        || resetFrameOwnerAfterWheel.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned wheel cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterWheel)}`);
     }
     const disableFrameOwnerAfterMouse = await page.evaluate(() =>
