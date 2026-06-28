@@ -420,6 +420,10 @@ shares structure and follows behind.
       `WM_ACTIVATEAPP`, `WM_ACTIVATE`, `WM_SETFOCUS`, and `WM_KILLFOCUS`
       messages, with Playwright coverage proving original `WndProc()` updates
       the Win32 mouse focus flag and D3D reset hook.
+- [x] Factor the original `Win32GameEngine::serviceWindowsOS()` message-pump
+      body into an Emscripten-visible helper and have the focused WndProc
+      harness call it directly, replacing the raw-storage/reinterpret-cast
+      pseudo-object used by the browser message-pump smoke.
 - [x] Route browser DOM composition events through Win32
       `WM_IME_STARTCOMPOSITION`, `WM_IME_COMPOSITION`,
       `WM_IME_ENDCOMPOSITION`, and committed `WM_CHAR` messages, with
@@ -3006,6 +3010,12 @@ shares structure and follows behind.
       the application window bounds and feeds `Win32Mouse::addWin32Event`, and
       the wasm harness observes `Win32Mouse::translateEvent` producing the
       expected `MouseIO::wheelPos` and canvas-relative position.
+- [ ] Add a separate real engine Mouse probe, not the current browser
+      `Win32Mouse`/`Mouse` shim, that wires `TheMouse == TheWin32Mouse`,
+      supplies the required `TheMessageStream` / keyboard / frame globals,
+      drives original `Mouse::update()` and `Mouse::createStreamMessages()`,
+      and smoke-tests `MSG_RAW_MOUSE_*` output for button, drag, and wheel
+      input.
 - [ ] Keyboard: DOM keyboard events → engine `Keyboard` (mapping, repeat, focus).
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through

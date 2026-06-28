@@ -37,6 +37,52 @@
 
 extern DWORD TheMessageTime;
 
+namespace {
+void serviceWindowsOSMessagePump()
+{
+	MSG msg;
+  Int returnValue;
+
+	//
+	// see if we have any messages to process, a NULL window handle tells the
+	// OS to look at the main window associated with the calling thread, us!
+	//
+	while( PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE ) )
+	{
+
+		// get the message
+		returnValue = GetMessage( &msg, NULL, 0, 0 );
+		(void)returnValue;
+
+		// this is one possible way to check for quitting conditions as a message
+		// of WM_QUIT will cause GetMessage() to return 0
+/*
+		if( returnValue == 0 )
+		{
+
+			setQuitting( true );
+			break;
+
+		}
+*/
+
+		TheMessageTime = msg.time;
+		// translate and dispatch the message
+		TranslateMessage( &msg );
+		DispatchMessage( &msg );
+		TheMessageTime = 0;
+
+	}  // end while
+}
+}
+
+#ifdef __EMSCRIPTEN__
+extern "C" void cnc_port_win32_service_windows_os_message_pump()
+{
+	serviceWindowsOSMessagePump();
+}
+#endif
+
 //-------------------------------------------------------------------------------------------------
 /** Constructor for Win32GameEngine */
 //-------------------------------------------------------------------------------------------------
@@ -132,38 +178,6 @@ void Win32GameEngine::update( void )
 //-------------------------------------------------------------------------------------------------
 void Win32GameEngine::serviceWindowsOS( void )
 {
-	MSG msg;
-  Int returnValue;
-
-	//
-	// see if we have any messages to process, a NULL window handle tells the
-	// OS to look at the main window associated with the calling thread, us!
-	//
-	while( PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE ) )
-	{
-
-		// get the message
-		returnValue = GetMessage( &msg, NULL, 0, 0 );
-
-		// this is one possible way to check for quitting conditions as a message
-		// of WM_QUIT will cause GetMessage() to return 0
-/*
-		if( returnValue == 0 )
-		{
-
-			setQuitting( true );
-			break;
-
-		}
-*/
-
-		TheMessageTime = msg.time;
-		// translate and dispatch the message
-		TranslateMessage( &msg );
-		DispatchMessage( &msg );
-		TheMessageTime = 0;
-			
-	}  // end while
+	serviceWindowsOSMessagePump();
 
 }  // end ServiceWindowsOS
-

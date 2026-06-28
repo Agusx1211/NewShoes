@@ -6,7 +6,6 @@
 #include "GameClient/Mouse.h"
 #include "GameLogic/GameLogic.h"
 #include "GameNetwork/LANAPICallbacks.h"
-#include "Win32Device/Common/Win32GameEngine.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 #include "WinMain.h"
 
@@ -21,6 +20,7 @@
 #endif
 
 extern LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+extern "C" void cnc_port_win32_service_windows_os_message_pump();
 extern HWND ApplicationHWnd;
 
 HINSTANCE ApplicationHInstance = NULL;
@@ -125,9 +125,7 @@ void service_original_wndproc_messages()
 	}
 
 	const unsigned int before_count = WasmWin32Input::message_queue_count;
-	alignas(Win32GameEngine) unsigned char engine_storage[sizeof(Win32GameEngine)] = {};
-	auto *engine = reinterpret_cast<Win32GameEngine *>(engine_storage);
-	engine->Win32GameEngine::serviceWindowsOS();
+	cnc_port_win32_service_windows_os_message_pump();
 	const unsigned int after_count = WasmWin32Input::message_queue_count;
 	g_original_wndproc_last_pumped = before_count >= after_count ? before_count - after_count : 0;
 	g_original_wndproc_messages_pumped += g_original_wndproc_last_pumped;
