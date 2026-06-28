@@ -2343,9 +2343,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       raw point-light payload plus selected shader light list, and Playwright
       confirms the far gray and near white samples with
       `harness-smoke-d3d8-point-light-canvas.png`. Broader original W3D
-      point-light attenuation variants, spot cone/falloff variants,
+      quadratic/range/mixed coefficient point-light variants, spot
+      cone/falloff variants, off-axis/transformed specular fidelity, and
+      broader material-source behavior remained open at that point.
+- [x] Add a focused fixed-function D3D8 pure quadratic point-light attenuation
+      proof. The native/browser probe exports
+      `cnc_port_probe_d3d8_point_quadratic_light`, sets a `D3DLIGHT_POINT` at
+      `(0.5, 0, 1)` with `Attenuation0 = 0`, `Attenuation1 = 0`, and
+      `Attenuation2 = 1`, then draws the same far and near quads used by the
+      linear attenuation proof. The harness RPC verifies the raw light payload,
+      selected fixed-function shader light, material state, exact attenuation
+      coefficients, and far gray / near white canvas samples, with Playwright
+      saving `harness-smoke-d3d8-point-quadratic-light-canvas.png`. Range
+      clipping, mixed attenuation coefficients, broader point-light variants,
       off-axis/transformed specular fidelity, and broader material-source
-      behavior remained open at that point.
+      behavior remain open.
 - [x] Add a focused fixed-function D3D8 spot-light hard-cone proof. The
       native/browser probe exports `cnc_port_probe_d3d8_spot_light`, sets a
       `D3DLIGHT_SPOT` with captured position, direction, range, falloff,

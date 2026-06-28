@@ -28,6 +28,10 @@ const d3d8PointLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-light-canvas.png",
 );
+const d3d8PointQuadraticLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-point-quadratic-light-canvas.png",
+);
 const d3d8SpotLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-light-canvas.png",
@@ -3387,6 +3391,46 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8PointLightCanvasScreenshot });
 
+  const d3d8PointQuadraticLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8PointQuadraticLight"));
+  const expectedPointQuadraticLeft = d3d8PointQuadraticLightResult.probe?.expectedLeft ?? [90, 90, 90, 255];
+  const expectedPointQuadraticRight = d3d8PointQuadraticLightResult.probe?.expectedRight ?? [253, 253, 253, 255];
+  if (!d3d8PointQuadraticLightResult.ok
+      || d3d8PointQuadraticLightResult.probe?.source !== "browser_d3d8_point_quadratic_light_probe"
+      || d3d8PointQuadraticLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8PointQuadraticLightResult.probe?.calls?.setLight !== 1
+      || d3d8PointQuadraticLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8PointQuadraticLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8PointQuadraticLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8PointQuadraticLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8PointQuadraticLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8PointQuadraticLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8PointQuadraticLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8PointQuadraticLightResult.browserProbe?.lights?.[0]?.type !== 1
+      || Math.abs(d3d8PointQuadraticLightResult.browserProbe?.lights?.[0]?.attenuation0 ?? 1) > 0.00001
+      || Math.abs(d3d8PointQuadraticLightResult.browserProbe?.lights?.[0]?.attenuation1 ?? 1) > 0.00001
+      || Math.abs((d3d8PointQuadraticLightResult.browserProbe?.lights?.[0]?.attenuation2 ?? 0) - 1) > 0.00001
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported !== true
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightCount !== 1
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLights?.[0]?.type !== 1
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== false
+      || d3d8PointQuadraticLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 0
+      || d3d8PointQuadraticLightResult.materialOk !== true
+      || d3d8PointQuadraticLightResult.lightAttenuationOk !== true
+      || d3d8PointQuadraticLightResult.selectedLightOk !== true
+      || d3d8PointQuadraticLightResult.quadraticShapeOk !== true
+      || d3d8PointQuadraticLightResult.leftPixelOk !== true
+      || d3d8PointQuadraticLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(d3d8PointQuadraticLightResult.pointQuadraticLightPixels?.left,
+        expectedPointQuadraticLeft, 8)
+      || !pixelsApproximatelyEqual(d3d8PointQuadraticLightResult.pointQuadraticLightPixels?.right,
+        expectedPointQuadraticRight, 4)) {
+    throw new Error(`D3D8 quadratic point-light probe failed: ${JSON.stringify(d3d8PointQuadraticLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8PointQuadraticLightCanvasScreenshot });
+
   const d3d8SpotLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8SpotLight"));
   const expectedSpotOutside = d3d8SpotLightResult.probe?.expectedOutside ?? [0, 0, 0, 255];
@@ -4626,6 +4670,7 @@ try {
       d3d8MultiDirectionalLightCanvasScreenshot,
       d3d8SpecularLightCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
+      d3d8PointQuadraticLightCanvasScreenshot,
       d3d8SpotLightCanvasScreenshot,
       d3d8SpotFalloffCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
