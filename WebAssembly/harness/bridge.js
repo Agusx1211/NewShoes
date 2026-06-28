@@ -248,6 +248,7 @@ const harnessState = {
   originalWndProcInput: null,
   originalGuiMouseInput: null,
   originalKeyboardInput: null,
+  originalKeyboardFrameTick: null,
   mountedArchives: [],
   logs: [],
 };
@@ -3275,6 +3276,8 @@ async function loadWasmModule() {
       probeOriginalCursorVisibility: module.cwrap(
         "cnc_port_probe_original_cursor_visibility", "string", ["number"]),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
+      probeOriginalKeyboardFrameTick: module.cwrap(
+        "cnc_port_probe_original_keyboard_frame_tick", "string", []),
       resetOriginalKeyboardInput: module.cwrap("cnc_port_reset_original_keyboard_input", "string", []),
       queueOriginalKeyboardFocusLost: module.cwrap(
         "cnc_port_queue_original_keyboard_focus_lost",
@@ -3342,6 +3345,7 @@ function snapshotState() {
     originalEngineStartup: harnessState.originalEngineStartup,
     originalWndProcInput: harnessState.originalWndProcInput,
     originalKeyboardInput: harnessState.originalKeyboardInput,
+    originalKeyboardFrameTick: harnessState.originalKeyboardFrameTick,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
@@ -4034,6 +4038,19 @@ async function probeOriginalKeyboardInput() {
 
   const probe = parseModuleState(wasmModule.probeOriginalKeyboardInput());
   harnessState.originalKeyboardInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function probeOriginalKeyboardFrameTick() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalKeyboardFrameTick());
+  harnessState.originalKeyboardFrameTick = probe;
   applyModuleState(parseModuleState(wasmModule.state()));
   harnessState.wasm = "loaded";
   return probe;
@@ -4744,6 +4761,14 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalKeyboardInput();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original Keyboard input cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalKeyboardFrameTickProbe":
+      {
+        const probe = await probeOriginalKeyboardFrameTick();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard frame tick cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }

@@ -401,6 +401,69 @@ const char *probe_original_keyboard_stream()
 	return g_original_keyboard_json.c_str();
 }
 
+const char *probe_original_keyboard_frame_tick()
+{
+	ScopedOriginalMemoryManager memory_scope;
+	GlobalData global_data;
+	MessageStream stream;
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	MessageStream *old_message_stream = TheMessageStream;
+	Keyboard *old_keyboard = TheKeyboard;
+	TheWritableGlobalData = &global_data;
+	TheMessageStream = &stream;
+	TheKeyboard = &g_browser_keyboard;
+
+	const unsigned int before_count = WasmWin32Input::message_queue_count;
+	const bool focus_lost_pending_before = g_browser_keyboard.focusLostPending();
+	const unsigned int drained = g_browser_keyboard.loadQueuedKeyMessages();
+	g_browser_keyboard.update();
+	g_browser_keyboard.createStreamMessages();
+	GameMessage *first = stream.getFirstMessage();
+	const unsigned int stream_count = count_game_messages(first);
+	const std::string events_json = build_browser_keyboard_events_json(g_browser_keyboard);
+	const std::string stream_json = build_original_keyboard_stream_json(first);
+	const bool ok = !WasmWin32Input::message_queue_overflowed;
+
+	char buffer[12000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_original_keyboard_frame_tick\","
+		"\"ok\":%s,\"keyboardAttached\":%s,"
+		"\"frameTick\":{\"probe\":true,\"messageStream\":\"probe-local\","
+		"\"promotedToTickFrame\":false},"
+		"\"queue\":{\"before\":%u,\"drained\":%u,\"ignored\":%u,\"remaining\":%u,"
+		"\"overflowed\":%s},"
+		"\"focusLost\":{\"pendingBefore\":%s,\"delivered\":%s,\"queuedCount\":%u},"
+		"\"inputFrame\":%u,"
+		"\"events\":%s,"
+		"\"stream\":{\"count\":%u,\"messages\":%s},"
+		"\"modifiers\":%d,"
+		"\"keyStatus\":{\"aDown\":%s,\"leftShiftDown\":%s}}",
+		bool_json(ok),
+		bool_json(TheKeyboard == &g_browser_keyboard),
+		before_count,
+		drained,
+		g_browser_keyboard.ignoredCount(),
+		WasmWin32Input::message_queue_count,
+		bool_json(WasmWin32Input::message_queue_overflowed),
+		bool_json(focus_lost_pending_before),
+		bool_json(g_browser_keyboard.focusLostDelivered()),
+		g_browser_keyboard.focusLostQueuedCount(),
+		g_browser_keyboard.inputFrame(),
+		events_json.c_str(),
+		stream_count,
+		stream_json.c_str(),
+		g_browser_keyboard.getModifierFlags(),
+		bool_json(g_browser_keyboard.keyDown(KEY_A)),
+		bool_json(g_browser_keyboard.keyDown(KEY_LSHIFT)));
+	g_original_keyboard_json = buffer;
+
+	TheKeyboard = old_keyboard;
+	TheMessageStream = old_message_stream;
+	TheWritableGlobalData = old_global_data;
+	return g_original_keyboard_json.c_str();
+}
+
 const char *reset_original_keyboard_stream()
 {
 	g_browser_keyboard.resetProbeState();
@@ -442,6 +505,11 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_keyboard_input()
 {
 	return probe_original_keyboard_stream();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_keyboard_frame_tick()
+{
+	return probe_original_keyboard_frame_tick();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_original_keyboard_input()
