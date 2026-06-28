@@ -2197,6 +2197,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `D3DTSS_TCI_CAMERASPACEPOSITION`,
       `D3DTTFF_PROJECTED | D3DTTFF_COUNT3`, the texture transform state, and the
       three perspective rows emitted by the original branch.
+- [x] Prove the original `ClassicEnvironmentMapperClass::Apply` path against
+      both the browser D3D8 state bridge and a native Node smoke. The browser
+      `cnc_port_probe_classic_environment_mapper_apply()` constructs a real
+      ref-counted stage-1 mapper, calls the original
+      `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/mapper.cpp` `Apply()`
+      method, and the Playwright smoke verifies
+      `D3DTSS_TCI_CAMERASPACENORMAL`, `D3DTTFF_COUNT2`, the texture transform
+      state, all four canonical environment-map matrix rows, and D3D8 shim
+      call deltas. `classic-environment-mapper-apply-smoke.cjs` independently
+      verifies the same original emission through the Node wasm D3D8 shim.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8
