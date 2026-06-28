@@ -80,6 +80,7 @@ const D3DSTENCILOP_DECRSAT = 5;
 const D3DSTENCILOP_INVERT = 6;
 const D3DSTENCILOP_INCR = 7;
 const D3DSTENCILOP_DECR = 8;
+const D3DFOG_LINEAR = 3;
 const D3DTSS_COLOROP = 1;
 const D3DTSS_COLORARG1 = 2;
 const D3DTSS_COLORARG2 = 3;
@@ -159,6 +160,7 @@ const D3D8_DIFFUSE_MIN_STRIDE = D3D8_DIFFUSE_OFFSET + 4;
 const D3D8_XYZNDUV_TEXCOORD0_OFFSET = 28;
 const D3D8_XYZNDUV_TEXCOORD_STRIDE = 8;
 const D3D8_XYZNDUV_TEXCOORD_SETS = 2;
+const D3D_FLOAT_ONE_BITS = 0x3f800000;
 const d3d8FloatBits = new ArrayBuffer(4);
 const d3d8FloatView = new DataView(d3d8FloatBits);
 const d3d8BufferStats = {
@@ -2204,12 +2206,19 @@ function ensureD3D8DrawProgram() {
     out vec4 vColor;
     out vec2 vTexCoord0;
     out vec2 vTexCoord1;
+    out float vFogDepth;
+    out float vFogRangeDistance;
     void main() {
+      vec4 viewPosition = uView * uWorld * vec4(aPosition, 1.0);
       if (uUseTransforms) {
-        vec4 d3dClip = uProjection * uView * uWorld * vec4(aPosition, 1.0);
+        vec4 d3dClip = uProjection * viewPosition;
         gl_Position = vec4(d3dClip.x, d3dClip.y, d3dClip.z * 2.0 - d3dClip.w, d3dClip.w);
+        vFogDepth = max(viewPosition.z, 0.0);
+        vFogRangeDistance = length(viewPosition.xyz);
       } else {
         gl_Position = vec4(aPosition.x / uScale, aPosition.y / uScale, 0.0, 1.0);
+        vFogDepth = 0.0;
+        vFogRangeDistance = 0.0;
       }
       vColor = vec4(aDiffuseBgra.b, aDiffuseBgra.g, aDiffuseBgra.r, aDiffuseBgra.a);
       if (uUseTexture0Transform) {
@@ -2231,6 +2240,8 @@ function ensureD3D8DrawProgram() {
     in vec4 vColor;
     in vec2 vTexCoord0;
     in vec2 vTexCoord1;
+    in float vFogDepth;
+    in float vFogRangeDistance;
     uniform bool uUseTexture0;
     uniform sampler2D uTexture0;
     uniform float uTexture0LodBias;
@@ -2260,6 +2271,11 @@ function ensureD3D8DrawProgram() {
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
+    uniform bool uFogEnabled;
+    uniform bool uFogRangeEnabled;
+    uniform vec3 uFogColor;
+    uniform float uFogStart;
+    uniform float uFogEnd;
     out vec4 fragColor;
     bool d3dAlphaCompare(float value, float reference) {
       if (uAlphaFunc == 1) {
@@ -2510,6 +2526,11 @@ function ensureD3D8DrawProgram() {
       if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
       }
+      if (uFogEnabled) {
+        float fogDistance = uFogRangeEnabled ? vFogRangeDistance : vFogDepth;
+        float fogAmount = clamp((fogDistance - uFogStart) / max(uFogEnd - uFogStart, 0.000001), 0.0, 1.0);
+        color.rgb = mix(color.rgb, uFogColor, fogAmount);
+      }
       fragColor = color;
     }
   `);
@@ -2569,6 +2590,11 @@ function ensureD3D8DrawProgram() {
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
+    fogEnabled: gl.getUniformLocation(program, "uFogEnabled"),
+    fogRangeEnabled: gl.getUniformLocation(program, "uFogRangeEnabled"),
+    fogColor: gl.getUniformLocation(program, "uFogColor"),
+    fogStart: gl.getUniformLocation(program, "uFogStart"),
+    fogEnd: gl.getUniformLocation(program, "uFogEnd"),
   };
   return d3d8DrawProgram;
 }
@@ -2768,6 +2794,12 @@ function normalizeD3D8RenderState(renderState = {}) {
     stencilRef: Number(renderState.stencilRef ?? 0) >>> 0,
     stencilMask: Number(renderState.stencilMask ?? 0xffffffff) >>> 0,
     stencilWriteMask: Number(renderState.stencilWriteMask ?? 0xffffffff) >>> 0,
+    fogEnable: Number(renderState.fogEnable ?? 0) >>> 0,
+    fogColor: Number(renderState.fogColor ?? 0) >>> 0,
+    fogStart: Number(renderState.fogStart ?? 0) >>> 0,
+    fogEnd: Number(renderState.fogEnd ?? D3D_FLOAT_ONE_BITS) >>> 0,
+    fogVertexMode: Number(renderState.fogVertexMode ?? D3DFOG_LINEAR) >>> 0,
+    rangeFogEnable: Number(renderState.rangeFogEnable ?? 0) >>> 0,
     textureStages: normalizeD3D8TextureStages(renderState.textureStages),
   };
 }
@@ -2881,6 +2913,14 @@ function applyD3D8RenderState(renderState, options = {}) {
   const stencilFail = d3dStencilOpToGl(state.stencilFail);
   const stencilZFail = d3dStencilOpToGl(state.stencilZFail);
   const stencilPass = d3dStencilOpToGl(state.stencilPass);
+  const fogStart = d3dDwordToFloat(state.fogStart);
+  const fogEnd = d3dDwordToFloat(state.fogEnd);
+  const fogEnabled = state.fogEnable !== 0 &&
+    state.fogVertexMode === D3DFOG_LINEAR &&
+    Number.isFinite(fogStart) &&
+    Number.isFinite(fogEnd) &&
+    fogEnd > fogStart;
+  const fogColor = d3dColorToNormalizedRgba(state.fogColor).slice(0, 3);
   const colorMask = {
     r: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_RED),
     g: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_GREEN),
@@ -2958,6 +2998,14 @@ function applyD3D8RenderState(renderState, options = {}) {
       enabled: state.alphaTestEnable !== 0,
       func: d3dCmpToGl(state.alphaFunc),
       ref: (state.alphaRef & 0xff) / 255,
+    },
+    fog: {
+      enabled: fogEnabled,
+      color: fogColor,
+      start: fogStart,
+      end: fogEnd,
+      vertexMode: state.fogVertexMode,
+      rangeEnabled: state.rangeFogEnable !== 0,
     },
     colorWrite: colorMask,
   };
@@ -3205,6 +3253,21 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.alphaRef) {
       gl.uniform1f(bridgeProgram.alphaRef, appliedRenderState.alphaTest.ref);
+    }
+    if (bridgeProgram.fogEnabled) {
+      gl.uniform1i(bridgeProgram.fogEnabled, appliedRenderState.fog.enabled ? 1 : 0);
+    }
+    if (bridgeProgram.fogRangeEnabled) {
+      gl.uniform1i(bridgeProgram.fogRangeEnabled, appliedRenderState.fog.rangeEnabled ? 1 : 0);
+    }
+    if (bridgeProgram.fogColor) {
+      gl.uniform3fv(bridgeProgram.fogColor, new Float32Array(appliedRenderState.fog.color));
+    }
+    if (bridgeProgram.fogStart) {
+      gl.uniform1f(bridgeProgram.fogStart, appliedRenderState.fog.start);
+    }
+    if (bridgeProgram.fogEnd) {
+      gl.uniform1f(bridgeProgram.fogEnd, appliedRenderState.fog.end);
     }
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexResource.buffer);
     gl.drawElements(glPrimitive, indexCount, indexSize === 4 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, indexByteOffset);
@@ -3587,6 +3650,7 @@ async function loadWasmModule() {
       probeD3D8TexCoordIndex: module.cwrap("cnc_port_probe_d3d8_texcoord_index", "string", ["number"]),
       probeD3D8TextureTransform: module.cwrap("cnc_port_probe_d3d8_texture_transform", "string", ["number"]),
       probeD3D8StencilState: module.cwrap("cnc_port_probe_d3d8_stencil_state", "string", []),
+      probeD3D8FogState: module.cwrap("cnc_port_probe_d3d8_fog_state", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
       probeD3D8LegacyTextureDraw: module.cwrap("cnc_port_probe_d3d8_legacy_texture_draw", "string", ["number"]),
       probeD3D8DxtTextureDraw: module.cwrap("cnc_port_probe_d3d8_dxt_texture_draw", "string", ["number"]),
@@ -6274,6 +6338,45 @@ async function rpc(command, payload = {}) {
           cornerPixel,
           centerPixelOk,
           cornerPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8FogState":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 fog-state probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8FogState());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedCenter = probe.expectedCenter ?? [];
+        const centerPixelOk = Array.isArray(browserProbe?.centerPixel)
+          && expectedCenter.length === 4
+          && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
+        const fog = browserProbe?.appliedRenderState?.fog ?? {};
+        const renderState = browserProbe?.renderState ?? {};
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && renderState.fogEnable === probe.fog?.enable
+          && renderState.fogColor === probe.fog?.color
+          && renderState.fogStart === probe.fog?.startBits
+          && renderState.fogEnd === probe.fog?.endBits
+          && renderState.fogVertexMode === probe.fog?.vertexMode
+          && renderState.rangeFogEnable === probe.fog?.rangeEnabled
+          && fog.enabled === true
+          && fog.vertexMode === D3DFOG_LINEAR
+          && fog.rangeEnabled === false
+          && Math.abs((fog.start ?? -1) - (probe.fog?.start ?? -1)) < 0.00001
+          && Math.abs((fog.end ?? -1) - (probe.fog?.end ?? -1)) < 0.00001
+          && centerPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          centerPixelOk,
           state: snapshotState(),
         };
       }

@@ -33,6 +33,12 @@ struct WasmD3D8DrawRenderState
 	DWORD stencil_ref;
 	DWORD stencil_mask;
 	DWORD stencil_write_mask;
+	DWORD fog_enable;
+	DWORD fog_color;
+	DWORD fog_start;
+	DWORD fog_end;
+	DWORD fog_vertex_mode;
+	DWORD range_fog_enable;
 	WasmD3D8DrawTextureStageState texture_stages[WASM_D3D8_TEXTURE_STAGE_COUNT];
 };
 

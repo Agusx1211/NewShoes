@@ -2231,6 +2231,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       missing stencil writes and accidentally disabled stencil tests. Broader
       W3D player-color, occlusion, and projected-shadow stencil flows remain
       open until the original scene/shadow renderer paths are harness-driven.
+- [x] Add shader-emulated D3D8 linear fog to the browser WebGL2 draw bridge.
+      The shim now captures `D3DRS_FOGENABLE`, `FOGCOLOR`, `FOGSTART`,
+      `FOGEND`, `FOGVERTEXMODE`, and `RANGEFOGENABLE` into the draw payload;
+      the browser bridge decodes the D3D float-bit start/end values and mixes
+      fog color after the fixed-function texture combiner/alpha-test path; and
+      a focused D3D8 probe draws a red quad at view-space depth 0.5 with blue
+      linear fog from 0..1. Playwright verifies the blended purple center
+      pixel and the decoded fog state, covering the render-state path used by
+      `DX8Wrapper::Set_Fog` / `ShaderClass` before the original scene fog
+      flows are fully harness-driven.
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8
       `Clear` path, verified by `harness-smoke-d3d8-clear-canvas.png` and

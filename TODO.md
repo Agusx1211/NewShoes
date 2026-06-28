@@ -448,7 +448,10 @@ shares structure and follows behind.
       uploads and shader sampling if original W3D assets exercise
       `VolumeTextureClass` beyond the verified uncompressed
       `D3DXCreateVolumeTexture` / `LockBox` / `SetTexture` path.
-- [ ] Render-state mapping (blend, depth, cull, alpha test) → GL state.
+- [ ] Remaining D3D8 render-state mapping beyond the current
+      cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog
+      coverage, including fill mode, shade mode, lighting/material state,
+      bias/clip state, and other W3D draw states → GL/shader state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

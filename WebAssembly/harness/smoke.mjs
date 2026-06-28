@@ -3064,6 +3064,22 @@ try {
     throw new Error(`D3D8 stencil-state probe failed: ${JSON.stringify(d3d8StencilStateResult)}`);
   }
 
+  const d3d8FogStateResult = await page.evaluate(() => window.CnCPort.rpc("d3d8FogState"));
+  if (!d3d8FogStateResult.ok
+      || d3d8FogStateResult.probe?.source !== "browser_d3d8_fog_state_probe"
+      || d3d8FogStateResult.probe?.calls?.drawIndexed !== 1
+      || d3d8FogStateResult.browserProbe?.renderState?.fogEnable !== 1
+      || d3d8FogStateResult.browserProbe?.renderState?.fogColor !== 0xff0000ff
+      || d3d8FogStateResult.browserProbe?.renderState?.fogStart !== 0
+      || d3d8FogStateResult.browserProbe?.renderState?.fogEnd !== 0x3f800000
+      || d3d8FogStateResult.browserProbe?.renderState?.fogVertexMode !== 3
+      || d3d8FogStateResult.browserProbe?.renderState?.rangeFogEnable !== 0
+      || d3d8FogStateResult.browserProbe?.appliedRenderState?.fog?.enabled !== true
+      || d3d8FogStateResult.browserProbe?.appliedRenderState?.fog?.rangeEnabled !== false
+      || d3d8FogStateResult.centerPixelOk !== true) {
+    throw new Error(`D3D8 fog-state probe failed: ${JSON.stringify(d3d8FogStateResult)}`);
+  }
+
   const d3d8LegacyTextureUploadResult = await page.evaluate(() => window.CnCPort.rpc("d3d8LegacyTextureUpload"));
   const legacyPerFormat = d3d8LegacyTextureUploadResult.perFormat ?? [];
   const legacyNames = legacyPerFormat.map((entry) => entry.name).join(",");

@@ -311,7 +311,7 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			return null;
 		}
 		const offset = ptr >>> 2;
-		const renderStateSlots = 21;
+		const renderStateSlots = 27;
 		const textureStageCount = 8;
 		const textureStageStateSlots = 29;
 		const state = Module.HEAPU32.subarray(offset, offset + renderStateSlots);
@@ -375,6 +375,12 @@ EM_JS(void, wasm_d3d8_browser_draw_indexed, (
 			stencilRef: state[18] >>> 0,
 			stencilMask: state[19] >>> 0,
 			stencilWriteMask: state[20] >>> 0,
+			fogEnable: state[21] >>> 0,
+			fogColor: state[22] >>> 0,
+			fogStart: state[23] >>> 0,
+			fogEnd: state[24] >>> 0,
+			fogVertexMode: state[25] >>> 0,
+			rangeFogEnable: state[26] >>> 0,
 			textureStages,
 		};
 	};
@@ -2767,6 +2773,12 @@ private:
 		state.stencil_ref = render_state_value(D3DRS_STENCILREF, 0);
 		state.stencil_mask = render_state_value(D3DRS_STENCILMASK, 0xffffffffUL);
 		state.stencil_write_mask = render_state_value(D3DRS_STENCILWRITEMASK, 0xffffffffUL);
+		state.fog_enable = render_state_value(D3DRS_FOGENABLE, FALSE);
+		state.fog_color = render_state_value(D3DRS_FOGCOLOR, 0);
+		state.fog_start = render_state_value(D3DRS_FOGSTART, 0);
+		state.fog_end = render_state_value(D3DRS_FOGEND, 0x3f800000UL);
+		state.fog_vertex_mode = render_state_value(D3DRS_FOGVERTEXMODE, D3DFOG_LINEAR);
+		state.range_fog_enable = render_state_value(D3DRS_RANGEFOGENABLE, FALSE);
 		capture_draw_texture_stage_states();
 	}
 
