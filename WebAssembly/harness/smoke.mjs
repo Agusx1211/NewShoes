@@ -5656,6 +5656,41 @@ try {
     );
   }
 
+  const wsEnvironmentMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("wsEnvironmentMapperApply"));
+  const wsClassic = wsEnvironmentMapperApplyResult.probe?.cases?.classic;
+  const wsReflection = wsEnvironmentMapperApplyResult.probe?.cases?.reflection;
+  const wsCaseOk = (wsCase, expectedClass, expectedAxis, expectedStage, expectedTexCoord) =>
+    wsCase?.ok === true
+    && wsCase?.class === expectedClass
+    && wsCase?.axis === expectedAxis
+    && wsCase?.stage === expectedStage
+    && wsCase?.mapperCreated === true
+    && wsCase?.mapperIdOk === true
+    && wsCase?.needsNormalsOk === true
+    && wsCase?.timeVariantOk === true
+    && wsCase?.stageOk === true
+    && wsCase?.viewInfluencedOk === true
+    && wsCase?.applyCalled === true
+    && wsCase?.texCoordIndex === expectedTexCoord
+    && wsCase?.textureTransformFlags === 2
+    && wsCase?.transform?.state === wsCase?.transform?.expectedState
+    && wsCase?.transform?.rowsOk === true
+    && wsCase?.transform?.row0Ok === true
+    && wsCase?.transform?.row1Ok === true
+    && wsCase?.transform?.row2Ok === true
+    && wsCase?.transform?.row3Ok === true
+    && wsCase?.callDeltas?.transform === 1
+    && wsCase?.callDeltas?.textureStageState === 2;
+  if (!wsEnvironmentMapperApplyResult.ok
+      || wsEnvironmentMapperApplyResult.probe?.source !== "ws_environment_mapper_apply_probe"
+      || !wsCaseOk(wsClassic, "WSClassicEnvironmentMapperClass", "X", 1, 0x00010000)
+      || !wsCaseOk(wsReflection, "WSEnvironmentMapperClass", "Y", 1, 0x00030000)) {
+    throw new Error(
+      `WS environment mapper apply probe failed: ${JSON.stringify(wsEnvironmentMapperApplyResult)}`,
+    );
+  }
+
   const screenMapperApplyResult =
       await page.evaluate(() => window.CnCPort.rpc("screenMapperApply"));
   if (!screenMapperApplyResult.ok

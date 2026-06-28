@@ -5194,6 +5194,8 @@ async function loadWasmModule() {
         "cnc_port_probe_matrixmapper_apply", "string", []),
       probeScreenMapperApply: module.cwrap(
         "cnc_port_probe_screen_mapper_apply", "string", []),
+      probeWSEnvironmentMapperApply: module.cwrap(
+        "cnc_port_probe_ws_environment_mapper_apply", "string", []),
       probeWWShadeCubeMapApply: module.cwrap(
         "cnc_port_probe_wwshade_cubemap_apply", "string", []),
       initOriginalWndProcInput: module.cwrap(
@@ -12305,6 +12307,54 @@ async function rpc(command, payload = {}) {
           && probe?.transform?.row3Ok === true
           && probe?.callDeltas?.transform === 1
           && probe?.callDeltas?.textureStageState === 2;
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "wsEnvironmentMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; WS environment mapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeWSEnvironmentMapperApply());
+        const classic = probe?.cases?.classic;
+        const reflection = probe?.cases?.reflection;
+        const caseOk = (wsCase, expectedStage, expectedTexCoord) =>
+          wsCase?.ok === true
+          && wsCase?.stage === expectedStage
+          && wsCase?.mapperCreated === true
+          && wsCase?.mapperIdOk === true
+          && wsCase?.needsNormalsOk === true
+          && wsCase?.timeVariantOk === true
+          && wsCase?.stageOk === true
+          && wsCase?.viewInfluencedOk === true
+          && wsCase?.applyCalled === true
+          && wsCase?.texCoordIndex === expectedTexCoord
+          && wsCase?.textureTransformFlags === D3DTTFF_COUNT2
+          && wsCase?.transform?.state === wsCase?.transform?.expectedState
+          && wsCase?.transform?.rowsOk === true
+          && wsCase?.transform?.row0Ok === true
+          && wsCase?.transform?.row1Ok === true
+          && wsCase?.transform?.row2Ok === true
+          && wsCase?.transform?.row3Ok === true
+          && wsCase?.callDeltas?.transform === 1
+          && wsCase?.callDeltas?.textureStageState === 2;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ws_environment_mapper_apply_probe"
+          && classic?.class === "WSClassicEnvironmentMapperClass"
+          && classic?.axis === "X"
+          && reflection?.class === "WSEnvironmentMapperClass"
+          && reflection?.axis === "Y"
+          && caseOk(classic, 1, D3DTSS_TCI_CAMERASPACENORMAL)
+          && caseOk(reflection, 1, D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR);
         return {
           ok,
           command,
