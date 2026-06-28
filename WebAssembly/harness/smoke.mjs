@@ -718,6 +718,163 @@ try {
       throw new Error(`Original Keyboard frame-tick state cleanup mismatch: ${JSON.stringify(resetFrameTickKeyboard)}`);
     }
 
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 2,
+      "original Keyboard frame-tick A repeat seed queue",
+    );
+    const frameTickRepeatSeedProbe = await page.evaluate(() =>
+      window.CnCPort.rpc("originalKeyboardFrameTickProbe"));
+    const frameTickRepeatSeedMessages = frameTickRepeatSeedProbe.probe?.stream?.messages ?? [];
+    if (!frameTickRepeatSeedProbe.ok
+        || frameTickRepeatSeedProbe.probe?.source !== "browser_original_keyboard_frame_tick"
+        || frameTickRepeatSeedProbe.probe?.ok !== true
+        || frameTickRepeatSeedProbe.probe?.frameTick?.probe !== true
+        || frameTickRepeatSeedProbe.probe?.queue?.before !== 2
+        || frameTickRepeatSeedProbe.probe?.queue?.drained !== 2
+        || frameTickRepeatSeedProbe.probe?.queue?.ignored !== 1
+        || frameTickRepeatSeedProbe.probe?.inputFrame !== 1
+        || frameTickRepeatSeedProbe.probe?.stream?.count !== 1
+        || frameTickRepeatSeedMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || frameTickRepeatSeedMessages[0]?.key !== keyA
+        || (frameTickRepeatSeedMessages[0]?.state & keyStateDown) === 0
+        || (frameTickRepeatSeedMessages[0]?.state & keyStateAutoRepeat) !== 0
+        || frameTickRepeatSeedProbe.probe?.keyStatus?.aDown !== true) {
+      throw new Error(`Original Keyboard frame-tick repeat seed failed: ${JSON.stringify(frameTickRepeatSeedProbe)}`);
+    }
+
+    for (let frame = 0; frame < 10; ++frame) {
+      const quietFrameTickRepeatProbe = await page.evaluate(() =>
+        window.CnCPort.rpc("originalKeyboardFrameTickProbe"));
+      if (!quietFrameTickRepeatProbe.ok
+          || quietFrameTickRepeatProbe.probe?.source !== "browser_original_keyboard_frame_tick"
+          || quietFrameTickRepeatProbe.probe?.ok !== true
+          || quietFrameTickRepeatProbe.probe?.queue?.before !== 0
+          || quietFrameTickRepeatProbe.probe?.queue?.drained !== 0
+          || quietFrameTickRepeatProbe.probe?.stream?.count !== 0
+          || quietFrameTickRepeatProbe.probe?.inputFrame !== frame + 2
+          || quietFrameTickRepeatProbe.probe?.keyStatus?.aDown !== true) {
+        throw new Error(`Original Keyboard frame-tick repeated before delay frame ${frame}: ${JSON.stringify(quietFrameTickRepeatProbe)}`);
+      }
+    }
+
+    const frameTickRepeatProbe = await page.evaluate(() =>
+      window.CnCPort.rpc("originalKeyboardFrameTickProbe"));
+    const frameTickRepeatMessages = frameTickRepeatProbe.probe?.stream?.messages ?? [];
+    if (!frameTickRepeatProbe.ok
+        || frameTickRepeatProbe.probe?.source !== "browser_original_keyboard_frame_tick"
+        || frameTickRepeatProbe.probe?.ok !== true
+        || frameTickRepeatProbe.probe?.inputFrame !== 12
+        || frameTickRepeatProbe.probe?.stream?.count !== 1
+        || frameTickRepeatMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || frameTickRepeatMessages[0]?.key !== keyA
+        || (frameTickRepeatMessages[0]?.state & keyStateDown) === 0
+        || (frameTickRepeatMessages[0]?.state & keyStateAutoRepeat) === 0
+        || frameTickRepeatProbe.probe?.keyStatus?.aDown !== true) {
+      throw new Error(`Original Keyboard frame-tick autorepeat did not fire after delay: ${JSON.stringify(frameTickRepeatProbe)}`);
+    }
+
+    await page.keyboard.up("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1,
+      "original Keyboard frame-tick A repeat release queue",
+    );
+    const resetFrameTickRepeatInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameTickRepeatInput.ok
+        || resetFrameTickRepeatInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameTickRepeatInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard frame-tick repeat cleanup reset mismatch: ${JSON.stringify(resetFrameTickRepeatInput)}`);
+    }
+    const resetFrameTickRepeatKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFrameTickRepeatKeyboard.ok
+        || resetFrameTickRepeatKeyboard.probe?.inputFrame !== 0
+        || resetFrameTickRepeatKeyboard.probe?.keyStatus?.aDown !== false) {
+      throw new Error(`Original Keyboard frame-tick repeat state cleanup mismatch: ${JSON.stringify(resetFrameTickRepeatKeyboard)}`);
+    }
+
+    await page.locator("#viewport").focus();
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard frame-tick focus-loss setup queue",
+    );
+    const resetFrameTickFocusSetupInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameTickFocusSetupInput.ok
+        || resetFrameTickFocusSetupInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameTickFocusSetupInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard frame-tick focus setup reset mismatch: ${JSON.stringify(resetFrameTickFocusSetupInput)}`);
+    }
+    const resetFrameTickFocusSetupKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFrameTickFocusSetupKeyboard.ok
+        || resetFrameTickFocusSetupKeyboard.probe?.inputFrame !== 0
+        || resetFrameTickFocusSetupKeyboard.probe?.modifiers !== 0) {
+      throw new Error(`Original Keyboard frame-tick focus setup state reset mismatch: ${JSON.stringify(resetFrameTickFocusSetupKeyboard)}`);
+    }
+
+    await page.keyboard.down("Shift");
+    await page.keyboard.down("A");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard frame-tick focus-loss held-key queue",
+    );
+    const frameTickFocusHeldProbe = await page.evaluate(() =>
+      window.CnCPort.rpc("originalKeyboardFrameTickProbe"));
+    if (!frameTickFocusHeldProbe.ok
+        || frameTickFocusHeldProbe.probe?.source !== "browser_original_keyboard_frame_tick"
+        || frameTickFocusHeldProbe.probe?.ok !== true
+        || frameTickFocusHeldProbe.probe?.stream?.count !== 2
+        || frameTickFocusHeldProbe.probe?.keyStatus?.aDown !== true
+        || frameTickFocusHeldProbe.probe?.keyStatus?.leftShiftDown !== true
+        || (frameTickFocusHeldProbe.probe?.modifiers & keyStateLShift) === 0) {
+      throw new Error(`Original Keyboard frame-tick focus-loss setup did not hold Shift+A: ${JSON.stringify(frameTickFocusHeldProbe)}`);
+    }
+
+    await page.evaluate(() => document.querySelector("#viewport").blur());
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 3,
+      "original Keyboard frame-tick focus-loss blur queue",
+    );
+    const frameTickFocusLostProbe = await page.evaluate(() =>
+      window.CnCPort.rpc("originalKeyboardFrameTickProbe"));
+    const frameTickFocusLostEvents = frameTickFocusLostProbe.probe?.events ?? [];
+    if (!frameTickFocusLostProbe.ok
+        || frameTickFocusLostProbe.probe?.source !== "browser_original_keyboard_frame_tick"
+        || frameTickFocusLostProbe.probe?.ok !== true
+        || frameTickFocusLostProbe.probe?.queue?.drained !== 0
+        || frameTickFocusLostProbe.probe?.focusLost?.pendingBefore !== true
+        || frameTickFocusLostProbe.probe?.focusLost?.delivered !== true
+        || frameTickFocusLostProbe.probe?.stream?.count !== 0
+        || frameTickFocusLostProbe.probe?.keyStatus?.aDown !== false
+        || frameTickFocusLostProbe.probe?.keyStatus?.leftShiftDown !== false
+        || frameTickFocusLostProbe.probe?.modifiers !== 0
+        || !frameTickFocusLostEvents.some((event) => event.focusLost === true && event.engineKey === keyLost)) {
+      throw new Error(`Browser blur did not deliver original Keyboard frame-tick KEY_LOST reset: ${JSON.stringify(frameTickFocusLostProbe)}`);
+    }
+
+    await page.keyboard.up("A");
+    await page.keyboard.up("Shift");
+    const resetFrameTickFocusLostInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameTickFocusLostInput.ok
+        || resetFrameTickFocusLostInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameTickFocusLostInput.state.browserInput?.messageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard frame-tick focus-loss cleanup reset mismatch: ${JSON.stringify(resetFrameTickFocusLostInput)}`);
+    }
+    const resetFrameTickFocusLostKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFrameTickFocusLostKeyboard.ok
+        || resetFrameTickFocusLostKeyboard.probe?.inputFrame !== 0
+        || resetFrameTickFocusLostKeyboard.probe?.modifiers !== 0
+        || resetFrameTickFocusLostKeyboard.probe?.keyStatus?.aDown !== false
+        || resetFrameTickFocusLostKeyboard.probe?.keyStatus?.leftShiftDown !== false) {
+      throw new Error(`Original Keyboard frame-tick focus-loss state cleanup mismatch: ${JSON.stringify(resetFrameTickFocusLostKeyboard)}`);
+    }
+
     await page.keyboard.down("Shift");
     await page.keyboard.down("A");
     await waitForBrowserInput(

@@ -3075,8 +3075,9 @@ shares structure and follows behind.
                         keyboard messages, runs the real
                         `Keyboard::update()` / `createStreamMessages()` slice
                         against a probe-local original `MessageStream`, and
-                        verifies `MSG_RAW_KEY_DOWN` output while marking that
-                        the slice is not yet promoted into `tick_frame()`.
+                        verifies `MSG_RAW_KEY_DOWN`, autorepeat, and
+                        focus-loss reset output while marking that the slice is
+                        not yet promoted into `tick_frame()`.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the
