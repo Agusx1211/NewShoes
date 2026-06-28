@@ -163,7 +163,7 @@ BranchResult run_branch(EdgeMapperClass *mapper, int stage, DWORD expected_tci)
 		"Mapper_ID must be MAPPER_ID_EDGE");
 	check(mapper->Needs_Normals() == true, "EdgeMapperClass must request normals");
 	check(mapper->Is_Time_Variant() == true, "EdgeMapperClass must be time variant");
-	check(mapper->Get_Stage() == static_cast<unsigned int>(stage),
+	check(mapper->Get_Stage() == stage,
 		"Get_Stage must report the construction stage");
 
 	// Derive the expected device matrix from the *real*

@@ -498,11 +498,14 @@ shares structure and follows behind.
       those dependencies are owned, not weak-faked.
 - [ ] Extend the focused browser generated texture-coordinate support into
       remaining original W3D mapper users beyond the direct
-      `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`, and
-      `MatrixMapperClass` / `ScreenMapperClass` proofs: additional
-      camera-space normal/reflection paths in `WW3D2/mapper.cpp` such as
-      `EdgeMapperClass::Apply`, water projection, and terrain projection,
-      including full stage mapping for original generated-coordinate paths.
+      `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`,
+      `EdgeMapperClass`, and `MatrixMapperClass` / `ScreenMapperClass` proofs:
+      the remaining world-space and grid environment mapper classes
+      (`WSClassicEnvironmentMapperClass`, `WSEnvironmentMapperClass`,
+      `GridClassicEnvironmentMapperClass`, `GridEnvironmentMapperClass`,
+      `GridWSClassicEnvironmentMapperClass`, `GridWSEnvironmentMapperClass`),
+      water projection, and terrain projection, including full stage mapping for
+      original generated-coordinate paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
