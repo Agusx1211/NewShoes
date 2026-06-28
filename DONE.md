@@ -31,6 +31,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       current startup-path candidate archives, and records the remaining absent
       default INI / `Rank.ini` / `CommandMap.ini` gaps without treating missing
       assets as tool failures.
+- [x] Classify startup archive inventory gaps by source: the tool now reports
+      optional base archive presence, per-file `missingDetails`, and
+      `missingByReason`, with `--strict` failing only when files are missing
+      from a present source archive or from the Zero Hour runtime set itself.
+      Current Zero Hour-only assets remain strict-clean because the remaining
+      default/startup INI gaps are expected from absent base `INI.big`.
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.
@@ -1595,6 +1601,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       wasm bootstrap's C++ state via an exported `cnc-port` archive-set hook,
       with Playwright coverage proving the engine-side state sees the mounted
       archive directory, mask, count, and byte total.
+- [x] Thread mounted archive/source names through the browser archive-set hook,
+      expose them in `archiveMount.archives` / `sourceArchives`, and
+      harness-prove `originalEngineStartup.startupFiles.baseIniArchive.mounted`
+      distinguishes the current Zero Hour-only runtime archive set from a
+      mounted base `INI.big` fallback instead of inferring from missing files
+      alone.
 - [x] Prove the browser harness can fetch, verify, and register the runtime BIG
       set before the wasm bootstrap `boot` RPC, then boot with the archive mount
       state retained. This validates the preload-before-engine-start ordering;

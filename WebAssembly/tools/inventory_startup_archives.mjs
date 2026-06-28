@@ -50,9 +50,19 @@ const requiredStartupPaths = [
 
 function usage() {
   return [
-    "usage: node tools/inventory_startup_archives.mjs [assets-dir] [--expect-current-zh]",
+    "usage: node tools/inventory_startup_archives.mjs [assets-dir]",
+    "                  [--expect-current-zh] [--strict]",
     "",
     "Indexes BIGF archives and reports original GameEngine.cpp startup file coverage.",
+    "",
+    "  --expect-current-zh  Self-check the JSON shape against the current Zero Hour",
+    "                       runtime archive set.",
+    "  --strict             Fail (nonzero exit, ok=false) when any required startup",
+    "                       file is missing for a reason other than an optional base",
+    "                       Generals archive (INI.big/English.big) being absent.",
+    "                       Missing files solely because those optional archives are",
+    "                       absent are tolerated, so the current Zero Hour-only set",
+    "                       (no INI.big) stays green under --strict.",
   ].join("\n");
 }
 
@@ -68,10 +78,13 @@ function fail(message) {
 function parseArgs(argv) {
   let assetsDir = null;
   let expectCurrentZh = false;
+  let strict = false;
 
   for (const arg of argv) {
     if (arg === "--expect-current-zh") {
       expectCurrentZh = true;
+    } else if (arg === "--strict") {
+      strict = true;
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -85,7 +98,7 @@ function parseArgs(argv) {
   const resolvedAssetsDir = assetsDir === null
     ? resolve(wasmRoot, "artifacts/real-assets")
     : resolve(process.cwd(), assetsDir);
-  return { assetsDir: resolvedAssetsDir, expectCurrentZh };
+  return { assetsDir: resolvedAssetsDir, expectCurrentZh, strict };
 }
 
 async function readExact(file, position, length, context) {
@@ -192,6 +205,51 @@ function archiveRecord(archive, entry) {
   };
 }
 
+const optionalBaseArchives = ["INI.big", "English.big"];
+
+const baseArchiveStartupPaths = new Set([
+  "data\\ini\\default\\gamedata.ini",
+  "data\\ini\\default\\water.ini",
+  "data\\ini\\default\\weather.ini",
+  "data\\ini\\default\\science.ini",
+  "data\\ini\\default\\multiplayer.ini",
+  "data\\ini\\default\\terrain.ini",
+  "data\\ini\\default\\roads.ini",
+  "data\\ini\\default\\playertemplate.ini",
+  "data\\ini\\default\\fxlist.ini",
+  "data\\ini\\default\\objectcreationlist.ini",
+  "data\\ini\\default\\specialpower.ini",
+  "data\\ini\\default\\upgrade.ini",
+  "data\\ini\\default\\aidata.ini",
+  "data\\ini\\default\\crate.ini",
+  "data\\ini\\default\\video.ini",
+  "data\\ini\\default\\object.ini",
+  "data\\ini\\rank.ini",
+  "data\\ini\\commandmap.ini",
+  "data\\english\\commandmap.ini",
+]);
+
+function expectedBaseArchiveForPath(normalizedPath) {
+  return normalizedPath === "data\\english\\commandmap.ini"
+    ? "English.big"
+    : "INI.big";
+}
+
+function classifyMissingPath(path, presentBaseArchiveNames) {
+  const normalizedPath = normalizeEntryPath(path);
+  if (baseArchiveStartupPaths.has(normalizedPath)) {
+    const expectedSource = expectedBaseArchiveForPath(normalizedPath);
+    return {
+      optionalBase: true,
+      expectedSource,
+      reason: presentBaseArchiveNames.has(expectedSource)
+        ? "missingFromBaseArchive"
+        : "optionalBaseArchiveAbsent",
+    };
+  }
+  return { optionalBase: false, expectedSource: null, reason: "missing" };
+}
+
 function buildInventory(assetsDir, archives) {
   const byPath = new Map();
   const objectIniEntries = [];
@@ -214,8 +272,23 @@ function buildInventory(assetsDir, archives) {
   objectIniEntries.sort((left, right) =>
     left.archive.localeCompare(right.archive) || left.path.localeCompare(right.path));
 
+  const presentArchiveNames = new Set(archives.map((archive) => archive.name));
+  const optionalBaseArchiveState = optionalBaseArchives.map((name) => ({
+    name,
+    present: presentArchiveNames.has(name),
+  }));
+  const presentBaseArchiveNames = new Set(optionalBaseArchiveState
+    .filter((archive) => archive.present)
+    .map((archive) => archive.name));
+
   const candidateArchives = new Set();
   const missing = [];
+  const missingDetails = [];
+  const missingByReason = {
+    optionalBaseArchiveAbsent: 0,
+    missingFromBaseArchive: 0,
+    missing: 0,
+  };
   const requiredFiles = requiredStartupPaths.map((path) => {
     let archivesForPath = [];
     if (path === "Data\\INI\\Object\\*.ini") {
@@ -230,7 +303,11 @@ function buildInventory(assetsDir, archives) {
         candidateArchives.add(archive.archive);
       }
     } else {
+      const classification = classifyMissingPath(path, presentBaseArchiveNames);
       missing.push(path);
+      missingDetails.push({ path, ...classification });
+      ++missingByReason[classification.reason];
+      return { path, found, archives: archivesForPath, ...classification };
     }
 
     return { path, found, archives: archivesForPath };
@@ -248,12 +325,15 @@ function buildInventory(assetsDir, archives) {
       size: archive.size,
       entryCount: archive.entryCount,
     })),
+    optionalBaseArchives: optionalBaseArchiveState,
     requiredFiles,
     objectIniFiles: {
       count: objectIniEntries.length,
       examples: objectIniEntries.slice(0, 20),
     },
     missing,
+    missingDetails,
+    missingByReason,
     candidateArchives: sortedCandidateArchives,
     candidateArchiveCount: sortedCandidateArchives.length,
   };
@@ -289,6 +369,16 @@ function assertShapeForCurrentZh(inventory) {
   if (rank && !rank.found && !inventory.missing.includes("Data\\INI\\Rank.ini")) {
     failures.push("missing Rank.ini was not reported");
   }
+  if (inventory.optionalBaseArchives?.some((archive) => archive.present)) {
+    failures.push("current Zero Hour-only inventory should not include optional base archives");
+  }
+  if (inventory.missingByReason?.optionalBaseArchiveAbsent !== 15 ||
+      inventory.missingByReason?.missingFromBaseArchive !== 0 ||
+      inventory.missingByReason?.missing !== 0 ||
+      inventory.missingDetails?.length !== 15 ||
+      inventory.missingDetails.some((entry) => entry.reason !== "optionalBaseArchiveAbsent")) {
+    failures.push("current Zero Hour-only missing startup files should all be optional base archive gaps");
+  }
 
   if (failures.length > 0) {
     throw new Error(`Current Zero Hour asset inventory self-check failed: ${failures.join("; ")}`);
@@ -296,7 +386,7 @@ function assertShapeForCurrentZh(inventory) {
 }
 
 async function main() {
-  const { assetsDir, expectCurrentZh } = parseArgs(process.argv.slice(2));
+  const { assetsDir, expectCurrentZh, strict } = parseArgs(process.argv.slice(2));
   const archivePaths = await findBigArchives(assetsDir);
   const archives = [];
 
@@ -314,6 +404,20 @@ async function main() {
   const inventory = buildInventory(assetsDir, archives);
   if (expectCurrentZh) {
     assertShapeForCurrentZh(inventory);
+  }
+  if (strict) {
+    const realGaps = inventory.missingDetails.filter(
+      (entry) => entry.reason !== "optionalBaseArchiveAbsent",
+    );
+    if (realGaps.length > 0) {
+      inventory.ok = false;
+      inventory.strictFailures = realGaps;
+      fail(
+        `Strict startup-archive inventory failed: ${realGaps.length} required ` +
+        `startup file(s) missing despite their source archives being present: ` +
+        realGaps.map((entry) => entry.path).join(", "),
+      );
+    }
   }
   console.log(JSON.stringify(inventory, null, 2));
 }

@@ -5067,7 +5067,7 @@ async function loadWasmModule() {
       registerArchiveSet: module.cwrap(
         "cnc_port_register_archive_set",
         "string",
-        ["string", "string", "number", "number"],
+        ["string", "string", "number", "number", "string"],
       ),
       setBrowserInput: module.cwrap(
         "cnc_port_set_browser_input",
@@ -5416,6 +5416,7 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
 
   return {
     name: archive.name,
+    sourceName: String(payload.sourceName ?? archive.name),
     path: archive.memfsPath,
     bytes: bytes.byteLength,
   };
@@ -5430,11 +5431,21 @@ function probeArchive(wasmModule, archivePath) {
 function registerArchiveSet(wasmModule, archiveSet) {
   const directory = archiveSet.path.endsWith("/") ? archiveSet.path : `${archiveSet.path}/`;
   const fileMask = archiveSet.probePath.slice(archiveSet.probePath.lastIndexOf("/") + 1) || "*.big";
+  const archiveManifest = archiveSet.archives
+    .map((archive) => {
+      const name = String(archive.name ?? "").replaceAll("\t", " ").replaceAll("\n", " ");
+      const sourceName = String(archive.sourceName ?? archive.name ?? "")
+        .replaceAll("\t", " ")
+        .replaceAll("\n", " ");
+      return `${name}\t${sourceName}`;
+    })
+    .join("\n");
   applyModuleState(parseModuleState(wasmModule.registerArchiveSet(
     directory,
     fileMask,
     archiveSet.archiveCount,
     archiveSet.totalBytes,
+    archiveManifest,
   )));
   harnessState.wasm = "loaded";
   return harnessState.archiveMount;
@@ -6722,6 +6733,7 @@ async function mountRangeBackedArchiveSet(payload = {}) {
       : probeArchive(moduleResult.wasmModule, archive.memfsPath);
     const mountedArchive = {
       name: archive.name,
+      sourceName: String(input.sourceName ?? input.sourceArchive ?? archive.name),
       path: archive.memfsPath,
       bytes: generated.bytes.byteLength,
       sourceBytes: Number(input.expectedSourceBytes ?? input.sourceBytes ?? 0),

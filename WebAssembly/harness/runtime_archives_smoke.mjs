@@ -1498,6 +1498,9 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
   if (baseIniArchive?.ready !== false
       || baseIniArchive.archive !== "INI.big"
       || baseIniArchive.source !== "Base Generals Data1.cab"
+      || baseIniArchive.mounted !== false
+      || baseIniArchive.mountName !== null
+      || baseIniArchive.sourceName !== null
       || !baseIniArchive.message?.includes("base Generals INI.big")
       || baseMissing.size !== expectedMissing.length) {
     throw new Error(`${context} base INI startup diagnostic mismatch: ${JSON.stringify(baseIniArchive)}`);
@@ -1561,6 +1564,9 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
   if (baseIniArchive?.ready !== true
       || baseIniArchive.archive !== "INI.big"
       || baseIniArchive.source !== "Base Generals Data1.cab"
+      || baseIniArchive.mounted !== true
+      || baseIniArchive.mountName !== "ZZBase_INI.big"
+      || baseIniArchive.sourceName !== "INI.big"
       || (baseIniArchive.missing?.length ?? -1) !== 0
       || !baseIniArchive.message?.includes("base INI startup files are visible")) {
     throw new Error(`${context} base INI startup diagnostic should be clear: ${JSON.stringify(baseIniArchive)}`);
@@ -1633,6 +1639,7 @@ try {
   const harnessUrl = new URL("harness/index.html", server.url).href;
   const archiveInputs = archives.map((archive) => ({
     name: archive.name,
+    sourceName: archive.sourceName ?? archive.name,
     bytes: archive.bytes,
     expectedBytes: archive.bytes,
     url: new URL(archive.urlPath, server.url).href,
@@ -1727,8 +1734,25 @@ try {
       || archiveMount.directory !== "/assets/runtime/"
       || archiveMount.fileMask !== "*.big"
       || archiveMount.archiveCount !== archives.length
-      || archiveMount.totalBytes !== archiveSet.totalBytes) {
+      || archiveMount.totalBytes !== archiveSet.totalBytes
+      || archiveMount.archives?.length !== archives.length
+      || archiveMount.sourceArchives?.length !== archives.length) {
     throw new Error(`wasm archive mount state mismatch: ${JSON.stringify(archiveMount)}`);
+  }
+  const archiveMountNames = new Set(archiveMount.archives);
+  const archiveMountSourceNames = new Set(archiveMount.sourceArchives);
+  for (const archive of archives) {
+    if (!archiveMountNames.has(archive.name)
+        || !archiveMountSourceNames.has(archive.sourceName ?? archive.name)) {
+      throw new Error(`wasm archive mount manifest missed ${archive.name}: ${JSON.stringify(archiveMount)}`);
+    }
+  }
+  if (hasBaseIniArchive) {
+    if (!archiveMountNames.has("ZZBase_INI.big") || !archiveMountSourceNames.has("INI.big")) {
+      throw new Error(`wasm archive mount manifest missed base INI archive: ${JSON.stringify(archiveMount)}`);
+    }
+  } else if (archiveMountNames.has("ZZBase_INI.big") || archiveMountSourceNames.has("INI.big")) {
+    throw new Error(`wasm archive mount manifest unexpectedly reports base INI archive: ${JSON.stringify(archiveMount)}`);
   }
   if (archiveMount.bootProbe?.attempted || archiveMount.bootProbe?.ok) {
     throw new Error(`boot archive probe should not run before boot: ${JSON.stringify(archiveMount.bootProbe)}`);
@@ -1746,7 +1770,9 @@ try {
       || bootArchiveMount.directory !== archiveMount.directory
       || bootArchiveMount.fileMask !== archiveMount.fileMask
       || bootArchiveMount.archiveCount !== archiveMount.archiveCount
-      || bootArchiveMount.totalBytes !== archiveMount.totalBytes) {
+      || bootArchiveMount.totalBytes !== archiveMount.totalBytes
+      || JSON.stringify(bootArchiveMount.archives) !== JSON.stringify(archiveMount.archives)
+      || JSON.stringify(bootArchiveMount.sourceArchives) !== JSON.stringify(archiveMount.sourceArchives)) {
     throw new Error(`archive mount state changed across boot: ${JSON.stringify({
       beforeBoot: archiveMount,
       afterBoot: bootArchiveMount,

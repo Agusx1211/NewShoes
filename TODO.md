@@ -25,7 +25,8 @@ shares structure and follows behind.
       archive candidates for known startup paths are `INIZH.big`,
       `EnglishZH.big`, `W3DEnglishZH.big`, and `MapsZH.big`, but default INI
       files, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` are still
-      absent from the indexed asset set.
+      absent from the indexed asset set; use the inventory `missingByReason`
+      output to separate optional base-archive absence from real archive gaps.
 
 ---
 

@@ -3,7 +3,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
+#include <cctype>
 #include <string>
+#include <vector>
 
 #include "wasm_archive_probe.h"
 #include "wasm_browser_runtime_assets.h"
@@ -94,6 +97,8 @@ struct ArchiveMountState
 	bool registered = false;
 	std::string directory;
 	std::string file_mask;
+	std::vector<std::string> archive_names;
+	std::vector<std::string> archive_source_names;
 	int archive_count = 0;
 	double total_bytes = 0.0;
 	bool boot_probe_attempted = false;
@@ -777,6 +782,105 @@ std::string json_escape(const std::string &value)
 	return escaped;
 }
 
+std::string normalize_archive_manifest_name(const std::string &name)
+{
+	std::string normalized = name;
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash != std::string::npos) {
+		normalized.erase(0, slash + 1);
+	}
+	for (char &ch : normalized) {
+		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+	}
+	return normalized;
+}
+
+void parse_archive_manifest(const char *archive_manifest)
+{
+	g_archive_mount.archive_names.clear();
+	g_archive_mount.archive_source_names.clear();
+
+	const std::string manifest = archive_manifest != nullptr ? archive_manifest : "";
+	std::size_t line_begin = 0;
+	while (line_begin < manifest.size()) {
+		std::size_t line_end = manifest.find('\n', line_begin);
+		if (line_end == std::string::npos) {
+			line_end = manifest.size();
+		}
+
+		if (line_end > line_begin) {
+			const std::string line = manifest.substr(line_begin, line_end - line_begin);
+			const std::size_t tab = line.find('\t');
+			const std::string mount_name = tab == std::string::npos ? line : line.substr(0, tab);
+			const std::string source_name = tab == std::string::npos ? mount_name : line.substr(tab + 1);
+			g_archive_mount.archive_names.push_back(mount_name);
+			g_archive_mount.archive_source_names.push_back(source_name);
+		}
+
+		line_begin = line_end + 1;
+	}
+}
+
+bool archive_manifest_matches_base(
+	const std::string &mount_name,
+	const std::string &source_name,
+	const char *expected)
+{
+	const std::string normalized_mount = normalize_archive_manifest_name(mount_name);
+	const std::string normalized_source = normalize_archive_manifest_name(source_name);
+	const std::string normalized_expected = normalize_archive_manifest_name(expected);
+	return normalized_source == normalized_expected ||
+		normalized_mount == normalized_expected ||
+		normalized_mount == ("zzbase_" + normalized_expected);
+}
+
+bool find_mounted_base_archive(
+	const char *expected,
+	std::string *mount_name,
+	std::string *source_name)
+{
+	for (std::size_t index = 0; index < g_archive_mount.archive_names.size(); ++index) {
+		const std::string &candidate_mount = g_archive_mount.archive_names[index];
+		const std::string candidate_source = index < g_archive_mount.archive_source_names.size()
+			? g_archive_mount.archive_source_names[index]
+			: candidate_mount;
+		if (archive_manifest_matches_base(candidate_mount, candidate_source, expected)) {
+			if (mount_name != nullptr) {
+				*mount_name = candidate_mount;
+			}
+			if (source_name != nullptr) {
+				*source_name = candidate_source;
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+std::string build_string_vector_json(const std::vector<std::string> &values)
+{
+	std::string json = "[";
+	for (std::size_t index = 0; index < values.size(); ++index) {
+		if (index != 0) {
+			json += ",";
+		}
+		json += "\"";
+		json += json_escape(values[index]);
+		json += "\"";
+	}
+	json += "]";
+	return json;
+}
+
+std::string build_nullable_string_json(const std::string &value, bool present)
+{
+	if (!present) {
+		return "null";
+	}
+	return "\"" + json_escape(value) + "\"";
+}
+
 std::string build_browser_input_json()
 {
 	char buffer[2200];
@@ -1112,15 +1216,25 @@ const char *base_ini_startup_message()
 
 std::string build_base_ini_startup_files_json()
 {
-	char buffer[3200];
+	char buffer[3800];
 	const std::string missing_json = build_missing_base_ini_startup_files_json();
 	const std::string message_json = json_escape(base_ini_startup_message());
+	std::string mount_name;
+	std::string source_name;
+	const bool mounted = find_mounted_base_archive("INI.big", &mount_name, &source_name);
+	const std::string mount_name_json = build_nullable_string_json(mount_name, mounted);
+	const std::string source_name_json = build_nullable_string_json(source_name, mounted);
 
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"ready\":%s,\"archive\":\"INI.big\","
-		"\"source\":\"Base Generals Data1.cab\",\"missing\":%s,"
+		"\"source\":\"Base Generals Data1.cab\","
+		"\"mounted\":%s,\"mountName\":%s,\"sourceName\":%s,"
+		"\"missing\":%s,"
 		"\"message\":\"%s\"}",
 		base_ini_startup_files_ready() ? "true" : "false",
+		mounted ? "true" : "false",
+		mount_name_json.c_str(),
+		source_name_json.c_str(),
 		missing_json.c_str(),
 		message_json.c_str());
 
@@ -2763,6 +2877,9 @@ const char *write_state_json()
 		json_escape(g_archive_probe.game_text_csf_path);
 	const std::string archive_mount_directory_json = json_escape(g_archive_mount.directory);
 	const std::string archive_mount_file_mask_json = json_escape(g_archive_mount.file_mask);
+	const std::string archive_mount_names_json = build_string_vector_json(g_archive_mount.archive_names);
+	const std::string archive_mount_source_names_json =
+		build_string_vector_json(g_archive_mount.archive_source_names);
 	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
@@ -3000,6 +3117,7 @@ const char *write_state_json()
 		"\"titleLabel\":%s,\"controlBarLabel\":%s,\"controlBarLabels\":%zu}},"
 		"\"archiveMount\":{\"registered\":%s,\"directory\":\"%s\","
 		"\"fileMask\":\"%s\",\"archiveCount\":%d,\"totalBytes\":%.0f,"
+		"\"archives\":%s,\"sourceArchives\":%s,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"browserRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
@@ -3492,6 +3610,8 @@ const char *write_state_json()
 		archive_mount_file_mask_json.c_str(),
 		g_archive_mount.archive_count,
 		g_archive_mount.total_bytes,
+		archive_mount_names_json.c_str(),
+		archive_mount_source_names_json.c_str(),
 		g_archive_mount.boot_probe_attempted ? "true" : "false",
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		g_archive_mount.boot_probe_indexed_file_count,
@@ -3646,11 +3766,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_register_archive_set(
 	const char *archive_directory,
 	const char *archive_file_mask,
 	int archive_count,
-	double total_bytes)
+	double total_bytes,
+	const char *archive_manifest)
 {
 	g_archive_mount.registered = true;
 	g_archive_mount.directory = archive_directory != nullptr ? archive_directory : "";
 	g_archive_mount.file_mask = archive_file_mask != nullptr ? archive_file_mask : "";
+	parse_archive_manifest(archive_manifest);
 	g_archive_mount.archive_count = archive_count < 0 ? 0 : archive_count;
 	g_archive_mount.total_bytes = total_bytes < 0.0 ? 0.0 : total_bytes;
 	g_archive_mount.boot_probe_attempted = false;

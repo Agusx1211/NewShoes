@@ -123,6 +123,25 @@ Optional base startup archives:
 | `INI.big` | Base Generals `Data1.cab` | Default/startup INI files still referenced by original `GameEngine.cpp`, including `Data\INI\Default\*.ini`, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` |
 | `English.big` | Base Generals `Language.cab` | Base English localization fallback data |
 
+### Startup Inventory Classification
+
+`npm run inventory:startup-archives` reports why required startup files are
+missing. `optionalBaseArchives` records whether `INI.big` / `English.big` are
+present, `missingDetails` annotates each gap with `expectedSource` and
+`reason`, and `missingByReason` summarizes the counts.
+
+Reasons are:
+
+- `optionalBaseArchiveAbsent` — the file is expected from optional base
+  Generals data that is not mounted locally.
+- `missingFromBaseArchive` — the expected base archive is present but still
+  lacks the file.
+- `missing` — the Zero Hour runtime archive set itself is incomplete.
+
+Pass `--strict` to fail only on `missingFromBaseArchive` or `missing`. The
+current Zero Hour-only set stays green under `--strict` because its remaining
+default/startup INI gaps are classified as optional base archive absence.
+
 This is the current runtime archive set from the installer media, not yet the
 minimum boot set. The exact boot-minimum list must be proven after the original
 engine startup and file-system paths are linked into wasm.
