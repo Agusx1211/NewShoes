@@ -2354,9 +2354,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       payload, selected fixed-function shader light, material state, and black
       outside / white inside canvas samples, with Playwright saving
       `harness-smoke-d3d8-spot-light-canvas.png`. Smooth spot
-      penumbra/falloff variants, broader point-light attenuation variants,
-      off-axis/transformed specular fidelity, and broader material-source
-      behavior remain open.
+      penumbra/falloff variants remained open at that point, alongside broader
+      point-light attenuation variants, off-axis/transformed specular
+      fidelity, and broader material-source behavior.
+- [x] Add a focused fixed-function D3D8 spot-light penumbra/falloff proof. The
+      native/browser probe exports `cnc_port_probe_d3d8_spot_falloff`, sets a
+      `D3DLIGHT_SPOT` with `Theta < Phi`, `Falloff = 2`, and constant
+      attenuation, then draws inside, mid-penumbra, and outside quads. The
+      harness RPC verifies the raw light payload, selected shader light,
+      material state, and white / gray / black samples, with Playwright saving
+      `harness-smoke-d3d8-spot-falloff-canvas.png`. Broader spot-light
+      variants, broader point-light attenuation variants, off-axis/transformed
+      specular fidelity, and broader material-source behavior remain open.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and

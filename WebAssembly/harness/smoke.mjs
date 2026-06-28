@@ -32,6 +32,10 @@ const d3d8SpotLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-light-canvas.png",
 );
+const d3d8SpotFalloffCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-spot-falloff-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3418,6 +3422,53 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8SpotLightCanvasScreenshot });
 
+  const d3d8SpotFalloffResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8SpotFalloff"));
+  const expectedFalloffInside = d3d8SpotFalloffResult.probe?.expectedInside ?? [255, 255, 255, 255];
+  const expectedFalloffPenumbra = d3d8SpotFalloffResult.probe?.expectedPenumbra ?? [61, 61, 61, 255];
+  const expectedFalloffOutside = d3d8SpotFalloffResult.probe?.expectedOutside ?? [0, 0, 0, 255];
+  if (!d3d8SpotFalloffResult.ok
+      || d3d8SpotFalloffResult.probe?.source !== "browser_d3d8_spot_falloff_probe"
+      || d3d8SpotFalloffResult.probe?.calls?.setMaterial !== 1
+      || d3d8SpotFalloffResult.probe?.calls?.setLight !== 1
+      || d3d8SpotFalloffResult.probe?.calls?.lightEnable !== 1
+      || d3d8SpotFalloffResult.probe?.calls?.drawIndexed !== 1
+      || d3d8SpotFalloffResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8SpotFalloffResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8SpotFalloffResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8SpotFalloffResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8SpotFalloffResult.browserProbe?.vertexCount !== 12
+      || d3d8SpotFalloffResult.browserProbe?.indexCount !== 18
+      || d3d8SpotFalloffResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8SpotFalloffResult.browserProbe?.lights?.[0]?.type !== 2
+      || d3d8SpotFalloffResult.browserProbe?.lights?.[0]?.theta >=
+        d3d8SpotFalloffResult.browserProbe?.lights?.[0]?.phi
+      || Math.abs((d3d8SpotFalloffResult.browserProbe?.lights?.[0]?.falloff ?? 0) - 2) > 0.00001
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported !== true
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightCount !== 1
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLights?.[0]?.type !== 2
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== false
+      || d3d8SpotFalloffResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 0
+      || d3d8SpotFalloffResult.materialOk !== true
+      || d3d8SpotFalloffResult.lightFalloffOk !== true
+      || d3d8SpotFalloffResult.selectedLightOk !== true
+      || d3d8SpotFalloffResult.insidePixelOk !== true
+      || d3d8SpotFalloffResult.penumbraPixelOk !== true
+      || d3d8SpotFalloffResult.outsidePixelOk !== true
+      || d3d8SpotFalloffResult.penumbraSeparatedOk !== true
+      || !pixelsApproximatelyEqual(d3d8SpotFalloffResult.spotFalloffPixels?.inside,
+        expectedFalloffInside, 3)
+      || !pixelsApproximatelyEqual(d3d8SpotFalloffResult.spotFalloffPixels?.penumbra,
+        expectedFalloffPenumbra, 16)
+      || !pixelsApproximatelyEqual(d3d8SpotFalloffResult.spotFalloffPixels?.outside,
+        expectedFalloffOutside, 2)
+      || !pixelLooksBlack(d3d8SpotFalloffResult.spotFalloffPixels?.outside)) {
+    throw new Error(`D3D8 spot falloff probe failed: ${JSON.stringify(d3d8SpotFalloffResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8SpotFalloffCanvasScreenshot });
+
   const d3d8MaterialResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Material"));
   const expectedMaterial = d3d8MaterialResult.probe?.material ?? {};
   const browserMaterial = d3d8MaterialResult.browserProbe?.material ?? {};
@@ -4576,6 +4627,7 @@ try {
       d3d8SpecularLightCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8SpotLightCanvasScreenshot,
+      d3d8SpotFalloffCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,
