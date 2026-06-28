@@ -229,6 +229,31 @@ int main()
 		return 1;
 	}
 
+	// A direct SetTransform on texture stage 1 must override the multiply-
+	// derived texture1 transform and be retained for draw-time capture. Use
+	// translation U/V values distinct from the multiply values above so the
+	// later draw-time texture1 capture can prove the override took effect.
+	D3DMATRIX texture1_direct_matrix = {};
+	texture1_direct_matrix.m[0][0] = 1.0f;
+	texture1_direct_matrix.m[1][1] = 1.0f;
+	texture1_direct_matrix.m[2][2] = 1.0f;
+	texture1_direct_matrix.m[3][3] = 1.0f;
+	texture1_direct_matrix.m[3][0] = 0.125f;
+	texture1_direct_matrix.m[3][1] = 0.875f;
+	if (!expect(SUCCEEDED(device->SetTransform(D3DTS_TEXTURE1, &texture1_direct_matrix)),
+			"SetTransform TEXTURE1 direct failed") ||
+		!expect(state->set_transform_calls == set_transform_before + 3,
+			"direct SetTransform TEXTURE1 should increment SetTransform counter") ||
+		!expect(state->last_set_transform_state == D3DTS_TEXTURE1,
+			"last_set_transform_state mismatch after direct TEXTURE1") ||
+		!expect(near(state->last_set_transform_matrix.m[3][0], 0.125f) &&
+				near(state->last_set_transform_matrix.m[3][1], 0.875f),
+			"last_set_transform_matrix mismatch after direct TEXTURE1")) {
+		device->Release();
+		d3d->Release();
+		return 1;
+	}
+
 	// Viewport set/get round-trip observability. The viewport was set above; a
 	// fresh GetViewport must echo the stored values and bump the get counter.
 	D3DVIEWPORT8 readback_viewport = {};
@@ -998,9 +1023,9 @@ int main()
 			near(state->last_draw_view_transform.m[1][2], 21.0f),
 			"indexed draw view transform capture mismatch after MultiplyTransform") ||
 		!expect((state->last_draw_texture_transform_mask & 2u) != 0 &&
-			near(state->last_draw_texture1_transform.m[3][0], 0.375f) &&
-			near(state->last_draw_texture1_transform.m[3][1], 0.625f),
-			"indexed draw texture transform capture mismatch after MultiplyTransform") ||
+			near(state->last_draw_texture1_transform.m[3][0], 0.125f) &&
+			near(state->last_draw_texture1_transform.m[3][1], 0.875f),
+			"indexed draw texture transform capture mismatch after direct SetTransform TEXTURE1") ||
 		!expect(state->last_draw_render_state.texture_factor == texture_factor,
 			"draw texture factor capture mismatch") ||
 		!expect(state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_MODULATE,
@@ -1055,7 +1080,7 @@ int main()
 		expect(state->viewport.X == 4 && state->viewport.Y == 8 &&
 			state->viewport.Width == 320 && state->viewport.Height == 180,
 			"viewport state mismatch") &&
-		expect(state->set_transform_calls == 2, "set_transform_calls count mismatch") &&
+		expect(state->set_transform_calls == 3, "set_transform_calls count mismatch") &&
 		expect(state->get_transform_calls == 3, "get_transform_calls count mismatch") &&
 		expect(state->set_viewport_calls == 1, "set_viewport_calls count mismatch") &&
 		expect(state->get_viewport_calls == 2, "get_viewport_calls count mismatch") &&
