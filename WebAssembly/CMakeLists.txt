@@ -4963,6 +4963,36 @@ target_link_options(win32-mouse-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(win32-mouse-cursor-smoke
+  tests/win32_mouse_cursor_smoke.cpp
+)
+
+set_target_properties(win32-mouse-cursor-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-mouse-cursor-smoke PRIVATE
+  zh_win32_mouse
+)
+
+target_compile_options(win32-mouse-cursor-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-mouse-cursor-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(win32-keyboard-smoke
   tests/win32_keyboard_smoke.cpp
 )

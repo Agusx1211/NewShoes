@@ -3057,6 +3057,14 @@ shares structure and follows behind.
       folding on the original `MessageStream`.
 - [ ] Pointer lock / capture behavior where needed.
 - [ ] Cursor rendering (engine-drawn cursor vs CSS cursor).
+      - [x] Add a focused `win32-mouse-cursor-smoke` proof for the original
+            `Mouse()` / `Win32Mouse` cursor contract: `m_winCursors` selects
+            `RM_WINDOWS` vs `RM_W3D`, `setCursor(NONE)` and
+            `setVisibility(false)` clear the browser Win32 cursor handle, and
+            the lost-focus short-circuit preserves the last OS cursor handle.
+      - [ ] Extend cursor rendering verification into the browser harness so
+            CSS cursor visibility and any future engine-drawn cursor pixels are
+            checked with screenshots.
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
