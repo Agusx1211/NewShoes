@@ -2344,6 +2344,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-d3d8-specular-offaxis-light-canvas.png`. At that point,
       transformed specular fidelity and broader lit material-source behavior
       remained open.
+- [x] Add a focused transformed fixed-function D3D8 specular normal-matrix
+      proof. The WebGL2 draw bridge now transforms fixed-function normals with
+      the inverse-transpose world normal matrix on transformed draws, and the
+      native/browser probe `cnc_port_probe_d3d8_specular_transformed_light`
+      sets world/view/projection transforms with a non-uniform X world scale.
+      It draws a black control bar beside a bar whose object-space normals
+      only resolve to the white specular half-vector through the correct
+      inverse-transpose normal path; the old world-3x3 normal path would leave
+      it black. The JS bridge exposes `d3d8SpecularTransformedLight`, verifies
+      transform mask/state, material/light specular state, the
+      `inverseTransposeWorld` normal-transform descriptor, and black/white
+      sampled pixels, with Playwright saving
+      `harness-smoke-d3d8-specular-transformed-light-canvas.png`.
 - [x] Add a focused lit fixed-function D3D8 material-source `COLOR1` proof.
       The native/browser probe `cnc_port_probe_d3d8_lit_material_sources`
       sets `COLORVERTEX=TRUE`, uses vertex diffuse colors as both the diffuse

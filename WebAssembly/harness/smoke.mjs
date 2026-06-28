@@ -28,6 +28,10 @@ const d3d8SpecularOffAxisLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-specular-offaxis-light-canvas.png",
 );
+const d3d8SpecularTransformedLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-specular-transformed-light-canvas.png",
+);
 const d3d8PointLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-light-canvas.png",
@@ -3431,6 +3435,85 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8SpecularOffAxisLightCanvasScreenshot });
 
+  const d3d8SpecularTransformedLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8SpecularTransformedLight"));
+  const expectedSpecularTransformedLeft =
+    d3d8SpecularTransformedLightResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedSpecularTransformedRight =
+    d3d8SpecularTransformedLightResult.probe?.expectedRight ?? [255, 255, 255, 255];
+  const expectedTransformedDirection =
+    d3d8SpecularTransformedLightResult.probe?.light?.direction ?? [-15 / 17, 0, -8 / 17];
+  if (!d3d8SpecularTransformedLightResult.ok
+      || d3d8SpecularTransformedLightResult.probe?.source !==
+        "browser_d3d8_specular_transformed_light_probe"
+      || d3d8SpecularTransformedLightResult.probe?.calls?.setTransform !== 3
+      || d3d8SpecularTransformedLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8SpecularTransformedLightResult.probe?.calls?.setLight !== 1
+      || d3d8SpecularTransformedLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8SpecularTransformedLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8SpecularTransformedLightResult.probe?.transforms?.mask !== 7
+      || Math.abs((d3d8SpecularTransformedLightResult.probe?.transforms?.worldScaleX ?? 0) - 2) >
+        0.00001
+      || d3d8SpecularTransformedLightResult.browserProbe?.transformMask !== 7
+      || d3d8SpecularTransformedLightResult.browserProbe?.usedTransforms !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.specularEnable !== 1
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8SpecularTransformedLightResult.browserProbe?.renderState?.specularMaterialSource !== 0
+      || d3d8SpecularTransformedLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8SpecularTransformedLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.lights?.[0]?.type !== 3
+      || !floatVectorApproximatelyEqual(
+        d3d8SpecularTransformedLightResult.browserProbe?.lights?.[0]?.direction,
+        expectedTransformedDirection,
+      )
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.enabled !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.sourceName !==
+        "material"
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.source !== "inverseTransposeWorld"
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting?.normalTransform
+        ?.inverseTransposeWorld !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightSupported !== true
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLightCount !== 1
+      || d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
+        ?.directionalLights?.[0]?.index !== 0
+      || !floatVectorApproximatelyEqual(
+        d3d8SpecularTransformedLightResult.browserProbe?.appliedRenderState?.lighting
+          ?.directionalLights?.[0]?.direction,
+        expectedTransformedDirection,
+      )
+      || d3d8SpecularTransformedLightResult.materialOk !== true
+      || d3d8SpecularTransformedLightResult.lightSpecularOk !== true
+      || d3d8SpecularTransformedLightResult.selectedLightOk !== true
+      || d3d8SpecularTransformedLightResult.appliedSpecularOk !== true
+      || d3d8SpecularTransformedLightResult.transformOk !== true
+      || d3d8SpecularTransformedLightResult.normalTransformOk !== true
+      || d3d8SpecularTransformedLightResult.transformedShapeOk !== true
+      || d3d8SpecularTransformedLightResult.leftPixelOk !== true
+      || d3d8SpecularTransformedLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8SpecularTransformedLightResult.specularTransformedPixels?.left,
+        expectedSpecularTransformedLeft,
+        2,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8SpecularTransformedLightResult.specularTransformedPixels?.right,
+        expectedSpecularTransformedRight,
+        8,
+      )
+      || !pixelLooksBlack(d3d8SpecularTransformedLightResult.specularTransformedPixels?.left, 5)) {
+    throw new Error(
+      `D3D8 transformed specular-light probe failed: ${JSON.stringify(d3d8SpecularTransformedLightResult)}`,
+    );
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8SpecularTransformedLightCanvasScreenshot });
+
   const d3d8PointLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8PointLight"));
   const expectedPointLeft = d3d8PointLightResult.probe?.expectedLeft ?? [128, 128, 128, 255];
@@ -4890,6 +4973,7 @@ try {
       d3d8MultiDirectionalLightCanvasScreenshot,
       d3d8SpecularLightCanvasScreenshot,
       d3d8SpecularOffAxisLightCanvasScreenshot,
+      d3d8SpecularTransformedLightCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
       d3d8PointRangeLightCanvasScreenshot,

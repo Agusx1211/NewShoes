@@ -2713,7 +2713,8 @@ function ensureD3D8DrawProgram() {
       vec3 viewDirection = vec3(0.0, 0.0, 1.0);
       if (uUseTransforms) {
         worldPosition = uWorld * vec4(aPosition, 1.0);
-        worldNormal = mat3(uWorld) * aNormal;
+        mat3 worldNormalMatrix = transpose(inverse(mat3(uWorld)));
+        worldNormal = worldNormalMatrix * aNormal;
         viewPosition = uView * worldPosition;
         vec4 cameraWorld = inverse(uView) * vec4(0.0, 0.0, 0.0, 1.0);
         vec3 cameraPosition = cameraWorld.xyz / max(abs(cameraWorld.w), 0.000001);
@@ -4156,6 +4157,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedRenderState.lighting = {
       ...appliedRenderState.lighting,
       shaderEnabled: appliedRenderState.lighting.enabled && fixedFunctionLights.length > 0,
+      normalTransform: {
+        source: useTransforms ? "inverseTransposeWorld" : "attribute",
+        inverseTransposeWorld: Boolean(useTransforms),
+      },
       specular: {
         enabled: renderState.specularEnable !== 0,
         material: material.specular.slice(),
@@ -4910,6 +4915,8 @@ async function loadWasmModule() {
       probeD3D8SpecularLight: module.cwrap("cnc_port_probe_d3d8_specular_light", "string", []),
       probeD3D8SpecularOffAxisLight: module.cwrap(
         "cnc_port_probe_d3d8_specular_offaxis_light", "string", []),
+      probeD3D8SpecularTransformedLight: module.cwrap(
+        "cnc_port_probe_d3d8_specular_transformed_light", "string", []),
       probeD3D8PointLight: module.cwrap("cnc_port_probe_d3d8_point_light", "string", []),
       probeD3D8PointQuadraticLight: module.cwrap("cnc_port_probe_d3d8_point_quadratic_light", "string", []),
       probeD3D8PointRangeLight: module.cwrap("cnc_port_probe_d3d8_point_range_light", "string", []),
@@ -8238,6 +8245,129 @@ async function rpc(command, payload = {}) {
           appliedSpecularOk,
           offAxisShapeOk,
           specularOffAxisPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8SpecularTransformedLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; D3D8 transformed specular-light probe cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8SpecularTransformedLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [255, 255, 255, 255];
+        const sampleNdcPixel = (point) => {
+          const x = point?.[0] ?? 0;
+          const y = point?.[1] ?? 0;
+          return sampleCanvasPixel(
+            Math.floor(canvas.width * ((x + 1) * 0.5)),
+            Math.floor(canvas.height * (1 - ((y + 1) * 0.5))));
+        };
+        const leftPixel = sampleNdcPixel(probe.sampleNdc?.left);
+        const rightPixel = sampleNdcPixel(probe.sampleNdc?.right);
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 2);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 8);
+        const expectedLight = normalizeD3D8Light(probe.light, 0);
+        const capturedLight = normalizeD3D8Light(browserProbe?.lights?.[0], 0);
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.directionalLights?.[0] ?? {};
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const appliedSpecular = appliedLighting.specular ?? {};
+        const normalTransform = appliedLighting.normalTransform ?? {};
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const lightSpecularOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction);
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          floatVectorApproximatelyEqual(selectedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(selectedLight.direction, expectedLight.direction);
+        const appliedSpecularOk =
+          appliedSpecular.enabled === true &&
+          appliedSpecular.source === 0 &&
+          appliedSpecular.sourceName === "material" &&
+          floatVectorApproximatelyEqual(appliedSpecular.material, expectedMaterial.specular) &&
+          Math.abs((appliedSpecular.power ?? 0) - expectedMaterial.power) < 0.00001;
+        const transformOk =
+          browserProbe?.transformMask === 7 &&
+          browserProbe?.usedTransforms === true &&
+          probe.calls?.setTransform === 3 &&
+          probe.transforms?.mask === 7 &&
+          Math.abs((probe.transforms?.worldScaleX ?? 0) - 2.0) < 0.00001;
+        const normalTransformOk =
+          normalTransform.source === "inverseTransposeWorld" &&
+          normalTransform.inverseTransposeWorld === true;
+        const transformedShapeOk = pixelLooksBlack(leftPixel, 5)
+          && Array.isArray(rightPixel)
+          && rightPixel[0] >= 240
+          && rightPixel[1] >= 240
+          && rightPixel[2] >= 240
+          && rightPixel[3] >= 200;
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState >= 13
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.specularEnable === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && browserProbe?.renderState?.specularMaterialSource === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && selectedLightOk
+          && appliedSpecularOk
+          && materialOk
+          && lightSpecularOk
+          && transformOk
+          && normalTransformOk
+          && transformedShapeOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          lightSpecularOk,
+          selectedLightOk,
+          appliedSpecularOk,
+          transformOk,
+          normalTransformOk,
+          transformedShapeOk,
+          specularTransformedPixels: {
             left: leftPixel,
             right: rightPixel,
           },
