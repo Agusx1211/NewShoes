@@ -2102,6 +2102,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MULTIPLYADD`/`LERP` operands, with focused browser probes proving
       `TFACTOR | ALPHAREPLICATE` drives stage-1 color arg0 without pretending
       stage-1 texture sampling is implemented.
+- [x] Apply stage-1 alpha combiner state in the current WebGL2 fixed-function
+      bridge instead of always preserving stage-0 alpha. The D3D8 combiner
+      probe now includes a stage-1 `ALPHAOP=SELECTARG1` / `ALPHAARG1=TFACTOR`
+      case that keeps RGB from `CURRENT`, overrides alpha from
+      `D3DRS_TEXTUREFACTOR`, and verifies the result through normal
+      `SRCALPHA` blending against black.
 - [x] Apply captured stage-0 `D3DTSS_TEXCOORDINDEX` passthrough UV selection
       in the current WebGL2 textured draw bridge for `VertexFormatXYZNDUV1/2`
       layouts, choosing UV0 or UV1 attribute offsets from the D3D8 stage state

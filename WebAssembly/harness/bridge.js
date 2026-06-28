@@ -1340,7 +1340,7 @@ function textureStageCombinerInfo(textureStage, stage, canSampleTexture) {
   const alphaNeedsArg0 = d3dTextureCombinerOpUsesArg0(alphaOp);
   const alphaNeedsArg1 = d3dTextureCombinerOpUsesArg1(alphaOp);
   const alphaNeedsArg2 = d3dTextureCombinerOpUsesArg2(alphaOp);
-  const supportedAlphaOp = stage === 0
+  const supportedAlphaOp = stage <= 1
     ? d3dTextureCombinerOpSupported(alphaOp)
     : alphaOp === D3DTOP_DISABLE || stageAlphaPassesCurrent;
   const supportedAlphaArg0 = !alphaNeedsArg0 || d3dTextureCombinerArgSupported(alphaArg0);
@@ -2244,6 +2244,10 @@ function ensureD3D8DrawProgram() {
     uniform int uStage1ColorArg0;
     uniform int uStage1ColorArg1;
     uniform int uStage1ColorArg2;
+    uniform int uStage1AlphaOp;
+    uniform int uStage1AlphaArg0;
+    uniform int uStage1AlphaArg1;
+    uniform int uStage1AlphaArg2;
     uniform bool uAlphaTestEnabled;
     uniform int uAlphaFunc;
     uniform float uAlphaRef;
@@ -2463,6 +2467,20 @@ function ensureD3D8DrawProgram() {
       vec3 arg2 = d3dCombinerColorArg(uStage1ColorArg2, textureColor, currentColor, diffuseColor, tempColor);
       return d3dApplyColorOp(uStage1ColorOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
     }
+    float d3dStage1Alpha(vec4 diffuseColor, vec4 textureColor, vec4 currentColor, vec4 tempColor) {
+      if (uStage1AlphaOp == 1) {
+        return currentColor.a;
+      }
+      float arg0 = d3dCombinerAlphaArg(uStage1AlphaArg0, textureColor, currentColor, diffuseColor, tempColor);
+      float arg1 = d3dCombinerAlphaArg(uStage1AlphaArg1, textureColor, currentColor, diffuseColor, tempColor);
+      float arg2 = d3dCombinerAlphaArg(uStage1AlphaArg2, textureColor, currentColor, diffuseColor, tempColor);
+      if (uStage1AlphaOp == 24) {
+        vec3 colorArg1 = d3dCombinerColorArg(uStage1AlphaArg1, textureColor, currentColor, diffuseColor, tempColor);
+        vec3 colorArg2 = d3dCombinerColorArg(uStage1AlphaArg2, textureColor, currentColor, diffuseColor, tempColor);
+        return d3dDotProduct3(colorArg1, colorArg2).r;
+      }
+      return d3dApplyAlphaOp(uStage1AlphaOp, arg0, arg1, arg2, textureColor, currentColor, diffuseColor);
+    }
     void main() {
       vec4 texture0Color = uUseTexture0
         ? d3dTextureSample(texture(uTexture0, vTexCoord0, uTexture0LodBias), uTexture0Semantic)
@@ -2478,7 +2496,7 @@ function ensureD3D8DrawProgram() {
       vec4 stage0TempColor = uStage0ResultArg == 5 ? stage0ComputedColor : vec4(0.0);
       vec4 color = vec4(
         d3dStage1Color(vColor, texture1Color, stage0CurrentColor, stage0TempColor),
-        stage0CurrentColor.a
+        d3dStage1Alpha(vColor, texture1Color, stage0CurrentColor, stage0TempColor)
       );
       if (uAlphaTestEnabled && !d3dAlphaCompare(color.a, uAlphaRef)) {
         discard;
@@ -2535,6 +2553,10 @@ function ensureD3D8DrawProgram() {
     stage1ColorArg0: gl.getUniformLocation(program, "uStage1ColorArg0"),
     stage1ColorArg1: gl.getUniformLocation(program, "uStage1ColorArg1"),
     stage1ColorArg2: gl.getUniformLocation(program, "uStage1ColorArg2"),
+    stage1AlphaOp: gl.getUniformLocation(program, "uStage1AlphaOp"),
+    stage1AlphaArg0: gl.getUniformLocation(program, "uStage1AlphaArg0"),
+    stage1AlphaArg1: gl.getUniformLocation(program, "uStage1AlphaArg1"),
+    stage1AlphaArg2: gl.getUniformLocation(program, "uStage1AlphaArg2"),
     alphaTestEnabled: gl.getUniformLocation(program, "uAlphaTestEnabled"),
     alphaFunc: gl.getUniformLocation(program, "uAlphaFunc"),
     alphaRef: gl.getUniformLocation(program, "uAlphaRef"),
@@ -3073,6 +3095,18 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.stage1ColorArg2) {
       gl.uniform1i(bridgeProgram.stage1ColorArg2, renderState.textureStages[1].colorArg2);
+    }
+    if (bridgeProgram.stage1AlphaOp) {
+      gl.uniform1i(bridgeProgram.stage1AlphaOp, renderState.textureStages[1].alphaOp);
+    }
+    if (bridgeProgram.stage1AlphaArg0) {
+      gl.uniform1i(bridgeProgram.stage1AlphaArg0, renderState.textureStages[1].alphaArg0);
+    }
+    if (bridgeProgram.stage1AlphaArg1) {
+      gl.uniform1i(bridgeProgram.stage1AlphaArg1, renderState.textureStages[1].alphaArg1);
+    }
+    if (bridgeProgram.stage1AlphaArg2) {
+      gl.uniform1i(bridgeProgram.stage1AlphaArg2, renderState.textureStages[1].alphaArg2);
     }
     if (canSampleTexture0) {
       const previousActiveTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
@@ -5939,7 +5973,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 texture combiner probe cannot run" };
         }
         const cases = [];
-        for (let caseId = 0; caseId < 35; ++caseId) {
+        for (let caseId = 0; caseId < 36; ++caseId) {
           const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
           const probe = parseModuleState(wasmModule.probeD3D8TextureCombiner(caseId));
           const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -5975,8 +6009,13 @@ async function rpc(command, payload = {}) {
             && combiner.alphaArg1 === probe.combiner?.alphaArg1
             && combiner.alphaArg2 === probe.combiner?.alphaArg2
             && stage1Combiner.colorOp === probe.stage1Combiner?.colorOp
+            && stage1Combiner.colorArg0 === probe.stage1Combiner?.colorArg0
             && stage1Combiner.colorArg1 === probe.stage1Combiner?.colorArg1
             && stage1Combiner.colorArg2 === probe.stage1Combiner?.colorArg2
+            && stage1Combiner.alphaOp === probe.stage1Combiner?.alphaOp
+            && stage1Combiner.alphaArg0 === probe.stage1Combiner?.alphaArg0
+            && stage1Combiner.alphaArg1 === probe.stage1Combiner?.alphaArg1
+            && stage1Combiner.alphaArg2 === probe.stage1Combiner?.alphaArg2
             && browserProbe?.renderState?.textureFactor === probe.textureFactor
             && browserProbe?.textureFactor === probe.textureFactor
             && combiner.supported === true

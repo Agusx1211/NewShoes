@@ -5942,6 +5942,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 	DWORD stage1_color_arg0 = D3DTA_CURRENT;
 	DWORD stage1_color_arg1 = D3DTA_TEXTURE;
 	DWORD stage1_color_arg2 = D3DTA_CURRENT;
+	DWORD stage1_alpha_op = D3DTOP_DISABLE;
+	DWORD stage1_alpha_arg0 = D3DTA_CURRENT;
+	DWORD stage1_alpha_arg1 = D3DTA_TEXTURE;
+	DWORD stage1_alpha_arg2 = D3DTA_CURRENT;
 	DWORD diffuse = 0xffffffffUL;
 	BYTE texture_red = 0xff;
 	BYTE texture_green = 0x00;
@@ -5954,6 +5958,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 	bool stage1_color_arg0_set = false;
 	bool stage1_color_arg1_set = false;
 	bool stage1_color_arg2_set = false;
+	bool stage1_alpha_op_set = false;
+	bool stage1_alpha_arg0_set = false;
+	bool stage1_alpha_arg1_set = false;
+	bool stage1_alpha_arg2_set = false;
 	DWORD texture_factor = 0xffffffffUL;
 	unsigned int expected_stage_state_calls = 14;
 	unsigned int expected_r = 255;
@@ -6384,6 +6392,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 			expected_g = 191;
 			expected_b = 0;
 			break;
+		case 35:
+			case_name = "stage1SelectAlphaTextureFactor";
+			color_op = D3DTOP_SELECTARG1;
+			color_arg1 = D3DTA_TEXTURE;
+			color_arg2 = D3DTA_DIFFUSE;
+			stage1_color_op = D3DTOP_SELECTARG1;
+			stage1_color_arg1 = D3DTA_CURRENT;
+			stage1_alpha_op = D3DTOP_SELECTARG1;
+			stage1_alpha_arg1 = D3DTA_TFACTOR;
+			texture_factor = 0x40000000UL;
+			stage1_color_arg1_set = true;
+			stage1_alpha_op_set = true;
+			stage1_alpha_arg1_set = true;
+			alpha_case = true;
+			expected_r = 64;
+			expected_g = 0;
+			expected_b = 0;
+			break;
 		default:
 			known_case = false;
 			break;
@@ -6405,6 +6431,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		++expected_stage_state_calls;
 	}
 	if (stage1_color_arg2_set) {
+		++expected_stage_state_calls;
+	}
+	if (stage1_alpha_op_set) {
+		++expected_stage_state_calls;
+	}
+	if (stage1_alpha_arg0_set) {
+		++expected_stage_state_calls;
+	}
+	if (stage1_alpha_arg1_set) {
+		++expected_stage_state_calls;
+	}
+	if (stage1_alpha_arg2_set) {
 		++expected_stage_state_calls;
 	}
 
@@ -6565,6 +6603,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		if (stage1_color_arg2_set) {
 			device->SetTextureStageState(1, D3DTSS_COLORARG2, stage1_color_arg2);
 		}
+		if (stage1_alpha_op_set) {
+			device->SetTextureStageState(1, D3DTSS_ALPHAOP, stage1_alpha_op);
+		}
+		if (stage1_alpha_arg0_set) {
+			device->SetTextureStageState(1, D3DTSS_ALPHAARG0, stage1_alpha_arg0);
+		}
+		if (stage1_alpha_arg1_set) {
+			device->SetTextureStageState(1, D3DTSS_ALPHAARG1, stage1_alpha_arg1);
+		}
+		if (stage1_alpha_arg2_set) {
+			device->SetTextureStageState(1, D3DTSS_ALPHAARG2, stage1_alpha_arg2);
+		}
 		device->SetTextureStageState(1, D3DTSS_TEXCOORDINDEX, 1);
 		set_texture_result = device->SetTexture(0, texture);
 		set_stream_result = device->SetStreamSource(0, vertex_buffer, sizeof(TexturedQuadVertex));
@@ -6619,9 +6669,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == stage1_color_op &&
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLORARG0] == stage1_color_arg0 &&
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLORARG1] == stage1_color_arg1 &&
-		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLORARG2] == stage1_color_arg2;
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLORARG2] == stage1_color_arg2 &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_ALPHAOP] == stage1_alpha_op &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_ALPHAARG0] == stage1_alpha_arg0 &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_ALPHAARG1] == stage1_alpha_arg1 &&
+		state->last_draw_render_state.texture_stages[1].values[D3DTSS_ALPHAARG2] == stage1_alpha_arg2;
 
-	char buffer[4096];
+	char buffer[8192];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_d3d8_texture_combiner_probe\","
 		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
@@ -6631,7 +6685,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		"\"combiner\":{\"colorOp\":%lu,\"colorArg0\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
 		"\"resultArg\":%lu,"
 		"\"alphaOp\":%lu,\"alphaArg0\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
-		"\"stage1Combiner\":{\"colorOp\":%lu,\"colorArg0\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu},"
+		"\"stage1Combiner\":{\"colorOp\":%lu,\"colorArg0\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg0\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
 		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
@@ -6666,6 +6721,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texture_combiner(unsigned i
 		static_cast<unsigned long>(stage1_color_arg0),
 		static_cast<unsigned long>(stage1_color_arg1),
 		static_cast<unsigned long>(stage1_color_arg2),
+		static_cast<unsigned long>(stage1_alpha_op),
+		static_cast<unsigned long>(stage1_alpha_arg0),
+		static_cast<unsigned long>(stage1_alpha_arg1),
+		static_cast<unsigned long>(stage1_alpha_arg2),
 		state != nullptr ? state->direct3d_create_calls : 0,
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
