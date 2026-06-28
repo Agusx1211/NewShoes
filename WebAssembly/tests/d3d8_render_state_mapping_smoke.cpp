@@ -44,6 +44,7 @@
 // value and the probe counters/last-value fields update as expected. The
 // emitted JSON spec is documentation, not an additional pass/fail gate.
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -229,6 +230,35 @@ struct FvfDrawVertex {
 };
 static_assert(sizeof(FvfDrawVertex) == 48,
 	"COLOR2/specular FVF vertex (XYZ|NORMAL|DIFFUSE|SPECULAR|TEX2) must be 48 bytes");
+
+// Fixed-function vertex layout WITHOUT specular, used by the emissive COLOR1
+// draw proof below: D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2.
+// This is the layout a future W3D fixed-function path must feed
+// DrawIndexedPrimitive with when the engine sources emissive color from the
+// vertex COLOR1/diffuse channel; pinning the 44-byte stride and the decoded
+// field offsets here keeps the draw-capture contract honest.
+//   offset  0: XYZ      (3 floats)
+//   offset 12: NORMAL   (3 floats)
+//   offset 24: DIFFUSE  (D3DCOLOR) -- also the COLOR1 material-source channel
+//   offset 28: TEX0     (2 floats)
+//   offset 36: TEX1     (2 floats)
+//   stride 44
+struct FvfDrawVertexColor1 {
+	float x, y, z;
+	float nx, ny, nz;
+	D3DCOLOR diffuse;
+	float u0, v0, u1, v1;
+};
+static_assert(sizeof(FvfDrawVertexColor1) == 44,
+	"COLOR1/emissive FVF vertex (XYZ|NORMAL|DIFFUSE|TEX2) must be 44 bytes");
+static_assert(offsetof(FvfDrawVertexColor1, nx) == 12,
+	"COLOR1/emissive FVF normal offset must be 12");
+static_assert(offsetof(FvfDrawVertexColor1, diffuse) == 24,
+	"COLOR1/emissive FVF diffuse/COLOR1 offset must be 24");
+static_assert(offsetof(FvfDrawVertexColor1, u0) == 28,
+	"COLOR1/emissive FVF texcoord0 offset must be 28");
+static_assert(offsetof(FvfDrawVertexColor1, u1) == 36,
+	"COLOR1/emissive FVF texcoord1 offset must be 36");
 
 } // namespace
 
@@ -605,12 +635,134 @@ int main()
 	vertex_buffer->Release();
 
 	// ----------------------------------------------------------------------
+	// 11. Emissive COLOR1 material-source draw proof. A nearby focused slice
+	//     that pins the draw-time state for
+	//     D3DRS_EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1 with
+	//     D3DRS_COLORVERTEX = TRUE, using a fixed-function FVF WITHOUT
+	//     specular (D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2,
+	//     44-byte stride). This is the vertex layout a future W3D
+	//     fixed-function emissive-COLOR1 path must feed DrawIndexedPrimitive
+	//     with when the engine sources emissive color from the vertex
+	//     diffuse/COLOR1 channel.
+	// ----------------------------------------------------------------------
+	const UINT set_vertex_shader_before_c1 = state->set_vertex_shader_calls;
+	const DWORD fvf_xyz_normal_diff_tex2 =
+		D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX2;
+	expect(SUCCEEDED(device->SetVertexShader(fvf_xyz_normal_diff_tex2)),
+		"SetVertexShader fixed-function FVF (XYZ|NORMAL|DIFFUSE|TEX2) failed");
+	expect(state->set_vertex_shader_calls == set_vertex_shader_before_c1 + 1,
+		"set_vertex_shader_calls counter mismatch for COLOR1 FVF");
+	expect(state->last_set_vertex_shader == fvf_xyz_normal_diff_tex2,
+		"last_set_vertex_shader FVF mismatch for COLOR1 FVF");
+
+	// 3-vertex COLOR1/emissive triangle with a matching 3-index buffer, bound
+	// at the 44-byte stride. Non-white diffuse/COLOR1 values so the test data
+	// actually represents an emissive COLOR1 source rather than just a stride
+	// placeholder.
+	const FvfDrawVertexColor1 vertices_c1[3] = {
+		{ -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff2010UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff10ff20UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff1020ffUL, 0.5f, 1.0f, 0.5f, 1.0f },
+	};
+	const UINT vertex_stride_c1 = sizeof(FvfDrawVertexColor1);
+	expect(vertex_stride_c1 == 44, "COLOR1/emissive vertex stride must be 44 bytes");
+
+	IDirect3DVertexBuffer8 *vertex_buffer_c1 = nullptr;
+	expect(SUCCEEDED(device->CreateVertexBuffer(sizeof(vertices_c1), D3DUSAGE_WRITEONLY,
+			fvf_xyz_normal_diff_tex2, D3DPOOL_DEFAULT, &vertex_buffer_c1)),
+		"CreateVertexBuffer for COLOR1/emissive FVF failed");
+	BYTE *vb_data_c1 = nullptr;
+	expect(SUCCEEDED(vertex_buffer_c1->Lock(0, 0, &vb_data_c1, 0)),
+		"vertex buffer Lock failed for COLOR1/emissive FVF");
+	std::memcpy(vb_data_c1, vertices_c1, sizeof(vertices_c1));
+	expect(SUCCEEDED(vertex_buffer_c1->Unlock()),
+		"vertex buffer Unlock failed for COLOR1/emissive FVF");
+
+	const uint16_t indices_c1[3] = { 0, 1, 2 };
+	IDirect3DIndexBuffer8 *index_buffer_c1 = nullptr;
+	expect(SUCCEEDED(device->CreateIndexBuffer(sizeof(indices_c1), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_DEFAULT, &index_buffer_c1)),
+		"CreateIndexBuffer for COLOR1/emissive draw failed");
+	BYTE *ib_data_c1 = nullptr;
+	expect(SUCCEEDED(index_buffer_c1->Lock(0, 0, &ib_data_c1, 0)),
+		"index buffer Lock failed for COLOR1/emissive draw");
+	std::memcpy(ib_data_c1, indices_c1, sizeof(indices_c1));
+	expect(SUCCEEDED(index_buffer_c1->Unlock()),
+		"index buffer Unlock failed for COLOR1/emissive draw");
+
+	expect(SUCCEEDED(device->SetStreamSource(0, vertex_buffer_c1, vertex_stride_c1)),
+		"SetStreamSource with 44-byte COLOR1/emissive stride failed");
+	expect(SUCCEEDED(device->SetIndices(index_buffer_c1, 0)),
+		"SetIndices failed for COLOR1/emissive draw");
+
+	// Pin the exact material-source state the browser emissive COLOR1 proof
+	// needs active at draw time: emissive comes from the vertex COLOR1/diffuse
+	// channel, COLORVERTEX is on, and the remaining sources stay on MATERIAL.
+	const DWORD draw_c1_color_vertex = TRUE;
+	const DWORD draw_c1_diffuse_source = D3DMCS_MATERIAL;
+	const DWORD draw_c1_specular_source = D3DMCS_MATERIAL;
+	const DWORD draw_c1_ambient_source = D3DMCS_MATERIAL;
+	const DWORD draw_c1_emissive_source = D3DMCS_COLOR1;
+	const DWORD draw_c1_specular_enable = FALSE;
+	set_state(D3DRS_COLORVERTEX, draw_c1_color_vertex,
+		"SetRenderState COLORVERTEX for emissive COLOR1 draw failed");
+	set_state(D3DRS_DIFFUSEMATERIALSOURCE, draw_c1_diffuse_source,
+		"SetRenderState DIFFUSEMATERIALSOURCE for emissive COLOR1 draw failed");
+	set_state(D3DRS_SPECULARMATERIALSOURCE, draw_c1_specular_source,
+		"SetRenderState SPECULARMATERIALSOURCE for emissive COLOR1 draw failed");
+	set_state(D3DRS_AMBIENTMATERIALSOURCE, draw_c1_ambient_source,
+		"SetRenderState AMBIENTMATERIALSOURCE for emissive COLOR1 draw failed");
+	set_state(D3DRS_EMISSIVEMATERIALSOURCE, draw_c1_emissive_source,
+		"SetRenderState EMISSIVEMATERIALSOURCE for emissive COLOR1 draw failed");
+	set_state(D3DRS_SPECULARENABLE, draw_c1_specular_enable,
+		"SetRenderState SPECULARENABLE for emissive COLOR1 draw failed");
+
+	const UINT draw_indexed_before_c1 = state->draw_indexed_primitive_calls;
+	expect(SUCCEEDED(device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 3, 0, 1)),
+		"DrawIndexedPrimitive for COLOR1/emissive FVF failed");
+
+	expect(state->draw_indexed_primitive_calls == draw_indexed_before_c1 + 1,
+		"draw_indexed_primitive_calls should advance by 1 for COLOR1 draw");
+	// FVF decoded layout captured at draw time. The native smoke output only
+	// exposes the source FVF and stream stride fields, so those are what we
+	// pin here; the decoded field offsets (normal 12, diffuse/COLOR1 24, no
+	// COLOR2/specular offset, texcoord 28/36, stride 44) are pinned via the
+	// static_asserts on FvfDrawVertexColor1 above.
+	expect(state->last_draw_vertex_shader == fvf_xyz_normal_diff_tex2,
+		"last_draw_vertex_shader must record the COLOR1 FVF after the draw");
+	expect(state->last_draw_stream_source_stride == 44,
+		"last_draw_stream_source_stride must be 44 for COLOR1/emissive FVF");
+	expect(state->last_draw_vertex_count == 3,
+		"last_draw_vertex_count must be 3 for COLOR1 draw");
+	expect(state->last_draw_primitive_count == 1,
+		"last_draw_primitive_count must be 1 for COLOR1 draw");
+	expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
+		"last_draw_primitive_type must be D3DPT_TRIANGLELIST for COLOR1 draw");
+	// The draw must capture the pinned emissive COLOR1 material-source state.
+	expect(state->last_draw_render_state.color_vertex == draw_c1_color_vertex,
+		"last_draw_render_state.color_vertex must be TRUE for emissive COLOR1 draw");
+	expect(state->last_draw_render_state.diffuse_material_source == draw_c1_diffuse_source,
+		"last_draw_render_state.diffuse_material_source must be MATERIAL for COLOR1 draw");
+	expect(state->last_draw_render_state.specular_material_source == draw_c1_specular_source,
+		"last_draw_render_state.specular_material_source must be MATERIAL for COLOR1 draw");
+	expect(state->last_draw_render_state.ambient_material_source == draw_c1_ambient_source,
+		"last_draw_render_state.ambient_material_source must be MATERIAL for COLOR1 draw");
+	expect(state->last_draw_render_state.emissive_material_source == draw_c1_emissive_source,
+		"last_draw_render_state.emissive_material_source must be COLOR1");
+	expect(state->last_draw_render_state.specular_enable == draw_c1_specular_enable,
+		"last_draw_render_state.specular_enable must be FALSE for emissive COLOR1 draw");
+
+	index_buffer_c1->Release();
+	vertex_buffer_c1->Release();
+
+	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
 	// Section 10 pins 6 additional SetRenderState calls for the emissive COLOR2
 	// draw proof (COLORVERTEX, DIFFUSE/SPECULAR/AMBIENT/EMISSIVE material
-	// sources, SPECULARENABLE).
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2 + 6;
+	// sources, SPECULARENABLE); section 11 pins another 6 for the emissive
+	// COLOR1 draw proof (same six states).
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2 + 6 + 6;
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
 	expect(state->last_set_render_state == D3DRS_SPECULARENABLE,
@@ -678,6 +830,12 @@ int main()
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
 		"\"fvf\":{\"vertexShaderFvf\":%lu,\"vertexStride\":%u,"
 		"\"note\":\"COLOR2/specular fixed-function (XYZ|NORMAL|DIFFUSE|SPECULAR|TEX2)\"},"
+		"\"emissiveColor1Fvf\":{\"note\":\"emissive COLOR1 source pinned at draw time\","
+		"\"vertexShaderFvf\":%lu,\"vertexStride\":%u,"
+		"\"normalOffset\":12,\"diffuseColor1Offset\":24,\"specularOffset\":null,"
+		"\"texcoordOffsets\":[28,36],\"emissiveSourceName\":\"COLOR1\","
+		"\"colorVertex\":%lu,\"emissiveMaterialSource\":%lu,"
+		"\"specularEnable\":%lu},"
 		"\"counters\":{\"setRenderState\":%u,\"getRenderState\":%u,"
 		"\"setMaterial\":%u,\"getMaterial\":%u}}\n",
 		// cull spec entries
@@ -743,6 +901,12 @@ int main()
 		// fvf / stride
 		static_cast<unsigned long>(fvf_xyz_normal_diff_spec_tex2),
 		vertex_stride,
+		// emissive COLOR1 FVF / draw-pinned state
+		static_cast<unsigned long>(fvf_xyz_normal_diff_tex2),
+		vertex_stride_c1,
+		static_cast<unsigned long>(draw_c1_color_vertex),
+		static_cast<unsigned long>(draw_c1_emissive_source),
+		static_cast<unsigned long>(draw_c1_specular_enable),
 		// counters
 		state->set_render_state_calls,
 		state->get_render_state_calls,
