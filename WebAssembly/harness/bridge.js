@@ -148,6 +148,9 @@ const D3DTA_ALPHAREPLICATE = 0x00000020;
 const D3DTA_SUPPORTED_MODIFIERS = D3DTA_COMPLEMENT | D3DTA_ALPHAREPLICATE;
 const D3D8_CLIP_PLANE_COUNT = 6;
 const D3DTSS_TCI_PASSTHRU = 0x00000000;
+const D3DTSS_TCI_CAMERASPACENORMAL = 0x00010000;
+const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
+const D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR = 0x00030000;
 const D3DTSS_TCI_COORDINDEX_MASK = 0x0000ffff;
 const D3DTSS_TCI_MODE_MASK = 0xffff0000;
 const D3DTADDRESS_WRAP = 1;
@@ -1527,11 +1530,11 @@ function d3dTextureCoordinateModeName(mode) {
   switch (Number(mode) >>> 0) {
     case D3DTSS_TCI_PASSTHRU:
       return "passthru";
-    case 0x00010000:
+    case D3DTSS_TCI_CAMERASPACENORMAL:
       return "cameraSpaceNormal";
-    case 0x00020000:
+    case D3DTSS_TCI_CAMERASPACEPOSITION:
       return "cameraSpacePosition";
-    case 0x00030000:
+    case D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR:
       return "cameraSpaceReflectionVector";
     default:
       return "unsupported";
@@ -1576,14 +1579,14 @@ function d3dTextureTransformFlagsInfo(flags) {
       componentCount = 0;
       break;
   }
-  const passThrough2DSamplerSupported = normalizedFlags === D3DTTFF_DISABLE ||
+  const twoDSamplerSupported = normalizedFlags === D3DTTFF_DISABLE ||
     (!projected && componentCount >= 2 && componentCount <= 4) ||
     (projected && componentCount === 3);
   return {
     modeName: d3dTextureTransformFlagsName(normalizedFlags),
     componentCount,
     projected,
-    passThrough2DSamplerSupported,
+    twoDSamplerSupported,
   };
 }
 
@@ -1703,12 +1706,16 @@ function textureStageCoordinateInfo(textureStage, stage, vertexStride, vertexLay
   const texCoord = Array.isArray(layout.texCoords) ? layout.texCoords[coordSet] : null;
   const texCoordOffset = Number(texCoord?.offset ?? 0) >>> 0;
   const passthru = mode === D3DTSS_TCI_PASSTHRU;
+  const generated = mode === D3DTSS_TCI_CAMERASPACENORMAL ||
+    mode === D3DTSS_TCI_CAMERASPACEPOSITION ||
+    mode === D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR;
   const coordSetAvailable = Boolean(texCoord?.available);
   const transformInfo = d3dTextureTransformFlagsInfo(textureTransformFlags);
   const transformApplied = textureTransformFlags !== D3DTTFF_DISABLE &&
     textureTransform !== null &&
-    transformInfo.passThrough2DSamplerSupported;
+    transformInfo.twoDSamplerSupported;
   const transformSupported = textureTransformFlags === D3DTTFF_DISABLE || transformApplied;
+  const coordinateSupported = (passthru && coordSetAvailable) || generated;
   return {
     stage,
     texCoordIndex,
@@ -1716,15 +1723,17 @@ function textureStageCoordinateInfo(textureStage, stage, vertexStride, vertexLay
     modeName: d3dTextureCoordinateModeName(mode),
     coordSet,
     layoutSource: layout.source,
-    offset: coordSetAvailable ? texCoordOffset : null,
-    components: coordSetAvailable ? texCoord.components : 0,
+    offset: passthru && coordSetAvailable ? texCoordOffset : null,
+    components: passthru && coordSetAvailable ? texCoord.components : generated ? 3 : 0,
+    generated,
+    usesVertexTexCoord: passthru,
     textureTransformFlags,
     textureTransformModeName: transformInfo.modeName,
     textureTransformComponentCount: transformInfo.componentCount,
     textureTransformProjected: transformInfo.projected,
     transformSupported,
     transformApplied,
-    supported: passthru && coordSetAvailable && transformSupported,
+    supported: coordinateSupported && transformSupported,
   };
 }
 
@@ -2621,10 +2630,12 @@ function ensureD3D8DrawProgram() {
     uniform mat4 uView;
     uniform mat4 uProjection;
     uniform float uDepthBias;
+    uniform int uTexture0CoordinateMode;
     uniform bool uUseTexture0Transform;
     uniform mat4 uTexture0Transform;
     uniform int uTexture0TransformComponentCount;
     uniform bool uTexture0TransformProjected;
+    uniform int uTexture1CoordinateMode;
     uniform bool uUseTexture1Transform;
     uniform mat4 uTexture1Transform;
     uniform int uTexture1TransformComponentCount;
@@ -2750,8 +2761,33 @@ function ensureD3D8DrawProgram() {
       }
       return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
     }
-    vec2 d3dApplyTextureTransform(vec2 texCoord, mat4 transformMatrix, int componentCount, bool projected) {
-      vec4 transformed = transformMatrix * vec4(texCoord, 0.0, 1.0);
+    vec4 d3dTextureCoordinateSource(
+      vec2 texCoord,
+      int coordinateMode,
+      vec3 cameraSpacePosition,
+      vec3 cameraSpaceNormal) {
+      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACENORMAL}) {
+        vec3 normal = length(cameraSpaceNormal) > 0.000001
+          ? normalize(cameraSpaceNormal)
+          : vec3(0.0, 0.0, 1.0);
+        return vec4(normal, 1.0);
+      }
+      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACEPOSITION}) {
+        return vec4(cameraSpacePosition, 1.0);
+      }
+      if (coordinateMode == ${D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR}) {
+        vec3 normal = length(cameraSpaceNormal) > 0.000001
+          ? normalize(cameraSpaceNormal)
+          : vec3(0.0, 0.0, 1.0);
+        vec3 incident = length(cameraSpacePosition) > 0.000001
+          ? normalize(cameraSpacePosition)
+          : vec3(0.0, 0.0, 1.0);
+        return vec4(reflect(incident, normal), 1.0);
+      }
+      return vec4(texCoord, 0.0, 1.0);
+    }
+    vec2 d3dApplyTextureTransform(vec4 texCoord, mat4 transformMatrix, int componentCount, bool projected) {
+      vec4 transformed = transformMatrix * texCoord;
       if (projected) {
         float divisor = componentCount == 4 ? transformed.w : transformed.z;
         if (abs(divisor) > 0.000001) {
@@ -2764,12 +2800,14 @@ function ensureD3D8DrawProgram() {
       vec4 worldPosition = vec4(aPosition, 1.0);
       vec4 viewPosition = worldPosition;
       vec3 worldNormal = aNormal;
+      vec3 cameraSpaceNormal = aNormal;
       vec3 viewDirection = vec3(0.0, 0.0, 1.0);
       if (uUseTransforms) {
         worldPosition = uWorld * vec4(aPosition, 1.0);
         mat3 worldNormalMatrix = transpose(inverse(mat3(uWorld)));
         worldNormal = worldNormalMatrix * aNormal;
         viewPosition = uView * worldPosition;
+        cameraSpaceNormal = mat3(uView) * worldNormal;
         vec4 cameraWorld = inverse(uView) * vec4(0.0, 0.0, 0.0, 1.0);
         vec3 cameraPosition = cameraWorld.xyz / max(abs(cameraWorld.w), 0.000001);
         vec4 cameraForwardWorld = inverse(uView) * vec4(0.0, 0.0, 1.0, 0.0);
@@ -2796,23 +2834,33 @@ function ensureD3D8DrawProgram() {
       vec4 color2 = vec4(aSpecularBgra.b, aSpecularBgra.g, aSpecularBgra.r, aSpecularBgra.a);
       vColor = uLightingEnabled ? d3dApplyLighting(color1, color2, worldPosition.xyz, worldNormal, viewDirection) : color1;
       vFlatColor = vColor;
+      vec4 texture0Coordinate = d3dTextureCoordinateSource(
+        aTexCoord0,
+        uTexture0CoordinateMode,
+        viewPosition.xyz,
+        cameraSpaceNormal);
       if (uUseTexture0Transform) {
         vTexCoord0 = d3dApplyTextureTransform(
-          aTexCoord0,
+          texture0Coordinate,
           uTexture0Transform,
           uTexture0TransformComponentCount,
           uTexture0TransformProjected);
       } else {
-        vTexCoord0 = aTexCoord0;
+        vTexCoord0 = texture0Coordinate.xy;
       }
+      vec4 texture1Coordinate = d3dTextureCoordinateSource(
+        aTexCoord1,
+        uTexture1CoordinateMode,
+        viewPosition.xyz,
+        cameraSpaceNormal);
       if (uUseTexture1Transform) {
         vTexCoord1 = d3dApplyTextureTransform(
-          aTexCoord1,
+          texture1Coordinate,
           uTexture1Transform,
           uTexture1TransformComponentCount,
           uTexture1TransformProjected);
       } else {
-        vTexCoord1 = aTexCoord1;
+        vTexCoord1 = texture1Coordinate.xy;
       }
     }
   `);
@@ -3155,10 +3203,12 @@ function ensureD3D8DrawProgram() {
     clipPlaneMask: gl.getUniformLocation(program, "uClipPlaneMask"),
     clipPlanes: gl.getUniformLocation(program, "uClipPlanes[0]"),
     useFlatShade: gl.getUniformLocation(program, "uUseFlatShade"),
+    texture0CoordinateMode: gl.getUniformLocation(program, "uTexture0CoordinateMode"),
     useTexture0Transform: gl.getUniformLocation(program, "uUseTexture0Transform"),
     texture0Transform: gl.getUniformLocation(program, "uTexture0Transform"),
     texture0TransformComponentCount: gl.getUniformLocation(program, "uTexture0TransformComponentCount"),
     texture0TransformProjected: gl.getUniformLocation(program, "uTexture0TransformProjected"),
+    texture1CoordinateMode: gl.getUniformLocation(program, "uTexture1CoordinateMode"),
     useTexture1Transform: gl.getUniformLocation(program, "uUseTexture1Transform"),
     texture1Transform: gl.getUniformLocation(program, "uTexture1Transform"),
     texture1TransformComponentCount: gl.getUniformLocation(program, "uTexture1TransformComponentCount"),
@@ -4308,7 +4358,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.specular);
       gl.vertexAttrib4f(bridgeProgram.specular, 0, 0, 0, 1);
     }
-    if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0) {
+    if (bridgeProgram.texCoord0 >= 0 && canSampleTexture0 && texture0Coordinates.usesVertexTexCoord) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttribPointer(bridgeProgram.texCoord0, 2, gl.FLOAT, false,
         vertexStride, vertexByteOffset + texture0Coordinates.offset);
@@ -4316,7 +4366,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.disableVertexAttribArray(bridgeProgram.texCoord0);
       gl.vertexAttrib2f(bridgeProgram.texCoord0, 0, 0);
     }
-    if (bridgeProgram.texCoord1 >= 0 && canSampleTexture1) {
+    if (bridgeProgram.texCoord1 >= 0 && canSampleTexture1 && texture1Coordinates.usesVertexTexCoord) {
       gl.enableVertexAttribArray(bridgeProgram.texCoord1);
       gl.vertexAttribPointer(bridgeProgram.texCoord1, 2, gl.FLOAT, false,
         vertexStride, vertexByteOffset + texture1Coordinates.offset);
@@ -4346,6 +4396,10 @@ function paintD3D8DrawIndexed(payload = {}) {
       gl.uniformMatrix4fv(bridgeProgram.view, false, view);
       gl.uniformMatrix4fv(bridgeProgram.projection, false, projection);
     }
+    if (bridgeProgram.texture0CoordinateMode) {
+      gl.uniform1i(bridgeProgram.texture0CoordinateMode,
+        canSampleTexture0 ? texture0Coordinates.mode : D3DTSS_TCI_PASSTHRU);
+    }
     if (bridgeProgram.useTexture0Transform) {
       gl.uniform1i(bridgeProgram.useTexture0Transform,
         canSampleTexture0 && texture0Coordinates.transformApplied ? 1 : 0);
@@ -4366,6 +4420,10 @@ function paintD3D8DrawIndexed(payload = {}) {
     }
     if (bridgeProgram.texture0Transform && canSampleTexture0 && texture0Coordinates.transformApplied) {
       gl.uniformMatrix4fv(bridgeProgram.texture0Transform, false, texture0Transform);
+    }
+    if (bridgeProgram.texture1CoordinateMode) {
+      gl.uniform1i(bridgeProgram.texture1CoordinateMode,
+        canSampleTexture1 ? texture1Coordinates.mode : D3DTSS_TCI_PASSTHRU);
     }
     if (bridgeProgram.useTexture1Transform) {
       gl.uniform1i(bridgeProgram.useTexture1Transform,
@@ -4691,6 +4749,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       texCoordSet: texture0Coordinates.coordSet,
       texCoordOffset: canSampleTexture0 ? texture0Coordinates.offset : null,
       texCoordComponents: texture0Coordinates.components,
+      texCoordGenerated: texture0Coordinates.generated,
+      texCoordUsesVertex: texture0Coordinates.usesVertexTexCoord,
       textureTransformFlags: texture0Coordinates.textureTransformFlags,
       textureTransformModeName: texture0Coordinates.textureTransformModeName,
       textureTransformComponentCount: texture0Coordinates.textureTransformComponentCount,
@@ -4724,6 +4784,8 @@ function paintD3D8DrawIndexed(payload = {}) {
       texCoordSet: texture1Coordinates.coordSet,
       texCoordOffset: canSampleTexture1 ? texture1Coordinates.offset : null,
       texCoordComponents: texture1Coordinates.components,
+      texCoordGenerated: texture1Coordinates.generated,
+      texCoordUsesVertex: texture1Coordinates.usesVertexTexCoord,
       textureTransformFlags: texture1Coordinates.textureTransformFlags,
       textureTransformModeName: texture1Coordinates.textureTransformModeName,
       textureTransformComponentCount: texture1Coordinates.textureTransformComponentCount,
@@ -7738,7 +7800,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; D3D8 texcoord index probe cannot run" };
         }
         const cases = [];
-        for (let caseId = 0; caseId < 2; ++caseId) {
+        for (let caseId = 0; caseId < 6; ++caseId) {
           const beforeTextures = harnessState.graphics.d3d8Textures ?? {};
           const probe = parseModuleState(wasmModule.probeD3D8TexCoordIndex(caseId));
           const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -7755,16 +7817,27 @@ async function rpc(command, payload = {}) {
             && expectedCenter.length === 4
             && pixelsApproximatelyEqual(browserProbe.centerPixel, expectedCenter, 2);
           const texture0 = browserProbe?.texture0 ?? {};
+          const expectedGenerated = Boolean(probe.texcoord?.generated);
+          const texCoordOffsetOk = expectedGenerated
+            ? texture0.texCoordOffset === null
+            : texture0.texCoordOffset === probe.texcoord?.expectedOffset;
           const caseOk = Boolean(probe.ok)
             && browserProbe?.source === "browser_d3d8_draw_indexed"
             && browserProbe?.usedPersistentBuffers === true
             && browserProbe?.texture0?.sampled === true
             && texture0.id === probe.texture?.id
             && texture0.texCoordIndex === probe.texcoord?.index
-            && texture0.texCoordModeName === "passthru"
+            && texture0.texCoordModeName === probe.texcoord?.modeName
             && texture0.texCoordSet === probe.texcoord?.set
-            && texture0.texCoordOffset === probe.texcoord?.expectedOffset
+            && texture0.texCoordGenerated === expectedGenerated
+            && texture0.texCoordUsesVertex === !expectedGenerated
+            && texCoordOffsetOk
             && texture0.textureTransformFlags === probe.texcoord?.textureTransformFlags
+            && texture0.textureTransformModeName === probe.transform?.modeName
+            && texture0.textureTransformComponentCount === probe.transform?.componentCount
+            && texture0.textureTransformProjected === Boolean(probe.transform?.projected)
+            && texture0.textureTransformSupported === true
+            && texture0.textureTransformApplied === Boolean(probe.transform?.applied)
             && texture0.texCoordSupported === true
             && centerPixelOk
             && textureDelta.creates === 1
@@ -7779,6 +7852,7 @@ async function rpc(command, payload = {}) {
             browserProbe,
             textureDelta,
             centerPixelOk,
+            texCoordOffsetOk,
           });
         }
         return {

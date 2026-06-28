@@ -7286,11 +7286,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	};
 
 	const char *case_name = "unknown";
+	const char *mode_name = "passthru";
+	const char *transform_mode_name = "disable";
 	DWORD texcoord_index = D3DTSS_TCI_PASSTHRU;
+	DWORD texture_transform_flags = D3DTTFF_DISABLE;
+	unsigned int transform_component_count = 0;
+	float expected_matrix_20 = 0.0f;
+	float expected_matrix_22 = 1.0f;
 	unsigned int expected_r = 255;
 	unsigned int expected_g = 0;
 	unsigned int expected_b = 0;
 	unsigned int expected_a = 255;
+	bool generated = false;
+	bool transform_applied = false;
+	bool transform_projected = false;
 	bool known_case = true;
 	switch (texcoord_case) {
 		case 0:
@@ -7302,6 +7311,60 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 			texcoord_index = D3DTSS_TCI_PASSTHRU | 1;
 			expected_r = 0;
 			expected_b = 255;
+			break;
+		case 2:
+			case_name = "cameraSpacePosition";
+			mode_name = "cameraSpacePosition";
+			transform_mode_name = "count2";
+			texcoord_index = D3DTSS_TCI_CAMERASPACEPOSITION | 0;
+			texture_transform_flags = D3DTTFF_COUNT2;
+			transform_component_count = 2;
+			expected_matrix_20 = 0.75f;
+			expected_r = 0;
+			expected_b = 255;
+			generated = true;
+			transform_applied = true;
+			break;
+		case 3:
+			case_name = "cameraSpaceNormal";
+			mode_name = "cameraSpaceNormal";
+			transform_mode_name = "count2";
+			texcoord_index = D3DTSS_TCI_CAMERASPACENORMAL | 0;
+			texture_transform_flags = D3DTTFF_COUNT2;
+			transform_component_count = 2;
+			expected_matrix_20 = 0.75f;
+			expected_r = 0;
+			expected_b = 255;
+			generated = true;
+			transform_applied = true;
+			break;
+		case 4:
+			case_name = "cameraSpaceReflectionVector";
+			mode_name = "cameraSpaceReflectionVector";
+			transform_mode_name = "count2";
+			texcoord_index = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR | 0;
+			texture_transform_flags = D3DTTFF_COUNT2;
+			transform_component_count = 2;
+			expected_matrix_20 = -0.75f;
+			expected_r = 0;
+			expected_b = 255;
+			generated = true;
+			transform_applied = true;
+			break;
+		case 5:
+			case_name = "projectedCameraSpacePosition";
+			mode_name = "cameraSpacePosition";
+			transform_mode_name = "count3Projected";
+			texcoord_index = D3DTSS_TCI_CAMERASPACEPOSITION | 0;
+			texture_transform_flags = D3DTTFF_PROJECTED | D3DTTFF_COUNT3;
+			transform_component_count = 3;
+			expected_matrix_20 = 0.375f;
+			expected_matrix_22 = 0.5f;
+			expected_r = 0;
+			expected_b = 255;
+			generated = true;
+			transform_applied = true;
+			transform_projected = true;
 			break;
 		default:
 			known_case = false;
@@ -7334,6 +7397,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	HRESULT index_create_result = E_FAIL;
 	HRESULT index_lock_result = E_FAIL;
 	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_transform_result = S_OK;
 	HRESULT set_texture_result = E_FAIL;
 	HRESULT set_stream_result = E_FAIL;
 	HRESULT set_indices_result = E_FAIL;
@@ -7394,10 +7458,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	}
 
 	const TexturedQuadVertex vertices[4] = {
-		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
-		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
-		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
-		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
+		{ -0.75f, -0.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
+		{  0.75f, -0.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
+		{  0.75f,  0.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
+		{ -0.75f,  0.75f, 1.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0.25f, 0.5f, 0.75f, 0.5f },
 	};
 	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
 
@@ -7445,7 +7509,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 			{ 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP },
 			{ 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP },
 			{ 0, D3DTSS_TEXCOORDINDEX, texcoord_index },
-			{ 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE },
+			{ 0, D3DTSS_TEXTURETRANSFORMFLAGS, texture_transform_flags },
 			{ 1, D3DTSS_COLOROP, D3DTOP_DISABLE },
 			{ 1, D3DTSS_TEXCOORDINDEX, 1 },
 		};
@@ -7455,12 +7519,21 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 				++texture_stage_write_count;
 			}
 		}
+		if (transform_applied) {
+			D3DMATRIX texture_transform = {};
+			for (UINT index = 0; index < 4; ++index) {
+				texture_transform.m[index][index] = 1.0f;
+			}
+			texture_transform.m[2][0] = expected_matrix_20;
+			texture_transform.m[2][2] = expected_matrix_22;
+			set_transform_result = device->SetTransform(D3DTS_TEXTURE0, &texture_transform);
+		}
 		set_texture_result = device->SetTexture(0, texture);
 		set_stream_result = device->SetStreamSource(0, vertex_buffer, sizeof(TexturedQuadVertex));
 		set_indices_result = device->SetIndices(index_buffer, 0);
 		draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
 		ok = ok && texture_stage_write_count == sizeof(texture_stage_writes) / sizeof(texture_stage_writes[0]) &&
-			SUCCEEDED(set_texture_result) && SUCCEEDED(set_stream_result) &&
+			SUCCEEDED(set_transform_result) && SUCCEEDED(set_texture_result) && SUCCEEDED(set_stream_result) &&
 			SUCCEEDED(set_indices_result) && SUCCEEDED(draw_result);
 	}
 
@@ -7481,6 +7554,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT expected_transform_mask = transform_applied ? 1U : 0U;
 	ok = ok &&
 		state != nullptr &&
 		state->direct3d_create_calls == 1 &&
@@ -7493,33 +7567,43 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 		state->browser_buffer_create_calls == 2 &&
 		state->browser_buffer_update_calls == 2 &&
 		state->browser_buffer_release_calls == 2 &&
+		state->set_transform_calls == expected_transform_mask &&
 		state->set_texture_calls == 1 &&
 		state->set_texture_stage_state_calls == texture_stage_write_count &&
 		state->draw_indexed_primitive_calls == 1 &&
+		state->last_draw_texture_transform_mask == expected_transform_mask &&
+		state->last_draw_texture0_transform.m[2][0] == expected_matrix_20 &&
+		state->last_draw_texture0_transform.m[2][2] == expected_matrix_22 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] == D3DTOP_SELECTARG1 &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
 		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXCOORDINDEX] == texcoord_index &&
-		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_DISABLE &&
+		state->last_draw_render_state.texture_stages[0].values[D3DTSS_TEXTURETRANSFORMFLAGS] ==
+			texture_transform_flags &&
 		state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
 
 	const unsigned int expected_set = texcoord_index & 0xffffU;
 	const unsigned int expected_offset = 28U + expected_set * 8U;
-	char buffer[3072];
+	char buffer[4096];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"browser_d3d8_texcoord_index_probe\","
 		"\"ok\":%s,\"caseId\":%u,\"caseName\":\"%s\","
 		"\"texture\":{\"id\":%u,\"format\":%u},"
 		"\"expectedCenter\":[%u,%u,%u,%u],"
-		"\"texcoord\":{\"index\":%lu,\"set\":%u,\"expectedOffset\":%u,"
+		"\"texcoord\":{\"index\":%lu,\"modeName\":\"%s\",\"set\":%u,\"expectedOffset\":%u,"
+		"\"generated\":%s,"
 		"\"textureTransformFlags\":%lu},"
+		"\"transform\":{\"modeName\":\"%s\",\"mask\":%u,\"expectedMask\":%u,"
+		"\"componentCount\":%u,\"projected\":%s,\"matrix20\":%.3f,"
+		"\"expectedMatrix20\":%.3f,\"matrix22\":%.3f,\"expectedMatrix22\":%.3f,"
+		"\"applied\":%s},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"createTexture\":%u,"
 		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
-		"\"setTexture\":%u,\"setTextureStageState\":%u,\"drawIndexed\":%u},"
+		"\"setTransform\":%u,\"setTexture\":%u,\"setTextureStageState\":%u,\"drawIndexed\":%u},"
 		"\"results\":{\"create\":%ld,\"textureCreate\":%ld,\"textureLock\":%ld,"
 		"\"textureUnlock\":%ld,\"vertexCreate\":%ld,\"vertexLock\":%ld,"
 		"\"vertexUnlock\":%ld,\"indexCreate\":%ld,\"indexLock\":%ld,"
-		"\"indexUnlock\":%ld,\"setTexture\":%ld,\"setStream\":%ld,"
+		"\"indexUnlock\":%ld,\"setTransform\":%ld,\"setTexture\":%ld,\"setStream\":%ld,"
 		"\"setIndices\":%ld,\"draw\":%ld}}",
 		ok ? "true" : "false",
 		texcoord_case,
@@ -7531,9 +7615,21 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 		expected_b,
 		expected_a,
 		static_cast<unsigned long>(texcoord_index),
+		mode_name,
 		expected_set,
 		expected_offset,
-		static_cast<unsigned long>(D3DTTFF_DISABLE),
+		generated ? "true" : "false",
+		static_cast<unsigned long>(texture_transform_flags),
+		transform_mode_name,
+		state != nullptr ? state->last_draw_texture_transform_mask : 0,
+		expected_transform_mask,
+		transform_component_count,
+		transform_projected ? "true" : "false",
+		state != nullptr ? static_cast<double>(state->last_draw_texture0_transform.m[2][0]) : 0.0,
+		static_cast<double>(expected_matrix_20),
+		state != nullptr ? static_cast<double>(state->last_draw_texture0_transform.m[2][2]) : 1.0,
+		static_cast<double>(expected_matrix_22),
+		transform_applied ? "true" : "false",
 		state != nullptr ? state->direct3d_create_calls : 0,
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
@@ -7543,6 +7639,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 		state != nullptr ? state->browser_buffer_create_calls : 0,
 		state != nullptr ? state->browser_buffer_update_calls : 0,
 		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
 		state != nullptr ? state->set_texture_calls : 0,
 		state != nullptr ? state->set_texture_stage_state_calls : 0,
 		state != nullptr ? state->draw_indexed_primitive_calls : 0,
@@ -7556,6 +7653,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_texcoord_index(unsigned int
 		static_cast<long>(index_create_result),
 		static_cast<long>(index_lock_result),
 		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_transform_result),
 		static_cast<long>(set_texture_result),
 		static_cast<long>(set_stream_result),
 		static_cast<long>(set_indices_result),

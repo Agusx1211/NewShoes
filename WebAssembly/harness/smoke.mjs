@@ -15,6 +15,10 @@ const d3d8TwoTextureAlphaCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-two-texture-alpha-canvas.png",
 );
+const d3d8GeneratedTexCoordCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-generated-texcoord-canvas.png",
+);
 const d3d8FvfTexCoordSizesCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-fvf-texcoord-sizes-canvas.png",
@@ -3227,22 +3231,49 @@ try {
   const texCoordCenters = texCoordCases.map((entry) => entry.browserProbe?.centerPixel?.join(",")).join("|");
   const texCoordSets = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordSet).join(",");
   const texCoordOffsets = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordOffset).join(",");
+  const texCoordModes = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordModeName).join(",");
+  const texCoordGenerated = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordGenerated).join(",");
+  const texCoordUsesVertex = texCoordCases.map((entry) => entry.browserProbe?.texture0?.texCoordUsesVertex).join(",");
+  const texCoordTransformFlags = texCoordCases.map((entry) =>
+    entry.browserProbe?.texture0?.textureTransformFlags).join(",");
+  const texCoordTransformApplied = texCoordCases.map((entry) =>
+    entry.browserProbe?.texture0?.textureTransformApplied).join(",");
   if (!d3d8TexCoordIndexResult.ok
-      || texCoordCases.length !== 2
-      || texCoordCaseNames !== "uv0,uv1"
-      || texCoordCenters !== "255,0,0,255|0,0,255,255"
-      || texCoordSets !== "0,1"
-      || texCoordOffsets !== "28,36"
+      || texCoordCases.length !== 6
+      || texCoordCaseNames !==
+        "uv0,uv1,cameraSpacePosition,cameraSpaceNormal,cameraSpaceReflectionVector,projectedCameraSpacePosition"
+      || texCoordCenters !==
+        "255,0,0,255|0,0,255,255|0,0,255,255|0,0,255,255|0,0,255,255|0,0,255,255"
+      || texCoordSets !== "0,1,0,0,0,0"
+      || texCoordOffsets !== "28,36,,,,"
+      || texCoordModes !==
+        "passthru,passthru,cameraSpacePosition,cameraSpaceNormal,cameraSpaceReflectionVector,cameraSpacePosition"
+      || texCoordGenerated !== "false,false,true,true,true,true"
+      || texCoordUsesVertex !== "true,true,false,false,false,false"
+      || texCoordTransformFlags !== "0,0,2,2,2,259"
+      || texCoordTransformApplied !== "false,false,true,true,true,true"
       || texCoordCases.some((entry) => entry.probe?.source !== "browser_d3d8_texcoord_index_probe")
       || texCoordCases.some((entry) => entry.probe?.calls?.setTextureStageState !== 12)
-      || texCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordModeName !== "passthru")
-      || texCoordCases.some((entry) => entry.browserProbe?.texture0?.textureTransformFlags !== 0)
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.texCoordModeName !== entry.probe?.texcoord?.modeName)
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.texCoordGenerated !== Boolean(entry.probe?.texcoord?.generated))
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformFlags !== entry.probe?.texcoord?.textureTransformFlags)
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformModeName !== entry.probe?.transform?.modeName)
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformComponentCount !== entry.probe?.transform?.componentCount)
+      || texCoordCases.some((entry) =>
+        entry.browserProbe?.texture0?.textureTransformProjected !== Boolean(entry.probe?.transform?.projected))
       || texCoordCases.some((entry) => entry.browserProbe?.texture0?.texCoordSupported !== true)
       || texCoordCases.some((entry) => entry.centerPixelOk !== true)
+      || texCoordCases.some((entry) => entry.texCoordOffsetOk !== true)
       || texCoordCases.some((entry) => entry.textureDelta?.creates !== 1)
       || texCoordCases.some((entry) => entry.textureDelta?.releaseUnbinds !== 1)) {
     throw new Error(`D3D8 texcoord index probe failed: ${JSON.stringify(d3d8TexCoordIndexResult)}`);
   }
+  await page.locator("#viewport").screenshot({ path: d3d8GeneratedTexCoordCanvasScreenshot });
 
   const d3d8FvfTexCoordSizesResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8FvfTexCoordSizes"));
@@ -5598,6 +5629,7 @@ try {
       clearCanvasScreenshot,
       d3d8ClearCanvasScreenshot,
       d3d8TwoTextureAlphaCanvasScreenshot,
+      d3d8GeneratedTexCoordCanvasScreenshot,
       d3d8FvfTexCoordSizesCanvasScreenshot,
       d3d8TextureTransformCanvasScreenshot,
       d3d8Stage1TextureTransformCanvasScreenshot,

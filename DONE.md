@@ -2169,6 +2169,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       turns the center pixel blue while texture 0 remains untransformed.
       Playwright captures
       `harness-smoke-d3d8-stage1-texture-transform-canvas.png`.
+- [x] Add focused browser support and harness proof for generated
+      `D3DTSS_TEXCOORDINDEX` texture-coordinate sources in the current WebGL2
+      draw bridge. The bridge now accepts camera-space normal, position, and
+      reflection-vector sources without requiring vertex UV attributes, feeds
+      them through captured texture transforms, and supports projected
+      `D3DTTFF_COUNT3` camera-space position sampling. The D3D8 texcoord probe
+      now renders UV0/UV1 passthrough plus generated normal/position/reflection
+      and projected position cases, verifies metadata and center pixels through
+      Playwright, and captures
+      `harness-smoke-d3d8-generated-texcoord-canvas.png`. Original W3D mapper,
+      water, and terrain call-site integration remains open.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8
