@@ -36,6 +36,10 @@ const d3d8PointRangeLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-range-light-canvas.png",
 );
+const d3d8PointMixedLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-point-mixed-light-canvas.png",
+);
 const d3d8SpotLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-light-canvas.png",
@@ -3477,6 +3481,48 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8PointRangeLightCanvasScreenshot });
 
+  const d3d8PointMixedLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8PointMixedLight"));
+  const expectedPointMixedLeft = d3d8PointMixedLightResult.probe?.expectedLeft ?? [101, 101, 101, 255];
+  const expectedPointMixedRight = d3d8PointMixedLightResult.probe?.expectedRight ?? [254, 254, 254, 255];
+  const pointMixedLight = d3d8PointMixedLightResult.browserProbe?.lights?.[0] ?? {};
+  if (!d3d8PointMixedLightResult.ok
+      || d3d8PointMixedLightResult.probe?.source !== "browser_d3d8_point_mixed_light_probe"
+      || d3d8PointMixedLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8PointMixedLightResult.probe?.calls?.setLight !== 1
+      || d3d8PointMixedLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8PointMixedLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8PointMixedLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8PointMixedLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8PointMixedLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8PointMixedLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || pointMixedLight.enabled !== true
+      || pointMixedLight.type !== 1
+      || Math.abs((pointMixedLight.range ?? 0) - 10) > 0.00001
+      || Math.abs((pointMixedLight.attenuation0 ?? 0) - 0.1) > 0.00001
+      || Math.abs((pointMixedLight.attenuation1 ?? 0) - 0.2) > 0.00001
+      || Math.abs((pointMixedLight.attenuation2 ?? 0) - 0.7) > 0.00001
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported !== true
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightCount !== 1
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLights?.[0]?.type !== 1
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== false
+      || d3d8PointMixedLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 0
+      || d3d8PointMixedLightResult.materialOk !== true
+      || d3d8PointMixedLightResult.lightAttenuationOk !== true
+      || d3d8PointMixedLightResult.selectedLightOk !== true
+      || d3d8PointMixedLightResult.mixedShapeOk !== true
+      || d3d8PointMixedLightResult.leftPixelOk !== true
+      || d3d8PointMixedLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(d3d8PointMixedLightResult.pointMixedLightPixels?.left,
+        expectedPointMixedLeft, 8)
+      || !pixelsApproximatelyEqual(d3d8PointMixedLightResult.pointMixedLightPixels?.right,
+        expectedPointMixedRight, 4)) {
+    throw new Error(`D3D8 mixed point-light probe failed: ${JSON.stringify(d3d8PointMixedLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8PointMixedLightCanvasScreenshot });
+
   const d3d8SpotLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8SpotLight"));
   const expectedSpotOutside = d3d8SpotLightResult.probe?.expectedOutside ?? [0, 0, 0, 255];
@@ -4718,6 +4764,7 @@ try {
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
       d3d8PointRangeLightCanvasScreenshot,
+      d3d8PointMixedLightCanvasScreenshot,
       d3d8SpotLightCanvasScreenshot,
       d3d8SpotFalloffCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
