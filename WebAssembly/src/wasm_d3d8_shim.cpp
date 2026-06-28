@@ -2516,8 +2516,7 @@ public:
 		if (value == nullptr) {
 			return E_FAIL;
 		}
-		const auto found = m_render_states.find(state);
-		*value = found != m_render_states.end() ? found->second : 0;
+		*value = render_state_value(state);
 		++g_state.get_render_state_calls;
 		g_state.last_get_render_state = state;
 		return S_OK;
@@ -2746,10 +2745,88 @@ private:
 		}
 	}
 
-	DWORD render_state_value(D3DRENDERSTATETYPE state, DWORD default_value) const
+	DWORD default_render_state_value(D3DRENDERSTATETYPE state) const
+	{
+		switch (state) {
+			case D3DRS_CULLMODE:
+				return D3DCULL_CW;
+			case D3DRS_ZENABLE:
+				return D3DZB_TRUE;
+			case D3DRS_ZWRITEENABLE:
+				return TRUE;
+			case D3DRS_ZFUNC:
+				return D3DCMP_LESSEQUAL;
+			case D3DRS_ALPHABLENDENABLE:
+				return FALSE;
+			case D3DRS_SRCBLEND:
+				return D3DBLEND_ONE;
+			case D3DRS_DESTBLEND:
+				return D3DBLEND_ZERO;
+			case D3DRS_BLENDOP:
+				return D3DBLENDOP_ADD;
+			case D3DRS_ALPHATESTENABLE:
+				return FALSE;
+			case D3DRS_ALPHAFUNC:
+				return D3DCMP_LESSEQUAL;
+			case D3DRS_ALPHAREF:
+				return 0;
+			case D3DRS_COLORWRITEENABLE:
+				return D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+					D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
+			case D3DRS_TEXTUREFACTOR:
+				return 0;
+			case D3DRS_STENCILENABLE:
+				return FALSE;
+			case D3DRS_STENCILFAIL:
+			case D3DRS_STENCILZFAIL:
+			case D3DRS_STENCILPASS:
+				return D3DSTENCILOP_KEEP;
+			case D3DRS_STENCILFUNC:
+				return D3DCMP_ALWAYS;
+			case D3DRS_STENCILREF:
+				return 0;
+			case D3DRS_STENCILMASK:
+			case D3DRS_STENCILWRITEMASK:
+				return 0xffffffffUL;
+			case D3DRS_FOGENABLE:
+				return FALSE;
+			case D3DRS_FOGCOLOR:
+			case D3DRS_FOGSTART:
+				return 0;
+			case D3DRS_FOGEND:
+				return 0x3f800000UL;
+			case D3DRS_FOGVERTEXMODE:
+				return D3DFOG_LINEAR;
+			case D3DRS_RANGEFOGENABLE:
+				return FALSE;
+			case D3DRS_FILLMODE:
+				return D3DFILL_SOLID;
+			case D3DRS_ZBIAS:
+				return 0;
+			case D3DRS_SHADEMODE:
+				return D3DSHADE_GOURAUD;
+			case D3DRS_LIGHTING:
+				return TRUE;
+			case D3DRS_AMBIENT:
+				return 0;
+			case D3DRS_COLORVERTEX:
+				return TRUE;
+			case D3DRS_DIFFUSEMATERIALSOURCE:
+				return D3DMCS_COLOR1;
+			case D3DRS_SPECULARMATERIALSOURCE:
+				return D3DMCS_COLOR2;
+			case D3DRS_AMBIENTMATERIALSOURCE:
+			case D3DRS_EMISSIVEMATERIALSOURCE:
+				return D3DMCS_MATERIAL;
+			default:
+				return 0;
+		}
+	}
+
+	DWORD render_state_value(D3DRENDERSTATETYPE state) const
 	{
 		const auto found = m_render_states.find(state);
-		return found != m_render_states.end() ? found->second : default_value;
+		return found != m_render_states.end() ? found->second : default_render_state_value(state);
 	}
 
 	DWORD default_texture_stage_state_value(DWORD stage, UINT state) const
@@ -2818,45 +2895,43 @@ private:
 	void capture_draw_render_state()
 	{
 		WasmD3D8DrawRenderState &state = g_state.last_draw_render_state;
-		state.cull_mode = render_state_value(D3DRS_CULLMODE, D3DCULL_CW);
-		state.z_enable = render_state_value(D3DRS_ZENABLE, D3DZB_TRUE);
-		state.z_write_enable = render_state_value(D3DRS_ZWRITEENABLE, TRUE);
-		state.z_func = render_state_value(D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
-		state.alpha_blend_enable = render_state_value(D3DRS_ALPHABLENDENABLE, FALSE);
-		state.src_blend = render_state_value(D3DRS_SRCBLEND, D3DBLEND_ONE);
-		state.dest_blend = render_state_value(D3DRS_DESTBLEND, D3DBLEND_ZERO);
-		state.blend_op = render_state_value(D3DRS_BLENDOP, D3DBLENDOP_ADD);
-		state.alpha_test_enable = render_state_value(D3DRS_ALPHATESTENABLE, FALSE);
-		state.alpha_func = render_state_value(D3DRS_ALPHAFUNC, D3DCMP_LESSEQUAL);
-		state.alpha_ref = render_state_value(D3DRS_ALPHAREF, 0);
-		state.color_write_enable = render_state_value(D3DRS_COLORWRITEENABLE,
-			D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
-				D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA);
-		state.texture_factor = render_state_value(D3DRS_TEXTUREFACTOR, 0);
-		state.stencil_enable = render_state_value(D3DRS_STENCILENABLE, FALSE);
-		state.stencil_fail = render_state_value(D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP);
-		state.stencil_z_fail = render_state_value(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP);
-		state.stencil_pass = render_state_value(D3DRS_STENCILPASS, D3DSTENCILOP_KEEP);
-		state.stencil_func = render_state_value(D3DRS_STENCILFUNC, D3DCMP_ALWAYS);
-		state.stencil_ref = render_state_value(D3DRS_STENCILREF, 0);
-		state.stencil_mask = render_state_value(D3DRS_STENCILMASK, 0xffffffffUL);
-		state.stencil_write_mask = render_state_value(D3DRS_STENCILWRITEMASK, 0xffffffffUL);
-		state.fog_enable = render_state_value(D3DRS_FOGENABLE, FALSE);
-		state.fog_color = render_state_value(D3DRS_FOGCOLOR, 0);
-		state.fog_start = render_state_value(D3DRS_FOGSTART, 0);
-		state.fog_end = render_state_value(D3DRS_FOGEND, 0x3f800000UL);
-		state.fog_vertex_mode = render_state_value(D3DRS_FOGVERTEXMODE, D3DFOG_LINEAR);
-		state.range_fog_enable = render_state_value(D3DRS_RANGEFOGENABLE, FALSE);
-		state.fill_mode = render_state_value(D3DRS_FILLMODE, D3DFILL_SOLID);
-		state.z_bias = render_state_value(D3DRS_ZBIAS, 0);
-		state.shade_mode = render_state_value(D3DRS_SHADEMODE, D3DSHADE_GOURAUD);
-		state.lighting = render_state_value(D3DRS_LIGHTING, TRUE);
-		state.ambient = render_state_value(D3DRS_AMBIENT, 0);
-		state.color_vertex = render_state_value(D3DRS_COLORVERTEX, TRUE);
-		state.diffuse_material_source = render_state_value(D3DRS_DIFFUSEMATERIALSOURCE, D3DMCS_COLOR1);
-		state.specular_material_source = render_state_value(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_COLOR2);
-		state.ambient_material_source = render_state_value(D3DRS_AMBIENTMATERIALSOURCE, D3DMCS_MATERIAL);
-		state.emissive_material_source = render_state_value(D3DRS_EMISSIVEMATERIALSOURCE, D3DMCS_MATERIAL);
+		state.cull_mode = render_state_value(D3DRS_CULLMODE);
+		state.z_enable = render_state_value(D3DRS_ZENABLE);
+		state.z_write_enable = render_state_value(D3DRS_ZWRITEENABLE);
+		state.z_func = render_state_value(D3DRS_ZFUNC);
+		state.alpha_blend_enable = render_state_value(D3DRS_ALPHABLENDENABLE);
+		state.src_blend = render_state_value(D3DRS_SRCBLEND);
+		state.dest_blend = render_state_value(D3DRS_DESTBLEND);
+		state.blend_op = render_state_value(D3DRS_BLENDOP);
+		state.alpha_test_enable = render_state_value(D3DRS_ALPHATESTENABLE);
+		state.alpha_func = render_state_value(D3DRS_ALPHAFUNC);
+		state.alpha_ref = render_state_value(D3DRS_ALPHAREF);
+		state.color_write_enable = render_state_value(D3DRS_COLORWRITEENABLE);
+		state.texture_factor = render_state_value(D3DRS_TEXTUREFACTOR);
+		state.stencil_enable = render_state_value(D3DRS_STENCILENABLE);
+		state.stencil_fail = render_state_value(D3DRS_STENCILFAIL);
+		state.stencil_z_fail = render_state_value(D3DRS_STENCILZFAIL);
+		state.stencil_pass = render_state_value(D3DRS_STENCILPASS);
+		state.stencil_func = render_state_value(D3DRS_STENCILFUNC);
+		state.stencil_ref = render_state_value(D3DRS_STENCILREF);
+		state.stencil_mask = render_state_value(D3DRS_STENCILMASK);
+		state.stencil_write_mask = render_state_value(D3DRS_STENCILWRITEMASK);
+		state.fog_enable = render_state_value(D3DRS_FOGENABLE);
+		state.fog_color = render_state_value(D3DRS_FOGCOLOR);
+		state.fog_start = render_state_value(D3DRS_FOGSTART);
+		state.fog_end = render_state_value(D3DRS_FOGEND);
+		state.fog_vertex_mode = render_state_value(D3DRS_FOGVERTEXMODE);
+		state.range_fog_enable = render_state_value(D3DRS_RANGEFOGENABLE);
+		state.fill_mode = render_state_value(D3DRS_FILLMODE);
+		state.z_bias = render_state_value(D3DRS_ZBIAS);
+		state.shade_mode = render_state_value(D3DRS_SHADEMODE);
+		state.lighting = render_state_value(D3DRS_LIGHTING);
+		state.ambient = render_state_value(D3DRS_AMBIENT);
+		state.color_vertex = render_state_value(D3DRS_COLORVERTEX);
+		state.diffuse_material_source = render_state_value(D3DRS_DIFFUSEMATERIALSOURCE);
+		state.specular_material_source = render_state_value(D3DRS_SPECULARMATERIALSOURCE);
+		state.ambient_material_source = render_state_value(D3DRS_AMBIENTMATERIALSOURCE);
+		state.emissive_material_source = render_state_value(D3DRS_EMISSIVEMATERIALSOURCE);
 		capture_draw_texture_stage_states();
 	}
 

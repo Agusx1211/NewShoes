@@ -250,6 +250,9 @@ int main()
 	const UINT get_before = state->get_render_state_calls;
 	const UINT set_material_before = state->set_material_calls;
 	const UINT get_material_before = state->get_material_calls;
+	const DWORD color_write_all =
+		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
 
 	// Helper lambdas to keep the per-state checks compact.
 	auto set_state = [&](D3DRENDERSTATETYPE rs, DWORD value, const char *label) {
@@ -268,6 +271,44 @@ int main()
 		expect(state->last_set_render_state == rs, "last_set_render_state mismatch");
 		expect(state->last_set_render_state_value == value, "last_set_render_state_value mismatch");
 	};
+	auto expect_default = [&](D3DRENDERSTATETYPE rs, DWORD expected, const char *label) {
+		DWORD readback = 0xDEADBEEFu;
+		if (!SUCCEEDED(device->GetRenderState(rs, &readback))) {
+			fail(label);
+			return;
+		}
+		expect(readback == expected, "unset render-state default mismatch");
+		expect(state->last_get_render_state == rs, "last_get_render_state default mismatch");
+	};
+
+	// ----------------------------------------------------------------------
+	// 0. Unset GetRenderState defaults for the currently captured draw subset.
+	// ----------------------------------------------------------------------
+	expect_default(D3DRS_CULLMODE, D3DCULL_CW, "GetRenderState CULLMODE default failed");
+	expect_default(D3DRS_ZENABLE, D3DZB_TRUE, "GetRenderState ZENABLE default failed");
+	expect_default(D3DRS_ZWRITEENABLE, TRUE, "GetRenderState ZWRITEENABLE default failed");
+	expect_default(D3DRS_ZFUNC, D3DCMP_LESSEQUAL, "GetRenderState ZFUNC default failed");
+	expect_default(D3DRS_SRCBLEND, D3DBLEND_ONE, "GetRenderState SRCBLEND default failed");
+	expect_default(D3DRS_DESTBLEND, D3DBLEND_ZERO, "GetRenderState DESTBLEND default failed");
+	expect_default(D3DRS_BLENDOP, D3DBLENDOP_ADD, "GetRenderState BLENDOP default failed");
+	expect_default(D3DRS_ALPHAFUNC, D3DCMP_LESSEQUAL, "GetRenderState ALPHAFUNC default failed");
+	expect_default(D3DRS_COLORWRITEENABLE, color_write_all, "GetRenderState COLORWRITEENABLE default failed");
+	expect_default(D3DRS_STENCILFAIL, D3DSTENCILOP_KEEP, "GetRenderState STENCILFAIL default failed");
+	expect_default(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP, "GetRenderState STENCILZFAIL default failed");
+	expect_default(D3DRS_STENCILPASS, D3DSTENCILOP_KEEP, "GetRenderState STENCILPASS default failed");
+	expect_default(D3DRS_STENCILFUNC, D3DCMP_ALWAYS, "GetRenderState STENCILFUNC default failed");
+	expect_default(D3DRS_STENCILMASK, 0xffffffffUL, "GetRenderState STENCILMASK default failed");
+	expect_default(D3DRS_STENCILWRITEMASK, 0xffffffffUL, "GetRenderState STENCILWRITEMASK default failed");
+	expect_default(D3DRS_FOGEND, 0x3f800000UL, "GetRenderState FOGEND default failed");
+	expect_default(D3DRS_FOGVERTEXMODE, D3DFOG_LINEAR, "GetRenderState FOGVERTEXMODE default failed");
+	expect_default(D3DRS_FILLMODE, D3DFILL_SOLID, "GetRenderState FILLMODE default failed");
+	expect_default(D3DRS_SHADEMODE, D3DSHADE_GOURAUD, "GetRenderState SHADEMODE default failed");
+	expect_default(D3DRS_LIGHTING, TRUE, "GetRenderState LIGHTING default failed");
+	expect_default(D3DRS_COLORVERTEX, TRUE, "GetRenderState COLORVERTEX default failed");
+	expect_default(D3DRS_DIFFUSEMATERIALSOURCE, D3DMCS_COLOR1,
+		"GetRenderState DIFFUSEMATERIALSOURCE default failed");
+	expect_default(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_COLOR2,
+		"GetRenderState SPECULARMATERIALSOURCE default failed");
 
 	// ----------------------------------------------------------------------
 	// 1. CULLMODE across all three D3D values.
@@ -348,9 +389,6 @@ int main()
 	// ----------------------------------------------------------------------
 	// 5. Color write mask round-trip.
 	// ----------------------------------------------------------------------
-	const DWORD color_write_all =
-		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
-		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
 	set_state(D3DRS_COLORWRITEENABLE, color_write_all, "SetRenderState COLORWRITEENABLE all failed");
 	DWORD cw = 0;
 	expect(SUCCEEDED(device->GetRenderState(D3DRS_COLORWRITEENABLE, &cw)) && cw == color_write_all,
@@ -443,8 +481,8 @@ int main()
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
-	// An unset render state still defaults to 0 through the get path and is
-	// observable through the last-get field, matching the existing shim smoke.
+	// Unset zero-default states still query as 0 and remain observable through
+	// the last-get field.
 	DWORD fog_value = 0xDEAD;
 	expect(SUCCEEDED(device->GetRenderState(D3DRS_FOGENABLE, &fog_value)),
 		"GetRenderState FOGENABLE failed");

@@ -2286,6 +2286,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       fixed-function lighting yet. A focused probe sets non-default source
       choices, verifies the per-draw descriptor, persistent buffers, and the
       green center pixel with lighting disabled.
+- [x] Replace the generic unset `GetRenderState` zero fallback with the same
+      per-state D3D8 defaults used by the current draw-capture subset. Direct
+      queries now return non-zero defaults such as `COLORVERTEX`,
+      `DIFFUSEMATERIALSOURCE`, `SPECULARMATERIALSOURCE`, cull/depth/blend,
+      stencil mask/op, fog, shade, lighting, and color-write defaults; focused
+      smoke coverage verifies unset default queries still preserve explicit
+      `SetRenderState` round-trips.
 
 ### Increasing fidelity (each step verified by screenshot)
 - [x] Clear to a color (prove the GL path works) through the browser D3D8

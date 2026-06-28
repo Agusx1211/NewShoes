@@ -456,11 +456,6 @@ shares structure and follows behind.
       `D3DMATERIAL8` material capture/material-source descriptor coverage,
       including fixed-function lighting shader behavior, clip state, and other
       W3D draw states → GL/shader state.
-- [ ] Replace the generic unset `GetRenderState` fallback with per-state D3D8
-      defaults for non-zero-default states such as `COLORVERTEX`,
-      `DIFFUSEMATERIALSOURCE`, and `SPECULARMATERIALSOURCE`; the current draw
-      descriptor path supplies correct capture defaults, but direct queries
-      still return zero until a state is explicitly set.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline
       rendering in real scenes; the first bridge expands indexed triangle
