@@ -2327,12 +2327,56 @@ try {
       throw new Error(`Original Mouse frame-owned GadgetPushButton cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterButton)}`);
     }
 
+    const frameMouseWindowProbeResult = await page.evaluate(() =>
+      window.CnCPort.rpc("originalMouseFrameWindows"));
+    const frameMouseWindowProbe = frameMouseWindowProbeResult.probe;
+    const frameMouseButtonWindow = frameMouseWindowProbe?.windows?.find(
+      (window) => window.name === "frameMouseProbeButton",
+    );
+    const resolvedFrameMouseButtonId = await page.evaluate(() =>
+      window.CnCPort.rpc("resolveOriginalMouseFrameWindowId", { name: "frameMouseProbeButton" }));
+    const missingFrameMouseButtonId = await page.evaluate(() =>
+      window.CnCPort.rpc("resolveOriginalMouseFrameWindowId", { name: "missingFrameMouseWidget" }));
+    if (!frameMouseWindowProbeResult.ok
+        || frameMouseWindowProbe?.ok !== true
+        || frameMouseWindowProbe?.windowManagerReady !== true
+        || frameMouseWindowProbe?.windowCount < 2
+        || !frameMouseButtonWindow
+        || frameMouseButtonWindow.id <= 0
+        || frameMouseButtonWindow.nameKey !== frameMouseButtonWindow.id
+        || frameMouseButtonWindow.kind !== "GadgetPushButton"
+        || frameMouseButtonWindow.clickable !== true
+        || frameMouseButtonWindow.x !== 32
+        || frameMouseButtonWindow.y !== 32
+        || frameMouseButtonWindow.width !== 96
+        || frameMouseButtonWindow.height !== 32
+        || frameMouseButtonWindow.clickX !== frameMouseButtonX
+        || frameMouseButtonWindow.clickY !== frameMouseButtonY
+        || frameMouseButtonWindow.clickInside !== true
+        || frameMouseButtonWindow.style !== frameMouseButtonStyle
+        || (frameMouseButtonWindow.status & frameMouseButtonEnabledStatus) !== frameMouseButtonEnabledStatus
+        || !resolvedFrameMouseButtonId.ok
+        || resolvedFrameMouseButtonId.id !== frameMouseButtonWindow.id
+        || missingFrameMouseButtonId.ok !== false
+        || missingFrameMouseButtonId.id !== 0) {
+      throw new Error(`Original Mouse frame window list did not expose the named button: ${JSON.stringify({ frameMouseWindowProbeResult, resolvedFrameMouseButtonId, missingFrameMouseButtonId })}`);
+    }
+
     const missingFrameMouseWidgetClick = await page.evaluate(() =>
       window.CnCPort.rpc("clickOriginalMouseFrameWidget", { name: "missingFrameMouseWidget" }));
     if (missingFrameMouseWidgetClick.ok !== false
         || !String(missingFrameMouseWidgetClick.error ?? "").includes("Unknown original mouse frame widget")
-        || !missingFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeButton")) {
+        || !missingFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeButton")
+        || !missingFrameMouseWidgetClick.windowProbe?.windows?.some((window) => window.name === "frameMouseProbeButton")) {
       throw new Error(`Original Mouse named widget click did not reject an unknown widget: ${JSON.stringify(missingFrameMouseWidgetClick)}`);
+    }
+
+    const wrongCaseFrameMouseWidgetClick = await page.evaluate(() =>
+      window.CnCPort.rpc("clickOriginalMouseFrameWidget", { name: "FrameMouseProbeButton" }));
+    if (wrongCaseFrameMouseWidgetClick.ok !== false
+        || !String(wrongCaseFrameMouseWidgetClick.error ?? "").includes("Unknown original mouse frame widget")
+        || !wrongCaseFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeButton")) {
+      throw new Error(`Original Mouse named widget click did not reject a case-mismatched widget: ${JSON.stringify(wrongCaseFrameMouseWidgetClick)}`);
     }
 
     const namedFrameMouseWidgetClick = await page.evaluate(() =>
@@ -2363,12 +2407,19 @@ try {
         || namedFrameMouseWidgetClick.selectedBefore !== 0
         || namedFrameMouseWidgetClick.selectedAfter !== 1
         || namedFrameMouseWidget?.kind !== "GadgetPushButton"
+        || namedFrameMouseWidget?.id !== frameMouseButtonWindow.id
+        || namedFrameMouseWidget?.nameKey !== frameMouseButtonWindow.id
         || namedFrameMouseWidget?.rect?.x !== 32
         || namedFrameMouseWidget?.rect?.y !== 32
         || namedFrameMouseWidget?.rect?.width !== 96
         || namedFrameMouseWidget?.rect?.height !== 32
         || namedFrameMouseWidget?.point?.x !== frameMouseButtonX
         || namedFrameMouseWidget?.point?.y !== frameMouseButtonY
+        || namedFrameMouseWidget?.window?.name !== "frameMouseProbeButton"
+        || namedFrameMouseWidget?.window?.id !== frameMouseButtonWindow.id
+        || namedFrameMouseWidget?.window?.clickable !== true
+        || !namedFrameMouseWidgetClick.windowProbe?.windows?.some(
+          (window) => window.name === "frameMouseProbeButton" && window.id === frameMouseButtonWindow.id)
         || namedFrameMouseDownProbe?.gui?.buttonName !== "frameMouseProbeButton"
         || namedFrameMouseDownProbe?.gui?.buttonNameMatches !== true
         || namedFrameMouseDownProbe?.gui?.buttonStyle !== frameMouseButtonStyle
@@ -2422,6 +2473,18 @@ try {
         || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonGrabbed !== false
         || resetFrameOwnerAfterNamedButton.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse named frame widget cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterNamedButton)}`);
+    }
+    const resetFrameMouseWindowProbeResult = await page.evaluate(() =>
+      window.CnCPort.rpc("originalMouseFrameWindows"));
+    const resetFrameMouseButtonWindow = resetFrameMouseWindowProbeResult.probe?.windows?.find(
+      (window) => window.name === "frameMouseProbeButton",
+    );
+    if (!resetFrameMouseWindowProbeResult.ok
+        || resetFrameMouseButtonWindow?.id !== frameMouseButtonWindow.id
+        || resetFrameMouseButtonWindow?.nameKey !== frameMouseButtonWindow.id
+        || resetFrameMouseButtonWindow?.clickable !== true
+        || resetFrameMouseButtonWindow?.clickInside !== true) {
+      throw new Error(`Original Mouse frame window list was not stable after reset: ${JSON.stringify(resetFrameMouseWindowProbeResult)}`);
     }
 
     const frameMouseWheelX = 345;

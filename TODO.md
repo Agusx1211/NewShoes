@@ -3203,6 +3203,10 @@ shares structure and follows behind.
             style/status, `winGetScreenPosition` / `winGetSize` rect, and
             C++-derived interior click point, and the bridge rejects stale or
             outside-window target metadata before queueing Win32 messages.
+      - [x] Add an engine-reported original `GameWindow` list for the
+            frame-owned GUI path, including name-key IDs, kind, status/style,
+            screen rect, and click point, then make the named-click bridge
+            resolve from that list instead of a JS-side allowlist.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

@@ -251,6 +251,7 @@ const harnessState = {
   originalKeyboardFrameTick: null,
   originalKeyboardFrameInput: null,
   originalMouseFrameInput: null,
+  originalMouseFrameWindows: null,
   mountedArchives: [],
   logs: [],
 };
@@ -3293,6 +3294,10 @@ async function loadWasmModule() {
         "cnc_port_reset_original_mouse_frame_input", "string", []),
       probeOriginalMouseFrameInput: module.cwrap(
         "cnc_port_probe_original_mouse_frame_input", "string", []),
+      probeOriginalMouseFrameWindows: module.cwrap(
+        "cnc_port_probe_original_mouse_frame_windows", "string", []),
+      resolveOriginalMouseFrameWindowId: module.cwrap(
+        "cnc_port_resolve_original_mouse_frame_window_id", "number", ["string"]),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
       probeOriginalKeyboardFrameTick: module.cwrap(
         "cnc_port_probe_original_keyboard_frame_tick", "string", []),
@@ -4154,28 +4159,60 @@ async function probeOriginalMouseFrameInput() {
   return probe;
 }
 
-const originalMouseFrameWidgetNames = Object.freeze([
-  "frameMouseProbeButton",
-]);
+async function probeOriginalMouseFrameWindows() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
 
-function originalMouseFrameWidgetFromProbe(probe, name) {
-  if (!originalMouseFrameWidgetNames.includes(name)) {
+  const probe = parseModuleState(wasmModule.probeOriginalMouseFrameWindows());
+  harnessState.originalMouseFrameWindows = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function resolveOriginalMouseFrameWindowId(name) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  return wasmModule.resolveOriginalMouseFrameWindowId(String(name ?? ""));
+}
+
+function knownOriginalMouseFrameWidgets(windowProbe) {
+  const windows = Array.isArray(windowProbe?.windows) ? windowProbe.windows : [];
+  return windows
+    .filter((window) => window?.name && window.clickable === true)
+    .map((window) => window.name);
+}
+
+function originalMouseFrameWidgetFromWindows(windowProbe, name) {
+  const windows = Array.isArray(windowProbe?.windows) ? windowProbe.windows : [];
+  const knownWidgets = knownOriginalMouseFrameWidgets(windowProbe);
+  const window = windows.find((candidate) => candidate?.name === name);
+  if (!window) {
     return {
       error: `Unknown original mouse frame widget: ${name}`,
-      knownWidgets: [...originalMouseFrameWidgetNames],
+      knownWidgets,
     };
   }
 
-  const gui = probe?.gui ?? {};
-  const x = Number(gui.buttonX);
-  const y = Number(gui.buttonY);
-  const width = Number(gui.buttonWidth);
-  const height = Number(gui.buttonHeight);
-  const clickX = Number(gui.buttonClickX);
-  const clickY = Number(gui.buttonClickY);
-  if (gui.buttonReady !== true
-      || gui.buttonName !== name
-      || gui.buttonNameMatches !== true
+  const id = Number(window.id);
+  const nameKey = Number(window.nameKey);
+  const x = Number(window.x);
+  const y = Number(window.y);
+  const width = Number(window.width);
+  const height = Number(window.height);
+  const clickX = Number(window.clickX);
+  const clickY = Number(window.clickY);
+  if (window.clickable !== true
+      || window.kind !== "GadgetPushButton"
+      || !Number.isFinite(id)
+      || id <= 0
+      || !Number.isFinite(nameKey)
+      || nameKey !== id
       || !Number.isFinite(x)
       || !Number.isFinite(y)
       || !Number.isFinite(width)
@@ -4184,33 +4221,50 @@ function originalMouseFrameWidgetFromProbe(probe, name) {
       || !Number.isFinite(clickY)
       || width <= 0
       || height <= 0
-      || gui.buttonClickInside !== true) {
+      || window.clickInside !== true) {
     return {
       error: `Original mouse frame widget is not ready: ${name}`,
-      knownWidgets: [...originalMouseFrameWidgetNames],
+      knownWidgets,
     };
   }
 
   return {
     name,
-    kind: "GadgetPushButton",
+    id,
+    nameKey,
+    kind: window.kind,
     rect: { x, y, width, height },
     point: {
       x: clickX,
       y: clickY,
     },
+    window,
   };
 }
 
 async function clickOriginalMouseFrameWidget(payload = {}) {
   const name = String(payload.name ?? "frameMouseProbeButton");
-  if (!originalMouseFrameWidgetNames.includes(name)) {
+
+  const windowProbe = await probeOriginalMouseFrameWindows();
+  if (!windowProbe) {
     return {
       ok: false,
       command: "clickOriginalMouseFrameWidget",
       name,
-      error: `Unknown original mouse frame widget: ${name}`,
-      knownWidgets: [...originalMouseFrameWidgetNames],
+      error: "Wasm module unavailable; original Mouse frame windows cannot be probed",
+      state: snapshotState(),
+    };
+  }
+
+  const widget = originalMouseFrameWidgetFromWindows(windowProbe, name);
+  if (widget.error) {
+    return {
+      ok: false,
+      command: "clickOriginalMouseFrameWidget",
+      name,
+      error: widget.error,
+      knownWidgets: widget.knownWidgets,
+      windowProbe,
       state: snapshotState(),
     };
   }
@@ -4230,19 +4284,6 @@ async function clickOriginalMouseFrameWidget(payload = {}) {
   }
   if (beforeProbe.enabled !== true) {
     beforeProbe = await setOriginalMouseFrameInputEnabled(true);
-  }
-
-  const widget = originalMouseFrameWidgetFromProbe(beforeProbe, name);
-  if (widget.error) {
-    return {
-      ok: false,
-      command: "clickOriginalMouseFrameWidget",
-      name,
-      error: widget.error,
-      knownWidgets: widget.knownWidgets,
-      probe: beforeProbe,
-      state: snapshotState(),
-    };
   }
 
   const point = widget.point;
@@ -4326,6 +4367,7 @@ async function clickOriginalMouseFrameWidget(payload = {}) {
     command: "clickOriginalMouseFrameWidget",
     name,
     widget,
+    windowProbe,
     selectedBefore,
     selectedAfter,
     down: {
@@ -5105,6 +5147,23 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; original Mouse frame input cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalMouseFrameWindows":
+      {
+        const probe = await probeOriginalMouseFrameWindows();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Mouse frame windows cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "resolveOriginalMouseFrameWindowId":
+      {
+        const name = String(payload.name ?? "");
+        const id = await resolveOriginalMouseFrameWindowId(name);
+        if (id === null) {
+          return { ok: false, command, name, error: "Wasm module unavailable; original Mouse frame window id cannot be resolved" };
+        }
+        return { ok: id > 0, command, name, id, state: snapshotState() };
       }
     case "clickOriginalMouseFrameWidget":
       return clickOriginalMouseFrameWidget(payload);

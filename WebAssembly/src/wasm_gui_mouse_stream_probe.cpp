@@ -2,6 +2,7 @@
 
 #include "Common/GlobalData.h"
 #include "Common/MessageStream.h"
+#include "Common/NameKeyGenerator.h"
 #include "GameClient/Gadget.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
@@ -162,9 +163,12 @@ GuiInputCapture g_frame_mouse_capture;
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_window_storage[sizeof(ProbeGameWindow)];
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_button_storage[sizeof(ProbeGameWindow)];
 char g_frame_mouse_json[12000] = "{}";
+char g_frame_mouse_windows_json[12000] = "{}";
+NameKeyGenerator g_frame_mouse_name_key_generator;
 bool g_frame_mouse_enabled = false;
 bool g_frame_mouse_initialized = false;
 bool g_frame_mouse_gui_attached = false;
+bool g_frame_mouse_name_key_initialized = false;
 bool g_frame_mouse_last_ran = false;
 unsigned int g_frame_mouse_ticks = 0;
 unsigned int g_frame_mouse_last_queue_before = 0;
@@ -186,6 +190,31 @@ constexpr const char *FRAME_MOUSE_BUTTON_NAME = "frameMouseProbeButton";
 const char *bool_json(bool value)
 {
 	return value ? "true" : "false";
+}
+
+NameKeyGenerator *frame_mouse_name_key_generator()
+{
+	if (TheNameKeyGenerator != nullptr) {
+		return TheNameKeyGenerator;
+	}
+
+	if (!g_frame_mouse_name_key_initialized) {
+		g_frame_mouse_name_key_generator.init();
+		g_frame_mouse_name_key_initialized = true;
+	}
+	return &g_frame_mouse_name_key_generator;
+}
+
+Int frame_mouse_name_to_id(const char *name)
+{
+	if (name == nullptr || *name == '\0') {
+		return 0;
+	}
+
+	NameKeyGenerator *generator = frame_mouse_name_key_generator();
+	return generator != nullptr
+		? static_cast<Int>(generator->nameToKey(name))
+		: 0;
 }
 
 WindowMsgHandledType capture_gui_input(GameWindow *window,
@@ -449,6 +478,143 @@ void append_json_fragment(char *json, std::size_t json_size, std::size_t &used, 
 		: remaining - 1;
 }
 
+void append_json_string(char *json, std::size_t json_size, std::size_t &used, const char *value)
+{
+	append_json_fragment(json, json_size, used, "\"");
+	if (value != nullptr) {
+		for (const char *ch = value; *ch != '\0'; ++ch) {
+			switch (*ch) {
+				case '\\':
+					append_json_fragment(json, json_size, used, "\\\\");
+					break;
+				case '"':
+					append_json_fragment(json, json_size, used, "\\\"");
+					break;
+				case '\n':
+					append_json_fragment(json, json_size, used, "\\n");
+					break;
+				case '\r':
+					append_json_fragment(json, json_size, used, "\\r");
+					break;
+				case '\t':
+					append_json_fragment(json, json_size, used, "\\t");
+					break;
+				default: {
+					char text[2] = { *ch, '\0' };
+					append_json_fragment(json, json_size, used, text);
+					break;
+				}
+			}
+		}
+	}
+	append_json_fragment(json, json_size, used, "\"");
+}
+
+const char *frame_mouse_window_kind(GameWindow *window)
+{
+	if (window == nullptr) {
+		return "null";
+	}
+	const UnsignedInt style = window->winGetStyle();
+	if (BitTest(style, GWS_PUSH_BUTTON)) {
+		return "GadgetPushButton";
+	}
+	return "GameWindow";
+}
+
+const char *frame_mouse_window_name(GameWindow *window)
+{
+	WinInstanceData *data = window != nullptr ? window->winGetInstanceData() : nullptr;
+	if (data != nullptr && data->m_decoratedNameString.isNotEmpty()) {
+		return data->m_decoratedNameString.str();
+	}
+	return "";
+}
+
+bool frame_mouse_window_clickable(GameWindow *window)
+{
+	if (window == nullptr) {
+		return false;
+	}
+	const UnsignedInt style = window->winGetStyle();
+	const UnsignedInt status = window->winGetStatus();
+	return BitTest(style, GWS_PUSH_BUTTON)
+		&& BitTest(status, WIN_STATUS_ENABLED)
+		&& !BitTest(status, WIN_STATUS_HIDDEN)
+		&& !BitTest(status, WIN_STATUS_NO_INPUT);
+}
+
+void append_frame_mouse_window_json(
+	GameWindow *window,
+	GameWindow *parent,
+	char *json,
+	std::size_t json_size,
+	std::size_t &used,
+	unsigned int &count)
+{
+	if (window == nullptr || count >= 64) {
+		return;
+	}
+
+	const char *name = frame_mouse_window_name(window);
+	const char *kind = frame_mouse_window_kind(window);
+	Int x = 0;
+	Int y = 0;
+	Int width = 0;
+	Int height = 0;
+	window->winGetScreenPosition(&x, &y);
+	window->winGetSize(&width, &height);
+	const Int click_x = x + width / 3;
+	const Int click_y = y + height / 2;
+	const UnsignedInt status = window->winGetStatus();
+	const UnsignedInt style = window->winGetStyle();
+	const bool click_inside = width > 0 && height > 0 && window->winPointInWindow(click_x, click_y);
+	const int id = window->winGetWindowId();
+	const int name_key = name[0] != '\0' ? frame_mouse_name_to_id(name) : 0;
+	const int parent_id = parent != nullptr ? parent->winGetWindowId() : 0;
+
+	char prefix[700];
+	std::snprintf(prefix, sizeof(prefix),
+		"%s{\"index\":%u,\"id\":%d,\"nameKey\":%d,\"name\":",
+		count == 0 ? "" : ",",
+		count,
+		id,
+		name_key);
+	append_json_fragment(json, json_size, used, prefix);
+	append_json_string(json, json_size, used, name);
+	append_json_fragment(json, json_size, used, ",\"kind\":");
+	append_json_string(json, json_size, used, kind);
+
+	char suffix[1400];
+	std::snprintf(suffix, sizeof(suffix),
+		",\"parentId\":%d,\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"clickX\":%d,\"clickY\":%d,\"clickInside\":%s,"
+		"\"status\":%u,\"style\":%u,"
+		"\"enabled\":%s,\"hidden\":%s,\"noInput\":%s,"
+		"\"clickable\":%s}",
+		parent_id,
+		x,
+		y,
+		width,
+		height,
+		click_x,
+		click_y,
+		bool_json(click_inside),
+		status,
+		style,
+		bool_json(BitTest(status, WIN_STATUS_ENABLED)),
+		bool_json(BitTest(status, WIN_STATUS_HIDDEN)),
+		bool_json(BitTest(status, WIN_STATUS_NO_INPUT)),
+		bool_json(frame_mouse_window_clickable(window)));
+	append_json_fragment(json, json_size, used, suffix);
+	++count;
+
+	for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+		append_frame_mouse_window_json(child, window, json, json_size, used, count);
+	}
+}
+
 void build_original_mouse_stream_json(GameMessage *first, char *json, std::size_t json_size)
 {
 	if (json_size == 0) {
@@ -552,7 +718,6 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_button->winSetPosition(FRAME_MOUSE_BUTTON_X, FRAME_MOUSE_BUTTON_Y);
 		g_frame_mouse_button->winSetSize(FRAME_MOUSE_BUTTON_WIDTH, FRAME_MOUSE_BUTTON_HEIGHT);
 		g_frame_mouse_button->winGetInstanceData()->m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
-		g_frame_mouse_button->winGetInstanceData()->m_decoratedNameString = FRAME_MOUSE_BUTTON_NAME;
 		g_frame_mouse_button->winSetOwner(g_frame_mouse_window);
 		g_frame_mouse_button->winSetSystemFunc(GadgetPushButtonSystem);
 		g_frame_mouse_button->winSetInputFunc(GadgetPushButtonInput);
@@ -560,6 +725,10 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_window_manager->addWindowToParent(g_frame_mouse_button, g_frame_mouse_window);
 		g_frame_mouse_window_manager->winSendSystemMsg(g_frame_mouse_button, GWM_CREATE, 0, 0);
 		TheWindowManager = old_window_manager;
+	}
+	if (g_frame_mouse_button != nullptr) {
+		g_frame_mouse_button->winGetInstanceData()->m_decoratedNameString = FRAME_MOUSE_BUTTON_NAME;
+		g_frame_mouse_button->winSetWindowId(frame_mouse_name_to_id(FRAME_MOUSE_BUTTON_NAME));
 	}
 	if (!g_frame_mouse_gui_attached) {
 		g_frame_mouse_message_stream->attachTranslator(new WindowTranslator, 100);
@@ -617,6 +786,96 @@ void clear_frame_mouse_messages()
 	TheKeyboard = old_keyboard;
 	TheWritableGlobalData = old_global_data;
 	reset_frame_mouse_gui_state();
+}
+
+GameWindow *find_frame_mouse_window_by_name(GameWindow *window, const char *name)
+{
+	if (window == nullptr || name == nullptr || *name == '\0') {
+		return nullptr;
+	}
+
+	const char *window_name = frame_mouse_window_name(window);
+	if (window_name[0] != '\0' && std::strcmp(window_name, name) == 0) {
+		return window;
+	}
+
+	for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+		GameWindow *match = find_frame_mouse_window_by_name(child, name);
+		if (match != nullptr) {
+			return match;
+		}
+	}
+
+	return nullptr;
+}
+
+GameWindow *find_frame_mouse_window_by_name(const char *name)
+{
+	if (g_frame_mouse_window_manager == nullptr) {
+		return nullptr;
+	}
+
+	for (GameWindow *window = g_frame_mouse_window_manager->winGetWindowList();
+		window != nullptr;
+		window = window->winGetNext()) {
+		GameWindow *match = find_frame_mouse_window_by_name(window, name);
+		if (match != nullptr) {
+			return match;
+		}
+	}
+	return nullptr;
+}
+
+Int resolve_original_mouse_frame_window_id(const char *name)
+{
+	ensure_frame_mouse_owner();
+	if (name == nullptr || *name == '\0' || g_frame_mouse_window_manager == nullptr) {
+		return 0;
+	}
+
+	const Int id = frame_mouse_name_to_id(name);
+	GameWindow *window = id != 0
+		? g_frame_mouse_window_manager->winGetWindowFromId(nullptr, id)
+		: nullptr;
+	if (window == nullptr) {
+		window = find_frame_mouse_window_by_name(name);
+	}
+	return window != nullptr ? window->winGetWindowId() : 0;
+}
+
+const char *probe_original_mouse_frame_windows()
+{
+	ensure_frame_mouse_owner();
+
+	std::size_t used = 0;
+	append_json_fragment(g_frame_mouse_windows_json, sizeof(g_frame_mouse_windows_json), used,
+		"{\"source\":\"browser_original_mouse_frame_windows\","
+		"\"ok\":true,\"initialized\":true,"
+		"\"windowManagerReady\":");
+	append_json_fragment(g_frame_mouse_windows_json, sizeof(g_frame_mouse_windows_json), used,
+		bool_json(g_frame_mouse_window_manager != nullptr));
+	append_json_fragment(g_frame_mouse_windows_json, sizeof(g_frame_mouse_windows_json), used,
+		",\"windows\":[");
+
+	unsigned int count = 0;
+	if (g_frame_mouse_window_manager != nullptr) {
+		for (GameWindow *window = g_frame_mouse_window_manager->winGetWindowList();
+			window != nullptr;
+			window = window->winGetNext()) {
+			append_frame_mouse_window_json(
+				window,
+				nullptr,
+				g_frame_mouse_windows_json,
+				sizeof(g_frame_mouse_windows_json),
+				used,
+				count);
+		}
+	}
+
+	char footer[100];
+	std::snprintf(footer, sizeof(footer), "],\"windowCount\":%u}", count);
+	append_json_fragment(g_frame_mouse_windows_json, sizeof(g_frame_mouse_windows_json), used, footer);
+	return g_frame_mouse_windows_json;
 }
 
 const char *write_frame_mouse_json()
@@ -995,6 +1254,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_original_mouse_frame_input()
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_mouse_frame_input()
 {
 	return write_frame_mouse_json();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_mouse_frame_windows()
+{
+	return probe_original_mouse_frame_windows();
+}
+
+EMSCRIPTEN_KEEPALIVE int cnc_port_resolve_original_mouse_frame_window_id(const char *name)
+{
+	return resolve_original_mouse_frame_window_id(name);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_gui_mouse_stream()
