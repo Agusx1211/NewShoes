@@ -2619,9 +2619,8 @@ shares structure and follows behind.
       through its real `Render2DClass` helper and the browser D3D8/WebGL2 draw
       bridge, verified by `harness-smoke-ww3d-display-drawimage-canvas.png`
       and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
-      This proves the Image blit call path only; mapped-image collection
-      handoff, clipping/rotation variants, and broader UI image rendering
-      remain open.
+      This proves the Image blit call path only; clipping variants and broader
+      UI image rendering remain open.
 - [x] Original `W3DDisplay::drawImage` also resolves a filename-backed `Image`
       through `Render2DClass::Set_Texture(const char*)`,
       `WW3DAssetManager::Get_Texture`, `TextureClass::Apply`, and the runtime
@@ -2632,6 +2631,17 @@ shares structure and follows behind.
       verifies real DDS-backed pixels plus
       `harness-smoke-ww3d-display-drawimage-file-canvas.png` when the archive
       is present.
+- [x] Original `ImageCollection::load(512)` mapped-image parsing now hands a
+      real INI-defined `Image` to `W3DDisplay::drawImage`: the dedicated
+      browser smoke range-fetches the 14 `MappedImages` INI files from
+      user-supplied `INIZH.big`, range-fetches
+      `Data\English\Art\Textures\SCShellUserInterface512_001.tga` from
+      user-supplied `EnglishZH.big`, verifies the original
+      `WatermarkChina` mapped image (`Status = ROTATED_90_CLOCKWISE`, 160x96
+      from a 512x512 atlas), resolves the atlas through
+      `WW3DAssetManager`/`TextureClass::Init`/runtime `W3DFileSystem`, and
+      screenshots the real TGA-backed blit at
+      `harness-smoke-ww3d-display-mapped-image-canvas.png`.
 - [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
       through the display-owned `Render2DClass` helper without using the
       raw-storage-unsafe virtual size setters, verified by

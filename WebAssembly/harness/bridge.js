@@ -3147,6 +3147,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
       probeWW3DDisplayDrawImageFile: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage_file", "string", ["string"]),
+      probeWW3DDisplayMappedImage: module.cwrap(
+        "cnc_port_probe_ww3d_display_mapped_image", "string", ["string", "string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
@@ -5656,6 +5658,95 @@ async function rpc(command, payload = {}) {
           && pixelHasColor(screenshot.centerPixel, 8)
           && !pixelLooksRed(browserProbe.centerPixel)
           && !pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayMappedImage":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; mapped-image WW3DDisplay drawImage cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "/assets/runtime-mapped-image/INIZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime-mapped-image/EnglishZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayMappedImage(
+          iniArchivePath,
+          textureArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_mapped_image_probe"
+          && probe?.image?.name === "WatermarkChina"
+          && probe?.image?.filename === "SCShellUserInterface512_001.tga"
+          && probe?.image?.rawTexture === false
+          && probe?.image?.status === 1
+          && probe?.image?.rotated === true
+          && probe?.image?.textureWidth === 512
+          && probe?.image?.textureHeight === 512
+          && probe?.image?.width === 160
+          && probe?.image?.height === 96
+          && probe?.results?.mappedCollectionLoaded === true
+          && probe?.results?.mappedImages === 1186
+          && probe?.results?.texturePreloaded === true
+          && probe?.results?.textureLoaded === true
+          && probe?.results?.textureResolved === true
+          && probe?.results?.textureHasD3DSurface === true
+          && String(probe?.texture?.name ?? "").toLowerCase() ===
+            String(probe?.image?.filename ?? "").toLowerCase()
+          && probe?.texture?.archiveEntry === "Data\\English\\Art\\Textures\\SCShellUserInterface512_001.tga"
+          && probe?.texture?.width === 512
+          && probe?.texture?.height === 512
+          && probe?.texture?.levels > 0
+          && probe?.texture?.uploadedLevels === probe?.texture?.levels
+          && probe?.runtimeAssets?.installed === true
+          && probe?.runtimeAssets?.archiveLoaded === true
+          && probe?.runtimeAssets?.w3dFileSystemInstalled === true
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.primitiveType === 4
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.combiner?.supported === true
+          && browserProbe?.texture0?.combiner?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.texture0?.sampler?.supported === true
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg2 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
+          && pixelHasColor(browserProbe.centerPixel, 8)
+          && pixelHasColor(screenshot.centerPixel, 8)
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= probe?.texture?.levels
+          && textureDelta.binds >= 1;
         return {
           ok,
           command,
