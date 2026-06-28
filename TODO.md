@@ -3073,7 +3073,7 @@ shares structure and follows behind.
             frames through `checkKeyRepeat()`, verifying cleared cached key
             state/modifiers plus `KEY_STATE_AUTOREPEAT` stream output before
             wiring those semantics into browser frame ownership.
-      - [ ] Extend the browser-backed `Keyboard` bridge beyond the focused
+      - [x] Extend the browser-backed `Keyboard` bridge beyond the focused
             proof with repeat timing, focus-loss reset semantics, and normal
             frame ownership once the broader input loop is ready.
             - [x] Add a browser harness proof that repeated
@@ -3085,7 +3085,7 @@ shares structure and follows behind.
                   browser-backed `Keyboard`, proving `resetKeys()` clears
                   held-key state and folded modifiers without emitting raw key
                   stream messages.
-            - [ ] Move the browser-backed `Keyboard::update()` /
+            - [x] Move the browser-backed `Keyboard::update()` /
                   `createStreamMessages()` call out of the focused probe and
                   into the normal per-frame input loop once that loop owns the
                   real `MessageStream` lifecycle.
@@ -3107,12 +3107,17 @@ shares structure and follows behind.
                         to cover held-key autorepeat across empty browser
                         queues and browser blur -> original `KEY_LOST` reset
                         semantics while the frame-owned path is enabled.
+            - [ ] Promote the browser-backed frame-owned `Keyboard` path from
+                  disabled-by-default harness opt-in to the final default
+                  gameplay input owner once the real engine `MessageStream` /
+                  `CommandList` lifecycle is no longer probe-owned.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the
       wasm harness observes the original `VK_ESCAPE` branch posting
-      `WM_QUIT` via `PostQuitMessage(0)`. This proves the WndProc key path only;
-      full DirectInput/`Keyboard` event delivery for gameplay remains open.
+      `WM_QUIT` via `PostQuitMessage(0)`. This proves the WndProc key path;
+      browser-backed `Keyboard` delivery is covered by the frame-owned input
+      owner above.
 - [x] Focused real Keyboard stream-message proof: the standalone wasm
       `win32-keyboard-smoke` links original
       `GameClient/Input/Keyboard.cpp`, feeds scripted device events through a
