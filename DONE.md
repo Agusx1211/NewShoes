@@ -2355,9 +2355,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       selected fixed-function shader light, material state, exact attenuation
       coefficients, and far gray / near white canvas samples, with Playwright
       saving `harness-smoke-d3d8-point-quadratic-light-canvas.png`. Range
-      clipping, mixed attenuation coefficients, broader point-light variants,
-      off-axis/transformed specular fidelity, and broader material-source
-      behavior remain open.
+      clipping still remained open at that point, alongside mixed attenuation
+      coefficients, broader point-light variants, off-axis/transformed
+      specular fidelity, and broader material-source behavior.
+- [x] Add a focused fixed-function D3D8 point-light range-clipping proof. The
+      native/browser probe exports `cnc_port_probe_d3d8_point_range_light`,
+      sets a `D3DLIGHT_POINT` at `(0.5, 0, 1)` with `Range = 1.25`,
+      `Attenuation0 = 1`, `Attenuation1 = 0`, and `Attenuation2 = 0`, then
+      draws the same far and near quads used by the linear point-light proof.
+      The harness RPC verifies the raw light payload, selected
+      fixed-function shader light, material state, exact range and attenuation
+      coefficients, and black outside-range / near-white inside-range canvas
+      samples, with Playwright saving
+      `harness-smoke-d3d8-point-range-light-canvas.png`. Mixed attenuation
+      coefficients, broader point-light variants, off-axis/transformed
+      specular fidelity, and broader material-source behavior remain open.
 - [x] Add a focused fixed-function D3D8 spot-light hard-cone proof. The
       native/browser probe exports `cnc_port_probe_d3d8_spot_light`, sets a
       `D3DLIGHT_SPOT` with captured position, direction, range, falloff,

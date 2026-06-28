@@ -32,6 +32,10 @@ const d3d8PointQuadraticLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-quadratic-light-canvas.png",
 );
+const d3d8PointRangeLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-point-range-light-canvas.png",
+);
 const d3d8SpotLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-light-canvas.png",
@@ -3431,6 +3435,48 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8PointQuadraticLightCanvasScreenshot });
 
+  const d3d8PointRangeLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8PointRangeLight"));
+  const expectedPointRangeLeft = d3d8PointRangeLightResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedPointRangeRight = d3d8PointRangeLightResult.probe?.expectedRight ?? [254, 254, 254, 255];
+  const pointRangeLight = d3d8PointRangeLightResult.browserProbe?.lights?.[0] ?? {};
+  if (!d3d8PointRangeLightResult.ok
+      || d3d8PointRangeLightResult.probe?.source !== "browser_d3d8_point_range_light_probe"
+      || d3d8PointRangeLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8PointRangeLightResult.probe?.calls?.setLight !== 1
+      || d3d8PointRangeLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8PointRangeLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8PointRangeLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8PointRangeLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8PointRangeLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8PointRangeLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || pointRangeLight.enabled !== true
+      || pointRangeLight.type !== 1
+      || Math.abs((pointRangeLight.range ?? 0) - 1.25) > 0.00001
+      || Math.abs((pointRangeLight.attenuation0 ?? 0) - 1) > 0.00001
+      || Math.abs(pointRangeLight.attenuation1 ?? 1) > 0.00001
+      || Math.abs(pointRangeLight.attenuation2 ?? 1) > 0.00001
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported !== true
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightCount !== 1
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.fixedFunctionLights?.[0]?.type !== 1
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== false
+      || d3d8PointRangeLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 0
+      || d3d8PointRangeLightResult.materialOk !== true
+      || d3d8PointRangeLightResult.lightAttenuationOk !== true
+      || d3d8PointRangeLightResult.selectedLightOk !== true
+      || d3d8PointRangeLightResult.rangeShapeOk !== true
+      || d3d8PointRangeLightResult.leftPixelOk !== true
+      || d3d8PointRangeLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(d3d8PointRangeLightResult.pointRangeLightPixels?.left,
+        expectedPointRangeLeft, 2)
+      || !pixelsApproximatelyEqual(d3d8PointRangeLightResult.pointRangeLightPixels?.right,
+        expectedPointRangeRight, 4)) {
+    throw new Error(`D3D8 point-light range probe failed: ${JSON.stringify(d3d8PointRangeLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8PointRangeLightCanvasScreenshot });
+
   const d3d8SpotLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8SpotLight"));
   const expectedSpotOutside = d3d8SpotLightResult.probe?.expectedOutside ?? [0, 0, 0, 255];
@@ -4671,6 +4717,7 @@ try {
       d3d8SpecularLightCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
+      d3d8PointRangeLightCanvasScreenshot,
       d3d8SpotLightCanvasScreenshot,
       d3d8SpotFalloffCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,

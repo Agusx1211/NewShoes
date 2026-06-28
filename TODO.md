@@ -458,9 +458,10 @@ shares structure and follows behind.
       diffuse+ambient lights (broader spot-light variants beyond the verified
       hard-cone and quadratic mid-penumbra falloff proofs, broader original
       W3D point-light attenuation variants beyond the verified linear and
-      pure quadratic point-light proofs, off-axis/transformed specular
-      fidelity beyond the verified aligned directional path, and broader
-      material-source behavior) and other W3D draw states → GL/shader state.
+      pure quadratic point-light proofs plus the verified finite-range clip
+      proof, off-axis/transformed specular fidelity beyond the verified
+      aligned directional path, and broader material-source behavior) and
+      other W3D draw states → GL/shader state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline
       rendering in real scenes; the first bridge expands indexed triangle
