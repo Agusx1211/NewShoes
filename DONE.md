@@ -2218,6 +2218,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       D3D8 shim call deltas. `environment-mapper-apply-smoke.cjs`
       independently verifies the same original emission through the Node wasm
       D3D8 shim, including `MAPPER_ID_ENVIRONMENT` and `Needs_Normals()`.
+- [x] Prove the original `ScreenMapperClass::Apply` path against both the
+      browser D3D8 state bridge and a native Node smoke. The browser
+      `cnc_port_probe_screen_mapper_apply()` constructs a real stage-1 mapper
+      with deterministic zero scroll speed, nonzero offset/scale, and a seeded
+      projection transform, calls the original
+      `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/mapper.cpp` `Apply()`
+      method, and the Playwright smoke verifies
+      `D3DTSS_TCI_CAMERASPACEPOSITION`,
+      `D3DTTFF_PROJECTED | D3DTTFF_COUNT3`, the texture transform state, all
+      four projected matrix rows, D3D8 shim call deltas, and
+      `MAPPER_ID_SCREEN`. `screen-mapper-apply-smoke.cjs` independently
+      verifies the same original emission through the Node wasm D3D8 shim.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8

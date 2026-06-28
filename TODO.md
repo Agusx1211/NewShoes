@@ -499,10 +499,10 @@ shares structure and follows behind.
 - [ ] Extend the focused browser generated texture-coordinate support into
       remaining original W3D mapper users beyond the direct
       `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`, and
-      `MatrixMapperClass` proofs: additional camera-space normal/reflection/
-      position `D3DTSS_TEXCOORDINDEX` paths in `WW3D2/mapper.cpp`, water
-      projection, and terrain projection, including full stage mapping and original
-      `D3DTTFF_PROJECTED | D3DTTFF_COUNT3` camera-space position paths.
+      `MatrixMapperClass` / `ScreenMapperClass` proofs: additional
+      camera-space normal/reflection paths in `WW3D2/mapper.cpp` such as
+      `EdgeMapperClass::Apply`, water projection, and terrain projection,
+      including full stage mapping for original generated-coordinate paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
