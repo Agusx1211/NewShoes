@@ -3183,6 +3183,13 @@ shares structure and follows behind.
             original `GadgetPushButtonInput` sends exactly one `GBM_SELECTED`
             to its owner while consuming the raw messages before
             `TheCommandList`.
+      - [x] Extend the browser frame-owned original Mouse GUI proof to a real
+            widget: the persistent probe `GameWindowManager` now owns a child
+            window wired to original `GadgetPushButtonSystem` /
+            `GadgetPushButtonInput`, the Playwright smoke clicks it through
+            DOM pointer events and original `Win32Mouse` / `Mouse` /
+            `WindowTranslator`, and the harness verifies the owner receives
+            `GBM_SELECTED` while the raw messages stay out of `TheCommandList`.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).

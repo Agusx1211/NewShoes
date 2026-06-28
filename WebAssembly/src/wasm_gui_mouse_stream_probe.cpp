@@ -2,6 +2,7 @@
 
 #include "Common/GlobalData.h"
 #include "Common/MessageStream.h"
+#include "GameClient/Gadget.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Keyboard.h"
@@ -81,12 +82,15 @@ struct GuiInputCapture
 	Int enteringCount = 0;
 	Int wheelUpCount = 0;
 	Int wheelDownCount = 0;
+	Int buttonSelectedCount = 0;
 	GameWindowMessage lastMessage = GWM_NONE;
+	GameWindow *buttonSelectedWindow = nullptr;
 	ICoord2D lastMouse = { 0, 0 };
 	ICoord2D leftDownMouse = { 0, 0 };
 	ICoord2D leftUpMouse = { 0, 0 };
 	ICoord2D leftDragMouse = { 0, 0 };
 	ICoord2D wheelMouse = { 0, 0 };
+	ICoord2D buttonSelectedMouse = { 0, 0 };
 };
 
 class ProbeGameWindow : public GameWindow
@@ -127,6 +131,7 @@ public:
 	GameWinDrawFunc getStaticTextDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getTextEntryImageDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getTextEntryDrawFunc() override { return getDefaultDraw(); }
+	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
 };
 
 class ProbeKeyboard : public Keyboard
@@ -151,8 +156,10 @@ MessageStream *g_frame_mouse_message_stream = nullptr;
 CommandList *g_frame_mouse_command_list = nullptr;
 ProbeGameWindowManager *g_frame_mouse_window_manager = nullptr;
 ProbeGameWindow *g_frame_mouse_window = nullptr;
+GameWindow *g_frame_mouse_button = nullptr;
 GuiInputCapture g_frame_mouse_capture;
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_window_storage[sizeof(ProbeGameWindow)];
+alignas(ProbeGameWindow) unsigned char g_frame_mouse_button_storage[sizeof(ProbeGameWindow)];
 char g_frame_mouse_json[12000] = "{}";
 bool g_frame_mouse_enabled = false;
 bool g_frame_mouse_initialized = false;
@@ -168,6 +175,11 @@ Int g_frame_mouse_last_events_this_frame = 0;
 bool g_frame_mouse_last_win32_attached = false;
 bool g_frame_mouse_last_stream_attached = false;
 char g_frame_mouse_last_stream_json[8000] = "[]";
+
+constexpr Int FRAME_MOUSE_BUTTON_X = 32;
+constexpr Int FRAME_MOUSE_BUTTON_Y = 32;
+constexpr Int FRAME_MOUSE_BUTTON_WIDTH = 96;
+constexpr Int FRAME_MOUSE_BUTTON_HEIGHT = 32;
 
 const char *bool_json(bool value)
 {
@@ -225,6 +237,27 @@ WindowMsgHandledType capture_gui_input(GameWindow *window,
 	if (msg == GWM_WHEEL_DOWN) {
 		++capture->wheelDownCount;
 		capture->wheelMouse = capture->lastMouse;
+		return MSG_HANDLED;
+	}
+
+	return MSG_IGNORED;
+}
+
+WindowMsgHandledType capture_gui_system(GameWindow *window,
+	UnsignedInt msg,
+	WindowMsgData mData1,
+	WindowMsgData mData2)
+{
+	GuiInputCapture *capture = static_cast<GuiInputCapture *>(window->winGetUserData());
+	if (capture == nullptr) {
+		return MSG_IGNORED;
+	}
+
+	if (msg == GBM_SELECTED) {
+		++capture->buttonSelectedCount;
+		capture->buttonSelectedWindow = reinterpret_cast<GameWindow *>(mData1);
+		capture->buttonSelectedMouse.x = LOLONGTOSHORT(mData2);
+		capture->buttonSelectedMouse.y = HILONGTOSHORT(mData2);
 		return MSG_HANDLED;
 	}
 
@@ -500,10 +533,29 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_window = ::new (static_cast<void *>(&g_frame_mouse_window_storage[0])) ProbeGameWindow;
 		g_frame_mouse_window->winSetUserData(&g_frame_mouse_capture);
 		g_frame_mouse_window->winSetInputFunc(capture_gui_input);
+		g_frame_mouse_window->winSetSystemFunc(capture_gui_system);
 		g_frame_mouse_window->winSetStatus(WIN_STATUS_ENABLED);
 		g_frame_mouse_window->winSetPosition(0, 0);
 		g_frame_mouse_window->winSetSize(4096, 4096);
 		g_frame_mouse_window_manager->linkWindow(g_frame_mouse_window);
+		TheWindowManager = old_window_manager;
+	}
+	if (g_frame_mouse_button == nullptr && g_frame_mouse_window != nullptr) {
+		GameWindowManager *old_window_manager = TheWindowManager;
+		TheWindowManager = g_frame_mouse_window_manager;
+		// Match the root probe window's lifetime: the frame-owned harness reuses
+		// this child across resets and only clears capture/grab state.
+		g_frame_mouse_button = ::new (static_cast<void *>(&g_frame_mouse_button_storage[0])) ProbeGameWindow;
+		g_frame_mouse_button->winSetStatus(WIN_STATUS_ENABLED);
+		g_frame_mouse_button->winSetPosition(FRAME_MOUSE_BUTTON_X, FRAME_MOUSE_BUTTON_Y);
+		g_frame_mouse_button->winSetSize(FRAME_MOUSE_BUTTON_WIDTH, FRAME_MOUSE_BUTTON_HEIGHT);
+		g_frame_mouse_button->winGetInstanceData()->m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
+		g_frame_mouse_button->winSetOwner(g_frame_mouse_window);
+		g_frame_mouse_button->winSetSystemFunc(GadgetPushButtonSystem);
+		g_frame_mouse_button->winSetInputFunc(GadgetPushButtonInput);
+		g_frame_mouse_button->winSetDrawFunc(g_frame_mouse_window_manager->getDefaultDraw());
+		g_frame_mouse_window_manager->addWindowToParent(g_frame_mouse_button, g_frame_mouse_window);
+		g_frame_mouse_window_manager->winSendSystemMsg(g_frame_mouse_button, GWM_CREATE, 0, 0);
 		TheWindowManager = old_window_manager;
 	}
 	if (!g_frame_mouse_gui_attached) {
@@ -522,6 +574,10 @@ void reset_frame_mouse_gui_state()
 	if (g_frame_mouse_window_manager != nullptr) {
 		if (g_frame_mouse_window != nullptr) {
 			g_frame_mouse_window_manager->winRelease(g_frame_mouse_window);
+		}
+		if (g_frame_mouse_button != nullptr) {
+			g_frame_mouse_window_manager->winRelease(g_frame_mouse_button);
+			g_frame_mouse_button->winGetInstanceData()->m_state = 0;
 		}
 		g_frame_mouse_window_manager->winSetGrabWindow(nullptr);
 	}
@@ -581,12 +637,16 @@ const char *write_frame_mouse_json()
 		"\"commandList\":{\"countAfterPropagate\":%u},"
 		"\"modifiers\":%d,"
 		"\"gui\":{\"attached\":%s,\"windowReady\":%s,"
+		"\"buttonReady\":%s,"
 		"\"mousePos\":%d,\"leftDown\":%d,\"leftUp\":%d,"
 		"\"leftDrag\":%d,\"entering\":%d,\"wheelUp\":%d,"
 		"\"wheelDown\":%d,\"wheel\":%d,\"lastMessage\":%d,"
 		"\"lastX\":%d,\"lastY\":%d,\"leftDownX\":%d,\"leftDownY\":%d,"
 		"\"leftUpX\":%d,\"leftUpY\":%d,\"leftDragX\":%d,\"leftDragY\":%d,"
-		"\"wheelX\":%d,\"wheelY\":%d,\"grabbed\":%s}}",
+		"\"wheelX\":%d,\"wheelY\":%d,"
+		"\"buttonSelected\":%d,\"buttonSelectedX\":%d,\"buttonSelectedY\":%d,"
+		"\"buttonSelectedSourceMatches\":%s,"
+		"\"grabbed\":%s,\"buttonGrabbed\":%s}}",
 		bool_json(ok),
 		bool_json(g_frame_mouse_enabled),
 		bool_json(g_frame_mouse_initialized),
@@ -605,6 +665,7 @@ const char *write_frame_mouse_json()
 		g_frame_mouse_keyboard != nullptr ? g_frame_mouse_keyboard->getModifierFlags() : 0,
 		bool_json(g_frame_mouse_gui_attached),
 		bool_json(g_frame_mouse_window_manager != nullptr && g_frame_mouse_window != nullptr),
+		bool_json(g_frame_mouse_button != nullptr),
 		g_frame_mouse_capture.mousePosCount,
 		g_frame_mouse_capture.leftDownCount,
 		g_frame_mouse_capture.leftUpCount,
@@ -624,9 +685,19 @@ const char *write_frame_mouse_json()
 		g_frame_mouse_capture.leftDragMouse.y,
 		g_frame_mouse_capture.wheelMouse.x,
 		g_frame_mouse_capture.wheelMouse.y,
+		g_frame_mouse_capture.buttonSelectedCount,
+		g_frame_mouse_capture.buttonSelectedMouse.x,
+		g_frame_mouse_capture.buttonSelectedMouse.y,
+		bool_json(
+			g_frame_mouse_button != nullptr &&
+			g_frame_mouse_capture.buttonSelectedWindow == g_frame_mouse_button),
 		bool_json(
 			g_frame_mouse_window_manager != nullptr &&
-			g_frame_mouse_window_manager->winGetGrabWindow() == g_frame_mouse_window));
+			g_frame_mouse_window_manager->winGetGrabWindow() == g_frame_mouse_window),
+		bool_json(
+			g_frame_mouse_window_manager != nullptr &&
+			g_frame_mouse_button != nullptr &&
+			g_frame_mouse_window_manager->winGetGrabWindow() == g_frame_mouse_button));
 	return g_frame_mouse_json;
 }
 
