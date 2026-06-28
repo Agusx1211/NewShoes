@@ -5184,6 +5184,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_source_asset_load", "string", []),
       probeWW3DFontChars: module.cwrap(
         "cnc_port_probe_ww3d_font_chars", "string", ["number", "string", "number"]),
+      probeWWShadeCubeMapApply: module.cwrap(
+        "cnc_port_probe_wwshade_cubemap_apply", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -12094,6 +12096,41 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(wasmModule.probeWW3DSourceAssetLoad());
         return {
           ok: Boolean(probe.ok),
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "wwshadeCubeMapApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WWShade cubemap apply cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeWWShadeCubeMapApply());
+        const ok = Boolean(probe.ok)
+          && probe?.source === "wwshade_cubemap_apply_probe"
+          && probe?.textureStages?.stage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR
+          && probe?.textureStages?.stage0?.colorArg1 === D3DTA_TEXTURE
+          && probe?.textureStages?.stage0?.colorOp === D3DTOP_MODULATE
+          && probe?.textureStages?.stage0?.colorArg2 === D3DTA_DIFFUSE
+          && probe?.textureStages?.stage0?.alphaOp === D3DTOP_MODULATE
+          && probe?.textureStages?.stage1?.colorOp === D3DTOP_DISABLE
+          && probe?.textureStages?.stage1?.alphaOp === D3DTOP_DISABLE
+          && probe?.renderState?.lighting === 1
+          && probe?.renderState?.specularEnable === 1
+          && probe?.renderState?.ambientMaterialSource === D3DMCS_MATERIAL
+          && probe?.renderState?.diffuseMaterialSource === D3DMCS_MATERIAL
+          && probe?.renderState?.specularMaterialSource === D3DMCS_MATERIAL
+          && probe?.renderState?.emissiveMaterialSource === D3DMCS_MATERIAL
+          && probe?.vertexShader?.fvf === probe?.vertexShader?.expected
+          && probe?.material?.ok === true
+          && (probe?.callDeltas?.textureStageState ?? 0) >= 7
+          && (probe?.callDeltas?.renderState ?? 0) >= 6
+          && probe?.callDeltas?.vertexShader === 1
+          && probe?.callDeltas?.material === 1;
+        return {
+          ok,
           command,
           probe,
           state: snapshotState(),
