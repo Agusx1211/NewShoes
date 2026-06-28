@@ -16,6 +16,10 @@ const d3d8DirectionalLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-directional-light-canvas.png",
 );
+const d3d8MultiDirectionalLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-multi-directional-light-canvas.png",
+);
 const ww3dAABoxCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-aabox-canvas.png");
 const ww3dSceneCameraCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-scene-camera-canvas.png");
 const ww3dRTSSceneCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-rts-scene-canvas.png");
@@ -3246,6 +3250,8 @@ try {
       || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
       || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
       || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 1
+      || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[0]?.index !== 0
       || d3d8DirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.firstDirectionalLight?.index !== 0
       || d3d8DirectionalLightResult.lightDiffuseOk !== true
       || d3d8DirectionalLightResult.lightDirectionOk !== true
@@ -3257,6 +3263,41 @@ try {
     throw new Error(`D3D8 directional-light probe failed: ${JSON.stringify(d3d8DirectionalLightResult)}`);
   }
   await page.locator("#viewport").screenshot({ path: d3d8DirectionalLightCanvasScreenshot });
+
+  const d3d8MultiDirectionalLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8MultiDirectionalLight"));
+  const expectedMultiLeft = d3d8MultiDirectionalLightResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedMultiRight = d3d8MultiDirectionalLightResult.probe?.expectedRight ?? [255, 0, 255, 255];
+  if (!d3d8MultiDirectionalLightResult.ok
+      || d3d8MultiDirectionalLightResult.probe?.source !== "browser_d3d8_multi_directional_light_probe"
+      || d3d8MultiDirectionalLightResult.probe?.calls?.setLight !== 2
+      || d3d8MultiDirectionalLightResult.probe?.calls?.lightEnable !== 2
+      || d3d8MultiDirectionalLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8MultiDirectionalLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8MultiDirectionalLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8MultiDirectionalLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8MultiDirectionalLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8MultiDirectionalLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8MultiDirectionalLightResult.browserProbe?.lights?.[3]?.enabled !== true
+      || d3d8MultiDirectionalLightResult.browserProbe?.lights?.[1]?.enabled !== false
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 2
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[0]?.index !== 0
+      || d3d8MultiDirectionalLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[1]?.index !== 3
+      || d3d8MultiDirectionalLightResult.redLightOk !== true
+      || d3d8MultiDirectionalLightResult.blueLightOk !== true
+      || d3d8MultiDirectionalLightResult.selectedLightsOk !== true
+      || d3d8MultiDirectionalLightResult.materialOk !== true
+      || d3d8MultiDirectionalLightResult.leftPixelOk !== true
+      || d3d8MultiDirectionalLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(d3d8MultiDirectionalLightResult.lightPixels?.left, expectedMultiLeft, 2)
+      || !pixelsApproximatelyEqual(d3d8MultiDirectionalLightResult.lightPixels?.right, expectedMultiRight, 2)
+      || !pixelLooksBlack(d3d8MultiDirectionalLightResult.lightPixels?.left)) {
+    throw new Error(`D3D8 multi-directional-light probe failed: ${JSON.stringify(d3d8MultiDirectionalLightResult)}`);
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8MultiDirectionalLightCanvasScreenshot });
 
   const d3d8MaterialResult = await page.evaluate(() => window.CnCPort.rpc("d3d8Material"));
   const expectedMaterial = d3d8MaterialResult.probe?.material ?? {};
@@ -4412,6 +4453,7 @@ try {
       d3d8ClearCanvasScreenshot,
       d3d8ClipPlaneCanvasScreenshot,
       d3d8DirectionalLightCanvasScreenshot,
+      d3d8MultiDirectionalLightCanvasScreenshot,
       ww3dAABoxCanvasScreenshot,
       ww3dSceneCameraCanvasScreenshot,
       ww3dRTSSceneCanvasScreenshot,

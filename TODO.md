@@ -454,10 +454,9 @@ shares structure and follows behind.
       cull/depth/blend/alpha-test/color-write/texture-factor/stencil/fog/
       fill-mode/z-bias/shade-mode, lighting/ambient capture, and
       `D3DMATERIAL8` material capture/material-source descriptor coverage,
-      including fixed-function lighting beyond the first directional
-      diffuse+ambient path (multiple active lights, point/spot attenuation,
-      specular, and broader material-source behavior) and other W3D draw
-      states → GL/shader state.
+      including fixed-function lighting beyond enabled directional
+      diffuse+ambient lights (point/spot attenuation, specular, and broader
+      material-source behavior) and other W3D draw states → GL/shader state.
 - [ ] Refine browser D3D8 wireframe emulation to match D3D culling and
       depth-bias behavior before relying on W3D extra-pass selection/outline
       rendering in real scenes; the first bridge expands indexed triangle

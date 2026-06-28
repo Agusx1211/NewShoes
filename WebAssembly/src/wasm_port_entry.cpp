@@ -9436,6 +9436,368 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_directional_light()
 	return g_d3d8_probe_json.c_str();
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_multi_directional_light()
+{
+	wasm_d3d8_reset_state();
+
+	struct DirectionalLightVertex
+	{
+		float x;
+		float y;
+		float z;
+		float nx;
+		float ny;
+		float nz;
+		DWORD diffuse;
+		float u0;
+		float v0;
+		float u1;
+		float v1;
+	};
+	static_assert(sizeof(DirectionalLightVertex) == 44,
+		"DirectionalLightVertex must match XYZNDUV2 stride");
+
+	const DirectionalLightVertex vertices[8] = {
+		{ -0.85f, -0.75f, 0.0f, 0.0f, 0.0f, -1.0f, 0xffffffffUL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{ -0.05f, -0.75f, 0.0f, 0.0f, 0.0f, -1.0f, 0xffffffffUL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{ -0.05f,  0.75f, 0.0f, 0.0f, 0.0f, -1.0f, 0xffffffffUL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{ -0.85f,  0.75f, 0.0f, 0.0f, 0.0f, -1.0f, 0xffffffffUL, 0.0f, 1.0f, 0.0f, 1.0f },
+		{  0.05f, -0.75f, 0.0f, 0.0f, 0.0f,  1.0f, 0xffffffffUL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  0.85f, -0.75f, 0.0f, 0.0f, 0.0f,  1.0f, 0xffffffffUL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.85f,  0.75f, 0.0f, 0.0f, 0.0f,  1.0f, 0xffffffffUL, 1.0f, 1.0f, 1.0f, 1.0f },
+		{  0.05f,  0.75f, 0.0f, 0.0f, 0.0f,  1.0f, 0xffffffffUL, 0.0f, 1.0f, 0.0f, 1.0f },
+	};
+	const WORD indices[12] = { 0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7 };
+	const DWORD full_color_write =
+		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
+		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
+	const DWORD ambient_color = 0x00000000UL;
+	D3DMATERIAL8 material = {};
+	material.Diffuse = { 1.0f, 1.0f, 1.0f, 1.0f };
+	material.Ambient = { 0.0f, 0.0f, 0.0f, 1.0f };
+	material.Specular = { 0.0f, 0.0f, 0.0f, 1.0f };
+	material.Emissive = { 0.0f, 0.0f, 0.0f, 1.0f };
+	material.Power = 1.0f;
+	D3DLIGHT8 red_light = {};
+	red_light.Type = D3DLIGHT_DIRECTIONAL;
+	red_light.Diffuse = { 1.0f, 0.0f, 0.0f, 1.0f };
+	red_light.Ambient = { 0.0f, 0.0f, 0.0f, 1.0f };
+	red_light.Specular = { 0.0f, 0.0f, 0.0f, 1.0f };
+	red_light.Direction = { 0.0f, 0.0f, -1.0f };
+	D3DLIGHT8 blue_light = {};
+	blue_light.Type = D3DLIGHT_DIRECTIONAL;
+	blue_light.Diffuse = { 0.0f, 0.0f, 1.0f, 1.0f };
+	blue_light.Ambient = { 0.0f, 0.0f, 0.0f, 1.0f };
+	blue_light.Specular = { 0.0f, 0.0f, 0.0f, 1.0f };
+	blue_light.Direction = { 0.0f, 0.0f, -1.0f };
+
+	const auto color_matches = [](const D3DCOLORVALUE &left, const D3DCOLORVALUE &right) {
+		return left.r == right.r && left.g == right.g && left.b == right.b && left.a == right.a;
+	};
+	const auto vector_matches = [](const D3DVECTOR &left, const D3DVECTOR &right) {
+		return left.x == right.x && left.y == right.y && left.z == right.z;
+	};
+	const auto draw_light_matches = [&](const WasmD3D8DrawLight &candidate, const D3DLIGHT8 &expected) {
+		return candidate.type == D3DLIGHT_DIRECTIONAL &&
+			candidate.enabled == TRUE &&
+			color_matches(candidate.diffuse, expected.Diffuse) &&
+			color_matches(candidate.ambient, expected.Ambient) &&
+			vector_matches(candidate.direction, expected.Direction);
+	};
+
+	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
+	IDirect3DDevice8 *device = nullptr;
+	IDirect3DVertexBuffer8 *vertex_buffer = nullptr;
+	IDirect3DIndexBuffer8 *index_buffer = nullptr;
+	bool ok = d3d != nullptr;
+	HRESULT create_result = E_FAIL;
+	HRESULT clear_result = E_FAIL;
+	HRESULT set_cull_result = E_FAIL;
+	HRESULT set_z_result = E_FAIL;
+	HRESULT set_z_write_result = E_FAIL;
+	HRESULT set_alpha_blend_result = E_FAIL;
+	HRESULT set_color_write_result = E_FAIL;
+	HRESULT set_lighting_result = E_FAIL;
+	HRESULT set_ambient_result = E_FAIL;
+	HRESULT set_color_vertex_result = E_FAIL;
+	HRESULT set_diffuse_source_result = E_FAIL;
+	HRESULT set_ambient_source_result = E_FAIL;
+	HRESULT set_emissive_source_result = E_FAIL;
+	HRESULT set_material_result = E_FAIL;
+	HRESULT set_red_light_result = E_FAIL;
+	HRESULT enable_red_light_result = E_FAIL;
+	HRESULT set_blue_light_result = E_FAIL;
+	HRESULT enable_blue_light_result = E_FAIL;
+	HRESULT vertex_create_result = E_FAIL;
+	HRESULT vertex_lock_result = E_FAIL;
+	HRESULT vertex_unlock_result = E_FAIL;
+	HRESULT index_create_result = E_FAIL;
+	HRESULT index_lock_result = E_FAIL;
+	HRESULT index_unlock_result = E_FAIL;
+	HRESULT set_stream_result = E_FAIL;
+	HRESULT set_indices_result = E_FAIL;
+	HRESULT draw_result = E_FAIL;
+
+	if (d3d != nullptr) {
+		D3DPRESENT_PARAMETERS parameters = {};
+		parameters.BackBufferWidth = 320;
+		parameters.BackBufferHeight = 240;
+		parameters.BackBufferFormat = D3DFMT_A8R8G8B8;
+		parameters.BackBufferCount = 1;
+		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
+		parameters.SwapEffect = D3DSWAPEFFECT_DISCARD;
+		parameters.Windowed = TRUE;
+		parameters.EnableAutoDepthStencil = TRUE;
+		parameters.AutoDepthStencilFormat = D3DFMT_D24S8;
+		create_result = d3d->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr,
+			D3DCREATE_SOFTWARE_VERTEXPROCESSING, &parameters, &device);
+		ok = ok && SUCCEEDED(create_result) && device != nullptr;
+	}
+
+	if (device != nullptr) {
+		clear_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+			0xff000000UL, 1.0f, 0);
+		set_cull_result = device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		set_z_result = device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
+		set_z_write_result = device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+		set_alpha_blend_result = device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+		set_color_write_result = device->SetRenderState(D3DRS_COLORWRITEENABLE, full_color_write);
+		set_lighting_result = device->SetRenderState(D3DRS_LIGHTING, TRUE);
+		set_ambient_result = device->SetRenderState(D3DRS_AMBIENT, ambient_color);
+		set_color_vertex_result = device->SetRenderState(D3DRS_COLORVERTEX, FALSE);
+		set_diffuse_source_result = device->SetRenderState(
+			D3DRS_DIFFUSEMATERIALSOURCE, D3DMCS_MATERIAL);
+		set_ambient_source_result = device->SetRenderState(
+			D3DRS_AMBIENTMATERIALSOURCE, D3DMCS_MATERIAL);
+		set_emissive_source_result = device->SetRenderState(
+			D3DRS_EMISSIVEMATERIALSOURCE, D3DMCS_MATERIAL);
+		set_material_result = device->SetMaterial(&material);
+		set_red_light_result = device->SetLight(0, &red_light);
+		enable_red_light_result = device->LightEnable(0, TRUE);
+		set_blue_light_result = device->SetLight(3, &blue_light);
+		enable_blue_light_result = device->LightEnable(3, TRUE);
+		ok = ok && SUCCEEDED(clear_result) && SUCCEEDED(set_cull_result) &&
+			SUCCEEDED(set_z_result) && SUCCEEDED(set_z_write_result) &&
+			SUCCEEDED(set_alpha_blend_result) && SUCCEEDED(set_color_write_result) &&
+			SUCCEEDED(set_lighting_result) && SUCCEEDED(set_ambient_result) &&
+			SUCCEEDED(set_color_vertex_result) && SUCCEEDED(set_diffuse_source_result) &&
+			SUCCEEDED(set_ambient_source_result) && SUCCEEDED(set_emissive_source_result) &&
+			SUCCEEDED(set_material_result) && SUCCEEDED(set_red_light_result) &&
+			SUCCEEDED(enable_red_light_result) && SUCCEEDED(set_blue_light_result) &&
+			SUCCEEDED(enable_blue_light_result);
+	}
+
+	if (device != nullptr) {
+		vertex_create_result = device->CreateVertexBuffer(sizeof(vertices), D3DUSAGE_WRITEONLY, 0,
+			D3DPOOL_MANAGED, &vertex_buffer);
+		index_create_result = device->CreateIndexBuffer(sizeof(indices), D3DUSAGE_WRITEONLY,
+			D3DFMT_INDEX16, D3DPOOL_MANAGED, &index_buffer);
+		ok = ok && SUCCEEDED(vertex_create_result) && vertex_buffer != nullptr &&
+			SUCCEEDED(index_create_result) && index_buffer != nullptr;
+	}
+
+	if (vertex_buffer != nullptr) {
+		BYTE *data = nullptr;
+		vertex_lock_result = vertex_buffer->Lock(0, sizeof(vertices), &data, 0);
+		if (SUCCEEDED(vertex_lock_result) && data != nullptr) {
+			std::memcpy(data, vertices, sizeof(vertices));
+		}
+		vertex_unlock_result = vertex_buffer->Unlock();
+		ok = ok && SUCCEEDED(vertex_lock_result) && SUCCEEDED(vertex_unlock_result);
+	}
+
+	if (index_buffer != nullptr) {
+		BYTE *data = nullptr;
+		index_lock_result = index_buffer->Lock(0, sizeof(indices), &data, 0);
+		if (SUCCEEDED(index_lock_result) && data != nullptr) {
+			std::memcpy(data, indices, sizeof(indices));
+		}
+		index_unlock_result = index_buffer->Unlock();
+		ok = ok && SUCCEEDED(index_lock_result) && SUCCEEDED(index_unlock_result);
+	}
+
+	if (device != nullptr && vertex_buffer != nullptr && index_buffer != nullptr) {
+		set_stream_result = device->SetStreamSource(0, vertex_buffer, sizeof(DirectionalLightVertex));
+		set_indices_result = device->SetIndices(index_buffer, 0);
+		draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 8, 0, 4);
+		ok = ok && SUCCEEDED(set_stream_result) && SUCCEEDED(set_indices_result) && SUCCEEDED(draw_result);
+	}
+
+	if (index_buffer != nullptr) {
+		index_buffer->Release();
+	}
+	if (vertex_buffer != nullptr) {
+		vertex_buffer->Release();
+	}
+	if (device != nullptr) {
+		device->Release();
+	}
+	if (d3d != nullptr) {
+		d3d->Release();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	ok = ok &&
+		state != nullptr &&
+		state->direct3d_create_calls == 1 &&
+		state->create_device_calls == 1 &&
+		state->clear_calls == 1 &&
+		state->set_material_calls == 1 &&
+		state->set_light_calls == 2 &&
+		state->light_enable_calls == 2 &&
+		state->last_set_light_index == 3 &&
+		state->last_light_enable_index == 3 &&
+		state->last_light_enable_value == TRUE &&
+		draw_light_matches(state->last_draw_lights[0], red_light) &&
+		draw_light_matches(state->last_draw_lights[3], blue_light) &&
+		state->last_draw_lights[1].enabled == FALSE &&
+		state->create_vertex_buffer_calls == 1 &&
+		state->create_index_buffer_calls == 1 &&
+		state->buffer_lock_calls == 2 &&
+		state->buffer_unlock_calls == 2 &&
+		state->browser_buffer_create_calls == 2 &&
+		state->browser_buffer_update_calls == 2 &&
+		state->browser_buffer_release_calls == 2 &&
+		state->draw_indexed_primitive_calls == 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 8 &&
+		state->last_draw_primitive_count == 4 &&
+		state->last_draw_stream_source_stride == sizeof(DirectionalLightVertex) &&
+		state->last_draw_render_state.lighting == TRUE &&
+		state->last_draw_render_state.ambient == ambient_color &&
+		state->last_draw_render_state.color_vertex == FALSE &&
+		state->last_draw_render_state.cull_mode == D3DCULL_NONE &&
+		state->last_draw_render_state.color_write_enable == full_color_write;
+
+	char buffer[10000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_d3d8_multi_directional_light_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"create\":%ld,\"clear\":%ld,"
+		"\"setCull\":%ld,\"setZ\":%ld,\"setZWrite\":%ld,\"setAlphaBlend\":%ld,"
+		"\"setColorWrite\":%ld,\"setLighting\":%ld,\"setAmbient\":%ld,"
+		"\"setColorVertex\":%ld,\"setDiffuseSource\":%ld,\"setAmbientSource\":%ld,"
+		"\"setEmissiveSource\":%ld,\"setMaterial\":%ld,"
+		"\"setRedLight\":%ld,\"enableRedLight\":%ld,"
+		"\"setBlueLight\":%ld,\"enableBlueLight\":%ld,"
+		"\"vertexCreate\":%ld,\"vertexLock\":%ld,"
+		"\"vertexUnlock\":%ld,\"indexCreate\":%ld,\"indexLock\":%ld,"
+		"\"indexUnlock\":%ld,\"setStream\":%ld,\"setIndices\":%ld,\"draw\":%ld},"
+		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"clear\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"bufferLock\":%u,\"bufferUnlock\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setRenderState\":%u,\"setMaterial\":%u,"
+		"\"setLight\":%u,\"lightEnable\":%u,\"drawIndexed\":%u},"
+		"\"material\":{\"diffuse\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"ambient\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"emissive\":[%0.6f,%0.6f,%0.6f,%0.6f]},"
+		"\"lights\":["
+		"{\"index\":0,\"enabled\":%lu,\"type\":%lu,"
+		"\"diffuse\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"ambient\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"direction\":[%0.6f,%0.6f,%0.6f]},"
+		"{\"index\":3,\"enabled\":%lu,\"type\":%lu,"
+		"\"diffuse\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"ambient\":[%0.6f,%0.6f,%0.6f,%0.6f],"
+		"\"direction\":[%0.6f,%0.6f,%0.6f]}],"
+		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"lighting\":%lu,\"ambient\":%lu,"
+		"\"colorVertex\":%lu,\"colorWriteEnable\":%lu},"
+		"\"expectedLeft\":[0,0,0,255],\"expectedRight\":[255,0,255,255]}",
+		ok ? "true" : "false",
+		static_cast<long>(create_result),
+		static_cast<long>(clear_result),
+		static_cast<long>(set_cull_result),
+		static_cast<long>(set_z_result),
+		static_cast<long>(set_z_write_result),
+		static_cast<long>(set_alpha_blend_result),
+		static_cast<long>(set_color_write_result),
+		static_cast<long>(set_lighting_result),
+		static_cast<long>(set_ambient_result),
+		static_cast<long>(set_color_vertex_result),
+		static_cast<long>(set_diffuse_source_result),
+		static_cast<long>(set_ambient_source_result),
+		static_cast<long>(set_emissive_source_result),
+		static_cast<long>(set_material_result),
+		static_cast<long>(set_red_light_result),
+		static_cast<long>(enable_red_light_result),
+		static_cast<long>(set_blue_light_result),
+		static_cast<long>(enable_blue_light_result),
+		static_cast<long>(vertex_create_result),
+		static_cast<long>(vertex_lock_result),
+		static_cast<long>(vertex_unlock_result),
+		static_cast<long>(index_create_result),
+		static_cast<long>(index_lock_result),
+		static_cast<long>(index_unlock_result),
+		static_cast<long>(set_stream_result),
+		static_cast<long>(set_indices_result),
+		static_cast<long>(draw_result),
+		state != nullptr ? state->direct3d_create_calls : 0,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->buffer_lock_calls : 0,
+		state != nullptr ? state->buffer_unlock_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_render_state_calls : 0,
+		state != nullptr ? state->set_material_calls : 0,
+		state != nullptr ? state->set_light_calls : 0,
+		state != nullptr ? state->light_enable_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		static_cast<double>(material.Diffuse.r),
+		static_cast<double>(material.Diffuse.g),
+		static_cast<double>(material.Diffuse.b),
+		static_cast<double>(material.Diffuse.a),
+		static_cast<double>(material.Ambient.r),
+		static_cast<double>(material.Ambient.g),
+		static_cast<double>(material.Ambient.b),
+		static_cast<double>(material.Ambient.a),
+		static_cast<double>(material.Emissive.r),
+		static_cast<double>(material.Emissive.g),
+		static_cast<double>(material.Emissive.b),
+		static_cast<double>(material.Emissive.a),
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_lights[0].enabled) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_lights[0].type) : 0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].diffuse.r) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].diffuse.g) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].diffuse.b) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].diffuse.a) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].ambient.r) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].ambient.g) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].ambient.b) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].ambient.a) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].direction.x) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].direction.y) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[0].direction.z) : 0.0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_lights[3].enabled) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_lights[3].type) : 0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].diffuse.r) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].diffuse.g) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].diffuse.b) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].diffuse.a) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].ambient.r) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].ambient.g) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].ambient.b) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].ambient.a) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].direction.x) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].direction.y) : 0.0,
+		state != nullptr ? static_cast<double>(state->last_draw_lights[3].direction.z) : 0.0,
+		state != nullptr ? static_cast<unsigned int>(state->last_draw_primitive_type) : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.lighting) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.ambient) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_vertex) : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0);
+	g_d3d8_probe_json = buffer;
+	return g_d3d8_probe_json.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_material()
 {
 	wasm_d3d8_reset_state();

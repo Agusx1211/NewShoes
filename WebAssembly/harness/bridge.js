@@ -165,6 +165,8 @@ const D3DTTFF_COUNT4 = 4;
 const D3DTTFF_PROJECTED = 256;
 const D3D8_TEXTURE_STAGE_COUNT = 8;
 const D3D8_LIGHT_COUNT = 8;
+const WW3D_ACTIVE_LIGHT_COUNT = 4;
+const D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT = WW3D_ACTIVE_LIGHT_COUNT;
 const D3DFVF_XYZ = 0x002;
 const D3DFVF_XYZRHW = 0x004;
 const D3DFVF_XYZB4 = 0x008;
@@ -1201,6 +1203,28 @@ function normalizeD3D8Light(light = {}, index = 0) {
 function normalizeD3D8Lights(lights) {
   return Array.from({ length: D3D8_LIGHT_COUNT }, (_, index) =>
     normalizeD3D8Light(Array.isArray(lights) ? lights[index] : null, index));
+}
+
+function d3d8DirectionalLights(lights) {
+  return lights
+    .filter((light) => light.enabled && light.type === D3DLIGHT_DIRECTIONAL)
+    .slice(0, D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT);
+}
+
+function flattenD3D8LightColor(lights, field) {
+  const values = [];
+  for (let index = 0; index < D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT; ++index) {
+    values.push(...(lights[index]?.[field] ?? [0, 0, 0, 1]));
+  }
+  return new Float32Array(values);
+}
+
+function flattenD3D8LightDirection(lights) {
+  const values = [];
+  for (let index = 0; index < D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT; ++index) {
+    values.push(...(lights[index]?.direction ?? [0, 0, 1]));
+  }
+  return new Float32Array(values);
 }
 
 function textureHasCompleteMipChain(resource) {
@@ -2525,11 +2549,10 @@ function ensureD3D8DrawProgram() {
     uniform int uDiffuseMaterialSource;
     uniform int uAmbientMaterialSource;
     uniform int uEmissiveMaterialSource;
-    uniform bool uLight0Enabled;
-    uniform int uLight0Type;
-    uniform vec4 uLight0Diffuse;
-    uniform vec4 uLight0Ambient;
-    uniform vec3 uLight0Direction;
+    uniform int uDirectionalLightCount;
+    uniform vec4 uDirectionalLightDiffuse[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
+    uniform vec4 uDirectionalLightAmbient[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
+    uniform vec3 uDirectionalLightDirection[${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}];
     out vec4 vColor;
     flat out vec4 vFlatColor;
     out vec2 vTexCoord0;
@@ -2551,13 +2574,16 @@ function ensureD3D8DrawProgram() {
       vec4 ambientMaterial = d3dMaterialSourceColor(uAmbientMaterialSource, uMaterialAmbient, color1);
       vec4 emissiveMaterial = d3dMaterialSourceColor(uEmissiveMaterialSource, uMaterialEmissive, color1);
       vec3 litRgb = emissiveMaterial.rgb + ambientMaterial.rgb * uSceneAmbient.rgb;
-      if (uLight0Enabled && uLight0Type == 3) {
-        vec3 lightVector = -uLight0Direction;
+      vec3 unitNormal = length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0);
+      for (int index = 0; index < ${D3D8_DIRECTIONAL_LIGHT_UNIFORM_COUNT}; ++index) {
+        if (index >= uDirectionalLightCount) {
+          break;
+        }
+        vec3 lightVector = -uDirectionalLightDirection[index];
         vec3 lightDirection = length(lightVector) > 0.000001 ? normalize(lightVector) : vec3(0.0, 0.0, 1.0);
-        vec3 unitNormal = length(normal) > 0.000001 ? normalize(normal) : vec3(0.0, 0.0, 1.0);
         float diffuseAmount = max(dot(unitNormal, lightDirection), 0.0);
-        litRgb += ambientMaterial.rgb * uLight0Ambient.rgb;
-        litRgb += diffuseMaterial.rgb * uLight0Diffuse.rgb * diffuseAmount;
+        litRgb += ambientMaterial.rgb * uDirectionalLightAmbient[index].rgb;
+        litRgb += diffuseMaterial.rgb * uDirectionalLightDiffuse[index].rgb * diffuseAmount;
       }
       return vec4(clamp(litRgb, 0.0, 1.0), diffuseMaterial.a);
     }
@@ -2948,11 +2974,10 @@ function ensureD3D8DrawProgram() {
     diffuseMaterialSource: gl.getUniformLocation(program, "uDiffuseMaterialSource"),
     ambientMaterialSource: gl.getUniformLocation(program, "uAmbientMaterialSource"),
     emissiveMaterialSource: gl.getUniformLocation(program, "uEmissiveMaterialSource"),
-    light0Enabled: gl.getUniformLocation(program, "uLight0Enabled"),
-    light0Type: gl.getUniformLocation(program, "uLight0Type"),
-    light0Diffuse: gl.getUniformLocation(program, "uLight0Diffuse"),
-    light0Ambient: gl.getUniformLocation(program, "uLight0Ambient"),
-    light0Direction: gl.getUniformLocation(program, "uLight0Direction"),
+    directionalLightCount: gl.getUniformLocation(program, "uDirectionalLightCount"),
+    directionalLightDiffuse: gl.getUniformLocation(program, "uDirectionalLightDiffuse[0]"),
+    directionalLightAmbient: gl.getUniformLocation(program, "uDirectionalLightAmbient[0]"),
+    directionalLightDirection: gl.getUniformLocation(program, "uDirectionalLightDirection[0]"),
     useTexture0: gl.getUniformLocation(program, "uUseTexture0"),
     texture0: gl.getUniformLocation(program, "uTexture0"),
     texture0LodBias: gl.getUniformLocation(program, "uTexture0LodBias"),
@@ -3939,7 +3964,8 @@ function paintD3D8DrawIndexed(payload = {}) {
   const clipPlanes = normalizeD3D8ClipPlanes(payload.clipPlanes);
   const material = normalizeD3D8Material(payload.material);
   const lights = normalizeD3D8Lights(payload.lights);
-  const directionalLight = lights.find((light) => light.enabled && light.type === D3DLIGHT_DIRECTIONAL) ?? null;
+  const directionalLights = d3d8DirectionalLights(lights);
+  const firstDirectionalLight = directionalLights[0] ?? null;
   const vertexLayout = d3d8VertexLayoutInfo(vertexShaderFvf, vertexStride);
   const texture0Id = Number(d3d8BoundTextures.get(0) ?? 0) >>> 0;
   const texture0Resource = texture0Id !== 0 ? d3d8Textures.get(texture0Id) : null;
@@ -3992,9 +4018,11 @@ function paintD3D8DrawIndexed(payload = {}) {
     appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
     appliedRenderState.lighting = {
       ...appliedRenderState.lighting,
-      shaderEnabled: appliedRenderState.lighting.enabled && Boolean(directionalLight),
-      directionalLightSupported: Boolean(directionalLight),
-      firstDirectionalLight: directionalLight,
+      shaderEnabled: appliedRenderState.lighting.enabled && directionalLights.length > 0,
+      directionalLightSupported: directionalLights.length > 0,
+      directionalLightCount: directionalLights.length,
+      directionalLights,
+      firstDirectionalLight,
     };
     const fillModeDraw = createD3D8FillModeDrawInfo(
       renderState,
@@ -4112,23 +4140,20 @@ function paintD3D8DrawIndexed(payload = {}) {
     if (bridgeProgram.emissiveMaterialSource) {
       gl.uniform1i(bridgeProgram.emissiveMaterialSource, renderState.emissiveMaterialSource);
     }
-    if (bridgeProgram.light0Enabled) {
-      gl.uniform1i(bridgeProgram.light0Enabled, directionalLight ? 1 : 0);
+    if (bridgeProgram.directionalLightCount) {
+      gl.uniform1i(bridgeProgram.directionalLightCount, directionalLights.length);
     }
-    if (bridgeProgram.light0Type) {
-      gl.uniform1i(bridgeProgram.light0Type, directionalLight?.type ?? 0);
+    if (bridgeProgram.directionalLightDiffuse) {
+      gl.uniform4fv(bridgeProgram.directionalLightDiffuse,
+        flattenD3D8LightColor(directionalLights, "diffuse"));
     }
-    if (bridgeProgram.light0Diffuse) {
-      gl.uniform4fv(bridgeProgram.light0Diffuse,
-        new Float32Array(directionalLight?.diffuse ?? [0, 0, 0, 1]));
+    if (bridgeProgram.directionalLightAmbient) {
+      gl.uniform4fv(bridgeProgram.directionalLightAmbient,
+        flattenD3D8LightColor(directionalLights, "ambient"));
     }
-    if (bridgeProgram.light0Ambient) {
-      gl.uniform4fv(bridgeProgram.light0Ambient,
-        new Float32Array(directionalLight?.ambient ?? [0, 0, 0, 1]));
-    }
-    if (bridgeProgram.light0Direction) {
-      gl.uniform3fv(bridgeProgram.light0Direction,
-        new Float32Array(directionalLight?.direction ?? [0, 0, 1]));
+    if (bridgeProgram.directionalLightDirection) {
+      gl.uniform3fv(bridgeProgram.directionalLightDirection,
+        flattenD3D8LightDirection(directionalLights));
     }
     if (bridgeProgram.useTexture0) {
       gl.uniform1i(bridgeProgram.useTexture0, canSampleTexture0 ? 1 : 0);
@@ -4694,6 +4719,7 @@ async function loadWasmModule() {
       probeD3D8ClipPlane: module.cwrap("cnc_port_probe_d3d8_clip_plane", "string", []),
       probeD3D8LightingAmbient: module.cwrap("cnc_port_probe_d3d8_lighting_ambient", "string", []),
       probeD3D8DirectionalLight: module.cwrap("cnc_port_probe_d3d8_directional_light", "string", []),
+      probeD3D8MultiDirectionalLight: module.cwrap("cnc_port_probe_d3d8_multi_directional_light", "string", []),
       probeD3D8Material: module.cwrap("cnc_port_probe_d3d8_material", "string", []),
       probeD3D8MaterialSources: module.cwrap("cnc_port_probe_d3d8_material_sources", "string", []),
       probeD3D8LegacyTextureUpload: module.cwrap("cnc_port_probe_d3d8_legacy_texture_upload", "string", []),
@@ -7726,6 +7752,8 @@ async function rpc(command, payload = {}) {
           && appliedLighting.enabled === true
           && appliedLighting.shaderEnabled === true
           && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.directionalLights?.[0]?.index === 0
           && appliedLighting.firstDirectionalLight?.index === 0
           && capturedLight.enabled === true
           && capturedLight.type === D3DLIGHT_DIRECTIONAL
@@ -7741,6 +7769,88 @@ async function rpc(command, payload = {}) {
           browserProbe,
           lightDiffuseOk,
           lightDirectionOk,
+          materialOk,
+          lightPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8MultiDirectionalLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 multi-directional-light probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8MultiDirectionalLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [255, 0, 255, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 2);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 2);
+        const expectedRedLight = probe.lights?.[0] ?? {};
+        const expectedBlueLight = probe.lights?.[1] ?? {};
+        const capturedRedLight = browserProbe?.lights?.[0] ?? {};
+        const capturedBlueLight = browserProbe?.lights?.[3] ?? {};
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLights = appliedLighting.directionalLights ?? [];
+        const redLightOk = capturedRedLight.enabled === true
+          && capturedRedLight.type === D3DLIGHT_DIRECTIONAL
+          && floatVectorApproximatelyEqual(capturedRedLight.diffuse, expectedRedLight.diffuse)
+          && floatVectorApproximatelyEqual(capturedRedLight.direction, expectedRedLight.direction);
+        const blueLightOk = capturedBlueLight.enabled === true
+          && capturedBlueLight.type === D3DLIGHT_DIRECTIONAL
+          && floatVectorApproximatelyEqual(capturedBlueLight.diffuse, expectedBlueLight.diffuse)
+          && floatVectorApproximatelyEqual(capturedBlueLight.direction, expectedBlueLight.direction);
+        const selectedLightsOk = selectedLights.length === 2
+          && selectedLights[0]?.index === 0
+          && selectedLights[1]?.index === 3
+          && floatVectorApproximatelyEqual(selectedLights[0]?.diffuse, expectedRedLight.diffuse)
+          && floatVectorApproximatelyEqual(selectedLights[1]?.diffuse, expectedBlueLight.diffuse);
+        const material = normalizeD3D8Material(browserProbe?.material);
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const materialOk =
+          floatVectorApproximatelyEqual(material.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(material.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(material.emissive, expectedMaterial.emissive);
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setLight === 2
+          && probe.calls?.lightEnable === 2
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && browserProbe?.lights?.[1]?.enabled === false
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 2
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && selectedLightsOk
+          && redLightOk
+          && blueLightOk
+          && materialOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          redLightOk,
+          blueLightOk,
+          selectedLightsOk,
           materialOk,
           lightPixels: {
             left: leftPixel,

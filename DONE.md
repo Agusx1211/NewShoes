@@ -2309,9 +2309,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       directional diffuse light when that supported light is present. A focused
       native/browser probe draws adjacent quads with opposite normals and
       Playwright verifies black left and green right pixels plus
-      `harness-smoke-d3d8-directional-light-canvas.png`. Broader fixed-function
-      lighting remains open for multiple lights, point/spot attenuation,
-      specular, and full material-source behavior.
+      `harness-smoke-d3d8-directional-light-canvas.png`. This was later
+      broadened to multiple enabled directional lights; point/spot attenuation,
+      specular, and full material-source behavior remain open.
+- [x] Extend the browser fixed-function D3D8 lighting shader path from the
+      first supported directional light to multiple enabled directional lights.
+      The WebGL2 bridge now filters the captured D3D light payload into a
+      WW3D-sized directional-light uniform array, reports the selected light
+      set in `appliedRenderState.lighting`, and sums each enabled directional
+      diffuse/ambient contribution in the vertex shader. A focused
+      native/browser probe enables non-adjacent red and blue directional light
+      slots, verifies the raw light payload plus selected shader light list,
+      and Playwright confirms black left and magenta right pixels with
+      `harness-smoke-d3d8-multi-directional-light-canvas.png`.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and
