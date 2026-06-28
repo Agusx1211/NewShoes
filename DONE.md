@@ -2333,6 +2333,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-d3d8-specular-light-canvas.png`. Point/spot attenuation,
       off-axis/transformed specular fidelity, and broader material-source
       behavior remain open.
+- [x] Add a focused fixed-function D3D8 point-light attenuation path. The
+      WebGL2 draw bridge now selects enabled point, spot, and directional
+      lights into the fixed-function shader uniform set, preserves each
+      selected light's original slot metadata, and applies captured D3D8
+      range and attenuation coefficients for non-directional lights. A
+      focused native/browser probe sets a `D3DLIGHT_POINT` at `(0.5, 0, 1)`
+      with linear attenuation, draws a far quad and a near quad, verifies the
+      raw point-light payload plus selected shader light list, and Playwright
+      confirms the far gray and near white samples with
+      `harness-smoke-d3d8-point-light-canvas.png`. Spot cone proof, broader
+      original W3D point-light attenuation variants, off-axis/transformed
+      specular fidelity, and broader material-source behavior remain open.
 - [x] Add D3D8 user clip-plane capture and browser shader clipping to the
       WebGL2 draw bridge. The shim now stores six `SetClipPlane` equations,
       exposes `D3DRS_CLIPPING` / `D3DRS_CLIPPLANEENABLE` in draw payloads, and
