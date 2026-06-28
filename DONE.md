@@ -2255,6 +2255,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `TEXCOORDINDEX`, `D3DTTFF_COUNT2`, all four matrix rows, and D3D8 shim
       call deltas. `ws-environment-mapper-apply-smoke.cjs` independently covers
       the same two original classes through the Node wasm D3D8 shim.
+- [x] Prove the original `GridClassicEnvironmentMapperClass::Apply` and
+      `GridEnvironmentMapperClass::Apply` paths against both the browser D3D8
+      state bridge and a native Node smoke. The browser
+      `cnc_port_probe_grid_environment_mapper_apply()` drives real stage-1
+      grid mappers with deterministic `FPS=0`, `Log2Width=2`, `Last=16`, and
+      distinct offsets 5 and 10, calls the original
+      `GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/mapper.cpp` `Apply()`
+      methods, and verifies class-specific mapper IDs, `Needs_Normals()`,
+      time-variant stage ownership, normal versus reflection `TEXCOORDINDEX`,
+      `D3DTTFF_COUNT2`, the grid-cell texture matrix rows derived from
+      `Calculate_Texture_Matrix()`, and D3D8 shim call deltas.
+      `grid-environment-mapper-apply-smoke.cjs` independently covers the same
+      two original classes through the Node wasm D3D8 shim while also proving
+      the `Last=0` default expansion to the 4x4 grid frame count.
 - [x] Prove uploaded legacy `A8`, `L8`, and `A8L8` textures through the actual
       stage-0 WebGL2 textured draw path, not only through storage readback. The
       draw bridge now records the texture semantic and reconstructs D3D8

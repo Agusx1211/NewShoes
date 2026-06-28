@@ -501,9 +501,9 @@ shares structure and follows behind.
       `ClassicEnvironmentMapperClass`, `EnvironmentMapperClass`,
       `EdgeMapperClass`, `WSClassicEnvironmentMapperClass`,
       `WSEnvironmentMapperClass`, and `MatrixMapperClass` /
-      `ScreenMapperClass` proofs: the remaining grid environment mapper classes
-      (`GridClassicEnvironmentMapperClass`, `GridEnvironmentMapperClass`,
-      `GridWSClassicEnvironmentMapperClass`, `GridWSEnvironmentMapperClass`),
+      `ScreenMapperClass` proofs: the remaining grid world-space environment
+      mapper classes (`GridWSClassicEnvironmentMapperClass`,
+      `GridWSEnvironmentMapperClass`),
       water projection, and terrain projection, including full stage mapping
       for original generated-coordinate paths.
 - [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
