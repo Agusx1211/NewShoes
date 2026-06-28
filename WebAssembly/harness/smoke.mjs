@@ -5692,6 +5692,66 @@ try {
     );
   }
 
+  const gridWSEnvironmentMapperApplyResult =
+      await page.evaluate(() => window.CnCPort.rpc("gridWSEnvironmentMapperApply"));
+  const gridWSClassic = gridWSEnvironmentMapperApplyResult.probe?.cases?.classic;
+  const gridWSReflection = gridWSEnvironmentMapperApplyResult.probe?.cases?.reflection;
+  const gridWSCaseOk = (
+    gridWsCase,
+    expectedClass,
+    expectedAxis,
+    expectedStage,
+    expectedOffset,
+    expectedTexCoord,
+  ) =>
+    gridWsCase?.ok === true
+    && gridWsCase?.class === expectedClass
+    && gridWsCase?.axis === expectedAxis
+    && gridWsCase?.stage === expectedStage
+    && gridWsCase?.gridWidthLog2 === 2
+    && gridWsCase?.lastFrame === 16
+    && gridWsCase?.offset === expectedOffset
+    && gridWsCase?.mapperCreated === true
+    && gridWsCase?.mapperIdOk === true
+    && gridWsCase?.needsNormalsOk === true
+    && gridWsCase?.timeVariantOk === true
+    && gridWsCase?.stageOk === true
+    && gridWsCase?.viewInfluencedOk === true
+    && gridWsCase?.applyCalled === true
+    && gridWsCase?.texCoordIndex === expectedTexCoord
+    && gridWsCase?.textureTransformFlags === 2
+    && gridWsCase?.transform?.state === gridWsCase?.transform?.expectedState
+    && gridWsCase?.transform?.rowsOk === true
+    && gridWsCase?.transform?.row0Ok === true
+    && gridWsCase?.transform?.row1Ok === true
+    && gridWsCase?.transform?.row2Ok === true
+    && gridWsCase?.transform?.row3Ok === true
+    && gridWsCase?.callDeltas?.transform === 1
+    && gridWsCase?.callDeltas?.textureStageState === 2;
+  if (!gridWSEnvironmentMapperApplyResult.ok
+      || gridWSEnvironmentMapperApplyResult.probe?.source
+          !== "grid_ws_environment_mapper_apply_probe"
+      || !gridWSCaseOk(
+        gridWSClassic,
+        "GridWSClassicEnvironmentMapperClass",
+        "X",
+        1,
+        5,
+        0x00010000,
+      )
+      || !gridWSCaseOk(
+        gridWSReflection,
+        "GridWSEnvironmentMapperClass",
+        "Y",
+        1,
+        10,
+        0x00030000,
+      )) {
+    throw new Error(
+      `Grid WS environment mapper apply probe failed: ${JSON.stringify(gridWSEnvironmentMapperApplyResult)}`,
+    );
+  }
+
   const wsEnvironmentMapperApplyResult =
       await page.evaluate(() => window.CnCPort.rpc("wsEnvironmentMapperApply"));
   const wsClassic = wsEnvironmentMapperApplyResult.probe?.cases?.classic;

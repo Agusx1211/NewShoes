@@ -5192,6 +5192,8 @@ async function loadWasmModule() {
         "cnc_port_probe_environment_mapper_apply", "string", []),
       probeGridEnvironmentMapperApply: module.cwrap(
         "cnc_port_probe_grid_environment_mapper_apply", "string", []),
+      probeGridWSEnvironmentMapperApply: module.cwrap(
+        "cnc_port_probe_grid_ws_environment_mapper_apply", "string", []),
       probeMatrixMapperApply: module.cwrap(
         "cnc_port_probe_matrixmapper_apply", "string", []),
       probeScreenMapperApply: module.cwrap(
@@ -12370,6 +12372,76 @@ async function rpc(command, payload = {}) {
           && caseOk(
             reflection,
             "GridEnvironmentMapperClass",
+            1,
+            10,
+            D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR,
+          );
+        return {
+          ok,
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "gridWSEnvironmentMapperApply":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; grid WS environment mapper apply cannot run",
+          };
+        }
+        const probe = parseModuleState(wasmModule.probeGridWSEnvironmentMapperApply());
+        const classic = probe?.cases?.classic;
+        const reflection = probe?.cases?.reflection;
+        const caseOk = (
+          gridWsCase,
+          expectedClass,
+          expectedAxis,
+          expectedStage,
+          expectedOffset,
+          expectedTexCoord,
+        ) =>
+          gridWsCase?.ok === true
+          && gridWsCase?.class === expectedClass
+          && gridWsCase?.axis === expectedAxis
+          && gridWsCase?.stage === expectedStage
+          && gridWsCase?.gridWidthLog2 === 2
+          && gridWsCase?.lastFrame === 16
+          && gridWsCase?.offset === expectedOffset
+          && gridWsCase?.mapperCreated === true
+          && gridWsCase?.mapperIdOk === true
+          && gridWsCase?.needsNormalsOk === true
+          && gridWsCase?.timeVariantOk === true
+          && gridWsCase?.stageOk === true
+          && gridWsCase?.viewInfluencedOk === true
+          && gridWsCase?.applyCalled === true
+          && gridWsCase?.texCoordIndex === expectedTexCoord
+          && gridWsCase?.textureTransformFlags === D3DTTFF_COUNT2
+          && gridWsCase?.transform?.state === gridWsCase?.transform?.expectedState
+          && gridWsCase?.transform?.rowsOk === true
+          && gridWsCase?.transform?.row0Ok === true
+          && gridWsCase?.transform?.row1Ok === true
+          && gridWsCase?.transform?.row2Ok === true
+          && gridWsCase?.transform?.row3Ok === true
+          && gridWsCase?.callDeltas?.transform === 1
+          && gridWsCase?.callDeltas?.textureStageState === 2;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "grid_ws_environment_mapper_apply_probe"
+          && caseOk(
+            classic,
+            "GridWSClassicEnvironmentMapperClass",
+            "X",
+            1,
+            5,
+            D3DTSS_TCI_CAMERASPACENORMAL,
+          )
+          && caseOk(
+            reflection,
+            "GridWSEnvironmentMapperClass",
+            "Y",
             1,
             10,
             D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR,
