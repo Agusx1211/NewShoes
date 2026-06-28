@@ -3145,6 +3145,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_string", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
+      probeWW3DDisplayDrawImageFile: module.cwrap(
+        "cnc_port_probe_ww3d_display_drawimage_file", "string", ["string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DTerrainTile: module.cwrap(
@@ -4071,6 +4073,7 @@ async function mountRangeBackedArchiveSet(payload = {}) {
 
   const archives = [];
   const archiveProbes = [];
+  const shouldRegister = payload.register !== false;
   for (const input of archiveInputs) {
     const archive = archivePathFromPayload(input, baseDirectory);
     if (archive.error) {
@@ -4119,7 +4122,7 @@ async function mountRangeBackedArchiveSet(payload = {}) {
       };
     }
 
-    const assetProbe = payload.verifyEach === false
+    const assetProbe = !shouldRegister || payload.verifyEach === false
       ? null
       : probeArchive(moduleResult.wasmModule, archive.memfsPath);
     const mountedArchive = {
@@ -4147,7 +4150,9 @@ async function mountRangeBackedArchiveSet(payload = {}) {
   }
 
   const probePath = `${baseDirectory}/*.big`;
-  const aggregateProbe = probeArchive(moduleResult.wasmModule, probePath);
+  const aggregateProbe = shouldRegister
+    ? probeArchive(moduleResult.wasmModule, probePath)
+    : { ok: true };
   rememberMountedArchives(archives);
 
   const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
@@ -4162,10 +4167,13 @@ async function mountRangeBackedArchiveSet(payload = {}) {
     sourceTotalBytes,
     archives,
     probes: archiveProbes,
-    reader: "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem",
+    reader: shouldRegister
+      ? "browser fetch Range -> synthesized BIG -> Win32BIGFileSystem"
+      : "browser fetch Range -> synthesized BIG",
     storage: "range-backed-subset-big",
+    registered: shouldRegister && ok,
   };
-  if (ok) {
+  if (ok && shouldRegister) {
     registerArchiveSet(moduleResult.wasmModule, archiveSet);
   }
 
@@ -5597,6 +5605,57 @@ async function rpc(command, payload = {}) {
           && probe?.image?.rawTexture === true
           && pixelLooksRed(browserProbe.centerPixel)
           && pixelLooksRed(screenshot.centerPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayDrawImageFile":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; filename-backed WW3DDisplay drawImage cannot render" };
+        }
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime-display-drawimage-file/TexturesZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayDrawImageFile(textureArchivePath));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_drawimage_file_probe"
+          && probe?.image?.rawTexture === false
+          && probe?.image?.filename === "cine_moon.tga"
+          && probe?.results?.texturePreloaded === true
+          && probe?.results?.textureDDSLoaded === true
+          && probe?.results?.textureResolved === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && pixelHasColor(browserProbe.centerPixel, 8)
+          && pixelHasColor(screenshot.centerPixel, 8)
+          && !pixelLooksRed(browserProbe.centerPixel)
+          && !pixelLooksRed(screenshot.centerPixel);
         return {
           ok,
           command,

@@ -2619,9 +2619,19 @@ shares structure and follows behind.
       through its real `Render2DClass` helper and the browser D3D8/WebGL2 draw
       bridge, verified by `harness-smoke-ww3d-display-drawimage-canvas.png`
       and red center-pixel sampling in `EXPECT_WASM=1 node harness/smoke.mjs`.
-      This proves the Image blit call path only; filename-backed mapped-image
-      loading, clipping/rotation variants, and `DisplayString` text rendering
+      This proves the Image blit call path only; mapped-image collection
+      handoff, clipping/rotation variants, and broader UI image rendering
       remain open.
+- [x] Original `W3DDisplay::drawImage` also resolves a filename-backed `Image`
+      through `Render2DClass::Set_Texture(const char*)`,
+      `WW3DAssetManager::Get_Texture`, `TextureClass::Apply`, and the runtime
+      `W3DFileSystem` / `Win32BIGFileSystem` archive path. A dedicated browser
+      smoke range-fetches `Art\Textures\cine_moon.dds` from user-supplied
+      `TexturesZH.big`, synthesizes a focused runtime BIG archive, draws
+      `cine_moon.tga` by filename with `IMAGE_STATUS_RAW_TEXTURE` clear, and
+      verifies real DDS-backed pixels plus
+      `harness-smoke-ww3d-display-drawimage-file-canvas.png` when the archive
+      is present.
 - [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
       through the display-owned `Render2DClass` helper without using the
       raw-storage-unsafe virtual size setters, verified by
