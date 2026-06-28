@@ -24,6 +24,10 @@ const d3d8SpecularLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-specular-light-canvas.png",
 );
+const d3d8SpecularOffAxisLightCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-d3d8-specular-offaxis-light-canvas.png",
+);
 const d3d8PointLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-point-light-canvas.png",
@@ -3365,6 +3369,64 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: d3d8SpecularLightCanvasScreenshot });
 
+  const d3d8SpecularOffAxisLightResult = await page.evaluate(() =>
+    window.CnCPort.rpc("d3d8SpecularOffAxisLight"));
+  const expectedSpecularOffAxisLeft = d3d8SpecularOffAxisLightResult.probe?.expectedLeft ?? [0, 0, 0, 255];
+  const expectedSpecularOffAxisRight = d3d8SpecularOffAxisLightResult.probe?.expectedRight ?? [255, 255, 255, 255];
+  const expectedOffAxisDirection = d3d8SpecularOffAxisLightResult.probe?.light?.direction ?? [-0.8, 0, -0.6];
+  if (!d3d8SpecularOffAxisLightResult.ok
+      || d3d8SpecularOffAxisLightResult.probe?.source !== "browser_d3d8_specular_offaxis_light_probe"
+      || d3d8SpecularOffAxisLightResult.probe?.calls?.setMaterial !== 1
+      || d3d8SpecularOffAxisLightResult.probe?.calls?.setLight !== 1
+      || d3d8SpecularOffAxisLightResult.probe?.calls?.lightEnable !== 1
+      || d3d8SpecularOffAxisLightResult.probe?.calls?.drawIndexed !== 1
+      || d3d8SpecularOffAxisLightResult.browserProbe?.renderState?.lighting !== 1
+      || d3d8SpecularOffAxisLightResult.browserProbe?.renderState?.specularEnable !== 1
+      || d3d8SpecularOffAxisLightResult.browserProbe?.renderState?.ambient !== 0
+      || d3d8SpecularOffAxisLightResult.browserProbe?.renderState?.colorVertex !== 0
+      || d3d8SpecularOffAxisLightResult.browserProbe?.renderState?.specularMaterialSource !== 0
+      || d3d8SpecularOffAxisLightResult.browserProbe?.vertexLayout?.normalOffset !== 12
+      || d3d8SpecularOffAxisLightResult.browserProbe?.lights?.[0]?.enabled !== true
+      || d3d8SpecularOffAxisLightResult.browserProbe?.lights?.[0]?.type !== 3
+      || !floatVectorApproximatelyEqual(
+        d3d8SpecularOffAxisLightResult.browserProbe?.lights?.[0]?.direction,
+        expectedOffAxisDirection,
+      )
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.enabled !== true
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.enabled !== true
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.specular?.sourceName !== "material"
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightSupported !== true
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLightCount !== 1
+      || d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[0]?.index !== 0
+      || !floatVectorApproximatelyEqual(
+        d3d8SpecularOffAxisLightResult.browserProbe?.appliedRenderState?.lighting?.directionalLights?.[0]?.direction,
+        expectedOffAxisDirection,
+      )
+      || d3d8SpecularOffAxisLightResult.materialOk !== true
+      || d3d8SpecularOffAxisLightResult.lightSpecularOk !== true
+      || d3d8SpecularOffAxisLightResult.selectedLightOk !== true
+      || d3d8SpecularOffAxisLightResult.appliedSpecularOk !== true
+      || d3d8SpecularOffAxisLightResult.offAxisShapeOk !== true
+      || d3d8SpecularOffAxisLightResult.leftPixelOk !== true
+      || d3d8SpecularOffAxisLightResult.rightPixelOk !== true
+      || !pixelsApproximatelyEqual(
+        d3d8SpecularOffAxisLightResult.specularOffAxisPixels?.left,
+        expectedSpecularOffAxisLeft,
+        2,
+      )
+      || !pixelsApproximatelyEqual(
+        d3d8SpecularOffAxisLightResult.specularOffAxisPixels?.right,
+        expectedSpecularOffAxisRight,
+        3,
+      )
+      || !pixelLooksBlack(d3d8SpecularOffAxisLightResult.specularOffAxisPixels?.left, 5)) {
+    throw new Error(
+      `D3D8 off-axis specular-light probe failed: ${JSON.stringify(d3d8SpecularOffAxisLightResult)}`,
+    );
+  }
+  await page.locator("#viewport").screenshot({ path: d3d8SpecularOffAxisLightCanvasScreenshot });
+
   const d3d8PointLightResult = await page.evaluate(() =>
     window.CnCPort.rpc("d3d8PointLight"));
   const expectedPointLeft = d3d8PointLightResult.probe?.expectedLeft ?? [128, 128, 128, 255];
@@ -4761,6 +4823,7 @@ try {
       d3d8DirectionalLightCanvasScreenshot,
       d3d8MultiDirectionalLightCanvasScreenshot,
       d3d8SpecularLightCanvasScreenshot,
+      d3d8SpecularOffAxisLightCanvasScreenshot,
       d3d8PointLightCanvasScreenshot,
       d3d8PointQuadraticLightCanvasScreenshot,
       d3d8PointRangeLightCanvasScreenshot,

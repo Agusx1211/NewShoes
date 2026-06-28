@@ -4908,6 +4908,8 @@ async function loadWasmModule() {
       probeD3D8DirectionalLight: module.cwrap("cnc_port_probe_d3d8_directional_light", "string", []),
       probeD3D8MultiDirectionalLight: module.cwrap("cnc_port_probe_d3d8_multi_directional_light", "string", []),
       probeD3D8SpecularLight: module.cwrap("cnc_port_probe_d3d8_specular_light", "string", []),
+      probeD3D8SpecularOffAxisLight: module.cwrap(
+        "cnc_port_probe_d3d8_specular_offaxis_light", "string", []),
       probeD3D8PointLight: module.cwrap("cnc_port_probe_d3d8_point_light", "string", []),
       probeD3D8PointQuadraticLight: module.cwrap("cnc_port_probe_d3d8_point_quadratic_light", "string", []),
       probeD3D8PointRangeLight: module.cwrap("cnc_port_probe_d3d8_point_range_light", "string", []),
@@ -8136,6 +8138,105 @@ async function rpc(command, payload = {}) {
           selectedLightOk,
           appliedSpecularOk,
           specularPixels: {
+            left: leftPixel,
+            right: rightPixel,
+          },
+          leftPixelOk,
+          rightPixelOk,
+          state: snapshotState(),
+        };
+      }
+    case "d3d8SpecularOffAxisLight":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; D3D8 off-axis specular-light probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeD3D8SpecularOffAxisLight());
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedLeft = probe.expectedLeft ?? [0, 0, 0, 255];
+        const expectedRight = probe.expectedRight ?? [255, 255, 255, 255];
+        const leftPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.25), Math.floor(canvas.height / 2));
+        const rightPixel = sampleCanvasPixel(Math.floor(canvas.width * 0.75), Math.floor(canvas.height / 2));
+        const leftPixelOk = pixelsApproximatelyEqual(leftPixel, expectedLeft, 2);
+        const rightPixelOk = pixelsApproximatelyEqual(rightPixel, expectedRight, 3);
+        const expectedLight = normalizeD3D8Light(probe.light, 0);
+        const capturedLight = normalizeD3D8Light(browserProbe?.lights?.[0], 0);
+        const appliedLighting = browserProbe?.appliedRenderState?.lighting ?? {};
+        const selectedLight = appliedLighting.directionalLights?.[0] ?? {};
+        const expectedMaterial = normalizeD3D8Material(probe.material);
+        const browserMaterial = normalizeD3D8Material(browserProbe?.material);
+        const appliedSpecular = appliedLighting.specular ?? {};
+        const materialOk =
+          floatVectorApproximatelyEqual(browserMaterial.diffuse, expectedMaterial.diffuse) &&
+          floatVectorApproximatelyEqual(browserMaterial.ambient, expectedMaterial.ambient) &&
+          floatVectorApproximatelyEqual(browserMaterial.specular, expectedMaterial.specular) &&
+          floatVectorApproximatelyEqual(browserMaterial.emissive, expectedMaterial.emissive) &&
+          Math.abs(browserMaterial.power - expectedMaterial.power) < 0.00001;
+        const lightSpecularOk =
+          capturedLight.enabled === true &&
+          capturedLight.type === D3DLIGHT_DIRECTIONAL &&
+          floatVectorApproximatelyEqual(capturedLight.diffuse, expectedLight.diffuse) &&
+          floatVectorApproximatelyEqual(capturedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(capturedLight.ambient, expectedLight.ambient) &&
+          floatVectorApproximatelyEqual(capturedLight.direction, expectedLight.direction) &&
+          floatVectorApproximatelyEqual(expectedLight.direction, [-0.8, 0, -0.6]);
+        const selectedLightOk =
+          selectedLight.index === 0 &&
+          floatVectorApproximatelyEqual(selectedLight.specular, expectedLight.specular) &&
+          floatVectorApproximatelyEqual(selectedLight.direction, expectedLight.direction);
+        const appliedSpecularOk =
+          appliedSpecular.enabled === true &&
+          appliedSpecular.source === 0 &&
+          appliedSpecular.sourceName === "material" &&
+          floatVectorApproximatelyEqual(appliedSpecular.material, expectedMaterial.specular) &&
+          Math.abs((appliedSpecular.power ?? 0) - expectedMaterial.power) < 0.00001;
+        const offAxisShapeOk = pixelLooksBlack(leftPixel, 5)
+          && Array.isArray(rightPixel)
+          && rightPixel[0] >= 240
+          && rightPixel[1] >= 240
+          && rightPixel[2] >= 240
+          && rightPixel[3] >= 200;
+        const caseOk = Boolean(probe.ok)
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && probe.calls?.setRenderState >= 13
+          && probe.calls?.setMaterial === 1
+          && probe.calls?.setLight === 1
+          && probe.calls?.lightEnable === 1
+          && probe.calls?.drawIndexed === 1
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.vertexCount === 8
+          && browserProbe?.indexCount === 12
+          && browserProbe?.vertexLayout?.normalOffset === 12
+          && browserProbe?.renderState?.lighting === 1
+          && browserProbe?.renderState?.specularEnable === 1
+          && browserProbe?.renderState?.ambient === 0
+          && browserProbe?.renderState?.colorVertex === 0
+          && browserProbe?.renderState?.specularMaterialSource === 0
+          && appliedLighting.enabled === true
+          && appliedLighting.shaderEnabled === true
+          && appliedLighting.directionalLightSupported === true
+          && appliedLighting.directionalLightCount === 1
+          && appliedLighting.firstDirectionalLight?.index === 0
+          && selectedLightOk
+          && appliedSpecularOk
+          && materialOk
+          && lightSpecularOk
+          && offAxisShapeOk
+          && leftPixelOk
+          && rightPixelOk;
+        return {
+          ok: caseOk,
+          command,
+          probe,
+          browserProbe,
+          materialOk,
+          lightSpecularOk,
+          selectedLightOk,
+          appliedSpecularOk,
+          offAxisShapeOk,
+          specularOffAxisPixels: {
             left: leftPixel,
             right: rightPixel,
           },

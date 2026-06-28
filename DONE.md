@@ -2330,9 +2330,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       native/browser probe draws black diffuse/ambient quads with opposite
       normals and verifies that only the front-facing quad turns white from
       specular, with Playwright saving
-      `harness-smoke-d3d8-specular-light-canvas.png`. Point/spot attenuation,
-      off-axis/transformed specular fidelity, and broader material-source
-      behavior remain open.
+      `harness-smoke-d3d8-specular-light-canvas.png`. At that point,
+      point/spot attenuation, off-axis/transformed specular fidelity, and
+      broader material-source behavior remained open.
+- [x] Add a focused fixed-function D3D8 off-axis specular lighting proof.
+      The native/browser probe `cnc_port_probe_d3d8_specular_offaxis_light`
+      draws a black control quad with normal `(0,0,1)` beside a white quad
+      whose normal `(0.4472136,0,0.8944272)` matches the half-vector for
+      directional light `Direction=(-0.8,0,-0.6)` and material power `64`.
+      The JS bridge exposes `d3d8SpecularOffAxisLight`, verifies raw and
+      selected light direction/specular state, material power/source state,
+      and black/white sampled pixels, with Playwright saving
+      `harness-smoke-d3d8-specular-offaxis-light-canvas.png`. Transformed
+      specular fidelity and broader lit material-source behavior remain open.
 - [x] Add a focused fixed-function D3D8 point-light attenuation path. The
       WebGL2 draw bridge now selects enabled point, spot, and directional
       lights into the fixed-function shader uniform set, preserves each
