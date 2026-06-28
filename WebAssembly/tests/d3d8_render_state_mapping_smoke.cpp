@@ -515,10 +515,12 @@ int main()
 	// Build a 3-vertex COLOR2/specular triangle with a matching 3-index buffer,
 	// bind it at the 48-byte stride, and issue one indexed triangle so the draw
 	// capture records the active FVF + stride.
+	// Non-white specular/COLOR2 values so the test data actually represents a
+	// COLOR2 emissive source rather than just a stride placeholder.
 	const FvfDrawVertex vertices[3] = {
-		{ -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 0.0f, 0.0f, 0.0f, 0.0f },
-		{  1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 1.0f, 0.0f, 1.0f, 0.0f },
-		{  0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffffffffUL, 0.5f, 1.0f, 0.5f, 1.0f },
+		{ -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xffff2010UL, 0.0f, 0.0f, 0.0f, 0.0f },
+		{  1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xff10ff20UL, 1.0f, 0.0f, 1.0f, 0.0f },
+		{  0.0f,  1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffUL, 0xff1020ffUL, 0.5f, 1.0f, 0.5f, 1.0f },
 	};
 	const UINT vertex_stride = sizeof(FvfDrawVertex);
 	expect(vertex_stride == 48, "vertex stride must be 48 bytes");
@@ -546,6 +548,29 @@ int main()
 		"SetStreamSource with 48-byte COLOR2/specular stride failed");
 	expect(SUCCEEDED(device->SetIndices(index_buffer, 0)), "SetIndices failed");
 
+	// Pin the exact material-source state the browser emissive COLOR2 proof
+	// needs active at draw time: diffuse/specular/ambient come from the
+	// MATERIAL, emissive comes from the vertex COLOR2/specular channel, and
+	// specular lighting is off so COLOR2 feeds emissive only.
+	const DWORD draw_color_vertex = TRUE;
+	const DWORD draw_diffuse_source = D3DMCS_MATERIAL;
+	const DWORD draw_specular_source = D3DMCS_MATERIAL;
+	const DWORD draw_ambient_source = D3DMCS_MATERIAL;
+	const DWORD draw_emissive_source = D3DMCS_COLOR2;
+	const DWORD draw_specular_enable = FALSE;
+	set_state(D3DRS_COLORVERTEX, draw_color_vertex,
+		"SetRenderState COLORVERTEX for emissive COLOR2 draw failed");
+	set_state(D3DRS_DIFFUSEMATERIALSOURCE, draw_diffuse_source,
+		"SetRenderState DIFFUSEMATERIALSOURCE for emissive COLOR2 draw failed");
+	set_state(D3DRS_SPECULARMATERIALSOURCE, draw_specular_source,
+		"SetRenderState SPECULARMATERIALSOURCE for emissive COLOR2 draw failed");
+	set_state(D3DRS_AMBIENTMATERIALSOURCE, draw_ambient_source,
+		"SetRenderState AMBIENTMATERIALSOURCE for emissive COLOR2 draw failed");
+	set_state(D3DRS_EMISSIVEMATERIALSOURCE, draw_emissive_source,
+		"SetRenderState EMISSIVEMATERIALSOURCE for emissive COLOR2 draw failed");
+	set_state(D3DRS_SPECULARENABLE, draw_specular_enable,
+		"SetRenderState SPECULARENABLE for emissive COLOR2 draw failed");
+
 	const UINT draw_indexed_before = state->draw_indexed_primitive_calls;
 	expect(SUCCEEDED(device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 3, 0, 1)),
 		"DrawIndexedPrimitive for COLOR2/specular FVF failed");
@@ -562,6 +587,19 @@ int main()
 		"last_draw_primitive_count must be 1");
 	expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
 		"last_draw_primitive_type must be D3DPT_TRIANGLELIST");
+	// The draw must capture the pinned emissive COLOR2 material-source state.
+	expect(state->last_draw_render_state.color_vertex == draw_color_vertex,
+		"last_draw_render_state.color_vertex must be TRUE for emissive COLOR2 draw");
+	expect(state->last_draw_render_state.diffuse_material_source == draw_diffuse_source,
+		"last_draw_render_state.diffuse_material_source must be MATERIAL");
+	expect(state->last_draw_render_state.specular_material_source == draw_specular_source,
+		"last_draw_render_state.specular_material_source must be MATERIAL");
+	expect(state->last_draw_render_state.ambient_material_source == draw_ambient_source,
+		"last_draw_render_state.ambient_material_source must be MATERIAL");
+	expect(state->last_draw_render_state.emissive_material_source == draw_emissive_source,
+		"last_draw_render_state.emissive_material_source must be COLOR2");
+	expect(state->last_draw_render_state.specular_enable == draw_specular_enable,
+		"last_draw_render_state.specular_enable must be FALSE for emissive COLOR2 draw");
 
 	index_buffer->Release();
 	vertex_buffer->Release();
@@ -569,13 +607,16 @@ int main()
 	// ----------------------------------------------------------------------
 	// Counter / probe bookkeeping checks.
 	// ----------------------------------------------------------------------
-	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2;
+	// Section 10 pins 6 additional SetRenderState calls for the emissive COLOR2
+	// draw proof (COLORVERTEX, DIFFUSE/SPECULAR/AMBIENT/EMISSIVE material
+	// sources, SPECULARENABLE).
+	const UINT sets_emitted = 3 + 3 + 2 + 2 + 4 + 2 + 3 + 1 + 1 + 3 + 3 + 5 + 2 + 2 + 6;
 	expect(state->set_render_state_calls == set_before + sets_emitted,
 		"set_render_state_calls counter mismatch");
-	expect(state->last_set_render_state == D3DRS_LOCALVIEWER,
-		"last_set_render_state mismatch after LOCALVIEWER");
-	expect(state->last_set_render_state_value == TRUE,
-		"last_set_render_state_value mismatch after LOCALVIEWER");
+	expect(state->last_set_render_state == D3DRS_SPECULARENABLE,
+		"last_set_render_state mismatch after emissive COLOR2 draw pin");
+	expect(state->last_set_render_state_value == FALSE,
+		"last_set_render_state_value mismatch after emissive COLOR2 draw pin");
 	expect(state->get_render_state_calls > get_before,
 		"get_render_state_calls should advance");
 
@@ -630,6 +671,9 @@ int main()
 		"\"emissive\":[%0.6f,%0.6f,%0.6f,%0.6f],\"power\":%0.6f},"
 		"\"materialSources\":{\"colorVertex\":%lu,"
 		"\"diffuse\":%lu,\"specular\":%lu,\"ambient\":%lu,\"emissive\":%lu},"
+		"\"drawMaterialSources\":{\"note\":\"emissive COLOR2 source pinned at draw time\",\"colorVertex\":%lu,"
+		"\"diffuse\":%lu,\"specular\":%lu,\"ambient\":%lu,\"emissive\":%lu,"
+		"\"emissiveSourceName\":\"COLOR2\",\"specularEnable\":%lu},"
 		"\"colorWrite\":{\"d3dColorWriteEnable\":%lu,"
 		"\"glColorMask\":{\"r\":%s,\"g\":%s,\"b\":%s,\"a\":%s}},"
 		"\"fvf\":{\"vertexShaderFvf\":%lu,\"vertexStride\":%u,"
@@ -683,6 +727,13 @@ int main()
 		static_cast<unsigned long>(specular_source),
 		static_cast<unsigned long>(ambient_source),
 		static_cast<unsigned long>(emissive_source),
+		// draw-pinned material sources for the emissive COLOR2 proof
+		static_cast<unsigned long>(draw_color_vertex),
+		static_cast<unsigned long>(draw_diffuse_source),
+		static_cast<unsigned long>(draw_specular_source),
+		static_cast<unsigned long>(draw_ambient_source),
+		static_cast<unsigned long>(draw_emissive_source),
+		static_cast<unsigned long>(draw_specular_enable),
 		// color write spec
 		static_cast<unsigned long>(color_write_all),
 		(color_write_all & D3DCOLORWRITEENABLE_RED) ? "true" : "false",
