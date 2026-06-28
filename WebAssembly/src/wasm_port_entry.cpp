@@ -27,6 +27,9 @@
 
 extern HWND ApplicationHWnd;
 
+extern "C" void cnc_port_update_original_keyboard_frame_input();
+extern "C" const char *cnc_port_probe_original_keyboard_frame_input();
+
 void cnc_port_service_original_wndproc_messages();
 
 namespace {
@@ -779,6 +782,7 @@ std::string build_browser_input_json()
 		"\"cursor\":{\"available\":%s,\"x\":%ld,\"y\":%ld},"
 		"\"cursorSet\":%s,\"capture\":%s,"
 		"\"messageQueue\":{\"count\":%u,\"overflowed\":%s},"
+		"\"keyboardMessageQueue\":{\"count\":%u,\"overflowed\":%s},"
 		"\"keys\":{\"f5\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
 		"\"f6\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
 		"\"f7\":{\"down\":%s,\"pressedSinceLastQuery\":%s},"
@@ -792,6 +796,8 @@ std::string build_browser_input_json()
 		WasmWin32Input::capture_window != nullptr ? "true" : "false",
 		WasmWin32Input::message_queue_count,
 		WasmWin32Input::message_queue_overflowed ? "true" : "false",
+		WasmWin32Input::keyboard_message_queue_count,
+		WasmWin32Input::keyboard_message_queue_overflowed ? "true" : "false",
 		WasmWin32Input::key_down[VK_F5] ? "true" : "false",
 		WasmWin32Input::key_pressed_since_last_query[VK_F5] ? "true" : "false",
 		WasmWin32Input::key_down[VK_F6] ? "true" : "false",
@@ -2583,6 +2589,7 @@ void tick_frame()
 	if (g_booted) {
 		++g_frame;
 		cnc_port_service_original_wndproc_messages();
+		cnc_port_update_original_keyboard_frame_input();
 		record_tick_time();
 	}
 }
@@ -2767,6 +2774,8 @@ const char *write_state_json()
 	const std::string file_system_probe_json = build_file_system_probe_json();
 	const std::string game_network_probe_json = build_game_network_probe_json();
 	const std::string browser_input_json = build_browser_input_json();
+	const char *original_keyboard_frame_input_json =
+		cnc_port_probe_original_keyboard_frame_input();
 	const std::string debug_last_type_json = json_escape(g_debug_last_type);
 	const std::string debug_last_message_json = json_escape(g_debug_last_message);
 	const std::string debug_last_assert_json = json_escape(g_debug_last_assert);
@@ -2782,6 +2791,7 @@ const char *write_state_json()
 		"\"bootTimeGetTime\":%lu,\"lastTimeGetTime\":%lu,"
 		"\"bootTickCount\":%lu,\"lastTickCount\":%lu},"
 		"\"browserInput\":%s,"
+		"\"originalKeyboardFrameInput\":%s,"
 		"\"assetProbe\":{\"attempted\":%s,\"ok\":%s,\"loaded\":%s,"
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
@@ -3049,6 +3059,7 @@ const char *write_state_json()
 		static_cast<unsigned long>(g_boot_tick_count_ms),
 		static_cast<unsigned long>(g_last_tick_count_ms),
 		browser_input_json.c_str(),
+		original_keyboard_frame_input_json,
 		g_archive_probe.attempted ? "true" : "false",
 		g_archive_probe.ok ? "true" : "false",
 		g_archive_probe.loaded ? "true" : "false",

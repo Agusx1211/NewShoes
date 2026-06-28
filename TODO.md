@@ -3078,6 +3078,12 @@ shares structure and follows behind.
                         verifies `MSG_RAW_KEY_DOWN`, autorepeat, and
                         focus-loss reset output while marking that the slice is
                         not yet promoted into `tick_frame()`.
+                  - [x] Add a disabled-by-default normal `tick_frame()`
+                        keyboard owner backed by a mirrored Win32 keyboard
+                        queue and persistent original `MessageStream` /
+                        `CommandList`, with browser harness proof that Escape
+                        still reaches original `WndProc` while the mirrored
+                        `KEY_ESC` reaches the frame-owned `Keyboard` stream.
 - [x] Focused browser keydown proof: DOM `Escape` queues a Win32
       `WM_KEYDOWN`, the original `WinMain.cpp::WndProc` consumes it through
       the existing browser `Win32GameEngine::serviceWindowsOS` pump, and the

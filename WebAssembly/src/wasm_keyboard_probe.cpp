@@ -147,39 +147,27 @@ public:
 	unsigned int loadQueuedKeyMessages()
 	{
 		ensureInitialized();
-		m_scriptCount = 0;
-		m_next = 0;
-		m_eventCount = 0;
-		m_ignored = 0;
-		m_focusLostDelivered = false;
-
+		beginLoad();
 		unsigned int drained = 0;
-
-		if (m_focusLostPending) {
-			BrowserKeyboardEvent event;
-			event.engineKey = KEY_LOST;
-			event.mapped = true;
-			event.focusLost = true;
-			appendEvent(event);
-			m_focusLostPending = false;
-			m_focusLostDelivered = true;
-		}
 
 		MSG message = {};
 		while (PeekMessage(&message, nullptr, WM_KEYDOWN, WM_SYSKEYUP, PM_REMOVE)) {
 			++drained;
+			appendMessageEvent(message);
+		}
+		return drained;
+	}
 
-			BrowserKeyboardEvent event;
-			event.message = message.message;
-			event.virtualKey = message.wParam;
-			event.engineKey = browser_virtual_key_to_engine_key(message.wParam);
-			if (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) {
-				event.state = KEY_STATE_DOWN;
-			} else if (message.message == WM_KEYUP || message.message == WM_SYSKEYUP) {
-				event.state = KEY_STATE_UP;
-			}
-			event.mapped = event.engineKey != KEY_NONE && event.state != KEY_STATE_NONE;
-			appendEvent(event);
+	unsigned int loadMirroredKeyMessages()
+	{
+		ensureInitialized();
+		beginLoad();
+		unsigned int drained = 0;
+
+		MSG message = {};
+		while (WasmWin32Input::ReadQueuedKeyboardMessage(&message, true)) {
+			++drained;
+			appendMessageEvent(message);
 		}
 		return drained;
 	}
@@ -233,6 +221,40 @@ protected:
 private:
 	enum { MAX_SCRIPT_KEYS = 32, MAX_EVENTS = 32 };
 
+	void beginLoad()
+	{
+		m_scriptCount = 0;
+		m_next = 0;
+		m_eventCount = 0;
+		m_ignored = 0;
+		m_focusLostDelivered = false;
+
+		if (m_focusLostPending) {
+			BrowserKeyboardEvent event;
+			event.engineKey = KEY_LOST;
+			event.mapped = true;
+			event.focusLost = true;
+			appendEvent(event);
+			m_focusLostPending = false;
+			m_focusLostDelivered = true;
+		}
+	}
+
+	void appendMessageEvent(const MSG &message)
+	{
+		BrowserKeyboardEvent event;
+		event.message = message.message;
+		event.virtualKey = message.wParam;
+		event.engineKey = browser_virtual_key_to_engine_key(message.wParam);
+		if (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) {
+			event.state = KEY_STATE_DOWN;
+		} else if (message.message == WM_KEYUP || message.message == WM_SYSKEYUP) {
+			event.state = KEY_STATE_UP;
+		}
+		event.mapped = event.engineKey != KEY_NONE && event.state != KEY_STATE_NONE;
+		appendEvent(event);
+	}
+
 	void appendEvent(const BrowserKeyboardEvent &event)
 	{
 		if (m_eventCount < MAX_EVENTS) {
@@ -265,6 +287,26 @@ private:
 
 BrowserKeyboard g_browser_keyboard;
 std::string g_original_keyboard_json;
+GlobalData *g_frame_keyboard_global_data = nullptr;
+MessageStream *g_frame_keyboard_message_stream = nullptr;
+CommandList *g_frame_keyboard_command_list = nullptr;
+std::string g_frame_keyboard_json;
+bool g_frame_keyboard_enabled = false;
+bool g_frame_keyboard_initialized = false;
+bool g_frame_keyboard_last_ran = false;
+unsigned int g_frame_keyboard_ticks = 0;
+unsigned int g_frame_keyboard_last_primary_remaining_before = 0;
+unsigned int g_frame_keyboard_last_primary_remaining_after = 0;
+unsigned int g_frame_keyboard_last_mirror_before = 0;
+unsigned int g_frame_keyboard_last_mirror_drained = 0;
+unsigned int g_frame_keyboard_last_mirror_remaining = 0;
+unsigned int g_frame_keyboard_last_ignored = 0;
+unsigned int g_frame_keyboard_last_stream_count = 0;
+unsigned int g_frame_keyboard_last_command_count = 0;
+bool g_frame_keyboard_last_focus_lost_pending_before = false;
+bool g_frame_keyboard_last_focus_lost_delivered = false;
+std::string g_frame_keyboard_last_events_json = "[]";
+std::string g_frame_keyboard_last_stream_json = "[]";
 
 const char *raw_key_message_name(GameMessage::Type type)
 {
@@ -338,6 +380,188 @@ unsigned int count_game_messages(GameMessage *first)
 		++count;
 	}
 	return count;
+}
+
+void ensure_frame_keyboard_owner()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+	if (g_frame_keyboard_global_data == nullptr) {
+		g_frame_keyboard_global_data = new GlobalData;
+	}
+	if (g_frame_keyboard_message_stream == nullptr) {
+		g_frame_keyboard_message_stream = new MessageStream;
+		g_frame_keyboard_message_stream->init();
+	}
+	if (g_frame_keyboard_command_list == nullptr) {
+		g_frame_keyboard_command_list = new CommandList;
+		g_frame_keyboard_command_list->init();
+	}
+	g_frame_keyboard_initialized = true;
+}
+
+void clear_frame_keyboard_messages()
+{
+	if (!g_frame_keyboard_initialized) {
+		return;
+	}
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	MessageStream *old_message_stream = TheMessageStream;
+	CommandList *old_command_list = TheCommandList;
+	if (TheWritableGlobalData == nullptr) {
+		TheWritableGlobalData = g_frame_keyboard_global_data;
+	}
+	TheMessageStream = g_frame_keyboard_message_stream;
+	TheCommandList = g_frame_keyboard_command_list;
+	if (g_frame_keyboard_message_stream->getFirstMessage() != nullptr) {
+		g_frame_keyboard_message_stream->propagateMessages();
+	}
+	g_frame_keyboard_command_list->reset();
+	TheCommandList = old_command_list;
+	TheMessageStream = old_message_stream;
+	TheWritableGlobalData = old_global_data;
+}
+
+const char *write_frame_keyboard_json()
+{
+	char buffer[16000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"browser_original_keyboard_frame_input\","
+		"\"enabled\":%s,\"initialized\":%s,\"lastRan\":%s,"
+		"\"ticks\":%u,"
+		"\"lifecycle\":{\"messageStream\":\"frame-owned\","
+		"\"commandList\":\"frame-owned\","
+		"\"memoryManager\":\"persistent\","
+		"\"promotedToTickFrame\":true},"
+		"\"queue\":{\"primaryRemainingBefore\":%u,"
+		"\"primaryRemainingAfter\":%u,"
+		"\"mirrorBefore\":%u,\"mirrorDrained\":%u,"
+		"\"mirrorRemaining\":%u,\"ignored\":%u,"
+		"\"primaryOverflowed\":%s,\"mirrorOverflowed\":%s},"
+		"\"focusLost\":{\"pendingBefore\":%s,\"delivered\":%s,"
+		"\"queuedCount\":%u},"
+		"\"inputFrame\":%u,"
+		"\"events\":%s,"
+		"\"stream\":{\"count\":%u,\"messages\":%s},"
+		"\"commandList\":{\"countAfterPropagate\":%u},"
+		"\"modifiers\":%d,"
+		"\"keyStatus\":{\"aDown\":%s,\"leftShiftDown\":%s}}",
+		bool_json(g_frame_keyboard_enabled),
+		bool_json(g_frame_keyboard_initialized),
+		bool_json(g_frame_keyboard_last_ran),
+		g_frame_keyboard_ticks,
+		g_frame_keyboard_last_primary_remaining_before,
+		g_frame_keyboard_last_primary_remaining_after,
+		g_frame_keyboard_last_mirror_before,
+		g_frame_keyboard_last_mirror_drained,
+		g_frame_keyboard_last_mirror_remaining,
+		g_frame_keyboard_last_ignored,
+		bool_json(WasmWin32Input::message_queue_overflowed),
+		bool_json(WasmWin32Input::keyboard_message_queue_overflowed),
+		bool_json(g_frame_keyboard_last_focus_lost_pending_before),
+		bool_json(g_frame_keyboard_last_focus_lost_delivered),
+		g_browser_keyboard.focusLostQueuedCount(),
+		g_browser_keyboard.inputFrame(),
+		g_frame_keyboard_last_events_json.c_str(),
+		g_frame_keyboard_last_stream_count,
+		g_frame_keyboard_last_stream_json.c_str(),
+		g_frame_keyboard_last_command_count,
+		g_browser_keyboard.getModifierFlags(),
+		bool_json(g_browser_keyboard.keyDown(KEY_A)),
+		bool_json(g_browser_keyboard.keyDown(KEY_LSHIFT)));
+	g_frame_keyboard_json = buffer;
+	return g_frame_keyboard_json.c_str();
+}
+
+void update_original_keyboard_frame_input()
+{
+	if (!g_frame_keyboard_enabled) {
+		g_frame_keyboard_last_ran = false;
+		write_frame_keyboard_json();
+		return;
+	}
+
+	ensure_frame_keyboard_owner();
+	g_frame_keyboard_last_ran = true;
+	++g_frame_keyboard_ticks;
+	g_frame_keyboard_last_primary_remaining_before = WasmWin32Input::message_queue_count;
+	g_frame_keyboard_last_mirror_before = WasmWin32Input::keyboard_message_queue_count;
+	g_frame_keyboard_last_focus_lost_pending_before = g_browser_keyboard.focusLostPending();
+
+	GlobalData *old_global_data = TheWritableGlobalData;
+	MessageStream *old_message_stream = TheMessageStream;
+	CommandList *old_command_list = TheCommandList;
+	Keyboard *old_keyboard = TheKeyboard;
+	if (TheWritableGlobalData == nullptr) {
+		TheWritableGlobalData = g_frame_keyboard_global_data;
+	}
+	TheMessageStream = g_frame_keyboard_message_stream;
+	TheCommandList = g_frame_keyboard_command_list;
+	TheKeyboard = &g_browser_keyboard;
+
+	g_frame_keyboard_last_mirror_drained = g_browser_keyboard.loadMirroredKeyMessages();
+	g_browser_keyboard.update();
+	g_browser_keyboard.createStreamMessages();
+
+	GameMessage *first = g_frame_keyboard_message_stream->getFirstMessage();
+	g_frame_keyboard_last_stream_count = count_game_messages(first);
+	g_frame_keyboard_last_events_json = build_browser_keyboard_events_json(g_browser_keyboard);
+	g_frame_keyboard_last_stream_json = build_original_keyboard_stream_json(first);
+	g_frame_keyboard_last_ignored = g_browser_keyboard.ignoredCount();
+	g_frame_keyboard_last_mirror_remaining = WasmWin32Input::keyboard_message_queue_count;
+	g_frame_keyboard_last_primary_remaining_after = WasmWin32Input::message_queue_count;
+	g_frame_keyboard_last_focus_lost_delivered = g_browser_keyboard.focusLostDelivered();
+
+	g_frame_keyboard_message_stream->propagateMessages();
+	g_frame_keyboard_last_command_count =
+		count_game_messages(g_frame_keyboard_command_list->getFirstMessage());
+	g_frame_keyboard_command_list->reset();
+
+	TheKeyboard = old_keyboard;
+	TheCommandList = old_command_list;
+	TheMessageStream = old_message_stream;
+	TheWritableGlobalData = old_global_data;
+	write_frame_keyboard_json();
+}
+
+const char *set_original_keyboard_frame_input_enabled(bool enabled)
+{
+	g_frame_keyboard_enabled = enabled;
+	if (enabled) {
+		ensure_frame_keyboard_owner();
+	}
+	write_frame_keyboard_json();
+	return g_frame_keyboard_json.c_str();
+}
+
+const char *reset_original_keyboard_frame_input()
+{
+	ensure_frame_keyboard_owner();
+	clear_frame_keyboard_messages();
+	g_browser_keyboard.resetProbeState();
+	WasmWin32Input::keyboard_message_queue_count = 0;
+	WasmWin32Input::keyboard_message_queue_overflowed = false;
+	for (unsigned int index = 0; index < WasmWin32Input::KeyboardMessageQueueCapacity(); ++index) {
+		WasmWin32Input::keyboard_message_queue[index] = {};
+	}
+	g_frame_keyboard_last_ran = false;
+	g_frame_keyboard_ticks = 0;
+	g_frame_keyboard_last_primary_remaining_before = 0;
+	g_frame_keyboard_last_primary_remaining_after = 0;
+	g_frame_keyboard_last_mirror_before = 0;
+	g_frame_keyboard_last_mirror_drained = 0;
+	g_frame_keyboard_last_mirror_remaining = 0;
+	g_frame_keyboard_last_ignored = 0;
+	g_frame_keyboard_last_stream_count = 0;
+	g_frame_keyboard_last_command_count = 0;
+	g_frame_keyboard_last_focus_lost_pending_before = false;
+	g_frame_keyboard_last_focus_lost_delivered = false;
+	g_frame_keyboard_last_events_json = "[]";
+	g_frame_keyboard_last_stream_json = "[]";
+	write_frame_keyboard_json();
+	return g_frame_keyboard_json.c_str();
 }
 
 const char *probe_original_keyboard_stream()
@@ -501,6 +725,26 @@ const char *queue_original_keyboard_focus_lost()
 } // namespace
 
 extern "C" {
+
+void cnc_port_update_original_keyboard_frame_input()
+{
+	update_original_keyboard_frame_input();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_set_original_keyboard_frame_input_enabled(int enabled)
+{
+	return set_original_keyboard_frame_input_enabled(enabled != 0);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_reset_original_keyboard_frame_input()
+{
+	return reset_original_keyboard_frame_input();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_keyboard_frame_input()
+{
+	return write_frame_keyboard_json();
+}
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_original_keyboard_input()
 {

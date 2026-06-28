@@ -249,6 +249,7 @@ const harnessState = {
   originalGuiMouseInput: null,
   originalKeyboardInput: null,
   originalKeyboardFrameTick: null,
+  originalKeyboardFrameInput: null,
   mountedArchives: [],
   logs: [],
 };
@@ -3032,6 +3033,8 @@ function applyModuleState(moduleState) {
   harnessState.win32Timing = moduleState.win32Timing ?? harnessState.win32Timing;
   harnessState.browserInput = moduleState.browserInput ?? harnessState.browserInput;
   syncBrowserCursor(harnessState.browserInput);
+  harnessState.originalKeyboardFrameInput =
+    moduleState.originalKeyboardFrameInput ?? harnessState.originalKeyboardFrameInput;
   harnessState.originalEngineLinked = Boolean(moduleState.originalEngineLinked);
   harnessState.originalCoreProbe = moduleState.originalCoreProbe ?? null;
   harnessState.globalDataProbe = moduleState.globalDataProbe ?? null;
@@ -3275,6 +3278,12 @@ async function loadWasmModule() {
         "cnc_port_probe_original_gui_mouse_stream", "string", []),
       probeOriginalCursorVisibility: module.cwrap(
         "cnc_port_probe_original_cursor_visibility", "string", ["number"]),
+      setOriginalKeyboardFrameInput: module.cwrap(
+        "cnc_port_set_original_keyboard_frame_input_enabled", "string", ["number"]),
+      resetOriginalKeyboardFrameInput: module.cwrap(
+        "cnc_port_reset_original_keyboard_frame_input", "string", []),
+      probeOriginalKeyboardFrameInput: module.cwrap(
+        "cnc_port_probe_original_keyboard_frame_input", "string", []),
       probeOriginalKeyboardInput: module.cwrap("cnc_port_probe_original_keyboard_input", "string", []),
       probeOriginalKeyboardFrameTick: module.cwrap(
         "cnc_port_probe_original_keyboard_frame_tick", "string", []),
@@ -3346,6 +3355,7 @@ function snapshotState() {
     originalWndProcInput: harnessState.originalWndProcInput,
     originalKeyboardInput: harnessState.originalKeyboardInput,
     originalKeyboardFrameTick: harnessState.originalKeyboardFrameTick,
+    originalKeyboardFrameInput: harnessState.originalKeyboardFrameInput,
     mountedArchives: harnessState.mountedArchives,
     logCount: harnessState.logs.length,
   };
@@ -4051,6 +4061,45 @@ async function probeOriginalKeyboardFrameTick() {
 
   const probe = parseModuleState(wasmModule.probeOriginalKeyboardFrameTick());
   harnessState.originalKeyboardFrameTick = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function setOriginalKeyboardFrameInputEnabled(enabled) {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.setOriginalKeyboardFrameInput(enabled ? 1 : 0));
+  harnessState.originalKeyboardFrameInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function resetOriginalKeyboardFrameInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.resetOriginalKeyboardFrameInput());
+  harnessState.originalKeyboardFrameInput = probe;
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
+async function probeOriginalKeyboardFrameInput() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+
+  const probe = parseModuleState(wasmModule.probeOriginalKeyboardFrameInput());
+  harnessState.originalKeyboardFrameInput = probe;
   applyModuleState(parseModuleState(wasmModule.state()));
   harnessState.wasm = "loaded";
   return probe;
@@ -4769,6 +4818,30 @@ async function rpc(command, payload = {}) {
         const probe = await probeOriginalKeyboardFrameTick();
         if (!probe) {
           return { ok: false, command, error: "Wasm module unavailable; original Keyboard frame tick cannot be probed" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "setOriginalKeyboardFrameInput":
+      {
+        const probe = await setOriginalKeyboardFrameInputEnabled(payload.enabled !== false);
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard frame input cannot be configured" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "resetOriginalKeyboardFrameInput":
+      {
+        const probe = await resetOriginalKeyboardFrameInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard frame input cannot be reset" };
+        }
+        return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "originalKeyboardFrameInputProbe":
+      {
+        const probe = await probeOriginalKeyboardFrameInput();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; original Keyboard frame input cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
       }

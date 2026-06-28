@@ -604,6 +604,7 @@ try {
     const keyStateLShift = 0x0010;
     const keyStateAutoRepeat = 0x0100;
     const keyA = 0x1e;
+    const keyEsc = 0x01;
     const keyLShift = 0x2a;
     const keyLost = 0xff;
     const mouseCursorArrow = 2;
@@ -1561,9 +1562,160 @@ try {
         || resetWndProcFocusKeyboard.probe?.keyStatus?.aDown !== false) {
       throw new Error(`Browser WndProc focus cleanup left original Keyboard state dirty: ${JSON.stringify(resetWndProcFocusKeyboard)}`);
     }
+
+    await page.locator("#viewport").focus();
+    const resetFrameOwnerInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameOwnerInput.ok
+        || resetFrameOwnerInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameOwnerInput.state.browserInput?.messageQueue?.overflowed !== false
+        || resetFrameOwnerInput.state.browserInput?.keyboardMessageQueue?.count !== 0
+        || resetFrameOwnerInput.state.browserInput?.keyboardMessageQueue?.overflowed !== false) {
+      throw new Error(`Original Keyboard frame-owned input reset mismatch: ${JSON.stringify(resetFrameOwnerInput)}`);
+    }
+    const disableFrameOwnerKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalKeyboardFrameInput", { enabled: false }));
+    if (!disableFrameOwnerKeyboard.ok
+        || disableFrameOwnerKeyboard.probe?.source !== "browser_original_keyboard_frame_input"
+        || disableFrameOwnerKeyboard.probe?.enabled !== false) {
+      throw new Error(`Original Keyboard frame-owned input did not disable cleanly: ${JSON.stringify(disableFrameOwnerKeyboard)}`);
+    }
+    const resetFrameOwnerProbeKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardInputProbe"));
+    if (!resetFrameOwnerProbeKeyboard.ok
+        || resetFrameOwnerProbeKeyboard.probe?.inputFrame !== 0
+        || resetFrameOwnerProbeKeyboard.probe?.modifiers !== 0
+        || resetFrameOwnerProbeKeyboard.probe?.keyStatus?.aDown !== false
+        || resetFrameOwnerProbeKeyboard.probe?.keyStatus?.leftShiftDown !== false) {
+      throw new Error(`Original Keyboard frame-owned shared keyboard reset mismatch: ${JSON.stringify(resetFrameOwnerProbeKeyboard)}`);
+    }
+    const resetFrameOwnerKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardFrameInput"));
+    if (!resetFrameOwnerKeyboard.ok
+        || resetFrameOwnerKeyboard.probe?.source !== "browser_original_keyboard_frame_input"
+        || resetFrameOwnerKeyboard.probe?.enabled !== false
+        || resetFrameOwnerKeyboard.probe?.initialized !== true
+        || resetFrameOwnerKeyboard.probe?.lastRan !== false
+        || resetFrameOwnerKeyboard.probe?.ticks !== 0
+        || resetFrameOwnerKeyboard.probe?.stream?.count !== 0
+        || resetFrameOwnerKeyboard.probe?.queue?.mirrorRemaining !== 0) {
+      throw new Error(`Original Keyboard frame-owned state reset mismatch: ${JSON.stringify(resetFrameOwnerKeyboard)}`);
+    }
+    const enableFrameOwnerKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalKeyboardFrameInput", { enabled: true }));
+    if (!enableFrameOwnerKeyboard.ok
+        || enableFrameOwnerKeyboard.probe?.enabled !== true
+        || enableFrameOwnerKeyboard.probe?.initialized !== true
+        || enableFrameOwnerKeyboard.probe?.lastRan !== false
+        || enableFrameOwnerKeyboard.probe?.ticks !== 0
+        || enableFrameOwnerKeyboard.probe?.lifecycle?.messageStream !== "frame-owned"
+        || enableFrameOwnerKeyboard.probe?.lifecycle?.commandList !== "frame-owned"
+        || enableFrameOwnerKeyboard.probe?.lifecycle?.promotedToTickFrame !== true) {
+      throw new Error(`Original Keyboard frame-owned input did not enable: ${JSON.stringify(enableFrameOwnerKeyboard)}`);
+    }
+
+    const wndProcBeforeFrameKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("originalWndProcInputProbe"));
+    const frameKeyboardQuitPostsBefore = wndProcBeforeFrameKeyboard.probe?.keyboard?.quitPosts ?? 0;
+    await page.keyboard.down("Escape");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1
+        && input?.keyboardMessageQueue?.count >= 1,
+      "original Keyboard frame-owned Escape keydown queues",
+    );
+    const frameKeyboardDown = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    const frameKeyboardDownProbe = frameKeyboardDown.state.originalKeyboardFrameInput;
+    const frameKeyboardDownMessages = frameKeyboardDownProbe?.stream?.messages ?? [];
+    if (!frameKeyboardDown.ok
+        || frameKeyboardDownProbe?.source !== "browser_original_keyboard_frame_input"
+        || frameKeyboardDownProbe?.enabled !== true
+        || frameKeyboardDownProbe?.initialized !== true
+        || frameKeyboardDownProbe?.lastRan !== true
+        || frameKeyboardDownProbe?.ticks !== 1
+        || frameKeyboardDownProbe?.lifecycle?.promotedToTickFrame !== true
+        || frameKeyboardDownProbe?.queue?.primaryRemainingBefore !== 0
+        || frameKeyboardDownProbe?.queue?.primaryRemainingAfter !== 0
+        || frameKeyboardDownProbe?.queue?.mirrorBefore !== 1
+        || frameKeyboardDownProbe?.queue?.mirrorDrained !== 1
+        || frameKeyboardDownProbe?.queue?.mirrorRemaining !== 0
+        || frameKeyboardDownProbe?.queue?.ignored !== 0
+        || frameKeyboardDownProbe?.stream?.count !== 1
+        || frameKeyboardDownProbe?.commandList?.countAfterPropagate !== 1
+        || frameKeyboardDownMessages[0]?.typeName !== "MSG_RAW_KEY_DOWN"
+        || frameKeyboardDownMessages[0]?.key !== keyEsc
+        || (frameKeyboardDownMessages[0]?.state & keyStateDown) === 0
+        || frameKeyboardDown.state.browserInput?.messageQueue?.count !== 0
+        || frameKeyboardDown.state.browserInput?.keyboardMessageQueue?.count !== 0) {
+      throw new Error(`Original Keyboard frame-owned Escape keydown did not run through tick_frame: ${JSON.stringify(frameKeyboardDown)}`);
+    }
+    const wndProcAfterFrameKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("originalWndProcInputProbe"));
+    if (!wndProcAfterFrameKeyboard.ok
+        || wndProcAfterFrameKeyboard.probe?.keyboard?.quitPosts !== frameKeyboardQuitPostsBefore + 1
+        || wndProcAfterFrameKeyboard.probe?.keyboard?.lastQuitExitCode !== 0
+        || wndProcAfterFrameKeyboard.probe?.messageQueue?.count !== 0) {
+      throw new Error(`Original WndProc did not retain Escape ownership during frame Keyboard input: ${JSON.stringify(wndProcAfterFrameKeyboard)}`);
+    }
+
+    await page.keyboard.up("Escape");
+    await waitForBrowserInput(
+      page,
+      (input) => input?.messageQueue?.count >= 1
+        && input?.keyboardMessageQueue?.count >= 1,
+      "original Keyboard frame-owned Escape keyup queues",
+    );
+    const frameKeyboardUp = await page.evaluate(() => window.CnCPort.rpc("frame", {
+      count: 1,
+    }));
+    const frameKeyboardUpProbe = frameKeyboardUp.state.originalKeyboardFrameInput;
+    const frameKeyboardUpMessages = frameKeyboardUpProbe?.stream?.messages ?? [];
+    if (!frameKeyboardUp.ok
+        || frameKeyboardUpProbe?.enabled !== true
+        || frameKeyboardUpProbe?.lastRan !== true
+        || frameKeyboardUpProbe?.ticks !== 2
+        || frameKeyboardUpProbe?.queue?.primaryRemainingBefore !== 0
+        || frameKeyboardUpProbe?.queue?.primaryRemainingAfter !== 0
+        || frameKeyboardUpProbe?.queue?.mirrorBefore !== 1
+        || frameKeyboardUpProbe?.queue?.mirrorDrained !== 1
+        || frameKeyboardUpProbe?.queue?.mirrorRemaining !== 0
+        || frameKeyboardUpProbe?.queue?.ignored !== 0
+        || frameKeyboardUpProbe?.stream?.count !== 1
+        || frameKeyboardUpProbe?.commandList?.countAfterPropagate !== 1
+        || frameKeyboardUpMessages[0]?.typeName !== "MSG_RAW_KEY_UP"
+        || frameKeyboardUpMessages[0]?.key !== keyEsc
+        || (frameKeyboardUpMessages[0]?.state & keyStateUp) === 0
+        || frameKeyboardUp.state.browserInput?.messageQueue?.count !== 0
+        || frameKeyboardUp.state.browserInput?.keyboardMessageQueue?.count !== 0) {
+      throw new Error(`Original Keyboard frame-owned Escape keyup did not run through tick_frame: ${JSON.stringify(frameKeyboardUp)}`);
+    }
+    const resetFrameOwnerAfterInput = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetFrameOwnerAfterInput.ok
+        || resetFrameOwnerAfterInput.state.browserInput?.messageQueue?.count !== 0
+        || resetFrameOwnerAfterInput.state.browserInput?.keyboardMessageQueue?.count !== 0) {
+      throw new Error(`Original Keyboard frame-owned input cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterInput)}`);
+    }
+    const resetFrameOwnerAfterKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("resetOriginalKeyboardFrameInput"));
+    if (!resetFrameOwnerAfterKeyboard.ok
+        || resetFrameOwnerAfterKeyboard.probe?.ticks !== 0
+        || resetFrameOwnerAfterKeyboard.probe?.lastRan !== false
+        || resetFrameOwnerAfterKeyboard.probe?.stream?.count !== 0
+        || resetFrameOwnerAfterKeyboard.probe?.queue?.mirrorRemaining !== 0) {
+      throw new Error(`Original Keyboard frame-owned keyboard cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterKeyboard)}`);
+    }
+    const disableFrameOwnerAfterKeyboard = await page.evaluate(() =>
+      window.CnCPort.rpc("setOriginalKeyboardFrameInput", { enabled: false }));
+    if (!disableFrameOwnerAfterKeyboard.ok
+        || disableFrameOwnerAfterKeyboard.probe?.enabled !== false
+        || disableFrameOwnerAfterKeyboard.probe?.lastRan !== false) {
+      throw new Error(`Original Keyboard frame-owned input cleanup disable mismatch: ${JSON.stringify(disableFrameOwnerAfterKeyboard)}`);
+    }
   }
 
-  const initialFrame = bootResult.state.frame;
+  const frameBaseline = await page.evaluate(() => window.CnCPort.rpc("state"));
+  const initialFrame = frameBaseline.state.frame;
   const frameResult = await page.evaluate(() => window.CnCPort.rpc("frame", {
     count: 3,
   }));

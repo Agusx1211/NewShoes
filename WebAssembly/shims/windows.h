@@ -979,6 +979,9 @@ inline bool key_pressed_since_last_query[256] = {};
 inline MSG message_queue[256] = {};
 inline unsigned int message_queue_count = 0;
 inline bool message_queue_overflowed = false;
+inline MSG keyboard_message_queue[256] = {};
+inline unsigned int keyboard_message_queue_count = 0;
+inline bool keyboard_message_queue_overflowed = false;
 inline unsigned int quit_message_posts = 0;
 inline int last_quit_exit_code = 0;
 struct WindowClassRecord
@@ -1054,6 +1057,16 @@ static inline unsigned int MessageQueueCapacity()
 	return static_cast<unsigned int>(sizeof(message_queue) / sizeof(message_queue[0]));
 }
 
+static inline unsigned int KeyboardMessageQueueCapacity()
+{
+	return static_cast<unsigned int>(sizeof(keyboard_message_queue) / sizeof(keyboard_message_queue[0]));
+}
+
+static inline bool IsKeyboardMessage(UINT message)
+{
+	return message >= WM_KEYDOWN && message <= WM_SYSKEYUP;
+}
+
 static inline bool MessageMatchesFilter(const MSG &message, HWND window, UINT filter_min, UINT filter_max)
 {
 	if (window != nullptr && message.hwnd != window) {
@@ -1078,6 +1091,19 @@ static inline void RemoveQueuedMessage(unsigned int logical_index)
 	--message_queue_count;
 }
 
+static inline void RemoveQueuedKeyboardMessage(unsigned int logical_index)
+{
+	if (logical_index >= keyboard_message_queue_count) {
+		return;
+	}
+
+	for (unsigned int index = logical_index; index + 1 < keyboard_message_queue_count; ++index) {
+		keyboard_message_queue[index] = keyboard_message_queue[index + 1];
+	}
+	keyboard_message_queue[keyboard_message_queue_count - 1] = {};
+	--keyboard_message_queue_count;
+}
+
 static inline bool ReadQueuedMessage(MSG *message, HWND window, UINT filter_min, UINT filter_max, bool remove)
 {
 	for (unsigned int index = 0; index < message_queue_count; ++index) {
@@ -1097,6 +1123,40 @@ static inline bool ReadQueuedMessage(MSG *message, HWND window, UINT filter_min,
 	return false;
 }
 
+static inline bool ReadQueuedKeyboardMessage(MSG *message, bool remove)
+{
+	for (unsigned int index = 0; index < keyboard_message_queue_count; ++index) {
+		MSG &queued = keyboard_message_queue[index];
+		if (!IsKeyboardMessage(queued.message)) {
+			continue;
+		}
+
+		if (message != nullptr) {
+			*message = queued;
+		}
+		if (remove) {
+			RemoveQueuedKeyboardMessage(index);
+		}
+		return true;
+	}
+	return false;
+}
+
+static inline bool QueueKeyboardMessageCopy(const MSG &message)
+{
+	if (!IsKeyboardMessage(message.message)) {
+		return true;
+	}
+	if (keyboard_message_queue_count >= KeyboardMessageQueueCapacity()) {
+		keyboard_message_queue_overflowed = true;
+		return false;
+	}
+
+	keyboard_message_queue[keyboard_message_queue_count] = message;
+	++keyboard_message_queue_count;
+	return true;
+}
+
 static inline bool QueueMessage(HWND window, UINT message, WPARAM w_param, LPARAM l_param, DWORD time, const POINT *point)
 {
 	if (message_queue_count >= MessageQueueCapacity()) {
@@ -1112,6 +1172,7 @@ static inline bool QueueMessage(HWND window, UINT message, WPARAM w_param, LPARA
 	queued.time = time != 0 ? time : static_cast<DWORD>(Win32PortNowMilliseconds());
 	queued.pt = point != nullptr ? *point : cursor_position;
 	++message_queue_count;
+	QueueKeyboardMessageCopy(queued);
 	return true;
 }
 
@@ -1243,10 +1304,15 @@ static inline void Reset()
 	capture_window = nullptr;
 	message_queue_count = 0;
 	message_queue_overflowed = false;
+	keyboard_message_queue_count = 0;
+	keyboard_message_queue_overflowed = false;
 	quit_message_posts = 0;
 	last_quit_exit_code = 0;
 	for (unsigned int index = 0; index < MessageQueueCapacity(); ++index) {
 		message_queue[index] = {};
+	}
+	for (unsigned int index = 0; index < KeyboardMessageQueueCapacity(); ++index) {
+		keyboard_message_queue[index] = {};
 	}
 	for (int index = 0; index < 256; ++index) {
 		key_down[index] = false;
