@@ -1413,6 +1413,11 @@ static inline BOOL ReleaseCapture()
 	return TRUE;
 }
 
+static inline HWND GetCapture()
+{
+	return WasmWin32Input::capture_window;
+}
+
 static inline BOOL GetWindowRect(HWND window, RECT *rect)
 {
 	if (rect == nullptr) {

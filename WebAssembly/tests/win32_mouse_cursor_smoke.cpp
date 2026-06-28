@@ -17,6 +17,9 @@
 //     the OS cursor handle is cleared.  setVisibility(true) restores it.  This
 //     is the seam the browser uses to apply `cursor: none` (engine-drawn) vs a
 //     real CSS cursor.
+//   - The browser Win32 shim preserves SetCapture/GetCapture/ReleaseCapture
+//     bookkeeping for future engine paths that ask the OS layer to keep mouse
+//     input routed to the game window while dragging.
 //   - Win32Mouse::initCursorResources() populates the directional cursor
 //     resource table from LoadCursorFromFile() (browser shim returns the path
 //     as a non-null HCURSOR), so a subsequent setCursor(ARROW) routes a
@@ -31,6 +34,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <cstdint>
 
 #include <windows.h>
 
@@ -110,6 +114,33 @@ bool exercise_redraw_mode_decision()
 		TheGlobalData = oldGlobalData;
 	}
 
+	return ok;
+}
+
+bool exercise_win32_capture_bookkeeping()
+{
+	bool ok = true;
+	WasmWin32Input::Reset();
+
+	HWND first_window = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x10000));
+	HWND second_window = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x10001));
+
+	ok = expect(GetCapture() == nullptr,
+		"browser Win32 capture shim should start with no captured window") && ok;
+	ok = expect(SetCapture(first_window) == nullptr,
+		"SetCapture should return the previous null capture window") && ok;
+	ok = expect(GetCapture() == first_window,
+		"GetCapture should report the first captured window") && ok;
+	ok = expect(SetCapture(second_window) == first_window,
+		"SetCapture should return the previous captured window") && ok;
+	ok = expect(GetCapture() == second_window,
+		"GetCapture should report the replacement captured window") && ok;
+	ok = expect(ReleaseCapture() == TRUE,
+		"ReleaseCapture should succeed in the browser Win32 shim") && ok;
+	ok = expect(GetCapture() == nullptr,
+		"ReleaseCapture should clear the captured window") && ok;
+
+	WasmWin32Input::Reset();
 	return ok;
 }
 
@@ -203,6 +234,7 @@ int main()
 {
 	bool ok = true;
 	ok = exercise_redraw_mode_decision() && ok;
+	ok = exercise_win32_capture_bookkeeping() && ok;
 	ok = exercise_cursor_handle_lifecycle() && ok;
 
 	if (!ok) {

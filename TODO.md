@@ -3071,6 +3071,15 @@ shares structure and follows behind.
       verifies `MSG_RAW_KEY_DOWN`, `MSG_RAW_KEY_UP`, and left-shift modifier
       folding on the original `MessageStream`.
 - [ ] Pointer lock / capture behavior where needed.
+      - [x] Add focused Win32 capture bookkeeping coverage:
+            `win32-mouse-cursor-smoke` verifies
+            `SetCapture` / `GetCapture` / `ReleaseCapture` against the browser
+            Win32 shim's captured-window state.
+      - [x] Add a focused browser harness proof for DOM pointer capture during
+            mouse drag: pointerdown claims canvas pointer capture, an
+            outside-canvas drag still queues clamped `WM_MOUSEMOVE` through the
+            browser input bridge, original `WndProc` feeds `Win32Mouse`, and
+            pointerup releases capture.
 - [ ] Cursor rendering (engine-drawn cursor vs CSS cursor).
       - [x] Add a focused `win32-mouse-cursor-smoke` proof for the original
             `Mouse()` / `Win32Mouse` cursor contract: `m_winCursors` selects

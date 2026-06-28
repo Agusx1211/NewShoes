@@ -203,6 +203,19 @@ const harnessState = {
     css: canvas.style.cursor || "auto",
     visible: true,
   },
+  browserPointerCapture: {
+    source: "browser_dom_pointer_capture",
+    supported: typeof canvas.setPointerCapture === "function"
+      && typeof canvas.releasePointerCapture === "function",
+    active: false,
+    pointerId: null,
+    claims: 0,
+    releases: 0,
+    gotEvents: 0,
+    lostEvents: 0,
+    lastEvent: null,
+    lastError: null,
+  },
   canvas: {
     width: canvas.width,
     height: canvas.height,
@@ -3302,6 +3315,7 @@ function snapshotState() {
     graphics: harnessState.graphics,
     browserInput: harnessState.browserInput,
     browserCursor: harnessState.browserCursor,
+    browserPointerCapture: harnessState.browserPointerCapture,
     originalEngineLinked: harnessState.originalEngineLinked,
     originalCoreProbe: harnessState.originalCoreProbe,
     globalDataProbe: harnessState.globalDataProbe,
@@ -3673,6 +3687,104 @@ function resetDoubleClickState() {
   doubleClickStateByButton.clear();
 }
 
+function browserPointerCaptureSupported() {
+  return typeof canvas.setPointerCapture === "function"
+    && typeof canvas.releasePointerCapture === "function";
+}
+
+function recordBrowserPointerCaptureEvent(eventName, event, overrides = {}) {
+  const pointerId = Number.isFinite(event?.pointerId) ? event.pointerId : null;
+  harnessState.browserPointerCapture = {
+    ...harnessState.browserPointerCapture,
+    supported: browserPointerCaptureSupported(),
+    lastEvent: {
+      name: eventName,
+      pointerId,
+      clientX: Number.isFinite(event?.clientX) ? event.clientX : null,
+      clientY: Number.isFinite(event?.clientY) ? event.clientY : null,
+    },
+    ...overrides,
+  };
+}
+
+function claimBrowserPointerCapture(event) {
+  if (!browserPointerCaptureSupported()) {
+    recordBrowserPointerCaptureEvent("pointerdown-unsupported", event, {
+      active: false,
+      pointerId: null,
+    });
+    return;
+  }
+
+  try {
+    canvas.setPointerCapture(event.pointerId);
+    recordBrowserPointerCaptureEvent("pointerdown-claim", event, {
+      active: true,
+      pointerId: event.pointerId,
+      claims: harnessState.browserPointerCapture.claims + 1,
+      lastError: null,
+    });
+  } catch (error) {
+    recordBrowserPointerCaptureEvent("pointerdown-claim-error", event, {
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function releaseBrowserPointerCapture(event) {
+  if (!browserPointerCaptureSupported()) {
+    recordBrowserPointerCaptureEvent("pointerup-unsupported", event, {
+      active: false,
+      pointerId: null,
+    });
+    return;
+  }
+
+  const pointerId = harnessState.browserPointerCapture.pointerId ?? event.pointerId;
+  try {
+    if (Number.isFinite(pointerId) && canvas.hasPointerCapture?.(pointerId)) {
+      canvas.releasePointerCapture(pointerId);
+    }
+    recordBrowserPointerCaptureEvent("pointerup-release", event, {
+      active: false,
+      pointerId: null,
+      releases: harnessState.browserPointerCapture.releases + 1,
+      lastError: null,
+    });
+  } catch (error) {
+    recordBrowserPointerCaptureEvent("pointerup-release-error", event, {
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function resetBrowserPointerCaptureState() {
+  const pointerId = harnessState.browserPointerCapture.pointerId;
+  if (browserPointerCaptureSupported()
+      && Number.isFinite(pointerId)
+      && canvas.hasPointerCapture?.(pointerId)) {
+    try {
+      canvas.releasePointerCapture(pointerId);
+    } catch (error) {
+      harnessState.browserPointerCapture.lastError =
+        error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  harnessState.browserPointerCapture = {
+    source: "browser_dom_pointer_capture",
+    supported: browserPointerCaptureSupported(),
+    active: false,
+    pointerId: null,
+    claims: 0,
+    releases: 0,
+    gotEvents: 0,
+    lostEvents: 0,
+    lastEvent: null,
+    lastError: harnessState.browserPointerCapture.lastError,
+  };
+}
+
 function wheelWParam(event) {
   const delta = event.deltaY > 0 ? -120 : 120;
   return (delta & 0xffff) << 16;
@@ -3774,6 +3886,7 @@ async function resetBrowserInput() {
     return null;
   }
   resetDoubleClickState();
+  resetBrowserPointerCaptureState();
   applyModuleState(parseModuleState(wasmModule.resetBrowserInput()));
   harnessState.wasm = "loaded";
   return snapshotState();
@@ -7009,6 +7122,7 @@ canvas.addEventListener("pointerdown", (event) => {
   canvas.focus();
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, true, point);
+  claimBrowserPointerCapture(event);
   event.preventDefault();
   void pushBrowserInputToWasm({
     cursor: point,
@@ -7023,6 +7137,7 @@ canvas.addEventListener("pointerup", (event) => {
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, false, point);
   rememberPointerUpForDoubleClick(event, point);
+  releaseBrowserPointerCapture(event);
   event.preventDefault();
   void pushBrowserInputToWasm({
     cursor: point,
@@ -7048,6 +7163,20 @@ canvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 canvas.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+});
+canvas.addEventListener("gotpointercapture", (event) => {
+  recordBrowserPointerCaptureEvent("gotpointercapture", event, {
+    active: true,
+    pointerId: event.pointerId,
+    gotEvents: harnessState.browserPointerCapture.gotEvents + 1,
+  });
+});
+canvas.addEventListener("lostpointercapture", (event) => {
+  recordBrowserPointerCaptureEvent("lostpointercapture", event, {
+    active: false,
+    pointerId: null,
+    lostEvents: harnessState.browserPointerCapture.lostEvents + 1,
+  });
 });
 window.addEventListener("keydown", (event) => {
   const virtualKey = virtualKeyFromEvent(event);

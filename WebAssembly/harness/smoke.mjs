@@ -107,6 +107,22 @@ async function waitForBrowserInput(page, predicate, label) {
   throw new Error(`${label} browser input state not observed: ${JSON.stringify(result.state.browserInput)}`);
 }
 
+async function waitForHarnessState(page, predicate, label) {
+  const deadline = Date.now() + 2000;
+  let result = await page.evaluate(() => window.CnCPort.rpc("state"));
+
+  while (Date.now() < deadline) {
+    if (predicate(result.state)) {
+      return result.state;
+    }
+
+    await page.waitForTimeout(20);
+    result = await page.evaluate(() => window.CnCPort.rpc("state"));
+  }
+
+  throw new Error(`${label} harness state not observed: ${JSON.stringify(result.state)}`);
+}
+
 async function assertQueuedMessages(page, expectedMessages, label) {
   for (let index = 0; index < expectedMessages.length; ++index) {
     const expected = expectedMessages[index];
@@ -885,6 +901,96 @@ try {
         || lastMouseEvent?.left?.state !== "down"
         || lastMouseEvent?.left?.frame !== 1) {
       throw new Error(`Original WndProc did not feed Win32Mouse: ${JSON.stringify(originalWndProcProbe)}`);
+    }
+
+    await page.mouse.move(canvasBox.x + 111, canvasBox.y + 88);
+    const resetBeforePointerCapture = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetBeforePointerCapture.ok
+        || resetBeforePointerCapture.state.browserInput?.messageQueue?.count !== 0
+        || resetBeforePointerCapture.state.browserInput?.messageQueue?.overflowed !== false
+        || resetBeforePointerCapture.state.browserPointerCapture?.active !== false) {
+      throw new Error(`Browser pointer-capture reset mismatch: ${JSON.stringify(resetBeforePointerCapture)}`);
+    }
+
+    await page.mouse.down();
+    const pointerCaptureDownState = await waitForHarnessState(
+      page,
+      (state) => state.browserPointerCapture?.supported === true
+        && state.browserPointerCapture.active === true
+        && state.browserPointerCapture.pointerId !== null
+        && state.browserPointerCapture.claims === 1
+        && state.browserInput?.messageQueue?.count >= 1,
+      "browser pointer-capture down",
+    );
+    if (pointerCaptureDownState.browserInput?.cursor?.x !== 111
+        || pointerCaptureDownState.browserInput?.cursor?.y !== 88
+        || pointerCaptureDownState.browserPointerCapture.lastError !== null) {
+      throw new Error(`Browser pointer down did not claim pointer capture cleanly: ${JSON.stringify(pointerCaptureDownState.browserPointerCapture)}`);
+    }
+
+    await page.mouse.move(canvasBox.x + canvasBox.width + 80, canvasBox.y + 88);
+    const pointerCaptureDragState = await waitForHarnessState(
+      page,
+      (state) => state.browserPointerCapture?.active === true
+        && state.browserInput?.cursor?.available
+        && state.browserInput.cursor.x === 1279
+        && state.browserInput.cursor.y === 88
+        && state.browserInput.messageQueue?.count >= 2,
+      "browser pointer-captured drag outside canvas",
+    );
+    if (pointerCaptureDragState.browserPointerCapture.lastEvent?.pointerId === null) {
+      throw new Error(`Browser pointer-captured drag did not retain pointer identity: ${JSON.stringify(pointerCaptureDragState.browserPointerCapture)}`);
+    }
+
+    const pointerCaptureDragPump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!pointerCaptureDragPump.ok
+        || pointerCaptureDragPump.probe.pump?.lastPumped !== 2
+        || pointerCaptureDragPump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Browser pointer-captured drag did not pump through original WndProc: ${JSON.stringify(pointerCaptureDragPump)}`);
+    }
+    const pointerCaptureDragProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const pointerCaptureDragEvent = pointerCaptureDragProbe.probe?.mouse?.lastEvent;
+    if (!pointerCaptureDragProbe.ok
+        || pointerCaptureDragProbe.probe.mouse?.lastProbeDrained !== 2
+        || pointerCaptureDragEvent?.pos?.x !== 1279
+        || pointerCaptureDragEvent?.pos?.y !== 88) {
+      throw new Error(`Browser pointer-captured drag did not feed Win32Mouse outside-canvas coordinates: ${JSON.stringify(pointerCaptureDragProbe)}`);
+    }
+
+    await page.mouse.up();
+    const pointerCaptureReleaseState = await waitForHarnessState(
+      page,
+      (state) => state.browserPointerCapture?.active === false
+        && state.browserPointerCapture.releases === 1
+        && state.browserInput?.messageQueue?.count >= 1
+        && state.browserInput.cursor?.x === 1279
+        && state.browserInput.cursor?.y === 88,
+      "browser pointer-capture release",
+    );
+    if (pointerCaptureReleaseState.browserPointerCapture.lastError !== null) {
+      throw new Error(`Browser pointer capture release failed: ${JSON.stringify(pointerCaptureReleaseState.browserPointerCapture)}`);
+    }
+    const pointerCaptureReleasePump = await page.evaluate(() => window.CnCPort.rpc("pumpOriginalWndProcInput"));
+    if (!pointerCaptureReleasePump.ok
+        || pointerCaptureReleasePump.probe.pump?.lastPumped !== 1
+        || pointerCaptureReleasePump.probe.messageQueue?.count !== 0) {
+      throw new Error(`Browser pointer capture release did not pump through original WndProc: ${JSON.stringify(pointerCaptureReleasePump)}`);
+    }
+    const pointerCaptureReleaseProbe = await page.evaluate(() => window.CnCPort.rpc("originalWndProcInputProbe"));
+    const pointerCaptureReleaseEvent = pointerCaptureReleaseProbe.probe?.mouse?.lastEvent;
+    if (!pointerCaptureReleaseProbe.ok
+        || pointerCaptureReleaseProbe.probe.mouse?.lastProbeDrained !== 1
+        || pointerCaptureReleaseEvent?.pos?.x !== 1279
+        || pointerCaptureReleaseEvent?.pos?.y !== 88
+        || pointerCaptureReleaseEvent?.left?.state !== "up") {
+      throw new Error(`Browser pointer capture release did not feed Win32Mouse: ${JSON.stringify(pointerCaptureReleaseProbe)}`);
+    }
+
+    const resetAfterPointerCapture = await page.evaluate(() => window.CnCPort.rpc("resetInput"));
+    if (!resetAfterPointerCapture.ok
+        || resetAfterPointerCapture.state.browserInput?.messageQueue?.count !== 0
+        || resetAfterPointerCapture.state.browserPointerCapture?.active !== false) {
+      throw new Error(`Browser pointer-capture cleanup mismatch: ${JSON.stringify(resetAfterPointerCapture)}`);
     }
 
     await page.mouse.move(canvasBox.x + 234, canvasBox.y + 56);
