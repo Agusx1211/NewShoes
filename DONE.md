@@ -3312,6 +3312,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       speech, and music BIG payloads (`AudioZH.big`, `AudioEnglishZH.big`,
       `SpeechZH.big`, `SpeechEnglishZH.big`, `MusicZH.big`, `Music.big`)
       while still reporting the browser Web Audio device/runtime as not ready.
+- [x] Add `npm run verify:miles-audio-playback-frontier`, a source verifier
+      that pins the current Miles sample/stream handle allocation, release,
+      start, completion, Bink-sharing, and inert `Mss.H` shim frontier that a
+      real Web Audio backend must replace.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

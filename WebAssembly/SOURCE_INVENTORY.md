@@ -375,7 +375,14 @@ The wasm CMake skeleton currently builds:
   446, `openDevice()` call line 454, `AIL_set_file_callbacks` line 458, the
   `openDevice` definition at line 1444 plus its Miles call ordering, and the
   inert compile-only `Mss.H` functions. Miles and WWAudio remain compile-only
-  and inert, not runtime audio.
+  and inert, not runtime audio. The playback-handle companion verifier `npm
+  run verify:miles-audio-playback-frontier` pins the sample/stream handle
+  allocate/release/start/observe frontier (`releaseMilesHandles`,
+  `freeAllMilesHandles`, `getFirst2DSample`, `getFirst3DSample`,
+  `initSamplePools`, `playStream`, `playSample`, `playSample3D`,
+  `notifyOfAudioCompletion`, `findPlayingAudioFrom`, `getHandleForBink`,
+  `releaseHandleForBink`) and its inert `Mss.H` declarations; this remains
+  compile-only/inert, not runtime audio.
 - `zh_bink_video_device_compile_frontier`: original
   `GameEngineDevice/Source/VideoDevice/Bink/BinkVideoPlayer.cpp` compiled into a
   wasm static library against real video-player interfaces and compile-only Bink
