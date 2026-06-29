@@ -3328,6 +3328,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SoundManager` filename hook, `MusicTrack` filename parsing, and the
       `GameAudio.cpp` / `AudioSettings.h` field mappings. This verifies source
       structure only, not runtime audio.
+- [x] Add `npm run verify:audio-settings-frontier`, a source-only verifier
+      for the `AudioSettings` / `AudioManager::init` startup contract: field
+      declarations, `audioSettingsFieldParseTable` mappings, original audio INI
+      load order, and the `AudioEventRTS::generateFilenamePrefix` settings
+      consumer.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
@@ -3341,6 +3346,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       harness now proves the current Zero Hour audio archives contain resolvable
       music, SFX, voice, and speech payload candidates while still reporting
       `AudioSettings.ini` / Web Audio readiness as future work.
+- [x] Extend `npm run inventory:startup-archives` so the
+      `AudioManager::init` audio startup gaps report expected source archives:
+      the current missing `AudioSettings.ini`, `Default\Music.ini`,
+      `Default\Speech.ini`, and `Default\Voice.ini` are now classified as
+      absent optional base `INI.big` files, and the base archive readiness
+      contract includes the base audio settings/default INIs.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

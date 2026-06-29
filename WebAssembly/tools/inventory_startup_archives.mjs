@@ -91,8 +91,10 @@ function usage() {
     "  --require-audio-startup Bounded verification mode for the",
     "                          AudioManager::init audio INI preflight. Fails",
     "                          nonzero (ok=false) when any audio startup INI is",
-    "                          absent. Current Zero Hour-only assets fail under",
-    "                          this mode by design.",
+    "                          absent, reporting the expected source archive for",
+    "                          base-owned audio settings/default INIs. Current",
+    "                          Zero Hour-only assets fail under this mode by",
+    "                          design.",
   ].join("\n");
 }
 
@@ -271,6 +273,19 @@ const baseArchiveStartupPaths = new Set([
   "data\\english\\commandmap.ini",
 ]);
 
+const baseArchiveAudioStartupPaths = new Set([
+  "data\\ini\\audiosettings.ini",
+  "data\\ini\\default\\music.ini",
+  "data\\ini\\default\\soundeffects.ini",
+  "data\\ini\\default\\speech.ini",
+  "data\\ini\\default\\voice.ini",
+]);
+
+const baseArchiveReadinessPaths = new Set([
+  ...baseArchiveStartupPaths,
+  ...baseArchiveAudioStartupPaths,
+]);
+
 function expectedBaseArchiveForPath(normalizedPath) {
   return normalizedPath === "data\\english\\commandmap.ini"
     ? "English.big"
@@ -283,7 +298,7 @@ function pathExistsInArchive(byPath, normalizedPath, archiveName) {
 
 function classifyMissingPath(path, presentBaseArchiveNames) {
   const normalizedPath = normalizeEntryPath(path);
-  if (baseArchiveStartupPaths.has(normalizedPath)) {
+  if (baseArchiveReadinessPaths.has(normalizedPath)) {
     const expectedSource = expectedBaseArchiveForPath(normalizedPath);
     return {
       optionalBase: true,
@@ -367,7 +382,7 @@ function buildInventory(assetsDir, archives) {
   // INI.big/English.big are supplied, separately from the Zero Hour-only
   // --strict contract.
   const baseArchiveReadiness = optionalBaseArchives.map((name) => {
-    const expectedFiles = [...baseArchiveStartupPaths]
+    const expectedFiles = [...baseArchiveReadinessPaths]
       .filter((path) => expectedBaseArchiveForPath(path) === name)
       .sort();
     const present = presentArchiveNames.has(name);
@@ -400,15 +415,36 @@ function buildInventory(assetsDir, archives) {
   });
   const audioStartupFiles = audioStartupPaths.map((path) => {
     const archivesForPath = byPath.get(normalizeEntryPath(path)) ?? [];
+    const found = archivesForPath.length > 0;
+    const classification = found
+      ? {}
+      : classifyMissingPath(path, presentBaseArchiveNames);
     return {
       path,
-      found: archivesForPath.length > 0,
+      found,
       archives: archivesForPath,
+      ...classification,
     };
   });
   const missingAudioStartupFiles = audioStartupFiles
     .filter((entry) => !entry.found)
     .map((entry) => entry.path);
+  const missingAudioStartupDetails = audioStartupFiles
+    .filter((entry) => !entry.found)
+    .map(({ path, optionalBase, expectedSource, reason }) => ({
+      path,
+      optionalBase: Boolean(optionalBase),
+      expectedSource: expectedSource ?? null,
+      reason: reason ?? "missing",
+    }));
+  const missingAudioByReason = {
+    optionalBaseArchiveAbsent: 0,
+    missingFromBaseArchive: 0,
+    missing: 0,
+  };
+  for (const detail of missingAudioStartupDetails) {
+    ++missingAudioByReason[detail.reason];
+  }
   const audioStartupReady = missingAudioStartupFiles.length === 0;
 
   return {
@@ -430,6 +466,8 @@ function buildInventory(assetsDir, archives) {
     audioStartupReady,
     audioStartupFiles,
     missingAudioStartupFiles,
+    missingAudioStartupDetails,
+    missingAudioByReason,
     requiredFiles,
     objectIniFiles: {
       count: objectIniEntries.length,
@@ -547,6 +585,18 @@ function assertShapeForCurrentZh(inventory) {
   if (JSON.stringify(inventory.missingAudioStartupFiles) !== JSON.stringify(expectedMissingAudio)) {
     failures.push("missingAudioStartupFiles should report the current absent audio startup INIs in source order");
   }
+  if (inventory.missingAudioStartupDetails?.length !== expectedMissingAudio.length ||
+      inventory.missingAudioStartupDetails.some((entry) =>
+        entry.expectedSource !== "INI.big" ||
+        entry.reason !== "optionalBaseArchiveAbsent" ||
+        entry.optionalBase !== true)) {
+    failures.push("missing audio startup details should classify current gaps as absent optional INI.big files");
+  }
+  if (inventory.missingAudioByReason?.optionalBaseArchiveAbsent !== expectedMissingAudio.length ||
+      inventory.missingAudioByReason?.missingFromBaseArchive !== 0 ||
+      inventory.missingAudioByReason?.missing !== 0) {
+    failures.push("missingAudioByReason should summarize the current absent optional INI.big audio gaps");
+  }
 
   if (failures.length > 0) {
     throw new Error(`Current Zero Hour asset inventory self-check failed: ${failures.join("; ")}`);
@@ -629,9 +679,7 @@ async function main() {
   }
   if (requireAudioStartup && !inventory.audioStartupReady) {
     inventory.ok = false;
-    inventory.requireAudioStartupFailures = inventory.missingAudioStartupFiles.map((path) => ({
-      path,
-    }));
+    inventory.requireAudioStartupFailures = inventory.missingAudioStartupDetails;
     fail(
       `Required audio startup-archive verification failed: missing ` +
       `${inventory.missingAudioStartupFiles.join(", ")}`,
