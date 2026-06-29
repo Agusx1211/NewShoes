@@ -673,9 +673,12 @@ shares structure and follows behind.
       proves `BinkOpen` can resolve the shipped loose payloads and fill the
       original `HBINK` fields, and `test:bink-provider-sidecar-browser` now
       proves a browser hook can synchronously copy decoded WebM sidecar pixels
-      into `BinkCopyToBuffer`'s wasm destination buffer. This remains open
-      until the original runtime uses that copied frame data for presentation
-      and the final decoder/format/upload contract is locked down.
+      into `BinkCopyToBuffer`'s wasm destination buffer. The browser
+      `test:bink-videoplayer-sidecar-browser` smoke now proves an original
+      `BinkVideoPlayer` / `BinkVideoStream::frameRender` flow can own that
+      sidecar copy into a `VideoBuffer`. This remains open until the final
+      decoder/format/upload contract is locked down and the copied frame data
+      is presented through the real W3D video texture path.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -685,8 +688,12 @@ shares structure and follows behind.
       `<video>`. The provider also emits browser-observable sidecar lifecycle
       hooks for open/decompress/pending-copy/copy-complete/advance/seek/close,
       and its browser-only copy hook can fill wasm memory from decoded WebM
-      sidecar pixels, but original runtime browser presentation, frame upload
-      through `W3DVideoBuffer`, and audio sync remain open.
+      sidecar pixels. The browser `BinkVideoPlayer` sidecar smoke now mounts
+      the real BIK payloads and sidecar manifest, installs the copy hook, and
+      verifies original player-owned open/decompress/render/advance/seek/close
+      copies decoded sidecar pixels into `SmokeVideoBuffer` memory. Original
+      runtime browser presentation, frame upload through real `W3DVideoBuffer`,
+      and audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise

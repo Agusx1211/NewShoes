@@ -133,6 +133,8 @@ protected:
 class SmokeVideoBuffer final : public VideoBuffer
 {
 public:
+	static constexpr unsigned char kSentinel = 0x5a;
+
 	explicit SmokeVideoBuffer(Type format) : VideoBuffer(format) {}
 
 	Bool allocate(UnsignedInt width, UnsignedInt height) override
@@ -142,7 +144,7 @@ public:
 		m_textureWidth = width;
 		m_textureHeight = height;
 		m_pitch = width * 4;
-		m_storage.assign(static_cast<std::size_t>(m_pitch) * height, 0x5a);
+		m_storage.assign(static_cast<std::size_t>(m_pitch) * height, kSentinel);
 		return TRUE;
 	}
 
@@ -161,6 +163,25 @@ public:
 
 	void unlock() override { ++unlock_count; }
 	Bool valid() override { return !m_storage.empty(); }
+
+	bool hasCopiedPixels() const
+	{
+		for (unsigned char value : m_storage) {
+			if (value != kSentinel) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	unsigned int checksum() const
+	{
+		unsigned int value = 0;
+		for (unsigned char byte : m_storage) {
+			value = (value + byte) & 0x00ffffffu;
+		}
+		return value;
+	}
 
 	Int lock_count = 0;
 	Int unlock_count = 0;
@@ -201,7 +222,8 @@ bool exercise_stream(
 	const char *name,
 	Int expected_width,
 	Int expected_height,
-	Int expected_frames)
+	Int expected_frames,
+	bool expect_copied_pixels)
 {
 	bool ok = expect(stream != nullptr, "BinkVideoPlayer did not open stream");
 	if (stream == nullptr) {
@@ -221,6 +243,12 @@ bool exercise_stream(
 	stream->frameRender(&buffer);
 	ok = expect(buffer.lock_count == 1 && buffer.unlock_count == 1,
 		"BinkVideoStream::frameRender did not lock/unlock the VideoBuffer once") && ok;
+	if (expect_copied_pixels) {
+		ok = expect(buffer.hasCopiedPixels(), "BinkVideoStream::frameRender did not copy sidecar pixels into VideoBuffer memory") && ok;
+		ok = expect(buffer.checksum() != 0, "BinkVideoStream::frameRender copied an all-zero buffer checksum") && ok;
+	} else {
+		ok = expect(!buffer.hasCopiedPixels(), "BinkVideoStream::frameRender unexpectedly changed VideoBuffer memory without a browser copy hook") && ok;
+	}
 	ok = expect(stream->frameIndex() == 0, "BinkDoFrame should not advance the frame cursor") && ok;
 
 	stream->frameNext();
@@ -239,9 +267,7 @@ bool exercise_stream(
 	return ok;
 }
 
-} // namespace
-
-int main()
+int run_runtime_smoke(bool expect_decode_ready, bool expect_copied_pixels)
 {
 	initMemoryManager();
 
@@ -268,12 +294,14 @@ int main()
 	add_video(*player, "VS_small", "VS_small");
 
 	ok = expect(player->getNumVideos() == 2, "BinkVideoPlayer video registration failed") && ok;
-	ok = expect(WasmBinkProviderCanDecodeFrames() == 0,
-		"Bink provider decode readiness must remain false without the browser sidecar copy hook") && ok;
+	ok = expect(WasmBinkProviderCanDecodeFrames() == (expect_decode_ready ? 1 : 0),
+		expect_decode_ready
+			? "Bink provider decode readiness must be true after installing the browser sidecar copy hook"
+			: "Bink provider decode readiness must remain false without the browser sidecar copy hook") && ok;
 	ok = exercise_stream(*player, player->open(AsciiString("GC_Background")),
-		"GC_Background", 800, 600, 180) && ok;
+		"GC_Background", 800, 600, 180, expect_copied_pixels) && ok;
 	ok = exercise_stream(*player, player->load(AsciiString("VS_small")),
-		"VS_small", 96, 120, 71) && ok;
+		"VS_small", 96, 120, 71, expect_copied_pixels) && ok;
 
 	player->deinit();
 	delete player;
@@ -285,3 +313,17 @@ int main()
 	ok = expect(audio.release_count >= 1, "BinkVideoPlayer did not release its Bink audio handle") && ok;
 	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+} // namespace
+
+extern "C" int run_bink_videoplayer_sidecar_copy_bridge_smoke()
+{
+	return run_runtime_smoke(true, true);
+}
+
+#ifndef BINK_VIDEOPLAYER_RUNTIME_SMOKE_NO_MAIN
+int main()
+{
+	return run_runtime_smoke(false, false);
+}
+#endif

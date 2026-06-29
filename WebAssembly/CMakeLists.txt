@@ -6473,3 +6473,41 @@ target_link_options(bink-videoplayer-runtime-smoke PRIVATE
   "SHELL:-sNODERAWFS=1"
   "SHELL:-sEXIT_RUNTIME=1"
 )
+
+add_executable(bink-videoplayer-browser-runtime-smoke
+  tests/bink_videoplayer_runtime_smoke.cpp
+)
+
+set_target_properties(bink-videoplayer-browser-runtime-smoke PROPERTIES
+  SUFFIX ".js"
+)
+
+target_link_libraries(bink-videoplayer-browser-runtime-smoke PRIVATE
+  zh_bink_video_device_compile_frontier
+  zh_gameclient_utility
+)
+
+target_compile_definitions(bink-videoplayer-browser-runtime-smoke PRIVATE
+  BINK_VIDEOPLAYER_RUNTIME_SMOKE_NO_MAIN
+)
+
+target_compile_options(bink-videoplayer-browser-runtime-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(bink-videoplayer-browser-runtime-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=web,worker"
+  "SHELL:-sMODULARIZE=1"
+  "SHELL:-sEXPORT_ES6=1"
+  "SHELL:-sEXPORT_NAME=createBinkVideoPlayerBrowserRuntimeSmokeModule"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_videoplayer_sidecar_copy_bridge_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
+)
