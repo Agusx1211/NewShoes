@@ -148,6 +148,7 @@ using AIL_file_seek_callback = S32 (AILCALLBACK *)(U32, S32, U32);
 using AIL_file_read_callback = U32 (AILCALLBACK *)(U32, void *, U32);
 using AIL_sample_callback = void (AILCALLBACK *)(HSAMPLE);
 using AIL_stream_callback = void (AILCALLBACK *)(HSTREAM);
+using AIL_3D_sample_callback = void (AILCALLBACK *)(H3DSAMPLE);
 
 #ifndef SMP_DONE
 #define SMP_DONE 1
@@ -167,6 +168,18 @@ using AIL_stream_callback = void (AILCALLBACK *)(HSTREAM);
 
 #ifndef MSS_BROWSER_MAX_STREAMS
 #define MSS_BROWSER_MAX_STREAMS 16
+#endif
+
+#ifndef MSS_BROWSER_MAX_3D_SAMPLES
+#define MSS_BROWSER_MAX_3D_SAMPLES 64
+#endif
+
+#ifndef MSS_BROWSER_MAX_3D_LISTENERS
+#define MSS_BROWSER_MAX_3D_LISTENERS 4
+#endif
+
+#ifndef MSS_BROWSER_MAX_3D_PROVIDERS
+#define MSS_BROWSER_MAX_3D_PROVIDERS 4
 #endif
 
 static inline std::uintptr_t MSSInvalidHandle()
@@ -226,6 +239,54 @@ struct MSSBrowserStreamState
 	AIL_stream_callback eos_callback = nullptr;
 };
 
+struct MSSBrowser3DVector
+{
+	F32 x = 0.0f;
+	F32 y = 0.0f;
+	F32 z = 0.0f;
+};
+
+struct MSSBrowser3DSampleState
+{
+	bool allocated = false;
+	bool released = false;
+	bool file_set = false;
+	bool started = false;
+	bool stopped = false;
+	bool resumed = false;
+	bool ended = false;
+	H3DSAMPLE handle = 0;
+	HPROVIDER provider = 0;
+	void *file_data = nullptr;
+	S32 status = SMP_DONE;
+	S32 user_data[8] = {};
+	S32 volume = 127;
+	S32 loop_count = 1;
+	U32 offset = 0;
+	U32 length = 0;
+	S32 playback_rate = 44100;
+	F32 occlusion = 0.0f;
+	F32 min_distance = 0.0f;
+	F32 max_distance = 0.0f;
+	F32 effects_level = 0.0f;
+	MSSBrowser3DVector position = {};
+	MSSBrowser3DVector velocity = {};
+	AIL_3D_sample_callback eos_callback = nullptr;
+};
+
+struct MSSBrowser3DListenerState
+{
+	bool allocated = false;
+	bool closed = false;
+	H3DPOBJECT handle = 0;
+	HPROVIDER provider = 0;
+	S32 user_data[8] = {};
+	MSSBrowser3DVector position = {};
+	MSSBrowser3DVector velocity = {};
+	MSSBrowser3DVector front = {};
+	MSSBrowser3DVector up = {};
+};
+
 struct MSSBrowserRuntimeState
 {
 	bool redist_directory_set = false;
@@ -244,8 +305,12 @@ struct MSSBrowserRuntimeState
 	std::uintptr_t next_3d_sample_handle = 0x3000;
 	std::uintptr_t next_listener_handle = 0x4000;
 	std::uintptr_t next_stream_handle = 0x5000;
+	bool provider_open[MSS_BROWSER_MAX_3D_PROVIDERS] = {};
+	S32 provider_speaker_type[MSS_BROWSER_MAX_3D_PROVIDERS] = {};
 	MSSBrowserSampleState samples[MSS_BROWSER_MAX_SAMPLES] = {};
 	MSSBrowserStreamState streams[MSS_BROWSER_MAX_STREAMS] = {};
+	MSSBrowser3DSampleState samples3D[MSS_BROWSER_MAX_3D_SAMPLES] = {};
+	MSSBrowser3DListenerState listeners3D[MSS_BROWSER_MAX_3D_LISTENERS] = {};
 	AIL_file_open_callback file_open = nullptr;
 	AIL_file_close_callback file_close = nullptr;
 	AIL_file_seek_callback file_seek = nullptr;
@@ -316,6 +381,75 @@ static inline MSSBrowserStreamState *MSSBrowserAllocateStream(HSTREAM handle)
 			stream.playback_rate =
 				state.digital_driver.output_rate > 0 ? state.digital_driver.output_rate : 44100;
 			return &stream;
+		}
+	}
+	return nullptr;
+}
+
+static inline bool MSSBrowserProviderValid(HPROVIDER provider)
+{
+	return provider > 0 && provider < MSS_BROWSER_MAX_3D_PROVIDERS;
+}
+
+static inline MSSBrowser3DSampleState *MSSBrowserFind3DSample(H3DSAMPLE handle)
+{
+	if (!MSSBrowserHandleValid(handle)) {
+		return nullptr;
+	}
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_3D_SAMPLES; ++i) {
+		MSSBrowser3DSampleState &sample = state.samples3D[i];
+		if (sample.allocated && !sample.released && sample.handle == handle) {
+			return &sample;
+		}
+	}
+	return nullptr;
+}
+
+static inline MSSBrowser3DSampleState *MSSBrowserAllocate3DSample(H3DSAMPLE handle, HPROVIDER provider)
+{
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_3D_SAMPLES; ++i) {
+		MSSBrowser3DSampleState &sample = state.samples3D[i];
+		if (!sample.allocated || sample.released) {
+			sample = MSSBrowser3DSampleState {};
+			sample.allocated = true;
+			sample.handle = handle;
+			sample.provider = provider;
+			sample.playback_rate =
+				state.digital_driver.output_rate > 0 ? state.digital_driver.output_rate : 44100;
+			return &sample;
+		}
+	}
+	return nullptr;
+}
+
+static inline MSSBrowser3DListenerState *MSSBrowserFind3DListener(H3DPOBJECT handle)
+{
+	if (!MSSBrowserHandleValid(handle)) {
+		return nullptr;
+	}
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_3D_LISTENERS; ++i) {
+		MSSBrowser3DListenerState &listener = state.listeners3D[i];
+		if (listener.allocated && !listener.closed && listener.handle == handle) {
+			return &listener;
+		}
+	}
+	return nullptr;
+}
+
+static inline MSSBrowser3DListenerState *MSSBrowserAllocate3DListener(H3DPOBJECT handle, HPROVIDER provider)
+{
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_3D_LISTENERS; ++i) {
+		MSSBrowser3DListenerState &listener = state.listeners3D[i];
+		if (!listener.allocated || listener.closed) {
+			listener = MSSBrowser3DListenerState {};
+			listener.allocated = true;
+			listener.handle = handle;
+			listener.provider = provider;
+			return &listener;
 		}
 	}
 	return nullptr;
@@ -596,30 +730,155 @@ static inline AIL_sample_callback AIL_register_EOS_callback(HSAMPLE sample, AIL_
 }
 static inline H3DSAMPLE AIL_allocate_3D_sample_handle(HPROVIDER provider)
 {
-	if (!MSSBrowserRuntimeStarted() || provider == 0) {
+	MSSBrowserRuntimeState &runtime = MSSBrowserRuntime();
+	if (!MSSBrowserRuntimeStarted()
+		|| !MSSBrowserProviderValid(provider)
+		|| !runtime.provider_open[provider]) {
 		return static_cast<H3DSAMPLE>(MSSInvalidHandle());
 	}
-	return static_cast<H3DSAMPLE>(MSSBrowserRuntime().next_3d_sample_handle++);
+	const H3DSAMPLE handle = static_cast<H3DSAMPLE>(runtime.next_3d_sample_handle++);
+	if (MSSBrowserAllocate3DSample(handle, provider) == nullptr) {
+		return static_cast<H3DSAMPLE>(MSSInvalidHandle());
+	}
+	return handle;
 }
-static inline void AIL_release_3D_sample_handle(H3DSAMPLE) {}
-static inline U32 AIL_set_3D_sample_file(H3DSAMPLE, U8 *) { return 0; }
+static inline void AIL_release_3D_sample_handle(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->released = true;
+		state->allocated = false;
+		state->status = SMP_DONE;
+		state->eos_callback = nullptr;
+	}
+}
+static inline U32 AIL_set_3D_sample_file(H3DSAMPLE sample, U8 *data)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state == nullptr || data == nullptr) {
+		return 0;
+	}
+	state->file_data = data;
+	state->file_set = true;
+	state->status = SMP_STOPPED;
+	return 1;
+}
 static inline U32 AIL_set_3D_sample_file(H3DSAMPLE sample, void *data)
 {
 	return AIL_set_3D_sample_file(sample, static_cast<U8 *>(data));
 }
-static inline void AIL_start_3D_sample(H3DSAMPLE) {}
-static inline void AIL_stop_3D_sample(H3DSAMPLE) {}
-static inline void AIL_resume_3D_sample(H3DSAMPLE) {}
-static inline void AIL_end_3D_sample(H3DSAMPLE) {}
-static inline void AIL_set_3D_sample_volume(H3DSAMPLE, S32) {}
-static inline S32 AIL_3D_sample_volume(H3DSAMPLE) { return 0; }
-static inline void AIL_set_3D_sample_loop_count(H3DSAMPLE, S32) {}
-static inline S32 AIL_3D_sample_loop_count(H3DSAMPLE) { return 0; }
-static inline void AIL_set_3D_sample_offset(H3DSAMPLE, U32) {}
-static inline U32 AIL_3D_sample_offset(H3DSAMPLE) { return 0; }
-static inline U32 AIL_3D_sample_length(H3DSAMPLE) { return 0; }
-static inline void AIL_set_3D_object_user_data(H3DPOBJECT, S32, S32) {}
-static inline S32 AIL_3D_object_user_data(H3DPOBJECT, S32) { return 0; }
+static inline void AIL_start_3D_sample(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr && state->file_set) {
+		state->started = true;
+		state->stopped = false;
+		state->resumed = false;
+		state->ended = false;
+		state->status = SMP_PLAYING;
+	}
+}
+static inline void AIL_stop_3D_sample(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->stopped = true;
+		state->status = SMP_STOPPED;
+	}
+}
+static inline void AIL_resume_3D_sample(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr && state->file_set) {
+		state->resumed = true;
+		state->stopped = false;
+		state->status = SMP_PLAYING;
+	}
+}
+static inline void AIL_end_3D_sample(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->ended = true;
+		state->status = SMP_DONE;
+		if (state->eos_callback != nullptr) {
+			state->eos_callback(sample);
+		}
+	}
+}
+static inline void AIL_set_3D_sample_volume(H3DSAMPLE sample, S32 volume)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->volume = volume;
+	}
+}
+static inline S32 AIL_3D_sample_volume(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->volume : 0;
+}
+static inline void AIL_set_3D_sample_loop_count(H3DSAMPLE sample, S32 loopCount)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->loop_count = loopCount;
+	}
+}
+static inline S32 AIL_3D_sample_loop_count(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->loop_count : 0;
+}
+static inline void AIL_set_3D_sample_offset(H3DSAMPLE sample, U32 offset)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->offset = offset;
+	}
+}
+static inline U32 AIL_3D_sample_offset(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->offset : 0;
+}
+static inline U32 AIL_3D_sample_length(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->length : 0;
+}
+static inline S32 AIL_3D_sample_status(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->status : SMP_DONE;
+}
+static inline void AIL_set_3D_object_user_data(H3DPOBJECT object, S32 index, S32 value)
+{
+	if (index < 0 || index >= 8) {
+		return;
+	}
+	MSSBrowser3DSampleState *sample = MSSBrowserFind3DSample(object);
+	if (sample != nullptr) {
+		sample->user_data[index] = value;
+		return;
+	}
+	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
+	if (listener != nullptr) {
+		listener->user_data[index] = value;
+	}
+}
+static inline S32 AIL_3D_object_user_data(H3DPOBJECT object, S32 index)
+{
+	if (index < 0 || index >= 8) {
+		return 0;
+	}
+	MSSBrowser3DSampleState *sample = MSSBrowserFind3DSample(object);
+	if (sample != nullptr) {
+		return sample->user_data[index];
+	}
+	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
+	return listener != nullptr ? listener->user_data[index] : 0;
+}
 static inline void AIL_set_3D_user_data(H3DSAMPLE sample, S32 index, S32 value)
 {
 	AIL_set_3D_object_user_data(sample, index, value);
@@ -628,30 +887,114 @@ static inline S32 AIL_3D_user_data(H3DSAMPLE sample, S32 index)
 {
 	return AIL_3D_object_user_data(sample, index);
 }
-static inline S32 AIL_3D_sample_playback_rate(H3DSAMPLE) { return 0; }
-static inline void AIL_set_3D_sample_playback_rate(H3DSAMPLE, S32) {}
-static inline void AIL_set_3D_sample_occlusion(H3DSAMPLE, F32) {}
-static inline void AIL_set_3D_position(H3DPOBJECT, F32, F32, F32) {}
-static inline void AIL_set_3D_orientation(H3DPOBJECT, F32, F32, F32, F32, F32, F32) {}
-static inline void AIL_set_3D_velocity_vector(H3DPOBJECT, F32, F32, F32) {}
-static inline void AIL_set_3D_sample_distances(H3DSAMPLE, F32, F32) {}
-static inline void AIL_set_3D_sample_effects_level(H3DSAMPLE, F32) {}
-using AIL_3D_sample_callback = void (AILCALLBACK *)(H3DSAMPLE);
+static inline S32 AIL_3D_sample_playback_rate(H3DSAMPLE sample)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	return state != nullptr ? state->playback_rate : 0;
+}
+static inline void AIL_set_3D_sample_playback_rate(H3DSAMPLE sample, S32 rate)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->playback_rate = rate;
+	}
+}
+static inline void AIL_set_3D_sample_occlusion(H3DSAMPLE sample, F32 occlusion)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->occlusion = occlusion;
+	}
+}
+static inline void AIL_set_3D_position(H3DPOBJECT object, F32 x, F32 y, F32 z)
+{
+	MSSBrowser3DSampleState *sample = MSSBrowserFind3DSample(object);
+	if (sample != nullptr) {
+		sample->position = { x, y, z };
+		return;
+	}
+	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
+	if (listener != nullptr) {
+		listener->position = { x, y, z };
+	}
+}
+static inline void AIL_set_3D_orientation(
+	H3DPOBJECT object,
+	F32 frontX,
+	F32 frontY,
+	F32 frontZ,
+	F32 upX,
+	F32 upY,
+	F32 upZ)
+{
+	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
+	if (listener != nullptr) {
+		listener->front = { frontX, frontY, frontZ };
+		listener->up = { upX, upY, upZ };
+	}
+}
+static inline void AIL_set_3D_velocity_vector(H3DPOBJECT object, F32 x, F32 y, F32 z)
+{
+	MSSBrowser3DSampleState *sample = MSSBrowserFind3DSample(object);
+	if (sample != nullptr) {
+		sample->velocity = { x, y, z };
+		return;
+	}
+	MSSBrowser3DListenerState *listener = MSSBrowserFind3DListener(object);
+	if (listener != nullptr) {
+		listener->velocity = { x, y, z };
+	}
+}
+static inline void AIL_set_3D_sample_distances(H3DSAMPLE sample, F32 minDistance, F32 maxDistance)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->min_distance = minDistance;
+		state->max_distance = maxDistance;
+	}
+}
+static inline void AIL_set_3D_sample_effects_level(H3DSAMPLE sample, F32 effectsLevel)
+{
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state != nullptr) {
+		state->effects_level = effectsLevel;
+	}
+}
 static inline AIL_3D_sample_callback AIL_register_3D_EOS_callback(
-	H3DSAMPLE,
+	H3DSAMPLE sample,
 	AIL_3D_sample_callback callback)
 {
-	return callback;
+	MSSBrowser3DSampleState *state = MSSBrowserFind3DSample(sample);
+	if (state == nullptr) {
+		return callback;
+	}
+	AIL_3D_sample_callback previous = state->eos_callback;
+	state->eos_callback = callback;
+	return previous;
 }
 static inline H3DPOBJECT AIL_3D_open_listener(HPROVIDER provider)
 {
-	if (!MSSBrowserRuntimeStarted() || provider == 0) {
+	MSSBrowserRuntimeState &runtime = MSSBrowserRuntime();
+	if (!MSSBrowserRuntimeStarted()
+		|| !MSSBrowserProviderValid(provider)
+		|| !runtime.provider_open[provider]) {
 		return static_cast<H3DPOBJECT>(MSSInvalidHandle());
 	}
-	return static_cast<H3DPOBJECT>(MSSBrowserRuntime().next_listener_handle++);
+	const H3DPOBJECT handle = static_cast<H3DPOBJECT>(runtime.next_listener_handle++);
+	if (MSSBrowserAllocate3DListener(handle, provider) == nullptr) {
+		return static_cast<H3DPOBJECT>(MSSInvalidHandle());
+	}
+	return handle;
 }
 static inline H3DPOBJECT AIL_open_3D_listener(HPROVIDER provider) { return AIL_3D_open_listener(provider); }
-static inline void AIL_close_3D_listener(H3DPOBJECT) {}
+static inline void AIL_close_3D_listener(H3DPOBJECT listener)
+{
+	MSSBrowser3DListenerState *state = MSSBrowserFind3DListener(listener);
+	if (state != nullptr) {
+		state->closed = true;
+		state->allocated = false;
+	}
+}
 static inline S32 AIL_enumerate_3D_providers(HPROENUM *next, HPROVIDER *provider, char **name)
 {
 	static char fast2DName[] = "Miles Fast 2D Positional Audio";
@@ -675,10 +1018,24 @@ static inline S32 AIL_enumerate_3D_providers(HPROENUM *next, HPROVIDER *provider
 }
 static inline S32 AIL_open_3D_provider(HPROVIDER provider)
 {
-	return MSSBrowserRuntimeStarted() && (provider == 1 || provider == 2) ? M3D_NOERR : 1;
+	if (!MSSBrowserRuntimeStarted() || !MSSBrowserProviderValid(provider) || provider > 2) {
+		return 1;
+	}
+	MSSBrowserRuntime().provider_open[provider] = true;
+	return M3D_NOERR;
 }
-static inline void AIL_close_3D_provider(HPROVIDER) {}
-static inline void AIL_set_3D_speaker_type(HPROVIDER, S32) {}
+static inline void AIL_close_3D_provider(HPROVIDER provider)
+{
+	if (MSSBrowserProviderValid(provider)) {
+		MSSBrowserRuntime().provider_open[provider] = false;
+	}
+}
+static inline void AIL_set_3D_speaker_type(HPROVIDER provider, S32 speakerType)
+{
+	if (MSSBrowserProviderValid(provider)) {
+		MSSBrowserRuntime().provider_speaker_type[provider] = speakerType;
+	}
+}
 static inline S32 AIL_enumerate_filters(HPROENUM *, HPROVIDER *, char **) { return 0; }
 static inline HSTREAM AIL_open_stream(HDIGDRIVER driver, const char *filename, S32 flags)
 {

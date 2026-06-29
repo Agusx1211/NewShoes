@@ -292,20 +292,20 @@ function main() {
   // misplaced definitions are hard errors.
   // ========================================================================
   const mssLifecycle = [
-    { name: "AIL_allocate_sample_handle", line: 397 },
-    { name: "AIL_release_sample_handle", line: 408 },
-    { name: "AIL_init_sample", line: 418 },
-    { name: "AIL_set_sample_user_data", line: 543 },
-    { name: "AIL_sample_user_data", line: 550 },
-    { name: "AIL_set_sample_file", line: 433 },
-    { name: "AIL_register_EOS_callback", line: 587 },
-    { name: "AIL_start_sample", line: 448 },
-    { name: "AIL_stop_sample", line: 458 },
-    { name: "AIL_resume_sample", line: 466 },
-    { name: "AIL_sample_status", line: 528 },
-    { name: "AIL_set_sample_volume_pan", line: 565 },
-    { name: "AIL_set_sample_playback_rate", line: 578 },
-    { name: "AIL_set_sample_loop_count", line: 509 },
+    { name: "AIL_allocate_sample_handle", line: 531 },
+    { name: "AIL_release_sample_handle", line: 542 },
+    { name: "AIL_init_sample", line: 552 },
+    { name: "AIL_set_sample_user_data", line: 677 },
+    { name: "AIL_sample_user_data", line: 684 },
+    { name: "AIL_set_sample_file", line: 567 },
+    { name: "AIL_register_EOS_callback", line: 721 },
+    { name: "AIL_start_sample", line: 582 },
+    { name: "AIL_stop_sample", line: 592 },
+    { name: "AIL_resume_sample", line: 600 },
+    { name: "AIL_sample_status", line: 662 },
+    { name: "AIL_set_sample_volume_pan", line: 699 },
+    { name: "AIL_set_sample_playback_rate", line: 712 },
+    { name: "AIL_set_sample_loop_count", line: 643 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssLifecycle) {

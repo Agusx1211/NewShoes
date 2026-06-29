@@ -579,9 +579,10 @@ shares structure and follows behind.
       missing audio startup INIs are classified as absent optional base
       `INI.big` files instead of anonymous payload gaps.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
-      The `Mss.H` startup/provider/listener/sample-handle boundary is now
-      stateful and harness-probed by `mssStartupProbe`, but the next required
-      work is a real Web Audio playback backend owned by the original manager.
+      The `Mss.H` startup/provider/listener/sample/stream-handle boundaries are
+      now stateful and harness-probed by the MSS lifecycle RPCs, but the next
+      required work is a real Web Audio playback backend owned by the original
+      manager.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -595,7 +596,12 @@ shares structure and follows behind.
       `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
       registration, volume/pan/rate/loop/position state, start/pause/resume,
       status, and close while still leaving real Web Audio stream scheduling
-      open.
+      open. The 3D sample/listener/provider lifecycle is now stateful and
+      harness-probed by `mss3DSampleLifecycleProbe`, covering provider open and
+      speaker type, listener position/orientation/velocity, 3D sample
+      allocation/user data/file/callback/distance/position/volume/rate/loop/
+      offset/occlusion/effects state, start/stop/resume/end callback, and
+      release while still leaving real Web Audio panning and scheduling open.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;

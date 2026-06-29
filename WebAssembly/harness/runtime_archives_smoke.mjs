@@ -1350,6 +1350,58 @@ function assertMssStreamLifecycleProbe(probe, context) {
   }
 }
 
+function assertMss3DSampleLifecycleProbe(probe, context) {
+  if (!probe
+      || probe.ok !== true
+      || probe.source !== "Mss.H browser 3D sample lifecycle contract probe"
+      || probe.runtimeReady !== false
+      || probe.sample3DLifecycleReady !== true
+      || probe.playbackReady !== false
+      || probe.nextRequired !== "webAudioPlaybackBackend"
+      || probe.provider?.enumerated !== true
+      || probe.provider?.id !== 1
+      || probe.provider?.opened !== true
+      || probe.provider?.speakerType !== 4
+      || probe.provider?.closed !== true
+      || !Number.isFinite(probe.listener?.handle)
+      || probe.listener?.opened !== true
+      || probe.listener?.position?.x !== 10
+      || probe.listener?.position?.y !== 20
+      || probe.listener?.position?.z !== 30
+      || probe.listener?.orientation?.frontY !== 1
+      || probe.listener?.orientation?.upZ !== -1
+      || probe.listener?.closed !== true
+      || probe.calls?.AIL_allocate_3D_sample_handle !== true
+      || probe.calls?.AIL_set_3D_user_data !== 7
+      || probe.calls?.AIL_set_3D_object_user_data !== 99
+      || probe.calls?.AIL_set_3D_sample_file !== 1
+      || probe.calls?.AIL_register_3D_EOS_callback !== true
+      || Math.abs((probe.calls?.AIL_set_3D_sample_distances?.min ?? 0) - 12) > 0.001
+      || Math.abs((probe.calls?.AIL_set_3D_sample_distances?.max ?? 0) - 345) > 0.001
+      || Math.abs((probe.calls?.AIL_set_3D_position?.x ?? 0) - 100) > 0.001
+      || Math.abs((probe.calls?.AIL_set_3D_position?.y ?? 0) - 200) > 0.001
+      || Math.abs((probe.calls?.AIL_set_3D_position?.z ?? 0) - 300) > 0.001
+      || probe.calls?.AIL_set_3D_sample_volume !== 66
+      || probe.calls?.AIL_set_3D_sample_loop_count !== 3
+      || probe.calls?.AIL_set_3D_sample_offset !== 17
+      || probe.calls?.AIL_set_3D_sample_playback_rate !== 22050
+      || Math.abs((probe.calls?.AIL_set_3D_sample_occlusion ?? 0) - 0.25) > 0.001
+      || Math.abs((probe.calls?.AIL_set_3D_sample_effects_level ?? 0) - 0.5) > 0.001
+      || probe.calls?.AIL_start_3D_sample !== 2
+      || probe.calls?.AIL_stop_3D_sample !== 4
+      || probe.calls?.AIL_resume_3D_sample !== 2
+      || probe.calls?.AIL_end_3D_sample !== 1
+      || probe.calls?.AIL_release_3D_sample_handle !== true
+      || probe.callback?.count !== 1
+      || probe.callback?.lastHandle !== probe.handle?.sample
+      || !Number.isFinite(probe.handle?.sample)
+      || probe.handle?.validBeforeRelease !== true
+      || probe.handle?.released !== true
+      || probe.handle?.statusAfterRelease !== 1) {
+    throw new Error(`${context} MSS 3D sample lifecycle probe mismatch: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertBrowserAudioRuntime(runtime, context, expected = {}) {
   if (!runtime
       || runtime.source !== "browser Web Audio runtime user-gesture proof"
@@ -3913,6 +3965,11 @@ try {
     throw new Error(`MSS stream lifecycle probe RPC failed: ${JSON.stringify(mssStreamLifecycleResult)}`);
   }
   assertMssStreamLifecycleProbe(mssStreamLifecycleResult.probe, "runtime archive boot");
+  const mss3DSampleLifecycleResult = await page.evaluate(() => window.CnCPort.rpc("mss3DSampleLifecycleProbe"));
+  if (!mss3DSampleLifecycleResult.ok) {
+    throw new Error(`MSS 3D sample lifecycle probe RPC failed: ${JSON.stringify(mss3DSampleLifecycleResult)}`);
+  }
+  assertMss3DSampleLifecycleProbe(mss3DSampleLifecycleResult.probe, "runtime archive boot");
 
   const audioGesturePoint = await page.evaluate(() => {
     const target = document.querySelector("#viewport");
