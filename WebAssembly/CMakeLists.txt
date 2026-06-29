@@ -5449,6 +5449,9 @@ add_executable(w3d-window-layout-script-smoke
   tests/w3d_window_layout_script_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/DisplayString.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
@@ -5527,6 +5530,7 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sNODERAWFS=1"
 )
 
 add_executable(win32-gameengine-message-pump-smoke

@@ -1729,6 +1729,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       focused BlankWindow proof with a real shell menu layout. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Extend the W3D layout-script smoke into real archive-backed GUI parsing:
+      it now mounts `artifacts/real-assets/WindowZH.big` through original
+      `Win32BIGFileSystem`, loads `Menus/MessageBox.wnd` and
+      `Menus/QuitMessageBox.wnd` through original
+      `WindowLayout::load -> GameWindowManager::winCreateFromScript`, links
+      original `GUI/GUICallbacks/MessageBox.cpp`, and verifies parsed
+      `GameWindow` callback pointers for original `MessageBoxSystem`,
+      `QuitMessageBoxSystem`, and `PassMessagesToParentSystem`. The smoke also
+      executes the original message-box input-focus callback path and keeps
+      display/font/text surfaces focused until production W3DDisplay and real
+      localized text ownership are ready. `test:startup-vertical` now requires
+      this `WindowZH.big` layout and callback-owner proof. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

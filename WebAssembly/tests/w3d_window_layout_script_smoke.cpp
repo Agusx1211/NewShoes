@@ -21,8 +21,11 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/ArchiveFileSystem.h"
 #include "GameClient/Display.h"
+#include "GameClient/DisplayStringManager.h"
 #include "GameClient/GameFont.h"
+#include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GlobalLanguage.h"
@@ -33,6 +36,8 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "W3DDevice/Common/W3DFunctionLexicon.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
 
 class GameLogic;
 class DisplayStringManager;
@@ -46,11 +51,14 @@ class SelectionTranslator;
 class VideoPlayerInterface;
 class View;
 void W3DMainMenuInit(WindowLayout *layout, void *userData);
+WindowMsgHandledType MessageBoxSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+WindowMsgHandledType QuitMessageBoxSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 
 GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
 GameLogic *TheGameLogic = nullptr;
-DisplayStringManager *TheDisplayStringManager = nullptr;
 GameTextInterface *TheGameText = nullptr;
 GlobalLanguage *TheGlobalLanguageData = nullptr;
 IMEManagerInterface *TheIMEManager = nullptr;
@@ -285,7 +293,10 @@ public:
 	GameWinDrawFunc getStaticTextDrawFunc() override { return SmokeNoDraw; }
 	GameWinDrawFunc getTextEntryImageDrawFunc() override { return SmokeNoDraw; }
 	GameWinDrawFunc getTextEntryDrawFunc() override { return SmokeNoDraw; }
-	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
+	GameFont *winFindFont(AsciiString font_name, Int point_size, Bool bold) override
+	{
+		return TheFontLibrary != nullptr ? TheFontLibrary->getFont(font_name, point_size, bold) : nullptr;
+	}
 };
 
 class SmokeFontLibrary : public FontLibrary
@@ -300,6 +311,91 @@ protected:
 		font->fontData = nullptr;
 		return TRUE;
 	}
+};
+
+class SmokeDisplayString : public DisplayString
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeDisplayString, "SmokeDisplayString", 1, 1)
+
+public:
+	void setWordWrap(Int wordWrap) override { m_wordWrap = wordWrap; }
+	void setWordWrapCentered(Bool isCentered) override { m_wordWrapCentered = isCentered; }
+	void draw(Int, Int, Color, Color) override {}
+	void draw(Int, Int, Color, Color, Int, Int) override {}
+	void getSize(Int *width, Int *height) override
+	{
+		if (width != nullptr) {
+			*width = getWidth();
+		}
+		if (height != nullptr) {
+			*height = m_font != nullptr ? m_font->height : 0;
+		}
+	}
+	Int getWidth(Int charPos = -1) override
+	{
+		const Int text_length = m_textString.getLength();
+		const Int chars = charPos >= 0 && charPos < text_length ? charPos : text_length;
+		return chars * 8;
+	}
+	void setUseHotkey(Bool, Color) override {}
+
+private:
+	Int m_wordWrap = 0;
+	Bool m_wordWrapCentered = FALSE;
+};
+
+EMPTY_DTOR(SmokeDisplayString)
+
+class SmokeDisplayStringManager : public DisplayStringManager
+{
+public:
+	DisplayString *newDisplayString() override
+	{
+		DisplayString *string = newInstance(SmokeDisplayString);
+		link(string);
+		return string;
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		if (string == nullptr) {
+			return;
+		}
+		unLink(string);
+		string->deleteInstance();
+	}
+
+	DisplayString *getGroupNumeralString(Int) override { return newDisplayString(); }
+	DisplayString *getFormationLetterString() override { return newDisplayString(); }
+};
+
+class SmokeGameText : public GameTextInterface
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+	UnicodeString fetch(const Char *label, Bool *exists = nullptr) override
+	{
+		if (exists != nullptr) {
+			*exists = TRUE;
+		}
+		UnicodeString text;
+		text.translate(label != nullptr ? label : "");
+		return text;
+	}
+
+	UnicodeString fetch(AsciiString label, Bool *exists = nullptr) override
+	{
+		return fetch(label.str(), exists);
+	}
+
+	AsciiStringVec &getStringsWithLabelPrefix(AsciiString) override { return m_empty; }
+	void initMapStringFile(const AsciiString &) override {}
+
+private:
+	AsciiStringVec m_empty;
 };
 
 class SmokeDisplay : public Display
@@ -357,6 +453,22 @@ bool expect(bool condition, const char *message)
 	return true;
 }
 
+void split_archive_path(const char *archive_path, AsciiString &directory, AsciiString &file_mask)
+{
+	std::string normalized = archive_path != nullptr ? archive_path : "";
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash == std::string::npos) {
+		directory = "";
+		file_mask = normalized.c_str();
+		return;
+	}
+
+	directory = normalized.substr(0, slash + 1).c_str();
+	file_mask = normalized.substr(slash + 1).c_str();
+}
+
 const char *blank_window_script()
 {
 	return
@@ -386,6 +498,8 @@ bool exercise_w3d_layout_script()
 	ScriptLocalFileSystem local_file_system(blank_window_script());
 	SmokeDisplay display;
 	SmokeFontLibrary font_library;
+	SmokeDisplayStringManager display_string_manager;
+	SmokeGameText game_text;
 	HeaderTemplateManager header_templates;
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
@@ -397,6 +511,8 @@ bool exercise_w3d_layout_script()
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
 	Display *old_display = TheDisplay;
 	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GameTextInterface *old_game_text = TheGameText;
 	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
 	GameWindowManager *old_window_manager = TheWindowManager;
 	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
@@ -408,6 +524,8 @@ bool exercise_w3d_layout_script()
 	TheLocalFileSystem = &local_file_system;
 	TheDisplay = &display;
 	TheFontLibrary = &font_library;
+	TheDisplayStringManager = &display_string_manager;
+	TheGameText = &game_text;
 	TheHeaderTemplateManager = &header_templates;
 	TheWindowManager = &window_manager;
 	TheFunctionLexicon = &function_lexicon;
@@ -471,10 +589,190 @@ bool exercise_w3d_layout_script()
 	TheFunctionLexicon = old_function_lexicon;
 	TheWindowManager = old_window_manager;
 	TheHeaderTemplateManager = old_header_templates;
+	TheGameText = old_game_text;
+	TheDisplayStringManager = old_display_string_manager;
 	TheFontLibrary = old_font_library;
 	TheDisplay = old_display;
 	TheLocalFileSystem = old_local_file_system;
 	TheFileSystem = old_file_system;
+	TheNameKeyGenerator = old_name_keys;
+	TheSubsystemList = old_subsystem_list;
+	TheGlobalData = old_global_data;
+
+	return ok;
+}
+
+struct ExpectedArchiveLayout
+{
+	const char *layout_path;
+	const char *root_name;
+	const char *parent_name;
+	const char *ok_button_name;
+	GameWinSystemFunc root_system;
+};
+
+bool verify_archive_layout(const ExpectedArchiveLayout &expected)
+{
+	bool ok = true;
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString(expected.layout_path));
+	GameWindow *root = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"WindowZH.big layout did not load through WindowLayout::load") && ok;
+	ok = expect(root != nullptr,
+		"WindowZH.big layout did not create a root GameWindow") && ok;
+
+	if (layout != nullptr) {
+		ok = expect(layout->getFilename() == AsciiString(expected.layout_path),
+			"WindowLayout did not retain the real archive layout filename") && ok;
+	}
+
+	if (root != nullptr) {
+		ok = expect(root->winGetLayout() == layout,
+			"real archive root window was not attached back to the layout") && ok;
+		ok = expect(root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(expected.root_name)),
+			"real archive root window did not receive its script NameKey") && ok;
+		ok = expect(root->winGetSystemFunc() == expected.root_system,
+			"real archive root window did not resolve to the original message-box system callback") && ok;
+		ok = expect(root->winGetInputFunc() == GameWinDefaultInput,
+			"[None] input callback did not fall back to the original default input callback") && ok;
+		ok = expect(root->winGetDrawFunc() == GameWinDefaultDraw,
+			"[None] draw callback did not fall back to the original default draw callback") && ok;
+
+		GameWindow *parent = TheWindowManager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(expected.parent_name)));
+		GameWindow *ok_button = TheWindowManager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(expected.ok_button_name)));
+		ok = expect(parent != nullptr,
+			"real archive layout did not create the expected MessageBoxParent child") && ok;
+		ok = expect(ok_button != nullptr,
+			"real archive layout did not create the expected ButtonOk child") && ok;
+		if (parent != nullptr) {
+			ok = expect(parent->winGetSystemFunc() == PassMessagesToParentSystem,
+				"MessageBoxParent did not resolve PassMessagesToParentSystem from the original GUI lexicon") && ok;
+		}
+		if (ok_button != nullptr) {
+			ok = expect(BitTest(ok_button->winGetStatus(), WIN_STATUS_HIDDEN),
+				"real message-box ButtonOk did not preserve the hidden startup status from WindowZH.big") && ok;
+		}
+
+		Bool wants_focus = FALSE;
+		const WindowMsgHandledType focus_result = root->winGetSystemFunc()(
+			root, GWM_INPUT_FOCUS, TRUE, reinterpret_cast<WindowMsgData>(&wants_focus));
+		ok = expect(focus_result == MSG_HANDLED && wants_focus == TRUE,
+			"original message-box system callback did not execute its input-focus path") && ok;
+	}
+
+	if (layout != nullptr) {
+		layout->destroyWindows();
+		layout->deleteInstance();
+	}
+	TheWindowManager->update();
+	ok = expect(TheWindowManager->winGetWindowList() == nullptr,
+		"destroying the real archive layout should clear the original window list") && ok;
+
+	return ok;
+}
+
+bool exercise_w3d_archive_layout_script(const char *archive_path)
+{
+	bool ok = true;
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (!expect(archive_mask.isNotEmpty(), "WindowZH.big archive file mask is empty")) {
+		return false;
+	}
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	NameKeyGenerator name_key_generator;
+	Win32LocalFileSystem local_file_system;
+	FileSystem file_system;
+	Win32BIGFileSystem archive_file_system;
+	SmokeDisplay display;
+	SmokeFontLibrary font_library;
+	SmokeDisplayStringManager display_string_manager;
+	SmokeGameText game_text;
+	HeaderTemplateManager header_templates;
+	SmokeGameWindowManager window_manager;
+	W3DFunctionLexicon function_lexicon;
+
+	GlobalData *old_global_data = TheGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GameTextInterface *old_game_text = TheGameText;
+	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+
+	TheGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheNameKeyGenerator = &name_key_generator;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	TheDisplay = &display;
+	TheFontLibrary = &font_library;
+	TheDisplayStringManager = &display_string_manager;
+	TheGameText = &game_text;
+	TheHeaderTemplateManager = &header_templates;
+	TheWindowManager = &window_manager;
+	TheFunctionLexicon = &function_lexicon;
+
+	display.setWidth(800);
+	display.setHeight(600);
+	display.setBitDepth(32);
+	display.setWindowed(TRUE);
+	name_key_generator.init();
+	function_lexicon.init();
+
+	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
+		"Win32BIGFileSystem did not load WindowZH.big") && ok;
+	ok = expect(file_system.doesFileExist("Window\\Menus\\MessageBox.wnd"),
+		"WindowZH.big did not expose MessageBox.wnd through FileSystem") && ok;
+	ok = expect(file_system.doesFileExist("Window\\Menus\\QuitMessageBox.wnd"),
+		"WindowZH.big did not expose QuitMessageBox.wnd through FileSystem") && ok;
+
+	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("MessageBoxSystem"))) == MessageBoxSystem,
+		"FunctionLexicon did not resolve MessageBoxSystem to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("QuitMessageBoxSystem"))) == QuitMessageBoxSystem,
+		"FunctionLexicon did not resolve QuitMessageBoxSystem to the original callback owner") && ok;
+
+	const ExpectedArchiveLayout message_box = {
+		"Menus/MessageBox.wnd",
+		"MessageBox.wnd:",
+		"MessageBox.wnd:MessageBoxParent",
+		"MessageBox.wnd:ButtonOk",
+		MessageBoxSystem
+	};
+	const ExpectedArchiveLayout quit_message_box = {
+		"Menus/QuitMessageBox.wnd",
+		"QuitMessageBox.wnd:",
+		"QuitMessageBox.wnd:MessageBoxParent",
+		"QuitMessageBox.wnd:ButtonOk",
+		QuitMessageBoxSystem
+	};
+	ok = verify_archive_layout(message_box) && ok;
+	ok = verify_archive_layout(quit_message_box) && ok;
+
+	TheFunctionLexicon = old_function_lexicon;
+	TheWindowManager = old_window_manager;
+	TheHeaderTemplateManager = old_header_templates;
+	TheGameText = old_game_text;
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
 	TheNameKeyGenerator = old_name_keys;
 	TheSubsystemList = old_subsystem_list;
 	TheGlobalData = old_global_data;
@@ -671,7 +969,6 @@ DEFINE_WINDOW_STUB(MainMenuInput)
 DEFINE_WINDOW_STUB(MainMenuSystem)
 DEFINE_WINDOW_STUB(MapSelectMenuInput)
 DEFINE_WINDOW_STUB(MapSelectMenuSystem)
-DEFINE_WINDOW_STUB(MessageBoxSystem)
 DEFINE_WINDOW_STUB(NetworkDirectConnectInput)
 DEFINE_WINDOW_STUB(NetworkDirectConnectSystem)
 DEFINE_WINDOW_STUB(OptionsMenuInput)
@@ -688,7 +985,6 @@ DEFINE_WINDOW_STUB(PopupLadderSelectSystem)
 DEFINE_WINDOW_STUB(PopupReplayInput)
 DEFINE_WINDOW_STUB(PopupReplaySystem)
 DEFINE_WINDOW_STUB(QuitMenuSystem)
-DEFINE_WINDOW_STUB(QuitMessageBoxSystem)
 DEFINE_WINDOW_STUB(RCGameDetailsMenuSystem)
 DEFINE_WINDOW_STUB(ReplayControlInput)
 DEFINE_WINDOW_STUB(ReplayControlSystem)
@@ -789,8 +1085,10 @@ void W3DMainMenuInit(WindowLayout *, void *)
 
 int main()
 {
+	const char *archive_path = "artifacts/real-assets/WindowZH.big";
+
 	initMemoryManager();
-	const bool ok = exercise_w3d_layout_script();
+	const bool ok = exercise_w3d_layout_script() && exercise_w3d_archive_layout_script(archive_path);
 	shutdownMemoryManager();
 
 	if (!ok) {
@@ -802,7 +1100,10 @@ int main()
 		<< "\"library\":\"W3DFunctionLexicon\","
 		<< "\"path\":\"WindowLayout::load->GameWindowManager::winCreateFromScript\","
 		<< "\"layout\":\"Menus/BlankWindow.wnd\","
-		<< "\"covered\":\"original WindowLayout load, .wnd parser, W3DFunctionLexicon device layout-init lookup, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"archive\":\"" << archive_path << "\","
+		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\"],"
+		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

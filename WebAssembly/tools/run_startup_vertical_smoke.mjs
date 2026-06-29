@@ -195,8 +195,19 @@ const steps = [
         'W3D window layout script smoke did not cover real WindowLayout load');
       expect(payload.layout === 'Menus/BlankWindow.wnd',
         'W3D window layout script smoke did not load BlankWindow.wnd');
+      expect(Array.isArray(payload.archiveLayouts)
+        && payload.archiveLayouts.includes('Menus/MessageBox.wnd')
+        && payload.archiveLayouts.includes('Menus/QuitMessageBox.wnd'),
+        'W3D window layout script smoke did not load real WindowZH message-box layouts');
+      expect(Array.isArray(payload.callbackOwners)
+        && payload.callbackOwners.includes('MessageBoxSystem')
+        && payload.callbackOwners.includes('QuitMessageBoxSystem')
+        && payload.callbackOwners.includes('PassMessagesToParentSystem'),
+        'W3D window layout script smoke did not prove real message-box callback ownership');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
+        'W3D window layout script smoke did not prove WindowZH.big archive-backed loading');
     },
   },
 ];
@@ -215,10 +226,11 @@ console.log(JSON.stringify({
     'original MilesAudioManager openDevice',
     'original W3DGameWindowManager window and gadget ownership',
     'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',
+    'real WindowZH.big message-box layout loading with original callback ownership',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance shell callback ownership from focused BlankWindow layout proof into a real shell menu layout',
+    'advance GUI ownership from real WindowZH message-box layouts into original Shell::push and MainMenu.wnd',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),
