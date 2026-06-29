@@ -1743,6 +1743,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       this `WindowZH.big` layout and callback-owner proof. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Advance the archive-backed GUI smoke into original Shell stack ownership:
+      `w3d-window-layout-script-smoke` now links original `Shell.cpp`,
+      `AnimateWindowManager.cpp`, `ProcessAnimateWindow.cpp`, and
+      `ShellMenuScheme.cpp`, constructs original `Shell`, and drives
+      `Shell::showShell -> Shell::push` so real `Menus/MainMenu.wnd` is loaded
+      from `WindowZH.big` through the existing original
+      `WindowLayout::load -> GameWindowManager::winCreateFromScript` path. The
+      smoke verifies `MainMenu.wnd:MainMenuParent`, `MainMenuSystem`,
+      `W3DMainMenuInit`, `MainMenuShutdown`, and clean
+      `Shell::popImmediate` teardown, while leaving original
+      `W3DMainMenuInit -> MainMenuInit` execution as the next bounded GUI
+      callback slice. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

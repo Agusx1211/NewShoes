@@ -197,17 +197,28 @@ const steps = [
         'W3D window layout script smoke did not load BlankWindow.wnd');
       expect(Array.isArray(payload.archiveLayouts)
         && payload.archiveLayouts.includes('Menus/MessageBox.wnd')
-        && payload.archiveLayouts.includes('Menus/QuitMessageBox.wnd'),
-        'W3D window layout script smoke did not load real WindowZH message-box layouts');
+        && payload.archiveLayouts.includes('Menus/QuitMessageBox.wnd')
+        && payload.archiveLayouts.includes('Menus/MainMenu.wnd'),
+        'W3D window layout script smoke did not load real WindowZH message-box/MainMenu layouts');
+      expect(Array.isArray(payload.shellLayouts)
+        && payload.shellLayouts.includes('Menus/MainMenu.wnd'),
+        'W3D window layout script smoke did not prove original Shell::push MainMenu.wnd ownership');
       expect(Array.isArray(payload.callbackOwners)
         && payload.callbackOwners.includes('MessageBoxSystem')
         && payload.callbackOwners.includes('QuitMessageBoxSystem')
         && payload.callbackOwners.includes('PassMessagesToParentSystem'),
         'W3D window layout script smoke did not prove real message-box callback ownership');
+      expect(Array.isArray(payload.shellCallbackNames)
+        && payload.shellCallbackNames.includes('W3DMainMenuInit')
+        && payload.shellCallbackNames.includes('MainMenuSystem')
+        && payload.shellCallbackNames.includes('MainMenuShutdown'),
+        'W3D window layout script smoke did not prove MainMenu.wnd callback-name binding');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
         'W3D window layout script smoke did not prove WindowZH.big archive-backed loading');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('Shell::showShell/Shell::push MainMenu.wnd'),
+        'W3D window layout script smoke did not prove original Shell::showShell/Shell::push MainMenu ownership');
     },
   },
 ];
@@ -227,10 +238,11 @@ console.log(JSON.stringify({
     'original W3DGameWindowManager window and gadget ownership',
     'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',
     'real WindowZH.big message-box layout loading with original callback ownership',
+    'original Shell::showShell/Shell::push loading MainMenu.wnd from WindowZH.big',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance GUI ownership from real WindowZH message-box layouts into original Shell::push and MainMenu.wnd',
+    'advance GUI ownership from Shell-pushed MainMenu.wnd into original W3DMainMenuInit -> MainMenuInit callback execution',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),

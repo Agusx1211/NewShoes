@@ -5451,10 +5451,14 @@ add_executable(w3d-window-layout-script-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayString.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp"
 )
 

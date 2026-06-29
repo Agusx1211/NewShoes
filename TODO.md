@@ -424,11 +424,18 @@ shares structure and follows behind.
       `Menus/QuitMessageBox.wnd`, links original `MessageBox.cpp`, and proves
       parsed `MessageBoxSystem`, `QuitMessageBoxSystem`, and
       `PassMessagesToParentSystem` ownership through original window callback
-      pointers. It still uses focused display/font/text shims for unrendered
-      UI surfaces, so full production `W3DDisplay` construction, original
-      `Shell::push` / `MainMenu.wnd` ownership, real main-menu callback
-      execution, and `W3DModuleFactory` module-template lookup still need
-      original public-API runtime proof. `verify:w3d-module-factory-frontier`
+      pointers. It now also constructs original `Shell`, drives
+      `Shell::showShell -> Shell::push`, loads real `Menus/MainMenu.wnd` from
+      `WindowZH.big`, verifies `MainMenu.wnd:MainMenuParent` creation and
+      `MainMenuSystem` binding, runs the W3D layout-init callback name, and
+      pops the shell stack cleanly through original `Shell::popImmediate`.
+      It still uses focused display/font/text shims and test-local W3D/main-menu
+      callback bodies for unrendered UI surfaces, so full production
+      `W3DDisplay` construction, original
+      `W3DMainMenuInit -> MainMenuInit` callback execution, first safe
+      original `MainMenu*` behavior, and `W3DModuleFactory` module-template
+      lookup still need original public-API runtime proof.
+      `verify:w3d-module-factory-frontier`
       now pins the original
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
       `GameEngine.cpp` call site, and all 19 original W3D draw-module
@@ -437,9 +444,9 @@ shares structure and follows behind.
       game-client global graph, so the full `W3DModuleFactory::init()` runtime
       proof should follow original `GameEngine.cpp` ownership of the
       pre-`createAudioManager` file/INI/CD frontier. Advance the next GUI slice
-      vertically from archive-backed message-box layouts into original
-      `Shell::push`, `Menus/MainMenu.wnd`, and the first safe `MainMenu*`
-      callback-owner surface.
+      vertically from Shell-pushed `Menus/MainMenu.wnd` into original
+      `W3DMainMenuInit -> MainMenuInit` callback execution and the first safe
+      `MainMenu*` runtime behavior.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

@@ -33,6 +33,7 @@
 #include "GameClient/Image.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/SelectionXlat.h"
+#include "GameClient/Shell.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "W3DDevice/Common/W3DFunctionLexicon.h"
@@ -50,7 +51,12 @@ class Keyboard;
 class SelectionTranslator;
 class VideoPlayerInterface;
 class View;
+class GameSpyInfoInterface;
 void W3DMainMenuInit(WindowLayout *layout, void *userData);
+void MainMenuInit(WindowLayout *layout, void *userData);
+void MainMenuShutdown(WindowLayout *layout, void *userData);
+WindowMsgHandledType MainMenuSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
 WindowMsgHandledType MessageBoxSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 WindowMsgHandledType QuitMessageBoxSystem(GameWindow *window, UnsignedInt msg,
@@ -68,6 +74,7 @@ Keyboard *TheKeyboard = nullptr;
 SelectionTranslator *TheSelectionTranslator = nullptr;
 VideoPlayerInterface *TheVideoPlayer = nullptr;
 View *TheTacticalView = nullptr;
+GameSpyInfoInterface *TheGameSpyInfo = nullptr;
 HWND ApplicationHWnd = NULL;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
@@ -75,6 +82,7 @@ const Char *g_csfFile = "Data\\%s\\Generals.csf";
 namespace {
 
 Int g_w3d_main_menu_init_calls = 0;
+Int g_main_menu_shutdown_calls = 0;
 
 std::string normalized_path(const Char *path)
 {
@@ -780,6 +788,129 @@ bool exercise_w3d_archive_layout_script(const char *archive_path)
 	return ok;
 }
 
+bool exercise_w3d_shell_main_menu_push(const char *archive_path)
+{
+	bool ok = true;
+	AsciiString archive_directory;
+	AsciiString archive_mask;
+	split_archive_path(archive_path, archive_directory, archive_mask);
+	if (!expect(archive_mask.isNotEmpty(), "WindowZH.big archive file mask is empty for shell push")) {
+		return false;
+	}
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	NameKeyGenerator name_key_generator;
+	Win32LocalFileSystem local_file_system;
+	FileSystem file_system;
+	Win32BIGFileSystem archive_file_system;
+	SmokeDisplay display;
+	SmokeFontLibrary font_library;
+	SmokeDisplayStringManager display_string_manager;
+	SmokeGameText game_text;
+	HeaderTemplateManager header_templates;
+	SmokeGameWindowManager window_manager;
+	W3DFunctionLexicon function_lexicon;
+
+	GlobalData *old_global_data = TheGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GameTextInterface *old_game_text = TheGameText;
+	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+	Shell *old_shell = TheShell;
+
+	TheGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheNameKeyGenerator = &name_key_generator;
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	TheDisplay = &display;
+	TheFontLibrary = &font_library;
+	TheDisplayStringManager = &display_string_manager;
+	TheGameText = &game_text;
+	TheHeaderTemplateManager = &header_templates;
+	TheWindowManager = &window_manager;
+	TheFunctionLexicon = &function_lexicon;
+
+	global_data.m_initialFile.clear();
+	global_data.m_shellMapOn = FALSE;
+	global_data.m_animateWindows = FALSE;
+	display.setWidth(800);
+	display.setHeight(600);
+	display.setBitDepth(32);
+	display.setWindowed(TRUE);
+	name_key_generator.init();
+	function_lexicon.init();
+
+	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
+		"Win32BIGFileSystem did not load WindowZH.big for original Shell::showShell") && ok;
+	ok = expect(file_system.doesFileExist("Window\\Menus\\MainMenu.wnd"),
+		"WindowZH.big did not expose MainMenu.wnd through FileSystem") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutInitFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"))) == W3DMainMenuInit,
+		"FunctionLexicon did not resolve W3DMainMenuInit for MainMenu.wnd") && ok;
+	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuSystem"))) == MainMenuSystem,
+		"FunctionLexicon did not resolve MainMenuSystem for MainMenu.wnd") && ok;
+
+	g_w3d_main_menu_init_calls = 0;
+	g_main_menu_shutdown_calls = 0;
+	{
+		Shell shell;
+		TheShell = &shell;
+		shell.showShell();
+		WindowLayout *top = shell.top();
+		GameWindow *main_parent = TheWindowManager->winGetWindowFromId(
+			nullptr, TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MainMenuParent")));
+		ok = expect(shell.getScreenCount() == 1,
+			"original Shell::showShell did not push exactly one layout") && ok;
+		ok = expect(top != nullptr && top->getFilename() == AsciiString("Menus/MainMenu.wnd"),
+			"original Shell::showShell did not push Menus/MainMenu.wnd") && ok;
+		ok = expect(g_w3d_main_menu_init_calls == 1,
+			"original Shell::doPush did not execute the MainMenu W3D layout init callback") && ok;
+		ok = expect(main_parent != nullptr,
+			"MainMenu.wnd did not create MainMenuParent through the shell stack") && ok;
+		if (main_parent != nullptr) {
+			ok = expect(main_parent->winGetSystemFunc() == MainMenuSystem,
+				"MainMenuParent did not resolve MainMenuSystem through the original GUI lexicon") && ok;
+		}
+		shell.popImmediate();
+		ok = expect(g_main_menu_shutdown_calls == 1,
+			"original Shell::popImmediate did not execute the MainMenu layout shutdown callback") && ok;
+		ok = expect(shell.getScreenCount() == 0,
+			"original Shell::popImmediate did not clear the shell stack") && ok;
+	}
+	TheShell = old_shell;
+	window_manager.update();
+	ok = expect(window_manager.winGetWindowList() == nullptr,
+		"popping MainMenu.wnd through Shell should clear the original window list") && ok;
+
+	TheFunctionLexicon = old_function_lexicon;
+	TheWindowManager = old_window_manager;
+	TheHeaderTemplateManager = old_header_templates;
+	TheGameText = old_game_text;
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+	TheNameKeyGenerator = old_name_keys;
+	TheSubsystemList = old_subsystem_list;
+	TheGlobalData = old_global_data;
+
+	return ok;
+}
+
 } // namespace
 
 // W3DFunctionLexicon::init() loads the base GUI lexicon tables before adding
@@ -842,8 +973,6 @@ DEFINE_LAYOUT_STUB(LanLobbyMenuUpdate)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuInit)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuShutdown)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuUpdate)
-DEFINE_LAYOUT_STUB(MainMenuInit)
-DEFINE_LAYOUT_STUB(MainMenuShutdown)
 DEFINE_LAYOUT_STUB(MainMenuUpdate)
 DEFINE_LAYOUT_STUB(MapSelectMenuInit)
 DEFINE_LAYOUT_STUB(MapSelectMenuShutdown)
@@ -1083,12 +1212,27 @@ void W3DMainMenuInit(WindowLayout *, void *)
 	++g_w3d_main_menu_init_calls;
 }
 
+void MainMenuInit(WindowLayout *, void *)
+{
+}
+
+void MainMenuShutdown(WindowLayout *, void *)
+{
+	++g_main_menu_shutdown_calls;
+}
+
+void GameSpyCloseAllOverlays()
+{
+}
+
 int main()
 {
 	const char *archive_path = "artifacts/real-assets/WindowZH.big";
 
 	initMemoryManager();
-	const bool ok = exercise_w3d_layout_script() && exercise_w3d_archive_layout_script(archive_path);
+	const bool ok = exercise_w3d_layout_script()
+		&& exercise_w3d_archive_layout_script(archive_path)
+		&& exercise_w3d_shell_main_menu_push(archive_path);
 	shutdownMemoryManager();
 
 	if (!ok) {
@@ -1101,9 +1245,11 @@ int main()
 		<< "\"path\":\"WindowLayout::load->GameWindowManager::winCreateFromScript\","
 		<< "\"layout\":\"Menus/BlankWindow.wnd\","
 		<< "\"archive\":\"" << archive_path << "\","
-		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\"],"
+		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\"],"
+		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }
