@@ -166,7 +166,18 @@ registration, volume/pan and float volume-pan storage, playback rate, loop
 block, loop count, millisecond position, start/pause/resume/status transitions,
 and close state. It reports `streamLifecycleReady: true`, `playbackReady:
 false`, and `nextRequired: "webAudioPlaybackBackend"`; it does not decode or
-schedule a browser stream.
+schedule a browser stream. `npm run verify:mss-stream-lifecycle-contract` is the
+source-only contract verifier for that probe: it reads only repo source (no
+browser, build, or assets) and pins the `Mss.H` stream lifecycle surface
+(`MSSBrowserStreamState`, `MSSBrowserFindStream`,
+`MSSBrowserAllocateStream`, and the stream `AIL_*` functions including both
+`AIL_stream_ms_position` overloads), the probe source
+`wasm_mss_stream_lifecycle_probe.cpp` (`cnc_port_probe_mss_stream_lifecycle`,
+representative calls, and the JSON strings `streamLifecycleReady`,
+`playbackReady:false`, `nextRequired:"webAudioPlaybackBackend"`), and the CMake
+source/export plus bridge RPC/cwrap lines for
+`cnc_port_probe_mss_stream_lifecycle` / `mssStreamLifecycleProbe`. It is a
+source contract verifier only and does not prove Web Audio playback.
 
 ## Runtime Targets
 

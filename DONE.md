@@ -3579,6 +3579,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WebAssembly/src/wasm_mss_sample_lifecycle_probe.cpp`
       (`cnc_port_probe_mss_sample_lifecycle` plus the key API calls). It emits
       JSON `{ ok, errors, sources, facts }` and exits nonzero on hard failure.
+- [x] Add `npm run verify:mss-stream-lifecycle-contract`
+      (`WebAssembly/tools/verify_mss_stream_lifecycle_contract.mjs`), a
+      source-only verifier for the MSS HSTREAM lifecycle contract implemented
+      in main. It reads only repo source (no browser/build/assets) and pins
+      the `Mss.H` stream lifecycle surface (`MSSBrowserStreamState`,
+      `MSSBrowserFindStream`, `MSSBrowserAllocateStream`, and the stream
+      `AIL_*` functions including both `AIL_stream_ms_position` overloads),
+      the probe source `WebAssembly/src/wasm_mss_stream_lifecycle_probe.cpp`
+      (`cnc_port_probe_mss_stream_lifecycle`, representative calls, and the
+      JSON strings `streamLifecycleReady`, `playbackReady:false`,
+      `nextRequired:"webAudioPlaybackBackend"`), and the CMake source/export
+      and bridge RPC/cwrap lines for `cnc_port_probe_mss_stream_lifecycle` /
+      `mssStreamLifecycleProbe`. It emits JSON `{ ok, errors, sources, facts }`
+      and exits nonzero on hard failure. This is a source contract verifier
+      only and does not prove Web Audio playback.
 - [x] Make the MSS HSTREAM lifecycle stateful and harness-observable. `Mss.H`
       now tracks browser stream handles opened from filenames or 2D sample
       handles, callback registration, volume/pan and float volume-pan, playback
