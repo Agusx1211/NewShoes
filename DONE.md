@@ -3360,6 +3360,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `processPlayingList` / `processStoppedList` cleanup, handle release,
       file close, and `AudioEventRTS` deletion. This verifies source structure
       only, not runtime audio.
+- [x] Add `npm run verify:audio-playing-event-state-frontier`, a source-only
+      verifier for the original playing-record state around active audio:
+      `PlayingAudio` fields, `playAudioEvent` list insertion order,
+      `notifyOfAudioCompletion` marking `PS_Stopped`, `processPlayingList`
+      release/erase drainage, and `AudioEventRTS` event-name/handle identity.
+      This verifies source structure only, not runtime audio.
 - [x] Add `npm run verify:audio-sound-manager-counters-frontier`, a source-only
       verifier for the original `SoundManager` request gate and 2D/3D sample
       counter contract: lazy configured limit loading, `canPlayNow`
