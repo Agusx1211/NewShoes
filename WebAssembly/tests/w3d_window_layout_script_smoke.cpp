@@ -43,6 +43,7 @@
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
 #include "GameClient/GameWindowTransitions.h"
+#include "GameLogic/GameLogic.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameNetwork/DownloadManager.h"
 #include "W3DDevice/Common/W3DFunctionLexicon.h"
@@ -53,7 +54,6 @@ class CampaignManager;
 class ChallengeGenerals;
 class DownloadManager;
 class GameEngine;
-class GameLogic;
 class Credits;
 class DisplayStringManager;
 class GameTextInterface;
@@ -71,6 +71,7 @@ class GameSpyPeerMessageQueueInterface;
 class GameSpyInfoInterface;
 void W3DMainMenuInit(WindowLayout *layout, void *userData);
 void MainMenuInit(WindowLayout *layout, void *userData);
+void MainMenuUpdate(WindowLayout *layout, void *userData);
 void MainMenuShutdown(WindowLayout *layout, void *userData);
 WindowMsgHandledType MainMenuSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
@@ -114,6 +115,12 @@ namespace {
 
 Int g_mouse_visibility_true_calls = 0;
 Int g_mouse_visibility_false_calls = 0;
+Int g_raise_gs_message_box_calls = 0;
+Int g_http_think_wrapper_calls = 0;
+Int g_game_spy_update_overlays_calls = 0;
+Int g_download_update_calls = 0;
+Int g_transition_set_group_calls = 0;
+Int g_transition_is_finished_calls = 0;
 Int g_transition_reverse_calls = 0;
 
 std::string normalized_path(const Char *path)
@@ -851,6 +858,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SmokeFontLibrary font_library;
 	SmokeDisplayStringManager display_string_manager;
 	SmokeGameText game_text;
+	GameLogic game_logic;
 	SmokeMouse mouse;
 	HeaderTemplateManager header_templates;
 	GameWindowTransitionsHandler transition_handler;
@@ -867,6 +875,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	FontLibrary *old_font_library = TheFontLibrary;
 	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
 	GameTextInterface *old_game_text = TheGameText;
+	GameLogic *old_game_logic = TheGameLogic;
+	DownloadManager *old_download_manager = TheDownloadManager;
 	Mouse *old_mouse = TheMouse;
 	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
 	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
@@ -884,6 +894,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheFontLibrary = &font_library;
 	TheDisplayStringManager = &display_string_manager;
 	TheGameText = &game_text;
+	TheGameLogic = &game_logic;
+	TheDownloadManager = nullptr;
 	TheMouse = &mouse;
 	TheHeaderTemplateManager = &header_templates;
 	TheTransitionHandler = &transition_handler;
@@ -910,10 +922,19 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuSystem"))) == MainMenuSystem,
 		"FunctionLexicon did not resolve MainMenuSystem for MainMenu.wnd") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutUpdateFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuUpdate"))) == MainMenuUpdate,
+		"FunctionLexicon did not resolve MainMenuUpdate for MainMenu.wnd") && ok;
 
 	global_data.m_breakTheMovie = TRUE;
 	g_mouse_visibility_true_calls = 0;
 	g_mouse_visibility_false_calls = 0;
+	g_raise_gs_message_box_calls = 0;
+	g_http_think_wrapper_calls = 0;
+	g_game_spy_update_overlays_calls = 0;
+	g_download_update_calls = 0;
+	g_transition_set_group_calls = 0;
+	g_transition_is_finished_calls = 0;
 	g_transition_reverse_calls = 0;
 	{
 		Shell shell;
@@ -961,6 +982,24 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					"original MainMenuInit did not hide dropdown window") && ok;
 			}
 		}
+		// MainMenuInit enters Shell::showShellMap if GameLogic is already in-game.
+		// This smoke owns the first idle-frame boundary, so switch modes after init.
+		game_logic.setGameMode(GAME_SHELL);
+		ok = expect(game_logic.isInGame() && game_logic.isInShellGame(),
+			"focused GameLogic boundary did not represent shell-mode state for MainMenuUpdate") && ok;
+		if (top != nullptr) {
+			top->runUpdate();
+		}
+		ok = expect(g_raise_gs_message_box_calls == 1,
+			"original MainMenuUpdate first idle frame did not cross the message-box boundary once") && ok;
+		ok = expect(g_http_think_wrapper_calls == 1,
+			"original MainMenuUpdate first idle frame did not tick the HTTP boundary once") && ok;
+		ok = expect(g_game_spy_update_overlays_calls == 1,
+			"original MainMenuUpdate first idle frame did not tick the GameSpy overlay boundary once") && ok;
+		ok = expect(g_download_update_calls == 0,
+			"original MainMenuUpdate should not enter the download branch when TheDownloadManager is null") && ok;
+		ok = expect(g_transition_set_group_calls == 0 && g_transition_is_finished_calls == 0,
+			"original MainMenuUpdate first idle frame unexpectedly entered transition/game-start branches") && ok;
 		shell.popImmediate();
 		ok = expect(shell.getScreenCount() == 0,
 			"original Shell::popImmediate/MainMenuShutdown did not clear the shell stack") && ok;
@@ -975,6 +1014,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheTransitionHandler = old_transition_handler;
 	TheHeaderTemplateManager = old_header_templates;
 	TheMouse = old_mouse;
+	TheDownloadManager = old_download_manager;
+	TheGameLogic = old_game_logic;
 	TheGameText = old_game_text;
 	TheDisplayStringManager = old_display_string_manager;
 	TheFontLibrary = old_font_library;
@@ -1278,10 +1319,12 @@ void GameSpyCloseAllOverlays()
 
 void GameSpyUpdateOverlays()
 {
+	++g_game_spy_update_overlays_calls;
 }
 
 void RaiseGSMessageBox()
 {
+	++g_raise_gs_message_box_calls;
 }
 
 void TearDownGameSpy()
@@ -1298,6 +1341,7 @@ void CancelPatchCheckCallback()
 
 void HTTPThinkWrapper()
 {
+	++g_http_think_wrapper_calls;
 }
 
 void StopAsyncDNSCheck()
@@ -1347,6 +1391,7 @@ void GameWindowTransitionsHandler::draw()
 
 Bool GameWindowTransitionsHandler::isFinished()
 {
+	++g_transition_is_finished_calls;
 	return TRUE;
 }
 
@@ -1356,6 +1401,7 @@ void GameWindowTransitionsHandler::parseWindow(INI *, void *, void *, const void
 
 void GameWindowTransitionsHandler::setGroup(AsciiString, Bool)
 {
+	++g_transition_set_group_calls;
 }
 
 void GameWindowTransitionsHandler::reverse(AsciiString groupName)
@@ -1394,6 +1440,7 @@ AsciiString CampaignManager::getCurrentMap()
 
 HRESULT DownloadManager::update()
 {
+	++g_download_update_calls;
 	return S_OK;
 }
 
@@ -1454,9 +1501,9 @@ int main()
 		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\"],"
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
-		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/update/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

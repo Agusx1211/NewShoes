@@ -24,16 +24,17 @@ class GameLogic
 {
 public:
 	int getFrame() const { return 0; }
-	Int getGameMode() const { return GAME_NONE; }
+	Int getGameMode() const { return m_gameMode; }
+	void setGameMode(Int mode) { m_gameMode = mode; }
 	Bool getDrawIconUI() const { return TRUE; }
-	Bool isInGame() const { return FALSE; }
-	Bool isInSinglePlayerGame() const { return FALSE; }
-	Bool isInMultiplayerGame() const { return FALSE; }
-	Bool isInLanGame() const { return FALSE; }
-	Bool isInSkirmishGame() const { return FALSE; }
-	Bool isInReplayGame() const { return FALSE; }
-	Bool isInShellGame() const { return FALSE; }
-	Bool isInInternetGame() const { return FALSE; }
+	Bool isInGame() const { return m_gameMode != GAME_NONE; }
+	Bool isInSinglePlayerGame() const { return m_gameMode == GAME_SINGLE_PLAYER; }
+	Bool isInMultiplayerGame() const { return m_gameMode == GAME_LAN || m_gameMode == GAME_INTERNET; }
+	Bool isInLanGame() const { return m_gameMode == GAME_LAN; }
+	Bool isInSkirmishGame() const { return m_gameMode == GAME_SKIRMISH; }
+	Bool isInReplayGame() const { return m_gameMode == GAME_REPLAY; }
+	Bool isInShellGame() const { return m_gameMode == GAME_SHELL; }
+	Bool isInInternetGame() const { return m_gameMode == GAME_INTERNET; }
 	Bool isLoadingMap() const { return FALSE; }
 	Bool isIntroMoviePlaying() const { return FALSE; }
 	Bool isGamePaused() const { return FALSE; }
@@ -56,6 +57,9 @@ public:
 	void setShowBehindBuildingMarkers(Bool) {}
 	Bool getShowBehindBuildingMarkers() const { return FALSE; }
 	Bool findControlBarOverride(const AsciiString &, Int, ConstCommandButtonPtr &) const { return FALSE; }
+
+private:
+	Int m_gameMode = GAME_NONE;
 };
 
 extern GameLogic *TheGameLogic;

@@ -1780,6 +1780,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       until those menu flows are harness-driven. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Advance the Shell-owned real `Menus/MainMenu.wnd` path one runtime frame
+      past init by running original `MainMenuUpdate` through the parsed layout's
+      `LAYOUTUPDATE` callback under focused shell `GameLogic` state. The smoke
+      proves `W3DFunctionLexicon` resolves `MainMenuUpdate`, counts the original
+      first idle frame crossing the message-box, HTTP, and GameSpy overlay tick
+      boundaries once, and verifies it does not enter the download,
+      transition/group, or game-start branches in the current harness state.
+      Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`
+      and `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

@@ -210,13 +210,15 @@ const steps = [
         'W3D window layout script smoke did not prove real message-box callback ownership');
       expect(Array.isArray(payload.shellCallbackNames)
         && payload.shellCallbackNames.includes('W3DMainMenuInit')
+        && payload.shellCallbackNames.includes('MainMenuUpdate')
         && payload.shellCallbackNames.includes('MainMenuSystem')
         && payload.shellCallbackNames.includes('MainMenuShutdown'),
         'W3D window layout script smoke did not prove MainMenu.wnd callback-name binding');
       expect(Array.isArray(payload.callbackPaths)
         && payload.callbackPaths.includes('W3DMainMenuInit->original MainMenuInit')
-        && payload.callbackPaths.includes('MainMenuSystem(GWM_INPUT_FOCUS)'),
-        'W3D window layout script smoke did not execute original MainMenuInit/MainMenuSystem callback paths');
+        && payload.callbackPaths.includes('MainMenuSystem(GWM_INPUT_FOCUS)')
+        && payload.callbackPaths.includes('MainMenuUpdate(first idle frame)'),
+        'W3D window layout script smoke did not execute original MainMenuInit/MainMenuSystem/MainMenuUpdate callback paths');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
@@ -227,6 +229,8 @@ const steps = [
         'W3D window layout script smoke did not report original MainMenuInit state mutation');
       expect(typeof payload.covered === 'string' && payload.covered.includes('MainMenuSystem input-focus handling'),
         'W3D window layout script smoke did not report original MainMenuSystem input-focus execution');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('MainMenuUpdate first idle frame'),
+        'W3D window layout script smoke did not report original MainMenuUpdate idle-frame execution');
     },
   },
 ];
@@ -249,10 +253,11 @@ console.log(JSON.stringify({
     'original Shell::showShell/Shell::push loading MainMenu.wnd from WindowZH.big',
     'original W3DMainMenuInit executing original MainMenuInit first-run state mutation',
     'original MainMenuSystem input-focus handling',
+    'original MainMenuUpdate first idle frame under shell GameLogic state',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance GUI ownership from original MainMenuInit into the first safe original MainMenuUpdate idle frame',
+    'advance the next vertical startup path outside the already-proven MainMenu first-frame slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),

@@ -433,12 +433,14 @@ shares structure and follows behind.
       original `Mouse.cpp`, then proves the original `W3DMainMenuInit` layout
       callback executes original `MainMenuInit` first-run state mutation
       (`m_breakTheMovie`, mouse visibility, `FadeWholeScreen`, focus, and
-      dropdown hides) plus original `MainMenuSystem(GWM_INPUT_FOCUS)`. It still
-      uses focused display/font/text shims and no-op branch boundaries for
+      dropdown hides), original `MainMenuSystem(GWM_INPUT_FOCUS)`, and the
+      first original `MainMenuUpdate` idle frame under focused shell
+      `GameLogic` state while counting the message-box/HTTP/GameSpy tick
+      boundaries and avoiding download, transition, and game-start branches. It
+      still uses focused display/font/text shims and no-op branch boundaries for
       undriven campaign/GameSpy/download/options paths, so full production
-      `W3DDisplay` construction, the first safe original `MainMenuUpdate` idle
-      frame with real shell `GameLogic` state, and `W3DModuleFactory`
-      module-template lookup still need original public-API runtime proof.
+      `W3DDisplay` construction and `W3DModuleFactory` module-template lookup
+      still need original public-API runtime proof.
       `verify:w3d-module-factory-frontier`
       now pins the original
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
@@ -447,9 +449,9 @@ shares structure and follows behind.
       attempted standalone runtime lookup pulled the base ModuleFactory / INI /
       game-client global graph, so the full `W3DModuleFactory::init()` runtime
       proof should follow original `GameEngine.cpp` ownership of the
-      pre-`createAudioManager` file/INI/CD frontier. Advance the next GUI slice
-      vertically from original `MainMenuInit` into a safe original
-      `MainMenuUpdate` idle frame.
+      pre-`createAudioManager` file/INI/CD frontier. Advance the next vertical
+      slice outside the already-proven `MainMenu` first-frame path unless a new
+      menu flow is driven through real original input/navigation.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
