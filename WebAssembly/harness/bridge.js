@@ -5730,6 +5730,7 @@ async function loadWasmModule() {
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
+      probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
       probeD3D8Viewport: module.cwrap("cnc_port_probe_d3d8_viewport", "string", []),
       probeD3D8BufferDirty: module.cwrap("cnc_port_probe_d3d8_buffer_dirty", "string", []),
@@ -15563,6 +15564,24 @@ async function rpc(command, payload = {}) {
           ok: Boolean(probe.ok)
             && probe.source === "Mss.H browser startup handle contract probe"
             && probe.startupBoundaryReady === true
+            && probe.playbackReady === false
+            && probe.nextRequired === "webAudioPlaybackBackend",
+          command,
+          probe,
+          state: snapshotState(),
+        };
+      }
+    case "mssSampleLifecycleProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MSS sample lifecycle probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeMssSampleLifecycle());
+        return {
+          ok: Boolean(probe.ok)
+            && probe.source === "Mss.H browser 2D sample lifecycle contract probe"
+            && probe.sampleLifecycleReady === true
             && probe.playbackReady === false
             && probe.nextRequired === "webAudioPlaybackBackend",
           command,

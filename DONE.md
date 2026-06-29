@@ -3562,6 +3562,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MilesAudioManager::openDevice` call order, the harness-visible
       `milesAudioDeviceFrontier` fields, the wasm probe source, CMake export,
       and the `mssStartupProbe` bridge RPC.
+- [x] Make the MSS 2D sample handle lifecycle stateful and
+      harness-observable. `Mss.H` now tracks allocated 2D sample handles,
+      initialization, sample file assignment, user data, EOS callbacks, volume,
+      pan, playback rate, loop count, millisecond position, start/stop/resume,
+      done status, and release. The wasm `cnc_port_probe_mss_sample_lifecycle`
+      export and harness `mssSampleLifecycleProbe` RPC assert those state
+      transitions while still reporting that Web Audio playback is not ready.
 
 ---
 

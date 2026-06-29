@@ -587,7 +587,10 @@ shares structure and follows behind.
       sample data, streams, provider/listener state, mixer state, and
       Bink-sharing handles. The startup boundary is no longer compile-only, but
       playback, stream scheduling, and DirectSound speaker/device replacement
-      remain open.
+      remain open. The 2D sample handle lifecycle is now stateful and
+      harness-probed by `mssSampleLifecycleProbe`, covering sample init, file
+      assignment, callbacks, volume/pan/rate/loop settings, start/stop/resume,
+      status, and release without claiming Web Audio playback.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;

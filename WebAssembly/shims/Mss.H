@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "windows.h"
@@ -145,11 +146,53 @@ using AIL_file_open_callback = U32 (AILCALLBACK *)(char const *, U32 *);
 using AIL_file_close_callback = void (AILCALLBACK *)(U32);
 using AIL_file_seek_callback = S32 (AILCALLBACK *)(U32, S32, U32);
 using AIL_file_read_callback = U32 (AILCALLBACK *)(U32, void *, U32);
+using AIL_sample_callback = void (AILCALLBACK *)(HSAMPLE);
+
+#ifndef SMP_DONE
+#define SMP_DONE 1
+#endif
+
+#ifndef SMP_PLAYING
+#define SMP_PLAYING 2
+#endif
+
+#ifndef SMP_STOPPED
+#define SMP_STOPPED 4
+#endif
+
+#ifndef MSS_BROWSER_MAX_SAMPLES
+#define MSS_BROWSER_MAX_SAMPLES 64
+#endif
 
 static inline std::uintptr_t MSSInvalidHandle()
 {
 	return static_cast<std::uintptr_t>(-1);
 }
+
+struct MSSBrowserSampleState
+{
+	bool allocated = false;
+	bool released = false;
+	bool initialized = false;
+	bool file_set = false;
+	bool started = false;
+	bool stopped = false;
+	bool resumed = false;
+	HSAMPLE handle = 0;
+	void *file_data = nullptr;
+	S32 file_flags = 0;
+	S32 status = SMP_DONE;
+	S32 user_data[8] = {};
+	S32 volume = 127;
+	S32 pan = 64;
+	F32 volume_float = 1.0f;
+	F32 pan_float = 0.5f;
+	S32 playback_rate = 44100;
+	S32 loop_count = 1;
+	S32 ms_length = 0;
+	S32 ms_position = 0;
+	AIL_sample_callback eos_callback = nullptr;
+};
 
 struct MSSBrowserRuntimeState
 {
@@ -168,6 +211,7 @@ struct MSSBrowserRuntimeState
 	std::uintptr_t next_sample_handle = 0x2000;
 	std::uintptr_t next_3d_sample_handle = 0x3000;
 	std::uintptr_t next_listener_handle = 0x4000;
+	MSSBrowserSampleState samples[MSS_BROWSER_MAX_SAMPLES] = {};
 	AIL_file_open_callback file_open = nullptr;
 	AIL_file_close_callback file_close = nullptr;
 	AIL_file_seek_callback file_seek = nullptr;
@@ -194,6 +238,38 @@ static inline bool MSSBrowserRuntimeStarted()
 static inline bool MSSBrowserHandleValid(std::uintptr_t handle)
 {
 	return handle != 0 && handle != MSSInvalidHandle();
+}
+
+static inline MSSBrowserSampleState *MSSBrowserFindSample(HSAMPLE handle)
+{
+	if (!MSSBrowserHandleValid(handle)) {
+		return nullptr;
+	}
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_SAMPLES; ++i) {
+		MSSBrowserSampleState &sample = state.samples[i];
+		if (sample.allocated && !sample.released && sample.handle == handle) {
+			return &sample;
+		}
+	}
+	return nullptr;
+}
+
+static inline MSSBrowserSampleState *MSSBrowserAllocateSample(HSAMPLE handle)
+{
+	MSSBrowserRuntimeState &state = MSSBrowserRuntime();
+	for (std::size_t i = 0; i < MSS_BROWSER_MAX_SAMPLES; ++i) {
+		MSSBrowserSampleState &sample = state.samples[i];
+		if (!sample.allocated || sample.released) {
+			sample = MSSBrowserSampleState {};
+			sample.allocated = true;
+			sample.handle = handle;
+			sample.playback_rate =
+				state.digital_driver.output_rate > 0 ? state.digital_driver.output_rate : 44100;
+			return &sample;
+		}
+	}
+	return nullptr;
 }
 
 static inline void AIL_startup()
@@ -257,52 +333,200 @@ static inline HSAMPLE AIL_allocate_sample_handle(HDIGDRIVER driver)
 	if (driver == nullptr || !MSSBrowserRuntimeStarted()) {
 		return static_cast<HSAMPLE>(MSSInvalidHandle());
 	}
-	return static_cast<HSAMPLE>(MSSBrowserRuntime().next_sample_handle++);
+	const HSAMPLE handle = static_cast<HSAMPLE>(MSSBrowserRuntime().next_sample_handle++);
+	if (MSSBrowserAllocateSample(handle) == nullptr) {
+		return static_cast<HSAMPLE>(MSSInvalidHandle());
+	}
+	return handle;
 }
-static inline void AIL_release_sample_handle(HSAMPLE) {}
-static inline void AIL_init_sample(HSAMPLE) {}
-static inline void AIL_set_named_sample_file(HSAMPLE, char *, U8 *, U32, S32) {}
-static inline S32 AIL_set_sample_file(HSAMPLE, void *, S32) { return 0; }
-static inline void AIL_start_sample(HSAMPLE) {}
-static inline void AIL_stop_sample(HSAMPLE) {}
-static inline void AIL_resume_sample(HSAMPLE) {}
-static inline void AIL_end_sample(HSAMPLE) {}
-static inline void AIL_set_sample_pan(HSAMPLE, S32) {}
-static inline S32 AIL_sample_pan(HSAMPLE) { return 0; }
-static inline void AIL_set_sample_volume(HSAMPLE, S32) {}
-static inline S32 AIL_sample_volume(HSAMPLE) { return 0; }
-static inline void AIL_set_sample_loop_count(HSAMPLE, S32) {}
-static inline S32 AIL_sample_loop_count(HSAMPLE) { return 0; }
-static inline void AIL_set_sample_ms_position(HSAMPLE, S32) {}
-static inline void AIL_sample_ms_position(HSAMPLE, S32 *len, S32 *pos)
+static inline void AIL_release_sample_handle(HSAMPLE sample)
 {
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->released = true;
+		state->allocated = false;
+		state->status = SMP_DONE;
+		state->eos_callback = nullptr;
+	}
+}
+static inline void AIL_init_sample(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->initialized = true;
+		state->file_set = false;
+		state->started = false;
+		state->stopped = false;
+		state->resumed = false;
+		state->file_data = nullptr;
+		state->file_flags = 0;
+		state->status = SMP_STOPPED;
+		state->ms_position = 0;
+	}
+}
+static inline S32 AIL_set_sample_file(HSAMPLE sample, void *data, S32 flags)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state == nullptr || data == nullptr) {
+		return 0;
+	}
+	state->file_data = data;
+	state->file_flags = flags;
+	state->file_set = true;
+	return 1;
+}
+static inline void AIL_set_named_sample_file(HSAMPLE sample, char *, U8 *data, U32, S32 flags)
+{
+	AIL_set_sample_file(sample, data, flags);
+}
+static inline void AIL_start_sample(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr && state->initialized && state->file_set) {
+		state->started = true;
+		state->stopped = false;
+		state->resumed = false;
+		state->status = SMP_PLAYING;
+	}
+}
+static inline void AIL_stop_sample(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->stopped = true;
+		state->status = SMP_STOPPED;
+	}
+}
+static inline void AIL_resume_sample(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr && state->initialized && state->file_set) {
+		state->resumed = true;
+		state->stopped = false;
+		state->status = SMP_PLAYING;
+	}
+}
+static inline void AIL_end_sample(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->status = SMP_DONE;
+		if (state->eos_callback != nullptr) {
+			state->eos_callback(sample);
+		}
+	}
+}
+static inline void AIL_set_sample_pan(HSAMPLE sample, S32 pan)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->pan = pan;
+	}
+}
+static inline S32 AIL_sample_pan(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr ? state->pan : 0;
+}
+static inline void AIL_set_sample_volume(HSAMPLE sample, S32 volume)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->volume = volume;
+	}
+}
+static inline S32 AIL_sample_volume(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr ? state->volume : 0;
+}
+static inline void AIL_set_sample_loop_count(HSAMPLE sample, S32 loopCount)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->loop_count = loopCount;
+	}
+}
+static inline S32 AIL_sample_loop_count(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr ? state->loop_count : 0;
+}
+static inline void AIL_set_sample_ms_position(HSAMPLE sample, S32 position)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->ms_position = position;
+	}
+}
+static inline S32 AIL_sample_status(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr ? state->status : SMP_DONE;
+}
+static inline void AIL_sample_ms_position(HSAMPLE sample, S32 *len, S32 *pos)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
 	if (len != nullptr) {
-		*len = 0;
+		*len = state != nullptr ? state->ms_length : 0;
 	}
 	if (pos != nullptr) {
-		*pos = 0;
+		*pos = state != nullptr ? state->ms_position : 0;
 	}
 }
-static inline void AIL_set_sample_user_data(HSAMPLE, S32, S32) {}
-static inline S32 AIL_sample_user_data(HSAMPLE, S32) { return 0; }
-static inline void AIL_sample_volume_pan(HSAMPLE, F32 *volume, F32 *pan)
+static inline void AIL_set_sample_user_data(HSAMPLE sample, S32 index, S32 value)
 {
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr && index >= 0 && index < 8) {
+		state->user_data[index] = value;
+	}
+}
+static inline S32 AIL_sample_user_data(HSAMPLE sample, S32 index)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr && index >= 0 && index < 8 ? state->user_data[index] : 0;
+}
+static inline void AIL_sample_volume_pan(HSAMPLE sample, F32 *volume, F32 *pan)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
 	if (volume != nullptr) {
-		*volume = 0.0f;
+		*volume = state != nullptr ? state->volume_float : 0.0f;
 	}
 	if (pan != nullptr) {
-		*pan = 0.5f;
+		*pan = state != nullptr ? state->pan_float : 0.5f;
 	}
 }
-static inline void AIL_set_sample_volume_pan(HSAMPLE, F32, F32) {}
-static inline S32 AIL_sample_playback_rate(HSAMPLE) { return 0; }
-static inline void AIL_set_sample_playback_rate(HSAMPLE, S32) {}
+static inline void AIL_set_sample_volume_pan(HSAMPLE sample, F32 volume, F32 pan)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->volume_float = volume;
+		state->pan_float = pan;
+	}
+}
+static inline S32 AIL_sample_playback_rate(HSAMPLE sample)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	return state != nullptr ? state->playback_rate : 0;
+}
+static inline void AIL_set_sample_playback_rate(HSAMPLE sample, S32 rate)
+{
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state != nullptr) {
+		state->playback_rate = rate;
+	}
+}
 static inline HPROVIDER AIL_set_sample_processor(HSAMPLE, U32, HPROVIDER) { return 0; }
 static inline void AIL_set_filter_sample_preference(HSAMPLE, const char *, F32 *) {}
-using AIL_sample_callback = void (AILCALLBACK *)(HSAMPLE);
-static inline AIL_sample_callback AIL_register_EOS_callback(HSAMPLE, AIL_sample_callback callback)
+static inline AIL_sample_callback AIL_register_EOS_callback(HSAMPLE sample, AIL_sample_callback callback)
 {
-	return callback;
+	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
+	if (state == nullptr) {
+		return callback;
+	}
+	AIL_sample_callback previous = state->eos_callback;
+	state->eos_callback = callback;
+	return previous;
 }
 static inline H3DSAMPLE AIL_allocate_3D_sample_handle(HPROVIDER provider)
 {
