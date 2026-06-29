@@ -3680,6 +3680,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Data\English\Movies\VS_small.bik` basename resolution, and reports
       `decodeReady:false`. Runtime frame decode/copy, WebCodecs/`<video>`
       presentation, and audio sync remain open.
+- [x] Decide the browser path for shipped `.bik` payloads as offline
+      transcode to browser-decodable sidecars, and add
+      `transcode:bink-video`. `WebAssembly/tools/transcode_bink_video_payloads.mjs`
+      reads the user-extracted `GC_Background.bik` and `VS_small.bik` files,
+      verifies their classic BIK header facts and FFmpeg source probe metadata,
+      emits VP9/Opus WebM files under ignored `artifacts/browser-video/bink`,
+      counts output video frames with `ffprobe`, and writes
+      `bink-browser-video-manifest.json` preserving source size, signature,
+      frames, dimensions, FPS, source/output codecs, and durations. This
+      chooses the `<video>` / WebCodecs sidecar input contract for the browser
+      port, but runtime manifest lookup, video presentation, frame upload,
+      `BinkCopyToBuffer` pixel-copy behavior, and audio synchronization remain
+      open.
+- [x] Add a browser smoke for the generated Bink sidecars.
+      `test:bink-browser-video` runs `transcode:bink-video`, serves the
+      generated WebM files through the existing Playwright static server, loads
+      them in Chromium as `<video>` elements, checks `canPlayType`, dimensions,
+      duration, play progress, seek behavior, same-origin canvas frame
+      readability, and captures
+      `artifacts/screenshots/harness-smoke-bink-browser-video.png`. This proves
+      the sidecar payloads are browser-decodable, but it still does not wire
+      them into the original `BinkVideoPlayer` runtime.
 
 ---
 
