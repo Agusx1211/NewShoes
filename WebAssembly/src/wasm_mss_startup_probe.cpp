@@ -72,6 +72,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 	const H3DSAMPLE sample_3d = AIL_allocate_3D_sample_handle(preferred_provider);
 	AIL_set_file_callbacks(probe_file_open, probe_file_close, probe_file_seek, probe_file_read);
 
+	HPROENUM filter_next = HPROENUM_FIRST;
+	HPROVIDER filter_provider = 0;
+	HPROVIDER mono_delay_filter = 0;
+	char *filter_name = nullptr;
+	int filter_count = 0;
+	char mono_delay_filter_name[96] = {};
+	while (AIL_enumerate_filters(&filter_next, &filter_provider, &filter_name)) {
+		++filter_count;
+		if (filter_name != nullptr && std::strcmp(filter_name, "Mono Delay Filter") == 0) {
+			mono_delay_filter = filter_provider;
+			std::snprintf(mono_delay_filter_name, sizeof(mono_delay_filter_name), "%s", filter_name);
+		}
+	}
+
 	const MSSBrowserRuntimeState before_shutdown = MSSBrowserRuntime();
 	AIL_shutdown();
 	const MSSBrowserRuntimeState after_shutdown = MSSBrowserRuntime();
@@ -96,6 +110,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 		handle_valid(sample_2d) &&
 		handle_valid(sample_3d) &&
 		before_shutdown.file_callbacks_set &&
+		filter_count >= 1 &&
+		mono_delay_filter == 0x6001 &&
 		after_shutdown.shutdown_called &&
 		!after_shutdown.quick_startup_ok;
 
@@ -116,6 +132,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 		"\"AIL_allocate_sample_handle\":%s,"
 		"\"AIL_allocate_3D_sample_handle\":%s,"
 		"\"AIL_set_file_callbacks\":%s,"
+		"\"AIL_enumerate_filters\":%d,"
 		"\"AIL_shutdown\":%s},"
 		"\"quickStartup\":{\"result\":%d,\"useDigital\":%d,\"useMidi\":%d,"
 		"\"outputRate\":%d,\"outputBits\":%d,\"outputChannels\":%d},"
@@ -123,6 +140,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 		"\"outputRate\":%d,\"outputBits\":%d,\"outputChannels\":%d},"
 		"\"provider\":{\"count\":%d,\"preferredName\":\"%s\","
 		"\"preferredHandle\":%llu,\"openResult\":%d},"
+		"\"filter\":{\"count\":%d,\"monoDelayName\":\"%s\","
+		"\"monoDelayHandle\":%llu},"
 		"\"handles\":{\"listener\":%llu,\"sample2D\":%llu,\"sample3D\":%llu},"
 		"\"shutdown\":{\"called\":%s,\"quickStartupActive\":%s}}",
 		ok ? "true" : "false",
@@ -137,6 +156,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 		handle_valid(sample_2d) ? "true" : "false",
 		handle_valid(sample_3d) ? "true" : "false",
 		before_shutdown.file_callbacks_set ? "true" : "false",
+		filter_count,
 		after_shutdown.shutdown_called ? "true" : "false",
 		quick_startup_result,
 		before_shutdown.use_digital,
@@ -153,6 +173,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_startup()
 		preferred_provider_name,
 		static_cast<unsigned long long>(preferred_provider),
 		provider_open_result,
+		filter_count,
+		mono_delay_filter_name,
+		static_cast<unsigned long long>(mono_delay_filter),
 		static_cast<unsigned long long>(listener),
 		static_cast<unsigned long long>(sample_2d),
 		static_cast<unsigned long long>(sample_3d),

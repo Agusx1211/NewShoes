@@ -1036,7 +1036,27 @@ static inline void AIL_set_3D_speaker_type(HPROVIDER provider, S32 speakerType)
 		MSSBrowserRuntime().provider_speaker_type[provider] = speakerType;
 	}
 }
-static inline S32 AIL_enumerate_filters(HPROENUM *, HPROVIDER *, char **) { return 0; }
+static inline S32 AIL_enumerate_filters(HPROENUM *next, HPROVIDER *provider, char **name)
+{
+	static char monoDelayName[] = "Mono Delay Filter";
+	static char lowPassName[] = "Low Pass Filter";
+	if (next == nullptr || provider == nullptr || name == nullptr || !MSSBrowserRuntimeStarted()) {
+		return 0;
+	}
+	if (*next == HPROENUM_FIRST) {
+		*provider = 0x6001;
+		*name = monoDelayName;
+		*next = 1;
+		return 1;
+	}
+	if (*next == 1) {
+		*provider = 0x6002;
+		*name = lowPassName;
+		*next = 2;
+		return 1;
+	}
+	return 0;
+}
 static inline HSTREAM AIL_open_stream(HDIGDRIVER driver, const char *filename, S32 flags)
 {
 	if (driver == nullptr || filename == nullptr || !MSSBrowserRuntimeStarted()) {

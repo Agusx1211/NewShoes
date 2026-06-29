@@ -1685,6 +1685,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       remain open. Verified with
       `cmake --build WebAssembly/build/wasm --target w3d-gamewindow-manager-smoke -j 8`
       and `node dist/w3d-gamewindow-manager-smoke.cjs`.
+- [x] Add the original `GlobalData` power-bar fields used by reached W3D
+      control-bar code to the current browser shim: `m_powerBarBase`,
+      `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching
+      original `GlobalData.cpp`.
 ---
 
 ## M3 — File / data subsystem (real data)
@@ -3663,6 +3667,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MilesAudioManager::openDevice` call order, the harness-visible
       `milesAudioDeviceFrontier` fields, the wasm probe source, CMake export,
       and the `mssStartupProbe` bridge RPC.
+- [x] Extend the MSS startup/device boundary through the original
+      `MilesAudioManager::initDelayFilter` lookup. `Mss.H` now enumerates
+      browser-owned filter providers, including `Mono Delay Filter`, and
+      `mssStartupProbe` asserts the filter count/name/handle before shutdown.
+      The startup frontier now marks `initDelayFilter` ready while keeping
+      `refreshCachedVariables`, playback scheduling, and real filter DSP open.
 - [x] Make the MSS 2D sample handle lifecycle stateful and
       harness-observable. `Mss.H` now tracks allocated 2D sample handles,
       initialization, sample file assignment, user data, EOS callbacks, volume,

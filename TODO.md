@@ -628,10 +628,10 @@ shares structure and follows behind.
       missing audio startup INIs are classified as absent optional base
       `INI.big` files instead of anonymous payload gaps.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
-      The `Mss.H` startup/provider/listener/sample/stream-handle boundaries are
-      now stateful and harness-probed by the MSS lifecycle RPCs, but the next
-      required work is a real Web Audio playback backend owned by the original
-      manager.
+      The `Mss.H` startup/provider/listener/filter/sample/stream-handle
+      boundaries are now stateful and harness-probed by the MSS lifecycle RPCs,
+      but the next required work is a real Web Audio playback backend owned by
+      the original manager.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -651,6 +651,9 @@ shares structure and follows behind.
       allocation/user data/file/callback/distance/position/volume/rate/loop/
       offset/occlusion/effects state, start/stop/resume/end callback, and
       release while still leaving real Web Audio panning and scheduling open.
+      The startup probe now also resolves the original `initDelayFilter`
+      `AIL_enumerate_filters` lookup to a browser-owned `Mono Delay Filter`
+      handle, without implementing the filter DSP path.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;

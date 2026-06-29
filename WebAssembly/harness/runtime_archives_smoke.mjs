@@ -1305,6 +1305,7 @@ function assertMssStartupProbe(probe, context) {
       || probe.calls?.AIL_allocate_sample_handle !== true
       || probe.calls?.AIL_allocate_3D_sample_handle !== true
       || probe.calls?.AIL_set_file_callbacks !== true
+      || probe.calls?.AIL_enumerate_filters !== 2
       || probe.calls?.AIL_shutdown !== true
       || probe.quickStartup?.result !== 1
       || probe.quickStartup?.useDigital !== 1
@@ -1315,6 +1316,9 @@ function assertMssStartupProbe(probe, context) {
       || probe.digitalHandle?.emulatedDirectSound !== true
       || probe.provider?.preferredName !== "Miles Fast 2D Positional Audio"
       || probe.provider?.openResult !== 0
+      || probe.filter?.count !== 2
+      || probe.filter?.monoDelayName !== "Mono Delay Filter"
+      || probe.filter?.monoDelayHandle !== 0x6001
       || !Number.isFinite(probe.handles?.listener)
       || !Number.isFinite(probe.handles?.sample2D)
       || !Number.isFinite(probe.handles?.sample3D)
@@ -3552,6 +3556,7 @@ function assertOriginalEngineStartup(
       || milesAudio?.mssShim?.AIL_open_3D_listener !== "stateful"
       || milesAudio?.mssShim?.AIL_allocate_sample_handle !== "stateful"
       || milesAudio?.mssShim?.AIL_allocate_3D_sample_handle !== "stateful"
+      || milesAudio?.mssShim?.AIL_enumerate_filters !== "stateful"
       || milesCalls.length !== 8
       || milesCalls[0]?.call !== "AIL_set_redist_directory"
       || milesCalls[0]?.line !== 1450
@@ -3576,7 +3581,7 @@ function assertOriginalEngineStartup(
       || milesCalls[6]?.ready !== false
       || milesCalls[7]?.call !== "initDelayFilter"
       || milesCalls[7]?.line !== 1479
-      || milesCalls[7]?.ready !== false
+      || milesCalls[7]?.ready !== true
       || frontier.fileSystemReady !== (expectedFileSystemReadiness.local && expectedFileSystemReadiness.archive)
       || frontier.startupFilesReady !== (expectedStatus === "browser_device_layer_pending")
       || frontier.startupSingletonsReady !== expectedStartupSingletonsReady

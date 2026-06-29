@@ -9,7 +9,8 @@
 //      AIL_startup, AIL_shutdown, AIL_quick_startup, AIL_quick_handles,
 //      AIL_set_file_callbacks, AIL_allocate_sample_handle,
 //      AIL_allocate_3D_sample_handle, AIL_open_3D_listener,
-//      AIL_enumerate_3D_providers, AIL_open_3D_provider.
+//      AIL_enumerate_3D_providers, AIL_open_3D_provider,
+//      AIL_enumerate_filters.
 //
 //   2. MilesAudioManager.cpp::openDevice calls, in source order:
 //      AIL_set_redist_directory, AIL_startup, AIL_quick_startup,
@@ -136,9 +137,10 @@ function main() {
     { name: "AIL_open_3D_listener", line: 989 },
     { name: "AIL_enumerate_3D_providers", line: 998 },
     { name: "AIL_open_3D_provider", line: 1019 },
-    { name: "AIL_set_file_callbacks", line: 1223 },
-    { name: "AIL_quick_startup", line: 1237 },
-    { name: "AIL_quick_handles", line: 1263 },
+    { name: "AIL_enumerate_filters", line: 1039 },
+    { name: "AIL_set_file_callbacks", line: 1243 },
+    { name: "AIL_quick_startup", line: 1257 },
+    { name: "AIL_quick_handles", line: 1283 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssBoundary) {
@@ -234,11 +236,11 @@ function main() {
   frontierFacts.sourceString = {
     expected: "MilesAudioManager.cpp::init/openDevice + Mss.H",
     line: frontierSourceLine,
-    expectedLine: 1469,
+    expectedLine: 1526,
   };
-  if (frontierSourceLine !== 1469) {
+  if (frontierSourceLine !== 1526) {
     errors.push(
-      `wasm_port_entry milesAudioDeviceFrontier source string expected at line 1469 but found at ${frontierSourceLine}`,
+      `wasm_port_entry milesAudioDeviceFrontier source string expected at line 1526 but found at ${frontierSourceLine}`,
     );
   }
 
@@ -246,11 +248,11 @@ function main() {
   // "key":value literal on its own snippet line. The optional-backslash form
   // (\\?") matches both the current escaped source and a plain JSON form.
   const frontierAnchors = [
-    { key: "initLine", value: 444, expectedLine: 1478 },
-    { key: "audioManagerInitLine", value: 446, expectedLine: 1479 },
-    { key: "openDeviceCallLine", value: 454, expectedLine: 1480 },
-    { key: "fileCallbacksLine", value: 458, expectedLine: 1481 },
-    { key: "openDeviceLine", value: 1444, expectedLine: 1482 },
+    { key: "initLine", value: 444, expectedLine: 1535 },
+    { key: "audioManagerInitLine", value: 446, expectedLine: 1536 },
+    { key: "openDeviceCallLine", value: 454, expectedLine: 1537 },
+    { key: "fileCallbacksLine", value: 458, expectedLine: 1538 },
+    { key: "openDeviceLine", value: 1444, expectedLine: 1539 },
   ];
   const anchorFacts = {};
   for (const { key, value, expectedLine } of frontierAnchors) {
@@ -325,25 +327,27 @@ function main() {
     allocateSample2D: requireLine(errors, probe.lines, 71, /\bAIL_allocate_sample_handle\s*\(/, "probe AIL_allocate_sample_handle"),
     allocateSample3D: requireLine(errors, probe.lines, 72, /\bAIL_allocate_3D_sample_handle\s*\(/, "probe AIL_allocate_3D_sample_handle"),
     fileCallbacks: requireLine(errors, probe.lines, 73, /\bAIL_set_file_callbacks\s*\(/, "probe AIL_set_file_callbacks"),
-    shutdown: requireLine(errors, probe.lines, 76, /\bAIL_shutdown\s*\(/, "probe AIL_shutdown"),
-    startupReadyJson: requireLine(errors, probe.lines, 106, /startupBoundaryReady/, "probe startupBoundaryReady JSON"),
-    playbackNotReadyJson: requireLine(errors, probe.lines, 107, /playbackReady/, "probe playbackReady false JSON"),
-    nextRequiredJson: requireLine(errors, probe.lines, 108, /nextRequired.*webAudioPlaybackBackend/, "probe nextRequired JSON"),
-    cmakeSource: requireLine(errors, cmake.lines, 3691, /src\/wasm_mss_startup_probe\.cpp/, "CMake wasm_mss_startup_probe source"),
-    cmakeExport: requireLine(errors, cmake.lines, 3818, /_cnc_port_probe_mss_startup/, "CMake cnc_port_probe_mss_startup export"),
+    enumerateFilters: requireLine(errors, probe.lines, 81, /\bAIL_enumerate_filters\s*\(/, "probe AIL_enumerate_filters"),
+    shutdown: requireLine(errors, probe.lines, 90, /\bAIL_shutdown\s*\(/, "probe AIL_shutdown"),
+    startupReadyJson: requireLine(errors, probe.lines, 122, /startupBoundaryReady/, "probe startupBoundaryReady JSON"),
+    playbackNotReadyJson: requireLine(errors, probe.lines, 123, /playbackReady/, "probe playbackReady false JSON"),
+    nextRequiredJson: requireLine(errors, probe.lines, 124, /nextRequired.*webAudioPlaybackBackend/, "probe nextRequired JSON"),
+    filterJson: requireLine(errors, probe.lines, 143, /filter.*monoDelayName/, "probe filter JSON"),
+    cmakeSource: requireLine(errors, cmake.lines, 3715, /src\/wasm_mss_startup_probe\.cpp/, "CMake wasm_mss_startup_probe source"),
+    cmakeExport: requireLine(errors, cmake.lines, 3844, /_cnc_port_probe_mss_startup/, "CMake cnc_port_probe_mss_startup export"),
     bridgeCwrap: requireLine(
       errors,
       bridge.lines,
-      5732,
+      5757,
       /probeMssStartup:\s*module\.cwrap\("cnc_port_probe_mss_startup",\s*"string",\s*\[\]\)/,
       "bridge probeMssStartup cwrap",
     ),
-    bridgeRpc: requireLine(errors, bridge.lines, 15558, /case "mssStartupProbe":/, "bridge mssStartupProbe RPC"),
-    bridgePlaybackGuard: requireLine(errors, bridge.lines, 15569, /probe\.playbackReady === false/, "bridge playbackReady false guard"),
+    bridgeRpc: requireLine(errors, bridge.lines, 15727, /case "mssStartupProbe":/, "bridge mssStartupProbe RPC"),
+    bridgePlaybackGuard: requireLine(errors, bridge.lines, 15738, /probe\.playbackReady === false/, "bridge playbackReady false guard"),
     bridgeNextRequiredGuard: requireLine(
       errors,
       bridge.lines,
-      15570,
+      15739,
       /probe\.nextRequired === "webAudioPlaybackBackend"/,
       "bridge nextRequired guard",
     ),
