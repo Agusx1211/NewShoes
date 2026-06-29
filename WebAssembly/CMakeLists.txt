@@ -6404,7 +6404,7 @@ target_link_options(bink-video-provider-smoke PRIVATE
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=33554432"
   "SHELL:-sNODERAWFS=1"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke','_run_bink_video_sidecar_copy_bridge_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
 
@@ -6438,7 +6438,7 @@ target_link_options(bink-video-provider-browser-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=33554432"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke','_run_bink_video_sidecar_copy_bridge_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
 

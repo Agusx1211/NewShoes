@@ -92,7 +92,7 @@ try {
   await page.goto(new URL("harness/index.html", server.url).href, { waitUntil: "networkidle" });
 
   const moduleUrl = new URL("dist/bink-video-provider-browser-smoke.js", server.url).href;
-  const providerResult = await page.evaluate(async ({ moduleUrl, gcBytes, vsBytes, manifestText }) => {
+  const providerResult = await page.evaluate(async ({ moduleUrl, gcBytes, vsBytes, manifestText, sidecarPayloads }) => {
     function ensureDirectory(fs, path) {
       const parts = path.split("/").filter(Boolean);
       let current = "";
@@ -106,6 +106,59 @@ try {
           }
         }
       }
+    }
+
+    function waitForEvent(target, eventName, timeoutMs) {
+      return new Promise((resolveEvent, rejectEvent) => {
+        const timeout = setTimeout(() => {
+          cleanup();
+          rejectEvent(new Error(`${eventName} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        const cleanup = () => {
+          clearTimeout(timeout);
+          target.removeEventListener(eventName, onEvent);
+          target.removeEventListener("error", onError);
+        };
+        const onEvent = () => {
+          cleanup();
+          resolveEvent();
+        };
+        const onError = () => {
+          cleanup();
+          rejectEvent(new Error(`${eventName} failed: video error ${target.error?.code ?? "unknown"}`));
+        };
+        target.addEventListener(eventName, onEvent, { once: true });
+        target.addEventListener("error", onError, { once: true });
+      });
+    }
+
+    async function decodeSidecarFrame(payload) {
+      const wasmBaseUrl = new URL("../", window.location.href).href;
+      const video = document.createElement("video");
+      video.muted = true;
+      video.preload = "auto";
+      video.src = new URL(payload.relativeOutputPath, wasmBaseUrl).href;
+      await waitForEvent(video, "loadedmetadata", 10000);
+      await waitForEvent(video, "canplay", 10000);
+
+      const seekTarget = Math.min(
+        Math.max(0.05, payload.outputDurationSeconds / 3),
+        Math.max(0.05, video.duration - 0.05),
+      );
+      video.currentTime = seekTarget;
+      await waitForEvent(video, "seeked", 10000);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = payload.width;
+      canvas.height = payload.height;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      return {
+        width: payload.width,
+        height: payload.height,
+        pixels,
+      };
     }
 
     const moduleExports = await import(moduleUrl);
@@ -141,12 +194,96 @@ try {
       ["string", "string"],
       ["artifacts/real-assets/GC_Background.bik", "artifacts/real-assets/VS_small.bik"],
     );
-    return { ok: status === 0, status, binkEvents };
+
+    const initialEvents = binkEvents.slice();
+    const decodedFrames = new Map();
+    for (const payload of sidecarPayloads) {
+      decodedFrames.set(payload.relativeOutputPath, await decodeSidecarFrame(payload));
+    }
+
+    const copyEvents = [];
+    module.cncPortBinkCopyToBuffer = (event) => {
+      const decoded = decodedFrames.get(event.videoPath);
+      if (!decoded) {
+        throw new Error(`No decoded sidecar frame cached for ${event.videoPath}`);
+      }
+      if (!module.HEAPU8) {
+        throw new Error("Emscripten module does not expose HEAPU8");
+      }
+      if ((event.flags >>> 0) !== 3) {
+        throw new Error(`Expected BINKSURFACE32 copy, got flags ${event.flags}`);
+      }
+
+      const dest = event.dest >>> 0;
+      const destPitch = event.destPitch >>> 0;
+      const destHeight = event.destHeight >>> 0;
+      const destX = event.destX >>> 0;
+      const destY = event.destY >>> 0;
+      const rowStart = destX * 4;
+      const rowCapacityBytes = destPitch > rowStart ? destPitch - rowStart : 0;
+      const copyWidth = Math.min(decoded.width, event.width >>> 0, Math.floor(rowCapacityBytes / 4));
+      const copyHeight = Math.min(
+        decoded.height,
+        event.height >>> 0,
+        destHeight > destY ? destHeight - destY : 0,
+      );
+      if (dest === 0 || copyWidth <= 0 || copyHeight <= 0) {
+        throw new Error(`Invalid Bink copy destination: ${JSON.stringify(event)}`);
+      }
+
+      let checksum = 0;
+      let bytesWritten = 0;
+      const rowBytes = copyWidth * 4;
+      for (let y = 0; y < copyHeight; ++y) {
+        const source = y * decoded.width * 4;
+        const target = dest + (destY + y) * destPitch + rowStart;
+        const row = decoded.pixels.subarray(source, source + rowBytes);
+        module.HEAPU8.set(row, target);
+        bytesWritten += row.length;
+        for (let i = 0; i < row.length; ++i) {
+          checksum = (checksum + row[i]) >>> 0;
+        }
+      }
+
+      copyEvents.push({
+        ...event,
+        copyWidth,
+        copyHeight,
+        bytesWritten,
+        checksum,
+      });
+      return true;
+    };
+
+    const copyBridgeStatus = module.ccall(
+      "run_bink_video_sidecar_copy_bridge_smoke",
+      "number",
+      ["string", "string"],
+      ["artifacts/real-assets/GC_Background.bik", "artifacts/real-assets/VS_small.bik"],
+    );
+
+    return {
+      ok: status === 0 && copyBridgeStatus === 0,
+      status,
+      binkEvents: initialEvents,
+      copyBridge: {
+        ok: copyBridgeStatus === 0,
+        status: copyBridgeStatus,
+        copyEvents,
+        binkEvents: binkEvents.slice(initialEvents.length),
+      },
+    };
   }, {
     moduleUrl,
     gcBytes: Array.from(gcBytes),
     vsBytes: Array.from(vsBytes),
     manifestText: manifestBytes.toString("utf8"),
+    sidecarPayloads: payloads.map((payload) => ({
+      relativeOutputPath: payload.relativeOutputPath,
+      width: payload.width,
+      height: payload.height,
+      outputDurationSeconds: payload.outputDurationSeconds,
+    })),
   });
 
   if (!providerResult.ok) {
@@ -198,6 +335,26 @@ try {
     if (count !== 3) {
       throw new Error(`Expected three Bink browser ${type} events, got ${count}: ${JSON.stringify(binkEvents)}`);
     }
+  }
+  const copyBridge = providerResult.copyBridge;
+  if (!copyBridge?.ok) {
+    throw new Error(`Bink browser sidecar copy bridge failed: ${JSON.stringify(copyBridge)}`);
+  }
+  const copyEvents = copyBridge.copyEvents ?? [];
+  if (copyEvents.length !== 3) {
+    throw new Error(`Expected three Bink sidecar copy hook events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
+  }
+  for (const event of copyEvents) {
+    if (event.bytesWritten <= 0 || event.checksum === 0) {
+      throw new Error(`Bink sidecar copy hook did not write decoded pixels: ${JSON.stringify(event)}`);
+    }
+  }
+  const copyCompleteEvents = (copyBridge.binkEvents ?? []).filter((event) => event.type === "copyComplete");
+  if (copyCompleteEvents.length !== 3) {
+    throw new Error(
+      `Expected three Bink browser copyComplete events, got ${copyCompleteEvents.length}: ` +
+      `${JSON.stringify(copyBridge.binkEvents)}`,
+    );
   }
 
   const videoPayloads = payloads.map((payload) => ({

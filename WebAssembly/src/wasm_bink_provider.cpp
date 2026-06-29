@@ -444,6 +444,59 @@ EM_JS(void, wasm_bink_browser_video_close, (unsigned int handle_id), {
 	}
 	bridge({ handle: handle_id >>> 0 });
 });
+
+EM_JS(int, wasm_bink_browser_can_copy_frames, (), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkCopyToBuffer : null;
+	return typeof bridge === "function" ? 1 : 0;
+});
+
+EM_JS(int, wasm_bink_browser_copy_to_buffer, (
+	unsigned int handle_id,
+	const char *source_path,
+	const char *video_path,
+	const char *video_codec,
+	const char *audio_codec,
+	unsigned int width,
+	unsigned int height,
+	unsigned int frames,
+	unsigned int frame_num,
+	unsigned int dest_ptr,
+	unsigned int dest_pitch,
+	unsigned int dest_height,
+	unsigned int dest_x,
+	unsigned int dest_y,
+	unsigned int flags
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkCopyToBuffer : null;
+	if (typeof bridge !== "function") {
+		return 0;
+	}
+	try {
+		const copied = bridge({
+			handle: handle_id >>> 0,
+			sourcePath: source_path ? UTF8ToString(source_path) : "",
+			videoPath: video_path ? UTF8ToString(video_path) : "",
+			videoCodec: video_codec ? UTF8ToString(video_codec) : "",
+			audioCodec: audio_codec ? UTF8ToString(audio_codec) : "",
+			width: width >>> 0,
+			height: height >>> 0,
+			frames: frames >>> 0,
+			frameNum: frame_num >>> 0,
+			dest: dest_ptr >>> 0,
+			destPitch: dest_pitch >>> 0,
+			destHeight: dest_height >>> 0,
+			destX: dest_x >>> 0,
+			destY: dest_y >>> 0,
+			flags: flags >>> 0,
+		});
+		return copied ? 1 : 0;
+	} catch (error) {
+		if (typeof console !== "undefined" && console.error) {
+			console.error("cncPortBinkCopyToBuffer failed", error);
+		}
+		return 0;
+	}
+});
 #else
 void wasm_bink_browser_video_open(unsigned int, const char *, const char *, const char *, const char *, unsigned int, unsigned int, unsigned int, unsigned int, double)
 {
@@ -455,6 +508,31 @@ void wasm_bink_browser_video_event(unsigned int, const char *, unsigned int, uns
 
 void wasm_bink_browser_video_close(unsigned int)
 {
+}
+
+int wasm_bink_browser_can_copy_frames()
+{
+	return 0;
+}
+
+int wasm_bink_browser_copy_to_buffer(
+	unsigned int,
+	const char *,
+	const char *,
+	const char *,
+	const char *,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int,
+	unsigned int)
+{
+	return 0;
 }
 #endif
 
@@ -496,6 +574,37 @@ void notify_browser_video_close(const BrowserBinkHandle &handle)
 		return;
 	}
 	wasm_bink_browser_video_close(browser_handle_id(handle));
+}
+
+bool copy_browser_video_frame_to_buffer(
+	const BrowserBinkHandle &handle,
+	void *dest,
+	u32 dest_pitch,
+	u32 dest_height,
+	u32 dest_x,
+	u32 dest_y,
+	u32 flags)
+{
+	if (!handle.browser_video_available || dest == nullptr || dest_pitch == 0 || dest_height == 0) {
+		return false;
+	}
+
+	return wasm_bink_browser_copy_to_buffer(
+		browser_handle_id(handle),
+		handle.path,
+		handle.browser_video_path,
+		handle.browser_video_codec,
+		handle.browser_audio_codec,
+		handle.public_handle.Width,
+		handle.public_handle.Height,
+		handle.public_handle.Frames,
+		handle.public_handle.FrameNum,
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(dest)),
+		dest_pitch,
+		dest_height,
+		dest_x,
+		dest_y,
+		flags) != 0;
 }
 }
 
@@ -573,14 +682,17 @@ void BinkGoto(HBINK bink, u32 frame, u32)
 	notify_browser_video_event(*handle, "gotoFrame", frame);
 }
 
-void BinkCopyToBuffer(HBINK bink, void *, u32 destPitch, u32 destHeight, u32, u32, u32)
+void BinkCopyToBuffer(HBINK bink, void *dest, u32 destPitch, u32 destHeight, u32 destX, u32 destY, u32 flags)
 {
 	const BrowserBinkHandle *handle = to_browser_handle(bink);
 	if (handle != nullptr) {
 		notify_browser_video_event(*handle, "copyPending", destPitch, destHeight);
+		if (copy_browser_video_frame_to_buffer(*handle, dest, destPitch, destHeight, destX, destY, flags)) {
+			notify_browser_video_event(*handle, "copyComplete", destPitch, destHeight);
+		}
 	}
-	// Frame decode/copy remains a WebCodecs/decoder task; this provider only
-	// proves real-file open, metadata, and cursor lifecycle for the original API.
+	// Frame decode/copy remains browser-hook gated; the provider still does not
+	// decode BIK frames itself or upload an original runtime video texture.
 }
 
 void BinkSetVolume(HBINK bink, u32, int volume)
@@ -602,7 +714,7 @@ void BinkSetSoundTrack(u32, const u32 *)
 
 int WasmBinkProviderCanDecodeFrames()
 {
-	return 0;
+	return wasm_bink_browser_can_copy_frames();
 }
 
 int WasmBinkProviderHasBrowserVideo(HBINK bink)

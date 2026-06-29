@@ -38,8 +38,8 @@
 //   - WebAssembly/src/wasm_bink_provider.cpp defines the current browser Bink
 //     provider: BinkOpen reads real classic BIK headers and fills the original
 //     handle fields, frame cursor APIs are stateful, sidecar metadata is read
-//     from bink-browser-video-manifest.json, and BinkCopyToBuffer still
-//     documents that frame decode/copy remains a WebCodecs/decoder task.
+//     from bink-browser-video-manifest.json, and BinkCopyToBuffer delegates
+//     decoded sidecar pixel copies to a hook-gated browser bridge.
 //   - WebAssembly/CMakeLists.txt defines the zh_bink_video_device_compile_frontier
 //     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469)
 //     and links it to zh_browser_bink. It also defines focused node/browser
@@ -617,14 +617,20 @@ function main() {
     ? firstMatchInRange(provider.lines, copyBody.start, copyBody.end, /Frame decode\/copy remains/)
     : -1;
   if (facts.provider.copyToBufferDecodePendingLine === -1) {
-    errors.push("provider BinkCopyToBuffer must document that frame decode/copy remains pending");
+    errors.push("provider BinkCopyToBuffer must document that direct frame decode/copy remains hook-gated");
+  }
+  facts.provider.copyToBufferBrowserHookLine = copyBody
+    ? firstMatchInRange(provider.lines, copyBody.start, copyBody.end, /copy_browser_video_frame_to_buffer\(\*handle/)
+    : -1;
+  if (facts.provider.copyToBufferBrowserHookLine === -1) {
+    errors.push("provider BinkCopyToBuffer must delegate browser sidecar pixel copies through the copy bridge");
   }
   const decodeReadyBody = functionBodyLineRange(provider.lines, facts.provider.apiDefinitions.WasmBinkProviderCanDecodeFrames);
-  facts.provider.canDecodeFramesFalseLine = decodeReadyBody
-    ? firstMatchInRange(provider.lines, decodeReadyBody.start, decodeReadyBody.end, /return\s+0\s*;/)
+  facts.provider.canDecodeFramesHookGateLine = decodeReadyBody
+    ? firstMatchInRange(provider.lines, decodeReadyBody.start, decodeReadyBody.end, /wasm_bink_browser_can_copy_frames\s*\(\s*\)/)
     : -1;
-  if (facts.provider.canDecodeFramesFalseLine === -1) {
-    errors.push("provider must report decodeReady=false until real frame decode is implemented");
+  if (facts.provider.canDecodeFramesHookGateLine === -1) {
+    errors.push("provider decode readiness must be gated on the browser sidecar copy hook");
   }
   const parseManifestBody = functionBodyLineRange(provider.lines, facts.provider.parseManifestPayloadLine);
   if (!parseManifestBody) {
@@ -670,6 +676,7 @@ function main() {
     nextFrame: { api: "BinkNextFrame", pattern: /notify_browser_video_event\(\*handle,\s*"nextFrame"\)/ },
     gotoFrame: { api: "BinkGoto", pattern: /notify_browser_video_event\(\*handle,\s*"gotoFrame"/ },
     copyPending: { api: "BinkCopyToBuffer", pattern: /notify_browser_video_event\(\*handle,\s*"copyPending"/ },
+    copyComplete: { api: "BinkCopyToBuffer", pattern: /notify_browser_video_event\(\*handle,\s*"copyComplete"/ },
   };
   facts.provider.lifecycleNotifications = {};
   for (const [name, check] of Object.entries(lifecycleNotifications)) {
@@ -686,6 +693,9 @@ function main() {
   assertPresent(errors, facts.smoke, "sidecarSmokeExportLine",
     lineNumber(smoke.lines, (line) => /\brun_bink_video_sidecar_provider_smoke\s*\(/.test(line)),
     "C++ sidecar provider smoke export");
+  assertPresent(errors, facts.smoke, "sidecarCopyBridgeSmokeExportLine",
+    lineNumber(smoke.lines, (line) => /\brun_bink_video_sidecar_copy_bridge_smoke\s*\(/.test(line)),
+    "C++ sidecar provider copy bridge smoke export");
   assertPresent(errors, facts.smoke, "originalPathResolutionLine",
     lineNumber(smoke.lines, (line) => /Data\\\\English\\\\Movies\\\\VS_small\.bik/.test(line)),
     "C++ sidecar provider smoke original-style path resolution");
@@ -698,6 +708,12 @@ function main() {
   assertPresent(errors, facts.smoke, "decodeReadyFalseLine",
     lineNumber(smoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*0/.test(line)),
     "C++ sidecar provider smoke keeps decodeReady false");
+  assertPresent(errors, facts.smoke, "copyBridgeDecodeReadyLine",
+    lineNumber(smoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*1/.test(line)),
+    "C++ sidecar copy bridge smoke requires hook-gated decodeReady true");
+  assertPresent(errors, facts.smoke, "copyBridgeBufferChangedLine",
+    lineNumber(smoke.lines, (line) => /any_nonzero/.test(line)),
+    "C++ sidecar copy bridge smoke verifies destination memory changed");
   const sidecarLifecycleSmoke = {
     doFrameLine: lineNumber(smoke.lines, (line) => /\bBinkDoFrame\s*\(\s*bink\s*\)/.test(line)),
     copyPendingLine: lineNumber(smoke.lines, (line) => /\bBinkCopyToBuffer\s*\(\s*bink\s*,/.test(line)),
@@ -762,6 +778,9 @@ function main() {
   assertPresent(errors, facts.browserHarness, "providerCcallLine",
     lineNumber(browserHarness.lines, (line) => /run_bink_video_sidecar_provider_smoke/.test(line)),
     "browser sidecar harness runs provider smoke");
+  assertPresent(errors, facts.browserHarness, "copyBridgeCcallLine",
+    lineNumber(browserHarness.lines, (line) => /run_bink_video_sidecar_copy_bridge_smoke/.test(line)),
+    "browser sidecar harness runs copy bridge smoke");
   assertPresent(errors, facts.browserHarness, "binkOpenHookLine",
     lineNumber(browserHarness.lines, (line) => /cncPortBinkVideoOpen/.test(line)),
     "browser sidecar harness installs Bink open hook");
@@ -771,12 +790,18 @@ function main() {
   assertPresent(errors, facts.browserHarness, "binkCloseHookLine",
     lineNumber(browserHarness.lines, (line) => /cncPortBinkVideoClose/.test(line)),
     "browser sidecar harness installs Bink close hook");
+  assertPresent(errors, facts.browserHarness, "binkCopyHookLine",
+    lineNumber(browserHarness.lines, (line) => /cncPortBinkCopyToBuffer/.test(line)),
+    "browser sidecar harness installs Bink copy hook");
   assertPresent(errors, facts.browserHarness, "binkOpenCountLine",
     lineNumber(browserHarness.lines, (line) => /openEvents\.length\s*!==\s*3/.test(line)),
     "browser sidecar harness validates Bink open count");
   assertPresent(errors, facts.browserHarness, "binkLifecycleCountLine",
     lineNumber(browserHarness.lines, (line) => /Expected three Bink browser \$\{type\} events/.test(line)),
     "browser sidecar harness validates Bink lifecycle event counts");
+  assertPresent(errors, facts.browserHarness, "binkCopyCompleteCountLine",
+    lineNumber(browserHarness.lines, (line) => /copyCompleteEvents\.length\s*!==\s*3/.test(line)),
+    "browser sidecar harness validates Bink copyComplete event counts");
   assertPresent(errors, facts.browserHarness, "canvasReadbackLine",
     lineNumber(browserHarness.lines, (line) => /nonTransparentSamples/.test(line)),
     "browser sidecar harness validates canvas samples");
@@ -813,9 +838,9 @@ function main() {
           cmake.lines,
           nodeProviderSmokeTargetLine,
           nodeProviderSmokeTargetLine + 40,
-          /_run_bink_video_provider_smoke.*_run_bink_video_sidecar_provider_smoke/,
+          /_run_bink_video_provider_smoke.*_run_bink_video_sidecar_provider_smoke.*_run_bink_video_sidecar_copy_bridge_smoke/,
         ),
-    "CMake node provider smoke exports sidecar entrypoint");
+    "CMake node provider smoke exports sidecar and copy bridge entrypoints");
   assertPresent(errors, facts.cmake, "browserProviderSmokeTargetLine",
     browserProviderSmokeTargetLine,
     "CMake browser provider sidecar smoke target");
@@ -829,6 +854,16 @@ function main() {
           /createBinkVideoProviderBrowserSmokeModule/,
         ),
     "CMake browser provider sidecar smoke export name");
+  assertPresent(errors, facts.cmake, "browserProviderSmokeExportLine",
+    browserProviderSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(
+          cmake.lines,
+          browserProviderSmokeTargetLine,
+          browserProviderSmokeTargetLine + 40,
+          /_run_bink_video_provider_smoke.*_run_bink_video_sidecar_provider_smoke.*_run_bink_video_sidecar_copy_bridge_smoke/,
+        ),
+    "CMake browser provider smoke exports sidecar and copy bridge entrypoints");
   assertPresent(errors, facts.cmake, "browserProviderSmokeRuntimeMethodsLine",
     browserProviderSmokeTargetLine === -1
       ? -1

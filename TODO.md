@@ -671,7 +671,11 @@ shares structure and follows behind.
       and frame-cursor lifecycle to actual decoded frame copy/upload through
       WebCodecs or a deliberate decoder path; `test:bink-video-provider` now
       proves `BinkOpen` can resolve the shipped loose payloads and fill the
-      original `HBINK` fields, but `BinkCopyToBuffer` still does not decode.
+      original `HBINK` fields, and `test:bink-provider-sidecar-browser` now
+      proves a browser hook can synchronously copy decoded WebM sidecar pixels
+      into `BinkCopyToBuffer`'s wasm destination buffer. This remains open
+      until the original runtime uses that copied frame data for presentation
+      and the final decoder/format/upload contract is locked down.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -679,13 +683,16 @@ shares structure and follows behind.
       now attaches `bink-browser-video-manifest.json` metadata to `HBINK`
       handles and the browser smoke proves the sidecars are playable through
       `<video>`. The provider also emits browser-observable sidecar lifecycle
-      hooks for open/decompress/pending-copy/advance/seek/close, but original
-      runtime browser presentation, frame upload, and `BinkCopyToBuffer`
-      pixel-copy support remain open. `test:bink-videoplayer-runtime` now
+      hooks for open/decompress/pending-copy/copy-complete/advance/seek/close,
+      and its browser-only copy hook can fill wasm memory from decoded WebM
+      sidecar pixels, but original runtime browser presentation, frame upload
+      through `W3DVideoBuffer`, and audio sync remain open.
+      `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
       ready/decompress/render/advance/seek/close against the real BIK payloads
-      with the sidecar manifest present while keeping decode readiness false.
+      with the sidecar manifest present while keeping decode readiness false
+      in the no-browser-hook node path.
       `verify:bink-runtime-callsite-frontier` now pins the source-only
       original Bink runtime *callsite* frontier that this runtime-wiring work
       must preserve (the `W3DGameClient::createVideoPlayer` `NEW BinkVideoPlayer`
@@ -701,8 +708,9 @@ shares structure and follows behind.
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and
       `Data/<lang>/Movies/<name>.bik` resolving to `<name>.webm`), and the
-      invariant that `WasmBinkProviderCanDecodeFrames` stays false until
-      `BinkCopyToBuffer` actually copies pixels.
+      invariant that `WasmBinkProviderCanDecodeFrames` is false without the
+      browser copy hook and hook-gated when `BinkCopyToBuffer` delegates a
+      decoded sidecar pixel copy into wasm memory.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.

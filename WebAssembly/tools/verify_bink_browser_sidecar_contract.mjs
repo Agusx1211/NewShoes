@@ -12,11 +12,9 @@
 //
 // Pinned contract:
 //   1. Provider decode-readiness invariant: WasmBinkProviderCanDecodeFrames
-//      must return 0 for as long as BinkCopyToBuffer does not actually copy
-//      decoded pixels. The current provider documents frame decode/copy as a
-//      pending WebCodecs task and reports canDecodeFrames=0; any future
-//      provider change that flips canDecodeFrames must first make
-//      BinkCopyToBuffer copy real pixels.
+//      must stay false without a browser copy hook. It may become true only
+//      when BinkCopyToBuffer delegates to a browser hook that can synchronously
+//      copy decoded sidecar pixels into the destination wasm memory.
 //   2. Manifest schema/path: the sidecar manifest lives at
 //      artifacts/browser-video/bink/bink-browser-video-manifest.json with
 //      schema "cnc-zh-bink-browser-video-manifest/v1". The provider source
@@ -226,6 +224,15 @@ function verifyProviderInvariant(provider, errors, facts) {
     ? firstMatchInRange(provider.lines, canDecodeBody.start, canDecodeBody.end, /return\s+0\s*;/) !== -1
     : false;
   facts.providerCanDecodeFramesReturnsZero = canDecodeReturnsZero;
+  const canDecodeHookGated = canDecodeBody
+    ? firstMatchInRange(
+      provider.lines,
+      canDecodeBody.start,
+      canDecodeBody.end,
+      /wasm_bink_browser_can_copy_frames\s*\(\s*\)/,
+    ) !== -1
+    : false;
+  facts.providerCanDecodeFramesHookGated = canDecodeHookGated;
 
   const copyDef = defLine("BinkCopyToBuffer");
   facts.providerCopyToBufferDefLine = copyDef;
@@ -238,9 +245,8 @@ function verifyProviderInvariant(provider, errors, facts) {
       /Frame decode\/copy remains/,
     ) !== -1
     : false;
-  // "Copies pixels" is detected by the presence of any buffer write through
-  // the destination pointer argument inside BinkCopyToBuffer. The current
-  // provider body is empty apart from the pending comment.
+  // "Copies pixels" is detected by either direct writes through the destination
+  // pointer or delegation to the browser hook that owns decoded sidecar pixels.
   const copyWritesPixels = copyBody
     ? firstMatchInRange(
       provider.lines,
@@ -249,15 +255,26 @@ function verifyProviderInvariant(provider, errors, facts) {
       /memcpy\s*\(|std::memcpy\s*\(|std::copy\s*\(|->data\s*\[|\bdest\s*\[/,
     ) !== -1
     : false;
+  const copyDelegatesToBrowser = copyBody
+    ? firstMatchInRange(
+      provider.lines,
+      copyBody.start,
+      copyBody.end,
+      /wasm_bink_browser_copy_to_buffer\s*\(|copy_browser_video_frame_to_buffer\s*\(/,
+    ) !== -1
+    : false;
   facts.copyToBufferDocumentsPending = copyPendingComment;
-  facts.copyToBufferCopiesPixels = copyWritesPixels;
+  facts.copyToBufferCopiesPixels = copyWritesPixels || copyDelegatesToBrowser;
+  facts.copyToBufferDirectWritesPixels = copyWritesPixels;
+  facts.copyToBufferDelegatesToBrowser = copyDelegatesToBrowser;
+  facts.providerReferencesCopyHook = /cncPortBinkCopyToBuffer/.test(provider.text);
 
-  // Coupling invariant: if BinkCopyToBuffer does not actually copy decoded
-  // pixels, WasmBinkProviderCanDecodeFrames MUST report 0. The two must flip
-  // together in a future provider change.
-  if (!copyWritesPixels && !canDecodeReturnsZero) {
+  // Coupling invariant: if BinkCopyToBuffer does not copy or delegate decoded
+  // pixels, WasmBinkProviderCanDecodeFrames MUST report 0. Hook delegation must
+  // use the hook-gated readiness path so node/no-hook runs stay false.
+  if (!copyWritesPixels && !copyDelegatesToBrowser && !canDecodeReturnsZero) {
     errors.push(
-      "provider invariant violated: BinkCopyToBuffer does not copy decoded pixels but " +
+      "provider invariant violated: BinkCopyToBuffer does not copy/delegate decoded pixels but " +
         "WasmBinkProviderCanDecodeFrames does not return 0",
     );
   }
@@ -266,6 +283,15 @@ function verifyProviderInvariant(provider, errors, facts) {
       "provider invariant violated: BinkCopyToBuffer copies pixels but " +
         "WasmBinkProviderCanDecodeFrames still returns 0",
     );
+  }
+  if (copyDelegatesToBrowser && !canDecodeHookGated) {
+    errors.push(
+      "provider invariant violated: BinkCopyToBuffer delegates to the browser copy hook but " +
+        "WasmBinkProviderCanDecodeFrames is not gated on wasm_bink_browser_can_copy_frames()",
+    );
+  }
+  if (copyDelegatesToBrowser && !facts.providerReferencesCopyHook) {
+    errors.push("provider must reference cncPortBinkCopyToBuffer for browser sidecar copy delegation");
   }
 
   // Provider source fact: the focused provider now knows the generated
@@ -457,8 +483,8 @@ async function main() {
       "Pins the contract between the offline-transcoded WebM sidecar manifest " +
       "and the browser Bink provider: manifest schema/path, source -> sidecar " +
       "association, original-style path aliases, and the decode-readiness " +
-      "invariant that ties WasmBinkProviderCanDecodeFrames to real " +
-      "BinkCopyToBuffer pixel copies.",
+      "invariant that ties WasmBinkProviderCanDecodeFrames to direct or " +
+      "browser-hooked BinkCopyToBuffer pixel copies.",
   };
 
   console.log(JSON.stringify(report, null, 2));

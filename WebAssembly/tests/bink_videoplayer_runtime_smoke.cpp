@@ -269,7 +269,7 @@ int main()
 
 	ok = expect(player->getNumVideos() == 2, "BinkVideoPlayer video registration failed") && ok;
 	ok = expect(WasmBinkProviderCanDecodeFrames() == 0,
-		"Bink provider decode readiness must remain false until BinkCopyToBuffer copies pixels") && ok;
+		"Bink provider decode readiness must remain false without the browser sidecar copy hook") && ok;
 	ok = exercise_stream(*player, player->open(AsciiString("GC_Background")),
 		"GC_Background", 800, 600, 180) && ok;
 	ok = exercise_stream(*player, player->load(AsciiString("VS_small")),

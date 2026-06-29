@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "bink.h"
 
@@ -87,14 +88,55 @@ bool expect_sidecar_payload(
 		"BinkCopyToBuffer decode readiness must stay false until frame copy/upload is implemented") && ok;
 	ok = expect(bink->FrameNum == 1, "sidecar BinkOpen should start on frame 1") && ok;
 
-	unsigned char scratch_pixel[4] = {};
+	std::vector<unsigned char> scratch(static_cast<std::size_t>(expected_width) * 4u * expected_height, 0);
 	BinkDoFrame(bink);
-	BinkCopyToBuffer(bink, scratch_pixel, expected_width * 4, expected_height, 0, 0, BINKSURFACE32);
+	BinkCopyToBuffer(bink, scratch.data(), expected_width * 4, expected_height, 0, 0, BINKSURFACE32);
 	BinkNextFrame(bink);
 	ok = expect(bink->FrameNum == 2, "sidecar BinkNextFrame should advance to frame 2") && ok;
 
 	BinkGoto(bink, expected_frames, 0);
 	ok = expect(bink->FrameNum == expected_frames, "sidecar BinkGoto should seek to the last frame") && ok;
+
+	BinkClose(bink);
+	return ok;
+}
+
+bool expect_sidecar_copy_payload(
+	const char *path,
+	u32 expected_frames,
+	u32 expected_width,
+	u32 expected_height,
+	const char *expected_video_path)
+{
+	HBINK bink = BinkOpen(path, BINKPRELOADALL);
+	if (!expect(bink != nullptr, "BinkOpen returned null for sidecar copy bridge payload")) {
+		return false;
+	}
+
+	bool ok = true;
+	ok = expect(WasmBinkProviderHasBrowserVideo(bink) == 1,
+		"Bink provider did not attach browser sidecar metadata for copy bridge") && ok;
+	ok = expect(std::strcmp(WasmBinkProviderGetBrowserVideoPath(bink), expected_video_path) == 0,
+		"unexpected browser sidecar path for copy bridge") && ok;
+	ok = expect(bink->Frames == expected_frames, "unexpected copy bridge Bink frame count") && ok;
+	ok = expect(bink->Width == expected_width, "unexpected copy bridge Bink width") && ok;
+	ok = expect(bink->Height == expected_height, "unexpected copy bridge Bink height") && ok;
+	ok = expect(WasmBinkProviderCanDecodeFrames() == 1,
+		"browser Bink copy bridge must report decode readiness after installing the copy hook") && ok;
+
+	const std::size_t pitch = static_cast<std::size_t>(expected_width) * 4u;
+	std::vector<unsigned char> pixels(pitch * expected_height, 0);
+	BinkDoFrame(bink);
+	BinkCopyToBuffer(bink, pixels.data(), static_cast<u32>(pitch), expected_height, 0, 0, BINKSURFACE32);
+
+	bool any_nonzero = false;
+	unsigned int checksum = 0;
+	for (unsigned char value : pixels) {
+		any_nonzero = any_nonzero || value != 0;
+		checksum = (checksum + value) & 0x00ffffffu;
+	}
+	ok = expect(any_nonzero, "browser Bink copy bridge did not write decoded pixels into wasm memory") && ok;
+	ok = expect(checksum != 0, "browser Bink copy bridge wrote an all-zero checksum") && ok;
 
 	BinkClose(bink);
 	return ok;
@@ -165,6 +207,49 @@ extern "C" int run_bink_video_sidecar_provider_smoke(const char *gc_background_p
 		"\"videoCodec\":\"vp9\",\"audioCodec\":\"opus\",\"frames\":180,\"width\":800,\"height\":600},"
 		"\"vsSmall\":{\"webm\":\"artifacts/browser-video/bink/VS_small.webm\","
 		"\"videoCodec\":\"vp9\",\"audioCodec\":\"\",\"frames\":71,\"width\":96,\"height\":120},"
+		"\"originalPathResolution\":%s,\"decodeReady\":%s,\"failures\":%d}\n",
+		ok && g_failures == failures_before ? "true" : "false",
+		original_path_ok ? "true" : "false",
+		WasmBinkProviderCanDecodeFrames() ? "true" : "false",
+		g_failures - failures_before);
+
+	return ok && g_failures == failures_before ? 0 : 1;
+}
+
+extern "C" int run_bink_video_sidecar_copy_bridge_smoke(const char *gc_background_path, const char *vs_small_path)
+{
+	if (gc_background_path == nullptr || gc_background_path[0] == '\0' ||
+			vs_small_path == nullptr || vs_small_path[0] == '\0') {
+		std::fprintf(stderr, "run_bink_video_sidecar_copy_bridge_smoke requires both BIK payload paths\n");
+		return 1;
+	}
+
+	const int failures_before = g_failures;
+	const bool gc_ok = expect_sidecar_copy_payload(
+		gc_background_path,
+		180,
+		800,
+		600,
+		"artifacts/browser-video/bink/GC_Background.webm");
+	const bool original_path_ok = expect_sidecar_copy_payload(
+		"Data\\English\\Movies\\VS_small.bik",
+		71,
+		96,
+		120,
+		"artifacts/browser-video/bink/VS_small.webm");
+	const bool direct_vs_ok = expect_sidecar_copy_payload(
+		vs_small_path,
+		71,
+		96,
+		120,
+		"artifacts/browser-video/bink/VS_small.webm");
+	const bool ok = gc_ok && original_path_ok && direct_vs_ok;
+	std::printf(
+		"{\"ok\":%s,\"providerSidecarCopyBridge\":true,"
+		"\"gcBackground\":{\"webm\":\"artifacts/browser-video/bink/GC_Background.webm\","
+		"\"frames\":180,\"width\":800,\"height\":600},"
+		"\"vsSmall\":{\"webm\":\"artifacts/browser-video/bink/VS_small.webm\","
+		"\"frames\":71,\"width\":96,\"height\":120},"
 		"\"originalPathResolution\":%s,\"decodeReady\":%s,\"failures\":%d}\n",
 		ok && g_failures == failures_before ? "true" : "false",
 		original_path_ok ? "true" : "false",

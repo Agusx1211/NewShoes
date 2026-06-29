@@ -3740,11 +3740,10 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the focused C++/JS/browser harnesses, the CMake smoke targets, and the
       package scripts. `verify:bink-browser-sidecar-contract` complements it
       by pinning the generated manifest schema/path, source-to-sidecar
-      metadata association, original-style Bink path aliases, and the invariant
-      that `WasmBinkProviderCanDecodeFrames` stays false until
-      `BinkCopyToBuffer` actually copies pixels. Original `BinkVideoPlayer`
-      runtime presentation, `BinkCopyToBuffer` frame upload, and audio sync
-      remain open.
+      metadata association, original-style Bink path aliases, and the
+      hook-gated `WasmBinkProviderCanDecodeFrames` / `BinkCopyToBuffer`
+      pixel-copy invariant. Original `BinkVideoPlayer` runtime presentation,
+      `BinkCopyToBuffer` frame upload, and audio sync remain open.
 - [x] Add `verify:bink-runtime-callsite-frontier`
       (`WebAssembly/tools/verify_bink_runtime_callsite_frontier.mjs`, with
       strict alias `verify:bink-runtime-callsite-frontier:strict`), a
@@ -3792,6 +3791,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       package script. This proves the original player/stream call path under
       wasm; browser presentation, frame upload, `BinkCopyToBuffer` pixel copy,
       and audio sync remain open.
+- [x] Add a browser-hooked Bink sidecar copy bridge proof.
+      `BinkCopyToBuffer` now delegates to `cncPortBinkCopyToBuffer` when a
+      browser sidecar copy hook is installed, passing the original handle,
+      source/sidecar metadata, frame cursor, destination pointer, pitch,
+      destination dimensions, offset, and Bink surface flags. The browser
+      `test:bink-provider-sidecar-browser` smoke still first runs the existing
+      no-hook sidecar metadata/lifecycle check with `decodeReady:false`, then
+      preloads decoded WebM frames through `<video>`/canvas, installs the copy
+      hook, and runs `run_bink_video_sidecar_copy_bridge_smoke` to prove
+      `BinkCopyToBuffer` writes nonzero decoded sidecar pixels into wasm memory
+      for `GC_Background.bik` and both original/direct `VS_small.bik` paths.
+      The provider emits `copyComplete` only after the hook reports a
+      successful copy, and `WasmBinkProviderCanDecodeFrames()` is now
+      hook-gated instead of unconditionally true. Original `BinkVideoPlayer`
+      browser presentation, `W3DVideoBuffer` texture upload/draw integration,
+      final Bink surface format conversion, and audio sync remain open.
 
 ---
 
