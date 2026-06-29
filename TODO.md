@@ -588,8 +588,9 @@ shares structure and follows behind.
       the ADPCM majority must be decoded or transcoded before
       `decodeAudioData`, and `audioPayloadInventory.decodeProofs` /
       `webAudioBufferProofs` currently cover only representative PCM and IMA
-      ADPCM WAV payloads. Expand that into full requested-payload decode/cache
-      and Web Audio buffer scheduling.
+      ADPCM WAV payloads, while `requestedPayloadCachePlan` is metadata-only.
+      Expand the resolved requested-payload cache plan into real decode/cache
+      storage and Web Audio buffer scheduling.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world.
 - [ ] Music playback + transitions.

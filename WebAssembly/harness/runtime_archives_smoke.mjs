@@ -1458,6 +1458,149 @@ function assertAudioBufferProofs(payloads, context) {
   ], `${context} IMA ADPCM Web Audio first samples`);
 }
 
+function assertRequestedCacheBucket(bucket, expected, context) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (bucket?.[key] !== value) {
+      throw new Error(`${context} requested audio cache ${key} mismatch: ${JSON.stringify(bucket)}`);
+    }
+  }
+}
+
+function assertRequestedCacheArchive(bucket, archive, expected, context) {
+  const actual = bucket?.archives?.[archive];
+  if (!actual) {
+    throw new Error(`${context} requested audio cache missing archive ${archive}: ${JSON.stringify(bucket)}`);
+  }
+  for (const [key, value] of Object.entries(expected)) {
+    if (actual[key] !== value) {
+      throw new Error(`${context} requested audio cache archive ${archive}.${key} mismatch: ${JSON.stringify(actual)}`);
+    }
+  }
+}
+
+function assertAudioRequestedPayloadCachePlan(payloads, context) {
+  const plan = payloads.requestedPayloadCachePlan;
+  if (!plan
+      || plan.source !== "shipped audio INI resolved payload cache plan"
+      || plan.ready !== true
+      || plan.metadataOnly !== true
+      || plan.runtimeDecoded !== false
+      || plan.runtimeScheduled !== false
+      || plan.nextRequired !== "decodeResolvedImaAdpcmPayloads") {
+    throw new Error(`${context} requested audio payload cache plan state mismatch: ${JSON.stringify(plan)}`);
+  }
+
+  assertRequestedCacheBucket(plan, {
+    references: 7933,
+    resolvedReferences: 3469,
+    missingReferences: 4464,
+    uniquePayloads: 3335,
+    totalBytes: 360615268,
+    webAudioDecodeCandidates: 779,
+    requiresTranscode: 2556,
+    unsupported: 0,
+  }, context);
+  if (plan.extensions?.mp3 !== 7
+      || plan.extensions?.wav !== 3328
+      || plan.wavCodec?.["1"] !== 772
+      || plan.wavCodec?.["17"] !== 2556) {
+    throw new Error(`${context} requested audio cache format counts mismatch: ${JSON.stringify(plan)}`);
+  }
+  assertRequestedCacheArchive(plan, "MusicZH.big", {
+    references: 8,
+    uniquePayloads: 7,
+    totalBytes: 33954918,
+  }, context);
+  assertRequestedCacheArchive(plan, "AudioZH.big", {
+    references: 305,
+    uniquePayloads: 273,
+    totalBytes: 23399124,
+  }, context);
+  assertRequestedCacheArchive(plan, "AudioEnglishZH.big", {
+    references: 721,
+    uniquePayloads: 626,
+    totalBytes: 44969350,
+  }, context);
+  assertRequestedCacheArchive(plan, "SpeechEnglishZH.big", {
+    references: 2424,
+    uniquePayloads: 2419,
+    totalBytes: 253178132,
+  }, context);
+  assertRequestedCacheArchive(plan, "SpeechZH.big", {
+    references: 11,
+    uniquePayloads: 10,
+    totalBytes: 5113744,
+  }, context);
+
+  assertRequestedCacheBucket(plan.sections?.music, {
+    references: 67,
+    resolvedReferences: 8,
+    missingReferences: 59,
+    uniquePayloads: 7,
+    totalBytes: 33954918,
+    webAudioDecodeCandidates: 7,
+    requiresTranscode: 0,
+    unsupported: 0,
+  }, `${context} music`);
+  assertRequestedCacheBucket(plan.sections?.soundEffects, {
+    references: 2290,
+    resolvedReferences: 628,
+    missingReferences: 1662,
+    uniquePayloads: 522,
+    totalBytes: 44137194,
+    webAudioDecodeCandidates: 353,
+    requiresTranscode: 169,
+    unsupported: 0,
+  }, `${context} soundEffects`);
+  assertRequestedCacheBucket(plan.sections?.voices, {
+    references: 3008,
+    resolvedReferences: 398,
+    missingReferences: 2610,
+    uniquePayloads: 377,
+    totalBytes: 24231280,
+    webAudioDecodeCandidates: 377,
+    requiresTranscode: 0,
+    unsupported: 0,
+  }, `${context} voices`);
+  assertRequestedCacheBucket(plan.sections?.speech, {
+    references: 2568,
+    resolvedReferences: 2435,
+    missingReferences: 133,
+    uniquePayloads: 2429,
+    totalBytes: 258291876,
+    webAudioDecodeCandidates: 42,
+    requiresTranscode: 2387,
+    unsupported: 0,
+  }, `${context} speech`);
+
+  const firstCache = plan.cacheKeyExamples?.[0];
+  if (!firstCache
+      || firstCache.cacheKey !== "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"
+      || firstCache.refCount !== 4
+      || firstCache.codec !== "PCM"
+      || firstCache.webAudioDecodeCandidate !== true
+      || firstCache.requiresTranscode !== false) {
+    throw new Error(`${context} requested audio cache key example mismatch: ${JSON.stringify(firstCache)}`);
+  }
+  const firstTranscode = plan.transcodeExamples?.[0];
+  if (!firstTranscode
+      || firstTranscode.cacheKey !== "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"
+      || firstTranscode.refCount !== 4
+      || firstTranscode.codec !== "IMA_ADPCM"
+      || firstTranscode.webAudioDecodeCandidate !== false
+      || firstTranscode.requiresTranscode !== true) {
+    throw new Error(`${context} requested audio transcode example mismatch: ${JSON.stringify(firstTranscode)}`);
+  }
+  const firstLargest = plan.largestEntries?.[0];
+  if (!firstLargest
+      || firstLargest.cacheKey !== "MusicZH.big|Data\\Audio\\Tracks\\Chi_11.mp3"
+      || firstLargest.size !== 5954563
+      || firstLargest.codec !== "mp3-id3"
+      || firstLargest.webAudioDecodeCandidate !== true) {
+    throw new Error(`${context} requested audio largest example mismatch: ${JSON.stringify(firstLargest)}`);
+  }
+}
+
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   const payloads = state.audioPayloadInventory;
   if (!payloads
@@ -1496,6 +1639,7 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   assertAudioPayloadFormats(payloads, context);
   assertAudioDecodeProofs(payloads, context);
   assertAudioBufferProofs(payloads, context);
+  assertAudioRequestedPayloadCachePlan(payloads, context);
 
   if (hasBaseIniArchive) {
     if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {

@@ -45,8 +45,12 @@ sample statistics. `audioPayloadInventory.webAudioBufferProofs` then uploads
 those decoded samples into Web Audio `AudioBuffer`s with
 `OfflineAudioContext.createBuffer` and pins buffer lengths, rates, durations,
 and normalized sample anchors. This proves the mounted-archive decode plus
-buffer-upload path for representative payloads, not full requested-payload
-decode/cache or audio scheduling.
+buffer-upload path for representative payloads. The
+`audioPayloadInventory.requestedPayloadCachePlan` surface separately dedupes
+the shipped INI music/SFX/voice/speech references into 3,335 unique resolved
+cache keys (360,615,268 bytes), with 779 direct Web Audio decode candidates
+and 2,556 IMA ADPCM payloads still requiring decode. This is a metadata-only
+cache plan, not full requested-payload decode/cache or audio scheduling.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current

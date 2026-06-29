@@ -6135,6 +6135,168 @@ function summarizeAudioPayloadRefs(refs) {
   };
 }
 
+function newAudioRequestedCacheBucket() {
+  return {
+    references: 0,
+    resolvedReferences: 0,
+    missingReferences: 0,
+    uniquePayloads: 0,
+    totalBytes: 0,
+    webAudioDecodeCandidates: 0,
+    requiresTranscode: 0,
+    unsupported: 0,
+    extensions: {},
+    wavCodec: {},
+    archives: {},
+  };
+}
+
+function addRequestedCacheUniquePayload(bucket, entry) {
+  bucket.uniquePayloads += 1;
+  bucket.totalBytes += entry.size;
+  const extension = entry.format?.extension || "unknown";
+  incrementCount(bucket.extensions, extension);
+  if (entry.format?.wavFmt) {
+    incrementCount(bucket.wavCodec, String(entry.format.wavFmt.wFormatTag));
+  }
+  if (entry.format?.webAudioDecodeCandidate) {
+    bucket.webAudioDecodeCandidates += 1;
+  } else if (entry.format?.requiresTranscode) {
+    bucket.requiresTranscode += 1;
+  } else {
+    bucket.unsupported += 1;
+  }
+}
+
+function addRequestedCacheArchiveRef(bucket, ref) {
+  const archiveName = ref.resolved.archive;
+  if (!bucket.archives[archiveName]) {
+    bucket.archives[archiveName] = {
+      references: 0,
+      uniquePayloads: 0,
+      totalBytes: 0,
+    };
+  }
+  bucket.archives[archiveName].references += 1;
+}
+
+function addRequestedCacheArchivePayload(bucket, entry) {
+  const archiveName = entry.archive;
+  if (!bucket.archives[archiveName]) {
+    bucket.archives[archiveName] = {
+      references: 0,
+      uniquePayloads: 0,
+      totalBytes: 0,
+    };
+  }
+  bucket.archives[archiveName].uniquePayloads += 1;
+  bucket.archives[archiveName].totalBytes += entry.size;
+}
+
+function compactRequestedCacheEntry(entry) {
+  return {
+    cacheKey: `${entry.archive}|${entry.path}`,
+    archive: entry.archive,
+    path: entry.path,
+    size: entry.size,
+    refCount: entry.refCount,
+    sections: entry.sections,
+    extension: entry.format?.extension ?? "unknown",
+    codec: entry.format?.wavFmt?.codec ?? entry.format?.magic ?? "unknown",
+    webAudioDecodeCandidate: entry.format?.webAudioDecodeCandidate === true,
+    requiresTranscode: entry.format?.requiresTranscode === true,
+  };
+}
+
+function buildAudioRequestedPayloadCachePlan(refsBySection) {
+  const summary = newAudioRequestedCacheBucket();
+  const sections = {};
+  const cacheEntries = new Map();
+
+  for (const [sectionName, refs] of Object.entries(refsBySection)) {
+    const section = newAudioRequestedCacheBucket();
+    const sectionUniqueKeys = new Set();
+    for (const ref of refs) {
+      summary.references += 1;
+      section.references += 1;
+      if (!ref.resolved) {
+        summary.missingReferences += 1;
+        section.missingReferences += 1;
+        continue;
+      }
+
+      summary.resolvedReferences += 1;
+      section.resolvedReferences += 1;
+      addRequestedCacheArchiveRef(summary, ref);
+      addRequestedCacheArchiveRef(section, ref);
+
+      const key = `${ref.resolved.archive}|${ref.resolved.path}`;
+      let entry = cacheEntries.get(key);
+      if (!entry) {
+        entry = {
+          archive: ref.resolved.archive,
+          path: ref.resolved.path,
+          size: ref.resolved.size,
+          offset: ref.resolved.offset,
+          localized: ref.resolved.localized,
+          format: ref.resolved.format,
+          refCount: 0,
+          sections: {},
+          firstEvent: ref.event,
+          firstSource: ref.source,
+        };
+        cacheEntries.set(key, entry);
+        addRequestedCacheUniquePayload(summary, entry);
+        addRequestedCacheArchivePayload(summary, entry);
+      }
+
+      if (!sectionUniqueKeys.has(key)) {
+        sectionUniqueKeys.add(key);
+        addRequestedCacheUniquePayload(section, entry);
+        addRequestedCacheArchivePayload(section, entry);
+      }
+      entry.refCount += 1;
+      incrementCount(entry.sections, sectionName);
+    }
+    sections[sectionName] = section;
+  }
+
+  const sortedEntries = [...cacheEntries.values()]
+    .sort((left, right) =>
+      (right.refCount - left.refCount) ||
+      (right.size - left.size) ||
+      left.path.localeCompare(right.path));
+  const largestEntries = [...cacheEntries.values()]
+    .sort((left, right) => (right.size - left.size) || left.path.localeCompare(right.path))
+    .slice(0, 6)
+    .map(compactRequestedCacheEntry);
+  const directDecodeExamples = sortedEntries
+    .filter((entry) => entry.format?.webAudioDecodeCandidate)
+    .slice(0, 6)
+    .map(compactRequestedCacheEntry);
+  const transcodeExamples = sortedEntries
+    .filter((entry) => entry.format?.requiresTranscode)
+    .slice(0, 6)
+    .map(compactRequestedCacheEntry);
+
+  return {
+    source: "shipped audio INI resolved payload cache plan",
+    ready: summary.resolvedReferences > 0 && summary.uniquePayloads > 0,
+    metadataOnly: true,
+    runtimeDecoded: false,
+    runtimeScheduled: false,
+    nextRequired: summary.requiresTranscode > 0
+      ? "decodeResolvedImaAdpcmPayloads"
+      : "decodeResolvedPayloads",
+    ...summary,
+    sections,
+    cacheKeyExamples: sortedEntries.slice(0, 8).map(compactRequestedCacheEntry),
+    largestEntries,
+    directDecodeExamples,
+    transcodeExamples,
+  };
+}
+
 function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const mountedArchives = [];
   const entryIndex = new Map();
@@ -6243,42 +6405,40 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     ? parseAudioPayloadBlocks(iniTexts["Data\\INI\\Speech.ini"], "Data\\INI\\Speech.ini", ["DialogEvent"])
     : [];
 
+  const refsBySection = {
+    music: collectAudioPayloadRefs(entryIndex, musicBlocks, "music", ["Filename"], false),
+    soundEffects: collectAudioPayloadRefs(
+      entryIndex,
+      soundBlocks,
+      "sound",
+      ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
+      true,
+    ),
+    voices: collectAudioPayloadRefs(
+      entryIndex,
+      voiceBlocks,
+      "sound",
+      ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
+      true,
+    ),
+    speech: collectAudioPayloadRefs(entryIndex, speechBlocks, "streaming", ["Filename"], false),
+  };
   const sections = {
     music: {
       sourceBlocks: musicBlocks.length,
-      summary: summarizeAudioPayloadRefs(
-        collectAudioPayloadRefs(entryIndex, musicBlocks, "music", ["Filename"], false),
-      ),
+      summary: summarizeAudioPayloadRefs(refsBySection.music),
     },
     soundEffects: {
       sourceBlocks: soundBlocks.length,
-      summary: summarizeAudioPayloadRefs(
-        collectAudioPayloadRefs(
-          entryIndex,
-          soundBlocks,
-          "sound",
-          ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
-          true,
-        ),
-      ),
+      summary: summarizeAudioPayloadRefs(refsBySection.soundEffects),
     },
     voices: {
       sourceBlocks: voiceBlocks.length,
-      summary: summarizeAudioPayloadRefs(
-        collectAudioPayloadRefs(
-          entryIndex,
-          voiceBlocks,
-          "sound",
-          ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
-          true,
-        ),
-      ),
+      summary: summarizeAudioPayloadRefs(refsBySection.voices),
     },
     speech: {
       sourceBlocks: speechBlocks.length,
-      summary: summarizeAudioPayloadRefs(
-        collectAudioPayloadRefs(entryIndex, speechBlocks, "streaming", ["Filename"], false),
-      ),
+      summary: summarizeAudioPayloadRefs(refsBySection.speech),
     },
   };
 
@@ -6315,6 +6475,7 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName);
   const decodeProofs = audioProofs.decodeProofs;
   const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
+  const requestedPayloadCachePlan = buildAudioRequestedPayloadCachePlan(refsBySection);
   if (decodeProofs.ready && webAudioBufferProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
     payloadFormats.nextRequired = "requestedPayloadDecodeCache";
   } else if (decodeProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
@@ -6343,8 +6504,9 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     payloadFormats,
     decodeProofs,
     webAudioBufferProofs,
+    requestedPayloadCachePlan,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, and webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers without scheduling or playing audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, and requestedPayloadCachePlan dedupes all resolved INI-requested payloads into a metadata-only cache plan without scheduling or playing audio.",
   };
 }
 

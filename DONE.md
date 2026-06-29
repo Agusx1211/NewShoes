@@ -3392,6 +3392,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       ranges, nonzero frame counts, and first-channel sample anchors while
       preserving that full requested-payload decode/cache and audio scheduling
       are future work.
+- [x] Add `audioPayloadInventory.requestedPayloadCachePlan`, a browser
+      harness-visible metadata plan for the actual shipped INI audio requests.
+      It dedupes 7,933 music/SFX/voice/speech references into 3,335 unique
+      resolved payload cache keys, pins archive/section/codec byte counts, and
+      records that 2,556 unique IMA ADPCM WAV payloads still need decoding
+      before the cache can become real Web Audio buffer storage.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
