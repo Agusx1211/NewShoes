@@ -7,6 +7,7 @@
 
 #include "Common/AsciiString.h"
 #include "Common/AudioAffect.h"
+#include "Common/AudioEventRTS.h"
 #include "Common/GameAudio.h"
 #include "Common/GameEngine.h"
 #include "Common/GameLOD.h"
@@ -18,10 +19,23 @@
 #include "GameClient/DisplayString.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/Gadget.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GameText.h"
 #include "GameClient/Image.h"
+// Test-only access to seed one Challenge persona without exporting hooks from
+// the shared GameClient utility archive.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
+#endif
+#define private public
+#include "GameClient/ChallengeGenerals.h"
+#undef private
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "GameClient/LoadScreen.h"
 #include "GameClient/Mouse.h"
 #include "GameClient/VideoPlayer.h"
@@ -68,6 +82,12 @@ extern "C" void CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(
 	GameWindow *continueButton,
 	GameWindow *okButton);
 extern "C" void CncPortScoreScreenSetSavedTextForMovie(GameWindow *savedText);
+extern "C" void CncPortScoreScreenSetChallengeWindowsForMovie(
+	GameWindow *backdropWindow,
+	GameWindow *gadgetParentWindow,
+	GameWindow *portraitWindow,
+	GameWindow *winLossTextWindow,
+	GameWindow *remarksWindow);
 extern "C" void CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
 extern "C" Int CncPortScoreScreenGetMissionSaveCallsForMovie();
 extern "C" Int CncPortScoreScreenGetFreeMessageResourcesCallsForMovie();
@@ -237,10 +257,17 @@ bool present_uploaded_video_buffer(
 class SmokeAudioManager final : public AudioManager
 {
 public:
+	void update() override { ++update_count; }
 	void stopAudio(AudioAffect) override {}
 	void pauseAudio(AudioAffect) override {}
 	void resumeAudio(AudioAffect) override {}
 	void pauseAmbient(Bool) override {}
+	AudioHandle addAudioEvent(const AudioEventRTS *event) override
+	{
+		++add_event_count;
+		last_event_name = event != nullptr ? event->getEventName() : AsciiString::TheEmptyString;
+		return add_event_count;
+	}
 	void killAudioEventImmediately(AudioHandle) override {}
 	void nextMusicTrack() override {}
 	void prevMusicTrack() override {}
@@ -278,7 +305,10 @@ public:
 	Real getFileLengthMS(AsciiString) const override { return 0.0f; }
 	void closeAnySamplesUsingFile(const void *) override {}
 
+	Int add_event_count = 0;
+	Int update_count = 0;
 	Int release_count = 0;
+	AsciiString last_event_name;
 
 protected:
 	void setDeviceListenerPosition() override {}
@@ -488,6 +518,26 @@ public:
 			*exists = TRUE;
 		}
 		UnicodeString text;
+		if (label.compare(AsciiString("GUI:ChallengeWinText")) == 0) {
+			text.translate(AsciiString("Challenge win: %ls"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:ChallengeLossText")) == 0) {
+			text.translate(AsciiString("Challenge loss: %ls"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeGeneral")) == 0) {
+			text.translate(AsciiString("General Smoke"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeDefeated")) == 0) {
+			text.translate(AsciiString("General Smoke was defeated"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeVictorious")) == 0) {
+			text.translate(AsciiString("General Smoke was victorious"));
+			return text;
+		}
 		text.translate(label);
 		return text;
 	}
@@ -675,6 +725,28 @@ public:
 		return window;
 	}
 
+	GameWindow *createScoreScreenStaticTextForTest(GameWindow *parent, AsciiString id, Int width, Int height)
+	{
+		WinInstanceData inst_data;
+		inst_data.m_style = GWS_STATIC_TEXT;
+		TextData text_data = {};
+		GameWindow *window = gogoGadgetStaticText(
+			parent,
+			WIN_STATUS_ENABLED,
+			0,
+			0,
+			width,
+			height,
+			&inst_data,
+			&text_data,
+			nullptr,
+			FALSE);
+		if (window != nullptr && TheNameKeyGenerator != nullptr) {
+			window->winSetWindowId(TheNameKeyGenerator->nameToKey(id));
+		}
+		return window;
+	}
+
 private:
 	GameWindow *createWindowWithId(GameWindow *parent, AsciiString id, Int width, Int height)
 	{
@@ -783,6 +855,37 @@ struct ProbeW3DDisplayStorage
 	Render2DClass *render = nullptr;
 	bool prepared = false;
 };
+
+const Image *add_mapped_image_for_test(ImageCollection &collection, const char *name, Int width, Int height)
+{
+	Image *image = newInstance(Image);
+	if (image == nullptr) {
+		return nullptr;
+	}
+	image->setName(AsciiString(name));
+	image->setTextureWidth(width);
+	image->setTextureHeight(height);
+	ICoord2D size = { width, height };
+	image->setImageSize(&size);
+	collection.addImage(image);
+	return image;
+}
+
+void seed_challenge_general_for_test(
+	ChallengeGenerals &manager,
+	const Image *defeated_image,
+	const Image *victorious_image)
+{
+	GeneralPersona &persona = manager.m_position[0];
+	persona.m_bStartsEnabled = TRUE;
+	persona.m_strBioName.set(AsciiString("GUI:SmokeChallengeGeneral"));
+	persona.m_imageDefeated = const_cast<Image *>(defeated_image);
+	persona.m_imageVictorious = const_cast<Image *>(victorious_image);
+	persona.m_strDefeated.set(AsciiString("GUI:SmokeChallengeDefeated"));
+	persona.m_strVictorious.set(AsciiString("GUI:SmokeChallengeVictorious"));
+	persona.m_strWinSound.set(AsciiString("SmokeChallengeWin"));
+	persona.m_strLossSound.set(AsciiString("SmokeChallengeLoss"));
+}
 
 bool expect(bool condition, const char *message)
 {
@@ -1890,6 +1993,253 @@ bool exercise_score_screen_finish_single_player_defeat_retry()
 	return ok;
 }
 
+bool exercise_score_screen_finish_single_player_challenge_branch(Bool victorious)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	SmokeGameEngine game_engine;
+	NameKeyGenerator name_key_generator;
+	SmokeGameText game_text;
+	SmokeDisplayStringManager display_string_manager;
+	SmokeAudioManager audio;
+	CampaignManager campaign_manager;
+	ChallengeGenerals challenge_generals;
+	ImageCollection image_collection;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	GameEngine *old_game_engine = TheGameEngine;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GameTextInterface *old_game_text = TheGameText;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
+	ChallengeGenerals *old_challenge_generals = TheChallengeGenerals;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	AudioManager *old_audio = TheAudio;
+	TheWindowManager = &window_manager;
+	TheGameEngine = &game_engine;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGameText = &game_text;
+	TheDisplayStringManager = &display_string_manager;
+	TheCampaignManager = &campaign_manager;
+	TheChallengeGenerals = &challenge_generals;
+	TheMappedImageCollection = &image_collection;
+	TheAudio = &audio;
+	name_key_generator.init();
+
+	const Image *challenge_background = add_mapped_image_for_test(
+		image_collection, "GeneralsChallengeWinLoss", 800, 600);
+	const Image *defeated_image = add_mapped_image_for_test(
+		image_collection, "SmokeChallengeDefeatedPortrait", 128, 128);
+	const Image *victorious_image = add_mapped_image_for_test(
+		image_collection, "SmokeChallengeVictoriousPortrait", 128, 128);
+	ok = expect(challenge_background != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the challenge backdrop image") && ok;
+	ok = expect(defeated_image != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the defeated portrait image") && ok;
+	ok = expect(victorious_image != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the victorious portrait image") && ok;
+	seed_challenge_general_for_test(challenge_generals, defeated_image, victorious_image);
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch blank WindowLayout was not created") && ok;
+	ok = expect(movie_window != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch blank layout did not own a first GameWindow") && ok;
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	GameWindow *score_parent = window_manager.createScoreScreenWindowForTest(
+		AsciiString("ScoreScreen.wnd:ParentScoreScreen"), 800, 600);
+	GameWindow *button_continue = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonContinue"), 160, 32);
+	GameWindow *button_ok = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonOk"), 96, 32);
+	GameWindow *static_text_game_saved = window_manager.createScoreScreenStaticTextForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:StaticTextGameSaved"), 240, 24);
+	GameWindow *backdrop_window = window_manager.createScoreScreenWindowForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:Backdrop"), 800, 600);
+	GameWindow *gadget_parent_window = window_manager.createScoreScreenWindowForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:GadgetParent"), 800, 600);
+	GameWindow *challenge_portrait = window_manager.createScoreScreenWindowForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ChallengePortrait"), 128, 128);
+	GameWindow *challenge_win_loss_text = window_manager.createScoreScreenStaticTextForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ChallengeWinLossText"), 360, 32);
+	GameWindow *challenge_remarks = window_manager.createScoreScreenStaticTextForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ChallengeRemarks"), 480, 64);
+	ok = expect(score_parent != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the score parent window") && ok;
+	ok = expect(button_continue != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the continue button") && ok;
+	ok = expect(button_ok != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the ok button") && ok;
+	ok = expect(static_text_game_saved != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create the saved-game text window") && ok;
+	ok = expect(backdrop_window != nullptr && gadget_parent_window != nullptr &&
+		challenge_portrait != nullptr && challenge_win_loss_text != nullptr && challenge_remarks != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create all challenge windows") && ok;
+	if (static_text_game_saved != nullptr) {
+		static_text_game_saved->winHide(TRUE);
+	}
+	if (challenge_portrait != nullptr) {
+		challenge_portrait->winHide(TRUE);
+	}
+	if (challenge_win_loss_text != nullptr) {
+		challenge_win_loss_text->winHide(TRUE);
+	}
+	if (challenge_remarks != nullptr) {
+		challenge_remarks->winHide(TRUE);
+	}
+
+	CncPortScoreScreenSetBlankLayoutForMovie(layout);
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(score_parent, button_continue, button_ok);
+	CncPortScoreScreenSetSavedTextForMovie(static_text_game_saved);
+	CncPortScoreScreenSetChallengeWindowsForMovie(
+		backdrop_window,
+		gadget_parent_window,
+		challenge_portrait,
+		challenge_win_loss_text,
+		challenge_remarks);
+
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("smoke_challenge_campaign"));
+	ok = expect(campaign != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not create a campaign") && ok;
+	if (campaign != nullptr) {
+		campaign->m_campaignNameLabel.set(AsciiString("GUI:SmokeChallengeCampaign"));
+		campaign->m_firstMission.set(AsciiString("mission1"));
+		campaign->m_isChallengeCampaign = TRUE;
+		Mission *mission1 = campaign->newMission(AsciiString("mission1"));
+		Mission *mission2 = campaign->newMission(AsciiString("mission2"));
+		ok = expect(mission1 != nullptr,
+			"ScoreScreen finishSinglePlayerInit challenge branch did not create mission1") && ok;
+		ok = expect(mission2 != nullptr,
+			"ScoreScreen finishSinglePlayerInit challenge branch did not create mission2") && ok;
+		if (mission1 != nullptr) {
+			mission1->m_mapName.set(AsciiString("Maps/Smoke/Challenge.map"));
+			mission1->m_nextMission.set(AsciiString("mission2"));
+			mission1->m_generalName.set(AsciiString("GUI:SmokeChallengeGeneral"));
+		}
+		if (mission2 != nullptr) {
+			mission2->m_mapName.set(AsciiString("Maps/Smoke/ChallengeNext.map"));
+			mission2->m_nextMission.clear();
+			mission2->m_generalName.set(AsciiString("GUI:SmokeChallengeGeneral"));
+		}
+		campaign_manager.setCampaignAndMission(AsciiString("smoke_challenge_campaign"), AsciiString("mission1"));
+	}
+	campaign_manager.setGameDifficulty(DIFFICULTY_NORMAL);
+	campaign_manager.SetVictorious(victorious);
+	ok = expect(campaign_manager.getCurrentCampaign() != nullptr &&
+		campaign_manager.getCurrentCampaign()->isChallengeCampaign(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not select a challenge campaign") && ok;
+	ok = expect(campaign_manager.getCurrentMission() != nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not select the current mission") && ok;
+
+	CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
+
+	CncPortScoreScreenFinishSinglePlayerInitForMovie();
+
+	const UnicodeString continue_text = button_continue != nullptr ?
+		button_continue->winGetInstanceData()->getText() :
+		UnicodeString::TheEmptyString;
+	const UnicodeString expected_continue = game_text.fetch(victorious ? "GUI:SaveAndContinue" : "GUI:Retry");
+	UnicodeString expected_header;
+	expected_header.format(
+		game_text.fetch(victorious ? "GUI:ChallengeWinText" : "GUI:ChallengeLossText"),
+		game_text.fetch("GUI:SmokeChallengeGeneral").str());
+	const UnicodeString expected_remarks =
+		game_text.fetch(victorious ? "GUI:SmokeChallengeDefeated" : "GUI:SmokeChallengeVictorious");
+	const Image *expected_portrait = victorious ? defeated_image : victorious_image;
+	const AsciiString expected_sound = victorious ?
+		AsciiString("SmokeChallengeWin") :
+		AsciiString("SmokeChallengeLoss");
+
+	ok = expect(continue_text == expected_continue,
+		"ScoreScreen finishSinglePlayerInit challenge branch set the wrong continue button text") && ok;
+	ok = expect(CncPortScoreScreenGetFinishCampaignForMovie() == 0,
+		"ScoreScreen finishSinglePlayerInit challenge branch incorrectly set finish-campaign state") && ok;
+	ok = expect(CncPortScoreScreenGetBlankLayoutForMovie() == nullptr,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not clear the blank layout pointer") && ok;
+	ok = expect(campaign_manager.getCurrentMission() != nullptr &&
+		campaign_manager.getCurrentMission()->m_name.compare(
+			AsciiString(victorious ? "mission2" : "mission1")) == 0,
+		"ScoreScreen finishSinglePlayerInit challenge branch selected the wrong mission") && ok;
+	ok = expect(campaign_manager.getCurrentMap().compare(
+			AsciiString(victorious ? "Maps/Smoke/ChallengeNext.map" : "Maps/Smoke/Challenge.map")) == 0,
+		"ScoreScreen finishSinglePlayerInit challenge branch selected the wrong map") && ok;
+	ok = expect(CncPortScoreScreenGetMissionSaveCallsForMovie() == (victorious ? 1 : 0),
+		"ScoreScreen finishSinglePlayerInit challenge branch mission-save count mismatch") && ok;
+	ok = expect(CncPortScoreScreenGetFreeMessageResourcesCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not free message resources once") && ok;
+	ok = expect(CncPortScoreScreenGetTransitionGroupCallsForMovie() == 0,
+		"ScoreScreen finishSinglePlayerInit challenge branch unexpectedly requested a ScoreScreenShow transition") && ok;
+	ok = expect(static_text_game_saved == nullptr ||
+		static_text_game_saved->winIsHidden() != victorious,
+		"ScoreScreen finishSinglePlayerInit challenge branch saved-game text visibility mismatch") && ok;
+	ok = expect(backdrop_window == nullptr || backdrop_window->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not hide the backdrop") && ok;
+	ok = expect(gadget_parent_window == nullptr || gadget_parent_window->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not hide the gadget parent") && ok;
+	ok = expect(challenge_portrait == nullptr || !challenge_portrait->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not reveal the challenge portrait") && ok;
+	ok = expect(challenge_win_loss_text == nullptr || !challenge_win_loss_text->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not reveal the win/loss header") && ok;
+	ok = expect(challenge_remarks == nullptr || !challenge_remarks->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not reveal the remarks text") && ok;
+	ok = expect(score_parent == nullptr || score_parent->winGetEnabledImage(0) == challenge_background,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not set the challenge backdrop image") && ok;
+	ok = expect(challenge_portrait == nullptr || challenge_portrait->winGetEnabledImage(0) == expected_portrait,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not set the expected general portrait") && ok;
+	ok = expect(challenge_win_loss_text == nullptr ||
+		GadgetStaticTextGetText(challenge_win_loss_text) == expected_header,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not set the formatted win/loss header") && ok;
+	ok = expect(challenge_remarks == nullptr ||
+		GadgetStaticTextGetText(challenge_remarks) == expected_remarks,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not set the general remarks text") && ok;
+	ok = expect(audio.add_event_count == 1 && audio.last_event_name.compare(expected_sound) == 0,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not enqueue the expected audio event") && ok;
+	ok = expect(audio.update_count == 1,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not update audio after enqueue") && ok;
+	ok = expect(button_ok == nullptr || !button_ok->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not restore the ok button") && ok;
+	ok = expect(button_continue == nullptr || !button_continue->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit challenge branch did not restore the continue button") && ok;
+
+	const char *summary_format = victorious ?
+		"ScoreScreen finishSinglePlayerInit challenge win branch ok: missionSave=%d freeMessages=%d audio=%s currentMap=%s\n" :
+		"ScoreScreen finishSinglePlayerInit challenge loss branch ok: missionSave=%d freeMessages=%d audio=%s currentMap=%s\n";
+	std::printf(summary_format,
+		CncPortScoreScreenGetMissionSaveCallsForMovie(),
+		CncPortScoreScreenGetFreeMessageResourcesCallsForMovie(),
+		audio.last_event_name.str(),
+		campaign_manager.getCurrentMap().str());
+
+	CncPortScoreScreenSetChallengeWindowsForMovie(nullptr, nullptr, nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetSavedTextForMovie(nullptr);
+	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
+	if (score_parent != nullptr) {
+		window_manager.winDestroy(score_parent);
+		window_manager.update();
+	}
+	ok = expect(display_string_manager.free_count >= 1,
+		"ScoreScreen finishSinglePlayerInit challenge branch did not release display strings during cleanup") && ok;
+
+	TheAudio = old_audio;
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheChallengeGenerals = old_challenge_generals;
+	TheCampaignManager = old_campaign_manager;
+	TheDisplayStringManager = old_display_string_manager;
+	TheGameText = old_game_text;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameEngine = old_game_engine;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 bool exercise_single_player_load_screen_init(VideoPlayerInterface &player)
 {
 	bool ok = true;
@@ -2153,6 +2503,8 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_score_screen_finish_single_player_final_movie(*player) && ok;
 		ok = exercise_score_screen_finish_single_player_non_final_victory() && ok;
 		ok = exercise_score_screen_finish_single_player_defeat_retry() && ok;
+		ok = exercise_score_screen_finish_single_player_challenge_branch(TRUE) && ok;
+		ok = exercise_score_screen_finish_single_player_challenge_branch(FALSE) && ok;
 		ok = exercise_single_player_load_screen_init(*player) && ok;
 		ok = exercise_challenge_load_screen_init(*player) && ok;
 	}

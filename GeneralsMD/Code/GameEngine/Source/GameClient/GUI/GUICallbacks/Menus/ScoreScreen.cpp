@@ -208,6 +208,20 @@ extern "C" void CncPortScoreScreenSetSavedTextForMovie(GameWindow *savedText)
 	staticTextGameSaved = savedText;
 }
 
+extern "C" void CncPortScoreScreenSetChallengeWindowsForMovie(
+	GameWindow *backdropWindow,
+	GameWindow *gadgetParentWindow,
+	GameWindow *portraitWindow,
+	GameWindow *winLossTextWindow,
+	GameWindow *remarksWindow)
+{
+	backdrop = backdropWindow;
+	gadgetParent = gadgetParentWindow;
+	challengePortrait = portraitWindow;
+	challengeWinLossText = winLossTextWindow;
+	challengeRemarks = remarksWindow;
+}
+
 extern "C" void CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie()
 {
 	s_finishSinglePlayerMissionSaveCalls = 0;

@@ -61,11 +61,13 @@
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
-// focused ScoreScreen final-campaign helper, a hook-counted non-final
-// victorious and defeat/retry finishSinglePlayerInit branches, SinglePlayerLoadScreen, and
-// ChallengeLoadScreen paths now own real window video buffers in the browser
-// smoke, but full non-test finishSinglePlayerInit subsystem edges, InGameUI
-// movie loops, and Bink/audio sync remain open. This verifier pins the
+// focused ScoreScreen final-campaign helper, hook-counted non-final
+// victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit
+// branches, SinglePlayerLoadScreen, and ChallengeLoadScreen paths now own real
+// window video buffers in the browser smoke, but full non-test
+// finishSinglePlayerInit subsystem edges, production Challenge persona
+// ownership, InGameUI movie loops, and Bink/audio sync remain open. This
+// verifier pins the
 // source presentation contract plus the focused runtime proof that the
 // downstream display sink works.
 //
@@ -835,14 +837,14 @@ function main() {
 	      "setVideoBuffer path, original ScoreScreen::PlayMovieAndBlock " +
 	      "loop for VS_small, the extracted ScoreScreen final-campaign " +
 	      "movie helper through a real CampaignManager/Campaign/Mission " +
-	      "transition, and hook-counted non-final victorious and defeat/retry " +
-	      "finishSinglePlayerInit branches that cover mission advance/save and retry/no-save outcomes " +
+	      "transition, and hook-counted non-final victorious, defeat/retry, and challenge win/loss " +
+	      "finishSinglePlayerInit branches that cover mission advance/save, retry/no-save, and challenge UI/audio outcomes " +
 	      "without adding Bink frames. The movie paths each include 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
 	      "VS_small through a focused layout/movie hook, plus original " +
 	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
-	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, challenge win/loss, " +
-	      "InGameUI movie-loop ownership, and " +
+	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, " +
+	      "production Challenge persona ownership, InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };
 

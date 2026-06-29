@@ -8,10 +8,11 @@
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
 // W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
 // original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
-// movie helper path, hook-counted non-final victorious and defeat/retry
-// finishSinglePlayerInit branches, and SinglePlayerLoadScreen::init movie loops through test-controlled
+// movie helper path, hook-counted non-final victorious, defeat/retry, and
+// challenge win/loss finishSinglePlayerInit branches, and
+// SinglePlayerLoadScreen::init movie loops through test-controlled
 // layout/movie facts; full non-test finishSinglePlayerInit subsystem edges,
-// Challenge persona ownership, and InGameUI coverage remain open.
+// production Challenge persona ownership, and InGameUI coverage remain open.
 //
 // Pinned contract:
 //   1. LoadScreen.h stores VideoBuffer / VideoStreamInterface ownership fields
@@ -27,9 +28,9 @@
 //      window, drawing each decompressed frame, and cleaning up the layout.
 //   5. The focused browser runtime drives the extracted final-campaign movie
 //      helper through a real CampaignManager/Campaign/Mission transition, and
-//      drives the full finishSinglePlayerInit non-final victorious and
-//      defeat/retry branches with hook-counted GameState/InGameUI/transition
-//      edges.
+//      drives the full finishSinglePlayerInit non-final victorious,
+//      defeat/retry, and challenge win/loss branches with hook-counted
+//      GameState/InGameUI/transition edges plus challenge UI/audio assertions.
 //   6. WindowLayout / GameWindowManager still expose the layout/window hooks
 //      those ScoreScreen ownership paths depend on.
 //
@@ -912,6 +913,38 @@ function main() {
 	      assertExact(errors, facts.scoreScreen, key,
 	        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
 	        expected, label));
+	    assertPresent(errors, facts.scoreScreen, "challengeWindowsHookLine",
+	      lineNumber(scoreScreen.lines,
+	        (line) => /CncPortScoreScreenSetChallengeWindowsForMovie\s*\(/.test(line)),
+	      "ScoreScreen challenge window hook");
+	    assertPresent(errors, facts.scoreScreen, "challengeWinHeaderLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /GUI:ChallengeWinText/),
+	      "ScoreScreen challenge victory header formatting");
+	    assertPresent(errors, facts.scoreScreen, "challengeWinPortraitLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /getImageDefeated\s*\(\s*\)/),
+	      "ScoreScreen challenge victory defeated portrait");
+	    assertPresent(errors, facts.scoreScreen, "challengeWinAudioLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /getWinSound\s*\(\s*\)/),
+	      "ScoreScreen challenge victory audio");
+	    assertPresent(errors, facts.scoreScreen, "challengeLossHeaderLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /GUI:ChallengeLossText/),
+	      "ScoreScreen challenge defeat header formatting");
+	    assertPresent(errors, facts.scoreScreen, "challengeLossPortraitLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /getImageVictorious\s*\(\s*\)/),
+	      "ScoreScreen challenge defeat victorious portrait");
+	    assertPresent(errors, facts.scoreScreen, "challengeLossAudioLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /getLossSound\s*\(\s*\)/),
+	      "ScoreScreen challenge defeat audio");
+	    assertPresent(errors, facts.scoreScreen, "challengeDisplayCallLine",
+	      firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end,
+	        /displayChallengeWinLoss\s*\(/),
+	      "ScoreScreen challenge win/loss display call");
 	  }
 
   // ------------------------------------------------------------------
@@ -1144,6 +1177,58 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_defeat_retry\s*\(\s*\)\s*&&\s*ok/.test(line)),
 	    2155, "runtime ScoreScreen defeat/retry exercise call");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeWindowHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetChallengeWindowsForMovie\s*\(/.test(line)),
+	    "runtime ScoreScreen challenge window hook declaration");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengePersonaSeedLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /seed_challenge_general_for_test\s*\(/.test(line)),
+	    "runtime ScoreScreen seeded ChallengeGenerals persona");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_challenge_branch\s*\(\s*Bool\s+victorious\s*\)/.test(line)),
+	    "runtime ScoreScreen challenge branch exercise");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeHookInstallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetChallengeWindowsForMovie\s*\(\s*$/.test(line)),
+	    "runtime ScoreScreen challenge window hook install");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeHeaderCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit challenge branch did not set the formatted win\/loss header/.test(line)),
+	    "runtime ScoreScreen challenge formatted header check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeRemarksCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit challenge branch did not set the general remarks text/.test(line)),
+	    "runtime ScoreScreen challenge remarks text check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengePortraitCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit challenge branch did not set the expected general portrait/.test(line)),
+	    "runtime ScoreScreen challenge portrait check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeNoTransitionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit challenge branch unexpectedly requested a ScoreScreenShow transition/.test(line)),
+	    "runtime ScoreScreen challenge transition suppression check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeAudioCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit challenge branch did not enqueue the expected audio event/.test(line)),
+	    "runtime ScoreScreen challenge audio event check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeWinSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit challenge win branch ok/.test(line)),
+	    "runtime ScoreScreen challenge victory branch summary");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeLossSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit challenge loss branch ok/.test(line)),
+	    "runtime ScoreScreen challenge defeat branch summary");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeWinExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_challenge_branch\s*\(\s*TRUE\s*\)\s*&&\s*ok/.test(line)),
+	    "runtime ScoreScreen challenge victory exercise call");
+	  assertPresent(errors, facts.runtimeScoreScreen, "challengeLossExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_challenge_branch\s*\(\s*FALSE\s*\)\s*&&\s*ok/.test(line)),
+	    "runtime ScoreScreen challenge defeat exercise call");
 
 	  assertExact(errors, facts.runtimeSinglePlayer, "hookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -1344,7 +1429,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, hook-counted non-final victorious and defeat/retry finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, challenge win/loss, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, hook-counted non-final victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, production Challenge persona ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

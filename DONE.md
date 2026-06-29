@@ -4148,9 +4148,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       The aggregate Bink/W3D smoke now expects 12 Bink open/close lifecycles,
       766 decoded frame copies, 766 indexed video-buffer draws, 13 texture
       creates, 779 texture updates, and 12 texture releases. Full
-      `finishSinglePlayerInit` branch coverage, browser-runtime stats/LOD gate
-      execution, non-final mission save, challenge win/loss, defeat/retry,
-      InGameUI movies, and Bink/audio sync remain open. Verified with
+      non-test `finishSinglePlayerInit` runtime ownership, browser-runtime
+      stats/LOD gate execution, InGameUI movies, and Bink/audio sync remain
+      open. Verified with
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
@@ -4170,8 +4170,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Bink open/close lifecycles, 766 decoded frame copies, 766 indexed
       video-buffer draws, 13 texture creates, 779 texture updates, and 12 texture
       releases. Full non-test `GameState`/`InGameUI`/transition-handler runtime
-      ownership, stats/LOD gates, challenge win/loss, defeat/retry, InGameUI
-      movies, and Bink/audio sync remain open. Verified with
+      ownership, stats/LOD gates, InGameUI movies, and Bink/audio sync remain
+      open. Verified with
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
@@ -4187,8 +4187,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       expects 12 Bink open/close lifecycles, 766 decoded frame copies, 766
       indexed video-buffer draws, 13 texture creates, 779 texture updates, and
       12 texture releases. Full non-test `GameState`/`InGameUI`/
-      transition-handler runtime ownership, stats/LOD gates, challenge
-      win/loss, InGameUI movies, and Bink/audio sync remain open. Verified with
+      transition-handler runtime ownership, stats/LOD gates, InGameUI movies,
+      and Bink/audio sync remain open. Verified with
+      `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the focused `finishSinglePlayerInit` browser smoke through the
+      challenge win/loss branches. The same hook build now seeds one real
+      `ChallengeGenerals` persona and drives a real challenge campaign through
+      original `finishSinglePlayerInit` for both `SetVictorious(TRUE)` and
+      `SetVictorious(FALSE)`, verifying challenge backdrop hiding, portrait
+      selection, formatted win/loss header text, remarks text, saved-text
+      visibility, mission save/retry behavior, transition suppression, and
+      win/loss audio event/update behavior. These branches add no Bink frames,
+      so the aggregate browser harness still expects 12 Bink open/close
+      lifecycles, 766 decoded frame copies, 766 indexed video-buffer draws, 13
+      texture creates, 779 texture updates, and 12 texture releases. Full
+      non-test `GameState`/`InGameUI`/transition-handler runtime ownership,
+      stats/LOD gates, production Challenge persona ownership, InGameUI movies,
+      and Bink/audio sync remain open. Verified with
       `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
