@@ -1,5 +1,6 @@
 #include "PreRTS.h"
 
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -12,9 +13,21 @@
 #include "Common/SubsystemInterface.h"
 #include "GameClient/VideoPlayer.h"
 #include "VideoDevice/Bink/BinkVideoPlayer.h"
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
+#endif
+#define protected public
+#include "W3DDevice/GameClient/W3DDisplay.h"
+#undef protected
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "ww3dformat.h"
 #include "W3DDevice/GameClient/W3DVideoBuffer.h"
 #include "bink.h"
+#include "rect.h"
+#include "render2d.h"
 #include "wasm_d3d8_shim.h"
 #include "wasm_ww3d_probe_lifetime.h"
 #include "ww3d.h"
@@ -133,6 +146,64 @@ protected:
 	void setDeviceListenerPosition() override {}
 };
 
+struct ProbeW3DDisplayStorage
+{
+	W3DDisplay *prepare_for_2d_probe()
+	{
+		std::memset(storage, 0, sizeof(storage));
+		prepared = true;
+		return as_display();
+	}
+
+	bool init_for_2d_probe(unsigned int width, unsigned int height)
+	{
+		if (!prepared) {
+			return false;
+		}
+
+		render = NEW Render2DClass;
+		if (render == nullptr) {
+			return false;
+		}
+
+		W3DDisplay *display = as_display();
+		display->m_width = width;
+		display->m_height = height;
+		display->m_bitDepth = 32;
+		display->m_windowed = TRUE;
+		display->m_2DRender = render;
+		display->m_isClippedEnabled = FALSE;
+		display->m_clipRegion.lo.x = 0;
+		display->m_clipRegion.lo.y = 0;
+		display->m_clipRegion.hi.x = static_cast<Int>(width);
+		display->m_clipRegion.hi.y = static_cast<Int>(height);
+		Render2DClass::Set_Screen_Resolution(RectClass(0.0f, 0.0f,
+			static_cast<float>(width), static_cast<float>(height)));
+		render->Set_Coordinate_Range(RectClass(0.0f, 0.0f,
+			static_cast<float>(width), static_cast<float>(height)));
+		return true;
+	}
+
+	void release_probe_renderer()
+	{
+		if (render != nullptr) {
+			render->Reset();
+			delete render;
+			render = nullptr;
+		}
+		as_display()->m_2DRender = nullptr;
+	}
+
+	W3DDisplay *as_display()
+	{
+		return reinterpret_cast<W3DDisplay *>(storage);
+	}
+
+	alignas(W3DDisplay) unsigned char storage[sizeof(W3DDisplay)] = {};
+	Render2DClass *render = nullptr;
+	bool prepared = false;
+};
+
 bool expect(bool condition, const char *message)
 {
 	if (!condition) {
@@ -174,7 +245,11 @@ bool exercise_stream(
 	const char *name,
 	Int expected_width,
 	Int expected_height,
-	Int expected_frames)
+	Int expected_frames,
+	Int draw_left,
+	Int draw_top,
+	Int draw_right,
+	Int draw_bottom)
 {
 	bool ok = expect(stream != nullptr, "BinkVideoPlayer did not open stream");
 	if (stream == nullptr) {
@@ -219,6 +294,8 @@ bool exercise_stream(
 	stream->frameRender(&buffer);
 
 	state = wasm_d3d8_get_state();
+	const UINT draw_calls_before_present = state->draw_indexed_primitive_calls;
+	const UINT texture_binds_before_present = state->browser_texture_bind_calls;
 	ok = expect(state->browser_texture_update_calls == updates_before_render + 1,
 		"BinkVideoStream::frameRender through W3DVideoBuffer did not upload the texture") && ok;
 	ok = expect(state->last_browser_texture_width == buffer.textureWidth(),
@@ -233,6 +310,58 @@ bool exercise_stream(
 		"uploaded W3DVideoBuffer texture format mismatch") && ok;
 	ok = expect(state->last_browser_texture_checksum != 0,
 		"BinkVideoStream::frameRender uploaded an all-zero W3DVideoBuffer texture") && ok;
+	const UINT decoded_upload_checksum = state->last_browser_texture_checksum;
+
+	ProbeW3DDisplayStorage display_storage;
+	W3DDisplay *display = display_storage.prepare_for_2d_probe();
+	const bool display_ready =
+		display != nullptr &&
+		display_storage.init_for_2d_probe(1024, 768);
+	ok = expect(display_ready, "probe W3DDisplay storage was not ready") && ok;
+
+	bool draw_video_called = false;
+	if (display_ready) {
+		display->W3DDisplay::drawVideoBuffer(&buffer, draw_left, draw_top, draw_right, draw_bottom);
+		draw_video_called = true;
+	}
+	display_storage.release_probe_renderer();
+
+	state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	ok = expect(draw_video_called,
+		"W3DDisplay::drawVideoBuffer was not called") && ok;
+	ok = expect(state->draw_indexed_primitive_calls == draw_calls_before_present + 1,
+		"W3DDisplay::drawVideoBuffer did not issue one indexed draw") && ok;
+	ok = expect(state->browser_texture_bind_calls > texture_binds_before_present,
+		"W3DDisplay::drawVideoBuffer did not bind the W3DVideoBuffer texture") && ok;
+	ok = expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
+		"W3DDisplay::drawVideoBuffer primitive type mismatch") && ok;
+	ok = expect(state->last_draw_vertex_count == 4 && state->last_draw_primitive_count == 2,
+		"W3DDisplay::drawVideoBuffer quad draw shape mismatch") && ok;
+	ok = expect(state->last_draw_stream_source_stride == 44,
+		"W3DDisplay::drawVideoBuffer Render2D vertex stride mismatch") && ok;
+	ok = expect(state->last_draw_vertex_buffer_id != 0 && state->last_draw_index_buffer_id != 0,
+		"W3DDisplay::drawVideoBuffer did not use browser-backed buffers") && ok;
+	ok = expect((state->last_draw_transform_mask & 7u) == 7u,
+		"W3DDisplay::drawVideoBuffer did not submit world/view/projection transforms") && ok;
+	ok = expect(draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA,
+		"W3DDisplay::drawVideoBuffer alpha blend state mismatch") && ok;
+	ok = expect(stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE,
+		"W3DDisplay::drawVideoBuffer stage 0 texture combiner mismatch") && ok;
+	ok = expect(stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
+		"W3DDisplay::drawVideoBuffer did not disable stage 1") && ok;
 
 	stream->frameNext();
 	ok = expect(stream->frameIndex() == 1, "BinkNextFrame should advance to frame index 1") && ok;
@@ -244,14 +373,18 @@ bool exercise_stream(
 
 	stream->close();
 	ok = expect(player.firstStream() != stream, "closed BinkVideoStream should leave the player stream list") && ok;
-	std::printf("%s W3DVideoBuffer upload ok: visible=%dx%d texture=%ux%u pitch=%u checksum=%u\n",
+	std::printf("%s Bink W3D presentation ok: visible=%dx%d texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
 		name,
 		expected_width,
 		expected_height,
 		buffer.textureWidth(),
 		buffer.textureHeight(),
 		buffer.pitch(),
-		static_cast<unsigned int>(wasm_d3d8_get_state()->last_browser_texture_checksum));
+		static_cast<unsigned int>(decoded_upload_checksum),
+		draw_left,
+		draw_top,
+		draw_right,
+		draw_bottom);
 	return ok;
 }
 
@@ -286,7 +419,6 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 
 	BinkVideoPlayer *player = nullptr;
 	if (ok) {
-		wasm_d3d8_reset_state();
 		TheAudio = &audio;
 		TheGlobalData = &global_data;
 		TheWritableGlobalData = &global_data;
@@ -301,9 +433,9 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = expect(WasmBinkProviderCanDecodeFrames() == 1,
 			"Bink provider decode readiness must be true after installing the browser sidecar copy hook") && ok;
 		ok = exercise_stream(*player, player->open(AsciiString("GC_Background")),
-			"GC_Background", 800, 600, 180) && ok;
+			"GC_Background", 800, 600, 180, 112, 84, 912, 684) && ok;
 		ok = exercise_stream(*player, player->load(AsciiString("VS_small")),
-			"VS_small", 96, 120, 71) && ok;
+			"VS_small", 96, 120, 71, 464, 324, 560, 444) && ok;
 	}
 
 	if (player != nullptr) {

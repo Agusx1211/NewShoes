@@ -6515,7 +6515,6 @@ target_link_options(bink-videoplayer-browser-runtime-smoke PRIVATE
 
 add_executable(bink-w3d-video-buffer-browser-smoke
   tests/bink_w3d_video_buffer_upload_smoke.cpp
-  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DVideoBuffer.cpp"
 )
 
 set_target_properties(bink-w3d-video-buffer-browser-smoke PROPERTIES
@@ -6525,6 +6524,7 @@ set_target_properties(bink-w3d-video-buffer-browser-smoke PROPERTIES
 target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
   zh_bink_video_device_compile_frontier
   zh_gameclient_utility
+  zh_w3d_display_drawimage_runtime
   zh_ww3d2_compile_frontier
   zh_browser_d3d8
   zh_wwmath_lookup

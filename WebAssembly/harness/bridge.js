@@ -5925,6 +5925,23 @@ async function loadWasmModule() {
   }
 }
 
+function d3d8BridgeCallbacks() {
+  return {
+    cncPortD3D8Clear: paintD3D8Clear,
+    cncPortD3D8SetViewport: setD3D8Viewport,
+    cncPortD3D8BufferCreate: createD3D8Buffer,
+    cncPortD3D8BufferUpdate: updateD3D8Buffer,
+    cncPortD3D8BufferRelease: releaseD3D8Buffer,
+    cncPortD3D8TextureCreate: createD3D8Texture,
+    cncPortD3D8TextureUpdate: updateD3D8Texture,
+    cncPortD3D8VolumeTextureCreate: createD3D8VolumeTexture,
+    cncPortD3D8VolumeTextureUpdate: updateD3D8VolumeTexture,
+    cncPortD3D8TextureRelease: releaseD3D8Texture,
+    cncPortD3D8TextureBind: bindD3D8Texture,
+    cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
+  };
+}
+
 function parseModuleState(stateJson) {
   try {
     return JSON.parse(stateJson);
@@ -16025,4 +16042,5 @@ window.addEventListener("blur", () => {
 window.CnCPort = {
   rpc,
   state: harnessState,
+  d3d8BridgeCallbacks,
 };

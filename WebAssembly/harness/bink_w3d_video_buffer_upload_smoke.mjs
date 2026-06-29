@@ -31,6 +31,12 @@ function assertInsideWasm(path, label) {
   }
 }
 
+function pixelHasColor(pixel, threshold = 8) {
+  return Array.isArray(pixel)
+    && pixel.length >= 4
+    && (pixel[0] > threshold || pixel[1] > threshold || pixel[2] > threshold);
+}
+
 for (const [path, label] of [
   [gcPath, "GC_Background.bik"],
   [vsPath, "VS_small.bik"],
@@ -184,21 +190,41 @@ try {
 
     document.body.style.margin = "0";
     document.body.style.background = "#202020";
-    document.body.innerHTML = "";
+    const statusPanel = document.querySelector(".status");
+    if (statusPanel) {
+      statusPanel.style.display = "none";
+    }
+    const viewport = document.querySelector("#viewport");
+    if (!viewport) {
+      throw new Error("Harness viewport canvas is missing");
+    }
 
     const moduleExports = await import(moduleUrl);
     const createModule =
       moduleExports.default ?? moduleExports.createBinkW3DVideoBufferBrowserSmokeModule;
     const distUrl = new URL("../dist/", window.location.href).href;
+    const bridgeCallbacks = window.CnCPort?.d3d8BridgeCallbacks?.();
+    if (!bridgeCallbacks?.cncPortD3D8DrawIndexed) {
+      throw new Error("CnCPort D3D8 bridge callbacks are unavailable");
+    }
     const binkEvents = [];
     const copyEvents = [];
     const textureCreates = [];
     const textureUpdates = [];
     const textureReleases = [];
+    const textureBinds = [];
+    const drawEvents = [];
     const liveTextures = new Set();
 
     const module = await createModule({
       locateFile: (path) => new URL(path, distUrl).href,
+      cncPortD3D8Clear: bridgeCallbacks.cncPortD3D8Clear,
+      cncPortD3D8SetViewport: bridgeCallbacks.cncPortD3D8SetViewport,
+      cncPortD3D8BufferCreate: bridgeCallbacks.cncPortD3D8BufferCreate,
+      cncPortD3D8BufferUpdate: bridgeCallbacks.cncPortD3D8BufferUpdate,
+      cncPortD3D8BufferRelease: bridgeCallbacks.cncPortD3D8BufferRelease,
+      cncPortD3D8VolumeTextureCreate: bridgeCallbacks.cncPortD3D8VolumeTextureCreate,
+      cncPortD3D8VolumeTextureUpdate: bridgeCallbacks.cncPortD3D8VolumeTextureUpdate,
       cncPortBinkVideoOpen: (event) => {
         binkEvents.push({ type: "open", ...event });
       },
@@ -211,6 +237,7 @@ try {
       cncPortD3D8TextureCreate: (event) => {
         textureCreates.push({ ...event });
         liveTextures.add(event.id >>> 0);
+        return bridgeCallbacks.cncPortD3D8TextureCreate(event);
       },
       cncPortD3D8TextureUpdate: (event) => {
         const bytes = event.bytes ?? new Uint8Array();
@@ -221,10 +248,28 @@ try {
           checksum: checksum(bytes),
           samplePixel: sampleNonzeroPixel(bytes),
         });
+        return bridgeCallbacks.cncPortD3D8TextureUpdate(event);
+      },
+      cncPortD3D8TextureBind: (event) => {
+        textureBinds.push({ ...event });
+        return bridgeCallbacks.cncPortD3D8TextureBind(event);
       },
       cncPortD3D8TextureRelease: (event) => {
         textureReleases.push({ ...event });
         liveTextures.delete(event.id >>> 0);
+        return bridgeCallbacks.cncPortD3D8TextureRelease(event);
+      },
+      cncPortD3D8DrawIndexed: (event) => {
+        drawEvents.push({
+          primitiveType: event.primitiveType,
+          vertexBufferId: event.vertexBufferId,
+          indexBufferId: event.indexBufferId,
+          vertexCount: event.vertexCount,
+          indexCount: event.indexCount,
+          vertexStride: event.vertexStride,
+          texture0BeforeDraw: window.CnCPort?.state?.graphics?.d3d8Textures?.boundTextures?.["0"] ?? null,
+        });
+        return bridgeCallbacks.cncPortD3D8DrawIndexed(event);
       },
     });
 
@@ -310,6 +355,9 @@ try {
       textureCreates,
       textureUpdates,
       textureReleases,
+      textureBinds,
+      drawEvents,
+      lastDrawProbe: window.CnCPort?.state?.graphics?.lastD3D8DrawIndexed ?? null,
       liveTextureCount: liveTextures.size,
     };
   }, {
@@ -335,6 +383,9 @@ try {
   const textureCreates = runtimeResult.textureCreates ?? [];
   const textureUpdates = runtimeResult.textureUpdates ?? [];
   const textureReleases = runtimeResult.textureReleases ?? [];
+  const textureBinds = runtimeResult.textureBinds ?? [];
+  const drawEvents = runtimeResult.drawEvents ?? [];
+  const lastDrawProbe = runtimeResult.lastDrawProbe ?? null;
 
   if (copyEvents.length !== 2) {
     throw new Error(`Expected two Bink copy events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
@@ -402,11 +453,36 @@ try {
     throw new Error(`Unexpected Bink lifecycle counts: ${JSON.stringify(binkEvents)}`);
   }
 
-  if (textureCreates.length < 2 || textureReleases.length < 2 || runtimeResult.liveTextureCount !== 0) {
-    throw new Error(
-      `Unexpected W3DVideoBuffer texture lifetime: creates=${textureCreates.length} ` +
-      `releases=${textureReleases.length} live=${runtimeResult.liveTextureCount}`,
-    );
+  const nonzeroTextureBinds = textureBinds.filter((event) => (event.id >>> 0) !== 0);
+  if (nonzeroTextureBinds.length < 2) {
+    throw new Error(`Expected W3DDisplay::drawVideoBuffer to bind both Bink textures: ${JSON.stringify(textureBinds)}`);
+  }
+
+  if (drawEvents.length < 2) {
+    throw new Error(`Expected two W3DDisplay::drawVideoBuffer indexed draws: ${JSON.stringify(drawEvents)}`);
+  }
+
+  if (
+    !lastDrawProbe
+    || lastDrawProbe.source !== "browser_d3d8_draw_indexed"
+    || lastDrawProbe.usedPersistentBuffers !== true
+    || lastDrawProbe.usedTransforms !== true
+    || lastDrawProbe.usedIdentityClipSpace !== true
+    || lastDrawProbe.primitiveType !== 4
+    || lastDrawProbe.vertexCount !== 4
+    || lastDrawProbe.indexCount !== 6
+    || lastDrawProbe.vertexStride !== 44
+    || lastDrawProbe.texture0?.ready !== true
+    || lastDrawProbe.texture0?.sampled !== true
+    || lastDrawProbe.texture0?.format !== 22
+    || lastDrawProbe.texture0?.storage !== "rgba8"
+    || lastDrawProbe.texture0?.combiner?.supported !== true
+    || lastDrawProbe.texture0?.combiner?.colorOp !== 4
+    || lastDrawProbe.texture0?.combiner?.colorArg1 !== 2
+    || lastDrawProbe.texture0?.combiner?.colorArg2 !== 0
+    || !pixelHasColor(lastDrawProbe.centerPixel, 0)
+  ) {
+    throw new Error(`Bink W3DDisplay presentation draw probe failed: ${JSON.stringify(lastDrawProbe)}`);
   }
 
   await page.screenshot({ path: screenshotPath, fullPage: true });

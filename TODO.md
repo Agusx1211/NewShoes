@@ -682,10 +682,14 @@ shares structure and follows behind.
       emit browser D3D8 texture updates. `test:ww3d-display-video-buffer` now
       proves a synthetic real `W3DVideoBuffer` can be presented by original
       `W3DDisplay::drawVideoBuffer` through display-owned `Render2DClass` to
-      the browser D3D8/WebGL2 canvas with a screenshot and pixel checks. This
-      remains open until the final decoder/format/presentation contract is
-      locked down and decoded Bink sidecar frame data is presented through that
-      `W3DDisplay::drawVideoBuffer` path.
+      the browser D3D8/WebGL2 canvas with a screenshot and pixel checks.
+      `test:bink-w3d-video-presentation-browser` now joins those paths for the
+      shipped sidecars: original `BinkVideoPlayer` streams copy decoded WebM
+      sidecar pixels into real `W3DVideoBuffer` textures and present them
+      through original `W3DDisplay::drawVideoBuffer` with browser draw/pixel
+      checks. This remains open until the final decoder/format policy is
+      locked down and the full original display/window movie playback loops
+      drive the same path.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -704,9 +708,12 @@ shares structure and follows behind.
       nonzero browser texture updates for the validated power-of-two texture
       sizes. The `W3DDisplay` video-buffer smoke now verifies synthetic
       `TYPE_X8R8G8B8` `W3DVideoBuffer` presentation through original
-      `W3DDisplay::drawVideoBuffer` and browser canvas readback. Original
-      Bink-sidecar runtime browser presentation through `drawVideoBuffer` and
-      audio sync remain open.
+      `W3DDisplay::drawVideoBuffer` and browser canvas readback.
+      `test:bink-w3d-video-presentation-browser` now verifies original-player
+      Bink sidecar frames through real `W3DVideoBuffer` upload and original
+      `W3DDisplay::drawVideoBuffer` presentation with a harness screenshot.
+      Full original `Display`/`WindowVideoManager`/load-screen movie playback
+      ownership and Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -736,9 +743,10 @@ shares structure and follows behind.
       `BinkVideoStream::frameRender` through the abstract `VideoBuffer`
       contract, original `W3DVideoBuffer` surface/texture ownership, and the
       browser D3D8 texture update hook. It also pins the new
-      `test:bink-w3d-video-buffer-browser` runtime proof. It does not claim
-      final W3D video presentation; that still needs a harness screenshot
-      through `W3DDisplay::drawVideoBuffer`.
+      `test:bink-w3d-video-buffer-browser` runtime proof; the same smoke now
+      has the `test:bink-w3d-video-presentation-browser` alias for the joined
+      display presentation proof. Full original movie-loop ownership remains
+      open.
       `verify:bink-w3d-video-presentation-frontier` now pins the source-only
       *presentation* contract from the original Bink/W3D video-buffer upload
       to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
@@ -750,10 +758,10 @@ shares structure and follows behind.
       `W3DVideoBuffer` through the original
       `DX8Wrapper::Get_Current_Caps()` / `D3DFMT` format-selection path. It
       is honest that the same `Render2DClass` textured-quad primitive has
-      browser-backed coverage via `test:ww3d-display-drawimage-file`, but that
-      runtime Bink video presentation through `drawVideoBuffer` still needs a
-      harness screenshot (source-only presentation contract pinned; not
-      runtime-complete).
+      browser-backed coverage via `test:ww3d-display-drawimage-file`, and
+      `test:bink-w3d-video-presentation-browser` now provides the runtime
+      decoded-Bink-frame screenshot proof for this focused path. The full
+      original movie playback loops still need to own that path.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

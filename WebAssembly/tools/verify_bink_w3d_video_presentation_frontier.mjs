@@ -12,9 +12,8 @@
 //   * `verify_bink_w3d_video_buffer_upload_frontier.mjs` — pins the
 //     *upload* contract (BinkCopyToBuffer -> W3DVideoBuffer surface lock /
 //     unlock -> browser D3D8 texture update hook) and the focused
-//     `bink-w3d-video-buffer-browser-smoke` upload proof. Upload is now
-//     proven; this verifier pins the downstream *presentation* contract that
-//     upload must ultimately reach.
+//     `bink-w3d-video-buffer-browser-smoke` proof that now carries those
+//     decoded pixels through original `W3DDisplay::drawVideoBuffer`.
 //   * `verify_bink_runtime_callsite_frontier.mjs` — pins the broader Bink
 //     runtime callsite surface.
 //   * `verify_bink_video_device_frontier.mjs` — pins the Bink device header /
@@ -48,22 +47,20 @@
 //      Add_Quad -> Render) already has browser-backed textured-quad coverage
 //      through the `test:ww3d-display-drawimage-file` harness proof
 //      (`ww3d_display_drawimage_file_probe`), so the presentation quad
-//      primitive is exercised end-to-end against real assets — but this new
-//      verifier is honest that Bink video presentation through
-//      `drawVideoBuffer` still needs a runtime harness screenshot.
-//   5. CMake / package facts for the current `bink-w3d-video-buffer-browser-smoke`
-//      upload proof and the `test:ww3d-display-drawimage-file` display
-//      draw-image target/script this verifier relies on.
+//      primitive is exercised end-to-end against real assets.
+//   5. The focused browser Bink/W3D runtime smoke proves decoded Bink sidecar
+//      pixels copied through original `BinkVideoStream::frameRender` are
+//      presented through original `W3DDisplay::drawVideoBuffer`, with browser
+//      indexed-draw and screenshot checks.
+//   6. CMake / package facts for the current `bink-w3d-video-buffer-browser-smoke`
+//      proof, its presentation alias, and the `test:ww3d-display-drawimage-file`
+//      display draw-image target/script this verifier relies on.
 //
-// OPEN (explicitly NOT claimed complete by this verifier): runtime
-// `W3DDisplay::drawVideoBuffer` presentation of a Bink video frame, verified
-// by a harness screenshot, is NOT complete. This verifier pins the
-// source-only presentation contract (the exact original code path an
-// uploaded video texture must travel to be presented), plus the existing
-// display draw-image proof that the same `Render2DClass` quad primitive has
-// browser-backed coverage. The remaining open work is to drive the uploaded
-// `W3DVideoBuffer` texture through `drawVideoBuffer` in a browser harness and
-// screenshot it.
+// OPEN (explicitly NOT claimed complete by this verifier): the full original
+// Display / WindowVideoManager / load-screen movie loop does not yet own this
+// decoded Bink presentation path, and Bink/audio sync remains open. This
+// verifier pins the source presentation contract plus the focused runtime
+// proof that the downstream display sink works.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -79,6 +76,8 @@ const SOURCES = {
     "GeneralsMD/Code/GameEngineDevice/Include/W3DDevice/GameClient/W3DVideobuffer.h",
   drawImageHarness:
     "WebAssembly/harness/display_drawimage_file_smoke.mjs",
+  runtimeSmoke: "WebAssembly/tests/bink_w3d_video_buffer_upload_smoke.cpp",
+  runtimeBrowserHarness: "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
   cmake: "WebAssembly/CMakeLists.txt",
   packageJson: "WebAssembly/package.json",
 };
@@ -183,6 +182,8 @@ function main() {
   const w3dDisplay = readSourceLines(SOURCES.w3dDisplay);
   const w3dVideoBufferH = readSourceLines(SOURCES.w3dVideoBufferH);
   const drawImageHarness = readSourceLines(SOURCES.drawImageHarness);
+  const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
+  const runtimeBrowserHarness = readSourceLines(SOURCES.runtimeBrowserHarness);
   const cmake = readSourceLines(SOURCES.cmake);
   const packageJson = readSourceLines(SOURCES.packageJson);
 
@@ -389,8 +390,7 @@ function main() {
   //    Set_Texture -> Add_Quad -> Render against real BIG-backed DDS
   //    textures and asserts a browser texture update/bind delta plus a
   //    screenshot. This proves the presentation quad primitive is
-  //    browser-backed; Bink video presentation through drawVideoBuffer is
-  //    still an open screenshot away.
+  //    browser-backed.
   // ------------------------------------------------------------------
   assertExact(errors, facts.drawImageHarness, "probeSourceLine",
     lineNumber(drawImageHarness.lines,
@@ -414,10 +414,42 @@ function main() {
     "drawimage file harness viewport screenshot");
 
   // ------------------------------------------------------------------
-  // 6. CMake / package facts for the current bink-w3d-video-buffer-browser-smoke
-  //    upload proof and the display draw-image target/script this verifier
-  //    relies on. The upload proof is what a presentation flow must feed;
-  //    the draw-image proof is what proves the shared Render2DClass quad
+  // ------------------------------------------------------------------
+  // 6. Focused runtime Bink/W3D presentation proof. It is intentionally
+  //    narrower than the full original movie loop, but it carries decoded
+  //    Bink sidecar pixels into the original W3DDisplay::drawVideoBuffer sink.
+  // ------------------------------------------------------------------
+  assertExact(errors, facts.runtimeSmoke ??= {}, "drawVideoBufferCallLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 324,
+    "runtime smoke original W3DDisplay::drawVideoBuffer call");
+  assertExact(errors, facts.runtimeSmoke, "stage0CombinerCheckLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 361,
+    "runtime smoke drawVideoBuffer combiner check");
+  assertExact(errors, facts.runtimeSmoke, "summaryLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /Bink W3D presentation ok/.test(line)), 376,
+    "runtime smoke Bink W3D presentation summary");
+
+  assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /Expected two W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
+    "browser harness drawVideoBuffer draw count check");
+  assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /Bink W3DDisplay presentation draw probe failed/.test(line)), 485,
+    "browser harness presentation draw probe check");
+  assertExact(errors, facts.runtimeBrowserHarness, "screenshotLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /page\.screenshot\s*\(\s*\{\s*path:\s*screenshotPath/.test(line)), 488,
+    "browser harness Bink/W3D screenshot capture");
+
+  // ------------------------------------------------------------------
+  // 7. CMake / package facts for the current bink-w3d-video-buffer-browser-smoke
+  //    upload+presentation proof and the display draw-image target/script this
+  //    verifier relies on. The upload proof is what a presentation flow must
+  //    feed; the draw-image proof is what proves the shared Render2DClass quad
   //    primitive is browser-backed.
   // ------------------------------------------------------------------
   assertExact(errors, facts.cmake, "binkTargetDefLine",
@@ -428,10 +460,10 @@ function main() {
     lineNumber(cmake.lines,
       (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6517,
     "CMake bink_w3d_video_buffer_upload_smoke.cpp source");
-  assertExact(errors, facts.cmake, "binkTargetW3dVideoBufferSourceLine",
-    firstMatchInRange(cmake.lines, facts.cmake.binkTargetDefLine, facts.cmake.binkTargetDefLine + 10,
-      /W3DVideoBuffer\.cpp/), 6518,
-    "CMake original W3DVideoBuffer.cpp source in bink target");
+  assertExact(errors, facts.cmake, "binkDisplayRuntimeLinkLine",
+    firstMatchInRange(cmake.lines, facts.cmake.binkTargetDefLine, facts.cmake.binkTargetDefLine + 20,
+      /zh_w3d_display_drawimage_runtime/), 6527,
+    "CMake original W3DDisplay/W3DVideoBuffer display runtime link");
   assertExact(errors, facts.cmake, "binkExportNameLine",
     lineNumber(cmake.lines,
       (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6590,
@@ -449,9 +481,13 @@ function main() {
     lineNumber(packageJson.lines,
       (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 116,
     "package.json test:bink-w3d-video-buffer-browser script");
+  assertExact(errors, facts.packageJson, "binkPresentationAliasLine",
+    lineNumber(packageJson.lines,
+      (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 117,
+    "package.json test:bink-w3d-video-presentation-browser alias");
   assertExact(errors, facts.packageJson, "drawimageScriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 119,
+      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 120,
     "package.json test:ww3d-display-drawimage-file script");
 
   // ------------------------------------------------------------------
@@ -468,11 +504,12 @@ function main() {
       "and W3DDisplay::createVideoBuffer creates a W3DVideoBuffer through the " +
       "original DX8Wrapper::Get_Current_Caps()/D3DFMT format-selection path. " +
       "The shared Render2DClass textured-quad primitive has browser-backed " +
-      "coverage via test:ww3d-display-drawimage-file, and synthetic " +
-      "W3DVideoBuffer presentation is covered by test:ww3d-display-video-buffer. " +
-      "Runtime W3DDisplay::drawVideoBuffer presentation of a decoded Bink " +
-      "sidecar frame, verified by a harness screenshot, remains open. This " +
-      "verifier does NOT claim runtime Bink video presentation complete.",
+      "coverage via test:ww3d-display-drawimage-file, synthetic W3DVideoBuffer " +
+      "presentation is covered by test:ww3d-display-video-buffer, and decoded " +
+      "Bink sidecar frames now reach original W3DDisplay::drawVideoBuffer in " +
+      "test:bink-w3d-video-presentation-browser. Full original Display / " +
+      "WindowVideoManager / load-screen movie-loop ownership and Bink/audio sync " +
+      "remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

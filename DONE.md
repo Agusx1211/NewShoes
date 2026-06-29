@@ -3872,6 +3872,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       This proves synthetic `W3DVideoBuffer` presentation through
       `W3DDisplay::drawVideoBuffer`; decoded Bink sidecar frames still need to
       be joined to this display path, and Bink/audio sync remains open.
+- [x] Join decoded Bink sidecar frames to original `W3DDisplay::drawVideoBuffer`
+      presentation in a focused browser runtime smoke. The existing
+      `bink-w3d-video-buffer-browser-smoke` target now links the original
+      `zh_w3d_display_drawimage_runtime` display path, keeps the original
+      `BinkVideoPlayer` / `BinkVideoStream::frameRender(&W3DVideoBuffer)`
+      ownership, then calls original `W3DDisplay::drawVideoBuffer` on a probe
+      display with a display-owned `Render2DClass`. The browser harness wires
+      the smoke module into the shared D3D8/WebGL bridge, decodes the shipped
+      `GC_Background.bik` and `VS_small.bik` WebM sidecars through `<video>` /
+      canvas, installs `cncPortBinkCopyToBuffer`, verifies decoded pixels are
+      uploaded into real `W3DVideoBuffer` textures, verifies two
+      `drawVideoBuffer` indexed quad draws bind and sample those textures with
+      the original modulate texture/diffuse combiner and stage 1 disabled, and
+      captures `artifacts/screenshots/harness-smoke-bink-w3d-video-buffer-upload.png`.
+      `test:bink-w3d-video-presentation-browser` is now an alias for this
+      stronger smoke. This proves the focused original-player sidecar frame
+      presentation path; full original `Display`/`WindowVideoManager`/
+      load-screen movie ownership and Bink/audio sync remain open.
 - [x] Add `verify:bink-audio-sync-frontier` (`verify:bink-audio-sync-frontier`
       and strict alias `verify:bink-audio-sync-frontier:strict`), a
       source-only verifier for the remaining Bink audio-sync/frontier
