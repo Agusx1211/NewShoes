@@ -3556,6 +3556,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       harness `mssStartupProbe` RPC assert that the startup boundary is ready,
       playback is still not ready, and the next required implementation is a
       Web Audio playback backend.
+- [x] Add `npm run verify:mss-startup-probe-contract`, a source-only verifier
+      for that MSS startup probe contract. It pins the `Mss.H` stateful
+      startup/provider/listener/sample-handle functions, the original
+      `MilesAudioManager::openDevice` call order, the harness-visible
+      `milesAudioDeviceFrontier` fields, the wasm probe source, CMake export,
+      and the `mssStartupProbe` bridge RPC.
 
 ---
 

@@ -144,6 +144,9 @@ boundary: redist directory recording, `AIL_startup`, `AIL_quick_startup`,
 handle allocation, file callback registration, and shutdown state reset. The
 frontier reports `startupBoundaryReady: true`, `playbackReady: false`, and
 `nextRequired: "webAudioPlaybackBackend"`; it does not schedule or play audio.
+`npm run verify:mss-startup-probe-contract` pins the source side of that
+contract, including the `Mss.H` function surface, original `openDevice` call
+order, startup frontier JSON, wasm probe source, CMake export, and harness RPC.
 
 ## Runtime Targets
 
