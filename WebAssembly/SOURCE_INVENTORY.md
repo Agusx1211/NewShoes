@@ -1144,6 +1144,18 @@ The wasm CMake skeleton currently builds:
   the original `FileSystem`, startup asset probes, and the startup frontier in
   one vertical path.
 
+## Recent Runtime Coverage
+
+- `test:w3d-gamewindow-manager` builds and runs a focused Node smoke around
+  the original `W3DGameWindowManager`, `W3DGameWindow`, and W3D push-button
+  gadget code. The test owns the required `GlobalData`, `SubsystemInterfaceList`,
+  focused `Display`, and focused `FontLibrary` globals, then proves original
+  `winCreate` window allocation, list ownership, root draw callback wiring,
+  `gogoGadgetPushButton` child allocation, parent linkage, W3D draw callback
+  selection, and original input callback wiring. Full production
+  `W3DDisplay`, `.wnd` layout loading, `W3DFunctionLexicon`, and
+  `W3DModuleFactory` integration remain open.
+
 ## Next Compile Order
 
 1. Restore or port the missing bundled `Compression/ZLib` and

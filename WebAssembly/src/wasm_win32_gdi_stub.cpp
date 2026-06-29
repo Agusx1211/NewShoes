@@ -85,3 +85,18 @@ COLORREF SetTextColor(HDC /*dc*/, COLORREF /*color*/)
 {
 	return 0;
 }
+
+BOOL GetTextExtentPoint32W(HDC /*dc*/, LPCWSTR /*text*/, int /*count*/, SIZE *size)
+{
+	if (size != nullptr) {
+		size->cx = 0;
+		size->cy = 0;
+	}
+	return FALSE;
+}
+
+BOOL ExtTextOutW(HDC /*dc*/, int /*x*/, int /*y*/, UINT /*options*/, const RECT * /*rect*/,
+	LPCWSTR /*text*/, UINT /*count*/, const int * /*dx*/)
+{
+	return FALSE;
+}

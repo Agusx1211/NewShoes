@@ -94,6 +94,7 @@ public:
 		m_groupMoveClickToGatherFactor(1.0f),
 		m_shroudAlpha(0),
 		m_clearAlpha(255),
+		m_hotKeyTextColor(GameMakeColor(255, 255, 0, 255)),
 		m_unlookPersistDuration(30),
 		m_playIntro(TRUE),
 		m_playSizzle(TRUE),
@@ -214,6 +215,7 @@ public:
 	Real m_groupMoveClickToGatherFactor;
 	UnsignedByte m_shroudAlpha;
 	UnsignedByte m_clearAlpha;
+	Color m_hotKeyTextColor;
 	UnsignedInt m_unlookPersistDuration;
 	Bool m_playIntro;
 	Bool m_playSizzle;

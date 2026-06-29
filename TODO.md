@@ -397,13 +397,15 @@ shares structure and follows behind.
       and startup singleton teardown contracts.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
       ownership slice before marking `createFunctionLexicon` or
-      `createModuleFactory` runtime-ready. A direct focused
-      `W3DFunctionLexicon::init()` smoke links original GUI/radar callback
-      objects and currently stops on unresolved `TheWindowManager` /
-      `TheDisplay`; do not hide that with null globals. Own the browser
-      `GameWindowManager`/`Display` singleton path, then prove
-      `W3DFunctionLexicon` table lookup and `W3DModuleFactory` module-template
-      lookup through original public APIs.
+      `createModuleFactory` runtime-ready. The current focused
+      `w3d-gamewindow-manager-smoke` owns `GlobalData`,
+      `SubsystemInterfaceList`, a focused `Display`, `FontLibrary`, and the
+      original `W3DGameWindowManager`, then proves original `winCreate` allocates
+      `W3DGameWindow` and original `gogoGadgetPushButton` installs the W3D draw
+      callback. Full production `W3DDisplay` construction, `.wnd` layout/script
+      callback loading, `W3DFunctionLexicon` table lookup, and
+      `W3DModuleFactory` module-template lookup still need original public-API
+      runtime proof.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

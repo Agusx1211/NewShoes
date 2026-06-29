@@ -1671,6 +1671,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       blocker before `createAudioManager`. The harness-visible device frontier
       now lists `TheAudio` at line 434 as the first unowned factory and keeps
       `TheMapCache` at line 606 as a deferred post-audio startup step.
+- [x] Add a focused W3D GUI ownership smoke that moves the startup frontier
+      beyond probe-only window-manager facts. `w3d-gamewindow-manager-smoke`
+      links original `W3DGameWindowManager`, `W3DGameWindow`, and the W3D
+      gadget draw callback batch, owns focused `GlobalData`,
+      `SubsystemInterfaceList`, `Display`, and `FontLibrary` instances for the
+      original GUI contracts, and proves original `winCreate` allocates a
+      `W3DGameWindow` plus original `gogoGadgetPushButton` installs the W3D
+      push-button draw callback and original input callback. The Node GDI stub
+      now covers the wide-text `Render2DSentenceClass` calls needed by this
+      non-rendering smoke. Full production `W3DDisplay`, `.wnd` script/layout
+      loading, `W3DFunctionLexicon`, and `W3DModuleFactory` runtime startup
+      remain open. Verified with
+      `cmake --build WebAssembly/build/wasm --target w3d-gamewindow-manager-smoke -j 8`
+      and `node dist/w3d-gamewindow-manager-smoke.cjs`.
 ---
 
 ## M3 — File / data subsystem (real data)

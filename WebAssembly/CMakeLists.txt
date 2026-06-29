@@ -5215,6 +5215,119 @@ target_link_options(gamewindow-input-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(w3d-gamewindow-manager-smoke
+  tests/w3d_gamewindow_manager_smoke.cpp
+  src/wasm_win32_gdi_stub.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/W3DGameWindow.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/W3DGameWindowManager.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DCheckBox.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DComboBox.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DHorizontalSlider.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DListBox.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DProgressBar.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DPushButton.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DRadioButton.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DStaticText.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DTabControl.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DTextEntry.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/Gadget/W3DVerticalSlider.cpp"
+)
+
+set_target_properties(w3d-gamewindow-manager-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(w3d-gamewindow-manager-smoke PRIVATE
+  zh_gameclient_utility
+  zh_ww3d2_compile_frontier
+  zh_browser_d3d8
+  zh_wwmath_lookup
+  zh_wwmath_core
+  zh_wwsaveload_full
+  zh_wwsaveload_core
+  zh_wwlib_file_ini
+  zh_wwlib_file_core
+  zh_wwlib_stream_core
+  zh_wwlib_string
+  zh_wwlib_refcount
+  zh_wwlib_containers
+  zh_wwlib_crc
+  zh_wwlib_random
+  zh_wwlib_thread
+  zh_wwlib_mutex
+  zh_wwlib_targa
+  zh_wwdebug_profile
+  zh_wwdebug_core
+  zh_compression_manager
+  zh_compression_eac
+)
+
+target_include_directories(w3d-gamewindow-manager-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(w3d-gamewindow-manager-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${WASM_SHIMS_DIR}/PreRTS.h"
+  "-iquote${WASM_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(w3d-gamewindow-manager-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(win32-gameengine-message-pump-smoke
   tests/win32_gameengine_message_pump_smoke.cpp
 )
