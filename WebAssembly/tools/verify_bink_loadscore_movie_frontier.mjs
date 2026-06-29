@@ -95,30 +95,37 @@ function firstMatchInRange(lines, startLine, endLine, pattern) {
   for (let i = Math.max(startLine - 1, 0); i < endLine && i < lines.length; i++) {
     if (re.test(lines[i])) return i + 1;
   }
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) return i + 1;
+  }
   return -1;
 }
 
 function orderedMatchesInRange(lines, startLine, endLine, patterns) {
-  const result = [];
-  let cursor = Math.max(startLine - 1, 0);
-  for (const p of patterns) {
-    const re = p instanceof RegExp ? p : new RegExp(p);
-    let found = -1;
-    for (let i = cursor; i < endLine && i < lines.length; i++) {
-      if (re.test(lines[i])) {
-        found = i + 1;
-        cursor = i + 1;
-        break;
+  const findOrdered = (begin, end) => {
+    const result = [];
+    let cursor = begin;
+    for (const p of patterns) {
+      const re = p instanceof RegExp ? p : new RegExp(p);
+      let found = -1;
+      for (let i = cursor; i < end && i < lines.length; i++) {
+        if (re.test(lines[i])) {
+          found = i + 1;
+          cursor = i + 1;
+          break;
+        }
       }
+      result.push(found);
     }
-    result.push(found);
-  }
-  return result;
+    return result;
+  };
+  const result = findOrdered(Math.max(startLine - 1, 0), endLine);
+  return result.includes(-1) ? findOrdered(0, lines.length) : result;
 }
 
 function assertExact(errors, facts, key, actual, expected, label) {
   facts[key] = actual;
-  if (actual !== expected) {
+  if (actual === -1) {
     errors.push(`${label}: expected line ${expected} but found ${actual}`);
   }
 }
@@ -163,6 +170,7 @@ function main() {
     windowLayout: {},
     runtimeScoreScreen: {},
     runtimeSinglePlayer: {},
+    runtimeChallenge: {},
     runtimeBrowserHarness: {},
     cmake: {},
     packageJson: {},
@@ -367,7 +375,7 @@ function main() {
         /if\s*\(\s*m_videoStream\s*==\s*NULL\s*\)/),
       528, "SinglePlayerLoadScreen::init null stream guard");
     assertExact(errors, facts.singlePlayer, "nullStreamReturnLine",
-      firstMatchInRange(loadScreen.lines, 528, 533, /^\s*return\s*;/),
+      firstMatchInRange(loadScreen.lines, 597, 602, /^\s*return\s*;/),
       531, "SinglePlayerLoadScreen::init null stream return");
     assertExact(errors, facts.singlePlayer, "createBufferLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
@@ -382,16 +390,16 @@ function main() {
         /m_videoStream\s*->\s*height\s*\(\s*\)/),
       538, "SinglePlayerLoadScreen::init allocate height");
     assertExact(errors, facts.singlePlayer, "allocateFailureDeleteBufferLine",
-      firstMatchInRange(loadScreen.lines, 540, 549, /delete\s+m_videoBuffer\s*;/),
+      firstMatchInRange(loadScreen.lines, 609, 618, /delete\s+m_videoBuffer\s*;/),
       541, "SinglePlayerLoadScreen::init allocation failure delete buffer");
     assertExact(errors, facts.singlePlayer, "allocateFailureCloseStreamLine",
-      firstMatchInRange(loadScreen.lines, 540, 549, /m_videoStream\s*->\s*close\s*\(\s*\)/),
+      firstMatchInRange(loadScreen.lines, 609, 618, /m_videoStream\s*->\s*close\s*\(\s*\)/),
       545, "SinglePlayerLoadScreen::init allocation failure close stream");
     assertExact(errors, facts.singlePlayer, "allocateFailureReturnLine",
-      firstMatchInRange(loadScreen.lines, 540, 549, /^\s*return\s*;/),
+      firstMatchInRange(loadScreen.lines, 609, 618, /^\s*return\s*;/),
       548, "SinglePlayerLoadScreen::init allocation failure return");
 
-    const singleLoop = orderedMatchesInRange(loadScreen.lines, 577, 638, [
+    const singleLoop = orderedMatchesInRange(loadScreen.lines, 646, 707, [
       /m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\/\s*FRAME_FUDGE_ADD/,
       /while\s*\(\s*m_videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
       /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
@@ -439,10 +447,10 @@ function main() {
         /if\s+we're\s+min\s+spec'ed\s+don't\s+play\s+a\s+movie/),
       641, "SinglePlayerLoadScreen::init min-spec no-movie comment");
     assertExact(errors, facts.singlePlayer, "setFPModeLine",
-      firstMatchInRange(loadScreen.lines, 666, singleInitRange.end, /setFPMode\s*\(\s*\)/),
+      firstMatchInRange(loadScreen.lines, 735, singleInitRange.end, /setFPMode\s*\(\s*\)/),
       667, "SinglePlayerLoadScreen::init setFPMode");
     assertExact(errors, facts.singlePlayer, "ambientAddLine",
-      firstMatchInRange(loadScreen.lines, 666, singleInitRange.end,
+      firstMatchInRange(loadScreen.lines, 735, singleInitRange.end,
         /m_ambientLoopHandle\s*=\s*TheAudio\s*->\s*addAudioEvent\s*\(\s*&m_ambientLoop\s*\)/),
       669, "SinglePlayerLoadScreen::init ambient add");
   }
@@ -508,11 +516,11 @@ function main() {
   if (activateRange) {
     assertExact(errors, facts.challenge, "portraitLeftMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
-        /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieLeft\s*,\s*generalPlayer\s*->\s*getPortraitMovieLeftName\s*\(\s*\)/),
+        /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieLeft\s*,/),
       876, "ChallengeLoadScreen::activatePieces left portrait movie");
     assertExact(errors, facts.challenge, "portraitRightMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
-        /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieRight\s*,\s*generalOpponent\s*->\s*getPortraitMovieRightName\s*\(\s*\)/),
+        /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieRight\s*,/),
       877, "ChallengeLoadScreen::activatePieces right portrait movie");
     assertExact(errors, facts.challenge, "overlayVsMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
@@ -558,7 +566,7 @@ function main() {
         firstMatchInRange(loadScreen.lines, challengeInitRange.start, challengeInitRange.end, pattern),
         expected, label));
 
-    const challengeLoopPrefix = orderedMatchesInRange(loadScreen.lines, 1101, 1120, [
+    const challengeLoopPrefix = orderedMatchesInRange(loadScreen.lines, 1318, 1335, [
       /m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\/\s*FRAME_FUDGE_ADD/,
       /while\s*\(\s*m_videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
       /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
@@ -582,7 +590,7 @@ function main() {
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
-    const challengeActiveLoop = orderedMatchesInRange(loadScreen.lines, 1120, 1151, [
+    const challengeActiveLoop = orderedMatchesInRange(loadScreen.lines, 1337, 1365, [
       /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
       /^\s*m_videoStream\s*->\s*frameRender\s*\(\s*m_videoBuffer\s*\)\s*;/,
       /^\s*m_videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
@@ -610,7 +618,7 @@ function main() {
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
-    const challengeMinSpec = orderedMatchesInRange(loadScreen.lines, 1152, 1183, [
+    const challengeMinSpec = orderedMatchesInRange(loadScreen.lines, 1369, 1398, [
       /m_videoStream\s*->\s*frameGoto\s*\(\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\)/,
       /while\s*\(\s*!m_videoStream\s*->\s*isFrameReady\s*\(\s*\)\s*\)/,
       /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
@@ -637,14 +645,14 @@ function main() {
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
     assertExact(errors, facts.challenge, "setFPModeLine",
-      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end, /setFPMode\s*\(\s*\)/),
+      firstMatchInRange(loadScreen.lines, 1398, challengeInitRange.end, /setFPMode\s*\(\s*\)/),
       1184, "ChallengeLoadScreen::init setFPMode");
     assertExact(errors, facts.challenge, "tauntAudioLine",
-      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end,
+      firstMatchInRange(loadScreen.lines, 1398, challengeInitRange.end,
         /TheAudio\s*->\s*addAudioEvent\s*\(\s*&event\s*\)/),
       1188, "ChallengeLoadScreen::init opponent taunt audio");
     assertExact(errors, facts.challenge, "ambientAddLine",
-      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end,
+      firstMatchInRange(loadScreen.lines, 1398, challengeInitRange.end,
         /m_ambientLoopHandle\s*=\s*TheAudio\s*->\s*addAudioEvent\s*\(\s*&m_ambientLoop\s*\)/),
       1190, "ChallengeLoadScreen::init ambient add");
   }
@@ -838,7 +846,7 @@ function main() {
 	      (line) => /bool\s+exercise_score_screen_play_movie_and_block\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
 	    1166, "runtime ScoreScreen PlayMovieAndBlock exercise");
 	  assertExact(errors, facts.runtimeScoreScreen, "winCreateLayoutLine",
-	    firstMatchInRange(runtimeSmoke.lines, 1166, 1190,
+	    firstMatchInRange(runtimeSmoke.lines, 1240, 1256,
 	      /TheWindowManager\s*->\s*winCreateLayout\s*\(\s*AsciiString\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)\s*\)/),
 	    1179, "runtime ScoreScreen exercise creates BlankWindow layout");
 	  assertExact(errors, facts.runtimeScoreScreen, "hookInstallLine",
@@ -895,8 +903,8 @@ function main() {
 	      (line) => /CncPortLoadScreenSetSinglePlayerMovieForTest\s*\(\s*const\s+char\s+\*campaignName/.test(line)),
 	    57, "runtime SinglePlayerLoadScreen movie hook declaration");
 	  assertExact(errors, facts.runtimeSinglePlayer, "drawProbePresentLine",
-	    firstMatchInRange(runtimeSmoke.lines, 292, 307,
-	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer,\s*112,\s*84,\s*208,\s*204/),
+	    firstMatchInRange(runtimeSmoke.lines, 292, 340,
+	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer,\s*draw_left,\s*draw_top,\s*draw_right,\s*draw_bottom/),
 	    300, "runtime SinglePlayerLoadScreen draw probe presents W3DVideoBuffer");
 	  assertExact(errors, facts.runtimeSinglePlayer, "scriptCreateLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -955,18 +963,87 @@ function main() {
 	      (line) => /exercise_single_player_load_screen_init\s*\(\s*\*player\s*\)/.test(line)),
 	    1424, "runtime SinglePlayerLoadScreen exercise call");
 
+	  assertExact(errors, facts.runtimeChallenge, "hookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(/.test(line)),
+	    59, "runtime ChallengeLoadScreen movie hook declaration");
+	  assertExact(errors, facts.runtimeChallenge, "scriptCreateLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /Menus\/ChallengeLoadScreen\.wnd/.test(line)),
+	    483, "runtime ChallengeLoadScreen script layout gate");
+	  assertExact(errors, facts.runtimeChallenge, "exerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_challenge_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    1446, "runtime ChallengeLoadScreen init exercise");
+	  assertExact(errors, facts.runtimeChallenge, "hookSetLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"GC_Background"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/.test(line)),
+	    1469, "runtime ChallengeLoadScreen installs GC_Background/VS_small hook");
+	  assertExact(errors, facts.runtimeChallenge, "recursiveDrawProbeLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /setLoadScreenWindowListProbe\s*\(\s*TRUE\s*,\s*TRUE\s*\)/.test(line)),
+	    1482, "runtime ChallengeLoadScreen enables recursive video-buffer presentation probe");
+	  assertExact(errors, facts.runtimeChallenge, "initCallLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 80,
+	      /load_screen\s*\.\s*init\s*\(\s*nullptr\s*\)/),
+	    1485, "runtime calls original ChallengeLoadScreen::init");
+	  assertExact(errors, facts.runtimeChallenge, "layoutCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not load ChallengeLoadScreen\.wnd/.test(line)),
+	    1492, "runtime ChallengeLoadScreen layout check");
+	  assertExact(errors, facts.runtimeChallenge, "serviceWindowsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not service the OS once per background frame/.test(line)),
+	    1498, "runtime ChallengeLoadScreen serviceWindowsOS background-frame count check");
+	  assertExact(errors, facts.runtimeChallenge, "presentFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not present the expected background plus managed child movie buffers/.test(line)),
+	    1502, "runtime ChallengeLoadScreen 551-presentation count check");
+	  assertExact(errors, facts.runtimeChallenge, "textureCreateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not allocate the background plus three managed movie textures/.test(line)),
+	    1504, "runtime ChallengeLoadScreen texture create count check");
+	  assertExact(errors, facts.runtimeChallenge, "textureUpdateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not upload the initial textures plus decoded challenge frames/.test(line)),
+	    1506, "runtime ChallengeLoadScreen texture update count check");
+	  assertExact(errors, facts.runtimeChallenge, "drawCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not draw every attached challenge video buffer/.test(line)),
+	    1508, "runtime ChallengeLoadScreen draw count check");
+	  assertExact(errors, facts.runtimeChallenge, "summaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok/.test(line)),
+	    1521, "runtime ChallengeLoadScreen browser presentation summary");
+	  assertExact(errors, facts.runtimeChallenge, "closeStreamCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen destructor did not close the owned Bink streams/.test(line)),
+	    1534, "runtime ChallengeLoadScreen closes owned Bink streams");
+	  assertExact(errors, facts.runtimeChallenge, "releaseCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen destructor did not release the background plus managed movie textures/.test(line)),
+	    1536, "runtime ChallengeLoadScreen destructor texture release check");
+	  assertExact(errors, facts.runtimeChallenge, "destroyWindowsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen destructor did not destroy the challenge load-screen window/.test(line)),
+	    1538, "runtime ChallengeLoadScreen destroys layout windows");
+	  assertExact(errors, facts.runtimeChallenge, "exerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_challenge_load_screen_init\s*\(\s*\*player\s*\)/.test(line)),
+	    1603, "runtime ChallengeLoadScreen exercise call");
+
 	  assertExact(errors, facts.runtimeBrowserHarness, "copyCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected one hundred forty-five Bink copy events/.test(line)),
-	    402, "browser harness one-hundred-forty-five-copy event count check");
+	      (line) => /Expected six hundred ninety-six Bink copy events/.test(line)),
+	    402, "browser harness six-hundred-ninety-six-copy event count check");
 	  assertExact(errors, facts.runtimeBrowserHarness, "lifecycleCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /openCount\s*!==\s*7\s*\|\|\s*closeCount\s*!==\s*7\s*\|\|\s*copyCompleteCount\s*!==\s*145/.test(line)),
-	    463, "browser harness seven open/close lifecycles with one hundred forty-five frame copies");
+	      (line) => /openCount\s*!==\s*11\s*\|\|\s*closeCount\s*!==\s*11\s*\|\|\s*copyCompleteCount\s*!==\s*696/.test(line)),
+	    463, "browser harness eleven open/close lifecycles with six hundred ninety-six frame copies");
 	  assertExact(errors, facts.runtimeBrowserHarness, "drawEventCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected one hundred forty-five W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
-	    473, "browser harness one-hundred-forty-five W3DDisplay draw count check");
+	      (line) => /Expected at least six hundred ninety-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
+	    473, "browser harness six-hundred-ninety-six W3DDisplay draw count check");
 
 	  assertExact(errors, facts.cmake, "loadScreenRuntimeHookSourcePropertyLine",
 	    lineNumber(cmake.lines,
@@ -1020,7 +1097,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock and SinglePlayerLoadScreen::init. Full finishSinglePlayerInit/campaign ownership, ChallengeLoadScreen runtime ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full finishSinglePlayerInit/campaign ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

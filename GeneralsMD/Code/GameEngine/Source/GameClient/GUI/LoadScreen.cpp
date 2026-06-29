@@ -133,6 +133,20 @@ static AsciiString s_singlePlayerLoadScreenUnitNames[MAX_DISPLAYED_UNITS] = {
 	AsciiString("GUI:LoadSmokeUnit1"),
 	AsciiString("GUI:LoadSmokeUnit2")
 };
+static AsciiString s_challengeLoadScreenMovieLabel = AsciiString("GC_Background");
+static AsciiString s_challengeLoadScreenPlayerBioNameLabel = AsciiString("GUI:ChallengeLoadSmokePlayerName");
+static AsciiString s_challengeLoadScreenPlayerBioRankLabel = AsciiString("GUI:ChallengeLoadSmokePlayerRank");
+static AsciiString s_challengeLoadScreenPlayerBioStrategyLabel = AsciiString("GUI:ChallengeLoadSmokePlayerStrategy");
+static AsciiString s_challengeLoadScreenPlayerNameSound = AsciiString("ChallengeLoadSmokePlayerNameSound");
+static AsciiString s_challengeLoadScreenPlayerPortraitMovieLeft = AsciiString("VS_small");
+static AsciiString s_challengeLoadScreenPlayerPortraitMovieRight = AsciiString("VS_small");
+static AsciiString s_challengeLoadScreenOpponentBioNameLabel = AsciiString("GUI:ChallengeLoadSmokeOpponentName");
+static AsciiString s_challengeLoadScreenOpponentBioRankLabel = AsciiString("GUI:ChallengeLoadSmokeOpponentRank");
+static AsciiString s_challengeLoadScreenOpponentBioStrategyLabel = AsciiString("GUI:ChallengeLoadSmokeOpponentStrategy");
+static AsciiString s_challengeLoadScreenOpponentNameSound = AsciiString("ChallengeLoadSmokeOpponentNameSound");
+static AsciiString s_challengeLoadScreenOpponentTauntSound = AsciiString("ChallengeLoadSmokeOpponentTaunt");
+static AsciiString s_challengeLoadScreenOpponentPortraitMovieLeft = AsciiString("VS_small");
+static AsciiString s_challengeLoadScreenOpponentPortraitMovieRight = AsciiString("VS_small");
 
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel)
 {
@@ -143,6 +157,61 @@ extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaig
 extern "C" const char *CncPortLoadScreenGetSinglePlayerMovieForTest()
 {
 	return s_singlePlayerLoadScreenMovieLabel.str();
+}
+
+extern "C" void CncPortLoadScreenSetChallengeMovieForTest(
+	const char *movieLabel,
+	const char *playerPortraitMovieLeft,
+	const char *opponentPortraitMovieRight)
+{
+	s_challengeLoadScreenMovieLabel = AsciiString(movieLabel != NULL ? movieLabel : "GC_Background");
+	s_challengeLoadScreenPlayerPortraitMovieLeft = AsciiString(playerPortraitMovieLeft != NULL ? playerPortraitMovieLeft : "VS_small");
+	s_challengeLoadScreenOpponentPortraitMovieRight = AsciiString(opponentPortraitMovieRight != NULL ? opponentPortraitMovieRight : "VS_small");
+}
+
+extern "C" const char *CncPortLoadScreenGetChallengeMovieForTest()
+{
+	return s_challengeLoadScreenMovieLabel.str();
+}
+
+static const AsciiString &challengeBioNameLabel(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getBioName() : (player ? s_challengeLoadScreenPlayerBioNameLabel : s_challengeLoadScreenOpponentBioNameLabel);
+}
+
+static const AsciiString &challengeBioRankLabel(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getBioRank() : (player ? s_challengeLoadScreenPlayerBioRankLabel : s_challengeLoadScreenOpponentBioRankLabel);
+}
+
+static const AsciiString &challengeBioStrategyLabel(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getBioStrategy() : (player ? s_challengeLoadScreenPlayerBioStrategyLabel : s_challengeLoadScreenOpponentBioStrategyLabel);
+}
+
+static const AsciiString &challengeNameSound(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getNameSound() : (player ? s_challengeLoadScreenPlayerNameSound : s_challengeLoadScreenOpponentNameSound);
+}
+
+static const AsciiString &challengeTauntSound(const GeneralPersona *general)
+{
+	return general ? general->getRandomTauntSound() : s_challengeLoadScreenOpponentTauntSound;
+}
+
+static const AsciiString &challengePortraitMovieLeftName(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getPortraitMovieLeftName() : (player ? s_challengeLoadScreenPlayerPortraitMovieLeft : s_challengeLoadScreenOpponentPortraitMovieLeft);
+}
+
+static const AsciiString &challengePortraitMovieRightName(const GeneralPersona *general, Bool player)
+{
+	return general ? general->getPortraitMovieRightName() : (player ? s_challengeLoadScreenPlayerPortraitMovieRight : s_challengeLoadScreenOpponentPortraitMovieRight);
+}
+
+static const Image *challengeBioPortraitLarge(const GeneralPersona *general)
+{
+	return general ? general->getBioPortraitLarge() : NULL;
 }
 #endif
 
@@ -819,9 +888,21 @@ void ChallengeLoadScreen::activatePieces( Int frame, const GeneralPersona *gener
 	static Int textPosBirthplaceLeft = 0;
 	static Int textPosStrategyLeft = 0;
 
-	AudioEventRTS eventLeftGeneral( generalPlayer->getNameSound() );
+	AudioEventRTS eventLeftGeneral(
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		challengeNameSound(generalPlayer, TRUE)
+#else
+		generalPlayer->getNameSound()
+#endif
+	);
 	AudioEventRTS eventVS("Taunts_GCAnnouncer12");
-	AudioEventRTS eventRightGeneral( generalOpponent->getNameSound() );
+	AudioEventRTS eventRightGeneral(
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		challengeNameSound(generalOpponent, FALSE)
+#else
+		generalOpponent->getNameSound()
+#endif
+	);
 
 	switch (frame)
 	{
@@ -873,8 +954,20 @@ void ChallengeLoadScreen::activatePieces( Int frame, const GeneralPersona *gener
 			break;
 		case FRAME_PORTRAITS_START:
 			
-			m_wndVideoManager->playMovie( m_portraitMovieLeft, generalPlayer->getPortraitMovieLeftName(), WINDOW_PLAY_MOVIE_SHOW_LAST_FRAME);
-			m_wndVideoManager->playMovie( m_portraitMovieRight, generalOpponent->getPortraitMovieRightName(), WINDOW_PLAY_MOVIE_SHOW_LAST_FRAME);
+			m_wndVideoManager->playMovie( m_portraitMovieLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+				challengePortraitMovieLeftName(generalPlayer, TRUE),
+#else
+				generalPlayer->getPortraitMovieLeftName(),
+#endif
+				WINDOW_PLAY_MOVIE_SHOW_LAST_FRAME);
+			m_wndVideoManager->playMovie( m_portraitMovieRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+				challengePortraitMovieRightName(generalOpponent, FALSE),
+#else
+				generalOpponent->getPortraitMovieRightName(),
+#endif
+				WINDOW_PLAY_MOVIE_SHOW_LAST_FRAME);
 			m_portraitMovieLeft->winHide(FALSE);
 			m_portraitMovieRight->winHide(FALSE);
 
@@ -922,17 +1015,65 @@ void ChallengeLoadScreen::activatePieces( Int frame, const GeneralPersona *gener
 	// update the teletype readout
 	if (frame > FRAME_TELETYPE_START && (frame % TELETYPE_UPDATE_FREQ) == 0)
 	{
-		textPosNameLeft = updateTeletypeText( 1, m_bioNameEntryLeft, TheGameText->fetch(generalPlayer->getBioName()), textPosNameLeft);
-		textPosBigNameLeft = updateTeletypeText( 1, m_bioBigNameEntryLeft, TheGameText->fetch(generalPlayer->getBioName()), textPosBigNameLeft);
+		textPosNameLeft = updateTeletypeText( 1, m_bioNameEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioNameLabel(generalPlayer, TRUE)),
+#else
+			TheGameText->fetch(generalPlayer->getBioName()),
+#endif
+			textPosNameLeft);
+		textPosBigNameLeft = updateTeletypeText( 1, m_bioBigNameEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioNameLabel(generalPlayer, TRUE)),
+#else
+			TheGameText->fetch(generalPlayer->getBioName()),
+#endif
+			textPosBigNameLeft);
 //		textPosAgeLeft = updateTeletypeText( 1, m_bioAgeEntryLeft, TheGameText->fetch(generalPlayer->getBioDOB()), textPosAgeLeft);
-		textPosBirthplaceLeft = updateTeletypeText( 1, m_bioBirthplaceEntryLeft, TheGameText->fetch(generalPlayer->getBioRank()), textPosBirthplaceLeft);
-		textPosStrategyLeft = updateTeletypeText( 1, m_bioStrategyEntryLeft, TheGameText->fetch(generalPlayer->getBioStrategy()), textPosStrategyLeft);
+		textPosBirthplaceLeft = updateTeletypeText( 1, m_bioBirthplaceEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioRankLabel(generalPlayer, TRUE)),
+#else
+			TheGameText->fetch(generalPlayer->getBioRank()),
+#endif
+			textPosBirthplaceLeft);
+		textPosStrategyLeft = updateTeletypeText( 1, m_bioStrategyEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioStrategyLabel(generalPlayer, TRUE)),
+#else
+			TheGameText->fetch(generalPlayer->getBioStrategy()),
+#endif
+			textPosStrategyLeft);
 		
-		textPosNameRight = updateTeletypeText( 1, m_bioNameEntryRight, TheGameText->fetch(generalOpponent->getBioName()), textPosNameRight);
-		textPosBigNameRight = updateTeletypeText( 1, m_bioBigNameEntryRight, TheGameText->fetch(generalOpponent->getBioName()), textPosBigNameRight);
+		textPosNameRight = updateTeletypeText( 1, m_bioNameEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioNameLabel(generalOpponent, FALSE)),
+#else
+			TheGameText->fetch(generalOpponent->getBioName()),
+#endif
+			textPosNameRight);
+		textPosBigNameRight = updateTeletypeText( 1, m_bioBigNameEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioNameLabel(generalOpponent, FALSE)),
+#else
+			TheGameText->fetch(generalOpponent->getBioName()),
+#endif
+			textPosBigNameRight);
 //		textPosAgeRight = updateTeletypeText( 1, m_bioAgeEntryRight, TheGameText->fetch(generalOpponent->getBioDOB()), textPosAgeRight);
-		textPosBirthplaceRight = updateTeletypeText( 1, m_bioBirthplaceEntryRight, TheGameText->fetch(generalOpponent->getBioRank()), textPosBirthplaceRight);
-		textPosStrategyRight = updateTeletypeText( 1, m_bioStrategyEntryRight, TheGameText->fetch(generalOpponent->getBioStrategy()), textPosStrategyRight);
+		textPosBirthplaceRight = updateTeletypeText( 1, m_bioBirthplaceEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioRankLabel(generalOpponent, FALSE)),
+#else
+			TheGameText->fetch(generalOpponent->getBioRank()),
+#endif
+			textPosBirthplaceRight);
+		textPosStrategyRight = updateTeletypeText( 1, m_bioStrategyEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+			TheGameText->fetch(challengeBioStrategyLabel(generalOpponent, FALSE)),
+#else
+			TheGameText->fetch(generalOpponent->getBioStrategy()),
+#endif
+			textPosStrategyRight);
 	}
 }
  
@@ -951,23 +1092,83 @@ void ChallengeLoadScreen::activatePiecesMinSpec(const GeneralPersona *generalPla
 //	m_bioAgeEntryLeft->winHide(FALSE);
 	m_bioBirthplaceEntryLeft->winHide(FALSE);
 	m_bioStrategyEntryLeft->winHide(FALSE);
-	GadgetStaticTextSetText( m_bioBigNameEntryLeft, TheGameText->fetch(generalPlayer->getBioName()) );
-	GadgetStaticTextSetText( m_bioNameEntryLeft, TheGameText->fetch(generalPlayer->getBioName()) );
+	GadgetStaticTextSetText( m_bioBigNameEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioNameLabel(generalPlayer, TRUE))
+#else
+		TheGameText->fetch(generalPlayer->getBioName())
+#endif
+	);
+	GadgetStaticTextSetText( m_bioNameEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioNameLabel(generalPlayer, TRUE))
+#else
+		TheGameText->fetch(generalPlayer->getBioName())
+#endif
+	);
 //	GadgetStaticTextSetText( m_bioAgeEntryLeft, TheGameText->fetch(generalPlayer->getBioDOB()) );
-	GadgetStaticTextSetText( m_bioBirthplaceEntryLeft, TheGameText->fetch(generalPlayer->getBioRank()) );
-	GadgetStaticTextSetText( m_bioStrategyEntryLeft, TheGameText->fetch(generalPlayer->getBioStrategy()) );
+	GadgetStaticTextSetText( m_bioBirthplaceEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioRankLabel(generalPlayer, TRUE))
+#else
+		TheGameText->fetch(generalPlayer->getBioRank())
+#endif
+	);
+	GadgetStaticTextSetText( m_bioStrategyEntryLeft,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioStrategyLabel(generalPlayer, TRUE))
+#else
+		TheGameText->fetch(generalPlayer->getBioStrategy())
+#endif
+	);
 	m_bioBigNameEntryRight->winHide(FALSE);
 	m_bioNameEntryRight->winHide(FALSE);
 //	m_bioAgeEntryRight->winHide(FALSE);
 	m_bioBirthplaceEntryRight->winHide(FALSE);
 	m_bioStrategyEntryRight->winHide(FALSE);
-	GadgetStaticTextSetText( m_bioBigNameEntryRight, TheGameText->fetch(generalOpponent->getBioName()) );
-	GadgetStaticTextSetText( m_bioNameEntryRight, TheGameText->fetch(generalOpponent->getBioName()) );
+	GadgetStaticTextSetText( m_bioBigNameEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioNameLabel(generalOpponent, FALSE))
+#else
+		TheGameText->fetch(generalOpponent->getBioName())
+#endif
+	);
+	GadgetStaticTextSetText( m_bioNameEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioNameLabel(generalOpponent, FALSE))
+#else
+		TheGameText->fetch(generalOpponent->getBioName())
+#endif
+	);
 //	GadgetStaticTextSetText( m_bioAgeEntryRight, TheGameText->fetch(generalOpponent->getBioDOB()) );
-	GadgetStaticTextSetText( m_bioBirthplaceEntryRight, TheGameText->fetch(generalOpponent->getBioRank()) );
-	GadgetStaticTextSetText( m_bioStrategyEntryRight, TheGameText->fetch(generalOpponent->getBioStrategy()) );
-	m_portraitLeft->winSetEnabledImage(0, generalPlayer->getBioPortraitLarge() );
-	m_portraitRight->winSetEnabledImage(0, generalOpponent->getBioPortraitLarge() );
+	GadgetStaticTextSetText( m_bioBirthplaceEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioRankLabel(generalOpponent, FALSE))
+#else
+		TheGameText->fetch(generalOpponent->getBioRank())
+#endif
+	);
+	GadgetStaticTextSetText( m_bioStrategyEntryRight,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		TheGameText->fetch(challengeBioStrategyLabel(generalOpponent, FALSE))
+#else
+		TheGameText->fetch(generalOpponent->getBioStrategy())
+#endif
+	);
+	m_portraitLeft->winSetEnabledImage(0,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		challengeBioPortraitLarge(generalPlayer)
+#else
+		generalPlayer->getBioPortraitLarge()
+#endif
+	);
+	m_portraitRight->winSetEnabledImage(0,
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		challengeBioPortraitLarge(generalOpponent)
+#else
+		generalOpponent->getBioPortraitLarge()
+#endif
+	);
 	m_portraitLeft->winHide(FALSE);
 	m_portraitRight->winHide(FALSE);
 	m_overlayReticleCircleAlphaOuter->winHide(FALSE);
@@ -981,6 +1182,11 @@ void ChallengeLoadScreen::activatePiecesMinSpec(const GeneralPersona *generalPla
 
 void ChallengeLoadScreen::init( GameInfo *game )
 {
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	const Mission *mission = NULL;
+	const GeneralPersona* generalPlayer = NULL;
+	const GeneralPersona* generalOpponent = NULL;
+#else
 	const Campaign *campaign = TheCampaignManager->getCurrentCampaign();
 	const Mission *mission = TheCampaignManager->getCurrentMission();
 
@@ -990,6 +1196,7 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	// the opponent general is tied to the mission
 	DEBUG_ASSERTCRASH(mission->m_generalName.isNotEmpty(), ("No GeneralName associated with this mission, check Campaign.ini"));
 	const GeneralPersona* generalOpponent = TheChallengeGenerals->getGeneralByGeneralName( mission->m_generalName );
+#endif
 
 	// create the layout of the load screen
 	m_loadScreen = TheWindowManager->winCreateFromScript( AsciiString( "Menus/ChallengeLoadScreen.wnd" ) );
@@ -1005,7 +1212,11 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	m_ambientLoop.setEventName("LoadScreenAmbient");
 
 	// create the new background video stream
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	m_videoStream = TheVideoPlayer->open( s_challengeLoadScreenMovieLabel );
+#else
 	m_videoStream = TheVideoPlayer->open( TheCampaignManager->getCurrentMission()->m_movieLabel );
+#endif
 
 	// Create the new buffer
 	m_videoBuffer = TheDisplay->createVideoBuffer();
@@ -1098,7 +1309,11 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	m_wndVideoManager = NEW WindowVideoManager;
 	m_wndVideoManager->init();
 
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	if(TRUE)
+#else
 	if(TheGameLODManager && TheGameLODManager->didMemPass())
+#endif
 	{
 		Int progressUpdateCount = m_videoStream->frameCount() / FRAME_FUDGE_ADD;
 		Int shiftedPercent = -FRAME_FUDGE_ADD + 1;
@@ -1184,7 +1399,13 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	setFPMode();
 
 	
-	AudioEventRTS event( generalOpponent->getRandomTauntSound() );
+	AudioEventRTS event(
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		challengeTauntSound(generalOpponent)
+#else
+		generalOpponent->getRandomTauntSound()
+#endif
+	);
 	TheAudio->addAudioEvent( &event );
 
 	m_ambientLoopHandle = TheAudio->addAudioEvent(&m_ambientLoop);

@@ -56,6 +56,11 @@ extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout);
 extern "C" WindowLayout *CncPortScoreScreenGetBlankLayoutForMovie();
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel);
 extern "C" const char *CncPortLoadScreenGetSinglePlayerMovieForTest();
+extern "C" void CncPortLoadScreenSetChallengeMovieForTest(
+	const char *movieLabel,
+	const char *playerPortraitMovieLeft,
+	const char *opponentPortraitMovieRight);
+extern "C" const char *CncPortLoadScreenGetChallengeMovieForTest();
 void PlayMovieAndBlock(AsciiString movieTitle);
 
 void setFPMode(void)
@@ -274,6 +279,14 @@ public:
 	void setLoadScreenWindowListProbe(Bool enabled)
 	{
 		m_loadScreenWindowListProbe = enabled ? true : false;
+		m_loadScreenPresentAllAttachedBuffers = false;
+		m_loadScreenPresentCount = 0;
+		m_loadScreenPresentOk = true;
+	}
+	void setLoadScreenWindowListProbe(Bool enabled, Bool present_all_attached_buffers)
+	{
+		m_loadScreenWindowListProbe = enabled ? true : false;
+		m_loadScreenPresentAllAttachedBuffers = present_all_attached_buffers ? true : false;
 		m_loadScreenPresentCount = 0;
 		m_loadScreenPresentOk = true;
 	}
@@ -290,20 +303,7 @@ public:
 	void draw() override
 	{
 		if (m_loadScreenWindowListProbe && TheWindowManager != nullptr) {
-			GameWindow *window = TheWindowManager->winGetWindowList();
-			while (window != nullptr) {
-				WinInstanceData *inst_data = window->winGetInstanceData();
-				VideoBuffer *video_buffer = inst_data != nullptr ? inst_data->m_videoBuffer : nullptr;
-				if (video_buffer != nullptr) {
-					W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(video_buffer);
-					m_loadScreenPresentOk =
-						present_uploaded_video_buffer(*w3d_buffer, 112, 84, 208, 204) &&
-						m_loadScreenPresentOk;
-					++m_loadScreenPresentCount;
-					break;
-				}
-				window = window->winGetNext();
-			}
+			presentLoadScreenWindowTree(TheWindowManager->winGetWindowList());
 		}
 
 		if (m_scoreScreenMovieWindow == nullptr) {
@@ -353,7 +353,42 @@ public:
 	Int getLastFrameDrawCalls() override { return 0; }
 
 private:
+	void presentLoadScreenWindowTree(GameWindow *window)
+	{
+		while (window != nullptr) {
+			WinInstanceData *inst_data = window->winGetInstanceData();
+			VideoBuffer *video_buffer = inst_data != nullptr ? inst_data->m_videoBuffer : nullptr;
+			if (video_buffer != nullptr) {
+				W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(video_buffer);
+				const bool root_window = window->winGetParent() == nullptr;
+				const bool full_screen_movie =
+					w3d_buffer->width() == 800 &&
+					w3d_buffer->height() == 600;
+				const Int draw_left = full_screen_movie || root_window ? 112 : 464;
+				const Int draw_top = full_screen_movie || root_window ? 84 : 324;
+				const Int draw_right = full_screen_movie ? 912 : draw_left + static_cast<Int>(w3d_buffer->width());
+				const Int draw_bottom = full_screen_movie ? 684 : draw_top + static_cast<Int>(w3d_buffer->height());
+				m_loadScreenPresentOk =
+					present_uploaded_video_buffer(*w3d_buffer, draw_left, draw_top, draw_right, draw_bottom) &&
+					m_loadScreenPresentOk;
+				++m_loadScreenPresentCount;
+				if (!m_loadScreenPresentAllAttachedBuffers) {
+					return;
+				}
+			}
+
+			if (window->winGetChild() != nullptr) {
+				presentLoadScreenWindowTree(window->winGetChild());
+				if (!m_loadScreenPresentAllAttachedBuffers && m_loadScreenPresentCount > 0) {
+					return;
+				}
+			}
+			window = window->winGetNext();
+		}
+	}
+
 	bool m_loadScreenWindowListProbe = false;
+	bool m_loadScreenPresentAllAttachedBuffers = false;
 	Int m_loadScreenPresentCount = 0;
 	bool m_loadScreenPresentOk = true;
 	GameWindow *m_scoreScreenMovieWindow = nullptr;
@@ -445,6 +480,44 @@ public:
 	GameWindow *allocateNewWindow() override { return newInstance(SmokeGameWindow); }
 	GameWindow *winCreateFromScript(AsciiString filename, WindowLayoutInfo *info = nullptr) override
 	{
+		if (filename.compareNoCase(AsciiString("Menus/ChallengeLoadScreen.wnd")) == 0) {
+			++challenge_layout_script_creates;
+			GameWindow *root = createWindowWithId(
+				nullptr,
+				AsciiString("ChallengeLoadScreen.wnd:ParentChallengeLoadScreen"),
+				800,
+				600);
+			if (root == nullptr) {
+				return nullptr;
+			}
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:ProgressLoad"), 320, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:PortraitLeft"), 96, 120);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:PortraitRight"), 96, 120);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:PortraitMovieLeft"), 96, 120);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:PortraitMovieRight"), 96, 120);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:CircleAlphaOuter"), 192, 192);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:CircleAlphaInner"), 128, 128);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:VersusBackdrop"), 128, 128);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:OverlayVs"), 96, 120);
+
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameLeft"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceLeft"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyLeft"), 260, 48);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryLeft"), 240, 28);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryLeft"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryLeft"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryLeft"), 260, 48);
+
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameRight"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceRight"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyRight"), 260, 48);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryRight"), 240, 28);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryRight"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryRight"), 200, 24);
+			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryRight"), 260, 48);
+			return root;
+		}
+
 		if (filename.compareNoCase(AsciiString("Menus/SinglePlayerLoadScreen.wnd")) == 0) {
 			++single_player_layout_script_creates;
 			GameWindow *root = createWindowWithId(
@@ -547,6 +620,7 @@ public:
 
 	Int blank_layout_script_creates = 0;
 	Int single_player_layout_script_creates = 0;
+	Int challenge_layout_script_creates = 0;
 };
 
 struct ProbeW3DDisplayStorage
@@ -1369,6 +1443,109 @@ bool exercise_single_player_load_screen_init(VideoPlayerInterface &player)
 	return ok;
 }
 
+bool exercise_challenge_load_screen_init(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	SmokeGameEngine game_engine;
+	NameKeyGenerator name_key_generator;
+	SmokeGameText game_text;
+	SmokeMouse mouse;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	GameEngine *old_game_engine = TheGameEngine;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GameTextInterface *old_game_text = TheGameText;
+	Mouse *old_mouse = TheMouse;
+
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+	TheGameEngine = &game_engine;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGameText = &game_text;
+	TheMouse = &mouse;
+	name_key_generator.init();
+	CncPortLoadScreenSetChallengeMovieForTest("GC_Background", "VS_small", "VS_small");
+	ok = expect(std::strcmp(CncPortLoadScreenGetChallengeMovieForTest(), "GC_Background") == 0,
+		"ChallengeLoadScreen movie test hook did not retain GC_Background") && ok;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_init = state->browser_texture_create_calls;
+	const UINT updates_before_init = state->browser_texture_update_calls;
+	const UINT releases_before_init = state->browser_texture_release_calls;
+	const UINT draws_before_init = state->draw_indexed_primitive_calls;
+	const Int expected_background_frames = 179;
+	const Int expected_window_movie_copies = 372;
+	const Int expected_total_copies = expected_background_frames + expected_window_movie_copies;
+	const Int expected_presented_buffers = 551;
+	display.setLoadScreenWindowListProbe(TRUE, TRUE);
+	{
+		ChallengeLoadScreen load_screen;
+		load_screen.init(nullptr);
+
+		state = wasm_d3d8_get_state();
+		GameWindow *load_screen_window = TheWindowManager->winGetWindowFromId(
+			nullptr,
+			TheNameKeyGenerator->nameToKey(AsciiString("ChallengeLoadScreen.wnd:ParentChallengeLoadScreen")));
+		ok = expect(window_manager.challenge_layout_script_creates == 1,
+			"ChallengeLoadScreen::init did not load ChallengeLoadScreen.wnd") && ok;
+		ok = expect(load_screen_window != nullptr,
+			"ChallengeLoadScreen::init did not retain the challenge load-screen parent window") && ok;
+		ok = expect(load_screen_window == nullptr || load_screen_window->winGetInstanceData()->m_videoBuffer != nullptr,
+			"ChallengeLoadScreen::init did not leave the background VideoBuffer attached before destruction") && ok;
+		ok = expect(game_engine.service_windows_calls == expected_background_frames,
+			"ChallengeLoadScreen::init did not service the OS once per background frame") && ok;
+		ok = expect(display.loadScreenPresentOk(),
+			"ChallengeLoadScreen::init display draw presentation failed") && ok;
+		ok = expect(display.loadScreenPresentCount() == expected_presented_buffers,
+			"ChallengeLoadScreen::init did not present the expected background plus managed child movie buffers") && ok;
+		ok = expect(state->browser_texture_create_calls == creates_before_init + 4,
+			"ChallengeLoadScreen::init did not allocate the background plus three managed movie textures") && ok;
+		ok = expect(state->browser_texture_update_calls == updates_before_init + 4 + expected_total_copies,
+			"ChallengeLoadScreen::init did not upload the initial textures plus decoded challenge frames") && ok;
+		ok = expect(state->draw_indexed_primitive_calls == draws_before_init + expected_presented_buffers,
+			"ChallengeLoadScreen::init did not draw every attached challenge video buffer") && ok;
+		ok = expect(player.firstStream() != nullptr,
+			"ChallengeLoadScreen::init should own open background/window streams until destruction") && ok;
+		ok = expect(state->last_browser_texture_width == next_power_of_two(96) &&
+			state->last_browser_texture_height == next_power_of_two(120),
+			"ChallengeLoadScreen::init final managed movie texture dimensions mismatch") && ok;
+		ok = expect(state->last_browser_texture_pitch == next_power_of_two(96) * 4,
+			"ChallengeLoadScreen::init final managed movie texture pitch mismatch") && ok;
+		ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+			"ChallengeLoadScreen::init decoded texture format mismatch") && ok;
+		ok = expect(state->last_browser_texture_checksum != 0,
+			"ChallengeLoadScreen::init uploaded an all-zero decoded frame") && ok;
+
+		std::printf("ChallengeLoadScreen init GC_Background Bink W3D presentation ok: backgroundFrames=%d windowCopies=%d presentedBuffers=%d finalTexture=%ux%u pitch=%u checksum=%u\n",
+			expected_background_frames,
+			expected_window_movie_copies,
+			expected_presented_buffers,
+			next_power_of_two(96),
+			next_power_of_two(120),
+			next_power_of_two(96) * 4,
+			static_cast<unsigned int>(state->last_browser_texture_checksum));
+	}
+	display.setLoadScreenWindowListProbe(FALSE);
+	window_manager.update();
+	state = wasm_d3d8_get_state();
+	ok = expect(player.firstStream() == nullptr,
+		"ChallengeLoadScreen destructor did not close the owned Bink streams") && ok;
+	ok = expect(state->browser_texture_release_calls == releases_before_init + 4,
+		"ChallengeLoadScreen destructor did not release the background plus managed movie textures") && ok;
+	ok = expect(window_manager.winGetWindowList() == nullptr,
+		"ChallengeLoadScreen destructor did not destroy the challenge load-screen window") && ok;
+
+	TheMouse = old_mouse;
+	TheGameText = old_game_text;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameEngine = old_game_engine;
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 } // namespace
 
 extern "C" int run_bink_w3d_video_buffer_upload_smoke()
@@ -1409,8 +1586,9 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		player->init();
 		add_video(*player, "GC_Background", "GC_Background");
 		add_video(*player, "VS_small", "VS_small");
+		add_video(*player, "VSSmall", "VS_small");
 
-		ok = expect(player->getNumVideos() == 2, "BinkVideoPlayer video registration failed") && ok;
+		ok = expect(player->getNumVideos() == 3, "BinkVideoPlayer video registration failed") && ok;
 		ok = expect(WasmBinkProviderCanDecodeFrames() == 1,
 			"Bink provider decode readiness must be true after installing the browser sidecar copy hook") && ok;
 		ok = exercise_stream(*player, player->open(AsciiString("GC_Background")),
@@ -1422,6 +1600,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_blank_layout_movie_path(*player) && ok;
 		ok = exercise_score_screen_play_movie_and_block(*player) && ok;
 		ok = exercise_single_player_load_screen_init(*player) && ok;
+		ok = exercise_challenge_load_screen_init(*player) && ok;
 	}
 
 	if (player != nullptr) {

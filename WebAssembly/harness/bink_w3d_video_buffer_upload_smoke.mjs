@@ -398,8 +398,8 @@ try {
   const drawEvents = runtimeResult.drawEvents ?? [];
   const lastDrawProbe = runtimeResult.lastDrawProbe ?? null;
 
-  if (copyEvents.length !== 145) {
-    throw new Error(`Expected one hundred forty-five Bink copy events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
+  if (copyEvents.length !== 696) {
+    throw new Error(`Expected six hundred ninety-six Bink copy events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
   }
   for (const event of copyEvents) {
     if (event.bytesWritten <= 0 || event.checksum === 0) {
@@ -460,17 +460,17 @@ try {
   const openCount = binkEvents.filter((event) => event.type === "open").length;
   const closeCount = binkEvents.filter((event) => event.type === "close").length;
   const copyCompleteCount = binkEvents.filter((event) => event.type === "copyComplete").length;
-  if (openCount !== 7 || closeCount !== 7 || copyCompleteCount !== 145) {
+  if (openCount !== 11 || closeCount !== 11 || copyCompleteCount !== 696) {
     throw new Error(`Unexpected Bink lifecycle counts: ${JSON.stringify(binkEvents)}`);
   }
 
   const nonzeroTextureBinds = textureBinds.filter((event) => (event.id >>> 0) !== 0);
-  if (nonzeroTextureBinds.length < 7) {
+  if (nonzeroTextureBinds.length < 11) {
     throw new Error(`Expected W3DDisplay::drawVideoBuffer to bind each distinct Bink texture: ${JSON.stringify(textureBinds)}`);
   }
 
-  if (drawEvents.length < 145) {
-    throw new Error(`Expected one hundred forty-five W3DDisplay::drawVideoBuffer indexed draws: ${JSON.stringify(drawEvents)}`);
+  if (drawEvents.length < 696) {
+    throw new Error(`Expected at least six hundred ninety-six W3DDisplay::drawVideoBuffer indexed draws: ${JSON.stringify(drawEvents)}`);
   }
 
   if (

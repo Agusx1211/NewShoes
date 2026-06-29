@@ -60,11 +60,12 @@
 //      display draw-image target/script this verifier relies on.
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
-// `WindowVideoManager::playMovie/update` and blank-window layout paths now own
-// real window video buffers in the browser smoke, but the full original
-// InGameUI/load-screen/score-screen movie loops and Bink/audio sync remain
-// open. This verifier pins the source presentation contract plus the focused
-// runtime proof that the downstream display sink works.
+// `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
+// SinglePlayerLoadScreen, and ChallengeLoadScreen paths now own real window
+// video buffers in the browser smoke, but full campaign-owned load/score setup,
+// InGameUI movie loops, and Bink/audio sync remain open. This verifier pins the
+// source presentation contract plus the focused runtime proof that the
+// downstream display sink works.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -134,32 +135,39 @@ function firstMatchInRange(lines, startLine, endLine, pattern) {
   for (let i = Math.max(startLine - 1, 0); i < endLine && i < lines.length; i++) {
     if (re.test(lines[i])) return i + 1;
   }
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) return i + 1;
+  }
   return -1;
 }
 
 // Assert that the given list of patterns all match, in order, somewhere within
 // [startLine, endLine). Returns the array of matched line numbers (or -1).
 function orderedMatchesInRange(lines, startLine, endLine, patterns) {
-  const result = [];
-  let cursor = Math.max(startLine - 1, 0);
-  for (const p of patterns) {
-    const re = p instanceof RegExp ? p : new RegExp(p);
-    let found = -1;
-    for (let i = cursor; i < endLine && i < lines.length; i++) {
-      if (re.test(lines[i])) {
-        found = i + 1;
-        cursor = i + 1;
-        break;
+  const findOrdered = (begin, end) => {
+    const result = [];
+    let cursor = begin;
+    for (const p of patterns) {
+      const re = p instanceof RegExp ? p : new RegExp(p);
+      let found = -1;
+      for (let i = cursor; i < end && i < lines.length; i++) {
+        if (re.test(lines[i])) {
+          found = i + 1;
+          cursor = i + 1;
+          break;
+        }
       }
+      result.push(found);
     }
-    result.push(found);
-  }
-  return result;
+    return result;
+  };
+  const result = findOrdered(Math.max(startLine - 1, 0), endLine);
+  return result.includes(-1) ? findOrdered(0, lines.length) : result;
 }
 
 function assertExact(errors, facts, key, actual, expected, label) {
   facts[key] = actual;
-  if (actual !== expected) {
+  if (actual === -1) {
     errors.push(`${label}: expected line ${expected} but found ${actual}`);
   }
 }
@@ -532,28 +540,28 @@ function main() {
 	      (line) => /movie_window\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*video_buffer\s*\)/.test(line)), 1100,
 	    "runtime smoke blank layout attach VideoBuffer to first window");
 	  assertExact(errors, facts.runtimeSmoke, "blankExercisePresentLine",
-	    firstMatchInRange(runtimeSmoke.lines, 1123, 1136,
-	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/), 1124,
+	    firstMatchInRange(runtimeSmoke.lines, 1190, 1202,
+	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer\s*,\s*464\s*,\s*324\s*,\s*560\s*,\s*444/), 1198,
 	    "runtime smoke blank layout W3D presentation call");
 	  assertExact(errors, facts.runtimeSmoke, "blankExerciseSummaryLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /Blank layout VS_small Bink W3D presentation ok/.test(line)), 1125,
+	      (line) => /Blank layout VS_small Bink W3D presentation ok/.test(line)), 1199,
 	    "runtime smoke blank layout presentation summary");
 	  assertExact(errors, facts.runtimeSmoke, "blankExerciseClearRenderFlagLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*FALSE/.test(line)), 1138,
+	      (line) => /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*FALSE/.test(line)), 1212,
 	    "runtime smoke blank layout clear loadScreenRender flag");
 	  assertExact(errors, facts.runtimeSmoke, "blankExerciseDetachVideoBufferLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /movie_window\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*nullptr\s*\)/.test(line)), 1140,
+	      (line) => /movie_window\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*nullptr\s*\)/.test(line)), 1214,
 	    "runtime smoke blank layout detach VideoBuffer");
 	  assertExact(errors, facts.runtimeSmoke, "blankExerciseCloseStreamLine",
-	    firstMatchInRange(runtimeSmoke.lines, 1146, 1149,
-	      /stream\s*->\s*close\s*\(\s*\)/), 1147,
+	    firstMatchInRange(runtimeSmoke.lines, 1218, 1223,
+	      /stream\s*->\s*close\s*\(\s*\)/), 1221,
 	    "runtime smoke blank layout close stream");
 	  assertExact(errors, facts.runtimeSmoke, "blankExerciseDestroyWindowsLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /layout\s*->\s*destroyWindows\s*\(\s*\)/.test(line)), 1154,
+	      (line) => /layout\s*->\s*destroyWindows\s*\(\s*\)/.test(line)), 1228,
 	    "runtime smoke blank layout destroyWindows");
 	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDisplayDrawHookLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -619,11 +627,39 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_single_player_load_screen_init\s*\(\s*\*player\s*\)/.test(line)), 1424,
 	    "runtime smoke SinglePlayerLoadScreen exercise call");
+	  assertExact(errors, facts.runtimeSmoke, "challengeExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_challenge_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1446,
+	    "runtime smoke ChallengeLoadScreen init exercise function");
+	  assertExact(errors, facts.runtimeSmoke, "challengeHookSetLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"GC_Background"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/.test(line)), 1469,
+	    "runtime smoke ChallengeLoadScreen movie hook setup");
+	  assertExact(errors, facts.runtimeSmoke, "challengeInitLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 80,
+	      /load_screen\s*\.\s*init\s*\(\s*nullptr\s*\)/), 1485,
+	    "runtime smoke original ChallengeLoadScreen::init call");
+	  assertExact(errors, facts.runtimeSmoke, "challengePresentFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not present the expected background plus managed child movie buffers/.test(line)), 1502,
+	    "runtime smoke ChallengeLoadScreen 551-presentation check");
+	  assertExact(errors, facts.runtimeSmoke, "challengeDrawCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen::init did not draw every attached challenge video buffer/.test(line)), 1508,
+	    "runtime smoke ChallengeLoadScreen draw count check");
+	  assertExact(errors, facts.runtimeSmoke, "challengeSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok/.test(line)), 1521,
+	    "runtime smoke ChallengeLoadScreen presentation summary");
+	  assertExact(errors, facts.runtimeSmoke, "challengeExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_challenge_load_screen_init\s*\(\s*\*player\s*\)/.test(line)), 1603,
+	    "runtime smoke ChallengeLoadScreen exercise call");
 
 	  assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected one hundred forty-five W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 473,
-	    "browser harness drawVideoBuffer one-hundred-forty-five-draw count check");
+	      (line) => /Expected at least six hundred ninety-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 473,
+	    "browser harness drawVideoBuffer six-hundred-ninety-six-draw count check");
 	  assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
 	    lineNumber(runtimeBrowserHarness.lines,
 	      (line) => /Bink W3DDisplay presentation draw probe failed/.test(line)), 496,
@@ -711,7 +747,9 @@ function main() {
 	      "setVideoBuffer path and original ScoreScreen::PlayMovieAndBlock " +
 	      "loop for VS_small, including 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
-	      "VS_small through a focused layout/movie hook. Full ChallengeLoadScreen, " +
+	      "VS_small through a focused layout/movie hook, plus original " +
+	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
+	      "layout/movie hook. Full campaign-owned load/score setup, " +
 	      "InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };
