@@ -3520,6 +3520,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       after the browser audio gesture and mixer setup, and asserts
       request/start/ended/completion/release log phases while preserving that
       the original engine audio request queue is still future work.
+- [x] Add a browser source-shaped audio request queue proof. The archive
+      harness now exposes `browserAudioRequestPathRuntime`, drives the same
+      real requested `CIAAgentVoiceAttack` payload through an ordered
+      `AudioManager::addAudioEvent` handle/filename/play-info phase,
+      `SoundManager::addAudioEvent` `AR_Play` queue phase,
+      `MilesAudioManager::processRequestList` / `processRequest` dispatch
+      phase, and live Web Audio start/completion/release assertions. This is a
+      harness proof of the source request contract; the original
+      `MilesAudioManager` runtime still needs a browser Web Audio backend.
 
 ---
 

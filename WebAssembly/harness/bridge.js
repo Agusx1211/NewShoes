@@ -341,6 +341,20 @@ const browserAudioLiveEventRuntime = {
   lastError: null,
 };
 
+const browserAudioRequestPathRuntime = {
+  source: "browser source-shaped audio request queue live playback proof",
+  nextHandle: 22001,
+  enqueued: 0,
+  drained: 0,
+  dispatched: 0,
+  started: 0,
+  completed: 0,
+  released: 0,
+  lastEvent: null,
+  eventLog: [],
+  lastError: null,
+};
+
 const wasmModulePromise = loadWasmModule();
 
 function browserAudioContextCtor() {
@@ -563,6 +577,16 @@ function rememberBrowserAudioRequestedDecodedCache(decodedCache) {
   browserAudioLiveEventRuntime.lastEvent = null;
   browserAudioLiveEventRuntime.eventLog = [];
   browserAudioLiveEventRuntime.lastError = null;
+  browserAudioRequestPathRuntime.nextHandle = 22001;
+  browserAudioRequestPathRuntime.enqueued = 0;
+  browserAudioRequestPathRuntime.drained = 0;
+  browserAudioRequestPathRuntime.dispatched = 0;
+  browserAudioRequestPathRuntime.started = 0;
+  browserAudioRequestPathRuntime.completed = 0;
+  browserAudioRequestPathRuntime.released = 0;
+  browserAudioRequestPathRuntime.lastEvent = null;
+  browserAudioRequestPathRuntime.eventLog = [];
+  browserAudioRequestPathRuntime.lastError = null;
 }
 
 function summarizeBrowserAudioLiveEventRuntime() {
@@ -592,6 +616,38 @@ function summarizeBrowserAudioLiveEventRuntime() {
   };
 }
 
+function summarizeBrowserAudioRequestPathRuntime() {
+  return {
+    source: browserAudioRequestPathRuntime.source,
+    ready:
+      browserAudioRequestedDecodedCache.size > 0 &&
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    cacheEntries: browserAudioRequestedDecodedCache.size,
+    cacheKeys: [...browserAudioRequestedDecodedCache.keys()],
+    runtimePlayback: browserAudioRequestPathRuntime.completed > 0,
+    engineDriven: false,
+    sourcePathDriven: true,
+    nextRequired: "realMilesAudioManagerWebAudioBackend",
+    sourceFrontiers: [
+      "verify:audio-event-request-frontier",
+      "verify:audio-request-update-frontier",
+      "verify:audio-sample-start-frontier",
+      "verify:audio-playing-event-state-frontier",
+      "verify:audio-completion-frontier",
+    ],
+    enqueued: browserAudioRequestPathRuntime.enqueued,
+    drained: browserAudioRequestPathRuntime.drained,
+    dispatched: browserAudioRequestPathRuntime.dispatched,
+    started: browserAudioRequestPathRuntime.started,
+    completed: browserAudioRequestPathRuntime.completed,
+    released: browserAudioRequestPathRuntime.released,
+    lastEvent: browserAudioRequestPathRuntime.lastEvent,
+    eventLog: [...browserAudioRequestPathRuntime.eventLog],
+    lastError: browserAudioRequestPathRuntime.lastError,
+  };
+}
+
 function selectBrowserAudioLiveEventTarget(cacheKey) {
   if (cacheKey) {
     return browserAudioRequestedDecodedCache.get(String(cacheKey)) ?? null;
@@ -603,6 +659,17 @@ function selectBrowserAudioLiveEventTarget(cacheKey) {
     }
   }
   return browserAudioRequestedDecodedCache.values().next().value ?? null;
+}
+
+function allocateBrowserAudioLiveEventHandle(handleOverride) {
+  const requestedHandle = Number(handleOverride);
+  if (Number.isInteger(requestedHandle) && requestedHandle > 0) {
+    if (requestedHandle >= browserAudioLiveEventRuntime.nextHandle) {
+      browserAudioLiveEventRuntime.nextHandle = requestedHandle + 1;
+    }
+    return requestedHandle;
+  }
+  return browserAudioLiveEventRuntime.nextHandle++;
 }
 
 async function playBrowserAudioRequestedLiveEvent(payload = {}) {
@@ -639,7 +706,7 @@ async function playBrowserAudioRequestedLiveEvent(payload = {}) {
       fullDurationSeconds,
     ),
   );
-  const handle = browserAudioLiveEventRuntime.nextHandle++;
+  const handle = allocateBrowserAudioLiveEventHandle(payload.handle);
   const eventName = decoded.firstEvent ?? decoded.path;
   const event = {
     handle,
@@ -724,6 +791,163 @@ async function playBrowserAudioRequestedLiveEvent(payload = {}) {
   }
 
   return summarizeBrowserAudioLiveEventRuntime();
+}
+
+function requestedAudioSourceRequestPathForDecoded(decoded) {
+  const route = requestedAudioMixerBusForDecoded(decoded);
+  if (route.bus === "music") {
+    return {
+      ...route,
+      audioType: "AT_Music",
+      commonRoute: "AudioManager::addAudioEvent -> m_music->addAudioEvent",
+      requestManager: "MusicManager::addAudioEvent",
+      queueFunction: "MusicManager::playTrack",
+      deviceStart: "playStream",
+      requestQueue: "m_audioRequests",
+    };
+  }
+  if (route.bus === "speech") {
+    return {
+      ...route,
+      audioType: "AT_Streaming",
+      commonRoute: "AudioManager::addAudioEvent -> m_sound->addAudioEvent",
+      requestManager: "SoundManager::addAudioEvent",
+      queueFunction: "SoundManager::addAudioEvent",
+      deviceStart: "playStream",
+      requestQueue: "m_audioRequests",
+    };
+  }
+  if (route.playingType === "PAT_3DSample") {
+    return {
+      ...route,
+      audioType: "AT_SoundEffect",
+      commonRoute: "AudioManager::addAudioEvent -> m_sound->addAudioEvent",
+      requestManager: "SoundManager::addAudioEvent",
+      queueFunction: "SoundManager::addAudioEvent",
+      deviceStart: "playSample3D",
+      requestQueue: "m_audioRequests",
+    };
+  }
+  return {
+    ...route,
+    audioType: "AT_SoundEffect",
+    commonRoute: "AudioManager::addAudioEvent -> m_sound->addAudioEvent",
+    requestManager: "SoundManager::addAudioEvent",
+    queueFunction: "SoundManager::addAudioEvent",
+    deviceStart: "playSample",
+    requestQueue: "m_audioRequests",
+  };
+}
+
+async function playBrowserAudioRequestPathLiveEvent(payload = {}) {
+  const context = browserAudioRuntime.context;
+  if (!context || context.state !== "running") {
+    browserAudioRequestPathRuntime.lastError = "AudioContext is not running";
+    return summarizeBrowserAudioRequestPathRuntime();
+  }
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    browserAudioRequestPathRuntime.lastError = browserAudioMixerRuntime.lastError;
+    return summarizeBrowserAudioRequestPathRuntime();
+  }
+  const decoded = selectBrowserAudioLiveEventTarget(payload.cacheKey);
+  if (!decoded) {
+    browserAudioRequestPathRuntime.lastError = "requested decoded audio cache is empty";
+    return summarizeBrowserAudioRequestPathRuntime();
+  }
+
+  const route = requestedAudioSourceRequestPathForDecoded(decoded);
+  const handle = browserAudioRequestPathRuntime.nextHandle++;
+  const eventName = decoded.firstEvent ?? decoded.path;
+  const event = {
+    handle,
+    cacheKey: decoded.cacheKey,
+    eventName,
+    firstSource: decoded.firstSource,
+    archive: decoded.archive,
+    path: decoded.path,
+    sections: decoded.sections,
+    common: {
+      function: "AudioManager::addAudioEvent",
+      handleAllocator: "allocateNewHandle",
+      filenameStep: "AudioEventRTS::generateFilename",
+      playInfoStep: "AudioEventRTS::generatePlayInfo",
+      audioType: route.audioType,
+      route: route.commonRoute,
+    },
+    request: {
+      manager: route.requestManager,
+      queueFunction: route.queueFunction,
+      requestQueue: route.requestQueue,
+      request: "AR_Play",
+      usePendingEvent: true,
+      pendingEvent: eventName,
+      canPlayNowGate: route.requestManager === "SoundManager::addAudioEvent",
+    },
+    drain: {
+      update: "MilesAudioManager::update",
+      requestList: "MilesAudioManager::processRequestList",
+      dispatch: "MilesAudioManager::processRequest",
+      playRoute: "AR_Play -> playAudioEvent(req->m_pendingEvent)",
+    },
+    playback: {
+      playAudioEvent: "MilesAudioManager::playAudioEvent",
+      deviceStart: route.deviceStart,
+      playingType: route.playingType,
+      bus: route.bus,
+      webAudioNode: "AudioBufferSourceNode",
+      sourceRoute: route.sourceRoute,
+      liveHandle: null,
+    },
+    completion: null,
+  };
+
+  browserAudioRequestPathRuntime.enqueued += 1;
+  browserAudioRequestPathRuntime.drained += 1;
+  browserAudioRequestPathRuntime.dispatched += 1;
+  browserAudioRequestPathRuntime.eventLog.push(
+    { handle, eventName, phase: "addAudioEvent", function: "AudioManager::addAudioEvent" },
+    { handle, eventName, phase: "generate", filename: true, playInfo: true },
+    { handle, eventName, phase: "route", audioType: route.audioType, manager: route.requestManager },
+    { handle, eventName, phase: "queue", request: "AR_Play", queue: route.requestQueue },
+    { handle, eventName, phase: "drain", function: "MilesAudioManager::processRequestList" },
+    { handle, eventName, phase: "dispatch", function: "MilesAudioManager::processRequest" },
+    { handle, eventName, phase: "playAudioEvent", deviceStart: route.deviceStart },
+  );
+
+  const liveBefore = browserAudioLiveEventRuntime.completed;
+  const liveEvent = await playBrowserAudioRequestedLiveEvent({
+    ...payload,
+    cacheKey: decoded.cacheKey,
+    handle,
+  });
+  const liveStarted = browserAudioLiveEventRuntime.lastEvent?.handle === handle;
+  if (liveEvent.lastError || !liveStarted) {
+    browserAudioRequestPathRuntime.lastError =
+      liveEvent.lastError ?? "live playback did not report the request-path handle";
+    browserAudioRequestPathRuntime.lastEvent = event;
+    return summarizeBrowserAudioRequestPathRuntime();
+  }
+
+  const liveLastEvent = browserAudioLiveEventRuntime.lastEvent;
+  event.playback.liveHandle = liveLastEvent.handle;
+  event.playback.start = liveLastEvent.start;
+  event.callback = liveLastEvent.callback;
+  event.completion = liveLastEvent.completion;
+  browserAudioRequestPathRuntime.started += 1;
+  if (browserAudioLiveEventRuntime.completed > liveBefore) {
+    browserAudioRequestPathRuntime.completed += 1;
+    browserAudioRequestPathRuntime.released += 1;
+  }
+  browserAudioRequestPathRuntime.eventLog.push(
+    { handle, eventName, phase: "start", playingType: route.playingType, node: "AudioBufferSourceNode" },
+    { handle, eventName, phase: "ended", observed: liveLastEvent.callback?.observed === true },
+    { handle, eventName, phase: "completion", call: "notifyOfAudioCompletion", status: "PS_Stopped" },
+    { handle, eventName, phase: "release", path: liveLastEvent.completion?.releasePath ?? null },
+  );
+  browserAudioRequestPathRuntime.lastEvent = event;
+  browserAudioRequestPathRuntime.lastError = null;
+  return summarizeBrowserAudioRequestPathRuntime();
 }
 
 function getCanvasDisplaySize() {
@@ -5722,6 +5946,7 @@ function snapshotState() {
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
+    browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -15231,6 +15456,13 @@ async function rpc(command, payload = {}) {
         browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
         state: snapshotState(),
       };
+    case "browserAudioRequestPathRuntime":
+      return {
+        ok: true,
+        command,
+        browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
+        state: snapshotState(),
+      };
     case "resumeBrowserAudioRuntime":
       {
         const runtime = await resumeBrowserAudioRuntime(payload.trigger ?? "rpc.resumeBrowserAudioRuntime");
@@ -15258,6 +15490,16 @@ async function rpc(command, payload = {}) {
           ok: liveEvent.ready === true && liveEvent.lastError === null && liveEvent.completed > 0,
           command,
           browserAudioLiveEventRuntime: liveEvent,
+          state: snapshotState(),
+        };
+      }
+    case "playBrowserAudioRequestPathEvent":
+      {
+        const requestPath = await playBrowserAudioRequestPathLiveEvent(payload);
+        return {
+          ok: requestPath.ready === true && requestPath.lastError === null && requestPath.completed > 0,
+          command,
+          browserAudioRequestPathRuntime: requestPath,
           state: snapshotState(),
         };
       }
