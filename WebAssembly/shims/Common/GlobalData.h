@@ -95,6 +95,9 @@ public:
 		m_shroudAlpha(0),
 		m_clearAlpha(255),
 		m_hotKeyTextColor(GameMakeColor(255, 255, 0, 255)),
+		m_powerBarBase(7),
+		m_powerBarIntervals(3.0f),
+		m_powerBarYellowRange(5),
 		m_unlookPersistDuration(30),
 		m_playIntro(TRUE),
 		m_playSizzle(TRUE),
@@ -216,6 +219,9 @@ public:
 	UnsignedByte m_shroudAlpha;
 	UnsignedByte m_clearAlpha;
 	Color m_hotKeyTextColor;
+	Int m_powerBarBase;
+	Real m_powerBarIntervals;
+	Int m_powerBarYellowRange;
 	UnsignedInt m_unlookPersistDuration;
 	Bool m_playIntro;
 	Bool m_playSizzle;
