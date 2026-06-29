@@ -211,14 +211,17 @@ ScoreScreen final-campaign movie helper through a real `CampaignManager` /
 `VS_small` presentations and blank-layout cleanup, and drives the non-final
 victorious `finishSinglePlayerInit` branch through a real two-mission
 `CampaignManager` graph with hook-counted mission-save, message-resource, and
-transition edges but no additional Bink frames. It also compiles original
+transition edges but no additional Bink frames, then drives the non-challenge
+defeat/retry branch through the same hook-counted path with `Retry`, no mission
+advance, no mission save, hidden saved-text, message cleanup, and
+`ScoreScreenShow` transition coverage. It also compiles original
 `LoadScreen.cpp` with a harness-only movie/campaign hook and drives original
 `SinglePlayerLoadScreen::init("VS_small")` for 70 decoded frame presentations,
 then drives original `ChallengeLoadScreen::init` with focused `GC_Background`
 and `VS_small`/`VSSmall` movie facts for 551 Challenge presentations. Full
 campaign-owned load-screen setup, campaign-owned Challenge persona setup, full
 non-test `finishSinglePlayerInit` subsystem ownership, stats/LOD gates in the
-focused browser runtime, challenge win/loss, defeat/retry, and the broader
+focused browser runtime, challenge win/loss, and the broader
 CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton surface
 remain open until they can be linked and harness-driven.
 
@@ -627,11 +630,12 @@ The wasm CMake skeleton currently builds:
   `Display::playMovie/update/stopMovie`, `WindowVideoManager::playMovie/update`,
   blank-window first-window `setVideoBuffer`, original
   `ScoreScreen::PlayMovieAndBlock`, the extracted ScoreScreen final-campaign
-  movie helper, focused original `SinglePlayerLoadScreen::init`, and focused
+  movie helper, hook-counted non-final victory and defeat/retry
+  `finishSinglePlayerInit` branches, focused original `SinglePlayerLoadScreen::init`, and focused
   original `ChallengeLoadScreen::init` ownership, while native `.bik` frame
   decoding, audio sync, full WebCodecs/`<video>` runtime ownership,
   campaign-owned load-screen setup, Challenge persona setup, and full
-  `finishSinglePlayerInit` branch coverage remain open. The runtime archive extractor
+  non-test `finishSinglePlayerInit` branch coverage remain open. The runtime archive extractor
   pulls the shipped loose `GC_Background.bik` and `VS_small.bik` files from
   `Data1.cab` and checks their BIK/KB2 header magic, and
   `npm run test:bink-video-provider` builds/runs a wasm smoke against those real

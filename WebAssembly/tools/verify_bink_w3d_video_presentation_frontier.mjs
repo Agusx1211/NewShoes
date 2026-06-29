@@ -62,7 +62,7 @@
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
 // focused ScoreScreen final-campaign helper, a hook-counted non-final
-// victorious finishSinglePlayerInit branch, SinglePlayerLoadScreen, and
+// victorious and defeat/retry finishSinglePlayerInit branches, SinglePlayerLoadScreen, and
 // ChallengeLoadScreen paths now own real window video buffers in the browser
 // smoke, but full non-test finishSinglePlayerInit subsystem edges, InGameUI
 // movie loops, and Bink/audio sync remain open. This verifier pins the
@@ -661,6 +661,40 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)\s*&&\s*ok/.test(line)), 2008,
 	    "runtime smoke ScoreScreen non-final exercise call");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_defeat_retry\s*\(\s*\)/.test(line)), 1747,
+	    "runtime smoke ScoreScreen defeat/retry exercise function");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryFinishInitCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeSmoke.scoreScreenDefeatRetryExerciseDefLine,
+	      facts.runtimeSmoke.scoreScreenDefeatRetryExerciseDefLine + 160,
+	      /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/), 1838,
+	    "runtime smoke full finishSinglePlayerInit wrapper call for defeat/retry");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryTextCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not set Retry text/.test(line)), 1844,
+	    "runtime smoke ScoreScreen defeat/retry Retry text check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryNoMissionSaveCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch unexpectedly called GameState::missionSave/.test(line)), 1855,
+	    "runtime smoke ScoreScreen defeat/retry no mission-save check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryFreeMessagesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not call InGameUI::freeMessageResources once/.test(line)), 1857,
+	    "runtime smoke ScoreScreen defeat/retry free-message counter check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryTransitionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not request ScoreScreenShow transition/.test(line)), 1860,
+	    "runtime smoke ScoreScreen defeat/retry transition counter check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetrySummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit defeat\/retry branch ok/.test(line)), 1868,
+	    "runtime smoke ScoreScreen defeat/retry branch summary");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenDefeatRetryExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_defeat_retry\s*\(\s*\)\s*&&\s*ok/.test(line)), 2155,
+	    "runtime smoke ScoreScreen defeat/retry exercise call");
 	  assertExact(errors, facts.runtimeSmoke, "singlePlayerExerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_single_player_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1268,
@@ -801,13 +835,13 @@ function main() {
 	      "setVideoBuffer path, original ScoreScreen::PlayMovieAndBlock " +
 	      "loop for VS_small, the extracted ScoreScreen final-campaign " +
 	      "movie helper through a real CampaignManager/Campaign/Mission " +
-	      "transition, and a hook-counted non-final victorious " +
-	      "finishSinglePlayerInit branch that advances to the next mission " +
+	      "transition, and hook-counted non-final victorious and defeat/retry " +
+	      "finishSinglePlayerInit branches that cover mission advance/save and retry/no-save outcomes " +
 	      "without adding Bink frames. The movie paths each include 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
 	      "VS_small through a focused layout/movie hook, plus original " +
 	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
-	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, " +
+	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, challenge win/loss, " +
 	      "InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };

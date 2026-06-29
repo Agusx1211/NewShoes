@@ -706,7 +706,11 @@ shares structure and follows behind.
       ScoreScreen hook build, verifying `SaveAndContinue`, next-map selection,
       saved-text visibility, and hook-counted mission-save, message-resource
       cleanup, and `ScoreScreenShow` transition edges without adding Bink
-      frames. It now also drives original `SinglePlayerLoadScreen::init`
+      frames. It now also drives the non-challenge defeat/retry branch through
+      the same focused hook build, verifying `Retry`, no mission advancement,
+      no mission save, hidden saved-text, message-resource cleanup, and
+      `ScoreScreenShow` transition edges without adding Bink frames. It now
+      also drives original `SinglePlayerLoadScreen::init`
       through a gated harness-only movie/campaign hook and a synthetic
       `Menus/SinglePlayerLoadScreen.wnd` hierarchy for 70 `VS_small`
       frame presentations. It now also drives original
@@ -719,8 +723,7 @@ shares structure and follows behind.
       setup, full non-test `finishSinglePlayerInit` subsystem coverage
       (including original `GameState::missionSave`,
       `InGameUI::freeMessageResources`, transition-handler calls, stats/LOD
-      gates in the browser runtime, challenge win/loss, and defeat/retry
-      branches),
+      gates in the browser runtime, and challenge win/loss branches),
       and Bink/audio sync drive the same video surface.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
@@ -769,10 +772,14 @@ shares structure and follows behind.
       branch in the focused ScoreScreen hook build, verifying mission
       advancement, `SaveAndContinue`, saved-text visibility, and hook-counted
       mission-save/message-cleanup/transition edges without adding Bink frames.
+      It now also drives the non-challenge defeat/retry branch in the focused
+      hook build, verifying `Retry`, no mission advancement, no mission save,
+      hidden saved-text, message-cleanup, and transition edges without adding
+      Bink frames.
       Full original InGameUI, campaign-owned load-screen setup,
       campaign-owned Challenge persona setup, full non-test
       `finishSinglePlayerInit` subsystem edges, stats/LOD gates in the focused
-      browser runtime, challenge win/loss, defeat/retry branches, and
+      browser runtime, challenge win/loss branches, and
       Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
@@ -813,8 +820,10 @@ shares structure and follows behind.
       `CampaignManager` / `Campaign` / final-`Mission` transition, calls original
       `finishSinglePlayerInit` through a focused non-final victorious
       two-mission campaign with hook-counted mission-save/message-cleanup/
-      transition edges, calls original `SinglePlayerLoadScreen::init` through a
-      gated movie/campaign hook, and now calls original
+      transition edges, calls original `finishSinglePlayerInit` through a
+      focused non-challenge defeat/retry campaign with hook-counted no-save/
+      message-cleanup/transition edges, calls original
+      `SinglePlayerLoadScreen::init` through a gated movie/campaign hook, and now calls original
       `ChallengeLoadScreen::init` through a focused
       harness-only Challenge movie hook. The browser harness now expects 12
       open/close lifecycles, 766 total copies, 766 draw-buffer indexed draws,
@@ -822,7 +831,7 @@ shares structure and follows behind.
       does not claim runtime InGameUI, full campaign-owned load-screen setup,
       campaign-owned Challenge persona setup, full non-test
       `finishSinglePlayerInit` subsystem edges, stats/LOD gates in the focused
-      browser runtime, challenge win/loss, defeat/retry branches, or
+      browser runtime, challenge win/loss branches, or
       Bink/audio sync complete; the
       broader CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI
       singleton path still needs to link and be harness-driven.
@@ -852,7 +861,8 @@ shares structure and follows behind.
       focused original `ChallengeLoadScreen::init` runtime loop for
       `GC_Background` plus `VS_small`/`VSSmall` child movies, plus the
       extracted ScoreScreen final-campaign movie helper, plus the hook-counted
-      non-final victorious `finishSinglePlayerInit` branch. Full original
+      non-final victorious and defeat/retry `finishSinglePlayerInit` branches.
+      Full original
       InGameUI, campaign-owned load-screen setup, campaign-owned Challenge
       persona setup, full non-test `finishSinglePlayerInit` subsystem edges,
       and Bink/audio sync ownership remain open.
@@ -880,7 +890,8 @@ shares structure and follows behind.
       original `SinglePlayerLoadScreen::init("VS_small")` and
       `ChallengeLoadScreen::init` runtime loops, plus the extracted
       ScoreScreen final-campaign movie helper, plus the hook-counted non-final
-      victorious `finishSinglePlayerInit` branch. The full original InGameUI,
+      victorious and defeat/retry `finishSinglePlayerInit` branches. The full
+      original InGameUI,
       campaign-owned load-screen setup, campaign-owned Challenge persona
       setup, full non-test `finishSinglePlayerInit` subsystem edges, and
       Bink/audio sync flows still need runtime ownership of that path, though the

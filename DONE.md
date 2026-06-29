@@ -4176,6 +4176,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the focused `finishSinglePlayerInit` browser smoke through the
+      non-challenge defeat/retry branch. The same hook build now drives a real
+      `CampaignManager` / two-mission campaign with `SetVictorious(FALSE)`,
+      verifies `GUI:Retry`, no mission advancement, retry-map preservation,
+      zero mission-save calls, one message-resource cleanup, one
+      `ScoreScreenShow` transition request, hidden saved-game text, restored
+      score buttons, blank-layout cleanup, and display-string cleanup. This
+      branch adds no Bink frames, so the aggregate browser harness still
+      expects 12 Bink open/close lifecycles, 766 decoded frame copies, 766
+      indexed video-buffer draws, 13 texture creates, 779 texture updates, and
+      12 texture releases. Full non-test `GameState`/`InGameUI`/
+      transition-handler runtime ownership, stats/LOD gates, challenge
+      win/loss, InGameUI movies, and Bink/audio sync remain open. Verified with
+      `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

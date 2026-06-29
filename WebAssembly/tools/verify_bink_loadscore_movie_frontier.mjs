@@ -8,8 +8,8 @@
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
 // W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
 // original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
-// movie helper path, a hook-counted non-final victorious finishSinglePlayerInit
-// branch, and SinglePlayerLoadScreen::init movie loops through test-controlled
+// movie helper path, hook-counted non-final victorious and defeat/retry
+// finishSinglePlayerInit branches, and SinglePlayerLoadScreen::init movie loops through test-controlled
 // layout/movie facts; full non-test finishSinglePlayerInit subsystem edges,
 // Challenge persona ownership, and InGameUI coverage remain open.
 //
@@ -27,8 +27,9 @@
 //      window, drawing each decompressed frame, and cleaning up the layout.
 //   5. The focused browser runtime drives the extracted final-campaign movie
 //      helper through a real CampaignManager/Campaign/Mission transition, and
-//      drives the full finishSinglePlayerInit non-final victorious branch with
-//      hook-counted GameState/InGameUI/transition edges.
+//      drives the full finishSinglePlayerInit non-final victorious and
+//      defeat/retry branches with hook-counted GameState/InGameUI/transition
+//      edges.
 //   6. WindowLayout / GameWindowManager still expose the layout/window hooks
 //      those ScoreScreen ownership paths depend on.
 //
@@ -904,6 +905,7 @@ function main() {
 	      ["saveAndContinueLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:SaveAndContinue"\s*\)\s*\)/, 1080, "finishSinglePlayerInit non-final SaveAndContinue text"],
 	      ["missionSaveHelperCallLine", /finishSinglePlayerMissionSave\s*\(\s*\)/, 1083, "finishSinglePlayerInit delegates non-final mission save"],
 	      ["savedTextRevealLine", /staticTextGameSaved\s*->\s*winHide\s*\(\s*FALSE\s*\)/, 1085, "finishSinglePlayerInit reveals saved-game text"],
+	      ["retryTextLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:Retry"\s*\)\s*\)/, 1107, "finishSinglePlayerInit defeat/retry text"],
 	      ["freeMessageResourcesLine", /finishSinglePlayerFreeMessageResources\s*\(\s*\)/, 1040, "finishSinglePlayerInit frees InGameUI message resources through helper"],
 	      ["cleanupHelperCallLine", /finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*TRUE\s*\)/, 1042, "finishSinglePlayerInit delegates blank layout cleanup"],
 	    ].forEach(([key, pattern, expected, label]) =>
@@ -1100,6 +1102,48 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)\s*&&\s*ok/.test(line)),
 	    2008, "runtime ScoreScreen non-final exercise call");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_defeat_retry\s*\(\s*\)/.test(line)),
+	    1747, "runtime ScoreScreen defeat/retry branch exercise");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryFinishInitCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.defeatRetryExerciseDefLine,
+	      facts.runtimeScoreScreen.defeatRetryExerciseDefLine + 160,
+	      /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/),
+	    1838, "runtime calls focused full finishSinglePlayerInit wrapper for defeat/retry");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryTextCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not set Retry text/.test(line)),
+	    1844, "runtime ScoreScreen defeat/retry Retry text check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryNoAdvanceCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch unexpectedly advanced the mission/.test(line)),
+	    1851, "runtime ScoreScreen defeat/retry no-advance check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryNoMissionSaveCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch unexpectedly called GameState::missionSave/.test(line)),
+	    1855, "runtime ScoreScreen defeat/retry no mission-save check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryFreeMessagesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not call InGameUI::freeMessageResources once/.test(line)),
+	    1857, "runtime ScoreScreen defeat/retry free-message counter check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryTransitionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch did not request ScoreScreenShow transition/.test(line)),
+	    1860, "runtime ScoreScreen defeat/retry transition counter check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetrySavedTextHiddenCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit defeat\/retry branch unexpectedly revealed the saved-game text/.test(line)),
+	    1862, "runtime ScoreScreen defeat/retry saved text remains hidden check");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetrySummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit defeat\/retry branch ok/.test(line)),
+	    1868, "runtime ScoreScreen defeat/retry branch summary");
+	  assertExact(errors, facts.runtimeScoreScreen, "defeatRetryExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_defeat_retry\s*\(\s*\)\s*&&\s*ok/.test(line)),
+	    2155, "runtime ScoreScreen defeat/retry exercise call");
 
 	  assertExact(errors, facts.runtimeSinglePlayer, "hookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -1300,7 +1344,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, a hook-counted non-final victorious finishSinglePlayerInit branch, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, hook-counted non-final victorious and defeat/retry finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, challenge win/loss, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {
