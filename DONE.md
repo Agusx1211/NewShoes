@@ -3548,6 +3548,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       phase, and live Web Audio start/completion/release assertions. This is a
       harness proof of the source request contract; the original
       `MilesAudioManager` runtime still needs a browser Web Audio backend.
+- [x] Make the first MSS startup/device boundary stateful and
+      harness-observable. `Mss.H` now records redist directory, startup,
+      shutdown, quick-startup arguments, and file callbacks, and returns
+      non-invalid digital-driver, provider, listener, and 2D/3D sample handles
+      after a valid startup. The wasm `cnc_port_probe_mss_startup` export and
+      harness `mssStartupProbe` RPC assert that the startup boundary is ready,
+      playback is still not ready, and the next required implementation is a
+      Web Audio playback backend.
 
 ---
 

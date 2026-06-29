@@ -3,7 +3,7 @@
 //
 // Source-checks the original Miles audio device startup frontier after
 // createAudioManager. It reads (never executes) the original device source,
-// header, and the wasm compile-only Mss.H shim, and emits a JSON report.
+// header, and the wasm Mss.H browser startup shim, and emits a JSON report.
 //
 // Verified facts:
 //   - MilesAudioManager::init exists at line 444.
@@ -15,9 +15,10 @@
 //     refreshCachedVariables, initDelayFilter.
 //   - Header declares virtual void openDevice(void) around line 162 and
 //     class MilesAudioManager derives from AudioManager around line 137.
-//   - WebAssembly/shims/Mss.H has inert compile-only implementations for
+//   - WebAssembly/shims/Mss.H has stateful startup-boundary implementations for
 //     AIL_startup, AIL_shutdown, AIL_quick_startup, AIL_quick_handles, and
-//     AIL_set_file_callbacks (compileOnly: true).
+//     AIL_set_file_callbacks, plus provider/listener/sample handle allocation.
+//     This boundary is startup-probe ready, but playbackReady remains false.
 //
 // Exit 0 only if all checks pass; exit 1 with JSON errors otherwise.
 //
@@ -238,13 +239,18 @@ function main() {
     );
   }
 
-  // Shim facts: inert compile-only implementations.
+  // Shim facts: stateful startup-boundary implementations.
   const shimFunctions = [
     "AIL_startup",
     "AIL_shutdown",
     "AIL_quick_startup",
     "AIL_quick_handles",
     "AIL_set_file_callbacks",
+    "AIL_enumerate_3D_providers",
+    "AIL_open_3D_provider",
+    "AIL_open_3D_listener",
+    "AIL_allocate_sample_handle",
+    "AIL_allocate_3D_sample_handle",
   ];
   const shimInfo = {};
   for (const fn of shimFunctions) {
@@ -255,17 +261,18 @@ function main() {
       errors.push(`shim Mss.H: missing function ${fn}`);
     }
   }
-  // compileOnly true: all functions present.
   const shimAllPresent =
     Object.values(shimInfo).every((info) => info.line !== -1);
   facts.mssShim = {
-    compileOnly: true,
+    compileOnly: false,
+    startupBoundaryReady: true,
+    playbackReady: false,
     functions: shimInfo,
-    allInertImplementationsPresent: shimAllPresent,
+    allStartupBoundaryFunctionsPresent: shimAllPresent,
   };
   if (!shimAllPresent) {
     errors.push(
-      "shim Mss.H: not all inert compile-only functions are present",
+      "shim Mss.H: not all stateful startup-boundary functions are present",
     );
   }
 

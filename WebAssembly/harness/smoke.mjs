@@ -633,6 +633,43 @@ function assertAudioRuntimeAssets(state, label, expectedReady) {
   }
 }
 
+function assertMssStartupProbe(probe, label) {
+  if (!probe
+      || probe.ok !== true
+      || probe.source !== "Mss.H browser startup handle contract probe"
+      || probe.runtimeReady !== false
+      || probe.startupBoundaryReady !== true
+      || probe.playbackReady !== false
+      || probe.nextRequired !== "webAudioPlaybackBackend"
+      || probe.calls?.AIL_set_redist_directory !== true
+      || probe.calls?.AIL_startup !== true
+      || probe.calls?.AIL_quick_startup !== true
+      || probe.calls?.AIL_quick_handles !== true
+      || probe.calls?.AIL_enumerate_3D_providers !== 2
+      || probe.calls?.AIL_open_3D_provider !== true
+      || probe.calls?.AIL_open_3D_listener !== true
+      || probe.calls?.AIL_allocate_sample_handle !== true
+      || probe.calls?.AIL_allocate_3D_sample_handle !== true
+      || probe.calls?.AIL_set_file_callbacks !== true
+      || probe.calls?.AIL_shutdown !== true
+      || probe.quickStartup?.result !== 1
+      || probe.quickStartup?.useDigital !== 1
+      || probe.quickStartup?.outputRate !== 44100
+      || probe.quickStartup?.outputBits !== 16
+      || probe.quickStartup?.outputChannels !== 2
+      || probe.digitalHandle?.nonNull !== true
+      || probe.digitalHandle?.emulatedDirectSound !== true
+      || probe.provider?.preferredName !== "Miles Fast 2D Positional Audio"
+      || probe.provider?.openResult !== 0
+      || !Number.isFinite(probe.handles?.listener)
+      || !Number.isFinite(probe.handles?.sample2D)
+      || !Number.isFinite(probe.handles?.sample3D)
+      || probe.shutdown?.called !== true
+      || probe.shutdown?.quickStartupActive !== false) {
+    throw new Error(`${label} MSS startup probe mismatch: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertOriginalEngineStartup(state, label, expectedStatus) {
   const startup = state.originalEngineStartup;
   if (!startup
@@ -649,6 +686,7 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
   const audioFiles = frontier?.audioStartupFiles;
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   const milesCalls = milesAudio?.openDeviceCalls ?? [];
+  const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
@@ -669,37 +707,57 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || audioFiles?.miscAudioIni !== false
       || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
       || milesAudio?.ready !== false
-      || milesAudio?.compileOnly !== true
+      || milesAudio?.runtimeReady !== false
+      || milesAudio?.compileOnly !== false
+      || milesAudio?.probeOnly !== true
+      || milesAudio?.startupBoundaryReady !== true
+      || milesAudio?.playbackReady !== false
       || milesAudio?.browserTarget !== "Web Audio"
-      || milesAudio?.nextRequired !== "audioStartupFiles"
+      || milesAudio?.nextRequired !== expectedMilesNextRequired
+      || milesAudio?.startupProbeCommand !== "mssStartupProbe"
       || milesAudio?.initLine !== 444
       || milesAudio?.audioManagerInitLine !== 446
       || milesAudio?.openDeviceCallLine !== 454
       || milesAudio?.fileCallbacksLine !== 458
       || milesAudio?.openDeviceLine !== 1444
-      || milesAudio?.mssShim?.compileOnly !== true
-      || milesAudio?.mssShim?.AIL_startup !== true
-      || milesAudio?.mssShim?.AIL_shutdown !== true
-      || milesAudio?.mssShim?.AIL_quick_startup !== true
-      || milesAudio?.mssShim?.AIL_quick_handles !== true
-      || milesAudio?.mssShim?.AIL_set_file_callbacks !== true
+      || milesAudio?.mssShim?.compileOnly !== false
+      || milesAudio?.mssShim?.startupBoundaryReady !== true
+      || milesAudio?.mssShim?.playbackReady !== false
+      || milesAudio?.mssShim?.AIL_startup !== "stateful"
+      || milesAudio?.mssShim?.AIL_shutdown !== "stateful"
+      || milesAudio?.mssShim?.AIL_quick_startup !== "stateful"
+      || milesAudio?.mssShim?.AIL_quick_handles !== "stateful"
+      || milesAudio?.mssShim?.AIL_set_file_callbacks !== "stateful"
+      || milesAudio?.mssShim?.AIL_enumerate_3D_providers !== "stateful"
+      || milesAudio?.mssShim?.AIL_open_3D_provider !== "stateful"
+      || milesAudio?.mssShim?.AIL_open_3D_listener !== "stateful"
+      || milesAudio?.mssShim?.AIL_allocate_sample_handle !== "stateful"
+      || milesAudio?.mssShim?.AIL_allocate_3D_sample_handle !== "stateful"
       || milesCalls.length !== 8
       || milesCalls[0]?.call !== "AIL_set_redist_directory"
       || milesCalls[0]?.line !== 1450
+      || milesCalls[0]?.ready !== true
       || milesCalls[1]?.call !== "AIL_startup"
       || milesCalls[1]?.line !== 1451
+      || milesCalls[1]?.ready !== true
       || milesCalls[2]?.call !== "AIL_quick_startup"
       || milesCalls[2]?.line !== 1458
+      || milesCalls[2]?.ready !== true
       || milesCalls[3]?.call !== "AIL_quick_handles"
       || milesCalls[3]?.line !== 1461
+      || milesCalls[3]?.ready !== true
       || milesCalls[4]?.call !== "buildProviderList"
       || milesCalls[4]?.line !== 1464
+      || milesCalls[4]?.ready !== true
       || milesCalls[5]?.call !== "selectProvider"
       || milesCalls[5]?.line !== 1470
+      || milesCalls[5]?.ready !== true
       || milesCalls[6]?.call !== "refreshCachedVariables"
       || milesCalls[6]?.line !== 1473
+      || milesCalls[6]?.ready !== false
       || milesCalls[7]?.call !== "initDelayFilter"
       || milesCalls[7]?.line !== 1479
+      || milesCalls[7]?.ready !== false
       || frontier.fileSystemReady !== false
       || frontier.startupFilesReady !== false
       || frontier.setupReady !== true
@@ -836,6 +894,11 @@ try {
     assertFileSystemProbe(bootResult.state, "boot");
     assertGameNetworkProbe(bootResult.state, "boot");
     assertBrowserInputInitial(bootResult.state, "boot");
+    const mssStartupResult = await page.evaluate(() => window.CnCPort.rpc("mssStartupProbe"));
+    if (!mssStartupResult.ok) {
+      throw new Error(`MSS startup probe RPC failed: ${JSON.stringify(mssStartupResult)}`);
+    }
+    assertMssStartupProbe(mssStartupResult.probe, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");

@@ -579,9 +579,15 @@ shares structure and follows behind.
       missing audio startup INIs are classified as absent optional base
       `INI.big` files instead of anonymous payload gaps.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
-- [ ] Replace compile-only `Mss.H`/`dsound.h` paths used by
+      The `Mss.H` startup/provider/listener/sample-handle boundary is now
+      stateful and harness-probed by `mssStartupProbe`, but the next required
+      work is a real Web Audio playback backend owned by the original manager.
+- [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
-      sample, stream, provider, listener, and Bink-sharing handles.
+      sample data, streams, provider/listener state, mixer state, and
+      Bink-sharing handles. The startup boundary is no longer compile-only, but
+      playback, stream scheduling, and DirectSound speaker/device replacement
+      remain open.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;
