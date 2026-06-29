@@ -408,10 +408,17 @@ shares structure and follows behind.
       is visible. Full production `W3DDisplay` construction, `.wnd`
       layout/script callback loading, `W3DFunctionLexicon` table lookup, and
       `W3DModuleFactory` module-template lookup still need original public-API
-      runtime proof; do the full `W3DFunctionLexicon::init()` proof with real
-      `.wnd`/shell callback ownership rather than a standalone table smoke,
-      because isolated table loading pulls the base GUI/control-bar/network
-      callback graph.
+      runtime proof. `verify:w3d-module-factory-frontier` now pins the original
+      `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
+      `GameEngine.cpp` call site, and all 19 original W3D draw-module
+      registrations through the public `ModuleFactory` lookup internals; the
+      attempted standalone runtime lookup pulled the base ModuleFactory / INI /
+      game-client global graph, so the full `W3DModuleFactory::init()` runtime
+      proof should follow original `GameEngine.cpp` ownership of the
+      pre-`createAudioManager` file/INI/CD frontier. Do the full
+      `W3DFunctionLexicon::init()` proof with real `.wnd`/shell callback
+      ownership rather than a standalone table smoke, because isolated table
+      loading pulls the base GUI/control-bar/network callback graph.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

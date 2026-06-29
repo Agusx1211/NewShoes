@@ -26,8 +26,8 @@ function extractJson(stdout, label) {
   fail(`${label} did not emit a JSON result`);
 }
 
-function runSmoke(step) {
-  const executable = path.join(distRoot, step.file);
+function runNodeStep(step, root) {
+  const executable = path.join(root, step.file);
   const result = spawnSync(process.execPath, [executable], {
     cwd: wasmRoot,
     encoding: 'utf8',
@@ -35,6 +35,9 @@ function runSmoke(step) {
 
   if (result.stdout) {
     process.stdout.write(result.stdout);
+    if (!result.stdout.endsWith('\n')) {
+      process.stdout.write('\n');
+    }
   }
   if (result.stderr) {
     process.stderr.write(result.stderr);
@@ -52,11 +55,37 @@ function runSmoke(step) {
   };
 }
 
+function runSmoke(step) {
+  return runNodeStep(step, distRoot);
+}
+
+function runSourceCheck(step) {
+  return runNodeStep(step, wasmRoot);
+}
+
 function expect(condition, message) {
   if (!condition) {
     fail(message);
   }
 }
+
+const sourceChecks = [
+  {
+    name: 'w3d-module-factory-frontier',
+    file: 'tools/verify_w3d_module_factory_frontier.mjs',
+    validate(payload) {
+      expect(payload.ok === true, 'W3DModuleFactory frontier verifier did not report ok');
+      expect(payload.path === 'w3d-module-factory-frontier',
+        'W3DModuleFactory frontier verifier emitted the wrong path');
+      expect(payload.factory?.concrete === 'W3DModuleFactory',
+        'W3DModuleFactory frontier verifier did not prove the factory concrete');
+      expect(payload.factory?.createModuleFactoryLine === 95 && payload.gameEngineCall?.line === 447,
+        'W3DModuleFactory frontier verifier did not prove the expected source lines');
+      expect(payload.registration?.w3dDrawModules >= 19,
+        'W3DModuleFactory frontier verifier did not see the expected W3D draw registrations');
+    },
+  },
+];
 
 const steps = [
   {
@@ -95,6 +124,7 @@ const steps = [
   },
 ];
 
+const sourceResults = sourceChecks.map(runSourceCheck);
 const results = steps.map(runSmoke);
 
 console.log(JSON.stringify({
@@ -108,7 +138,8 @@ console.log(JSON.stringify({
   nextRequired: [
     'replace focused GameEngine lifetime owner with original GameEngine.cpp singleton ownership',
     'advance W3DFunctionLexicon with real .wnd and shell callback ownership',
-    'prove W3DModuleFactory module-template lookup through the original public API',
+    'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
+  sourceChecks: sourceResults.map(result => result.name),
   smokes: results.map(result => result.name),
 }));
