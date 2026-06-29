@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +29,20 @@ NameKeyGenerator g_runtime_name_key_generator;
 W3DFileSystem *g_runtime_w3d_file_system = nullptr;
 WasmBrowserRuntimeAssetsState g_runtime_assets_state;
 std::vector<std::pair<std::string, std::string>> g_loaded_archive_specs;
+
+constexpr const char RUNTIME_LOCAL_DIRECTORY[] = "cnc-port-runtime-fs-owner";
+constexpr const char RUNTIME_LOCAL_DIRECTORY_SLASH[] = "cnc-port-runtime-fs-owner/";
+constexpr const char RUNTIME_LOCAL_PATH[] = "cnc-port-runtime-fs-owner/local-file.txt";
+constexpr const char RUNTIME_LOCAL_PAYLOAD[] = "cnc-port runtime FileSystem owner\n";
+constexpr const char RUNTIME_MISSING_PATH[] = "cnc-port-runtime-fs-owner/missing-file.txt";
+constexpr const char RUNTIME_ARCHIVE_PATH[] = "Data\\INI\\Armor.ini";
+constexpr const char RUNTIME_FILE_PROBE_SOURCE[] =
+	"browser runtime persistent FileSystem globals + Win32BIGFileSystem";
+
+const char *json_bool(bool value)
+{
+	return value ? "true" : "false";
+}
 
 std::string json_escape(const std::string &value)
 {
@@ -56,6 +71,85 @@ std::string json_escape(const std::string &value)
 		}
 	}
 	return escaped;
+}
+
+std::string runtime_file_probe_state_json(const WasmBrowserRuntimeFileProbeState &probe)
+{
+	const std::string local_path_json = json_escape(probe.local_path);
+	const std::string archive_path_json = json_escape(probe.archive_path);
+	const std::string archive_owner_json = json_escape(probe.archive_owner);
+	const std::string source_json = json_escape(probe.source);
+	std::string json = "{";
+	json += "\"attempted\":";
+	json += json_bool(probe.attempted);
+	json += ",\"ok\":";
+	json += json_bool(probe.ok);
+	json += ",\"source\":\"";
+	json += source_json;
+	json += "\",\"globals\":{\"ok\":";
+	json += json_bool(probe.global_owner_ok);
+	json += ",\"localFileSystem\":";
+	json += json_bool(probe.local_file_system_global);
+	json += ",\"archiveFileSystem\":";
+	json += json_bool(probe.archive_file_system_global);
+	json += ",\"fileSystem\":";
+	json += json_bool(probe.file_system_global);
+	json += ",\"nameKeyGenerator\":";
+	json += json_bool(probe.name_key_generator_global);
+	json += ",\"w3dFileSystem\":";
+	json += json_bool(probe.w3d_file_system_global);
+	json += "},\"local\":{\"ok\":";
+	json += json_bool(probe.local_ok);
+	json += ",\"path\":\"";
+	json += local_path_json;
+	json += "\",\"directory\":";
+	json += json_bool(probe.local_directory_ok);
+	json += ",\"write\":";
+	json += json_bool(probe.local_write_ok);
+	json += ",\"exists\":";
+	json += json_bool(probe.local_exists_ok);
+	json += ",\"cache\":";
+	json += json_bool(probe.local_cache_ok);
+	json += ",\"info\":";
+	json += json_bool(probe.local_info_ok);
+	json += ",\"infoSize\":";
+	json += std::to_string(probe.local_info_size);
+	json += ",\"list\":";
+	json += json_bool(probe.local_list_ok);
+	json += ",\"read\":";
+	json += json_bool(probe.local_read_ok);
+	json += ",\"missingCache\":";
+	json += json_bool(probe.local_missing_cache_ok);
+	json += ",\"bytes\":";
+	json += std::to_string(probe.local_bytes);
+	json += "},\"archive\":{\"attempted\":";
+	json += json_bool(probe.archive_attempted);
+	json += ",\"loaded\":";
+	json += json_bool(probe.archive_loaded);
+	json += ",\"ok\":";
+	json += json_bool(probe.archive_ok);
+	json += ",\"path\":\"";
+	json += archive_path_json;
+	json += "\",\"owner\":\"";
+	json += archive_owner_json;
+	json += "\",\"indexedFiles\":";
+	json += std::to_string(probe.archive_indexed_file_count);
+	json += ",\"exists\":";
+	json += json_bool(probe.archive_exists_ok);
+	json += ",\"info\":";
+	json += json_bool(probe.archive_info_ok);
+	json += ",\"infoSize\":";
+	json += std::to_string(probe.archive_info_size);
+	json += ",\"list\":";
+	json += json_bool(probe.archive_list_ok);
+	json += ",\"read\":";
+	json += json_bool(probe.archive_read_ok);
+	json += ",\"bytes\":";
+	json += std::to_string(probe.archive_bytes);
+	json += ",\"ownerLookup\":";
+	json += json_bool(probe.archive_owner_ok);
+	json += "}}";
+	return json;
 }
 
 void split_archive_path(const char *archive_path, std::string &directory, std::string &file_mask)
@@ -96,6 +190,158 @@ void remember_archive_spec(const std::string &directory, const std::string &file
 	g_runtime_assets_state.loaded_archive_specs = g_loaded_archive_specs.size();
 }
 
+void probe_persistent_runtime_file_system()
+{
+	WasmBrowserRuntimeFileProbeState probe;
+	probe.attempted = true;
+	probe.source = RUNTIME_FILE_PROBE_SOURCE;
+	probe.local_path = RUNTIME_LOCAL_PATH;
+	probe.archive_path = RUNTIME_ARCHIVE_PATH;
+	probe.local_file_system_global = TheLocalFileSystem == &g_runtime_local_file_system;
+	probe.archive_file_system_global = TheArchiveFileSystem == &g_runtime_archive_file_system;
+	probe.file_system_global = TheFileSystem == &g_runtime_file_system;
+	probe.name_key_generator_global = TheNameKeyGenerator == &g_runtime_name_key_generator;
+	probe.w3d_file_system_global =
+		TheW3DFileSystem != nullptr &&
+		_TheFileFactory == TheW3DFileSystem;
+	probe.global_owner_ok =
+		probe.local_file_system_global &&
+		probe.archive_file_system_global &&
+		probe.file_system_global &&
+		probe.name_key_generator_global &&
+		probe.w3d_file_system_global;
+
+	if (!probe.local_file_system_global ||
+		!probe.archive_file_system_global ||
+		!probe.file_system_global ||
+		!probe.name_key_generator_global) {
+		g_runtime_assets_state.file_probe = probe;
+		return;
+	}
+
+	std::remove(RUNTIME_LOCAL_PATH);
+	probe.local_directory_ok =
+		TheFileSystem->createDirectory(AsciiString(RUNTIME_LOCAL_DIRECTORY)) ||
+		TheFileSystem->doesFileExist(RUNTIME_LOCAL_DIRECTORY);
+
+	File *written = TheFileSystem->openFile(
+		RUNTIME_LOCAL_PATH,
+		File::WRITE | File::TEXT | File::CREATE);
+	probe.local_write_ok = written != nullptr;
+	if (written != nullptr) {
+		probe.local_bytes = written->write(
+			RUNTIME_LOCAL_PAYLOAD,
+			static_cast<Int>(std::strlen(RUNTIME_LOCAL_PAYLOAD)));
+		probe.local_write_ok =
+			probe.local_bytes == static_cast<Int>(std::strlen(RUNTIME_LOCAL_PAYLOAD));
+		written->close();
+	}
+
+	probe.local_exists_ok = TheFileSystem->doesFileExist(RUNTIME_LOCAL_PATH);
+
+	FileInfo local_info = {};
+	probe.local_info_ok =
+		TheFileSystem->getFileInfo(AsciiString(RUNTIME_LOCAL_PATH), &local_info) &&
+		local_info.sizeHigh == 0 &&
+		local_info.sizeLow == probe.local_bytes;
+	probe.local_info_size = local_info.sizeLow;
+
+	FilenameList local_files;
+	TheFileSystem->getFileListInDirectory(
+		AsciiString(RUNTIME_LOCAL_DIRECTORY_SLASH),
+		AsciiString("*.txt"),
+		local_files,
+		FALSE);
+	probe.local_list_ok = local_files.find(AsciiString(RUNTIME_LOCAL_PATH)) != local_files.end();
+
+	File *opened = TheFileSystem->openFile(RUNTIME_LOCAL_PATH, File::READ | File::BINARY);
+	char local_readback[sizeof(RUNTIME_LOCAL_PAYLOAD)] = {};
+	const Int local_bytes_read = opened != nullptr
+		? opened->read(local_readback, static_cast<Int>(std::strlen(RUNTIME_LOCAL_PAYLOAD)))
+		: 0;
+	probe.local_read_ok =
+		opened != nullptr &&
+		local_bytes_read == static_cast<Int>(std::strlen(RUNTIME_LOCAL_PAYLOAD)) &&
+		std::memcmp(local_readback, RUNTIME_LOCAL_PAYLOAD, std::strlen(RUNTIME_LOCAL_PAYLOAD)) == 0;
+	if (opened != nullptr) {
+		opened->close();
+	}
+
+	std::remove(RUNTIME_LOCAL_PATH);
+	probe.local_cache_ok = TheFileSystem->doesFileExist(RUNTIME_LOCAL_PATH);
+	const bool missing_first = !TheFileSystem->doesFileExist(RUNTIME_MISSING_PATH);
+	const bool missing_second = !TheFileSystem->doesFileExist(RUNTIME_MISSING_PATH);
+	probe.local_missing_cache_ok = missing_first && missing_second;
+	probe.local_ok =
+		probe.local_directory_ok &&
+		probe.local_write_ok &&
+		probe.local_exists_ok &&
+		probe.local_cache_ok &&
+		probe.local_info_ok &&
+		probe.local_list_ok &&
+		probe.local_read_ok &&
+		probe.local_missing_cache_ok;
+
+	probe.archive_loaded = g_runtime_assets_state.archive_loaded;
+	if (g_runtime_assets_state.archive_loaded) {
+		FilenameList indexed_files;
+		g_runtime_archive_file_system.getFileListInDirectory(
+			AsciiString(""),
+			AsciiString(""),
+			AsciiString("*"),
+			indexed_files,
+			TRUE);
+		probe.archive_indexed_file_count = indexed_files.size();
+
+		probe.archive_owner =
+			g_runtime_archive_file_system.getArchiveFilenameForFile(RUNTIME_ARCHIVE_PATH).str();
+		probe.archive_owner_ok = !probe.archive_owner.empty();
+		if (probe.archive_owner_ok) {
+			probe.archive_attempted = true;
+			probe.archive_exists_ok = TheFileSystem->doesFileExist(RUNTIME_ARCHIVE_PATH);
+
+			FileInfo archive_info = {};
+			probe.archive_info_ok =
+				TheFileSystem->getFileInfo(AsciiString(RUNTIME_ARCHIVE_PATH), &archive_info) &&
+				archive_info.sizeHigh == 0 &&
+				archive_info.sizeLow > 0;
+			probe.archive_info_size = archive_info.sizeLow;
+
+			FilenameList ini_files;
+			TheFileSystem->getFileListInDirectory(
+				AsciiString("Data\\INI\\"),
+				AsciiString("*.ini"),
+				ini_files,
+				FALSE);
+			probe.archive_list_ok =
+				ini_files.find(AsciiString("data\\ini\\armor.ini")) != ini_files.end();
+
+			File *archive_file = TheFileSystem->openFile(RUNTIME_ARCHIVE_PATH, File::READ | File::BINARY);
+			char header[16] = {};
+			probe.archive_bytes =
+				archive_file != nullptr ? archive_file->read(header, sizeof(header)) : 0;
+			probe.archive_read_ok =
+				archive_file != nullptr &&
+				probe.archive_bytes == static_cast<Int>(sizeof(header));
+			if (archive_file != nullptr) {
+				archive_file->close();
+			}
+		}
+
+		probe.archive_ok =
+			probe.archive_loaded &&
+			probe.archive_indexed_file_count > 0 &&
+			probe.archive_exists_ok &&
+			probe.archive_info_ok &&
+			probe.archive_list_ok &&
+			probe.archive_read_ok &&
+			probe.archive_owner_ok;
+	}
+
+	probe.ok = probe.global_owner_ok && probe.local_ok && (!probe.archive_attempted || probe.archive_ok);
+	g_runtime_assets_state.file_probe = probe;
+}
+
 void install_runtime_globals()
 {
 	++g_runtime_assets_state.install_calls;
@@ -131,6 +377,7 @@ void install_runtime_globals()
 		_TheFileFactory == TheW3DFileSystem;
 	g_runtime_assets_state.source =
 		"browser runtime original FileSystem + Win32BIGFileSystem + W3DFileSystem";
+	probe_persistent_runtime_file_system();
 }
 
 bool load_archive_set(const std::string &directory, const std::string &file_mask)
@@ -146,6 +393,7 @@ bool load_archive_set(const std::string &directory, const std::string &file_mask
 			g_runtime_assets_state.archive_file_mask = file_mask;
 		}
 		g_runtime_assets_state.archive_loaded = true;
+		probe_persistent_runtime_file_system();
 		return true;
 	}
 
@@ -160,6 +408,7 @@ bool load_archive_set(const std::string &directory, const std::string &file_mask
 		remember_archive_spec(directory, file_mask);
 		g_runtime_assets_state.archive_loaded = true;
 	}
+	probe_persistent_runtime_file_system();
 	return loaded;
 }
 
@@ -239,25 +488,33 @@ std::string wasm_browser_runtime_assets_state_json()
 	const std::string directory_json = json_escape(g_runtime_assets_state.archive_directory);
 	const std::string file_mask_json = json_escape(g_runtime_assets_state.archive_file_mask);
 	const std::string source_json = json_escape(g_runtime_assets_state.source);
-	char buffer[1400];
-	std::snprintf(buffer, sizeof(buffer),
-		"{\"installed\":%s,\"fileSystemInitialized\":%s,"
-		"\"archiveLoaded\":%s,\"nameKeyGeneratorInitialized\":%s,"
-		"\"w3dFileSystemInstalled\":%s,\"ownsW3DFileSystem\":%s,"
-		"\"installCalls\":%d,\"archiveLoadCalls\":%d,"
-		"\"loadedArchiveSpecs\":%zu,\"directory\":\"%s\","
-		"\"fileMask\":\"%s\",\"source\":\"%s\"}",
-		g_runtime_assets_state.installed ? "true" : "false",
-		g_runtime_assets_state.file_system_initialized ? "true" : "false",
-		g_runtime_assets_state.archive_loaded ? "true" : "false",
-		g_runtime_assets_state.name_key_generator_initialized ? "true" : "false",
-		g_runtime_assets_state.w3d_file_system_installed ? "true" : "false",
-		g_runtime_assets_state.owns_w3d_file_system ? "true" : "false",
-		g_runtime_assets_state.install_calls,
-		g_runtime_assets_state.archive_load_calls,
-		g_runtime_assets_state.loaded_archive_specs,
-		directory_json.c_str(),
-		file_mask_json.c_str(),
-		source_json.c_str());
-	return buffer;
+	std::string json = "{";
+	json += "\"installed\":";
+	json += json_bool(g_runtime_assets_state.installed);
+	json += ",\"fileSystemInitialized\":";
+	json += json_bool(g_runtime_assets_state.file_system_initialized);
+	json += ",\"archiveLoaded\":";
+	json += json_bool(g_runtime_assets_state.archive_loaded);
+	json += ",\"nameKeyGeneratorInitialized\":";
+	json += json_bool(g_runtime_assets_state.name_key_generator_initialized);
+	json += ",\"w3dFileSystemInstalled\":";
+	json += json_bool(g_runtime_assets_state.w3d_file_system_installed);
+	json += ",\"ownsW3DFileSystem\":";
+	json += json_bool(g_runtime_assets_state.owns_w3d_file_system);
+	json += ",\"installCalls\":";
+	json += std::to_string(g_runtime_assets_state.install_calls);
+	json += ",\"archiveLoadCalls\":";
+	json += std::to_string(g_runtime_assets_state.archive_load_calls);
+	json += ",\"loadedArchiveSpecs\":";
+	json += std::to_string(g_runtime_assets_state.loaded_archive_specs);
+	json += ",\"directory\":\"";
+	json += directory_json;
+	json += "\",\"fileMask\":\"";
+	json += file_mask_json;
+	json += "\",\"source\":\"";
+	json += source_json;
+	json += "\",\"fileProbe\":";
+	json += runtime_file_probe_state_json(g_runtime_assets_state.file_probe);
+	json += "}";
+	return json;
 }

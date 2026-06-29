@@ -103,12 +103,15 @@ shares structure and follows behind.
 - [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
       `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
       the full snapshot subsystem can link into the runtime.
-- [ ] Link and smoke-test the real-header memory/file/archive/system leaves
-      after the browser archive/audio/persistence singleton contracts replace
+- [ ] Link and smoke-test the remaining real-header memory/archive/system
+      leaves after the browser audio and persistence singleton contracts replace
       the current target-local smoke globals.
-- [ ] Replace the current `FileSystem` smoke globals with the final browser
-      archive/audio singleton contracts, then harness-test music archive
-      load/unload and asset lookup through fetched browser archives.
+- [ ] Finish replacing temporary probe-local `FileSystem` consumers with the
+      browser-owned archive/audio singleton contracts. The browser runtime now
+      harness-proves persistent `TheFileSystem`/`TheLocalFileSystem`/
+      `TheArchiveFileSystem`/`TheNameKeyGenerator` ownership over registered
+      fetched archives; music archive load/unload, persistence, and full
+      original engine startup consumption remain open.
 - [ ] Extend the browser MEMFS real-asset smoke from `INIZH.big` to the exact
       minimum boot archive set once engine startup uses fetched archives.
 - [ ] Re-run original `DataChunkOutput` write/temp-file coverage after the real
@@ -392,6 +395,10 @@ shares structure and follows behind.
       surface with original `GameEngine.cpp` still requires owned
       `TheSubsystemList`, `TheGameResultsQueue`, map-cache, LOD, file/archive,
       and startup singleton teardown contracts.
+- [ ] Next vertical startup slice: install browser-owned real
+      `SubsystemInterfaceList`, `MapCache`, and `GameLODManager` singletons for
+      the original `GameEngine::init()` path, keep teardown owned by the
+      browser runtime, and stop before instantiating `createAudioManager`.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.

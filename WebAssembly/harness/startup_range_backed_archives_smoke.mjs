@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { assertBrowserRuntimeFileSystem } from "./browser_runtime_filesystem_assertions.mjs";
 import { assertWin32GameEngineProbe } from "./win32_gameengine_assertions.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
@@ -469,6 +470,9 @@ try {
       || preloadState.archiveMount?.bootProbe?.attempted) {
     throw new Error(`range-backed startup archives should register before boot probing: ${JSON.stringify(preloadState)}`);
   }
+  assertBrowserRuntimeFileSystem(preloadState, "range-backed startup preload", {
+    directory: `${runtimeArchivePath}/`,
+  });
 
   const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot"));
   if (!bootResult.ok || !bootResult.state?.booted) {
@@ -476,6 +480,9 @@ try {
   }
 
   assertStartupAssetsReady(bootResult.state, "range-backed startup boot");
+  assertBrowserRuntimeFileSystem(bootResult.state, "range-backed startup boot", {
+    directory: `${runtimeArchivePath}/`,
+  });
   if (hasBaseIniArchive) {
     assertOriginalStartupWithBaseFiles(bootResult.state, "range-backed startup boot");
   } else {

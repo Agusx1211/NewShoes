@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { assertBrowserRuntimeFileSystem } from "./browser_runtime_filesystem_assertions.mjs";
 import { assertWin32GameEngineProbe } from "./win32_gameengine_assertions.mjs";
 
 const runtimeArchives = [
@@ -3860,6 +3861,10 @@ try {
   assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
   assertAudioRuntimeAssets(mountResult.state, "runtime archive preload");
   assertAudioPayloadInventory(mountResult.state, "runtime archive preload", hasBaseIniArchive);
+  assertBrowserRuntimeFileSystem(mountResult.state, "runtime archive preload", {
+    directory: "/assets/runtime/",
+    indexedFiles: assetProbe.indexedFiles,
+  });
   assertOriginalEngineStartup(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
   if (mountResult.state.mountedArchives?.length !== archives.length) {
@@ -3978,6 +3983,10 @@ try {
   );
   assertAudioPayloadInventory(bootResult.state, "runtime archive boot", hasBaseIniArchive);
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
+  assertBrowserRuntimeFileSystem(bootResult.state, "runtime archive boot", {
+    directory: "/assets/runtime/",
+    indexedFiles: bootResult.state.assetProbe.indexedFiles,
+  });
   assertDataSummary(bootResult.state, "runtime archive boot", true);
   if (hasBaseIniArchive) {
     assertOriginalEngineStartupWithBaseIni(bootResult.state, "runtime archive boot");

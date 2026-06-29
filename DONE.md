@@ -1655,6 +1655,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       before boot. This is focused facade coverage only; persistent IDBFS,
       final browser asset device ownership, and full `GameEngine::init`
       consumption remain open.
+- [x] Promote the fetched browser archive registration path to a persistent
+      runtime `FileSystem` ownership proof: `wasm_browser_runtime_assets`
+      now exposes a harness-visible `fileProbe` proving the browser-owned
+      `TheLocalFileSystem`, `TheArchiveFileSystem`, `TheFileSystem`,
+      `TheNameKeyGenerator`, and `W3DFileSystem` globals; local
+      create/write/info/list/read/cache through that owner; and
+      `Data\INI\Armor.ini` owner/read/list/info through the same
+      `Win32BIGFileSystem` archive tree when the registered archive set
+      contains `INIZH.big`. The full runtime archive and range-backed startup
+      browser smokes assert the proof before and after boot, while texture/mesh
+      archive-only render smokes keep the startup sentinel branch unattempted.
 - [x] Add a main `cnc-port` harness `mountArchive` RPC that fetches a
       user-supplied BIG into Emscripten MEMFS and verifies it through the
       original `Win32BIGFileSystem`, with browser smoke coverage for

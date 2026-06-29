@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { assertBrowserRuntimeFileSystem } from "./browser_runtime_filesystem_assertions.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -195,15 +196,13 @@ try {
       || multiTextureStage1Entry?.reader !== "browser fetch Range"
       || archiveMountResult.state?.archiveMount?.registered !== true
       || archiveMountResult.state?.archiveMount?.directory !== `${runtimeArchivePath}/`
-      || archiveMountResult.state?.archiveMount?.fileMask !== "*.big"
-      || archiveMountResult.state?.browserRuntimeAssets?.installed !== true
-      || archiveMountResult.state?.browserRuntimeAssets?.fileSystemInitialized !== true
-      || archiveMountResult.state?.browserRuntimeAssets?.archiveLoaded !== true
-      || archiveMountResult.state?.browserRuntimeAssets?.w3dFileSystemInstalled !== true
-      || archiveMountResult.state?.browserRuntimeAssets?.directory !== `${runtimeArchivePath}/`
-      || archiveMountResult.state?.browserRuntimeAssets?.fileMask !== "*.big") {
+      || archiveMountResult.state?.archiveMount?.fileMask !== "*.big") {
     throw new Error(`runtime W3D/texture archive registration failed: ${JSON.stringify(archiveMountResult)}`);
   }
+  assertBrowserRuntimeFileSystem(archiveMountResult.state, "runtime W3D/texture archive registration", {
+    directory: `${runtimeArchivePath}/`,
+    requireArmorArchive: false,
+  });
 
   let renderResult;
   try {

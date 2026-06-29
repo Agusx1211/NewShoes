@@ -1102,7 +1102,13 @@ The wasm CMake skeleton currently builds:
   original `INIMapCache.cpp` from `MapsZH.big` through the aggregate archive
   path. The same smoke checks
   `startupAssets` for the pre-boot `pending_boot_probe` state and the post-boot
-  `ready` state.
+  `ready` state. It now also asserts `browserRuntimeAssets.fileProbe`, which
+  proves the registered browser runtime owns the persistent
+  `TheLocalFileSystem`, `TheArchiveFileSystem`, `TheFileSystem`,
+  `TheNameKeyGenerator`, and `W3DFileSystem` globals; can create/write/info/
+  list/read/cache a local MEMFS file through `TheFileSystem`; and can resolve,
+  list, stat, and read `Data\INI\Armor.ini` from `INIZH.big` through the same
+  persistent `Win32BIGFileSystem` archive tree before and after boot.
 - `startup_range_backed_archives_smoke.mjs`: an opt-in browser harness smoke
   (`npm run test:startup-range-backed-archives-browser`) that builds wasm,
   extracts the current runtime archives, range-fetches a startup-shaped subset
@@ -1116,7 +1122,12 @@ The wasm CMake skeleton currently builds:
   `English.big` as `ZZBase_English.big` when available, and expects the startup
   frontier to advance to `CreateGameEngine`. After boot it also drives the
   `win32GameEngineProbe` RPC, tying the range-backed startup frontier to the
-  linked original Win32 message-pump/device boundary.
+  linked original Win32 message-pump/device boundary. The smoke now requires
+  the same persistent browser runtime `FileSystem` owner proof at preload time
+  and after boot, so the range-backed archive path is checked through fetched
+  browser bytes, synthesized BIG archives, the original `Win32BIGFileSystem`,
+  the original `FileSystem`, startup asset probes, and the startup frontier in
+  one vertical path.
 
 ## Next Compile Order
 
