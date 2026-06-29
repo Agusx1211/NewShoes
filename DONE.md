@@ -3680,6 +3680,32 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Data\English\Movies\VS_small.bik` basename resolution, and reports
       `decodeReady:false`. Runtime frame decode/copy, WebCodecs/`<video>`
       presentation, and audio sync remain open.
+- Added `verify:bink-browser-video-outputs` / `verify:bink-browser-video-outputs:strict`
+      (`WebAssembly/tools/verify_bink_browser_video_outputs.mjs`), a bounded
+      verifier for *future* browser-decodable Bink transcode outputs that is
+      useful both before and after such outputs exist. It does not modify the
+      C++ Bink provider and does not decode, demux, or play Bink video, nor
+      does it invent decode readiness or mark runtime playback done. It
+      validates a future transcode output directory (default
+      `artifacts/bink-browser-outputs`) for the two known real loose shipped
+      BIK payloads (`GC_Background.bik`, `VS_small.bik`) against a tight,
+      source-grounded manifest schema a future transcode script can emit
+      (source BIK path, source size, source signature/version, frames, width,
+      height, fps, output path, output format/codec, duration seconds). When
+      `ffprobe` is available and outputs (`.webm`/`.mp4`) are present, it
+      verifies the real video stream width/height/codec and the format
+      duration against the manifest; when `ffprobe` is absent it falls back to
+      manifest-schema + pinned-source-fact checks only. With `--allow-missing`
+      it reports absent outputs in JSON and exits 0 (useful before any
+      transcode exists); without `--allow-missing` it fails nonzero when
+      outputs are absent or any metadata mismatches. Under
+      `--expect-current-zh` it cross-checks each present manifest entry's
+      source-grounded fields against the values pinned from the actually
+      shipped files (mirrors `verify:bink-payload-header-contract`) and also
+      sniffs the real source `.bik` size/signature when present. It emits JSON
+      `{ ok, source, outputDir, outputDirExists, manifestPath, manifestPresent,
+      ffprobe, mode, payloads, missingPayloads, errors, note }`. Runtime
+      WebCodecs/`<video>` decode, frame upload, and audio sync remain open.
 
 ---
 

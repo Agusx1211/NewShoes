@@ -676,7 +676,9 @@ shares structure and follows behind.
       `extract_zh_runtime_archives.sh` now preserves the shipped loose
       `GC_Background.bik` and `VS_small.bik` payloads from `Data1.cab`, so the
       next decision can work from real extracted video files rather than only
-      source-level Bink API declarations.
+      source-level Bink API declarations. `verify:bink-browser-video-outputs`
+      is now the bounded verifier for whatever future transcode outputs that
+      decision produces, useful both before and after outputs exist.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.
