@@ -9302,15 +9302,20 @@ async function clickOriginalMouseFrameWidget(payload = {}) {
   await stepFrames({ count: 1 });
   const upProbe = await probeOriginalMouseFrameInput();
   const upFrameQueueCount = harnessState.browserInput?.messageQueue?.count ?? null;
+  const windowProbeAfter = await probeOriginalMouseFrameWindows();
   const downMessages = downProbe?.stream?.messages ?? [];
   const upMessages = upProbe?.stream?.messages ?? [];
   const selectedAfter = Number(upProbe?.gui?.buttonSelected ?? 0);
+  const targetWindowAfter = windowProbeAfter?.windows?.find(
+    (window) => window?.name === "frameMouseProbeTarget",
+  );
   const ok = Boolean(
     downProbe?.enabled === true
       && downProbe?.lastRan === true
       && downProbe?.commandList?.countAfterPropagate === 0
       && downProbe?.gui?.buttonGrabbed === true
       && downProbe?.gui?.buttonSelected === selectedBefore
+      && downProbe?.gui?.targetHidden === true
       && downMessages.some((message) =>
         message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_DOWN"
         && message.x === point.x
@@ -9322,6 +9327,11 @@ async function clickOriginalMouseFrameWidget(payload = {}) {
       && upProbe?.gui?.buttonSelectedSourceMatches === true
       && upProbe?.gui?.buttonSelectedX === point.x
       && upProbe?.gui?.buttonSelectedY === point.y
+      && upProbe?.gui?.targetShownBySelection === true
+      && upProbe?.gui?.targetShowCount === 1
+      && upProbe?.gui?.targetHidden === false
+      && targetWindowAfter?.hidden === false
+      && targetWindowAfter?.noInput === true
       && selectedAfter === selectedBefore + 1
       && upMessages.some((message) =>
         message.typeName === "MSG_RAW_MOUSE_LEFT_BUTTON_UP"
@@ -9336,8 +9346,12 @@ async function clickOriginalMouseFrameWidget(payload = {}) {
     name,
     widget,
     windowProbe,
+    windowProbeAfter,
+    targetWindowAfter,
     selectedBefore,
     selectedAfter,
+    targetHiddenBefore: beforeProbe?.gui?.targetHidden ?? null,
+    targetHiddenAfter: upProbe?.gui?.targetHidden ?? null,
     down: {
       postQueueCount: downPostState.browserInput?.messageQueue?.count ?? null,
       frameQueueCount: downFrameQueueCount,

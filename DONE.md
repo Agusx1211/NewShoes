@@ -3445,6 +3445,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       frame-owned GUI path, including name-key IDs, kind, status/style,
       screen rect, and click point, then make the named-click bridge
       resolve from that list instead of a JS-side allowlist.
+- [x] Extend the browser named-widget original-GUI click into a concrete
+      state-change vertical: the frame-owned probe now includes a hidden
+      named target `GameWindow`, the button owner's original
+      `GBM_SELECTED` handler calls `GameWindow::winHide(FALSE)`, and the
+      Playwright harness verifies both the C++ probe fields and the
+      engine-reported window list move the target from hidden to visible
+      after `clickOriginalMouseFrameWidget("frameMouseProbeButton")`.
 ---
 
 ## M6 — Playable skirmish (no audio/video)

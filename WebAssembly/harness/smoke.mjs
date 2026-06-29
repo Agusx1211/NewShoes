@@ -2676,6 +2676,10 @@ try {
         || resetFrameOwnerAfterMouse.probe?.gui?.leftUp !== 0
         || resetFrameOwnerAfterMouse.probe?.gui?.leftDrag !== 0
         || resetFrameOwnerAfterMouse.probe?.gui?.buttonSelected !== 0
+        || resetFrameOwnerAfterMouse.probe?.gui?.targetReady !== true
+        || resetFrameOwnerAfterMouse.probe?.gui?.targetHidden !== true
+        || resetFrameOwnerAfterMouse.probe?.gui?.targetShownBySelection !== false
+        || resetFrameOwnerAfterMouse.probe?.gui?.targetShowCount !== 0
         || resetFrameOwnerAfterMouse.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned mouse cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterMouse)}`);
     }
@@ -2684,6 +2688,8 @@ try {
     const frameMouseButtonY = 48;
     const frameMouseButtonStyle = 0x00000401; // GWS_PUSH_BUTTON | GWS_MOUSE_TRACK.
     const frameMouseButtonEnabledStatus = 0x00000008; // WIN_STATUS_ENABLED.
+    const frameMouseTargetHiddenStatus = 0x00000010; // WIN_STATUS_HIDDEN.
+    const frameMouseTargetNoInputStatus = 0x00000200; // WIN_STATUS_NO_INPUT.
     await page.mouse.move(canvasBox.x + frameMouseButtonX, canvasBox.y + frameMouseButtonY);
     await page.mouse.down();
     await waitForBrowserInput(
@@ -2718,6 +2724,13 @@ try {
         || frameMouseButtonDownProbe?.gui?.windowReady !== true
         || frameMouseButtonDownProbe?.gui?.buttonReady !== true
         || frameMouseButtonDownProbe?.gui?.buttonSelected !== 0
+        || frameMouseButtonDownProbe?.gui?.targetReady !== true
+        || frameMouseButtonDownProbe?.gui?.targetName !== "frameMouseProbeTarget"
+        || frameMouseButtonDownProbe?.gui?.targetNameMatches !== true
+        || frameMouseButtonDownProbe?.gui?.targetHidden !== true
+        || frameMouseButtonDownProbe?.gui?.targetNoInput !== true
+        || frameMouseButtonDownProbe?.gui?.targetShownBySelection !== false
+        || frameMouseButtonDownProbe?.gui?.targetShowCount !== 0
         || frameMouseButtonDownProbe?.gui?.buttonGrabbed !== true
         || frameMouseButtonDownProbe?.gui?.grabbed !== false
         || frameMouseButtonLeftDownMessage?.x !== frameMouseButtonX
@@ -2763,6 +2776,11 @@ try {
         || frameMouseButtonUpProbe?.gui?.buttonSelectedX !== frameMouseButtonX
         || frameMouseButtonUpProbe?.gui?.buttonSelectedY !== frameMouseButtonY
         || frameMouseButtonUpProbe?.gui?.buttonSelectedSourceMatches !== true
+        || frameMouseButtonUpProbe?.gui?.targetReady !== true
+        || frameMouseButtonUpProbe?.gui?.targetHidden !== false
+        || frameMouseButtonUpProbe?.gui?.targetNoInput !== true
+        || frameMouseButtonUpProbe?.gui?.targetShownBySelection !== true
+        || frameMouseButtonUpProbe?.gui?.targetShowCount !== 1
         || frameMouseButtonUpProbe?.gui?.buttonGrabbed !== false
         || frameMouseButtonUpProbe?.gui?.grabbed !== false
         || frameMouseButtonLeftUpMessage?.x !== frameMouseButtonX
@@ -2782,6 +2800,11 @@ try {
         || resetFrameOwnerAfterButton.probe?.gui?.attached !== true
         || resetFrameOwnerAfterButton.probe?.gui?.buttonReady !== true
         || resetFrameOwnerAfterButton.probe?.gui?.buttonSelected !== 0
+        || resetFrameOwnerAfterButton.probe?.gui?.targetReady !== true
+        || resetFrameOwnerAfterButton.probe?.gui?.targetHidden !== true
+        || resetFrameOwnerAfterButton.probe?.gui?.targetNoInput !== true
+        || resetFrameOwnerAfterButton.probe?.gui?.targetShownBySelection !== false
+        || resetFrameOwnerAfterButton.probe?.gui?.targetShowCount !== 0
         || resetFrameOwnerAfterButton.probe?.gui?.buttonGrabbed !== false
         || resetFrameOwnerAfterButton.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse frame-owned GadgetPushButton cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterButton)}`);
@@ -2793,15 +2816,21 @@ try {
     const frameMouseButtonWindow = frameMouseWindowProbe?.windows?.find(
       (window) => window.name === "frameMouseProbeButton",
     );
+    const frameMouseTargetWindow = frameMouseWindowProbe?.windows?.find(
+      (window) => window.name === "frameMouseProbeTarget",
+    );
     const resolvedFrameMouseButtonId = await page.evaluate(() =>
       window.CnCPort.rpc("resolveOriginalMouseFrameWindowId", { name: "frameMouseProbeButton" }));
+    const resolvedFrameMouseTargetId = await page.evaluate(() =>
+      window.CnCPort.rpc("resolveOriginalMouseFrameWindowId", { name: "frameMouseProbeTarget" }));
     const missingFrameMouseButtonId = await page.evaluate(() =>
       window.CnCPort.rpc("resolveOriginalMouseFrameWindowId", { name: "missingFrameMouseWidget" }));
     if (!frameMouseWindowProbeResult.ok
         || frameMouseWindowProbe?.ok !== true
         || frameMouseWindowProbe?.windowManagerReady !== true
-        || frameMouseWindowProbe?.windowCount < 2
+        || frameMouseWindowProbe?.windowCount < 3
         || !frameMouseButtonWindow
+        || !frameMouseTargetWindow
         || frameMouseButtonWindow.id <= 0
         || frameMouseButtonWindow.nameKey !== frameMouseButtonWindow.id
         || frameMouseButtonWindow.kind !== "GadgetPushButton"
@@ -2815,11 +2844,27 @@ try {
         || frameMouseButtonWindow.clickInside !== true
         || frameMouseButtonWindow.style !== frameMouseButtonStyle
         || (frameMouseButtonWindow.status & frameMouseButtonEnabledStatus) !== frameMouseButtonEnabledStatus
+        || frameMouseTargetWindow.id <= 0
+        || frameMouseTargetWindow.id === frameMouseButtonWindow.id
+        || frameMouseTargetWindow.nameKey !== frameMouseTargetWindow.id
+        || frameMouseTargetWindow.kind !== "GameWindow"
+        || frameMouseTargetWindow.clickable !== false
+        || frameMouseTargetWindow.hidden !== true
+        || frameMouseTargetWindow.noInput !== true
+        || frameMouseTargetWindow.x !== 160
+        || frameMouseTargetWindow.y !== 32
+        || frameMouseTargetWindow.width !== 96
+        || frameMouseTargetWindow.height !== 32
+        || (frameMouseTargetWindow.status & frameMouseButtonEnabledStatus) !== frameMouseButtonEnabledStatus
+        || (frameMouseTargetWindow.status & frameMouseTargetHiddenStatus) !== frameMouseTargetHiddenStatus
+        || (frameMouseTargetWindow.status & frameMouseTargetNoInputStatus) !== frameMouseTargetNoInputStatus
         || !resolvedFrameMouseButtonId.ok
         || resolvedFrameMouseButtonId.id !== frameMouseButtonWindow.id
+        || !resolvedFrameMouseTargetId.ok
+        || resolvedFrameMouseTargetId.id !== frameMouseTargetWindow.id
         || missingFrameMouseButtonId.ok !== false
         || missingFrameMouseButtonId.id !== 0) {
-      throw new Error(`Original Mouse frame window list did not expose the named button: ${JSON.stringify({ frameMouseWindowProbeResult, resolvedFrameMouseButtonId, missingFrameMouseButtonId })}`);
+      throw new Error(`Original Mouse frame window list did not expose the named button and target: ${JSON.stringify({ frameMouseWindowProbeResult, resolvedFrameMouseButtonId, resolvedFrameMouseTargetId, missingFrameMouseButtonId })}`);
     }
 
     const missingFrameMouseWidgetClick = await page.evaluate(() =>
@@ -2827,6 +2872,7 @@ try {
     if (missingFrameMouseWidgetClick.ok !== false
         || !String(missingFrameMouseWidgetClick.error ?? "").includes("Unknown original mouse frame widget")
         || !missingFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeButton")
+        || missingFrameMouseWidgetClick.knownWidgets?.includes("frameMouseProbeTarget")
         || !missingFrameMouseWidgetClick.windowProbe?.windows?.some((window) => window.name === "frameMouseProbeButton")) {
       throw new Error(`Original Mouse named widget click did not reject an unknown widget: ${JSON.stringify(missingFrameMouseWidgetClick)}`);
     }
@@ -2842,6 +2888,7 @@ try {
     const namedFrameMouseWidgetClick = await page.evaluate(() =>
       window.CnCPort.rpc("clickOriginalMouseFrameWidget", { name: "frameMouseProbeButton" }));
     const namedFrameMouseWidget = namedFrameMouseWidgetClick.widget;
+    const namedFrameMouseTargetAfter = namedFrameMouseWidgetClick.targetWindowAfter;
     const namedFrameMouseDownProbe = namedFrameMouseWidgetClick.down?.probe;
     const namedFrameMouseUpProbe = namedFrameMouseWidgetClick.up?.probe;
     const namedFrameMouseDownMessages = namedFrameMouseDownProbe?.stream?.messages ?? [];
@@ -2866,6 +2913,8 @@ try {
         || namedFrameMouseWidgetClick.name !== "frameMouseProbeButton"
         || namedFrameMouseWidgetClick.selectedBefore !== 0
         || namedFrameMouseWidgetClick.selectedAfter !== 1
+        || namedFrameMouseWidgetClick.targetHiddenBefore !== true
+        || namedFrameMouseWidgetClick.targetHiddenAfter !== false
         || namedFrameMouseWidget?.kind !== "GadgetPushButton"
         || namedFrameMouseWidget?.id !== frameMouseButtonWindow.id
         || namedFrameMouseWidget?.nameKey !== frameMouseButtonWindow.id
@@ -2880,6 +2929,15 @@ try {
         || namedFrameMouseWidget?.window?.clickable !== true
         || !namedFrameMouseWidgetClick.windowProbe?.windows?.some(
           (window) => window.name === "frameMouseProbeButton" && window.id === frameMouseButtonWindow.id)
+        || !namedFrameMouseWidgetClick.windowProbe?.windows?.some(
+          (window) => window.name === "frameMouseProbeTarget" && window.id === frameMouseTargetWindow.id && window.hidden === true)
+        || !namedFrameMouseWidgetClick.windowProbeAfter?.windows?.some(
+          (window) => window.name === "frameMouseProbeTarget" && window.id === frameMouseTargetWindow.id && window.hidden === false)
+        || namedFrameMouseTargetAfter?.id !== frameMouseTargetWindow.id
+        || namedFrameMouseTargetAfter?.hidden !== false
+        || namedFrameMouseTargetAfter?.noInput !== true
+        || (namedFrameMouseTargetAfter?.status & frameMouseTargetHiddenStatus) !== 0
+        || (namedFrameMouseTargetAfter?.status & frameMouseTargetNoInputStatus) !== frameMouseTargetNoInputStatus
         || namedFrameMouseDownProbe?.gui?.buttonName !== "frameMouseProbeButton"
         || namedFrameMouseDownProbe?.gui?.buttonNameMatches !== true
         || namedFrameMouseDownProbe?.gui?.buttonStyle !== frameMouseButtonStyle
@@ -2887,6 +2945,11 @@ try {
         || namedFrameMouseDownProbe?.gui?.buttonClickX !== frameMouseButtonX
         || namedFrameMouseDownProbe?.gui?.buttonClickY !== frameMouseButtonY
         || namedFrameMouseDownProbe?.gui?.buttonClickInside !== true
+        || namedFrameMouseDownProbe?.gui?.targetReady !== true
+        || namedFrameMouseDownProbe?.gui?.targetHidden !== true
+        || namedFrameMouseDownProbe?.gui?.targetNoInput !== true
+        || namedFrameMouseDownProbe?.gui?.targetShownBySelection !== false
+        || namedFrameMouseDownProbe?.gui?.targetShowCount !== 0
         || namedFrameMouseWidgetClick.down?.postQueueCount !== 2
         || namedFrameMouseWidgetClick.down?.frameQueueCount !== 0
         || namedFrameMouseWidgetClick.up?.postQueueCount !== 1
@@ -2911,6 +2974,11 @@ try {
         || namedFrameMouseUpProbe?.gui?.buttonSelectedX !== frameMouseButtonX
         || namedFrameMouseUpProbe?.gui?.buttonSelectedY !== frameMouseButtonY
         || namedFrameMouseUpProbe?.gui?.buttonSelectedSourceMatches !== true
+        || namedFrameMouseUpProbe?.gui?.targetReady !== true
+        || namedFrameMouseUpProbe?.gui?.targetHidden !== false
+        || namedFrameMouseUpProbe?.gui?.targetNoInput !== true
+        || namedFrameMouseUpProbe?.gui?.targetShownBySelection !== true
+        || namedFrameMouseUpProbe?.gui?.targetShowCount !== 1
         || namedFrameMouseUpProbe?.gui?.buttonGrabbed !== false
         || namedFrameMouseUpProbe?.gui?.grabbed !== false
         || namedFrameMouseLeftDownMessage?.x !== frameMouseButtonX
@@ -2930,6 +2998,11 @@ try {
         || resetFrameOwnerAfterNamedButton.probe?.mouse?.win32Attached !== true
         || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonReady !== true
         || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonSelected !== 0
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.targetReady !== true
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.targetHidden !== true
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.targetNoInput !== true
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.targetShownBySelection !== false
+        || resetFrameOwnerAfterNamedButton.probe?.gui?.targetShowCount !== 0
         || resetFrameOwnerAfterNamedButton.probe?.gui?.buttonGrabbed !== false
         || resetFrameOwnerAfterNamedButton.probe?.gui?.grabbed !== false) {
       throw new Error(`Original Mouse named frame widget cleanup mismatch: ${JSON.stringify(resetFrameOwnerAfterNamedButton)}`);
@@ -2939,11 +3012,19 @@ try {
     const resetFrameMouseButtonWindow = resetFrameMouseWindowProbeResult.probe?.windows?.find(
       (window) => window.name === "frameMouseProbeButton",
     );
+    const resetFrameMouseTargetWindow = resetFrameMouseWindowProbeResult.probe?.windows?.find(
+      (window) => window.name === "frameMouseProbeTarget",
+    );
     if (!resetFrameMouseWindowProbeResult.ok
         || resetFrameMouseButtonWindow?.id !== frameMouseButtonWindow.id
         || resetFrameMouseButtonWindow?.nameKey !== frameMouseButtonWindow.id
         || resetFrameMouseButtonWindow?.clickable !== true
-        || resetFrameMouseButtonWindow?.clickInside !== true) {
+        || resetFrameMouseButtonWindow?.clickInside !== true
+        || resetFrameMouseTargetWindow?.id !== frameMouseTargetWindow.id
+        || resetFrameMouseTargetWindow?.nameKey !== frameMouseTargetWindow.id
+        || resetFrameMouseTargetWindow?.hidden !== true
+        || resetFrameMouseTargetWindow?.noInput !== true
+        || (resetFrameMouseTargetWindow?.status & frameMouseTargetHiddenStatus) !== frameMouseTargetHiddenStatus) {
       throw new Error(`Original Mouse frame window list was not stable after reset: ${JSON.stringify(resetFrameMouseWindowProbeResult)}`);
     }
 

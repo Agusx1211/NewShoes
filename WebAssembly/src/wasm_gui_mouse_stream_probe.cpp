@@ -85,6 +85,8 @@ struct GuiInputCapture
 	Int wheelUpCount = 0;
 	Int wheelDownCount = 0;
 	Int buttonSelectedCount = 0;
+	Int targetShowCount = 0;
+	Bool targetShownBySelection = FALSE;
 	GameWindowMessage lastMessage = GWM_NONE;
 	GameWindow *buttonSelectedWindow = nullptr;
 	ICoord2D lastMouse = { 0, 0 };
@@ -159,9 +161,11 @@ CommandList *g_frame_mouse_command_list = nullptr;
 ProbeGameWindowManager *g_frame_mouse_window_manager = nullptr;
 ProbeGameWindow *g_frame_mouse_window = nullptr;
 GameWindow *g_frame_mouse_button = nullptr;
+GameWindow *g_frame_mouse_target = nullptr;
 GuiInputCapture g_frame_mouse_capture;
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_window_storage[sizeof(ProbeGameWindow)];
 alignas(ProbeGameWindow) unsigned char g_frame_mouse_button_storage[sizeof(ProbeGameWindow)];
+alignas(ProbeGameWindow) unsigned char g_frame_mouse_target_storage[sizeof(ProbeGameWindow)];
 char g_frame_mouse_json[12000] = "{}";
 char g_frame_mouse_windows_json[12000] = "{}";
 NameKeyGenerator g_frame_mouse_name_key_generator;
@@ -186,6 +190,11 @@ constexpr Int FRAME_MOUSE_BUTTON_Y = 32;
 constexpr Int FRAME_MOUSE_BUTTON_WIDTH = 96;
 constexpr Int FRAME_MOUSE_BUTTON_HEIGHT = 32;
 constexpr const char *FRAME_MOUSE_BUTTON_NAME = "frameMouseProbeButton";
+constexpr Int FRAME_MOUSE_TARGET_X = 160;
+constexpr Int FRAME_MOUSE_TARGET_Y = 32;
+constexpr Int FRAME_MOUSE_TARGET_WIDTH = 96;
+constexpr Int FRAME_MOUSE_TARGET_HEIGHT = 32;
+constexpr const char *FRAME_MOUSE_TARGET_NAME = "frameMouseProbeTarget";
 
 const char *bool_json(bool value)
 {
@@ -289,6 +298,15 @@ WindowMsgHandledType capture_gui_system(GameWindow *window,
 		capture->buttonSelectedWindow = reinterpret_cast<GameWindow *>(mData1);
 		capture->buttonSelectedMouse.x = LOLONGTOSHORT(mData2);
 		capture->buttonSelectedMouse.y = HILONGTOSHORT(mData2);
+		if (g_frame_mouse_target != nullptr) {
+			const bool was_hidden = BitTest(g_frame_mouse_target->winGetStatus(), WIN_STATUS_HIDDEN);
+			g_frame_mouse_target->winHide(FALSE);
+			capture->targetShownBySelection =
+				!BitTest(g_frame_mouse_target->winGetStatus(), WIN_STATUS_HIDDEN);
+			if (was_hidden && capture->targetShownBySelection) {
+				++capture->targetShowCount;
+			}
+		}
 		return MSG_HANDLED;
 	}
 
@@ -708,6 +726,17 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_window_manager->linkWindow(g_frame_mouse_window);
 		TheWindowManager = old_window_manager;
 	}
+	if (g_frame_mouse_target == nullptr && g_frame_mouse_window != nullptr) {
+		GameWindowManager *old_window_manager = TheWindowManager;
+		TheWindowManager = g_frame_mouse_window_manager;
+		g_frame_mouse_target = ::new (static_cast<void *>(&g_frame_mouse_target_storage[0])) ProbeGameWindow;
+		g_frame_mouse_target->winSetStatus(WIN_STATUS_ENABLED | WIN_STATUS_HIDDEN | WIN_STATUS_NO_INPUT);
+		g_frame_mouse_target->winSetPosition(FRAME_MOUSE_TARGET_X, FRAME_MOUSE_TARGET_Y);
+		g_frame_mouse_target->winSetSize(FRAME_MOUSE_TARGET_WIDTH, FRAME_MOUSE_TARGET_HEIGHT);
+		g_frame_mouse_target->winSetDrawFunc(g_frame_mouse_window_manager->getDefaultDraw());
+		g_frame_mouse_window_manager->addWindowToParentAtEnd(g_frame_mouse_target, g_frame_mouse_window);
+		TheWindowManager = old_window_manager;
+	}
 	if (g_frame_mouse_button == nullptr && g_frame_mouse_window != nullptr) {
 		GameWindowManager *old_window_manager = TheWindowManager;
 		TheWindowManager = g_frame_mouse_window_manager;
@@ -730,6 +759,10 @@ void ensure_frame_mouse_owner()
 		g_frame_mouse_button->winGetInstanceData()->m_decoratedNameString = FRAME_MOUSE_BUTTON_NAME;
 		g_frame_mouse_button->winSetWindowId(frame_mouse_name_to_id(FRAME_MOUSE_BUTTON_NAME));
 	}
+	if (g_frame_mouse_target != nullptr) {
+		g_frame_mouse_target->winGetInstanceData()->m_decoratedNameString = FRAME_MOUSE_TARGET_NAME;
+		g_frame_mouse_target->winSetWindowId(frame_mouse_name_to_id(FRAME_MOUSE_TARGET_NAME));
+	}
 	if (!g_frame_mouse_gui_attached) {
 		g_frame_mouse_message_stream->attachTranslator(new WindowTranslator, 100);
 		g_frame_mouse_gui_attached = true;
@@ -750,6 +783,11 @@ void reset_frame_mouse_gui_state()
 		if (g_frame_mouse_button != nullptr) {
 			g_frame_mouse_window_manager->winRelease(g_frame_mouse_button);
 			g_frame_mouse_button->winGetInstanceData()->m_state = 0;
+		}
+		if (g_frame_mouse_target != nullptr) {
+			g_frame_mouse_window_manager->winRelease(g_frame_mouse_target);
+			g_frame_mouse_target->winSetStatus(WIN_STATUS_ENABLED | WIN_STATUS_HIDDEN | WIN_STATUS_NO_INPUT);
+			g_frame_mouse_target->winGetInstanceData()->m_state = 0;
 		}
 		g_frame_mouse_window_manager->winSetGrabWindow(nullptr);
 	}
@@ -892,6 +930,17 @@ const char *write_frame_mouse_json()
 	UnsignedInt button_style = 0;
 	bool button_name_matches = false;
 	bool button_click_inside = false;
+	const bool target_ready = g_frame_mouse_target != nullptr;
+	const char *target_name = FRAME_MOUSE_TARGET_NAME;
+	Int target_x = 0;
+	Int target_y = 0;
+	Int target_width = 0;
+	Int target_height = 0;
+	UnsignedInt target_status = 0;
+	UnsignedInt target_style = 0;
+	bool target_name_matches = false;
+	bool target_hidden = true;
+	bool target_no_input = false;
 	if (button_ready) {
 		WinInstanceData *button_data = g_frame_mouse_button->winGetInstanceData();
 		if (button_data != nullptr && button_data->m_decoratedNameString.isNotEmpty()) {
@@ -905,6 +954,19 @@ const char *write_frame_mouse_json()
 		button_style = g_frame_mouse_button->winGetStyle();
 		button_name_matches = std::strcmp(button_name, FRAME_MOUSE_BUTTON_NAME) == 0;
 		button_click_inside = g_frame_mouse_button->winPointInWindow(button_click_x, button_click_y);
+	}
+	if (target_ready) {
+		WinInstanceData *target_data = g_frame_mouse_target->winGetInstanceData();
+		if (target_data != nullptr && target_data->m_decoratedNameString.isNotEmpty()) {
+			target_name = target_data->m_decoratedNameString.str();
+		}
+		g_frame_mouse_target->winGetScreenPosition(&target_x, &target_y);
+		g_frame_mouse_target->winGetSize(&target_width, &target_height);
+		target_status = g_frame_mouse_target->winGetStatus();
+		target_style = g_frame_mouse_target->winGetStyle();
+		target_name_matches = std::strcmp(target_name, FRAME_MOUSE_TARGET_NAME) == 0;
+		target_hidden = BitTest(target_status, WIN_STATUS_HIDDEN);
+		target_no_input = BitTest(target_status, WIN_STATUS_NO_INPUT);
 	}
 	const bool ok = !g_frame_mouse_enabled
 		|| !g_frame_mouse_last_ran
@@ -932,6 +994,13 @@ const char *write_frame_mouse_json()
 		"\"buttonWidth\":%d,\"buttonHeight\":%d,"
 		"\"buttonClickX\":%d,\"buttonClickY\":%d,"
 		"\"buttonClickInside\":%s,"
+		"\"targetReady\":%s,"
+		"\"targetName\":\"%s\",\"targetNameMatches\":%s,"
+		"\"targetStatus\":%u,\"targetStyle\":%u,"
+		"\"targetX\":%d,\"targetY\":%d,"
+		"\"targetWidth\":%d,\"targetHeight\":%d,"
+		"\"targetHidden\":%s,\"targetNoInput\":%s,"
+		"\"targetShownBySelection\":%s,\"targetShowCount\":%d,"
 		"\"mousePos\":%d,\"leftDown\":%d,\"leftUp\":%d,"
 		"\"leftDrag\":%d,\"entering\":%d,\"wheelUp\":%d,"
 		"\"wheelDown\":%d,\"wheel\":%d,\"lastMessage\":%d,"
@@ -971,6 +1040,19 @@ const char *write_frame_mouse_json()
 		button_click_x,
 		button_click_y,
 		bool_json(button_click_inside),
+		bool_json(target_ready),
+		target_name,
+		bool_json(target_name_matches),
+		target_status,
+		target_style,
+		target_x,
+		target_y,
+		target_width,
+		target_height,
+		bool_json(target_hidden),
+		bool_json(target_no_input),
+		bool_json(g_frame_mouse_capture.targetShownBySelection),
+		g_frame_mouse_capture.targetShowCount,
 		g_frame_mouse_capture.mousePosCount,
 		g_frame_mouse_capture.leftDownCount,
 		g_frame_mouse_capture.leftUpCount,
