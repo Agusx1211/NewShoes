@@ -15,7 +15,10 @@ adjacent original event/request lifecycle before backend playback:
 assignment plus filename/play-info generation, music/sound handoff,
 `SoundManager` AR_Play queueing, `removeAudioEvent` AR_Stop queueing, dynamic
 metadata overrides, and `INIAudioEventInfo` metadata parsing. `npm run
-verify:audio-settings-frontier` pins the earlier settings frontier:
+verify:audio-request-update-frontier` pins the matching per-frame drain:
+`MilesAudioManager::update`, `processRequestList`, request gating, and
+AR_Play/AR_Pause/AR_Stop routing into the original Miles playback calls.
+`npm run verify:audio-settings-frontier` pins the earlier settings frontier:
 `AudioSettings` fields, `GameAudio.cpp`
 `audioSettingsFieldParseTable` mappings, `AudioManager::init` audio INI load
 order, and the `AudioEventRTS::generateFilenamePrefix` settings consumer.

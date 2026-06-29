@@ -3340,6 +3340,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       handoff, `SoundManager` AR_Play queueing, `removeAudioEvent` AR_Stop
       queueing, dynamic metadata overrides, and `INIAudioEventInfo` metadata
       parsing. This verifies source structure only, not runtime audio.
+- [x] Add `npm run verify:audio-request-update-frontier`, a source-only
+      verifier for the original queued audio request drain/update contract:
+      base `AudioManager` no-op/stub behavior, `removeAllAudioRequests`
+      cleanup, `MilesAudioManager::update` ordering, `processRequestList`
+      gating/deletion/erase order, and AR_Play/AR_Pause/AR_Stop routing to the
+      original Miles playback calls. This verifies source structure only, not
+      runtime audio.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from

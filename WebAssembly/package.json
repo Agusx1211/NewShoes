@@ -18,6 +18,7 @@
     "verify:audio-settings-frontier": "node tools/verify_audio_settings_frontier.mjs",
     "verify:audio-format-frontier": "node tools/verify_audio_format_frontier.mjs artifacts/real-assets --expect-current-zh",
     "verify:audio-event-request-frontier": "node tools/verify_audio_event_request_frontier.mjs",
+    "verify:audio-request-update-frontier": "node tools/verify_audio_request_update_frontier.mjs",
     "verify:audio-filename-frontier": "node tools/verify_audio_filename_frontier.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",
