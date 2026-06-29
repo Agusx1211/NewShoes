@@ -1671,6 +1671,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       blocker before `createAudioManager`. The harness-visible device frontier
       now lists `TheAudio` at line 434 as the first unowned factory and keeps
       `TheMapCache` at line 606 as a deferred post-audio startup step.
+- [x] Move the startup singleton owner residency off static placement storage.
+      The wasm bootstrap now constructs durable original `SubsystemInterfaceList`,
+      `GlobalData`, `GameLODManager`, and `MapCache` instances in heap-backed
+      storage, exposes `startupSingletons.heapAllocated`, and asserts the field
+      in the no-archive and mounted-runtime archive harness paths. The original
+      `MSGNEW`/`delete` shutdown path remains open because freeing temporary
+      startup owners after archive preflight corrupts the wasm memory pool.
 - [x] Add a focused W3D GUI ownership smoke that moves the startup frontier
       beyond probe-only window-manager facts. `w3d-gamewindow-manager-smoke`
       links original `W3DGameWindowManager`, `W3DGameWindow`, and the W3D

@@ -11,6 +11,8 @@
 #include "Common/SubsystemInterface.h"
 #include "GameClient/MapUtil.h"
 
+#include <cstddef>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -21,11 +23,6 @@ constexpr const char GAME_LOD_PRESETS_INI_PATH[] = "Data\\INI\\GameLODPresets.in
 constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 
 StartupSingletonsProbeResult g_startup_singletons_state;
-alignas(SubsystemInterfaceList) unsigned char
-	g_startup_subsystem_list_storage[sizeof(SubsystemInterfaceList)];
-alignas(GlobalData) unsigned char g_startup_global_data_storage[sizeof(GlobalData)];
-alignas(GameLODManager) unsigned char g_startup_game_lod_manager_storage[sizeof(GameLODManager)];
-alignas(MapCache) unsigned char g_startup_map_cache_storage[sizeof(MapCache)];
 GlobalData *g_startup_global_data = nullptr;
 SubsystemInterfaceList *g_startup_subsystem_list = nullptr;
 GameLODManager *g_startup_game_lod_manager = nullptr;
@@ -97,6 +94,26 @@ private:
 	int *m_shutdown_count = nullptr;
 };
 
+template <typename T>
+T *construct_persistent_startup_singleton()
+{
+	static_assert(alignof(T) <= alignof(std::max_align_t),
+		"startup singleton type requires over-aligned storage");
+	// Keep residency off static storage while the original allocator/free path is
+	// still unsafe after archive preflight.
+	void *storage = std::malloc(sizeof(T));
+	if (storage == nullptr) {
+		throw std::bad_alloc();
+	}
+
+	try {
+		return new (storage) T;
+	} catch (...) {
+		std::free(storage);
+		throw;
+	}
+}
+
 void ensure_owned_instances()
 {
 	if (!isMemoryManagerOfficiallyInited()) {
@@ -105,19 +122,19 @@ void ensure_owned_instances()
 
 	if (g_startup_subsystem_list == nullptr) {
 		g_startup_subsystem_list =
-			new (g_startup_subsystem_list_storage) SubsystemInterfaceList;
+			construct_persistent_startup_singleton<SubsystemInterfaceList>();
 	}
 	TheSubsystemList = g_startup_subsystem_list;
 
 	if (g_startup_global_data == nullptr) {
-		g_startup_global_data = new (g_startup_global_data_storage) GlobalData;
+		g_startup_global_data = construct_persistent_startup_singleton<GlobalData>();
 	}
 	if (g_startup_game_lod_manager == nullptr) {
 		g_startup_game_lod_manager =
-			new (g_startup_game_lod_manager_storage) GameLODManager;
+			construct_persistent_startup_singleton<GameLODManager>();
 	}
 	if (g_startup_map_cache == nullptr) {
-		g_startup_map_cache = new (g_startup_map_cache_storage) MapCache;
+		g_startup_map_cache = construct_persistent_startup_singleton<MapCache>();
 	}
 
 	TheWritableGlobalData = g_startup_global_data;
@@ -202,14 +219,22 @@ void finish_status(StartupSingletonsProbeResult &result)
 		result.next_required = "browserRuntimeAssets";
 		return;
 	}
+	if (!result.heap_allocated ||
+		!result.global_data_owned ||
+		!result.subsystem_list_owned ||
+		!result.game_lod_owned ||
+		!result.map_cache_owned) {
+		result.status = "startup_singleton_probe_failed";
+		result.next_required = "startupSingletonOwnership";
+		return;
+	}
 	if (!result.game_lod_files_ready) {
 		result.status = "missing_game_lod_files";
 		result.next_required = "GameLODStartupFiles";
 		return;
 	}
 	if (!result.subsystem_init_shutdown_ok ||
-		!result.game_lod_initialized ||
-		!result.map_cache_owned) {
+		!result.game_lod_initialized) {
 		result.status = "startup_singleton_probe_failed";
 		result.next_required = "startupSingletonOwnership";
 		return;
@@ -297,8 +322,14 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 		result.subsystem_list_owned = TheSubsystemList == g_startup_subsystem_list;
 		result.game_lod_owned = TheGameLODManager == g_startup_game_lod_manager;
 		result.map_cache_owned = TheMapCache == g_startup_map_cache;
+		result.heap_allocated =
+			g_startup_global_data != nullptr &&
+			g_startup_subsystem_list != nullptr &&
+			g_startup_game_lod_manager != nullptr &&
+			g_startup_map_cache != nullptr;
 
 		if (result.runtime_globals_installed &&
+			result.heap_allocated &&
 			result.global_data_owned &&
 			result.subsystem_list_owned &&
 			result.game_lod_owned &&
@@ -315,6 +346,7 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 	result.ok =
 		result.runtime_archive_registered &&
 		result.runtime_globals_installed &&
+		result.heap_allocated &&
 		result.global_data_owned &&
 		result.subsystem_list_owned &&
 		result.subsystem_init_shutdown_ok &&
@@ -343,7 +375,8 @@ const char *wasm_startup_singletons_state_json()
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
 		"\"runtimeArchiveRegistered\":%s,"
-		"\"runtimeGlobalsInstalled\":%s,\"globalDataOwned\":%s,"
+		"\"runtimeGlobalsInstalled\":%s,\"heapAllocated\":%s,"
+		"\"globalDataOwned\":%s,"
 		"\"subsystemListOwned\":%s,\"subsystemInitShutdownOk\":%s,"
 		"\"subsystemInitCount\":%d,\"subsystemShutdownCount\":%d,"
 		"\"gameLOD\":{\"owned\":%s,\"filesReady\":%s,"
@@ -362,6 +395,7 @@ const char *wasm_startup_singletons_state_json()
 		next_required_json.c_str(),
 		json_bool(state.runtime_archive_registered),
 		json_bool(state.runtime_globals_installed),
+		json_bool(state.heap_allocated),
 		json_bool(state.global_data_owned),
 		json_bool(state.subsystem_list_owned),
 		json_bool(state.subsystem_init_shutdown_ok),

@@ -629,7 +629,8 @@ function assertStartupSingletonsMissing(state, label) {
       || probe.status !== "missing_runtime_archives"
       || probe.nextRequired !== "runtimeArchiveSet"
       || probe.runtimeArchiveRegistered !== false
-      || probe.runtimeGlobalsInstalled !== false) {
+      || probe.runtimeGlobalsInstalled !== false
+      || probe.heapAllocated !== false) {
     throw new Error(`${label} startup singleton state mismatch: ${JSON.stringify(probe)}`);
   }
 }

@@ -435,11 +435,13 @@ shares structure and follows behind.
       verify the next blocker is `createAudioManager`. Keep
       `Maps\MapCache.ini` loading deferred to its original post-audio
       `GameEngine.cpp` point (`MapCache::updateCache` at line 607).
-- [ ] Replace the startup singleton probe's static placement-storage residency
-      with the original `GameEngine.cpp` heap allocation/destructor path once
-      the wasm original memory-manager lifetime is safe for durable
-      `GlobalData`, `SubsystemInterfaceList`, `GameLODManager`, and `MapCache`
-      ownership.
+- [ ] Prove the startup singleton shutdown/destructor path through the original
+      `GameEngine.cpp` allocator/free lifetime after archive preflight is safe.
+      A direct `MSGNEW`/`delete` probe for durable `GlobalData`,
+      `SubsystemInterfaceList`, `GameLODManager`, and `MapCache` currently
+      corrupts the wasm memory pool after the mounted-archive boot logs the
+      singleton state, so the bootstrap keeps heap-backed residency but does not
+      yet free those owner blocks.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.

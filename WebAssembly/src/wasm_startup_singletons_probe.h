@@ -9,6 +9,7 @@ struct StartupSingletonsProbeResult
 	bool ok = false;
 	bool runtime_archive_registered = false;
 	bool runtime_globals_installed = false;
+	bool heap_allocated = false;
 	bool global_data_owned = false;
 	bool subsystem_list_owned = false;
 	bool subsystem_init_shutdown_ok = false;

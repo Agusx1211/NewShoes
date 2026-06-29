@@ -41,6 +41,7 @@ function assertStartupSingletonsMissing(state) {
   expect(probe.nextRequired === "runtimeArchiveSet", "startup singleton nextRequired mismatch", probe);
   expect(probe.runtimeArchiveRegistered === false, "startup singleton archive registration mismatch", probe);
   expect(probe.runtimeGlobalsInstalled === false, "startup singleton runtime globals mismatch", probe);
+  expect(probe.heapAllocated === false, "startup singleton heap allocation mismatch", probe);
 }
 
 function assertOriginalStartupFrontier(state) {

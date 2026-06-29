@@ -1226,6 +1226,7 @@ function assertStartupSingletons(state, context, expectedReady) {
     && probe.attempted === true
     && probe.runtimeArchiveRegistered === true
     && probe.runtimeGlobalsInstalled === true
+    && probe.heapAllocated === true
     && probe.globalDataOwned === true
     && probe.subsystemListOwned === true
     && probe.subsystemInitShutdownOk === true
