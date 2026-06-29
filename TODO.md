@@ -680,6 +680,12 @@ shares structure and follows behind.
       handles and the browser smoke proves the sidecars are playable through
       `<video>`, but original runtime playback, frame upload, and
       `BinkCopyToBuffer` pixel-copy support remain open.
+      `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
+      schema/path, BIK source-to-WebM metadata association, original-style path
+      aliases (`Data\Movies\<name>.bik` and
+      `Data/<lang>/Movies/<name>.bik` resolving to `<name>.webm`), and the
+      invariant that `WasmBinkProviderCanDecodeFrames` stays false until
+      `BinkCopyToBuffer` actually copies pixels.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.

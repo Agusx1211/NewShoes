@@ -3733,8 +3733,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `artifacts/screenshots/harness-smoke-bink-provider-sidecar-video.png`.
       `verify:bink-video-device-frontier` now pins this provider extension,
       the focused C++/JS/browser harnesses, the CMake smoke targets, and the
-      package scripts. Original `BinkVideoPlayer` runtime presentation,
-      `BinkCopyToBuffer` frame upload, and audio sync remain open.
+      package scripts. `verify:bink-browser-sidecar-contract` complements it
+      by pinning the generated manifest schema/path, source-to-sidecar
+      metadata association, original-style Bink path aliases, and the invariant
+      that `WasmBinkProviderCanDecodeFrames` stays false until
+      `BinkCopyToBuffer` actually copies pixels. Original `BinkVideoPlayer`
+      runtime presentation, `BinkCopyToBuffer` frame upload, and audio sync
+      remain open.
 
 ---
 
