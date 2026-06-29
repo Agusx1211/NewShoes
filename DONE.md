@@ -3386,6 +3386,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the exact `TheAudio->setVolume(... | AudioAffect_SystemSetting)` calls
       into `AudioManager::setVolume` script/system volume fields. This
       verifies the source UI contract only, not live browser mixer control.
+- [x] Add `npm run verify:audio-options-volume-readback-frontier`, a
+      source-only verifier for the original Zero Hour Options-menu persisted
+      volume readback path: `OptionsMenuInit` initializes the music, SFX, and
+      voice sliders from `OptionPreferences`, including the real
+      `VoiceVolume` key through `getSpeechVolume` and the SFX max of 2D/3D
+      persisted volumes. This verifies source UI initialization only, not live
+      browser mixer control.
 - [x] Add `npm run verify:audio-music-manager-frontier`, a source-only
       verifier for the original music playback/transition frontier:
       `MusicTrack` fields and parse table, `MusicManager` AR_Play/AR_Stop
