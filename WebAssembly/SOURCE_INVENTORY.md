@@ -9,8 +9,14 @@ Studio workspace/project files, especially `GeneralsMD/Code/RTS.dsp` and
 `npm run verify:audio-filename-frontier` pins the original audio filename
 generation source (`AudioEventRTS.cpp`, `INIAudioEventInfo.cpp`,
 `GameAudio.cpp`, `GameMusic.cpp`, and `AudioSettings.h`) before any backend can
-request a payload. `npm run verify:audio-settings-frontier` pins the earlier
-settings frontier: `AudioSettings` fields, `GameAudio.cpp`
+request a payload. `npm run verify:audio-event-request-frontier` pins the
+adjacent original event/request lifecycle before backend playback:
+`AudioRequest` play/pause/stop records, `AudioManager::addAudioEvent` handle
+assignment plus filename/play-info generation, music/sound handoff,
+`SoundManager` AR_Play queueing, `removeAudioEvent` AR_Stop queueing, dynamic
+metadata overrides, and `INIAudioEventInfo` metadata parsing. `npm run
+verify:audio-settings-frontier` pins the earlier settings frontier:
+`AudioSettings` fields, `GameAudio.cpp`
 `audioSettingsFieldParseTable` mappings, `AudioManager::init` audio INI load
 order, and the `AudioEventRTS::generateFilenamePrefix` settings consumer.
 `npm run inventory:audio-payloads` is the paired real-asset preflight: it

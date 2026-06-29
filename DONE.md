@@ -3333,6 +3333,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       declarations, `audioSettingsFieldParseTable` mappings, original audio INI
       load order, and the `AudioEventRTS::generateFilenamePrefix` settings
       consumer.
+- [x] Add `npm run verify:audio-event-request-frontier`, a source-only verifier
+      for the original audio event/request lifecycle before backend playback:
+      `AudioRequest` play/pause/stop records, `AudioManager::addAudioEvent`
+      handle assignment plus filename/play-info generation, music/sound
+      handoff, `SoundManager` AR_Play queueing, `removeAudioEvent` AR_Stop
+      queueing, dynamic metadata overrides, and `INIAudioEventInfo` metadata
+      parsing. This verifies source structure only, not runtime audio.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
