@@ -11,7 +11,11 @@
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/SubsystemInterface.h"
+#include "GameClient/GameWindow.h"
+#include "GameClient/GameWindowManager.h"
 #include "GameClient/VideoPlayer.h"
+#include "GameClient/WinInstanceData.h"
+#include "GameClient/WindowVideoManager.h"
 #include "VideoDevice/Bink/BinkVideoPlayer.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -39,6 +43,32 @@ GlobalData *TheGlobalData = nullptr;
 #endif
 GlobalData *TheWritableGlobalData = nullptr;
 AudioManager *TheAudio = nullptr;
+
+GameWindow *GameWindowManager::winCreateFromScript(AsciiString, WindowLayoutInfo *)
+{
+	return nullptr;
+}
+
+WindowLayout *GameWindowManager::winCreateLayout(AsciiString)
+{
+	return nullptr;
+}
+
+void GameWindowManager::freeStaticStrings()
+{
+}
+
+WindowLayoutInfo::WindowLayoutInfo() :
+	version(0),
+	init(NULL),
+	update(NULL),
+	shutdown(NULL),
+	initNameString(AsciiString::TheEmptyString),
+	updateNameString(AsciiString::TheEmptyString),
+	shutdownNameString(AsciiString::TheEmptyString)
+{
+	windows.clear();
+}
 
 AudioManager::AudioManager() {}
 AudioManager::~AudioManager() {}
@@ -146,6 +176,90 @@ protected:
 	void setDeviceListenerPosition() override {}
 };
 
+class WindowVideoProbeDisplay final : public Display
+{
+public:
+	WindowVideoProbeDisplay()
+	{
+		setWidth(1024);
+		setHeight(768);
+		setBitDepth(32);
+		setWindowed(TRUE);
+	}
+
+	VideoBuffer *createVideoBuffer() override { return NEW W3DVideoBuffer(VideoBuffer::TYPE_X8R8G8B8); }
+	void doSmartAssetPurgeAndPreload(const char *) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpAssetUsage(const char *) override {}
+	void dumpModelAssets(const char *) override {}
+#endif
+	void setClipRegion(IRegion2D *) override {}
+	Bool isClippingEnabled() override { return FALSE; }
+	void enableClipping(Bool) override {}
+	void setTimeOfDay(TimeOfDay) override {}
+	void createLightPulse(const Coord3D *, const RGBColor *, Real, Real, UnsignedInt, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt, UnsignedInt) override {}
+	void drawOpenRect(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawFillRect(Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
+	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void clearShroud() override {}
+	void setBorderShroudLevel(UnsignedByte) override {}
+	void preloadModelAssets(AsciiString) override {}
+	void preloadTextureAssets(AsciiString) override {}
+	void takeScreenShot() override {}
+	void toggleMovieCapture() override {}
+	void toggleLetterBox() override {}
+	void enableLetterBox(Bool) override {}
+	Real getAverageFPS() override { return 30.0f; }
+	Int getLastFrameDrawCalls() override { return 0; }
+};
+
+class SmokeGameWindow : public GameWindow
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeGameWindow, "SmokeGameWindow", 1, 1)
+
+public:
+	SmokeGameWindow() = default;
+	void winDrawBorder() override {}
+};
+
+EMPTY_DTOR(SmokeGameWindow)
+
+class SmokeGameWindowManager : public GameWindowManager
+{
+public:
+	GameWindow *allocateNewWindow() override { return newInstance(SmokeGameWindow); }
+
+	GameWinDrawFunc getPushButtonImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getPushButtonDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getCheckBoxImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getCheckBoxDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getRadioButtonImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getRadioButtonDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getTabControlImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getTabControlDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getListBoxImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getListBoxDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getComboBoxImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getComboBoxDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getHorizontalSliderImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getHorizontalSliderDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getVerticalSliderImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getVerticalSliderDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getProgressBarImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getProgressBarDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getStaticTextImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getStaticTextDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getTextEntryImageDrawFunc() override { return getDefaultDraw(); }
+	GameWinDrawFunc getTextEntryDrawFunc() override { return getDefaultDraw(); }
+	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
+};
+
 struct ProbeW3DDisplayStorage
 {
 	W3DDisplay *prepare_for_2d_probe()
@@ -239,6 +353,71 @@ void add_video(VideoPlayerInterface &player, const char *internal_name, const ch
 	player.addVideo(&video);
 }
 
+bool present_uploaded_video_buffer(
+	W3DVideoBuffer &buffer,
+	Int draw_left,
+	Int draw_top,
+	Int draw_right,
+	Int draw_bottom)
+{
+	bool ok = true;
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT draw_calls_before_present = state->draw_indexed_primitive_calls;
+	const UINT texture_binds_before_present = state->browser_texture_bind_calls;
+
+	ProbeW3DDisplayStorage display_storage;
+	W3DDisplay *display = display_storage.prepare_for_2d_probe();
+	const bool display_ready =
+		display != nullptr &&
+		display_storage.init_for_2d_probe(1024, 768);
+	ok = expect(display_ready, "probe W3DDisplay storage was not ready") && ok;
+
+	bool draw_video_called = false;
+	if (display_ready) {
+		display->W3DDisplay::drawVideoBuffer(&buffer, draw_left, draw_top, draw_right, draw_bottom);
+		draw_video_called = true;
+	}
+	display_storage.release_probe_renderer();
+
+	state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	ok = expect(draw_video_called,
+		"W3DDisplay::drawVideoBuffer was not called") && ok;
+	ok = expect(state->draw_indexed_primitive_calls == draw_calls_before_present + 1,
+		"W3DDisplay::drawVideoBuffer did not issue one indexed draw") && ok;
+	ok = expect(state->browser_texture_bind_calls > texture_binds_before_present,
+		"W3DDisplay::drawVideoBuffer did not bind the W3DVideoBuffer texture") && ok;
+	ok = expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
+		"W3DDisplay::drawVideoBuffer primitive type mismatch") && ok;
+	ok = expect(state->last_draw_vertex_count == 4 && state->last_draw_primitive_count == 2,
+		"W3DDisplay::drawVideoBuffer quad draw shape mismatch") && ok;
+	ok = expect(state->last_draw_stream_source_stride == 44,
+		"W3DDisplay::drawVideoBuffer Render2D vertex stride mismatch") && ok;
+	ok = expect(state->last_draw_vertex_buffer_id != 0 && state->last_draw_index_buffer_id != 0,
+		"W3DDisplay::drawVideoBuffer did not use browser-backed buffers") && ok;
+	ok = expect((state->last_draw_transform_mask & 7u) == 7u,
+		"W3DDisplay::drawVideoBuffer did not submit world/view/projection transforms") && ok;
+	ok = expect(draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA,
+		"W3DDisplay::drawVideoBuffer alpha blend state mismatch") && ok;
+	ok = expect(stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE,
+		"W3DDisplay::drawVideoBuffer stage 0 texture combiner mismatch") && ok;
+	ok = expect(stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
+		"W3DDisplay::drawVideoBuffer did not disable stage 1") && ok;
+	return ok;
+}
+
 bool exercise_stream(
 	VideoPlayerInterface &player,
 	VideoStreamInterface *stream,
@@ -294,8 +473,6 @@ bool exercise_stream(
 	stream->frameRender(&buffer);
 
 	state = wasm_d3d8_get_state();
-	const UINT draw_calls_before_present = state->draw_indexed_primitive_calls;
-	const UINT texture_binds_before_present = state->browser_texture_bind_calls;
 	ok = expect(state->browser_texture_update_calls == updates_before_render + 1,
 		"BinkVideoStream::frameRender through W3DVideoBuffer did not upload the texture") && ok;
 	ok = expect(state->last_browser_texture_width == buffer.textureWidth(),
@@ -311,57 +488,7 @@ bool exercise_stream(
 	ok = expect(state->last_browser_texture_checksum != 0,
 		"BinkVideoStream::frameRender uploaded an all-zero W3DVideoBuffer texture") && ok;
 	const UINT decoded_upload_checksum = state->last_browser_texture_checksum;
-
-	ProbeW3DDisplayStorage display_storage;
-	W3DDisplay *display = display_storage.prepare_for_2d_probe();
-	const bool display_ready =
-		display != nullptr &&
-		display_storage.init_for_2d_probe(1024, 768);
-	ok = expect(display_ready, "probe W3DDisplay storage was not ready") && ok;
-
-	bool draw_video_called = false;
-	if (display_ready) {
-		display->W3DDisplay::drawVideoBuffer(&buffer, draw_left, draw_top, draw_right, draw_bottom);
-		draw_video_called = true;
-	}
-	display_storage.release_probe_renderer();
-
-	state = wasm_d3d8_get_state();
-	const WasmD3D8DrawRenderState *draw_state =
-		state != nullptr ? &state->last_draw_render_state : nullptr;
-	const WasmD3D8DrawTextureStageState *stage0 =
-		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
-	const WasmD3D8DrawTextureStageState *stage1 =
-		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
-	ok = expect(draw_video_called,
-		"W3DDisplay::drawVideoBuffer was not called") && ok;
-	ok = expect(state->draw_indexed_primitive_calls == draw_calls_before_present + 1,
-		"W3DDisplay::drawVideoBuffer did not issue one indexed draw") && ok;
-	ok = expect(state->browser_texture_bind_calls > texture_binds_before_present,
-		"W3DDisplay::drawVideoBuffer did not bind the W3DVideoBuffer texture") && ok;
-	ok = expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
-		"W3DDisplay::drawVideoBuffer primitive type mismatch") && ok;
-	ok = expect(state->last_draw_vertex_count == 4 && state->last_draw_primitive_count == 2,
-		"W3DDisplay::drawVideoBuffer quad draw shape mismatch") && ok;
-	ok = expect(state->last_draw_stream_source_stride == 44,
-		"W3DDisplay::drawVideoBuffer Render2D vertex stride mismatch") && ok;
-	ok = expect(state->last_draw_vertex_buffer_id != 0 && state->last_draw_index_buffer_id != 0,
-		"W3DDisplay::drawVideoBuffer did not use browser-backed buffers") && ok;
-	ok = expect((state->last_draw_transform_mask & 7u) == 7u,
-		"W3DDisplay::drawVideoBuffer did not submit world/view/projection transforms") && ok;
-	ok = expect(draw_state != nullptr &&
-		draw_state->alpha_blend_enable == TRUE &&
-		draw_state->src_blend == D3DBLEND_SRCALPHA &&
-		draw_state->dest_blend == D3DBLEND_INVSRCALPHA,
-		"W3DDisplay::drawVideoBuffer alpha blend state mismatch") && ok;
-	ok = expect(stage0 != nullptr &&
-		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
-		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
-		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE,
-		"W3DDisplay::drawVideoBuffer stage 0 texture combiner mismatch") && ok;
-	ok = expect(stage1 != nullptr &&
-		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE,
-		"W3DDisplay::drawVideoBuffer did not disable stage 1") && ok;
+	ok = present_uploaded_video_buffer(buffer, draw_left, draw_top, draw_right, draw_bottom) && ok;
 
 	stream->frameNext();
 	ok = expect(stream->frameIndex() == 1, "BinkNextFrame should advance to frame index 1") && ok;
@@ -385,6 +512,117 @@ bool exercise_stream(
 		draw_top,
 		draw_right,
 		draw_bottom);
+	return ok;
+}
+
+bool exercise_window_video_manager(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+
+	GameWindow *window = window_manager.allocateNewWindow();
+	ok = expect(window != nullptr, "SmokeGameWindow allocation failed") && ok;
+	if (window != nullptr) {
+		window_manager.linkWindow(window);
+		window->winSetStatus(WIN_STATUS_ENABLED);
+		window->winSetSize(96, 120);
+		window->winHide(FALSE);
+	}
+
+	WindowVideoManager video_manager;
+	video_manager.init();
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_play = state->browser_texture_create_calls;
+	const UINT updates_before_play = state->browser_texture_update_calls;
+
+	if (window != nullptr) {
+		video_manager.playMovie(window, AsciiString("VS_small"), WINDOW_PLAY_MOVIE_SHOW_LAST_FRAME);
+	}
+
+	state = wasm_d3d8_get_state();
+	VideoBuffer *attached_buffer = window != nullptr ? window->winGetInstanceData()->m_videoBuffer : nullptr;
+	W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(attached_buffer);
+	const UnsignedInt expected_texture_width = next_power_of_two(96);
+	const UnsignedInt expected_texture_height = next_power_of_two(120);
+	ok = expect(attached_buffer != nullptr,
+		"WindowVideoManager::playMovie did not attach a VideoBuffer to the GameWindow") && ok;
+	ok = expect(video_manager.getWinState(window) == WINDOW_VIDEO_STATE_PLAY,
+		"WindowVideoManager::playMovie did not leave the window video in PLAY state") && ok;
+	ok = expect(player.firstStream() != nullptr,
+		"WindowVideoManager::playMovie did not leave an owned Bink stream on the player") && ok;
+	ok = expect(state->browser_texture_create_calls == creates_before_play + 1,
+		"WindowVideoManager::playMovie W3DVideoBuffer allocation did not create one browser texture") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_play + 1,
+		"WindowVideoManager::playMovie W3DVideoBuffer allocation did not upload the initial texture") && ok;
+	if (w3d_buffer != nullptr) {
+		ok = expect(w3d_buffer->valid(), "WindowVideoManager W3DVideoBuffer is not valid after allocate") && ok;
+		ok = expect(w3d_buffer->texture() != nullptr,
+			"WindowVideoManager W3DVideoBuffer did not create a TextureClass") && ok;
+		ok = expect(w3d_buffer->width() == 96 && w3d_buffer->height() == 120,
+			"WindowVideoManager W3DVideoBuffer visible dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->textureWidth() == expected_texture_width &&
+			w3d_buffer->textureHeight() == expected_texture_height,
+			"WindowVideoManager W3DVideoBuffer backing texture dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->pitch() == expected_texture_width * 4,
+			"WindowVideoManager W3DVideoBuffer pitch mismatch") && ok;
+	}
+
+	const UINT updates_before_update = state->browser_texture_update_calls;
+	video_manager.update();
+
+	state = wasm_d3d8_get_state();
+	ok = expect(window == nullptr || window->winGetInstanceData()->m_videoBuffer == attached_buffer,
+		"WindowVideoManager::update changed the GameWindow video buffer ownership") && ok;
+	ok = expect(video_manager.getWinState(window) == WINDOW_VIDEO_STATE_PLAY,
+		"WindowVideoManager::update unexpectedly paused or stopped a mid-stream movie") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_update + 1,
+		"WindowVideoManager::update did not upload decoded Bink pixels through W3DVideoBuffer") && ok;
+	ok = expect(state->last_browser_texture_width == expected_texture_width &&
+		state->last_browser_texture_height == expected_texture_height,
+		"WindowVideoManager decoded texture upload dimensions mismatch") && ok;
+	ok = expect(state->last_browser_texture_pitch == expected_texture_width * 4,
+		"WindowVideoManager decoded texture upload pitch mismatch") && ok;
+	ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+		"WindowVideoManager decoded texture upload format mismatch") && ok;
+	ok = expect(state->last_browser_texture_checksum != 0,
+		"WindowVideoManager::update uploaded an all-zero decoded frame") && ok;
+	const UINT decoded_upload_checksum = state->last_browser_texture_checksum;
+
+	if (w3d_buffer != nullptr) {
+		ok = present_uploaded_video_buffer(*w3d_buffer, 464, 324, 560, 444) && ok;
+		std::printf("WindowVideoManager VS_small Bink W3D presentation ok: visible=%ux%u texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
+			w3d_buffer->width(),
+			w3d_buffer->height(),
+			w3d_buffer->textureWidth(),
+			w3d_buffer->textureHeight(),
+			w3d_buffer->pitch(),
+			static_cast<unsigned int>(decoded_upload_checksum),
+			464,
+			324,
+			560,
+			444);
+	}
+
+	video_manager.reset();
+	ok = expect(window == nullptr || window->winGetInstanceData()->m_videoBuffer == nullptr,
+		"WindowVideoManager::reset did not clear the GameWindow video buffer") && ok;
+	ok = expect(video_manager.getWinState(window) == WINDOW_VIDEO_STATE_STOP,
+		"WindowVideoManager::reset did not remove the window video entry") && ok;
+	ok = expect(player.firstStream() == nullptr,
+		"WindowVideoManager::reset did not close the owned Bink stream") && ok;
+
+	if (window != nullptr) {
+		window_manager.winDestroy(window);
+		window_manager.update();
+	}
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
 	return ok;
 }
 
@@ -436,6 +674,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 			"GC_Background", 800, 600, 180, 112, 84, 912, 684) && ok;
 		ok = exercise_stream(*player, player->load(AsciiString("VS_small")),
 			"VS_small", 96, 120, 71, 464, 324, 560, 444) && ok;
+		ok = exercise_window_video_manager(*player) && ok;
 	}
 
 	if (player != nullptr) {

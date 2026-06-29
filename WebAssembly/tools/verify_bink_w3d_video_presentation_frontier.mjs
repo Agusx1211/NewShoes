@@ -56,11 +56,12 @@
 //      proof, its presentation alias, and the `test:ww3d-display-drawimage-file`
 //      display draw-image target/script this verifier relies on.
 //
-// OPEN (explicitly NOT claimed complete by this verifier): the full original
-// Display / WindowVideoManager / load-screen movie loop does not yet own this
-// decoded Bink presentation path, and Bink/audio sync remains open. This
-// verifier pins the source presentation contract plus the focused runtime
-// proof that the downstream display sink works.
+// OPEN (explicitly NOT claimed complete by this verifier): the focused
+// `WindowVideoManager::playMovie/update` path now owns one real window video
+// buffer in the browser smoke, but the full original `Display` / load-screen /
+// score-screen movie loops and Bink/audio sync remain open. This verifier pins
+// the source presentation contract plus the focused runtime proof that the
+// downstream display sink works.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -421,20 +422,36 @@ function main() {
   // ------------------------------------------------------------------
   assertExact(errors, facts.runtimeSmoke ??= {}, "drawVideoBufferCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 324,
+      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 377,
     "runtime smoke original W3DDisplay::drawVideoBuffer call");
   assertExact(errors, facts.runtimeSmoke, "stage0CombinerCheckLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 361,
+      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 414,
     "runtime smoke drawVideoBuffer combiner check");
   assertExact(errors, facts.runtimeSmoke, "summaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /Bink W3D presentation ok/.test(line)), 376,
+      (line) => /Bink W3D presentation ok/.test(line)), 503,
     "runtime smoke Bink W3D presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "windowManagerPlayLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /video_manager\.playMovie\s*\(\s*window\s*,\s*AsciiString\s*\(\s*"VS_small"\s*\)/.test(line)), 545,
+    "runtime smoke WindowVideoManager::playMovie");
+  assertExact(errors, facts.runtimeSmoke, "windowManagerPresentLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/.test(line)), 598,
+    "runtime smoke WindowVideoManager W3D presentation call");
+  assertExact(errors, facts.runtimeSmoke, "windowManagerSummaryLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WindowVideoManager VS_small Bink W3D presentation ok/.test(line)), 599,
+    "runtime smoke WindowVideoManager presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "windowManagerExerciseCallLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /exercise_window_video_manager\s*\(\s*\*player\s*\)/.test(line)), 677,
+    "runtime smoke WindowVideoManager exercise call");
 
   assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
     lineNumber(runtimeBrowserHarness.lines,
-      (line) => /Expected two W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
+      (line) => /Expected three W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
     "browser harness drawVideoBuffer draw count check");
   assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
     lineNumber(runtimeBrowserHarness.lines,
@@ -507,9 +524,10 @@ function main() {
       "coverage via test:ww3d-display-drawimage-file, synthetic W3DVideoBuffer " +
       "presentation is covered by test:ww3d-display-video-buffer, and decoded " +
       "Bink sidecar frames now reach original W3DDisplay::drawVideoBuffer in " +
-      "test:bink-w3d-video-presentation-browser. Full original Display / " +
-      "WindowVideoManager / load-screen movie-loop ownership and Bink/audio sync " +
-      "remain open M8 tasks.",
+      "test:bink-w3d-video-presentation-browser, including a focused original " +
+      "WindowVideoManager::playMovie/update path that attaches the real W3DVideoBuffer " +
+      "to a GameWindow before presentation. Full original Display / load-screen / " +
+      "score-screen movie-loop ownership and Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

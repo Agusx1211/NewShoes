@@ -3949,9 +3949,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `test:ww3d-display-drawimage-file` display draw-image target/script it
       relies on. The verifier is honest that this is a source-only
       presentation contract pin: runtime `W3DDisplay::drawVideoBuffer`
-      presentation of a Bink video frame, verified by a harness screenshot,
-      is still open unless the main agent has completed it by merge time; it
-      does NOT claim runtime Bink video presentation complete.
+      presentation of a Bink video frame, verified by a harness screenshot, was
+      still open at the time of that entry; it did NOT claim runtime Bink video
+      presentation complete.
+- [x] Extend the Bink/W3D browser presentation smoke through focused original
+      `WindowVideoManager::playMovie/update/reset` ownership. The
+      `bink-w3d-video-buffer-browser-smoke` test now creates a lightweight
+      `Display` adapter whose `createVideoBuffer()` returns a real
+      `W3DVideoBuffer`, creates a real `GameWindow` through a focused
+      `GameWindowManager`, calls original `WindowVideoManager::playMovie` for
+      `VS_small`, verifies the manager-attached `WinInstanceData::m_videoBuffer`
+      is a valid `W3DVideoBuffer`, then calls original
+      `WindowVideoManager::update` so the original manager drives
+      `BinkVideoStream::frameDecompress`, `frameRender(videoBuffer)`, and
+      `frameNext`. The browser harness now expects three Bink copy/open/close
+      lifecycles and three original `W3DDisplay::drawVideoBuffer` indexed draws:
+      direct `GC_Background`, direct `VS_small`, and manager-owned `VS_small`.
+      `verify:bink-w3d-video-buffer-upload-frontier` and
+      `verify:bink-w3d-video-presentation-frontier` now pin the new manager path
+      while keeping full original `Display` / load-screen / score-screen movie
+      loops and Bink/audio sync open. Verified with `npm run build:wasm`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-buffer-browser`.
 
 ---
 
