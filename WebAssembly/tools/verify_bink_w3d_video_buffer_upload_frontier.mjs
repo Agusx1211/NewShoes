@@ -6,8 +6,8 @@
 // decoded Bink frame travels from `BinkVideoStream::frameRender(VideoBuffer*)`
 // through the abstract `VideoBuffer` contract, the W3D `W3DVideoBuffer`
 // `TextureClass`/`SurfaceClass` ownership, and the browser D3D8 shim
-// `LockRect`/`UnlockRect`/`wasm_d3d8_browser_texture_update` path that must
-// carry dirty pixels out to the browser.
+// `LockRect`/owned-surface `UnlockRect`/`wasm_d3d8_browser_texture_update`
+// path that must carry dirty pixels out to the browser.
 //
 // It is intentionally narrower than `verify_bink_runtime_callsite_frontier.mjs`
 // (which pins the broader Bink runtime callsite surface) and
@@ -30,20 +30,24 @@
 //      `TextureClass *m_texture` / `SurfaceClass *m_surface` and a `texture()`
 //      accessor.
 //   4. Current browser D3D8 shim texture/surface path: surface `LockRect`
-//      returns wasm-backed `m_pixels` memory and pitch; surface `UnlockRect`
-//      delegates to `unlock_and_capture`; texture `UnlockRect(level)` calls
-//      `browser_texture_update`, which drives the
+//      returns wasm-backed `m_pixels` memory and pitch; owned-surface
+//      `UnlockRect` captures dirty pixels and calls `browser_texture_update`;
+//      texture `UnlockRect(level)` also calls `browser_texture_update`, which drives the
 //      `wasm_d3d8_browser_texture_update` JS hook (`Module.cncPortD3D8TextureUpdate`)
 //      to carry dirty pixels to the browser.
-//   5. The original presentation sink `W3DDisplay::drawVideoBuffer` exists and
+//   5. The focused browser runtime smoke wires original `BinkVideoPlayer`
+//      through a real `W3DVideoBuffer` and asserts nonzero browser texture
+//      updates. This proves upload to the browser texture boundary, not final
+//      display presentation.
+//   6. The original presentation sink `W3DDisplay::drawVideoBuffer` exists and
 //      binds the `W3DVideoBuffer` texture as a 2D quad — the path an original
 //      `BinkVideoPlayer`-owned browser presentation flow must ultimately reach.
 //
 // OPEN (explicitly not claimed complete by this verifier): the original
-// `BinkVideoPlayer` browser presentation through a real `W3DVideoBuffer` and
-// `W3DDisplay::drawVideoBuffer`, verified by a harness screenshot, is NOT
-// complete. This verifier only pins the source contract that such runtime
-// presentation/upload wiring must preserve.
+// `BinkVideoPlayer` browser presentation through `W3DDisplay::drawVideoBuffer`,
+// verified by a harness screenshot, is NOT complete. This verifier pins the
+// source/upload contract and the focused real-`W3DVideoBuffer` upload smoke that
+// future presentation wiring must preserve.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -63,6 +67,10 @@ const SOURCES = {
   w3dDisplay:
     "GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DDisplay.cpp",
   d3d8Shim: "WebAssembly/src/wasm_d3d8_shim.cpp",
+  runtimeSmoke: "WebAssembly/tests/bink_w3d_video_buffer_upload_smoke.cpp",
+  runtimeBrowserHarness: "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
+  cmake: "WebAssembly/CMakeLists.txt",
+  packageJson: "WebAssembly/package.json",
 };
 
 function readSourceLines(relPath) {
@@ -158,6 +166,10 @@ function main() {
     w3dVideoBuffer: {},
     drawVideoBuffer: {},
     d3d8Shim: {},
+    runtimeSmoke: {},
+    runtimeBrowserHarness: {},
+    cmake: {},
+    packageJson: {},
   };
 
   const binkPlayer = readSourceLines(SOURCES.binkPlayer);
@@ -166,6 +178,10 @@ function main() {
   const w3dVideoBuffer = readSourceLines(SOURCES.w3dVideoBuffer);
   const w3dDisplay = readSourceLines(SOURCES.w3dDisplay);
   const d3d8Shim = readSourceLines(SOURCES.d3d8Shim);
+  const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
+  const runtimeBrowserHarness = readSourceLines(SOURCES.runtimeBrowserHarness);
+  const cmake = readSourceLines(SOURCES.cmake);
+  const packageJson = readSourceLines(SOURCES.packageJson);
 
   // ------------------------------------------------------------------
   // 1. BinkVideoStream::frameRender(VideoBuffer*) — lock, format→flag map,
@@ -468,16 +484,40 @@ function main() {
       if (pBitsSet === -1) errors.push("BrowserD3DSurface LockRect: locked_rect->pBits = m_pixels.data() not found");
     }
   }
-  // Surface UnlockRect delegates to unlock_and_capture(nullptr).
-  assertExact(errors, facts.d3d8Shim, "surfaceUnlockRectLine",
-    lineNumber(d3d8Shim.lines,
-      (line) => /HRESULT\s+UnlockRect\s*\(\s*\)\s*override\s*\{\s*return\s+unlock_and_capture\s*\(\s*nullptr\s*\)/.test(line)), 1282,
-    "BrowserD3DSurface UnlockRect -> unlock_and_capture(nullptr)");
+  // Owned texture surfaces can be locked/unlocked directly through
+  // GetSurfaceLevel, which is the original W3DVideoBuffer path. Surface
+  // UnlockRect must capture dirty pixels and upload them through the owning
+  // browser texture id.
+  const surfaceUnlockRectDef = lineNumber(d3d8Shim.lines,
+    (line) => /HRESULT\s+UnlockRect\s*\(\s*\)\s*override/.test(line));
+  assertExact(errors, facts.d3d8Shim, "surfaceUnlockRectDefLine", surfaceUnlockRectDef, 1282,
+    "BrowserD3DSurface UnlockRect");
+  if (surfaceUnlockRectDef > 0) {
+    const range = functionBodyLineRange(d3d8Shim.lines, surfaceUnlockRectDef);
+    if (!range) {
+      errors.push("BrowserD3DSurface UnlockRect: body not found");
+    } else {
+      const capture = firstMatchInRange(d3d8Shim.lines, range.start, range.end,
+        /unlock_and_capture\s*\(\s*&dirty\s*\)/);
+      const update = firstMatchInRange(d3d8Shim.lines, range.start, range.end,
+        /browser_texture_update\s*\(\s*m_owner_texture_id\s*,\s*m_owner_texture_level/);
+      facts.d3d8Shim.surfaceUnlockRectCaptureLine = capture;
+      facts.d3d8Shim.surfaceUnlockRectUpdateLine = update;
+      if (capture === -1) {
+        errors.push("BrowserD3DSurface UnlockRect: unlock_and_capture(&dirty) not found");
+      }
+      if (update === -1) {
+        errors.push("BrowserD3DSurface UnlockRect: browser_texture_update(m_owner_texture_id, ...) not found");
+      } else if (capture !== -1 && !(capture < update)) {
+        errors.push("BrowserD3DSurface UnlockRect: unlock_and_capture must precede browser_texture_update");
+      }
+    }
+  }
 
   // Texture LockRect(level) delegates to surface level LockRect.
   const textureLockRectDef = lineNumber(d3d8Shim.lines,
     (line) => /HRESULT\s+LockRect\s*\(\s*UINT\s+level,\s*D3DLOCKED_RECT\s*\*\s*locked_rect,\s*const\s+RECT\s*\*rect,\s*DWORD\s+flags\s*\)\s*override/.test(line));
-  assertExact(errors, facts.d3d8Shim, "textureLockRectDefLine", textureLockRectDef, 1720,
+  assertExact(errors, facts.d3d8Shim, "textureLockRectDefLine", textureLockRectDef, 1729,
     "BrowserD3DTexture LockRect(level)");
   if (textureLockRectDef > 0) {
     const range = functionBodyLineRange(d3d8Shim.lines, textureLockRectDef);
@@ -493,7 +533,7 @@ function main() {
   // Texture UnlockRect(level) calls browser_texture_update on success.
   const textureUnlockRectDef = lineNumber(d3d8Shim.lines,
     (line) => /HRESULT\s+UnlockRect\s*\(\s*UINT\s+level\s*\)\s*override/.test(line));
-  assertExact(errors, facts.d3d8Shim, "textureUnlockRectDefLine", textureUnlockRectDef, 1733,
+  assertExact(errors, facts.d3d8Shim, "textureUnlockRectDefLine", textureUnlockRectDef, 1742,
     "BrowserD3DTexture UnlockRect(level)");
   if (textureUnlockRectDef > 0) {
     const range = functionBodyLineRange(d3d8Shim.lines, textureUnlockRectDef);
@@ -532,21 +572,153 @@ function main() {
   }
 
   // ------------------------------------------------------------------
+  // 6. Focused runtime proof: original BinkVideoPlayer + real
+  //    W3DVideoBuffer reaches the browser texture-upload boundary.
+  // ------------------------------------------------------------------
+  assertExact(errors, facts.runtimeSmoke, "w3dBufferLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /W3DVideoBuffer\s+buffer\s*\(\s*VideoBuffer::TYPE_X8R8G8B8\s*\)/.test(line)), 193,
+    "runtime smoke W3DVideoBuffer allocation object");
+  assertExact(errors, facts.runtimeSmoke, "w3dAllocateLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /buffer\.allocate\s*\(\s*stream\s*->\s*width\s*\(\s*\)\s*,\s*stream\s*->\s*height\s*\(\s*\)\s*\)/.test(line)), 194,
+    "runtime smoke W3DVideoBuffer allocate(stream dimensions)");
+  assertExact(errors, facts.runtimeSmoke, "textureWidthLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /buffer\.textureWidth\s*\(\s*\)\s*==\s*expected_texture_width/.test(line)), 204,
+    "runtime smoke W3DVideoBuffer textureWidth check");
+  assertExact(errors, facts.runtimeSmoke, "textureHeightLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /buffer\.textureHeight\s*\(\s*\)\s*==\s*expected_texture_height/.test(line)), 206,
+    "runtime smoke W3DVideoBuffer textureHeight check");
+  assertExact(errors, facts.runtimeSmoke, "pitchLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /buffer\.pitch\s*\(\s*\)\s*==\s*expected_texture_width\s*\*\s*4/.test(line)), 208,
+    "runtime smoke W3DVideoBuffer pitch check");
+  assertExact(errors, facts.runtimeSmoke, "allocateUploadLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /surface unlock did not upload the initial texture/.test(line)), 215,
+    "runtime smoke allocation surface unlock upload check");
+  assertExact(errors, facts.runtimeSmoke, "frameDecompressLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /stream\s*->\s*frameDecompress\s*\(\s*\)/.test(line)), 218,
+    "runtime smoke BinkVideoStream::frameDecompress");
+  assertExact(errors, facts.runtimeSmoke, "frameRenderLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /stream\s*->\s*frameRender\s*\(\s*&buffer\s*\)/.test(line)), 219,
+    "runtime smoke BinkVideoStream::frameRender(&W3DVideoBuffer)");
+  assertExact(errors, facts.runtimeSmoke, "renderUploadLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /frameRender through W3DVideoBuffer did not upload the texture/.test(line)), 223,
+    "runtime smoke frameRender upload check");
+  assertExact(errors, facts.runtimeSmoke, "nonzeroChecksumLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /uploaded an all-zero W3DVideoBuffer texture/.test(line)), 235,
+    "runtime smoke nonzero texture checksum check");
+  assertExact(errors, facts.runtimeSmoke, "exportLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /extern\s+"C"\s+int\s+run_bink_w3d_video_buffer_upload_smoke\s*\(\s*\)/.test(line)), 260,
+    "runtime smoke exported function");
+  assertExact(errors, facts.runtimeSmoke, "ww3dInitLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WW3D::Init\s*\(\s*nullptr\s*,\s*nullptr\s*,\s*false\s*\)/.test(line)), 272,
+    "runtime smoke WW3D::Init");
+  assertExact(errors, facts.runtimeSmoke, "setRenderDeviceLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WW3D::Set_Render_Device\s*\(\s*0\s*,\s*1024\s*,\s*768/.test(line)), 276,
+    "runtime smoke WW3D::Set_Render_Device");
+  assertExact(errors, facts.runtimeSmoke, "decodeReadyLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WasmBinkProviderCanDecodeFrames\s*\(\s*\)\s*==\s*1/.test(line)), 301,
+    "runtime smoke browser decode-ready hook gate");
+  assertExact(errors, facts.runtimeSmoke, "openGcLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /player\s*->\s*open\s*\(\s*AsciiString\s*\(\s*"GC_Background"\s*\)\s*\)/.test(line)), 303,
+    "runtime smoke GC_Background open");
+  assertExact(errors, facts.runtimeSmoke, "loadVsLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /player\s*->\s*load\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)), 305,
+    "runtime smoke VS_small load");
+
+  assertExact(errors, facts.runtimeBrowserHarness, "moduleLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 191,
+    "browser harness ES module export");
+  assertExact(errors, facts.runtimeBrowserHarness, "textureCreateHookLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /cncPortD3D8TextureCreate/.test(line)), 211,
+    "browser harness D3D texture create hook");
+  assertExact(errors, facts.runtimeBrowserHarness, "textureUpdateHookLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /cncPortD3D8TextureUpdate/.test(line)), 215,
+    "browser harness D3D texture update hook");
+  assertExact(errors, facts.runtimeBrowserHarness, "textureReleaseHookLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /cncPortD3D8TextureRelease/.test(line)), 225,
+    "browser harness D3D texture release hook");
+  assertExact(errors, facts.runtimeBrowserHarness, "copyHookLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /module\.cncPortBinkCopyToBuffer\s*=/.test(line)), 245,
+    "browser harness Bink copy hook");
+  assertExact(errors, facts.runtimeBrowserHarness, "runtimeCcallLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /run_bink_w3d_video_buffer_upload_smoke/.test(line)), 299,
+    "browser harness runtime ccall");
+  assertExact(errors, facts.runtimeBrowserHarness, "copyCountLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /Expected two Bink copy events/.test(line)), 340,
+    "browser harness copy event count check");
+  assertExact(errors, facts.runtimeBrowserHarness, "textureCreateCheckLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /Missing W3DVideoBuffer texture create/.test(line)), 381,
+    "browser harness W3DVideoBuffer texture create check");
+  assertExact(errors, facts.runtimeBrowserHarness, "textureUploadCheckLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /Missing nonzero W3DVideoBuffer texture upload/.test(line)), 394,
+    "browser harness nonzero texture upload check");
+  assertExact(errors, facts.runtimeBrowserHarness, "screenshotLine",
+    lineNumber(runtimeBrowserHarness.lines,
+      (line) => /page\.screenshot\s*\(\s*\{\s*path:\s*screenshotPath/.test(line)), 412,
+    "browser harness screenshot capture");
+
+  assertExact(errors, facts.cmake, "targetDefLine",
+    lineNumber(cmake.lines,
+      (line) => /add_executable\s*\(\s*bink-w3d-video-buffer-browser-smoke/.test(line)), 6515,
+    "CMake bink-w3d-video-buffer-browser-smoke target");
+  assertExact(errors, facts.cmake, "targetSourceLine",
+    lineNumber(cmake.lines,
+      (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6516,
+    "CMake bink_w3d_video_buffer_upload_smoke.cpp source");
+  assertExact(errors, facts.cmake, "w3dVideoBufferSourceLine",
+    firstMatchInRange(cmake.lines, facts.cmake.targetDefLine, facts.cmake.targetDefLine + 10,
+      /W3DVideoBuffer\.cpp/), 6517,
+    "CMake original W3DVideoBuffer.cpp source");
+  assertExact(errors, facts.cmake, "exportNameLine",
+    lineNumber(cmake.lines,
+      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6589,
+    "CMake browser smoke export name");
+  assertExact(errors, facts.cmake, "exportFunctionLine",
+    lineNumber(cmake.lines,
+      (line) => /_run_bink_w3d_video_buffer_upload_smoke/.test(line)), 6593,
+    "CMake browser smoke exported function");
+  assertExact(errors, facts.packageJson, "scriptLine",
+    lineNumber(packageJson.lines,
+      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 112,
+    "package.json test:bink-w3d-video-buffer-browser script");
+
+  // ------------------------------------------------------------------
   const report = {
     ok: errors.length === 0,
     errors,
     sources: SOURCES,
     facts,
     open:
-      "Original BinkVideoPlayer browser presentation through a real " +
-      "W3DVideoBuffer and W3DDisplay::drawVideoBuffer is NOT complete. " +
-      "This verifier pins only the source contract (frameRender lock/copy/" +
-      "unlock, VideoBuffer accessors, W3DVideoBuffer texture/surface " +
-      "ownership, and the browser D3D8 shim LockRect/UnlockRect/" +
-      "wasm_d3d8_browser_texture_update pixel-update path) that such " +
-      "runtime presentation/upload wiring must preserve. A harness " +
-      "screenshot of an original BinkVideoPlayer-owned flow rendered " +
-      "through W3DDisplay::drawVideoBuffer remains an open M8 task.",
+      "Original BinkVideoPlayer browser upload through a real W3DVideoBuffer " +
+      "is now covered by test:bink-w3d-video-buffer-browser, including decoded " +
+      "sidecar pixels copied by BinkVideoStream::frameRender into the original " +
+      "W3DVideoBuffer surface and emitted through the browser D3D8 texture " +
+      "update hook. Full browser presentation through W3DDisplay::drawVideoBuffer " +
+      "and Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

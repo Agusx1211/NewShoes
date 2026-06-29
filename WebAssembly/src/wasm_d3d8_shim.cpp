@@ -1279,7 +1279,16 @@ public:
 		return S_OK;
 	}
 
-	HRESULT UnlockRect() override { return unlock_and_capture(nullptr); }
+	HRESULT UnlockRect() override
+	{
+		BrowserD3DTextureDirtyRegion dirty = {};
+		HRESULT result = unlock_and_capture(&dirty);
+		if (SUCCEEDED(result)) {
+			browser_texture_update(m_owner_texture_id, m_owner_texture_level, m_owner_texture_format,
+				dirty, m_owner_texture_usage);
+		}
+		return result;
+	}
 
 	HRESULT unlock_and_capture(BrowserD3DTextureDirtyRegion *dirty)
 	{

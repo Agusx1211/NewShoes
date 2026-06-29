@@ -6511,3 +6511,85 @@ target_link_options(bink-videoplayer-browser-runtime-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_videoplayer_sidecar_copy_bridge_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
+
+add_executable(bink-w3d-video-buffer-browser-smoke
+  tests/bink_w3d_video_buffer_upload_smoke.cpp
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DVideoBuffer.cpp"
+)
+
+set_target_properties(bink-w3d-video-buffer-browser-smoke PROPERTIES
+  SUFFIX ".js"
+)
+
+target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
+  zh_bink_video_device_compile_frontier
+  zh_gameclient_utility
+  zh_ww3d2_compile_frontier
+  zh_browser_d3d8
+  zh_wwmath_lookup
+  zh_wwmath_core
+  zh_wwsaveload_full
+  zh_wwsaveload_core
+  zh_wwlib_file_ini
+  zh_wwlib_file_core
+  zh_wwlib_stream_core
+  zh_wwlib_string
+  zh_wwlib_refcount
+  zh_wwlib_containers
+  zh_wwlib_crc
+  zh_wwlib_random
+  zh_wwlib_thread
+  zh_wwlib_mutex
+  zh_wwlib_targa
+  zh_wwdebug_profile
+  zh_wwdebug_core
+  zh_compression_manager
+  zh_compression_eac
+)
+
+target_compile_options(bink-w3d-video-buffer-browser-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${WASM_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(bink-w3d-video-buffer-browser-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=web,worker"
+  "SHELL:-sMODULARIZE=1"
+  "SHELL:-sEXPORT_ES6=1"
+  "SHELL:-sEXPORT_NAME=createBinkW3DVideoBufferBrowserSmokeModule"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=134217728"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_w3d_video_buffer_upload_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
+)
