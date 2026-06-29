@@ -598,7 +598,9 @@ shares structure and follows behind.
       requested-payload decode/cache storage and engine-driven Web Audio
       scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
-- [ ] 3D positional audio (panning/attenuation) tied to camera/world.
+- [ ] 3D positional audio (panning/attenuation) tied to camera/world;
+      `verify:audio-3d-position-frontier` now pins the source listener/sample
+      position contract that the browser Web Audio backend must satisfy.
 - [ ] Music playback + transitions.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI.

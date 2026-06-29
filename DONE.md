@@ -3366,6 +3366,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       2D/3D availability checks, start/completion counter mutations,
       reset cleanup, and the `AudioManager` methods a Web Audio backend must
       keep compatible.
+- [x] Add `npm run verify:audio-3d-position-frontier`, a source-only verifier
+      for the original positional audio path: `AudioEventRTS` position
+      ownership, `SoundManager::canPlayNow` distance/shroud culling,
+      listener position/orientation updates, one-shot 3D sample
+      distance/position setup, per-frame 3D sample position updates, and 3D
+      sample volume routing.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
