@@ -703,8 +703,10 @@ function main() {
     "CMake browser smoke exported function");
   assertExact(errors, facts.packageJson, "scriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 114,
+      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 116,
     "package.json test:bink-w3d-video-buffer-browser script");
+  // NOTE: the two verify:bink-w3d-video-presentation-frontier scripts added
+  // above this entry shifted the test script block down by two lines.
 
   // ------------------------------------------------------------------
   const report = {

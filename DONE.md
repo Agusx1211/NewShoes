@@ -3876,6 +3876,45 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       explicitly does NOT complete runtime Bink audio playback, per-frame
       audio-clock frame progression (`BinkWait`), or a Web Audio/DirectSound
       handoff; those remain open M8 tasks tracked in `TODO.md`.
+- [x] Add `verify:bink-w3d-video-presentation-frontier`
+      (`verify:bink-w3d-video-presentation-frontier` and strict alias
+      `verify:bink-w3d-video-presentation-frontier:strict`), a source-only
+      verifier (it reads files, never executes the engine or wasm) for the
+      original Bink/W3D *video presentation* contract from a browser-uploaded
+      `W3DVideoBuffer` texture to final `W3DDisplay::drawVideoBuffer`
+      presentation. It is deliberately disjoint from the runtime
+      `bink-w3d-video-buffer-browser-smoke` upload smoke and from
+      `verify:bink-w3d-video-buffer-upload-frontier` (which pins the
+      *upload* contract): this verifier pins the downstream *presentation*
+      source contract that the upload must ultimately reach. It asserts that
+      `W3DDisplay::drawVideoBuffer(VideoBuffer*, Int, Int, Int, Int)` casts
+      its argument to `W3DVideoBuffer*` and drives the display-owned
+      `Render2DClass` (`m_2DRender`) in the exact original order
+      (`Reset()` -> `Enable_Texturing(TRUE)` ->
+      `Set_Texture(vbuffer->texture())` ->
+      `Add_Quad(RectClass(startX,startY,endX,endY), vbuffer->Rect(0,0,1,1))`
+      -> `Render()`); that `W3DDisplay::createVideoBuffer()` creates a
+      `W3DVideoBuffer` through the original format-selection path
+      (`DX8Wrapper::getBackBufferFormat()` ->
+      `Get_Current_Caps()->Support_Texture_Format` ->
+      `W3DFormatToType`, the `WW3D_FORMAT_X8R8G8B8`/`R8G8B8`/`R5G6B5`/
+      `X1R5G5B5` `D3DFMT` fallback ladder -> `VideoBuffer::TYPE_*` with the
+      no-format `return NULL` path and the `TheGlobalData->m_playIntro`
+      low-mem 16-bit override, then `NEW W3DVideoBuffer(format)`); that
+      `W3DDisplay::drawImage` proves the SAME display-owned
+      `Render2DClass` path (`Reset` -> `Enable_Texturing` -> `Set_Texture`
+      -> `Add_Quad` -> `Render`) already has browser-backed textured-quad
+      coverage through the `test:ww3d-display-drawimage-file` harness proof
+      (`ww3d_display_drawimage_file_probe`, `Render2DClass::Set_Texture`
+      source attribution, texture create/update/bind delta check, and
+      viewport screenshot); and the CMake/package facts for the current
+      `bink-w3d-video-buffer-browser-smoke` upload proof and the
+      `test:ww3d-display-drawimage-file` display draw-image target/script it
+      relies on. The verifier is honest that this is a source-only
+      presentation contract pin: runtime `W3DDisplay::drawVideoBuffer`
+      presentation of a Bink video frame, verified by a harness screenshot,
+      is still open unless the main agent has completed it by merge time; it
+      does NOT claim runtime Bink video presentation complete.
 
 ---
 

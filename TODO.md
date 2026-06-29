@@ -732,6 +732,21 @@ shares structure and follows behind.
       `test:bink-w3d-video-buffer-browser` runtime proof. It does not claim
       final W3D video presentation; that still needs a harness screenshot
       through `W3DDisplay::drawVideoBuffer`.
+      `verify:bink-w3d-video-presentation-frontier` now pins the source-only
+      *presentation* contract from the original Bink/W3D video-buffer upload
+      to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
+      `drawVideoBuffer` casts to `W3DVideoBuffer*` and drives the
+      display-owned `Render2DClass`
+      (`Reset` -> `Enable_Texturing(TRUE)` -> `Set_Texture(vbuffer->texture())`
+      -> `Add_Quad(RectClass(startX,startY,endX,endY), Rect(0,0,1,1))` ->
+      `Render`) in order, and that `createVideoBuffer` creates the
+      `W3DVideoBuffer` through the original
+      `DX8Wrapper::Get_Current_Caps()` / `D3DFMT` format-selection path. It
+      is honest that the same `Render2DClass` textured-quad primitive has
+      browser-backed coverage via `test:ww3d-display-drawimage-file`, but that
+      runtime Bink video presentation through `drawVideoBuffer` still needs a
+      harness screenshot (source-only presentation contract pinned; not
+      runtime-complete).
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then
