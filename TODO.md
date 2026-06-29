@@ -402,10 +402,16 @@ shares structure and follows behind.
       `SubsystemInterfaceList`, a focused `Display`, `FontLibrary`, and the
       original `W3DGameWindowManager`, then proves original `winCreate` allocates
       `W3DGameWindow` and original `gogoGadgetPushButton` installs the W3D draw
-      callback. Full production `W3DDisplay` construction, `.wnd` layout/script
-      callback loading, `W3DFunctionLexicon` table lookup, and
+      callback. `test:startup-vertical` now gates the focused
+      `Win32GameEngine` lifetime, original `MilesAudioManager::openDevice`, and
+      W3D game-window ownership smokes together so cross-subsystem startup drift
+      is visible. Full production `W3DDisplay` construction, `.wnd`
+      layout/script callback loading, `W3DFunctionLexicon` table lookup, and
       `W3DModuleFactory` module-template lookup still need original public-API
-      runtime proof.
+      runtime proof; do the full `W3DFunctionLexicon::init()` proof with real
+      `.wnd`/shell callback ownership rather than a standalone table smoke,
+      because isolated table loading pulls the base GUI/control-bar/network
+      callback graph.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
