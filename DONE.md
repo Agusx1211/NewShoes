@@ -3360,6 +3360,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `processPlayingList` / `processStoppedList` cleanup, handle release,
       file close, and `AudioEventRTS` deletion. This verifies source structure
       only, not runtime audio.
+- [x] Add `npm run verify:audio-sound-manager-counters-frontier`, a source-only
+      verifier for the original `SoundManager` request gate and 2D/3D sample
+      counter contract: lazy configured limit loading, `canPlayNow`
+      2D/3D availability checks, start/completion counter mutations,
+      reset cleanup, and the `AudioManager` methods a Web Audio backend must
+      keep compatible.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
@@ -3432,6 +3438,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioBufferSourceNode`s, four completion callbacks, render timing,
       non-silent rendered windows, and rendered sample anchors while leaving
       engine-driven audio-event scheduling open.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible requested audio event lifecycle proof for the same four
+      requested payload cache entries. The smoke now pins synthetic event
+      handles, AR_Play request state, sample vs stream playing types,
+      `AudioBufferSourceNode` start windows, ordered completion callbacks,
+      `PS_Stopped`, and the sample/stream release paths while preserving that
+      this is not yet engine-driven playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
