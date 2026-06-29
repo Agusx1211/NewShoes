@@ -1238,7 +1238,8 @@ function assertStartupSingletons(state, context, expectedReady) {
         || probe.nextRequired !== "createAudioManager"
         || probe.gameLOD?.filesReady !== true
         || probe.gameLOD?.initialized !== true
-        || probe.mapCache?.loaded !== true
+        || probe.mapCache?.loaded !== false
+        || probe.mapCache?.updateCacheRuntimeReady !== false
         || probe.gameLOD?.textureReduction < 0
         || probe.gameLOD?.memoryPassed !== true)) {
     throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
@@ -3720,7 +3721,7 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
     "browser_device_layer_pending",
     true,
     { local: true, archive: true },
-    false,
+    true,
     true,
   );
   const files = state.originalEngineStartup.startupFiles;

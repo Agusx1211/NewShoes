@@ -1658,6 +1658,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       still lack base `Data\INI\GameLODPresets.ini`, and the durable
       startup-owned `TheMapCache` is not yet loaded through
       `Maps\MapCache.ini` or advanced into `MapCache::updateCache`.
+- [x] Correct the startup singleton frontier to match original
+      `GameEngine.cpp` line order: pre-audio readiness now requires owned
+      `SubsystemInterfaceList`, `GlobalData`, and initialized
+      `GameLODManager`, but no longer treats `MapCache::updateCache` as a
+      blocker before `createAudioManager`. The harness-visible device frontier
+      now lists `TheAudio` at line 434 as the first unowned factory and keeps
+      `TheMapCache` at line 606 as a deferred post-audio startup step.
 ---
 
 ## M3 — File / data subsystem (real data)

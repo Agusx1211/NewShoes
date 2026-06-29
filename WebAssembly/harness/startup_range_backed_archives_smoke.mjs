@@ -212,7 +212,8 @@ function assertStartupSingletons(state, context, expectedReady) {
         || probe.nextRequired !== "createAudioManager"
         || probe.gameLOD?.filesReady !== true
         || probe.gameLOD?.initialized !== true
-        || probe.mapCache?.loaded !== true
+        || probe.mapCache?.loaded !== false
+        || probe.mapCache?.updateCacheRuntimeReady !== false
         || probe.gameLOD?.textureReduction < 0
         || probe.gameLOD?.memoryPassed !== true)) {
     throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
@@ -373,12 +374,12 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
 function assertOriginalStartupWithBaseFiles(state, context) {
   const startup = assertOriginalStartupHeader(state, context, {
     status: "browser_device_layer_pending",
-    nextRequired: "originalSetupResidency",
+    nextRequired: "CreateGameEngine",
     startupFilesReady: true,
-    startupSingletonsReady: false,
+    startupSingletonsReady: true,
     gameLODReady: true,
     mapCacheReady: false,
-    setupReady: false,
+    setupReady: true,
     audioStartupFilesReady: true,
     milesNextRequired: "webAudioPlaybackBackend",
   });

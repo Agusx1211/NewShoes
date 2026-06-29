@@ -397,9 +397,10 @@ shares structure and follows behind.
       and startup singleton teardown contracts.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
-      is mounted, load `GameLODManager`, load `Maps\MapCache.ini` through the
-      durable startup-owned `TheMapCache`, and verify the next blocker is
-      `createAudioManager`.
+      is mounted, load `GameLODManager` through the durable startup owner and
+      verify the next blocker is `createAudioManager`. Keep
+      `Maps\MapCache.ini` loading deferred to its original post-audio
+      `GameEngine.cpp` point (`MapCache::updateCache` at line 607).
 - [ ] Replace the startup singleton probe's static placement-storage residency
       with the original `GameEngine.cpp` heap allocation/destructor path once
       the wasm original memory-manager lifetime is safe for durable

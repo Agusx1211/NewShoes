@@ -207,14 +207,9 @@ void finish_status(StartupSingletonsProbeResult &result)
 		result.next_required = "GameLODStartupFiles";
 		return;
 	}
-	if (!result.map_cache_file_ready) {
-		result.status = "missing_map_cache_file";
-		result.next_required = "MapCacheStartupFile";
-		return;
-	}
 	if (!result.subsystem_init_shutdown_ok ||
 		!result.game_lod_initialized ||
-		!result.map_cache_loaded) {
+		!result.map_cache_owned) {
 		result.status = "startup_singleton_probe_failed";
 		result.next_required = "startupSingletonOwnership";
 		return;
@@ -325,8 +320,7 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 		result.subsystem_init_shutdown_ok &&
 		result.game_lod_owned &&
 		result.game_lod_initialized &&
-		result.map_cache_owned &&
-		result.map_cache_loaded;
+		result.map_cache_owned;
 	finish_status(result);
 	g_startup_singletons_state = result;
 	return g_startup_singletons_state;

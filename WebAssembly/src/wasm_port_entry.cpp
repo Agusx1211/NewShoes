@@ -1537,17 +1537,17 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":5,\"line\":363,\"subsystem\":\"StartupData\",\"factory\":\"default_and_shipped_ini_loads\",\"originalConcrete\":\"Original INI stores\",\"ready\":%s,\"called\":true,\"status\":\"blocked_until_base_ini_archive_ready\"},"
 		"{\"order\":6,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
 		"{\"order\":7,\"line\":384,\"subsystem\":\"TheGameLODManager\",\"factory\":\"GameLODManager\",\"originalConcrete\":\"GameLODManager\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
-		"{\"order\":8,\"line\":606,\"subsystem\":\"TheMapCache\",\"factory\":\"MapCache\",\"originalConcrete\":\"MapCache\",\"ready\":%s,\"called\":false,\"status\":\"browser_runtime_owned_before_update_cache\"},"
-		"{\"order\":9,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
-		"{\"order\":10,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
-		"{\"order\":11,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
-		"{\"order\":12,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
-		"{\"order\":13,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
-		"{\"order\":14,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
-		"{\"order\":15,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
-		"{\"order\":16,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
-		"{\"order\":17,\"line\":510,\"subsystem\":\"TheRadar\",\"factory\":\"createRadar\",\"originalConcrete\":\"W3DRadar\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_radar_renderer\"},"
-		"{\"order\":18,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"}"
+		"{\"order\":8,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":9,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
+		"{\"order\":10,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":11,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":12,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
+		"{\"order\":13,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
+		"{\"order\":14,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
+		"{\"order\":15,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
+		"{\"order\":16,\"line\":510,\"subsystem\":\"TheRadar\",\"factory\":\"createRadar\",\"originalConcrete\":\"W3DRadar\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_radar_renderer\"},"
+		"{\"order\":17,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"},"
+		"{\"order\":18,\"line\":606,\"subsystem\":\"TheMapCache\",\"factory\":\"MapCache\",\"originalConcrete\":\"MapCache\",\"ready\":%s,\"called\":false,\"status\":\"post_audio_update_cache_deferred\"}"
 		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"startupSingletonsReady\":%s,\"setupReady\":%s}",
 		next_required,
 		json_bool(audio_files_ready),
@@ -1568,8 +1568,8 @@ const char *build_device_factory_frontier_json()
 		json_bool(startup_data_probes_ready() && startup_files_ready),
 		json_bool(startup_singletons.subsystem_list_owned && startup_singletons.subsystem_init_shutdown_ok),
 		json_bool(startup_singletons.game_lod_initialized),
-		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(g_cd_manager_probe.ok),
+		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(file_system_ready),
 		json_bool(startup_files_ready),
 		json_bool(startup_singletons.ok),

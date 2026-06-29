@@ -406,7 +406,8 @@ The wasm CMake skeleton currently builds:
   Hour archive set, while `Data\INI\GameLODPresets.ini` is classified as a base
   `INI.big` startup gap; `MapCache` residency is proven, but loading
   `Maps\MapCache.ini` through the durable startup owner and running
-  `MapCache::updateCache` remain open. The bootstrap also links original
+  `MapCache::updateCache` remain deferred to the original post-audio startup
+  point at `GameEngine.cpp:606-607`. The bootstrap also links original
   `Win32Device/Common/Win32CDManager.cpp` and reports `cdManagerProbe` after
   initializing the original manager through browser drive shims; the verified
   startup state has zero CD drives and no blocking physical-media probe.
@@ -1129,8 +1130,8 @@ The wasm CMake skeleton currently builds:
   optional base Generals `INI.big` is present, the same smoke range-fetches its
   startup/audio INI entries as `ZZBase_INI.big`, also mounts optional
   `English.big` as `ZZBase_English.big` when available, and expects the startup
-  frontier to advance past missing startup files into the remaining original
-  setup residency/device-factory boundary. After boot it also drives the
+  frontier to advance past missing startup files to the `CreateGameEngine`
+  browser-device boundary. After boot it also drives the
   `win32GameEngineProbe` RPC, tying the range-backed startup frontier to the
   linked original Win32 message-pump/device boundary. The smoke now requires
   the same persistent browser runtime `FileSystem` owner proof at preload time
