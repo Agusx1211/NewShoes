@@ -3807,6 +3807,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       hook-gated instead of unconditionally true. Original `BinkVideoPlayer`
       browser presentation, `W3DVideoBuffer` texture upload/draw integration,
       final Bink surface format conversion, and audio sync remain open.
+- [x] Add `verify:bink-w3d-video-buffer-upload-frontier`, a source-only
+      verifier for the next M8 upload/presentation contract after
+      `BinkCopyToBuffer`. It pins original `BinkVideoStream::frameRender`
+      lock/copy/unlock order and `VideoBuffer::Type` to `BINKSURFACE*` mapping,
+      the abstract `VideoBuffer` lock/unlock/pitch/height/xPos/yPos/format
+      contract, original `W3DVideoBuffer` `TextureClass`/`SurfaceClass`
+      allocation/lock/unlock/free ownership, `W3DDisplay::drawVideoBuffer` as
+      the eventual 2D textured-quad presentation sink, and the browser D3D8
+      shim `LockRect`/`UnlockRect`/`wasm_d3d8_browser_texture_update` dirty
+      pixel hook path. The verifier explicitly leaves original
+      `BinkVideoPlayer` browser presentation through a real `W3DVideoBuffer`
+      and screenshot-proven `W3DDisplay::drawVideoBuffer` path open.
 
 ---
 

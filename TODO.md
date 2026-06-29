@@ -711,6 +711,13 @@ shares structure and follows behind.
       invariant that `WasmBinkProviderCanDecodeFrames` is false without the
       browser copy hook and hook-gated when `BinkCopyToBuffer` delegates a
       decoded sidecar pixel copy into wasm memory.
+      `verify:bink-w3d-video-buffer-upload-frontier` now pins the next
+      source-only upload/presentation frontier from original
+      `BinkVideoStream::frameRender` through the abstract `VideoBuffer`
+      contract, original `W3DVideoBuffer` surface/texture ownership, and the
+      browser D3D8 texture update hook. It does not claim real W3D video
+      texture presentation; that still needs a harness screenshot through
+      `W3DDisplay::drawVideoBuffer`.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.

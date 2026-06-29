@@ -17,6 +17,8 @@
     "verify:bink-video-device-frontier": "node tools/verify_bink_video_device_frontier.mjs",
     "verify:bink-runtime-callsite-frontier": "node tools/verify_bink_runtime_callsite_frontier.mjs",
     "verify:bink-runtime-callsite-frontier:strict": "node tools/verify_bink_runtime_callsite_frontier.mjs",
+    "verify:bink-w3d-video-buffer-upload-frontier": "node tools/verify_bink_w3d_video_buffer_upload_frontier.mjs",
+    "verify:bink-w3d-video-buffer-upload-frontier:strict": "node tools/verify_bink_w3d_video_buffer_upload_frontier.mjs",
     "verify:bink-payload-header-contract": "node tools/verify_bink_payload_header_contract.mjs artifacts/real-assets --expect-current-zh",
     "verify:bink-browser-video-outputs": "node tools/verify_bink_browser_video_outputs.mjs --allow-missing --expect-current-zh",
     "verify:bink-browser-video-outputs:strict": "node tools/verify_bink_browser_video_outputs.mjs --expect-current-zh",
