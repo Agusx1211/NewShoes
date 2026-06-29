@@ -670,6 +670,10 @@ shares structure and follows behind.
 - [ ] Replace the compile-only Bink API declarations with a browser-backed video
       provider that preserves the original `VideoPlayer`/`VideoStream` call path.
 - [ ] Decide path for `.bik` files: transcode offline vs in-browser decode.
+      `extract_zh_runtime_archives.sh` now preserves the shipped loose
+      `GC_Background.bik` and `VS_small.bik` payloads from `Data1.cab`, so the
+      next decision can work from real extracted video files rather than only
+      source-level Bink API declarations.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.

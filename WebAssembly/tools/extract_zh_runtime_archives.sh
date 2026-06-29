@@ -45,6 +45,11 @@ top_level_archives=(
   GensecZH.big
 )
 
+loose_video_payloads=(
+  GC_Background.bik
+  VS_small.bik
+)
+
 base_data_archives=(
   INI.big
 )
@@ -115,6 +120,22 @@ require_big() {
 
   if [[ "$(head -c 4 "${archive_path}")" != "BIGF" ]]; then
     echo "Archive does not have BIGF header: ${archive_path}" >&2
+    exit 1
+  fi
+}
+
+require_bink() {
+  local video_path="$1"
+
+  if [[ ! -s "${video_path}" ]]; then
+    echo "Bink video missing or empty: ${video_path}" >&2
+    exit 1
+  fi
+
+  local magic
+  magic="$(head -c 3 "${video_path}")"
+  if [[ "${magic}" != "BIK" && "${magic}" != "KB2" ]]; then
+    echo "Bink video has unexpected header: ${video_path}" >&2
     exit 1
   fi
 }
@@ -194,10 +215,15 @@ ensure_iso "${disc2_image}" "${disc2_iso}"
 7z e -y "-o${out_dir}" "${disc1_iso}" Data1.cab GensecZH.big >/dev/null
 7z e -y "-o${out_dir}" "${disc2_iso}" Language.cab Gensec.big >/dev/null
 7z e -y "-o${out_dir}" "${data_cab}" "${data_archives[@]}" >/dev/null
+7z e -y "-o${out_dir}" "${data_cab}" "${loose_video_payloads[@]}" >/dev/null
 7z e -y "-o${out_dir}" "${language_cab}" "${language_archives[@]}" >/dev/null
 
 for archive in "${data_archives[@]}" "${language_archives[@]}" "${top_level_archives[@]}"; do
   require_big "${out_dir}/${archive}"
+done
+
+for video in "${loose_video_payloads[@]}"; do
+  require_bink "${out_dir}/${video}"
 done
 
 extract_optional_base_startup_archives
@@ -206,4 +232,5 @@ printf '%s\n' \
   "${data_archives[@]}" \
   "${language_archives[@]}" \
   "${top_level_archives[@]}" \
+  "${loose_video_payloads[@]}" \
   "${extracted_optional_archives[@]}" | sort -u
