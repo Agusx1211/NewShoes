@@ -3745,6 +3745,36 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `BinkCopyToBuffer` actually copies pixels. Original `BinkVideoPlayer`
       runtime presentation, `BinkCopyToBuffer` frame upload, and audio sync
       remain open.
+- [x] Add `verify:bink-runtime-callsite-frontier`
+      (`WebAssembly/tools/verify_bink_runtime_callsite_frontier.mjs`, with
+      strict alias `verify:bink-runtime-callsite-frontier:strict`), a
+      source-only verifier for the original Bink runtime *callsite* frontier
+      that any future sidecar-into-`BinkVideoPlayer` presentation bridge must
+      preserve. It pins, as exact source lines where stable: the
+      `W3DGameClient::createVideoPlayer()` `NEW BinkVideoPlayer` factory
+      (`W3DGameClient.h` line 115) and the `GameClient::init()` ownership path
+      (`TheVideoPlayer = createVideoPlayer()` at line 411, `->init()` at 414,
+      `setName("TheVideoPlayer")` at 415); `BinkVideoPlayer::createStream`
+      (187) setting `m_handle` (200) then `BinkSetVolume` (210),
+      `BinkVideoPlayer::open` (221) calling `BinkOpen` then
+      `createStream(handle)`, and `BinkVideoPlayer::load` (264) delegating to
+      `open`; the abstract `VideoBuffer` `lock`/`unlock` (126/127)/`pitch`
+      (137)/`format` (138) contract; the `W3DVideoBuffer` surface-backed
+      `lock` (167, via `m_texture->Get_Surface_Level()` and
+      `m_surface->Lock()`) and `unlock` (190, via `m_surface->Unlock()` +
+      `Release_Ref()`) facts; and the existing
+      `zh_bink_video_device_compile_frontier` CMake target (2468) compiling
+      `BinkVideoPlayer.cpp` (2469). The representative original frame loops
+      (`Display::update`, `InGameUI::update`, `WindowVideoManager::update`,
+      the `SinglePlayerLoadScreen::init` and `ChallengeLoadScreen::init`
+      load-video loops, and `PlayMovieAndBlock` in `ScoreScreen.cpp`) and the
+      `ChallengeLoadScreen::init` min-spec `frameGoto(frameCount())` skip path
+      (1101, followed by its own ready-wait/decompress/render) are verified by
+      robust function-body range/ordered searches rather than brittle
+      full-file line equality. It emits JSON `{ ok, errors, sources, facts }`
+      and exits nonzero on any missing/moved hard fact. It does NOT mark
+      runtime playback, frame upload, or `BinkCopyToBuffer` pixel copy
+      complete; those remain open M8 tasks tracked in `TODO.md`.
 
 ---
 
