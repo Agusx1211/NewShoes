@@ -8,7 +8,8 @@
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
 // W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
 // original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
-// movie helper path, hook-counted non-final victorious, defeat/retry, and
+// movie helper path with hook-counted campaign stats and LOD gates, its low-res
+// skip branch, hook-counted non-final victorious, defeat/retry, and
 // challenge win/loss finishSinglePlayerInit branches, and
 // SinglePlayerLoadScreen::init movie loops through test-controlled
 // layout/movie facts; full non-test finishSinglePlayerInit subsystem edges,
@@ -27,10 +28,12 @@
 //      creating Menus/BlankWindow.wnd, attaching a VideoBuffer to its first
 //      window, drawing each decompressed frame, and cleaning up the layout.
 //   5. The focused browser runtime drives the extracted final-campaign movie
-//      helper through a real CampaignManager/Campaign/Mission transition, and
-//      drives the full finishSinglePlayerInit non-final victorious,
-//      defeat/retry, and challenge win/loss branches with hook-counted
-//      GameState/InGameUI/transition edges plus challenge UI/audio assertions.
+//      helper through a real CampaignManager/Campaign/Mission transition,
+//      hook-counts the final stats/LOD gates on both high-detail playback and
+//      low-res skip outcomes, and drives the full finishSinglePlayerInit
+//      non-final victorious, defeat/retry, and challenge win/loss branches with
+//      hook-counted GameState/InGameUI/transition edges plus challenge UI/audio
+//      assertions.
 //   6. WindowLayout / GameWindowManager still expose the layout/window hooks
 //      those ScoreScreen ownership paths depend on.
 //
@@ -806,37 +809,65 @@ function main() {
         expected, label));
   }
 
-  const finalCampaignRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerFinalCampaignMovie", scoreScreen,
-    /static\s+void\s+finishSinglePlayerFinalCampaignMovie\s*\(\s*void\s*\)/,
-    810, "ScoreScreen finishSinglePlayerFinalCampaignMovie helper");
-  if (finalCampaignRange) {
-    [
-      ["endCampaignTextLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:EndCampaign"\s*\)\s*\)/, 812, "final-campaign helper EndCampaign button text"],
-      ["finishCampaignFlagLine", /buttonIsFinishCampaign\s*=\s*TRUE\s*;/, 813, "final-campaign helper finish-campaign flag"],
-      ["campaignLine", /Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 815, "final-campaign helper current campaign"],
-      ["honorsHookGuardLine", /!\s*defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/, 819, "final-campaign helper hook build stats guard"],
-      ["statsWriteLine", /stats\s*\.\s*write\s*\(\s*\)/, 858, "final-campaign helper campaign stats write"],
-      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 877, "final-campaign helper final victory movie check"],
-      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 880, "final-campaign helper final victory movie assign"],
-      ["useLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 881, "final-campaign helper useLowRes init"],
-      ["memPassLowResLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 884, "final-campaign helper didMemPass low-res gate"],
-      ["staticFindLowResLine", /findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 887, "final-campaign helper findStaticLODLevel low-res gate"],
-      ["staticGetLowResLine", /getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 890, "final-campaign helper getStaticLODLevel low-res gate"],
-      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 894, "final-campaign helper non-low-res gate"],
-      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 895, "final-campaign helper PlayMovieAndBlock call"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, finalCampaignRange.start, finalCampaignRange.end, pattern),
-        expected, label));
+	  const statsRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerWriteCampaignCompletionStats", scoreScreen,
+	    /static\s+void\s+finishSinglePlayerWriteCampaignCompletionStats\s*\(\s*Campaign\s*\*\s*campaign\s*\)/,
+	    810, "ScoreScreen final-campaign stats helper");
+	  if (statsRange) {
+	    [
+	      ["statsNullCampaignGuardLine", /if\s*\(\s*!campaign\s*\)/, 811, "stats helper null campaign guard"],
+	      ["statsDifficultyLine", /GameDifficulty\s+difficulty\s*=\s*TheCampaignManager\s*->\s*getGameDifficulty\s*\(\s*\)/, 814, "stats helper original difficulty source"],
+	      ["statsHookCounterLine", /\+\+s_finishSinglePlayerStatsWriteCalls/, 816, "stats helper hook counter"],
+	      ["statsHookCampaignLine", /s_finishSinglePlayerLastStatsCampaign\s*=\s*campaign\s*->\s*m_name/, 817, "stats helper hook campaign capture"],
+	      ["statsUsaHonorLine", /BATTLE_HONOR_CAMPAIGN_USA/, 828, "stats helper USA battle honor"],
+	      ["statsChinaHonorLine", /BATTLE_HONOR_CAMPAIGN_CHINA/, 838, "stats helper China battle honor"],
+	      ["statsGlaHonorLine", /BATTLE_HONOR_CAMPAIGN_GLA/, 848, "stats helper GLA battle honor"],
+	      ["statsChallengeIndexLine", /s_finishSinglePlayerLastStatsChallengeIndex\s*=\s*i/, 872, "stats helper challenge index capture"],
+	      ["statsChallengeHonorLine", /BATTLE_HONOR_CHALLENGE_MODE/, 873, "stats helper challenge battle honor"],
+	      ["statsOriginalWriteLine", /stats\s*\.\s*write\s*\(\s*\)/, 882, "stats helper original SkirmishBattleHonors write"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, statsRange.start, statsRange.end, pattern),
+	        expected, label));
+	  }
 
-    const lodGuardStart = facts.scoreScreen.useLowResInitLine > 0 ?
-      facts.scoreScreen.useLowResInitLine :
-      finalCampaignRange.start;
-    assertExact(errors, facts.scoreScreen, "lodHookGuardLine",
-      firstMatchInRange(scoreScreen.lines, lodGuardStart, finalCampaignRange.end,
-        /!\s*defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/),
-      882, "final-campaign helper hook build LOD guard");
-  }
+	  const lodRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerShouldUseLowResFinalMovie", scoreScreen,
+	    /static\s+Bool\s+finishSinglePlayerShouldUseLowResFinalMovie\s*\(\s*void\s*\)/,
+	    886, "ScoreScreen final-campaign LOD helper");
+	  if (lodRange) {
+	    [
+	      ["lodUseLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 888, "LOD helper useLowRes init"],
+	      ["lodHookOverrideLine", /s_finishSinglePlayerLodOverrideEnabled/, 890, "LOD helper focused override gate"],
+	      ["lodHookDidMemPassCounterLine", /\+\+s_finishSinglePlayerLodDidMemPassCalls/, 892, "LOD helper didMemPass hook counter"],
+	      ["lodHookFindCounterLine", /\+\+s_finishSinglePlayerLodFindStaticCalls/, 895, "LOD helper findStatic hook counter"],
+	      ["lodHookGetCounterLine", /\+\+s_finishSinglePlayerLodGetStaticCalls/, 898, "LOD helper getStatic hook counter"],
+	      ["lodOriginalDidMemPassLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 906, "LOD helper original didMemPass gate"],
+	      ["lodOriginalFindLine", /TheGameLODManager\s*->\s*findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 909, "LOD helper original findStaticLODLevel gate"],
+	      ["lodOriginalGetLine", /TheGameLODManager\s*->\s*getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 912, "LOD helper original getStaticLODLevel gate"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, lodRange.start, lodRange.end, pattern),
+	        expected, label));
+	  }
+
+	  const finalCampaignRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerFinalCampaignMovie", scoreScreen,
+	    /static\s+void\s+finishSinglePlayerFinalCampaignMovie\s*\(\s*void\s*\)/,
+	    810, "ScoreScreen finishSinglePlayerFinalCampaignMovie helper");
+	  if (finalCampaignRange) {
+	    [
+	      ["endCampaignTextLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:EndCampaign"\s*\)\s*\)/, 812, "final-campaign helper EndCampaign button text"],
+	      ["finishCampaignFlagLine", /buttonIsFinishCampaign\s*=\s*TRUE\s*;/, 813, "final-campaign helper finish-campaign flag"],
+	      ["campaignLine", /Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 815, "final-campaign helper current campaign"],
+	      ["statsHelperCallLine", /finishSinglePlayerWriteCampaignCompletionStats\s*\(\s*campaign\s*\)/, 818, "final-campaign helper delegates campaign stats write"],
+	      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 877, "final-campaign helper final victory movie check"],
+	      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 880, "final-campaign helper final victory movie assign"],
+	      ["lodHelperCallLine", /Bool\s+useLowRes\s*=\s*finishSinglePlayerShouldUseLowResFinalMovie\s*\(\s*\)/, 881, "final-campaign helper delegates low-res LOD decision"],
+	      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 894, "final-campaign helper non-low-res gate"],
+	      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 895, "final-campaign helper PlayMovieAndBlock call"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, finalCampaignRange.start, finalCampaignRange.end, pattern),
+	        expected, label));
+	  }
 
   const cleanupRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerMovieBlankLayoutCleanup", scoreScreen,
     /static\s+void\s+finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*Bool\s+setTransitionGroup\s*\)/,
@@ -1045,6 +1076,22 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie\s*\(/.test(line)),
 	    66, "runtime ScoreScreen final-campaign window hook declaration");
+	  assertPresent(errors, facts.runtimeScoreScreen, "statsWriteHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenGetStatsWriteCallsForMovie\s*\(\s*\)/.test(line)),
+	    "runtime ScoreScreen stats write hook declaration");
+	  assertPresent(errors, facts.runtimeScoreScreen, "statsHonorHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenGetLastStatsHonorBitsForMovie\s*\(\s*\)/.test(line)),
+	    "runtime ScoreScreen stats honor hook declaration");
+	  assertPresent(errors, facts.runtimeScoreScreen, "lodOverrideHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetFinalMovieLodForMovie\s*\(/.test(line)),
+	    "runtime ScoreScreen final-movie LOD override hook declaration");
+	  assertPresent(errors, facts.runtimeScoreScreen, "lodCounterHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenGetLodDidMemPassCallsForMovie\s*\(\s*\)/.test(line)),
+	    "runtime ScoreScreen LOD counter hook declaration");
 	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignExerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_score_screen_finish_single_player_final_movie\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
@@ -1059,10 +1106,28 @@ function main() {
 	      facts.runtimeScoreScreen.finalCampaignExerciseDefLine + 140,
 	      /CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie\s*\(\s*\)/),
 	    1520, "runtime calls focused ScoreScreen final-campaign helper");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignHighLodSetLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.finalCampaignExerciseDefLine,
+	      facts.runtimeScoreScreen.finalCampaignExerciseDefLine + 120,
+	      /CncPortScoreScreenSetFinalMovieLodForMovie\s*\(\s*TRUE\s*,\s*TRUE\s*,\s*STATIC_GAME_LOD_HIGH\s*,\s*STATIC_GAME_LOD_HIGH\s*\)/),
+	    "runtime ScoreScreen final-campaign high-detail LOD setup");
 	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignFrameCountCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames/.test(line)),
 	    1536, "runtime ScoreScreen final-campaign 70-frame presentation check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignStatsWriteCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /final movie did not execute the campaign stats write gate/.test(line)),
+	    "runtime ScoreScreen final-campaign stats write check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignUsaHonorCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /final movie did not record the USA campaign battle honor/.test(line)),
+	    "runtime ScoreScreen final-campaign USA battle honor check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLodGateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /final movie did not execute all final-movie LOD gates/.test(line)),
+	    "runtime ScoreScreen final-campaign LOD gate check");
 		  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignSummaryLine",
 		    lineNumber(runtimeSmoke.lines,
 		      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)),
@@ -1071,6 +1136,48 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)),
 	    1849, "runtime ScoreScreen final-campaign exercise call");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_final_movie_lod_skip\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    "runtime ScoreScreen final-campaign low-res skip exercise");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResLodSetLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.finalCampaignLowResExerciseDefLine,
+	      facts.runtimeScoreScreen.finalCampaignLowResExerciseDefLine + 140,
+	      /CncPortScoreScreenSetFinalMovieLodForMovie\s*\(\s*TRUE\s*,\s*FALSE\s*,\s*STATIC_GAME_LOD_HIGH\s*,\s*STATIC_GAME_LOD_HIGH\s*\)/),
+	    "runtime ScoreScreen final-campaign low-res LOD setup");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResNoFramesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly presented movie frames/.test(line)),
+	    "runtime ScoreScreen low-res skip no-frame check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResNoCountsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly changed texture or draw counts/.test(line)),
+	    "runtime ScoreScreen low-res skip texture/draw count check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResNoStreamCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly opened a Bink stream/.test(line)),
+	    "runtime ScoreScreen low-res skip no-stream check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResChallengeHonorCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip did not record the challenge battle honor/.test(line)),
+	    "runtime ScoreScreen low-res skip challenge honor check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResChallengeIndexCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip recorded the wrong challenge stats index/.test(line)),
+	    "runtime ScoreScreen low-res skip challenge index check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResLodGateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip did not execute all final-movie LOD gates/.test(line)),
+	    "runtime ScoreScreen low-res skip LOD gate check");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit final low-res skip branch ok/.test(line)),
+	    "runtime ScoreScreen final-campaign low-res skip summary");
+	  assertPresent(errors, facts.runtimeScoreScreen, "finalCampaignLowResExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_score_screen_finish_single_player_final_movie_lod_skip\s*\(\s*\*player\s*\)/.test(line)),
+	    "runtime ScoreScreen final-campaign low-res skip exercise call");
 	  assertExact(errors, facts.runtimeScoreScreen, "finishSinglePlayerInitHookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/.test(line)),
@@ -1429,7 +1536,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, hook-counted non-final victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, production Challenge persona ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+		    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper including hook-counted stats/LOD gates and low-res skip, hook-counted non-final victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, production Challenge persona ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

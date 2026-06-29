@@ -701,9 +701,15 @@ shares structure and follows behind.
       final-campaign movie helper through a real `CampaignManager` /
       `Campaign` / final-`Mission` transition and verifies another 70
       `VS_small` decoded frame presentations plus blank-layout cleanup. It now
-      also drives the full `finishSinglePlayerInit` non-final victorious branch
-      through a real `CampaignManager` / two-mission campaign in the focused
-      ScoreScreen hook build, verifying `SaveAndContinue`, next-map selection,
+      also hook-counts the final-campaign stats/LOD gates: the high-detail `USA`
+      path records normal difficulty and `BATTLE_HONOR_CAMPAIGN_USA` while
+      playing 70 frames, and the low-res `CHALLENGE_3` path records hard
+      difficulty, `BATTLE_HONOR_CHALLENGE_MODE`, challenge index 3, executes all
+      three LOD checks, opens no Bink stream, and leaves texture/draw counts
+      unchanged. It now also drives the full `finishSinglePlayerInit` non-final
+      victorious branch through a real `CampaignManager` / two-mission campaign
+      in the focused ScoreScreen hook build, verifying `SaveAndContinue`,
+      next-map selection,
       saved-text visibility, and hook-counted mission-save, message-resource
       cleanup, and `ScoreScreenShow` transition edges without adding Bink
       frames. It now also drives the non-challenge defeat/retry branch through
@@ -726,9 +732,9 @@ shares structure and follows behind.
       campaign-owned load-screen setup, campaign-owned Challenge persona
       setup, full non-test `finishSinglePlayerInit` subsystem coverage
       (including original `GameState::missionSave`,
-      `InGameUI::freeMessageResources`, transition-handler calls, stats/LOD
-      gates in the browser runtime), and Bink/audio sync drive the same video
-      surface.
+      `InGameUI::freeMessageResources`, transition-handler calls, production
+      `SkirmishBattleHonors` persistence, and real `GameLODManager` singleton
+      ownership), and Bink/audio sync drive the same video surface.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -772,6 +778,10 @@ shares structure and follows behind.
       `CampaignManager` / `Campaign` / final-`Mission` transition, including
       the original `PlayMovieAndBlock("VS_small")` call, 70 decoded frame
       presentations, finish-campaign button state, and blank-layout cleanup.
+      It now also hook-counts the final-campaign stats/LOD gates for the
+      high-detail `USA` movie path and the low-res `CHALLENGE_3` skip path,
+      verifying difficulty/honor/challenge-index recording, all three LOD
+      checks, no Bink stream open on skip, and unchanged texture/draw counts.
       It now also drives the full non-final victorious `finishSinglePlayerInit`
       branch in the focused ScoreScreen hook build, verifying mission
       advancement, `SaveAndContinue`, saved-text visibility, and hook-counted
@@ -785,8 +795,9 @@ shares structure and follows behind.
       win/loss audio events without adding Bink frames.
       Full original InGameUI, campaign-owned load-screen setup,
       campaign-owned Challenge persona setup, full non-test
-      `finishSinglePlayerInit` subsystem edges, stats/LOD gates in the focused
-      browser runtime, and Bink/audio sync remain open.
+      `finishSinglePlayerInit` subsystem edges, production
+      `SkirmishBattleHonors` persistence / real `GameLODManager` singleton
+      ownership, and Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -838,8 +849,9 @@ shares structure and follows behind.
       13 texture creates, 779 texture updates, and 12 texture releases. It
       does not claim runtime InGameUI, full campaign-owned load-screen setup,
       campaign-owned Challenge persona setup, full non-test
-      `finishSinglePlayerInit` subsystem edges, stats/LOD gates in the focused
-      browser runtime, or Bink/audio sync complete; the
+      `finishSinglePlayerInit` subsystem edges, production
+      `SkirmishBattleHonors` persistence / real `GameLODManager` singleton
+      ownership, or Bink/audio sync complete; the
       broader CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI
       singleton path still needs to link and be harness-driven.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
@@ -867,8 +879,9 @@ shares structure and follows behind.
       original `SinglePlayerLoadScreen::init("VS_small")` runtime loop, and
       focused original `ChallengeLoadScreen::init` runtime loop for
       `GC_Background` plus `VS_small`/`VSSmall` child movies, plus the
-      extracted ScoreScreen final-campaign movie helper, plus the hook-counted
-      non-final victorious and defeat/retry `finishSinglePlayerInit` branches.
+      extracted ScoreScreen final-campaign movie helper with hook-counted
+      stats/LOD gates and low-res skip, plus the hook-counted non-final
+      victorious and defeat/retry `finishSinglePlayerInit` branches.
       Full original
       InGameUI, campaign-owned load-screen setup, campaign-owned Challenge
       persona setup, full non-test `finishSinglePlayerInit` subsystem edges,
@@ -894,6 +907,7 @@ shares structure and follows behind.
       first-window `WinInstanceData::setVideoBuffer` path shaped like
       `ScoreScreen::PlayMovieAndBlock`, and now the focused original
       `ScoreScreen::PlayMovieAndBlock("VS_small")` loop itself, plus focused
+      final-campaign stats/LOD and low-res skip coverage, plus focused
       original `SinglePlayerLoadScreen::init("VS_small")` and
       `ChallengeLoadScreen::init` runtime loops, plus the extracted
       ScoreScreen final-campaign movie helper, plus the hook-counted non-final

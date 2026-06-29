@@ -162,12 +162,26 @@ static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup )
 static void finishSinglePlayerMissionSave( void );
 static void finishSinglePlayerFreeMessageResources( void );
 static void finishSinglePlayerSetTransitionGroup( AsciiString groupName );
+static void finishSinglePlayerWriteCampaignCompletionStats( Campaign *campaign );
+static Bool finishSinglePlayerShouldUseLowResFinalMovie( void );
 
 #if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
 static Int s_finishSinglePlayerMissionSaveCalls = 0;
 static Int s_finishSinglePlayerFreeMessageResourcesCalls = 0;
 static Int s_finishSinglePlayerTransitionGroupCalls = 0;
 static AsciiString s_finishSinglePlayerLastTransitionGroup;
+static Int s_finishSinglePlayerStatsWriteCalls = 0;
+static AsciiString s_finishSinglePlayerLastStatsCampaign;
+static Int s_finishSinglePlayerLastStatsDifficulty = -1;
+static UnsignedInt s_finishSinglePlayerLastStatsHonorBits = 0;
+static Int s_finishSinglePlayerLastStatsChallengeIndex = -1;
+static Bool s_finishSinglePlayerLodOverrideEnabled = FALSE;
+static Bool s_finishSinglePlayerLodMemPass = TRUE;
+static StaticGameLODLevel s_finishSinglePlayerLodFindLevel = STATIC_GAME_LOD_HIGH;
+static StaticGameLODLevel s_finishSinglePlayerLodCurrentLevel = STATIC_GAME_LOD_HIGH;
+static Int s_finishSinglePlayerLodDidMemPassCalls = 0;
+static Int s_finishSinglePlayerLodFindStaticCalls = 0;
+static Int s_finishSinglePlayerLodGetStaticCalls = 0;
 
 extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout)
 {
@@ -228,6 +242,18 @@ extern "C" void CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie(
 	s_finishSinglePlayerFreeMessageResourcesCalls = 0;
 	s_finishSinglePlayerTransitionGroupCalls = 0;
 	s_finishSinglePlayerLastTransitionGroup.clear();
+	s_finishSinglePlayerStatsWriteCalls = 0;
+	s_finishSinglePlayerLastStatsCampaign.clear();
+	s_finishSinglePlayerLastStatsDifficulty = -1;
+	s_finishSinglePlayerLastStatsHonorBits = 0;
+	s_finishSinglePlayerLastStatsChallengeIndex = -1;
+	s_finishSinglePlayerLodOverrideEnabled = FALSE;
+	s_finishSinglePlayerLodMemPass = TRUE;
+	s_finishSinglePlayerLodFindLevel = STATIC_GAME_LOD_HIGH;
+	s_finishSinglePlayerLodCurrentLevel = STATIC_GAME_LOD_HIGH;
+	s_finishSinglePlayerLodDidMemPassCalls = 0;
+	s_finishSinglePlayerLodFindStaticCalls = 0;
+	s_finishSinglePlayerLodGetStaticCalls = 0;
 }
 
 extern "C" Int CncPortScoreScreenGetMissionSaveCallsForMovie()
@@ -253,6 +279,58 @@ extern "C" const char *CncPortScoreScreenGetLastTransitionGroupForMovie()
 extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie()
 {
 	return buttonIsFinishCampaign ? 1 : 0;
+}
+
+extern "C" Int CncPortScoreScreenGetStatsWriteCallsForMovie()
+{
+	return s_finishSinglePlayerStatsWriteCalls;
+}
+
+extern "C" const char *CncPortScoreScreenGetLastStatsCampaignForMovie()
+{
+	return s_finishSinglePlayerLastStatsCampaign.str();
+}
+
+extern "C" Int CncPortScoreScreenGetLastStatsDifficultyForMovie()
+{
+	return s_finishSinglePlayerLastStatsDifficulty;
+}
+
+extern "C" UnsignedInt CncPortScoreScreenGetLastStatsHonorBitsForMovie()
+{
+	return s_finishSinglePlayerLastStatsHonorBits;
+}
+
+extern "C" Int CncPortScoreScreenGetLastStatsChallengeIndexForMovie()
+{
+	return s_finishSinglePlayerLastStatsChallengeIndex;
+}
+
+extern "C" void CncPortScoreScreenSetFinalMovieLodForMovie(
+	Bool enabled,
+	Bool didMemPass,
+	Int findStaticLevel,
+	Int currentStaticLevel)
+{
+	s_finishSinglePlayerLodOverrideEnabled = enabled;
+	s_finishSinglePlayerLodMemPass = didMemPass;
+	s_finishSinglePlayerLodFindLevel = (StaticGameLODLevel)findStaticLevel;
+	s_finishSinglePlayerLodCurrentLevel = (StaticGameLODLevel)currentStaticLevel;
+}
+
+extern "C" Int CncPortScoreScreenGetLodDidMemPassCallsForMovie()
+{
+	return s_finishSinglePlayerLodDidMemPassCalls;
+}
+
+extern "C" Int CncPortScoreScreenGetLodFindStaticCallsForMovie()
+{
+	return s_finishSinglePlayerLodFindStaticCalls;
+}
+
+extern "C" Int CncPortScoreScreenGetLodGetStaticCallsForMovie()
+{
+	return s_finishSinglePlayerLodGetStaticCalls;
 }
 
 extern "C" void CncPortScoreScreenFinishSinglePlayerInitForMovie()
@@ -867,6 +945,117 @@ void PlayMovieAndBlock(AsciiString movieTitle)
 	setFPMode();
 }
 
+static void finishSinglePlayerWriteCampaignCompletionStats( Campaign *campaign )
+{
+	if (!campaign)
+		return;
+
+	GameDifficulty difficulty = TheCampaignManager->getGameDifficulty();
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	++s_finishSinglePlayerStatsWriteCalls;
+	s_finishSinglePlayerLastStatsCampaign = campaign->m_name;
+	s_finishSinglePlayerLastStatsDifficulty = difficulty;
+	s_finishSinglePlayerLastStatsHonorBits = 0;
+	s_finishSinglePlayerLastStatsChallengeIndex = -1;
+#else
+	SkirmishBattleHonors stats;
+#endif
+
+	if (campaign->m_name.compareNoCase("USA") == 0)
+	{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+		s_finishSinglePlayerLastStatsHonorBits |= BATTLE_HONOR_CAMPAIGN_USA;
+#else
+		stats.setUSACampaignComplete(difficulty);
+		stats.setHonors(BATTLE_HONOR_CAMPAIGN_USA);
+#endif
+	}
+
+	if (campaign->m_name.compareNoCase("China") == 0)
+	{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+		s_finishSinglePlayerLastStatsHonorBits |= BATTLE_HONOR_CAMPAIGN_CHINA;
+#else
+		stats.setCHINACampaignComplete(difficulty);
+		stats.setHonors(BATTLE_HONOR_CAMPAIGN_CHINA);
+#endif
+	}
+
+	if (campaign->m_name.compareNoCase("GLA") == 0)
+	{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+		s_finishSinglePlayerLastStatsHonorBits |= BATTLE_HONOR_CAMPAIGN_GLA;
+#else
+		stats.setGLACampaignComplete(difficulty);
+		stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
+#endif
+	}
+
+	if (campaign->m_name.compareNoCase("GLA") == 0)
+	{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+		s_finishSinglePlayerLastStatsHonorBits |= BATTLE_HONOR_CAMPAIGN_GLA;
+#else
+		stats.setGLACampaignComplete(difficulty);
+		stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
+#endif
+	}
+
+	for (int i = 0; i < MAX_GLOBAL_GENERAL_TYPES; ++i)
+	{
+		char campaignName[128];
+		sprintf(campaignName, "CHALLENGE_%d", i);
+		if (campaign->m_name.compareNoCase(campaignName) == 0)
+		{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+			s_finishSinglePlayerLastStatsChallengeIndex = i;
+			s_finishSinglePlayerLastStatsHonorBits |= BATTLE_HONOR_CHALLENGE_MODE;
+#else
+			stats.setChallengeCampaignComplete(i, difficulty);
+			stats.setHonors(BATTLE_HONOR_CHALLENGE_MODE);
+#endif
+		}
+	}
+
+#if !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	stats.write();
+#endif
+}
+
+static Bool finishSinglePlayerShouldUseLowResFinalMovie( void )
+{
+	Bool useLowRes = FALSE;
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	if (s_finishSinglePlayerLodOverrideEnabled)
+	{
+		++s_finishSinglePlayerLodDidMemPassCalls;
+		if (!s_finishSinglePlayerLodMemPass)
+			useLowRes = TRUE;
+		++s_finishSinglePlayerLodFindStaticCalls;
+		if (s_finishSinglePlayerLodFindLevel == STATIC_GAME_LOD_LOW)
+			useLowRes = TRUE;
+		++s_finishSinglePlayerLodGetStaticCalls;
+		if (s_finishSinglePlayerLodCurrentLevel == STATIC_GAME_LOD_LOW)
+			useLowRes = TRUE;
+		return useLowRes;
+	}
+	return useLowRes;
+#else
+	if (TheGameLODManager) {
+		if (!TheGameLODManager->didMemPass()) {
+			useLowRes = TRUE;
+		}
+		if (TheGameLODManager->findStaticLODLevel()==STATIC_GAME_LOD_LOW) {
+			useLowRes = TRUE;
+		}
+		if (TheGameLODManager->getStaticLODLevel()==STATIC_GAME_LOD_LOW) {
+			useLowRes = TRUE;
+		}
+	}
+	return useLowRes;
+#endif
+}
+
 static void finishSinglePlayerFinalCampaignMovie( void )
 {
 	GadgetButtonSetText(buttonContinue, TheGameText->fetch("GUI:EndCampaign"));
@@ -875,46 +1064,7 @@ static void finishSinglePlayerFinalCampaignMovie( void )
 	Campaign* campaign = TheCampaignManager->getCurrentCampaign();
 	if (campaign)
 	{
-#if !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
-		GameDifficulty difficulty = TheCampaignManager->getGameDifficulty();
-		SkirmishBattleHonors stats;
-		if (campaign->m_name.compareNoCase("USA") == 0)
-		{
-			stats.setUSACampaignComplete(difficulty);
-			stats.setHonors(BATTLE_HONOR_CAMPAIGN_USA);
-		}
-
-		if (campaign->m_name.compareNoCase("China") == 0)
-		{
-			stats.setCHINACampaignComplete(difficulty);
-			stats.setHonors(BATTLE_HONOR_CAMPAIGN_CHINA);
-		}
-
-		if (campaign->m_name.compareNoCase("GLA") == 0)
-		{
-			stats.setGLACampaignComplete(difficulty);
-			stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
-		}
-
-		if (campaign->m_name.compareNoCase("GLA") == 0)
-		{
-			stats.setGLACampaignComplete(difficulty);
-			stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
-		}
-
-		for (int i = 0; i < MAX_GLOBAL_GENERAL_TYPES; ++i)
-		{
-			char campaignName[128];
-			sprintf(campaignName, "CHALLENGE_%d", i);
-			if (campaign->m_name.compareNoCase(campaignName) == 0)
-			{
-				stats.setChallengeCampaignComplete(i, difficulty);
-				stats.setHonors(BATTLE_HONOR_CHALLENGE_MODE);
-			}
-		}
-
-		stats.write();
-#endif
+		finishSinglePlayerWriteCampaignCompletionStats(campaign);
 
 		if (buttonOk)
 			buttonOk->winHide(TRUE);
@@ -938,20 +1088,7 @@ static void finishSinglePlayerFinalCampaignMovie( void )
 		{
 			AsciiString vidName;
 			vidName = campaign->getFinalVictoryMovie();
-			Bool useLowRes = FALSE;
-#if !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
-			if (TheGameLODManager) {
-				if (!TheGameLODManager->didMemPass()) {
-					useLowRes = TRUE;
-				}
-				if (TheGameLODManager->findStaticLODLevel()==STATIC_GAME_LOD_LOW) {
-					useLowRes = TRUE;
-				}
-				if (TheGameLODManager->getStaticLODLevel()==STATIC_GAME_LOD_LOW) {
-					useLowRes = TRUE;
-				}
-			}
-#endif
+			Bool useLowRes = finishSinglePlayerShouldUseLowResFinalMovie();
 			if(!useLowRes)
 				PlayMovieAndBlock(vidName);
 		}

@@ -61,8 +61,9 @@
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
-// focused ScoreScreen final-campaign helper, hook-counted non-final
-// victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit
+// focused ScoreScreen final-campaign helper with hook-counted stats/LOD gates
+// and low-res skip, hook-counted non-final victorious, defeat/retry, and
+// challenge win/loss finishSinglePlayerInit
 // branches, SinglePlayerLoadScreen, and ChallengeLoadScreen paths now own real
 // window video buffers in the browser smoke, but full non-test
 // finishSinglePlayerInit subsystem edges, production Challenge persona
@@ -625,6 +626,14 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames/.test(line)), 1536,
 	    "runtime smoke ScoreScreen final-campaign 70-frame presentation check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalStatsWriteCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /final movie did not execute the campaign stats write gate/.test(line)),
+	    "runtime smoke ScoreScreen final-campaign stats write check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLodGateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /final movie did not execute all final-movie LOD gates/.test(line)),
+	    "runtime smoke ScoreScreen final-campaign LOD gate check");
 	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalSummaryLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)), 1557,
@@ -633,6 +642,38 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)), 1849,
 	    "runtime smoke ScoreScreen final-campaign exercise call");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_final_movie_lod_skip\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    "runtime smoke ScoreScreen final-campaign low-res skip exercise function");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResNoFramesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly presented movie frames/.test(line)),
+	    "runtime smoke ScoreScreen low-res skip no-frame check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResNoCountsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly changed texture or draw counts/.test(line)),
+	    "runtime smoke ScoreScreen low-res skip texture/draw count check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResNoStreamCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip unexpectedly opened a Bink stream/.test(line)),
+	    "runtime smoke ScoreScreen low-res skip no-stream check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResChallengeHonorCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip did not record the challenge battle honor/.test(line)),
+	    "runtime smoke ScoreScreen low-res skip challenge honor check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResLodGateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /low-res skip did not execute all final-movie LOD gates/.test(line)),
+	    "runtime smoke ScoreScreen low-res skip LOD gate check");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit final low-res skip branch ok/.test(line)),
+	    "runtime smoke ScoreScreen final-campaign low-res skip summary");
+	  assertPresent(errors, facts.runtimeSmoke, "scoreScreenFinalLowResExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_score_screen_finish_single_player_final_movie_lod_skip\s*\(\s*\*player\s*\)/.test(line)),
+	    "runtime smoke ScoreScreen final-campaign low-res skip exercise call");
 	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalExerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)/.test(line)), 1601,
@@ -835,9 +876,10 @@ function main() {
 	      "to a GameWindow before presentation, plus a focused " +
 	      "WindowLayout::load(\"Menus/BlankWindow.wnd\") first-window " +
 	      "setVideoBuffer path, original ScoreScreen::PlayMovieAndBlock " +
-	      "loop for VS_small, the extracted ScoreScreen final-campaign " +
-	      "movie helper through a real CampaignManager/Campaign/Mission " +
-	      "transition, and hook-counted non-final victorious, defeat/retry, and challenge win/loss " +
+		      "loop for VS_small, the extracted ScoreScreen final-campaign " +
+		      "movie helper through a real CampaignManager/Campaign/Mission " +
+		      "transition with hook-counted stats/LOD gates plus a low-res skip branch, " +
+		      "and hook-counted non-final victorious, defeat/retry, and challenge win/loss " +
 	      "finishSinglePlayerInit branches that cover mission advance/save, retry/no-save, and challenge UI/audio outcomes " +
 	      "without adding Bink frames. The movie paths each include 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +

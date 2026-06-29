@@ -208,7 +208,9 @@ original `PlayMovieAndBlock("VS_small")` for 70 decoded frame presentations
 through `TheDisplay->draw()`. The same focused proof now drives the extracted
 ScoreScreen final-campaign movie helper through a real `CampaignManager` /
 `Campaign` / final-`Mission` transition for another 70 decoded
-`VS_small` presentations and blank-layout cleanup, and drives the non-final
+`VS_small` presentations and blank-layout cleanup, hook-counts the
+final-campaign stats/LOD gates on both high-detail `USA` playback and low-res
+`CHALLENGE_3` skip outcomes, and drives the non-final
 victorious `finishSinglePlayerInit` branch through a real two-mission
 `CampaignManager` graph with hook-counted mission-save, message-resource, and
 transition edges but no additional Bink frames, then drives the non-challenge
@@ -222,8 +224,9 @@ transition suppression, and win/loss audio assertions. It also compiles original
 then drives original `ChallengeLoadScreen::init` with focused `GC_Background`
 and `VS_small`/`VSSmall` movie facts for 551 Challenge presentations. Full
 campaign-owned load-screen setup, campaign-owned Challenge persona setup, full
-non-test `finishSinglePlayerInit` subsystem ownership, stats/LOD gates in the
-focused browser runtime, and the broader
+non-test `finishSinglePlayerInit` subsystem ownership, production
+`SkirmishBattleHonors` persistence / real `GameLODManager` singleton ownership,
+and the broader
 CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton surface
 remain open until they can be linked and harness-driven.
 
@@ -632,7 +635,8 @@ The wasm CMake skeleton currently builds:
   `Display::playMovie/update/stopMovie`, `WindowVideoManager::playMovie/update`,
   blank-window first-window `setVideoBuffer`, original
   `ScoreScreen::PlayMovieAndBlock`, the extracted ScoreScreen final-campaign
-  movie helper, hook-counted non-final victory, defeat/retry, and challenge win/loss
+  movie helper with hook-counted stats/LOD gates and low-res skip, hook-counted
+  non-final victory, defeat/retry, and challenge win/loss
   `finishSinglePlayerInit` branches, focused original `SinglePlayerLoadScreen::init`, and focused
   original `ChallengeLoadScreen::init` ownership, while native `.bik` frame
   decoding, audio sync, full WebCodecs/`<video>` runtime ownership,

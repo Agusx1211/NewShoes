@@ -4136,8 +4136,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the original final-campaign movie body and blank-layout cleanup out of
       `finishSinglePlayerInit`; normal non-test behavior still delegates
       through those helpers, while the focused `CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS`
-      build skips the stats/LOD singleton edges that are not part of this
-      browser proof. The smoke installs real score-screen push-button windows,
+      build initially skipped the stats/LOD singleton edges that are closed by
+      the later final-campaign stats/LOD smoke below. The smoke installs real score-screen push-button windows,
       a `SmokeDisplayStringManager`, and a real `CampaignManager` /
       `Campaign` / final `Mission`, advances the campaign to completion, then
       drives the original final-victory `PlayMovieAndBlock("VS_small")` path.
@@ -4147,9 +4147,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DVideoBuffer` texture lifecycle, and nonzero decoded texture pixels.
       The aggregate Bink/W3D smoke now expects 12 Bink open/close lifecycles,
       766 decoded frame copies, 766 indexed video-buffer draws, 13 texture
-      creates, 779 texture updates, and 12 texture releases. Full
+      creates, 779 texture updates, and 12 texture releases. At that point full
       non-test `finishSinglePlayerInit` runtime ownership, browser-runtime
-      stats/LOD gate execution, InGameUI movies, and Bink/audio sync remain
+      stats/LOD gate execution, InGameUI movies, and Bink/audio sync remained
       open. Verified with
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
@@ -4170,8 +4170,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Bink open/close lifecycles, 766 decoded frame copies, 766 indexed
       video-buffer draws, 13 texture creates, 779 texture updates, and 12 texture
       releases. Full non-test `GameState`/`InGameUI`/transition-handler runtime
-      ownership, stats/LOD gates, InGameUI movies, and Bink/audio sync remain
-      open. Verified with
+      ownership, production stat persistence / real LOD singleton ownership,
+      InGameUI movies, and Bink/audio sync remain open. Verified with
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
@@ -4187,8 +4187,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       expects 12 Bink open/close lifecycles, 766 decoded frame copies, 766
       indexed video-buffer draws, 13 texture creates, 779 texture updates, and
       12 texture releases. Full non-test `GameState`/`InGameUI`/
-      transition-handler runtime ownership, stats/LOD gates, InGameUI movies,
-      and Bink/audio sync remain open. Verified with
+      transition-handler runtime ownership, production stat persistence / real
+      LOD singleton ownership, InGameUI movies, and Bink/audio sync remain open. Verified with
       `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
@@ -4206,8 +4206,31 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       lifecycles, 766 decoded frame copies, 766 indexed video-buffer draws, 13
       texture creates, 779 texture updates, and 12 texture releases. Full
       non-test `GameState`/`InGameUI`/transition-handler runtime ownership,
-      stats/LOD gates, production Challenge persona ownership, InGameUI movies,
-      and Bink/audio sync remain open. Verified with
+      production stat persistence / real LOD singleton ownership, production
+      Challenge persona ownership, InGameUI movies, and Bink/audio sync remain
+      open. Verified with
+      `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the focused ScoreScreen final-campaign browser smoke through the
+      stats/LOD gates and low-res skip. `ScoreScreen.cpp` now keeps production
+      final-campaign behavior on the original `SkirmishBattleHonors` /
+      `TheGameLODManager` path while the focused
+      `CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS` build exposes counters for the
+      stats write gate and the three final-movie LOD checks. The high-detail
+      `USA` path records `DIFFICULTY_NORMAL`, `BATTLE_HONOR_CAMPAIGN_USA`, no
+      challenge index, all three LOD checks, and still presents 70 `VS_small`
+      decoded frames. The low-res `CHALLENGE_3` path records `DIFFICULTY_HARD`,
+      `BATTLE_HONOR_CHALLENGE_MODE`, challenge index 3, all three LOD checks,
+      opens no Bink stream, presents no frames, and leaves aggregate
+      Bink/texture/draw counts unchanged at 12 open/close lifecycles, 766 frame
+      copies/draws, 13 texture creates, 779 texture updates, and 12 texture
+      releases. Full non-test stat persistence through
+      `SkirmishBattleHonors::write`, real `GameLODManager` singleton runtime,
+      production Challenge persona ownership, InGameUI movies, and Bink/audio
+      sync remain open. Verified with
       `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
       `npm run verify:bink-loadscore-movie-frontier`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,

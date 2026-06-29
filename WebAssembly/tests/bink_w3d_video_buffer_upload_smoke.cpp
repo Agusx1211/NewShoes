@@ -8,6 +8,7 @@
 #include "Common/AsciiString.h"
 #include "Common/AudioAffect.h"
 #include "Common/AudioEventRTS.h"
+#include "Common/BattleHonors.h"
 #include "Common/GameAudio.h"
 #include "Common/GameEngine.h"
 #include "Common/GameLOD.h"
@@ -94,6 +95,19 @@ extern "C" Int CncPortScoreScreenGetFreeMessageResourcesCallsForMovie();
 extern "C" Int CncPortScoreScreenGetTransitionGroupCallsForMovie();
 extern "C" const char *CncPortScoreScreenGetLastTransitionGroupForMovie();
 extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie();
+extern "C" Int CncPortScoreScreenGetStatsWriteCallsForMovie();
+extern "C" const char *CncPortScoreScreenGetLastStatsCampaignForMovie();
+extern "C" Int CncPortScoreScreenGetLastStatsDifficultyForMovie();
+extern "C" UnsignedInt CncPortScoreScreenGetLastStatsHonorBitsForMovie();
+extern "C" Int CncPortScoreScreenGetLastStatsChallengeIndexForMovie();
+extern "C" void CncPortScoreScreenSetFinalMovieLodForMovie(
+	Bool enabled,
+	Bool didMemPass,
+	Int findStaticLevel,
+	Int currentStaticLevel);
+extern "C" Int CncPortScoreScreenGetLodDidMemPassCallsForMovie();
+extern "C" Int CncPortScoreScreenGetLodFindStaticCallsForMovie();
+extern "C" Int CncPortScoreScreenGetLodGetStaticCallsForMovie();
 extern "C" void CncPortScoreScreenFinishSinglePlayerInitForMovie();
 extern "C" void CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel);
@@ -1603,7 +1617,7 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 	CncPortScoreScreenSetBlankLayoutForMovie(layout);
 	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(score_parent, button_continue, button_ok);
 
-	Campaign *campaign = campaign_manager.newCampaign(AsciiString("smoke_campaign"));
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("USA"));
 	ok = expect(campaign != nullptr,
 		"ScoreScreen finishSinglePlayerInit movie path did not create a campaign") && ok;
 	if (campaign != nullptr) {
@@ -1616,7 +1630,7 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 			mission->m_mapName.set(AsciiString("Maps/Smoke/Smoke.map"));
 			mission->m_nextMission.clear();
 		}
-		campaign_manager.setCampaignAndMission(AsciiString("smoke_campaign"), AsciiString("mission1"));
+		campaign_manager.setCampaignAndMission(AsciiString("USA"), AsciiString("mission1"));
 	}
 	campaign_manager.setGameDifficulty(DIFFICULTY_NORMAL);
 	campaign_manager.SetVictorious(TRUE);
@@ -1631,6 +1645,9 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 	const UINT releases_before_finish = state->browser_texture_release_calls;
 	const UINT draws_before_finish = state->draw_indexed_primitive_calls;
 	const Int expected_presented_frames = 70;
+
+	CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
+	CncPortScoreScreenSetFinalMovieLodForMovie(TRUE, TRUE, STATIC_GAME_LOD_HIGH, STATIC_GAME_LOD_HIGH);
 
 	CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
 
@@ -1668,6 +1685,20 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 		"ScoreScreen finishSinglePlayerInit final movie decoded texture format mismatch") && ok;
 	ok = expect(state->last_browser_texture_checksum != 0,
 		"ScoreScreen finishSinglePlayerInit final movie uploaded an all-zero decoded frame") && ok;
+	ok = expect(CncPortScoreScreenGetStatsWriteCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit final movie did not execute the campaign stats write gate") && ok;
+	ok = expect(AsciiString(CncPortScoreScreenGetLastStatsCampaignForMovie()).compareNoCase(AsciiString("USA")) == 0,
+		"ScoreScreen finishSinglePlayerInit final movie recorded the wrong campaign for stats") && ok;
+	ok = expect(CncPortScoreScreenGetLastStatsDifficultyForMovie() == DIFFICULTY_NORMAL,
+		"ScoreScreen finishSinglePlayerInit final movie recorded the wrong stats difficulty") && ok;
+	ok = expect((CncPortScoreScreenGetLastStatsHonorBitsForMovie() & BATTLE_HONOR_CAMPAIGN_USA) != 0,
+		"ScoreScreen finishSinglePlayerInit final movie did not record the USA campaign battle honor") && ok;
+	ok = expect(CncPortScoreScreenGetLastStatsChallengeIndexForMovie() == -1,
+		"ScoreScreen finishSinglePlayerInit final movie incorrectly recorded a challenge stats index") && ok;
+	ok = expect(CncPortScoreScreenGetLodDidMemPassCallsForMovie() == 1 &&
+		CncPortScoreScreenGetLodFindStaticCallsForMovie() == 1 &&
+		CncPortScoreScreenGetLodGetStaticCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit final movie did not execute all final-movie LOD gates") && ok;
 
 	std::printf("ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok: frames=%d texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
 		expected_presented_frames,
@@ -1681,6 +1712,7 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 		444);
 
 	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetFinalMovieLodForMovie(FALSE, TRUE, STATIC_GAME_LOD_HIGH, STATIC_GAME_LOD_HIGH);
 	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
 	display.setScoreScreenMovieWindow(nullptr);
 	if (score_parent != nullptr) {
@@ -1689,6 +1721,156 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 	}
 	ok = expect(display_string_manager.free_count >= 1,
 		"ScoreScreen finishSinglePlayerInit did not release button display strings during cleanup") && ok;
+
+	TheGameLODManager = old_game_lod_manager;
+	TheCampaignManager = old_campaign_manager;
+	TheDisplayStringManager = old_display_string_manager;
+	TheGameText = old_game_text;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameEngine = old_game_engine;
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
+bool exercise_score_screen_finish_single_player_final_movie_lod_skip(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	SmokeGameEngine game_engine;
+	NameKeyGenerator name_key_generator;
+	SmokeGameText game_text;
+	SmokeDisplayStringManager display_string_manager;
+	CampaignManager campaign_manager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	GameEngine *old_game_engine = TheGameEngine;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GameTextInterface *old_game_text = TheGameText;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
+	GameLODManager *old_game_lod_manager = TheGameLODManager;
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+	TheGameEngine = &game_engine;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGameText = &game_text;
+	TheDisplayStringManager = &display_string_manager;
+	TheCampaignManager = &campaign_manager;
+	TheGameLODManager = nullptr;
+	name_key_generator.init();
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip blank WindowLayout was not created") && ok;
+	ok = expect(movie_window != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip blank layout did not own a first GameWindow") && ok;
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	GameWindow *score_parent = window_manager.createScoreScreenWindowForTest(
+		AsciiString("ScoreScreen.wnd:ParentScoreScreen"), 800, 600);
+	GameWindow *button_continue = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonContinue"), 160, 32);
+	GameWindow *button_ok = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonOk"), 96, 32);
+	ok = expect(score_parent != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not create the score parent window") && ok;
+	ok = expect(button_continue != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not create the continue button") && ok;
+	ok = expect(button_ok != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not create the ok button") && ok;
+
+	CncPortScoreScreenSetBlankLayoutForMovie(layout);
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(score_parent, button_continue, button_ok);
+
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("CHALLENGE_3"));
+	ok = expect(campaign != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not create a challenge campaign") && ok;
+	if (campaign != nullptr) {
+		campaign->m_firstMission.set(AsciiString("mission1"));
+		campaign->m_finalMovieName.set(AsciiString("VS_small"));
+		Mission *mission = campaign->newMission(AsciiString("mission1"));
+		ok = expect(mission != nullptr,
+			"ScoreScreen finishSinglePlayerInit low-res skip did not create a mission") && ok;
+		if (mission != nullptr) {
+			mission->m_mapName.set(AsciiString("Maps/Smoke/ChallengeFinal.map"));
+			mission->m_nextMission.clear();
+		}
+		campaign_manager.setCampaignAndMission(AsciiString("CHALLENGE_3"), AsciiString("mission1"));
+	}
+	campaign_manager.setGameDifficulty(DIFFICULTY_HARD);
+	campaign_manager.SetVictorious(TRUE);
+	ok = expect(campaign_manager.getCurrentMission() != nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not select the current mission") && ok;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_finish = state->browser_texture_create_calls;
+	const UINT updates_before_finish = state->browser_texture_update_calls;
+	const UINT releases_before_finish = state->browser_texture_release_calls;
+	const UINT draws_before_finish = state->draw_indexed_primitive_calls;
+
+	CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
+	CncPortScoreScreenSetFinalMovieLodForMovie(TRUE, FALSE, STATIC_GAME_LOD_HIGH, STATIC_GAME_LOD_HIGH);
+
+	CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
+
+	state = wasm_d3d8_get_state();
+	ok = expect(CncPortScoreScreenGetFinishCampaignForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not set finish-campaign state") && ok;
+	ok = expect(CncPortScoreScreenGetBlankLayoutForMovie() == nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not clear the blank layout pointer") && ok;
+	ok = expect(campaign_manager.getCurrentMission() == nullptr &&
+		campaign_manager.getCurrentMap().isEmpty(),
+		"ScoreScreen finishSinglePlayerInit low-res skip did not advance past the final challenge mission") && ok;
+	ok = expect(game_engine.service_windows_calls == 0 && display.scoreScreenPresentCount() == 0,
+		"ScoreScreen finishSinglePlayerInit low-res skip unexpectedly presented movie frames") && ok;
+	ok = expect(state->browser_texture_create_calls == creates_before_finish &&
+		state->browser_texture_update_calls == updates_before_finish &&
+		state->browser_texture_release_calls == releases_before_finish &&
+		state->draw_indexed_primitive_calls == draws_before_finish,
+		"ScoreScreen finishSinglePlayerInit low-res skip unexpectedly changed texture or draw counts") && ok;
+	ok = expect(player.firstStream() == nullptr,
+		"ScoreScreen finishSinglePlayerInit low-res skip unexpectedly opened a Bink stream") && ok;
+	ok = expect(CncPortScoreScreenGetStatsWriteCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not execute the campaign stats write gate") && ok;
+	ok = expect(AsciiString(CncPortScoreScreenGetLastStatsCampaignForMovie()).compareNoCase(AsciiString("CHALLENGE_3")) == 0,
+		"ScoreScreen finishSinglePlayerInit low-res skip recorded the wrong campaign for stats") && ok;
+	ok = expect(CncPortScoreScreenGetLastStatsDifficultyForMovie() == DIFFICULTY_HARD,
+		"ScoreScreen finishSinglePlayerInit low-res skip recorded the wrong stats difficulty") && ok;
+	ok = expect((CncPortScoreScreenGetLastStatsHonorBitsForMovie() & BATTLE_HONOR_CHALLENGE_MODE) != 0,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not record the challenge battle honor") && ok;
+	ok = expect(CncPortScoreScreenGetLastStatsChallengeIndexForMovie() == 3,
+		"ScoreScreen finishSinglePlayerInit low-res skip recorded the wrong challenge stats index") && ok;
+	ok = expect(CncPortScoreScreenGetLodDidMemPassCallsForMovie() == 1 &&
+		CncPortScoreScreenGetLodFindStaticCallsForMovie() == 1 &&
+		CncPortScoreScreenGetLodGetStaticCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not execute all final-movie LOD gates") && ok;
+
+	std::printf("ScoreScreen finishSinglePlayerInit final low-res skip branch ok: statsCampaign=%s challengeIndex=%d lodCalls=%d/%d/%d currentMap=%s\n",
+		CncPortScoreScreenGetLastStatsCampaignForMovie(),
+		CncPortScoreScreenGetLastStatsChallengeIndexForMovie(),
+		CncPortScoreScreenGetLodDidMemPassCallsForMovie(),
+		CncPortScoreScreenGetLodFindStaticCallsForMovie(),
+		CncPortScoreScreenGetLodGetStaticCallsForMovie(),
+		campaign_manager.getCurrentMap().str());
+
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetFinalMovieLodForMovie(FALSE, TRUE, STATIC_GAME_LOD_HIGH, STATIC_GAME_LOD_HIGH);
+	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
+	if (score_parent != nullptr) {
+		window_manager.winDestroy(score_parent);
+		window_manager.update();
+	}
+	ok = expect(display_string_manager.free_count >= 1,
+		"ScoreScreen finishSinglePlayerInit low-res skip did not release button display strings during cleanup") && ok;
 
 	TheGameLODManager = old_game_lod_manager;
 	TheCampaignManager = old_campaign_manager;
@@ -2501,6 +2683,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_blank_layout_movie_path(*player) && ok;
 		ok = exercise_score_screen_play_movie_and_block(*player) && ok;
 		ok = exercise_score_screen_finish_single_player_final_movie(*player) && ok;
+		ok = exercise_score_screen_finish_single_player_final_movie_lod_skip(*player) && ok;
 		ok = exercise_score_screen_finish_single_player_non_final_victory() && ok;
 		ok = exercise_score_screen_finish_single_player_defeat_retry() && ok;
 		ok = exercise_score_screen_finish_single_player_challenge_branch(TRUE) && ok;
