@@ -3316,6 +3316,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       that pins the current Miles sample/stream handle allocation, release,
       start, completion, Bink-sharing, and inert `Mss.H` shim frontier that a
       real Web Audio backend must replace.
+- [x] Add `npm run verify:audio-filename-frontier`, a source-only verifier
+      that pins the original audio filename/path generation frontier used
+      before any backend can request a payload: `AudioEventRTS::generateFilename`,
+      `generateFilenamePrefix`, `generateFilenameExtension`, the
+      `SoundManager` filename hook, `MusicTrack` filename parsing, and the
+      `GameAudio.cpp` / `AudioSettings.h` field mappings. This verifies source
+      structure only, not runtime audio.
+- [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
+      preflight that indexes the current BIG archives, reads shipped
+      `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
+      `INIZH.big`, applies the original filename-generation shape to candidate
+      music/SFX/voice/speech payload paths, and reports found/missing payloads
+      while preserving that `AudioSettings.ini` and Web Audio playback are not
+      runtime-ready.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

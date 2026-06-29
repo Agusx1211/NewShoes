@@ -6,6 +6,16 @@ inputs. It is based on the checked-in source layout and the original Visual
 Studio workspace/project files, especially `GeneralsMD/Code/RTS.dsp` and
 `GeneralsMD/Code/RTS.dsw`.
 
+`npm run verify:audio-filename-frontier` pins the original audio filename
+generation source (`AudioEventRTS.cpp`, `INIAudioEventInfo.cpp`,
+`GameAudio.cpp`, `GameMusic.cpp`, and `AudioSettings.h`) before any backend can
+request a payload. `npm run inventory:audio-payloads` is the paired real-asset
+preflight: it indexes the current BIG directories, reads shipped audio INIs
+from `INIZH.big`, and checks candidate paths shaped by those source rules. The
+inventory proves payload availability only; it does not decode, schedule, or
+play audio, and it currently reports `AudioSettings.ini` absent in the Zero
+Hour-only archive set.
+
 ## Runtime Targets
 
 These are part of the real game runtime or are linked by the original `RTS`

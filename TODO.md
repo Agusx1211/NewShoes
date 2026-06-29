@@ -569,6 +569,12 @@ shares structure and follows behind.
 
 ## M7 — Audio (Miles → Web Audio)
 
+- [ ] Source `Data\INI\AudioSettings.ini` from a complete base/Zero Hour
+      runtime archive set or define the browser-loaded audio settings contract
+      before treating audio payload path resolution as runtime-ready. The
+      current Zero Hour-only archive set resolves many payload candidates, but
+      `AudioEventRTS::generateFilenamePrefix` still depends on parsed
+      `AudioSettings` folders at runtime.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
 - [ ] Replace compile-only `Mss.H`/`dsound.h` paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
