@@ -33,8 +33,8 @@
 //   - releaseHandleForBink defined at line 2986; body resets m_binkHandle = NULL.
 //   - MilesAudioManager.h declares the playback/Bink/helper methods at the
 //     current line anchors.
-//   - WebAssembly/shims/Mss.H has inert compile-only declarations for every Miles
-//     call above (compileOnly: true).
+//   - WebAssembly/shims/Mss.H exposes every Miles call above; some are now
+//     stateful probe surfaces, while playbackReady remains false.
 //
 // Exit 0 only if all checks pass; exit 1 with JSON errors otherwise.
 //
