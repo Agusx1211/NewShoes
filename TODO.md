@@ -678,8 +678,10 @@ shares structure and follows behind.
       and harness-test an original `BinkVideoPlayer`-owned flow. The provider
       now attaches `bink-browser-video-manifest.json` metadata to `HBINK`
       handles and the browser smoke proves the sidecars are playable through
-      `<video>`, but original runtime playback, frame upload, and
-      `BinkCopyToBuffer` pixel-copy support remain open.
+      `<video>`. The provider also emits browser-observable sidecar lifecycle
+      hooks for open/decompress/pending-copy/advance/seek/close, but original
+      runtime playback, frame upload, and `BinkCopyToBuffer` pixel-copy support
+      remain open.
       `verify:bink-runtime-callsite-frontier` now pins the source-only
       original Bink runtime *callsite* frontier that this runtime-wiring work
       must preserve (the `W3DGameClient::createVideoPlayer` `NEW BinkVideoPlayer`

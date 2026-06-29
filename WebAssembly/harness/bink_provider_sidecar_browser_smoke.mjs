@@ -112,8 +112,18 @@ try {
     const createModule =
       moduleExports.default ?? moduleExports.createBinkVideoProviderBrowserSmokeModule;
     const distUrl = new URL("../dist/", window.location.href).href;
+    const binkEvents = [];
     const module = await createModule({
       locateFile: (path) => new URL(path, distUrl).href,
+      cncPortBinkVideoOpen: (event) => {
+        binkEvents.push({ type: "open", ...event });
+      },
+      cncPortBinkVideoEvent: (event) => {
+        binkEvents.push({ type: event.event, ...event });
+      },
+      cncPortBinkVideoClose: (event) => {
+        binkEvents.push({ type: "close", ...event });
+      },
     });
 
     ensureDirectory(module.FS, "artifacts/real-assets");
@@ -131,7 +141,7 @@ try {
       ["string", "string"],
       ["artifacts/real-assets/GC_Background.bik", "artifacts/real-assets/VS_small.bik"],
     );
-    return { ok: status === 0, status };
+    return { ok: status === 0, status, binkEvents };
   }, {
     moduleUrl,
     gcBytes: Array.from(gcBytes),
@@ -141,6 +151,53 @@ try {
 
   if (!providerResult.ok) {
     throw new Error(`Bink provider sidecar smoke failed: ${JSON.stringify(providerResult)}`);
+  }
+
+  const binkEvents = providerResult.binkEvents ?? [];
+  const openEvents = binkEvents.filter((event) => event.type === "open");
+  const closeEvents = binkEvents.filter((event) => event.type === "close");
+  if (openEvents.length !== 3 || closeEvents.length !== 3) {
+    throw new Error(
+      `Expected three Bink browser sidecar open/close events, got ` +
+      `${openEvents.length}/${closeEvents.length}: ${JSON.stringify(binkEvents)}`,
+    );
+  }
+  for (const expected of [
+    {
+      videoPath: "artifacts/browser-video/bink/GC_Background.webm",
+      videoCodec: "vp9",
+      audioCodec: "opus",
+      width: 800,
+      height: 600,
+      frames: 180,
+    },
+    {
+      videoPath: "artifacts/browser-video/bink/VS_small.webm",
+      videoCodec: "vp9",
+      audioCodec: "",
+      width: 96,
+      height: 120,
+      frames: 71,
+    },
+  ]) {
+    const match = openEvents.find((event) =>
+      event.videoPath === expected.videoPath &&
+      event.videoCodec === expected.videoCodec &&
+      event.audioCodec === expected.audioCodec &&
+      event.width === expected.width &&
+      event.height === expected.height &&
+      event.frames === expected.frames &&
+      event.durationSeconds > 0,
+    );
+    if (!match) {
+      throw new Error(`Missing Bink browser sidecar open event: ${JSON.stringify(expected)} in ${JSON.stringify(openEvents)}`);
+    }
+  }
+  for (const type of ["doFrame", "copyPending", "nextFrame", "gotoFrame"]) {
+    const count = binkEvents.filter((event) => event.type === type).length;
+    if (count !== 3) {
+      throw new Error(`Expected three Bink browser ${type} events, got ${count}: ${JSON.stringify(binkEvents)}`);
+    }
   }
 
   const videoPayloads = payloads.map((payload) => ({
