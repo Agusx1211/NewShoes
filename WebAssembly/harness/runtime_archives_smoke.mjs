@@ -1235,6 +1235,107 @@ function assertAudioRuntimeAssets(state, context) {
   }
 }
 
+function assertSectionSummary(section, expected, context, name) {
+  const summary = section?.summary;
+  for (const [key, value] of Object.entries(expected)) {
+    if (summary?.[key] !== value) {
+      throw new Error(`${context} audio payload ${name}.${key} mismatch: ${JSON.stringify(section)}`);
+    }
+  }
+}
+
+function assertArchiveReferenceCounts(section, expected, context, name) {
+  const archives = section?.summary?.archives ?? {};
+  for (const [archive, count] of Object.entries(expected)) {
+    if (archives[archive] !== count) {
+      throw new Error(`${context} audio payload ${name} archive ${archive} mismatch: ${JSON.stringify(section)}`);
+    }
+  }
+}
+
+function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
+  const payloads = state.audioPayloadInventory;
+  if (!payloads
+      || payloads.source !== "browser mounted BIG directory + shipped audio INI parser"
+      || payloads.ok !== true
+      || payloads.ready !== true
+      || payloads.runtimeReady !== false) {
+    throw new Error(`${context} audio payload inventory mismatch: ${JSON.stringify(payloads)}`);
+  }
+
+  for (const archive of [
+    "AudioEnglishZH.big",
+    "AudioZH.big",
+    "Music.big",
+    "MusicZH.big",
+    "SpeechEnglishZH.big",
+    "SpeechZH.big",
+  ]) {
+    if (payloads.requiredArchives?.[archive] !== true) {
+      throw new Error(`${context} audio payload archive ${archive} missing: ${JSON.stringify(payloads)}`);
+    }
+  }
+
+  for (const path of [
+    "Data\\Audio\\Tracks\\USA_10.mp3",
+    "Data\\Audio\\Tracks\\CHI_10.mp3",
+    "Data\\Audio\\Sounds\\addnwi1a.wav",
+    "Data\\Audio\\Sounds\\English\\aangr01a.wav",
+    "Data\\Audio\\Speech\\English\\dxxoc001.wav",
+  ]) {
+    if (payloads.knownPayloads?.[path] !== true) {
+      throw new Error(`${context} known audio payload ${path} missing: ${JSON.stringify(payloads)}`);
+    }
+  }
+
+  if (hasBaseIniArchive) {
+    if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {
+      throw new Error(`${context} base INI audio settings state mismatch: ${JSON.stringify(payloads.audioSettings)}`);
+    }
+    return;
+  }
+
+  if (payloads.audioSettings?.present !== false || payloads.nextRequired !== "audioSettings") {
+    throw new Error(`${context} Zero Hour-only audio settings state mismatch: ${JSON.stringify(payloads.audioSettings)}`);
+  }
+
+  assertSectionSummary(payloads.sections?.music, {
+    references: 67,
+    resolved: 8,
+    missing: 59,
+  }, context, "music");
+  assertSectionSummary(payloads.sections?.soundEffects, {
+    references: 2290,
+    resolved: 628,
+    missing: 1662,
+  }, context, "soundEffects");
+  assertSectionSummary(payloads.sections?.voices, {
+    references: 3008,
+    resolved: 398,
+    missing: 2610,
+  }, context, "voices");
+  assertSectionSummary(payloads.sections?.speech, {
+    references: 2568,
+    resolved: 2435,
+    missing: 133,
+  }, context, "speech");
+
+  assertArchiveReferenceCounts(payloads.sections?.music, {
+    "MusicZH.big": 8,
+  }, context, "music");
+  assertArchiveReferenceCounts(payloads.sections?.soundEffects, {
+    "AudioEnglishZH.big": 323,
+    "AudioZH.big": 305,
+  }, context, "soundEffects");
+  assertArchiveReferenceCounts(payloads.sections?.voices, {
+    "AudioEnglishZH.big": 398,
+  }, context, "voices");
+  assertArchiveReferenceCounts(payloads.sections?.speech, {
+    "SpeechEnglishZH.big": 2424,
+    "SpeechZH.big": 11,
+  }, context, "speech");
+}
+
 function assertFileSystemProbe(state, context) {
   const probe = state.fileSystemProbe;
   if (!probe?.ok || probe.source !== "GameEngine/Common/System/FileSystem.cpp") {
@@ -1832,6 +1933,7 @@ try {
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
   assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
   assertAudioRuntimeAssets(mountResult.state, "runtime archive preload");
+  assertAudioPayloadInventory(mountResult.state, "runtime archive preload", hasBaseIniArchive);
   assertOriginalEngineStartup(mountResult.state, "runtime archive preload", "pending_boot_probe", false);
 
   if (mountResult.state.mountedArchives?.length !== archives.length) {
@@ -1926,6 +2028,7 @@ try {
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
   assertAudioRuntimeAssets(bootResult.state, "runtime archive boot");
+  assertAudioPayloadInventory(bootResult.state, "runtime archive boot", hasBaseIniArchive);
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
   if (hasBaseIniArchive) {
@@ -1952,6 +2055,7 @@ try {
     bootArchiveMount,
     startupAssets: bootResult.state.startupAssets,
     audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
+    audioPayloadInventory: bootResult.state.audioPayloadInventory,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,
     bootFrame: bootResult.state.frame,

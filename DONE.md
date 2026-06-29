@@ -3316,6 +3316,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       that pins the current Miles sample/stream handle allocation, release,
       start, completion, Bink-sharing, and inert `Mss.H` shim frontier that a
       real Web Audio backend must replace.
+- [x] Add `npm run verify:miles-audio-volume-frontier`, a source verifier
+      that pins the original audio on/off, focus, volume, per-event
+      pitch/volume/loop derivation, Miles mixer volume/pan/rate calls, and 3D
+      listener/sample position frontier that the Web Audio backend must
+      preserve.
 - [x] Add `npm run verify:audio-filename-frontier`, a source-only verifier
       that pins the original audio filename/path generation frontier used
       before any backend can request a payload: `AudioEventRTS::generateFilename`,
@@ -3330,6 +3335,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       music/SFX/voice/speech payload paths, and reports found/missing payloads
       while preserving that `AudioSettings.ini` and Web Audio playback are not
       runtime-ready.
+- [x] Expose that audio payload preflight in the browser archive harness as
+      `audioPayloadInventory`, built from the mounted MEMFS BIG files and
+      asserted by `runtime_archives_smoke.mjs` before and after boot. The
+      harness now proves the current Zero Hour audio archives contain resolvable
+      music, SFX, voice, and speech payload candidates while still reporting
+      `AudioSettings.ini` / Web Audio readiness as future work.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

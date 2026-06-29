@@ -290,6 +290,7 @@ const harnessState = {
   archiveMount: null,
   browserRuntimeAssets: null,
   audioRuntimeAssets: null,
+  audioPayloadInventory: null,
   startupAssets: null,
   dataSummary: null,
   originalEngineStartup: null,
@@ -5299,6 +5300,7 @@ function snapshotState() {
     archiveMount: harnessState.archiveMount,
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
+    audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
     originalEngineStartup: harnessState.originalEngineStartup,
@@ -5339,6 +5341,430 @@ function normalizeAssetDirectory(path) {
 function normalizeAssetPath(path) {
   const parts = normalizeAssetParts(path);
   return parts && parts[0] === "assets" && parts.length > 1 ? `/${parts.join("/")}` : null;
+}
+
+const audioPayloadIniPaths = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Music.ini",
+  "Data\\INI\\Default\\SoundEffects.ini",
+  "Data\\INI\\SoundEffects.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+  "Data\\INI\\Voice.ini",
+  "Data\\INI\\MiscAudio.ini",
+];
+
+const audioPayloadArchiveNames = [
+  "AudioEnglishZH.big",
+  "AudioZH.big",
+  "Music.big",
+  "MusicZH.big",
+  "SpeechEnglishZH.big",
+  "SpeechZH.big",
+];
+
+const audioPayloadKnownPaths = [
+  "Data\\Audio\\Tracks\\USA_10.mp3",
+  "Data\\Audio\\Tracks\\CHI_10.mp3",
+  "Data\\Audio\\Sounds\\addnwi1a.wav",
+  "Data\\Audio\\Sounds\\English\\aangr01a.wav",
+  "Data\\Audio\\Speech\\English\\dxxoc001.wav",
+];
+
+const audioPayloadCandidateSettings = {
+  audioRoot: "Data\\Audio",
+  soundsFolder: "Sounds",
+  musicFolder: "Tracks",
+  streamingFolder: "Speech",
+  soundsExtension: "wav",
+  language: "English",
+  source: "candidate folder contract for mounted archive lookup; AudioSettings.ini remains required for runtime path readiness",
+};
+
+function normalizeBigPath(path) {
+  return String(path ?? "").replaceAll("/", "\\").toLowerCase();
+}
+
+function isAudioPayloadRelevantArchive(archive) {
+  const names = [archive.name, archive.sourceName].filter(Boolean);
+  return names.some((name) =>
+    name === "INIZH.big" || name === "INI.big" || audioPayloadArchiveNames.includes(name));
+}
+
+function readBigDirectoryFromBytes(bytes, archiveName) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength < 16) {
+    throw new Error(`${archiveName} is too small to be a BIGF archive`);
+  }
+  const magic = String.fromCharCode(...bytes.subarray(0, 4));
+  if (magic !== "BIGF") {
+    throw new Error(`${archiveName} is not a BIGF archive`);
+  }
+
+  const entryCount = readBigUInt32BE(bytes, 8);
+  if (entryCount > 1000000) {
+    throw new Error(`${archiveName} has an invalid BIGF entry count: ${entryCount}`);
+  }
+
+  const decoder = new TextDecoder("ascii");
+  const entries = [];
+  let cursor = 0x10;
+  for (let index = 0; index < entryCount; ++index) {
+    if (cursor + 9 > bytes.byteLength) {
+      throw new Error(`${archiveName} BIGF directory ended before entry ${index}`);
+    }
+    const offset = readBigUInt32BE(bytes, cursor);
+    const size = readBigUInt32BE(bytes, cursor + 4);
+    const pathStart = cursor + 8;
+    let pathEnd = pathStart;
+    while (pathEnd < bytes.byteLength && bytes[pathEnd] !== 0) {
+      pathEnd += 1;
+    }
+    if (pathEnd >= bytes.byteLength) {
+      throw new Error(`${archiveName} BIGF entry ${index} has no terminator`);
+    }
+    if (offset + size > bytes.byteLength) {
+      throw new Error(`${archiveName} BIGF entry extends past archive end`);
+    }
+
+    const path = decoder.decode(bytes.subarray(pathStart, pathEnd));
+    entries.push({
+      archive: archiveName,
+      path,
+      normalizedPath: normalizeBigPath(path),
+      offset,
+      size,
+    });
+    cursor = pathEnd + 1;
+  }
+  return entries;
+}
+
+function readMountedBigText(archiveBytes, entry) {
+  const bytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+  return new TextDecoder("windows-1252").decode(bytes);
+}
+
+function stripIniComment(line) {
+  const semicolon = line.indexOf(";");
+  return semicolon >= 0 ? line.slice(0, semicolon) : line;
+}
+
+function parseAudioPayloadBlocks(text, sourcePath, wantedKinds) {
+  const wanted = new Set(wantedKinds);
+  const blockStart = /^\s*([A-Za-z][A-Za-z0-9_]*)\s+([^\s;]+)/;
+  const fieldLine = /^\s*([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/;
+  const blocks = [];
+  let current = null;
+
+  const finishCurrent = () => {
+    if (current) {
+      blocks.push(current);
+      current = null;
+    }
+  };
+
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; ++index) {
+    const lineNumber = index + 1;
+    const line = stripIniComment(lines[index]).trimEnd();
+    if (line.trim() === "") {
+      continue;
+    }
+
+    const block = blockStart.exec(line);
+    if (block && !line.includes("=")) {
+      finishCurrent();
+      if (wanted.has(block[1])) {
+        current = {
+          sourcePath,
+          kind: block[1],
+          name: block[2],
+          line: lineNumber,
+          fields: [],
+        };
+      }
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+    const field = fieldLine.exec(line);
+    if (field) {
+      current.fields.push({
+        name: field[1],
+        value: field[2].trim(),
+        line: lineNumber,
+      });
+    }
+  }
+  finishCurrent();
+  return blocks;
+}
+
+function parseAudioTokenList(value) {
+  return String(value ?? "")
+    .replaceAll(",", " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0 && token.toLowerCase() !== "none");
+}
+
+function audioPayloadCandidatePaths(kind, leaf) {
+  let file = String(leaf ?? "").trim();
+  if (!file) {
+    return [];
+  }
+
+  let folder = audioPayloadCandidateSettings.soundsFolder;
+  if (kind === "music") {
+    folder = audioPayloadCandidateSettings.musicFolder;
+  } else if (kind === "streaming") {
+    folder = audioPayloadCandidateSettings.streamingFolder;
+    if (file.startsWith("$")) {
+      file = file.slice(1);
+    }
+  } else {
+    file = `${file}.${audioPayloadCandidateSettings.soundsExtension}`;
+  }
+
+  return [...new Set([
+    `${audioPayloadCandidateSettings.audioRoot}\\${folder}\\${audioPayloadCandidateSettings.language}\\${file}`,
+    `${audioPayloadCandidateSettings.audioRoot}\\${folder}\\${file}`,
+  ])];
+}
+
+function resolveAudioPayloadCandidate(entryIndex, candidates) {
+  for (const candidate of candidates) {
+    const entry = entryIndex.get(normalizeBigPath(candidate));
+    if (entry) {
+      return {
+        archive: entry.archive,
+        path: entry.path,
+        size: entry.size,
+        offset: entry.offset,
+        localized: normalizeBigPath(candidate).includes("\\english\\"),
+      };
+    }
+  }
+  return null;
+}
+
+function collectAudioPayloadRefs(entryIndex, blocks, kind, fieldNames, listMode) {
+  const wanted = new Set(fieldNames.map((field) => field.toLowerCase()));
+  const refs = [];
+  for (const block of blocks) {
+    for (const field of block.fields) {
+      if (!wanted.has(field.name.toLowerCase())) {
+        continue;
+      }
+      const leaves = listMode ? parseAudioTokenList(field.value) : [field.value.trim()];
+      for (const leaf of leaves) {
+        if (!leaf) {
+          continue;
+        }
+        const candidates = audioPayloadCandidatePaths(kind, leaf);
+        refs.push({
+          event: block.name,
+          field: field.name,
+          leaf,
+          source: `${block.sourcePath}:${field.line}`,
+          firstCandidate: candidates[0] ?? null,
+          resolved: resolveAudioPayloadCandidate(entryIndex, candidates),
+        });
+      }
+    }
+  }
+  return refs;
+}
+
+function summarizeAudioPayloadRefs(refs) {
+  const resolved = refs.filter((ref) => ref.resolved);
+  const missing = refs.filter((ref) => !ref.resolved);
+  const uniqueLeaves = new Set(refs.map((ref) => ref.leaf.toLowerCase()));
+  const archives = {};
+  for (const ref of resolved) {
+    archives[ref.resolved.archive] = (archives[ref.resolved.archive] ?? 0) + 1;
+  }
+  return {
+    references: refs.length,
+    uniqueLeaves: uniqueLeaves.size,
+    resolved: resolved.length,
+    localizedResolved: resolved.filter((ref) => ref.resolved.localized).length,
+    missing: missing.length,
+    archives,
+    resolvedExamples: resolved.slice(0, 5),
+    missingExamples: missing.slice(0, 5),
+  };
+}
+
+function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
+  const mountedArchives = [];
+  const entryIndex = new Map();
+  const iniFiles = {};
+  const iniTexts = {};
+
+  for (const archive of archives.filter(isAudioPayloadRelevantArchive)) {
+    let archiveBytes;
+    try {
+      archiveBytes = wasmModule.fs.readFile(archive.path);
+    } catch (error) {
+      return {
+        ok: false,
+        source: "browser mounted BIG directory + shipped audio INI parser",
+        error: error?.message ?? String(error),
+      };
+    }
+
+    let entries;
+    try {
+      entries = readBigDirectoryFromBytes(archiveBytes, archive.name);
+    } catch (error) {
+      return {
+        ok: false,
+        source: "browser mounted BIG directory + shipped audio INI parser",
+        error: error?.message ?? String(error),
+      };
+    }
+
+    mountedArchives.push({
+      name: archive.name,
+      sourceName: archive.sourceName,
+      entries: entries.length,
+      bytes: archive.bytes,
+    });
+    for (const entry of entries) {
+      if (!entryIndex.has(entry.normalizedPath)) {
+        entryIndex.set(entry.normalizedPath, entry);
+      }
+    }
+
+    for (const iniPath of audioPayloadIniPaths) {
+      if (iniTexts[iniPath]) {
+        continue;
+      }
+      const entry = entries.find((candidate) =>
+        candidate.normalizedPath === normalizeBigPath(iniPath));
+      if (entry) {
+        iniTexts[iniPath] = readMountedBigText(archiveBytes, entry);
+        iniFiles[iniPath] = {
+          present: true,
+          archive: archive.name,
+          size: entry.size,
+        };
+      }
+    }
+  }
+
+  for (const iniPath of audioPayloadIniPaths) {
+    if (!iniFiles[iniPath]) {
+      iniFiles[iniPath] = { present: false };
+    }
+  }
+
+  const musicBlocks = iniTexts["Data\\INI\\Music.ini"]
+    ? parseAudioPayloadBlocks(iniTexts["Data\\INI\\Music.ini"], "Data\\INI\\Music.ini", ["MusicTrack"])
+    : [];
+  const soundBlocks = [
+    ...(iniTexts["Data\\INI\\Default\\SoundEffects.ini"]
+      ? parseAudioPayloadBlocks(
+        iniTexts["Data\\INI\\Default\\SoundEffects.ini"],
+        "Data\\INI\\Default\\SoundEffects.ini",
+        ["AudioEvent"],
+      )
+      : []),
+    ...(iniTexts["Data\\INI\\SoundEffects.ini"]
+      ? parseAudioPayloadBlocks(
+        iniTexts["Data\\INI\\SoundEffects.ini"],
+        "Data\\INI\\SoundEffects.ini",
+        ["AudioEvent"],
+      )
+      : []),
+  ];
+  const voiceBlocks = iniTexts["Data\\INI\\Voice.ini"]
+    ? parseAudioPayloadBlocks(iniTexts["Data\\INI\\Voice.ini"], "Data\\INI\\Voice.ini", ["AudioEvent"])
+    : [];
+  const speechBlocks = iniTexts["Data\\INI\\Speech.ini"]
+    ? parseAudioPayloadBlocks(iniTexts["Data\\INI\\Speech.ini"], "Data\\INI\\Speech.ini", ["DialogEvent"])
+    : [];
+
+  const sections = {
+    music: {
+      sourceBlocks: musicBlocks.length,
+      summary: summarizeAudioPayloadRefs(
+        collectAudioPayloadRefs(entryIndex, musicBlocks, "music", ["Filename"], false),
+      ),
+    },
+    soundEffects: {
+      sourceBlocks: soundBlocks.length,
+      summary: summarizeAudioPayloadRefs(
+        collectAudioPayloadRefs(
+          entryIndex,
+          soundBlocks,
+          "sound",
+          ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
+          true,
+        ),
+      ),
+    },
+    voices: {
+      sourceBlocks: voiceBlocks.length,
+      summary: summarizeAudioPayloadRefs(
+        collectAudioPayloadRefs(
+          entryIndex,
+          voiceBlocks,
+          "sound",
+          ["Sounds", "SoundsNight", "SoundsEvening", "SoundsMorning", "Attack", "Decay"],
+          true,
+        ),
+      ),
+    },
+    speech: {
+      sourceBlocks: speechBlocks.length,
+      summary: summarizeAudioPayloadRefs(
+        collectAudioPayloadRefs(entryIndex, speechBlocks, "streaming", ["Filename"], false),
+      ),
+    },
+  };
+
+  const requiredArchives = Object.fromEntries(
+    audioPayloadArchiveNames.map((name) => [
+      name,
+      mountedArchives.some((archive) => archive.name === name || archive.sourceName === name),
+    ]),
+  );
+  const knownPayloads = Object.fromEntries(
+    audioPayloadKnownPaths.map((path) => [path, entryIndex.has(normalizeBigPath(path))]),
+  );
+  const audioArchivesReady = Object.values(requiredArchives).every(Boolean);
+  const knownPayloadsReady = Object.values(knownPayloads).every(Boolean);
+  const referencedPayloadsReady = Object.values(sections)
+    .every((section) => section.summary.resolved > 0);
+  const audioSettingsPresent = Boolean(iniFiles["Data\\INI\\AudioSettings.ini"]?.present);
+
+  return {
+    ok: audioArchivesReady && knownPayloadsReady && referencedPayloadsReady,
+    ready: audioArchivesReady && knownPayloadsReady && referencedPayloadsReady,
+    source: "browser mounted BIG directory + shipped audio INI parser",
+    pathRulesSource: "AudioEventRTS.cpp + INIAudioEventInfo.cpp + GameAudio.cpp",
+    runtimeReady: false,
+    nextRequired: audioSettingsPresent ? "browserAudioDevice" : "audioSettings",
+    audioSettings: {
+      present: audioSettingsPresent,
+      candidateSettings: audioPayloadCandidateSettings,
+    },
+    requiredArchives,
+    knownPayloads,
+    iniFiles,
+    archiveCount: mountedArchives.length,
+    indexedEntries: entryIndex.size,
+    audioArchives: mountedArchives
+      .filter((archive) => audioPayloadArchiveNames.includes(archive.name)),
+    sections,
+    note: "Resolved means a candidate path exists in mounted BIG directories; this does not decode, schedule, or play audio.",
+  };
 }
 
 function ensureMemfsDirectory(fs, path) {
@@ -6446,6 +6872,10 @@ async function mountArchives(payload = {}) {
   const probePath = `${baseDirectory}/*.big`;
   const aggregateProbe = probeArchive(moduleResult.wasmModule, probePath);
   rememberMountedArchives(archives);
+  harnessState.audioPayloadInventory = buildAudioPayloadInventoryFromMountedArchives(
+    moduleResult.wasmModule,
+    harnessState.mountedArchives,
+  );
 
   const allArchiveBytesMatch = archives.every((archive) => archive.bytesMatch);
   const allArchiveProbesOk = archiveProbes.every((archive) => archive.ok);
