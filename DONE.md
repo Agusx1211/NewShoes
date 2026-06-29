@@ -3650,6 +3650,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verifies BIK/KB2 header magic, and lists them alongside the runtime BIG
       archives while leaving the ignored binary artifacts out of git. Runtime
       WebCodecs/`<video>` decode, frame upload, and audio sync remain open.
+- Added `verify:bink-payload-header-contract`
+      (`WebAssembly/tools/verify_bink_payload_header_contract.mjs`), a bounded
+      real-data verifier for the shipped loose Bink payload headers. It reads
+      the actual extracted `GC_Background.bik` and `VS_small.bik` files from
+      `WebAssembly/artifacts/real-assets` (printing a clear `npm run
+      extract:runtime-archives` error and exiting nonzero if they are absent)
+      and parses only the source-grounded classic-BINK header fields visible
+      in the real files and needed by the browser Bink provider front end:
+      3-byte `BIK` magic + 1-byte version (BIKi), the u32 size field (file
+      size minus 8), frame count, largest frame size, the repeated frame
+      count field, width, height, fps numerator, and fps denominator. It
+      verifies the size field equals file size minus 8, and under
+      `--expect-current-zh` pins the values measured from the real files:
+      `GC_Background.bik` 149,700 bytes, BIKi, 180 frames, 800x600, 30/1 fps;
+      `VS_small.bik` 310,128 bytes, BIKi, 71 frames, 96x120, 30/1 fps. It
+      emits JSON `{ ok, errors, payloads, source }` and fails nonzero on
+      mismatch. It does not decode, demux, or play Bink video, and does not
+      invent decode behavior. Runtime WebCodecs/`<video>` decode, frame
+      upload, and audio sync remain open.
 - [x] Add the first browser Bink provider implementation and smoke. `zh_browser_bink`
       now defines the original Bink API functions for real-file open/header
       parsing and frame-cursor lifecycle, and `zh_bink_video_device_compile_frontier`

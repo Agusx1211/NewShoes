@@ -14,6 +14,7 @@
     "verify:gameengine-startup-order": "node tools/verify_gameengine_startup_order.mjs",
     "verify:miles-audio-device-frontier": "node tools/verify_miles_audio_device_frontier.mjs",
     "verify:bink-video-device-frontier": "node tools/verify_bink_video_device_frontier.mjs",
+    "verify:bink-payload-header-contract": "node tools/verify_bink_payload_header_contract.mjs artifacts/real-assets --expect-current-zh",
     "verify:mss-startup-probe-contract": "node tools/verify_mss_startup_probe_contract.mjs",
     "verify:mss-sample-lifecycle-contract": "node tools/verify_mss_sample_lifecycle_contract.mjs",
     "verify:mss-stream-lifecycle-contract": "node tools/verify_mss_stream_lifecycle_contract.mjs",
