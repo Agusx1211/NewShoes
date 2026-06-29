@@ -16,6 +16,7 @@
     "verify:mss-startup-probe-contract": "node tools/verify_mss_startup_probe_contract.mjs",
     "verify:mss-sample-lifecycle-contract": "node tools/verify_mss_sample_lifecycle_contract.mjs",
     "verify:mss-stream-lifecycle-contract": "node tools/verify_mss_stream_lifecycle_contract.mjs",
+    "verify:mss-3d-sample-lifecycle-contract": "node tools/verify_mss_3d_sample_lifecycle_contract.mjs",
     "verify:miles-audio-playback-frontier": "node tools/verify_miles_audio_playback_frontier.mjs",
     "verify:miles-audio-decode-frontier": "node tools/verify_miles_audio_decode_frontier.mjs",
     "verify:miles-audio-volume-frontier": "node tools/verify_miles_audio_volume_frontier.mjs",
