@@ -630,8 +630,11 @@ shares structure and follows behind.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
       The `Mss.H` startup/provider/listener/filter/sample/stream-handle
       boundaries are now stateful and harness-probed by the MSS lifecycle RPCs,
-      but the next required work is a real Web Audio playback backend owned by
-      the original manager.
+      and `node WebAssembly/dist/miles-audio-open-device-smoke.cjs` now
+      instantiates the original `MilesAudioManager` and drives its real
+      `openDevice()` path through shared browser MSS runtime state. Full
+      `AudioManager::init` INI-driven startup and the next required real Web
+      Audio playback backend owned by the original manager remain open.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -653,7 +656,9 @@ shares structure and follows behind.
       release while still leaving real Web Audio panning and scheduling open.
       The startup probe now also resolves the original `initDelayFilter`
       `AIL_enumerate_filters` lookup to a browser-owned `Mono Delay Filter`
-      handle, without implementing the filter DSP path.
+      handle, and the focused original-manager `openDevice()` smoke verifies
+      the same provider/listener/sample/filter state from `MilesAudioManager`
+      itself, without implementing the filter DSP path.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;

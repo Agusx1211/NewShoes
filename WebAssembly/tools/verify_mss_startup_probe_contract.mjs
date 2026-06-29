@@ -5,7 +5,8 @@
 // source files only, with no assets, browser, or build artifacts, and pins the
 // facts that the probe must observe:
 //
-//   1. WebAssembly/shims/Mss.H declares the MSS startup boundary surface:
+//   1. WebAssembly/shims/Mss.H owns one shared browser runtime state and
+//      declares the MSS startup boundary surface:
 //      AIL_startup, AIL_shutdown, AIL_quick_startup, AIL_quick_handles,
 //      AIL_set_file_callbacks, AIL_allocate_sample_handle,
 //      AIL_allocate_3D_sample_handle, AIL_open_3D_listener,
@@ -129,18 +130,35 @@ function main() {
   // Each expected function is defined (static inline) in Mss.H at the pinned
   // line. Definitions, not references, must exist.
   // ========================================================================
+  facts.mssShimSharedRuntime = {
+    storage: requireLine(
+      errors,
+      mss.lines,
+      320,
+      /\binline\s+MSSBrowserRuntimeState\s+g_MSSBrowserRuntimeState\s*;/,
+      "Mss.H shared runtime storage",
+    ),
+    accessor: requireLine(
+      errors,
+      mss.lines,
+      324,
+      /\breturn\s+g_MSSBrowserRuntimeState\s*;/,
+      "Mss.H shared runtime accessor",
+    ),
+  };
+
   const mssBoundary = [
-    { name: "AIL_startup", line: 475 },
-    { name: "AIL_shutdown", line: 482 },
-    { name: "AIL_allocate_sample_handle", line: 531 },
-    { name: "AIL_allocate_3D_sample_handle", line: 731 },
-    { name: "AIL_open_3D_listener", line: 989 },
-    { name: "AIL_enumerate_3D_providers", line: 998 },
-    { name: "AIL_open_3D_provider", line: 1019 },
-    { name: "AIL_enumerate_filters", line: 1039 },
-    { name: "AIL_set_file_callbacks", line: 1243 },
-    { name: "AIL_quick_startup", line: 1257 },
-    { name: "AIL_quick_handles", line: 1283 },
+    { name: "AIL_startup", line: 476 },
+    { name: "AIL_shutdown", line: 483 },
+    { name: "AIL_allocate_sample_handle", line: 532 },
+    { name: "AIL_allocate_3D_sample_handle", line: 732 },
+    { name: "AIL_open_3D_listener", line: 990 },
+    { name: "AIL_enumerate_3D_providers", line: 999 },
+    { name: "AIL_open_3D_provider", line: 1020 },
+    { name: "AIL_enumerate_filters", line: 1040 },
+    { name: "AIL_set_file_callbacks", line: 1244 },
+    { name: "AIL_quick_startup", line: 1258 },
+    { name: "AIL_quick_handles", line: 1284 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssBoundary) {

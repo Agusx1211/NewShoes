@@ -317,10 +317,11 @@ struct MSSBrowserRuntimeState
 	AIL_file_read_callback file_read = nullptr;
 };
 
+inline MSSBrowserRuntimeState g_MSSBrowserRuntimeState;
+
 static inline MSSBrowserRuntimeState &MSSBrowserRuntime()
 {
-	static MSSBrowserRuntimeState state;
-	return state;
+	return g_MSSBrowserRuntimeState;
 }
 
 static inline void MSSBrowserRuntimeReset()

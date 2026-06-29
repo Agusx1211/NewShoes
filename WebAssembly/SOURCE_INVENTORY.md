@@ -151,6 +151,13 @@ frontier reports `startupBoundaryReady: true`, `playbackReady: false`, and
 `npm run verify:mss-startup-probe-contract` pins the source side of that
 contract, including the `Mss.H` function surface, original `openDevice` call
 order, startup frontier JSON, wasm probe source, CMake export, and harness RPC.
+`node WebAssembly/dist/miles-audio-open-device-smoke.cjs` now complements that
+probe by instantiating the original `MilesAudioManager` and driving its real
+`openDevice()` implementation against shared browser MSS runtime state. It
+asserts the original manager-owned provider selection, listener allocation,
+2D/3D sample pools, stream count, speaker state, and `Mono Delay Filter`
+lookup while still bypassing full `AudioManager::init` INI loading and all Web
+Audio scheduling/playback.
 The wasm `mssSampleLifecycleProbe` now executes the next 2D sample boundary:
 sample handle allocation, initialization, user-data storage, sample file
 assignment, EOS callback registration, volume/pan/rate/loop/position state,

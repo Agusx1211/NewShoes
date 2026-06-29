@@ -3673,6 +3673,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `mssStartupProbe` asserts the filter count/name/handle before shutdown.
       The startup frontier now marks `initDelayFilter` ready while keeping
       `refreshCachedVariables`, playback scheduling, and real filter DSP open.
+- [x] Add a focused original `MilesAudioManager::openDevice` runtime smoke.
+      `WebAssembly/dist/miles-audio-open-device-smoke.cjs` instantiates the
+      original manager, installs minimal target-local audio settings plus a raw
+      original-layout `GlobalData::m_audioOn` owner, and drives the real
+      `openDevice()` path through the browser `Mss.H` shim. The smoke verifies
+      MSS redist/startup/quick-startup arguments, provider enumeration and
+      selection, speaker type propagation, listener allocation, 2D/3D sample
+      pool allocation, stream count, and `Mono Delay Filter` lookup. `Mss.H`
+      now stores its browser runtime in shared C++17 inline storage so
+      manager-compiled calls and smoke assertions observe the same state across
+      translation units. Verified with
+      `cmake --build WebAssembly/build/wasm --target miles-audio-open-device-smoke -j 8`
+      and `node WebAssembly/dist/miles-audio-open-device-smoke.cjs`. Full
+      `AudioManager::init` INI loading and Web Audio playback remain open.
 - [x] Make the MSS 2D sample handle lifecycle stateful and
       harness-observable. `Mss.H` now tracks allocated 2D sample handles,
       initialization, sample file assignment, user data, EOS callbacks, volume,
