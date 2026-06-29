@@ -781,11 +781,11 @@ function main() {
     "CMake browser smoke exported function");
   assertExact(errors, facts.packageJson, "scriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 116,
+      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 118,
     "package.json test:bink-w3d-video-buffer-browser script");
   assertExact(errors, facts.packageJson, "presentationAliasLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 117,
+      (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 119,
     "package.json test:bink-w3d-video-presentation-browser alias");
 
   // ------------------------------------------------------------------
@@ -801,8 +801,8 @@ function main() {
       "W3DVideoBuffer surface, emitted through the browser D3D8 texture update " +
       "hook, presented by original W3DDisplay::drawVideoBuffer, and now " +
       "also exercised through focused original Display::playMovie/update/stopMovie " +
-      "and WindowVideoManager::playMovie/update paths. Full load-screen / " +
-      "score-screen movie-loop ownership and Bink/audio sync remain open M8 tasks.",
+      "and WindowVideoManager::playMovie/update paths. Full InGameUI / " +
+      "load-screen / score-screen movie-loop ownership and Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

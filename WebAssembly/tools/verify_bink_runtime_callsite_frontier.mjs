@@ -523,10 +523,10 @@ function main() {
   // ------------------------------------------------------------------
   assertExact(errors, facts.cmake, "frontierTargetLine",
     lineNumber(cmake.lines,
-      (line) => /add_library\s*\(\s*zh_bink_video_device_compile_frontier\b/.test(line)), 2468,
+      (line) => /add_library\s*\(\s*zh_bink_video_device_compile_frontier\b/.test(line)), 2469,
     "CMake zh_bink_video_device_compile_frontier target");
   assertExact(errors, facts.cmake, "frontierSourceLine",
-    lineNumber(cmake.lines, (line) => /BinkVideoPlayer\.cpp/.test(line)), 2469,
+    lineNumber(cmake.lines, (line) => /BinkVideoPlayer\.cpp/.test(line)), 2470,
     "CMake BinkVideoPlayer.cpp source");
   assertPresent(errors, facts.cmake, "frontierLinkLine",
     lineNumber(cmake.lines,

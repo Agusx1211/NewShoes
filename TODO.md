@@ -692,7 +692,7 @@ shares structure and follows behind.
       `WindowVideoManager::playMovie/update` path that attaches a real
       `W3DVideoBuffer` to a `GameWindow`; this item remains open until the
       final decoder/format policy is locked down and the full original
-      load-screen / score-screen movie loops drive the same path.
+      InGameUI, load-screen, and score-screen movie loops drive the same path.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -718,8 +718,8 @@ shares structure and follows behind.
       The same smoke now also proves focused original
       `Display::playMovie/update/stopMovie` ownership and focused original
       `WindowVideoManager::playMovie/update` ownership of a window-attached
-      real `W3DVideoBuffer`. Full original load-screen / score-screen movie
-      playback ownership and Bink/audio sync remain open.
+      real `W3DVideoBuffer`. Full original InGameUI, load-screen, and
+      score-screen movie playback ownership and Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -737,6 +737,15 @@ shares structure and follows behind.
       lock/unlock/format/pitch contract, and the existing CMake compile
       frontier target); it keeps runtime playback and open-frame upload open
       and does not claim them complete.
+      `verify:bink-ingameui-movie-frontier` now pins the source-only
+      InGameUI movie ownership contract specifically: the header method/field
+      surface, constructor initialization, `InGameUI::update` main and cameo
+      frame-loop order, `playMovie`/`stopMovie` buffer and stream ownership,
+      `playCameoMovie`/`stopCameoMovie` `RightHUD` buffer attachment, and the
+      original CommandXlat / ScriptActions entry points. It is source-only:
+      a focused runtime `InGameUI` instantiation currently pulls the broad
+      ControlBar/GameLogic/ScriptEngine link surface, so runtime InGameUI
+      movie playback remains open.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and
@@ -754,8 +763,8 @@ shares structure and follows behind.
       display presentation proof and pins the focused original
       `Display::playMovie/update/stopMovie` path plus the focused original
       `WindowVideoManager::playMovie/update/reset` path that owns a
-      `GameWindow` video buffer. Full original load-screen / score-screen
-      movie-loop ownership remains open.
+      `GameWindow` video buffer. Full original InGameUI, load-screen, and
+      score-screen movie-loop ownership remains open.
       `verify:bink-w3d-video-presentation-frontier` now pins the source-only
       *presentation* contract from the original Bink/W3D video-buffer upload
       to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
@@ -772,8 +781,9 @@ shares structure and follows behind.
       decoded-Bink-frame screenshot proof for this focused path, including
       focused original `Display::playMovie/update/stopMovie` ownership and
       focused original `WindowVideoManager::playMovie/update` ownership of
-      the attached `GameWindow` video buffer. The full original load-screen /
-      score-screen movie playback loops still need to own that path.
+      the attached `GameWindow` video buffer. The full original InGameUI,
+      load-screen, and score-screen movie playback loops still need to own
+      that path.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

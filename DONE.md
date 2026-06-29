@@ -3990,6 +3990,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and `verify:bink-w3d-video-presentation-frontier` now pin the new Display
       path while keeping full original load-screen / score-screen movie loops
       and Bink/audio sync open.
+- [x] Add `verify:bink-ingameui-movie-frontier`
+      (`verify:bink-ingameui-movie-frontier` and strict alias
+      `verify:bink-ingameui-movie-frontier:strict`), a source-only verifier for
+      original `InGameUI` Bink movie ownership. It pins the `InGameUI.h`
+      movie/cameo method declarations and `m_videoBuffer` / `m_videoStream` /
+      `m_cameoVideoBuffer` / `m_cameoVideoStream` fields, constructor null
+      initialization, `InGameUI::update` main/cameo movie frame-loop order,
+      `playMovie` / `stopMovie` / `videoBuffer` ownership through
+      `TheVideoPlayer` and `TheDisplay`, `playCameoMovie` /
+      `stopCameoMovie` / `cameoVideoBuffer` `ControlBar.wnd:RightHUD`
+      attachment, and the original `CommandXlat` / `ScriptActions` callsites
+      that route demo/objective/radar movies through `TheInGameUI`. This does
+      not claim runtime InGameUI playback complete; a focused runtime
+      instantiation currently pulls the broad ControlBar/GameLogic/ScriptEngine
+      link surface, so runtime InGameUI plus full load-screen / score-screen
+      movie-loop ownership remains open. Verified with `npm run build:wasm`,
+      `npm run verify:bink-ingameui-movie-frontier`,
+      `npm run verify:bink-runtime-callsite-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

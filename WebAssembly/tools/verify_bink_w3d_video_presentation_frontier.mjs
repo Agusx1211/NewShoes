@@ -520,15 +520,15 @@ function main() {
 
   assertExact(errors, facts.packageJson, "binkScriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 116,
+      (line) => /"test:bink-w3d-video-buffer-browser"/.test(line)), 118,
     "package.json test:bink-w3d-video-buffer-browser script");
   assertExact(errors, facts.packageJson, "binkPresentationAliasLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 117,
+      (line) => /"test:bink-w3d-video-presentation-browser"/.test(line)), 119,
     "package.json test:bink-w3d-video-presentation-browser alias");
   assertExact(errors, facts.packageJson, "drawimageScriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 120,
+      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 122,
     "package.json test:ww3d-display-drawimage-file script");
 
   // ------------------------------------------------------------------
@@ -551,8 +551,8 @@ function main() {
       "test:bink-w3d-video-presentation-browser, including a focused original " +
       "Display::playMovie/update/stopMovie path and a focused original " +
       "WindowVideoManager::playMovie/update path that attaches the real W3DVideoBuffer " +
-      "to a GameWindow before presentation. Full load-screen / score-screen movie-loop " +
-      "ownership and Bink/audio sync remain open M8 tasks.",
+      "to a GameWindow before presentation. Full InGameUI / load-screen / score-screen " +
+      "movie-loop ownership and Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

@@ -17,6 +17,8 @@
     "verify:bink-video-device-frontier": "node tools/verify_bink_video_device_frontier.mjs",
     "verify:bink-runtime-callsite-frontier": "node tools/verify_bink_runtime_callsite_frontier.mjs",
     "verify:bink-runtime-callsite-frontier:strict": "node tools/verify_bink_runtime_callsite_frontier.mjs",
+    "verify:bink-ingameui-movie-frontier": "node tools/verify_bink_ingameui_movie_frontier.mjs",
+    "verify:bink-ingameui-movie-frontier:strict": "node tools/verify_bink_ingameui_movie_frontier.mjs",
     "verify:bink-w3d-video-buffer-upload-frontier": "node tools/verify_bink_w3d_video_buffer_upload_frontier.mjs",
     "verify:bink-w3d-video-buffer-upload-frontier:strict": "node tools/verify_bink_w3d_video_buffer_upload_frontier.mjs",
     "verify:bink-w3d-video-presentation-frontier": "node tools/verify_bink_w3d_video_presentation_frontier.mjs",

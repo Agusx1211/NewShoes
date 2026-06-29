@@ -187,6 +187,15 @@ pins the `MilesAudioManager.cpp` 3D paths (`initSamplePools`, `playSample3D`,
 `Mss.H` stateful 3D surface, the runtime probe source/JSON contract, and the
 CMake source/export plus bridge cwrap/RPC lines.
 
+`npm run verify:bink-ingameui-movie-frontier` pins the original InGameUI Bink
+movie ownership surface before it can be linked into the focused browser Bink
+runtime smoke: `InGameUI.h` movie/cameo declarations and fields, constructor
+initialization, `InGameUI::update` main/cameo frame-loop order,
+`playMovie`/`stopMovie`/`videoBuffer`, `playCameoMovie`/`stopCameoMovie`/
+`cameoVideoBuffer` `RightHUD` attachment, and the `CommandXlat` /
+`ScriptActions` callsites. It is source-only; runtime InGameUI playback remains
+open until the ControlBar/GameLogic/UI dependency surface can link cleanly.
+
 ## Runtime Targets
 
 These are part of the real game runtime or are linked by the original `RTS`
