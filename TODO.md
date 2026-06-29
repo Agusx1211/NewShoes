@@ -600,7 +600,10 @@ shares structure and follows behind.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world;
       `verify:audio-3d-position-frontier` now pins the source listener/sample
-      position contract that the browser Web Audio backend must satisfy.
+      position contract that the browser Web Audio backend must satisfy, and
+      `requestedPayloadDecodeCacheProof.browserAudio3DPositioningProof` now
+      proves one real requested world SFX can render through a browser
+      `PannerNode`. Engine-driven 3D playback is still open.
 - [ ] Music playback + transitions.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI.

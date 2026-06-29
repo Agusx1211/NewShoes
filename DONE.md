@@ -3452,6 +3452,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioBufferSourceNode` start windows, ordered completion callbacks,
       `PS_Stopped`, and the sample/stream release paths while preserving that
       this is not yet engine-driven playback.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible 3D positioning proof for a real requested world SFX
+      (`ArtilleryBarrageIncomingWhistle` / `gshescre.wav`). The smoke now
+      renders the decoded buffer through `AudioBufferSourceNode -> PannerNode`
+      with source min/max range, listener/source coordinates, and stereo
+      separation metrics pinned, while preserving that this is not yet
+      engine-driven 3D playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

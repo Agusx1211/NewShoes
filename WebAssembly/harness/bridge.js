@@ -6071,6 +6071,44 @@ function summarizeRenderedAudioWindow(channelData, startFrame, endFrame) {
   };
 }
 
+function setAudioParamValue(target, key, value) {
+  const param = target?.[key];
+  if (param && typeof param.setValueAtTime === "function") {
+    param.setValueAtTime(value, 0);
+  } else if (target) {
+    target[key] = value;
+  }
+}
+
+function summarizeStereoRenderedAudio(rendered, startFrame = 0, endFrame = rendered.length) {
+  const left = summarizeRenderedAudioWindow(rendered.getChannelData(0), startFrame, endFrame);
+  const right = summarizeRenderedAudioWindow(rendered.getChannelData(1), startFrame, endFrame);
+  let leftSumSquares = 0;
+  let rightSumSquares = 0;
+  const start = Math.max(0, startFrame);
+  const end = Math.min(rendered.length, endFrame);
+  const leftData = rendered.getChannelData(0);
+  const rightData = rendered.getChannelData(1);
+  for (let frame = start; frame < end; ++frame) {
+    leftSumSquares += leftData[frame] * leftData[frame];
+    rightSumSquares += rightData[frame] * rightData[frame];
+  }
+  const frames = Math.max(1, end - start);
+  const leftRms = Math.sqrt(leftSumSquares / frames);
+  const rightRms = Math.sqrt(rightSumSquares / frames);
+  return {
+    numberOfChannels: rendered.numberOfChannels,
+    sampleRate: rendered.sampleRate,
+    length: rendered.length,
+    durationSeconds: Number(rendered.duration.toFixed(6)),
+    left,
+    right,
+    leftRms: Number(leftRms.toFixed(6)),
+    rightRms: Number(rightRms.toFixed(6)),
+    rightMinusLeftRms: Number((rightRms - leftRms).toFixed(6)),
+  };
+}
+
 function requestedAudioSchedulePlaybackSeconds(decoded, durationSeconds) {
   if (decoded.sections?.music && durationSeconds > 10) {
     return 10;
@@ -6346,6 +6384,163 @@ function buildBrowserAudioEventLifecycleProof(decodedPayloads, scheduleProof) {
   };
 }
 
+async function buildBrowserAudio3DPositioningProof(decodedPayloads) {
+  const errors = [];
+  const OfflineAudioContextCtor =
+    globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContextCtor !== "function") {
+    return {
+      source: "browser requested audio PannerNode 3D positioning proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "browserAudioDevicePannerBinding",
+      errors: ["OfflineAudioContext is unavailable"],
+      events: [],
+    };
+  }
+
+  const target = decodedPayloads.find((decoded) =>
+    decoded.firstEvent === "ArtilleryBarrageIncomingWhistle");
+  if (!target) {
+    return {
+      source: "browser requested audio PannerNode 3D positioning proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "requestedWorldSfxDecodeTarget",
+      errors: ["ArtilleryBarrageIncomingWhistle decode target is unavailable"],
+      events: [],
+    };
+  }
+
+  const renderSampleRate = 44100;
+  const renderSeconds = 0.25;
+  const renderLength = Math.ceil(renderSeconds * renderSampleRate);
+  let audioContext;
+  try {
+    audioContext = new OfflineAudioContextCtor(2, renderLength, renderSampleRate);
+  } catch (error) {
+    return {
+      source: "browser requested audio PannerNode 3D positioning proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "offlineAudioContext",
+      errors: [error?.message ?? String(error)],
+      events: [],
+    };
+  }
+
+  const listenerPosition = { x: 0, y: 0, z: 0 };
+  const listenerOrientation = {
+    forwardX: 0,
+    forwardY: 0,
+    forwardZ: -1,
+    upX: 0,
+    upY: 1,
+    upZ: 0,
+  };
+  const sourcePosition = { x: 600, y: 0, z: -600 };
+  const sourceEvent = {
+    name: target.firstEvent,
+    source: "Data\\INI\\SoundEffects.ini:3570",
+    soundsSource: target.firstSource,
+    type: "world everyone",
+    minRange: 300,
+    maxRange: 2000,
+    volume: 70,
+    volumeShift: -20,
+    limit: 4,
+    priority: "normal",
+  };
+  const pannerConfig = {
+    panningModel: "equalpower",
+    distanceModel: "linear",
+    refDistance: sourceEvent.minRange,
+    maxDistance: sourceEvent.maxRange,
+    rolloffFactor: 1,
+  };
+
+  try {
+    const source = audioContext.createBufferSource();
+    const panner = audioContext.createPanner();
+    source.buffer = createWebAudioBufferFromDecoded(audioContext, target);
+    panner.panningModel = pannerConfig.panningModel;
+    panner.distanceModel = pannerConfig.distanceModel;
+    panner.refDistance = pannerConfig.refDistance;
+    panner.maxDistance = pannerConfig.maxDistance;
+    panner.rolloffFactor = pannerConfig.rolloffFactor;
+    for (const [key, value] of Object.entries(listenerPosition)) {
+      setAudioParamValue(audioContext.listener, `position${key.toUpperCase()}`, value);
+    }
+    for (const [key, value] of Object.entries(listenerOrientation)) {
+      setAudioParamValue(audioContext.listener, key, value);
+    }
+    for (const [key, value] of Object.entries(sourcePosition)) {
+      setAudioParamValue(panner, `position${key.toUpperCase()}`, value);
+    }
+    source.connect(panner);
+    panner.connect(audioContext.destination);
+    source.start(0, 0, renderSeconds);
+    const rendered = await audioContext.startRendering();
+    await Promise.resolve();
+    const render = summarizeStereoRenderedAudio(rendered, 0, rendered.length);
+    if (render.left.nonZeroFrames <= 0 || render.right.nonZeroFrames <= 0) {
+      errors.push("PannerNode render was silent");
+    }
+    if (Math.abs(render.rightMinusLeftRms) < 0.000001) {
+      errors.push("PannerNode render did not produce observable stereo separation");
+    }
+    return {
+      source: "browser requested audio PannerNode 3D positioning proof",
+      ready: errors.length === 0,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "engineDrivenWebAudioPannerBinding",
+      sourceFrontiers: [
+        "verify:audio-3d-position-frontier",
+        "verify:audio-sample-start-frontier",
+        "verify:miles-audio-volume-frontier",
+      ],
+      errors,
+      events: [
+        {
+          cacheKey: target.cacheKey,
+          archive: target.archive,
+          path: target.path,
+          eventName: target.firstEvent,
+          firstSource: target.firstSource,
+          sections: target.sections,
+          sourceEvent,
+          nodeGraph: ["AudioBufferSourceNode", "PannerNode", "AudioDestinationNode"],
+          pannerConfig,
+          listenerPosition,
+          listenerOrientation,
+          sourcePosition,
+          render,
+        },
+      ],
+    };
+  } catch (error) {
+    errors.push(error?.message ?? String(error));
+    return {
+      source: "browser requested audio PannerNode 3D positioning proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "offlinePannerRender",
+      sourceFrontiers: [
+        "verify:audio-3d-position-frontier",
+        "verify:audio-sample-start-frontier",
+        "verify:miles-audio-volume-frontier",
+      ],
+      errors,
+      events: [],
+    };
+  }
+}
+
 function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
   const errors = [];
   const proofs = [];
@@ -6565,6 +6760,9 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     [...decodedCache.values()],
     webAudioScheduleProof,
   );
+  const browserAudio3DPositioningProof = await buildBrowserAudio3DPositioningProof(
+    [...decodedCache.values()],
+  );
   const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
   const decodedFloatBytes = entries.reduce((total, entry) => total + entry.decodedFloatBytes, 0);
 
@@ -6575,7 +6773,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       entries.length === targets.length &&
       webAudioBufferCache.ready === true &&
       webAudioScheduleProof.ready === true &&
-      browserAudioEventLifecycleProof.ready === true,
+      browserAudioEventLifecycleProof.ready === true &&
+      browserAudio3DPositioningProof.ready === true,
     metadataOnly: false,
     runtimeDecoded: true,
     runtimeScheduled: true,
@@ -6604,6 +6803,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     webAudioBufferCache,
     webAudioScheduleProof,
     browserAudioEventLifecycleProof,
+    browserAudio3DPositioningProof,
   };
 }
 
@@ -7096,7 +7296,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     requestedPayloadCachePlan,
     requestedPayloadDecodeCacheProof,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded MP3/WAV cache entries plus an OfflineAudioContext preview scheduling proof for requested payload keys without audible runtime playback.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded MP3/WAV cache entries plus OfflineAudioContext preview scheduling, lifecycle, and PannerNode 3D-positioning proofs for requested payload keys without audible runtime playback.",
   };
 }
 

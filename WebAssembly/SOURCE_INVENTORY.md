@@ -81,8 +81,12 @@ track. It also exposes a browser requested audio event lifecycle proof tied to
 the request, update, sample-start, and completion frontier verifiers, pinning
 AR_Play request state, sample/stream playing types, ordered completion
 callbacks, `PS_Stopped`, and release paths for those five requested events.
-This is still representative proof coverage, not full requested-payload
-decode/cache or engine-driven audio-event scheduling/playback.
+The same proof surface now includes a browser `PannerNode` 3D-positioning proof
+for the real requested world SFX `ArtilleryBarrageIncomingWhistle`, carrying
+the source min/max range, listener/source coordinates, and stereo separation
+metrics through an OfflineAudioContext render. This is still representative
+proof coverage, not full requested-payload decode/cache or engine-driven
+audio-event scheduling/playback.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current
