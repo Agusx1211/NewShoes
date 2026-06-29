@@ -381,6 +381,12 @@ shares structure and follows behind.
 
 - [ ] Replace the skeleton wasm boot module with original engine Emscripten
       initialization.
+- [ ] Promote the `CreateGameEngine` frontier from probe-only to real browser
+      startup ownership: link original `Win32GameEngine` construction with
+      owned `GameEngine` vtable/typeinfo/destructor lifetime, then advance
+      `GameEngine::init()` only as far as the first real browser-owned device
+      factory (`createAudioManager` / `TheAudio`) instead of adding more
+      source-only Win32 probes.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.

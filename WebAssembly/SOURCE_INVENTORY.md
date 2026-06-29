@@ -411,6 +411,14 @@ The wasm CMake skeleton currently builds:
   canvas/GL/log/asset bridge surface only; original W3D display, WW3D rendering,
   engine archive consumption, and release-crash/dialog routing still need to
   bind to it before those runtime paths are complete.
+- `harness/win32_gameengine_smoke.mjs`: browser harness smoke exposed through
+  the `win32GameEngineProbe` RPC. It builds `cnc-port`, queues a
+  browser-backed Win32 message, drains it through the Emscripten-visible helper
+  factored from the linked original `Win32GameEngine::serviceWindowsOS()`
+  body, verifies `TheMessageTime`, `CreateWindow`/`DestroyWindow` dispatch,
+  and stateful `SetErrorMode` shim behavior, and reports real
+  `Win32GameEngine` construction/destruction as the next owned `GameEngine`
+  startup-lifetime boundary.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
 - `zh_compression_manager`: original `CompressionManager.cpp` compiled into a

@@ -431,6 +431,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Finish Win32 engine message-loop enablement on top of the browser-fed
       queue for keyboard, pointer, double-click, focus/activation, lifecycle,
       and DOM composition text paths through the browser device layer.
+- [x] Add a `cnc-port` browser RPC and Playwright smoke for the original
+      `Win32GameEngine::serviceWindowsOS()` path. The smoke queues a
+      browser-backed Win32 message, drains it through the Emscripten-visible
+      helper factored from the linked original `Win32GameEngine.cpp`
+      `serviceWindowsOS()` body, verifies `TheMessageTime` propagation, proves
+      stateful `SetErrorMode` shim behavior for the constructor contract, and
+      explicitly leaves real `Win32GameEngine` construction / `GameEngine`
+      singleton lifetime as the next startup boundary instead of faking full
+      engine ownership.
 - [x] `WWVegas/WWLib` guarded legacy translation units (`Except.cpp`,
       `point.cpp`) compile under their original source guards; this is compile
       coverage only, not a browser exception dialog or enabled Point body.

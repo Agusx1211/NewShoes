@@ -953,9 +953,31 @@ static inline BOOL ShowWindow(HWND, int)
 #define SEM_FAILCRITICALERRORS 0x0001
 #endif
 
-static inline UINT SetErrorMode(UINT)
+namespace WasmWin32System
 {
-	return 0;
+inline UINT error_mode = 0;
+
+static inline UINT SetErrorModeState(UINT mode)
+{
+	const UINT previous = error_mode;
+	error_mode = mode;
+	return previous;
+}
+
+static inline UINT GetErrorModeState()
+{
+	return error_mode;
+}
+}
+
+static inline UINT SetErrorMode(UINT mode)
+{
+	return WasmWin32System::SetErrorModeState(mode);
+}
+
+static inline UINT GetErrorMode()
+{
+	return WasmWin32System::GetErrorModeState();
 }
 
 static inline BOOL SetWindowText(HWND, const char *)

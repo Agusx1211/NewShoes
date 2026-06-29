@@ -5751,6 +5751,7 @@ async function loadWasmModule() {
       ),
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
+      probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeMssStreamLifecycle: module.cwrap("cnc_port_probe_mss_stream_lifecycle", "string", []),
@@ -8940,6 +8941,17 @@ async function probeBrowserInput() {
   return probe;
 }
 
+async function probeWin32GameEngine() {
+  const wasmModule = await wasmModulePromise;
+  if (!wasmModule) {
+    return null;
+  }
+  const probe = parseModuleState(wasmModule.probeWin32GameEngine());
+  applyModuleState(parseModuleState(wasmModule.state()));
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
 async function initOriginalWndProcInput(payload = {}) {
   const wasmModule = await wasmModulePromise;
   if (!wasmModule) {
@@ -9997,6 +10009,14 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; browser input cannot be probed" };
         }
         return { ok: true, command, probe, state: snapshotState() };
+      }
+    case "win32GameEngineProbe":
+      {
+        const probe = await probeWin32GameEngine();
+        if (!probe) {
+          return { ok: false, command, error: "Wasm module unavailable; Win32GameEngine cannot be probed" };
+        }
+        return { ok: Boolean(probe.ok), command, probe, state: snapshotState() };
       }
     case "initOriginalWndProcInput":
       {
