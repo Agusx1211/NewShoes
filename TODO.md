@@ -598,7 +598,7 @@ shares structure and follows behind.
       retains that representative decoded cache for one live requested
       `AudioBufferSourceNode` lifecycle proof through the runtime mixer. Expand
       that proof into full resolved requested-payload decode/cache storage and
-      engine-driven Web Audio scheduling/lifecycle.
+      real engine-driven Web Audio scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo);
       `verify:audio-playing-event-state-frontier` now pins the original
       `PlayingAudio` active-event record, list insertion, completion marker,
@@ -630,8 +630,12 @@ shares structure and follows behind.
       mixer.
 - [ ] Harness: assert engine-driven audio events fire (state/log), not just
       sound; the current browser live-event proof logs request/start/ended/
-      completion/release for one real requested decoded payload, but it is not
-      yet driven by the original `MilesAudioManager` request queue.
+      completion/release for one real requested decoded payload, and
+      `browserAudioRequestPathRuntime` now proves the ordered
+      `AudioManager::addAudioEvent` / `SoundManager::addAudioEvent` /
+      `MilesAudioManager::processRequest` source contract around that live
+      playback. It is still harness-driven rather than executed by the
+      original `MilesAudioManager` runtime.
 
 ---
 

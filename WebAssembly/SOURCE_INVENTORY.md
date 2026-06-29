@@ -25,6 +25,11 @@ calls.
 `npm run verify:audio-completion-frontier` pins the original completion tail:
 Miles end-of-sample callbacks, `notifyOfAudioCompletion`, `AudioEventRTS`
 loop/portion state, `PS_Stopped`, and the per-frame release cleanup path.
+`npm run verify:audio-browser-bridge-contract-frontier` stitches those request,
+drain, device-start, completion, and playing-list facts into the browser Web
+Audio replacement seam, pinning that the Common managers stay intact while
+`MilesAudioManager::playAudioEvent` retargets `playStream`, `playSample3D`,
+and `playSample`.
 `npm run verify:audio-sound-manager-counters-frontier` pins the engine-side
 `SoundManager` request gate and 2D/3D sample counter contract: lazy audio limit
 loading, `canPlayNow` 2D/3D availability checks, start/completion counter
@@ -96,8 +101,13 @@ real requested music, 2D SFX, voice, 3D SFX, and speech payloads through
 source-default `GainNode` buses, plus a browser `PannerNode` 3D-positioning
 proof for the real requested world SFX `ArtilleryBarrageIncomingWhistle`,
 carrying the source min/max range, listener/source coordinates, and stereo
-separation metrics through an OfflineAudioContext render. This is still
-representative proof coverage, not full requested-payload decode/cache or
+separation metrics through an OfflineAudioContext render. The runtime harness
+also exposes `browserAudioRequestPathRuntime`, which takes one real decoded
+requested payload through a source-shaped `AudioManager::addAudioEvent` handle,
+filename, play-info, `SoundManager::addAudioEvent` `AR_Play` queue,
+`MilesAudioManager::processRequestList` / `processRequest` dispatch, and live
+`AudioBufferSourceNode` completion/release sequence. This is still
+representative proof coverage, not full requested-payload decode/cache or real
 engine-driven audio-event scheduling/playback.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the

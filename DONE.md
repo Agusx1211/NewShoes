@@ -3366,6 +3366,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `notifyOfAudioCompletion` marking `PS_Stopped`, `processPlayingList`
       release/erase drainage, and `AudioEventRTS` event-name/handle identity.
       This verifies source structure only, not runtime audio.
+- [x] Add `npm run verify:audio-browser-bridge-contract-frontier`, a
+      source-only verifier that stitches the original audio enqueue, drain,
+      device-start, completion, and playing-list contracts into the browser
+      Web Audio replacement seam: preserve `AudioManager::addAudioEvent`,
+      `SoundManager`/`MusicManager` `AR_Play` request queueing,
+      `MilesAudioManager::processRequest`, `playAudioEvent`, and the
+      `playStream` / `playSample3D` / `playSample` retarget points.
 - [x] Add `npm run verify:audio-sound-manager-counters-frontier`, a source-only
       verifier for the original `SoundManager` request gate and 2D/3D sample
       counter contract: lazy configured limit loading, `canPlayNow`
@@ -3520,6 +3527,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       after the browser audio gesture and mixer setup, and asserts
       request/start/ended/completion/release log phases while preserving that
       the original engine audio request queue is still future work.
+- [x] Add a browser source-shaped audio request queue proof. The archive
+      harness now exposes `browserAudioRequestPathRuntime`, drives the same
+      real requested `CIAAgentVoiceAttack` payload through an ordered
+      `AudioManager::addAudioEvent` handle/filename/play-info phase,
+      `SoundManager::addAudioEvent` `AR_Play` queue phase,
+      `MilesAudioManager::processRequestList` / `processRequest` dispatch
+      phase, and live Web Audio start/completion/release assertions. This is a
+      harness proof of the source request contract; the original
+      `MilesAudioManager` runtime still needs a browser Web Audio backend.
 
 ---
 
