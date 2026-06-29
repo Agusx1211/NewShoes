@@ -612,12 +612,13 @@ shares structure and follows behind.
       contracts that the Web Audio stream backend must satisfy. Engine-driven
       music playback and transitions are still open.
 - [ ] EVA voice / unit voices.
-- [ ] Volume/mixer controls wired to options UI; the representative
-      `requestedPayloadDecodeCacheProof.browserAudioMixerBusProof` now proves
+- [ ] Volume/mixer controls wired to options UI; `verify:audio-options-volume-frontier`
+      now pins the original Zero Hour OptionsMenu slider-to-`TheAudio->setVolume`
+      write path and the representative
+      `requestedPayloadDecodeCacheProof.browserAudioMixerBusProof` proves
       source-default music/sound/3D/speech Web Audio `GainNode` buses against
       real requested payloads, but the engine/options UI still does not drive
       a live browser mixer.
-- [ ] Respect browser autoplay policy (resume AudioContext on user gesture).
 - [ ] Harness: assert audio events fire (state/log), not just sound.
 
 ---
