@@ -139,6 +139,7 @@
     "test:w3d-gamewindow-manager": "npm run build:wasm && node dist/w3d-gamewindow-manager-smoke.cjs",
     "test:win32-gameengine-message-pump": "npm run build:wasm && node dist/win32-gameengine-message-pump-smoke.cjs",
     "test:win32-gameengine-lifetime": "npm run build:wasm && node dist/win32-gameengine-lifetime-smoke.cjs",
+    "test:win32-gameengine-original-lifetime": "npm run build:wasm && node dist/win32-gameengine-original-lifetime-smoke.cjs",
     "test:winmain-wndproc-mouse": "npm run build:wasm && node dist/winmain-wndproc-mouse-smoke.cjs",
     "test:real-big": "npm run build:wasm && npm run verify:assets && node tools/run_real_big_smoke.mjs artifacts/real-assets/INIZH.big",
     "test:real-big-browser": "npm run build:wasm && npm run verify:assets && node harness/real_big_smoke.mjs artifacts/real-assets/INIZH.big",

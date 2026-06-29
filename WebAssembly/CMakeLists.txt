@@ -3636,6 +3636,123 @@ target_compile_options(zh_win32_gameengine_message_pump PRIVATE
   -Wno-writable-strings
 )
 
+add_library(zh_gameengine_original_lifetime STATIC
+  "${GAMEENGINE_COMMON_DIR}/GameEngine.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Science.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/SubsystemInterface.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
+)
+
+target_include_directories(zh_gameengine_original_lifetime PUBLIC
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${WWVEGAS_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_definitions(zh_gameengine_original_lifetime PRIVATE
+  __PRERTS_H__
+)
+
+target_compile_options(zh_gameengine_original_lifetime PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WASM_SHIMS_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+add_library(zh_gameengine_original_drawable_lifetime STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/Drawable.cpp"
+)
+
+target_include_directories(zh_gameengine_original_drawable_lifetime PUBLIC
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_definitions(zh_gameengine_original_drawable_lifetime PRIVATE
+  __PRERTS_H__
+)
+
+target_compile_options(zh_gameengine_original_drawable_lifetime PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  "-iquote${WASM_SHIMS_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_library(zh_gamenetwork_core STATIC
   "${GAMEENGINE_GAMENETWORK_DIR}/Connection.cpp"
   "${GAMEENGINE_GAMENETWORK_DIR}/ConnectionManager.cpp"
@@ -5383,6 +5500,43 @@ target_compile_options(win32-gameengine-lifetime-smoke PRIVATE
 
 target_link_options(win32-gameengine-lifetime-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
+add_executable(win32-gameengine-original-lifetime-smoke
+  tests/win32_gameengine_original_lifetime_smoke.cpp
+)
+
+set_target_properties(win32-gameengine-original-lifetime-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-gameengine-original-lifetime-smoke PRIVATE
+  zh_win32_gameengine_message_pump
+  zh_gameengine_original_lifetime
+  zh_gameengine_original_drawable_lifetime
+)
+
+target_compile_options(win32-gameengine-original-lifetime-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-gameengine-original-lifetime-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
   "SHELL:-sENVIRONMENT=node"
   "SHELL:-sSINGLE_FILE=1"
   "SHELL:-sASSERTIONS=1"

@@ -389,14 +389,19 @@ shares structure and follows behind.
       owned original `GameEngine.cpp` singleton/destructor lifetime, then
       advance `GameEngine::init()` only as far as the first real browser-owned
       device factory (`createAudioManager` / `TheAudio`) instead of adding more
-      source-only Win32 probes. The current focused lifetime smoke proves
-      original `Win32GameEngine` construction/destruction over a minimal
-      browser-owned `GameEngine` lifetime surface; replacing that focused
-      surface with original `GameEngine.cpp` still requires owned
-      `TheGameResultsQueue`, full original `GameEngine.cpp` init consumption,
-      and startup singleton teardown contracts. `test:startup-vertical` now
-      also boots the wasm harness in Chromium and asserts the browser-visible
-      original `GameEngine.cpp` startup frontier still stops at
+      source-only Win32 probes. The focused lifetime smoke still proves original
+      `Win32GameEngine` construction/destruction over a minimal browser-owned
+      `GameEngine` surface, and `win32-gameengine-original-lifetime-smoke` now
+      links full original `GameEngine.cpp`, original `Win32GameEngine.cpp`,
+      original `SubsystemInterface.cpp`, and original
+      `Drawable::killStaticImages()` (plus original `Science.cpp` /
+      `RankInfo.cpp` vtable owners) to prove constructor/destructor teardown
+      calls `TheGameResultsQueue->endThreads()` without entering `init()`.
+      Remaining work is owned `TheGameEngine` singleton assignment,
+      full original `GameEngine.cpp` init consumption, and startup singleton
+      teardown contracts. `test:startup-vertical` now also boots the wasm
+      harness in Chromium and asserts the browser-visible original
+      `GameEngine.cpp` startup frontier still stops at
       `createAudioManager` line 434 with no runtime archives mounted, so the
       focused C++ smokes cannot drift away from the actual browser boot state.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
@@ -407,9 +412,10 @@ shares structure and follows behind.
       original `W3DGameWindowManager`, then proves original `winCreate` allocates
       `W3DGameWindow` and original `gogoGadgetPushButton` installs the W3D draw
       callback. `test:startup-vertical` now gates the focused
-      `Win32GameEngine` lifetime, original `MilesAudioManager::openDevice`, and
-      W3D game-window ownership smokes together so cross-subsystem startup drift
-      is visible. Full production `W3DDisplay` construction, `.wnd`
+      `Win32GameEngine` lifetime, full original `GameEngine.cpp`
+      constructor/destructor lifetime, original `MilesAudioManager::openDevice`,
+      and W3D game-window ownership smokes together so cross-subsystem startup
+      drift is visible. Full production `W3DDisplay` construction, `.wnd`
       layout/script callback loading, `W3DFunctionLexicon` table lookup, and
       `W3DModuleFactory` module-template lookup still need original public-API
       runtime proof. `verify:w3d-module-factory-frontier` now pins the original

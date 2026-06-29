@@ -135,6 +135,33 @@ const steps = [
     },
   },
   {
+    name: 'win32-gameengine-original-lifetime',
+    file: 'win32-gameengine-original-lifetime-smoke.cjs',
+    validate(payload) {
+      expect(payload.ok === true, 'Original GameEngine lifetime smoke did not report ok');
+      expect(payload.path === 'original-gameengine-lifetime',
+        'Original GameEngine lifetime smoke emitted the wrong path');
+      expect(payload.source === 'GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp',
+        'Original GameEngine lifetime smoke is not covering GameEngine.cpp');
+      expect(payload.win32Source === 'GeneralsMD/Code/GameEngineDevice/Source/Win32Device/Common/Win32GameEngine.cpp',
+        'Original GameEngine lifetime smoke is not covering Win32GameEngine.cpp');
+      expect(payload.supportSources?.includes('GeneralsMD/Code/GameEngine/Source/Common/System/SubsystemInterface.cpp'),
+        'Original GameEngine lifetime smoke did not report SubsystemInterface.cpp support');
+      expect(payload.supportSources?.includes('GeneralsMD/Code/GameEngine/Source/GameClient/Drawable.cpp'),
+        'Original GameEngine lifetime smoke did not report Drawable.cpp support');
+      expect(payload.supportSources?.includes('GeneralsMD/Code/GameEngine/Source/Common/RTS/Science.cpp'),
+        'Original GameEngine lifetime smoke did not report Science.cpp support');
+      expect(payload.supportSources?.includes('GeneralsMD/Code/GameEngine/Source/GameLogic/System/RankInfo.cpp'),
+        'Original GameEngine lifetime smoke did not report RankInfo.cpp support');
+      expect(payload.fullOriginalGameEngineCppLinked === true,
+        'Original GameEngine lifetime smoke did not link full GameEngine.cpp');
+      expect(payload.initAttempted === false,
+        'Original GameEngine lifetime smoke should not enter GameEngine::init yet');
+      expect(payload.gameResultsEndThreads === 1,
+        'Original GameEngine lifetime smoke did not prove GameResultsQueue teardown');
+    },
+  },
+  {
     name: 'miles-audio-open-device',
     file: 'miles-audio-open-device-smoke.cjs',
     validate(payload) {
@@ -169,11 +196,12 @@ console.log(JSON.stringify({
   covered: [
     'browser wasm original GameEngine.cpp startup frontier',
     'original Win32GameEngine lifetime',
+    'original GameEngine.cpp constructor/destructor lifetime',
     'original MilesAudioManager openDevice',
     'original W3DGameWindowManager window and gadget ownership',
   ],
   nextRequired: [
-    'replace focused GameEngine lifetime owner with original GameEngine.cpp singleton ownership',
+    'advance original GameEngine.cpp init singleton ownership before createAudioManager',
     'advance W3DFunctionLexicon with real .wnd and shell callback ownership',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
