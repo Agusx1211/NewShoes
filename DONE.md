@@ -3029,6 +3029,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `milesAudioDeviceFrontier.nextRequired == webAudioPlaybackBackend`.
       The current local Zero Hour-only asset set still verifies the no-base
       branch with `optionalBaseArchives: []`.
+- [x] Move the Win32GameEngine browser probe into the vertical startup/archive
+      harness path: the shared `win32GameEngineProbe` assertion now runs inside
+      both `npm run test:runtime-archives-browser` and
+      `npm run test:startup-range-backed-archives-browser`, so the same browser
+      boot that verifies real archive registration, original startup readiness,
+      file/data probes, and Miles startup boundaries also drains a
+      browser-backed Win32 message through the linked original
+      `Win32GameEngine::serviceWindowsOS()` helper. This still leaves real
+      `CreateGameEngine` / original `GameEngine.cpp` singleton ownership open.
 - [x] Bring the original `TextureClass::Init` / `TextureLoader`
       foreground and background filename-loading path online for browser
       wasm so real texture probes can use the normal asset-manager

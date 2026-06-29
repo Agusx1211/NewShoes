@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { assertWin32GameEngineProbe } from "./win32_gameengine_assertions.mjs";
 
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
@@ -480,6 +481,11 @@ try {
   } else {
     assertOriginalStartupMissingOnlyBaseFiles(bootResult.state, "range-backed startup boot");
   }
+  const win32GameEngineResult = await page.evaluate(() => window.CnCPort.rpc("win32GameEngineProbe"));
+  if (!win32GameEngineResult.ok) {
+    throw new Error(`Win32GameEngine probe RPC failed: ${JSON.stringify(win32GameEngineResult)}`);
+  }
+  assertWin32GameEngineProbe(win32GameEngineResult.probe, "range-backed startup boot");
 
   console.log(JSON.stringify({
     ok: true,
@@ -495,6 +501,7 @@ try {
       entries: archive.entries.length,
     })),
     bootFrame: bootResult.state.frame,
+    win32GameEngineProbe: win32GameEngineResult.probe,
     startupAssets: bootResult.state.startupAssets,
     originalEngineStartup: bootResult.state.originalEngineStartup,
     reader: archiveSet.reader,

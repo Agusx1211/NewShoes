@@ -418,7 +418,10 @@ The wasm CMake skeleton currently builds:
   body, verifies `TheMessageTime`, `CreateWindow`/`DestroyWindow` dispatch,
   and stateful `SetErrorMode` shim behavior, and reports real
   `Win32GameEngine` construction/destruction as the next owned `GameEngine`
-  startup-lifetime boundary.
+  startup-lifetime boundary. The same assertion is shared with the real-asset
+  runtime archive smoke and the range-backed startup smoke so Win32 message-pump
+  readiness is checked in the same browser boot that proves archive/data/startup
+  readiness.
 - `win32-gameengine-lifetime-smoke`: focused Node wasm smoke
   (`npm run test:win32-gameengine-lifetime`) that constructs and destroys the
   linked original `Win32GameEngine.cpp` concrete over a minimal browser-owned
@@ -1111,7 +1114,9 @@ The wasm CMake skeleton currently builds:
   optional base Generals `INI.big` is present, the same smoke range-fetches its
   startup/audio INI entries as `ZZBase_INI.big`, also mounts optional
   `English.big` as `ZZBase_English.big` when available, and expects the startup
-  frontier to advance to `CreateGameEngine`.
+  frontier to advance to `CreateGameEngine`. After boot it also drives the
+  `win32GameEngineProbe` RPC, tying the range-backed startup frontier to the
+  linked original Win32 message-pump/device boundary.
 
 ## Next Compile Order
 

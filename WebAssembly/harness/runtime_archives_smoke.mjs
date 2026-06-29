@@ -3,6 +3,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
+import { assertWin32GameEngineProbe } from "./win32_gameengine_assertions.mjs";
 
 const runtimeArchives = [
   "INIZH.big",
@@ -3983,6 +3984,11 @@ try {
   } else {
     assertOriginalEngineStartupMissingFiles(bootResult.state, "runtime archive boot");
   }
+  const win32GameEngineResult = await page.evaluate(() => window.CnCPort.rpc("win32GameEngineProbe"));
+  if (!win32GameEngineResult.ok) {
+    throw new Error(`Win32GameEngine probe RPC failed: ${JSON.stringify(win32GameEngineResult)}`);
+  }
+  assertWin32GameEngineProbe(win32GameEngineResult.probe, "runtime archive boot");
   const mssStartupResult = await page.evaluate(() => window.CnCPort.rpc("mssStartupProbe"));
   if (!mssStartupResult.ok) {
     throw new Error(`MSS startup probe RPC failed: ${JSON.stringify(mssStartupResult)}`);
@@ -4222,6 +4228,7 @@ try {
     audioPayloadInventory: bootResult.state.audioPayloadInventory,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,
+    win32GameEngineProbe: win32GameEngineResult.probe,
     bootFrame: bootResult.state.frame,
     reader: "Win32BIGFileSystem",
     filesystem: "Emscripten MEMFS",
