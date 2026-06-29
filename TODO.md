@@ -617,8 +617,10 @@ shares structure and follows behind.
       write path and the representative
       `requestedPayloadDecodeCacheProof.browserAudioMixerBusProof` proves
       source-default music/sound/3D/speech Web Audio `GainNode` buses against
-      real requested payloads, but the engine/options UI still does not drive
-      a live browser mixer.
+      real requested payloads; `browserAudioMixerRuntime` also proves live
+      runtime `GainNode` bus updates from source-shaped script/system volume
+      values, but the engine/options UI still does not drive that browser
+      mixer.
 - [ ] Harness: assert audio events fire (state/log), not just sound.
 
 ---

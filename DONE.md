@@ -3493,6 +3493,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Playwright canvas click to assert the context reaches `running` while the
       original engine audio runtime still reports that the browser audio device
       is future work.
+- [x] Add a browser Web Audio runtime mixer proof. The harness now exposes
+      `browserAudioMixerRuntime`, creates live music/sound/3D/speech
+      `GainNode` buses after the gesture-resumed `AudioContext` exists, applies
+      source-shaped script/system volume values through the original
+      `AudioManager::setVolume` formula, and asserts the real `GainNode.gain`
+      values in `runtime_archives_smoke.mjs` while preserving that engine/UI
+      control of the mixer is future work.
 
 ---
 
