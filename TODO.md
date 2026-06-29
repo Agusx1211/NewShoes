@@ -680,6 +680,17 @@ shares structure and follows behind.
       handles and the browser smoke proves the sidecars are playable through
       `<video>`, but original runtime playback, frame upload, and
       `BinkCopyToBuffer` pixel-copy support remain open.
+      `verify:bink-runtime-callsite-frontier` now pins the source-only
+      original Bink runtime *callsite* frontier that this runtime-wiring work
+      must preserve (the `W3DGameClient::createVideoPlayer` `NEW BinkVideoPlayer`
+      factory, `GameClient::init` `TheVideoPlayer` ownership path,
+      `BinkVideoPlayer::open/createStream/load` `m_handle`/`BinkSetVolume`
+      contract, the representative `Display`/`InGameUI`/`WindowVideoManager`/
+      `LoadScreen`/`ScoreScreen` frame loops, the `LoadScreen` min-spec
+      `frameGoto(frameCount())` skip path, the `VideoBuffer`/`W3DVideoBuffer`
+      lock/unlock/format/pitch contract, and the existing CMake compile
+      frontier target); it keeps runtime playback and open-frame upload open
+      and does not claim them complete.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and
