@@ -50,6 +50,7 @@ Run the opt-in real BIG archive smoke:
 npm run test:real-big
 npm run test:real-big-browser
 npm run test:runtime-archives-browser
+npm run test:vertical-integrations
 ```
 
 This also requires the user-supplied disc images. It builds the current wasm
@@ -107,6 +108,12 @@ work. This is still a bootstrap preflight; full original
 all-block INI loading, startup CRC coverage, default+shipped water/weather
 loading, map water/weather overrides, water/weather rendering, and live
 map-cache rebuilds remain part of engine startup work.
+`npm run test:vertical-integrations` is the broader progress gate: after one
+build and runtime-archive extraction it runs the runtime archive startup path,
+range-backed startup archive path, WindowZH-backed MainMenu layout callbacks,
+mapped-image display rendering, and shipped W3D mesh rendering. Use it when a
+change should prove the port is moving across subsystems instead of only deeper
+inside one startup probe.
 
 ## Toolchain
 

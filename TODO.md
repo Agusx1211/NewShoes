@@ -452,6 +452,11 @@ shares structure and follows behind.
       pre-`createAudioManager` file/INI/CD frontier. Advance the next vertical
       slice outside the already-proven `MainMenu` first-frame path unless a new
       menu flow is driven through real original input/navigation.
+      `test:vertical-integrations` now gates runtime archive preload/startup
+      asset consumption, range-backed startup archive delivery, WindowZH-backed
+      MainMenu layout callbacks, mapped-image W3DDisplay rendering, and shipped
+      W3D mesh rendering together so cross-subsystem regressions are visible
+      while the next feature slice moves to real menu input/navigation.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
