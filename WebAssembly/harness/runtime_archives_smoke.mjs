@@ -1599,6 +1599,233 @@ function assertAudioRequestedPayloadCachePlan(payloads, context) {
       || firstLargest.webAudioDecodeCandidate !== true) {
     throw new Error(`${context} requested audio largest example mismatch: ${JSON.stringify(firstLargest)}`);
   }
+
+  const targetKeys = (plan.decodeCacheProofTargets ?? []).map((target) => target.cacheKey);
+  assertArrayPrefix(targetKeys, [
+    "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
+    "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+    "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+    "SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
+  ], `${context} requested audio decode-cache target keys`);
+}
+
+function assertRequestedDecodeCacheEntry(entry, expected, context) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (key === "firstSamples") {
+      assertArrayPrefix(entry?.firstSamples, value, `${context} first samples`);
+    } else if (entry?.[key] !== value) {
+      throw new Error(`${context} requested decode-cache entry ${key} mismatch: ${JSON.stringify(entry)}`);
+    }
+  }
+}
+
+function assertRequestedAudioBufferCacheEntry(entry, expected, context) {
+  for (const [key, value] of Object.entries(expected)) {
+    if (key === "firstChannelFirstSamples") {
+      assertArrayPrefix(entry?.firstChannelFirstSamples, value, `${context} first channel samples`);
+    } else if (entry?.[key] !== value) {
+      throw new Error(`${context} requested AudioBuffer cache entry ${key} mismatch: ${JSON.stringify(entry)}`);
+    }
+  }
+}
+
+function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
+  const proof = payloads.requestedPayloadDecodeCacheProof;
+  if (!proof
+      || proof.source !== "browser requested audio decoded PCM cache proof"
+      || proof.ready !== true
+      || proof.metadataOnly !== false
+      || proof.runtimeDecoded !== true
+      || proof.runtimeScheduled !== false
+      || proof.coverage !== "representative requested WAV payloads from the shipped INI cache plan"
+      || proof.nextRequired !== "decodeAllRequestedPayloadsAndSchedule"
+      || proof.requestedPlanReferences !== 7933
+      || proof.requestedPlanUniquePayloads !== 3335
+      || proof.cacheEntriesCreated !== 4
+      || proof.decodedPcmBytes !== 1096144
+      || !Array.isArray(proof.errors)
+      || proof.errors.length !== 0
+      || !Array.isArray(proof.entries)
+      || proof.entries.length !== 4) {
+    throw new Error(`${context} requested audio decode-cache proof state mismatch: ${JSON.stringify(proof)}`);
+  }
+
+  const entries = new Map(proof.entries.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedDecodeCacheEntry(entries.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    reason: "direct requested PCM WAV from SFX",
+    codec: "PCM",
+    archive: "AudioEnglishZH.big",
+    refCount: 4,
+    size: 62312,
+    wFormatTag: 1,
+    samplesPerSec: 22050,
+    bitsPerSample: 16,
+    dataBytes: 62108,
+    decodedFrames: 31054,
+    decodedSamples: 31054,
+    decodedPcmBytes: 62108,
+    durationSeconds: 1.408345,
+    minSample: -32767,
+    maxSample: 30611,
+    nonZeroSamples: 31034,
+    sumAbs: 171353033,
+    firstSamples: [
+      -4187, -8447, -7064, -4447, -6186, -5450, -5389, -4080,
+      -509, -481, -2235, -262, 2235, 6193, 7994, 7317,
+    ],
+  }, `${context} requested SFX PCM`);
+  assertRequestedDecodeCacheEntry(entries.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    reason: "direct requested PCM WAV from voice",
+    codec: "PCM",
+    archive: "AudioEnglishZH.big",
+    refCount: 3,
+    size: 53146,
+    wFormatTag: 1,
+    samplesPerSec: 22050,
+    bitsPerSample: 16,
+    dataBytes: 52916,
+    decodedFrames: 26458,
+    decodedSamples: 26458,
+    decodedPcmBytes: 52916,
+    durationSeconds: 1.199909,
+    minSample: -23154,
+    maxSample: 32767,
+    nonZeroSamples: 26349,
+    sumAbs: 76480220,
+    firstSamples: [
+      5, -15, -56, -94, -110, -106, -99, -94,
+      -97, -112, -135, -153, -160, -145, -115, -80,
+    ],
+  }, `${context} requested voice PCM`);
+  assertRequestedDecodeCacheEntry(entries.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    reason: "requested IMA ADPCM WAV transcode from SFX",
+    codec: "IMA_ADPCM",
+    archive: "AudioZH.big",
+    refCount: 4,
+    size: 48282,
+    wFormatTag: 17,
+    samplesPerSec: 44100,
+    bitsPerSample: 4,
+    blockAlign: 1024,
+    samplesPerBlock: 2041,
+    factSamples: 95744,
+    dataBytes: 48128,
+    decodedFrames: 95744,
+    decodedSamples: 95744,
+    decodedPcmBytes: 191488,
+    durationSeconds: 2.171066,
+    minSample: -31572,
+    maxSample: 32723,
+    nonZeroSamples: 94765,
+    sumAbs: 192168585,
+    firstSamples: [
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ],
+  }, `${context} requested SFX IMA ADPCM`);
+  assertRequestedDecodeCacheEntry(entries.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    reason: "requested IMA ADPCM WAV transcode from speech",
+    codec: "IMA_ADPCM",
+    archive: "SpeechEnglishZH.big",
+    refCount: 2,
+    size: 198902,
+    wFormatTag: 17,
+    samplesPerSec: 44100,
+    bitsPerSample: 4,
+    blockAlign: 1024,
+    samplesPerBlock: 2041,
+    factSamples: 394816,
+    dataBytes: 198656,
+    decodedFrames: 394816,
+    decodedSamples: 394816,
+    decodedPcmBytes: 789632,
+    durationSeconds: 8.952744,
+    minSample: -30982,
+    maxSample: 32271,
+    nonZeroSamples: 393306,
+    sumAbs: 1307119860,
+    firstSamples: [
+      28, 39, 69, 115, 121, 126, 111, 98,
+      86, 61, 44, 29, 22, 10, 4, -2,
+    ],
+  }, `${context} requested speech IMA ADPCM`);
+
+  const bufferCache = proof.webAudioBufferCache;
+  if (!bufferCache
+      || bufferCache.source !== "browser requested audio AudioBuffer cache proof"
+      || bufferCache.ready !== true
+      || bufferCache.runtimePlayback !== false
+      || bufferCache.nextRequired !== "audioEventScheduling"
+      || !Array.isArray(bufferCache.errors)
+      || bufferCache.errors.length !== 0
+      || !Array.isArray(bufferCache.proofs)
+      || bufferCache.proofs.length !== 4) {
+    throw new Error(`${context} requested AudioBuffer cache state mismatch: ${JSON.stringify(bufferCache)}`);
+  }
+
+  const buffers = new Map(bufferCache.proofs.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedAudioBufferCacheEntry(buffers.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    codec: "PCM",
+    length: 31054,
+    sampleRate: 22050,
+    durationSeconds: 1.408345,
+    minFloat: -0.999969,
+    maxFloat: 0.934202,
+    maxAbsFloat: 0.999969,
+    nonZeroFrames: 31034,
+    firstChannelFirstSamples: [
+      -0.127777, -0.257782, -0.215576, -0.135712,
+      -0.188782, -0.166321, -0.164459, -0.124512,
+      -0.015533, -0.014679, -0.068207, -0.007996,
+      0.068209, 0.189001, 0.243965, 0.223304,
+    ],
+  }, `${context} requested SFX PCM AudioBuffer`);
+  assertRequestedAudioBufferCacheEntry(buffers.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    codec: "PCM",
+    length: 26458,
+    sampleRate: 22050,
+    durationSeconds: 1.199909,
+    minFloat: -0.706604,
+    maxFloat: 1,
+    maxAbsFloat: 1,
+    nonZeroFrames: 26349,
+    firstChannelFirstSamples: [
+      0.000153, -0.000458, -0.001709, -0.002869,
+      -0.003357, -0.003235, -0.003021, -0.002869,
+      -0.00296, -0.003418, -0.00412, -0.004669,
+      -0.004883, -0.004425, -0.00351, -0.002441,
+    ],
+  }, `${context} requested voice PCM AudioBuffer`);
+  assertRequestedAudioBufferCacheEntry(buffers.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    codec: "IMA_ADPCM",
+    length: 95744,
+    sampleRate: 44100,
+    durationSeconds: 2.171066,
+    minFloat: -0.963501,
+    maxFloat: 0.998657,
+    maxAbsFloat: 0.998657,
+    nonZeroFrames: 94765,
+    firstChannelFirstSamples: [
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ],
+  }, `${context} requested SFX IMA AudioBuffer`);
+  assertRequestedAudioBufferCacheEntry(buffers.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    codec: "IMA_ADPCM",
+    length: 394816,
+    sampleRate: 44100,
+    durationSeconds: 8.952744,
+    minFloat: -0.945496,
+    maxFloat: 0.984863,
+    maxAbsFloat: 0.984863,
+    nonZeroFrames: 393306,
+    firstChannelFirstSamples: [
+      0.000855, 0.00119, 0.002106, 0.00351,
+      0.003693, 0.003845, 0.003388, 0.002991,
+      0.002625, 0.001862, 0.001343, 0.000885,
+      0.000671, 0.000305, 0.000122, -0.000061,
+    ],
+  }, `${context} requested speech IMA AudioBuffer`);
 }
 
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
@@ -1640,6 +1867,7 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   assertAudioDecodeProofs(payloads, context);
   assertAudioBufferProofs(payloads, context);
   assertAudioRequestedPayloadCachePlan(payloads, context);
+  assertAudioRequestedPayloadDecodeCacheProof(payloads, context);
 
   if (hasBaseIniArchive) {
     if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {

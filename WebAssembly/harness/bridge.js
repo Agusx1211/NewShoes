@@ -5969,8 +5969,11 @@ function buildWebAudioBufferProofs(decodedPayloads) {
         }
       }
       proofs.push({
+        ...(decoded.cacheKey ? { cacheKey: decoded.cacheKey } : {}),
         path: decoded.path,
         archive: decoded.archive,
+        ...(decoded.refCount ? { refCount: decoded.refCount } : {}),
+        ...(decoded.sections ? { sections: decoded.sections } : {}),
         codec: decoded.info.codec,
         constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
         runtimePlayback: false,
@@ -6063,6 +6066,128 @@ function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
       proofs,
     },
     webAudioBufferProofs: buildWebAudioBufferProofs(decodedPayloads),
+  };
+}
+
+function selectRequestedDecodeCacheTargets(requestedPayloadCachePlan) {
+  if (Array.isArray(requestedPayloadCachePlan.decodeCacheProofTargets)
+      && requestedPayloadCachePlan.decodeCacheProofTargets.length > 0) {
+    return requestedPayloadCachePlan.decodeCacheProofTargets;
+  }
+  return [
+    ...(requestedPayloadCachePlan.directDecodeExamples ?? [])
+      .filter((candidate) => candidate.extension === "wav" && candidate.codec === "PCM")
+      .slice(0, 2)
+      .map((entry) => ({ ...entry, reason: "direct requested PCM WAV" })),
+    ...(requestedPayloadCachePlan.transcodeExamples ?? [])
+      .filter((candidate) => candidate.extension === "wav" && candidate.codec === "IMA_ADPCM")
+      .slice(0, 2)
+      .map((entry) => ({ ...entry, reason: "requested IMA ADPCM WAV transcode" })),
+  ];
+}
+
+function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, archiveBytesByName) {
+  const errors = [];
+  const entries = [];
+  const decodedCache = new Map();
+  const targets = selectRequestedDecodeCacheTargets(requestedPayloadCachePlan);
+  if (targets.length < 4) {
+    errors.push(`expected four requested WAV decode-cache targets, found ${targets.length}`);
+  }
+
+  for (const target of targets) {
+    const entry = entryIndex.get(normalizeBigPath(target.path));
+    if (!entry) {
+      errors.push(`requested decode-cache target not found: ${target.cacheKey}`);
+      continue;
+    }
+    if (entry.archive !== target.archive) {
+      errors.push(
+        `${target.cacheKey} resolved from ${entry.archive}, expected ${target.archive}`,
+      );
+      continue;
+    }
+    const archiveBytes = archiveBytesByName.get(target.archive);
+    if (!archiveBytes) {
+      errors.push(`requested decode-cache archive bytes not found: ${target.archive}`);
+      continue;
+    }
+
+    try {
+      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+      const decoded = decodeAudioWavPayload(payloadBytes);
+      const decodedFrames = decoded.samples.length / decoded.info.channels;
+      const cacheEntry = {
+        cacheKey: target.cacheKey,
+        path: entry.path,
+        archive: entry.archive,
+        reason: target.reason,
+        refCount: target.refCount,
+        sections: target.sections,
+        size: entry.size,
+        codec: decoded.info.codec,
+        wFormatTag: decoded.info.wFormatTag,
+        channels: decoded.info.channels,
+        samplesPerSec: decoded.info.samplesPerSec,
+        bitsPerSample: decoded.info.bitsPerSample,
+        blockAlign: decoded.info.blockAlign,
+        samplesPerBlock: decoded.info.samplesPerBlock,
+        factSamples: decoded.info.factSamples,
+        dataBytes: decoded.info.dataBytes,
+        decodedFrames,
+        decodedSamples: decoded.samples.length,
+        decodedPcmBytes: decoded.samples.byteLength,
+        durationSeconds: Number((decodedFrames / decoded.info.samplesPerSec).toFixed(6)),
+        storage: "Int16Array interleaved PCM cache entry",
+        ...summarizeDecodedSamples(decoded.samples),
+      };
+      decodedCache.set(target.cacheKey, {
+        cacheKey: target.cacheKey,
+        path: entry.path,
+        archive: entry.archive,
+        refCount: target.refCount,
+        sections: target.sections,
+        info: decoded.info,
+        samples: decoded.samples,
+        decodedFrames,
+      });
+      entries.push(cacheEntry);
+    } catch (error) {
+      errors.push(`${target.cacheKey}: ${error?.message ?? String(error)}`);
+    }
+  }
+
+  const webAudioBufferCache = buildWebAudioBufferProofs([...decodedCache.values()]);
+  webAudioBufferCache.source = "browser requested audio AudioBuffer cache proof";
+  webAudioBufferCache.nextRequired = "audioEventScheduling";
+  const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
+
+  return {
+    source: "browser requested audio decoded PCM cache proof",
+    ready:
+      errors.length === 0 &&
+      entries.length === targets.length &&
+      webAudioBufferCache.ready === true,
+    metadataOnly: false,
+    runtimeDecoded: true,
+    runtimeScheduled: false,
+    coverage: "representative requested WAV payloads from the shipped INI cache plan",
+    nextRequired: "decodeAllRequestedPayloadsAndSchedule",
+    requestedPlanReferences: requestedPayloadCachePlan.references,
+    requestedPlanUniquePayloads: requestedPayloadCachePlan.uniquePayloads,
+    targets: targets.map((target) => ({
+      cacheKey: target.cacheKey,
+      reason: target.reason,
+      refCount: target.refCount,
+      sections: target.sections,
+      codec: target.codec,
+      size: target.size,
+    })),
+    cacheEntriesCreated: entries.length,
+    decodedPcmBytes,
+    errors,
+    entries,
+    webAudioBufferCache,
   };
 }
 
@@ -6278,6 +6403,40 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
     .filter((entry) => entry.format?.requiresTranscode)
     .slice(0, 6)
     .map(compactRequestedCacheEntry);
+  const decodeCacheProofTargets = [];
+  const decodeCacheProofTargetKeys = new Set();
+  const addDecodeCacheProofTarget = (reason, predicate) => {
+    const found = sortedEntries.find(predicate);
+    if (!found) {
+      return;
+    }
+    const compact = compactRequestedCacheEntry(found);
+    if (decodeCacheProofTargetKeys.has(compact.cacheKey)) {
+      return;
+    }
+    decodeCacheProofTargetKeys.add(compact.cacheKey);
+    decodeCacheProofTargets.push({ ...compact, reason });
+  };
+  addDecodeCacheProofTarget(
+    "direct requested PCM WAV from SFX",
+    (entry) => entry.sections.soundEffects
+      && entry.format?.wavFmt?.wFormatTag === 1,
+  );
+  addDecodeCacheProofTarget(
+    "direct requested PCM WAV from voice",
+    (entry) => entry.sections.voices
+      && entry.format?.wavFmt?.wFormatTag === 1,
+  );
+  addDecodeCacheProofTarget(
+    "requested IMA ADPCM WAV transcode from SFX",
+    (entry) => entry.sections.soundEffects
+      && entry.format?.wavFmt?.wFormatTag === 17,
+  );
+  addDecodeCacheProofTarget(
+    "requested IMA ADPCM WAV transcode from speech",
+    (entry) => entry.sections.speech
+      && entry.format?.wavFmt?.wFormatTag === 17,
+  );
 
   return {
     source: "shipped audio INI resolved payload cache plan",
@@ -6294,6 +6453,7 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
     largestEntries,
     directDecodeExamples,
     transcodeExamples,
+    decodeCacheProofTargets,
   };
 }
 
@@ -6476,6 +6636,11 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const decodeProofs = audioProofs.decodeProofs;
   const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
   const requestedPayloadCachePlan = buildAudioRequestedPayloadCachePlan(refsBySection);
+  const requestedPayloadDecodeCacheProof = buildRequestedAudioDecodeCacheProof(
+    requestedPayloadCachePlan,
+    entryIndex,
+    archiveBytesByName,
+  );
   if (decodeProofs.ready && webAudioBufferProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
     payloadFormats.nextRequired = "requestedPayloadDecodeCache";
   } else if (decodeProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
@@ -6505,8 +6670,9 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     decodeProofs,
     webAudioBufferProofs,
     requestedPayloadCachePlan,
+    requestedPayloadDecodeCacheProof,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, and requestedPayloadCachePlan dedupes all resolved INI-requested payloads into a metadata-only cache plan without scheduling or playing audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded PCM/Web Audio cache entries for requested payload keys without scheduling or playing audio.",
   };
 }
 

@@ -53,7 +53,11 @@ buffer-upload path for representative payloads. The
 the shipped INI music/SFX/voice/speech references into 3,335 unique resolved
 cache keys (360,615,268 bytes), with 779 direct Web Audio decode candidates
 and 2,556 IMA ADPCM payloads still requiring decode. This is a metadata-only
-cache plan, not full requested-payload decode/cache or audio scheduling.
+cache plan. `audioPayloadInventory.requestedPayloadDecodeCacheProof` now uses
+that plan to build real decoded PCM and Web Audio `AudioBuffer` cache entries
+for representative requested SFX, voice, and speech keys (four entries,
+1,096,144 decoded PCM bytes). This is still representative proof coverage, not
+full requested-payload decode/cache or audio scheduling.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current

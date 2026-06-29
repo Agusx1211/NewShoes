@@ -3405,6 +3405,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       resolved payload cache keys, pins archive/section/codec byte counts, and
       records that 2,556 unique IMA ADPCM WAV payloads still need decoding
       before the cache can become real Web Audio buffer storage.
+- [x] Add `audioPayloadInventory.requestedPayloadDecodeCacheProof`, a browser
+      harness-visible proof that creates real decoded PCM cache entries and
+      Web Audio `AudioBuffer` cache entries for representative requested
+      payload keys: PCM SFX, PCM voice, IMA ADPCM SFX, and IMA ADPCM speech.
+      The smoke pins four cache keys, decoded frame/sample counts,
+      1,096,144 decoded PCM bytes, first-sample anchors, and the corresponding
+      buffer upload statistics while leaving full requested-payload scheduling
+      open.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
