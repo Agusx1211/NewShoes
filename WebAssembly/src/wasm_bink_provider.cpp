@@ -6,8 +6,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 
 namespace {
 constexpr std::size_t kBikHeaderBytes = 44;
@@ -373,6 +378,125 @@ BrowserBinkHandle *to_browser_handle(HBINK bink)
 {
 	return reinterpret_cast<BrowserBinkHandle *>(bink);
 }
+
+unsigned int browser_handle_id(const BrowserBinkHandle &handle)
+{
+	return static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(&handle.public_handle));
+}
+
+#ifdef __EMSCRIPTEN__
+EM_JS(void, wasm_bink_browser_video_open, (
+	unsigned int handle_id,
+	const char *source_path,
+	const char *video_path,
+	const char *video_codec,
+	const char *audio_codec,
+	unsigned int width,
+	unsigned int height,
+	unsigned int frames,
+	unsigned int frame_num,
+	double duration_seconds
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkVideoOpen : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		handle: handle_id >>> 0,
+		sourcePath: source_path ? UTF8ToString(source_path) : "",
+		videoPath: video_path ? UTF8ToString(video_path) : "",
+		videoCodec: video_codec ? UTF8ToString(video_codec) : "",
+		audioCodec: audio_codec ? UTF8ToString(audio_codec) : "",
+		width: width >>> 0,
+		height: height >>> 0,
+		frames: frames >>> 0,
+		frameNum: frame_num >>> 0,
+		durationSeconds: duration_seconds,
+	});
+});
+
+EM_JS(void, wasm_bink_browser_video_event, (
+	unsigned int handle_id,
+	const char *event_name,
+	unsigned int frame_num,
+	unsigned int frames,
+	unsigned int arg0,
+	unsigned int arg1
+), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkVideoEvent : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({
+		handle: handle_id >>> 0,
+		event: event_name ? UTF8ToString(event_name) : "",
+		frameNum: frame_num >>> 0,
+		frames: frames >>> 0,
+		arg0: arg0 >>> 0,
+		arg1: arg1 >>> 0,
+	});
+});
+
+EM_JS(void, wasm_bink_browser_video_close, (unsigned int handle_id), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBinkVideoClose : null;
+	if (typeof bridge !== "function") {
+		return;
+	}
+	bridge({ handle: handle_id >>> 0 });
+});
+#else
+void wasm_bink_browser_video_open(unsigned int, const char *, const char *, const char *, const char *, unsigned int, unsigned int, unsigned int, unsigned int, double)
+{
+}
+
+void wasm_bink_browser_video_event(unsigned int, const char *, unsigned int, unsigned int, unsigned int, unsigned int)
+{
+}
+
+void wasm_bink_browser_video_close(unsigned int)
+{
+}
+#endif
+
+void notify_browser_video_open(BrowserBinkHandle &handle)
+{
+	if (!handle.browser_video_available) {
+		return;
+	}
+	wasm_bink_browser_video_open(
+		browser_handle_id(handle),
+		handle.path,
+		handle.browser_video_path,
+		handle.browser_video_codec,
+		handle.browser_audio_codec,
+		handle.public_handle.Width,
+		handle.public_handle.Height,
+		handle.public_handle.Frames,
+		handle.public_handle.FrameNum,
+		handle.browser_video_duration_seconds);
+}
+
+void notify_browser_video_event(const BrowserBinkHandle &handle, const char *event_name, u32 arg0 = 0, u32 arg1 = 0)
+{
+	if (!handle.browser_video_available) {
+		return;
+	}
+	wasm_bink_browser_video_event(
+		browser_handle_id(handle),
+		event_name,
+		handle.public_handle.FrameNum,
+		handle.public_handle.Frames,
+		arg0,
+		arg1);
+}
+
+void notify_browser_video_close(const BrowserBinkHandle &handle)
+{
+	if (!handle.browser_video_available) {
+		return;
+	}
+	wasm_bink_browser_video_close(browser_handle_id(handle));
+}
 }
 
 extern "C" {
@@ -394,6 +518,7 @@ HBINK BinkOpen(const char *name, u32 flags)
 			continue;
 		}
 		attach_browser_video_metadata(path, *handle);
+		notify_browser_video_open(*handle);
 		return &handle->public_handle;
 	}
 	return nullptr;
@@ -401,7 +526,11 @@ HBINK BinkOpen(const char *name, u32 flags)
 
 void BinkClose(HBINK bink)
 {
-	delete to_browser_handle(bink);
+	BrowserBinkHandle *handle = to_browser_handle(bink);
+	if (handle != nullptr) {
+		notify_browser_video_close(*handle);
+	}
+	delete handle;
 }
 
 int BinkWait(HBINK bink)
@@ -415,6 +544,7 @@ void BinkDoFrame(HBINK bink)
 	BrowserBinkHandle *handle = to_browser_handle(bink);
 	if (handle != nullptr) {
 		handle->frame_ready = true;
+		notify_browser_video_event(*handle, "doFrame");
 	}
 }
 
@@ -423,6 +553,7 @@ void BinkNextFrame(HBINK bink)
 	BrowserBinkHandle *handle = to_browser_handle(bink);
 	if (handle != nullptr && handle->public_handle.FrameNum < handle->public_handle.Frames) {
 		++handle->public_handle.FrameNum;
+		notify_browser_video_event(*handle, "nextFrame");
 	}
 }
 
@@ -439,10 +570,15 @@ void BinkGoto(HBINK bink, u32 frame, u32)
 		frame = handle->public_handle.Frames;
 	}
 	handle->public_handle.FrameNum = frame;
+	notify_browser_video_event(*handle, "gotoFrame", frame);
 }
 
-void BinkCopyToBuffer(HBINK, void *, u32, u32, u32, u32, u32)
+void BinkCopyToBuffer(HBINK bink, void *, u32 destPitch, u32 destHeight, u32, u32, u32)
 {
+	const BrowserBinkHandle *handle = to_browser_handle(bink);
+	if (handle != nullptr) {
+		notify_browser_video_event(*handle, "copyPending", destPitch, destHeight);
+	}
 	// Frame decode/copy remains a WebCodecs/decoder task; this provider only
 	// proves real-file open, metadata, and cursor lifecycle for the original API.
 }

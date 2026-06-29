@@ -3731,6 +3731,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       provider query smoke in Chromium, loads the advertised WebMs through
       `<video>`, checks metadata/play/seek/canvas-readback, and captures
       `artifacts/screenshots/harness-smoke-bink-provider-sidecar-video.png`.
+      The provider now also emits browser-observable sidecar lifecycle hooks
+      for open, `BinkDoFrame`, pending `BinkCopyToBuffer`, `BinkNextFrame`,
+      `BinkGoto`, and close; the browser smoke installs
+      `Module.cncPortBinkVideo*` hooks and verifies those events for the
+      shipped sidecars.
       `verify:bink-video-device-frontier` now pins this provider extension,
       the focused C++/JS/browser harnesses, the CMake smoke targets, and the
       package scripts. `verify:bink-browser-sidecar-contract` complements it

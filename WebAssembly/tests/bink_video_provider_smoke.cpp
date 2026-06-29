@@ -85,6 +85,16 @@ bool expect_sidecar_payload(
 		"browser video sidecar duration missing") && ok;
 	ok = expect(WasmBinkProviderCanDecodeFrames() == 0,
 		"BinkCopyToBuffer decode readiness must stay false until frame copy/upload is implemented") && ok;
+	ok = expect(bink->FrameNum == 1, "sidecar BinkOpen should start on frame 1") && ok;
+
+	unsigned char scratch_pixel[4] = {};
+	BinkDoFrame(bink);
+	BinkCopyToBuffer(bink, scratch_pixel, expected_width * 4, expected_height, 0, 0, BINKSURFACE32);
+	BinkNextFrame(bink);
+	ok = expect(bink->FrameNum == 2, "sidecar BinkNextFrame should advance to frame 2") && ok;
+
+	BinkGoto(bink, expected_frames, 0);
+	ok = expect(bink->FrameNum == expected_frames, "sidecar BinkGoto should seek to the last frame") && ok;
 
 	BinkClose(bink);
 	return ok;

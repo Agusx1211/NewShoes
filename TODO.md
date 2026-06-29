@@ -678,8 +678,10 @@ shares structure and follows behind.
       and harness-test an original `BinkVideoPlayer`-owned flow. The provider
       now attaches `bink-browser-video-manifest.json` metadata to `HBINK`
       handles and the browser smoke proves the sidecars are playable through
-      `<video>`, but original runtime playback, frame upload, and
-      `BinkCopyToBuffer` pixel-copy support remain open.
+      `<video>`. The provider also emits browser-observable sidecar lifecycle
+      hooks for open/decompress/pending-copy/advance/seek/close, but original
+      runtime playback, frame upload, and `BinkCopyToBuffer` pixel-copy support
+      remain open.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and

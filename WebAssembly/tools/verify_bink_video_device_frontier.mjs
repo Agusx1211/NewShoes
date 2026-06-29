@@ -537,6 +537,20 @@ function main() {
   assertPresent(errors, facts.provider, "attachBrowserVideoMetadataLine",
     lineNumber(provider.lines, (line) => /\battach_browser_video_metadata\s*\(/.test(line)),
     "provider attach_browser_video_metadata");
+  const browserBridgeFacts = {
+    openHookLine: lineNumber(provider.lines, (line) => /cncPortBinkVideoOpen/.test(line)),
+    eventHookLine: lineNumber(provider.lines, (line) => /cncPortBinkVideoEvent/.test(line)),
+    closeHookLine: lineNumber(provider.lines, (line) => /cncPortBinkVideoClose/.test(line)),
+    notifyOpenLine: lineNumber(provider.lines, (line) => /\bnotify_browser_video_open\s*\(/.test(line)),
+    notifyEventLine: lineNumber(provider.lines, (line) => /\bnotify_browser_video_event\s*\(/.test(line)),
+    notifyCloseLine: lineNumber(provider.lines, (line) => /\bnotify_browser_video_close\s*\(/.test(line)),
+  };
+  facts.provider.browserBridge = browserBridgeFacts;
+  for (const [key, line] of Object.entries(browserBridgeFacts)) {
+    if (line === -1) {
+      errors.push(`provider browser bridge missing ${key}`);
+    }
+  }
 
   const parseHeaderLine = facts.provider.parseHeaderLine;
   const parseHeaderBody = functionBodyLineRange(provider.lines, parseHeaderLine);
@@ -640,6 +654,28 @@ function main() {
   if (facts.provider.binkOpenAttachSidecarLine === -1) {
     errors.push("provider BinkOpen must attach browser sidecar metadata after header parse");
   }
+  facts.provider.binkOpenNotifyBrowserLine = binkOpenBody
+    ? firstMatchInRange(provider.lines, binkOpenBody.start, binkOpenBody.end, /notify_browser_video_open\(\*handle\)/)
+    : -1;
+  if (facts.provider.binkOpenNotifyBrowserLine === -1) {
+    errors.push("provider BinkOpen must notify the browser sidecar bridge after metadata attach");
+  }
+  const lifecycleNotifications = {
+    close: { api: "BinkClose", pattern: /notify_browser_video_close\(\*handle\)/ },
+    doFrame: { api: "BinkDoFrame", pattern: /notify_browser_video_event\(\*handle,\s*"doFrame"\)/ },
+    nextFrame: { api: "BinkNextFrame", pattern: /notify_browser_video_event\(\*handle,\s*"nextFrame"\)/ },
+    gotoFrame: { api: "BinkGoto", pattern: /notify_browser_video_event\(\*handle,\s*"gotoFrame"/ },
+    copyPending: { api: "BinkCopyToBuffer", pattern: /notify_browser_video_event\(\*handle,\s*"copyPending"/ },
+  };
+  facts.provider.lifecycleNotifications = {};
+  for (const [name, check] of Object.entries(lifecycleNotifications)) {
+    const body = functionBodyLineRange(provider.lines, facts.provider.apiDefinitions[check.api]);
+    const line = body ? firstMatchInRange(provider.lines, body.start, body.end, check.pattern) : -1;
+    facts.provider.lifecycleNotifications[name] = line;
+    if (line === -1) {
+      errors.push(`provider ${check.api} must notify browser sidecar lifecycle event ${name}`);
+    }
+  }
   facts.provider.runtimeDecode = false;
 
   // --- Focused sidecar smoke facts ---
@@ -658,6 +694,18 @@ function main() {
   assertPresent(errors, facts.smoke, "decodeReadyFalseLine",
     lineNumber(smoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*0/.test(line)),
     "C++ sidecar provider smoke keeps decodeReady false");
+  const sidecarLifecycleSmoke = {
+    doFrameLine: lineNumber(smoke.lines, (line) => /\bBinkDoFrame\s*\(\s*bink\s*\)/.test(line)),
+    copyPendingLine: lineNumber(smoke.lines, (line) => /\bBinkCopyToBuffer\s*\(\s*bink\s*,/.test(line)),
+    nextFrameLine: lineNumber(smoke.lines, (line) => /\bBinkNextFrame\s*\(\s*bink\s*\)/.test(line)),
+    gotoFrameLine: lineNumber(smoke.lines, (line) => /\bBinkGoto\s*\(\s*bink\s*,\s*expected_frames/.test(line)),
+  };
+  facts.smoke.sidecarLifecycle = sidecarLifecycleSmoke;
+  for (const [key, line] of Object.entries(sidecarLifecycleSmoke)) {
+    if (line === -1) {
+      errors.push(`C++ sidecar provider smoke missing lifecycle call ${key}`);
+    }
+  }
 
   assertPresent(errors, facts.sidecarRunner, "manifestPreflightLine",
     lineNumber(sidecarRunner.lines, (line) => /bink-browser-video-manifest\.json/.test(line)),
@@ -675,6 +723,21 @@ function main() {
   assertPresent(errors, facts.browserHarness, "providerCcallLine",
     lineNumber(browserHarness.lines, (line) => /run_bink_video_sidecar_provider_smoke/.test(line)),
     "browser sidecar harness runs provider smoke");
+  assertPresent(errors, facts.browserHarness, "binkOpenHookLine",
+    lineNumber(browserHarness.lines, (line) => /cncPortBinkVideoOpen/.test(line)),
+    "browser sidecar harness installs Bink open hook");
+  assertPresent(errors, facts.browserHarness, "binkEventHookLine",
+    lineNumber(browserHarness.lines, (line) => /cncPortBinkVideoEvent/.test(line)),
+    "browser sidecar harness installs Bink lifecycle hook");
+  assertPresent(errors, facts.browserHarness, "binkCloseHookLine",
+    lineNumber(browserHarness.lines, (line) => /cncPortBinkVideoClose/.test(line)),
+    "browser sidecar harness installs Bink close hook");
+  assertPresent(errors, facts.browserHarness, "binkOpenCountLine",
+    lineNumber(browserHarness.lines, (line) => /openEvents\.length\s*!==\s*3/.test(line)),
+    "browser sidecar harness validates Bink open count");
+  assertPresent(errors, facts.browserHarness, "binkLifecycleCountLine",
+    lineNumber(browserHarness.lines, (line) => /Expected three Bink browser \$\{type\} events/.test(line)),
+    "browser sidecar harness validates Bink lifecycle event counts");
   assertPresent(errors, facts.browserHarness, "canvasReadbackLine",
     lineNumber(browserHarness.lines, (line) => /nonTransparentSamples/.test(line)),
     "browser sidecar harness validates canvas samples");
