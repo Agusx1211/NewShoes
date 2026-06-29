@@ -3347,6 +3347,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       gating/deletion/erase order, and AR_Play/AR_Pause/AR_Stop routing to the
       original Miles playback calls. This verifies source structure only, not
       runtime audio.
+- [x] Add `npm run verify:audio-sample-start-frontier`, a source-only verifier
+      for the original sample-start contract after AR_Play reaches
+      `MilesAudioManager::playAudioEvent`: stream/2D/3D branching, sample-pool
+      selection, file loading, completion callback registration, payload handoff
+      to AIL, volume/pan/3D positioning setup, and `AIL_start_*` calls. This
+      verifies source structure only, not runtime audio.
 - [x] Add `npm run verify:audio-completion-frontier`, a source-only verifier
       for the original audio completion/cleanup tail: Miles completion
       callbacks, `MilesAudioManager::notifyOfAudioCompletion`,
