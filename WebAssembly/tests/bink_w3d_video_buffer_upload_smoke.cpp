@@ -15,6 +15,7 @@
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/VideoPlayer.h"
 #include "GameClient/WinInstanceData.h"
+#include "GameClient/WindowLayout.h"
 #include "GameClient/WindowVideoManager.h"
 #include "VideoDevice/Bink/BinkVideoPlayer.h"
 #if defined(__clang__)
@@ -236,6 +237,39 @@ class SmokeGameWindowManager : public GameWindowManager
 {
 public:
 	GameWindow *allocateNewWindow() override { return newInstance(SmokeGameWindow); }
+	GameWindow *winCreateFromScript(AsciiString filename, WindowLayoutInfo *info = nullptr) override
+	{
+		if (filename.compareNoCase(AsciiString("Menus/BlankWindow.wnd")) != 0) {
+			return nullptr;
+		}
+
+		GameWindow *window = allocateNewWindow();
+		if (window == nullptr) {
+			return nullptr;
+		}
+
+		linkWindow(window);
+		window->winSetStatus(WIN_STATUS_ENABLED | WIN_STATUS_IMAGE);
+		window->winSetSize(800, 600);
+		window->winHide(FALSE);
+		if (info != nullptr) {
+			info->windows.push_back(window);
+		}
+		++blank_layout_script_creates;
+		return window;
+	}
+	WindowLayout *winCreateLayout(AsciiString filename) override
+	{
+		WindowLayout *layout = newInstance(WindowLayout);
+		if (layout == nullptr) {
+			return nullptr;
+		}
+		if (!layout->load(filename)) {
+			layout->deleteInstance();
+			return nullptr;
+		}
+		return layout;
+	}
 
 	GameWinDrawFunc getPushButtonImageDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getPushButtonDrawFunc() override { return getDefaultDraw(); }
@@ -260,6 +294,8 @@ public:
 	GameWinDrawFunc getTextEntryImageDrawFunc() override { return getDefaultDraw(); }
 	GameWinDrawFunc getTextEntryDrawFunc() override { return getDefaultDraw(); }
 	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
+
+	Int blank_layout_script_creates = 0;
 };
 
 struct ProbeW3DDisplayStorage
@@ -736,6 +772,145 @@ bool exercise_window_video_manager(VideoPlayerInterface &player)
 	return ok;
 }
 
+bool exercise_blank_layout_movie_path(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"blank WindowLayout was not created through GameWindowManager::winCreateLayout") && ok;
+	ok = expect(window_manager.blank_layout_script_creates == 1,
+		"blank WindowLayout did not load through winCreateFromScript") && ok;
+	ok = expect(movie_window != nullptr,
+		"blank WindowLayout did not own a first GameWindow") && ok;
+	ok = expect(movie_window == nullptr || movie_window->winGetLayout() == layout,
+		"blank layout first window did not point back to its WindowLayout") && ok;
+
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	VideoStreamInterface *stream = TheVideoPlayer->open(AsciiString("VS_small"));
+	ok = expect(stream != nullptr, "blank layout path did not open VS_small") && ok;
+	if (stream != nullptr) {
+		ok = expect(stream->width() == 96 && stream->height() == 120,
+			"blank layout path opened VS_small with unexpected dimensions") && ok;
+		ok = expect(stream->frameCount() == 71,
+			"blank layout path opened VS_small with unexpected frame count") && ok;
+	}
+
+	VideoBuffer *video_buffer = TheDisplay->createVideoBuffer();
+	W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(video_buffer);
+	const UnsignedInt expected_texture_width = next_power_of_two(96);
+	const UnsignedInt expected_texture_height = next_power_of_two(120);
+	ok = expect(video_buffer != nullptr,
+		"blank layout path did not create a VideoBuffer") && ok;
+	if (video_buffer != nullptr && stream != nullptr) {
+		ok = expect(video_buffer->allocate(stream->width(), stream->height()),
+			"blank layout path could not allocate the VideoBuffer") && ok;
+	}
+	if (w3d_buffer != nullptr) {
+		ok = expect(w3d_buffer->valid(),
+			"blank layout W3DVideoBuffer is not valid after allocate") && ok;
+		ok = expect(w3d_buffer->texture() != nullptr,
+			"blank layout W3DVideoBuffer did not create a TextureClass") && ok;
+		ok = expect(w3d_buffer->width() == 96 && w3d_buffer->height() == 120,
+			"blank layout W3DVideoBuffer visible dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->textureWidth() == expected_texture_width &&
+			w3d_buffer->textureHeight() == expected_texture_height,
+			"blank layout W3DVideoBuffer backing texture dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->pitch() == expected_texture_width * 4,
+			"blank layout W3DVideoBuffer pitch mismatch") && ok;
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT updates_before_render = state->browser_texture_update_calls;
+	TheWritableGlobalData->m_loadScreenRender = TRUE;
+	if (stream != nullptr && video_buffer != nullptr) {
+		ok = expect(stream->isFrameReady(),
+			"blank layout path VS_small first frame should be ready") && ok;
+		stream->frameDecompress();
+		stream->frameRender(video_buffer);
+		stream->frameNext();
+	}
+	if (movie_window != nullptr) {
+		movie_window->winGetInstanceData()->setVideoBuffer(video_buffer);
+	}
+
+	state = wasm_d3d8_get_state();
+	ok = expect(state->browser_texture_update_calls == updates_before_render + 1,
+		"blank layout path did not upload decoded Bink pixels through W3DVideoBuffer") && ok;
+	ok = expect(movie_window == nullptr || movie_window->winGetInstanceData()->m_videoBuffer == video_buffer,
+		"blank layout first window did not own the decoded VideoBuffer") && ok;
+	ok = expect(state->last_browser_texture_width == expected_texture_width &&
+		state->last_browser_texture_height == expected_texture_height,
+		"blank layout decoded texture upload dimensions mismatch") && ok;
+	ok = expect(state->last_browser_texture_pitch == expected_texture_width * 4,
+		"blank layout decoded texture upload pitch mismatch") && ok;
+	ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+		"blank layout decoded texture upload format mismatch") && ok;
+	ok = expect(state->last_browser_texture_checksum != 0,
+		"blank layout path uploaded an all-zero decoded frame") && ok;
+	if (stream != nullptr) {
+		ok = expect(stream->frameIndex() == 1,
+			"blank layout path did not advance VS_small to frame index 1") && ok;
+	}
+	const UINT decoded_upload_checksum = state->last_browser_texture_checksum;
+
+	if (w3d_buffer != nullptr) {
+		ok = present_uploaded_video_buffer(*w3d_buffer, 464, 324, 560, 444) && ok;
+		std::printf("Blank layout VS_small Bink W3D presentation ok: visible=%ux%u texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
+			w3d_buffer->width(),
+			w3d_buffer->height(),
+			w3d_buffer->textureWidth(),
+			w3d_buffer->textureHeight(),
+			w3d_buffer->pitch(),
+			static_cast<unsigned int>(decoded_upload_checksum),
+			464,
+			324,
+			560,
+			444);
+	}
+
+	TheWritableGlobalData->m_loadScreenRender = FALSE;
+	if (movie_window != nullptr) {
+		movie_window->winGetInstanceData()->setVideoBuffer(nullptr);
+	}
+	if (video_buffer != nullptr) {
+		delete video_buffer;
+		video_buffer = nullptr;
+	}
+	if (stream != nullptr) {
+		stream->close();
+		stream = nullptr;
+	}
+	ok = expect(player.firstStream() == nullptr,
+		"blank layout path did not close the owned Bink stream") && ok;
+
+	if (layout != nullptr) {
+		layout->destroyWindows();
+		ok = expect(layout->getFirstWindow() == nullptr,
+			"WindowLayout::destroyWindows did not clear the blank layout first window") && ok;
+		layout->deleteInstance();
+	}
+	window_manager.update();
+
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 } // namespace
 
 extern "C" int run_bink_w3d_video_buffer_upload_smoke()
@@ -786,6 +961,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 			"VS_small", 96, 120, 71, 464, 324, 560, 444) && ok;
 		ok = exercise_display_movie(*player) && ok;
 		ok = exercise_window_video_manager(*player) && ok;
+		ok = exercise_blank_layout_movie_path(*player) && ok;
 	}
 
 	if (player != nullptr) {

@@ -51,17 +51,20 @@
 //   5. The focused browser Bink/W3D runtime smoke proves decoded Bink sidecar
 //      pixels copied through original `BinkVideoStream::frameRender` are
 //      presented through original `W3DDisplay::drawVideoBuffer`, with browser
-//      indexed-draw and screenshot checks.
+//      indexed-draw and screenshot checks. It also proves a focused
+//      `WindowLayout::load("Menus/BlankWindow.wnd")` / first-window
+//      `WinInstanceData::setVideoBuffer` path shaped like
+//      ScoreScreen::PlayMovieAndBlock.
 //   6. CMake / package facts for the current `bink-w3d-video-buffer-browser-smoke`
 //      proof, its presentation alias, and the `test:ww3d-display-drawimage-file`
 //      display draw-image target/script this verifier relies on.
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
-// `WindowVideoManager::playMovie/update` path now owns one real window video
-// buffer in the browser smoke, but the full original `Display` / load-screen /
-// score-screen movie loops and Bink/audio sync remain open. This verifier pins
-// the source presentation contract plus the focused runtime proof that the
-// downstream display sink works.
+// `WindowVideoManager::playMovie/update` and blank-window layout paths now own
+// real window video buffers in the browser smoke, but the full original
+// InGameUI/load-screen/score-screen movie loops and Bink/audio sync remain
+// open. This verifier pins the source presentation contract plus the focused
+// runtime proof that the downstream display sink works.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -422,61 +425,153 @@ function main() {
   // ------------------------------------------------------------------
   assertExact(errors, facts.runtimeSmoke ??= {}, "drawVideoBufferCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 379,
+      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 415,
     "runtime smoke original W3DDisplay::drawVideoBuffer call");
   assertExact(errors, facts.runtimeSmoke, "stage0CombinerCheckLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 416,
+      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 452,
     "runtime smoke drawVideoBuffer combiner check");
   assertExact(errors, facts.runtimeSmoke, "summaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /Bink W3D presentation ok/.test(line)), 505,
+      (line) => /Bink W3D presentation ok/.test(line)), 541,
     "runtime smoke Bink W3D presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "blankScriptCreateLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /GameWindow\s*\*\s*winCreateFromScript\s*\(\s*AsciiString\s+filename/.test(line)), 240,
+    "runtime smoke blank layout winCreateFromScript override");
+  assertExact(errors, facts.runtimeSmoke, "blankScriptFilenameLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /Menus\/BlankWindow\.wnd/.test(line)), 242,
+    "runtime smoke blank layout script filename gate");
+  assertExact(errors, facts.runtimeSmoke, "blankScriptInfoWindowsLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /info\s*->\s*windows\.push_back\s*\(\s*window\s*\)/.test(line)), 256,
+    "runtime smoke blank layout WindowLayoutInfo windows push");
+  assertExact(errors, facts.runtimeSmoke, "blankWinCreateLayoutLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WindowLayout\s*\*\s*winCreateLayout\s*\(\s*AsciiString\s+filename\s*\)\s+override/.test(line)), 261,
+    "runtime smoke winCreateLayout override");
+  assertExact(errors, facts.runtimeSmoke, "blankLayoutNewInstanceLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /WindowLayout\s*\*\s*layout\s*=\s*newInstance\s*\(\s*WindowLayout\s*\)/.test(line)), 263,
+    "runtime smoke WindowLayout memory-pool allocation");
+  assertExact(errors, facts.runtimeSmoke, "blankLayoutLoadLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /!\s*layout\s*->\s*load\s*\(\s*filename\s*\)/.test(line)), 267,
+    "runtime smoke original WindowLayout::load call");
   assertExact(errors, facts.runtimeSmoke, "displayPlayLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display\.Display::playMovie\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)), 531,
+      (line) => /display\.Display::playMovie\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)), 567,
     "runtime smoke Display::playMovie");
   assertExact(errors, facts.runtimeSmoke, "displayUpdateLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display\.Display::update\s*\(\s*\)/.test(line)), 573,
+      (line) => /display\.Display::update\s*\(\s*\)/.test(line)), 609,
     "runtime smoke Display::update");
   assertExact(errors, facts.runtimeSmoke, "displayPresentLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/.test(line)), 600,
+      (line) => /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/.test(line)), 636,
     "runtime smoke Display W3D presentation call");
   assertExact(errors, facts.runtimeSmoke, "displaySummaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /Display VS_small Bink W3D presentation ok/.test(line)), 601,
+      (line) => /Display VS_small Bink W3D presentation ok/.test(line)), 637,
     "runtime smoke Display presentation summary");
   assertExact(errors, facts.runtimeSmoke, "displayStopLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display\.Display::stopMovie\s*\(\s*\)/.test(line)), 614,
+      (line) => /display\.Display::stopMovie\s*\(\s*\)/.test(line)), 650,
     "runtime smoke Display::stopMovie");
   assertExact(errors, facts.runtimeSmoke, "windowManagerPlayLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /video_manager\.playMovie\s*\(\s*window\s*,\s*AsciiString\s*\(\s*"VS_small"\s*\)/.test(line)), 655,
+      (line) => /video_manager\.playMovie\s*\(\s*window\s*,\s*AsciiString\s*\(\s*"VS_small"\s*\)/.test(line)), 691,
     "runtime smoke WindowVideoManager::playMovie");
   assertExact(errors, facts.runtimeSmoke, "windowManagerPresentLine",
     firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.windowManagerPlayLine, facts.runtimeSmoke.windowManagerPlayLine + 80,
-      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/), 708,
+      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/), 744,
     "runtime smoke WindowVideoManager W3D presentation call");
   assertExact(errors, facts.runtimeSmoke, "windowManagerSummaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /WindowVideoManager VS_small Bink W3D presentation ok/.test(line)), 709,
+      (line) => /WindowVideoManager VS_small Bink W3D presentation ok/.test(line)), 745,
     "runtime smoke WindowVideoManager presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseDefLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /bool\s+exercise_blank_layout_movie_path\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 775,
+    "runtime smoke blank layout exercise function");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseWinCreateLayoutLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /TheWindowManager\s*->\s*winCreateLayout\s*\(\s*AsciiString\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)\s*\)/.test(line)), 785,
+    "runtime smoke blank layout winCreateLayout call");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseGetFirstWindowLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /layout\s*->\s*getFirstWindow\s*\(\s*\)/.test(line)), 786,
+    "runtime smoke blank layout getFirstWindow call");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseHideLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /layout\s*->\s*hide\s*\(\s*FALSE\s*\)/.test(line)), 797,
+    "runtime smoke blank layout hide(FALSE)");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseBringForwardLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /layout\s*->\s*bringForward\s*\(\s*\)/.test(line)), 798,
+    "runtime smoke blank layout bringForward");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseClearImageLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /movie_window\s*->\s*winClearStatus\s*\(\s*WIN_STATUS_IMAGE\s*\)/.test(line)), 800,
+    "runtime smoke blank layout first-window image clear");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseVideoOpenLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /TheVideoPlayer\s*->\s*open\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)), 804,
+    "runtime smoke blank layout TheVideoPlayer->open");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseCreateBufferLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/.test(line)), 813,
+    "runtime smoke blank layout createVideoBuffer");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseFrameRenderLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /stream\s*->\s*frameRender\s*\(\s*video_buffer\s*\)/.test(line)), 844,
+    "runtime smoke blank layout frameRender");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseAttachVideoBufferLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /movie_window\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*video_buffer\s*\)/.test(line)), 848,
+    "runtime smoke blank layout attach VideoBuffer to first window");
+  assertExact(errors, facts.runtimeSmoke, "blankExercisePresentLine",
+    firstMatchInRange(runtimeSmoke.lines, 850, 884,
+      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/), 872,
+    "runtime smoke blank layout W3D presentation call");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseSummaryLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /Blank layout VS_small Bink W3D presentation ok/.test(line)), 873,
+    "runtime smoke blank layout presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseClearRenderFlagLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*FALSE/.test(line)), 886,
+    "runtime smoke blank layout clear loadScreenRender flag");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseDetachVideoBufferLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /movie_window\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*nullptr\s*\)/.test(line)), 888,
+    "runtime smoke blank layout detach VideoBuffer");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseCloseStreamLine",
+    firstMatchInRange(runtimeSmoke.lines, 890, 900,
+      /stream\s*->\s*close\s*\(\s*\)/), 895,
+    "runtime smoke blank layout close stream");
+  assertExact(errors, facts.runtimeSmoke, "blankExerciseDestroyWindowsLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /layout\s*->\s*destroyWindows\s*\(\s*\)/.test(line)), 902,
+    "runtime smoke blank layout destroyWindows");
   assertExact(errors, facts.runtimeSmoke, "displayExerciseCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /exercise_display_movie\s*\(\s*\*player\s*\)/.test(line)), 787,
+      (line) => /exercise_display_movie\s*\(\s*\*player\s*\)/.test(line)), 962,
     "runtime smoke Display exercise call");
   assertExact(errors, facts.runtimeSmoke, "windowManagerExerciseCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /exercise_window_video_manager\s*\(\s*\*player\s*\)/.test(line)), 788,
+      (line) => /exercise_window_video_manager\s*\(\s*\*player\s*\)/.test(line)), 963,
     "runtime smoke WindowVideoManager exercise call");
+  assertExact(errors, facts.runtimeSmoke, "blankLayoutExerciseCallLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /exercise_blank_layout_movie_path\s*\(\s*\*player\s*\)/.test(line)), 964,
+    "runtime smoke blank layout exercise call");
 
   assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
     lineNumber(runtimeBrowserHarness.lines,
-      (line) => /Expected four W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
-    "browser harness drawVideoBuffer draw count check");
+      (line) => /Expected five W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
+    "browser harness drawVideoBuffer five-draw count check");
   assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
     lineNumber(runtimeBrowserHarness.lines,
       (line) => /Bink W3DDisplay presentation draw probe failed/.test(line)), 485,
@@ -551,8 +646,11 @@ function main() {
       "test:bink-w3d-video-presentation-browser, including a focused original " +
       "Display::playMovie/update/stopMovie path and a focused original " +
       "WindowVideoManager::playMovie/update path that attaches the real W3DVideoBuffer " +
-      "to a GameWindow before presentation. Full InGameUI / load-screen / score-screen " +
-      "movie-loop ownership and Bink/audio sync remain open M8 tasks.",
+      "to a GameWindow before presentation, plus a focused " +
+      "WindowLayout::load(\"Menus/BlankWindow.wnd\") first-window " +
+      "setVideoBuffer path shaped like ScoreScreen::PlayMovieAndBlock. " +
+      "Full InGameUI / load-screen / score-screen movie-loop ownership and " +
+      "Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

@@ -4033,6 +4033,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `verify:bink-runtime-callsite-frontier` check now also skips the
       commented/inactive branch matches in the load-screen and score-screen
       frame loops so its reported lines point at the active render path.
+- [x] Extend the Bink/W3D browser presentation smoke through a focused
+      blank-window layout movie path shaped like `ScoreScreen::PlayMovieAndBlock`.
+      The `bink-w3d-video-buffer-browser-smoke` test now implements a focused
+      `GameWindowManager::winCreateLayout` route that allocates a real
+      `WindowLayout`, calls original `WindowLayout::load("Menus/BlankWindow.wnd")`,
+      receives the script-created first `GameWindow`, opens `VS_small` through
+      `TheVideoPlayer`, allocates a real `W3DVideoBuffer` through `TheDisplay`,
+      drives original `BinkVideoStream::frameDecompress`,
+      `frameRender(videoBuffer)`, and `frameNext`, attaches that buffer through
+      `WinInstanceData::setVideoBuffer`, presents it with original
+      `W3DDisplay::drawVideoBuffer`, then detaches, closes, and destroys the
+      layout windows. The browser harness now expects five Bink open/copy/close
+      lifecycles and five original `W3DDisplay::drawVideoBuffer` indexed draws:
+      direct `GC_Background`, direct `VS_small`, Display-owned `VS_small`,
+      manager-owned `VS_small`, and blank-layout `VS_small`. This keeps the
+      full original InGameUI, load-screen, score-screen loops, and Bink/audio
+      sync open while proving the blank-window video-buffer ownership step in
+      a harness screenshot. Verified with `npm run build:wasm`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`,
+      `npm run verify:bink-loadscore-movie-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

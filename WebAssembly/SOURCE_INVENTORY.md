@@ -201,9 +201,12 @@ linked into a full browser runtime smoke: `SinglePlayerLoadScreen::init`,
 `ChallengeLoadScreen::init`, challenge portrait/VS overlay
 `WindowVideoManager` calls, `ScoreScreen::PlayMovieAndBlock`, blank-layout
 first-window video-buffer attachment, and the layout/window hooks underneath
-that path. It is source-only; runtime load-screen and score-screen playback
-remain open until the CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI
-singleton surface can be linked and harness-driven.
+that path. It is source-only; the focused browser Bink/W3D smoke now proves the
+blank-window `WindowLayout::load("Menus/BlankWindow.wnd")` /
+first-window `WinInstanceData::setVideoBuffer` step in isolation, but runtime
+load-screen and score-screen playback remain open until the
+CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton surface can
+be linked and harness-driven.
 
 ## Runtime Targets
 
@@ -604,9 +607,13 @@ The wasm CMake skeleton currently builds:
   wasm static library against real video-player interfaces and the
   `zh_browser_bink` provider. This now covers original Bink video player compile
   plus real `.bik` open/header parsing and frame-cursor lifecycle through
-  `WebAssembly/src/wasm_bink_provider.cpp`; `.bik` frame decoding,
-  `BinkCopyToBuffer` pixels, frame upload, audio sync, WebCodecs/`<video>`
-  runtime, and browser presentation remain open. The runtime archive extractor
+  `WebAssembly/src/wasm_bink_provider.cpp`; focused browser smokes now prove
+  sidecar-backed `BinkCopyToBuffer` pixels, real `W3DVideoBuffer` upload,
+  original `W3DDisplay::drawVideoBuffer` presentation, focused
+  `Display::playMovie/update/stopMovie`, `WindowVideoManager::playMovie/update`,
+  and blank-window first-window `setVideoBuffer` ownership, while native `.bik`
+  frame decoding, audio sync, full WebCodecs/`<video>` runtime ownership, and
+  full original load-screen / score-screen playback remain open. The runtime archive extractor
   pulls the shipped loose `GC_Background.bik` and `VS_small.bik` files from
   `Data1.cab` and checks their BIK/KB2 header magic, and
   `npm run test:bink-video-provider` builds/runs a wasm smoke against those real
