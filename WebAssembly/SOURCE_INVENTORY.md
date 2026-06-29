@@ -61,7 +61,13 @@ payload availability only; it does not decode, schedule, or play audio, and it
 currently reports `AudioSettings.ini` absent in the Zero Hour-only archive set.
 The browser harness also exposes the same mounted-archive preflight as
 `audioPayloadInventory` in `runtime_archives_smoke.mjs`, so the MEMFS/runtime
-archive path is checked before and after boot.
+archive path is checked before and after boot. That surface now includes
+`audioStartupArchiveContract`, a runtime copy of the original
+`AudioManager::init` audio INI startup contract: ten required audio INI paths,
+missing details by expected source archive, the current
+`optionalBaseArchiveAbsent` classification for the four base `INI.big` audio
+startup gaps, and the `audioStartupArchives` next-required state until the
+optional base archive is mounted.
 
 `npm run verify:audio-format-frontier` pins the current real-asset audio
 payload encoding frontier. It enumerates every `Data\Audio\` payload in the
@@ -114,7 +120,9 @@ engine-driven audio-event scheduling/playback.
 remaining audio startup blockers with expected source archives: the current
 Zero Hour-only set is missing `AudioSettings.ini`, `Default\Music.ini`,
 `Default\Speech.ini`, and `Default\Voice.ini` because optional base `INI.big`
-is not mounted.
+is not mounted. The browser runtime mirrors this as
+`audioPayloadInventory.audioStartupArchiveContract`, so harness state can tell
+an absent optional base archive apart from a bad or incomplete mounted archive.
 
 `npm run verify:miles-audio-volume-frontier` pins the original volume/mixer
 control path through `GameAudio.cpp`, `AudioEventRTS.cpp`, and

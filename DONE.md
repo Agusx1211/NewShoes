@@ -3432,6 +3432,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Default\Speech.ini`, and `Default\Voice.ini` are now classified as
       absent optional base `INI.big` files, and the base archive readiness
       contract includes the base audio settings/default INIs.
+- [x] Expose the same audio startup archive gap in the browser harness as
+      `audioPayloadInventory.audioStartupArchiveContract`. Runtime archive
+      smoke now asserts the ten original `AudioManager::init` audio INI paths,
+      the current four missing optional-base `INI.big` files, the
+      `--require-audio-startup` verification command, and the transition from
+      `audioStartupArchives` to `browserAudioDevice` when the optional base
+      archive is mounted.
 - [x] Add `npm run verify:audio-format-frontier`, a real-asset verifier that
       pins the current audio payload encoding frontier before Web Audio decode:
       3,530 `Data\Audio\` entries across the six current audio archives, split

@@ -2937,15 +2937,63 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   assertAudioRequestedPayloadCachePlan(payloads, context);
   assertAudioRequestedPayloadDecodeCacheProof(payloads, context);
 
+  const startupContract = payloads.audioStartupArchiveContract;
+  if (!startupContract
+      || startupContract.source !== "GameAudio.cpp::AudioManager::init audio INI startup archive contract"
+      || startupContract.runtimeReady !== false
+      || startupContract.requireCommand !== "npm run inventory:startup-archives -- --require-audio-startup"
+      || !Array.isArray(startupContract.files)
+      || startupContract.files.length !== 10
+      || !Array.isArray(startupContract.optionalBaseArchives)
+      || startupContract.optionalBaseArchives[0]?.name !== "INI.big") {
+    throw new Error(`${context} audio startup archive contract mismatch: ${JSON.stringify(startupContract)}`);
+  }
+
   if (hasBaseIniArchive) {
-    if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {
-      throw new Error(`${context} base INI audio settings state mismatch: ${JSON.stringify(payloads.audioSettings)}`);
+    if (payloads.audioSettings?.present !== true
+        || payloads.nextRequired !== "browserAudioDevice"
+        || startupContract.ready !== true
+        || startupContract.nextRequired !== "browserAudioDevice"
+        || startupContract.optionalBaseArchives[0]?.mounted !== true
+        || startupContract.optionalBaseArchives[0]?.mountName !== "ZZBase_INI.big"
+        || startupContract.optionalBaseArchives[0]?.sourceName !== "INI.big"
+        || (startupContract.missing?.length ?? -1) !== 0
+        || startupContract.missingByReason?.optionalBaseArchiveAbsent !== 0
+        || startupContract.missingByReason?.missingFromBaseArchive !== 0
+        || startupContract.missingByReason?.missing !== 0) {
+      throw new Error(`${context} base INI audio startup state mismatch: ${JSON.stringify({
+        audioSettings: payloads.audioSettings,
+        startupContract,
+      })}`);
     }
     return;
   }
 
-  if (payloads.audioSettings?.present !== false || payloads.nextRequired !== "audioSettings") {
-    throw new Error(`${context} Zero Hour-only audio settings state mismatch: ${JSON.stringify(payloads.audioSettings)}`);
+  const expectedMissingAudioStartup = [
+    "Data\\INI\\AudioSettings.ini",
+    "Data\\INI\\Default\\Music.ini",
+    "Data\\INI\\Default\\Speech.ini",
+    "Data\\INI\\Default\\Voice.ini",
+  ];
+  if (payloads.audioSettings?.present !== false
+      || payloads.nextRequired !== "audioStartupArchives"
+      || startupContract.ready !== false
+      || startupContract.nextRequired !== "audioStartupArchives"
+      || startupContract.optionalBaseArchives[0]?.mounted !== false
+      || startupContract.optionalBaseArchives[0]?.mountName !== null
+      || startupContract.optionalBaseArchives[0]?.sourceName !== null
+      || JSON.stringify(startupContract.missing) !== JSON.stringify(expectedMissingAudioStartup)
+      || startupContract.missingByReason?.optionalBaseArchiveAbsent !== expectedMissingAudioStartup.length
+      || startupContract.missingByReason?.missingFromBaseArchive !== 0
+      || startupContract.missingByReason?.missing !== 0
+      || startupContract.missingDetails.some((entry) =>
+        entry.optionalBase !== true ||
+        entry.expectedSource !== "INI.big" ||
+        entry.reason !== "optionalBaseArchiveAbsent")) {
+    throw new Error(`${context} Zero Hour-only audio startup state mismatch: ${JSON.stringify({
+      audioSettings: payloads.audioSettings,
+      startupContract,
+    })}`);
   }
 
   assertSectionSummary(payloads.sections?.music, {

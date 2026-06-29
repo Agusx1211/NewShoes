@@ -574,7 +574,10 @@ shares structure and follows behind.
       before treating audio payload path resolution as runtime-ready. The
       current Zero Hour-only archive set resolves many payload candidates, but
       `AudioEventRTS::generateFilenamePrefix` still depends on parsed
-      `AudioSettings` folders at runtime.
+      `AudioSettings` folders at runtime; the browser harness now exposes
+      `audioPayloadInventory.audioStartupArchiveContract` so the four current
+      missing audio startup INIs are classified as absent optional base
+      `INI.big` files instead of anonymous payload gaps.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
 - [ ] Replace compile-only `Mss.H`/`dsound.h` paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real

@@ -6046,10 +6046,95 @@ function normalizeBigPath(path) {
   return String(path ?? "").replaceAll("/", "\\").toLowerCase();
 }
 
+const optionalBaseAudioStartupPaths = new Set([
+  "data\\ini\\audiosettings.ini",
+  "data\\ini\\default\\music.ini",
+  "data\\ini\\default\\soundeffects.ini",
+  "data\\ini\\default\\speech.ini",
+  "data\\ini\\default\\voice.ini",
+]);
+
 function isAudioPayloadRelevantArchive(archive) {
   const names = [archive.name, archive.sourceName].filter(Boolean);
   return names.some((name) =>
     name === "INIZH.big" || name === "INI.big" || audioPayloadArchiveNames.includes(name));
+}
+
+function buildAudioStartupArchiveContract(iniFiles, mountedArchives) {
+  const baseIniArchive = mountedArchives.find((archive) =>
+    archive.name === "INI.big" ||
+    archive.sourceName === "INI.big" ||
+    archive.name === "ZZBase_INI.big");
+  const files = audioPayloadIniPaths.map((path) => {
+    const ini = iniFiles[path] ?? { present: false };
+    if (ini.present) {
+      return {
+        path,
+        found: true,
+        archives: [
+          {
+            archive: ini.archive,
+            size: ini.size,
+          },
+        ],
+      };
+    }
+
+    const normalized = normalizeBigPath(path);
+    if (optionalBaseAudioStartupPaths.has(normalized)) {
+      return {
+        path,
+        found: false,
+        archives: [],
+        optionalBase: true,
+        expectedSource: "INI.big",
+        reason: baseIniArchive ? "missingFromBaseArchive" : "optionalBaseArchiveAbsent",
+      };
+    }
+
+    return {
+      path,
+      found: false,
+      archives: [],
+      optionalBase: false,
+      expectedSource: null,
+      reason: "missing",
+    };
+  });
+  const missing = files.filter((entry) => !entry.found);
+  const missingByReason = {
+    optionalBaseArchiveAbsent: 0,
+    missingFromBaseArchive: 0,
+    missing: 0,
+  };
+  for (const entry of missing) {
+    missingByReason[entry.reason] = (missingByReason[entry.reason] ?? 0) + 1;
+  }
+
+  return {
+    source: "GameAudio.cpp::AudioManager::init audio INI startup archive contract",
+    ready: missing.length === 0,
+    runtimeReady: false,
+    nextRequired: missing.length === 0 ? "browserAudioDevice" : "audioStartupArchives",
+    requireCommand: "npm run inventory:startup-archives -- --require-audio-startup",
+    optionalBaseArchives: [
+      {
+        name: "INI.big",
+        mounted: Boolean(baseIniArchive),
+        mountName: baseIniArchive?.name ?? null,
+        sourceName: baseIniArchive?.sourceName ?? null,
+      },
+    ],
+    files,
+    missing: missing.map((entry) => entry.path),
+    missingDetails: missing.map(({ path, optionalBase, expectedSource, reason }) => ({
+      path,
+      optionalBase: Boolean(optionalBase),
+      expectedSource: expectedSource ?? null,
+      reason,
+    })),
+    missingByReason,
+  };
 }
 
 function readBigDirectoryFromBytes(bytes, archiveName) {
@@ -8159,6 +8244,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
   const referencedPayloadsReady = Object.values(sections)
     .every((section) => section.summary.resolved > 0);
   const audioSettingsPresent = Boolean(iniFiles["Data\\INI\\AudioSettings.ini"]?.present);
+  const audioStartupArchiveContract = buildAudioStartupArchiveContract(iniFiles, mountedArchives);
   payloadFormats.webAudioDecodeCandidateReady =
     payloadFormats.entryCount > 0 &&
     payloadFormats.requiresTranscode === 0 &&
@@ -8190,11 +8276,12 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     source: "browser mounted BIG directory + shipped audio INI parser",
     pathRulesSource: "AudioEventRTS.cpp + INIAudioEventInfo.cpp + GameAudio.cpp",
     runtimeReady: false,
-    nextRequired: audioSettingsPresent ? "browserAudioDevice" : "audioSettings",
+    nextRequired: audioStartupArchiveContract.ready ? "browserAudioDevice" : "audioStartupArchives",
     audioSettings: {
       present: audioSettingsPresent,
       candidateSettings: audioPayloadCandidateSettings,
     },
+    audioStartupArchiveContract,
     requiredArchives,
     knownPayloads,
     knownPayloadFormats,
