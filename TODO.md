@@ -603,7 +603,9 @@ shares structure and follows behind.
       position contract that the browser Web Audio backend must satisfy, and
       `requestedPayloadDecodeCacheProof.browserAudio3DPositioningProof` now
       proves one real requested world SFX can render through a browser
-      `PannerNode`. Engine-driven 3D playback is still open.
+      `PannerNode`. `verify:audio-3d-zoom-volume-frontier` pins the source
+      zoom-volume recompute and already-playing 3D volume re-push path.
+      Engine-driven 3D playback and zoom-volume binding are still open.
 - [ ] Music playback + transitions; `verify:audio-music-manager-frontier` now
       pins the source-only `MusicTrack` / `MusicManager` / Miles stream route,
       volume bus, Music.ini parse path, and next/previous/completion state

@@ -35,6 +35,11 @@ frontier: `AudioEventRTS` position ownership, `SoundManager::canPlayNow`
 distance/shroud culling, listener position/orientation application, per-frame
 3D sample position updates, one-shot 3D sample distance/position setup, and 3D
 sample volume routing.
+`npm run verify:audio-3d-zoom-volume-frontier` pins the adjacent 3D
+zoom/volume-adjustment frontier: `AudioManager::setVolume` Sound3D recompute,
+`set3DVolumeAdjustment` multiply/clamp/volume-change flag behavior, the
+`m_zoomVolume` update-to-adjustment call path, and `MilesAudioManager`'s
+per-frame re-push of changed volume to playing 2D/3D/stream handles.
 `npm run verify:audio-music-manager-frontier` pins the original music
 streaming and transition frontier: `MusicTrack` fields/parse table,
 `MusicManager` AR_Play/AR_Stop request construction, `AudioManager` AT_Music
