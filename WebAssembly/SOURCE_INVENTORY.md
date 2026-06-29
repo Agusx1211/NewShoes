@@ -59,8 +59,11 @@ and 2,556 IMA ADPCM payloads still requiring decode. This is a metadata-only
 cache plan. `audioPayloadInventory.requestedPayloadDecodeCacheProof` now uses
 that plan to build real decoded PCM and Web Audio `AudioBuffer` cache entries
 for representative requested SFX, voice, and speech keys (four entries,
-1,096,144 decoded PCM bytes). This is still representative proof coverage, not
-full requested-payload decode/cache or audio scheduling.
+1,096,144 decoded PCM bytes), then schedules those buffers in an
+`OfflineAudioContext` and pins four `AudioBufferSourceNode` completion
+callbacks plus rendered sample-window statistics. This is still representative
+proof coverage, not full requested-payload decode/cache or engine audio-event
+scheduling.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current

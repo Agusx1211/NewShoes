@@ -5923,6 +5923,23 @@ function summarizeAudioBuffer(buffer) {
   };
 }
 
+function createWebAudioBufferFromDecoded(audioContext, decoded) {
+  const buffer = audioContext.createBuffer(
+    decoded.info.channels,
+    decoded.decodedFrames,
+    decoded.info.samplesPerSec,
+  );
+  for (let channel = 0; channel < decoded.info.channels; ++channel) {
+    const channelData = buffer.getChannelData(channel);
+    for (let frame = 0; frame < decoded.decodedFrames; ++frame) {
+      channelData[frame] = int16AudioSampleToFloat(
+        decoded.samples[frame * decoded.info.channels + channel],
+      );
+    }
+  }
+  return buffer;
+}
+
 function buildWebAudioBufferProofs(decodedPayloads) {
   const errors = [];
   const proofs = [];
@@ -5955,19 +5972,7 @@ function buildWebAudioBufferProofs(decodedPayloads) {
 
   for (const decoded of decodedPayloads) {
     try {
-      const buffer = audioContext.createBuffer(
-        decoded.info.channels,
-        decoded.decodedFrames,
-        decoded.info.samplesPerSec,
-      );
-      for (let channel = 0; channel < decoded.info.channels; ++channel) {
-        const channelData = buffer.getChannelData(channel);
-        for (let frame = 0; frame < decoded.decodedFrames; ++frame) {
-          channelData[frame] = int16AudioSampleToFloat(
-            decoded.samples[frame * decoded.info.channels + channel],
-          );
-        }
-      }
+      const buffer = createWebAudioBufferFromDecoded(audioContext, decoded);
       proofs.push({
         ...(decoded.cacheKey ? { cacheKey: decoded.cacheKey } : {}),
         path: decoded.path,
@@ -5996,6 +6001,179 @@ function buildWebAudioBufferProofs(decodedPayloads) {
     errors,
     proofs,
   };
+}
+
+function summarizeRenderedAudioWindow(channelData, startFrame, endFrame) {
+  let minFloat = 1;
+  let maxFloat = -1;
+  let nonZeroFrames = 0;
+  let maxAbsFloat = 0;
+  const start = Math.max(0, startFrame);
+  const end = Math.min(channelData.length, endFrame);
+  for (let frame = start; frame < end; ++frame) {
+    const sample = channelData[frame];
+    if (sample < minFloat) minFloat = sample;
+    if (sample > maxFloat) maxFloat = sample;
+    if (sample !== 0) nonZeroFrames += 1;
+    const abs = Math.abs(sample);
+    if (abs > maxAbsFloat) maxAbsFloat = abs;
+  }
+  if (end <= start) {
+    minFloat = 0;
+    maxFloat = 0;
+  }
+  return {
+    startFrame: start,
+    endFrame: end,
+    frames: Math.max(0, end - start),
+    minFloat: Number(minFloat.toFixed(6)),
+    maxFloat: Number(maxFloat.toFixed(6)),
+    maxAbsFloat: Number(maxAbsFloat.toFixed(6)),
+    nonZeroFrames,
+    firstSamples: [...channelData.subarray(start, Math.min(start + 16, end))]
+      .map((sample) => Number(sample.toFixed(6))),
+  };
+}
+
+async function buildWebAudioScheduleProof(decodedPayloads) {
+  const errors = [];
+  const scheduled = [];
+  const endedCallbacks = [];
+  const OfflineAudioContextCtor =
+    globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContextCtor !== "function") {
+    return {
+      source: "browser requested audio OfflineAudioContext scheduling proof",
+      ready: false,
+      runtimePlayback: false,
+      offlineRendered: false,
+      nextRequired: "offlineAudioContext",
+      errors: ["OfflineAudioContext is unavailable"],
+      scheduled,
+      endedCallbacks,
+    };
+  }
+
+  const renderSampleRate = 44100;
+  const gapSeconds = 0.02;
+  const tailSeconds = 0.1;
+  let cursorSeconds = 0;
+  for (const decoded of decodedPayloads) {
+    const durationSeconds = decoded.decodedFrames / decoded.info.samplesPerSec;
+    scheduled.push({
+      cacheKey: decoded.cacheKey,
+      archive: decoded.archive,
+      path: decoded.path,
+      codec: decoded.info.codec,
+      refCount: decoded.refCount,
+      sections: decoded.sections,
+      startSeconds: Number(cursorSeconds.toFixed(6)),
+      durationSeconds: Number(durationSeconds.toFixed(6)),
+      endSeconds: Number((cursorSeconds + durationSeconds).toFixed(6)),
+      sourceSampleRate: decoded.info.samplesPerSec,
+      sourceFrames: decoded.decodedFrames,
+    });
+    cursorSeconds += durationSeconds + gapSeconds;
+  }
+
+  const renderLength = Math.max(1, Math.ceil((cursorSeconds + tailSeconds) * renderSampleRate));
+  let audioContext;
+  try {
+    audioContext = new OfflineAudioContextCtor(1, renderLength, renderSampleRate);
+  } catch (error) {
+    return {
+      source: "browser requested audio OfflineAudioContext scheduling proof",
+      ready: false,
+      runtimePlayback: false,
+      offlineRendered: false,
+      nextRequired: "offlineAudioContext",
+      errors: [error?.message ?? String(error)],
+      scheduled,
+      endedCallbacks,
+    };
+  }
+
+  try {
+    for (let index = 0; index < decodedPayloads.length; ++index) {
+      const decoded = decodedPayloads[index];
+      const schedule = scheduled[index];
+      const source = audioContext.createBufferSource();
+      source.buffer = createWebAudioBufferFromDecoded(audioContext, decoded);
+      source.connect(audioContext.destination);
+      source.onended = () => {
+        endedCallbacks.push({
+          cacheKey: decoded.cacheKey,
+          order: endedCallbacks.length + 1,
+        });
+      };
+      source.start(schedule.startSeconds);
+    }
+    const rendered = await audioContext.startRendering();
+    await Promise.resolve();
+    const firstChannel = rendered.getChannelData(0);
+    const renderSummary = summarizeRenderedAudioWindow(firstChannel, 0, firstChannel.length);
+    const windows = scheduled.map((schedule) => ({
+      cacheKey: schedule.cacheKey,
+      ...summarizeRenderedAudioWindow(
+        firstChannel,
+        Math.floor(schedule.startSeconds * rendered.sampleRate),
+        Math.min(
+          Math.ceil(schedule.endSeconds * rendered.sampleRate),
+          firstChannel.length,
+        ),
+      ),
+    }));
+    if (endedCallbacks.length !== scheduled.length) {
+      errors.push(
+        `expected ${scheduled.length} ended callbacks, observed ${endedCallbacks.length}`,
+      );
+    }
+    if (renderSummary.nonZeroFrames <= 0 || renderSummary.maxAbsFloat <= 0) {
+      errors.push("offline render was silent");
+    }
+    for (const window of windows) {
+      if (window.nonZeroFrames <= 0 || window.maxAbsFloat <= 0) {
+        errors.push(`${window.cacheKey}: rendered window was silent`);
+      }
+    }
+    return {
+      source: "browser requested audio OfflineAudioContext scheduling proof",
+      ready: errors.length === 0,
+      runtimePlayback: false,
+      offlineRendered: true,
+      nextRequired: "engineAudioEventScheduling",
+      constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
+      scheduledSources: scheduled.length,
+      endedCallbacksObserved: endedCallbacks.length,
+      renderSampleRate: rendered.sampleRate,
+      renderLength: rendered.length,
+      renderDurationSeconds: Number(rendered.duration.toFixed(6)),
+      gapSeconds,
+      errors,
+      scheduled,
+      endedCallbacks,
+      renderSummary,
+      renderedWindows: windows,
+    };
+  } catch (error) {
+    errors.push(error?.message ?? String(error));
+    return {
+      source: "browser requested audio OfflineAudioContext scheduling proof",
+      ready: false,
+      runtimePlayback: false,
+      offlineRendered: false,
+      nextRequired: "offlineAudioContextStartRendering",
+      constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
+      scheduledSources: scheduled.length,
+      endedCallbacksObserved: endedCallbacks.length,
+      renderSampleRate,
+      renderLength,
+      gapSeconds,
+      errors,
+      scheduled,
+      endedCallbacks,
+    };
+  }
 }
 
 function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
@@ -6086,7 +6264,7 @@ function selectRequestedDecodeCacheTargets(requestedPayloadCachePlan) {
   ];
 }
 
-function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, archiveBytesByName) {
+async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryIndex, archiveBytesByName) {
   const errors = [];
   const entries = [];
   const decodedCache = new Map();
@@ -6160,6 +6338,7 @@ function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryInd
   const webAudioBufferCache = buildWebAudioBufferProofs([...decodedCache.values()]);
   webAudioBufferCache.source = "browser requested audio AudioBuffer cache proof";
   webAudioBufferCache.nextRequired = "audioEventScheduling";
+  const webAudioScheduleProof = await buildWebAudioScheduleProof([...decodedCache.values()]);
   const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
 
   return {
@@ -6167,12 +6346,14 @@ function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryInd
     ready:
       errors.length === 0 &&
       entries.length === targets.length &&
-      webAudioBufferCache.ready === true,
+      webAudioBufferCache.ready === true &&
+      webAudioScheduleProof.ready === true,
     metadataOnly: false,
     runtimeDecoded: true,
-    runtimeScheduled: false,
+    runtimeScheduled: true,
+    runtimePlayback: false,
     coverage: "representative requested WAV payloads from the shipped INI cache plan",
-    nextRequired: "decodeAllRequestedPayloadsAndSchedule",
+    nextRequired: "engineAudioEventScheduling",
     requestedPlanReferences: requestedPayloadCachePlan.references,
     requestedPlanUniquePayloads: requestedPayloadCachePlan.uniquePayloads,
     targets: targets.map((target) => ({
@@ -6188,6 +6369,7 @@ function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, entryInd
     errors,
     entries,
     webAudioBufferCache,
+    webAudioScheduleProof,
   };
 }
 
@@ -6457,7 +6639,7 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
   };
 }
 
-function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
+async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const mountedArchives = [];
   const entryIndex = new Map();
   const iniFiles = {};
@@ -6636,7 +6818,7 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const decodeProofs = audioProofs.decodeProofs;
   const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
   const requestedPayloadCachePlan = buildAudioRequestedPayloadCachePlan(refsBySection);
-  const requestedPayloadDecodeCacheProof = buildRequestedAudioDecodeCacheProof(
+  const requestedPayloadDecodeCacheProof = await buildRequestedAudioDecodeCacheProof(
     requestedPayloadCachePlan,
     entryIndex,
     archiveBytesByName,
@@ -6672,7 +6854,7 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     requestedPayloadCachePlan,
     requestedPayloadDecodeCacheProof,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded PCM/Web Audio cache entries for requested payload keys without scheduling or playing audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded PCM/Web Audio cache entries and an OfflineAudioContext scheduling proof for requested payload keys without audible runtime playback.",
   };
 }
 
@@ -7781,7 +7963,7 @@ async function mountArchives(payload = {}) {
   const probePath = `${baseDirectory}/*.big`;
   const aggregateProbe = probeArchive(moduleResult.wasmModule, probePath);
   rememberMountedArchives(archives);
-  harnessState.audioPayloadInventory = buildAudioPayloadInventoryFromMountedArchives(
+  harnessState.audioPayloadInventory = await buildAudioPayloadInventoryFromMountedArchives(
     moduleResult.wasmModule,
     harnessState.mountedArchives,
   );

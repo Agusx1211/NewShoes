@@ -3420,6 +3420,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       1,096,144 decoded PCM bytes, first-sample anchors, and the corresponding
       buffer upload statistics while leaving full requested-payload scheduling
       open.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with an
+      OfflineAudioContext scheduling/render proof for the same requested
+      payload cache entries. The browser smoke now asserts four scheduled
+      `AudioBufferSourceNode`s, four completion callbacks, render timing,
+      non-silent rendered windows, and rendered sample anchors while leaving
+      engine-driven audio-event scheduling open.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

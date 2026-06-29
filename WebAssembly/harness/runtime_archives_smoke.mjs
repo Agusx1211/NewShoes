@@ -1621,8 +1621,8 @@ function assertRequestedDecodeCacheEntry(entry, expected, context) {
 
 function assertRequestedAudioBufferCacheEntry(entry, expected, context) {
   for (const [key, value] of Object.entries(expected)) {
-    if (key === "firstChannelFirstSamples") {
-      assertArrayPrefix(entry?.firstChannelFirstSamples, value, `${context} first channel samples`);
+    if (key === "firstChannelFirstSamples" || key === "firstSamples") {
+      assertArrayPrefix(entry?.[key], value, `${context} ${key}`);
     } else if (entry?.[key] !== value) {
       throw new Error(`${context} requested AudioBuffer cache entry ${key} mismatch: ${JSON.stringify(entry)}`);
     }
@@ -1636,9 +1636,10 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       || proof.ready !== true
       || proof.metadataOnly !== false
       || proof.runtimeDecoded !== true
-      || proof.runtimeScheduled !== false
+      || proof.runtimeScheduled !== true
+      || proof.runtimePlayback !== false
       || proof.coverage !== "representative requested WAV payloads from the shipped INI cache plan"
-      || proof.nextRequired !== "decodeAllRequestedPayloadsAndSchedule"
+      || proof.nextRequired !== "engineAudioEventScheduling"
       || proof.requestedPlanReferences !== 7933
       || proof.requestedPlanUniquePayloads !== 3335
       || proof.cacheEntriesCreated !== 4
@@ -1826,6 +1827,140 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       0.000671, 0.000305, 0.000122, -0.000061,
     ],
   }, `${context} requested speech IMA AudioBuffer`);
+
+  const schedule = proof.webAudioScheduleProof;
+  if (!schedule
+      || schedule.source !== "browser requested audio OfflineAudioContext scheduling proof"
+      || schedule.ready !== true
+      || schedule.runtimePlayback !== false
+      || schedule.offlineRendered !== true
+      || schedule.nextRequired !== "engineAudioEventScheduling"
+      || schedule.scheduledSources !== 4
+      || schedule.endedCallbacksObserved !== 4
+      || schedule.renderSampleRate !== 44100
+      || schedule.renderLength !== 613522
+      || schedule.renderDurationSeconds !== 13.912063
+      || schedule.gapSeconds !== 0.02
+      || !Array.isArray(schedule.errors)
+      || schedule.errors.length !== 0
+      || !Array.isArray(schedule.scheduled)
+      || schedule.scheduled.length !== 4
+      || !Array.isArray(schedule.endedCallbacks)
+      || schedule.endedCallbacks.length !== 4
+      || !Array.isArray(schedule.renderedWindows)
+      || schedule.renderedWindows.length !== 4) {
+    throw new Error(`${context} requested audio schedule proof state mismatch: ${JSON.stringify(schedule)}`);
+  }
+  assertArrayPrefix(schedule.endedCallbacks.map((entry) => entry.cacheKey), [
+    "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
+    "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+    "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+    "SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
+  ], `${context} requested audio ended callback order`);
+
+  assertRequestedAudioBufferCacheEntry(schedule.renderSummary, {
+    frames: 613522,
+    minFloat: -0.999969,
+    maxFloat: 0.999017,
+    maxAbsFloat: 0.999969,
+    nonZeroFrames: 604310,
+    firstSamples: [
+      -0.127777, -0.19278, -0.257782, -0.236679,
+      -0.215576, -0.175644, -0.135712, -0.162247,
+      -0.188782, -0.177551, -0.166321, -0.16539,
+      -0.164459, -0.144485, -0.124512, -0.070023,
+    ],
+  }, `${context} requested schedule render summary`);
+
+  const scheduled = new Map(schedule.scheduled.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    startSeconds: 0,
+    durationSeconds: 1.408345,
+    endSeconds: 1.408345,
+    sourceSampleRate: 22050,
+    sourceFrames: 31054,
+  }, `${context} requested SFX PCM schedule`);
+  assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    startSeconds: 1.428345,
+    durationSeconds: 1.199909,
+    endSeconds: 2.628254,
+    sourceSampleRate: 22050,
+    sourceFrames: 26458,
+  }, `${context} requested voice PCM schedule`);
+  assertRequestedAudioBufferCacheEntry(scheduled.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    startSeconds: 2.648254,
+    durationSeconds: 2.171066,
+    endSeconds: 4.81932,
+    sourceSampleRate: 44100,
+    sourceFrames: 95744,
+  }, `${context} requested SFX IMA schedule`);
+  assertRequestedAudioBufferCacheEntry(scheduled.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    startSeconds: 4.83932,
+    durationSeconds: 8.952744,
+    endSeconds: 13.792063,
+    sourceSampleRate: 44100,
+    sourceFrames: 394816,
+  }, `${context} requested speech IMA schedule`);
+
+  const windows = new Map(schedule.renderedWindows.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedAudioBufferCacheEntry(windows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    startFrame: 0,
+    endFrame: 62109,
+    frames: 62109,
+    minFloat: -0.999969,
+    maxFloat: 0.934202,
+    maxAbsFloat: 0.999969,
+    nonZeroFrames: 62088,
+    firstSamples: [
+      -0.127777, -0.19278, -0.257782, -0.236679,
+      -0.215576, -0.175644, -0.135712, -0.162247,
+      -0.188782, -0.177551, -0.166321, -0.16539,
+      -0.164459, -0.144485, -0.124512, -0.070023,
+    ],
+  }, `${context} requested SFX PCM scheduled render`);
+  assertRequestedAudioBufferCacheEntry(windows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    startFrame: 62990,
+    endFrame: 115907,
+    frames: 52917,
+    minFloat: -0.705687,
+    maxFloat: 0.999017,
+    maxAbsFloat: 0.999017,
+    nonZeroFrames: 52858,
+    firstSamples: [
+      0, -0.000148, -0.000453, -0.001074,
+      -0.0017, -0.00228, -0.00286, -0.003109,
+      -0.003353, -0.003297, -0.003236, -0.00313,
+      -0.003023, -0.002946, -0.00287, -0.002914,
+    ],
+  }, `${context} requested voice PCM scheduled render`);
+  assertRequestedAudioBufferCacheEntry(windows.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    startFrame: 116788,
+    endFrame: 212533,
+    frames: 95745,
+    minFloat: -0.963397,
+    maxFloat: 0.998629,
+    maxAbsFloat: 0.998629,
+    nonZeroFrames: 94848,
+    firstSamples: [
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+    ],
+  }, `${context} requested SFX IMA scheduled render`);
+  assertRequestedAudioBufferCacheEntry(windows.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    startFrame: 213414,
+    endFrame: 608230,
+    frames: 394816,
+    minFloat: -0.945251,
+    maxFloat: 0.983941,
+    maxAbsFloat: 0.983941,
+    nonZeroFrames: 394515,
+    firstSamples: [
+      0, 0.001186, 0.002095, 0.003493,
+      0.003691, 0.003844, 0.003393, 0.002996,
+      0.002629, 0.001871, 0.001349, 0.000891,
+      0.000674, 0.00031, 0.000124, -0.000059,
+    ],
+  }, `${context} requested speech IMA scheduled render`);
 }
 
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
