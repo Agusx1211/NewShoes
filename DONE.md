@@ -3569,6 +3569,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       done status, and release. The wasm `cnc_port_probe_mss_sample_lifecycle`
       export and harness `mssSampleLifecycleProbe` RPC assert those state
       transitions while still reporting that Web Audio playback is not ready.
+- [x] Add `npm run verify:mss-sample-lifecycle-contract`, a source-only
+      verifier for the MSS 2D sample lifecycle contract. It reads only repo
+      source (no browser/build/assets) and pins `initSamplePools`, `playSample`,
+      and the `releaseMilesHandles`/`freeAllMilesHandles` paths in
+      `MilesAudioManager.cpp`, the `Mss.H` 2D sample lifecycle surface
+      (allocate/release/init/user-data/set-file/EOS/start/stop/resume/status/
+      volume-pan/playback-rate/loop-count), and the runtime probe source
+      `WebAssembly/src/wasm_mss_sample_lifecycle_probe.cpp`
+      (`cnc_port_probe_mss_sample_lifecycle` plus the key API calls). It emits
+      JSON `{ ok, errors, sources, facts }` and exits nonzero on hard failure.
 
 ---
 

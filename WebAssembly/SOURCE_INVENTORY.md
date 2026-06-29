@@ -153,7 +153,13 @@ assignment, EOS callback registration, volume/pan/rate/loop/position state,
 start/stop/resume/status transitions, callback completion, and handle release.
 It reports `sampleLifecycleReady: true`, `playbackReady: false`, and
 `nextRequired: "webAudioPlaybackBackend"`; no browser audio node is scheduled
-by this probe.
+by this probe. `npm run verify:mss-sample-lifecycle-contract` is the source-only
+contract verifier for that probe: it reads only repo source (no browser, build,
+or assets) and pins `MilesAudioManager.cpp` `initSamplePools`, `playSample`, and
+the `releaseMilesHandles`/`freeAllMilesHandles` release paths, the `Mss.H` 2D
+sample lifecycle surface, and the runtime probe source
+`wasm_mss_sample_lifecycle_probe.cpp` (`cnc_port_probe_mss_sample_lifecycle`
+plus the key API calls).
 
 ## Runtime Targets
 
