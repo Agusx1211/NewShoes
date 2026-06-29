@@ -93,6 +93,7 @@
     "test:ww3d2-texture-loader": "npm run build:wasm && node dist/ww3d2-texture-loader-smoke.cjs",
     "test:ww3d2-shatterplanes-loader": "npm run build:wasm && node tools/run_ww3d2_shatterplanes_smoke.mjs ../GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/RequiredAssets/ShatterPlanes0.w3d",
     "test:ww3d2-shipped-mesh-loader": "npm run build:wasm && npm run extract:runtime-archives && node tools/run_ww3d2_shipped_mesh_smoke.mjs artifacts/real-assets/W3DZH.big",
+    "test:bink-video-provider": "npm run build:wasm && npm run extract:runtime-archives && node tools/run_bink_video_provider_smoke.mjs artifacts/real-assets/GC_Background.bik artifacts/real-assets/VS_small.bik",
     "test:ww3d-shipped-mesh-render": "npm run build:wasm && npm run extract:runtime-archives && node harness/shipped_mesh_render_smoke.mjs artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big",
     "test:ww3d-display-drawimage-file": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_drawimage_file_smoke.mjs artifacts/real-assets/TexturesZH.big",
     "test:ww3d-display-mapped-image": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",

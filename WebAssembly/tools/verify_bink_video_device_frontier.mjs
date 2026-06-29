@@ -3,9 +3,9 @@
 //
 // Source-checks the original Bink video device frontier. It reads (never
 // executes) only repo source files: the original Bink video device source and
-// header, the wasm browser bink declaration shim, and the wasm CMake compile
-// frontier target/source. It emits a JSON { ok, errors, sources, facts } report
-// and exits nonzero on missing/moved hard facts.
+// header, the wasm browser bink declaration shim/provider, and the wasm CMake
+// compile frontier target/source. It emits a JSON { ok, errors, sources, facts }
+// report and exits nonzero on missing/moved hard facts.
 //
 // Verified facts (line numbers measured against the current original source):
 //   - BinkVideoPlayer::init (line 128) calls VideoPlayer::init() (line 131)
@@ -33,10 +33,14 @@
 //     FrameNum), HBINK, BINKPRELOADALL/BINKSURFACE* constants, and the Bink API
 //     declarations (BinkOpen/BinkClose/BinkWait/BinkDoFrame/BinkNextFrame/
 //     BinkGoto/BinkCopyToBuffer/BinkSetVolume/BinkSoundUseDirectSound/
-//     BinkSetSoundTrack). These are declarations only; the shim does not decode
-//     .bik files, upload frames, or drive audio sync.
+//     BinkSetSoundTrack).
+//   - WebAssembly/src/wasm_bink_provider.cpp defines the current browser Bink
+//     provider: BinkOpen reads real classic BIK headers and fills the original
+//     handle fields, frame cursor APIs are stateful, and BinkCopyToBuffer still
+//     documents that frame decode/copy remains a WebCodecs/decoder task.
 //   - WebAssembly/CMakeLists.txt defines the zh_bink_video_device_compile_frontier
-//     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469).
+//     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469)
+//     and links it to zh_browser_bink.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -49,6 +53,7 @@ const SOURCES = {
   cpp: "GeneralsMD/Code/GameEngineDevice/Source/VideoDevice/Bink/BinkVideoPlayer.cpp",
   h: "GeneralsMD/Code/GameEngineDevice/Include/VideoDevice/Bink/BinkVideoPlayer.h",
   shim: "WebAssembly/shims/bink.h",
+  provider: "WebAssembly/src/wasm_bink_provider.cpp",
   cmake: "WebAssembly/CMakeLists.txt",
 };
 
@@ -107,6 +112,13 @@ function assertExact(errors, facts, key, actual, expected, label) {
   }
 }
 
+function assertPresent(errors, facts, key, actual, label) {
+  facts[key] = actual;
+  if (actual === -1) {
+    errors.push(`${label}: not found`);
+  }
+}
+
 function assertOrder(errors, a, b, label) {
   if (a !== -1 && b !== -1 && !(a < b)) {
     errors.push(`${label}: line ${a} must come before line ${b}`);
@@ -115,11 +127,12 @@ function assertOrder(errors, a, b, label) {
 
 function main() {
   const errors = [];
-  const facts = { player: {}, stream: {}, header: {}, shim: {}, cmake: {} };
+  const facts = { player: {}, stream: {}, header: {}, shim: {}, provider: {}, cmake: {} };
 
   const cpp = readSourceLines(SOURCES.cpp);
   const h = readSourceLines(SOURCES.h);
   const shim = readSourceLines(SOURCES.shim);
+  const provider = readSourceLines(SOURCES.provider);
   const cmake = readSourceLines(SOURCES.cmake);
 
   // --- BinkVideoPlayer::init / deinit ---
@@ -375,7 +388,7 @@ function main() {
     lineNumber(h.lines, (line) => /virtual\s+void\s+initializeBinkWithMiles\s*\(\s*void\s*\)/.test(line)), 134,
     "BinkVideoPlayer.h initializeBinkWithMiles declaration");
 
-  // --- Shim facts (declarations only) ---
+  // --- Shim header facts ---
   facts.shim = {};
   assertExact(errors, facts.shim, "structBinkLine",
     lineNumber(shim.lines, (line) => /\bstruct\s+BINK\b/.test(line)), 7,
@@ -421,9 +434,9 @@ function main() {
       errors.push(`shim bink.h: ${name} declaration expected at line ${expectedLine} but found ${ln}`);
     }
   }
-  // The shim provides declarations only: every Bink API signature must end in
-  // a semicolon (declaration), never a brace body (definition). The struct
-  // BINK definition is a type, not a function body, and is expected.
+  // The shim header provides API declarations; definitions live in the browser
+  // provider source below. The struct BINK definition is a type, not a function
+  // body, and is expected.
   let apiBodyViolation = false;
   for (const { name, line: expectedLine } of shimApi) {
     const line = shim.lines[expectedLine - 1];
@@ -432,8 +445,87 @@ function main() {
       errors.push(`shim bink.h: ${name} at line ${expectedLine} is not a declaration (no trailing ';')`);
     }
   }
-  facts.shim.declarationsOnly = !apiBodyViolation;
-  facts.shim.runtimeDecode = false;
+  facts.shim.headerDeclarationsOnly = !apiBodyViolation;
+
+  // --- Browser Bink provider facts ---
+  assertPresent(errors, facts.provider, "handleStructLine",
+    lineNumber(provider.lines, (line) => /\bstruct\s+BrowserBinkHandle\b/.test(line)),
+    "provider BrowserBinkHandle struct");
+  assertPresent(errors, facts.provider, "publicHandleFieldLine",
+    lineNumber(provider.lines, (line) => /\bBINK\s+public_handle\s*=/.test(line)),
+    "provider public BINK handle field");
+  assertPresent(errors, facts.provider, "headerBytesLine",
+    lineNumber(provider.lines, (line) => /kBikHeaderBytes\s*=\s*44/.test(line)),
+    "provider BIK header byte count");
+  assertPresent(errors, facts.provider, "parseHeaderLine",
+    lineNumber(provider.lines, (line) => /\bparse_bik_header\s*\(/.test(line)),
+    "provider parse_bik_header");
+
+  const parseHeaderLine = facts.provider.parseHeaderLine;
+  const parseHeaderBody = functionBodyLineRange(provider.lines, parseHeaderLine);
+  if (!parseHeaderBody) {
+    errors.push("provider parse_bik_header body not found");
+  } else {
+    const sizeFieldLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /size_field\s*=\s*read_le32\(&header\[4\]\)/);
+    const framesLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /Frames\s*=\s*read_le32\(&header\[8\]\)/);
+    const widthLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /Width\s*=\s*read_le32\(&header\[20\]\)/);
+    const heightLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /Height\s*=\s*read_le32\(&header\[24\]\)/);
+    const fpsNumLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /fps_numerator\s*=\s*read_le32\(&header\[28\]\)/);
+    const fpsDenLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /fps_denominator\s*=\s*read_le32\(&header\[32\]\)/);
+    const sizeCheckLine = firstMatchInRange(provider.lines, parseHeaderBody.start, parseHeaderBody.end, /size_field\s*==\s*handle\.file_size\s*-\s*8/);
+    facts.provider.headerOffsets = {
+      sizeFieldLine,
+      framesLine,
+      widthLine,
+      heightLine,
+      fpsNumLine,
+      fpsDenLine,
+      sizeCheckLine,
+    };
+    for (const [key, line] of Object.entries(facts.provider.headerOffsets)) {
+      if (line === -1) {
+        errors.push(`provider parse_bik_header missing ${key}`);
+      }
+    }
+  }
+
+  const providerApi = [
+    "BinkOpen",
+    "BinkClose",
+    "BinkWait",
+    "BinkDoFrame",
+    "BinkNextFrame",
+    "BinkGoto",
+    "BinkCopyToBuffer",
+    "BinkSetVolume",
+    "BinkSoundUseDirectSound",
+    "BinkSetSoundTrack",
+    "WasmBinkProviderCanDecodeFrames",
+  ];
+  facts.provider.apiDefinitions = {};
+  for (const name of providerApi) {
+    const ln = lineNumber(provider.lines, (line) => new RegExp(`\\b${name}\\s*\\(`).test(line) && !/;/.test(line));
+    facts.provider.apiDefinitions[name] = ln;
+    if (ln === -1) {
+      errors.push(`provider ${name} definition not found`);
+    }
+  }
+
+  const copyBody = functionBodyLineRange(provider.lines, facts.provider.apiDefinitions.BinkCopyToBuffer);
+  facts.provider.copyToBufferDecodePendingLine = copyBody
+    ? firstMatchInRange(provider.lines, copyBody.start, copyBody.end, /Frame decode\/copy remains/)
+    : -1;
+  if (facts.provider.copyToBufferDecodePendingLine === -1) {
+    errors.push("provider BinkCopyToBuffer must document that frame decode/copy remains pending");
+  }
+  const decodeReadyBody = functionBodyLineRange(provider.lines, facts.provider.apiDefinitions.WasmBinkProviderCanDecodeFrames);
+  facts.provider.canDecodeFramesFalseLine = decodeReadyBody
+    ? firstMatchInRange(provider.lines, decodeReadyBody.start, decodeReadyBody.end, /return\s+0\s*;/)
+    : -1;
+  if (facts.provider.canDecodeFramesFalseLine === -1) {
+    errors.push("provider must report decodeReady=false until real frame decode is implemented");
+  }
+  facts.provider.runtimeDecode = false;
 
   // --- CMake compile frontier target/source ---
   facts.cmake = {};
@@ -443,6 +535,15 @@ function main() {
   assertExact(errors, facts.cmake, "targetSourceLine",
     lineNumber(cmake.lines, (line) => /BinkVideoPlayer\.cpp/.test(line)), 2469,
     "CMake BinkVideoPlayer.cpp source");
+  assertPresent(errors, facts.cmake, "providerTargetLine",
+    lineNumber(cmake.lines, (line) => /add_library\s*\(\s*zh_browser_bink\b/.test(line)),
+    "CMake zh_browser_bink target");
+  assertPresent(errors, facts.cmake, "providerSourceLine",
+    lineNumber(cmake.lines, (line) => /src\/wasm_bink_provider\.cpp/.test(line)),
+    "CMake wasm_bink_provider source");
+  assertPresent(errors, facts.cmake, "providerLinkLine",
+    lineNumber(cmake.lines, (line) => /target_link_libraries\s*\(\s*zh_bink_video_device_compile_frontier\s+PUBLIC/.test(line)),
+    "CMake Bink frontier links zh_browser_bink");
 
   const report = {
     ok: errors.length === 0,
@@ -451,6 +552,7 @@ function main() {
       cpp: SOURCES.cpp,
       header: SOURCES.h,
       shim: SOURCES.shim,
+      provider: SOURCES.provider,
       cmake: SOURCES.cmake,
     },
     facts,

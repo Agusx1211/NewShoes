@@ -667,8 +667,11 @@ shares structure and follows behind.
 
 - [ ] Re-target `VideoDevice/Bink` (`BinkVideoPlayer`/`VideoStream`) to WebCodecs
       or `<video>`.
-- [ ] Replace the compile-only Bink API declarations with a browser-backed video
-      provider that preserves the original `VideoPlayer`/`VideoStream` call path.
+- [ ] Extend the current browser Bink provider from real-file open/header parsing
+      and frame-cursor lifecycle to actual decoded frame copy/upload through
+      WebCodecs or a deliberate decoder path; `test:bink-video-provider` now
+      proves `BinkOpen` can resolve the shipped loose payloads and fill the
+      original `HBINK` fields, but `BinkCopyToBuffer` still does not decode.
 - [ ] Decide path for `.bik` files: transcode offline vs in-browser decode.
       `extract_zh_runtime_archives.sh` now preserves the shipped loose
       `GC_Background.bik` and `VS_small.bik` payloads from `Data1.cab`, so the
