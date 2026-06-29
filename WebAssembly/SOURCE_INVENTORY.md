@@ -195,6 +195,15 @@ initialization, `InGameUI::update` main/cameo frame-loop order,
 `cameoVideoBuffer` `RightHUD` attachment, and the `CommandXlat` /
 `ScriptActions` callsites. It is source-only; runtime InGameUI playback remains
 open until the ControlBar/GameLogic/UI dependency surface can link cleanly.
+`npm run verify:bink-loadscore-movie-frontier` similarly pins the original
+load-screen and score-screen Bink movie ownership surface before it can be
+linked into a full browser runtime smoke: `SinglePlayerLoadScreen::init`,
+`ChallengeLoadScreen::init`, challenge portrait/VS overlay
+`WindowVideoManager` calls, `ScoreScreen::PlayMovieAndBlock`, blank-layout
+first-window video-buffer attachment, and the layout/window hooks underneath
+that path. It is source-only; runtime load-screen and score-screen playback
+remain open until the CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI
+singleton surface can be linked and harness-driven.
 
 ## Runtime Targets
 

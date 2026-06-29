@@ -335,11 +335,12 @@ function main() {
       key: "singlePlayerLoadScreenInit",
       src: loadScreen,
       defRe: /void\s+SinglePlayerLoadScreen\s*::\s*init\s*\(\s*GameInfo\s*\*\s*game\s*\)/,
+      matchStartLines: [undefined, 552],
       patterns: [
         /isFrameReady\s*\(\s*\)/,
-        /frameDecompress\s*\(\s*\)/,
-        /frameRender\s*\(\s*m_videoBuffer\s*\)/,
-        /frameNext\s*\(\s*\)/,
+        /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
+        /^\s*m_videoStream\s*->\s*frameRender\s*\(\s*m_videoBuffer\s*\)\s*;/,
+        /^\s*m_videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
       ],
       labels: ["isFrameReady", "frameDecompress", "frameRender(m_videoBuffer)", "frameNext"],
     },
@@ -347,11 +348,12 @@ function main() {
       key: "challengeLoadScreenInit",
       src: loadScreen,
       defRe: /void\s+ChallengeLoadScreen\s*::\s*init\s*\(\s*GameInfo\s*\*\s*game\s*\)/,
+      matchStartLines: [undefined, 1066],
       patterns: [
         /isFrameReady\s*\(\s*\)/,
-        /frameDecompress\s*\(\s*\)/,
-        /frameRender\s*\(\s*m_videoBuffer\s*\)/,
-        /frameNext\s*\(\s*\)/,
+        /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
+        /^\s*m_videoStream\s*->\s*frameRender\s*\(\s*m_videoBuffer\s*\)\s*;/,
+        /^\s*m_videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
       ],
       labels: ["isFrameReady", "frameDecompress", "frameRender(m_videoBuffer)", "frameNext"],
     },
@@ -359,11 +361,12 @@ function main() {
       key: "scoreScreenPlayMovieAndBlock",
       src: scoreScreen,
       defRe: /void\s+PlayMovieAndBlock\s*\(\s*AsciiString\s+movieTitle\s*\)/,
+      matchStartLines: [undefined, 728],
       patterns: [
         /isFrameReady\s*\(\s*\)/,
-        /frameDecompress\s*\(\s*\)/,
-        /frameRender\s*\(\s*videoBuffer\s*\)/,
-        /frameNext\s*\(\s*\)/,
+        /^\s*videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
+        /^\s*videoStream\s*->\s*frameRender\s*\(\s*videoBuffer\s*\)\s*;/,
+        /^\s*videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
       ],
       labels: ["isFrameReady", "frameDecompress", "frameRender(videoBuffer)", "frameNext"],
     },
@@ -381,7 +384,16 @@ function main() {
       errors.push(`${spec.key}: function body not found`);
       continue;
     }
-    const matched = orderedMatchesInRange(spec.src.lines, range.start, range.end, spec.patterns);
+    const matched = [];
+    let cursor = range.start;
+    for (let i = 0; i < spec.patterns.length; i++) {
+      const startLine = spec.matchStartLines?.[i] ?? cursor;
+      const found = firstMatchInRange(spec.src.lines, startLine, range.end, spec.patterns[i]);
+      matched.push(found);
+      if (found !== -1) {
+        cursor = found + 1;
+      }
+    }
     let prev = -1;
     for (let i = 0; i < matched.length; i++) {
       facts.frameLoops[spec.key].calls[spec.labels[i]] = matched[i];

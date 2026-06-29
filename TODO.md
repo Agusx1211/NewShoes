@@ -746,6 +746,15 @@ shares structure and follows behind.
       a focused runtime `InGameUI` instantiation currently pulls the broad
       ControlBar/GameLogic/ScriptEngine link surface, so runtime InGameUI
       movie playback remains open.
+      `verify:bink-loadscore-movie-frontier` now pins the source-only original
+      load-screen and score-screen movie ownership contract: `LoadScreen.h`
+      video buffer/stream fields, `SinglePlayerLoadScreen::init` and
+      `ChallengeLoadScreen::init` mission-movie open/buffer/frame/draw loops,
+      challenge portrait/VS overlay `WindowVideoManager` movie calls, and the
+      `ScoreScreen` final-victory `PlayMovieAndBlock` blank-window playback
+      path. It does not claim runtime load-screen or score-screen playback
+      complete; the broader CampaignManager/GameInfo/GameWindow layout/LOD/
+      shell/GUI singleton path still needs to link and be harness-driven.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and
@@ -782,8 +791,9 @@ shares structure and follows behind.
       focused original `Display::playMovie/update/stopMovie` ownership and
       focused original `WindowVideoManager::playMovie/update` ownership of
       the attached `GameWindow` video buffer. The full original InGameUI,
-      load-screen, and score-screen movie playback loops still need to own
-      that path.
+      load-screen, and score-screen movie playback loops still need runtime
+      ownership of that path, though the load/score source contract is pinned
+      by `verify:bink-loadscore-movie-frontier`.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

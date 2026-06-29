@@ -4011,6 +4011,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Add `verify:bink-loadscore-movie-frontier`
+      (`verify:bink-loadscore-movie-frontier` and strict alias
+      `verify:bink-loadscore-movie-frontier:strict`), a source-only verifier
+      for original load-screen and score-screen Bink movie ownership. It pins
+      the `LoadScreen.h` video buffer/stream fields, base `LoadScreen` window
+      destroy/update pump, `SinglePlayerLoadScreen::init` mission-movie
+      `TheVideoPlayer` open, `TheDisplay` video-buffer allocation,
+      ready/decompress/render/advance/draw loop, cleanup, and min-spec
+      no-movie branch; `ChallengeLoadScreen::init` background movie loop,
+      min-spec final-frame path, and `WindowVideoManager` ownership of the
+      portrait and VS overlay movies; and `ScoreScreen` final-victory
+      `PlayMovieAndBlock` path through `Menus/BlankWindow.wnd`, `s_blankLayout`
+      first-window video-buffer attachment, per-frame draw, and cleanup. It
+      also pins the `GameWindowManager::winCreateLayout` /
+      `WindowLayout::getFirstWindow` / `WindowLayout::destroyWindows` hooks
+      needed by that ScoreScreen path. This is source-only and does not claim
+      runtime load-screen or score-screen playback complete; the broader
+      CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton path
+      still needs to link and be harness-driven. The adjacent
+      `verify:bink-runtime-callsite-frontier` check now also skips the
+      commented/inactive branch matches in the load-screen and score-screen
+      frame loops so its reported lines point at the active render path.
 
 ---
 
