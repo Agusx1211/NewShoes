@@ -3589,6 +3589,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       source/export plus bridge cwrap/RPC lines. It emits JSON
       `{ ok, errors, sources, facts }` and exits nonzero on hard failure; this
       source verifier does not prove Web Audio playback.
+- [x] Add `npm run verify:mss-3d-sample-lifecycle-contract`, a source-only
+      verifier for the MSS 3D provider/listener/sample lifecycle contract. It
+      reads only repo source (no browser/build/assets) and pins
+      `MilesAudioManager.cpp` `initSamplePools` 3D allocation/user-data calls,
+      `playSample3D` ordered file/callback/distances/position/start calls, the
+      `releaseMilesHandles`/`freeAllMilesHandles` 3D stop/callback/release
+      paths, and the `setDeviceListenerPosition`/`createListener`/`selectProvider`/
+      `unselectProvider`/`setSpeakerType` listener/provider/speaker paths; the
+      `Mss.H` stateful 3D surface (provider enumerate/open/close/speaker,
+      listener open/close, sample allocate/release/file/user-data/callback/
+      distances/position/orientation/velocity/volume/loop/offset/rate/occlusion/
+      effects/start/stop/resume/end/status, plus the `MSSBrowser3D*` structs and
+      find/allocate helpers); the runtime probe source
+      `WebAssembly/src/wasm_mss_3d_sample_lifecycle_probe.cpp`
+      (`cnc_port_probe_mss_3d_sample_lifecycle`, representative 3D calls, and the
+      `sample3DLifecycleReady`/`playbackReady:false`/`nextRequired` JSON); and
+      the CMake source/export plus bridge cwrap/RPC lines. It emits JSON
+      `{ ok, errors, sources, facts }` and exits nonzero on hard failure; this
+      source verifier does not prove Web Audio playback.
 - [x] Make the MSS HSTREAM lifecycle stateful and harness-observable. `Mss.H`
       now tracks browser stream handles opened from filenames or 2D sample
       handles, callback registration, volume/pan and float volume-pan, playback

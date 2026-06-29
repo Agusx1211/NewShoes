@@ -178,6 +178,13 @@ start/stop/resume/end status, callback dispatch, and release. It reports
 `sample3DLifecycleReady: true`, `playbackReady: false`, and
 `nextRequired: "webAudioPlaybackBackend"`; it does not schedule a Web Audio
 panner or source.
+`npm run verify:mss-3d-sample-lifecycle-contract` is the source-only verifier
+for that probe: it reads only repo source (no browser, build, or assets) and
+pins the `MilesAudioManager.cpp` 3D paths (`initSamplePools`, `playSample3D`,
+`releaseMilesHandles`/`freeAllMilesHandles`, `setDeviceListenerPosition`,
+`createListener`, `selectProvider`/`unselectProvider`, `setSpeakerType`), the
+`Mss.H` stateful 3D surface, the runtime probe source/JSON contract, and the
+CMake source/export plus bridge cwrap/RPC lines.
 
 ## Runtime Targets
 
