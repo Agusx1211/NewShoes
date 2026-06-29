@@ -581,7 +581,9 @@ shares structure and follows behind.
       sample, stream, provider, listener, and Bink-sharing handles.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
-      callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists.
+      callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;
+      `verify:audio-sound-manager-counters-frontier` now pins the source-only
+      `SoundManager` counter contract that runtime playback must satisfy.
 - [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove

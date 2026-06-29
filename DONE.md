@@ -3360,6 +3360,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `processPlayingList` / `processStoppedList` cleanup, handle release,
       file close, and `AudioEventRTS` deletion. This verifies source structure
       only, not runtime audio.
+- [x] Add `npm run verify:audio-sound-manager-counters-frontier`, a source-only
+      verifier for the original `SoundManager` request gate and 2D/3D sample
+      counter contract: lazy configured limit loading, `canPlayNow`
+      2D/3D availability checks, start/completion counter mutations,
+      reset cleanup, and the `AudioManager` methods a Web Audio backend must
+      keep compatible.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
