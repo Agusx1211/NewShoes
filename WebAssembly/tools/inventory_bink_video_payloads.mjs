@@ -13,7 +13,7 @@
 //
 // Output JSON shape:
 //   { ok, source, assetsDir, archiveCount, videoEntryCount, byArchive, entries,
-//     looseBikFiles, looseBikCount, dataCabPresent, looseBikExtractionRequired,
+//     looseBikFiles, looseBikCount, dataCab, looseBikExtractionRequired,
 //     errors, note }
 //
 // `--expect-current-zh` self-checks the JSON shape against the current Zero
@@ -276,7 +276,7 @@ async function buildInventory(assetsDir, options) {
   // --- BIG archives ---
   const archivePaths = await findBigArchives(assetsDir);
   const archives = [];
-  const bigEntries = []; // all BIG entries (video only kept)
+  const bigEntries = [];
   const videoEntries = [];
   const byArchive = {};
 
