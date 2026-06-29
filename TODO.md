@@ -394,7 +394,11 @@ shares structure and follows behind.
       browser-owned `GameEngine` lifetime surface; replacing that focused
       surface with original `GameEngine.cpp` still requires owned
       `TheGameResultsQueue`, full original `GameEngine.cpp` init consumption,
-      and startup singleton teardown contracts.
+      and startup singleton teardown contracts. `test:startup-vertical` now
+      also boots the wasm harness in Chromium and asserts the browser-visible
+      original `GameEngine.cpp` startup frontier still stops at
+      `createAudioManager` line 434 with no runtime archives mounted, so the
+      focused C++ smokes cannot drift away from the actual browser boot state.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
       ownership slice before marking `createFunctionLexicon` or
       `createModuleFactory` runtime-ready. The current focused

@@ -18,9 +18,10 @@ function extractJson(stdout, label) {
       continue;
     }
     try {
-      return JSON.parse(line);
+      return JSON.parse(lines.slice(index).join('\n'));
     } catch {
-      break;
+      // Keep scanning upward; some verifiers emit pretty JSON with nested
+      // object lines before the top-level opening brace.
     }
   }
   fail(`${label} did not emit a JSON result`);
@@ -71,6 +72,23 @@ function expect(condition, message) {
 
 const sourceChecks = [
   {
+    name: 'gameengine-startup-order',
+    file: 'tools/verify_gameengine_startup_order.mjs',
+    validate(payload) {
+      expect(payload.ok === true && payload.orderOk === true,
+        'GameEngine startup-order verifier did not report ok');
+      expect(payload.createGameEngine?.line === 1122,
+        'GameEngine startup-order verifier did not prove CreateGameEngine line');
+      const byKey = new Map((payload.initOrder ?? []).map(entry => [entry.key, entry]));
+      expect(byKey.get('createFileSystem')?.line === 305,
+        'GameEngine startup-order verifier did not prove createFileSystem line');
+      expect(byKey.get('createAudioManager')?.line === 434,
+        'GameEngine startup-order verifier did not prove createAudioManager line');
+      expect(payload.factoryMappings?.createAudioManager?.actual === 'MilesAudioManager',
+        'GameEngine startup-order verifier did not prove MilesAudioManager factory mapping');
+    },
+  },
+  {
     name: 'w3d-module-factory-frontier',
     file: 'tools/verify_w3d_module_factory_frontier.mjs',
     validate(payload) {
@@ -83,6 +101,23 @@ const sourceChecks = [
         'W3DModuleFactory frontier verifier did not prove the expected source lines');
       expect(payload.registration?.w3dDrawModules >= 19,
         'W3DModuleFactory frontier verifier did not see the expected W3D draw registrations');
+    },
+  },
+];
+
+const browserChecks = [
+  {
+    name: 'startup-browser-frontier',
+    file: 'harness/startup_vertical_smoke.mjs',
+    validate(payload) {
+      expect(payload.ok === true, 'Startup browser frontier smoke did not report ok');
+      expect(payload.wasm === 'loaded', 'Startup browser frontier smoke did not load wasm');
+      expect(payload.originalEngineStartup?.status === 'missing_runtime_archives',
+        'Startup browser frontier smoke reported the wrong original startup status');
+      expect(payload.originalEngineStartup?.deviceFactoryFrontier?.firstUnownedInitFactory === 'createAudioManager',
+        'Startup browser frontier smoke did not prove createAudioManager as the first unowned factory');
+      expect(payload.originalEngineStartup?.deviceFactoryFrontier?.firstUnownedInitLine === 434,
+        'Startup browser frontier smoke did not prove createAudioManager line 434');
     },
   },
 ];
@@ -126,11 +161,13 @@ const steps = [
 
 const sourceResults = sourceChecks.map(runSourceCheck);
 const results = steps.map(runSmoke);
+const browserResults = browserChecks.map(runSourceCheck);
 
 console.log(JSON.stringify({
   ok: true,
   path: 'startup-vertical',
   covered: [
+    'browser wasm original GameEngine.cpp startup frontier',
     'original Win32GameEngine lifetime',
     'original MilesAudioManager openDevice',
     'original W3DGameWindowManager window and gadget ownership',
@@ -141,5 +178,6 @@ console.log(JSON.stringify({
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),
+  browserChecks: browserResults.map(result => result.name),
   smokes: results.map(result => result.name),
 }));
