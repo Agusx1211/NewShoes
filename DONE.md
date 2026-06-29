@@ -3775,6 +3775,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and exits nonzero on any missing/moved hard fact. It does NOT mark
       runtime playback, frame upload, or `BinkCopyToBuffer` pixel copy
       complete; those remain open M8 tasks tracked in `TODO.md`.
+- [x] Add the first original `BinkVideoPlayer`-owned runtime smoke.
+      `test:bink-videoplayer-runtime` builds `bink-videoplayer-runtime-smoke`
+      against `zh_bink_video_device_compile_frontier`, `zh_browser_bink`, and
+      the original `GameClient/VideoPlayer` implementation, runs
+      `transcode:bink-video` so the provider sidecar manifest is present, then
+      opens the real shipped loose `GC_Background.bik` and `VS_small.bik`
+      payloads through original `BinkVideoPlayer::open` / `load` paths. The
+      smoke uses target-local `TheAudio` / `GlobalData` / `VideoBuffer`
+      compatibility surfaces only to reach the original runtime path, verifies
+      `800x600` / `180` frames and `96x120` / `71` frames, exercises
+      `isFrameReady`, `update`, `frameDecompress`, `frameRender`,
+      `frameNext`, `frameGoto`, and close, and keeps
+      `WasmBinkProviderCanDecodeFrames() == 0`. `verify:bink-video-device-frontier`
+      now pins the runtime smoke source, CMake target, NODERAWFS setting, and
+      package script. This proves the original player/stream call path under
+      wasm; browser presentation, frame upload, `BinkCopyToBuffer` pixel copy,
+      and audio sync remain open.
 
 ---
 

@@ -43,7 +43,8 @@
 //   - WebAssembly/CMakeLists.txt defines the zh_bink_video_device_compile_frontier
 //     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469)
 //     and links it to zh_browser_bink. It also defines focused node/browser
-//     provider smoke targets for the sidecar manifest contract.
+//     provider smoke targets for the sidecar manifest contract and an original
+//     BinkVideoPlayer runtime smoke target.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -58,6 +59,7 @@ const SOURCES = {
   shim: "WebAssembly/shims/bink.h",
   provider: "WebAssembly/src/wasm_bink_provider.cpp",
   smoke: "WebAssembly/tests/bink_video_provider_smoke.cpp",
+  runtimeSmoke: "WebAssembly/tests/bink_videoplayer_runtime_smoke.cpp",
   sidecarRunner: "WebAssembly/tools/run_bink_video_sidecar_provider_smoke.mjs",
   browserHarness: "WebAssembly/harness/bink_provider_sidecar_browser_smoke.mjs",
   cmake: "WebAssembly/CMakeLists.txt",
@@ -141,6 +143,7 @@ function main() {
     shim: {},
     provider: {},
     smoke: {},
+    runtimeSmoke: {},
     sidecarRunner: {},
     browserHarness: {},
     cmake: {},
@@ -152,6 +155,7 @@ function main() {
   const shim = readSourceLines(SOURCES.shim);
   const provider = readSourceLines(SOURCES.provider);
   const smoke = readSourceLines(SOURCES.smoke);
+  const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
   const sidecarRunner = readSourceLines(SOURCES.sidecarRunner);
   const browserHarness = readSourceLines(SOURCES.browserHarness);
   const cmake = readSourceLines(SOURCES.cmake);
@@ -707,6 +711,41 @@ function main() {
     }
   }
 
+  // --- Original BinkVideoPlayer runtime smoke facts ---
+  const runtimeSmokeFacts = {
+    binkHeaderLine: lineNumber(runtimeSmoke.lines, (line) => /VideoDevice\/Bink\/BinkVideoPlayer\.h/.test(line)),
+    writableGlobalDataLine: lineNumber(runtimeSmoke.lines, (line) => /GlobalData\s+\*TheWritableGlobalData\s*=/.test(line)),
+    smokeAudioManagerLine: lineNumber(runtimeSmoke.lines, (line) => /class\s+SmokeAudioManager\s+final\s*:\s*public\s+AudioManager/.test(line)),
+    smokeVideoBufferLine: lineNumber(runtimeSmoke.lines, (line) => /class\s+SmokeVideoBuffer\s+final\s*:\s*public\s+VideoBuffer/.test(line)),
+    playerInitLine: lineNumber(runtimeSmoke.lines, (line) => /player->init\(\)/.test(line)),
+    gcRegistrationLine: lineNumber(runtimeSmoke.lines, (line) => /add_video\(\*player,\s*"GC_Background",\s*"GC_Background"\)/.test(line)),
+    vsRegistrationLine: lineNumber(runtimeSmoke.lines, (line) => /add_video\(\*player,\s*"VS_small",\s*"VS_small"\)/.test(line)),
+    decodeReadyFalseLine: lineNumber(runtimeSmoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*0/.test(line)),
+    openGcLine: lineNumber(runtimeSmoke.lines, (line) => /player->open\(AsciiString\("GC_Background"\)\)/.test(line)),
+    loadVsLine: lineNumber(runtimeSmoke.lines, (line) => /player->load\(AsciiString\("VS_small"\)\)/.test(line)),
+    frameDecompressLine: lineNumber(runtimeSmoke.lines, (line) => /stream->frameDecompress\(\)/.test(line)),
+    frameRenderLine: lineNumber(runtimeSmoke.lines, (line) => /stream->frameRender\(&buffer\)/.test(line)),
+    frameNextLine: lineNumber(runtimeSmoke.lines, (line) => /stream->frameNext\(\)/.test(line)),
+    frameGotoLastLine: lineNumber(runtimeSmoke.lines, (line) => /stream->frameGoto\(expected_frames\)/.test(line)),
+    streamCloseLine: lineNumber(runtimeSmoke.lines, (line) => /stream->close\(\)/.test(line)),
+  };
+  facts.runtimeSmoke = runtimeSmokeFacts;
+  for (const [key, line] of Object.entries(runtimeSmokeFacts)) {
+    if (line === -1) {
+      errors.push(`BinkVideoPlayer runtime smoke missing ${key}`);
+    }
+  }
+  assertOrder(errors, runtimeSmokeFacts.playerInitLine, runtimeSmokeFacts.gcRegistrationLine,
+    "BinkVideoPlayer runtime smoke should initialize before manual video registration");
+  assertOrder(errors, runtimeSmokeFacts.openGcLine, runtimeSmokeFacts.loadVsLine,
+    "BinkVideoPlayer runtime smoke should exercise open before load");
+  assertOrder(errors, runtimeSmokeFacts.frameDecompressLine, runtimeSmokeFacts.frameRenderLine,
+    "BinkVideoPlayer runtime smoke should decompress before render");
+  assertOrder(errors, runtimeSmokeFacts.frameRenderLine, runtimeSmokeFacts.frameNextLine,
+    "BinkVideoPlayer runtime smoke should render before advancing");
+  assertOrder(errors, runtimeSmokeFacts.frameNextLine, runtimeSmokeFacts.frameGotoLastLine,
+    "BinkVideoPlayer runtime smoke should advance before seeking");
+
   assertPresent(errors, facts.sidecarRunner, "manifestPreflightLine",
     lineNumber(sidecarRunner.lines, (line) => /bink-browser-video-manifest\.json/.test(line)),
     "Node sidecar provider runner manifest preflight");
@@ -800,11 +839,36 @@ function main() {
           /EXPORTED_RUNTIME_METHODS=\['ccall','FS'\]/,
         ),
     "CMake browser provider sidecar smoke exports ccall and FS");
+  const runtimeSmokeTargetLine = lineNumber(cmake.lines, (line) => /add_executable\s*\(\s*bink-videoplayer-runtime-smoke\b/.test(line));
+  assertPresent(errors, facts.cmake, "runtimeSmokeTargetLine",
+    runtimeSmokeTargetLine,
+    "CMake BinkVideoPlayer runtime smoke target");
+  assertPresent(errors, facts.cmake, "runtimeSmokeSourceLine",
+    runtimeSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeSmokeTargetLine, runtimeSmokeTargetLine + 10, /tests\/bink_videoplayer_runtime_smoke\.cpp/),
+    "CMake BinkVideoPlayer runtime smoke source");
+  assertPresent(errors, facts.cmake, "runtimeSmokeBinkFrontierLinkLine",
+    runtimeSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeSmokeTargetLine, runtimeSmokeTargetLine + 35, /zh_bink_video_device_compile_frontier/),
+    "CMake BinkVideoPlayer runtime smoke links Bink frontier");
+  assertPresent(errors, facts.cmake, "runtimeSmokeGameclientLinkLine",
+    runtimeSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeSmokeTargetLine, runtimeSmokeTargetLine + 35, /zh_gameclient_utility/),
+    "CMake BinkVideoPlayer runtime smoke links GameClient utility");
+  assertPresent(errors, facts.cmake, "runtimeSmokeNodeRawFsLine",
+    runtimeSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeSmokeTargetLine, runtimeSmokeTargetLine + 55, /NODERAWFS=1/),
+    "CMake BinkVideoPlayer runtime smoke enables node raw FS");
 
   // --- package script facts ---
   facts.packageJson.scripts = {};
   const packageScripts = {
     "test:bink-video-sidecar-provider": /"test:bink-video-sidecar-provider":\s*"npm run build:wasm && npm run transcode:bink-video && node tools\/run_bink_video_sidecar_provider_smoke\.mjs/,
+    "test:bink-videoplayer-runtime": /"test:bink-videoplayer-runtime":\s*"npm run build:wasm && npm run transcode:bink-video && node dist\/bink-videoplayer-runtime-smoke\.cjs/,
     "test:bink-provider-sidecar-browser": /"test:bink-provider-sidecar-browser":\s*"npm run build:wasm && npm run transcode:bink-video && node harness\/bink_provider_sidecar_browser_smoke\.mjs/,
   };
   for (const [name, re] of Object.entries(packageScripts)) {
@@ -824,6 +888,7 @@ function main() {
       shim: SOURCES.shim,
       provider: SOURCES.provider,
       smoke: SOURCES.smoke,
+      runtimeSmoke: SOURCES.runtimeSmoke,
       sidecarRunner: SOURCES.sidecarRunner,
       browserHarness: SOURCES.browserHarness,
       cmake: SOURCES.cmake,

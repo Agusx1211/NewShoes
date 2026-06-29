@@ -6441,3 +6441,35 @@ target_link_options(bink-video-provider-browser-smoke PRIVATE
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
+
+add_executable(bink-videoplayer-runtime-smoke
+  tests/bink_videoplayer_runtime_smoke.cpp
+)
+
+set_target_properties(bink-videoplayer-runtime-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(bink-videoplayer-runtime-smoke PRIVATE
+  zh_bink_video_device_compile_frontier
+  zh_gameclient_utility
+)
+
+target_compile_options(bink-videoplayer-runtime-smoke PRIVATE
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(bink-videoplayer-runtime-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+  "SHELL:-sNODERAWFS=1"
+  "SHELL:-sEXIT_RUNTIME=1"
+)
