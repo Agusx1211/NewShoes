@@ -3439,6 +3439,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `--require-audio-startup` verification command, and the transition from
       `audioStartupArchives` to `browserAudioDevice` when the optional base
       archive is mounted.
+- [x] Add `npm run verify:audio-startup-archive-contract`, a source/tooling
+      verifier for the same archive contract. It pins the original
+      `AudioManager::init` load order, the startup inventory path/flag
+      coverage, optional base `INI.big` / `English.big` extraction behavior, and
+      the runtime smoke optional-base branch.
 - [x] Add `npm run verify:audio-format-frontier`, a real-asset verifier that
       pins the current audio payload encoding frontier before Web Audio decode:
       3,530 `Data\Audio\` entries across the six current audio archives, split

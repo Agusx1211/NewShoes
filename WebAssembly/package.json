@@ -16,6 +16,7 @@
     "verify:miles-audio-decode-frontier": "node tools/verify_miles_audio_decode_frontier.mjs",
     "verify:miles-audio-volume-frontier": "node tools/verify_miles_audio_volume_frontier.mjs",
     "verify:audio-settings-frontier": "node tools/verify_audio_settings_frontier.mjs",
+    "verify:audio-startup-archive-contract": "node tools/verify_audio_startup_archive_contract.mjs",
     "verify:audio-format-frontier": "node tools/verify_audio_format_frontier.mjs artifacts/real-assets --expect-current-zh",
     "verify:audio-event-request-frontier": "node tools/verify_audio_event_request_frontier.mjs",
     "verify:audio-request-update-frontier": "node tools/verify_audio_request_update_frontier.mjs",

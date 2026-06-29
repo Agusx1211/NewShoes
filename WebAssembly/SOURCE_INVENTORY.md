@@ -124,6 +124,13 @@ is not mounted. The browser runtime mirrors this as
 `audioPayloadInventory.audioStartupArchiveContract`, so harness state can tell
 an absent optional base archive apart from a bad or incomplete mounted archive.
 
+`npm run verify:audio-startup-archive-contract` pins the static source/tooling
+version of that same contract: the original `AudioManager::init` audio INI load
+order, the startup-archive inventory paths and `--require-audio-startup` mode,
+the optional base `INI.big` / `English.big` extraction-or-skip contract, and the
+runtime smoke branch that mounts optional base archives as `ZZBase_INI.big` /
+`ZZBase_English.big`.
+
 `npm run verify:miles-audio-volume-frontier` pins the original volume/mixer
 control path through `GameAudio.cpp`, `AudioEventRTS.cpp`, and
 `MilesAudioManager.cpp` before replacing Miles with Web Audio.
