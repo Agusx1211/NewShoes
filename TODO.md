@@ -678,6 +678,16 @@ shares structure and follows behind.
       `BinkCopyToBuffer` pixel-copy support until frame upload is real. The
       current `test:bink-browser-video` smoke proves the generated sidecars
       are browser-decodable outside the original runtime path.
+      `verify:bink-browser-sidecar-contract` now pins the contract the next
+      provider change must satisfy: the sidecar manifest schema/path
+      (`artifacts/browser-video/bink/bink-browser-video-manifest.json`,
+      `cnc-zh-bink-browser-video-manifest/v1`), the BIK source -> WebM sidecar
+      metadata association, the original-style path aliases
+      (`Data\Movies\<name>.bik` and `Data/<lang>/Movies/<name>.bik` resolving
+      to `<name>.webm`), and the invariant that
+      `WasmBinkProviderCanDecodeFrames` stays false until `BinkCopyToBuffer`
+      actually copies pixels. The provider does not yet reference the manifest;
+      that gap is reported by the verifier as a forward-looking fact.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.
