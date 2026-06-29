@@ -2990,6 +2990,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Win32BIGFileSystem`. This locks the range-backed subset BIG
       path to startup-relevant data while the true on-demand
       full-archive streamer remains open.
+- [x] Add a vertical browser startup smoke for range-backed archive
+      registration: `npm run test:startup-range-backed-archives-browser`
+      builds wasm, extracts the current runtime archives, range-fetches
+      50 startup-shaped INI/CSF/map-cache entries from user-supplied
+      `INIZH.big`, `EnglishZH.big`, and `MapsZH.big`, synthesizes valid
+      `/assets/range-startup/*.big` archives, registers them through
+      `Win32BIGFileSystem` before boot, and verifies the wasm boot reaches
+      `startupAssets.status == ready` plus the expected
+      `originalEngineStartup.status == missing_startup_files` frontier for
+      absent base Generals startup INI files.
 - [x] Bring the original `TextureClass::Init` / `TextureLoader`
       foreground and background filename-loading path online for browser
       wasm so real texture probes can use the normal asset-manager

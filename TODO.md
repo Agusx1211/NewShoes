@@ -483,7 +483,13 @@ shares structure and follows behind.
 - [ ] Generalize the browser range-backed BIG archive reader into the
       original file/archive registration path so normal engine startup
       can stream user-supplied runtime archives without focused harness
-      mounts or whole-archive MEMFS copies.
+      mounts or whole-archive MEMFS copies. Current coverage:
+      `npm run test:startup-range-backed-archives-browser` range-fetches
+      a startup-shaped `INIZH.big`/`EnglishZH.big`/`MapsZH.big` subset,
+      registers synthesized BIG archives before boot, proves the startup
+      asset/data preflight is ready, and confirms the next frontier is the
+      absent base Generals startup INI files. The remaining work is the
+      normal on-demand full-archive streamer without a curated entry list.
 - [ ] Hand runtime `W3DFileSystem` ownership over to the real
       `W3DDisplay` / browser display startup path once full display
       construction owns WW3D lifetime. The current smoke proves the

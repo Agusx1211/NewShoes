@@ -1081,6 +1081,14 @@ The wasm CMake skeleton currently builds:
   path. The same smoke checks
   `startupAssets` for the pre-boot `pending_boot_probe` state and the post-boot
   `ready` state.
+- `startup_range_backed_archives_smoke.mjs`: an opt-in browser harness smoke
+  (`npm run test:startup-range-backed-archives-browser`) that builds wasm,
+  extracts the current runtime archives, range-fetches a startup-shaped subset
+  from `INIZH.big`, `EnglishZH.big`, and `MapsZH.big`, synthesizes valid
+  `/assets/range-startup/*.big` archives, registers them through the existing
+  browser runtime archive owner before boot, and verifies wasm boot reaches
+  `startupAssets.status == ready` while the original engine startup frontier
+  stops only on the expected missing base Generals startup INI files.
 
 ## Next Compile Order
 
