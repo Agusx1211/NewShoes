@@ -3807,6 +3807,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       hook-gated instead of unconditionally true. Original `BinkVideoPlayer`
       browser presentation, `W3DVideoBuffer` texture upload/draw integration,
       final Bink surface format conversion, and audio sync remain open.
+- [x] Add an original `BinkVideoPlayer`-owned browser sidecar copy smoke.
+      `test:bink-videoplayer-sidecar-browser` builds
+      `bink-videoplayer-browser-runtime-smoke` as an ES module, mounts the
+      real shipped `GC_Background.bik` / `VS_small.bik` payloads plus
+      `bink-browser-video-manifest.json` into MEMFS, decodes the advertised
+      WebM sidecar frames in Chromium, installs `cncPortBinkCopyToBuffer`, and
+      calls the original `BinkVideoPlayer` runtime smoke export. The smoke
+      verifies `BinkVideoPlayer::open` / `load` create streams from the real
+      payloads, `BinkVideoStream::frameDecompress` / `frameRender` drives
+      `BinkCopyToBuffer`, decoded sidecar pixels are copied into
+      `SmokeVideoBuffer` memory, frame advance/seek/close lifecycle events are
+      emitted, and
+      `artifacts/screenshots/harness-smoke-bink-videoplayer-sidecar-copy.png`
+      is captured. This proves original-player ownership of the sidecar copy
+      bridge; real `W3DVideoBuffer` texture upload, `W3DDisplay` presentation,
+      final surface-format conversion, and Bink/audio sync remain open.
 
 ---
 

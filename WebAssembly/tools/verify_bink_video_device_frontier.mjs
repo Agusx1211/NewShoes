@@ -43,8 +43,9 @@
 //   - WebAssembly/CMakeLists.txt defines the zh_bink_video_device_compile_frontier
 //     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469)
 //     and links it to zh_browser_bink. It also defines focused node/browser
-//     provider smoke targets for the sidecar manifest contract and an original
-//     BinkVideoPlayer runtime smoke target.
+//     provider smoke targets for the sidecar manifest contract, a node
+//     BinkVideoPlayer runtime smoke target, and a browser BinkVideoPlayer
+//     sidecar-copy smoke target.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,7 @@ const SOURCES = {
   runtimeSmoke: "WebAssembly/tests/bink_videoplayer_runtime_smoke.cpp",
   sidecarRunner: "WebAssembly/tools/run_bink_video_sidecar_provider_smoke.mjs",
   browserHarness: "WebAssembly/harness/bink_provider_sidecar_browser_smoke.mjs",
+  runtimeBrowserHarness: "WebAssembly/harness/bink_videoplayer_sidecar_browser_smoke.mjs",
   cmake: "WebAssembly/CMakeLists.txt",
   packageJson: "WebAssembly/package.json",
 };
@@ -146,6 +148,7 @@ function main() {
     runtimeSmoke: {},
     sidecarRunner: {},
     browserHarness: {},
+    runtimeBrowserHarness: {},
     cmake: {},
     packageJson: {},
   };
@@ -158,6 +161,7 @@ function main() {
   const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
   const sidecarRunner = readSourceLines(SOURCES.sidecarRunner);
   const browserHarness = readSourceLines(SOURCES.browserHarness);
+  const runtimeBrowserHarness = readSourceLines(SOURCES.runtimeBrowserHarness);
   const cmake = readSourceLines(SOURCES.cmake);
   const packageJson = readSourceLines(SOURCES.packageJson);
 
@@ -736,7 +740,12 @@ function main() {
     playerInitLine: lineNumber(runtimeSmoke.lines, (line) => /player->init\(\)/.test(line)),
     gcRegistrationLine: lineNumber(runtimeSmoke.lines, (line) => /add_video\(\*player,\s*"GC_Background",\s*"GC_Background"\)/.test(line)),
     vsRegistrationLine: lineNumber(runtimeSmoke.lines, (line) => /add_video\(\*player,\s*"VS_small",\s*"VS_small"\)/.test(line)),
-    decodeReadyFalseLine: lineNumber(runtimeSmoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*0/.test(line)),
+    decodeReadyHookGateLine: lineNumber(runtimeSmoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*\(expect_decode_ready\s*\?\s*1\s*:\s*0\)/.test(line)),
+    copiedPixelsCheckLine: lineNumber(runtimeSmoke.lines, (line) => /buffer\.hasCopiedPixels\(\)/.test(line)),
+    sidecarCopyExportLine: lineNumber(runtimeSmoke.lines, (line) => /run_bink_videoplayer_sidecar_copy_bridge_smoke/.test(line)),
+    browserCopyImplLine: lineNumber(runtimeSmoke.lines, (line) => /run_runtime_smoke\(true,\s*true\)/.test(line)),
+    nodeNoHookMainLine: lineNumber(runtimeSmoke.lines, (line) => /run_runtime_smoke\(false,\s*false\)/.test(line)),
+    noMainGuardLine: lineNumber(runtimeSmoke.lines, (line) => /BINK_VIDEOPLAYER_RUNTIME_SMOKE_NO_MAIN/.test(line)),
     openGcLine: lineNumber(runtimeSmoke.lines, (line) => /player->open\(AsciiString\("GC_Background"\)\)/.test(line)),
     loadVsLine: lineNumber(runtimeSmoke.lines, (line) => /player->load\(AsciiString\("VS_small"\)\)/.test(line)),
     frameDecompressLine: lineNumber(runtimeSmoke.lines, (line) => /stream->frameDecompress\(\)/.test(line)),
@@ -808,6 +817,25 @@ function main() {
   assertPresent(errors, facts.browserHarness, "screenshotLine",
     lineNumber(browserHarness.lines, (line) => /harness-smoke-bink-provider-sidecar-video\.png/.test(line)),
     "browser sidecar harness screenshot output");
+
+  const runtimeBrowserHarnessFacts = {
+    moduleLine: lineNumber(runtimeBrowserHarness.lines, (line) => /createBinkVideoPlayerBrowserRuntimeSmokeModule/.test(line)),
+    manifestMountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /bink-browser-video-manifest\.json/.test(line)),
+    copyHookLine: lineNumber(runtimeBrowserHarness.lines, (line) => /cncPortBinkCopyToBuffer/.test(line)),
+    runtimeCcallLine: lineNumber(runtimeBrowserHarness.lines, (line) => /run_bink_videoplayer_sidecar_copy_bridge_smoke/.test(line)),
+    openCountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /openEvents\.length\s*!==\s*2/.test(line)),
+    copyEventCountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /copyEvents\.length\s*!==\s*2/.test(line)),
+    copyCompleteCountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /Expected two BinkVideoPlayer browser \$\{type\} events/.test(line)),
+    nextFrameCountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /nextFrameCount\s*!==\s*2/.test(line)),
+    gotoFrameCountLine: lineNumber(runtimeBrowserHarness.lines, (line) => /gotoFrameCount\s*!==\s*4/.test(line)),
+    screenshotLine: lineNumber(runtimeBrowserHarness.lines, (line) => /harness-smoke-bink-videoplayer-sidecar-copy\.png/.test(line)),
+  };
+  facts.runtimeBrowserHarness = runtimeBrowserHarnessFacts;
+  for (const [key, line] of Object.entries(runtimeBrowserHarnessFacts)) {
+    if (line === -1) {
+      errors.push(`BinkVideoPlayer browser sidecar harness missing ${key}`);
+    }
+  }
 
   // --- CMake compile frontier target/source ---
   facts.cmake = {};
@@ -898,6 +926,30 @@ function main() {
       ? -1
       : firstMatchInRange(cmake.lines, runtimeSmokeTargetLine, runtimeSmokeTargetLine + 55, /NODERAWFS=1/),
     "CMake BinkVideoPlayer runtime smoke enables node raw FS");
+  const runtimeBrowserSmokeTargetLine = lineNumber(cmake.lines, (line) => /add_executable\s*\(\s*bink-videoplayer-browser-runtime-smoke\b/.test(line));
+  assertPresent(errors, facts.cmake, "runtimeBrowserSmokeTargetLine",
+    runtimeBrowserSmokeTargetLine,
+    "CMake BinkVideoPlayer browser runtime smoke target");
+  assertPresent(errors, facts.cmake, "runtimeBrowserSmokeNoMainLine",
+    runtimeBrowserSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeBrowserSmokeTargetLine, runtimeBrowserSmokeTargetLine + 35, /BINK_VIDEOPLAYER_RUNTIME_SMOKE_NO_MAIN/),
+    "CMake BinkVideoPlayer browser runtime smoke disables main");
+  assertPresent(errors, facts.cmake, "runtimeBrowserSmokeExportNameLine",
+    runtimeBrowserSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeBrowserSmokeTargetLine, runtimeBrowserSmokeTargetLine + 60, /createBinkVideoPlayerBrowserRuntimeSmokeModule/),
+    "CMake BinkVideoPlayer browser runtime smoke export name");
+  assertPresent(errors, facts.cmake, "runtimeBrowserSmokeExportLine",
+    runtimeBrowserSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeBrowserSmokeTargetLine, runtimeBrowserSmokeTargetLine + 70, /_run_bink_videoplayer_sidecar_copy_bridge_smoke/),
+    "CMake BinkVideoPlayer browser runtime smoke exports copy bridge entrypoint");
+  assertPresent(errors, facts.cmake, "runtimeBrowserSmokeRuntimeMethodsLine",
+    runtimeBrowserSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(cmake.lines, runtimeBrowserSmokeTargetLine, runtimeBrowserSmokeTargetLine + 70, /EXPORTED_RUNTIME_METHODS=\['ccall','FS'\]/),
+    "CMake BinkVideoPlayer browser runtime smoke exports ccall and FS");
 
   // --- package script facts ---
   facts.packageJson.scripts = {};
@@ -905,6 +957,7 @@ function main() {
     "test:bink-video-sidecar-provider": /"test:bink-video-sidecar-provider":\s*"npm run build:wasm && npm run transcode:bink-video && node tools\/run_bink_video_sidecar_provider_smoke\.mjs/,
     "test:bink-videoplayer-runtime": /"test:bink-videoplayer-runtime":\s*"npm run build:wasm && npm run transcode:bink-video && node dist\/bink-videoplayer-runtime-smoke\.cjs/,
     "test:bink-provider-sidecar-browser": /"test:bink-provider-sidecar-browser":\s*"npm run build:wasm && npm run transcode:bink-video && node harness\/bink_provider_sidecar_browser_smoke\.mjs/,
+    "test:bink-videoplayer-sidecar-browser": /"test:bink-videoplayer-sidecar-browser":\s*"npm run build:wasm && npm run transcode:bink-video && node harness\/bink_videoplayer_sidecar_browser_smoke\.mjs/,
   };
   for (const [name, re] of Object.entries(packageScripts)) {
     const ln = lineNumber(packageJson.lines, (line) => re.test(line));
@@ -926,6 +979,7 @@ function main() {
       runtimeSmoke: SOURCES.runtimeSmoke,
       sidecarRunner: SOURCES.sidecarRunner,
       browserHarness: SOURCES.browserHarness,
+      runtimeBrowserHarness: SOURCES.runtimeBrowserHarness,
       cmake: SOURCES.cmake,
       packageJson: SOURCES.packageJson,
     },
