@@ -393,12 +393,18 @@ shares structure and follows behind.
       original `Win32GameEngine` construction/destruction over a minimal
       browser-owned `GameEngine` lifetime surface; replacing that focused
       surface with original `GameEngine.cpp` still requires owned
-      `TheSubsystemList`, `TheGameResultsQueue`, map-cache, LOD, file/archive,
+      `TheGameResultsQueue`, full original `GameEngine.cpp` init consumption,
       and startup singleton teardown contracts.
-- [ ] Next vertical startup slice: install browser-owned real
-      `SubsystemInterfaceList`, `MapCache`, and `GameLODManager` singletons for
-      the original `GameEngine::init()` path, keep teardown owned by the
-      browser runtime, and stop before instantiating `createAudioManager`.
+- [ ] Advance the startup singleton frontier from browser-owned residency to
+      original startup consumption: after the base `GameLODPresets.ini` source
+      is mounted, load `GameLODManager`, load `Maps\MapCache.ini` through the
+      durable startup-owned `TheMapCache`, and verify the next blocker is
+      `createAudioManager`.
+- [ ] Replace the startup singleton probe's static placement-storage residency
+      with the original `GameEngine.cpp` heap allocation/destructor path once
+      the wasm original memory-manager lifetime is safe for durable
+      `GlobalData`, `SubsystemInterfaceList`, `GameLODManager`, and `MapCache`
+      ownership.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.

@@ -608,6 +608,19 @@ function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   }
 }
 
+function assertStartupSingletonsMissing(state, label) {
+  const probe = state.startupSingletons;
+  if (!probe
+      || probe.attempted !== true
+      || probe.ok !== false
+      || probe.status !== "missing_runtime_archives"
+      || probe.nextRequired !== "runtimeArchiveSet"
+      || probe.runtimeArchiveRegistered !== false
+      || probe.runtimeGlobalsInstalled !== false) {
+    throw new Error(`${label} startup singleton state mismatch: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertAudioRuntimeAssets(state, label, expectedReady) {
   const audioAssets = state.audioRuntimeAssets;
   if (!audioAssets
@@ -890,7 +903,8 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || milesCalls[7]?.ready !== false
       || frontier.fileSystemReady !== false
       || frontier.startupFilesReady !== false
-      || frontier.setupReady !== true
+      || frontier.startupSingletonsReady !== false
+      || frontier.setupReady !== false
       || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
       || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
@@ -910,9 +924,14 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || startup.originalSetup?.globalData !== true
       || startup.originalSetup?.commandLine !== true
       || startup.originalSetup?.cdManager !== true
+      || startup.originalSetup?.startupSingletons !== false
+      || startup.originalSetup?.subsystemList !== false
+      || startup.originalSetup?.gameLODManager !== false
+      || startup.originalSetup?.mapCache !== false
       || startup.browserDeviceLayer?.cdManager !== true
       || startup.browserDeviceLayer?.localFileSystem !== true
       || startup.browserDeviceLayer?.archiveFileSystem !== false
+      || startup.browserDeviceLayer?.startupSingletons !== false
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
       || startup.browserDeviceLayer?.display !== false
@@ -1012,6 +1031,7 @@ try {
   }
   if (expectWasm) {
     assertStartupAssets(bootResult.state, "boot", "missing_runtime_archives");
+    assertStartupSingletonsMissing(bootResult.state, "boot");
     assertAudioRuntimeAssets(bootResult.state, "boot", false);
     assertOriginalEngineStartup(bootResult.state, "boot", "missing_runtime_archives");
     assertWasmTiming(bootResult.state, "boot");

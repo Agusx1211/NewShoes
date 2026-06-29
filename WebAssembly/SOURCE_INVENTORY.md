@@ -397,7 +397,16 @@ The wasm CMake skeleton currently builds:
   runtime archives, and a boot-probe-verified archive set with required INI,
   GameData, Water, Weather, GameText, and MapCache coverage. Original engine
   startup still needs to consume the mounted runtime archive set through full
-  all-block INI loading beyond this preflight. The bootstrap also links original
+  all-block INI loading beyond this preflight. The bootstrap now also reports
+  `startupSingletons`, a vertical original-startup ownership probe that keeps
+  browser-owned original `SubsystemInterfaceList`, `GlobalData`,
+  `GameLODManager`, and `MapCache` instances resident, exercises the original
+  subsystem-list init/reset/shutdown path, and exposes the next blocker before
+  `createAudioManager`. `Data\INI\GameLOD.ini` is present in the current Zero
+  Hour archive set, while `Data\INI\GameLODPresets.ini` is classified as a base
+  `INI.big` startup gap; `MapCache` residency is proven, but loading
+  `Maps\MapCache.ini` through the durable startup owner and running
+  `MapCache::updateCache` remain open. The bootstrap also links original
   `Win32Device/Common/Win32CDManager.cpp` and reports `cdManagerProbe` after
   initializing the original manager through browser drive shims; the verified
   startup state has zero CD drives and no blocking physical-media probe.
@@ -1120,11 +1129,13 @@ The wasm CMake skeleton currently builds:
   optional base Generals `INI.big` is present, the same smoke range-fetches its
   startup/audio INI entries as `ZZBase_INI.big`, also mounts optional
   `English.big` as `ZZBase_English.big` when available, and expects the startup
-  frontier to advance to `CreateGameEngine`. After boot it also drives the
+  frontier to advance past missing startup files into the remaining original
+  setup residency/device-factory boundary. After boot it also drives the
   `win32GameEngineProbe` RPC, tying the range-backed startup frontier to the
   linked original Win32 message-pump/device boundary. The smoke now requires
   the same persistent browser runtime `FileSystem` owner proof at preload time
-  and after boot, so the range-backed archive path is checked through fetched
+  and after boot, plus the same startup singleton ownership state, so the
+  range-backed archive path is checked through fetched
   browser bytes, synthesized BIG archives, the original `Win32BIGFileSystem`,
   the original `FileSystem`, startup asset probes, and the startup frontier in
   one vertical path.

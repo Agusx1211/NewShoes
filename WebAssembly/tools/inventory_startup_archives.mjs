@@ -13,6 +13,8 @@ const requiredStartupPaths = [
   "Data\\INI\\Default\\Weather.ini",
   "Data\\INI\\Weather.ini",
   "Data\\English\\Generals.csf",
+  "Data\\INI\\GameLOD.ini",
+  "Data\\INI\\GameLODPresets.ini",
   "Data\\INI\\Default\\Science.ini",
   "Data\\INI\\Science.ini",
   "Data\\INI\\Default\\Multiplayer.ini",
@@ -253,6 +255,7 @@ const optionalBaseArchives = ["INI.big", "English.big"];
 
 const baseArchiveStartupPaths = new Set([
   "data\\ini\\default\\gamedata.ini",
+  "data\\ini\\gamelodpresets.ini",
   "data\\ini\\default\\water.ini",
   "data\\ini\\default\\weather.ini",
   "data\\ini\\default\\science.ini",
@@ -514,10 +517,10 @@ function assertShapeForCurrentZh(inventory) {
   if (inventory.optionalBaseArchives?.some((archive) => archive.present)) {
     failures.push("current Zero Hour-only inventory should not include optional base archives");
   }
-  if (inventory.missingByReason?.optionalBaseArchiveAbsent !== 15 ||
+  if (inventory.missingByReason?.optionalBaseArchiveAbsent !== 16 ||
       inventory.missingByReason?.missingFromBaseArchive !== 0 ||
       inventory.missingByReason?.missing !== 0 ||
-      inventory.missingDetails?.length !== 15 ||
+      inventory.missingDetails?.length !== 16 ||
       inventory.missingDetails.some((entry) => entry.reason !== "optionalBaseArchiveAbsent")) {
     failures.push("current Zero Hour-only missing startup files should all be optional base archive gaps");
   }

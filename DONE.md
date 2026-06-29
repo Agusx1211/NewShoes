@@ -1643,6 +1643,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `SOURCE_INVENTORY.md`, preserving that Miles/WWAudio remain
       compile-only and inert until real Web Audio scheduling, decoding, handle
       ownership, and harness-observable playback exist.
+- [x] Add a vertical startup singleton ownership slice before the first device
+      factory: the wasm bootstrap now installs browser-owned original
+      `SubsystemInterfaceList`, `GlobalData`, `GameLODManager`, and `MapCache`
+      instances, publishes the original globals, verifies
+      `SubsystemInterfaceList::initSubsystem`/`postProcessLoadAll`/`resetAll`/
+      `shutdownAll` with an original subsystem object, and exposes
+      `startupSingletons` through the C++ state JSON plus the browser harness.
+      The state is also folded into
+      `originalEngineStartup.originalSetup`, `browserDeviceLayer`, and
+      `deviceFactoryFrontier`, keeping `createAudioManager` as the next device
+      boundary instead of adding more isolated probes. The slice deliberately
+      stops short of full `GameEngine::init()` consumption: current real assets
+      still lack base `Data\INI\GameLODPresets.ini`, and the durable
+      startup-owned `TheMapCache` is not yet loaded through
+      `Maps\MapCache.ini` or advanced into `MapCache::updateCache`.
 ---
 
 ## M3 — File / data subsystem (real data)

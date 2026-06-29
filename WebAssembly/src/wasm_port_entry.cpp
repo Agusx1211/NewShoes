@@ -14,6 +14,7 @@
 #include "wasm_filesystem_probe.h"
 #include "wasm_gamenetwork_probe.h"
 #include "wasm_globaldata_probe.h"
+#include "wasm_startup_singletons_probe.h"
 #include "wasm_d3d8_shim.h"
 
 #include "D3dx8core.h"
@@ -321,6 +322,22 @@ void probe_registered_archive_set_for_boot()
 		g_archive_probe.indexed_file_count);
 }
 
+void run_startup_singletons_probe()
+{
+	const char *archive_directory = g_archive_mount.registered
+		? g_archive_mount.directory.c_str()
+		: nullptr;
+	const char *archive_file_mask = g_archive_mount.registered
+		? g_archive_mount.file_mask.c_str()
+		: nullptr;
+	const StartupSingletonsProbeResult &result =
+		wasm_startup_singletons_install(archive_directory, archive_file_mask);
+	std::printf("cnc-port: startup singletons ok=%d status=%s maps=%zu\n",
+		result.ok ? 1 : 0,
+		result.status != nullptr ? result.status : "",
+		result.map_count);
+}
+
 bool startup_boot_ini_present()
 {
 	return g_archive_probe.has_armor_ini &&
@@ -334,6 +351,7 @@ bool startup_boot_ini_present()
 		g_archive_probe.has_control_bar_scheme_ini &&
 		g_archive_probe.has_default_control_bar_scheme_ini &&
 		g_archive_probe.has_game_data_ini &&
+		g_archive_probe.has_game_lod_ini &&
 		g_archive_probe.has_terrain_ini &&
 		g_archive_probe.has_roads_ini &&
 		g_archive_probe.has_upgrade_ini &&
@@ -1151,6 +1169,8 @@ bool original_engine_startup_files_ready()
 		g_archive_probe.has_default_weather_ini &&
 		g_archive_probe.has_weather_ini &&
 		g_archive_probe.has_generals_csf &&
+		g_archive_probe.has_game_lod_ini &&
+		g_archive_probe.has_game_lod_presets_ini &&
 		g_archive_probe.has_default_science_ini &&
 		g_archive_probe.has_science_ini &&
 		g_archive_probe.has_default_multiplayer_ini &&
@@ -1190,6 +1210,7 @@ bool base_ini_startup_files_ready()
 {
 	return g_archive_probe.loaded &&
 		g_archive_probe.has_default_game_data_ini &&
+		g_archive_probe.has_game_lod_presets_ini &&
 		g_archive_probe.has_default_water_ini &&
 		g_archive_probe.has_default_weather_ini &&
 		g_archive_probe.has_default_science_ini &&
@@ -1248,6 +1269,8 @@ std::string build_missing_base_ini_startup_files_json()
 	bool first = true;
 	append_missing_json_path(json, first, g_archive_probe.has_default_game_data_ini,
 		"Data\\INI\\Default\\GameData.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_game_lod_presets_ini,
+		"Data\\INI\\GameLODPresets.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_default_water_ini,
 		"Data\\INI\\Default\\Water.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_default_weather_ini,
@@ -1340,6 +1363,8 @@ std::string build_missing_original_engine_startup_files_json()
 	append_missing_json_path(json, first, g_archive_probe.has_default_weather_ini, "Data\\INI\\Default\\Weather.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_weather_ini, "Data\\INI\\Weather.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_generals_csf, "Data\\English\\Generals.csf");
+	append_missing_json_path(json, first, g_archive_probe.has_game_lod_ini, "Data\\INI\\GameLOD.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_game_lod_presets_ini, "Data\\INI\\GameLODPresets.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_default_science_ini, "Data\\INI\\Default\\Science.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_science_ini, "Data\\INI\\Science.ini");
 	append_missing_json_path(json, first, g_archive_probe.has_default_multiplayer_ini, "Data\\INI\\Default\\Multiplayer.ini");
@@ -1419,11 +1444,13 @@ const char *json_bool(bool value)
 
 const char *build_device_factory_frontier_json()
 {
-	static char buffer[16000];
+	static char buffer[20000];
+	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
 	const bool setup_ready =
 		g_global_data_probe.ok &&
 		g_command_line_probe.ok &&
-		g_cd_manager_probe.ok;
+		g_cd_manager_probe.ok &&
+		startup_singletons.ok;
 	const bool file_system_ready =
 		g_file_system_probe.local_ok &&
 		g_file_system_probe.archive_ok;
@@ -1508,17 +1535,20 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":3,\"line\":342,\"subsystem\":\"TheLocalFileSystem\",\"factory\":\"createLocalFileSystem\",\"originalConcrete\":\"Win32LocalFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":4,\"line\":353,\"subsystem\":\"TheArchiveFileSystem\",\"factory\":\"createArchiveFileSystem\",\"originalConcrete\":\"Win32BIGFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":5,\"line\":363,\"subsystem\":\"StartupData\",\"factory\":\"default_and_shipped_ini_loads\",\"originalConcrete\":\"Original INI stores\",\"ready\":%s,\"called\":true,\"status\":\"blocked_until_base_ini_archive_ready\"},"
-		"{\"order\":6,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
-		"{\"order\":7,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
-		"{\"order\":8,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
-		"{\"order\":9,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
-		"{\"order\":10,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
-		"{\"order\":11,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
-		"{\"order\":12,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
-		"{\"order\":13,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
-		"{\"order\":14,\"line\":510,\"subsystem\":\"TheRadar\",\"factory\":\"createRadar\",\"originalConcrete\":\"W3DRadar\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_radar_renderer\"},"
-		"{\"order\":15,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"}"
-		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"setupReady\":%s}",
+		"{\"order\":6,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
+		"{\"order\":7,\"line\":384,\"subsystem\":\"TheGameLODManager\",\"factory\":\"GameLODManager\",\"originalConcrete\":\"GameLODManager\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
+		"{\"order\":8,\"line\":606,\"subsystem\":\"TheMapCache\",\"factory\":\"MapCache\",\"originalConcrete\":\"MapCache\",\"ready\":%s,\"called\":false,\"status\":\"browser_runtime_owned_before_update_cache\"},"
+		"{\"order\":9,\"line\":427,\"subsystem\":\"TheCDManager\",\"factory\":\"CreateCDManager\",\"originalConcrete\":\"Win32CDManager\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
+		"{\"order\":10,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_audio_manager\"},"
+		"{\"order\":11,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":12,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_w3d_factory\"},"
+		"{\"order\":13,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
+		"{\"order\":14,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
+		"{\"order\":15,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
+		"{\"order\":16,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
+		"{\"order\":17,\"line\":510,\"subsystem\":\"TheRadar\",\"factory\":\"createRadar\",\"originalConcrete\":\"W3DRadar\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_radar_renderer\"},"
+		"{\"order\":18,\"line\":537,\"subsystem\":\"TheWebBrowser\",\"factory\":\"createWebBrowser\",\"originalConcrete\":\"CComObject<W3DWebBrowser>\",\"ready\":false,\"called\":false,\"status\":\"original_call_commented_out_but_factory_requires_browser_contract\"}"
+		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"startupSingletonsReady\":%s,\"setupReady\":%s}",
 		next_required,
 		json_bool(audio_files_ready),
 		json_bool(g_archive_probe.has_audio_settings_ini),
@@ -1536,9 +1566,13 @@ const char *build_device_factory_frontier_json()
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.archive_ok),
 		json_bool(startup_data_probes_ready() && startup_files_ready),
+		json_bool(startup_singletons.subsystem_list_owned && startup_singletons.subsystem_init_shutdown_ok),
+		json_bool(startup_singletons.game_lod_initialized),
+		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(g_cd_manager_probe.ok),
 		json_bool(file_system_ready),
 		json_bool(startup_files_ready),
+		json_bool(startup_singletons.ok),
 		json_bool(setup_ready));
 
 	return buffer;
@@ -1546,7 +1580,8 @@ const char *build_device_factory_frontier_json()
 
 const char *build_original_engine_startup_json()
 {
-	static char buffer[36000];
+	static char buffer[40000];
+	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
 	const std::string status_json = json_escape(original_engine_startup_status());
 	const std::string message_json = json_escape(original_engine_startup_message());
 	const std::string missing_files_json =
@@ -1561,6 +1596,7 @@ const char *build_original_engine_startup_json()
 		"\"startupFiles\":{\"ready\":%s,\"missing\":%s,"
 		"\"baseIniArchive\":%s,"
 		"\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
+		"\"gameLODIni\":%s,\"gameLODPresetsIni\":%s,"
 		"\"defaultWaterIni\":%s,\"waterIni\":%s,"
 		"\"defaultWeatherIni\":%s,\"weatherIni\":%s,"
 		"\"generalsCsf\":%s,\"defaultScienceIni\":%s,\"scienceIni\":%s,"
@@ -1579,11 +1615,12 @@ const char *build_original_engine_startup_json()
 		"\"mapCacheIni\":%s,\"defaultVideoIni\":%s,\"videoIni\":%s},"
 		"\"originalSetup\":{\"probeOnly\":true,\"runtimeOwned\":false,"
 		"\"globalData\":%s,\"commandLine\":%s,"
-		"\"cdManager\":%s},"
+		"\"cdManager\":%s,\"startupSingletons\":%s,"
+		"\"subsystemList\":%s,\"gameLODManager\":%s,\"mapCache\":%s},"
 		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":false,"
 		"\"browserGameEngine\":false,\"cdManager\":%s,"
 		"\"localFileSystem\":%s,"
-		"\"archiveFileSystem\":%s,\"gameLogic\":false,"
+		"\"archiveFileSystem\":%s,\"startupSingletons\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":false,"
 		"\"thingFactory\":false,\"functionLexicon\":false,\"radar\":false,"
 		"\"webBrowser\":false,\"particleSystemManager\":false,"
@@ -1598,6 +1635,8 @@ const char *build_original_engine_startup_json()
 		base_ini_startup_json.c_str(),
 		g_archive_probe.has_default_game_data_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_game_lod_ini ? "true" : "false",
+		g_archive_probe.has_game_lod_presets_ini ? "true" : "false",
 		g_archive_probe.has_default_water_ini ? "true" : "false",
 		g_archive_probe.has_water_ini ? "true" : "false",
 		g_archive_probe.has_default_weather_ini ? "true" : "false",
@@ -1639,9 +1678,15 @@ const char *build_original_engine_startup_json()
 		g_global_data_probe.ok ? "true" : "false",
 		g_command_line_probe.ok ? "true" : "false",
 		g_cd_manager_probe.ok ? "true" : "false",
+		startup_singletons.ok ? "true" : "false",
+		(startup_singletons.subsystem_list_owned &&
+			startup_singletons.subsystem_init_shutdown_ok) ? "true" : "false",
+		startup_singletons.game_lod_initialized ? "true" : "false",
+		startup_singletons.map_cache_loaded ? "true" : "false",
 		g_cd_manager_probe.ok ? "true" : "false",
 		g_file_system_probe.local_ok ? "true" : "false",
 		g_file_system_probe.archive_ok ? "true" : "false",
+		startup_singletons.ok ? "true" : "false",
 		device_factory_frontier_json);
 
 	return buffer;
@@ -2915,6 +2960,7 @@ void ensure_booted()
 		run_original_file_system_probe();
 		run_original_game_network_probe();
 		probe_registered_archive_set_for_boot();
+		run_startup_singletons_probe();
 		log_boot_state();
 	}
 }
@@ -3098,6 +3144,7 @@ const char *write_state_json()
 	const std::string archive_mount_source_names_json =
 		build_string_vector_json(g_archive_mount.archive_source_names);
 	const std::string browser_runtime_assets_json = wasm_browser_runtime_assets_state_json();
+	const char *startup_singletons_json = wasm_startup_singletons_state_json();
 	const std::string audio_runtime_assets_json = build_audio_runtime_assets_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
@@ -3135,6 +3182,7 @@ const char *write_state_json()
 		"\"archive\":\"%s\",\"reader\":\"Win32BIGFileSystem\","
 		"\"indexedFiles\":%zu,\"sampleBytes\":%zu,"
 		"\"inizh\":{\"defaultGameDataIni\":%s,\"gameDataIni\":%s,"
+		"\"gameLODIni\":%s,\"gameLODPresetsIni\":%s,"
 		"\"armorIni\":%s,\"challengeModeIni\":%s,\"damageFXIni\":%s,"
 		"\"defaultFXListIni\":%s,\"fxListIni\":%s,"
 		"\"defaultObjectCreationListIni\":%s,\"objectCreationListIni\":%s,"
@@ -3338,6 +3386,7 @@ const char *write_state_json()
 		"\"archives\":%s,\"sourceArchives\":%s,"
 		"\"bootProbe\":{\"attempted\":%s,\"ok\":%s,\"indexedFiles\":%zu}},"
 		"\"browserRuntimeAssets\":%s,"
+		"\"startupSingletons\":%s,"
 		"\"audioRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
@@ -3349,7 +3398,7 @@ const char *write_state_json()
 		"\"commandSet\":%s,\"controlBarScheme\":%s,\"crate\":%s,"
 		"\"specialPower\":%s,\"playerTemplate\":%s,\"multiplayer\":%s,"
 		"\"terrain\":%s,\"terrainRoads\":%s,"
-		"\"gameData\":%s,\"water\":%s,\"weather\":%s,"
+		"\"gameData\":%s,\"gameLOD\":%s,\"water\":%s,\"weather\":%s,"
 		"\"video\":%s,\"gameText\":%s,\"mapCache\":%s}},"
 		"\"dataSummary\":%s,"
 		"\"originalEngineStartup\":%s,"
@@ -3409,6 +3458,8 @@ const char *write_state_json()
 		g_archive_probe.sample_bytes,
 		g_archive_probe.has_default_game_data_ini ? "true" : "false",
 		g_archive_probe.has_game_data_ini ? "true" : "false",
+		g_archive_probe.has_game_lod_ini ? "true" : "false",
+		g_archive_probe.has_game_lod_presets_ini ? "true" : "false",
 		g_archive_probe.has_armor_ini ? "true" : "false",
 		g_archive_probe.has_challenge_mode_ini ? "true" : "false",
 		g_archive_probe.has_damage_fx_ini ? "true" : "false",
@@ -3835,6 +3886,7 @@ const char *write_state_json()
 		g_archive_mount.boot_probe_ok ? "true" : "false",
 		g_archive_mount.boot_probe_indexed_file_count,
 		browser_runtime_assets_json.c_str(),
+		startup_singletons_json,
 		audio_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),
@@ -3863,6 +3915,7 @@ const char *write_state_json()
 		startup_terrain_ready() ? "true" : "false",
 		startup_terrain_roads_ready() ? "true" : "false",
 		startup_game_data_ready() ? "true" : "false",
+		g_archive_probe.has_game_lod_ini ? "true" : "false",
 		startup_water_ready() ? "true" : "false",
 		startup_weather_ready() ? "true" : "false",
 		startup_video_ready() ? "true" : "false",

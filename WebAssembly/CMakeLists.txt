@@ -3728,6 +3728,7 @@ add_executable(cnc-port
   src/wasm_matrixmapper_probe.cpp
   src/wasm_projection_state_probe.cpp
   src/wasm_screen_mapper_probe.cpp
+  src/wasm_startup_singletons_probe.cpp
   src/wasm_ws_environment_mapper_probe.cpp
   src/wasm_ww3d_font_chars_probe.cpp
   src/wasm_ww3d_render_probe.cpp

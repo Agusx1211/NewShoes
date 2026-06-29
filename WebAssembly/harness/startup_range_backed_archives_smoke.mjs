@@ -14,6 +14,7 @@ const runtimeArchivePath = "/assets/range-startup";
 
 const baseIniStartupEntries = [
   "Data\\INI\\Default\\GameData.ini",
+  "Data\\INI\\GameLODPresets.ini",
   "Data\\INI\\Default\\Water.ini",
   "Data\\INI\\Default\\Science.ini",
   "Data\\INI\\Default\\Multiplayer.ini",
@@ -71,6 +72,7 @@ const requiredArchiveSpecs = [
       "Data\\INI\\Default\\Weather.ini",
       "Data\\INI\\FXList.ini",
       "Data\\INI\\GameData.ini",
+      "Data\\INI\\GameLOD.ini",
       "Data\\INI\\Locomotor.ini",
       "Data\\INI\\MiscAudio.ini",
       "Data\\INI\\multiplayer.ini",
@@ -174,6 +176,7 @@ function assertStartupAssetsReady(state, context) {
     "terrain",
     "terrainRoads",
     "gameData",
+    "gameLOD",
     "water",
     "weather",
     "video",
@@ -184,8 +187,51 @@ function assertStartupAssetsReady(state, context) {
   }
 }
 
+function assertStartupSingletons(state, context, expectedReady) {
+  const probe = state.startupSingletons;
+  const commonReady = probe
+    && probe.attempted === true
+    && probe.runtimeArchiveRegistered === true
+    && probe.runtimeGlobalsInstalled === true
+    && probe.globalDataOwned === true
+    && probe.subsystemListOwned === true
+    && probe.subsystemInitShutdownOk === true
+    && probe.subsystemInitCount === 1
+    && probe.subsystemShutdownCount === 1
+    && probe.gameLOD?.owned === true
+    && probe.mapCache?.owned === true
+    && probe.mapCache?.loaded === false
+    && probe.mapCache?.updateCacheRuntimeReady === false;
+  if (!commonReady) {
+    throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
+  }
+
+  if (expectedReady
+      && (probe.ok !== true
+        || probe.status !== "ready"
+        || probe.nextRequired !== "createAudioManager"
+        || probe.gameLOD?.filesReady !== true
+        || probe.gameLOD?.initialized !== true
+        || probe.mapCache?.loaded !== true
+        || probe.gameLOD?.textureReduction < 0
+        || probe.gameLOD?.memoryPassed !== true)) {
+    throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
+  }
+
+  if (!expectedReady
+      && (probe.ok !== false
+        || probe.status !== "missing_game_lod_files"
+        || probe.nextRequired !== "GameLODStartupFiles"
+        || probe.gameLOD?.filesReady !== false
+        || probe.gameLOD?.initialized !== false)) {
+    throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertDeviceFactoryFrontier(startup, context, expected) {
   const frontier = startup.deviceFactoryFrontier;
+  const entries = frontier?.entries ?? [];
+  const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
   const audioFiles = frontier?.audioStartupFiles;
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   if (!frontier
@@ -195,11 +241,18 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
       || frontier.firstUnownedInitFactory !== "createAudioManager"
       || frontier.fileSystemReady !== true
       || frontier.startupFilesReady !== expected.startupFilesReady
-      || frontier.setupReady !== true
+      || frontier.startupSingletonsReady !== expected.startupSingletonsReady
+      || frontier.setupReady !== expected.setupReady
       || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
       || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
       || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || byFactory.get("SubsystemInterfaceList")?.line !== 297
+      || byFactory.get("SubsystemInterfaceList")?.ready !== true
+      || byFactory.get("GameLODManager")?.line !== 384
+      || byFactory.get("GameLODManager")?.ready !== expected.gameLODReady
+      || byFactory.get("MapCache")?.line !== 606
+      || byFactory.get("MapCache")?.ready !== expected.mapCacheReady
       || audioFiles?.source !== "GameAudio.cpp::AudioManager::init"
       || audioFiles?.ready !== expected.audioStartupFilesReady
       || audioFiles?.audioSettingsIni !== expected.audioStartupFilesReady
@@ -234,10 +287,15 @@ function assertOriginalStartupHeader(state, context, expected) {
       || startup.originalSetup?.globalData !== true
       || startup.originalSetup?.commandLine !== true
       || startup.originalSetup?.cdManager !== true
+      || startup.originalSetup?.startupSingletons !== expected.startupSingletonsReady
+      || startup.originalSetup?.subsystemList !== true
+      || startup.originalSetup?.gameLODManager !== expected.gameLODReady
+      || startup.originalSetup?.mapCache !== expected.mapCacheReady
       || startup.browserDeviceLayer?.ready !== false
       || startup.browserDeviceLayer?.cdManager !== true
       || startup.browserDeviceLayer?.localFileSystem !== true
-      || startup.browserDeviceLayer?.archiveFileSystem !== true) {
+      || startup.browserDeviceLayer?.archiveFileSystem !== true
+      || startup.browserDeviceLayer?.startupSingletons !== expected.startupSingletonsReady) {
     throw new Error(`${context} original startup state mismatch: ${JSON.stringify(startup)}`);
   }
 
@@ -250,6 +308,10 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
     status: "missing_startup_files",
     nextRequired: "startupFiles",
     startupFilesReady: false,
+    startupSingletonsReady: false,
+    gameLODReady: false,
+    mapCacheReady: false,
+    setupReady: false,
     audioStartupFilesReady: false,
     milesNextRequired: "audioStartupFiles",
   });
@@ -257,6 +319,8 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
   const missing = new Set(files?.missing ?? []);
   if (files?.ready !== false
       || files.gameDataIni !== true
+      || files.gameLODIni !== true
+      || files.gameLODPresetsIni !== false
       || files.waterIni !== true
       || files.weatherIni !== true
       || files.scienceIni !== true
@@ -309,8 +373,12 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
 function assertOriginalStartupWithBaseFiles(state, context) {
   const startup = assertOriginalStartupHeader(state, context, {
     status: "browser_device_layer_pending",
-    nextRequired: "CreateGameEngine",
+    nextRequired: "originalSetupResidency",
     startupFilesReady: true,
+    startupSingletonsReady: false,
+    gameLODReady: true,
+    mapCacheReady: false,
+    setupReady: false,
     audioStartupFilesReady: true,
     milesNextRequired: "webAudioPlaybackBackend",
   });
@@ -318,6 +386,8 @@ function assertOriginalStartupWithBaseFiles(state, context) {
   if (files?.ready !== true
       || files.defaultGameDataIni !== true
       || files.gameDataIni !== true
+      || files.gameLODIni !== true
+      || files.gameLODPresetsIni !== true
       || files.defaultWaterIni !== true
       || files.waterIni !== true
       || files.defaultWeatherIni !== true
@@ -426,6 +496,15 @@ let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage();
+  const browserLogs = [];
+  page.on("console", (message) => {
+    browserLogs.push(`[${message.type()}] ${message.text()}`);
+    if (browserLogs.length > 80) browserLogs.shift();
+  });
+  page.on("pageerror", (error) => {
+    browserLogs.push(`[pageerror] ${error.message}`);
+    if (browserLogs.length > 80) browserLogs.shift();
+  });
   const harnessUrl = new URL("harness/index.html", server.url).href;
 
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
@@ -474,7 +553,12 @@ try {
     directory: `${runtimeArchivePath}/`,
   });
 
-  const bootResult = await page.evaluate(() => window.CnCPort.rpc("boot"));
+  let bootResult;
+  try {
+    bootResult = await page.evaluate(() => window.CnCPort.rpc("boot"));
+  } catch (error) {
+    throw new Error(`range-backed startup boot RPC failed: ${error.message}\n${browserLogs.join("\n")}`);
+  }
   if (!bootResult.ok || !bootResult.state?.booted) {
     throw new Error(`range-backed startup boot failed: ${JSON.stringify(bootResult)}`);
   }
@@ -483,6 +567,7 @@ try {
   assertBrowserRuntimeFileSystem(bootResult.state, "range-backed startup boot", {
     directory: `${runtimeArchivePath}/`,
   });
+  assertStartupSingletons(bootResult.state, "range-backed startup boot", false);
   if (hasBaseIniArchive) {
     assertOriginalStartupWithBaseFiles(bootResult.state, "range-backed startup boot");
   } else {

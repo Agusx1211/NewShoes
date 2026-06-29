@@ -29,6 +29,8 @@ struct ArchiveProbeResult
 	bool has_default_player_template_ini = false;
 	bool has_player_template_ini = false;
 	bool has_game_data_ini = false;
+	bool has_game_lod_ini = false;
+	bool has_game_lod_presets_ini = false;
 	bool has_default_science_ini = false;
 	bool has_science_ini = false;
 	bool has_default_special_power_ini = false;

@@ -289,6 +289,7 @@ const harnessState = {
   assetProbe: null,
   archiveMount: null,
   browserRuntimeAssets: null,
+  startupSingletons: null,
   audioRuntimeAssets: null,
   audioPayloadInventory: null,
   startupAssets: null,
@@ -5591,6 +5592,7 @@ function applyModuleState(moduleState) {
   harnessState.assetProbe = moduleState.assetProbe ?? null;
   harnessState.archiveMount = moduleState.archiveMount ?? harnessState.archiveMount;
   harnessState.browserRuntimeAssets = moduleState.browserRuntimeAssets ?? harnessState.browserRuntimeAssets;
+  harnessState.startupSingletons = moduleState.startupSingletons ?? harnessState.startupSingletons;
   harnessState.audioRuntimeAssets = moduleState.audioRuntimeAssets ?? harnessState.audioRuntimeAssets;
   harnessState.startupAssets = moduleState.startupAssets ?? harnessState.startupAssets;
   harnessState.dataSummary = moduleState.dataSummary ?? harnessState.dataSummary;
@@ -5989,6 +5991,7 @@ function snapshotState() {
     assetProbe: harnessState.assetProbe,
     archiveMount: harnessState.archiveMount,
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
+    startupSingletons: harnessState.startupSingletons,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),

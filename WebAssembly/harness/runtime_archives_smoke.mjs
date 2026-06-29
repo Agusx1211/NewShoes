@@ -1203,12 +1203,54 @@ function assertStartupAssets(state, context, expectedStatus, expectedOk) {
         || !startupAssets.required?.terrain
         || !startupAssets.required?.terrainRoads
         || !startupAssets.required?.gameData
+        || !startupAssets.required?.gameLOD
         || !startupAssets.required?.water
         || !startupAssets.required?.weather
         || !startupAssets.required?.video
         || !startupAssets.required?.gameText
         || !startupAssets.required?.mapCache)) {
     throw new Error(`${context} startup asset requirements incomplete: ${JSON.stringify(startupAssets)}`);
+  }
+}
+
+function assertStartupSingletons(state, context, expectedReady) {
+  const probe = state.startupSingletons;
+  const commonReady = probe
+    && probe.attempted === true
+    && probe.runtimeArchiveRegistered === true
+    && probe.runtimeGlobalsInstalled === true
+    && probe.globalDataOwned === true
+    && probe.subsystemListOwned === true
+    && probe.subsystemInitShutdownOk === true
+    && probe.subsystemInitCount === 1
+    && probe.subsystemShutdownCount === 1
+    && probe.gameLOD?.owned === true
+    && probe.mapCache?.owned === true
+    && probe.mapCache?.loaded === false
+    && probe.mapCache?.updateCacheRuntimeReady === false;
+  if (!commonReady) {
+    throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
+  }
+
+  if (expectedReady
+      && (probe.ok !== true
+        || probe.status !== "ready"
+        || probe.nextRequired !== "createAudioManager"
+        || probe.gameLOD?.filesReady !== true
+        || probe.gameLOD?.initialized !== true
+        || probe.mapCache?.loaded !== true
+        || probe.gameLOD?.textureReduction < 0
+        || probe.gameLOD?.memoryPassed !== true)) {
+    throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
+  }
+
+  if (!expectedReady
+      && (probe.ok !== false
+        || probe.status !== "missing_game_lod_files"
+        || probe.nextRequired !== "GameLODStartupFiles"
+        || probe.gameLOD?.filesReady !== false
+        || probe.gameLOD?.initialized !== false)) {
+    throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
   }
 }
 
@@ -3419,7 +3461,8 @@ function assertOriginalEngineStartup(
   expectedStatus,
   expectedStartupAssetsReady,
   expectedFileSystemReadiness = { local: false, archive: false },
-  expectedOriginalSetupReady = false,
+  expectedSetupReady = false,
+  expectedCoreSetupReady = expectedSetupReady,
 ) {
   const startup = state.originalEngineStartup;
   if (!startup
@@ -3432,7 +3475,7 @@ function assertOriginalEngineStartup(
   }
 
   const expectedNextRequired = expectedStatus === "browser_device_layer_pending"
-    ? "CreateGameEngine"
+    ? (expectedSetupReady ? "CreateGameEngine" : "originalSetupResidency")
     : expectedStatus === "missing_startup_files"
       ? "startupFiles"
       : "startupAssets";
@@ -3443,6 +3486,12 @@ function assertOriginalEngineStartup(
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   const milesCalls = milesAudio?.openDeviceCalls ?? [];
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
+  const expectedStartupSingletonsReady = state.startupSingletons?.ok === true;
+  const expectedSubsystemListReady =
+    state.startupSingletons?.subsystemListOwned === true &&
+    state.startupSingletons?.subsystemInitShutdownOk === true;
+  const expectedGameLODReady = state.startupSingletons?.gameLOD?.initialized === true;
+  const expectedMapCacheReady = state.startupSingletons?.mapCache?.loaded === true;
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
@@ -3516,7 +3565,8 @@ function assertOriginalEngineStartup(
       || milesCalls[7]?.ready !== false
       || frontier.fileSystemReady !== (expectedFileSystemReadiness.local && expectedFileSystemReadiness.archive)
       || frontier.startupFilesReady !== (expectedStatus === "browser_device_layer_pending")
-      || frontier.setupReady !== expectedOriginalSetupReady
+      || frontier.startupSingletonsReady !== expectedStartupSingletonsReady
+      || frontier.setupReady !== expectedSetupReady
       || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
       || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
@@ -3525,6 +3575,12 @@ function assertOriginalEngineStartup(
       || byFactory.get("CreateGameEngine")?.line !== 1122
       || byFactory.get("createLocalFileSystem")?.line !== 342
       || byFactory.get("createArchiveFileSystem")?.line !== 353
+      || byFactory.get("SubsystemInterfaceList")?.line !== 297
+      || byFactory.get("SubsystemInterfaceList")?.ready !== expectedSubsystemListReady
+      || byFactory.get("GameLODManager")?.line !== 384
+      || byFactory.get("GameLODManager")?.ready !== expectedGameLODReady
+      || byFactory.get("MapCache")?.line !== 606
+      || byFactory.get("MapCache")?.ready !== expectedMapCacheReady
       || byFactory.get("createAudioManager")?.line !== 434
       || byFactory.get("createAudioManager")?.ready !== false
       || byFactory.get("createThingFactory")?.line !== 482
@@ -3540,12 +3596,17 @@ function assertOriginalEngineStartup(
       || startup.browserDeviceLayer?.browserGameEngine !== false
       || startup.originalSetup?.probeOnly !== true
       || startup.originalSetup?.runtimeOwned !== false
-      || startup.originalSetup?.globalData !== expectedOriginalSetupReady
-      || startup.originalSetup?.commandLine !== expectedOriginalSetupReady
-      || startup.originalSetup?.cdManager !== expectedOriginalSetupReady
-      || startup.browserDeviceLayer?.cdManager !== expectedOriginalSetupReady
+      || startup.originalSetup?.globalData !== expectedCoreSetupReady
+      || startup.originalSetup?.commandLine !== expectedCoreSetupReady
+      || startup.originalSetup?.cdManager !== expectedCoreSetupReady
+      || startup.originalSetup?.startupSingletons !== expectedStartupSingletonsReady
+      || startup.originalSetup?.subsystemList !== expectedSubsystemListReady
+      || startup.originalSetup?.gameLODManager !== expectedGameLODReady
+      || startup.originalSetup?.mapCache !== expectedMapCacheReady
+      || startup.browserDeviceLayer?.cdManager !== expectedCoreSetupReady
       || startup.browserDeviceLayer?.localFileSystem !== expectedFileSystemReadiness.local
       || startup.browserDeviceLayer?.archiveFileSystem !== expectedFileSystemReadiness.archive
+      || startup.browserDeviceLayer?.startupSingletons !== expectedStartupSingletonsReady
       || startup.browserDeviceLayer?.gameClient !== false
       || startup.browserDeviceLayer?.audioManager !== false
       || startup.browserDeviceLayer?.display !== false
@@ -3561,12 +3622,14 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
     "missing_startup_files",
     true,
     { local: true, archive: true },
+    false,
     true,
   );
   const files = state.originalEngineStartup.startupFiles;
   const missing = new Set(files?.missing ?? []);
   const expectedMissing = [
     "Data\\INI\\Default\\GameData.ini",
+    "Data\\INI\\GameLODPresets.ini",
     "Data\\INI\\Default\\Water.ini",
     "Data\\INI\\Default\\Science.ini",
     "Data\\INI\\Default\\Multiplayer.ini",
@@ -3602,6 +3665,8 @@ function assertOriginalEngineStartupMissingFiles(state, context) {
       || files.englishCommandMapIni !== true
       || files.defaultVideoIni !== false
       || files.gameDataIni !== true
+      || files.gameLODIni !== true
+      || files.gameLODPresetsIni !== false
       || files.waterIni !== true
       || files.weatherIni !== true
       || files.scienceIni !== true
@@ -3655,6 +3720,7 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
     "browser_device_layer_pending",
     true,
     { local: true, archive: true },
+    false,
     true,
   );
   const files = state.originalEngineStartup.startupFiles;
@@ -3676,6 +3742,8 @@ function assertOriginalEngineStartupWithBaseIni(state, context) {
       || files.commandMapIni !== true
       || files.englishCommandMapIni !== true
       || files.defaultVideoIni !== true
+      || files.gameLODIni !== true
+      || files.gameLODPresetsIni !== true
       || files.gameDataIni !== true
       || files.waterIni !== true
       || files.weatherIni !== true
@@ -3828,6 +3896,7 @@ try {
       || !assetProbe.inizh?.defaultAIDataIni
       || !assetProbe.inizh?.locomotorIni
       || !assetProbe.inizh?.weaponIni
+      || !assetProbe.inizh?.gameLODIni
       || !assetProbe.inizh?.particleSystemIni) {
     throw new Error(`aggregate runtime archive probe missed required INIZH files: ${JSON.stringify(assetProbe)}`);
   }
@@ -3987,6 +4056,7 @@ try {
     directory: "/assets/runtime/",
     indexedFiles: bootResult.state.assetProbe.indexedFiles,
   });
+  assertStartupSingletons(bootResult.state, "runtime archive boot", false);
   assertDataSummary(bootResult.state, "runtime archive boot", true);
   if (hasBaseIniArchive) {
     assertOriginalEngineStartupWithBaseIni(bootResult.state, "runtime archive boot");

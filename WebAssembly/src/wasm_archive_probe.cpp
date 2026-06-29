@@ -58,6 +58,8 @@ constexpr const char DEFAULT_PLAYER_TEMPLATE_INI_PATH[] =
 	"Data\\INI\\Default\\PlayerTemplate.ini";
 constexpr const char MULTIPLAYER_INI_PATH[] = "Data\\INI\\multiplayer.ini";
 constexpr const char DEFAULT_MULTIPLAYER_INI_PATH[] = "Data\\INI\\Default\\Multiplayer.ini";
+constexpr const char GAME_LOD_INI_PATH[] = "Data\\INI\\GameLOD.ini";
+constexpr const char GAME_LOD_PRESETS_INI_PATH[] = "Data\\INI\\GameLODPresets.ini";
 constexpr const char DEFAULT_SCIENCE_INI_PATH[] = "Data\\INI\\Default\\Science.ini";
 constexpr const char TERRAIN_INI_PATH[] = "Data\\INI\\Terrain.ini";
 constexpr const char DEFAULT_TERRAIN_INI_PATH[] = "Data\\INI\\Default\\Terrain.ini";
@@ -1466,6 +1468,9 @@ ArchiveProbeResult probe_original_archive(const char *archive_path)
 				archive_file_system.doesFileExist(DEFAULT_PLAYER_TEMPLATE_INI_PATH);
 			result.has_player_template_ini = archive_file_system.doesFileExist(PLAYER_TEMPLATE_INI_PATH);
 			result.has_game_data_ini = archive_file_system.doesFileExist(GAME_DATA_INI_PATH);
+			result.has_game_lod_ini = archive_file_system.doesFileExist(GAME_LOD_INI_PATH);
+			result.has_game_lod_presets_ini =
+				archive_file_system.doesFileExist(GAME_LOD_PRESETS_INI_PATH);
 			result.has_default_multiplayer_ini =
 				archive_file_system.doesFileExist(DEFAULT_MULTIPLAYER_INI_PATH);
 			result.has_multiplayer_ini = archive_file_system.doesFileExist(MULTIPLAYER_INI_PATH);
