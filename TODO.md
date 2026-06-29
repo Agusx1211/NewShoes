@@ -725,6 +725,24 @@ shares structure and follows behind.
       browser D3D8 texture update hook. It does not claim real W3D video
       texture presentation; that still needs a harness screenshot through
       `W3DDisplay::drawVideoBuffer`.
+      `verify:bink-audio-sync-frontier` now pins the source-only Bink
+      *audio-sync* handoff frontier that future browser Bink playback must
+      preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then
+      `initializeBinkWithMiles()`, `deinit` releasing the Bink handle before
+      the base deinit, `initializeBinkWithMiles` feeding `TheAudio->
+      getHandleForBink()` to `BinkSoundUseDirectSound()` with a
+      `BinkSetSoundTrack(0,0)` muted-video fallback, `createStream` deriving
+      the per-stream volume from `TheAudio->getVolume(AudioAffect_Speech)` and
+      calling `BinkSetVolume`, `notifyVideoPlayerOfNewProvider` tearing the
+      handoff down on provider loss and re-establishing it on provider gain,
+      the abstract `AudioManager` / `VideoPlayer` Bink handle boundary, and
+      `MilesAudioManager` ownership of the `m_binkHandle` `PlayingAudio`
+      member (destructor leak-assert + release, `getHandleForBink` 2D-sample
+      + `AIL_get_DirectSound_info` handoff, `releaseHandleForBink` release,
+      and `selectProvider`/`unselectProvider` driving the gain/loss notify).
+      It is source-only and does NOT complete runtime Bink audio playback,
+      per-frame audio-clock frame progression (`BinkWait`), or a Web Audio /
+      DirectSound handoff; those remain open.
 - [ ] Logo / intro movie plays.
 - [ ] Mission briefing / cutscene playback with audio sync.
 - [ ] In-engine video surfaces (e.g. comms video) render to a texture.

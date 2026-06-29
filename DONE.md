@@ -3835,6 +3835,29 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       is captured. This proves original-player ownership of the sidecar copy
       bridge; real `W3DVideoBuffer` texture upload, `W3DDisplay` presentation,
       final surface-format conversion, and Bink/audio sync remain open.
+- [x] Add `verify:bink-audio-sync-frontier` (`verify:bink-audio-sync-frontier`
+      and strict alias `verify:bink-audio-sync-frontier:strict`), a
+      source-only verifier for the remaining Bink audio-sync/frontier
+      contract so future browser Bink playback does not break the original
+      Miles/Bink handoff. It reads original C++ source (never executes the
+      engine or wasm) and pins hard facts around
+      `BinkVideoPlayer::init`/`initializeBinkWithMiles`,
+      `BinkVideoPlayer::deinit` `TheAudio->releaseHandleForBink()`,
+      `initializeBinkWithMiles` `TheAudio->getHandleForBink()` ->
+      `BinkSoundUseDirectSound()` with `BinkSetSoundTrack(0,0)` muted-video
+      fallback, `createStream` Speech-volume-derived `BinkSetVolume`,
+      `notifyVideoPlayerOfNewProvider` tear-down/re-establish lifecycle, the
+      abstract `AudioManager` / `VideoPlayer` Bink handle boundary, and
+      `MilesAudioManager` ownership of the `m_binkHandle` `PlayingAudio`
+      member (constructor `NULL` initializer, destructor leak-assert +
+      release, `getHandleForBink` `allocatePlayingAudio` +
+      `AudioEventRTS("BinkHandle")` 2D-sample + `AIL_get_DirectSound_info`
+      handoff, `releaseHandleForBink` release/null, and
+      `selectProvider`/`unselectProvider` driving
+      `notifyVideoPlayerOfNewProvider(TRUE/FALSE)`). It is source-only and
+      explicitly does NOT complete runtime Bink audio playback, per-frame
+      audio-clock frame progression (`BinkWait`), or a Web Audio/DirectSound
+      handoff; those remain open M8 tasks tracked in `TODO.md`.
 
 ---
 
