@@ -21,6 +21,7 @@
     "verify:audio-request-update-frontier": "node tools/verify_audio_request_update_frontier.mjs",
     "verify:audio-sample-start-frontier": "node tools/verify_audio_sample_start_frontier.mjs",
     "verify:audio-completion-frontier": "node tools/verify_audio_completion_frontier.mjs",
+    "verify:audio-playing-event-state-frontier": "node tools/verify_audio_playing_event_state_frontier.mjs",
     "verify:audio-sound-manager-counters-frontier": "node tools/verify_audio_sound_manager_counters_frontier.mjs",
     "verify:audio-3d-position-frontier": "node tools/verify_audio_3d_position_frontier.mjs",
     "verify:audio-music-manager-frontier": "node tools/verify_audio_music_manager_frontier.mjs",

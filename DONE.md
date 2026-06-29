@@ -3360,6 +3360,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `processPlayingList` / `processStoppedList` cleanup, handle release,
       file close, and `AudioEventRTS` deletion. This verifies source structure
       only, not runtime audio.
+- [x] Add `npm run verify:audio-playing-event-state-frontier`, a source-only
+      verifier for the original playing-record state around active audio:
+      `PlayingAudio` fields, `playAudioEvent` list insertion order,
+      `notifyOfAudioCompletion` marking `PS_Stopped`, `processPlayingList`
+      release/erase drainage, and `AudioEventRTS` event-name/handle identity.
+      This verifies source structure only, not runtime audio.
 - [x] Add `npm run verify:audio-sound-manager-counters-frontier`, a source-only
       verifier for the original `SoundManager` request gate and 2D/3D sample
       counter contract: lazy configured limit loading, `canPlayNow`
@@ -3507,6 +3513,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioManager::setVolume` formula, and asserts the real `GainNode.gain`
       values in `runtime_archives_smoke.mjs` while preserving that engine/UI
       control of the mixer is future work.
+- [x] Add a browser requested-audio live event lifecycle proof. The archive
+      harness now retains the representative decoded requested payload cache,
+      starts one real requested payload (`CIAAgentVoiceAttack`) through a live
+      `AudioBufferSourceNode -> soundGainNode -> AudioDestinationNode` graph
+      after the browser audio gesture and mixer setup, and asserts
+      request/start/ended/completion/release log phases while preserving that
+      the original engine audio request queue is still future work.
 
 ---
 

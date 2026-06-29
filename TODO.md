@@ -594,10 +594,16 @@ shares structure and follows behind.
       `requestedPayloadDecodeCacheProof` now creates representative decoded
       MP3/WAV Web Audio buffer cache entries, an OfflineAudioContext preview
       schedule render, a browser lifecycle proof, and a Web Audio mixer-bus
-      proof for requested music/SFX/3D SFX/voice/speech keys. Expand that proof
-      into full resolved requested-payload decode/cache storage and
+      proof for requested music/SFX/3D SFX/voice/speech keys. The harness also
+      retains that representative decoded cache for one live requested
+      `AudioBufferSourceNode` lifecycle proof through the runtime mixer. Expand
+      that proof into full resolved requested-payload decode/cache storage and
       engine-driven Web Audio scheduling/lifecycle.
-- [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
+- [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo);
+      `verify:audio-playing-event-state-frontier` now pins the original
+      `PlayingAudio` active-event record, list insertion, completion marker,
+      and release/erase drainage that engine-driven Web Audio playback must
+      preserve.
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world;
       `verify:audio-3d-position-frontier` now pins the source listener/sample
       position contract that the browser Web Audio backend must satisfy, and
@@ -622,7 +628,10 @@ shares structure and follows behind.
       runtime `GainNode` bus updates from source-shaped script/system volume
       values, but the engine/options UI still does not drive that browser
       mixer.
-- [ ] Harness: assert audio events fire (state/log), not just sound.
+- [ ] Harness: assert engine-driven audio events fire (state/log), not just
+      sound; the current browser live-event proof logs request/start/ended/
+      completion/release for one real requested decoded payload, but it is not
+      yet driven by the original `MilesAudioManager` request queue.
 
 ---
 
