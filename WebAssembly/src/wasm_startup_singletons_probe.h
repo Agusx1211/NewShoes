@@ -13,6 +13,7 @@ struct StartupSingletonsProbeResult
 	bool global_data_owned = false;
 	bool subsystem_list_owned = false;
 	bool subsystem_init_shutdown_ok = false;
+	bool subsystem_shutdown_deferred = false;
 	int subsystem_init_count = 0;
 	int subsystem_shutdown_count = 0;
 	bool game_lod_owned = false;

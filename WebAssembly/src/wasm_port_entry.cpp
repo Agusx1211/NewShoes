@@ -77,6 +77,7 @@ bool g_original_core_probe_ok = false;
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
+std::string g_locomotor_probe_json_cache;
 GlobalDataProbeResult g_global_data_probe;
 CommandLineProbeResult g_command_line_probe;
 CDManagerProbeResult g_cd_manager_probe;
@@ -108,6 +109,9 @@ struct ArchiveMountState
 };
 
 ArchiveMountState g_archive_mount;
+
+std::string build_locomotor_probe_json();
+void refresh_archive_probe_json_cache();
 
 double browser_now_ms()
 {
@@ -313,7 +317,21 @@ void probe_registered_archive_set_for_boot()
 	}
 
 	const std::string archive_path = g_archive_mount.directory + g_archive_mount.file_mask;
+	if (g_archive_probe.loaded && g_archive_probe.archive_path == archive_path) {
+		if (g_locomotor_probe_json_cache.empty()) {
+			refresh_archive_probe_json_cache();
+		}
+		g_archive_mount.boot_probe_ok = g_archive_probe.ok;
+		g_archive_mount.boot_probe_indexed_file_count = g_archive_probe.indexed_file_count;
+		std::printf("cnc-port: boot archive probe path=%s ok=%d indexed=%zu cached=1\n",
+			archive_path.c_str(),
+			g_archive_probe.ok ? 1 : 0,
+			g_archive_probe.indexed_file_count);
+		return;
+	}
+
 	g_archive_probe = probe_original_archive(archive_path.c_str());
+	refresh_archive_probe_json_cache();
 	g_archive_mount.boot_probe_ok = g_archive_probe.ok;
 	g_archive_mount.boot_probe_indexed_file_count = g_archive_probe.indexed_file_count;
 	std::printf("cnc-port: boot archive probe path=%s ok=%d indexed=%zu\n",
@@ -1598,7 +1616,7 @@ const char *build_device_factory_frontier_json()
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(g_file_system_probe.archive_ok),
 		json_bool(startup_data_probes_ready() && startup_files_ready),
-		json_bool(startup_singletons.subsystem_list_owned && startup_singletons.subsystem_init_shutdown_ok),
+		json_bool(startup_singletons.subsystem_list_owned),
 		json_bool(startup_singletons.game_lod_initialized),
 		json_bool(g_cd_manager_probe.ok),
 		json_bool(startup_singletons.map_cache_loaded),
@@ -1711,8 +1729,7 @@ const char *build_original_engine_startup_json()
 		g_command_line_probe.ok ? "true" : "false",
 		g_cd_manager_probe.ok ? "true" : "false",
 		startup_singletons.ok ? "true" : "false",
-		(startup_singletons.subsystem_list_owned &&
-			startup_singletons.subsystem_init_shutdown_ok) ? "true" : "false",
+		startup_singletons.subsystem_list_owned ? "true" : "false",
 		startup_singletons.game_lod_initialized ? "true" : "false",
 		startup_singletons.map_cache_loaded ? "true" : "false",
 		g_cd_manager_probe.ok ? "true" : "false",
@@ -2193,6 +2210,11 @@ std::string build_locomotor_probe_json()
 			"true" : "false");
 
 	return buffer;
+}
+
+void refresh_archive_probe_json_cache()
+{
+	g_locomotor_probe_json_cache = build_locomotor_probe_json();
 }
 
 std::string build_upgrade_probe_json()
@@ -3027,7 +3049,9 @@ const char *write_state_json()
 		build_object_creation_list_probe_json();
 	const std::string weapon_probe_json = build_weapon_probe_json();
 	const std::string ai_data_probe_json = build_ai_data_probe_json();
-	const std::string locomotor_probe_json = build_locomotor_probe_json();
+	const std::string locomotor_probe_json = g_locomotor_probe_json_cache.empty()
+		? build_locomotor_probe_json()
+		: g_locomotor_probe_json_cache;
 	const std::string science_source_json = json_escape(g_archive_probe.science_source);
 	const std::string upgrade_probe_json = build_upgrade_probe_json();
 	const std::string command_button_probe_json = build_command_button_probe_json();
@@ -4059,6 +4083,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_stop_main_loop()
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_archive(const char *archive_path)
 {
 	g_archive_probe = probe_original_archive(archive_path);
+	refresh_archive_probe_json_cache();
 	std::printf("cnc-port: archive probe path=%s ok=%d indexed=%zu\n",
 		archive_path != nullptr ? archive_path : "",
 		g_archive_probe.ok ? 1 : 0,

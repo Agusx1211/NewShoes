@@ -432,7 +432,8 @@ shares structure and follows behind.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
-      verify the next blocker is `createAudioManager`. Keep
+      only then exercise the original `SubsystemInterfaceList::initSubsystem`
+      mutation path and verify the next blocker is `createAudioManager`. Keep
       `Maps\MapCache.ini` loading deferred to its original post-audio
       `GameEngine.cpp` point (`MapCache::updateCache` at line 607).
 - [ ] Prove the startup singleton shutdown/destructor path through the original
@@ -440,7 +441,8 @@ shares structure and follows behind.
       A direct `MSGNEW`/`delete` probe for durable `GlobalData`,
       `SubsystemInterfaceList`, `GameLODManager`, and `MapCache` currently
       corrupts the wasm memory pool after the mounted-archive boot logs the
-      singleton state, so the bootstrap keeps heap-backed residency but does not
+      singleton state, so the bootstrap keeps heap-backed residency, defers
+      subsystem-list shutdown proof until base startup files exist, and does not
       yet free those owner blocks.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.

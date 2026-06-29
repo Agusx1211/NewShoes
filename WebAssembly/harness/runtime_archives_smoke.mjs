@@ -1229,9 +1229,6 @@ function assertStartupSingletons(state, context, expectedReady) {
     && probe.heapAllocated === true
     && probe.globalDataOwned === true
     && probe.subsystemListOwned === true
-    && probe.subsystemInitShutdownOk === true
-    && probe.subsystemInitCount === 1
-    && probe.subsystemShutdownCount === 1
     && probe.gameLOD?.owned === true
     && probe.mapCache?.owned === true
     && probe.mapCache?.loaded === false
@@ -1244,6 +1241,10 @@ function assertStartupSingletons(state, context, expectedReady) {
       && (probe.ok !== true
         || probe.status !== "ready"
         || probe.nextRequired !== "createAudioManager"
+        || probe.subsystemInitShutdownOk !== true
+        || probe.subsystemShutdownDeferred !== true
+        || probe.subsystemInitCount !== 1
+        || probe.subsystemShutdownCount !== 0
         || probe.gameLOD?.filesReady !== true
         || probe.gameLOD?.initialized !== true
         || probe.mapCache?.loaded !== false
@@ -1257,6 +1258,10 @@ function assertStartupSingletons(state, context, expectedReady) {
       && (probe.ok !== false
         || probe.status !== "missing_game_lod_files"
         || probe.nextRequired !== "GameLODStartupFiles"
+        || probe.subsystemInitShutdownOk !== false
+        || probe.subsystemShutdownDeferred !== false
+        || probe.subsystemInitCount !== 0
+        || probe.subsystemShutdownCount !== 0
         || probe.gameLOD?.filesReady !== false
         || probe.gameLOD?.initialized !== false)) {
     throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
@@ -3504,9 +3509,7 @@ function assertOriginalEngineStartup(
   const audioMissing = new Set(audioFiles?.missing ?? []);
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
   const expectedStartupSingletonsReady = state.startupSingletons?.ok === true;
-  const expectedSubsystemListReady =
-    state.startupSingletons?.subsystemListOwned === true &&
-    state.startupSingletons?.subsystemInitShutdownOk === true;
+  const expectedSubsystemListReady = state.startupSingletons?.subsystemListOwned === true;
   const expectedGameLODReady = state.startupSingletons?.gameLOD?.initialized === true;
   const expectedMapCacheReady = state.startupSingletons?.mapCache?.loaded === true;
   if (!frontier

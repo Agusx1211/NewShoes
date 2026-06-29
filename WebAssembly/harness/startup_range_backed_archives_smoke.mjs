@@ -12,6 +12,14 @@ const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const archiveRoot = resolve(wasmRoot, process.argv[2] ?? defaultArchiveRoot);
 const runtimeArchivePath = "/assets/range-startup";
 
+function withTimeout(promise, milliseconds, label) {
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} timed out after ${milliseconds}ms`)), milliseconds);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
+}
+
 const baseIniStartupEntries = [
   "Data\\INI\\Default\\GameData.ini",
   "Data\\INI\\GameLODPresets.ini",
@@ -202,9 +210,6 @@ function assertStartupSingletons(state, context, expectedReady) {
     && probe.heapAllocated === true
     && probe.globalDataOwned === true
     && probe.subsystemListOwned === true
-    && probe.subsystemInitShutdownOk === true
-    && probe.subsystemInitCount === 1
-    && probe.subsystemShutdownCount === 1
     && probe.gameLOD?.owned === true
     && probe.mapCache?.owned === true
     && probe.mapCache?.loaded === false
@@ -217,6 +222,10 @@ function assertStartupSingletons(state, context, expectedReady) {
       && (probe.ok !== true
         || probe.status !== "ready"
         || probe.nextRequired !== "createAudioManager"
+        || probe.subsystemInitShutdownOk !== true
+        || probe.subsystemShutdownDeferred !== true
+        || probe.subsystemInitCount !== 1
+        || probe.subsystemShutdownCount !== 0
         || probe.gameLOD?.filesReady !== true
         || probe.gameLOD?.initialized !== true
         || probe.mapCache?.loaded !== false
@@ -230,6 +239,10 @@ function assertStartupSingletons(state, context, expectedReady) {
       && (probe.ok !== false
         || probe.status !== "missing_game_lod_files"
         || probe.nextRequired !== "GameLODStartupFiles"
+        || probe.subsystemInitShutdownOk !== false
+        || probe.subsystemShutdownDeferred !== false
+        || probe.subsystemInitCount !== 0
+        || probe.subsystemShutdownCount !== 0
         || probe.gameLOD?.filesReady !== false
         || probe.gameLOD?.initialized !== false)) {
     throw new Error(`${context} startup singleton ownership mismatch: ${JSON.stringify(probe)}`);
@@ -524,7 +537,7 @@ try {
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
 
-  const mountResult = await page.evaluate((payload) =>
+  const mountResult = await withTimeout(page.evaluate((payload) =>
     window.CnCPort.rpc("mountRangeBackedArchiveSet", payload), {
     path: runtimeArchivePath,
     verifyEach: false,
@@ -536,7 +549,7 @@ try {
       sourceArchive: archive.path,
       entries: archive.entries,
     })),
-  });
+  }), 45000, "range-backed startup archive mount");
 
   if (!mountResult.ok) {
     throw new Error(`range-backed startup archive mount failed: ${JSON.stringify(mountResult)}`);
@@ -569,7 +582,11 @@ try {
 
   let bootResult;
   try {
-    bootResult = await page.evaluate(() => window.CnCPort.rpc("boot"));
+    bootResult = await withTimeout(
+      page.evaluate(() => window.CnCPort.rpc("boot")),
+      30000,
+      "range-backed startup boot RPC",
+    );
   } catch (error) {
     throw new Error(`range-backed startup boot RPC failed: ${error.message}\n${browserLogs.join("\n")}`);
   }

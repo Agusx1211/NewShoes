@@ -1678,6 +1678,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       in the no-archive and mounted-runtime archive harness paths. The original
       `MSGNEW`/`delete` shutdown path remains open because freeing temporary
       startup owners after archive preflight corrupts the wasm memory pool.
+- [x] Keep the mounted-archive startup singleton probe vertical on the next
+      real blocker instead of mutating extra subsystem state early. The browser
+      bootstrap now checks `GameLOD.ini`/`GameLODPresets.ini` presence before
+      exercising `SubsystemInterfaceList::initSubsystem`, reports the owned
+      list separately from the deferred init/shutdown proof, and exposes
+      `startupSingletons.subsystemShutdownDeferred` when that later proof runs.
 - [x] Add a focused W3D GUI ownership smoke that moves the startup frontier
       beyond probe-only window-manager facts. `w3d-gamewindow-manager-smoke`
       links original `W3DGameWindowManager`, `W3DGameWindow`, and the W3D
@@ -3074,7 +3080,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Add a vertical browser startup smoke for range-backed archive
       registration: `npm run test:startup-range-backed-archives-browser`
       builds wasm, extracts the current runtime archives, range-fetches
-      50 startup-shaped INI/CSF/map-cache entries from user-supplied
+      51 startup-shaped INI/CSF/map-cache entries from user-supplied
       `INIZH.big`, `EnglishZH.big`, and `MapsZH.big`, synthesizes valid
       `/assets/range-startup/*.big` archives, registers them through
       `Win32BIGFileSystem` before boot, and verifies the wasm boot reaches
@@ -3093,6 +3099,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `milesAudioDeviceFrontier.nextRequired == webAudioPlaybackBackend`.
       The current local Zero Hour-only asset set still verifies the no-base
       branch with `optionalBaseArchives: []`.
+- [x] Make the range-backed startup smoke a bounded vertical gate instead of a
+      possible post-boot hang: archive mount and boot RPCs now have harness
+      timeouts with browser log context, boot reuses the registered archive
+      preflight when the wildcard path matches, and the C++ state serializer
+      reuses the locomotor probe JSON cached during archive preflight so
+      post-boot state can report the base-archive blocker.
 - [x] Move the Win32GameEngine browser probe into the vertical startup/archive
       harness path: the shared `win32GameEngineProbe` assertion now runs inside
       both `npm run test:runtime-archives-browser` and

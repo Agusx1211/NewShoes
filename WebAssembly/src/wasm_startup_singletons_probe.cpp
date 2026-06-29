@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <utility>
 
 namespace {
 constexpr const char GAME_LOD_INI_PATH[] = "Data\\INI\\GameLOD.ini";
@@ -27,6 +28,8 @@ GlobalData *g_startup_global_data = nullptr;
 SubsystemInterfaceList *g_startup_subsystem_list = nullptr;
 GameLODManager *g_startup_game_lod_manager = nullptr;
 MapCache *g_startup_map_cache = nullptr;
+int g_startup_probe_init_count = 0;
+int g_startup_probe_shutdown_count = 0;
 
 const char *json_bool(bool value)
 {
@@ -94,8 +97,10 @@ private:
 	int *m_shutdown_count = nullptr;
 };
 
-template <typename T>
-T *construct_persistent_startup_singleton()
+StartupProbeSubsystem *g_startup_probe_subsystem = nullptr;
+
+template <typename T, typename... Args>
+T *construct_persistent_startup_singleton(Args&&... args)
 {
 	static_assert(alignof(T) <= alignof(std::max_align_t),
 		"startup singleton type requires over-aligned storage");
@@ -107,7 +112,7 @@ T *construct_persistent_startup_singleton()
 	}
 
 	try {
-		return new (storage) T;
+		return new (storage) T(std::forward<Args>(args)...);
 	} catch (...) {
 		std::free(storage);
 		throw;
@@ -161,23 +166,28 @@ bool run_subsystem_list_probe(StartupSingletonsProbeResult &result)
 		return false;
 	}
 
-	int init_count = 0;
-	int shutdown_count = 0;
-	TheSubsystemList->shutdownAll();
-	TheSubsystemList->initSubsystem(
-		MSGNEW("GameEngineSubsystem") StartupProbeSubsystem(&init_count, &shutdown_count),
-		nullptr,
-		nullptr,
-		nullptr,
-		nullptr,
-		AsciiString("BrowserStartupSingletonProbe"));
+	if (g_startup_probe_subsystem == nullptr) {
+		g_startup_probe_subsystem =
+			construct_persistent_startup_singleton<StartupProbeSubsystem>(
+				&g_startup_probe_init_count,
+				&g_startup_probe_shutdown_count);
+		TheSubsystemList->initSubsystem(
+			g_startup_probe_subsystem,
+			nullptr,
+			nullptr,
+			nullptr,
+			nullptr,
+			AsciiString("BrowserStartupSingletonProbe"));
+	}
 	TheSubsystemList->postProcessLoadAll();
 	TheSubsystemList->resetAll();
-	TheSubsystemList->shutdownAll();
 
-	result.subsystem_init_count = init_count;
-	result.subsystem_shutdown_count = shutdown_count;
-	return init_count == 1 && shutdown_count == 1;
+	result.subsystem_init_count = g_startup_probe_init_count;
+	result.subsystem_shutdown_count = g_startup_probe_shutdown_count;
+	result.subsystem_shutdown_deferred =
+		g_startup_probe_subsystem != nullptr &&
+		g_startup_probe_shutdown_count == 0;
+	return g_startup_probe_init_count == 1 && result.subsystem_shutdown_deferred;
 }
 
 bool run_game_lod_probe(StartupSingletonsProbeResult &result)
@@ -334,8 +344,10 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 			result.subsystem_list_owned &&
 			result.game_lod_owned &&
 			result.map_cache_owned) {
-			result.subsystem_init_shutdown_ok = run_subsystem_list_probe(result);
 			result.game_lod_initialized = run_game_lod_probe(result);
+			if (result.game_lod_files_ready) {
+				result.subsystem_init_shutdown_ok = run_subsystem_list_probe(result);
+			}
 			result.map_cache_loaded = run_map_cache_probe(result);
 		}
 	} catch (...) {
@@ -378,6 +390,7 @@ const char *wasm_startup_singletons_state_json()
 		"\"runtimeGlobalsInstalled\":%s,\"heapAllocated\":%s,"
 		"\"globalDataOwned\":%s,"
 		"\"subsystemListOwned\":%s,\"subsystemInitShutdownOk\":%s,"
+		"\"subsystemShutdownDeferred\":%s,"
 		"\"subsystemInitCount\":%d,\"subsystemShutdownCount\":%d,"
 		"\"gameLOD\":{\"owned\":%s,\"filesReady\":%s,"
 		"\"initialized\":%s,\"staticLOD\":%d,\"dynamicLOD\":%d,"
@@ -399,6 +412,7 @@ const char *wasm_startup_singletons_state_json()
 		json_bool(state.global_data_owned),
 		json_bool(state.subsystem_list_owned),
 		json_bool(state.subsystem_init_shutdown_ok),
+		json_bool(state.subsystem_shutdown_deferred),
 		state.subsystem_init_count,
 		state.subsystem_shutdown_count,
 		json_bool(state.game_lod_owned),
