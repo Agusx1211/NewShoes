@@ -18,6 +18,9 @@ metadata overrides, and `INIAudioEventInfo` metadata parsing. `npm run
 verify:audio-request-update-frontier` pins the matching per-frame drain:
 `MilesAudioManager::update`, `processRequestList`, request gating, and
 AR_Play/AR_Pause/AR_Stop routing into the original Miles playback calls.
+`npm run verify:audio-completion-frontier` pins the original completion tail:
+Miles end-of-sample callbacks, `notifyOfAudioCompletion`, `AudioEventRTS`
+loop/portion state, `PS_Stopped`, and the per-frame release cleanup path.
 `npm run verify:audio-settings-frontier` pins the earlier settings frontier:
 `AudioSettings` fields, `GameAudio.cpp`
 `audioSettingsFieldParseTable` mappings, `AudioManager::init` audio INI load

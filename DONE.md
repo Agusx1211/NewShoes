@@ -3347,6 +3347,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       gating/deletion/erase order, and AR_Play/AR_Pause/AR_Stop routing to the
       original Miles playback calls. This verifies source structure only, not
       runtime audio.
+- [x] Add `npm run verify:audio-completion-frontier`, a source-only verifier
+      for the original audio completion/cleanup tail: Miles completion
+      callbacks, `MilesAudioManager::notifyOfAudioCompletion`,
+      `AudioEventRTS` loop/portion updates, `PS_Stopped` marking,
+      `processPlayingList` / `processStoppedList` cleanup, handle release,
+      file close, and `AudioEventRTS` deletion. This verifies source structure
+      only, not runtime audio.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
