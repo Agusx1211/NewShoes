@@ -27,6 +27,10 @@ shares structure and follows behind.
       files, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` are still
       absent from the indexed asset set; use the inventory `missingByReason`
       output to separate optional base-archive absence from real archive gaps.
+      Once base Generals `INI.big`/`English.big` are supplied, rerun
+      `npm run test:startup-range-backed-archives-browser` to verify the
+      optional range-backed base archive branch advances original startup to
+      the `CreateGameEngine` browser-device frontier.
 
 ---
 
@@ -488,8 +492,11 @@ shares structure and follows behind.
       a startup-shaped `INIZH.big`/`EnglishZH.big`/`MapsZH.big` subset,
       registers synthesized BIG archives before boot, proves the startup
       asset/data preflight is ready, and confirms the next frontier is the
-      absent base Generals startup INI files. The remaining work is the
-      normal on-demand full-archive streamer without a curated entry list.
+      absent base Generals startup INI files. The same smoke now also mounts
+      optional base Generals startup/audio entries from `INI.big`/`English.big`
+      when present and expects the `CreateGameEngine` frontier. The remaining
+      work is the normal on-demand full-archive streamer without a curated
+      entry list.
 - [ ] Hand runtime `W3DFileSystem` ownership over to the real
       `W3DDisplay` / browser display startup path once full display
       construction owns WW3D lifetime. The current smoke proves the

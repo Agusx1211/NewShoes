@@ -10,6 +10,31 @@ const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const archiveRoot = resolve(wasmRoot, process.argv[2] ?? defaultArchiveRoot);
 const runtimeArchivePath = "/assets/range-startup";
 
+const baseIniStartupEntries = [
+  "Data\\INI\\Default\\GameData.ini",
+  "Data\\INI\\Default\\Water.ini",
+  "Data\\INI\\Default\\Science.ini",
+  "Data\\INI\\Default\\Multiplayer.ini",
+  "Data\\INI\\Default\\Terrain.ini",
+  "Data\\INI\\Default\\Roads.ini",
+  "Data\\INI\\Rank.ini",
+  "Data\\INI\\Default\\PlayerTemplate.ini",
+  "Data\\INI\\Default\\FXList.ini",
+  "Data\\INI\\Default\\ObjectCreationList.ini",
+  "Data\\INI\\Default\\SpecialPower.ini",
+  "Data\\INI\\Default\\Upgrade.ini",
+  "Data\\INI\\Default\\Crate.ini",
+  "Data\\INI\\CommandMap.ini",
+  "Data\\INI\\Default\\Video.ini",
+];
+
+const baseIniAudioStartupEntries = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+];
+
 const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI",
   "Data\\INI\\MappedImages\\TextureSize_512\\HandCreatedMappedImages.INI",
@@ -27,7 +52,7 @@ const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\TextureSize_512\\SUUserInterface512.INI",
 ];
 
-const archiveSpecs = [
+const requiredArchiveSpecs = [
   {
     name: "INIZH.big",
     entries: [
@@ -82,23 +107,27 @@ const archiveSpecs = [
   },
 ];
 
-const expectedMissingStartupFiles = [
-  "Data\\INI\\Default\\GameData.ini",
-  "Data\\INI\\Default\\Water.ini",
-  "Data\\INI\\Default\\Science.ini",
-  "Data\\INI\\Default\\Multiplayer.ini",
-  "Data\\INI\\Default\\Terrain.ini",
-  "Data\\INI\\Default\\Roads.ini",
-  "Data\\INI\\Rank.ini",
-  "Data\\INI\\Default\\PlayerTemplate.ini",
-  "Data\\INI\\Default\\FXList.ini",
-  "Data\\INI\\Default\\ObjectCreationList.ini",
-  "Data\\INI\\Default\\SpecialPower.ini",
-  "Data\\INI\\Default\\Upgrade.ini",
-  "Data\\INI\\Default\\Crate.ini",
-  "Data\\INI\\CommandMap.ini",
-  "Data\\INI\\Default\\Video.ini",
+const optionalBaseArchiveSpecs = [
+  {
+    name: "ZZBase_INI.big",
+    sourceName: "INI.big",
+    description: "base Generals default/startup INI data",
+    entries: [
+      ...baseIniStartupEntries,
+      ...baseIniAudioStartupEntries,
+    ],
+  },
+  {
+    name: "ZZBase_English.big",
+    sourceName: "English.big",
+    description: "base Generals English localization data",
+    entries: [
+      "Data\\English\\CommandMap.ini",
+    ],
+  },
 ];
+
+const expectedMissingStartupFiles = baseIniStartupEntries;
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -153,23 +182,75 @@ function assertStartupAssetsReady(state, context) {
   }
 }
 
-function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
+function assertDeviceFactoryFrontier(startup, context, expected) {
+  const frontier = startup.deviceFactoryFrontier;
+  const audioFiles = frontier?.audioStartupFiles;
+  const milesAudio = frontier?.milesAudioDeviceFrontier;
+  if (!frontier
+      || frontier.probeOnly !== true
+      || frontier.ready !== false
+      || frontier.nextRequired !== expected.nextRequired
+      || frontier.firstUnownedInitFactory !== "createAudioManager"
+      || frontier.fileSystemReady !== true
+      || frontier.startupFilesReady !== expected.startupFilesReady
+      || frontier.setupReady !== true
+      || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
+      || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
+      || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
+      || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || audioFiles?.source !== "GameAudio.cpp::AudioManager::init"
+      || audioFiles?.ready !== expected.audioStartupFilesReady
+      || audioFiles?.audioSettingsIni !== expected.audioStartupFilesReady
+      || audioFiles?.defaultMusicIni !== expected.audioStartupFilesReady
+      || audioFiles?.musicIni !== true
+      || audioFiles?.defaultSoundEffectsIni !== true
+      || audioFiles?.soundEffectsIni !== true
+      || audioFiles?.defaultSpeechIni !== expected.audioStartupFilesReady
+      || audioFiles?.speechIni !== true
+      || audioFiles?.defaultVoiceIni !== expected.audioStartupFilesReady
+      || audioFiles?.voiceIni !== true
+      || audioFiles?.miscAudioIni !== true
+      || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
+      || milesAudio?.ready !== false
+      || milesAudio?.startupBoundaryReady !== true
+      || milesAudio?.playbackReady !== false
+      || milesAudio?.browserTarget !== "Web Audio"
+      || milesAudio?.nextRequired !== expected.milesNextRequired) {
+    throw new Error(`${context} device factory frontier mismatch: ${JSON.stringify(frontier)}`);
+  }
+}
+
+function assertOriginalStartupHeader(state, context, expected) {
   const startup = state.originalEngineStartup;
   if (!startup
       || startup.ok !== false
       || startup.initAttempted !== false
       || startup.source !== "GameEngine/Common/GameEngine.cpp::init"
-      || startup.status !== "missing_startup_files"
+      || startup.status !== expected.status
       || startup.startupAssetsReady !== true
       || startup.dataPreflightReady !== true
-      || startup.deviceFactoryFrontier?.nextRequired !== "startupFiles"
-      || startup.deviceFactoryFrontier?.fileSystemReady !== true
-      || startup.deviceFactoryFrontier?.startupFilesReady !== false
+      || startup.originalSetup?.globalData !== true
+      || startup.originalSetup?.commandLine !== true
+      || startup.originalSetup?.cdManager !== true
+      || startup.browserDeviceLayer?.ready !== false
+      || startup.browserDeviceLayer?.cdManager !== true
       || startup.browserDeviceLayer?.localFileSystem !== true
       || startup.browserDeviceLayer?.archiveFileSystem !== true) {
     throw new Error(`${context} original startup state mismatch: ${JSON.stringify(startup)}`);
   }
 
+  assertDeviceFactoryFrontier(startup, context, expected);
+  return startup;
+}
+
+function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
+  const startup = assertOriginalStartupHeader(state, context, {
+    status: "missing_startup_files",
+    nextRequired: "startupFiles",
+    startupFilesReady: false,
+    audioStartupFilesReady: false,
+    milesNextRequired: "audioStartupFiles",
+  });
   const files = startup.startupFiles;
   const missing = new Set(files?.missing ?? []);
   if (files?.ready !== false
@@ -200,10 +281,93 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
     throw new Error(`${context} startup file readiness mismatch: ${JSON.stringify(files)}`);
   }
 
+  const baseIniArchive = files.baseIniArchive;
+  const baseMissing = new Set(baseIniArchive?.missing ?? []);
+  if (baseIniArchive?.ready !== false
+      || baseIniArchive.archive !== "INI.big"
+      || baseIniArchive.source !== "Base Generals Data1.cab"
+      || baseIniArchive.mounted !== false
+      || baseIniArchive.mountName !== null
+      || baseIniArchive.sourceName !== null
+      || baseMissing.size !== expectedMissingStartupFiles.length
+      || !baseIniArchive.message?.includes("base Generals INI.big")) {
+    throw new Error(`${context} base INI startup diagnostic mismatch: ${JSON.stringify(baseIniArchive)}`);
+  }
+
   for (const expected of expectedMissingStartupFiles) {
     if (!missing.has(expected)) {
       throw new Error(`${context} did not report expected missing base startup file ${expected}: ${JSON.stringify(files)}`);
     }
+    if (!baseMissing.has(expected)) {
+      throw new Error(`${context} did not report expected missing base INI file ${expected}: ${JSON.stringify(baseIniArchive)}`);
+    }
+  }
+}
+
+function assertOriginalStartupWithBaseFiles(state, context) {
+  const startup = assertOriginalStartupHeader(state, context, {
+    status: "browser_device_layer_pending",
+    nextRequired: "CreateGameEngine",
+    startupFilesReady: true,
+    audioStartupFilesReady: true,
+    milesNextRequired: "webAudioPlaybackBackend",
+  });
+  const files = startup.startupFiles;
+  if (files?.ready !== true
+      || files.defaultGameDataIni !== true
+      || files.gameDataIni !== true
+      || files.defaultWaterIni !== true
+      || files.waterIni !== true
+      || files.defaultWeatherIni !== true
+      || files.weatherIni !== true
+      || files.generalsCsf !== true
+      || files.defaultScienceIni !== true
+      || files.scienceIni !== true
+      || files.defaultMultiplayerIni !== true
+      || files.multiplayerIni !== true
+      || files.defaultTerrainIni !== true
+      || files.terrainIni !== true
+      || files.defaultRoadsIni !== true
+      || files.roadsIni !== true
+      || files.rankIni !== true
+      || files.defaultPlayerTemplateIni !== true
+      || files.playerTemplateIni !== true
+      || files.defaultFXListIni !== true
+      || files.fxListIni !== true
+      || files.weaponIni !== true
+      || files.defaultObjectCreationListIni !== true
+      || files.objectCreationListIni !== true
+      || files.locomotorIni !== true
+      || files.defaultSpecialPowerIni !== true
+      || files.specialPowerIni !== true
+      || files.damageFXIni !== true
+      || files.armorIni !== true
+      || files.defaultObjectIni !== true
+      || files.objectIniFiles !== 1
+      || files.defaultUpgradeIni !== true
+      || files.upgradeIni !== true
+      || files.defaultAIDataIni !== true
+      || files.defaultCrateIni !== true
+      || files.crateIni !== true
+      || files.englishCommandMapIni !== true
+      || files.commandMapIni !== true
+      || files.mapCacheIni !== true
+      || files.defaultVideoIni !== true
+      || files.videoIni !== true
+      || (files.missing?.length ?? -1) !== 0) {
+    throw new Error(`${context} base startup file readiness mismatch: ${JSON.stringify(files)}`);
+  }
+
+  const baseIniArchive = files.baseIniArchive;
+  if (baseIniArchive?.ready !== true
+      || baseIniArchive.archive !== "INI.big"
+      || baseIniArchive.source !== "Base Generals Data1.cab"
+      || baseIniArchive.mounted !== true
+      || baseIniArchive.mountName !== "ZZBase_INI.big"
+      || baseIniArchive.sourceName !== "INI.big"
+      || (baseIniArchive.missing?.length ?? -1) !== 0
+      || !baseIniArchive.message?.includes("base INI startup files are visible")) {
+    throw new Error(`${context} base INI startup diagnostic should be clear: ${JSON.stringify(baseIniArchive)}`);
   }
 }
 
@@ -211,9 +375,29 @@ if (!isInside(wasmRoot, archiveRoot)) {
   throw new Error(`archive root must be inside ${wasmRoot}: ${archiveRoot}`);
 }
 
+const archiveSpecs = [...requiredArchiveSpecs];
+const availableOptionalBaseArchives = [];
+for (const spec of optionalBaseArchiveSpecs) {
+  const sourceName = spec.sourceName ?? spec.name;
+  const path = resolve(archiveRoot, sourceName);
+  if (!isInside(archiveRoot, path)) {
+    throw new Error(`optional archive path escaped ${archiveRoot}: ${path}`);
+  }
+
+  try {
+    await access(path);
+  } catch {
+    continue;
+  }
+
+  archiveSpecs.push(spec);
+  availableOptionalBaseArchives.push(spec);
+}
+
 const archives = [];
 for (const spec of archiveSpecs) {
-  const path = resolve(archiveRoot, spec.name);
+  const sourceName = spec.sourceName ?? spec.name;
+  const path = resolve(archiveRoot, sourceName);
   if (!isInside(archiveRoot, path)) {
     throw new Error(`archive path escaped ${archiveRoot}: ${path}`);
   }
@@ -226,11 +410,13 @@ for (const spec of archiveSpecs) {
 
   archives.push({
     ...spec,
+    sourceName,
     path,
     bytes: fileStat.size,
     urlPath: relative(wasmRoot, path).split(sep).join("/"),
   });
 }
+const hasBaseIniArchive = archives.some((archive) => archive.sourceName === "INI.big");
 
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
@@ -250,7 +436,7 @@ try {
     archives: archives.map((archive) => ({
       url: new URL(archive.urlPath, server.url).href,
       name: archive.name,
-      sourceName: archive.name,
+      sourceName: archive.sourceName,
       expectedSourceBytes: archive.bytes,
       sourceArchive: archive.path,
       entries: archive.entries,
@@ -289,7 +475,11 @@ try {
   }
 
   assertStartupAssetsReady(bootResult.state, "range-backed startup boot");
-  assertOriginalStartupMissingOnlyBaseFiles(bootResult.state, "range-backed startup boot");
+  if (hasBaseIniArchive) {
+    assertOriginalStartupWithBaseFiles(bootResult.state, "range-backed startup boot");
+  } else {
+    assertOriginalStartupMissingOnlyBaseFiles(bootResult.state, "range-backed startup boot");
+  }
 
   console.log(JSON.stringify({
     ok: true,
@@ -298,6 +488,12 @@ try {
     subsetBytes: archiveSet.totalBytes,
     sourceBytes: archiveSet.sourceTotalBytes,
     entries: totalEntryCount,
+    optionalBaseArchives: availableOptionalBaseArchives.map((archive) => ({
+      sourceName: archive.sourceName,
+      mountName: archive.name,
+      description: archive.description,
+      entries: archive.entries.length,
+    })),
     bootFrame: bootResult.state.frame,
     startupAssets: bootResult.state.startupAssets,
     originalEngineStartup: bootResult.state.originalEngineStartup,

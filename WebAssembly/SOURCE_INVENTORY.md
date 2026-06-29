@@ -1088,7 +1088,11 @@ The wasm CMake skeleton currently builds:
   `/assets/range-startup/*.big` archives, registers them through the existing
   browser runtime archive owner before boot, and verifies wasm boot reaches
   `startupAssets.status == ready` while the original engine startup frontier
-  stops only on the expected missing base Generals startup INI files.
+  stops only on the expected missing base Generals startup INI files. When
+  optional base Generals `INI.big` is present, the same smoke range-fetches its
+  startup/audio INI entries as `ZZBase_INI.big`, also mounts optional
+  `English.big` as `ZZBase_English.big` when available, and expects the startup
+  frontier to advance to `CreateGameEngine`.
 
 ## Next Compile Order
 

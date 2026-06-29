@@ -3000,6 +3000,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `startupAssets.status == ready` plus the expected
       `originalEngineStartup.status == missing_startup_files` frontier for
       absent base Generals startup INI files.
+- [x] Extend the range-backed startup browser smoke to consume optional base
+      Generals startup data when supplied: if `INI.big` is present in
+      `artifacts/real-assets`, the smoke range-fetches the needed base
+      startup/audio INI entries, mounts them as `ZZBase_INI.big` through the
+      same synthesized BIG archive path, also mounts `English.big` as
+      `ZZBase_English.big` when available, and asserts the with-base branch
+      advances original startup to
+      `originalEngineStartup.status == browser_device_layer_pending`,
+      `deviceFactoryFrontier.nextRequired == CreateGameEngine`, and
+      `milesAudioDeviceFrontier.nextRequired == webAudioPlaybackBackend`.
+      The current local Zero Hour-only asset set still verifies the no-base
+      branch with `optionalBaseArchives: []`.
 - [x] Bring the original `TextureClass::Init` / `TextureLoader`
       foreground and background filename-loading path online for browser
       wasm so real texture probes can use the normal asset-manager
