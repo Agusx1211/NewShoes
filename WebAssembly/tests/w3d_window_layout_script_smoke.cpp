@@ -21,9 +21,12 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/UserPreferences.h"
 #include "Common/ArchiveFileSystem.h"
 #include "GameClient/Display.h"
 #include "GameClient/DisplayStringManager.h"
+#include "GameClient/CampaignManager.h"
+#include "GameClient/ExtendedMessageBox.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
@@ -32,14 +35,24 @@
 #include "GameClient/HeaderTemplate.h"
 #include "GameClient/Image.h"
 #include "GameClient/Keyboard.h"
+#include "GameClient/MapUtil.h"
+#include "GameClient/Mouse.h"
 #include "GameClient/SelectionXlat.h"
 #include "GameClient/Shell.h"
+#include "GameClient/ShellHooks.h"
 #include "GameClient/WinInstanceData.h"
 #include "GameClient/WindowLayout.h"
+#include "GameClient/GameWindowTransitions.h"
+#include "GameLogic/ScriptEngine.h"
+#include "GameNetwork/DownloadManager.h"
 #include "W3DDevice/Common/W3DFunctionLexicon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
+class CampaignManager;
+class ChallengeGenerals;
+class DownloadManager;
+class GameEngine;
 class GameLogic;
 class Credits;
 class DisplayStringManager;
@@ -49,9 +62,12 @@ class IMEManagerInterface;
 class ImageCollection;
 class InGameUI;
 class Keyboard;
+class MapCache;
 class SelectionTranslator;
+class ScriptEngine;
 class VideoPlayerInterface;
 class View;
+class GameSpyPeerMessageQueueInterface;
 class GameSpyInfoInterface;
 void W3DMainMenuInit(WindowLayout *layout, void *userData);
 void MainMenuInit(WindowLayout *layout, void *userData);
@@ -72,19 +88,33 @@ IMEManagerInterface *TheIMEManager = nullptr;
 ImageCollection *TheMappedImageCollection = nullptr;
 InGameUI *TheInGameUI = nullptr;
 Keyboard *TheKeyboard = nullptr;
+CampaignManager *TheCampaignManager = nullptr;
+ChallengeGenerals *TheChallengeGenerals = nullptr;
+DownloadManager *TheDownloadManager = nullptr;
+GameEngine *TheGameEngine = nullptr;
+GameSpyPeerMessageQueueInterface *TheGameSpyPeerMessageQueue = nullptr;
+MapCache *TheMapCache = nullptr;
 SelectionTranslator *TheSelectionTranslator = nullptr;
+ScriptEngine *TheScriptEngine = nullptr;
 VideoPlayerInterface *TheVideoPlayer = nullptr;
 View *TheTacticalView = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
 Credits *TheCredits = nullptr;
+GameWindowTransitionsHandler *TheTransitionHandler = nullptr;
+Bool DontShowMainMenu = FALSE;
+Bool dispChanged = FALSE;
+DisplaySettings oldDispSettings = {800, 600, 32, TRUE};
+DisplaySettings newDispSettings = {800, 600, 32, TRUE};
+char *TheShellHookNames[SHELL_SCRIPT_HOOK_TOTAL] = {};
 HWND ApplicationHWnd = NULL;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
 
-Int g_main_menu_init_calls = 0;
-Int g_main_menu_shutdown_calls = 0;
+Int g_mouse_visibility_true_calls = 0;
+Int g_mouse_visibility_false_calls = 0;
+Int g_transition_reverse_calls = 0;
 
 std::string normalized_path(const Char *path)
 {
@@ -408,6 +438,27 @@ private:
 	AsciiStringVec m_empty;
 };
 
+class SmokeMouse : public Mouse
+{
+public:
+	void initCursorResources() override {}
+	void setCursor(MouseCursor cursor) override { m_currentCursor = cursor; }
+	void setVisibility(Bool visible) override
+	{
+		if (visible) {
+			++g_mouse_visibility_true_calls;
+		} else {
+			++g_mouse_visibility_false_calls;
+		}
+		Mouse::setVisibility(visible);
+	}
+	void capture() override {}
+	void releaseCapture() override {}
+
+protected:
+	UnsignedByte getMouseEvent(MouseIO *, Bool) override { return MOUSE_EVENT_NONE; }
+};
+
 class SmokeDisplay : public Display
 {
 public:
@@ -578,17 +629,7 @@ bool exercise_w3d_layout_script()
 			"parseStatus did not preserve WIN_STATUS_ENABLED") && ok;
 	}
 
-	g_main_menu_init_calls = 0;
 	if (layout != nullptr) {
-		layout->runInit();
-	}
-	ok = expect(g_main_menu_init_calls == 1,
-		"original W3DMainMenuInit did not reach the MainMenuInit boundary through W3DFunctionLexicon lookup") && ok;
-	if (layout != nullptr) {
-		layout->runUpdate();
-		layout->runShutdown();
-		ok = expect(g_main_menu_init_calls == 1,
-			"[None] update/shutdown callbacks should not call W3DMainMenuInit again") && ok;
 		layout->destroyWindows();
 		layout->deleteInstance();
 	}
@@ -810,7 +851,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SmokeFontLibrary font_library;
 	SmokeDisplayStringManager display_string_manager;
 	SmokeGameText game_text;
+	SmokeMouse mouse;
 	HeaderTemplateManager header_templates;
+	GameWindowTransitionsHandler transition_handler;
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
 
@@ -824,7 +867,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	FontLibrary *old_font_library = TheFontLibrary;
 	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
 	GameTextInterface *old_game_text = TheGameText;
+	Mouse *old_mouse = TheMouse;
 	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
 	GameWindowManager *old_window_manager = TheWindowManager;
 	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
 	Shell *old_shell = TheShell;
@@ -839,7 +884,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheFontLibrary = &font_library;
 	TheDisplayStringManager = &display_string_manager;
 	TheGameText = &game_text;
+	TheMouse = &mouse;
 	TheHeaderTemplateManager = &header_templates;
+	TheTransitionHandler = &transition_handler;
 	TheWindowManager = &window_manager;
 	TheFunctionLexicon = &function_lexicon;
 
@@ -864,8 +911,10 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuSystem"))) == MainMenuSystem,
 		"FunctionLexicon did not resolve MainMenuSystem for MainMenu.wnd") && ok;
 
-	g_main_menu_init_calls = 0;
-	g_main_menu_shutdown_calls = 0;
+	global_data.m_breakTheMovie = TRUE;
+	g_mouse_visibility_true_calls = 0;
+	g_mouse_visibility_false_calls = 0;
+	g_transition_reverse_calls = 0;
 	{
 		Shell shell;
 		TheShell = &shell;
@@ -877,19 +926,44 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			"original Shell::showShell did not push exactly one layout") && ok;
 		ok = expect(top != nullptr && top->getFilename() == AsciiString("Menus/MainMenu.wnd"),
 			"original Shell::showShell did not push Menus/MainMenu.wnd") && ok;
-		ok = expect(g_main_menu_init_calls == 1,
-			"original Shell::doPush did not execute W3DMainMenuInit through to the MainMenuInit boundary") && ok;
 		ok = expect(main_parent != nullptr,
 			"MainMenu.wnd did not create MainMenuParent through the shell stack") && ok;
 		if (main_parent != nullptr) {
 			ok = expect(main_parent->winGetSystemFunc() == MainMenuSystem,
 				"MainMenuParent did not resolve MainMenuSystem through the original GUI lexicon") && ok;
+			ok = expect(TheWindowManager->winGetFocus() == main_parent,
+				"original MainMenuInit did not set keyboard focus to MainMenuParent") && ok;
+			Bool wants_focus = FALSE;
+			const WindowMsgHandledType focus_result = main_parent->winGetSystemFunc()(
+				main_parent, GWM_INPUT_FOCUS, TRUE, reinterpret_cast<WindowMsgData>(&wants_focus));
+			ok = expect(focus_result == MSG_HANDLED && wants_focus == TRUE,
+				"original MainMenuSystem did not handle the input-focus path") && ok;
+		}
+		ok = expect(global_data.m_breakTheMovie == FALSE,
+			"original MainMenuInit did not clear GlobalData::m_breakTheMovie") && ok;
+		ok = expect(g_mouse_visibility_true_calls == 1 && g_mouse_visibility_false_calls == 1,
+			"original MainMenuInit did not exercise the first-run mouse visibility path") && ok;
+		ok = expect(TheMouse->getVisibility() == FALSE,
+			"original MainMenuInit first-run branch did not leave the mouse hidden for fade-in") && ok;
+		ok = expect(g_transition_reverse_calls == 1,
+			"original MainMenuInit did not reverse the first-run FadeWholeScreen transition") && ok;
+		for (const char *name : {
+				"MainMenu.wnd:MapBorder1",
+				"MainMenu.wnd:MapBorder2",
+				"MainMenu.wnd:MapBorder3",
+				"MainMenu.wnd:MapBorder4"}) {
+			GameWindow *dropdown = TheWindowManager->winGetWindowFromId(main_parent,
+				TheNameKeyGenerator->nameToKey(AsciiString(name)));
+			ok = expect(dropdown != nullptr,
+				"MainMenu.wnd did not create an expected dropdown window") && ok;
+			if (dropdown != nullptr) {
+				ok = expect(BitTest(dropdown->winGetStatus(), WIN_STATUS_HIDDEN),
+					"original MainMenuInit did not hide dropdown window") && ok;
+			}
 		}
 		shell.popImmediate();
-		ok = expect(g_main_menu_shutdown_calls == 1,
-			"original Shell::popImmediate did not execute the MainMenu layout shutdown callback") && ok;
 		ok = expect(shell.getScreenCount() == 0,
-			"original Shell::popImmediate did not clear the shell stack") && ok;
+			"original Shell::popImmediate/MainMenuShutdown did not clear the shell stack") && ok;
 	}
 	TheShell = old_shell;
 	window_manager.update();
@@ -898,7 +972,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 
 	TheFunctionLexicon = old_function_lexicon;
 	TheWindowManager = old_window_manager;
+	TheTransitionHandler = old_transition_handler;
 	TheHeaderTemplateManager = old_header_templates;
+	TheMouse = old_mouse;
 	TheGameText = old_game_text;
 	TheDisplayStringManager = old_display_string_manager;
 	TheFontLibrary = old_font_library;
@@ -975,7 +1051,6 @@ DEFINE_LAYOUT_STUB(LanLobbyMenuUpdate)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuInit)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuShutdown)
 DEFINE_LAYOUT_STUB(LanMapSelectMenuUpdate)
-DEFINE_LAYOUT_STUB(MainMenuUpdate)
 DEFINE_LAYOUT_STUB(MapSelectMenuInit)
 DEFINE_LAYOUT_STUB(MapSelectMenuShutdown)
 DEFINE_LAYOUT_STUB(MapSelectMenuUpdate)
@@ -1096,8 +1171,6 @@ DEFINE_WINDOW_STUB(LanMapSelectMenuInput)
 DEFINE_WINDOW_STUB(LanMapSelectMenuSystem)
 DEFINE_WINDOW_STUB(LeftHUDInput)
 DEFINE_WINDOW_STUB(MOTDSystem)
-DEFINE_WINDOW_STUB(MainMenuInput)
-DEFINE_WINDOW_STUB(MainMenuSystem)
 DEFINE_WINDOW_STUB(MapSelectMenuInput)
 DEFINE_WINDOW_STUB(MapSelectMenuSystem)
 DEFINE_WINDOW_STUB(NetworkDirectConnectInput)
@@ -1199,17 +1272,162 @@ void W3DCommandBarTopDraw(GameWindow *, WinInstanceData *) {}
 void W3DNoDraw(GameWindow *, WinInstanceData *) {}
 void W3DDrawMapPreview(GameWindow *, WinInstanceData *) {}
 
-void MainMenuInit(WindowLayout *, void *)
-{
-	++g_main_menu_init_calls;
-}
-
-void MainMenuShutdown(WindowLayout *, void *)
-{
-	++g_main_menu_shutdown_calls;
-}
-
 void GameSpyCloseAllOverlays()
+{
+}
+
+void GameSpyUpdateOverlays()
+{
+}
+
+void RaiseGSMessageBox()
+{
+}
+
+void TearDownGameSpy()
+{
+}
+
+void StartPatchCheck()
+{
+}
+
+void CancelPatchCheckCallback()
+{
+}
+
+void HTTPThinkWrapper()
+{
+}
+
+void StopAsyncDNSCheck()
+{
+}
+
+void StartDownloadingPatches()
+{
+}
+
+Bool IsFirstCDPresent()
+{
+	return TRUE;
+}
+
+const FieldParse GameWindowTransitionsHandler::m_gameWindowTransitionsFieldParseTable[] = {
+	{NULL, NULL, NULL, 0}
+};
+
+GameWindowTransitionsHandler::GameWindowTransitionsHandler()
+{
+}
+
+GameWindowTransitionsHandler::~GameWindowTransitionsHandler()
+{
+}
+
+void GameWindowTransitionsHandler::init()
+{
+}
+
+void GameWindowTransitionsHandler::load()
+{
+}
+
+void GameWindowTransitionsHandler::reset()
+{
+}
+
+void GameWindowTransitionsHandler::update()
+{
+}
+
+void GameWindowTransitionsHandler::draw()
+{
+}
+
+Bool GameWindowTransitionsHandler::isFinished()
+{
+	return TRUE;
+}
+
+void GameWindowTransitionsHandler::parseWindow(INI *, void *, void *, const void *)
+{
+}
+
+void GameWindowTransitionsHandler::setGroup(AsciiString, Bool)
+{
+}
+
+void GameWindowTransitionsHandler::reverse(AsciiString groupName)
+{
+	if (groupName == AsciiString("FadeWholeScreen")) {
+		++g_transition_reverse_calls;
+	}
+}
+
+void GameWindowTransitionsHandler::remove(AsciiString, Bool)
+{
+}
+
+TransitionGroup *GameWindowTransitionsHandler::getNewGroup(AsciiString)
+{
+	return nullptr;
+}
+
+GameWindow *ExMessageBoxOkCancel(UnicodeString, UnicodeString, void *, MessageBoxFunc, MessageBoxFunc)
+{
+	return nullptr;
+}
+
+void ScriptEngine::setGlobalDifficulty(GameDifficulty)
+{
+}
+
+void CampaignManager::setCampaign(AsciiString)
+{
+}
+
+AsciiString CampaignManager::getCurrentMap()
+{
+	return AsciiString::TheEmptyString;
+}
+
+HRESULT DownloadManager::update()
+{
+	return S_OK;
+}
+
+UserPreferences::UserPreferences()
+{
+}
+
+UserPreferences::~UserPreferences()
+{
+}
+
+Bool UserPreferences::load(AsciiString)
+{
+	return TRUE;
+}
+
+Bool UserPreferences::write()
+{
+	return TRUE;
+}
+
+OptionPreferences::OptionPreferences()
+{
+}
+
+OptionPreferences::~OptionPreferences()
+{
+}
+
+void OptionPreferences::setCampaignDifficulty(Int)
+{
+}
+
+void MapCache::updateCache()
 {
 }
 
@@ -1237,8 +1455,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->MainMenuInit\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original W3DMainMenuInit to MainMenuInit boundary, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

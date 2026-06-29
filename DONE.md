@@ -1768,6 +1768,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MainMenu.cpp` behavior remains the next GUI slice. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Link original `MainMenu.cpp` and original `Mouse.cpp` into
+      `w3d-window-layout-script-smoke`, remove the remaining local
+      `MainMenu*` callback bodies, and drive real Shell-owned
+      `Menus/MainMenu.wnd` through original
+      `W3DMainMenuInit -> MainMenuInit`. The smoke now verifies original
+      `MainMenuInit` first-run state mutation (`m_breakTheMovie`, mouse
+      visibility, `FadeWholeScreen`, `MainMenuParent` focus, dropdown hides)
+      plus original `MainMenuSystem(GWM_INPUT_FOCUS)`, while keeping undriven
+      campaign/GameSpy/download/options branches as explicit no-op boundaries
+      until those menu flows are harness-driven. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching
