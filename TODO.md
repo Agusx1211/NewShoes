@@ -395,6 +395,15 @@ shares structure and follows behind.
       surface with original `GameEngine.cpp` still requires owned
       `TheGameResultsQueue`, full original `GameEngine.cpp` init consumption,
       and startup singleton teardown contracts.
+- [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
+      ownership slice before marking `createFunctionLexicon` or
+      `createModuleFactory` runtime-ready. A direct focused
+      `W3DFunctionLexicon::init()` smoke links original GUI/radar callback
+      objects and currently stops on unresolved `TheWindowManager` /
+      `TheDisplay`; do not hide that with null globals. Own the browser
+      `GameWindowManager`/`Display` singleton path, then prove
+      `W3DFunctionLexicon` table lookup and `W3DModuleFactory` module-template
+      lookup through original public APIs.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
