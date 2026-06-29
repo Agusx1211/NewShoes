@@ -3379,6 +3379,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       is computed in `AudioManager::update` and passed as the adjustment
       argument, and `MilesAudioManager::processPlayingList` re-pushing changed
       volume into already-playing 2D/3D/stream handles.
+- [x] Add `npm run verify:audio-options-volume-frontier`, a source-only
+      verifier for the original Zero Hour Options-menu volume write path:
+      the music/SFX/voice slider control IDs, `saveOptions` slider reads,
+      preference writes, SFX 2D/3D split through `m_relative2DVolume`, and
+      the exact `TheAudio->setVolume(... | AudioAffect_SystemSetting)` calls
+      into `AudioManager::setVolume` script/system volume fields. This
+      verifies the source UI contract only, not live browser mixer control.
 - [x] Add `npm run verify:audio-music-manager-frontier`, a source-only
       verifier for the original music playback/transition frontier:
       `MusicTrack` fields and parse table, `MusicManager` AR_Play/AR_Stop
