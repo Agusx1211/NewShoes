@@ -1706,6 +1706,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       remain open. Verified with
       `cmake --build WebAssembly/build/wasm --target w3d-gamewindow-manager-smoke -j 8`
       and `node dist/w3d-gamewindow-manager-smoke.cjs`.
+- [x] Extend the focused W3D GUI ownership smoke into a repaint dispatch
+      proof: the same `w3d-gamewindow-manager-smoke` now gives the original
+      push-button enabled fill/border colors, calls original
+      `GameWindowManager::winRepaint`, and verifies
+      `W3DGadgetPushButtonDraw` reaches the focused `Display::drawOpenRect`
+      and `Display::drawFillRect` sinks. This is still a Node GUI-dispatch
+      proof, not a browser W3DDisplay/WebGL rendering completion. Verified
+      with `npm --prefix WebAssembly run test:w3d-gamewindow-manager`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching
@@ -3409,6 +3417,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       original `GadgetPushButtonInput` sends exactly one `GBM_SELECTED`
       to its owner while consuming the raw messages before
       `TheCommandList`.
+- [x] Extend the focused original widget click proof into an observable
+      GUI state-change vertical: the button owner's `GBM_SELECTED` handler
+      now calls original `GameWindow::winHide(FALSE)` on a hidden target
+      window, and `gamewindow-input-smoke` verifies the target's
+      `WIN_STATUS_HIDDEN` bit clears after the original click path runs.
+      Verified with `npm --prefix WebAssembly run test:gamewindow-input`.
 - [x] Extend the browser frame-owned original Mouse GUI proof to a real
       widget: the persistent probe `GameWindowManager` now owns a child
       window wired to original `GadgetPushButtonSystem` /

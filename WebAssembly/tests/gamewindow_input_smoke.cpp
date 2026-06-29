@@ -66,7 +66,9 @@ struct ButtonCapture
 {
 	Int selectedCount = 0;
 	GameWindow *selectedWindow = nullptr;
+	GameWindow *targetWindow = nullptr;
 	ICoord2D selectedMouse = { 0, 0 };
+	Bool targetShownBySelection = FALSE;
 };
 
 class SmokeGameWindow : public GameWindow
@@ -207,6 +209,11 @@ WindowMsgHandledType capture_button_owner_system(GameWindow *window,
 		capture->selectedWindow = reinterpret_cast<GameWindow *>(mData1);
 		capture->selectedMouse.x = LOLONGTOSHORT(mData2);
 		capture->selectedMouse.y = HILONGTOSHORT(mData2);
+		if (capture->targetWindow != nullptr) {
+			capture->targetWindow->winHide(FALSE);
+			capture->targetShownBySelection =
+				BitTest(capture->targetWindow->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE;
+		}
 		return MSG_HANDLED;
 	}
 
@@ -338,6 +345,22 @@ bool exercise_push_button_widget_click()
 	owner->winSetSize(220, 160);
 	manager.linkWindow(owner);
 
+	GameWindow *target = manager.winCreate(owner,
+		WIN_STATUS_ENABLED | WIN_STATUS_HIDDEN,
+		130,
+		20,
+		60,
+		40,
+		nullptr,
+		nullptr);
+	capture.targetWindow = target;
+	ok = expect(target != nullptr,
+		"original GameWindowManager should create a target window for button-selected GUI state changes") && ok;
+	if (target != nullptr) {
+		ok = expect(BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN),
+			"target window should start hidden before the push-button click") && ok;
+	}
+
 	WinInstanceData buttonInstData;
 	buttonInstData.m_style = GWS_PUSH_BUTTON | GWS_MOUSE_TRACK;
 	GameWindow *button = manager.gogoGadgetPushButton(owner,
@@ -364,6 +387,10 @@ bool exercise_push_button_widget_click()
 			"GBM_SELECTED should identify the clicked GadgetPushButton as its source window") && ok;
 		ok = expect(capture.selectedMouse.x == 42 && capture.selectedMouse.y == 36,
 			"GBM_SELECTED should carry the original packed click coordinates from WindowTranslator") && ok;
+		ok = expect(capture.targetShownBySelection,
+			"owner GBM_SELECTED handler should be able to mutate another GameWindow via winHide(FALSE)") && ok;
+		ok = expect(target != nullptr && BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+			"push-button-selected GUI state change should leave the target window unhidden") && ok;
 		ok = expect(BitTest(button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
 			"GadgetPushButtonInput should clear transient selected state after the left-button release") && ok;
 		ok = expect(manager.winGetGrabWindow() == nullptr,
@@ -496,6 +523,6 @@ int main()
 		return 1;
 	}
 
-	std::cout << "{\"ok\":true,\"library\":\"GameWindow\",\"covered\":\"Win32Mouse Mouse::createStreamMessages to MessageStream WindowTranslator original GameWindowManager click dispatch and GadgetPushButton GBM_SELECTED\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"GameWindow\",\"covered\":\"Win32Mouse Mouse::createStreamMessages to MessageStream WindowTranslator original GameWindowManager click dispatch, GadgetPushButton GBM_SELECTED, and selected-handler winHide GUI state mutation\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }

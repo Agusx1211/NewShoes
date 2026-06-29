@@ -4,6 +4,7 @@
 #include "Common/GlobalData.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/Display.h"
+#include "GameClient/GadgetPushButton.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
@@ -103,6 +104,18 @@ public:
 		return m_lineDraws + m_openRectDraws + m_fillRectDraws + m_rectClockDraws +
 			m_remainingRectClockDraws + m_imageDraws + m_videoBufferDraws;
 	}
+	void resetDrawCounts()
+	{
+		m_lineDraws = 0;
+		m_openRectDraws = 0;
+		m_fillRectDraws = 0;
+		m_rectClockDraws = 0;
+		m_remainingRectClockDraws = 0;
+		m_imageDraws = 0;
+		m_videoBufferDraws = 0;
+	}
+	Int openRectDraws() const { return m_openRectDraws; }
+	Int fillRectDraws() const { return m_fillRectDraws; }
 
 private:
 	IRegion2D m_clipRegion = { { 0, 0 }, { 0, 0 } };
@@ -162,7 +175,7 @@ bool exercise_w3d_window_manager()
 			"W3DGameWindowManager should expose the W3D push-button image draw callback") && ok;
 
 		GameWindow *root = manager.winCreate(nullptr,
-			WIN_STATUS_ENABLED,
+			WIN_STATUS_ENABLED | WIN_STATUS_SEE_THRU,
 			0,
 			0,
 			320,
@@ -198,6 +211,14 @@ bool exercise_w3d_window_manager()
 					"W3D push-button gadget should install the W3D draw callback") && ok;
 				ok = expect(button->winGetInputFunc() == GadgetPushButtonInput,
 					"W3D push-button gadget should keep the original push-button input callback") && ok;
+				GadgetButtonSetEnabledColor(button, GameMakeColor(0, 255, 0, 255));
+				GadgetButtonSetEnabledBorderColor(button, GameMakeColor(255, 255, 255, 255));
+				display.resetDrawCounts();
+				manager.winRepaint();
+				ok = expect(display.openRectDraws() >= 1,
+					"GameWindowManager::winRepaint should dispatch W3DGadgetPushButtonDraw to Display::drawOpenRect") && ok;
+				ok = expect(display.fillRectDraws() >= 1,
+					"GameWindowManager::winRepaint should dispatch W3DGadgetPushButtonDraw to Display::drawFillRect") && ok;
 			}
 
 			manager.winDestroy(root);
@@ -228,6 +249,6 @@ int main()
 		return 1;
 	}
 
-	std::cout << "{\"ok\":true,\"library\":\"W3DGameWindowManager\",\"covered\":\"original W3DGameWindowManager winCreate W3DGameWindow allocation and W3D GadgetPushButton callback ownership\",\"source\":\"GeneralsMD original\"}\n";
+	std::cout << "{\"ok\":true,\"library\":\"W3DGameWindowManager\",\"covered\":\"original W3DGameWindowManager winCreate W3DGameWindow allocation, GadgetPushButton callback ownership, and winRepaint dispatch into W3DGadgetPushButtonDraw Display draw sinks\",\"source\":\"GeneralsMD original\"}\n";
 	return 0;
 }
