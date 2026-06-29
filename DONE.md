@@ -4236,6 +4236,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the focused `ChallengeLoadScreen::init` browser smoke through a
+      real campaign/persona lookup. The load-screen hook build now preserves
+      production behavior while allowing the focused smoke to opt into
+      `CampaignManager` / `ChallengeGenerals` data: the selected challenge
+      campaign resolves the player persona, the selected mission resolves the
+      opponent persona and `GC_Background` movie label, and the fallback movie
+      hook remains set to `VS_small` so the test proves the mission-owned movie
+      path. The synthetic Challenge layout now creates real static-text gadget
+      entries for bio text, and the smoke asserts campaign/opponent lookup
+      counters, teletype-rendered player/opponent bio text, player/opponent
+      name and taunt audio, `LoadScreenAmbient`, 179 background frames, 372
+      managed child-window copies, 551 Challenge presentations, and unchanged
+      aggregate browser counts of 12 Bink open/close lifecycles, 766 frame
+      copies/draws, 13 texture creates, 779 texture updates, and 12 texture
+      releases. Full production Challenge persona setup from the normal
+      shell/INI path, full campaign-owned load-screen setup, InGameUI movies,
+      and Bink/audio sync remain open. Verified with
+      `cmake --build WebAssembly/build/wasm --target bink-w3d-video-buffer-browser-smoke -j 8`,
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

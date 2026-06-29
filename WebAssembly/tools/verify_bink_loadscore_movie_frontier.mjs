@@ -10,10 +10,12 @@
 // original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
 // movie helper path with hook-counted campaign stats and LOD gates, its low-res
 // skip branch, hook-counted non-final victorious, defeat/retry, and
-// challenge win/loss finishSinglePlayerInit branches, and
+// challenge win/loss finishSinglePlayerInit branches,
 // SinglePlayerLoadScreen::init movie loops through test-controlled
-// layout/movie facts; full non-test finishSinglePlayerInit subsystem edges,
-// production Challenge persona ownership, and InGameUI coverage remain open.
+// layout/movie facts, and ChallengeLoadScreen::init through a focused
+// CampaignManager / ChallengeGenerals persona setup; full non-test
+// finishSinglePlayerInit subsystem edges, production Challenge persona
+// ownership, and InGameUI coverage remain open.
 //
 // Pinned contract:
 //   1. LoadScreen.h stores VideoBuffer / VideoStreamInterface ownership fields
@@ -22,8 +24,9 @@
 //      TheVideoPlayer, allocates a Display video buffer, loops through
 //      isFrameReady -> frameDecompress -> frameRender(buffer) -> frameNext,
 //      attaches the buffer to the load-screen GameWindow, draws, then closes.
-//   3. ChallengeLoadScreen::init owns the same background movie loop, plus a
-//      WindowVideoManager that plays portrait and VS overlay movies.
+//   3. ChallengeLoadScreen::init owns the same background movie loop, uses the
+//      campaign/mission persona lookup path in the focused runtime hook build,
+//      plus a WindowVideoManager that plays portrait and VS overlay movies.
 //   4. ScoreScreen final-victory movies route through PlayMovieAndBlock,
 //      creating Menus/BlankWindow.wnd, attaching a VideoBuffer to its first
 //      window, drawing each decompressed frame, and cleaning up the layout.
@@ -553,15 +556,28 @@ function main() {
     /void\s+ChallengeLoadScreen\s*::\s*init\s*\(\s*GameInfo\s*\*\s*game\s*\)/,
     982, "ChallengeLoadScreen::init");
   if (challengeInitRange) {
+    assertExact(errors, facts.challenge, "campaignDataHookDeclLine",
+      lineNumber(loadScreen.lines,
+        (line) => /CncPortLoadScreenSetChallengeUseCampaignDataForTest\s*\(/.test(line)),
+      181, "ChallengeLoadScreen campaign-data test hook declaration");
+    assertExact(errors, facts.challenge, "campaignDataHookCountGetterLine",
+      lineNumber(loadScreen.lines,
+        (line) => /CncPortLoadScreenGetChallengeCampaignPersonaLookupsForTest\s*\(/.test(line)),
+      189, "ChallengeLoadScreen campaign-data lookup-count hook declaration");
     [
+      ["campaignDataGateLine", /s_challengeLoadScreenUseCampaignData\s*&&\s*TheCampaignManager/, 1216, "ChallengeLoadScreen::init focused campaign-data gate"],
       ["campaignLine", /const\s+Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 984, "ChallengeLoadScreen::init current campaign"],
       ["missionLine", /const\s+Mission\s*\*\s*mission\s*=\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)/, 985, "ChallengeLoadScreen::init current mission"],
+      ["lastCampaignHookLine", /s_challengeLoadScreenLastCampaignName\s*=\s*campaign\s*\?\s*campaign\s*->\s*m_name\s*:\s*AsciiString::TheEmptyString/, 1220, "ChallengeLoadScreen::init records focused campaign name"],
+      ["lastMissionGeneralHookLine", /s_challengeLoadScreenLastMissionGeneralName\s*=\s*mission\s*\?\s*mission\s*->\s*m_generalName\s*:\s*AsciiString::TheEmptyString/, 1221, "ChallengeLoadScreen::init records focused mission general"],
+      ["campaignPersonaLookupCounterLine", /\+\+s_challengeLoadScreenCampaignPersonaLookups/, 1222, "ChallengeLoadScreen::init counts focused campaign persona lookups"],
       ["playerGeneralLine", /getPlayerGeneralByCampaignName\s*\(\s*campaign\s*->\s*m_name\s*\)/, 988, "ChallengeLoadScreen::init player general"],
       ["opponentGeneralLine", /getGeneralByGeneralName\s*\(\s*mission\s*->\s*m_generalName\s*\)/, 992, "ChallengeLoadScreen::init opponent general"],
       ["layoutCreateLine", /winCreateFromScript\s*\(\s*AsciiString\s*\(\s*"Menus\/ChallengeLoadScreen\.wnd"\s*\)\s*\)/, 995, "ChallengeLoadScreen::init layout create"],
       ["progressBarLookupLine", /ChallengeLoadScreen\.wnd:ProgressLoad/, 1001, "ChallengeLoadScreen::init progress bar lookup"],
       ["ambientEventLine", /m_ambientLoop\s*\.\s*setEventName\s*\(\s*"LoadScreenAmbient"\s*\)/, 1005, "ChallengeLoadScreen::init ambient event"],
-      ["videoOpenLine", /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)\s*->\s*m_movieLabel\s*\)/, 1008, "ChallengeLoadScreen::init TheVideoPlayer->open mission movie"],
+      ["videoOpenHookLine", /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*mission\s*\?\s*mission\s*->\s*m_movieLabel\s*:\s*s_challengeLoadScreenMovieLabel\s*\)/, 1258, "ChallengeLoadScreen::init focused mission movie open"],
+      ["videoOpenLine", /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)\s*->\s*m_movieLabel\s*\)/, 1008, "ChallengeLoadScreen::init production mission movie open"],
       ["createBufferLine", /m_videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/, 1011, "ChallengeLoadScreen::init create video buffer"],
       ["allocateLine", /m_videoBuffer\s*==\s*NULL\s*\|\|\s*!m_videoBuffer\s*->\s*allocate\s*\(\s*m_videoStream\s*->\s*width\s*\(\s*\)\s*,\s*m_videoStream\s*->\s*height\s*\(\s*\)\s*\)/, 1012, "ChallengeLoadScreen::init allocate buffer"],
       ["allocateFailureDeleteBufferLine", /delete\s+m_videoBuffer\s*;/, 1014, "ChallengeLoadScreen::init allocation failure delete buffer"],
@@ -1406,6 +1422,10 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(/.test(line)),
 	    59, "runtime ChallengeLoadScreen movie hook declaration");
+	  assertExact(errors, facts.runtimeChallenge, "campaignDataHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetChallengeUseCampaignDataForTest\s*\(/.test(line)),
+	    120, "runtime ChallengeLoadScreen campaign-data hook declaration");
 	  assertExact(errors, facts.runtimeChallenge, "scriptCreateLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /Menus\/ChallengeLoadScreen\.wnd/.test(line)),
@@ -1414,16 +1434,32 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_challenge_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
 	    1446, "runtime ChallengeLoadScreen init exercise");
-	  assertExact(errors, facts.runtimeChallenge, "hookSetLine",
-	    lineNumber(runtimeSmoke.lines,
-	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"GC_Background"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/.test(line)),
-	    1469, "runtime ChallengeLoadScreen installs GC_Background/VS_small hook");
+	  assertExact(errors, facts.runtimeChallenge, "personaSeedLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 80,
+	      /seed_challenge_load_screen_general_for_test\s*\(/),
+	    2657, "runtime ChallengeLoadScreen seeds ChallengeGenerals personas");
+	  assertExact(errors, facts.runtimeChallenge, "campaignCreateLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 100,
+	      /newCampaign\s*\(\s*AsciiString\s*\(\s*"smoke_challenge_load_campaign"\s*\)\s*\)/),
+	    2682, "runtime ChallengeLoadScreen creates focused challenge campaign");
+	  assertExact(errors, facts.runtimeChallenge, "missionMovieLabelLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 110,
+	      /mission\s*->\s*m_movieLabel\s*\.\s*set\s*\(\s*AsciiString\s*\(\s*"GC_Background"\s*\)\s*\)/),
+	    2692, "runtime ChallengeLoadScreen mission owns GC_Background");
+	  assertExact(errors, facts.runtimeChallenge, "fallbackHookSetLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 110,
+	      /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"VS_small"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/),
+	    2701, "runtime ChallengeLoadScreen keeps VS_small fallback hook");
+	  assertExact(errors, facts.runtimeChallenge, "campaignDataHookSetLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 110,
+	      /CncPortLoadScreenSetChallengeUseCampaignDataForTest\s*\(\s*TRUE\s*\)/),
+	    2704, "runtime ChallengeLoadScreen enables campaign-data hook");
 	  assertExact(errors, facts.runtimeChallenge, "recursiveDrawProbeLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /setLoadScreenWindowListProbe\s*\(\s*TRUE\s*,\s*TRUE\s*\)/.test(line)),
 	    1482, "runtime ChallengeLoadScreen enables recursive video-buffer presentation probe");
 	  assertExact(errors, facts.runtimeChallenge, "initCallLine",
-	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 80,
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeChallenge.exerciseDefLine, facts.runtimeChallenge.exerciseDefLine + 130,
 	      /load_screen\s*\.\s*init\s*\(\s*nullptr\s*\)/),
 	    1485, "runtime calls original ChallengeLoadScreen::init");
 	  assertExact(errors, facts.runtimeChallenge, "layoutCheckLine",
@@ -1450,9 +1486,33 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ChallengeLoadScreen::init did not draw every attached challenge video buffer/.test(line)),
 	    1508, "runtime ChallengeLoadScreen draw count check");
+	  assertExact(errors, facts.runtimeChallenge, "campaignLookupCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not execute the campaign\/persona lookup gate/.test(line)),
+	    2754, "runtime ChallengeLoadScreen campaign/persona lookup check");
+	  assertExact(errors, facts.runtimeChallenge, "campaignNameCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /looked up the wrong challenge campaign/.test(line)),
+	    2757, "runtime ChallengeLoadScreen campaign name check");
+	  assertExact(errors, facts.runtimeChallenge, "opponentGeneralCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /looked up the wrong opponent general/.test(line)),
+	    2760, "runtime ChallengeLoadScreen opponent general check");
+	  assertExact(errors, facts.runtimeChallenge, "playerBioCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not render the player persona bio name/.test(line)),
+	    2779, "runtime ChallengeLoadScreen player bio text check");
+	  assertExact(errors, facts.runtimeChallenge, "opponentBioCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not render the opponent persona bio name/.test(line)),
+	    2782, "runtime ChallengeLoadScreen opponent bio text check");
+	  assertExact(errors, facts.runtimeChallenge, "audioEventsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not enqueue all campaign-persona audio events/.test(line)),
+	    2793, "runtime ChallengeLoadScreen campaign persona audio check");
 	  assertExact(errors, facts.runtimeChallenge, "summaryLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok/.test(line)),
+	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok:.*campaign=%s opponent=%s/.test(line)),
 	    1521, "runtime ChallengeLoadScreen browser presentation summary");
 	  assertExact(errors, facts.runtimeChallenge, "closeStreamCheckLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -1536,7 +1596,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-		    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper including hook-counted stats/LOD gates and low-res skip, hook-counted non-final victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, production Challenge persona ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper including hook-counted stats/LOD gates and low-res skip, hook-counted non-final victorious, defeat/retry, and challenge win/loss finishSinglePlayerInit branches, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init through a focused CampaignManager/ChallengeGenerals campaign-persona setup. Full non-test finishSinglePlayerInit subsystem edges, full production Challenge persona setup from the normal shell/INI path, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

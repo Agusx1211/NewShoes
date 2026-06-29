@@ -66,8 +66,8 @@
 // challenge win/loss finishSinglePlayerInit
 // branches, SinglePlayerLoadScreen, and ChallengeLoadScreen paths now own real
 // window video buffers in the browser smoke, but full non-test
-// finishSinglePlayerInit subsystem edges, production Challenge persona
-// ownership, InGameUI movie loops, and Bink/audio sync remain open. This
+// finishSinglePlayerInit subsystem edges, full production Challenge persona
+// setup from the normal shell/INI path, InGameUI movie loops, and Bink/audio sync remain open. This
 // verifier pins the
 // source presentation contract plus the focused runtime proof that the
 // downstream display sink works.
@@ -762,12 +762,28 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_challenge_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1446,
 	    "runtime smoke ChallengeLoadScreen init exercise function");
-	  assertExact(errors, facts.runtimeSmoke, "challengeHookSetLine",
-	    lineNumber(runtimeSmoke.lines,
-	      (line) => /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"GC_Background"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/.test(line)), 1469,
-	    "runtime smoke ChallengeLoadScreen movie hook setup");
-	  assertExact(errors, facts.runtimeSmoke, "challengeInitLine",
+	  assertExact(errors, facts.runtimeSmoke, "challengePersonaSeedLine",
 	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 80,
+	      /seed_challenge_load_screen_general_for_test\s*\(/), 2657,
+	    "runtime smoke ChallengeLoadScreen campaign-persona seed");
+	  assertExact(errors, facts.runtimeSmoke, "challengeCampaignCreateLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 100,
+	      /newCampaign\s*\(\s*AsciiString\s*\(\s*"smoke_challenge_load_campaign"\s*\)\s*\)/), 2682,
+	    "runtime smoke ChallengeLoadScreen campaign setup");
+	  assertExact(errors, facts.runtimeSmoke, "challengeMissionMovieLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 110,
+	      /mission\s*->\s*m_movieLabel\s*\.\s*set\s*\(\s*AsciiString\s*\(\s*"GC_Background"\s*\)\s*\)/), 2692,
+	    "runtime smoke ChallengeLoadScreen mission-owned movie setup");
+	  assertExact(errors, facts.runtimeSmoke, "challengeFallbackHookSetLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 110,
+	      /CncPortLoadScreenSetChallengeMovieForTest\s*\(\s*"VS_small"\s*,\s*"VS_small"\s*,\s*"VS_small"\s*\)/), 2701,
+	    "runtime smoke ChallengeLoadScreen fallback movie hook setup");
+	  assertExact(errors, facts.runtimeSmoke, "challengeCampaignDataHookSetLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 110,
+	      /CncPortLoadScreenSetChallengeUseCampaignDataForTest\s*\(\s*TRUE\s*\)/), 2704,
+	    "runtime smoke ChallengeLoadScreen campaign-data hook setup");
+	  assertExact(errors, facts.runtimeSmoke, "challengeInitLine",
+	    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.challengeExerciseDefLine, facts.runtimeSmoke.challengeExerciseDefLine + 130,
 	      /load_screen\s*\.\s*init\s*\(\s*nullptr\s*\)/), 1485,
 	    "runtime smoke original ChallengeLoadScreen::init call");
 	  assertExact(errors, facts.runtimeSmoke, "challengePresentFrameCountCheckLine",
@@ -778,9 +794,21 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ChallengeLoadScreen::init did not draw every attached challenge video buffer/.test(line)), 1508,
 	    "runtime smoke ChallengeLoadScreen draw count check");
+	  assertExact(errors, facts.runtimeSmoke, "challengeCampaignLookupCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not execute the campaign\/persona lookup gate/.test(line)), 2754,
+	    "runtime smoke ChallengeLoadScreen campaign/persona lookup check");
+	  assertExact(errors, facts.runtimeSmoke, "challengePlayerBioCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not render the player persona bio name/.test(line)), 2779,
+	    "runtime smoke ChallengeLoadScreen player bio text check");
+	  assertExact(errors, facts.runtimeSmoke, "challengeAudioEventsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /did not enqueue all campaign-persona audio events/.test(line)), 2793,
+	    "runtime smoke ChallengeLoadScreen campaign persona audio check");
 	  assertExact(errors, facts.runtimeSmoke, "challengeSummaryLine",
 	    lineNumber(runtimeSmoke.lines,
-	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok/.test(line)), 1521,
+	      (line) => /ChallengeLoadScreen init GC_Background Bink W3D presentation ok:.*campaign=%s opponent=%s/.test(line)), 1521,
 	    "runtime smoke ChallengeLoadScreen presentation summary");
 	  assertExact(errors, facts.runtimeSmoke, "challengeExerciseCallLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -885,8 +913,9 @@ function main() {
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
 	      "VS_small through a focused layout/movie hook, plus original " +
 	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
-	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, " +
-	      "production Challenge persona ownership, InGameUI movie-loop ownership, and " +
+	      "CampaignManager/ChallengeGenerals campaign-persona setup with bio text " +
+	      "and persona audio assertions. Full non-test finishSinglePlayerInit subsystem edges, " +
+	      "full production Challenge persona setup from the normal shell/INI path, InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };
 

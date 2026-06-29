@@ -724,13 +724,18 @@ shares structure and follows behind.
       through a gated harness-only movie/campaign hook and a synthetic
       `Menus/SinglePlayerLoadScreen.wnd` hierarchy for 70 `VS_small`
       frame presentations. It now also drives original
-      `ChallengeLoadScreen::init` through the same gated harness-only hook and
-      a synthetic `Menus/ChallengeLoadScreen.wnd` hierarchy, presenting the
-      `GC_Background` background movie plus `VS_small`/`VSSmall` child-window
-      portrait and VS-overlay movies. This item remains open until the final
+      `ChallengeLoadScreen::init` through a focused real `CampaignManager` /
+      `ChallengeGenerals` setup: the selected challenge campaign supplies the
+      player persona, the selected mission supplies the opponent persona and
+      `GC_Background` movie label, the synthetic static-text layout verifies
+      teletype-rendered bio text, and the smoke verifies player/opponent
+      name/taunt plus ambient audio events while still presenting
+      `GC_Background` plus `VS_small`/`VSSmall` child-window portrait and
+      VS-overlay movies. This item remains open until the final
       decoder/format policy is locked down and the full original InGameUI,
-      campaign-owned load-screen setup, campaign-owned Challenge persona
-      setup, full non-test `finishSinglePlayerInit` subsystem coverage
+      campaign-owned load-screen setup, full production Challenge persona setup
+      from the normal shell/INI path, full non-test `finishSinglePlayerInit`
+      subsystem coverage
       (including original `GameState::missionSave`,
       `InGameUI::freeMessageResources`, transition-handler calls, production
       `SkirmishBattleHonors` persistence, and real `GameLODManager` singleton
@@ -771,9 +776,11 @@ shares structure and follows behind.
       `SinglePlayerLoadScreen::init("VS_small")` ownership end-to-end
       through 70 decoded frame presentations and destructor cleanup. It now
       also proves focused original `ChallengeLoadScreen::init` ownership
-      end-to-end for `GC_Background` plus `VS_small`/`VSSmall` child-window
-      movies, including 179 background frames, 372 managed child-window
-      copies, and 551 Challenge presentations. It now also proves the extracted
+      end-to-end through a real `CampaignManager` / `ChallengeGenerals`
+      campaign/persona lookup for `GC_Background` plus `VS_small`/`VSSmall`
+      child-window movies, including teletype bio text, persona audio events,
+      179 background frames, 372 managed child-window copies, and 551
+      Challenge presentations. It now also proves the extracted
       ScoreScreen final-campaign movie helper through a real
       `CampaignManager` / `Campaign` / final-`Mission` transition, including
       the original `PlayMovieAndBlock("VS_small")` call, 70 decoded frame
@@ -794,7 +801,8 @@ shares structure and follows behind.
       updates, mission save/retry behavior, transition suppression, and
       win/loss audio events without adding Bink frames.
       Full original InGameUI, campaign-owned load-screen setup,
-      campaign-owned Challenge persona setup, full non-test
+      full production Challenge persona setup from the normal shell/INI path,
+      full non-test
       `finishSinglePlayerInit` subsystem edges, production
       `SkirmishBattleHonors` persistence / real `GameLODManager` singleton
       ownership, and Bink/audio sync remain open.
@@ -842,13 +850,15 @@ shares structure and follows behind.
       message-cleanup/transition edges, calls original `finishSinglePlayerInit`
       through focused challenge win/loss branches with challenge UI/audio and
       transition-suppression assertions, calls original
-      `SinglePlayerLoadScreen::init` through a gated movie/campaign hook, and now calls original
-      `ChallengeLoadScreen::init` through a focused
-      harness-only Challenge movie hook. The browser harness now expects 12
-      open/close lifecycles, 766 total copies, 766 draw-buffer indexed draws,
-      13 texture creates, 779 texture updates, and 12 texture releases. It
+      `SinglePlayerLoadScreen::init` through a gated movie/campaign hook, and
+      calls original `ChallengeLoadScreen::init` through a focused
+      `CampaignManager` / `ChallengeGenerals` campaign/persona setup. The
+      browser harness now expects 12 open/close lifecycles, 766 total copies,
+      766 draw-buffer indexed draws, 13 texture creates, 779 texture updates,
+      and 12 texture releases. It
       does not claim runtime InGameUI, full campaign-owned load-screen setup,
-      campaign-owned Challenge persona setup, full non-test
+      full production Challenge persona setup from the normal shell/INI path,
+      full non-test
       `finishSinglePlayerInit` subsystem edges, production
       `SkirmishBattleHonors` persistence / real `GameLODManager` singleton
       ownership, or Bink/audio sync complete; the
@@ -877,15 +887,17 @@ shares structure and follows behind.
       `ScoreScreen::PlayMovieAndBlock`, plus the original
       `ScoreScreen::PlayMovieAndBlock("VS_small")` runtime loop, focused
       original `SinglePlayerLoadScreen::init("VS_small")` runtime loop, and
-      focused original `ChallengeLoadScreen::init` runtime loop for
+      focused original `ChallengeLoadScreen::init` runtime loop through a real
+      `CampaignManager` / `ChallengeGenerals` campaign/persona lookup for
       `GC_Background` plus `VS_small`/`VSSmall` child movies, plus the
       extracted ScoreScreen final-campaign movie helper with hook-counted
       stats/LOD gates and low-res skip, plus the hook-counted non-final
       victorious and defeat/retry `finishSinglePlayerInit` branches.
       Full original
-      InGameUI, campaign-owned load-screen setup, campaign-owned Challenge
-      persona setup, full non-test `finishSinglePlayerInit` subsystem edges,
-      and Bink/audio sync ownership remain open.
+      InGameUI, campaign-owned load-screen setup, full production Challenge
+      persona setup from the normal shell/INI path, full non-test
+      `finishSinglePlayerInit` subsystem edges, and Bink/audio sync ownership
+      remain open.
       `verify:bink-w3d-video-presentation-frontier` now pins the source-only
       *presentation* contract from the original Bink/W3D video-buffer upload
       to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
@@ -909,14 +921,15 @@ shares structure and follows behind.
       `ScoreScreen::PlayMovieAndBlock("VS_small")` loop itself, plus focused
       final-campaign stats/LOD and low-res skip coverage, plus focused
       original `SinglePlayerLoadScreen::init("VS_small")` and
-      `ChallengeLoadScreen::init` runtime loops, plus the extracted
+      `ChallengeLoadScreen::init` runtime loops, with the Challenge path now
+      covering focused campaign/persona lookup, plus the extracted
       ScoreScreen final-campaign movie helper, plus the hook-counted non-final
       victorious, defeat/retry, and challenge win/loss `finishSinglePlayerInit`
       branches. The full
       original InGameUI,
-      campaign-owned load-screen setup, campaign-owned Challenge persona
-      setup, full non-test `finishSinglePlayerInit` subsystem edges, and
-      Bink/audio sync flows still need runtime ownership of that path, though the
+      campaign-owned load-screen setup, full production Challenge persona setup
+      from the normal shell/INI path, full non-test `finishSinglePlayerInit`
+      subsystem edges, and Bink/audio sync flows still need runtime ownership of that path, though the
       load/score source contract and focused ScoreScreen/SinglePlayer/Challenge
       runtime proofs are pinned by `verify:bink-loadscore-movie-frontier`.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink

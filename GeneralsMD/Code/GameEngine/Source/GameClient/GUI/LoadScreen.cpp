@@ -147,6 +147,10 @@ static AsciiString s_challengeLoadScreenOpponentNameSound = AsciiString("Challen
 static AsciiString s_challengeLoadScreenOpponentTauntSound = AsciiString("ChallengeLoadSmokeOpponentTaunt");
 static AsciiString s_challengeLoadScreenOpponentPortraitMovieLeft = AsciiString("VS_small");
 static AsciiString s_challengeLoadScreenOpponentPortraitMovieRight = AsciiString("VS_small");
+static Bool s_challengeLoadScreenUseCampaignData = FALSE;
+static Int s_challengeLoadScreenCampaignPersonaLookups = 0;
+static AsciiString s_challengeLoadScreenLastCampaignName;
+static AsciiString s_challengeLoadScreenLastMissionGeneralName;
 
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel)
 {
@@ -172,6 +176,29 @@ extern "C" void CncPortLoadScreenSetChallengeMovieForTest(
 extern "C" const char *CncPortLoadScreenGetChallengeMovieForTest()
 {
 	return s_challengeLoadScreenMovieLabel.str();
+}
+
+extern "C" void CncPortLoadScreenSetChallengeUseCampaignDataForTest(Bool enabled)
+{
+	s_challengeLoadScreenUseCampaignData = enabled;
+	s_challengeLoadScreenCampaignPersonaLookups = 0;
+	s_challengeLoadScreenLastCampaignName.clear();
+	s_challengeLoadScreenLastMissionGeneralName.clear();
+}
+
+extern "C" Int CncPortLoadScreenGetChallengeCampaignPersonaLookupsForTest()
+{
+	return s_challengeLoadScreenCampaignPersonaLookups;
+}
+
+extern "C" const char *CncPortLoadScreenGetChallengeLastCampaignNameForTest()
+{
+	return s_challengeLoadScreenLastCampaignName.str();
+}
+
+extern "C" const char *CncPortLoadScreenGetChallengeLastMissionGeneralNameForTest()
+{
+	return s_challengeLoadScreenLastMissionGeneralName.str();
 }
 
 static const AsciiString &challengeBioNameLabel(const GeneralPersona *general, Bool player)
@@ -1186,6 +1213,21 @@ void ChallengeLoadScreen::init( GameInfo *game )
 	const Mission *mission = NULL;
 	const GeneralPersona* generalPlayer = NULL;
 	const GeneralPersona* generalOpponent = NULL;
+	if (s_challengeLoadScreenUseCampaignData && TheCampaignManager)
+	{
+		const Campaign *campaign = TheCampaignManager->getCurrentCampaign();
+		mission = TheCampaignManager->getCurrentMission();
+		s_challengeLoadScreenLastCampaignName = campaign ? campaign->m_name : AsciiString::TheEmptyString;
+		s_challengeLoadScreenLastMissionGeneralName = mission ? mission->m_generalName : AsciiString::TheEmptyString;
+		++s_challengeLoadScreenCampaignPersonaLookups;
+		if (TheChallengeGenerals)
+		{
+			if (campaign)
+				generalPlayer = TheChallengeGenerals->getPlayerGeneralByCampaignName( campaign->m_name );
+			if (mission && mission->m_generalName.isNotEmpty())
+				generalOpponent = TheChallengeGenerals->getGeneralByGeneralName( mission->m_generalName );
+		}
+	}
 #else
 	const Campaign *campaign = TheCampaignManager->getCurrentCampaign();
 	const Mission *mission = TheCampaignManager->getCurrentMission();
@@ -1213,7 +1255,7 @@ void ChallengeLoadScreen::init( GameInfo *game )
 
 	// create the new background video stream
 #if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
-	m_videoStream = TheVideoPlayer->open( s_challengeLoadScreenMovieLabel );
+	m_videoStream = TheVideoPlayer->open( mission ? mission->m_movieLabel : s_challengeLoadScreenMovieLabel );
 #else
 	m_videoStream = TheVideoPlayer->open( TheCampaignManager->getCurrentMission()->m_movieLabel );
 #endif

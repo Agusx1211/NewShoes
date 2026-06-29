@@ -117,6 +117,10 @@ extern "C" void CncPortLoadScreenSetChallengeMovieForTest(
 	const char *playerPortraitMovieLeft,
 	const char *opponentPortraitMovieRight);
 extern "C" const char *CncPortLoadScreenGetChallengeMovieForTest();
+extern "C" void CncPortLoadScreenSetChallengeUseCampaignDataForTest(Bool enabled);
+extern "C" Int CncPortLoadScreenGetChallengeCampaignPersonaLookupsForTest();
+extern "C" const char *CncPortLoadScreenGetChallengeLastCampaignNameForTest();
+extern "C" const char *CncPortLoadScreenGetChallengeLastMissionGeneralNameForTest();
 void PlayMovieAndBlock(AsciiString movieTitle);
 
 void setFPMode(void)
@@ -280,6 +284,9 @@ public:
 	{
 		++add_event_count;
 		last_event_name = event != nullptr ? event->getEventName() : AsciiString::TheEmptyString;
+		if (stored_event_count < MAX_STORED_EVENTS) {
+			stored_event_names[stored_event_count++] = last_event_name;
+		}
 		return add_event_count;
 	}
 	void killAudioEventImmediately(AudioHandle) override {}
@@ -319,6 +326,16 @@ public:
 	Real getFileLengthMS(AsciiString) const override { return 0.0f; }
 	void closeAnySamplesUsingFile(const void *) override {}
 
+	Bool sawEvent(AsciiString event_name) const
+	{
+		for (Int i = 0; i < stored_event_count; ++i) {
+			if (stored_event_names[i].compare(event_name) == 0) {
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
+
 	Int add_event_count = 0;
 	Int update_count = 0;
 	Int release_count = 0;
@@ -326,6 +343,11 @@ public:
 
 protected:
 	void setDeviceListenerPosition() override {}
+
+private:
+	static const Int MAX_STORED_EVENTS = 16;
+	AsciiString stored_event_names[MAX_STORED_EVENTS];
+	Int stored_event_count = 0;
 };
 
 class SmokeDisplayString final : public DisplayString
@@ -552,6 +574,30 @@ public:
 			text.translate(AsciiString("General Smoke was victorious"));
 			return text;
 		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadPlayer")) == 0) {
+			text.translate(AsciiString("Challenge Player"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadPlayerRank")) == 0) {
+			text.translate(AsciiString("Player Rank"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadPlayerStrategy")) == 0) {
+			text.translate(AsciiString("Player Strategy"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadOpponent")) == 0) {
+			text.translate(AsciiString("Challenge Opponent"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadOpponentRank")) == 0) {
+			text.translate(AsciiString("Opponent Rank"));
+			return text;
+		}
+		if (label.compare(AsciiString("GUI:SmokeChallengeLoadOpponentStrategy")) == 0) {
+			text.translate(AsciiString("Opponent Strategy"));
+			return text;
+		}
 		text.translate(label);
 		return text;
 	}
@@ -641,18 +687,18 @@ public:
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameLeft"), 200, 24);
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceLeft"), 200, 24);
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyLeft"), 260, 48);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryLeft"), 240, 28);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryLeft"), 200, 24);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryLeft"), 200, 24);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryLeft"), 260, 48);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryLeft"), 240, 28);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryLeft"), 200, 24);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryLeft"), 200, 24);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryLeft"), 260, 48);
 
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameRight"), 200, 24);
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceRight"), 200, 24);
 			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyRight"), 260, 48);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryRight"), 240, 28);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryRight"), 200, 24);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryRight"), 200, 24);
-			createWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryRight"), 260, 48);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BigNameEntryRight"), 240, 28);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioNameEntryRight"), 200, 24);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryRight"), 200, 24);
+			createStaticTextWindowWithId(root, AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryRight"), 260, 48);
 			return root;
 		}
 
@@ -741,6 +787,12 @@ public:
 
 	GameWindow *createScoreScreenStaticTextForTest(GameWindow *parent, AsciiString id, Int width, Int height)
 	{
+		return createStaticTextWindowWithId(parent, id, width, height);
+	}
+
+private:
+	GameWindow *createStaticTextWindowWithId(GameWindow *parent, AsciiString id, Int width, Int height)
+	{
 		WinInstanceData inst_data;
 		inst_data.m_style = GWS_STATIC_TEXT;
 		TextData text_data = {};
@@ -761,7 +813,6 @@ public:
 		return window;
 	}
 
-private:
 	GameWindow *createWindowWithId(GameWindow *parent, AsciiString id, Int width, Int height)
 	{
 		GameWindow *window = allocateNewWindow();
@@ -893,12 +944,50 @@ void seed_challenge_general_for_test(
 	GeneralPersona &persona = manager.m_position[0];
 	persona.m_bStartsEnabled = TRUE;
 	persona.m_strBioName.set(AsciiString("GUI:SmokeChallengeGeneral"));
+	persona.m_strBioRank.set(AsciiString("GUI:SmokeChallengeGeneralRank"));
+	persona.m_strBioStrategy.set(AsciiString("GUI:SmokeChallengeGeneralStrategy"));
+	persona.m_strCampaign.set(AsciiString("smoke_challenge_campaign"));
+	persona.m_strPortraitMovieLeftName.set(AsciiString("VS_small"));
+	persona.m_strPortraitMovieRightName.set(AsciiString("VS_small"));
+	persona.m_strNameSound.set(AsciiString("SmokeChallengeGeneralName"));
+	persona.m_strTauntSound1.set(AsciiString("SmokeChallengeGeneralTaunt"));
+	persona.m_strTauntSound2.set(AsciiString("SmokeChallengeGeneralTaunt"));
+	persona.m_strTauntSound3.set(AsciiString("SmokeChallengeGeneralTaunt"));
+	persona.m_imageBioPortraitLarge = const_cast<Image *>(victorious_image);
 	persona.m_imageDefeated = const_cast<Image *>(defeated_image);
 	persona.m_imageVictorious = const_cast<Image *>(victorious_image);
 	persona.m_strDefeated.set(AsciiString("GUI:SmokeChallengeDefeated"));
 	persona.m_strVictorious.set(AsciiString("GUI:SmokeChallengeVictorious"));
 	persona.m_strWinSound.set(AsciiString("SmokeChallengeWin"));
 	persona.m_strLossSound.set(AsciiString("SmokeChallengeLoss"));
+}
+
+void seed_challenge_load_screen_general_for_test(
+	ChallengeGenerals &manager,
+	Int index,
+	AsciiString campaign_name,
+	AsciiString bio_name,
+	AsciiString bio_rank,
+	AsciiString bio_strategy,
+	AsciiString portrait_movie_left,
+	AsciiString portrait_movie_right,
+	AsciiString name_sound,
+	AsciiString taunt_sound,
+	const Image *portrait_image)
+{
+	GeneralPersona &persona = manager.m_position[index];
+	persona.m_bStartsEnabled = TRUE;
+	persona.m_strCampaign = campaign_name;
+	persona.m_strBioName = bio_name;
+	persona.m_strBioRank = bio_rank;
+	persona.m_strBioStrategy = bio_strategy;
+	persona.m_strPortraitMovieLeftName = portrait_movie_left;
+	persona.m_strPortraitMovieRightName = portrait_movie_right;
+	persona.m_strNameSound = name_sound;
+	persona.m_strTauntSound1 = taunt_sound;
+	persona.m_strTauntSound2 = taunt_sound;
+	persona.m_strTauntSound3 = taunt_sound;
+	persona.m_imageBioPortraitLarge = const_cast<Image *>(portrait_image);
 }
 
 bool expect(bool condition, const char *message)
@@ -2534,24 +2623,93 @@ bool exercise_challenge_load_screen_init(VideoPlayerInterface &player)
 	SmokeGameEngine game_engine;
 	NameKeyGenerator name_key_generator;
 	SmokeGameText game_text;
+	SmokeDisplayStringManager display_string_manager;
 	SmokeMouse mouse;
+	SmokeAudioManager audio;
+	CampaignManager campaign_manager;
+	ChallengeGenerals challenge_generals;
+	ImageCollection image_collection;
 	GameWindowManager *old_window_manager = TheWindowManager;
 	Display *old_display = TheDisplay;
 	GameEngine *old_game_engine = TheGameEngine;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
 	GameTextInterface *old_game_text = TheGameText;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
 	Mouse *old_mouse = TheMouse;
+	AudioManager *old_audio = TheAudio;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
+	ChallengeGenerals *old_challenge_generals = TheChallengeGenerals;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
 
 	TheWindowManager = &window_manager;
 	TheDisplay = &display;
 	TheGameEngine = &game_engine;
 	TheNameKeyGenerator = &name_key_generator;
 	TheGameText = &game_text;
+	TheDisplayStringManager = &display_string_manager;
 	TheMouse = &mouse;
+	TheAudio = &audio;
+	TheCampaignManager = &campaign_manager;
+	TheChallengeGenerals = &challenge_generals;
+	TheMappedImageCollection = &image_collection;
 	name_key_generator.init();
-	CncPortLoadScreenSetChallengeMovieForTest("GC_Background", "VS_small", "VS_small");
-	ok = expect(std::strcmp(CncPortLoadScreenGetChallengeMovieForTest(), "GC_Background") == 0,
-		"ChallengeLoadScreen movie test hook did not retain GC_Background") && ok;
+
+	const Image *player_portrait = add_mapped_image_for_test(
+		image_collection, "SmokeChallengeLoadPlayerPortrait", 128, 128);
+	const Image *opponent_portrait = add_mapped_image_for_test(
+		image_collection, "SmokeChallengeLoadOpponentPortrait", 128, 128);
+	ok = expect(player_portrait != nullptr,
+		"ChallengeLoadScreen::init campaign-persona path did not create the player portrait image") && ok;
+	ok = expect(opponent_portrait != nullptr,
+		"ChallengeLoadScreen::init campaign-persona path did not create the opponent portrait image") && ok;
+	seed_challenge_load_screen_general_for_test(
+		challenge_generals,
+		0,
+		AsciiString("smoke_challenge_load_campaign"),
+		AsciiString("GUI:SmokeChallengeLoadPlayer"),
+		AsciiString("GUI:SmokeChallengeLoadPlayerRank"),
+		AsciiString("GUI:SmokeChallengeLoadPlayerStrategy"),
+		AsciiString("VS_small"),
+		AsciiString("VS_small"),
+		AsciiString("SmokeChallengeLoadPlayerName"),
+		AsciiString("SmokeChallengeLoadPlayerTaunt"),
+		player_portrait);
+	seed_challenge_load_screen_general_for_test(
+		challenge_generals,
+		1,
+		AsciiString("unused_opponent_campaign"),
+		AsciiString("GUI:SmokeChallengeLoadOpponent"),
+		AsciiString("GUI:SmokeChallengeLoadOpponentRank"),
+		AsciiString("GUI:SmokeChallengeLoadOpponentStrategy"),
+		AsciiString("VS_small"),
+		AsciiString("VS_small"),
+		AsciiString("SmokeChallengeLoadOpponentName"),
+		AsciiString("SmokeChallengeLoadOpponentTaunt"),
+		opponent_portrait);
+
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("smoke_challenge_load_campaign"));
+	ok = expect(campaign != nullptr,
+		"ChallengeLoadScreen::init campaign-persona path did not create a campaign") && ok;
+	if (campaign != nullptr) {
+		campaign->m_firstMission.set(AsciiString("mission1"));
+		campaign->m_isChallengeCampaign = TRUE;
+		Mission *mission = campaign->newMission(AsciiString("mission1"));
+		ok = expect(mission != nullptr,
+			"ChallengeLoadScreen::init campaign-persona path did not create a mission") && ok;
+		if (mission != nullptr) {
+			mission->m_movieLabel.set(AsciiString("GC_Background"));
+			mission->m_generalName.set(AsciiString("GUI:SmokeChallengeLoadOpponent"));
+			mission->m_voiceLength = 0;
+		}
+		campaign_manager.setCampaignAndMission(AsciiString("smoke_challenge_load_campaign"), AsciiString("mission1"));
+	}
+	ok = expect(campaign_manager.getCurrentCampaign() != nullptr &&
+		campaign_manager.getCurrentMission() != nullptr,
+		"ChallengeLoadScreen::init campaign-persona path did not select current campaign and mission") && ok;
+	CncPortLoadScreenSetChallengeMovieForTest("VS_small", "VS_small", "VS_small");
+	ok = expect(std::strcmp(CncPortLoadScreenGetChallengeMovieForTest(), "VS_small") == 0,
+		"ChallengeLoadScreen movie test hook did not retain the fallback movie label") && ok;
+	CncPortLoadScreenSetChallengeUseCampaignDataForTest(TRUE);
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const UINT creates_before_init = state->browser_texture_create_calls;
@@ -2600,15 +2758,58 @@ bool exercise_challenge_load_screen_init(VideoPlayerInterface &player)
 			"ChallengeLoadScreen::init decoded texture format mismatch") && ok;
 		ok = expect(state->last_browser_texture_checksum != 0,
 			"ChallengeLoadScreen::init uploaded an all-zero decoded frame") && ok;
+		ok = expect(CncPortLoadScreenGetChallengeCampaignPersonaLookupsForTest() == 1,
+			"ChallengeLoadScreen::init did not execute the campaign/persona lookup gate") && ok;
+		ok = expect(AsciiString(CncPortLoadScreenGetChallengeLastCampaignNameForTest()).compare(
+				AsciiString("smoke_challenge_load_campaign")) == 0,
+			"ChallengeLoadScreen::init looked up the wrong challenge campaign") && ok;
+		ok = expect(AsciiString(CncPortLoadScreenGetChallengeLastMissionGeneralNameForTest()).compare(
+				AsciiString("GUI:SmokeChallengeLoadOpponent")) == 0,
+			"ChallengeLoadScreen::init looked up the wrong opponent general") && ok;
 
-		std::printf("ChallengeLoadScreen init GC_Background Bink W3D presentation ok: backgroundFrames=%d windowCopies=%d presentedBuffers=%d finalTexture=%ux%u pitch=%u checksum=%u\n",
+		GameWindow *bio_name_left = TheWindowManager->winGetWindowFromId(
+			load_screen_window,
+			TheNameKeyGenerator->nameToKey(AsciiString("ChallengeLoadScreen.wnd:BioNameEntryLeft")));
+		GameWindow *bio_name_right = TheWindowManager->winGetWindowFromId(
+			load_screen_window,
+			TheNameKeyGenerator->nameToKey(AsciiString("ChallengeLoadScreen.wnd:BioNameEntryRight")));
+		GameWindow *bio_rank_left = TheWindowManager->winGetWindowFromId(
+			load_screen_window,
+			TheNameKeyGenerator->nameToKey(AsciiString("ChallengeLoadScreen.wnd:BioBirthplaceEntryLeft")));
+		GameWindow *bio_strategy_right = TheWindowManager->winGetWindowFromId(
+			load_screen_window,
+			TheNameKeyGenerator->nameToKey(AsciiString("ChallengeLoadScreen.wnd:BioStrategyEntryRight")));
+		ok = expect(bio_name_left != nullptr && bio_name_right != nullptr &&
+				bio_rank_left != nullptr && bio_strategy_right != nullptr,
+			"ChallengeLoadScreen::init did not retain all campaign-persona bio text windows") && ok;
+		ok = expect(bio_name_left == nullptr ||
+				GadgetStaticTextGetText(bio_name_left) == game_text.fetch("GUI:SmokeChallengeLoadPlayer"),
+			"ChallengeLoadScreen::init did not render the player persona bio name") && ok;
+		ok = expect(bio_name_right == nullptr ||
+				GadgetStaticTextGetText(bio_name_right) == game_text.fetch("GUI:SmokeChallengeLoadOpponent"),
+			"ChallengeLoadScreen::init did not render the opponent persona bio name") && ok;
+		ok = expect(bio_rank_left == nullptr ||
+				GadgetStaticTextGetText(bio_rank_left) == game_text.fetch("GUI:SmokeChallengeLoadPlayerRank"),
+			"ChallengeLoadScreen::init did not render the player persona rank") && ok;
+		ok = expect(bio_strategy_right == nullptr ||
+				GadgetStaticTextGetText(bio_strategy_right) == game_text.fetch("GUI:SmokeChallengeLoadOpponentStrategy"),
+			"ChallengeLoadScreen::init did not render the opponent persona strategy") && ok;
+		ok = expect(audio.sawEvent(AsciiString("SmokeChallengeLoadPlayerName")) &&
+				audio.sawEvent(AsciiString("SmokeChallengeLoadOpponentName")) &&
+				audio.sawEvent(AsciiString("SmokeChallengeLoadOpponentTaunt")) &&
+				audio.sawEvent(AsciiString("LoadScreenAmbient")),
+			"ChallengeLoadScreen::init did not enqueue all campaign-persona audio events") && ok;
+
+		std::printf("ChallengeLoadScreen init GC_Background Bink W3D presentation ok: backgroundFrames=%d windowCopies=%d presentedBuffers=%d finalTexture=%ux%u pitch=%u checksum=%u campaign=%s opponent=%s\n",
 			expected_background_frames,
 			expected_window_movie_copies,
 			expected_presented_buffers,
 			next_power_of_two(96),
 			next_power_of_two(120),
 			next_power_of_two(96) * 4,
-			static_cast<unsigned int>(state->last_browser_texture_checksum));
+			static_cast<unsigned int>(state->last_browser_texture_checksum),
+			CncPortLoadScreenGetChallengeLastCampaignNameForTest(),
+			CncPortLoadScreenGetChallengeLastMissionGeneralNameForTest());
 	}
 	display.setLoadScreenWindowListProbe(FALSE);
 	window_manager.update();
@@ -2620,7 +2821,13 @@ bool exercise_challenge_load_screen_init(VideoPlayerInterface &player)
 	ok = expect(window_manager.winGetWindowList() == nullptr,
 		"ChallengeLoadScreen destructor did not destroy the challenge load-screen window") && ok;
 
+	CncPortLoadScreenSetChallengeUseCampaignDataForTest(FALSE);
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheChallengeGenerals = old_challenge_generals;
+	TheCampaignManager = old_campaign_manager;
+	TheAudio = old_audio;
 	TheMouse = old_mouse;
+	TheDisplayStringManager = old_display_string_manager;
 	TheGameText = old_game_text;
 	TheNameKeyGenerator = old_name_key_generator;
 	TheGameEngine = old_game_engine;
