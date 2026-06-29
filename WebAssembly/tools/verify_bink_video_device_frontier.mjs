@@ -3,9 +3,10 @@
 //
 // Source-checks the original Bink video device frontier. It reads (never
 // executes) only repo source files: the original Bink video device source and
-// header, the wasm browser bink declaration shim/provider, and the wasm CMake
-// compile frontier target/source. It emits a JSON { ok, errors, sources, facts }
-// report and exits nonzero on missing/moved hard facts.
+// header, the wasm browser bink declaration shim/provider, the wasm CMake
+// compile/smoke targets, and the focused sidecar smoke harnesses. It emits a
+// JSON { ok, errors, sources, facts } report and exits nonzero on missing/moved
+// hard facts.
 //
 // Verified facts (line numbers measured against the current original source):
 //   - BinkVideoPlayer::init (line 128) calls VideoPlayer::init() (line 131)
@@ -36,11 +37,13 @@
 //     BinkSetSoundTrack).
 //   - WebAssembly/src/wasm_bink_provider.cpp defines the current browser Bink
 //     provider: BinkOpen reads real classic BIK headers and fills the original
-//     handle fields, frame cursor APIs are stateful, and BinkCopyToBuffer still
+//     handle fields, frame cursor APIs are stateful, sidecar metadata is read
+//     from bink-browser-video-manifest.json, and BinkCopyToBuffer still
 //     documents that frame decode/copy remains a WebCodecs/decoder task.
 //   - WebAssembly/CMakeLists.txt defines the zh_bink_video_device_compile_frontier
 //     static library target (line 2468) compiling BinkVideoPlayer.cpp (line 2469)
-//     and links it to zh_browser_bink.
+//     and links it to zh_browser_bink. It also defines focused node/browser
+//     provider smoke targets for the sidecar manifest contract.
 //
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -54,7 +57,11 @@ const SOURCES = {
   h: "GeneralsMD/Code/GameEngineDevice/Include/VideoDevice/Bink/BinkVideoPlayer.h",
   shim: "WebAssembly/shims/bink.h",
   provider: "WebAssembly/src/wasm_bink_provider.cpp",
+  smoke: "WebAssembly/tests/bink_video_provider_smoke.cpp",
+  sidecarRunner: "WebAssembly/tools/run_bink_video_sidecar_provider_smoke.mjs",
+  browserHarness: "WebAssembly/harness/bink_provider_sidecar_browser_smoke.mjs",
   cmake: "WebAssembly/CMakeLists.txt",
+  packageJson: "WebAssembly/package.json",
 };
 
 function readSourceLines(relPath) {
@@ -127,13 +134,28 @@ function assertOrder(errors, a, b, label) {
 
 function main() {
   const errors = [];
-  const facts = { player: {}, stream: {}, header: {}, shim: {}, provider: {}, cmake: {} };
+  const facts = {
+    player: {},
+    stream: {},
+    header: {},
+    shim: {},
+    provider: {},
+    smoke: {},
+    sidecarRunner: {},
+    browserHarness: {},
+    cmake: {},
+    packageJson: {},
+  };
 
   const cpp = readSourceLines(SOURCES.cpp);
   const h = readSourceLines(SOURCES.h);
   const shim = readSourceLines(SOURCES.shim);
   const provider = readSourceLines(SOURCES.provider);
+  const smoke = readSourceLines(SOURCES.smoke);
+  const sidecarRunner = readSourceLines(SOURCES.sidecarRunner);
+  const browserHarness = readSourceLines(SOURCES.browserHarness);
   const cmake = readSourceLines(SOURCES.cmake);
+  const packageJson = readSourceLines(SOURCES.packageJson);
 
   // --- BinkVideoPlayer::init / deinit ---
   const initDef = lineNumber(
@@ -434,11 +456,35 @@ function main() {
       errors.push(`shim bink.h: ${name} declaration expected at line ${expectedLine} but found ${ln}`);
     }
   }
+  const shimExtensionApi = [
+    { name: "WasmBinkProviderCanDecodeFrames", line: 34 },
+    { name: "WasmBinkProviderHasBrowserVideo", line: 35 },
+    { name: "WasmBinkProviderGetBrowserVideoPath", line: 36 },
+    { name: "WasmBinkProviderGetBrowserVideoCodec", line: 37 },
+    { name: "WasmBinkProviderGetBrowserAudioCodec", line: 38 },
+    { name: "WasmBinkProviderGetBrowserVideoFrameCount", line: 39 },
+    { name: "WasmBinkProviderGetBrowserVideoDurationSeconds", line: 40 },
+  ];
+  facts.shim.providerExtensionDeclarations = {};
+  for (const { name, line: expectedLine } of shimExtensionApi) {
+    const ln = lineNumber(shim.lines, (line) => new RegExp(`\\b${name}\\s*\\(`).test(line));
+    facts.shim.providerExtensionDeclarations[name] = ln;
+    if (ln !== expectedLine) {
+      errors.push(`shim bink.h: ${name} provider extension expected at line ${expectedLine} but found ${ln}`);
+    }
+  }
   // The shim header provides API declarations; definitions live in the browser
   // provider source below. The struct BINK definition is a type, not a function
   // body, and is expected.
   let apiBodyViolation = false;
   for (const { name, line: expectedLine } of shimApi) {
+    const line = shim.lines[expectedLine - 1];
+    if (line && !/;\s*$/.test(line.trim())) {
+      apiBodyViolation = true;
+      errors.push(`shim bink.h: ${name} at line ${expectedLine} is not a declaration (no trailing ';')`);
+    }
+  }
+  for (const { name, line: expectedLine } of shimExtensionApi) {
     const line = shim.lines[expectedLine - 1];
     if (line && !/;\s*$/.test(line.trim())) {
       apiBodyViolation = true;
@@ -457,9 +503,40 @@ function main() {
   assertPresent(errors, facts.provider, "headerBytesLine",
     lineNumber(provider.lines, (line) => /kBikHeaderBytes\s*=\s*44/.test(line)),
     "provider BIK header byte count");
+  assertPresent(errors, facts.provider, "manifestNameLine",
+    lineNumber(provider.lines, (line) => /kBrowserVideoManifestName\s*=\s*"bink-browser-video-manifest\.json"/.test(line)),
+    "provider browser video manifest filename");
+  assertPresent(errors, facts.provider, "manifestDirLine",
+    lineNumber(provider.lines, (line) => /kBrowserVideoManifestDir\s*=\s*"artifacts\/browser-video\/bink"/.test(line)),
+    "provider browser video manifest directory");
+  const sidecarFieldMap = [
+    "browser_video_path",
+    "browser_video_codec",
+    "browser_audio_codec",
+    "browser_video_frame_count",
+    "browser_video_duration_seconds",
+    "browser_video_available",
+  ];
+  facts.provider.sidecarFields = {};
+  for (const field of sidecarFieldMap) {
+    const ln = lineNumber(provider.lines, (line) => new RegExp(`\\b${field}\\b`).test(line));
+    facts.provider.sidecarFields[field] = ln;
+    if (ln === -1) {
+      errors.push(`provider sidecar field ${field} not found`);
+    }
+  }
   assertPresent(errors, facts.provider, "parseHeaderLine",
     lineNumber(provider.lines, (line) => /\bparse_bik_header\s*\(/.test(line)),
     "provider parse_bik_header");
+  assertPresent(errors, facts.provider, "manifestCandidatePathsLine",
+    lineNumber(provider.lines, (line) => /\bmanifest_candidate_paths\s*\(/.test(line)),
+    "provider manifest_candidate_paths");
+  assertPresent(errors, facts.provider, "parseManifestPayloadLine",
+    lineNumber(provider.lines, (line) => /\bparse_manifest_payload\s*\(/.test(line)),
+    "provider parse_manifest_payload");
+  assertPresent(errors, facts.provider, "attachBrowserVideoMetadataLine",
+    lineNumber(provider.lines, (line) => /\battach_browser_video_metadata\s*\(/.test(line)),
+    "provider attach_browser_video_metadata");
 
   const parseHeaderLine = facts.provider.parseHeaderLine;
   const parseHeaderBody = functionBodyLineRange(provider.lines, parseHeaderLine);
@@ -501,6 +578,12 @@ function main() {
     "BinkSoundUseDirectSound",
     "BinkSetSoundTrack",
     "WasmBinkProviderCanDecodeFrames",
+    "WasmBinkProviderHasBrowserVideo",
+    "WasmBinkProviderGetBrowserVideoPath",
+    "WasmBinkProviderGetBrowserVideoCodec",
+    "WasmBinkProviderGetBrowserAudioCodec",
+    "WasmBinkProviderGetBrowserVideoFrameCount",
+    "WasmBinkProviderGetBrowserVideoDurationSeconds",
   ];
   facts.provider.apiDefinitions = {};
   for (const name of providerApi) {
@@ -525,7 +608,79 @@ function main() {
   if (facts.provider.canDecodeFramesFalseLine === -1) {
     errors.push("provider must report decodeReady=false until real frame decode is implemented");
   }
+  const parseManifestBody = functionBodyLineRange(provider.lines, facts.provider.parseManifestPayloadLine);
+  if (!parseManifestBody) {
+    errors.push("provider parse_manifest_payload body not found");
+  } else {
+    const sidecarChecks = {
+      sourceFileMatchLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_string_value\(section,\s*"sourceFile"\)\s*!=\s*source_file/),
+      framesLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_u32_value\(section,\s*"frames"/),
+      outputFramesLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_u32_value\(section,\s*"outputFrameCount"/),
+      widthLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_u32_value\(section,\s*"width"/),
+      heightLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_u32_value\(section,\s*"height"/),
+      durationLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_double_value\(section,\s*"outputDurationSeconds"/),
+      outputFileLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_string_value\(section,\s*"outputFile"\)/),
+      outputVideoCodecLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_string_value\(section,\s*"outputVideoCodec"\)/),
+      outputAudioCodecLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /json_first_array_string\(section,\s*"outputAudioCodecs"\)/),
+      handleFieldValidationLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /frames\s*!=\s*handle\.public_handle\.Frames/),
+      browserVideoAvailableLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /browser_video_available\s*=\s*true/),
+      relativeSidecarPathLine: firstMatchInRange(provider.lines, parseManifestBody.start, parseManifestBody.end, /kBrowserVideoManifestDir\)\s*\+\s*"\/"\s*\+\s*output_file/),
+    };
+    facts.provider.sidecarManifestParsing = sidecarChecks;
+    for (const [key, line] of Object.entries(sidecarChecks)) {
+      if (line === -1) {
+        errors.push(`provider parse_manifest_payload missing ${key}`);
+      }
+    }
+  }
+  const binkOpenBody = functionBodyLineRange(provider.lines, facts.provider.apiDefinitions.BinkOpen);
+  facts.provider.binkOpenAttachSidecarLine = binkOpenBody
+    ? firstMatchInRange(provider.lines, binkOpenBody.start, binkOpenBody.end, /attach_browser_video_metadata\(path,\s*\*handle\)/)
+    : -1;
+  if (facts.provider.binkOpenAttachSidecarLine === -1) {
+    errors.push("provider BinkOpen must attach browser sidecar metadata after header parse");
+  }
   facts.provider.runtimeDecode = false;
+
+  // --- Focused sidecar smoke facts ---
+  assertPresent(errors, facts.smoke, "sidecarSmokeExportLine",
+    lineNumber(smoke.lines, (line) => /\brun_bink_video_sidecar_provider_smoke\s*\(/.test(line)),
+    "C++ sidecar provider smoke export");
+  assertPresent(errors, facts.smoke, "originalPathResolutionLine",
+    lineNumber(smoke.lines, (line) => /Data\\\\English\\\\Movies\\\\VS_small\.bik/.test(line)),
+    "C++ sidecar provider smoke original-style path resolution");
+  assertPresent(errors, facts.smoke, "gcSidecarLine",
+    lineNumber(smoke.lines, (line) => /artifacts\/browser-video\/bink\/GC_Background\.webm/.test(line)),
+    "C++ sidecar provider smoke GC sidecar expectation");
+  assertPresent(errors, facts.smoke, "vsSidecarLine",
+    lineNumber(smoke.lines, (line) => /artifacts\/browser-video\/bink\/VS_small\.webm/.test(line)),
+    "C++ sidecar provider smoke VS sidecar expectation");
+  assertPresent(errors, facts.smoke, "decodeReadyFalseLine",
+    lineNumber(smoke.lines, (line) => /WasmBinkProviderCanDecodeFrames\(\)\s*==\s*0/.test(line)),
+    "C++ sidecar provider smoke keeps decodeReady false");
+
+  assertPresent(errors, facts.sidecarRunner, "manifestPreflightLine",
+    lineNumber(sidecarRunner.lines, (line) => /bink-browser-video-manifest\.json/.test(line)),
+    "Node sidecar provider runner manifest preflight");
+  assertPresent(errors, facts.sidecarRunner, "ccallLine",
+    lineNumber(sidecarRunner.lines, (line) => /run_bink_video_sidecar_provider_smoke/.test(line)),
+    "Node sidecar provider runner ccall");
+
+  assertPresent(errors, facts.browserHarness, "browserSmokeModuleLine",
+    lineNumber(browserHarness.lines, (line) => /createBinkVideoProviderBrowserSmokeModule/.test(line)),
+    "browser sidecar harness loads provider smoke module");
+  assertPresent(errors, facts.browserHarness, "manifestMountLine",
+    lineNumber(browserHarness.lines, (line) => /bink-browser-video-manifest\.json/.test(line)),
+    "browser sidecar harness mounts manifest into MEMFS");
+  assertPresent(errors, facts.browserHarness, "providerCcallLine",
+    lineNumber(browserHarness.lines, (line) => /run_bink_video_sidecar_provider_smoke/.test(line)),
+    "browser sidecar harness runs provider smoke");
+  assertPresent(errors, facts.browserHarness, "canvasReadbackLine",
+    lineNumber(browserHarness.lines, (line) => /nonTransparentSamples/.test(line)),
+    "browser sidecar harness validates canvas samples");
+  assertPresent(errors, facts.browserHarness, "screenshotLine",
+    lineNumber(browserHarness.lines, (line) => /harness-smoke-bink-provider-sidecar-video\.png/.test(line)),
+    "browser sidecar harness screenshot output");
 
   // --- CMake compile frontier target/source ---
   facts.cmake = {};
@@ -544,6 +699,58 @@ function main() {
   assertPresent(errors, facts.cmake, "providerLinkLine",
     lineNumber(cmake.lines, (line) => /target_link_libraries\s*\(\s*zh_bink_video_device_compile_frontier\s+PUBLIC/.test(line)),
     "CMake Bink frontier links zh_browser_bink");
+  const nodeProviderSmokeTargetLine = lineNumber(cmake.lines, (line) => /add_executable\s*\(\s*bink-video-provider-smoke\b/.test(line));
+  assertPresent(errors, facts.cmake, "nodeProviderSmokeTargetLine",
+    nodeProviderSmokeTargetLine,
+    "CMake node provider smoke target");
+  const browserProviderSmokeTargetLine = lineNumber(cmake.lines, (line) => /add_executable\s*\(\s*bink-video-provider-browser-smoke\b/.test(line));
+  assertPresent(errors, facts.cmake, "providerSmokeExportLine",
+    nodeProviderSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(
+          cmake.lines,
+          nodeProviderSmokeTargetLine,
+          nodeProviderSmokeTargetLine + 40,
+          /_run_bink_video_provider_smoke.*_run_bink_video_sidecar_provider_smoke/,
+        ),
+    "CMake node provider smoke exports sidecar entrypoint");
+  assertPresent(errors, facts.cmake, "browserProviderSmokeTargetLine",
+    browserProviderSmokeTargetLine,
+    "CMake browser provider sidecar smoke target");
+  assertPresent(errors, facts.cmake, "browserProviderSmokeExportNameLine",
+    browserProviderSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(
+          cmake.lines,
+          browserProviderSmokeTargetLine,
+          browserProviderSmokeTargetLine + 40,
+          /createBinkVideoProviderBrowserSmokeModule/,
+        ),
+    "CMake browser provider sidecar smoke export name");
+  assertPresent(errors, facts.cmake, "browserProviderSmokeRuntimeMethodsLine",
+    browserProviderSmokeTargetLine === -1
+      ? -1
+      : firstMatchInRange(
+          cmake.lines,
+          browserProviderSmokeTargetLine,
+          browserProviderSmokeTargetLine + 40,
+          /EXPORTED_RUNTIME_METHODS=\['ccall','FS'\]/,
+        ),
+    "CMake browser provider sidecar smoke exports ccall and FS");
+
+  // --- package script facts ---
+  facts.packageJson.scripts = {};
+  const packageScripts = {
+    "test:bink-video-sidecar-provider": /"test:bink-video-sidecar-provider":\s*"npm run build:wasm && npm run transcode:bink-video && node tools\/run_bink_video_sidecar_provider_smoke\.mjs/,
+    "test:bink-provider-sidecar-browser": /"test:bink-provider-sidecar-browser":\s*"npm run build:wasm && npm run transcode:bink-video && node harness\/bink_provider_sidecar_browser_smoke\.mjs/,
+  };
+  for (const [name, re] of Object.entries(packageScripts)) {
+    const ln = lineNumber(packageJson.lines, (line) => re.test(line));
+    facts.packageJson.scripts[name] = ln;
+    if (ln === -1) {
+      errors.push(`package.json script ${name} not found`);
+    }
+  }
 
   const report = {
     ok: errors.length === 0,
@@ -553,7 +760,11 @@ function main() {
       header: SOURCES.h,
       shim: SOURCES.shim,
       provider: SOURCES.provider,
+      smoke: SOURCES.smoke,
+      sidecarRunner: SOURCES.sidecarRunner,
+      browserHarness: SOURCES.browserHarness,
       cmake: SOURCES.cmake,
+      packageJson: SOURCES.packageJson,
     },
     facts,
   };

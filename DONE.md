@@ -3715,6 +3715,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       exits 0 before transcode output exists; strict mode fails on absent or
       mismatched output. This verifier does not decode Bink inside the
       provider or claim original `BinkVideoPlayer` runtime playback.
+- [x] Attach browser sidecar metadata to the current Bink provider handles and
+      harness-test that provider/browser contract. `WebAssembly/shims/bink.h`
+      now exposes provider query helpers for sidecar availability, relative
+      WebM path, video/audio codecs, frame count, and duration while
+      `WasmBinkProviderCanDecodeFrames()` still reports false. `zh_browser_bink`
+      reads `bink-browser-video-manifest.json`, matches entries by source BIK
+      basename, validates frame count and dimensions against the parsed
+      `HBINK` header fields, and stores browser-facing relative paths like
+      `artifacts/browser-video/bink/GC_Background.webm`.
+      `test:bink-video-sidecar-provider` exercises this in the node smoke,
+      including original-style `Data\English\Movies\VS_small.bik` basename
+      resolution. `test:bink-provider-sidecar-browser` builds an ES module
+      smoke, mounts the BIK payloads plus manifest into MEMFS, runs the
+      provider query smoke in Chromium, loads the advertised WebMs through
+      `<video>`, checks metadata/play/seek/canvas-readback, and captures
+      `artifacts/screenshots/harness-smoke-bink-provider-sidecar-video.png`.
+      `verify:bink-video-device-frontier` now pins this provider extension,
+      the focused C++/JS/browser harnesses, the CMake smoke targets, and the
+      package scripts. Original `BinkVideoPlayer` runtime presentation,
+      `BinkCopyToBuffer` frame upload, and audio sync remain open.
 
 ---
 

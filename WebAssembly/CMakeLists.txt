@@ -6404,6 +6404,40 @@ target_link_options(bink-video-provider-smoke PRIVATE
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=33554432"
   "SHELL:-sNODERAWFS=1"
-  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke']"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
+)
+
+add_executable(bink-video-provider-browser-smoke
+  tests/bink_video_provider_smoke.cpp
+)
+
+set_target_properties(bink-video-provider-browser-smoke PROPERTIES
+  SUFFIX ".js"
+)
+
+target_link_libraries(bink-video-provider-browser-smoke PRIVATE
+  zh_browser_bink
+)
+
+target_compile_definitions(bink-video-provider-browser-smoke PRIVATE
+  BINK_VIDEO_PROVIDER_SMOKE_NO_MAIN
+)
+
+target_compile_options(bink-video-provider-browser-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(bink-video-provider-browser-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=web,worker"
+  "SHELL:-sMODULARIZE=1"
+  "SHELL:-sEXPORT_ES6=1"
+  "SHELL:-sEXPORT_NAME=createBinkVideoProviderBrowserSmokeModule"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=33554432"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke','_run_bink_video_sidecar_provider_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )

@@ -31,4 +31,11 @@ void BinkCopyToBuffer(HBINK bink, void *dest, u32 destPitch, u32 destHeight, u32
 void BinkSetVolume(HBINK bink, u32 trackId, int volume);
 int BinkSoundUseDirectSound(void *directSound);
 void BinkSetSoundTrack(u32 totalTracks, const u32 *tracks);
+int WasmBinkProviderCanDecodeFrames();
+int WasmBinkProviderHasBrowserVideo(HBINK bink);
+const char *WasmBinkProviderGetBrowserVideoPath(HBINK bink);
+const char *WasmBinkProviderGetBrowserVideoCodec(HBINK bink);
+const char *WasmBinkProviderGetBrowserAudioCodec(HBINK bink);
+u32 WasmBinkProviderGetBrowserVideoFrameCount(HBINK bink);
+double WasmBinkProviderGetBrowserVideoDurationSeconds(HBINK bink);
 }
