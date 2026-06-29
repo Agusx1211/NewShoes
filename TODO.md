@@ -676,9 +676,12 @@ shares structure and follows behind.
       into `BinkCopyToBuffer`'s wasm destination buffer. The browser
       `test:bink-videoplayer-sidecar-browser` smoke now proves an original
       `BinkVideoPlayer` / `BinkVideoStream::frameRender` flow can own that
-      sidecar copy into a `VideoBuffer`. This remains open until the final
-      decoder/format/upload contract is locked down and the copied frame data
-      is presented through the real W3D video texture path.
+      sidecar copy into a `VideoBuffer`, and
+      `test:bink-w3d-video-buffer-browser` now proves that same original-player
+      flow can copy decoded sidecar pixels into a real `W3DVideoBuffer` and
+      emit browser D3D8 texture updates. This remains open until the final
+      decoder/format/presentation contract is locked down and the copied frame
+      data is presented through `W3DDisplay::drawVideoBuffer`.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -691,9 +694,12 @@ shares structure and follows behind.
       sidecar pixels. The browser `BinkVideoPlayer` sidecar smoke now mounts
       the real BIK payloads and sidecar manifest, installs the copy hook, and
       verifies original player-owned open/decompress/render/advance/seek/close
-      copies decoded sidecar pixels into `SmokeVideoBuffer` memory. Original
-      runtime browser presentation, frame upload through real `W3DVideoBuffer`,
-      and audio sync remain open.
+      copies decoded sidecar pixels into `SmokeVideoBuffer` memory. The browser
+      `Bink W3DVideoBuffer` upload smoke now initializes WW3D, renders those
+      original streams into real `W3DVideoBuffer` textures, and verifies
+      nonzero browser texture updates for the validated power-of-two texture
+      sizes. Original runtime browser presentation through
+      `W3DDisplay::drawVideoBuffer` and audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -722,9 +728,10 @@ shares structure and follows behind.
       source-only upload/presentation frontier from original
       `BinkVideoStream::frameRender` through the abstract `VideoBuffer`
       contract, original `W3DVideoBuffer` surface/texture ownership, and the
-      browser D3D8 texture update hook. It does not claim real W3D video
-      texture presentation; that still needs a harness screenshot through
-      `W3DDisplay::drawVideoBuffer`.
+      browser D3D8 texture update hook. It also pins the new
+      `test:bink-w3d-video-buffer-browser` runtime proof. It does not claim
+      final W3D video presentation; that still needs a harness screenshot
+      through `W3DDisplay::drawVideoBuffer`.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

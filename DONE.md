@@ -3835,6 +3835,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       is captured. This proves original-player ownership of the sidecar copy
       bridge; real `W3DVideoBuffer` texture upload, `W3DDisplay` presentation,
       final surface-format conversion, and Bink/audio sync remain open.
+- [x] Add an original `BinkVideoPlayer` to real `W3DVideoBuffer` browser
+      upload proof. The browser D3D8 shim now uploads dirty pixels when a
+      texture-owned surface is unlocked directly, which is the original
+      `W3DVideoBuffer::lock` / `SurfaceClass::Unlock` path. The new
+      `bink-w3d-video-buffer-browser-smoke` target links original
+      `W3DVideoBuffer.cpp`, initializes WW3D, mounts the real shipped BIK
+      payloads and sidecar manifest, decodes the advertised WebMs in Chromium,
+      installs `cncPortBinkCopyToBuffer`, and drives original
+      `BinkVideoStream::frameRender(&W3DVideoBuffer)`. The harness
+      `test:bink-w3d-video-buffer-browser` verifies decoded sidecar pixels are
+      copied into real W3D texture memory and emitted through
+      `cncPortD3D8TextureUpdate` as nonzero uploads for `GC_Background`
+      (`800x600` visible into a `1024x1024` texture, pitch `4096`) and
+      `VS_small` (`96x120` visible into a `128x128` texture, pitch `512`), with
+      texture release cleanup and screenshot
+      `artifacts/screenshots/harness-smoke-bink-w3d-video-buffer-upload.png`.
+      Final presentation through `W3DDisplay::drawVideoBuffer`, final surface
+      format policy, and Bink/audio sync remain open.
 - [x] Add `verify:bink-audio-sync-frontier` (`verify:bink-audio-sync-frontier`
       and strict alias `verify:bink-audio-sync-frontier:strict`), a
       source-only verifier for the remaining Bink audio-sync/frontier
