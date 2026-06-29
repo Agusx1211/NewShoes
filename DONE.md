@@ -3702,6 +3702,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `artifacts/screenshots/harness-smoke-bink-browser-video.png`. This proves
       the sidecar payloads are browser-decodable, but it still does not wire
       them into the original `BinkVideoPlayer` runtime.
+- [x] Add `verify:bink-browser-video-outputs` /
+      `verify:bink-browser-video-outputs:strict`
+      (`WebAssembly/tools/verify_bink_browser_video_outputs.mjs`) for the real
+      sidecar manifest emitted by `transcode:bink-video`. It validates
+      `artifacts/browser-video/bink/bink-browser-video-manifest.json` for the
+      two shipped loose BIK payloads, checks source size/signature, source and
+      output codecs, dimensions, frame counts, FPS, durations, and
+      `browserDecode` metadata against the current pinned Zero Hour facts, and
+      uses `ffprobe` when available to inspect the actual generated WebM
+      streams. With `--allow-missing` it reports absent sidecars in JSON and
+      exits 0 before transcode output exists; strict mode fails on absent or
+      mismatched output. This verifier does not decode Bink inside the
+      provider or claim original `BinkVideoPlayer` runtime playback.
 
 ---
 
