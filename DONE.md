@@ -3853,6 +3853,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `artifacts/screenshots/harness-smoke-bink-w3d-video-buffer-upload.png`.
       Final presentation through `W3DDisplay::drawVideoBuffer`, final surface
       format policy, and Bink/audio sync remain open.
+- [x] Add an original `W3DDisplay::drawVideoBuffer` browser presentation
+      smoke for a real `W3DVideoBuffer`. The `cnc-port` runtime now exports
+      `cnc_port_probe_ww3d_display_video_buffer`, which initializes WW3D,
+      allocates a `TYPE_X8R8G8B8` `W3DVideoBuffer`, locks and fills its
+      `128x128` texture-owned surface with synthetic red pixels, unlocks it
+      through the original `W3DVideoBuffer` / `SurfaceClass` upload path, and
+      calls original `W3DDisplay::drawVideoBuffer` on a probe display with a
+      display-owned `Render2DClass`. The harness RPC
+      `ww3dDisplayVideoBuffer` and `test:ww3d-display-video-buffer` verify the
+      original draw path emits a textured quad (`D3DPT_TRIANGLELIST`, 4
+      vertices, 2 primitives, 44-byte stride), binds the same browser texture
+      reported by the `W3DVideoBuffer`, uses the expected modulate
+      texture/diffuse state with stage 1 disabled, updates/releases browser
+      D3D8 textures, and renders red center pixels with black outside pixels
+      on the WebGL2 canvas. The smoke captures
+      `artifacts/screenshots/harness-smoke-ww3d-display-video-buffer-canvas.png`.
+      This proves synthetic `W3DVideoBuffer` presentation through
+      `W3DDisplay::drawVideoBuffer`; decoded Bink sidecar frames still need to
+      be joined to this display path, and Bink/audio sync remains open.
 - [x] Add `verify:bink-audio-sync-frontier` (`verify:bink-audio-sync-frontier`
       and strict alias `verify:bink-audio-sync-frontier:strict`), a
       source-only verifier for the remaining Bink audio-sync/frontier

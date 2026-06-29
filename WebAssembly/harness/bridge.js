@@ -5819,6 +5819,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_string", "string", []),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
+      probeWW3DDisplayVideoBuffer: module.cwrap(
+        "cnc_port_probe_ww3d_display_video_buffer", "string", []),
       probeWW3DDisplayDrawImageAdditive: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage_additive", "string", []),
       probeWW3DDisplayDrawImageSolid: module.cwrap(
@@ -14017,6 +14019,111 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayVideoBuffer":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3DDisplay video buffer cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayVideoBuffer());
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const videoPixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          outside: sampleVirtualCanvasPixel(250, 200),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          videoPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const stage0 = probe?.draw?.renderState?.textureStages?.[0];
+        const stage1 = probe?.draw?.renderState?.textureStages?.[1];
+        const ok = Boolean(probe.ok)
+          && Boolean(browserProbe?.ok)
+          && probe?.source === "ww3d_display_video_buffer_probe"
+          && probe?.display?.path === "W3DDisplay::drawVideoBuffer"
+          && probe?.results?.drawVideoBufferCalled === true
+          && probe?.videoBuffer?.type === 2
+          && probe?.videoBuffer?.format === D3DFMT_X8R8G8B8
+          && probe?.videoBuffer?.textureId !== 0
+          && probe?.videoBuffer?.visibleWidth === 128
+          && probe?.videoBuffer?.visibleHeight === 128
+          && probe?.videoBuffer?.textureWidth === 128
+          && probe?.videoBuffer?.textureHeight === 128
+          && probe?.videoBuffer?.pitch === 512
+          && probe?.videoBuffer?.uploadChecksum !== 0
+          && probe?.draw?.primitiveType === D3DPT_TRIANGLELIST
+          && probe?.draw?.vertexCount === 4
+          && probe?.draw?.primitiveCount === 2
+          && probe?.draw?.vertexStride === 44
+          && probe?.draw?.vertexBufferId !== 0
+          && probe?.draw?.indexBufferId !== 0
+          && (probe?.draw?.transformMask & 7) === 7
+          && probe?.draw?.renderState?.alphaBlendEnable === 1
+          && probe?.draw?.renderState?.srcBlend === D3DBLEND_SRCALPHA
+          && probe?.draw?.renderState?.destBlend === D3DBLEND_INVSRCALPHA
+          && stage0?.colorOp === D3DTOP_MODULATE
+          && stage0?.colorArg1 === D3DTA_TEXTURE
+          && stage0?.colorArg2 === D3DTA_DIFFUSE
+          && stage1?.colorOp === D3DTOP_DISABLE
+          && probe?.calls?.drawIndexed >= 1
+          && probe?.calls?.browserTextureCreate >= 1
+          && probe?.calls?.browserTextureUpdate >= 2
+          && probe?.calls?.browserTextureBind >= 1
+          && probe?.calls?.browserTextureRelease >= 1
+          && probe?.calls?.browserBufferCreate >= 2
+          && probe?.calls?.browserBufferUpdate >= 2
+          && probe?.calls?.setTexture >= 1
+          && probe?.calls?.setTransform >= 3
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
+          && browserProbe?.texture0?.id === probe?.videoBuffer?.textureId
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.storage === "rgba8"
+          && browserProbe?.texture0?.format === D3DFMT_X8R8G8B8
+          && browserProbe?.texture0?.combiner?.supported === true
+          && browserProbe?.texture0?.combiner?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.texture0?.combiner?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.texture0?.combiner?.colorArg2 === D3DTA_DIFFUSE
+          && pixelLooksRed(browserProbe.centerPixel)
+          && pixelLooksRed(videoPixels.center)
+          && pixelLooksRed(screenshot.centerPixel)
+          && pixelLooksBlack(videoPixels.outside)
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 2
+          && textureDelta.binds >= 1
+          && textureDelta.releases >= 1;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          videoPixels,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
