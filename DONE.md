@@ -1757,6 +1757,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       callback slice. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Replace the test-local W3D main-menu init body with original
+      `W3DMainMenu.cpp` ownership in `w3d-window-layout-script-smoke`: the
+      target now links original W3D main-menu GUI callbacks, removes duplicate
+      local W3D main-menu draw/init stubs, and verifies both the focused
+      `BlankWindow.wnd` layout and real Shell-pushed `Menus/MainMenu.wnd`
+      execute original `W3DMainMenuInit` through to the current
+      `MainMenuInit` boundary. The startup vertical gate now requires
+      `callbackPaths:["W3DMainMenuInit->MainMenuInit"]`; first real
+      `MainMenu.cpp` behavior remains the next GUI slice. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

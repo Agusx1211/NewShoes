@@ -5460,6 +5460,7 @@ add_executable(w3d-window-layout-script-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp"
 )
 
 set_target_properties(w3d-window-layout-script-smoke PROPERTIES

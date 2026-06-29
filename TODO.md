@@ -429,12 +429,13 @@ shares structure and follows behind.
       `WindowZH.big`, verifies `MainMenu.wnd:MainMenuParent` creation and
       `MainMenuSystem` binding, runs the W3D layout-init callback name, and
       pops the shell stack cleanly through original `Shell::popImmediate`.
-      It still uses focused display/font/text shims and test-local W3D/main-menu
+      It now links original `W3DMainMenu.cpp` and proves the original
+      `W3DMainMenuInit` layout callback reaches the `MainMenuInit` boundary.
+      It still uses focused display/font/text shims and test-local `MainMenu*`
       callback bodies for unrendered UI surfaces, so full production
-      `W3DDisplay` construction, original
-      `W3DMainMenuInit -> MainMenuInit` callback execution, first safe
-      original `MainMenu*` behavior, and `W3DModuleFactory` module-template
-      lookup still need original public-API runtime proof.
+      `W3DDisplay` construction, first safe original `MainMenu.cpp` runtime
+      behavior, and `W3DModuleFactory` module-template lookup still need
+      original public-API runtime proof.
       `verify:w3d-module-factory-frontier`
       now pins the original
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
@@ -444,9 +445,8 @@ shares structure and follows behind.
       game-client global graph, so the full `W3DModuleFactory::init()` runtime
       proof should follow original `GameEngine.cpp` ownership of the
       pre-`createAudioManager` file/INI/CD frontier. Advance the next GUI slice
-      vertically from Shell-pushed `Menus/MainMenu.wnd` into original
-      `W3DMainMenuInit -> MainMenuInit` callback execution and the first safe
-      `MainMenu*` runtime behavior.
+      vertically from original `W3DMainMenuInit` into the first safe
+      `MainMenu.cpp` runtime behavior.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

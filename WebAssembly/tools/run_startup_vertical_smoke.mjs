@@ -213,12 +213,17 @@ const steps = [
         && payload.shellCallbackNames.includes('MainMenuSystem')
         && payload.shellCallbackNames.includes('MainMenuShutdown'),
         'W3D window layout script smoke did not prove MainMenu.wnd callback-name binding');
+      expect(Array.isArray(payload.callbackPaths)
+        && payload.callbackPaths.includes('W3DMainMenuInit->MainMenuInit'),
+        'W3D window layout script smoke did not execute original W3DMainMenuInit to the MainMenuInit boundary');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
         'W3D window layout script smoke did not prove WindowZH.big archive-backed loading');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Shell::showShell/Shell::push MainMenu.wnd'),
         'W3D window layout script smoke did not prove original Shell::showShell/Shell::push MainMenu ownership');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('W3DMainMenuInit to MainMenuInit boundary'),
+        'W3D window layout script smoke did not report original W3DMainMenuInit/MainMenuInit execution');
     },
   },
 ];
@@ -239,10 +244,11 @@ console.log(JSON.stringify({
     'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',
     'real WindowZH.big message-box layout loading with original callback ownership',
     'original Shell::showShell/Shell::push loading MainMenu.wnd from WindowZH.big',
+    'original W3DMainMenuInit executing to the MainMenuInit boundary',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance GUI ownership from Shell-pushed MainMenu.wnd into original W3DMainMenuInit -> MainMenuInit callback execution',
+    'advance GUI ownership from W3DMainMenuInit into first safe original MainMenu.cpp runtime behavior',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),

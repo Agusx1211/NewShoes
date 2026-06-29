@@ -41,6 +41,7 @@
 #include "Win32Device/Common/Win32LocalFileSystem.h"
 
 class GameLogic;
+class Credits;
 class DisplayStringManager;
 class GameTextInterface;
 class GlobalLanguage;
@@ -75,13 +76,14 @@ SelectionTranslator *TheSelectionTranslator = nullptr;
 VideoPlayerInterface *TheVideoPlayer = nullptr;
 View *TheTacticalView = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
+Credits *TheCredits = nullptr;
 HWND ApplicationHWnd = NULL;
 const Char *g_strFile = "Data\\Generals.str";
 const Char *g_csfFile = "Data\\%s\\Generals.csf";
 
 namespace {
 
-Int g_w3d_main_menu_init_calls = 0;
+Int g_main_menu_init_calls = 0;
 Int g_main_menu_shutdown_calls = 0;
 
 std::string normalized_path(const Char *path)
@@ -576,17 +578,17 @@ bool exercise_w3d_layout_script()
 			"parseStatus did not preserve WIN_STATUS_ENABLED") && ok;
 	}
 
-	g_w3d_main_menu_init_calls = 0;
+	g_main_menu_init_calls = 0;
 	if (layout != nullptr) {
 		layout->runInit();
 	}
-	ok = expect(g_w3d_main_menu_init_calls == 1,
-		"layout init callback did not run through W3DFunctionLexicon lookup") && ok;
+	ok = expect(g_main_menu_init_calls == 1,
+		"original W3DMainMenuInit did not reach the MainMenuInit boundary through W3DFunctionLexicon lookup") && ok;
 	if (layout != nullptr) {
 		layout->runUpdate();
 		layout->runShutdown();
-		ok = expect(g_w3d_main_menu_init_calls == 1,
-			"[None] update/shutdown callbacks should not call the W3D init stub") && ok;
+		ok = expect(g_main_menu_init_calls == 1,
+			"[None] update/shutdown callbacks should not call W3DMainMenuInit again") && ok;
 		layout->destroyWindows();
 		layout->deleteInstance();
 	}
@@ -862,7 +864,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuSystem"))) == MainMenuSystem,
 		"FunctionLexicon did not resolve MainMenuSystem for MainMenu.wnd") && ok;
 
-	g_w3d_main_menu_init_calls = 0;
+	g_main_menu_init_calls = 0;
 	g_main_menu_shutdown_calls = 0;
 	{
 		Shell shell;
@@ -875,8 +877,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			"original Shell::showShell did not push exactly one layout") && ok;
 		ok = expect(top != nullptr && top->getFilename() == AsciiString("Menus/MainMenu.wnd"),
 			"original Shell::showShell did not push Menus/MainMenu.wnd") && ok;
-		ok = expect(g_w3d_main_menu_init_calls == 1,
-			"original Shell::doPush did not execute the MainMenu W3D layout init callback") && ok;
+		ok = expect(g_main_menu_init_calls == 1,
+			"original Shell::doPush did not execute W3DMainMenuInit through to the MainMenuInit boundary") && ok;
 		ok = expect(main_parent != nullptr,
 			"MainMenu.wnd did not create MainMenuParent through the shell stack") && ok;
 		if (main_parent != nullptr) {
@@ -1188,16 +1190,6 @@ void W3DLeftHUDDraw(GameWindow *, WinInstanceData *) {}
 void W3DCameoMovieDraw(GameWindow *, WinInstanceData *) {}
 void W3DRightHUDDraw(GameWindow *, WinInstanceData *) {}
 void W3DPowerDraw(GameWindow *, WinInstanceData *) {}
-void W3DMainMenuDraw(GameWindow *, WinInstanceData *) {}
-void W3DMainMenuFourDraw(GameWindow *, WinInstanceData *) {}
-void W3DMetalBarMenuDraw(GameWindow *, WinInstanceData *) {}
-void W3DCreditsMenuDraw(GameWindow *, WinInstanceData *) {}
-void W3DClockDraw(GameWindow *, WinInstanceData *) {}
-void W3DMainMenuMapBorder(GameWindow *, WinInstanceData *) {}
-void W3DMainMenuButtonDropShadowDraw(GameWindow *, WinInstanceData *) {}
-void W3DMainMenuRandomTextDraw(GameWindow *, WinInstanceData *) {}
-void W3DThinBorderDraw(GameWindow *, WinInstanceData *) {}
-void W3DShellMenuSchemeDraw(GameWindow *, WinInstanceData *) {}
 void W3DCommandBarGridDraw(GameWindow *, WinInstanceData *) {}
 void W3DCommandBarGenExpDraw(GameWindow *, WinInstanceData *) {}
 void W3DCommandBarHelpPopupDraw(GameWindow *, WinInstanceData *) {}
@@ -1207,13 +1199,9 @@ void W3DCommandBarTopDraw(GameWindow *, WinInstanceData *) {}
 void W3DNoDraw(GameWindow *, WinInstanceData *) {}
 void W3DDrawMapPreview(GameWindow *, WinInstanceData *) {}
 
-void W3DMainMenuInit(WindowLayout *, void *)
-{
-	++g_w3d_main_menu_init_calls;
-}
-
 void MainMenuInit(WindowLayout *, void *)
 {
+	++g_main_menu_init_calls;
 }
 
 void MainMenuShutdown(WindowLayout *, void *)
@@ -1249,7 +1237,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->MainMenuInit\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init lookup, original W3DMainMenuInit to MainMenuInit boundary, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }
