@@ -590,10 +590,10 @@ shares structure and follows behind.
       `webAudioBufferProofs` currently cover only representative PCM and IMA
       ADPCM WAV payloads. `requestedPayloadCachePlan` is metadata-only, and
       `requestedPayloadDecodeCacheProof` now creates representative decoded
-      PCM/Web Audio buffer cache entries plus an OfflineAudioContext schedule
-      render for requested SFX/voice/speech keys. Expand that proof into full
-      resolved requested-payload decode/cache storage and engine-driven Web
-      Audio scheduling.
+      PCM/Web Audio buffer cache entries, an OfflineAudioContext schedule
+      render, and a browser lifecycle proof for requested SFX/voice/speech
+      keys. Expand that proof into full resolved requested-payload decode/cache
+      storage and engine-driven Web Audio scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world.
 - [ ] Music playback + transitions.

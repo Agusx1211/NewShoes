@@ -3432,6 +3432,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioBufferSourceNode`s, four completion callbacks, render timing,
       non-silent rendered windows, and rendered sample anchors while leaving
       engine-driven audio-event scheduling open.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible requested audio event lifecycle proof for the same four
+      requested payload cache entries. The smoke now pins synthetic event
+      handles, AR_Play request state, sample vs stream playing types,
+      `AudioBufferSourceNode` start windows, ordered completion callbacks,
+      `PS_Stopped`, and the sample/stream release paths while preserving that
+      this is not yet engine-driven playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

@@ -6064,6 +6064,8 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
       cacheKey: decoded.cacheKey,
       archive: decoded.archive,
       path: decoded.path,
+      firstEvent: decoded.firstEvent,
+      firstSource: decoded.firstSource,
       codec: decoded.info.codec,
       refCount: decoded.refCount,
       sections: decoded.sections,
@@ -6103,6 +6105,7 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
       source.onended = () => {
         endedCallbacks.push({
           cacheKey: decoded.cacheKey,
+          firstEvent: decoded.firstEvent,
           order: endedCallbacks.length + 1,
         });
       };
@@ -6174,6 +6177,123 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
       endedCallbacks,
     };
   }
+}
+
+function requestedAudioPlayingTypeForSections(sections) {
+  if (sections?.music || sections?.speech) {
+    return "PAT_Stream";
+  }
+  return "PAT_Sample";
+}
+
+function requestedAudioCompletionDrainForType(playingType) {
+  if (playingType === "PAT_Stream") {
+    return "processStoppedList -> releasePlayingAudio";
+  }
+  return "processPlayingList -> releasePlayingAudio";
+}
+
+function buildBrowserAudioEventLifecycleProof(decodedPayloads, scheduleProof) {
+  const errors = [];
+  const endedByCacheKey = new Map(
+    (scheduleProof.endedCallbacks ?? []).map((entry) => [entry.cacheKey, entry]),
+  );
+  const scheduledByCacheKey = new Map(
+    (scheduleProof.scheduled ?? []).map((entry) => [entry.cacheKey, entry]),
+  );
+  const events = [];
+  const eventLog = [];
+  let nextHandle = 9001;
+
+  for (const decoded of decodedPayloads) {
+    const schedule = scheduledByCacheKey.get(decoded.cacheKey);
+    const ended = endedByCacheKey.get(decoded.cacheKey);
+    const playingType = requestedAudioPlayingTypeForSections(decoded.sections);
+    const handle = nextHandle++;
+    const eventName = decoded.firstEvent ?? decoded.path;
+    if (!schedule) {
+      errors.push(`${decoded.cacheKey}: missing scheduled source`);
+    }
+    if (!ended) {
+      errors.push(`${decoded.cacheKey}: missing ended callback`);
+    }
+    const event = {
+      handle,
+      cacheKey: decoded.cacheKey,
+      eventName,
+      firstSource: decoded.firstSource,
+      archive: decoded.archive,
+      path: decoded.path,
+      sections: decoded.sections,
+      request: {
+        type: "AR_Play",
+        queued: true,
+        usePendingEvent: true,
+      },
+      start: {
+        playingType,
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: schedule?.startSeconds ?? null,
+        endSeconds: schedule?.endSeconds ?? null,
+        sourceSampleRate: schedule?.sourceSampleRate ?? decoded.info.samplesPerSec,
+        sourceFrames: schedule?.sourceFrames ?? decoded.decodedFrames,
+      },
+      callback: {
+        observed: Boolean(ended),
+        order: ended?.order ?? null,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: playingType,
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: requestedAudioCompletionDrainForType(playingType),
+        releaseAudioEventRTS: true,
+      },
+    };
+    events.push(event);
+    eventLog.push(
+      { handle, eventName, phase: "request", request: "AR_Play" },
+      { handle, eventName, phase: "start", playingType, node: "AudioBufferSourceNode" },
+      { handle, eventName, phase: "ended", observed: Boolean(ended), order: ended?.order ?? null },
+      { handle, eventName, phase: "completion", call: "notifyOfAudioCompletion", status: "PS_Stopped" },
+      { handle, eventName, phase: "release", path: event.completion.releasePath },
+    );
+  }
+
+  const handles = events.map((event) => event.handle);
+  const uniqueHandles = new Set(handles);
+  const callbacksInOrder = [...(scheduleProof.endedCallbacks ?? [])]
+    .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
+    .map((entry) => entry.cacheKey);
+  const expectedOrder = events.map((event) => event.cacheKey);
+  if (uniqueHandles.size !== handles.length) {
+    errors.push("synthetic audio handles are not unique");
+  }
+  if (callbacksInOrder.join("|") !== expectedOrder.join("|")) {
+    errors.push("ended callback order does not match scheduled event order");
+  }
+
+  return {
+    source: "browser requested audio event lifecycle proof",
+    ready: errors.length === 0 && events.length === decodedPayloads.length,
+    runtimePlayback: false,
+    engineDriven: false,
+    nextRequired: "replaceMilesSampleStartWithBrowserAudioDevice",
+    sourceFrontiers: [
+      "verify:audio-event-request-frontier",
+      "verify:audio-request-update-frontier",
+      "verify:audio-sample-start-frontier",
+      "verify:audio-completion-frontier",
+    ],
+    eventsStarted: events.length,
+    completionCallbacksObserved: scheduleProof.endedCallbacksObserved ?? 0,
+    handlesUnique: uniqueHandles.size === handles.length,
+    callbacksInScheduledOrder: callbacksInOrder.join("|") === expectedOrder.join("|"),
+    errors,
+    events,
+    eventLog,
+  };
 }
 
 function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
@@ -6302,6 +6422,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
         reason: target.reason,
         refCount: target.refCount,
         sections: target.sections,
+        firstEvent: target.firstEvent,
+        firstSource: target.firstSource,
         size: entry.size,
         codec: decoded.info.codec,
         wFormatTag: decoded.info.wFormatTag,
@@ -6325,6 +6447,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
         archive: entry.archive,
         refCount: target.refCount,
         sections: target.sections,
+        firstEvent: target.firstEvent,
+        firstSource: target.firstSource,
         info: decoded.info,
         samples: decoded.samples,
         decodedFrames,
@@ -6339,6 +6463,10 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
   webAudioBufferCache.source = "browser requested audio AudioBuffer cache proof";
   webAudioBufferCache.nextRequired = "audioEventScheduling";
   const webAudioScheduleProof = await buildWebAudioScheduleProof([...decodedCache.values()]);
+  const browserAudioEventLifecycleProof = buildBrowserAudioEventLifecycleProof(
+    [...decodedCache.values()],
+    webAudioScheduleProof,
+  );
   const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
 
   return {
@@ -6347,7 +6475,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       errors.length === 0 &&
       entries.length === targets.length &&
       webAudioBufferCache.ready === true &&
-      webAudioScheduleProof.ready === true,
+      webAudioScheduleProof.ready === true &&
+      browserAudioEventLifecycleProof.ready === true,
     metadataOnly: false,
     runtimeDecoded: true,
     runtimeScheduled: true,
@@ -6361,6 +6490,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       reason: target.reason,
       refCount: target.refCount,
       sections: target.sections,
+      firstEvent: target.firstEvent,
+      firstSource: target.firstSource,
       codec: target.codec,
       size: target.size,
     })),
@@ -6370,6 +6501,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     entries,
     webAudioBufferCache,
     webAudioScheduleProof,
+    browserAudioEventLifecycleProof,
   };
 }
 
@@ -6508,6 +6640,8 @@ function compactRequestedCacheEntry(entry) {
     size: entry.size,
     refCount: entry.refCount,
     sections: entry.sections,
+    firstEvent: entry.firstEvent,
+    firstSource: entry.firstSource,
     extension: entry.format?.extension ?? "unknown",
     codec: entry.format?.wavFmt?.codec ?? entry.format?.magic ?? "unknown",
     webAudioDecodeCandidate: entry.format?.webAudioDecodeCandidate === true,

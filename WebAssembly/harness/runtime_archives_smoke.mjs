@@ -1333,6 +1333,30 @@ function assertArrayPrefix(actual, expected, context) {
   }
 }
 
+function assertValueMatches(actual, expected, context) {
+  if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+    if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
+      throw new Error(`${context} object mismatch: ${JSON.stringify(actual)}`);
+    }
+    for (const [key, value] of Object.entries(expected)) {
+      assertValueMatches(actual[key], value, `${context}.${key}`);
+    }
+    return;
+  }
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual) || actual.length !== expected.length) {
+      throw new Error(`${context} array mismatch: ${JSON.stringify(actual)}`);
+    }
+    for (let index = 0; index < expected.length; ++index) {
+      assertValueMatches(actual[index], expected[index], `${context}[${index}]`);
+    }
+    return;
+  }
+  if (!Object.is(actual, expected)) {
+    throw new Error(`${context} value mismatch: ${JSON.stringify(actual)} !== ${JSON.stringify(expected)}`);
+  }
+}
+
 function assertAudioDecodeProofs(payloads, context) {
   const decode = payloads.decodeProofs;
   if (!decode
@@ -1629,6 +1653,14 @@ function assertRequestedAudioBufferCacheEntry(entry, expected, context) {
   }
 }
 
+function assertRequestedAudioLifecycleEvent(events, expected, context) {
+  const event = events.get(expected.cacheKey);
+  if (!event) {
+    throw new Error(`${context} lifecycle event missing: ${expected.cacheKey}`);
+  }
+  assertValueMatches(event, expected, context);
+}
+
 function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   const proof = payloads.requestedPayloadDecodeCacheProof;
   if (!proof
@@ -1657,6 +1689,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     codec: "PCM",
     archive: "AudioEnglishZH.big",
     refCount: 4,
+    firstEvent: "Amb_DesertMarketWallaLoop3",
+    firstSource: "Data\\INI\\SoundEffects.ini:5587",
     size: 62312,
     wFormatTag: 1,
     samplesPerSec: 22050,
@@ -1680,6 +1714,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     codec: "PCM",
     archive: "AudioEnglishZH.big",
     refCount: 3,
+    firstEvent: "CIAAgentVoiceAttack",
+    firstSource: "Data\\INI\\Voice.ini:4500",
     size: 53146,
     wFormatTag: 1,
     samplesPerSec: 22050,
@@ -1703,6 +1739,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     codec: "IMA_ADPCM",
     archive: "AudioZH.big",
     refCount: 4,
+    firstEvent: "ArtilleryBarrageIncomingWhistle",
+    firstSource: "Data\\INI\\SoundEffects.ini:3571",
     size: 48282,
     wFormatTag: 17,
     samplesPerSec: 44100,
@@ -1729,6 +1767,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     codec: "IMA_ADPCM",
     archive: "SpeechEnglishZH.big",
     refCount: 2,
+    firstEvent: "Taunts_AirTrafficControl01",
+    firstSource: "Data\\INI\\Speech.ini:933",
     size: 198902,
     wFormatTag: 17,
     samplesPerSec: 44100,
@@ -1874,6 +1914,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
 
   const scheduled = new Map(schedule.scheduled.map((entry) => [entry.cacheKey, entry]));
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    firstEvent: "Amb_DesertMarketWallaLoop3",
+    firstSource: "Data\\INI\\SoundEffects.ini:5587",
     startSeconds: 0,
     durationSeconds: 1.408345,
     endSeconds: 1.408345,
@@ -1881,6 +1923,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     sourceFrames: 31054,
   }, `${context} requested SFX PCM schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    firstEvent: "CIAAgentVoiceAttack",
+    firstSource: "Data\\INI\\Voice.ini:4500",
     startSeconds: 1.428345,
     durationSeconds: 1.199909,
     endSeconds: 2.628254,
@@ -1888,6 +1932,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     sourceFrames: 26458,
   }, `${context} requested voice PCM schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    firstEvent: "ArtilleryBarrageIncomingWhistle",
+    firstSource: "Data\\INI\\SoundEffects.ini:3571",
     startSeconds: 2.648254,
     durationSeconds: 2.171066,
     endSeconds: 4.81932,
@@ -1895,6 +1941,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     sourceFrames: 95744,
   }, `${context} requested SFX IMA schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    firstEvent: "Taunts_AirTrafficControl01",
+    firstSource: "Data\\INI\\Speech.ini:933",
     startSeconds: 4.83932,
     durationSeconds: 8.952744,
     endSeconds: 13.792063,
@@ -1961,6 +2009,198 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       0.000674, 0.00031, 0.000124, -0.000059,
     ],
   }, `${context} requested speech IMA scheduled render`);
+
+  const lifecycle = proof.browserAudioEventLifecycleProof;
+  if (!lifecycle
+      || lifecycle.source !== "browser requested audio event lifecycle proof"
+      || lifecycle.ready !== true
+      || lifecycle.runtimePlayback !== false
+      || lifecycle.engineDriven !== false
+      || lifecycle.nextRequired !== "replaceMilesSampleStartWithBrowserAudioDevice"
+      || lifecycle.eventsStarted !== 4
+      || lifecycle.completionCallbacksObserved !== 4
+      || lifecycle.handlesUnique !== true
+      || lifecycle.callbacksInScheduledOrder !== true
+      || !Array.isArray(lifecycle.errors)
+      || lifecycle.errors.length !== 0
+      || !Array.isArray(lifecycle.sourceFrontiers)
+      || lifecycle.sourceFrontiers.length !== 4
+      || !Array.isArray(lifecycle.events)
+      || lifecycle.events.length !== 4
+      || !Array.isArray(lifecycle.eventLog)
+      || lifecycle.eventLog.length !== 20) {
+    throw new Error(`${context} requested audio lifecycle proof state mismatch: ${JSON.stringify(lifecycle)}`);
+  }
+  assertArrayPrefix(lifecycle.sourceFrontiers, [
+    "verify:audio-event-request-frontier",
+    "verify:audio-request-update-frontier",
+    "verify:audio-sample-start-frontier",
+    "verify:audio-completion-frontier",
+  ], `${context} requested audio lifecycle source frontiers`);
+
+  const lifecycleEvents = new Map(lifecycle.events.map((entry) => [entry.cacheKey, entry]));
+  const expectedLifecycleEvents = [
+    {
+      handle: 9001,
+      cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
+      eventName: "Amb_DesertMarketWallaLoop3",
+      firstSource: "Data\\INI\\SoundEffects.ini:5587",
+      archive: "AudioEnglishZH.big",
+      path: "Data\\Audio\\Sounds\\English\\amarke2e.wav",
+      sections: { soundEffects: 4 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Sample",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 0,
+        endSeconds: 1.408345,
+        sourceSampleRate: 22050,
+        sourceFrames: 31054,
+      },
+      callback: {
+        observed: true,
+        order: 1,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Sample",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processPlayingList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+    {
+      handle: 9002,
+      cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+      eventName: "CIAAgentVoiceAttack",
+      firstSource: "Data\\INI\\Voice.ini:4500",
+      archive: "AudioEnglishZH.big",
+      path: "Data\\Audio\\Sounds\\English\\iciaatd.wav",
+      sections: { voices: 3 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Sample",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 1.428345,
+        endSeconds: 2.628254,
+        sourceSampleRate: 22050,
+        sourceFrames: 26458,
+      },
+      callback: {
+        observed: true,
+        order: 2,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Sample",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processPlayingList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+    {
+      handle: 9003,
+      cacheKey: "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+      eventName: "ArtilleryBarrageIncomingWhistle",
+      firstSource: "Data\\INI\\SoundEffects.ini:3571",
+      archive: "AudioZH.big",
+      path: "Data\\Audio\\Sounds\\gshescre.wav",
+      sections: { soundEffects: 4 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Sample",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 2.648254,
+        endSeconds: 4.81932,
+        sourceSampleRate: 44100,
+        sourceFrames: 95744,
+      },
+      callback: {
+        observed: true,
+        order: 3,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Sample",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processPlayingList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+    {
+      handle: 9004,
+      cacheKey: "SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
+      eventName: "Taunts_AirTrafficControl01",
+      firstSource: "Data\\INI\\Speech.ini:933",
+      archive: "SpeechEnglishZH.big",
+      path: "Data\\Audio\\Speech\\English\\tairf066.wav",
+      sections: { speech: 2 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Stream",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 4.83932,
+        endSeconds: 13.792063,
+        sourceSampleRate: 44100,
+        sourceFrames: 394816,
+      },
+      callback: {
+        observed: true,
+        order: 4,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Stream",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processStoppedList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+  ];
+  for (const event of expectedLifecycleEvents) {
+    assertRequestedAudioLifecycleEvent(lifecycleEvents, event, `${context} requested audio lifecycle ${event.eventName}`);
+  }
+
+  let logIndex = 0;
+  for (const event of expectedLifecycleEvents) {
+    assertValueMatches(lifecycle.eventLog[logIndex++], {
+      handle: event.handle,
+      eventName: event.eventName,
+      phase: "request",
+      request: "AR_Play",
+    }, `${context} requested audio lifecycle request log`);
+    assertValueMatches(lifecycle.eventLog[logIndex++], {
+      handle: event.handle,
+      eventName: event.eventName,
+      phase: "start",
+      playingType: event.start.playingType,
+      node: "AudioBufferSourceNode",
+    }, `${context} requested audio lifecycle start log`);
+    assertValueMatches(lifecycle.eventLog[logIndex++], {
+      handle: event.handle,
+      eventName: event.eventName,
+      phase: "ended",
+      observed: true,
+      order: event.callback.order,
+    }, `${context} requested audio lifecycle ended log`);
+    assertValueMatches(lifecycle.eventLog[logIndex++], {
+      handle: event.handle,
+      eventName: event.eventName,
+      phase: "completion",
+      call: "notifyOfAudioCompletion",
+      status: "PS_Stopped",
+    }, `${context} requested audio lifecycle completion log`);
+    assertValueMatches(lifecycle.eventLog[logIndex++], {
+      handle: event.handle,
+      eventName: event.eventName,
+      phase: "release",
+      path: event.completion.releasePath,
+    }, `${context} requested audio lifecycle release log`);
+  }
 }
 
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
