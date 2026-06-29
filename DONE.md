@@ -1238,6 +1238,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       path in `assetProbe.gameText`, and require the runtime archive
       Playwright harness to prove the selected `Data\english\Generals.csf`
       path exists before treating the CSF label probe as ready.
+- [x] Add a real browser rendering vertical for CSF-backed text:
+      `test:ww3d-display-game-text` mounts only
+      `Data\English\Generals.csf` from `EnglishZH.big` as a range-backed subset,
+      loads it through original `GameText.cpp`, fetches
+      `GUI:Command&ConquerGenerals`, feeds that `UnicodeString` to original
+      `W3DDisplayString`, and verifies the browser D3D8/WebGL2 draw with a
+      screenshot/state check. This proves the thin asset-to-text-to-render path;
+      full `GlobalLanguage::init` and local-font startup remain open.
 - [x] Compile original `GameClient/DisplayString.cpp`,
       `DisplayStringManager.cpp`, `GUI/GameFont.cpp`,
       `GUI/WinInstanceData.cpp`, and empty legacy `DrawableManager.cpp`; smoke

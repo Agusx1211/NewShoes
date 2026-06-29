@@ -10,6 +10,7 @@
 #include "Common/GameMemory.h"
 #include "Common/UnicodeString.h"
 #include "GameClient/GameFont.h"
+#include "GameClient/GameText.h"
 #include "GameClient/Image.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -69,6 +70,7 @@ std::string g_ww3d_display_rectclock_probe_json;
 std::string g_ww3d_display_remaining_rectclock_probe_json;
 std::string g_ww3d_render2d_sentence_probe_json;
 std::string g_ww3d_display_string_probe_json;
+std::string g_ww3d_display_game_text_probe_json;
 
 constexpr const char *kDisplayDrawImageFileTextureName = "cine_moon.tga";
 constexpr const char *kDisplayDrawImageFileTextureArchiveEntry = "art\\textures\\cine_moon.dds";
@@ -1461,6 +1463,350 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_string()
 
 	g_ww3d_display_string_probe_json = buffer;
 	return g_ww3d_display_string_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_game_text(
+	const char *english_archive_path)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	const char *label = "GUI:Command&ConquerGenerals";
+	const char *csf_path = "Data\\English\\Generals.csf";
+	const char *font_face = "Arial";
+	constexpr int point_size = 26;
+	constexpr int draw_x = 210;
+	constexpr int draw_y = 260;
+	constexpr int drop_x = 2;
+	constexpr int drop_y = 2;
+	const Color text_color = GameMakeColor(255, 255, 255, 255);
+	const Color drop_color = GameMakeColor(48, 48, 48, 255);
+
+	GameTextInterface *old_game_text = TheGameText;
+	FontLibrary *old_font_library = TheFontLibrary;
+	GameTextInterface *game_text = nullptr;
+	GameFont *normal_font = nullptr;
+	DisplayString *display_string = nullptr;
+	UnicodeString fetched_text;
+	AsciiString fetched_ascii;
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool runtime_asset_system_installed = false;
+	bool csf_exists = false;
+	bool game_text_created = false;
+	bool game_text_initialized = false;
+	bool fetched_label_exists = false;
+	bool fetched_text_nonempty = false;
+	bool used_existing_asset_manager = false;
+	bool asset_manager_created = false;
+	bool used_existing_font_library = false;
+	bool font_library_created = false;
+	bool normal_font_loaded = false;
+	bool display_string_allocated = false;
+	bool font_set = false;
+	bool text_set = false;
+	bool size_computed = false;
+	bool draw_called = false;
+	int text_length = 0;
+	int normal_font_height = 0;
+	int display_width = 0;
+	int display_height = 0;
+	int display_width_via_chars = 0;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		Render2DClass::Set_Screen_Resolution(RectClass(0.0f, 0.0f, 800.0f, 600.0f));
+
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_paths(english_archive_path, nullptr);
+		csf_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(csf_path);
+
+		asset_manager = WW3DAssetManager::Get_Instance();
+		used_existing_asset_manager = asset_manager != nullptr;
+		if (asset_manager == nullptr) {
+			asset_manager = W3DNEW WW3DAssetManager();
+			asset_manager_created = asset_manager != nullptr;
+		}
+
+		used_existing_font_library = TheFontLibrary != nullptr;
+		if (TheFontLibrary == nullptr) {
+			TheFontLibrary = NEW W3DFontLibrary;
+			font_library_created = TheFontLibrary != nullptr;
+			if (TheFontLibrary != nullptr) {
+				TheFontLibrary->init();
+			}
+		}
+	}
+
+	if (csf_exists) {
+		game_text = CreateGameTextInterface();
+		game_text_created = game_text != nullptr;
+		TheGameText = game_text;
+		if (game_text != nullptr) {
+			game_text->init();
+			game_text_initialized = true;
+			fetched_text = game_text->fetch(label, &fetched_label_exists);
+			fetched_text_nonempty = !fetched_text.isEmpty();
+			fetched_ascii.translate(fetched_text);
+		}
+	}
+
+	if (asset_manager != nullptr && TheFontLibrary != nullptr && fetched_label_exists) {
+		normal_font = TheFontLibrary->getFont(AsciiString(font_face), point_size, FALSE);
+		normal_font_loaded = normal_font != nullptr && normal_font->fontData != nullptr;
+		normal_font_height = normal_font_loaded ? normal_font->height : 0;
+	}
+
+	if (normal_font_loaded) {
+		display_string = newInstance(W3DDisplayString);
+		display_string_allocated = display_string != nullptr;
+	}
+
+	if (display_string != nullptr) {
+		display_string->setFont(normal_font);
+		font_set = display_string->getFont() == normal_font;
+		display_string->setText(fetched_text);
+		text_set = display_string->getText().compare(fetched_text) == 0;
+		text_length = display_string->getTextLength();
+		display_string->getSize(&display_width, &display_height);
+		display_width_via_chars = display_string->getWidth();
+		size_computed = display_width > 0 && display_height > 0 && display_width_via_chars > 0;
+
+		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			display_string->draw(draw_x, draw_y, text_color, drop_color, drop_x, drop_y);
+			draw_called = true;
+			end_render_result = WW3D::End_Render(false);
+		}
+	}
+
+	if (display_string != nullptr) {
+		display_string->deleteInstance();
+		display_string = nullptr;
+	}
+	TheGameText = old_game_text;
+	delete game_text;
+
+	if (font_library_created && TheFontLibrary != nullptr) {
+		TheFontLibrary->reset();
+		delete TheFontLibrary;
+		TheFontLibrary = old_font_library;
+	} else {
+		TheFontLibrary = old_font_library;
+	}
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+	if (asset_manager_created && asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		csf_exists &&
+		game_text_created &&
+		game_text_initialized &&
+		fetched_label_exists &&
+		fetched_text_nonempty &&
+		(asset_manager_created || used_existing_asset_manager) &&
+		(font_library_created || used_existing_font_library) &&
+		normal_font_loaded &&
+		display_string_allocated &&
+		font_set &&
+		text_set &&
+		text_length > 0 &&
+		size_computed &&
+		succeeded(begin_render_result) &&
+		draw_called &&
+		succeeded(end_render_result) &&
+		state->copy_rects_calls >= 1 &&
+		state->last_copy_rects_format == D3DFMT_A4R4G4B4 &&
+		state->last_copy_rects_uploaded_texture_id != 0 &&
+		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= 1 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->create_vertex_buffer_calls >= 1 &&
+		state->create_index_buffer_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_texture_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count >= 8 &&
+		state->last_draw_primitive_count >= 4 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_bytes >= 8 * 44 &&
+		state->last_draw_index_buffer_bytes >= 12 * 2 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	const std::string archive_json =
+		json_escape(english_archive_path != nullptr ? english_archive_path : "");
+	const std::string csf_path_json = json_escape(csf_path);
+	const std::string label_json = json_escape(label);
+	const std::string fetched_ascii_json =
+		json_escape(fetched_ascii.str() != nullptr ? fetched_ascii.str() : "");
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+
+	char buffer[7000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_display_game_text_probe\","
+		"\"ok\":%s,"
+		"\"archives\":{\"english\":\"%s\"},"
+		"\"gameText\":{\"csfPath\":\"%s\",\"label\":\"%s\","
+		"\"created\":%s,\"initialized\":%s,\"labelExists\":%s,"
+		"\"nonEmpty\":%s,\"ascii\":\"%s\"},"
+		"\"font\":{\"face\":\"%s\",\"pointSize\":%d,"
+		"\"normalLoaded\":%s,\"normalHeight\":%d,"
+		"\"fontLibraryCreated\":%s,\"usedExistingFontLibrary\":%s,"
+		"\"assetManagerCreated\":%s,\"usedExistingAssetManager\":%s},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,\"csfExists\":%s,"
+		"\"displayStringAllocated\":%s,\"fontSet\":%s,\"textSet\":%s,"
+		"\"sizeComputed\":%s,\"beginRender\":%d,\"drawCalled\":%s,"
+		"\"endRender\":%d},"
+		"\"textMetrics\":{\"length\":%d,\"width\":%d,\"height\":%d,"
+		"\"widthViaChars\":%d},"
+		"\"drawRegion\":{\"left\":%d,\"top\":%d,\"right\":%d,\"bottom\":%d},"
+		"\"runtimeAssets\":%s,"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"copyRects\":%u,\"browserTextureCreate\":%u,"
+		"\"browserTextureUpdate\":%u,\"browserTextureBind\":%u,"
+		"\"browserTextureRelease\":%u,\"createVertexBuffer\":%u,"
+		"\"createIndexBuffer\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"drawIndexed\":%u},"
+		"\"copyRects\":{\"rectCount\":%u,\"width\":%u,\"height\":%u,"
+		"\"format\":%u,\"uploadedTextureId\":%u},"
+		"\"texture\":{\"id\":%u,\"format\":%u,\"width\":%u,\"height\":%u,"
+		"\"checksum\":%lu,\"lastBindStage\":%u,\"lastBindId\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"vertexBytes\":%u,\"indexBytes\":%u,"
+		"\"indexFormat\":%d,\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu}]}}}",
+		bool_json(ok),
+		archive_json.c_str(),
+		csf_path_json.c_str(),
+		label_json.c_str(),
+		bool_json(game_text_created),
+		bool_json(game_text_initialized),
+		bool_json(fetched_label_exists),
+		bool_json(fetched_text_nonempty),
+		fetched_ascii_json.c_str(),
+		font_face,
+		point_size,
+		bool_json(normal_font_loaded),
+		normal_font_height,
+		bool_json(font_library_created),
+		bool_json(used_existing_font_library),
+		bool_json(asset_manager_created),
+		bool_json(used_existing_asset_manager),
+		init_result,
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(csf_exists),
+		bool_json(display_string_allocated),
+		bool_json(font_set),
+		bool_json(text_set),
+		bool_json(size_computed),
+		begin_render_result,
+		bool_json(draw_called),
+		end_render_result,
+		text_length,
+		display_width,
+		display_height,
+		display_width_via_chars,
+		draw_x,
+		draw_y,
+		draw_x + display_width + drop_x,
+		draw_y + display_height + drop_y,
+		runtime_assets_json.c_str(),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->copy_rects_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->copy_rects_calls : 0,
+		state != nullptr ? state->last_copy_rects_width : 0,
+		state != nullptr ? state->last_copy_rects_height : 0,
+		state != nullptr ? static_cast<unsigned int>(state->last_copy_rects_format) : 0,
+		state != nullptr ? state->last_copy_rects_uploaded_texture_id : 0,
+		state != nullptr ? state->last_browser_texture_id : 0,
+		state != nullptr ? static_cast<unsigned int>(state->last_browser_texture_format) : 0,
+		state != nullptr ? state->last_browser_texture_width : 0,
+		state != nullptr ? state->last_browser_texture_height : 0,
+		state != nullptr ? static_cast<unsigned long>(state->last_browser_texture_checksum) : 0UL,
+		state != nullptr ? state->last_set_texture_stage : 0,
+		state != nullptr ? state->last_set_texture_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_bytes : 0,
+		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0));
+
+	g_ww3d_display_game_text_probe_json = buffer;
+	return g_ww3d_display_game_text_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()

@@ -5820,6 +5820,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_render2d_sentence", "string", []),
       probeWW3DDisplayString: module.cwrap(
         "cnc_port_probe_ww3d_display_string", "string", []),
+      probeWW3DDisplayGameText: module.cwrap(
+        "cnc_port_probe_ww3d_display_game_text", "string", ["string"]),
       probeWW3DDisplayDrawImage: module.cwrap(
         "cnc_port_probe_ww3d_display_drawimage", "string", []),
       probeWW3DDisplayVideoBuffer: module.cwrap(
@@ -14010,6 +14012,87 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.format === D3DFMT_A4R4G4B4
           && (textRegion.coloredPixelCount ?? 0) > 16
           && (textRegion.maxComponent ?? 0) > 32;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textRegion,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayGameText":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; GameText-backed WW3DDisplayString cannot render" };
+        }
+        const englishArchivePath = String(payload.englishArchivePath ?? "/assets/runtime-game-text/EnglishZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayGameText(englishArchivePath));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const virtualDrawRect = probe?.drawRegion ?? {};
+        const scaleX = screenshot.width / 800;
+        const scaleY = screenshot.height / 600;
+        const drawRect = {
+          left: (virtualDrawRect.left ?? 0) * scaleX,
+          top: (virtualDrawRect.top ?? 0) * scaleY,
+          right: (virtualDrawRect.right ?? 0) * scaleX,
+          bottom: (virtualDrawRect.bottom ?? 0) * scaleY,
+        };
+        const textRegion = sampleCanvasRegion(drawRect, 8);
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_game_text_probe"
+          && probe?.archives?.english === englishArchivePath
+          && probe?.gameText?.csfPath === "Data\\English\\Generals.csf"
+          && probe?.gameText?.label === "GUI:Command&ConquerGenerals"
+          && probe?.gameText?.created === true
+          && probe?.gameText?.initialized === true
+          && probe?.gameText?.labelExists === true
+          && probe?.gameText?.nonEmpty === true
+          && typeof probe?.gameText?.ascii === "string"
+          && probe.gameText.ascii.length > 0
+          && probe?.runtimeAssets?.installed === true
+          && probe?.runtimeAssets?.archiveLoaded === true
+          && probe?.runtimeAssets?.w3dFileSystemInstalled === true
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.csfExists === true
+          && probe?.results?.displayStringAllocated === true
+          && probe?.results?.fontSet === true
+          && probe?.results?.textSet === true
+          && probe?.results?.sizeComputed === true
+          && probe?.results?.drawCalled === true
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.id === probe?.copyRects?.uploadedTextureId
+          && browserProbe?.texture0?.format === D3DFMT_A4R4G4B4
+          && (textRegion.coloredPixelCount ?? 0) > 16
+          && (textRegion.maxComponent ?? 0) > 32
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && textureDelta.binds >= 1;
         return {
           ok,
           command,

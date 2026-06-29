@@ -123,6 +123,7 @@
     "test:ww3d-shipped-mesh-render": "npm run build:wasm && npm run extract:runtime-archives && node harness/shipped_mesh_render_smoke.mjs artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big",
     "test:ww3d-display-video-buffer": "npm run build:wasm && node harness/display_video_buffer_smoke.mjs",
     "test:ww3d-display-drawimage-file": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_drawimage_file_smoke.mjs artifacts/real-assets/TexturesZH.big",
+    "test:ww3d-display-game-text": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_game_text_smoke.mjs artifacts/real-assets/EnglishZH.big",
     "test:ww3d-display-mapped-image": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
     "test:ww3d-display-mapped-image-clip": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_clip_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
     "test:ww3d-display-mapped-image-unrotated": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_unrotated_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
