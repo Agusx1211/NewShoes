@@ -5896,9 +5896,109 @@ function summarizeDecodedSamples(samples) {
   };
 }
 
-function buildAudioDecodeProofs(entryIndex, archiveBytesByName) {
+function int16AudioSampleToFloat(sample) {
+  return sample < 0 ? sample / 32768 : sample / 32767;
+}
+
+function summarizeAudioBuffer(buffer) {
+  const firstChannel = buffer.getChannelData(0);
+  let minFloat = 1;
+  let maxFloat = -1;
+  let nonZeroFrames = 0;
+  let maxAbsFloat = 0;
+  for (const sample of firstChannel) {
+    if (sample < minFloat) minFloat = sample;
+    if (sample > maxFloat) maxFloat = sample;
+    if (sample !== 0) nonZeroFrames += 1;
+    const abs = Math.abs(sample);
+    if (abs > maxAbsFloat) maxAbsFloat = abs;
+  }
+  return {
+    minFloat: Number(minFloat.toFixed(6)),
+    maxFloat: Number(maxFloat.toFixed(6)),
+    maxAbsFloat: Number(maxAbsFloat.toFixed(6)),
+    nonZeroFrames,
+    firstChannelFirstSamples: [...firstChannel.subarray(0, Math.min(16, firstChannel.length))]
+      .map((sample) => Number(sample.toFixed(6))),
+  };
+}
+
+function buildWebAudioBufferProofs(decodedPayloads) {
   const errors = [];
   const proofs = [];
+  const OfflineAudioContextCtor =
+    globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContextCtor !== "function") {
+    return {
+      source: "browser Web Audio AudioBuffer upload proof",
+      ready: false,
+      runtimePlayback: false,
+      nextRequired: "offlineAudioContext",
+      errors: ["OfflineAudioContext is unavailable"],
+      proofs,
+    };
+  }
+
+  let audioContext;
+  try {
+    audioContext = new OfflineAudioContextCtor(1, 1, 8000);
+  } catch (error) {
+    return {
+      source: "browser Web Audio AudioBuffer upload proof",
+      ready: false,
+      runtimePlayback: false,
+      nextRequired: "offlineAudioContext",
+      errors: [error?.message ?? String(error)],
+      proofs,
+    };
+  }
+
+  for (const decoded of decodedPayloads) {
+    try {
+      const buffer = audioContext.createBuffer(
+        decoded.info.channels,
+        decoded.decodedFrames,
+        decoded.info.samplesPerSec,
+      );
+      for (let channel = 0; channel < decoded.info.channels; ++channel) {
+        const channelData = buffer.getChannelData(channel);
+        for (let frame = 0; frame < decoded.decodedFrames; ++frame) {
+          channelData[frame] = int16AudioSampleToFloat(
+            decoded.samples[frame * decoded.info.channels + channel],
+          );
+        }
+      }
+      proofs.push({
+        path: decoded.path,
+        archive: decoded.archive,
+        codec: decoded.info.codec,
+        constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
+        runtimePlayback: false,
+        numberOfChannels: buffer.numberOfChannels,
+        length: buffer.length,
+        sampleRate: buffer.sampleRate,
+        durationSeconds: Number(buffer.duration.toFixed(6)),
+        ...summarizeAudioBuffer(buffer),
+      });
+    } catch (error) {
+      errors.push(`${decoded.path}: ${error?.message ?? String(error)}`);
+    }
+  }
+
+  return {
+    source: "browser Web Audio AudioBuffer upload proof",
+    ready: errors.length === 0 && proofs.length === decodedPayloads.length,
+    runtimePlayback: false,
+    nextRequired: "requestedPayloadDecodeCache",
+    errors,
+    proofs,
+  };
+}
+
+function buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName) {
+  const errors = [];
+  const proofs = [];
+  const decodedPayloads = [];
   for (const target of audioDecodeProofTargets) {
     const entry = entryIndex.get(normalizeBigPath(target.path));
     if (!entry) {
@@ -5914,6 +6014,13 @@ function buildAudioDecodeProofs(entryIndex, archiveBytesByName) {
       const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
       const decoded = decodeAudioWavPayload(payloadBytes);
       const decodedFrames = decoded.samples.length / decoded.info.channels;
+      decodedPayloads.push({
+        path: entry.path,
+        archive: entry.archive,
+        info: decoded.info,
+        samples: decoded.samples,
+        decodedFrames,
+      });
       const proof = {
         path: entry.path,
         archive: entry.archive,
@@ -5947,12 +6054,15 @@ function buildAudioDecodeProofs(entryIndex, archiveBytesByName) {
   }
 
   return {
-    source: "browser mounted BIG WAV decoder proof",
-    ready: errors.length === 0 && proofs.length === audioDecodeProofTargets.length,
-    runtimePlayback: false,
-    nextRequired: "webAudioBufferUpload",
-    errors,
-    proofs,
+    decodeProofs: {
+      source: "browser mounted BIG WAV decoder proof",
+      ready: errors.length === 0 && proofs.length === audioDecodeProofTargets.length,
+      runtimePlayback: false,
+      nextRequired: "webAudioBufferUpload",
+      errors,
+      proofs,
+    },
+    webAudioBufferProofs: buildWebAudioBufferProofs(decodedPayloads),
   };
 }
 
@@ -6202,9 +6312,13 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     : payloadFormats.requiresTranscode > 0
       ? "imaAdpcmDecoder"
       : "decodeAudioDataHarness";
-  const decodeProofs = buildAudioDecodeProofs(entryIndex, archiveBytesByName);
-  if (decodeProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
-    payloadFormats.nextRequired = "imaAdpcmDecodeIntegration";
+  const audioProofs = buildAudioDecodeAndBufferProofs(entryIndex, archiveBytesByName);
+  const decodeProofs = audioProofs.decodeProofs;
+  const webAudioBufferProofs = audioProofs.webAudioBufferProofs;
+  if (decodeProofs.ready && webAudioBufferProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
+    payloadFormats.nextRequired = "requestedPayloadDecodeCache";
+  } else if (decodeProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
+    payloadFormats.nextRequired = "webAudioBufferUpload";
   }
 
   return {
@@ -6228,8 +6342,9 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
       .filter((archive) => audioPayloadArchiveNames.includes(archive.name)),
     payloadFormats,
     decodeProofs,
+    webAudioBufferProofs,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, and decodeProofs decodes two WAV payloads to PCM metadata but does not schedule or play audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, and webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers without scheduling or playing audio.",
   };
 }
 

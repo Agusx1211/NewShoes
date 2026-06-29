@@ -35,8 +35,12 @@ majority requires an ADPCM decoder/transcode step before `decodeAudioData`.
 `audioPayloadInventory.decodeProofs` now decodes one representative real PCM
 WAV and one representative real IMA ADPCM WAV mounted from the BIG archives to
 PCM sample metadata, and the browser smoke pins their decoded sample counts and
-sample statistics. This proves the mounted-archive decode path, not full audio
-scheduling or Web Audio buffer upload.
+sample statistics. `audioPayloadInventory.webAudioBufferProofs` then uploads
+those decoded samples into Web Audio `AudioBuffer`s with
+`OfflineAudioContext.createBuffer` and pins buffer lengths, rates, durations,
+and normalized sample anchors. This proves the mounted-archive decode plus
+buffer-upload path for representative payloads, not full requested-payload
+decode/cache or audio scheduling.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current

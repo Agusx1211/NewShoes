@@ -3377,6 +3377,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       fields, decoded frame/sample counts, durations, first samples, and sample
       statistics while still reporting that scheduling/playback and Web Audio
       buffer upload are future work.
+- [x] Extend the browser runtime archive harness with
+      `audioPayloadInventory.webAudioBufferProofs`, uploading the two decoded
+      real WAV payloads into Web Audio `AudioBuffer`s through
+      `OfflineAudioContext.createBuffer`. `runtime_archives_smoke.mjs` now
+      asserts channel count, length, sample rate, duration, normalized sample
+      ranges, nonzero frame counts, and first-channel sample anchors while
+      preserving that full requested-payload decode/cache and audio scheduling
+      are future work.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

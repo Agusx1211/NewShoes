@@ -1264,7 +1264,7 @@ function assertAudioPayloadFormats(payloads, context) {
       || formats.unsupported !== 0
       || formats.webAudioDecodeCandidateReady !== false
       || formats.runtimeDecoded !== false
-      || formats.nextRequired !== "imaAdpcmDecodeIntegration"
+      || formats.nextRequired !== "requestedPayloadDecodeCache"
       || formats.extensions?.wav !== 3523
       || formats.extensions?.mp3 !== 7
       || formats.magic?.["riff-wave"] !== 3523
@@ -1398,6 +1398,66 @@ function assertAudioDecodeProofs(payloads, context) {
   ], `${context} IMA ADPCM first samples`);
 }
 
+function assertAudioBufferProofs(payloads, context) {
+  const upload = payloads.webAudioBufferProofs;
+  if (!upload
+      || upload.source !== "browser Web Audio AudioBuffer upload proof"
+      || upload.ready !== true
+      || upload.runtimePlayback !== false
+      || upload.nextRequired !== "requestedPayloadDecodeCache"
+      || !Array.isArray(upload.errors)
+      || upload.errors.length !== 0
+      || !Array.isArray(upload.proofs)
+      || upload.proofs.length !== 2) {
+    throw new Error(`${context} Web Audio buffer proof state mismatch: ${JSON.stringify(upload)}`);
+  }
+
+  const byPath = new Map(upload.proofs.map((proof) => [proof.path, proof]));
+  const pcm = byPath.get("Data\\Audio\\Sounds\\English\\aangr01a.wav");
+  if (!pcm
+      || pcm.archive !== "AudioEnglishZH.big"
+      || pcm.codec !== "PCM"
+      || pcm.runtimePlayback !== false
+      || pcm.numberOfChannels !== 1
+      || pcm.length !== 59392
+      || pcm.sampleRate !== 22050
+      || pcm.durationSeconds !== 2.693515
+      || pcm.minFloat !== -0.669006
+      || pcm.maxFloat !== 0.674215
+      || pcm.maxAbsFloat !== 0.674215
+      || pcm.nonZeroFrames !== 59382) {
+    throw new Error(`${context} PCM Web Audio buffer proof mismatch: ${JSON.stringify(pcm)}`);
+  }
+  assertArrayPrefix(pcm.firstChannelFirstSamples, [
+    0.003754, 0.024506, 0.059267, 0.096072,
+    0.119236, 0.137791, 0.170904, 0.203223,
+    0.189856, 0.10889, 0.020234, -0.069183,
+    -0.145782, -0.1698, -0.165009, -0.222382,
+  ], `${context} PCM Web Audio first samples`);
+
+  const adpcm = byPath.get("Data\\Audio\\Speech\\English\\dxxoc001.wav");
+  if (!adpcm
+      || adpcm.archive !== "SpeechEnglishZH.big"
+      || adpcm.codec !== "IMA_ADPCM"
+      || adpcm.runtimePlayback !== false
+      || adpcm.numberOfChannels !== 1
+      || adpcm.length !== 753874
+      || adpcm.sampleRate !== 44100
+      || adpcm.durationSeconds !== 17.094649
+      || adpcm.minFloat !== -0.97934
+      || adpcm.maxFloat !== 0.841304
+      || adpcm.maxAbsFloat !== 0.97934
+      || adpcm.nonZeroFrames !== 753561) {
+    throw new Error(`${context} IMA ADPCM Web Audio buffer proof mismatch: ${JSON.stringify(adpcm)}`);
+  }
+  assertArrayPrefix(adpcm.firstChannelFirstSamples, [
+    -0.00708, -0.006958, -0.006836, -0.006714,
+    -0.006622, -0.006531, -0.0065, -0.00647,
+    -0.006439, -0.006409, -0.006195, -0.006104,
+    -0.006012, -0.00589, -0.005768, -0.005646,
+  ], `${context} IMA ADPCM Web Audio first samples`);
+}
+
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   const payloads = state.audioPayloadInventory;
   if (!payloads
@@ -1435,6 +1495,7 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
 
   assertAudioPayloadFormats(payloads, context);
   assertAudioDecodeProofs(payloads, context);
+  assertAudioBufferProofs(payloads, context);
 
   if (hasBaseIniArchive) {
     if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {
