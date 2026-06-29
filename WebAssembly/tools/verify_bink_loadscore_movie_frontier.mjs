@@ -7,9 +7,10 @@
 // This complements the focused browser Bink/W3D presentation smoke, which
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
 // W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
-// original ScoreScreen::PlayMovieAndBlock and SinglePlayerLoadScreen::init
-// movie loops through test-controlled layout/movie facts; full campaign-owned
-// ScoreScreen/Challenge/InGameUI coverage remains open.
+// original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
+// movie helper path, and SinglePlayerLoadScreen::init movie loops through
+// test-controlled layout/movie facts; full finishSinglePlayerInit branch
+// coverage, Challenge persona ownership, and InGameUI coverage remain open.
 //
 // Pinned contract:
 //   1. LoadScreen.h stores VideoBuffer / VideoStreamInterface ownership fields
@@ -23,7 +24,10 @@
 //   4. ScoreScreen final-victory movies route through PlayMovieAndBlock,
 //      creating Menus/BlankWindow.wnd, attaching a VideoBuffer to its first
 //      window, drawing each decompressed frame, and cleaning up the layout.
-//   5. WindowLayout / GameWindowManager still expose the layout/window hooks
+//   5. The focused browser runtime drives the extracted final-campaign movie
+//      helper through a real CampaignManager/Campaign/Mission transition, while
+//      full finishSinglePlayerInit branches remain open.
+//   6. WindowLayout / GameWindowManager still expose the layout/window hooks
 //      those ScoreScreen ownership paths depend on.
 //
 import { readFileSync } from "node:fs";
@@ -780,26 +784,67 @@ function main() {
         expected, label));
   }
 
-	  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
-	    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
-	    798, "ScoreScreen finishSinglePlayerInit");
-	  if (finishRange) {
-	    [
-	      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 804, "finishSinglePlayerInit victory check"],
-	      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 890, "finishSinglePlayerInit final victory movie check"],
-	      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 893, "finishSinglePlayerInit final victory movie assign"],
-	      ["useLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 894, "finishSinglePlayerInit useLowRes init"],
-	      ["memPassLowResLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 896, "finishSinglePlayerInit didMemPass low-res gate"],
-	      ["staticFindLowResLine", /findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 899, "finishSinglePlayerInit findStaticLODLevel low-res gate"],
-	      ["staticGetLowResLine", /getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 902, "finishSinglePlayerInit getStaticLODLevel low-res gate"],
-	      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 906, "finishSinglePlayerInit non-low-res gate"],
-	      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 907, "finishSinglePlayerInit PlayMovieAndBlock call"],
-	      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 950, "finishSinglePlayerInit destroy blank layout windows"],
-	      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 951, "finishSinglePlayerInit delete blank layout"],
-	      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 952, "finishSinglePlayerInit clear blank layout"],
-	    ].forEach(([key, pattern, expected, label]) =>
-	      assertExact(errors, facts.scoreScreen, key,
-	        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
+  const finalCampaignRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerFinalCampaignMovie", scoreScreen,
+    /static\s+void\s+finishSinglePlayerFinalCampaignMovie\s*\(\s*void\s*\)/,
+    810, "ScoreScreen finishSinglePlayerFinalCampaignMovie helper");
+  if (finalCampaignRange) {
+    [
+      ["endCampaignTextLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:EndCampaign"\s*\)\s*\)/, 812, "final-campaign helper EndCampaign button text"],
+      ["finishCampaignFlagLine", /buttonIsFinishCampaign\s*=\s*TRUE\s*;/, 813, "final-campaign helper finish-campaign flag"],
+      ["campaignLine", /Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 815, "final-campaign helper current campaign"],
+      ["honorsHookGuardLine", /!\s*defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/, 819, "final-campaign helper hook build stats guard"],
+      ["statsWriteLine", /stats\s*\.\s*write\s*\(\s*\)/, 858, "final-campaign helper campaign stats write"],
+      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 877, "final-campaign helper final victory movie check"],
+      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 880, "final-campaign helper final victory movie assign"],
+      ["useLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 881, "final-campaign helper useLowRes init"],
+      ["memPassLowResLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 884, "final-campaign helper didMemPass low-res gate"],
+      ["staticFindLowResLine", /findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 887, "final-campaign helper findStaticLODLevel low-res gate"],
+      ["staticGetLowResLine", /getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 890, "final-campaign helper getStaticLODLevel low-res gate"],
+      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 894, "final-campaign helper non-low-res gate"],
+      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 895, "final-campaign helper PlayMovieAndBlock call"],
+    ].forEach(([key, pattern, expected, label]) =>
+      assertExact(errors, facts.scoreScreen, key,
+        firstMatchInRange(scoreScreen.lines, finalCampaignRange.start, finalCampaignRange.end, pattern),
+        expected, label));
+
+    const lodGuardStart = facts.scoreScreen.useLowResInitLine > 0 ?
+      facts.scoreScreen.useLowResInitLine :
+      finalCampaignRange.start;
+    assertExact(errors, facts.scoreScreen, "lodHookGuardLine",
+      firstMatchInRange(scoreScreen.lines, lodGuardStart, finalCampaignRange.end,
+        /!\s*defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/),
+      882, "final-campaign helper hook build LOD guard");
+  }
+
+  const cleanupRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerMovieBlankLayoutCleanup", scoreScreen,
+    /static\s+void\s+finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*Bool\s+setTransitionGroup\s*\)/,
+    901, "ScoreScreen finishSinglePlayerMovieBlankLayoutCleanup helper");
+  if (cleanupRange) {
+    [
+      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 905, "blank-layout cleanup destroys windows"],
+      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 906, "blank-layout cleanup deletes layout"],
+      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 907, "blank-layout cleanup clears pointer"],
+      ["focusParentLine", /TheWindowManager\s*->\s*winSetFocus\s*\(\s*parent\s*\)/, 911, "blank-layout cleanup restores parent focus"],
+      ["transitionGroupLine", /TheTransitionHandler\s*->\s*setGroup\s*\(\s*"ScoreScreenShow"\s*\)/, 940, "blank-layout cleanup restores transition group"],
+    ].forEach(([key, pattern, expected, label]) =>
+      assertExact(errors, facts.scoreScreen, key,
+        firstMatchInRange(scoreScreen.lines, cleanupRange.start, cleanupRange.end, pattern),
+        expected, label));
+  }
+
+  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
+    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
+    973, "ScoreScreen finishSinglePlayerInit");
+  if (finishRange) {
+    [
+      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 979, "finishSinglePlayerInit victory check"],
+      ["gotoNextMissionLine", /TheCampaignManager\s*->\s*gotoNextMission\s*\(\s*\)/, 997, "finishSinglePlayerInit advances campaign mission"],
+      ["finalCampaignHelperCallLine", /finishSinglePlayerFinalCampaignMovie\s*\(\s*\)/, 1002, "finishSinglePlayerInit delegates final campaign movie helper"],
+      ["freeMessageResourcesLine", /TheInGameUI\s*->\s*freeMessageResources\s*\(\s*\)/, 1040, "finishSinglePlayerInit frees InGameUI message resources"],
+      ["cleanupHelperCallLine", /finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*TRUE\s*\)/, 1042, "finishSinglePlayerInit delegates blank layout cleanup"],
+    ].forEach(([key, pattern, expected, label]) =>
+      assertExact(errors, facts.scoreScreen, key,
+        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
         expected, label));
   }
 
@@ -897,6 +942,36 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_play_movie_and_block\s*\(\s*\*player\s*\)/.test(line)),
 	    1423, "runtime ScoreScreen exercise call");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalWindowsHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie\s*\(/.test(line)),
+	    66, "runtime ScoreScreen final-campaign window hook declaration");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_final_movie\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    1432, "runtime ScoreScreen final-campaign helper exercise");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignHookInstallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie\s*\(\s*score_parent\s*,\s*button_continue\s*,\s*button_ok\s*\)/.test(line)),
+	    1489, "runtime ScoreScreen final-campaign window hook install");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.finalCampaignExerciseDefLine,
+	      facts.runtimeScoreScreen.finalCampaignExerciseDefLine + 140,
+	      /CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie\s*\(\s*\)/),
+	    1520, "runtime calls focused ScoreScreen final-campaign helper");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames/.test(line)),
+	    1536, "runtime ScoreScreen final-campaign 70-frame presentation check");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)),
+	    1557, "runtime ScoreScreen final-campaign browser presentation summary");
+	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)),
+	    1849, "runtime ScoreScreen final-campaign exercise call");
 
 	  assertExact(errors, facts.runtimeSinglePlayer, "hookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -1034,16 +1109,16 @@ function main() {
 
 	  assertExact(errors, facts.runtimeBrowserHarness, "copyCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected six hundred ninety-six Bink copy events/.test(line)),
-	    402, "browser harness six-hundred-ninety-six-copy event count check");
+	      (line) => /Expected seven hundred sixty-six Bink copy events/.test(line)),
+	    402, "browser harness seven-hundred-sixty-six-copy event count check");
 	  assertExact(errors, facts.runtimeBrowserHarness, "lifecycleCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /openCount\s*!==\s*11\s*\|\|\s*closeCount\s*!==\s*11\s*\|\|\s*copyCompleteCount\s*!==\s*696/.test(line)),
-	    463, "browser harness eleven open/close lifecycles with six hundred ninety-six frame copies");
+	      (line) => /openCount\s*!==\s*12\s*\|\|\s*closeCount\s*!==\s*12\s*\|\|\s*copyCompleteCount\s*!==\s*766/.test(line)),
+	    463, "browser harness twelve open/close lifecycles with seven hundred sixty-six frame copies");
 	  assertExact(errors, facts.runtimeBrowserHarness, "drawEventCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected at least six hundred ninety-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
-	    473, "browser harness six-hundred-ninety-six W3DDisplay draw count check");
+	      (line) => /Expected at least seven hundred sixty-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
+	    473, "browser harness seven-hundred-sixty-six W3DDisplay draw count check");
 
 	  assertExact(errors, facts.cmake, "loadScreenRuntimeHookSourcePropertyLine",
 	    lineNumber(cmake.lines,
@@ -1097,7 +1172,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full finishSinglePlayerInit/campaign ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full finishSinglePlayerInit branch coverage, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

@@ -4131,6 +4131,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the Bink/W3D browser presentation smoke through the extracted
+      ScoreScreen final-campaign movie helper. `ScoreScreen.cpp` now factors
+      the original final-campaign movie body and blank-layout cleanup out of
+      `finishSinglePlayerInit`; normal non-test behavior still delegates
+      through those helpers, while the focused `CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS`
+      build skips the stats/LOD singleton edges that are not part of this
+      browser proof. The smoke installs real score-screen push-button windows,
+      a `SmokeDisplayStringManager`, and a real `CampaignManager` /
+      `Campaign` / final `Mission`, advances the campaign to completion, then
+      drives the original final-victory `PlayMovieAndBlock("VS_small")` path.
+      The browser harness verifies finish-campaign button state, blank-layout
+      cleanup, 70 decoded frame presentations through `TheDisplay->draw()` and
+      original `W3DDisplay::drawVideoBuffer`, stream closure, one
+      `W3DVideoBuffer` texture lifecycle, and nonzero decoded texture pixels.
+      The aggregate Bink/W3D smoke now expects 12 Bink open/close lifecycles,
+      766 decoded frame copies, 766 indexed video-buffer draws, 13 texture
+      creates, 779 texture updates, and 12 texture releases. Full
+      `finishSinglePlayerInit` branch coverage, browser-runtime stats/LOD gate
+      execution, non-final mission save, challenge win/loss, defeat/retry,
+      InGameUI movies, and Bink/audio sync remain open. Verified with
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

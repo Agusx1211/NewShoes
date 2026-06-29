@@ -61,9 +61,10 @@
 //
 // OPEN (explicitly NOT claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
-// SinglePlayerLoadScreen, and ChallengeLoadScreen paths now own real window
-// video buffers in the browser smoke, but full campaign-owned load/score setup,
-// InGameUI movie loops, and Bink/audio sync remain open. This verifier pins the
+// focused ScoreScreen final-campaign helper, SinglePlayerLoadScreen, and
+// ChallengeLoadScreen paths now own real window video buffers in the browser
+// smoke, but full finishSinglePlayerInit branch coverage, InGameUI movie loops,
+// and Bink/audio sync remain open. This verifier pins the
 // source presentation contract plus the focused runtime proof that the
 // downstream display sink works.
 //
@@ -607,6 +608,28 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_play_movie_and_block\s*\(\s*\*player\s*\)/.test(line)), 1423,
 	    "runtime smoke ScoreScreen exercise call");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_final_movie\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1432,
+	    "runtime smoke ScoreScreen final-campaign helper exercise function");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeSmoke.scoreScreenFinalExerciseDefLine,
+	      facts.runtimeSmoke.scoreScreenFinalExerciseDefLine + 140,
+	      /CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie\s*\(\s*\)/), 1520,
+	    "runtime smoke focused ScoreScreen final-campaign call");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames/.test(line)), 1536,
+	    "runtime smoke ScoreScreen final-campaign 70-frame presentation check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)), 1557,
+	    "runtime smoke ScoreScreen final-campaign presentation summary");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenFinalExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)), 1849,
+	    "runtime smoke ScoreScreen final-campaign exercise call");
 	  assertExact(errors, facts.runtimeSmoke, "singlePlayerExerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_single_player_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1268,
@@ -658,8 +681,8 @@ function main() {
 
 	  assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected at least six hundred ninety-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 473,
-	    "browser harness drawVideoBuffer six-hundred-ninety-six-draw count check");
+	      (line) => /Expected at least seven hundred sixty-six W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 473,
+	    "browser harness drawVideoBuffer seven-hundred-sixty-six-draw count check");
 	  assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
 	    lineNumber(runtimeBrowserHarness.lines,
 	      (line) => /Bink W3DDisplay presentation draw probe failed/.test(line)), 496,
@@ -744,12 +767,14 @@ function main() {
 	      "WindowVideoManager::playMovie/update path that attaches the real W3DVideoBuffer " +
 	      "to a GameWindow before presentation, plus a focused " +
 	      "WindowLayout::load(\"Menus/BlankWindow.wnd\") first-window " +
-	      "setVideoBuffer path and original ScoreScreen::PlayMovieAndBlock " +
-	      "loop for VS_small, including 70 decoded-frame draw calls through " +
+	      "setVideoBuffer path, original ScoreScreen::PlayMovieAndBlock " +
+	      "loop for VS_small, and the extracted ScoreScreen final-campaign " +
+	      "movie helper through a real CampaignManager/Campaign/Mission " +
+	      "transition, each including 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
 	      "VS_small through a focused layout/movie hook, plus original " +
 	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
-	      "layout/movie hook. Full campaign-owned load/score setup, " +
+	      "layout/movie hook. Full finishSinglePlayerInit branch coverage, " +
 	      "InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };

@@ -6585,6 +6585,7 @@ target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
   zh_score_screen_movie_runtime
   zh_bink_video_device_compile_frontier
   zh_gameclient_utility
+  zh_gamenetwork_core
   zh_w3d_display_drawimage_runtime
   zh_ww3d2_compile_frontier
   zh_browser_d3d8

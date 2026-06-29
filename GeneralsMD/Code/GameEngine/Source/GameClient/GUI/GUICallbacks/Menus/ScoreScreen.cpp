@@ -157,6 +157,8 @@ void finishSinglePlayerInit( void );
 static Bool s_needToFinishSinglePlayerInit = FALSE;
 static Bool buttonIsFinishCampaign = FALSE;
 static WindowLayout *s_blankLayout = NULL;
+static void finishSinglePlayerFinalCampaignMovie( void );
+static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup );
 
 #if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
 extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout)
@@ -167,6 +169,46 @@ extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout)
 extern "C" WindowLayout *CncPortScoreScreenGetBlankLayoutForMovie()
 {
 	return s_blankLayout;
+}
+
+extern "C" void CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(
+	GameWindow *parentWindow,
+	GameWindow *continueButton,
+	GameWindow *okButton)
+{
+	parent = parentWindow;
+	buttonContinue = continueButton;
+	buttonOk = okButton;
+	textEntryChat = NULL;
+	buttonEmote = NULL;
+	chatBoxBorder = NULL;
+	buttonBuddies = NULL;
+	staticTextGameSaved = NULL;
+	backdrop = NULL;
+	challengePortrait = NULL;
+	challengeRemarks = NULL;
+	challengeWinLossText = NULL;
+	gadgetParent = NULL;
+	listboxChatWindowScoreScreen = NULL;
+	listboxAcademyWindowScoreScreen = NULL;
+	staticTextAcademyTitle = NULL;
+	buttonIsFinishCampaign = FALSE;
+}
+
+extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie()
+{
+	return buttonIsFinishCampaign ? 1 : 0;
+}
+
+extern "C" void CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie()
+{
+	if (TheCampaignManager)
+	{
+		TheCampaignManager->gotoNextMission();
+		if (TheCampaignManager->getCurrentMap().isEmpty())
+			finishSinglePlayerFinalCampaignMovie();
+	}
+	finishSinglePlayerMovieBlankLayoutCleanup(FALSE);
 }
 #endif
 
@@ -765,6 +807,139 @@ void PlayMovieAndBlock(AsciiString movieTitle)
 	setFPMode();
 }
 
+static void finishSinglePlayerFinalCampaignMovie( void )
+{
+	GadgetButtonSetText(buttonContinue, TheGameText->fetch("GUI:EndCampaign"));
+	buttonIsFinishCampaign = TRUE;
+	// mark us as having completed the campaign
+	Campaign* campaign = TheCampaignManager->getCurrentCampaign();
+	if (campaign)
+	{
+#if !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+		GameDifficulty difficulty = TheCampaignManager->getGameDifficulty();
+		SkirmishBattleHonors stats;
+		if (campaign->m_name.compareNoCase("USA") == 0)
+		{
+			stats.setUSACampaignComplete(difficulty);
+			stats.setHonors(BATTLE_HONOR_CAMPAIGN_USA);
+		}
+
+		if (campaign->m_name.compareNoCase("China") == 0)
+		{
+			stats.setCHINACampaignComplete(difficulty);
+			stats.setHonors(BATTLE_HONOR_CAMPAIGN_CHINA);
+		}
+
+		if (campaign->m_name.compareNoCase("GLA") == 0)
+		{
+			stats.setGLACampaignComplete(difficulty);
+			stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
+		}
+
+		if (campaign->m_name.compareNoCase("GLA") == 0)
+		{
+			stats.setGLACampaignComplete(difficulty);
+			stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
+		}
+
+		for (int i = 0; i < MAX_GLOBAL_GENERAL_TYPES; ++i)
+		{
+			char campaignName[128];
+			sprintf(campaignName, "CHALLENGE_%d", i);
+			if (campaign->m_name.compareNoCase(campaignName) == 0)
+			{
+				stats.setChallengeCampaignComplete(i, difficulty);
+				stats.setHonors(BATTLE_HONOR_CHALLENGE_MODE);
+			}
+		}
+
+		stats.write();
+#endif
+
+		if (buttonOk)
+			buttonOk->winHide(TRUE);
+		if (buttonContinue)
+			buttonContinue->winHide(TRUE);
+		if (textEntryChat)
+			textEntryChat->winHide(TRUE);
+		if (buttonEmote)
+			buttonEmote->winHide(TRUE);
+		if (listboxChatWindowScoreScreen)
+			listboxChatWindowScoreScreen->winHide(TRUE);
+		if( listboxAcademyWindowScoreScreen )
+			listboxAcademyWindowScoreScreen->winHide( TRUE );
+		if( staticTextAcademyTitle )
+			staticTextAcademyTitle->winHide( TRUE );
+		if (chatBoxBorder)
+			chatBoxBorder->winHide(TRUE);
+		if (buttonBuddies)
+			buttonBuddies->winHide(TRUE);
+		if (campaign->getFinalVictoryMovie().isNotEmpty())
+		{
+			AsciiString vidName;
+			vidName = campaign->getFinalVictoryMovie();
+			Bool useLowRes = FALSE;
+#if !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+			if (TheGameLODManager) {
+				if (!TheGameLODManager->didMemPass()) {
+					useLowRes = TRUE;
+				}
+				if (TheGameLODManager->findStaticLODLevel()==STATIC_GAME_LOD_LOW) {
+					useLowRes = TRUE;
+				}
+				if (TheGameLODManager->getStaticLODLevel()==STATIC_GAME_LOD_LOW) {
+					useLowRes = TRUE;
+				}
+			}
+#endif
+			if(!useLowRes)
+				PlayMovieAndBlock(vidName);
+		}
+	}
+}
+
+static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup )
+{
+	if (s_blankLayout)
+	{
+		s_blankLayout->destroyWindows();
+		s_blankLayout->deleteInstance();
+		s_blankLayout = NULL;
+	}
+
+	// set keyboard focus to main parent
+	TheWindowManager->winSetFocus( parent );
+
+	if (buttonOk)
+		buttonOk->winHide(FALSE);
+	if (buttonContinue)
+		buttonContinue->winHide(FALSE);
+	if (textEntryChat)
+		textEntryChat->winHide(TRUE);
+	if (buttonEmote)
+		buttonEmote->winHide(TRUE);
+
+	if (listboxChatWindowScoreScreen)
+		listboxChatWindowScoreScreen->winHide(TRUE);
+	if( listboxAcademyWindowScoreScreen )
+		listboxAcademyWindowScoreScreen->winHide( TRUE );
+	if( staticTextAcademyTitle )
+		staticTextAcademyTitle->winHide( TRUE );
+
+	if (chatBoxBorder)
+		chatBoxBorder->winHide(TRUE);
+	if (buttonBuddies)
+		buttonBuddies->winHide(TRUE);
+//	if (buttonRehost)
+//		buttonRehost->winHide(TRUE);
+
+	// need to do this here
+	if ( setTransitionGroup
+	 && TheCampaignManager->getCurrentCampaign()
+	 && !TheCampaignManager->getCurrentCampaign()->isChallengeCampaign())
+		TheTransitionHandler->setGroup("ScoreScreenShow");
+}
+
 void initSinglePlayer( void )
 {
 	screenType = SCORESCREEN_SINGLEPLAYER;
@@ -824,89 +999,7 @@ void finishSinglePlayerInit( void )
 
 		if(TheCampaignManager->getCurrentMap().isEmpty())
 		{
-			GadgetButtonSetText(buttonContinue, TheGameText->fetch("GUI:EndCampaign"));
-			buttonIsFinishCampaign = TRUE;
-			// mark us as having completed the campaign
-			Campaign* campaign = TheCampaignManager->getCurrentCampaign();
-			if (campaign)
-			{
-				GameDifficulty difficulty = TheCampaignManager->getGameDifficulty();
-				SkirmishBattleHonors stats;
-				if (campaign->m_name.compareNoCase("USA") == 0)
-				{
-					stats.setUSACampaignComplete(difficulty);
-					stats.setHonors(BATTLE_HONOR_CAMPAIGN_USA);
-				}
-
-				if (campaign->m_name.compareNoCase("China") == 0)
-				{
-					stats.setCHINACampaignComplete(difficulty);
-					stats.setHonors(BATTLE_HONOR_CAMPAIGN_CHINA);
-				}
-
-				if (campaign->m_name.compareNoCase("GLA") == 0)
-				{
-					stats.setGLACampaignComplete(difficulty);
-					stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
-				}
-
-				if (campaign->m_name.compareNoCase("GLA") == 0)
-				{
-					stats.setGLACampaignComplete(difficulty);
-					stats.setHonors(BATTLE_HONOR_CAMPAIGN_GLA);
-				}
-
-				for (int i = 0; i < MAX_GLOBAL_GENERAL_TYPES; ++i)
-				{
-					char campaignName[128];
-					sprintf(campaignName, "CHALLENGE_%d", i);
-					if (campaign->m_name.compareNoCase(campaignName) == 0)
-					{
-						stats.setChallengeCampaignComplete(i, difficulty);
-						stats.setHonors(BATTLE_HONOR_CHALLENGE_MODE);
-					}
-				}
-
-				stats.write();
-
-				if (buttonOk)
-					buttonOk->winHide(TRUE);
-				if (buttonContinue)
-					buttonContinue->winHide(TRUE);
-				if (textEntryChat)
-					textEntryChat->winHide(TRUE);
-				if (buttonEmote)
-					buttonEmote->winHide(TRUE);
-				if (listboxChatWindowScoreScreen)
-					listboxChatWindowScoreScreen->winHide(TRUE);
-				if( listboxAcademyWindowScoreScreen )
-					listboxAcademyWindowScoreScreen->winHide( TRUE );
-				if( staticTextAcademyTitle )
-					staticTextAcademyTitle->winHide( TRUE );
-				if (chatBoxBorder)
-					chatBoxBorder->winHide(TRUE);
-				if (buttonBuddies)
-					buttonBuddies->winHide(TRUE);
-				if (campaign->getFinalVictoryMovie().isNotEmpty())
-				{
-					AsciiString vidName;
-					vidName = campaign->getFinalVictoryMovie();
-					Bool useLowRes = FALSE;
-					if (TheGameLODManager) {
-						if (!TheGameLODManager->didMemPass()) {
-							useLowRes = TRUE;
-						}
-						if (TheGameLODManager->findStaticLODLevel()==STATIC_GAME_LOD_LOW) {
-							useLowRes = TRUE;
-						}
-						if (TheGameLODManager->getStaticLODLevel()==STATIC_GAME_LOD_LOW) {
-							useLowRes = TRUE;
-						}
-					}
-					if(!useLowRes)
-						PlayMovieAndBlock(vidName);
-				}
-			}
+			finishSinglePlayerFinalCampaignMovie();
 		}
 		else 
 		{
@@ -946,41 +1039,7 @@ void finishSinglePlayerInit( void )
 
 	TheInGameUI->freeMessageResources();
 
-	//
-	s_blankLayout->destroyWindows();
-	s_blankLayout->deleteInstance();
-	s_blankLayout = NULL;
-
-	// set keyboard focus to main parent
-	TheWindowManager->winSetFocus( parent );
-
-	if (buttonOk)
-		buttonOk->winHide(FALSE);
-	if (buttonContinue)
-		buttonContinue->winHide(FALSE);
-	if (textEntryChat)
-		textEntryChat->winHide(TRUE);
-	if (buttonEmote)
-		buttonEmote->winHide(TRUE);
-
-	if (listboxChatWindowScoreScreen)
-		listboxChatWindowScoreScreen->winHide(TRUE);
-	if( listboxAcademyWindowScoreScreen )
-		listboxAcademyWindowScoreScreen->winHide( TRUE );
-	if( staticTextAcademyTitle )
-		staticTextAcademyTitle->winHide( TRUE );
-
-	if (chatBoxBorder)
-		chatBoxBorder->winHide(TRUE);
-	if (buttonBuddies)
-		buttonBuddies->winHide(TRUE);
-//	if (buttonRehost)
-//		buttonRehost->winHide(TRUE);
-
-	// need to do this here
-	if ( TheCampaignManager->getCurrentCampaign()
-	 && !TheCampaignManager->getCurrentCampaign()->isChallengeCampaign())
-		TheTransitionHandler->setGroup("ScoreScreenShow");
+	finishSinglePlayerMovieBlankLayoutCleanup(TRUE);
 }
 
 /** Special Init path for making this a single player replay Score Screen */

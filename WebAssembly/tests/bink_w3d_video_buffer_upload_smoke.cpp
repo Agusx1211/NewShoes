@@ -9,10 +9,15 @@
 #include "Common/AudioAffect.h"
 #include "Common/GameAudio.h"
 #include "Common/GameEngine.h"
+#include "Common/GameLOD.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
+#include "GameClient/CampaignManager.h"
+#include "GameClient/DisplayString.h"
+#include "GameClient/DisplayStringManager.h"
+#include "GameClient/Gadget.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GameText.h"
@@ -51,9 +56,19 @@ GlobalData *TheGlobalData = nullptr;
 GlobalData *TheWritableGlobalData = nullptr;
 AudioManager *TheAudio = nullptr;
 GameEngine *TheGameEngine = nullptr;
+GameLODManager *TheGameLODManager = nullptr;
+class GameSpyGameInfo;
+GameSpyGameInfo *TheGameSpyGame = nullptr;
+Int NET_CRC_INTERVAL = 1;
 
 extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout);
 extern "C" WindowLayout *CncPortScoreScreenGetBlankLayoutForMovie();
+extern "C" void CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(
+	GameWindow *parentWindow,
+	GameWindow *continueButton,
+	GameWindow *okButton);
+extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie();
+extern "C" void CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel);
 extern "C" const char *CncPortLoadScreenGetSinglePlayerMovieForTest();
 extern "C" void CncPortLoadScreenSetChallengeMovieForTest(
@@ -260,6 +275,58 @@ public:
 
 protected:
 	void setDeviceListenerPosition() override {}
+};
+
+class SmokeDisplayString final : public DisplayString
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeDisplayString, "SmokeDisplayString", 1, 1)
+
+public:
+	void setWordWrap(Int) override {}
+	void setWordWrapCentered(Bool) override {}
+	void draw(Int, Int, Color, Color) override {}
+	void draw(Int, Int, Color, Color, Int, Int) override {}
+	void getSize(Int *width, Int *height) override
+	{
+		if (width != nullptr) {
+			*width = getWidth();
+		}
+		if (height != nullptr) {
+			*height = 16;
+		}
+	}
+	Int getWidth(Int charPos = -1) override
+	{
+		const Int length = charPos >= 0 ? charPos : getTextLength();
+		return length * 8;
+	}
+	void setUseHotkey(Bool, Color) override {}
+};
+
+EMPTY_DTOR(SmokeDisplayString)
+
+class SmokeDisplayStringManager final : public DisplayStringManager
+{
+public:
+	DisplayString *newDisplayString() override
+	{
+		++new_count;
+		return newInstance(SmokeDisplayString);
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		if (string != nullptr) {
+			static_cast<SmokeDisplayString *>(string)->deleteInstance();
+			++free_count;
+		}
+	}
+
+	DisplayString *getGroupNumeralString(Int) override { return newDisplayString(); }
+	DisplayString *getFormationLetterString() override { return newDisplayString(); }
+
+	Int new_count = 0;
+	Int free_count = 0;
 };
 
 class WindowVideoProbeDisplay final : public Display
@@ -570,6 +637,30 @@ public:
 			return nullptr;
 		}
 		return layout;
+	}
+
+	GameWindow *createScoreScreenWindowForTest(AsciiString id, Int width, Int height)
+	{
+		return createWindowWithId(nullptr, id, width, height);
+	}
+
+	GameWindow *createScoreScreenButtonForTest(GameWindow *parent, AsciiString id, Int width, Int height)
+	{
+		WinInstanceData inst_data;
+		inst_data.m_style = GWS_PUSH_BUTTON;
+		GameWindow *window = winCreate(
+			parent,
+			WIN_STATUS_ENABLED,
+			0,
+			0,
+			width,
+			height,
+			GadgetPushButtonSystem,
+			&inst_data);
+		if (window != nullptr && TheNameKeyGenerator != nullptr) {
+			window->winSetWindowId(TheNameKeyGenerator->nameToKey(id));
+		}
+		return window;
 	}
 
 private:
@@ -1339,6 +1430,162 @@ bool exercise_score_screen_play_movie_and_block(VideoPlayerInterface &player)
 	return ok;
 }
 
+bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	SmokeGameEngine game_engine;
+	NameKeyGenerator name_key_generator;
+	SmokeGameText game_text;
+	SmokeDisplayStringManager display_string_manager;
+	CampaignManager campaign_manager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	GameEngine *old_game_engine = TheGameEngine;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GameTextInterface *old_game_text = TheGameText;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
+	GameLODManager *old_game_lod_manager = TheGameLODManager;
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+	TheGameEngine = &game_engine;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGameText = &game_text;
+	TheDisplayStringManager = &display_string_manager;
+	TheCampaignManager = &campaign_manager;
+	TheGameLODManager = nullptr;
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path blank WindowLayout was not created") && ok;
+	ok = expect(movie_window != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path blank layout did not own a first GameWindow") && ok;
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	GameWindow *score_parent = window_manager.createScoreScreenWindowForTest(
+		AsciiString("ScoreScreen.wnd:ParentScoreScreen"), 800, 600);
+	GameWindow *button_continue = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonContinue"), 160, 32);
+	GameWindow *button_ok = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonOk"), 96, 32);
+	ok = expect(score_parent != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path did not create the score parent window") && ok;
+	ok = expect(button_continue != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path did not create the continue button") && ok;
+	ok = expect(button_ok != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path did not create the ok button") && ok;
+
+	display.setScoreScreenMovieWindow(movie_window);
+	CncPortScoreScreenSetBlankLayoutForMovie(layout);
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(score_parent, button_continue, button_ok);
+
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("smoke_campaign"));
+	ok = expect(campaign != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path did not create a campaign") && ok;
+	if (campaign != nullptr) {
+		campaign->m_firstMission.set(AsciiString("mission1"));
+		campaign->m_finalMovieName.set(AsciiString("VS_small"));
+		Mission *mission = campaign->newMission(AsciiString("mission1"));
+		ok = expect(mission != nullptr,
+			"ScoreScreen finishSinglePlayerInit movie path did not create a mission") && ok;
+		if (mission != nullptr) {
+			mission->m_mapName.set(AsciiString("Maps/Smoke/Smoke.map"));
+			mission->m_nextMission.clear();
+		}
+		campaign_manager.setCampaignAndMission(AsciiString("smoke_campaign"), AsciiString("mission1"));
+	}
+	campaign_manager.setGameDifficulty(DIFFICULTY_NORMAL);
+	campaign_manager.SetVictorious(TRUE);
+	ok = expect(campaign_manager.isVictorious(),
+		"ScoreScreen finishSinglePlayerInit movie path did not mark the campaign victorious") && ok;
+	ok = expect(campaign_manager.getCurrentMission() != nullptr,
+		"ScoreScreen finishSinglePlayerInit movie path did not select the current mission") && ok;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_finish = state->browser_texture_create_calls;
+	const UINT updates_before_finish = state->browser_texture_update_calls;
+	const UINT releases_before_finish = state->browser_texture_release_calls;
+	const UINT draws_before_finish = state->draw_indexed_primitive_calls;
+	const Int expected_presented_frames = 70;
+
+	CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
+
+	state = wasm_d3d8_get_state();
+	ok = expect(CncPortScoreScreenGetFinishCampaignForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit did not set the finish-campaign button state") && ok;
+	ok = expect(CncPortScoreScreenGetBlankLayoutForMovie() == nullptr,
+		"ScoreScreen finishSinglePlayerInit did not clear the blank layout pointer") && ok;
+	ok = expect(campaign_manager.getCurrentMission() == nullptr,
+		"ScoreScreen finishSinglePlayerInit did not advance past the final mission") && ok;
+	ok = expect(campaign_manager.getCurrentMap().isEmpty(),
+		"ScoreScreen finishSinglePlayerInit did not leave the current map empty after campaign completion") && ok;
+	ok = expect(game_engine.service_windows_calls == expected_presented_frames,
+		"ScoreScreen finishSinglePlayerInit final movie did not service the OS once per presented frame") && ok;
+	ok = expect(display.scoreScreenPresentOk(),
+		"ScoreScreen finishSinglePlayerInit final movie display presentation failed") && ok;
+	ok = expect(display.scoreScreenPresentCount() == expected_presented_frames,
+		"ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames") && ok;
+	ok = expect(state->browser_texture_create_calls == creates_before_finish + 1,
+		"ScoreScreen finishSinglePlayerInit final movie did not allocate one W3DVideoBuffer texture") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_finish + 1 + expected_presented_frames,
+		"ScoreScreen finishSinglePlayerInit final movie did not upload the initial texture plus decoded frames") && ok;
+	ok = expect(state->browser_texture_release_calls == releases_before_finish + 1,
+		"ScoreScreen finishSinglePlayerInit final movie did not release the W3DVideoBuffer texture") && ok;
+	ok = expect(state->draw_indexed_primitive_calls == draws_before_finish + expected_presented_frames,
+		"ScoreScreen finishSinglePlayerInit final movie did not draw every decoded frame") && ok;
+	ok = expect(player.firstStream() == nullptr,
+		"ScoreScreen finishSinglePlayerInit did not close the owned Bink stream") && ok;
+	ok = expect(state->last_browser_texture_width == next_power_of_two(96) &&
+		state->last_browser_texture_height == next_power_of_two(120),
+		"ScoreScreen finishSinglePlayerInit final movie decoded texture dimensions mismatch") && ok;
+	ok = expect(state->last_browser_texture_pitch == next_power_of_two(96) * 4,
+		"ScoreScreen finishSinglePlayerInit final movie decoded texture pitch mismatch") && ok;
+	ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+		"ScoreScreen finishSinglePlayerInit final movie decoded texture format mismatch") && ok;
+	ok = expect(state->last_browser_texture_checksum != 0,
+		"ScoreScreen finishSinglePlayerInit final movie uploaded an all-zero decoded frame") && ok;
+
+	std::printf("ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok: frames=%d texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
+		expected_presented_frames,
+		next_power_of_two(96),
+		next_power_of_two(120),
+		next_power_of_two(96) * 4,
+		static_cast<unsigned int>(state->last_browser_texture_checksum),
+		464,
+		324,
+		560,
+		444);
+
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
+	display.setScoreScreenMovieWindow(nullptr);
+	if (score_parent != nullptr) {
+		window_manager.winDestroy(score_parent);
+		window_manager.update();
+	}
+	ok = expect(display_string_manager.free_count >= 1,
+		"ScoreScreen finishSinglePlayerInit did not release button display strings during cleanup") && ok;
+
+	TheGameLODManager = old_game_lod_manager;
+	TheCampaignManager = old_campaign_manager;
+	TheDisplayStringManager = old_display_string_manager;
+	TheGameText = old_game_text;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameEngine = old_game_engine;
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 bool exercise_single_player_load_screen_init(VideoPlayerInterface &player)
 {
 	bool ok = true;
@@ -1599,6 +1846,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_window_video_manager(*player) && ok;
 		ok = exercise_blank_layout_movie_path(*player) && ok;
 		ok = exercise_score_screen_play_movie_and_block(*player) && ok;
+		ok = exercise_score_screen_finish_single_player_final_movie(*player) && ok;
 		ok = exercise_single_player_load_screen_init(*player) && ok;
 		ok = exercise_challenge_load_screen_init(*player) && ok;
 	}
