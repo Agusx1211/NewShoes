@@ -383,10 +383,15 @@ shares structure and follows behind.
       initialization.
 - [ ] Promote the `CreateGameEngine` frontier from probe-only to real browser
       startup ownership: link original `Win32GameEngine` construction with
-      owned `GameEngine` vtable/typeinfo/destructor lifetime, then advance
-      `GameEngine::init()` only as far as the first real browser-owned device
-      factory (`createAudioManager` / `TheAudio`) instead of adding more
-      source-only Win32 probes.
+      owned original `GameEngine.cpp` singleton/destructor lifetime, then
+      advance `GameEngine::init()` only as far as the first real browser-owned
+      device factory (`createAudioManager` / `TheAudio`) instead of adding more
+      source-only Win32 probes. The current focused lifetime smoke proves
+      original `Win32GameEngine` construction/destruction over a minimal
+      browser-owned `GameEngine` lifetime surface; replacing that focused
+      surface with original `GameEngine.cpp` still requires owned
+      `TheSubsystemList`, `TheGameResultsQueue`, map-cache, LOD, file/archive,
+      and startup singleton teardown contracts.
 - [ ] Emscripten entry point replacing `Main/WinMain.cpp` (`main()` + main loop).
 - [ ] `emscripten_set_main_loop` driving the engine tick at fixed timestep.
 - [ ] Canvas + GL context creation (no draw yet); resize handling.

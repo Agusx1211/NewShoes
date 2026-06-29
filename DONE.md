@@ -440,6 +440,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       explicitly leaves real `Win32GameEngine` construction / `GameEngine`
       singleton lifetime as the next startup boundary instead of faking full
       engine ownership.
+- [x] Add a focused wasm `Win32GameEngine` lifetime smoke that constructs and
+      destroys the linked original `Win32GameEngine.cpp` concrete over a
+      minimal browser-owned `GameEngine` lifetime surface, verifies inherited
+      focus/quitting/FPS state, and proves the constructor/destructor
+      `SetErrorMode` save/restore path. This intentionally does not claim full
+      original `GameEngine.cpp` ownership: linking that source still pulls the
+      broad startup singleton set that must be owned before `createAudioManager`
+      can become the next real init boundary.
 - [x] `WWVegas/WWLib` guarded legacy translation units (`Except.cpp`,
       `point.cpp`) compile under their original source guards; this is compile
       coverage only, not a browser exception dialog or enabled Point body.

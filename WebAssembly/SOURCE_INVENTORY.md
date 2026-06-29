@@ -419,6 +419,17 @@ The wasm CMake skeleton currently builds:
   and stateful `SetErrorMode` shim behavior, and reports real
   `Win32GameEngine` construction/destruction as the next owned `GameEngine`
   startup-lifetime boundary.
+- `win32-gameengine-lifetime-smoke`: focused Node wasm smoke
+  (`npm run test:win32-gameengine-lifetime`) that constructs and destroys the
+  linked original `Win32GameEngine.cpp` concrete over a minimal browser-owned
+  `GameEngine` lifetime surface. It verifies inherited focus/quitting/FPS state
+  plus `SetErrorMode` save/restore. It deliberately does not link original
+  `GameEngine.cpp`; the attempted broad link pulls `ApplicationHInstance`,
+  `_Module`, `TheMapCache`, `TheGameResultsQueue`, `TheSubsystemList`,
+  `TheGameText`, `TheTerrainRoads`, `TheGlobalLanguageData`,
+  `TheParticleSystemManager`, `TheFXListStore`, `TheMetaMap`, and related
+  startup globals, so full original startup lifetime ownership remains the
+  next boundary before `createAudioManager`.
 - `zh_compression_eac`: original `Compression/EAC` BTree, Huff, and RefPack source compiled into a
   wasm static library.
 - `zh_compression_manager`: original `CompressionManager.cpp` compiled into a

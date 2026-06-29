@@ -5244,6 +5244,38 @@ target_link_options(win32-gameengine-message-pump-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(win32-gameengine-lifetime-smoke
+  tests/win32_gameengine_lifetime_smoke.cpp
+)
+
+set_target_properties(win32-gameengine-lifetime-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(win32-gameengine-lifetime-smoke PRIVATE
+  zh_win32_gameengine_message_pump
+  zh_gameengine_common_core
+)
+
+target_compile_options(win32-gameengine-lifetime-smoke PRIVATE
+  -include${WASM_SHIMS_DIR}/PreRTS.h
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-register
+  -Wno-writable-strings
+)
+
+target_link_options(win32-gameengine-lifetime-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(winmain-wndproc-mouse-smoke
   tests/winmain_wndproc_mouse_smoke.cpp
 )
