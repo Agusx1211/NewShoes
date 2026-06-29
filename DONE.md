@@ -1714,6 +1714,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and `Display::drawFillRect` sinks. This is still a Node GUI-dispatch
       proof, not a browser W3DDisplay/WebGL rendering completion. Verified
       with `npm --prefix WebAssembly run test:w3d-gamewindow-manager`.
+- [x] Add a focused W3D layout-script vertical proof. The new
+      `w3d-window-layout-script-smoke` runs original
+      `WindowLayout::load("Menus/BlankWindow.wnd")`, original
+      `GameWindowManager::winCreateFromScript`, original `.wnd` layout-block /
+      root-window parsing, and original `W3DFunctionLexicon::init()` lookup for
+      `W3DMainMenuInit`, then executes `WindowLayout::runInit()` and verifies
+      parsed `NameKey`, geometry, enabled status, layout ownership, and window
+      teardown. The smoke uses a memory-backed `BlankWindow.wnd` script and
+      test-local bodies for unexecuted W3D/base shell callbacks to keep the
+      proof bounded; real shell menu layout assets, production W3DDisplay, and
+      real shell callback ownership remain open. `test:startup-vertical` now
+      includes this smoke and reports the next GUI slice as replacing the
+      focused BlankWindow proof with a real shell menu layout. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:startup-vertical`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

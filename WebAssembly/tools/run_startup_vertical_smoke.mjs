@@ -184,6 +184,21 @@ const steps = [
         'W3D game-window manager smoke did not prove gadget callback ownership');
     },
   },
+  {
+    name: 'w3d-window-layout-script',
+    file: 'w3d-window-layout-script-smoke.cjs',
+    validate(payload) {
+      expect(payload.ok === true, 'W3D window layout script smoke did not report ok');
+      expect(payload.library === 'W3DFunctionLexicon',
+        'W3D window layout script smoke is not covering W3DFunctionLexicon');
+      expect(payload.path === 'WindowLayout::load->GameWindowManager::winCreateFromScript',
+        'W3D window layout script smoke did not cover real WindowLayout load');
+      expect(payload.layout === 'Menus/BlankWindow.wnd',
+        'W3D window layout script smoke did not load BlankWindow.wnd');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
+        'W3D window layout script smoke did not prove parser coverage');
+    },
+  },
 ];
 
 const sourceResults = sourceChecks.map(runSourceCheck);
@@ -199,10 +214,11 @@ console.log(JSON.stringify({
     'original GameEngine.cpp constructor/destructor lifetime',
     'original MilesAudioManager openDevice',
     'original W3DGameWindowManager window and gadget ownership',
+    'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance W3DFunctionLexicon with real .wnd and shell callback ownership',
+    'advance shell callback ownership from focused BlankWindow layout proof into a real shell menu layout',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),

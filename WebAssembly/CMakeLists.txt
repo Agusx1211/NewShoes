@@ -5445,6 +5445,90 @@ target_link_options(w3d-gamewindow-manager-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(w3d-window-layout-script-smoke
+  tests/w3d_window_layout_script_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp"
+)
+
+set_target_properties(w3d-window-layout-script-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(w3d-window-layout-script-smoke PRIVATE
+  zh_gameclient_gui_input_runtime
+)
+
+target_include_directories(w3d-window-layout-script-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(w3d-window-layout-script-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${WASM_SHIMS_DIR}/PreRTS.h"
+  "-iquote${WASM_SHIMS_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-logical-not-parentheses
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(w3d-window-layout-script-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(win32-gameengine-message-pump-smoke
   tests/win32_gameengine_message_pump_smoke.cpp
 )

@@ -415,20 +415,26 @@ shares structure and follows behind.
       `Win32GameEngine` lifetime, full original `GameEngine.cpp`
       constructor/destructor lifetime, original `MilesAudioManager::openDevice`,
       and W3D game-window ownership smokes together so cross-subsystem startup
-      drift is visible. Full production `W3DDisplay` construction, `.wnd`
-      layout/script callback loading, `W3DFunctionLexicon` table lookup, and
-      `W3DModuleFactory` module-template lookup still need original public-API
-      runtime proof. `verify:w3d-module-factory-frontier` now pins the original
+      drift is visible. The focused `w3d-window-layout-script-smoke` now runs
+      original `WindowLayout::load("Menus/BlankWindow.wnd")`, original
+      `GameWindowManager::winCreateFromScript`, original `.wnd` layout-block /
+      window parsing, and original `W3DFunctionLexicon::init()` lookup for
+      `W3DMainMenuInit`; it uses test-local bodies for unexecuted base shell /
+      control-bar callbacks so the proof stays bounded to layout parsing and
+      device callback lookup. Full production `W3DDisplay` construction, a real
+      shell menu layout loaded from the asset set, real shell callback
+      ownership, and `W3DModuleFactory` module-template lookup still need
+      original public-API runtime proof. `verify:w3d-module-factory-frontier`
+      now pins the original
       `Win32GameEngine::createModuleFactory -> W3DModuleFactory` mapping,
       `GameEngine.cpp` call site, and all 19 original W3D draw-module
       registrations through the public `ModuleFactory` lookup internals; the
       attempted standalone runtime lookup pulled the base ModuleFactory / INI /
       game-client global graph, so the full `W3DModuleFactory::init()` runtime
       proof should follow original `GameEngine.cpp` ownership of the
-      pre-`createAudioManager` file/INI/CD frontier. Do the full
-      `W3DFunctionLexicon::init()` proof with real `.wnd`/shell callback
-      ownership rather than a standalone table smoke, because isolated table
-      loading pulls the base GUI/control-bar/network callback graph.
+      pre-`createAudioManager` file/INI/CD frontier. Advance the next GUI slice
+      vertically by replacing the focused `BlankWindow.wnd` proof with a real
+      shell menu layout and its original callback owners.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

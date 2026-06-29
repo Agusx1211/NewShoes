@@ -1,0 +1,808 @@
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "PreRTS.h"
+
+// Original headers use "= NULL" for pure virtual declarations.
+#ifdef NULL
+#undef NULL
+#endif
+#define NULL 0
+
+#include "Common/File.h"
+#include "Common/FileSystem.h"
+#include "Common/FunctionLexicon.h"
+#include "Common/GameMemory.h"
+#include "Common/GlobalData.h"
+#include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
+#include "Common/SubsystemInterface.h"
+#include "GameClient/Display.h"
+#include "GameClient/GameFont.h"
+#include "GameClient/GameWindow.h"
+#include "GameClient/GameWindowManager.h"
+#include "GameClient/GlobalLanguage.h"
+#include "GameClient/HeaderTemplate.h"
+#include "GameClient/Image.h"
+#include "GameClient/Keyboard.h"
+#include "GameClient/SelectionXlat.h"
+#include "GameClient/WinInstanceData.h"
+#include "GameClient/WindowLayout.h"
+#include "W3DDevice/Common/W3DFunctionLexicon.h"
+
+class GameLogic;
+class DisplayStringManager;
+class GameTextInterface;
+class GlobalLanguage;
+class IMEManagerInterface;
+class ImageCollection;
+class InGameUI;
+class Keyboard;
+class SelectionTranslator;
+class VideoPlayerInterface;
+class View;
+void W3DMainMenuInit(WindowLayout *layout, void *userData);
+
+GlobalData *TheGlobalData = nullptr;
+SubsystemInterfaceList *TheSubsystemList = nullptr;
+GameLogic *TheGameLogic = nullptr;
+DisplayStringManager *TheDisplayStringManager = nullptr;
+GameTextInterface *TheGameText = nullptr;
+GlobalLanguage *TheGlobalLanguageData = nullptr;
+IMEManagerInterface *TheIMEManager = nullptr;
+ImageCollection *TheMappedImageCollection = nullptr;
+InGameUI *TheInGameUI = nullptr;
+Keyboard *TheKeyboard = nullptr;
+SelectionTranslator *TheSelectionTranslator = nullptr;
+VideoPlayerInterface *TheVideoPlayer = nullptr;
+View *TheTacticalView = nullptr;
+HWND ApplicationHWnd = NULL;
+const Char *g_strFile = "Data\\Generals.str";
+const Char *g_csfFile = "Data\\%s\\Generals.csf";
+
+namespace {
+
+Int g_w3d_main_menu_init_calls = 0;
+
+std::string normalized_path(const Char *path)
+{
+	std::string result = path != nullptr ? path : "";
+	std::replace(result.begin(), result.end(), '/', '\\');
+	std::transform(result.begin(), result.end(), result.begin(),
+		[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+	return result;
+}
+
+class MemoryScriptFile : public File
+{
+public:
+	void setPayload(const std::string &payload)
+	{
+		m_data.assign(payload.begin(), payload.end());
+		m_pos = 0;
+	}
+
+	Bool open(const Char *filename, Int access = 0) override
+	{
+		m_pos = 0;
+		return File::open(filename, access);
+	}
+
+	Int read(void *buffer, Int bytes) override
+	{
+		if (bytes <= 0) {
+			return 0;
+		}
+		const Int remaining = static_cast<Int>(m_data.size()) - m_pos;
+		const Int bytes_to_read = remaining <= 0 ? 0 : (bytes < remaining ? bytes : remaining);
+		if (bytes_to_read > 0 && buffer != nullptr) {
+			std::memcpy(buffer, m_data.data() + m_pos, static_cast<std::size_t>(bytes_to_read));
+		}
+		m_pos += bytes_to_read;
+		return bytes_to_read;
+	}
+
+	Int write(const void *, Int) override { return -1; }
+
+	Int seek(Int bytes, seekMode mode = CURRENT) override
+	{
+		Int base = 0;
+		if (mode == CURRENT) {
+			base = m_pos;
+		} else if (mode == END) {
+			base = static_cast<Int>(m_data.size());
+		}
+		const Int next = base + bytes;
+		m_pos = next < 0 ? 0 : (next > static_cast<Int>(m_data.size()) ? static_cast<Int>(m_data.size()) : next);
+		return m_pos;
+	}
+
+	void nextLine(Char *buf = nullptr, Int bufSize = 0) override
+	{
+		Int i = 0;
+		while (m_pos < static_cast<Int>(m_data.size()) && m_data[static_cast<std::size_t>(m_pos)] != '\n') {
+			if (buf != nullptr && i < bufSize - 1) {
+				buf[i++] = m_data[static_cast<std::size_t>(m_pos)];
+			}
+			++m_pos;
+		}
+		if (m_pos < static_cast<Int>(m_data.size())) {
+			if (buf != nullptr && i < bufSize - 1) {
+				buf[i++] = m_data[static_cast<std::size_t>(m_pos)];
+			}
+			++m_pos;
+		}
+		if (buf != nullptr && bufSize > 0) {
+			buf[i < bufSize ? i : bufSize - 1] = 0;
+		}
+	}
+
+	Bool scanInt(Int &newInt) override
+	{
+		while (m_pos < static_cast<Int>(m_data.size())
+			&& !std::isdigit(static_cast<unsigned char>(m_data[static_cast<std::size_t>(m_pos)]))
+			&& m_data[static_cast<std::size_t>(m_pos)] != '-') {
+			++m_pos;
+		}
+		if (m_pos >= static_cast<Int>(m_data.size())) {
+			return FALSE;
+		}
+		std::string token;
+		do {
+			token.push_back(m_data[static_cast<std::size_t>(m_pos++)]);
+		} while (m_pos < static_cast<Int>(m_data.size())
+			&& std::isdigit(static_cast<unsigned char>(m_data[static_cast<std::size_t>(m_pos)])));
+		newInt = std::atoi(token.c_str());
+		return TRUE;
+	}
+
+	Bool scanReal(Real &newReal) override
+	{
+		Int value = 0;
+		if (!scanInt(value)) {
+			return FALSE;
+		}
+		newReal = static_cast<Real>(value);
+		return TRUE;
+	}
+
+	Bool scanString(AsciiString &newString) override
+	{
+		newString.clear();
+		while (m_pos < static_cast<Int>(m_data.size())
+			&& std::isspace(static_cast<unsigned char>(m_data[static_cast<std::size_t>(m_pos)]))) {
+			++m_pos;
+		}
+		if (m_pos >= static_cast<Int>(m_data.size())) {
+			return FALSE;
+		}
+		do {
+			newString.concat(m_data[static_cast<std::size_t>(m_pos++)]);
+		} while (m_pos < static_cast<Int>(m_data.size())
+			&& !std::isspace(static_cast<unsigned char>(m_data[static_cast<std::size_t>(m_pos)])));
+		return TRUE;
+	}
+
+	char *readEntireAndClose() override
+	{
+		char *buffer = NEW char[m_data.size() + 1];
+		if (buffer != nullptr) {
+			std::memcpy(buffer, m_data.data(), m_data.size());
+			buffer[m_data.size()] = 0;
+		}
+		close();
+		return buffer;
+	}
+
+	File *convertToRAMFile() override { return this; }
+
+private:
+	std::vector<char> m_data;
+	Int m_pos = 0;
+};
+
+class ScriptLocalFileSystem : public LocalFileSystem
+{
+public:
+	explicit ScriptLocalFileSystem(const std::string &payload) : m_payload(payload) {}
+
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+	File *openFile(const Char *filename, Int access = 0) override
+	{
+		if (normalized_path(filename) != "window\\menus\\blankwindow.wnd") {
+			return nullptr;
+		}
+		m_file.close();
+		m_file.setPayload(m_payload);
+		return m_file.open(filename, access) ? &m_file : nullptr;
+	}
+
+	Bool doesFileExist(const Char *filename) const override
+	{
+		return normalized_path(filename) == "window\\menus\\blankwindow.wnd";
+	}
+
+	void getFileListInDirectory(
+		const AsciiString &,
+		const AsciiString &,
+		const AsciiString &,
+		FilenameList &,
+		Bool) const override {}
+
+	Bool getFileInfo(const AsciiString &, FileInfo *) const override { return FALSE; }
+	Bool createDirectory(AsciiString) override { return FALSE; }
+
+private:
+	std::string m_payload;
+	MemoryScriptFile m_file;
+};
+
+class SmokeGameWindow : public GameWindow
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeGameWindow, "SmokeGameWindow", 1, 1)
+
+public:
+	SmokeGameWindow() = default;
+	void winDrawBorder() override {}
+};
+
+EMPTY_DTOR(SmokeGameWindow)
+
+void SmokeNoDraw(GameWindow *, WinInstanceData *)
+{
+}
+
+class SmokeGameWindowManager : public GameWindowManager
+{
+public:
+	GameWindow *allocateNewWindow() override { return newInstance(SmokeGameWindow); }
+	GameWinDrawFunc getPushButtonImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getPushButtonDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getCheckBoxImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getCheckBoxDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getRadioButtonImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getRadioButtonDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getTabControlImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getTabControlDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getListBoxImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getListBoxDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getComboBoxImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getComboBoxDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getHorizontalSliderImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getHorizontalSliderDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getVerticalSliderImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getVerticalSliderDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getProgressBarImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getProgressBarDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getStaticTextImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getStaticTextDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getTextEntryImageDrawFunc() override { return SmokeNoDraw; }
+	GameWinDrawFunc getTextEntryDrawFunc() override { return SmokeNoDraw; }
+	GameFont *winFindFont(AsciiString, Int, Bool) override { return nullptr; }
+};
+
+class SmokeFontLibrary : public FontLibrary
+{
+protected:
+	Bool loadFontData(GameFont *font) override
+	{
+		if (font == nullptr) {
+			return FALSE;
+		}
+		font->height = font->pointSize;
+		font->fontData = nullptr;
+		return TRUE;
+	}
+};
+
+class SmokeDisplay : public Display
+{
+public:
+	void doSmartAssetPurgeAndPreload(const char *) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpAssetUsage(const char *) override {}
+#endif
+	VideoBuffer *createVideoBuffer() override { return nullptr; }
+	void setClipRegion(IRegion2D *region) override
+	{
+		if (region != nullptr) {
+			m_clipRegion = *region;
+		}
+	}
+	Bool isClippingEnabled() override { return m_clippingEnabled; }
+	void enableClipping(Bool onoff) override { m_clippingEnabled = onoff; }
+	void setTimeOfDay(TimeOfDay) override {}
+	void createLightPulse(const Coord3D *, const RGBColor *, Real, Real, UnsignedInt, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt, UnsignedInt) override {}
+	void drawOpenRect(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawFillRect(Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
+	void clearShroud() override {}
+	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void setBorderShroudLevel(UnsignedByte) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpModelAssets(const char *) override {}
+#endif
+	void preloadModelAssets(AsciiString) override {}
+	void preloadTextureAssets(AsciiString) override {}
+	void takeScreenShot() override {}
+	void toggleMovieCapture() override {}
+	void toggleLetterBox() override {}
+	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
+	Real getAverageFPS() override { return 0.0f; }
+	Int getLastFrameDrawCalls() override { return 0; }
+
+private:
+	IRegion2D m_clipRegion = { { 0, 0 }, { 0, 0 } };
+	Bool m_clippingEnabled = FALSE;
+};
+
+bool expect(bool condition, const char *message)
+{
+	if (!condition) {
+		std::cerr << message << "\n";
+		return false;
+	}
+	return true;
+}
+
+const char *blank_window_script()
+{
+	return
+		"FILE_VERSION = 2\n"
+		"STARTLAYOUTBLOCK\n"
+		"LAYOUTINIT = W3DMainMenuInit;\n"
+		"LAYOUTUPDATE = [None];\n"
+		"LAYOUTSHUTDOWN = [None];\n"
+		"ENDLAYOUTBLOCK\n"
+		"WINDOW\n"
+		"WINDOWTYPE = USER;\n"
+		"SCREENRECT = UPPERLEFT: 0 0 BOTTOMRIGHT: 800 600 CREATIONRESOLUTION: 800 600;\n"
+		"NAME = \"BlankWindow.wnd:Root\";\n"
+		"STATUS = ENABLED;\n"
+		"STYLE = USER;\n"
+		"END\n";
+}
+
+bool exercise_w3d_layout_script()
+{
+	bool ok = true;
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	NameKeyGenerator name_key_generator;
+	FileSystem file_system;
+	ScriptLocalFileSystem local_file_system(blank_window_script());
+	SmokeDisplay display;
+	SmokeFontLibrary font_library;
+	HeaderTemplateManager header_templates;
+	SmokeGameWindowManager window_manager;
+	W3DFunctionLexicon function_lexicon;
+
+	GlobalData *old_global_data = TheGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
+	FileSystem *old_file_system = TheFileSystem;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+
+	TheGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheNameKeyGenerator = &name_key_generator;
+	TheFileSystem = &file_system;
+	TheLocalFileSystem = &local_file_system;
+	TheDisplay = &display;
+	TheFontLibrary = &font_library;
+	TheHeaderTemplateManager = &header_templates;
+	TheWindowManager = &window_manager;
+	TheFunctionLexicon = &function_lexicon;
+
+	display.setWidth(800);
+	display.setHeight(600);
+	display.setBitDepth(32);
+	display.setWindowed(TRUE);
+	name_key_generator.init();
+	function_lexicon.init();
+
+	const NameKeyType w3d_init_key = TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"));
+	ok = expect(TheFunctionLexicon->winLayoutInitFunc(w3d_init_key) == W3DMainMenuInit,
+		"W3DFunctionLexicon did not expose W3DMainMenuInit through the device layout-init table") && ok;
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *root = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"WindowLayout::load did not create a layout through real winCreateFromScript") && ok;
+	ok = expect(root != nullptr,
+		"real .wnd parser did not create a root GameWindow") && ok;
+	if (layout != nullptr) {
+		ok = expect(layout->getFilename() == AsciiString("Menus/BlankWindow.wnd"),
+			"WindowLayout did not retain the loaded filename") && ok;
+	}
+	if (root != nullptr) {
+		Int x = -1;
+		Int y = -1;
+		Int width = -1;
+		Int height = -1;
+		root->winGetScreenPosition(&x, &y);
+		root->winGetSize(&width, &height);
+		ok = expect(root->winGetLayout() == layout,
+			"WindowLayout::load did not attach the root window back to the layout") && ok;
+		ok = expect(root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString("BlankWindow.wnd:Root")),
+			"parseName did not assign the expected NameKey window id") && ok;
+		ok = expect(x == 0 && y == 0 && width == 800 && height == 600,
+			"parseScreenRect did not create the expected root geometry") && ok;
+		ok = expect(BitTest(root->winGetStatus(), WIN_STATUS_ENABLED),
+			"parseStatus did not preserve WIN_STATUS_ENABLED") && ok;
+	}
+
+	g_w3d_main_menu_init_calls = 0;
+	if (layout != nullptr) {
+		layout->runInit();
+	}
+	ok = expect(g_w3d_main_menu_init_calls == 1,
+		"layout init callback did not run through W3DFunctionLexicon lookup") && ok;
+	if (layout != nullptr) {
+		layout->runUpdate();
+		layout->runShutdown();
+		ok = expect(g_w3d_main_menu_init_calls == 1,
+			"[None] update/shutdown callbacks should not call the W3D init stub") && ok;
+		layout->destroyWindows();
+		layout->deleteInstance();
+	}
+	window_manager.update();
+	ok = expect(window_manager.winGetWindowList() == nullptr,
+		"destroying the parsed layout should clear the original window list") && ok;
+
+	TheFunctionLexicon = old_function_lexicon;
+	TheWindowManager = old_window_manager;
+	TheHeaderTemplateManager = old_header_templates;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheLocalFileSystem = old_local_file_system;
+	TheFileSystem = old_file_system;
+	TheNameKeyGenerator = old_name_keys;
+	TheSubsystemList = old_subsystem_list;
+	TheGlobalData = old_global_data;
+
+	return ok;
+}
+
+} // namespace
+
+// W3DFunctionLexicon::init() loads the base GUI lexicon tables before adding
+// W3D device entries. These test-local bodies satisfy unexecuted base callback
+// owners without linking the full shell/control-bar/network graph.
+Int GlobalLanguage::adjustFontSize(Int fontSize)
+{
+	return fontSize;
+}
+
+const Image *ImageCollection::findImageByName(const AsciiString &)
+{
+	return nullptr;
+}
+
+WideChar Keyboard::getPrintableKey(UnsignedByte, Int)
+{
+	return 0;
+}
+
+void SelectionTranslator::setDragSelecting(Bool)
+{
+}
+
+void SelectionTranslator::setLeftMouseButton(Bool)
+{
+}
+
+#define DEFINE_LAYOUT_STUB(name) void name(WindowLayout *, void *) {}
+#define DEFINE_WINDOW_STUB(name) \
+	WindowMsgHandledType name(GameWindow *, UnsignedInt, WindowMsgData, WindowMsgData) { return MSG_IGNORED; }
+#define DEFINE_DRAW_STUB(name) void name(GameWindow *, WinInstanceData *) {}
+
+DEFINE_DRAW_STUB(IMECandidateMainDraw)
+DEFINE_DRAW_STUB(IMECandidateTextAreaDraw)
+
+DEFINE_LAYOUT_STUB(ChallengeMenuInit)
+DEFINE_LAYOUT_STUB(ChallengeMenuShutdown)
+DEFINE_LAYOUT_STUB(ChallengeMenuUpdate)
+DEFINE_LAYOUT_STUB(CreditsMenuInit)
+DEFINE_LAYOUT_STUB(CreditsMenuShutdown)
+DEFINE_LAYOUT_STUB(CreditsMenuUpdate)
+DEFINE_LAYOUT_STUB(DifficultySelectInit)
+DEFINE_LAYOUT_STUB(DownloadMenuInit)
+DEFINE_LAYOUT_STUB(DownloadMenuShutdown)
+DEFINE_LAYOUT_STUB(DownloadMenuUpdate)
+DEFINE_LAYOUT_STUB(GameInfoWindowInit)
+DEFINE_LAYOUT_STUB(GameSpyPlayerInfoOverlayInit)
+DEFINE_LAYOUT_STUB(GameSpyPlayerInfoOverlayShutdown)
+DEFINE_LAYOUT_STUB(GameSpyPlayerInfoOverlayUpdate)
+DEFINE_LAYOUT_STUB(InGamePopupMessageInit)
+DEFINE_LAYOUT_STUB(KeyboardOptionsMenuInit)
+DEFINE_LAYOUT_STUB(KeyboardOptionsMenuShutdown)
+DEFINE_LAYOUT_STUB(LanGameOptionsMenuInit)
+DEFINE_LAYOUT_STUB(LanGameOptionsMenuShutdown)
+DEFINE_LAYOUT_STUB(LanGameOptionsMenuUpdate)
+DEFINE_LAYOUT_STUB(LanLobbyMenuInit)
+DEFINE_LAYOUT_STUB(LanLobbyMenuShutdown)
+DEFINE_LAYOUT_STUB(LanLobbyMenuUpdate)
+DEFINE_LAYOUT_STUB(LanMapSelectMenuInit)
+DEFINE_LAYOUT_STUB(LanMapSelectMenuShutdown)
+DEFINE_LAYOUT_STUB(LanMapSelectMenuUpdate)
+DEFINE_LAYOUT_STUB(MainMenuInit)
+DEFINE_LAYOUT_STUB(MainMenuShutdown)
+DEFINE_LAYOUT_STUB(MainMenuUpdate)
+DEFINE_LAYOUT_STUB(MapSelectMenuInit)
+DEFINE_LAYOUT_STUB(MapSelectMenuShutdown)
+DEFINE_LAYOUT_STUB(MapSelectMenuUpdate)
+DEFINE_LAYOUT_STUB(NetworkDirectConnectInit)
+DEFINE_LAYOUT_STUB(NetworkDirectConnectShutdown)
+DEFINE_LAYOUT_STUB(NetworkDirectConnectUpdate)
+DEFINE_LAYOUT_STUB(OptionsMenuInit)
+DEFINE_LAYOUT_STUB(OptionsMenuShutdown)
+DEFINE_LAYOUT_STUB(OptionsMenuUpdate)
+DEFINE_LAYOUT_STUB(PopupCommunicatorInit)
+DEFINE_LAYOUT_STUB(PopupCommunicatorShutdown)
+DEFINE_LAYOUT_STUB(PopupHostGameInit)
+DEFINE_LAYOUT_STUB(PopupHostGameUpdate)
+DEFINE_LAYOUT_STUB(PopupJoinGameInit)
+DEFINE_LAYOUT_STUB(PopupLadderSelectInit)
+DEFINE_LAYOUT_STUB(PopupReplayInit)
+DEFINE_LAYOUT_STUB(PopupReplayShutdown)
+DEFINE_LAYOUT_STUB(PopupReplayUpdate)
+DEFINE_LAYOUT_STUB(RCGameDetailsMenuInit)
+DEFINE_LAYOUT_STUB(ReplayMenuInit)
+DEFINE_LAYOUT_STUB(ReplayMenuShutdown)
+DEFINE_LAYOUT_STUB(ReplayMenuUpdate)
+DEFINE_LAYOUT_STUB(SaveLoadMenuFullScreenInit)
+DEFINE_LAYOUT_STUB(SaveLoadMenuInit)
+DEFINE_LAYOUT_STUB(SaveLoadMenuShutdown)
+DEFINE_LAYOUT_STUB(SaveLoadMenuUpdate)
+DEFINE_LAYOUT_STUB(ScoreScreenInit)
+DEFINE_LAYOUT_STUB(ScoreScreenShutdown)
+DEFINE_LAYOUT_STUB(ScoreScreenUpdate)
+DEFINE_LAYOUT_STUB(SinglePlayerMenuInit)
+DEFINE_LAYOUT_STUB(SinglePlayerMenuShutdown)
+DEFINE_LAYOUT_STUB(SinglePlayerMenuUpdate)
+DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuInit)
+DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuShutdown)
+DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuUpdate)
+DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuInit)
+DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuShutdown)
+DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLBuddyOverlayInit)
+DEFINE_LAYOUT_STUB(WOLBuddyOverlayRCMenuInit)
+DEFINE_LAYOUT_STUB(WOLBuddyOverlayShutdown)
+DEFINE_LAYOUT_STUB(WOLBuddyOverlayUpdate)
+DEFINE_LAYOUT_STUB(WOLCustomScoreScreenInit)
+DEFINE_LAYOUT_STUB(WOLCustomScoreScreenShutdown)
+DEFINE_LAYOUT_STUB(WOLCustomScoreScreenUpdate)
+DEFINE_LAYOUT_STUB(WOLGameSetupMenuInit)
+DEFINE_LAYOUT_STUB(WOLGameSetupMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLGameSetupMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLLadderScreenInit)
+DEFINE_LAYOUT_STUB(WOLLadderScreenShutdown)
+DEFINE_LAYOUT_STUB(WOLLadderScreenUpdate)
+DEFINE_LAYOUT_STUB(WOLLobbyMenuInit)
+DEFINE_LAYOUT_STUB(WOLLobbyMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLLobbyMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLLocaleSelectInit)
+DEFINE_LAYOUT_STUB(WOLLocaleSelectShutdown)
+DEFINE_LAYOUT_STUB(WOLLocaleSelectUpdate)
+DEFINE_LAYOUT_STUB(WOLLoginMenuInit)
+DEFINE_LAYOUT_STUB(WOLLoginMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLLoginMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLMapSelectMenuInit)
+DEFINE_LAYOUT_STUB(WOLMapSelectMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLMapSelectMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLMessageWindowInit)
+DEFINE_LAYOUT_STUB(WOLMessageWindowShutdown)
+DEFINE_LAYOUT_STUB(WOLMessageWindowUpdate)
+DEFINE_LAYOUT_STUB(WOLQMScoreScreenInit)
+DEFINE_LAYOUT_STUB(WOLQMScoreScreenShutdown)
+DEFINE_LAYOUT_STUB(WOLQMScoreScreenUpdate)
+DEFINE_LAYOUT_STUB(WOLQuickMatchMenuInit)
+DEFINE_LAYOUT_STUB(WOLQuickMatchMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLQuickMatchMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLStatusMenuInit)
+DEFINE_LAYOUT_STUB(WOLStatusMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLStatusMenuUpdate)
+DEFINE_LAYOUT_STUB(WOLWelcomeMenuInit)
+DEFINE_LAYOUT_STUB(WOLWelcomeMenuShutdown)
+DEFINE_LAYOUT_STUB(WOLWelcomeMenuUpdate)
+
+DEFINE_WINDOW_STUB(BeaconWindowInput)
+DEFINE_WINDOW_STUB(ChallengeMenuInput)
+DEFINE_WINDOW_STUB(ChallengeMenuSystem)
+DEFINE_WINDOW_STUB(ControlBarInput)
+DEFINE_WINDOW_STUB(ControlBarObserverSystem)
+DEFINE_WINDOW_STUB(ControlBarSystem)
+DEFINE_WINDOW_STUB(CreditsMenuInput)
+DEFINE_WINDOW_STUB(CreditsMenuSystem)
+DEFINE_WINDOW_STUB(DifficultySelectInput)
+DEFINE_WINDOW_STUB(DifficultySelectSystem)
+DEFINE_WINDOW_STUB(DiplomacyInput)
+DEFINE_WINDOW_STUB(DiplomacySystem)
+DEFINE_WINDOW_STUB(DisconnectControlInput)
+DEFINE_WINDOW_STUB(DisconnectControlSystem)
+DEFINE_WINDOW_STUB(DownloadMenuInput)
+DEFINE_WINDOW_STUB(DownloadMenuSystem)
+DEFINE_WINDOW_STUB(EstablishConnectionsControlInput)
+DEFINE_WINDOW_STUB(EstablishConnectionsControlSystem)
+DEFINE_WINDOW_STUB(ExtendedMessageBoxSystem)
+DEFINE_WINDOW_STUB(GameInfoWindowSystem)
+DEFINE_WINDOW_STUB(GameSpyPlayerInfoOverlayInput)
+DEFINE_WINDOW_STUB(GameSpyPlayerInfoOverlaySystem)
+DEFINE_WINDOW_STUB(GeneralsExpPointsInput)
+DEFINE_WINDOW_STUB(GeneralsExpPointsSystem)
+DEFINE_WINDOW_STUB(IMECandidateWindowInput)
+DEFINE_WINDOW_STUB(IMECandidateWindowSystem)
+DEFINE_WINDOW_STUB(IdleWorkerSystem)
+DEFINE_WINDOW_STUB(InGameChatInput)
+DEFINE_WINDOW_STUB(InGameChatSystem)
+DEFINE_WINDOW_STUB(InGamePopupMessageInput)
+DEFINE_WINDOW_STUB(InGamePopupMessageSystem)
+DEFINE_WINDOW_STUB(KeyboardOptionsMenuInput)
+DEFINE_WINDOW_STUB(KeyboardOptionsMenuSystem)
+DEFINE_WINDOW_STUB(LanGameOptionsMenuInput)
+DEFINE_WINDOW_STUB(LanGameOptionsMenuSystem)
+DEFINE_WINDOW_STUB(LanLobbyMenuInput)
+DEFINE_WINDOW_STUB(LanLobbyMenuSystem)
+DEFINE_WINDOW_STUB(LanMapSelectMenuInput)
+DEFINE_WINDOW_STUB(LanMapSelectMenuSystem)
+DEFINE_WINDOW_STUB(LeftHUDInput)
+DEFINE_WINDOW_STUB(MOTDSystem)
+DEFINE_WINDOW_STUB(MainMenuInput)
+DEFINE_WINDOW_STUB(MainMenuSystem)
+DEFINE_WINDOW_STUB(MapSelectMenuInput)
+DEFINE_WINDOW_STUB(MapSelectMenuSystem)
+DEFINE_WINDOW_STUB(MessageBoxSystem)
+DEFINE_WINDOW_STUB(NetworkDirectConnectInput)
+DEFINE_WINDOW_STUB(NetworkDirectConnectSystem)
+DEFINE_WINDOW_STUB(OptionsMenuInput)
+DEFINE_WINDOW_STUB(OptionsMenuSystem)
+DEFINE_WINDOW_STUB(PopupBuddyNotificationSystem)
+DEFINE_WINDOW_STUB(PopupCommunicatorInput)
+DEFINE_WINDOW_STUB(PopupCommunicatorSystem)
+DEFINE_WINDOW_STUB(PopupHostGameInput)
+DEFINE_WINDOW_STUB(PopupHostGameSystem)
+DEFINE_WINDOW_STUB(PopupJoinGameInput)
+DEFINE_WINDOW_STUB(PopupJoinGameSystem)
+DEFINE_WINDOW_STUB(PopupLadderSelectInput)
+DEFINE_WINDOW_STUB(PopupLadderSelectSystem)
+DEFINE_WINDOW_STUB(PopupReplayInput)
+DEFINE_WINDOW_STUB(PopupReplaySystem)
+DEFINE_WINDOW_STUB(QuitMenuSystem)
+DEFINE_WINDOW_STUB(QuitMessageBoxSystem)
+DEFINE_WINDOW_STUB(RCGameDetailsMenuSystem)
+DEFINE_WINDOW_STUB(ReplayControlInput)
+DEFINE_WINDOW_STUB(ReplayControlSystem)
+DEFINE_WINDOW_STUB(ReplayMenuInput)
+DEFINE_WINDOW_STUB(ReplayMenuSystem)
+DEFINE_WINDOW_STUB(SaveLoadMenuInput)
+DEFINE_WINDOW_STUB(SaveLoadMenuSystem)
+DEFINE_WINDOW_STUB(ScoreScreenInput)
+DEFINE_WINDOW_STUB(ScoreScreenSystem)
+DEFINE_WINDOW_STUB(SinglePlayerMenuInput)
+DEFINE_WINDOW_STUB(SinglePlayerMenuSystem)
+DEFINE_WINDOW_STUB(SkirmishGameOptionsMenuInput)
+DEFINE_WINDOW_STUB(SkirmishGameOptionsMenuSystem)
+DEFINE_WINDOW_STUB(SkirmishMapSelectMenuInput)
+DEFINE_WINDOW_STUB(SkirmishMapSelectMenuSystem)
+DEFINE_WINDOW_STUB(WOLBuddyOverlayInput)
+DEFINE_WINDOW_STUB(WOLBuddyOverlayRCMenuSystem)
+DEFINE_WINDOW_STUB(WOLBuddyOverlaySystem)
+DEFINE_WINDOW_STUB(WOLCustomScoreScreenInput)
+DEFINE_WINDOW_STUB(WOLCustomScoreScreenSystem)
+DEFINE_WINDOW_STUB(WOLGameSetupMenuInput)
+DEFINE_WINDOW_STUB(WOLGameSetupMenuSystem)
+DEFINE_WINDOW_STUB(WOLLadderScreenInput)
+DEFINE_WINDOW_STUB(WOLLadderScreenSystem)
+DEFINE_WINDOW_STUB(WOLLobbyMenuInput)
+DEFINE_WINDOW_STUB(WOLLobbyMenuSystem)
+DEFINE_WINDOW_STUB(WOLLocaleSelectInput)
+DEFINE_WINDOW_STUB(WOLLocaleSelectSystem)
+DEFINE_WINDOW_STUB(WOLLoginMenuInput)
+DEFINE_WINDOW_STUB(WOLLoginMenuSystem)
+DEFINE_WINDOW_STUB(WOLMapSelectMenuInput)
+DEFINE_WINDOW_STUB(WOLMapSelectMenuSystem)
+DEFINE_WINDOW_STUB(WOLMessageWindowInput)
+DEFINE_WINDOW_STUB(WOLMessageWindowSystem)
+DEFINE_WINDOW_STUB(WOLQMScoreScreenInput)
+DEFINE_WINDOW_STUB(WOLQMScoreScreenSystem)
+DEFINE_WINDOW_STUB(WOLQuickMatchMenuInput)
+DEFINE_WINDOW_STUB(WOLQuickMatchMenuSystem)
+DEFINE_WINDOW_STUB(WOLStatusMenuInput)
+DEFINE_WINDOW_STUB(WOLStatusMenuSystem)
+DEFINE_WINDOW_STUB(WOLWelcomeMenuInput)
+DEFINE_WINDOW_STUB(WOLWelcomeMenuSystem)
+
+#undef DEFINE_DRAW_STUB
+#undef DEFINE_LAYOUT_STUB
+#undef DEFINE_WINDOW_STUB
+
+void W3DGameWinDefaultDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetPushButtonDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetPushButtonImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetCheckBoxDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetCheckBoxImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetRadioButtonDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetRadioButtonImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetTabControlDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetTabControlImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetListBoxDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetListBoxImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetComboBoxDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetComboBoxImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetHorizontalSliderDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetHorizontalSliderImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetVerticalSliderDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetVerticalSliderImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetProgressBarDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetProgressBarImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetStaticTextDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetStaticTextImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetTextEntryDraw(GameWindow *, WinInstanceData *) {}
+void W3DGadgetTextEntryImageDraw(GameWindow *, WinInstanceData *) {}
+void W3DLeftHUDDraw(GameWindow *, WinInstanceData *) {}
+void W3DCameoMovieDraw(GameWindow *, WinInstanceData *) {}
+void W3DRightHUDDraw(GameWindow *, WinInstanceData *) {}
+void W3DPowerDraw(GameWindow *, WinInstanceData *) {}
+void W3DMainMenuDraw(GameWindow *, WinInstanceData *) {}
+void W3DMainMenuFourDraw(GameWindow *, WinInstanceData *) {}
+void W3DMetalBarMenuDraw(GameWindow *, WinInstanceData *) {}
+void W3DCreditsMenuDraw(GameWindow *, WinInstanceData *) {}
+void W3DClockDraw(GameWindow *, WinInstanceData *) {}
+void W3DMainMenuMapBorder(GameWindow *, WinInstanceData *) {}
+void W3DMainMenuButtonDropShadowDraw(GameWindow *, WinInstanceData *) {}
+void W3DMainMenuRandomTextDraw(GameWindow *, WinInstanceData *) {}
+void W3DThinBorderDraw(GameWindow *, WinInstanceData *) {}
+void W3DShellMenuSchemeDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarGridDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarGenExpDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarHelpPopupDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarBackgroundDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarForegroundDraw(GameWindow *, WinInstanceData *) {}
+void W3DCommandBarTopDraw(GameWindow *, WinInstanceData *) {}
+void W3DNoDraw(GameWindow *, WinInstanceData *) {}
+void W3DDrawMapPreview(GameWindow *, WinInstanceData *) {}
+
+void W3DMainMenuInit(WindowLayout *, void *)
+{
+	++g_w3d_main_menu_init_calls;
+}
+
+int main()
+{
+	initMemoryManager();
+	const bool ok = exercise_w3d_layout_script();
+	shutdownMemoryManager();
+
+	if (!ok) {
+		return 1;
+	}
+
+	std::cout
+		<< "{\"ok\":true,"
+		<< "\"library\":\"W3DFunctionLexicon\","
+		<< "\"path\":\"WindowLayout::load->GameWindowManager::winCreateFromScript\","
+		<< "\"layout\":\"Menus/BlankWindow.wnd\","
+		<< "\"covered\":\"original WindowLayout load, .wnd parser, W3DFunctionLexicon device layout-init lookup, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\n";
+	return 0;
+}
