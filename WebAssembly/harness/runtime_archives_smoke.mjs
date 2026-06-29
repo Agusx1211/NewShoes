@@ -2333,6 +2333,104 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       path: event.completion.releasePath,
     }, `${context} requested audio lifecycle release log`);
   }
+
+  const positioning = proof.browserAudio3DPositioningProof;
+  if (!positioning
+      || positioning.source !== "browser requested audio PannerNode 3D positioning proof"
+      || positioning.ready !== true
+      || positioning.runtimePlayback !== false
+      || positioning.engineDriven !== false
+      || positioning.nextRequired !== "engineDrivenWebAudioPannerBinding"
+      || !Array.isArray(positioning.sourceFrontiers)
+      || positioning.sourceFrontiers.length !== 3
+      || !Array.isArray(positioning.errors)
+      || positioning.errors.length !== 0
+      || !Array.isArray(positioning.events)
+      || positioning.events.length !== 1) {
+    throw new Error(`${context} requested audio 3D positioning proof state mismatch: ${JSON.stringify(positioning)}`);
+  }
+  assertArrayPrefix(positioning.sourceFrontiers, [
+    "verify:audio-3d-position-frontier",
+    "verify:audio-sample-start-frontier",
+    "verify:miles-audio-volume-frontier",
+  ], `${context} requested audio 3D positioning source frontiers`);
+  assertValueMatches(positioning.events[0], {
+    cacheKey: "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+    archive: "AudioZH.big",
+    path: "Data\\Audio\\Sounds\\gshescre.wav",
+    eventName: "ArtilleryBarrageIncomingWhistle",
+    firstSource: "Data\\INI\\SoundEffects.ini:3571",
+    sections: { soundEffects: 4 },
+    sourceEvent: {
+      name: "ArtilleryBarrageIncomingWhistle",
+      source: "Data\\INI\\SoundEffects.ini:3570",
+      soundsSource: "Data\\INI\\SoundEffects.ini:3571",
+      type: "world everyone",
+      minRange: 300,
+      maxRange: 2000,
+      volume: 70,
+      volumeShift: -20,
+      limit: 4,
+      priority: "normal",
+    },
+    nodeGraph: ["AudioBufferSourceNode", "PannerNode", "AudioDestinationNode"],
+    pannerConfig: {
+      panningModel: "equalpower",
+      distanceModel: "linear",
+      refDistance: 300,
+      maxDistance: 2000,
+      rolloffFactor: 1,
+    },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+    listenerOrientation: {
+      forwardX: 0,
+      forwardY: 0,
+      forwardZ: -1,
+      upX: 0,
+      upY: 1,
+      upZ: 0,
+    },
+    sourcePosition: { x: 600, y: 0, z: -600 },
+    render: {
+      numberOfChannels: 2,
+      sampleRate: 44100,
+      length: 11025,
+      durationSeconds: 0.25,
+      left: {
+        startFrame: 0,
+        endFrame: 11025,
+        frames: 11025,
+        minFloat: -0.034315,
+        maxFloat: 0.043603,
+        maxAbsFloat: 0.043603,
+        nonZeroFrames: 10107,
+        firstSamples: [
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+        ],
+      },
+      right: {
+        startFrame: 0,
+        endFrame: 11025,
+        frames: 11025,
+        minFloat: -0.082844,
+        maxFloat: 0.105267,
+        maxAbsFloat: 0.105267,
+        nonZeroFrames: 10107,
+        firstSamples: [
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+        ],
+      },
+      leftRms: 0.008197,
+      rightRms: 0.019789,
+      rightMinusLeftRms: 0.011592,
+    },
+  }, `${context} requested audio 3D positioning event`);
 }
 
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {

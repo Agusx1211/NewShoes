@@ -3372,6 +3372,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       listener position/orientation updates, one-shot 3D sample
       distance/position setup, per-frame 3D sample position updates, and 3D
       sample volume routing.
+- [x] Add `npm run verify:audio-music-manager-frontier`, a source-only
+      verifier for the original music playback/transition frontier:
+      `MusicTrack` fields and parse table, `MusicManager` AR_Play/AR_Stop
+      request construction, `AudioManager` AT_Music routing and music volume
+      bus, `Music.ini` parse registration, Miles stream open/volume routing,
+      and next/previous/completion track state helpers. This verifies source
+      structure only, not runtime Web Audio music playback.
 - [x] Add `npm run inventory:audio-payloads`, a real-asset audio payload
       preflight that indexes the current BIG archives, reads shipped
       `Music.ini`, `SoundEffects.ini`, `Voice.ini`, and `Speech.ini` from
@@ -3452,6 +3459,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioBufferSourceNode` start windows, ordered completion callbacks,
       `PS_Stopped`, and the sample/stream release paths while preserving that
       this is not yet engine-driven playback.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible 3D positioning proof for a real requested world SFX
+      (`ArtilleryBarrageIncomingWhistle` / `gshescre.wav`). The smoke now
+      renders the decoded buffer through `AudioBufferSourceNode -> PannerNode`
+      with source min/max range, listener/source coordinates, and stereo
+      separation metrics pinned, while preserving that this is not yet
+      engine-driven 3D playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
