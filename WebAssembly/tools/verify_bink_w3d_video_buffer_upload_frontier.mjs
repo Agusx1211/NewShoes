@@ -683,23 +683,23 @@ function main() {
 
   assertExact(errors, facts.cmake, "targetDefLine",
     lineNumber(cmake.lines,
-      (line) => /add_executable\s*\(\s*bink-w3d-video-buffer-browser-smoke/.test(line)), 6515,
+      (line) => /add_executable\s*\(\s*bink-w3d-video-buffer-browser-smoke/.test(line)), 6516,
     "CMake bink-w3d-video-buffer-browser-smoke target");
   assertExact(errors, facts.cmake, "targetSourceLine",
     lineNumber(cmake.lines,
-      (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6516,
+      (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6517,
     "CMake bink_w3d_video_buffer_upload_smoke.cpp source");
   assertExact(errors, facts.cmake, "w3dVideoBufferSourceLine",
     firstMatchInRange(cmake.lines, facts.cmake.targetDefLine, facts.cmake.targetDefLine + 10,
-      /W3DVideoBuffer\.cpp/), 6517,
+      /W3DVideoBuffer\.cpp/), 6518,
     "CMake original W3DVideoBuffer.cpp source");
   assertExact(errors, facts.cmake, "exportNameLine",
     lineNumber(cmake.lines,
-      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6589,
+      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6590,
     "CMake browser smoke export name");
   assertExact(errors, facts.cmake, "exportFunctionLine",
     lineNumber(cmake.lines,
-      (line) => /_run_bink_w3d_video_buffer_upload_smoke/.test(line)), 6593,
+      (line) => /_run_bink_w3d_video_buffer_upload_smoke/.test(line)), 6594,
     "CMake browser smoke exported function");
   assertExact(errors, facts.packageJson, "scriptLine",
     lineNumber(packageJson.lines,

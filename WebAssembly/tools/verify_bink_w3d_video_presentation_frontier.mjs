@@ -422,27 +422,27 @@ function main() {
   // ------------------------------------------------------------------
   assertExact(errors, facts.cmake, "binkTargetDefLine",
     lineNumber(cmake.lines,
-      (line) => /add_executable\s*\(\s*bink-w3d-video-buffer-browser-smoke/.test(line)), 6515,
+      (line) => /add_executable\s*\(\s*bink-w3d-video-buffer-browser-smoke/.test(line)), 6516,
     "CMake bink-w3d-video-buffer-browser-smoke target");
   assertExact(errors, facts.cmake, "binkTargetSourceLine",
     lineNumber(cmake.lines,
-      (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6516,
+      (line) => /tests\/bink_w3d_video_buffer_upload_smoke\.cpp/.test(line)), 6517,
     "CMake bink_w3d_video_buffer_upload_smoke.cpp source");
   assertExact(errors, facts.cmake, "binkTargetW3dVideoBufferSourceLine",
     firstMatchInRange(cmake.lines, facts.cmake.binkTargetDefLine, facts.cmake.binkTargetDefLine + 10,
-      /W3DVideoBuffer\.cpp/), 6517,
+      /W3DVideoBuffer\.cpp/), 6518,
     "CMake original W3DVideoBuffer.cpp source in bink target");
   assertExact(errors, facts.cmake, "binkExportNameLine",
     lineNumber(cmake.lines,
-      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6589,
+      (line) => /createBinkW3DVideoBufferBrowserSmokeModule/.test(line)), 6590,
     "CMake browser smoke export name");
   assertExact(errors, facts.cmake, "binkExportFunctionLine",
     lineNumber(cmake.lines,
-      (line) => /_run_bink_w3d_video_buffer_upload_smoke/.test(line)), 6593,
+      (line) => /_run_bink_w3d_video_buffer_upload_smoke/.test(line)), 6594,
     "CMake browser smoke exported function");
   assertExact(errors, facts.cmake, "drawimageExportLine",
     lineNumber(cmake.lines,
-      (line) => /_cnc_port_probe_ww3d_display_drawimage_file/.test(line)), 3837,
+      (line) => /_cnc_port_probe_ww3d_display_drawimage_file/.test(line)), 3838,
     "CMake cnc-port drawimage file probe export");
 
   assertExact(errors, facts.packageJson, "binkScriptLine",
@@ -451,7 +451,7 @@ function main() {
     "package.json test:bink-w3d-video-buffer-browser script");
   assertExact(errors, facts.packageJson, "drawimageScriptLine",
     lineNumber(packageJson.lines,
-      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 118,
+      (line) => /"test:ww3d-display-drawimage-file"/.test(line)), 119,
     "package.json test:ww3d-display-drawimage-file script");
 
   // ------------------------------------------------------------------
@@ -468,11 +468,11 @@ function main() {
       "and W3DDisplay::createVideoBuffer creates a W3DVideoBuffer through the " +
       "original DX8Wrapper::Get_Current_Caps()/D3DFMT format-selection path. " +
       "The shared Render2DClass textured-quad primitive has browser-backed " +
-      "coverage via test:ww3d-display-drawimage-file. Runtime " +
-      "W3DDisplay::drawVideoBuffer presentation of a Bink video frame, " +
-      "verified by a harness screenshot, is still open unless the main agent " +
-      "has completed it by merge time. This verifier does NOT claim runtime " +
-      "Bink video presentation complete.",
+      "coverage via test:ww3d-display-drawimage-file, and synthetic " +
+      "W3DVideoBuffer presentation is covered by test:ww3d-display-video-buffer. " +
+      "Runtime W3DDisplay::drawVideoBuffer presentation of a decoded Bink " +
+      "sidecar frame, verified by a harness screenshot, remains open. This " +
+      "verifier does NOT claim runtime Bink video presentation complete.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

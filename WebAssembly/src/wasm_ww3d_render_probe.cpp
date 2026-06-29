@@ -23,6 +23,8 @@
 #endif
 #include "W3DDevice/GameClient/W3DDisplayString.h"
 #include "W3DDevice/GameClient/W3DGameFont.h"
+#include "ww3dformat.h"
+#include "W3DDevice/GameClient/W3DVideoBuffer.h"
 #include "assetmgr.h"
 #include "boxrobj.h"
 #include "camera.h"
@@ -51,6 +53,7 @@ std::string g_ww3d_aabox_probe_json;
 std::string g_ww3d_render2d_probe_json;
 std::string g_ww3d_scene_camera_probe_json;
 std::string g_ww3d_display_drawimage_probe_json;
+std::string g_ww3d_display_video_buffer_probe_json;
 std::string g_ww3d_display_drawimage_additive_probe_json;
 std::string g_ww3d_display_drawimage_solid_probe_json;
 std::string g_ww3d_display_drawimage_grayscale_probe_json;
@@ -239,6 +242,21 @@ void fill_argb_texture_translucent_red(D3DLOCKED_RECT &locked_rect, unsigned int
 void fill_argb_texture_grayscale_probe(D3DLOCKED_RECT &locked_rect, unsigned int width, unsigned int height)
 {
 	fill_argb_texture_color(locked_rect, width, height, 0x40, 0x80, 0xc0, 0xff);
+}
+
+void fill_xrgb_video_buffer_red(void *memory, unsigned int pitch, unsigned int width, unsigned int height)
+{
+	for (unsigned int y = 0; y < height; ++y) {
+		unsigned char *row = static_cast<unsigned char *>(memory) +
+			static_cast<std::size_t>(pitch) * y;
+		for (unsigned int x = 0; x < width; ++x) {
+			unsigned char *pixel = row + x * 4;
+			pixel[0] = 0x00; // B
+			pixel[1] = 0x00; // G
+			pixel[2] = 0xff; // R
+			pixel[3] = 0x00; // ignored by X8R8G8B8, forced opaque by the browser upload
+		}
+	}
 }
 
 struct ProbeW3DDisplayStorage
@@ -1734,6 +1752,247 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage()
 
 	g_ww3d_display_drawimage_probe_json = buffer;
 	return g_ww3d_display_drawimage_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_video_buffer()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	constexpr unsigned int video_width = 128;
+	constexpr unsigned int video_height = 128;
+	constexpr Int draw_left = 320;
+	constexpr Int draw_top = 236;
+	constexpr Int draw_right = 480;
+	constexpr Int draw_bottom = 364;
+
+	GlobalData global_data;
+	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool video_allocated = false;
+	bool video_valid = false;
+	bool video_locked = false;
+	bool video_filled = false;
+	bool draw_video_called = false;
+	UINT texture_id = 0;
+	UINT upload_checksum = 0;
+
+	ProbeW3DDisplayStorage display_storage;
+	W3DDisplay *display = nullptr;
+	W3DVideoBuffer video_buffer(VideoBuffer::TYPE_X8R8G8B8);
+
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		video_allocated = video_buffer.allocate(video_width, video_height);
+		video_valid = video_buffer.valid();
+		const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+		texture_id = state != nullptr ? state->last_browser_texture_id : 0;
+	}
+
+	if (video_allocated && video_valid) {
+		void *memory = video_buffer.lock();
+		video_locked = memory != nullptr;
+		if (video_locked) {
+			fill_xrgb_video_buffer_red(memory, video_buffer.pitch(),
+				video_buffer.textureWidth(), video_buffer.textureHeight());
+			video_filled =
+				video_buffer.width() == video_width &&
+				video_buffer.height() == video_height &&
+				video_buffer.textureWidth() == video_width &&
+				video_buffer.textureHeight() == video_height &&
+				video_buffer.pitch() == video_width * 4;
+			video_buffer.unlock();
+			const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+			upload_checksum = state != nullptr ? state->last_browser_texture_checksum : 0;
+		}
+	}
+
+	if (video_filled) {
+		display = display_storage.prepare_for_2d_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
+		if (display_setup) {
+			begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(begin_render_result)) {
+				display->W3DDisplay::drawVideoBuffer(&video_buffer,
+					draw_left, draw_top, draw_right, draw_bottom);
+				draw_video_called = true;
+				end_render_result = WW3D::End_Render(false);
+			}
+		}
+	}
+
+	display_storage.release_probe_renderer();
+	video_buffer.free();
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	TheGlobalData = old_global_data;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		video_allocated &&
+		video_valid &&
+		video_locked &&
+		video_filled &&
+		display_allocated &&
+		display_setup &&
+		succeeded(begin_render_result) &&
+		draw_video_called &&
+		succeeded(end_render_result) &&
+		texture_id != 0 &&
+		upload_checksum != 0 &&
+		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= 2 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->browser_texture_release_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_texture_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[5600];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_display_video_buffer_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"videoAllocated\":%s,\"videoValid\":%s,\"videoLocked\":%s,"
+		"\"videoFilled\":%s,\"displayAllocated\":%s,\"displaySetup\":%s,"
+		"\"beginRender\":%d,\"drawVideoBufferCalled\":%s,\"endRender\":%d},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"drawIndexed\":%u,\"setTransform\":%u,"
+		"\"clear\":%u,\"present\":%u},"
+		"\"videoBuffer\":{\"type\":%u,\"textureId\":%u,\"format\":%u,"
+		"\"visibleWidth\":%u,\"visibleHeight\":%u,\"textureWidth\":%u,"
+		"\"textureHeight\":%u,\"pitch\":%u,\"uploadChecksum\":%u,"
+		"\"expectedCenter\":[255,0,0,255]},"
+		"\"display\":{\"path\":\"W3DDisplay::drawVideoBuffer\","
+		"\"drawLeft\":%d,\"drawTop\":%d,\"drawRight\":%d,\"drawBottom\":%d},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,\"alphaArg2\":%lu,"
+		"\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
+		bool_json(ok),
+		init_result,
+		set_device_result,
+		bool_json(video_allocated),
+		bool_json(video_valid),
+		bool_json(video_locked),
+		bool_json(video_filled),
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		begin_render_result,
+		bool_json(draw_video_called),
+		end_render_result,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->texture_lock_rect_calls : 0,
+		state != nullptr ? state->texture_unlock_rect_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<unsigned int>(VideoBuffer::TYPE_X8R8G8B8),
+		texture_id,
+		static_cast<unsigned int>(D3DFMT_X8R8G8B8),
+		video_width,
+		video_height,
+		video_width,
+		video_height,
+		video_width * 4,
+		upload_checksum,
+		draw_left,
+		draw_top,
+		draw_right,
+		draw_bottom,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
+
+	g_ww3d_display_video_buffer_probe_json = buffer;
+	return g_ww3d_display_video_buffer_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_drawimage_additive()

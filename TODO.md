@@ -679,9 +679,13 @@ shares structure and follows behind.
       sidecar copy into a `VideoBuffer`, and
       `test:bink-w3d-video-buffer-browser` now proves that same original-player
       flow can copy decoded sidecar pixels into a real `W3DVideoBuffer` and
-      emit browser D3D8 texture updates. This remains open until the final
-      decoder/format/presentation contract is locked down and the copied frame
-      data is presented through `W3DDisplay::drawVideoBuffer`.
+      emit browser D3D8 texture updates. `test:ww3d-display-video-buffer` now
+      proves a synthetic real `W3DVideoBuffer` can be presented by original
+      `W3DDisplay::drawVideoBuffer` through display-owned `Render2DClass` to
+      the browser D3D8/WebGL2 canvas with a screenshot and pixel checks. This
+      remains open until the final decoder/format/presentation contract is
+      locked down and decoded Bink sidecar frame data is presented through that
+      `W3DDisplay::drawVideoBuffer` path.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -698,8 +702,11 @@ shares structure and follows behind.
       `Bink W3DVideoBuffer` upload smoke now initializes WW3D, renders those
       original streams into real `W3DVideoBuffer` textures, and verifies
       nonzero browser texture updates for the validated power-of-two texture
-      sizes. Original runtime browser presentation through
-      `W3DDisplay::drawVideoBuffer` and audio sync remain open.
+      sizes. The `W3DDisplay` video-buffer smoke now verifies synthetic
+      `TYPE_X8R8G8B8` `W3DVideoBuffer` presentation through original
+      `W3DDisplay::drawVideoBuffer` and browser canvas readback. Original
+      Bink-sidecar runtime browser presentation through `drawVideoBuffer` and
+      audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
