@@ -3507,6 +3507,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `AudioManager::setVolume` formula, and asserts the real `GainNode.gain`
       values in `runtime_archives_smoke.mjs` while preserving that engine/UI
       control of the mixer is future work.
+- [x] Add a browser requested-audio live event lifecycle proof. The archive
+      harness now retains the representative decoded requested payload cache,
+      starts one real requested payload (`CIAAgentVoiceAttack`) through a live
+      `AudioBufferSourceNode -> soundGainNode -> AudioDestinationNode` graph
+      after the browser audio gesture and mixer setup, and asserts
+      request/start/ended/completion/release log phases while preserving that
+      the original engine audio request queue is still future work.
 
 ---
 

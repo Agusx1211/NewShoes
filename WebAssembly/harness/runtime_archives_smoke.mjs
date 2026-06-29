@@ -1309,6 +1309,55 @@ function assertBrowserAudioMixerRuntime(mixer, context, expected = {}) {
   }
 }
 
+function assertBrowserAudioLiveEventRuntime(live, context, expected = {}) {
+  if (!live
+      || live.source !== "browser requested audio live AudioBufferSourceNode lifecycle proof"
+      || live.engineDriven !== false
+      || live.nextRequired !== "engineAudioEventScheduling"
+      || !Array.isArray(live.sourceFrontiers)
+      || !live.sourceFrontiers.includes("verify:audio-event-request-frontier")
+      || !live.sourceFrontiers.includes("verify:audio-sample-start-frontier")
+      || !live.sourceFrontiers.includes("verify:audio-completion-frontier")) {
+    throw new Error(`${context} browser audio live event runtime state mismatch: ${JSON.stringify(live)}`);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(expected, "ready") && live.ready !== expected.ready) {
+    throw new Error(`${context} browser audio live event ready mismatch: ${JSON.stringify(live)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(expected, "cacheEntries") && live.cacheEntries !== expected.cacheEntries) {
+    throw new Error(`${context} browser audio live event cache mismatch: ${JSON.stringify(live)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(expected, "completed") && live.completed !== expected.completed) {
+    throw new Error(`${context} browser audio live event completion count mismatch: ${JSON.stringify(live)}`);
+  }
+  if (expected.afterPlayback) {
+    const event = live.lastEvent;
+    if (live.ready !== true
+        || live.runtimePlayback !== true
+        || live.started < 1
+        || live.completed < 1
+        || live.released < 1
+        || live.lastError !== null
+        || event?.cacheKey !== expected.cacheKey
+        || event?.eventName !== expected.eventName
+        || event?.request?.type !== "AR_Play"
+        || event?.start?.playingType !== expected.playingType
+        || event?.start?.webAudioNode !== "AudioBufferSourceNode"
+        || event?.start?.bus !== expected.bus
+        || event?.callback?.observed !== true
+        || event?.callback?.completionCall !== "notifyOfAudioCompletion"
+        || event?.completion?.statusAfterCallback !== "PS_Stopped"
+        || event?.completion?.releasePath !== expected.releasePath
+        || event?.completion?.releaseAudioEventRTS !== true) {
+      throw new Error(`${context} browser audio live event playback mismatch: ${JSON.stringify(live)}`);
+    }
+    const phases = (live.eventLog ?? []).slice(-5).map((entry) => entry.phase);
+    if (phases.join("|") !== "request|start|ended|completion|release") {
+      throw new Error(`${context} browser audio live event log phases mismatch: ${JSON.stringify(live.eventLog)}`);
+    }
+  }
+}
+
 function assertSectionSummary(section, expected, context, name) {
   const summary = section?.summary;
   for (const [key, value] of Object.entries(expected)) {
@@ -3560,6 +3609,11 @@ try {
     created: false,
     updates: 0,
   });
+  assertBrowserAudioLiveEventRuntime(bootResult.state.browserAudioLiveEventRuntime, "runtime archive boot before gesture", {
+    ready: false,
+    cacheEntries: 5,
+    completed: 0,
+  });
   assertAudioPayloadInventory(bootResult.state, "runtime archive boot", hasBaseIniArchive);
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
@@ -3646,7 +3700,39 @@ try {
     "runtime archive state after mixer volume update",
     { afterVolumeUpdate: true, busGains: expectedMixerGains },
   );
-  assertAudioRuntimeAssets(mixerVolumeResult.state, "runtime archive boot after mixer volume update");
+  assertBrowserAudioLiveEventRuntime(
+    mixerVolumeResult.state.browserAudioLiveEventRuntime,
+    "runtime archive state before live event playback",
+    { ready: true, cacheEntries: 5, completed: 0 },
+  );
+  const liveEventTarget = {
+    cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+    eventName: "CIAAgentVoiceAttack",
+    playingType: "PAT_Sample",
+    bus: "sound",
+    releasePath: "processPlayingList -> releasePlayingAudio",
+  };
+  const liveEventResult = await page.evaluate(
+    (payload) => window.CnCPort.rpc("playBrowserAudioRequestedEvent", payload),
+    {
+      cacheKey: liveEventTarget.cacheKey,
+      durationSeconds: 0.05,
+    },
+  );
+  if (!liveEventResult.ok) {
+    throw new Error(`browser audio live event RPC failed: ${JSON.stringify(liveEventResult)}`);
+  }
+  assertBrowserAudioLiveEventRuntime(
+    liveEventResult.browserAudioLiveEventRuntime,
+    "runtime archive live requested audio event",
+    { afterPlayback: true, ...liveEventTarget },
+  );
+  assertBrowserAudioLiveEventRuntime(
+    liveEventResult.state.browserAudioLiveEventRuntime,
+    "runtime archive state after live requested audio event",
+    { afterPlayback: true, ...liveEventTarget },
+  );
+  assertAudioRuntimeAssets(liveEventResult.state, "runtime archive boot after live requested audio event");
 
   console.log(JSON.stringify({
     ok: true,
@@ -3668,6 +3754,7 @@ try {
     audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
     browserAudioRuntime: audioGestureResult.browserAudioRuntime,
     browserAudioMixerRuntime: mixerVolumeResult.browserAudioMixerRuntime,
+    browserAudioLiveEventRuntime: liveEventResult.browserAudioLiveEventRuntime,
     audioPayloadInventory: bootResult.state.audioPayloadInventory,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,

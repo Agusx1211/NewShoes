@@ -329,6 +329,18 @@ const browserAudioMixerRuntime = {
   lastError: null,
 };
 
+const browserAudioRequestedDecodedCache = new Map();
+const browserAudioLiveEventRuntime = {
+  source: "browser requested audio live AudioBufferSourceNode lifecycle proof",
+  nextHandle: 12001,
+  started: 0,
+  completed: 0,
+  released: 0,
+  lastEvent: null,
+  eventLog: [],
+  lastError: null,
+};
+
 const wasmModulePromise = loadWasmModule();
 
 function browserAudioContextCtor() {
@@ -537,6 +549,181 @@ function setBrowserAudioMixerRuntimeVolumes(payload = {}) {
   };
   mixer.lastError = null;
   return summarizeBrowserAudioMixerRuntime();
+}
+
+function rememberBrowserAudioRequestedDecodedCache(decodedCache) {
+  browserAudioRequestedDecodedCache.clear();
+  for (const [cacheKey, decoded] of decodedCache) {
+    browserAudioRequestedDecodedCache.set(cacheKey, decoded);
+  }
+  browserAudioLiveEventRuntime.nextHandle = 12001;
+  browserAudioLiveEventRuntime.started = 0;
+  browserAudioLiveEventRuntime.completed = 0;
+  browserAudioLiveEventRuntime.released = 0;
+  browserAudioLiveEventRuntime.lastEvent = null;
+  browserAudioLiveEventRuntime.eventLog = [];
+  browserAudioLiveEventRuntime.lastError = null;
+}
+
+function summarizeBrowserAudioLiveEventRuntime() {
+  return {
+    source: browserAudioLiveEventRuntime.source,
+    ready:
+      browserAudioRequestedDecodedCache.size > 0 &&
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    cacheEntries: browserAudioRequestedDecodedCache.size,
+    cacheKeys: [...browserAudioRequestedDecodedCache.keys()],
+    runtimePlayback: browserAudioLiveEventRuntime.completed > 0,
+    engineDriven: false,
+    nextRequired: "engineAudioEventScheduling",
+    sourceFrontiers: [
+      "verify:audio-event-request-frontier",
+      "verify:audio-sample-start-frontier",
+      "verify:audio-completion-frontier",
+      "verify:audio-playing-event-state-frontier",
+    ],
+    started: browserAudioLiveEventRuntime.started,
+    completed: browserAudioLiveEventRuntime.completed,
+    released: browserAudioLiveEventRuntime.released,
+    lastEvent: browserAudioLiveEventRuntime.lastEvent,
+    eventLog: [...browserAudioLiveEventRuntime.eventLog],
+    lastError: browserAudioLiveEventRuntime.lastError,
+  };
+}
+
+function selectBrowserAudioLiveEventTarget(cacheKey) {
+  if (cacheKey) {
+    return browserAudioRequestedDecodedCache.get(String(cacheKey)) ?? null;
+  }
+  for (const decoded of browserAudioRequestedDecodedCache.values()) {
+    const route = requestedAudioMixerBusForDecoded(decoded);
+    if (route.bus === "sound") {
+      return decoded;
+    }
+  }
+  return browserAudioRequestedDecodedCache.values().next().value ?? null;
+}
+
+async function playBrowserAudioRequestedLiveEvent(payload = {}) {
+  const context = browserAudioRuntime.context;
+  if (!context || context.state !== "running") {
+    browserAudioLiveEventRuntime.lastError = "AudioContext is not running";
+    return summarizeBrowserAudioLiveEventRuntime();
+  }
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    browserAudioLiveEventRuntime.lastError = browserAudioMixerRuntime.lastError;
+    return summarizeBrowserAudioLiveEventRuntime();
+  }
+  const decoded = selectBrowserAudioLiveEventTarget(payload.cacheKey);
+  if (!decoded) {
+    browserAudioLiveEventRuntime.lastError = "requested decoded audio cache is empty";
+    return summarizeBrowserAudioLiveEventRuntime();
+  }
+
+  const route = requestedAudioMixerBusForDecoded(decoded);
+  const busNode = mixer.busNodes?.[route.bus] ?? null;
+  if (!busNode) {
+    browserAudioLiveEventRuntime.lastError = `missing browser audio mixer bus: ${route.bus}`;
+    return summarizeBrowserAudioLiveEventRuntime();
+  }
+
+  const fullDurationSeconds = decoded.decodedFrames / decoded.info.samplesPerSec;
+  const requestedDuration = Number(payload.durationSeconds ?? 0.05);
+  const durationSeconds = Math.max(
+    0.01,
+    Math.min(
+      Number.isFinite(requestedDuration) ? requestedDuration : 0.05,
+      0.25,
+      fullDurationSeconds,
+    ),
+  );
+  const handle = browserAudioLiveEventRuntime.nextHandle++;
+  const eventName = decoded.firstEvent ?? decoded.path;
+  const event = {
+    handle,
+    cacheKey: decoded.cacheKey,
+    eventName,
+    firstSource: decoded.firstSource,
+    archive: decoded.archive,
+    path: decoded.path,
+    sections: decoded.sections,
+    request: {
+      type: "AR_Play",
+      queued: true,
+      usePendingEvent: true,
+    },
+    start: {
+      playingType: route.playingType,
+      statusBeforeStart: "PS_Playing",
+      webAudioNode: "AudioBufferSourceNode",
+      bus: route.bus,
+      busGain: mixer.busGains[route.bus],
+      nodeGraph: ["AudioBufferSourceNode", `${route.bus}GainNode`, "AudioDestinationNode"],
+      startSeconds: Number(context.currentTime.toFixed(6)),
+      durationSeconds: Number(durationSeconds.toFixed(6)),
+      fullDurationSeconds: Number(fullDurationSeconds.toFixed(6)),
+      sourceSampleRate: decoded.info.samplesPerSec,
+      sourceFrames: decoded.decodedFrames,
+    },
+    callback: {
+      observed: false,
+      order: null,
+      completionCall: "notifyOfAudioCompletion",
+      completionType: route.playingType,
+    },
+    completion: {
+      statusAfterCallback: null,
+      releasePath: requestedAudioCompletionDrainForType(route.playingType),
+      releaseAudioEventRTS: false,
+    },
+  };
+
+  browserAudioLiveEventRuntime.started += 1;
+  browserAudioLiveEventRuntime.eventLog.push(
+    { handle, eventName, phase: "request", request: "AR_Play" },
+    { handle, eventName, phase: "start", playingType: route.playingType, node: "AudioBufferSourceNode" },
+  );
+
+  const source = context.createBufferSource();
+  source.buffer = createWebAudioBufferFromDecoded(context, decoded);
+  source.connect(busNode);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        reject(new Error("AudioBufferSourceNode ended callback timed out"));
+      }, 2000);
+      source.onended = () => {
+        window.clearTimeout(timeout);
+        try {
+          source.disconnect();
+        } catch {
+          // Source may already be disconnected by the browser; lifecycle proof is still complete.
+        }
+        event.callback.observed = true;
+        event.callback.order = browserAudioLiveEventRuntime.completed + 1;
+        event.completion.statusAfterCallback = "PS_Stopped";
+        event.completion.releaseAudioEventRTS = true;
+        browserAudioLiveEventRuntime.completed += 1;
+        browserAudioLiveEventRuntime.released += 1;
+        browserAudioLiveEventRuntime.eventLog.push(
+          { handle, eventName, phase: "ended", observed: true, order: event.callback.order },
+          { handle, eventName, phase: "completion", call: "notifyOfAudioCompletion", status: "PS_Stopped" },
+          { handle, eventName, phase: "release", path: event.completion.releasePath },
+        );
+        browserAudioLiveEventRuntime.lastEvent = event;
+        browserAudioLiveEventRuntime.lastError = null;
+        resolve();
+      };
+      source.start(context.currentTime, 0, durationSeconds);
+    });
+  } catch (error) {
+    browserAudioLiveEventRuntime.lastError = error?.message ?? String(error);
+  }
+
+  return summarizeBrowserAudioLiveEventRuntime();
 }
 
 function getCanvasDisplaySize() {
@@ -5534,6 +5721,7 @@ function snapshotState() {
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
+    browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -7259,6 +7447,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
   const browserAudio3DPositioningProof = await buildBrowserAudio3DPositioningProof(
     [...decodedCache.values()],
   );
+  rememberBrowserAudioRequestedDecodedCache(decodedCache);
   const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
   const decodedFloatBytes = entries.reduce((total, entry) => total + entry.decodedFloatBytes, 0);
 
@@ -15035,6 +15224,13 @@ async function rpc(command, payload = {}) {
         browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
         state: snapshotState(),
       };
+    case "browserAudioLiveEventRuntime":
+      return {
+        ok: true,
+        command,
+        browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
+        state: snapshotState(),
+      };
     case "resumeBrowserAudioRuntime":
       {
         const runtime = await resumeBrowserAudioRuntime(payload.trigger ?? "rpc.resumeBrowserAudioRuntime");
@@ -15052,6 +15248,16 @@ async function rpc(command, payload = {}) {
           ok: mixer.available === true && mixer.created === true && mixer.lastError === null,
           command,
           browserAudioMixerRuntime: mixer,
+          state: snapshotState(),
+        };
+      }
+    case "playBrowserAudioRequestedEvent":
+      {
+        const liveEvent = await playBrowserAudioRequestedLiveEvent(payload);
+        return {
+          ok: liveEvent.ready === true && liveEvent.lastError === null && liveEvent.completed > 0,
+          command,
+          browserAudioLiveEventRuntime: liveEvent,
           state: snapshotState(),
         };
       }
