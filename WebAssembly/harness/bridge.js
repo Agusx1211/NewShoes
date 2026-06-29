@@ -315,6 +315,20 @@ const browserAudioRuntime = {
   lastResumeError: null,
 };
 
+const browserAudioMixerBusNames = ["music", "sound", "sound3D", "speech"];
+const browserAudioMixerRuntime = {
+  source: "browser Web Audio runtime mixer GainNode proof",
+  created: false,
+  busNodes: null,
+  scriptVolumes: null,
+  systemVolumes: null,
+  zoomVolume: 1,
+  busGains: null,
+  updates: 0,
+  lastUpdate: null,
+  lastError: null,
+};
+
 const wasmModulePromise = loadWasmModule();
 
 function browserAudioContextCtor() {
@@ -390,6 +404,139 @@ async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntim
     browserAudioRuntime.lastResumeError = error?.message ?? String(error);
   }
   return summarizeBrowserAudioRuntime();
+}
+
+function normalizeBrowserAudioMixerVolumes(defaults, overrides) {
+  const volumes = {};
+  for (const bus of browserAudioMixerBusNames) {
+    const value = Number(overrides?.[bus] ?? defaults?.[bus] ?? 1);
+    volumes[bus] = Number.isFinite(value) ? value : Number(defaults?.[bus] ?? 1);
+  }
+  return volumes;
+}
+
+function computeBrowserAudioMixerGains(scriptVolumes, systemVolumes, zoomVolume) {
+  return {
+    music: Number((scriptVolumes.music * systemVolumes.music).toFixed(6)),
+    sound: Number((scriptVolumes.sound * systemVolumes.sound).toFixed(6)),
+    sound3D: Number((zoomVolume * scriptVolumes.sound3D * systemVolumes.sound3D).toFixed(6)),
+    speech: Number((scriptVolumes.speech * systemVolumes.speech).toFixed(6)),
+  };
+}
+
+function ensureBrowserAudioMixerRuntime() {
+  const context = browserAudioRuntime.context;
+  if (!context) {
+    browserAudioMixerRuntime.lastError = "AudioContext has not been created by a user gesture";
+    return null;
+  }
+  if (context.state !== "running") {
+    browserAudioMixerRuntime.lastError = `AudioContext is ${context.state}`;
+    return null;
+  }
+
+  if (!browserAudioMixerRuntime.scriptVolumes || !browserAudioMixerRuntime.systemVolumes) {
+    const defaults = buildBrowserAudioMixerDefaults();
+    browserAudioMixerRuntime.scriptVolumes = { ...defaults.scriptVolumes };
+    browserAudioMixerRuntime.systemVolumes = { ...defaults.systemVolumes };
+    browserAudioMixerRuntime.zoomVolume = defaults.zoomVolume;
+    browserAudioMixerRuntime.busGains = { ...defaults.busGains };
+  }
+
+  if (!browserAudioMixerRuntime.created) {
+    browserAudioMixerRuntime.busNodes = {};
+    for (const bus of browserAudioMixerBusNames) {
+      const gain = context.createGain();
+      gain.gain.value = browserAudioMixerRuntime.busGains[bus];
+      gain.connect(context.destination);
+      browserAudioMixerRuntime.busNodes[bus] = gain;
+    }
+    browserAudioMixerRuntime.created = true;
+    browserAudioMixerRuntime.lastError = null;
+  }
+
+  return browserAudioMixerRuntime;
+}
+
+function summarizeBrowserAudioMixerRuntime() {
+  const defaults = buildBrowserAudioMixerDefaults();
+  const scriptVolumes = browserAudioMixerRuntime.scriptVolumes ?? defaults.scriptVolumes;
+  const systemVolumes = browserAudioMixerRuntime.systemVolumes ?? defaults.systemVolumes;
+  const zoomVolume = browserAudioMixerRuntime.zoomVolume ?? defaults.zoomVolume;
+  const busGains = browserAudioMixerRuntime.busGains
+    ?? computeBrowserAudioMixerGains(scriptVolumes, systemVolumes, zoomVolume);
+  const context = browserAudioRuntime.context;
+  const buses = Object.fromEntries(browserAudioMixerBusNames.map((bus) => [
+    bus,
+    {
+      node: "GainNode",
+      connected: browserAudioMixerRuntime.created === true,
+      gain: Number((browserAudioMixerRuntime.busNodes?.[bus]?.gain?.value ?? busGains[bus]).toFixed(6)),
+    },
+  ]));
+  return {
+    source: browserAudioMixerRuntime.source,
+    available: typeof browserAudioContextCtor() === "function",
+    created: browserAudioMixerRuntime.created,
+    contextCreated: browserAudioRuntime.created,
+    contextState: context?.state ?? null,
+    runtimePlayback: false,
+    engineDriven: false,
+    nextRequired: "engineOptionsAudioVolumeBinding",
+    sourceFrontiers: [
+      "verify:audio-options-volume-frontier",
+      "verify:miles-audio-volume-frontier",
+      "verify:audio-3d-zoom-volume-frontier",
+    ],
+    nodeGraph: ["GainNode", "AudioDestinationNode"],
+    formula: defaults.formula,
+    scriptVolumes,
+    systemVolumes,
+    zoomVolume,
+    busGains,
+    buses,
+    updates: browserAudioMixerRuntime.updates,
+    lastUpdate: browserAudioMixerRuntime.lastUpdate,
+    lastError: browserAudioMixerRuntime.lastError,
+  };
+}
+
+function setBrowserAudioMixerRuntimeVolumes(payload = {}) {
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    return summarizeBrowserAudioMixerRuntime();
+  }
+
+  mixer.scriptVolumes = normalizeBrowserAudioMixerVolumes(
+    mixer.scriptVolumes,
+    payload.scriptVolumes,
+  );
+  mixer.systemVolumes = normalizeBrowserAudioMixerVolumes(
+    mixer.systemVolumes,
+    payload.systemVolumes,
+  );
+  const zoomVolume = Number(payload.zoomVolume ?? mixer.zoomVolume ?? 1);
+  mixer.zoomVolume = Number.isFinite(zoomVolume) ? zoomVolume : 1;
+  mixer.busGains = computeBrowserAudioMixerGains(
+    mixer.scriptVolumes,
+    mixer.systemVolumes,
+    mixer.zoomVolume,
+  );
+
+  for (const bus of browserAudioMixerBusNames) {
+    mixer.busNodes[bus].gain.value = mixer.busGains[bus];
+  }
+  mixer.updates += 1;
+  mixer.lastUpdate = {
+    source: "AudioManager::setVolume script/system volume split",
+    trigger: String(payload.trigger ?? "rpc.setBrowserAudioMixerVolumes"),
+    scriptVolumes: { ...mixer.scriptVolumes },
+    systemVolumes: { ...mixer.systemVolumes },
+    zoomVolume: mixer.zoomVolume,
+    busGains: { ...mixer.busGains },
+  };
+  mixer.lastError = null;
+  return summarizeBrowserAudioMixerRuntime();
 }
 
 function getCanvasDisplaySize() {
@@ -5386,6 +5533,7 @@ function snapshotState() {
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
+    browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -6490,12 +6638,7 @@ function buildBrowserAudioMixerDefaults() {
     scriptVolumes,
     systemVolumes,
     zoomVolume,
-    busGains: {
-      music: Number((scriptVolumes.music * systemVolumes.music).toFixed(6)),
-      sound: Number((scriptVolumes.sound * systemVolumes.sound).toFixed(6)),
-      sound3D: Number((zoomVolume * scriptVolumes.sound3D * systemVolumes.sound3D).toFixed(6)),
-      speech: Number((scriptVolumes.speech * systemVolumes.speech).toFixed(6)),
-    },
+    busGains: computeBrowserAudioMixerGains(scriptVolumes, systemVolumes, zoomVolume),
   };
 }
 
@@ -14885,6 +15028,13 @@ async function rpc(command, payload = {}) {
         browserAudioRuntime: summarizeBrowserAudioRuntime(),
         state: snapshotState(),
       };
+    case "browserAudioMixerRuntime":
+      return {
+        ok: true,
+        command,
+        browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
+        state: snapshotState(),
+      };
     case "resumeBrowserAudioRuntime":
       {
         const runtime = await resumeBrowserAudioRuntime(payload.trigger ?? "rpc.resumeBrowserAudioRuntime");
@@ -14892,6 +15042,16 @@ async function rpc(command, payload = {}) {
           ok: runtime.available === true,
           command,
           browserAudioRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "setBrowserAudioMixerVolumes":
+      {
+        const mixer = setBrowserAudioMixerRuntimeVolumes(payload);
+        return {
+          ok: mixer.available === true && mixer.created === true && mixer.lastError === null,
+          command,
+          browserAudioMixerRuntime: mixer,
           state: snapshotState(),
         };
       }

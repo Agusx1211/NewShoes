@@ -1265,6 +1265,50 @@ function assertBrowserAudioRuntime(runtime, context, expected = {}) {
   }
 }
 
+function assertNumberClose(actual, expected, context, epsilon = 0.000001) {
+  if (typeof actual !== "number" || Math.abs(actual - expected) > epsilon) {
+    throw new Error(`${context} expected ${expected} but got ${actual}`);
+  }
+}
+
+function assertBrowserAudioMixerRuntime(mixer, context, expected = {}) {
+  if (!mixer
+      || mixer.source !== "browser Web Audio runtime mixer GainNode proof"
+      || mixer.available !== true
+      || mixer.runtimePlayback !== false
+      || mixer.engineDriven !== false
+      || mixer.nextRequired !== "engineOptionsAudioVolumeBinding"
+      || !Array.isArray(mixer.sourceFrontiers)
+      || !mixer.sourceFrontiers.includes("verify:audio-options-volume-frontier")
+      || !mixer.sourceFrontiers.includes("verify:miles-audio-volume-frontier")) {
+    throw new Error(`${context} browser audio mixer runtime state mismatch: ${JSON.stringify(mixer)}`);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(expected, "created") && mixer.created !== expected.created) {
+    throw new Error(`${context} browser audio mixer created mismatch: ${JSON.stringify(mixer)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(expected, "updates") && mixer.updates !== expected.updates) {
+    throw new Error(`${context} browser audio mixer updates mismatch: ${JSON.stringify(mixer)}`);
+  }
+  if (expected.afterVolumeUpdate) {
+    if (mixer.created !== true
+        || mixer.contextCreated !== true
+        || mixer.contextState !== "running"
+        || mixer.updates < 1
+        || mixer.lastError !== null
+        || mixer.lastUpdate?.source !== "AudioManager::setVolume script/system volume split") {
+      throw new Error(`${context} browser audio mixer update mismatch: ${JSON.stringify(mixer)}`);
+    }
+    for (const [bus, gain] of Object.entries(expected.busGains ?? {})) {
+      assertNumberClose(mixer.busGains?.[bus], gain, `${context} ${bus} busGain`);
+      assertNumberClose(mixer.buses?.[bus]?.gain, gain, `${context} ${bus} GainNode.gain`);
+      if (mixer.buses?.[bus]?.connected !== true || mixer.buses?.[bus]?.node !== "GainNode") {
+        throw new Error(`${context} ${bus} GainNode metadata mismatch: ${JSON.stringify(mixer.buses?.[bus])}`);
+      }
+    }
+  }
+}
+
 function assertSectionSummary(section, expected, context, name) {
   const summary = section?.summary;
   for (const [key, value] of Object.entries(expected)) {
@@ -3512,6 +3556,10 @@ try {
     created: false,
     resumeAttempts: 0,
   });
+  assertBrowserAudioMixerRuntime(bootResult.state.browserAudioMixerRuntime, "runtime archive boot before gesture", {
+    created: false,
+    updates: 0,
+  });
   assertAudioPayloadInventory(bootResult.state, "runtime archive boot", hasBaseIniArchive);
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
@@ -3553,6 +3601,52 @@ try {
     { afterGesture: true },
   );
   assertAudioRuntimeAssets(audioGestureResult.state, "runtime archive boot after audio gesture");
+  assertBrowserAudioMixerRuntime(
+    audioGestureResult.state.browserAudioMixerRuntime,
+    "runtime archive state before mixer volume update",
+    { created: false, updates: 0 },
+  );
+
+  const mixerVolumePayload = {
+    trigger: "runtime_archives_smoke.mjs source-shaped mixer volume update",
+    scriptVolumes: {
+      music: 0.8,
+      sound: 0.6,
+      sound3D: 0.5,
+      speech: 0.9,
+    },
+    systemVolumes: {
+      music: 0.25,
+      sound: 0.5,
+      sound3D: 0.75,
+      speech: 0.4,
+    },
+    zoomVolume: 1,
+  };
+  const expectedMixerGains = {
+    music: 0.2,
+    sound: 0.3,
+    sound3D: 0.375,
+    speech: 0.36,
+  };
+  const mixerVolumeResult = await page.evaluate(
+    (payload) => window.CnCPort.rpc("setBrowserAudioMixerVolumes", payload),
+    mixerVolumePayload,
+  );
+  if (!mixerVolumeResult.ok) {
+    throw new Error(`browser audio mixer volume RPC failed: ${JSON.stringify(mixerVolumeResult)}`);
+  }
+  assertBrowserAudioMixerRuntime(
+    mixerVolumeResult.browserAudioMixerRuntime,
+    "runtime archive mixer volume update",
+    { afterVolumeUpdate: true, busGains: expectedMixerGains },
+  );
+  assertBrowserAudioMixerRuntime(
+    mixerVolumeResult.state.browserAudioMixerRuntime,
+    "runtime archive state after mixer volume update",
+    { afterVolumeUpdate: true, busGains: expectedMixerGains },
+  );
+  assertAudioRuntimeAssets(mixerVolumeResult.state, "runtime archive boot after mixer volume update");
 
   console.log(JSON.stringify({
     ok: true,
@@ -3573,6 +3667,7 @@ try {
     startupAssets: bootResult.state.startupAssets,
     audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
     browserAudioRuntime: audioGestureResult.browserAudioRuntime,
+    browserAudioMixerRuntime: mixerVolumeResult.browserAudioMixerRuntime,
     audioPayloadInventory: bootResult.state.audioPayloadInventory,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,

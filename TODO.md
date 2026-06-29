@@ -614,11 +614,14 @@ shares structure and follows behind.
 - [ ] EVA voice / unit voices.
 - [ ] Volume/mixer controls wired to options UI; `verify:audio-options-volume-frontier`
       now pins the original Zero Hour OptionsMenu slider-to-`TheAudio->setVolume`
-      write path and the representative
+      write path, `verify:audio-options-volume-readback-frontier` pins the
+      persisted-preference slider initialization path, and the representative
       `requestedPayloadDecodeCacheProof.browserAudioMixerBusProof` proves
       source-default music/sound/3D/speech Web Audio `GainNode` buses against
-      real requested payloads, but the engine/options UI still does not drive
-      a live browser mixer.
+      real requested payloads; `browserAudioMixerRuntime` also proves live
+      runtime `GainNode` bus updates from source-shaped script/system volume
+      values, but the engine/options UI still does not drive that browser
+      mixer.
 - [ ] Harness: assert audio events fire (state/log), not just sound.
 
 ---
