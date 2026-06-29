@@ -10,6 +10,7 @@ const contentTypes = new Map([
   [".mjs", "text/javascript; charset=utf-8"],
   [".png", "image/png"],
   [".wasm", "application/wasm"],
+  [".webm", "video/webm"],
 ]);
 
 function isInside(parent, child) {

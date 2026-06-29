@@ -3680,32 +3680,41 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Data\English\Movies\VS_small.bik` basename resolution, and reports
       `decodeReady:false`. Runtime frame decode/copy, WebCodecs/`<video>`
       presentation, and audio sync remain open.
-- Added `verify:bink-browser-video-outputs` / `verify:bink-browser-video-outputs:strict`
-      (`WebAssembly/tools/verify_bink_browser_video_outputs.mjs`), a bounded
-      verifier for *future* browser-decodable Bink transcode outputs that is
-      useful both before and after such outputs exist. It does not modify the
-      C++ Bink provider and does not decode, demux, or play Bink video, nor
-      does it invent decode readiness or mark runtime playback done. It
-      validates a future transcode output directory (default
-      `artifacts/bink-browser-outputs`) for the two known real loose shipped
-      BIK payloads (`GC_Background.bik`, `VS_small.bik`) against a tight,
-      source-grounded manifest schema a future transcode script can emit
-      (source BIK path, source size, source signature/version, frames, width,
-      height, fps, output path, output format/codec, duration seconds). When
-      `ffprobe` is available and outputs (`.webm`/`.mp4`) are present, it
-      verifies the real video stream width/height/codec and the format
-      duration against the manifest; when `ffprobe` is absent it falls back to
-      manifest-schema + pinned-source-fact checks only. With `--allow-missing`
-      it reports absent outputs in JSON and exits 0 (useful before any
-      transcode exists); without `--allow-missing` it fails nonzero when
-      outputs are absent or any metadata mismatches. Under
-      `--expect-current-zh` it cross-checks each present manifest entry's
-      source-grounded fields against the values pinned from the actually
-      shipped files (mirrors `verify:bink-payload-header-contract`) and also
-      sniffs the real source `.bik` size/signature when present. It emits JSON
-      `{ ok, source, outputDir, outputDirExists, manifestPath, manifestPresent,
-      ffprobe, mode, payloads, missingPayloads, errors, note }`. Runtime
-      WebCodecs/`<video>` decode, frame upload, and audio sync remain open.
+- [x] Decide the browser path for shipped `.bik` payloads as offline
+      transcode to browser-decodable sidecars, and add
+      `transcode:bink-video`. `WebAssembly/tools/transcode_bink_video_payloads.mjs`
+      reads the user-extracted `GC_Background.bik` and `VS_small.bik` files,
+      verifies their classic BIK header facts and FFmpeg source probe metadata,
+      emits VP9/Opus WebM files under ignored `artifacts/browser-video/bink`,
+      counts output video frames with `ffprobe`, and writes
+      `bink-browser-video-manifest.json` preserving source size, signature,
+      frames, dimensions, FPS, source/output codecs, and durations. This
+      chooses the `<video>` / WebCodecs sidecar input contract for the browser
+      port, but runtime manifest lookup, video presentation, frame upload,
+      `BinkCopyToBuffer` pixel-copy behavior, and audio synchronization remain
+      open.
+- [x] Add a browser smoke for the generated Bink sidecars.
+      `test:bink-browser-video` runs `transcode:bink-video`, serves the
+      generated WebM files through the existing Playwright static server, loads
+      them in Chromium as `<video>` elements, checks `canPlayType`, dimensions,
+      duration, play progress, seek behavior, same-origin canvas frame
+      readability, and captures
+      `artifacts/screenshots/harness-smoke-bink-browser-video.png`. This proves
+      the sidecar payloads are browser-decodable, but it still does not wire
+      them into the original `BinkVideoPlayer` runtime.
+- [x] Add `verify:bink-browser-video-outputs` /
+      `verify:bink-browser-video-outputs:strict`
+      (`WebAssembly/tools/verify_bink_browser_video_outputs.mjs`) for the real
+      sidecar manifest emitted by `transcode:bink-video`. It validates
+      `artifacts/browser-video/bink/bink-browser-video-manifest.json` for the
+      two shipped loose BIK payloads, checks source size/signature, source and
+      output codecs, dimensions, frame counts, FPS, durations, and
+      `browserDecode` metadata against the current pinned Zero Hour facts, and
+      uses `ffprobe` when available to inspect the actual generated WebM
+      streams. With `--allow-missing` it reports absent sidecars in JSON and
+      exits 0 before transcode output exists; strict mode fails on absent or
+      mismatched output. This verifier does not decode Bink inside the
+      provider or claim original `BinkVideoPlayer` runtime playback.
 
 ---
 
