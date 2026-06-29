@@ -13,6 +13,7 @@
     "verify:gameengine-startup-order": "node tools/verify_gameengine_startup_order.mjs",
     "verify:miles-audio-device-frontier": "node tools/verify_miles_audio_device_frontier.mjs",
     "verify:miles-audio-playback-frontier": "node tools/verify_miles_audio_playback_frontier.mjs",
+    "verify:miles-audio-decode-frontier": "node tools/verify_miles_audio_decode_frontier.mjs",
     "verify:miles-audio-volume-frontier": "node tools/verify_miles_audio_volume_frontier.mjs",
     "verify:audio-settings-frontier": "node tools/verify_audio_settings_frontier.mjs",
     "verify:audio-format-frontier": "node tools/verify_audio_format_frontier.mjs artifacts/real-assets --expect-current-zh",

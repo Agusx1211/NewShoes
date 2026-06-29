@@ -586,7 +586,9 @@ shares structure and follows behind.
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove
       the ADPCM majority must be decoded or transcoded before
-      `decodeAudioData`.
+      `decodeAudioData`, and `audioPayloadInventory.decodeProofs` currently
+      covers only representative PCM and IMA ADPCM WAV payloads. Expand that
+      into full requested-payload decode/cache and Web Audio buffer upload.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world.
 - [ ] Music playback + transitions.

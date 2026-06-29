@@ -1264,7 +1264,7 @@ function assertAudioPayloadFormats(payloads, context) {
       || formats.unsupported !== 0
       || formats.webAudioDecodeCandidateReady !== false
       || formats.runtimeDecoded !== false
-      || formats.nextRequired !== "imaAdpcmDecoder"
+      || formats.nextRequired !== "imaAdpcmDecodeIntegration"
       || formats.extensions?.wav !== 3523
       || formats.extensions?.mp3 !== 7
       || formats.magic?.["riff-wave"] !== 3523
@@ -1322,6 +1322,82 @@ function assertAudioPayloadFormats(payloads, context) {
   }
 }
 
+function assertArrayPrefix(actual, expected, context) {
+  if (!Array.isArray(actual) || actual.length < expected.length) {
+    throw new Error(`${context} array missing/short: ${JSON.stringify(actual)}`);
+  }
+  for (let index = 0; index < expected.length; ++index) {
+    if (actual[index] !== expected[index]) {
+      throw new Error(`${context} array mismatch at ${index}: ${JSON.stringify(actual)}`);
+    }
+  }
+}
+
+function assertAudioDecodeProofs(payloads, context) {
+  const decode = payloads.decodeProofs;
+  if (!decode
+      || decode.source !== "browser mounted BIG WAV decoder proof"
+      || decode.ready !== true
+      || decode.runtimePlayback !== false
+      || decode.nextRequired !== "webAudioBufferUpload"
+      || !Array.isArray(decode.errors)
+      || decode.errors.length !== 0
+      || !Array.isArray(decode.proofs)
+      || decode.proofs.length !== 2) {
+    throw new Error(`${context} audio decode proof state mismatch: ${JSON.stringify(decode)}`);
+  }
+
+  const byPath = new Map(decode.proofs.map((proof) => [proof.path, proof]));
+  const pcm = byPath.get("Data\\Audio\\Sounds\\English\\aangr01a.wav");
+  if (!pcm
+      || pcm.archive !== "AudioEnglishZH.big"
+      || pcm.codec !== "PCM"
+      || pcm.wFormatTag !== 1
+      || pcm.channels !== 1
+      || pcm.samplesPerSec !== 22050
+      || pcm.bitsPerSample !== 16
+      || pcm.dataBytes !== 118784
+      || pcm.decodedFrames !== 59392
+      || pcm.decodedSamples !== 59392
+      || pcm.durationSeconds !== 2.693515
+      || pcm.minSample !== -21922
+      || pcm.maxSample !== 22092
+      || pcm.nonZeroSamples !== 59382
+      || pcm.sumAbs !== 249600043) {
+    throw new Error(`${context} PCM decode proof mismatch: ${JSON.stringify(pcm)}`);
+  }
+  assertArrayPrefix(pcm.firstSamples, [
+    123, 803, 1942, 3148, 3907, 4515, 5600, 6659,
+    6221, 3568, 663, -2267, -4777, -5564, -5407, -7287,
+  ], `${context} PCM first samples`);
+
+  const adpcm = byPath.get("Data\\Audio\\Speech\\English\\dxxoc001.wav");
+  if (!adpcm
+      || adpcm.archive !== "SpeechEnglishZH.big"
+      || adpcm.codec !== "IMA_ADPCM"
+      || adpcm.wFormatTag !== 17
+      || adpcm.channels !== 1
+      || adpcm.samplesPerSec !== 44100
+      || adpcm.bitsPerSample !== 4
+      || adpcm.blockAlign !== 1024
+      || adpcm.samplesPerBlock !== 2041
+      || adpcm.factSamples !== 753874
+      || adpcm.dataBytes !== 378880
+      || adpcm.decodedFrames !== 753874
+      || adpcm.decodedSamples !== 753874
+      || adpcm.durationSeconds !== 17.094649
+      || adpcm.minSample !== -32091
+      || adpcm.maxSample !== 27567
+      || adpcm.nonZeroSamples !== 753561
+      || adpcm.sumAbs !== 2300028998) {
+    throw new Error(`${context} IMA ADPCM decode proof mismatch: ${JSON.stringify(adpcm)}`);
+  }
+  assertArrayPrefix(adpcm.firstSamples, [
+    -232, -228, -224, -220, -217, -214, -213, -212,
+    -211, -210, -203, -200, -197, -193, -189, -185,
+  ], `${context} IMA ADPCM first samples`);
+}
+
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   const payloads = state.audioPayloadInventory;
   if (!payloads
@@ -1358,6 +1434,7 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   }
 
   assertAudioPayloadFormats(payloads, context);
+  assertAudioDecodeProofs(payloads, context);
 
   if (hasBaseIniArchive) {
     if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {

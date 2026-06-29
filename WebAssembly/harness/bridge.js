@@ -5373,6 +5373,17 @@ const audioPayloadKnownPaths = [
   "Data\\Audio\\Speech\\English\\dxxoc001.wav",
 ];
 
+const audioDecodeProofTargets = [
+  {
+    path: "Data\\Audio\\Sounds\\English\\aangr01a.wav",
+    expectedCodec: "PCM",
+  },
+  {
+    path: "Data\\Audio\\Speech\\English\\dxxoc001.wav",
+    expectedCodec: "IMA_ADPCM",
+  },
+];
+
 const audioPayloadCandidateSettings = {
   audioRoot: "Data\\Audio",
   soundsFolder: "Sounds",
@@ -5567,6 +5578,11 @@ function readU16LE(bytes, offset) {
   return bytes[offset] | (bytes[offset + 1] << 8);
 }
 
+function readI16LE(bytes, offset) {
+  const value = readU16LE(bytes, offset);
+  return value & 0x8000 ? value - 0x10000 : value;
+}
+
 function readU32LE(bytes, offset) {
   return (
     bytes[offset] |
@@ -5695,6 +5711,251 @@ function addAudioFormatSummaryEntry(summary, entry) {
   }
 }
 
+const imaAdpcmStepTable = [
+  7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+  19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+  50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
+  130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
+  337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
+  876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
+  2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
+  5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+  15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+];
+
+const imaAdpcmIndexTable = [
+  -1, -1, -1, -1, 2, 4, 6, 8,
+  -1, -1, -1, -1, 2, 4, 6, 8,
+];
+
+function clampAudioSample(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function decodeImaAdpcmNibble(nibble, state) {
+  const step = imaAdpcmStepTable[state.index];
+  let diff = step >> 3;
+  if (nibble & 1) diff += step >> 2;
+  if (nibble & 2) diff += step >> 1;
+  if (nibble & 4) diff += step;
+  state.predictor = clampAudioSample(
+    state.predictor + ((nibble & 8) ? -diff : diff),
+    -32768,
+    32767,
+  );
+  state.index = clampAudioSample(state.index + imaAdpcmIndexTable[nibble], 0, 88);
+  return state.predictor;
+}
+
+function findAudioWavChunks(bytes) {
+  if (bytes.byteLength < 12 || audioPayloadMagic(bytes) !== "riff-wave") {
+    throw new Error("payload is not a RIFF/WAVE file");
+  }
+  const chunks = {};
+  let offset = 12;
+  while (offset + 8 <= bytes.byteLength) {
+    const id = String.fromCharCode(...bytes.subarray(offset, offset + 4));
+    const size = readU32LE(bytes, offset + 4);
+    const bodyOffset = offset + 8;
+    if (bodyOffset + size > bytes.byteLength) {
+      throw new Error(`WAV chunk ${id} extends past payload end`);
+    }
+    chunks[id] = { id, offset: bodyOffset, size };
+    offset = bodyOffset + size + (size & 1);
+  }
+  return chunks;
+}
+
+function parseAudioWavPayload(bytes) {
+  const chunks = findAudioWavChunks(bytes);
+  const fmt = chunks["fmt "];
+  const data = chunks.data;
+  if (!fmt || !data) {
+    throw new Error("WAV payload is missing fmt or data chunk");
+  }
+  if (fmt.size < 16) {
+    throw new Error("WAV fmt chunk is too small");
+  }
+  const info = {
+    wFormatTag: readU16LE(bytes, fmt.offset),
+    codec: null,
+    channels: readU16LE(bytes, fmt.offset + 2),
+    samplesPerSec: readU32LE(bytes, fmt.offset + 4),
+    avgBytesPerSec: readU32LE(bytes, fmt.offset + 8),
+    blockAlign: readU16LE(bytes, fmt.offset + 12),
+    bitsPerSample: readU16LE(bytes, fmt.offset + 14),
+    cbSize: fmt.size >= 18 ? readU16LE(bytes, fmt.offset + 16) : 0,
+    samplesPerBlock: fmt.size >= 20 ? readU16LE(bytes, fmt.offset + 18) : 0,
+    factSamples: chunks.fact && chunks.fact.size >= 4
+      ? readU32LE(bytes, chunks.fact.offset)
+      : null,
+    dataOffset: data.offset,
+    dataBytes: data.size,
+  };
+  info.codec = audioWavCodecName(info.wFormatTag);
+  return info;
+}
+
+function decodePcm16Wav(bytes, info) {
+  if (info.bitsPerSample !== 16) {
+    throw new Error(`unsupported PCM bit depth: ${info.bitsPerSample}`);
+  }
+  const sampleCount = Math.floor(info.dataBytes / 2);
+  const samples = new Int16Array(sampleCount);
+  let cursor = info.dataOffset;
+  for (let i = 0; i < sampleCount; ++i, cursor += 2) {
+    samples[i] = readI16LE(bytes, cursor);
+  }
+  return samples;
+}
+
+function decodeImaAdpcmWav(bytes, info) {
+  if (info.bitsPerSample !== 4) {
+    throw new Error(`unsupported IMA ADPCM bit depth: ${info.bitsPerSample}`);
+  }
+  if (info.channels < 1 || info.blockAlign < info.channels * 4) {
+    throw new Error(`invalid IMA ADPCM block layout: ${JSON.stringify(info)}`);
+  }
+  const blocks = Math.floor(info.dataBytes / info.blockAlign);
+  const framesPerBlock = info.samplesPerBlock ||
+    Math.floor(((info.blockAlign - 4 * info.channels) * 2) / info.channels) + 1;
+  const expectedFrames = info.factSamples ?? (blocks * framesPerBlock);
+  const samples = new Int16Array(expectedFrames * info.channels);
+  let outputFrames = 0;
+
+  for (let block = 0; block < blocks && outputFrames < expectedFrames; ++block) {
+    const blockStart = info.dataOffset + block * info.blockAlign;
+    const blockEnd = blockStart + info.blockAlign;
+    let cursor = blockStart;
+    const states = [];
+    const channelSamples = [];
+
+    for (let channel = 0; channel < info.channels; ++channel) {
+      const predictor = readI16LE(bytes, cursor);
+      const index = clampAudioSample(bytes[cursor + 2], 0, 88);
+      states.push({ predictor, index });
+      channelSamples.push([predictor]);
+      cursor += 4;
+    }
+
+    while (cursor < blockEnd) {
+      for (let channel = 0; channel < info.channels && cursor < blockEnd; ++channel) {
+        for (let i = 0; i < 4 && cursor < blockEnd; ++i, ++cursor) {
+          const value = bytes[cursor];
+          channelSamples[channel].push(decodeImaAdpcmNibble(value & 0x0f, states[channel]));
+          channelSamples[channel].push(decodeImaAdpcmNibble(value >> 4, states[channel]));
+        }
+      }
+    }
+
+    const decodedFrames = Math.min(
+      framesPerBlock,
+      ...channelSamples.map((values) => values.length),
+      expectedFrames - outputFrames,
+    );
+    for (let frame = 0; frame < decodedFrames; ++frame) {
+      for (let channel = 0; channel < info.channels; ++channel) {
+        samples[(outputFrames + frame) * info.channels + channel] =
+          channelSamples[channel][frame];
+      }
+    }
+    outputFrames += decodedFrames;
+  }
+
+  return samples.subarray(0, outputFrames * info.channels);
+}
+
+function decodeAudioWavPayload(bytes) {
+  const info = parseAudioWavPayload(bytes);
+  if (info.wFormatTag === 1) {
+    return { info, samples: decodePcm16Wav(bytes, info) };
+  }
+  if (info.wFormatTag === 17) {
+    return { info, samples: decodeImaAdpcmWav(bytes, info) };
+  }
+  throw new Error(`unsupported WAV codec: ${info.wFormatTag}`);
+}
+
+function summarizeDecodedSamples(samples) {
+  let minSample = 32767;
+  let maxSample = -32768;
+  let nonZeroSamples = 0;
+  let sumAbs = 0;
+  for (const sample of samples) {
+    if (sample < minSample) minSample = sample;
+    if (sample > maxSample) maxSample = sample;
+    if (sample !== 0) nonZeroSamples += 1;
+    sumAbs += Math.abs(sample);
+  }
+  return {
+    minSample,
+    maxSample,
+    nonZeroSamples,
+    sumAbs,
+    firstSamples: [...samples.subarray(0, Math.min(16, samples.length))],
+  };
+}
+
+function buildAudioDecodeProofs(entryIndex, archiveBytesByName) {
+  const errors = [];
+  const proofs = [];
+  for (const target of audioDecodeProofTargets) {
+    const entry = entryIndex.get(normalizeBigPath(target.path));
+    if (!entry) {
+      errors.push(`decode proof payload not found: ${target.path}`);
+      continue;
+    }
+    const archiveBytes = archiveBytesByName.get(entry.archive);
+    if (!archiveBytes) {
+      errors.push(`decode proof archive bytes not found: ${entry.archive}`);
+      continue;
+    }
+    try {
+      const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
+      const decoded = decodeAudioWavPayload(payloadBytes);
+      const decodedFrames = decoded.samples.length / decoded.info.channels;
+      const proof = {
+        path: entry.path,
+        archive: entry.archive,
+        size: entry.size,
+        codec: decoded.info.codec,
+        wFormatTag: decoded.info.wFormatTag,
+        channels: decoded.info.channels,
+        samplesPerSec: decoded.info.samplesPerSec,
+        bitsPerSample: decoded.info.bitsPerSample,
+        blockAlign: decoded.info.blockAlign,
+        samplesPerBlock: decoded.info.samplesPerBlock,
+        factSamples: decoded.info.factSamples,
+        dataBytes: decoded.info.dataBytes,
+        decodedFrames,
+        decodedSamples: decoded.samples.length,
+        durationSeconds: Number((decodedFrames / decoded.info.samplesPerSec).toFixed(6)),
+        ...summarizeDecodedSamples(decoded.samples),
+      };
+      if (proof.codec !== target.expectedCodec) {
+        errors.push(
+          `${target.path} expected codec ${target.expectedCodec} but decoded ${proof.codec}`,
+        );
+      }
+      if (proof.decodedSamples <= 0 || proof.nonZeroSamples <= 0) {
+        errors.push(`${target.path} decoded to empty or silent PCM`);
+      }
+      proofs.push(proof);
+    } catch (error) {
+      errors.push(`${target.path}: ${error?.message ?? String(error)}`);
+    }
+  }
+
+  return {
+    source: "browser mounted BIG WAV decoder proof",
+    ready: errors.length === 0 && proofs.length === audioDecodeProofTargets.length,
+    runtimePlayback: false,
+    nextRequired: "webAudioBufferUpload",
+    errors,
+    proofs,
+  };
+}
+
 function resolveAudioPayloadCandidate(entryIndex, candidates) {
   for (const candidate of candidates) {
     const entry = entryIndex.get(normalizeBigPath(candidate));
@@ -5771,6 +6032,7 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const iniTexts = {};
   const payloadFormats = newAudioFormatSummary("mounted BIG Data\\Audio entry headers");
   payloadFormats.archives = {};
+  const archiveBytesByName = new Map();
 
   for (const archive of archives.filter(isAudioPayloadRelevantArchive)) {
     let archiveBytes;
@@ -5782,6 +6044,10 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
         source: "browser mounted BIG directory + shipped audio INI parser",
         error: error?.message ?? String(error),
       };
+    }
+    archiveBytesByName.set(archive.name, archiveBytes);
+    if (archive.sourceName) {
+      archiveBytesByName.set(archive.sourceName, archiveBytes);
     }
 
     let entries;
@@ -5936,6 +6202,10 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     : payloadFormats.requiresTranscode > 0
       ? "imaAdpcmDecoder"
       : "decodeAudioDataHarness";
+  const decodeProofs = buildAudioDecodeProofs(entryIndex, archiveBytesByName);
+  if (decodeProofs.ready && payloadFormats.nextRequired === "imaAdpcmDecoder") {
+    payloadFormats.nextRequired = "imaAdpcmDecodeIntegration";
+  }
 
   return {
     ok: audioArchivesReady && knownPayloadsReady && referencedPayloadsReady,
@@ -5957,8 +6227,9 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     audioArchives: mountedArchives
       .filter((archive) => audioPayloadArchiveNames.includes(archive.name)),
     payloadFormats,
+    decodeProofs,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers but does not decode, schedule, or play audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, and decodeProofs decodes two WAV payloads to PCM metadata but does not schedule or play audio.",
   };
 }
 

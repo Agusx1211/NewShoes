@@ -3363,6 +3363,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Web Audio decode candidates while keeping the IMA ADPCM majority blocked
       on an ADPCM decode/transcode step. This still does not decode,
       schedule, or play audio.
+- [x] Add `npm run verify:miles-audio-decode-frontier`, a source-only verifier
+      that pins the original Miles decode/load boundary: sample payload reads
+      through `TheFileSystem`, `AIL_WAV_info` / `AIL_decompress_ADPCM`, cache
+      release ownership, decoded buffer handoff to 2D/3D Miles sample handles,
+      streaming file callbacks, and inert compile-only `Mss.H` declarations.
+      This verifies source structure only, not browser runtime audio.
+- [x] Extend the browser runtime archive harness with
+      `audioPayloadInventory.decodeProofs`, decoding one real mounted PCM WAV
+      (`Data\Audio\Sounds\English\aangr01a.wav`) and one real mounted IMA
+      ADPCM WAV (`Data\Audio\Speech\English\dxxoc001.wav`) to PCM sample
+      metadata. `runtime_archives_smoke.mjs` now asserts their codec/header
+      fields, decoded frame/sample counts, durations, first samples, and sample
+      statistics while still reporting that scheduling/playback and Web Audio
+      buffer upload are future work.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
