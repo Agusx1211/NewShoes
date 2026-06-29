@@ -3610,6 +3610,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       while still reporting `playbackReady:false` and
       `nextRequired:"webAudioPlaybackBackend"`; real Web Audio panning,
       listener binding, and scheduling remain open.
+- [x] Broaden the live browser audio request-path runtime proof beyond one 2D
+      sample. `browserAudioRequestPathRuntime` now reports covered playing
+      types, device starts, audio types, and mixer buses from its source-shaped
+      event log, and `harness/runtime_archives_smoke.mjs` drives real decoded
+      requested payloads through `PAT_Sample` / `playSample`,
+      `PAT_3DSample` / `playSample3D`, and `PAT_Stream` / `playStream` live
+      Web Audio completion/release paths. This remains harness-driven proof
+      coverage, not original `MilesAudioManager` runtime scheduling.
 
 ---
 

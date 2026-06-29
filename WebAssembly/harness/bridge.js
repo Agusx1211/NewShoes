@@ -616,6 +616,16 @@ function summarizeBrowserAudioLiveEventRuntime() {
   };
 }
 
+function uniqueBrowserAudioRequestPathLogValues(phase, property) {
+  return [
+    ...new Set(
+      browserAudioRequestPathRuntime.eventLog
+        .filter((entry) => entry.phase === phase && entry[property])
+        .map((entry) => entry[property]),
+    ),
+  ];
+}
+
 function summarizeBrowserAudioRequestPathRuntime() {
   return {
     source: browserAudioRequestPathRuntime.source,
@@ -637,6 +647,10 @@ function summarizeBrowserAudioRequestPathRuntime() {
       "verify:audio-completion-frontier",
       "verify:audio-browser-bridge-contract-frontier",
     ],
+    coveredPlayingTypes: uniqueBrowserAudioRequestPathLogValues("start", "playingType"),
+    coveredDeviceStarts: uniqueBrowserAudioRequestPathLogValues("playAudioEvent", "deviceStart"),
+    coveredAudioTypes: uniqueBrowserAudioRequestPathLogValues("route", "audioType"),
+    coveredBuses: uniqueBrowserAudioRequestPathLogValues("route", "bus"),
     enqueued: browserAudioRequestPathRuntime.enqueued,
     drained: browserAudioRequestPathRuntime.drained,
     dispatched: browserAudioRequestPathRuntime.dispatched,
@@ -909,7 +923,15 @@ async function playBrowserAudioRequestPathLiveEvent(payload = {}) {
   browserAudioRequestPathRuntime.eventLog.push(
     { handle, eventName, phase: "addAudioEvent", function: "AudioManager::addAudioEvent" },
     { handle, eventName, phase: "generate", filename: true, playInfo: true },
-    { handle, eventName, phase: "route", audioType: route.audioType, manager: route.requestManager },
+    {
+      handle,
+      eventName,
+      phase: "route",
+      audioType: route.audioType,
+      manager: route.requestManager,
+      playingType: route.playingType,
+      bus: route.bus,
+    },
     { handle, eventName, phase: "queue", request: "AR_Play", queue: route.requestQueue },
     { handle, eventName, phase: "drain", function: "MilesAudioManager::processRequestList" },
     { handle, eventName, phase: "dispatch", function: "MilesAudioManager::processRequest" },
@@ -941,7 +963,7 @@ async function playBrowserAudioRequestPathLiveEvent(payload = {}) {
     browserAudioRequestPathRuntime.released += 1;
   }
   browserAudioRequestPathRuntime.eventLog.push(
-    { handle, eventName, phase: "start", playingType: route.playingType, node: "AudioBufferSourceNode" },
+    { handle, eventName, phase: "start", playingType: route.playingType, bus: route.bus, node: "AudioBufferSourceNode" },
     { handle, eventName, phase: "ended", observed: liveLastEvent.callback?.observed === true },
     { handle, eventName, phase: "completion", call: "notifyOfAudioCompletion", status: "PS_Stopped" },
     { handle, eventName, phase: "release", path: liveLastEvent.completion?.releasePath ?? null },

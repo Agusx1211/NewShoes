@@ -656,9 +656,10 @@ shares structure and follows behind.
       completion/release for one real requested decoded payload, and
       `browserAudioRequestPathRuntime` now proves the ordered
       `AudioManager::addAudioEvent` / `SoundManager::addAudioEvent` /
-      `MilesAudioManager::processRequest` source contract around that live
-      playback. It is still harness-driven rather than executed by the
-      original `MilesAudioManager` runtime.
+      `MilesAudioManager::processRequest` source contract around live
+      playback for representative 2D sample, 3D sample, and stream playing
+      types. It is still harness-driven rather than executed by the original
+      `MilesAudioManager` runtime.
 
 ---
 

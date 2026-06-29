@@ -1552,6 +1552,39 @@ function assertBrowserAudioRequestPathRuntime(requestPath, context, expected = {
       && requestPath.completed !== expected.completed) {
     throw new Error(`${context} browser audio request path completion count mismatch: ${JSON.stringify(requestPath)}`);
   }
+  for (const counter of ["enqueued", "drained", "dispatched", "started", "released"]) {
+    if (Object.prototype.hasOwnProperty.call(expected, counter) && requestPath[counter] !== expected[counter]) {
+      throw new Error(`${context} browser audio request path ${counter} count mismatch: ${JSON.stringify(requestPath)}`);
+    }
+  }
+  if (expected.coveredPlayingTypes) {
+    assertArrayPrefix(
+      requestPath.coveredPlayingTypes,
+      expected.coveredPlayingTypes,
+      `${context} browser audio request path playing-type coverage`,
+    );
+  }
+  if (expected.coveredDeviceStarts) {
+    assertArrayPrefix(
+      requestPath.coveredDeviceStarts,
+      expected.coveredDeviceStarts,
+      `${context} browser audio request path device-start coverage`,
+    );
+  }
+  if (expected.coveredAudioTypes) {
+    assertArrayPrefix(
+      requestPath.coveredAudioTypes,
+      expected.coveredAudioTypes,
+      `${context} browser audio request path audio-type coverage`,
+    );
+  }
+  if (expected.coveredBuses) {
+    assertArrayPrefix(
+      requestPath.coveredBuses,
+      expected.coveredBuses,
+      `${context} browser audio request path bus coverage`,
+    );
+  }
   if (expected.afterPlayback) {
     const event = requestPath.lastEvent;
     if (requestPath.ready !== true
@@ -4069,6 +4102,31 @@ try {
     bus: "sound",
     releasePath: "processPlayingList -> releasePlayingAudio",
   };
+  const requestPathTargets = [
+    liveEventTarget,
+    {
+      cacheKey: "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+      eventName: "ArtilleryBarrageIncomingWhistle",
+      audioType: "AT_SoundEffect",
+      requestManager: "SoundManager::addAudioEvent",
+      queueFunction: "SoundManager::addAudioEvent",
+      deviceStart: "playSample3D",
+      playingType: "PAT_3DSample",
+      bus: "sound3D",
+      releasePath: "processPlayingList -> releasePlayingAudio",
+    },
+    {
+      cacheKey: "SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
+      eventName: "Taunts_AirTrafficControl01",
+      audioType: "AT_Streaming",
+      requestManager: "SoundManager::addAudioEvent",
+      queueFunction: "SoundManager::addAudioEvent",
+      deviceStart: "playStream",
+      playingType: "PAT_Stream",
+      bus: "speech",
+      releasePath: "processStoppedList -> releasePlayingAudio",
+    },
+  ];
   const liveEventResult = await page.evaluate(
     (payload) => window.CnCPort.rpc("playBrowserAudioRequestedEvent", payload),
     {
@@ -4096,25 +4154,46 @@ try {
     { ready: true, cacheEntries: 5, completed: 0 },
   );
 
-  const requestPathResult = await page.evaluate(
-    (payload) => window.CnCPort.rpc("playBrowserAudioRequestPathEvent", payload),
-    {
-      cacheKey: liveEventTarget.cacheKey,
-      durationSeconds: 0.05,
-    },
-  );
-  if (!requestPathResult.ok) {
-    throw new Error(`browser audio request path RPC failed: ${JSON.stringify(requestPathResult)}`);
+  let requestPathResult = null;
+  for (const requestPathTarget of requestPathTargets) {
+    requestPathResult = await page.evaluate(
+      (payload) => window.CnCPort.rpc("playBrowserAudioRequestPathEvent", payload),
+      {
+        cacheKey: requestPathTarget.cacheKey,
+        durationSeconds: 0.05,
+      },
+    );
+    if (!requestPathResult.ok) {
+      throw new Error(`browser audio request path RPC failed: ${JSON.stringify(requestPathResult)}`);
+    }
+    assertBrowserAudioRequestPathRuntime(
+      requestPathResult.browserAudioRequestPathRuntime,
+      `runtime archive source-shaped audio request path ${requestPathTarget.eventName}`,
+      { afterPlayback: true, ...requestPathTarget },
+    );
+    assertBrowserAudioRequestPathRuntime(
+      requestPathResult.state.browserAudioRequestPathRuntime,
+      `runtime archive state after source-shaped audio request path ${requestPathTarget.eventName}`,
+      { afterPlayback: true, ...requestPathTarget },
+    );
   }
   assertBrowserAudioRequestPathRuntime(
     requestPathResult.browserAudioRequestPathRuntime,
-    "runtime archive source-shaped audio request path",
-    { afterPlayback: true, ...liveEventTarget },
-  );
-  assertBrowserAudioRequestPathRuntime(
-    requestPathResult.state.browserAudioRequestPathRuntime,
-    "runtime archive state after source-shaped audio request path",
-    { afterPlayback: true, ...liveEventTarget },
+    "runtime archive source-shaped audio request path coverage",
+    {
+      ready: true,
+      cacheEntries: 5,
+      completed: requestPathTargets.length,
+      enqueued: requestPathTargets.length,
+      drained: requestPathTargets.length,
+      dispatched: requestPathTargets.length,
+      started: requestPathTargets.length,
+      released: requestPathTargets.length,
+      coveredPlayingTypes: ["PAT_Sample", "PAT_3DSample", "PAT_Stream"],
+      coveredDeviceStarts: ["playSample", "playSample3D", "playStream"],
+      coveredAudioTypes: ["AT_SoundEffect", "AT_Streaming"],
+      coveredBuses: ["sound", "sound3D", "speech"],
+    },
   );
   assertAudioRuntimeAssets(requestPathResult.state, "runtime archive boot after source-shaped audio request path");
 
