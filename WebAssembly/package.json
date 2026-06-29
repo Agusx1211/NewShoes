@@ -22,6 +22,7 @@
     "verify:audio-sample-start-frontier": "node tools/verify_audio_sample_start_frontier.mjs",
     "verify:audio-completion-frontier": "node tools/verify_audio_completion_frontier.mjs",
     "verify:audio-sound-manager-counters-frontier": "node tools/verify_audio_sound_manager_counters_frontier.mjs",
+    "verify:audio-3d-position-frontier": "node tools/verify_audio_3d_position_frontier.mjs",
     "verify:audio-filename-frontier": "node tools/verify_audio_filename_frontier.mjs",
     "test:w3d-material-scan": "node tools/scan_w3d_material_pass_test.mjs",
     "serve:harness": "node harness/serve.mjs",

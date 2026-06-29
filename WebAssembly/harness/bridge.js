@@ -5924,6 +5924,9 @@ function summarizeAudioBuffer(buffer) {
 }
 
 function createWebAudioBufferFromDecoded(audioContext, decoded) {
+  if (decoded.audioBuffer) {
+    return decoded.audioBuffer;
+  }
   const buffer = audioContext.createBuffer(
     decoded.info.channels,
     decoded.decodedFrames,
@@ -5938,6 +5941,35 @@ function createWebAudioBufferFromDecoded(audioContext, decoded) {
     }
   }
   return buffer;
+}
+
+function audioBufferDecodedFloatBytes(buffer) {
+  return buffer.numberOfChannels * buffer.length * Float32Array.BYTES_PER_ELEMENT;
+}
+
+function clonePayloadArrayBuffer(bytes) {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+async function decodeWebAudioPayload(payloadBytes) {
+  const OfflineAudioContextCtor =
+    globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContextCtor !== "function") {
+    throw new Error("OfflineAudioContext is unavailable");
+  }
+  const audioContext = new OfflineAudioContextCtor(1, 1, 44100);
+  const audioBuffer = await audioContext.decodeAudioData(clonePayloadArrayBuffer(payloadBytes));
+  return {
+    audioBuffer,
+    info: {
+      codec: "mp3-id3",
+      channels: audioBuffer.numberOfChannels,
+      samplesPerSec: audioBuffer.sampleRate,
+      webAudioDecoded: true,
+    },
+    decodedFrames: audioBuffer.length,
+    decodedFloatBytes: audioBufferDecodedFloatBytes(audioBuffer),
+  };
 }
 
 function buildWebAudioBufferProofs(decodedPayloads) {
@@ -5979,13 +6011,17 @@ function buildWebAudioBufferProofs(decodedPayloads) {
         archive: decoded.archive,
         ...(decoded.refCount ? { refCount: decoded.refCount } : {}),
         ...(decoded.sections ? { sections: decoded.sections } : {}),
+        ...(decoded.firstEvent ? { firstEvent: decoded.firstEvent } : {}),
+        ...(decoded.firstSource ? { firstSource: decoded.firstSource } : {}),
         codec: decoded.info.codec,
+        decodedBy: decoded.decodedBy ?? "harnessWavDecoder",
         constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
         runtimePlayback: false,
         numberOfChannels: buffer.numberOfChannels,
         length: buffer.length,
         sampleRate: buffer.sampleRate,
         durationSeconds: Number(buffer.duration.toFixed(6)),
+        ...(decoded.decodedFloatBytes ? { decodedFloatBytes: decoded.decodedFloatBytes } : {}),
         ...summarizeAudioBuffer(buffer),
       });
     } catch (error) {
@@ -6035,6 +6071,13 @@ function summarizeRenderedAudioWindow(channelData, startFrame, endFrame) {
   };
 }
 
+function requestedAudioSchedulePlaybackSeconds(decoded, durationSeconds) {
+  if (decoded.sections?.music && durationSeconds > 10) {
+    return 10;
+  }
+  return durationSeconds;
+}
+
 async function buildWebAudioScheduleProof(decodedPayloads) {
   const errors = [];
   const scheduled = [];
@@ -6060,6 +6103,7 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
   let cursorSeconds = 0;
   for (const decoded of decodedPayloads) {
     const durationSeconds = decoded.decodedFrames / decoded.info.samplesPerSec;
+    const playbackSeconds = requestedAudioSchedulePlaybackSeconds(decoded, durationSeconds);
     scheduled.push({
       cacheKey: decoded.cacheKey,
       archive: decoded.archive,
@@ -6070,12 +6114,14 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
       refCount: decoded.refCount,
       sections: decoded.sections,
       startSeconds: Number(cursorSeconds.toFixed(6)),
-      durationSeconds: Number(durationSeconds.toFixed(6)),
-      endSeconds: Number((cursorSeconds + durationSeconds).toFixed(6)),
+      durationSeconds: Number(playbackSeconds.toFixed(6)),
+      fullDurationSeconds: Number(durationSeconds.toFixed(6)),
+      scheduledPreview: playbackSeconds < durationSeconds,
+      endSeconds: Number((cursorSeconds + playbackSeconds).toFixed(6)),
       sourceSampleRate: decoded.info.samplesPerSec,
       sourceFrames: decoded.decodedFrames,
     });
-    cursorSeconds += durationSeconds + gapSeconds;
+    cursorSeconds += playbackSeconds + gapSeconds;
   }
 
   const renderLength = Math.max(1, Math.ceil((cursorSeconds + tailSeconds) * renderSampleRate));
@@ -6109,7 +6155,11 @@ async function buildWebAudioScheduleProof(decodedPayloads) {
           order: endedCallbacks.length + 1,
         });
       };
-      source.start(schedule.startSeconds);
+      if (schedule.scheduledPreview) {
+        source.start(schedule.startSeconds, 0, schedule.durationSeconds);
+      } else {
+        source.start(schedule.startSeconds);
+      }
     }
     const rendered = await audioContext.startRendering();
     await Promise.resolve();
@@ -6389,8 +6439,8 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
   const entries = [];
   const decodedCache = new Map();
   const targets = selectRequestedDecodeCacheTargets(requestedPayloadCachePlan);
-  if (targets.length < 4) {
-    errors.push(`expected four requested WAV decode-cache targets, found ${targets.length}`);
+  if (targets.length < 5) {
+    errors.push(`expected five requested MP3/WAV decode-cache targets, found ${targets.length}`);
   }
 
   for (const target of targets) {
@@ -6413,47 +6463,95 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
 
     try {
       const payloadBytes = archiveBytes.subarray(entry.offset, entry.offset + entry.size);
-      const decoded = decodeAudioWavPayload(payloadBytes);
-      const decodedFrames = decoded.samples.length / decoded.info.channels;
-      const cacheEntry = {
-        cacheKey: target.cacheKey,
-        path: entry.path,
-        archive: entry.archive,
-        reason: target.reason,
-        refCount: target.refCount,
-        sections: target.sections,
-        firstEvent: target.firstEvent,
-        firstSource: target.firstSource,
-        size: entry.size,
-        codec: decoded.info.codec,
-        wFormatTag: decoded.info.wFormatTag,
-        channels: decoded.info.channels,
-        samplesPerSec: decoded.info.samplesPerSec,
-        bitsPerSample: decoded.info.bitsPerSample,
-        blockAlign: decoded.info.blockAlign,
-        samplesPerBlock: decoded.info.samplesPerBlock,
-        factSamples: decoded.info.factSamples,
-        dataBytes: decoded.info.dataBytes,
-        decodedFrames,
-        decodedSamples: decoded.samples.length,
-        decodedPcmBytes: decoded.samples.byteLength,
-        durationSeconds: Number((decodedFrames / decoded.info.samplesPerSec).toFixed(6)),
-        storage: "Int16Array interleaved PCM cache entry",
-        ...summarizeDecodedSamples(decoded.samples),
-      };
-      decodedCache.set(target.cacheKey, {
-        cacheKey: target.cacheKey,
-        path: entry.path,
-        archive: entry.archive,
-        refCount: target.refCount,
-        sections: target.sections,
-        firstEvent: target.firstEvent,
-        firstSource: target.firstSource,
-        info: decoded.info,
-        samples: decoded.samples,
-        decodedFrames,
-      });
-      entries.push(cacheEntry);
+      if (target.extension === "mp3") {
+        const decoded = await decodeWebAudioPayload(payloadBytes);
+        const cacheEntry = {
+          cacheKey: target.cacheKey,
+          path: entry.path,
+          archive: entry.archive,
+          reason: target.reason,
+          refCount: target.refCount,
+          sections: target.sections,
+          firstEvent: target.firstEvent,
+          firstSource: target.firstSource,
+          size: entry.size,
+          extension: target.extension,
+          codec: target.codec,
+          channels: decoded.info.channels,
+          samplesPerSec: decoded.info.samplesPerSec,
+          decodedBy: "WebAudio.decodeAudioData",
+          decodedFrames: decoded.decodedFrames,
+          decodedSamples: decoded.decodedFrames * decoded.info.channels,
+          decodedPcmBytes: 0,
+          decodedFloatBytes: decoded.decodedFloatBytes,
+          durationSeconds: Number((decoded.decodedFrames / decoded.info.samplesPerSec).toFixed(6)),
+          storage: "AudioBuffer decoded by Web Audio decodeAudioData",
+          ...summarizeAudioBuffer(decoded.audioBuffer),
+        };
+        decodedCache.set(target.cacheKey, {
+          cacheKey: target.cacheKey,
+          path: entry.path,
+          archive: entry.archive,
+          refCount: target.refCount,
+          sections: target.sections,
+          firstEvent: target.firstEvent,
+          firstSource: target.firstSource,
+          info: { ...decoded.info, codec: target.codec },
+          audioBuffer: decoded.audioBuffer,
+          decodedBy: "WebAudio.decodeAudioData",
+          decodedFrames: decoded.decodedFrames,
+          decodedFloatBytes: decoded.decodedFloatBytes,
+        });
+        entries.push(cacheEntry);
+      } else if (target.extension === "wav") {
+        const decoded = decodeAudioWavPayload(payloadBytes);
+        const decodedFrames = decoded.samples.length / decoded.info.channels;
+        const cacheEntry = {
+          cacheKey: target.cacheKey,
+          path: entry.path,
+          archive: entry.archive,
+          reason: target.reason,
+          refCount: target.refCount,
+          sections: target.sections,
+          firstEvent: target.firstEvent,
+          firstSource: target.firstSource,
+          size: entry.size,
+          extension: target.extension,
+          codec: decoded.info.codec,
+          wFormatTag: decoded.info.wFormatTag,
+          channels: decoded.info.channels,
+          samplesPerSec: decoded.info.samplesPerSec,
+          bitsPerSample: decoded.info.bitsPerSample,
+          blockAlign: decoded.info.blockAlign,
+          samplesPerBlock: decoded.info.samplesPerBlock,
+          factSamples: decoded.info.factSamples,
+          dataBytes: decoded.info.dataBytes,
+          decodedBy: "harnessWavDecoder",
+          decodedFrames,
+          decodedSamples: decoded.samples.length,
+          decodedPcmBytes: decoded.samples.byteLength,
+          decodedFloatBytes: 0,
+          durationSeconds: Number((decodedFrames / decoded.info.samplesPerSec).toFixed(6)),
+          storage: "Int16Array interleaved PCM cache entry",
+          ...summarizeDecodedSamples(decoded.samples),
+        };
+        decodedCache.set(target.cacheKey, {
+          cacheKey: target.cacheKey,
+          path: entry.path,
+          archive: entry.archive,
+          refCount: target.refCount,
+          sections: target.sections,
+          firstEvent: target.firstEvent,
+          firstSource: target.firstSource,
+          info: decoded.info,
+          samples: decoded.samples,
+          decodedBy: "harnessWavDecoder",
+          decodedFrames,
+        });
+        entries.push(cacheEntry);
+      } else {
+        errors.push(`${target.cacheKey}: unsupported requested decode extension ${target.extension}`);
+      }
     } catch (error) {
       errors.push(`${target.cacheKey}: ${error?.message ?? String(error)}`);
     }
@@ -6468,9 +6566,10 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     webAudioScheduleProof,
   );
   const decodedPcmBytes = entries.reduce((total, entry) => total + entry.decodedPcmBytes, 0);
+  const decodedFloatBytes = entries.reduce((total, entry) => total + entry.decodedFloatBytes, 0);
 
   return {
-    source: "browser requested audio decoded PCM cache proof",
+    source: "browser requested audio decoded payload cache proof",
     ready:
       errors.length === 0 &&
       entries.length === targets.length &&
@@ -6481,7 +6580,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     runtimeDecoded: true,
     runtimeScheduled: true,
     runtimePlayback: false,
-    coverage: "representative requested WAV payloads from the shipped INI cache plan",
+    coverage: "representative requested MP3/WAV payloads from the shipped INI cache plan",
     nextRequired: "engineAudioEventScheduling",
     requestedPlanReferences: requestedPayloadCachePlan.references,
     requestedPlanUniquePayloads: requestedPayloadCachePlan.uniquePayloads,
@@ -6493,10 +6592,13 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       firstEvent: target.firstEvent,
       firstSource: target.firstSource,
       codec: target.codec,
+      extension: target.extension,
       size: target.size,
     })),
     cacheEntriesCreated: entries.length,
     decodedPcmBytes,
+    decodedFloatBytes,
+    decodedAudioBytes: decodedPcmBytes + decodedFloatBytes,
     errors,
     entries,
     webAudioBufferCache,
@@ -6721,8 +6823,7 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
     .map(compactRequestedCacheEntry);
   const decodeCacheProofTargets = [];
   const decodeCacheProofTargetKeys = new Set();
-  const addDecodeCacheProofTarget = (reason, predicate) => {
-    const found = sortedEntries.find(predicate);
+  const addDecodeCacheProofEntry = (reason, found) => {
     if (!found) {
       return;
     }
@@ -6733,6 +6834,13 @@ function buildAudioRequestedPayloadCachePlan(refsBySection) {
     decodeCacheProofTargetKeys.add(compact.cacheKey);
     decodeCacheProofTargets.push({ ...compact, reason });
   };
+  const addDecodeCacheProofTarget = (reason, predicate) => {
+    addDecodeCacheProofEntry(reason, sortedEntries.find(predicate));
+  };
+  const musicMp3Targets = sortedEntries
+    .filter((entry) => entry.sections.music && entry.format?.extension === "mp3")
+    .sort((left, right) => (left.size - right.size) || left.path.localeCompare(right.path));
+  addDecodeCacheProofEntry("direct requested MP3 from music", musicMp3Targets[0]);
   addDecodeCacheProofTarget(
     "direct requested PCM WAV from SFX",
     (entry) => entry.sections.soundEffects
@@ -6988,7 +7096,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     requestedPayloadCachePlan,
     requestedPayloadDecodeCacheProof,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded PCM/Web Audio cache entries and an OfflineAudioContext scheduling proof for requested payload keys without audible runtime playback.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded MP3/WAV cache entries plus an OfflineAudioContext preview scheduling proof for requested payload keys without audible runtime playback.",
   };
 }
 

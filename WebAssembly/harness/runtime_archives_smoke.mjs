@@ -1626,6 +1626,7 @@ function assertAudioRequestedPayloadCachePlan(payloads, context) {
 
   const targetKeys = (plan.decodeCacheProofTargets ?? []).map((target) => target.cacheKey);
   assertArrayPrefix(targetKeys, [
+    "MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3",
     "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
     "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
     "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
@@ -1635,8 +1636,8 @@ function assertAudioRequestedPayloadCachePlan(payloads, context) {
 
 function assertRequestedDecodeCacheEntry(entry, expected, context) {
   for (const [key, value] of Object.entries(expected)) {
-    if (key === "firstSamples") {
-      assertArrayPrefix(entry?.firstSamples, value, `${context} first samples`);
+    if (key === "firstSamples" || key === "firstChannelFirstSamples") {
+      assertArrayPrefix(entry?.[key], value, `${context} ${key}`);
     } else if (entry?.[key] !== value) {
       throw new Error(`${context} requested decode-cache entry ${key} mismatch: ${JSON.stringify(entry)}`);
     }
@@ -1664,26 +1665,57 @@ function assertRequestedAudioLifecycleEvent(events, expected, context) {
 function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   const proof = payloads.requestedPayloadDecodeCacheProof;
   if (!proof
-      || proof.source !== "browser requested audio decoded PCM cache proof"
+      || proof.source !== "browser requested audio decoded payload cache proof"
       || proof.ready !== true
       || proof.metadataOnly !== false
       || proof.runtimeDecoded !== true
       || proof.runtimeScheduled !== true
       || proof.runtimePlayback !== false
-      || proof.coverage !== "representative requested WAV payloads from the shipped INI cache plan"
+      || proof.coverage !== "representative requested MP3/WAV payloads from the shipped INI cache plan"
       || proof.nextRequired !== "engineAudioEventScheduling"
       || proof.requestedPlanReferences !== 7933
       || proof.requestedPlanUniquePayloads !== 3335
-      || proof.cacheEntriesCreated !== 4
+      || proof.cacheEntriesCreated !== 5
       || proof.decodedPcmBytes !== 1096144
+      || proof.decodedFloatBytes !== 36744192
+      || proof.decodedAudioBytes !== 37840336
       || !Array.isArray(proof.errors)
       || proof.errors.length !== 0
       || !Array.isArray(proof.entries)
-      || proof.entries.length !== 4) {
+      || proof.entries.length !== 5) {
     throw new Error(`${context} requested audio decode-cache proof state mismatch: ${JSON.stringify(proof)}`);
   }
 
   const entries = new Map(proof.entries.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedDecodeCacheEntry(entries.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
+    reason: "direct requested MP3 from music",
+    codec: "mp3-id3",
+    archive: "MusicZH.big",
+    refCount: 1,
+    firstEvent: "Cin_XChina01",
+    firstSource: "Data\\INI\\Music.ini:294",
+    size: 2500757,
+    extension: "mp3",
+    channels: 2,
+    samplesPerSec: 44100,
+    decodedBy: "WebAudio.decodeAudioData",
+    decodedFrames: 4593024,
+    decodedSamples: 9186048,
+    decodedPcmBytes: 0,
+    decodedFloatBytes: 36744192,
+    durationSeconds: 104.150204,
+    storage: "AudioBuffer decoded by Web Audio decodeAudioData",
+    minFloat: -1,
+    maxFloat: 0.995727,
+    maxAbsFloat: 1,
+    nonZeroFrames: 4591257,
+    firstChannelFirstSamples: [
+      0, -0.000031, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested music MP3`);
   assertRequestedDecodeCacheEntry(entries.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
     reason: "direct requested PCM WAV from SFX",
     codec: "PCM",
@@ -1692,13 +1724,16 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     firstEvent: "Amb_DesertMarketWallaLoop3",
     firstSource: "Data\\INI\\SoundEffects.ini:5587",
     size: 62312,
+    extension: "wav",
     wFormatTag: 1,
     samplesPerSec: 22050,
     bitsPerSample: 16,
     dataBytes: 62108,
+    decodedBy: "harnessWavDecoder",
     decodedFrames: 31054,
     decodedSamples: 31054,
     decodedPcmBytes: 62108,
+    decodedFloatBytes: 0,
     durationSeconds: 1.408345,
     minSample: -32767,
     maxSample: 30611,
@@ -1717,13 +1752,16 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     firstEvent: "CIAAgentVoiceAttack",
     firstSource: "Data\\INI\\Voice.ini:4500",
     size: 53146,
+    extension: "wav",
     wFormatTag: 1,
     samplesPerSec: 22050,
     bitsPerSample: 16,
     dataBytes: 52916,
+    decodedBy: "harnessWavDecoder",
     decodedFrames: 26458,
     decodedSamples: 26458,
     decodedPcmBytes: 52916,
+    decodedFloatBytes: 0,
     durationSeconds: 1.199909,
     minSample: -23154,
     maxSample: 32767,
@@ -1742,6 +1780,7 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     firstEvent: "ArtilleryBarrageIncomingWhistle",
     firstSource: "Data\\INI\\SoundEffects.ini:3571",
     size: 48282,
+    extension: "wav",
     wFormatTag: 17,
     samplesPerSec: 44100,
     bitsPerSample: 4,
@@ -1749,9 +1788,11 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     samplesPerBlock: 2041,
     factSamples: 95744,
     dataBytes: 48128,
+    decodedBy: "harnessWavDecoder",
     decodedFrames: 95744,
     decodedSamples: 95744,
     decodedPcmBytes: 191488,
+    decodedFloatBytes: 0,
     durationSeconds: 2.171066,
     minSample: -31572,
     maxSample: 32723,
@@ -1770,6 +1811,7 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     firstEvent: "Taunts_AirTrafficControl01",
     firstSource: "Data\\INI\\Speech.ini:933",
     size: 198902,
+    extension: "wav",
     wFormatTag: 17,
     samplesPerSec: 44100,
     bitsPerSample: 4,
@@ -1777,9 +1819,11 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     samplesPerBlock: 2041,
     factSamples: 394816,
     dataBytes: 198656,
+    decodedBy: "harnessWavDecoder",
     decodedFrames: 394816,
     decodedSamples: 394816,
     decodedPcmBytes: 789632,
+    decodedFloatBytes: 0,
     durationSeconds: 8.952744,
     minSample: -30982,
     maxSample: 32271,
@@ -1800,13 +1844,33 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       || !Array.isArray(bufferCache.errors)
       || bufferCache.errors.length !== 0
       || !Array.isArray(bufferCache.proofs)
-      || bufferCache.proofs.length !== 4) {
+      || bufferCache.proofs.length !== 5) {
     throw new Error(`${context} requested AudioBuffer cache state mismatch: ${JSON.stringify(bufferCache)}`);
   }
 
   const buffers = new Map(bufferCache.proofs.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedAudioBufferCacheEntry(buffers.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
+    codec: "mp3-id3",
+    decodedBy: "WebAudio.decodeAudioData",
+    numberOfChannels: 2,
+    length: 4593024,
+    sampleRate: 44100,
+    durationSeconds: 104.150204,
+    decodedFloatBytes: 36744192,
+    minFloat: -1,
+    maxFloat: 0.995727,
+    maxAbsFloat: 1,
+    nonZeroFrames: 4591257,
+    firstChannelFirstSamples: [
+      0, -0.000031, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested music MP3 AudioBuffer`);
   assertRequestedAudioBufferCacheEntry(buffers.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
     codec: "PCM",
+    decodedBy: "harnessWavDecoder",
     length: 31054,
     sampleRate: 22050,
     durationSeconds: 1.408345,
@@ -1823,6 +1887,7 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   }, `${context} requested SFX PCM AudioBuffer`);
   assertRequestedAudioBufferCacheEntry(buffers.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
     codec: "PCM",
+    decodedBy: "harnessWavDecoder",
     length: 26458,
     sampleRate: 22050,
     durationSeconds: 1.199909,
@@ -1839,6 +1904,7 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   }, `${context} requested voice PCM AudioBuffer`);
   assertRequestedAudioBufferCacheEntry(buffers.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
     codec: "IMA_ADPCM",
+    decodedBy: "harnessWavDecoder",
     length: 95744,
     sampleRate: 44100,
     durationSeconds: 2.171066,
@@ -1853,6 +1919,7 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   }, `${context} requested SFX IMA AudioBuffer`);
   assertRequestedAudioBufferCacheEntry(buffers.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
     codec: "IMA_ADPCM",
+    decodedBy: "harnessWavDecoder",
     length: 394816,
     sampleRate: 44100,
     durationSeconds: 8.952744,
@@ -1875,23 +1942,24 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       || schedule.runtimePlayback !== false
       || schedule.offlineRendered !== true
       || schedule.nextRequired !== "engineAudioEventScheduling"
-      || schedule.scheduledSources !== 4
-      || schedule.endedCallbacksObserved !== 4
+      || schedule.scheduledSources !== 5
+      || schedule.endedCallbacksObserved !== 5
       || schedule.renderSampleRate !== 44100
-      || schedule.renderLength !== 613522
-      || schedule.renderDurationSeconds !== 13.912063
+      || schedule.renderLength !== 1055404
+      || schedule.renderDurationSeconds !== 23.932063
       || schedule.gapSeconds !== 0.02
       || !Array.isArray(schedule.errors)
       || schedule.errors.length !== 0
       || !Array.isArray(schedule.scheduled)
-      || schedule.scheduled.length !== 4
+      || schedule.scheduled.length !== 5
       || !Array.isArray(schedule.endedCallbacks)
-      || schedule.endedCallbacks.length !== 4
+      || schedule.endedCallbacks.length !== 5
       || !Array.isArray(schedule.renderedWindows)
-      || schedule.renderedWindows.length !== 4) {
+      || schedule.renderedWindows.length !== 5) {
     throw new Error(`${context} requested audio schedule proof state mismatch: ${JSON.stringify(schedule)}`);
   }
   assertArrayPrefix(schedule.endedCallbacks.map((entry) => entry.cacheKey), [
+    "MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3",
     "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
     "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
     "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
@@ -1899,61 +1967,95 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   ], `${context} requested audio ended callback order`);
 
   assertRequestedAudioBufferCacheEntry(schedule.renderSummary, {
-    frames: 613522,
+    frames: 1055404,
     minFloat: -0.999969,
     maxFloat: 0.999017,
     maxAbsFloat: 0.999969,
-    nonZeroFrames: 604310,
+    nonZeroFrames: 1045047,
     firstSamples: [
-      -0.127777, -0.19278, -0.257782, -0.236679,
-      -0.215576, -0.175644, -0.135712, -0.162247,
-      -0.188782, -0.177551, -0.166321, -0.16539,
-      -0.164459, -0.144485, -0.124512, -0.070023,
+      0, -0.000015, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
     ],
   }, `${context} requested schedule render summary`);
 
   const scheduled = new Map(schedule.scheduled.map((entry) => [entry.cacheKey, entry]));
+  assertRequestedAudioBufferCacheEntry(scheduled.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
+    firstEvent: "Cin_XChina01",
+    firstSource: "Data\\INI\\Music.ini:294",
+    startSeconds: 0,
+    durationSeconds: 10,
+    fullDurationSeconds: 104.150204,
+    scheduledPreview: true,
+    endSeconds: 10,
+    sourceSampleRate: 44100,
+    sourceFrames: 4593024,
+  }, `${context} requested music MP3 schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
     firstEvent: "Amb_DesertMarketWallaLoop3",
     firstSource: "Data\\INI\\SoundEffects.ini:5587",
-    startSeconds: 0,
+    startSeconds: 10.02,
     durationSeconds: 1.408345,
-    endSeconds: 1.408345,
+    fullDurationSeconds: 1.408345,
+    scheduledPreview: false,
+    endSeconds: 11.428345,
     sourceSampleRate: 22050,
     sourceFrames: 31054,
   }, `${context} requested SFX PCM schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
     firstEvent: "CIAAgentVoiceAttack",
     firstSource: "Data\\INI\\Voice.ini:4500",
-    startSeconds: 1.428345,
+    startSeconds: 11.448345,
     durationSeconds: 1.199909,
-    endSeconds: 2.628254,
+    fullDurationSeconds: 1.199909,
+    scheduledPreview: false,
+    endSeconds: 12.648254,
     sourceSampleRate: 22050,
     sourceFrames: 26458,
   }, `${context} requested voice PCM schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
     firstEvent: "ArtilleryBarrageIncomingWhistle",
     firstSource: "Data\\INI\\SoundEffects.ini:3571",
-    startSeconds: 2.648254,
+    startSeconds: 12.668254,
     durationSeconds: 2.171066,
-    endSeconds: 4.81932,
+    fullDurationSeconds: 2.171066,
+    scheduledPreview: false,
+    endSeconds: 14.83932,
     sourceSampleRate: 44100,
     sourceFrames: 95744,
   }, `${context} requested SFX IMA schedule`);
   assertRequestedAudioBufferCacheEntry(scheduled.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
     firstEvent: "Taunts_AirTrafficControl01",
     firstSource: "Data\\INI\\Speech.ini:933",
-    startSeconds: 4.83932,
+    startSeconds: 14.85932,
     durationSeconds: 8.952744,
-    endSeconds: 13.792063,
+    fullDurationSeconds: 8.952744,
+    scheduledPreview: false,
+    endSeconds: 23.812063,
     sourceSampleRate: 44100,
     sourceFrames: 394816,
   }, `${context} requested speech IMA schedule`);
 
   const windows = new Map(schedule.renderedWindows.map((entry) => [entry.cacheKey, entry]));
-  assertRequestedAudioBufferCacheEntry(windows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+  assertRequestedAudioBufferCacheEntry(windows.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
     startFrame: 0,
-    endFrame: 62109,
+    endFrame: 441000,
+    frames: 441000,
+    minFloat: -0.838638,
+    maxFloat: 0.831523,
+    maxAbsFloat: 0.838638,
+    nonZeroFrames: 440737,
+    firstSamples: [
+      0, -0.000015, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested music MP3 scheduled render`);
+  assertRequestedAudioBufferCacheEntry(windows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    startFrame: 441882,
+    endFrame: 503991,
     frames: 62109,
     minFloat: -0.999969,
     maxFloat: 0.934202,
@@ -1967,8 +2069,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     ],
   }, `${context} requested SFX PCM scheduled render`);
   assertRequestedAudioBufferCacheEntry(windows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
-    startFrame: 62990,
-    endFrame: 115907,
+    startFrame: 504872,
+    endFrame: 557789,
     frames: 52917,
     minFloat: -0.705687,
     maxFloat: 0.999017,
@@ -1982,8 +2084,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     ],
   }, `${context} requested voice PCM scheduled render`);
   assertRequestedAudioBufferCacheEntry(windows.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
-    startFrame: 116788,
-    endFrame: 212533,
+    startFrame: 558670,
+    endFrame: 654415,
     frames: 95745,
     minFloat: -0.963397,
     maxFloat: 0.998629,
@@ -1995,8 +2097,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     ],
   }, `${context} requested SFX IMA scheduled render`);
   assertRequestedAudioBufferCacheEntry(windows.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
-    startFrame: 213414,
-    endFrame: 608230,
+    startFrame: 655296,
+    endFrame: 1050112,
     frames: 394816,
     minFloat: -0.945251,
     maxFloat: 0.983941,
@@ -2017,8 +2119,8 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       || lifecycle.runtimePlayback !== false
       || lifecycle.engineDriven !== false
       || lifecycle.nextRequired !== "replaceMilesSampleStartWithBrowserAudioDevice"
-      || lifecycle.eventsStarted !== 4
-      || lifecycle.completionCallbacksObserved !== 4
+      || lifecycle.eventsStarted !== 5
+      || lifecycle.completionCallbacksObserved !== 5
       || lifecycle.handlesUnique !== true
       || lifecycle.callbacksInScheduledOrder !== true
       || !Array.isArray(lifecycle.errors)
@@ -2026,9 +2128,9 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
       || !Array.isArray(lifecycle.sourceFrontiers)
       || lifecycle.sourceFrontiers.length !== 4
       || !Array.isArray(lifecycle.events)
-      || lifecycle.events.length !== 4
+      || lifecycle.events.length !== 5
       || !Array.isArray(lifecycle.eventLog)
-      || lifecycle.eventLog.length !== 20) {
+      || lifecycle.eventLog.length !== 25) {
     throw new Error(`${context} requested audio lifecycle proof state mismatch: ${JSON.stringify(lifecycle)}`);
   }
   assertArrayPrefix(lifecycle.sourceFrontiers, [
@@ -2042,6 +2144,36 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
   const expectedLifecycleEvents = [
     {
       handle: 9001,
+      cacheKey: "MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3",
+      eventName: "Cin_XChina01",
+      firstSource: "Data\\INI\\Music.ini:294",
+      archive: "MusicZH.big",
+      path: "Data\\Audio\\Tracks\\C_Chix01.mp3",
+      sections: { music: 1 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Stream",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 0,
+        endSeconds: 10,
+        sourceSampleRate: 44100,
+        sourceFrames: 4593024,
+      },
+      callback: {
+        observed: true,
+        order: 1,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Stream",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processStoppedList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+    {
+      handle: 9002,
       cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
       eventName: "Amb_DesertMarketWallaLoop3",
       firstSource: "Data\\INI\\SoundEffects.ini:5587",
@@ -2053,40 +2185,10 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
         playingType: "PAT_Sample",
         statusBeforeStart: "PS_Playing",
         webAudioNode: "AudioBufferSourceNode",
-        startSeconds: 0,
-        endSeconds: 1.408345,
+        startSeconds: 10.02,
+        endSeconds: 11.428345,
         sourceSampleRate: 22050,
         sourceFrames: 31054,
-      },
-      callback: {
-        observed: true,
-        order: 1,
-        completionCall: "notifyOfAudioCompletion",
-        completionType: "PAT_Sample",
-      },
-      completion: {
-        statusAfterCallback: "PS_Stopped",
-        releasePath: "processPlayingList -> releasePlayingAudio",
-        releaseAudioEventRTS: true,
-      },
-    },
-    {
-      handle: 9002,
-      cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
-      eventName: "CIAAgentVoiceAttack",
-      firstSource: "Data\\INI\\Voice.ini:4500",
-      archive: "AudioEnglishZH.big",
-      path: "Data\\Audio\\Sounds\\English\\iciaatd.wav",
-      sections: { voices: 3 },
-      request: { type: "AR_Play", queued: true, usePendingEvent: true },
-      start: {
-        playingType: "PAT_Sample",
-        statusBeforeStart: "PS_Playing",
-        webAudioNode: "AudioBufferSourceNode",
-        startSeconds: 1.428345,
-        endSeconds: 2.628254,
-        sourceSampleRate: 22050,
-        sourceFrames: 26458,
       },
       callback: {
         observed: true,
@@ -2102,21 +2204,21 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     },
     {
       handle: 9003,
-      cacheKey: "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
-      eventName: "ArtilleryBarrageIncomingWhistle",
-      firstSource: "Data\\INI\\SoundEffects.ini:3571",
-      archive: "AudioZH.big",
-      path: "Data\\Audio\\Sounds\\gshescre.wav",
-      sections: { soundEffects: 4 },
+      cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+      eventName: "CIAAgentVoiceAttack",
+      firstSource: "Data\\INI\\Voice.ini:4500",
+      archive: "AudioEnglishZH.big",
+      path: "Data\\Audio\\Sounds\\English\\iciaatd.wav",
+      sections: { voices: 3 },
       request: { type: "AR_Play", queued: true, usePendingEvent: true },
       start: {
         playingType: "PAT_Sample",
         statusBeforeStart: "PS_Playing",
         webAudioNode: "AudioBufferSourceNode",
-        startSeconds: 2.648254,
-        endSeconds: 4.81932,
-        sourceSampleRate: 44100,
-        sourceFrames: 95744,
+        startSeconds: 11.448345,
+        endSeconds: 12.648254,
+        sourceSampleRate: 22050,
+        sourceFrames: 26458,
       },
       callback: {
         observed: true,
@@ -2132,6 +2234,36 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     },
     {
       handle: 9004,
+      cacheKey: "AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+      eventName: "ArtilleryBarrageIncomingWhistle",
+      firstSource: "Data\\INI\\SoundEffects.ini:3571",
+      archive: "AudioZH.big",
+      path: "Data\\Audio\\Sounds\\gshescre.wav",
+      sections: { soundEffects: 4 },
+      request: { type: "AR_Play", queued: true, usePendingEvent: true },
+      start: {
+        playingType: "PAT_Sample",
+        statusBeforeStart: "PS_Playing",
+        webAudioNode: "AudioBufferSourceNode",
+        startSeconds: 12.668254,
+        endSeconds: 14.83932,
+        sourceSampleRate: 44100,
+        sourceFrames: 95744,
+      },
+      callback: {
+        observed: true,
+        order: 4,
+        completionCall: "notifyOfAudioCompletion",
+        completionType: "PAT_Sample",
+      },
+      completion: {
+        statusAfterCallback: "PS_Stopped",
+        releasePath: "processPlayingList -> releasePlayingAudio",
+        releaseAudioEventRTS: true,
+      },
+    },
+    {
+      handle: 9005,
       cacheKey: "SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
       eventName: "Taunts_AirTrafficControl01",
       firstSource: "Data\\INI\\Speech.ini:933",
@@ -2143,14 +2275,14 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
         playingType: "PAT_Stream",
         statusBeforeStart: "PS_Playing",
         webAudioNode: "AudioBufferSourceNode",
-        startSeconds: 4.83932,
-        endSeconds: 13.792063,
+        startSeconds: 14.85932,
+        endSeconds: 23.812063,
         sourceSampleRate: 44100,
         sourceFrames: 394816,
       },
       callback: {
         observed: true,
-        order: 4,
+        order: 5,
         completionCall: "notifyOfAudioCompletion",
         completionType: "PAT_Stream",
       },
