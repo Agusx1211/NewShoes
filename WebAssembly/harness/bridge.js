@@ -635,6 +635,7 @@ function summarizeBrowserAudioRequestPathRuntime() {
       "verify:audio-sample-start-frontier",
       "verify:audio-playing-event-state-frontier",
       "verify:audio-completion-frontier",
+      "verify:audio-browser-bridge-contract-frontier",
     ],
     enqueued: browserAudioRequestPathRuntime.enqueued,
     drained: browserAudioRequestPathRuntime.drained,

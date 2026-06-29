@@ -25,6 +25,11 @@ calls.
 `npm run verify:audio-completion-frontier` pins the original completion tail:
 Miles end-of-sample callbacks, `notifyOfAudioCompletion`, `AudioEventRTS`
 loop/portion state, `PS_Stopped`, and the per-frame release cleanup path.
+`npm run verify:audio-browser-bridge-contract-frontier` stitches those request,
+drain, device-start, completion, and playing-list facts into the browser Web
+Audio replacement seam, pinning that the Common managers stay intact while
+`MilesAudioManager::playAudioEvent` retargets `playStream`, `playSample3D`,
+and `playSample`.
 `npm run verify:audio-sound-manager-counters-frontier` pins the engine-side
 `SoundManager` request gate and 2D/3D sample counter contract: lazy audio limit
 loading, `canPlayNow` 2D/3D availability checks, start/completion counter

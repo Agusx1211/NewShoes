@@ -1369,7 +1369,8 @@ function assertBrowserAudioRequestPathRuntime(requestPath, context, expected = {
       || !requestPath.sourceFrontiers.includes("verify:audio-request-update-frontier")
       || !requestPath.sourceFrontiers.includes("verify:audio-sample-start-frontier")
       || !requestPath.sourceFrontiers.includes("verify:audio-playing-event-state-frontier")
-      || !requestPath.sourceFrontiers.includes("verify:audio-completion-frontier")) {
+      || !requestPath.sourceFrontiers.includes("verify:audio-completion-frontier")
+      || !requestPath.sourceFrontiers.includes("verify:audio-browser-bridge-contract-frontier")) {
     throw new Error(`${context} browser audio request path runtime state mismatch: ${JSON.stringify(requestPath)}`);
   }
 
