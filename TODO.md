@@ -697,8 +697,12 @@ shares structure and follows behind.
 	      `ScoreScreen.cpp` in a focused runtime target and drives original
 	      `PlayMovieAndBlock("VS_small")` for 70 decoded frames through
 	      `TheDisplay->draw()`, using a gated blank-layout hook only for harness
-	      setup. This item remains open until the final decoder/format policy is
-	      locked down and the full original InGameUI, load-screen, and campaign
+	      setup. It now also drives original `SinglePlayerLoadScreen::init`
+	      through a gated harness-only movie/campaign hook and a synthetic
+	      `Menus/SinglePlayerLoadScreen.wnd` hierarchy for 70 `VS_small`
+	      frame presentations. This item remains open until the final
+	      decoder/format policy is locked down and the full original InGameUI,
+	      ChallengeLoadScreen, campaign-owned load-screen setup, and campaign
 	      `finishSinglePlayerInit` ownership paths drive the same video surface.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
@@ -732,8 +736,11 @@ shares structure and follows behind.
 	      `ScoreScreen::PlayMovieAndBlock("VS_small")` ownership end-to-end
 	      through 70 Bink sidecar frame copies, real `W3DVideoBuffer` uploads,
 	      original `TheDisplay->draw()` calls, and harness screenshot/pixel
-	      checks. Full original InGameUI, load-screen, campaign score-screen
-	      setup, and Bink/audio sync remain open.
+	      checks. It now also proves focused original
+	      `SinglePlayerLoadScreen::init("VS_small")` ownership end-to-end
+	      through 70 decoded frame presentations and destructor cleanup. Full
+	      original InGameUI, ChallengeLoadScreen, campaign-owned load-screen
+	      setup, campaign score-screen setup, and Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -768,12 +775,14 @@ shares structure and follows behind.
 	      `ScoreScreen` final-victory `PlayMovieAndBlock` blank-window playback
 	      path. It now also pins the focused runtime proof that installs the gated
 	      ScoreScreen blank-layout hook, links `zh_score_screen_movie_runtime`,
-	      calls original `PlayMovieAndBlock("VS_small")`, and expects six
-	      open/close lifecycles, 75 total copies, and 75 draw-buffer indexed
-	      draws in the browser harness. It does not claim runtime load-screen,
-	      InGameUI, campaign `finishSinglePlayerInit`, or Bink/audio sync
-	      complete; the broader CampaignManager/GameInfo/GameWindow layout/LOD/
-	      shell/GUI singleton path still needs to link and be harness-driven.
+	      calls original `PlayMovieAndBlock("VS_small")`, and also calls original
+	      `SinglePlayerLoadScreen::init` through a gated movie/campaign hook. The
+	      browser harness now expects seven open/close lifecycles, 145 total
+	      copies, and 145 draw-buffer indexed draws. It does not claim runtime
+	      ChallengeLoadScreen, InGameUI, full campaign-owned load-screen setup,
+	      campaign `finishSinglePlayerInit`, or Bink/audio sync complete; the
+	      broader CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI
+	      singleton path still needs to link and be harness-driven.
       `verify:bink-browser-sidecar-contract` also pins the sidecar manifest
       schema/path, BIK source-to-WebM metadata association, original-style path
       aliases (`Data\Movies\<name>.bik` and
@@ -795,9 +804,11 @@ shares structure and follows behind.
 	      blank-window `WindowLayout::load("Menus/BlankWindow.wnd")` /
 	      first-window `WinInstanceData::setVideoBuffer` path shaped like
 	      `ScoreScreen::PlayMovieAndBlock`, plus the original
-	      `ScoreScreen::PlayMovieAndBlock("VS_small")` runtime loop. Full
-	      original InGameUI, load-screen, campaign score-screen setup, and
-	      Bink/audio sync ownership remains open.
+	      `ScoreScreen::PlayMovieAndBlock("VS_small")` runtime loop and focused
+	      original `SinglePlayerLoadScreen::init("VS_small")` runtime loop. Full
+	      original InGameUI, ChallengeLoadScreen, campaign-owned load-screen
+	      setup, campaign score-screen setup, and Bink/audio sync ownership
+	      remain open.
       `verify:bink-w3d-video-presentation-frontier` now pins the source-only
       *presentation* contract from the original Bink/W3D video-buffer upload
       to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
@@ -818,11 +829,13 @@ shares structure and follows behind.
 	      `WindowLayout::load("Menus/BlankWindow.wnd")` /
 	      first-window `WinInstanceData::setVideoBuffer` path shaped like
 	      `ScoreScreen::PlayMovieAndBlock`, and now the focused original
-	      `ScoreScreen::PlayMovieAndBlock("VS_small")` loop itself. The full
-	      original InGameUI, load-screen, campaign score-screen setup, and
-	      Bink/audio sync flows still need runtime ownership of that path, though
-	      the load/score source contract and focused ScoreScreen runtime proof are
-	      pinned by `verify:bink-loadscore-movie-frontier`.
+	      `ScoreScreen::PlayMovieAndBlock("VS_small")` loop itself, plus focused
+	      original `SinglePlayerLoadScreen::init("VS_small")`. The full original
+	      InGameUI, ChallengeLoadScreen, campaign-owned load-screen setup,
+	      campaign score-screen setup, and Bink/audio sync flows still need
+	      runtime ownership of that path, though the load/score source contract
+	      and focused ScoreScreen/SinglePlayer runtime proofs are pinned by
+	      `verify:bink-loadscore-movie-frontier`.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

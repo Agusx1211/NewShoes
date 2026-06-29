@@ -123,6 +123,29 @@ void positionStartSpots( GameInfo *myGame, GameWindow *buttonMapStartPositions[]
 void updateMapStartSpots( GameInfo *myGame, GameWindow *buttonMapStartPositions[], Bool onLoadScreen = FALSE );
 void positionAdditionalImages( MapMetaData *mmd, GameWindow *mapWindow, Bool force);
 
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+static AsciiString s_singlePlayerLoadScreenMovieLabel = AsciiString("VS_small");
+static AsciiString s_singlePlayerLoadScreenCampaignName = AsciiString("USA");
+static AsciiString s_singlePlayerLoadScreenObjectiveLabel = AsciiString("GUI:LoadSmokeObjective");
+static AsciiString s_singlePlayerLoadScreenLocationLabel = AsciiString("GUI:LoadSmokeLocation");
+static AsciiString s_singlePlayerLoadScreenUnitNames[MAX_DISPLAYED_UNITS] = {
+	AsciiString("GUI:LoadSmokeUnit0"),
+	AsciiString("GUI:LoadSmokeUnit1"),
+	AsciiString("GUI:LoadSmokeUnit2")
+};
+
+extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel)
+{
+	s_singlePlayerLoadScreenCampaignName = AsciiString(campaignName != NULL ? campaignName : "USA");
+	s_singlePlayerLoadScreenMovieLabel = AsciiString(movieLabel != NULL ? movieLabel : "VS_small");
+}
+
+extern "C" const char *CncPortLoadScreenGetSinglePlayerMovieForTest()
+{
+	return s_singlePlayerLoadScreenMovieLabel.str();
+}
+#endif
+
 enum{
 FRAME_TITLES_START = 20,
 FRAME_TELETYPE_START = 24,
@@ -414,7 +437,9 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 	m_objectiveWin->winHide(TRUE);
 
 	
+#if !defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
 	Mission *mission = TheCampaignManager->getCurrentMission();
+#endif
 	AsciiString lineName;
 	Int i;
 	for(i = 0; i < MAX_OBJECTIVE_LINES; ++i)
@@ -425,8 +450,13 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 		GadgetStaticTextSetText(m_objectiveLines[i],UnicodeString::TheEmptyString);
 
 		// translate the objective lines
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		if(i == 0 && s_singlePlayerLoadScreenObjectiveLabel.isNotEmpty())
+			m_unicodeObjectiveLines[i] = TheGameText->fetch(s_singlePlayerLoadScreenObjectiveLabel);
+#else
 		if(mission->m_missionObjectivesLabel[i].isNotEmpty())
 			m_unicodeObjectiveLines[i] = TheGameText->fetch(mission->m_missionObjectivesLabel[i]);
+#endif
 	}
 
 	for(i = 0; i < MAX_DISPLAYED_UNITS; ++i)
@@ -434,13 +464,21 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 		lineName.format("SinglePlayerLoadScreen.wnd:StaticTextCameoText%d",i);
 		m_unitDesc[i] = TheWindowManager->winGetWindowFromId( m_loadScreen,TheNameKeyGenerator->nameToKey( lineName ));
 		DEBUG_ASSERTCRASH(m_unitDesc[i], ("Can't initialize the m_objectiveLines[%d] for the single player loadscreen", i));
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		GadgetStaticTextSetText(m_unitDesc[i],TheGameText->fetch(s_singlePlayerLoadScreenUnitNames[i]));
+#else
 		GadgetStaticTextSetText(m_unitDesc[i],TheGameText->fetch(mission->m_unitNames[i]));
+#endif
 		m_unitDesc[i]->winHide(TRUE);
 	}
 	m_location = TheWindowManager->winGetWindowFromId( m_loadScreen,TheNameKeyGenerator->nameToKey( AsciiString( "SinglePlayerLoadScreen.wnd:StaticTextCameoText3" ) ));
 	DEBUG_ASSERTCRASH(m_location, ("Can't initialize the m_objectiveWin for the single player loadscreen"));
 	m_location->winHide(TRUE);
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	GadgetStaticTextSetText(m_location, TheGameText->fetch(s_singlePlayerLoadScreenLocationLabel));
+#else
 	GadgetStaticTextSetText(m_location, TheGameText->fetch(mission->m_locationNameLabel));
+#endif
 	
 
 	
@@ -482,7 +520,11 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 */
 	m_ambientLoop.setEventName("LoadScreenAmbient");
 	// create the new stream
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	m_videoStream = TheVideoPlayer->open( s_singlePlayerLoadScreenMovieLabel );
+#else
 	m_videoStream = TheVideoPlayer->open( TheCampaignManager->getCurrentMission()->m_movieLabel );
+#endif
 	if ( m_videoStream == NULL )
 	{
 		m_percent->winHide(TRUE);
@@ -508,7 +550,11 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 
 	// format the progress bar: USA to blue, GLA to green, China to red
 	// and set the background image
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	AsciiString campaignName = s_singlePlayerLoadScreenCampaignName;
+#else
 	AsciiString campaignName = TheCampaignManager->getCurrentCampaign()->m_name;
+#endif
 	GameWindow *backgroundWin = TheWindowManager->winGetWindowFromId( m_loadScreen,TheNameKeyGenerator->nameToKey( AsciiString( "SinglePlayerLoadScreen.wnd:ParentSinglePlayerLoadScreen" ) ));
 	if (campaignName.compareNoCase("USA") == 0)
 	{
@@ -528,7 +574,11 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 	// else leave the default background screen
 
 
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+	if(TRUE)
+#else
 	if(TheGameLODManager && TheGameLODManager->didMemPass())
+#endif
 	{
 		Int progressUpdateCount = m_videoStream->frameCount() / FRAME_FUDGE_ADD;
 		Int shiftedPercent = -FRAME_FUDGE_ADD + 1;
@@ -590,7 +640,11 @@ void SinglePlayerLoadScreen::init( GameInfo *game )
 	{
 		// if we're min spec'ed don't play a movie
 		
+#if defined(CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS)
+		Int delay = 0;
+#else
 		Int delay = mission->m_voiceLength * 1000;
+#endif
 		Int begin = timeGetTime();
 		Int currTime = begin;
 		Int fudgeFactor = 0;

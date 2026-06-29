@@ -3988,8 +3988,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `GC_Background`, direct `VS_small`, Display-owned `VS_small`, and
       manager-owned `VS_small`. `verify:bink-w3d-video-buffer-upload-frontier`
       and `verify:bink-w3d-video-presentation-frontier` now pin the new Display
-      path while keeping full original load-screen / score-screen movie loops
-      and Bink/audio sync open.
+      path while broader original movie-loop runtime and Bink/audio sync
+      remained open at that point.
 - [x] Add `verify:bink-ingameui-movie-frontier`
       (`verify:bink-ingameui-movie-frontier` and strict alias
       `verify:bink-ingameui-movie-frontier:strict`), a source-only verifier for
@@ -4068,16 +4068,43 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       71 texture uploads (initial clear plus decoded frames), one texture
       release, 70 original `W3DDisplay::drawVideoBuffer` indexed draws, final
       video-buffer detach, stream close, nonzero decoded texture checksum, and
-      a browser screenshot/pixel proof. The browser harness now expects six
-      Bink open/close lifecycles, 75 total decoded frame copies, and 75
+      a browser screenshot/pixel proof. This was later extended by the
+      SinglePlayerLoadScreen smoke below; the browser harness now expects seven
+      Bink open/close lifecycles, 145 total decoded frame copies, and 145
       draw-buffer indexed draws across direct, Display-owned, WindowVideoManager,
-      blank-layout, and original ScoreScreen paths. Full campaign
-      `finishSinglePlayerInit`, original load-screen runtime ownership,
-      InGameUI movies, and Bink/audio sync remain open. Verified with
+      blank-layout, original ScoreScreen, and original SinglePlayerLoadScreen
+      paths. Full campaign `finishSinglePlayerInit`, ChallengeLoadScreen,
+      campaign-owned load-screen setup, InGameUI movies, and Bink/audio sync
+      remain open. Verified with
       `npm run build:wasm`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`,
       `npm run verify:bink-loadscore-movie-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the Bink/W3D browser presentation smoke through original
+      `SinglePlayerLoadScreen::init`. The focused browser smoke now compiles
+      original `LoadScreen.cpp` in `zh_gameclient_utility` with a gated
+      `CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS` surface, used only by this harness
+      to provide `USA` / `VS_small` movie facts without pulling in the full
+      CampaignManager graph. The smoke builds a synthetic
+      `Menus/SinglePlayerLoadScreen.wnd` hierarchy, installs real
+      `NameKeyGenerator`, `GameText`, `Mouse`, `ImageCollection`, `Display`,
+      `GameEngine`, and `GameWindowManager` singletons, calls original
+      `SinglePlayerLoadScreen::init(nullptr)`, and verifies the original loop
+      services the game engine, uploads the initial texture plus 70 decoded
+      frames, presents 70 frames through `TheDisplay->draw()` and original
+      `W3DDisplay::drawVideoBuffer`, detaches the load-screen `VideoBuffer`,
+      closes the stream, releases the texture in the destructor, and destroys
+      the windows. The browser harness now expects seven Bink open/close
+      lifecycles, 145 decoded frame copies, 145 indexed video-buffer draws,
+      eight texture creates, 153 texture updates, seven releases, and captures
+      `WebAssembly/artifacts/screenshots/harness-smoke-bink-w3d-video-buffer-upload.png`.
+      Full ChallengeLoadScreen, campaign-owned load-screen setup, campaign
+      `finishSinglePlayerInit`, InGameUI movies, and Bink/audio sync remain
+      open. Verified with `npm run build:wasm`,
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
 
 ---

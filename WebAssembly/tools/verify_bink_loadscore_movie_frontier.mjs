@@ -6,11 +6,10 @@
 //
 // This complements the focused browser Bink/W3D presentation smoke, which
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
-// W3DDisplay::drawVideoBuffer. Pulling the full original load-screen and
-// score-screen flows into that runtime path still depends on CampaignManager,
-// GameInfo, GameWindow layout, LOD, shell, and broader GUI/game singleton
-// ownership, so this pins the original source contract until those dependencies
-// can be linked and harness-driven.
+// W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
+// original ScoreScreen::PlayMovieAndBlock and SinglePlayerLoadScreen::init
+// movie loops through test-controlled layout/movie facts; full campaign-owned
+// ScoreScreen/Challenge/InGameUI coverage remains open.
 //
 // Pinned contract:
 //   1. LoadScreen.h stores VideoBuffer / VideoStreamInterface ownership fields
@@ -163,6 +162,7 @@ function main() {
     scoreScreen: {},
     windowLayout: {},
     runtimeScoreScreen: {},
+    runtimeSinglePlayer: {},
     runtimeBrowserHarness: {},
     cmake: {},
     packageJson: {},
@@ -238,25 +238,25 @@ function main() {
   // 2. LoadScreen base ownership and per-frame update draw pump.
   // ------------------------------------------------------------------
   const loadCtorRange = assertFunctionRange(errors, facts.loadScreenBase, "loadCtor", loadScreen,
-    /LoadScreen\s*::\s*LoadScreen\s*\(\s*void\s*\)/, 150, "LoadScreen::LoadScreen");
+    /LoadScreen\s*::\s*LoadScreen\s*\(\s*void\s*\)/, 173, "LoadScreen::LoadScreen");
   if (loadCtorRange) {
     assertExact(errors, facts.loadScreenBase, "loadScreenNullInitLine",
       firstMatchInRange(loadScreen.lines, loadCtorRange.start, loadCtorRange.end,
         /m_loadScreen\s*=\s*NULL\s*;/),
-      152, "LoadScreen constructor m_loadScreen init");
+      175, "LoadScreen constructor m_loadScreen init");
   }
 
   const loadDtorRange = assertFunctionRange(errors, facts.loadScreenBase, "loadDtor", loadScreen,
-    /LoadScreen\s*::\s*~LoadScreen\s*\(\s*void\s*\)/, 155, "LoadScreen::~LoadScreen");
+    /LoadScreen\s*::\s*~LoadScreen\s*\(\s*void\s*\)/, 178, "LoadScreen::~LoadScreen");
   if (loadDtorRange) {
     assertExact(errors, facts.loadScreenBase, "loadScreenDestroyLine",
       firstMatchInRange(loadScreen.lines, loadDtorRange.start, loadDtorRange.end,
         /TheWindowManager\s*->\s*winDestroy\s*\(\s*m_loadScreen\s*\)/),
-      160, "LoadScreen destructor TheWindowManager->winDestroy");
+      183, "LoadScreen destructor TheWindowManager->winDestroy");
   }
 
   const loadUpdateRange = assertFunctionRange(errors, facts.loadScreenBase, "loadUpdate", loadScreen,
-    /void\s+LoadScreen\s*::\s*update\s*\(\s*Int\s+percent\s*\)/, 164, "LoadScreen::update(Int)");
+    /void\s+LoadScreen\s*::\s*update\s*\(\s*Int\s+percent\s*\)/, 187, "LoadScreen::update(Int)");
   if (loadUpdateRange) {
     const updateLoop = orderedMatchesInRange(loadScreen.lines, loadUpdateRange.start, loadUpdateRange.end, [
       /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
@@ -267,15 +267,15 @@ function main() {
     ]);
     facts.loadScreenBase.updatePumpLines = updateLoop;
     assertOrdered(errors, "LoadScreen::update(Int) service/update/draw pump", updateLoop);
-    assertExact(errors, facts.loadScreenBase, "serviceWindowsOSLine", updateLoop[0], 166,
+    assertExact(errors, facts.loadScreenBase, "serviceWindowsOSLine", updateLoop[0], 189,
       "LoadScreen::update TheGameEngine->serviceWindowsOS");
-    assertExact(errors, facts.loadScreenBase, "windowManagerUpdateLine", updateLoop[1], 170,
+    assertExact(errors, facts.loadScreenBase, "windowManagerUpdateLine", updateLoop[1], 193,
       "LoadScreen::update TheWindowManager->update");
-    assertExact(errors, facts.loadScreenBase, "displayUpdateLine", updateLoop[2], 171,
+    assertExact(errors, facts.loadScreenBase, "displayUpdateLine", updateLoop[2], 194,
       "LoadScreen::update TheDisplay->update");
-    assertExact(errors, facts.loadScreenBase, "displayDrawLine", updateLoop[3], 173,
+    assertExact(errors, facts.loadScreenBase, "displayDrawLine", updateLoop[3], 196,
       "LoadScreen::update TheDisplay->draw");
-    assertExact(errors, facts.loadScreenBase, "setFPModeLine", updateLoop[4], 175,
+    assertExact(errors, facts.loadScreenBase, "setFPModeLine", updateLoop[4], 198,
       "LoadScreen::update setFPMode");
   }
 
@@ -284,98 +284,114 @@ function main() {
   // ------------------------------------------------------------------
   const singleCtorRange = assertFunctionRange(errors, facts.singlePlayer, "ctor", loadScreen,
     /SinglePlayerLoadScreen\s*::\s*SinglePlayerLoadScreen\s*\(\s*void\s*\)/,
-    181, "SinglePlayerLoadScreen::SinglePlayerLoadScreen");
+    204, "SinglePlayerLoadScreen::SinglePlayerLoadScreen");
   if (singleCtorRange) {
     assertExact(errors, facts.singlePlayer, "streamNullInitLine",
       firstMatchInRange(loadScreen.lines, singleCtorRange.start, singleCtorRange.end,
         /m_videoStream\s*=\s*NULL\s*;/),
-      192, "SinglePlayerLoadScreen constructor m_videoStream init");
+      215, "SinglePlayerLoadScreen constructor m_videoStream init");
     assertExact(errors, facts.singlePlayer, "bufferNullInitLine",
       firstMatchInRange(loadScreen.lines, singleCtorRange.start, singleCtorRange.end,
         /m_videoBuffer\s*=\s*NULL\s*;/),
-      193, "SinglePlayerLoadScreen constructor m_videoBuffer init");
+      216, "SinglePlayerLoadScreen constructor m_videoBuffer init");
   }
 
   const singleDtorRange = assertFunctionRange(errors, facts.singlePlayer, "dtor", loadScreen,
     /SinglePlayerLoadScreen\s*::\s*~SinglePlayerLoadScreen\s*\(\s*void\s*\)/,
-    200, "SinglePlayerLoadScreen::~SinglePlayerLoadScreen");
+    223, "SinglePlayerLoadScreen::~SinglePlayerLoadScreen");
   if (singleDtorRange) {
     assertExact(errors, facts.singlePlayer, "deleteBufferLine",
       firstMatchInRange(loadScreen.lines, singleDtorRange.start, singleDtorRange.end,
         /delete\s+m_videoBuffer\s*;/),
-      208, "SinglePlayerLoadScreen destructor delete m_videoBuffer");
+      231, "SinglePlayerLoadScreen destructor delete m_videoBuffer");
     assertExact(errors, facts.singlePlayer, "clearBufferLine",
       firstMatchInRange(loadScreen.lines, singleDtorRange.start, singleDtorRange.end,
         /m_videoBuffer\s*=\s*NULL\s*;/),
-      209, "SinglePlayerLoadScreen destructor clear m_videoBuffer");
+      232, "SinglePlayerLoadScreen destructor clear m_videoBuffer");
     assertExact(errors, facts.singlePlayer, "closeStreamLine",
       firstMatchInRange(loadScreen.lines, singleDtorRange.start, singleDtorRange.end,
         /m_videoStream\s*->\s*close\s*\(\s*\)/),
-      212, "SinglePlayerLoadScreen destructor close stream");
+      235, "SinglePlayerLoadScreen destructor close stream");
     assertExact(errors, facts.singlePlayer, "clearStreamLine",
       firstMatchInRange(loadScreen.lines, singleDtorRange.start, singleDtorRange.end,
         /m_videoStream\s*=\s*NULL\s*;/),
-      213, "SinglePlayerLoadScreen destructor clear stream");
+      236, "SinglePlayerLoadScreen destructor clear stream");
     assertExact(errors, facts.singlePlayer, "removeAmbientLine",
       firstMatchInRange(loadScreen.lines, singleDtorRange.start, singleDtorRange.end,
         /TheAudio\s*->\s*removeAudioEvent\s*\(\s*m_ambientLoopHandle\s*\)/),
-      215, "SinglePlayerLoadScreen destructor remove ambient loop");
+      238, "SinglePlayerLoadScreen destructor remove ambient loop");
   }
 
   const singleInitRange = assertFunctionRange(errors, facts.singlePlayer, "init", loadScreen,
     /void\s+SinglePlayerLoadScreen\s*::\s*init\s*\(\s*GameInfo\s*\*\s*game\s*\)/,
-    392, "SinglePlayerLoadScreen::init");
+    415, "SinglePlayerLoadScreen::init");
   if (singleInitRange) {
+    assertExact(errors, facts.singlePlayer, "movieTestHookGuardLine",
+      lineNumber(loadScreen.lines,
+        (line) => /defined\s*\(\s*CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS\s*\)/.test(line)),
+      126, "LoadScreen.cpp focused SinglePlayerLoadScreen movie test hook guard");
+    assertExact(errors, facts.singlePlayer, "movieTestHookSetLine",
+      lineNumber(loadScreen.lines,
+        (line) => /CncPortLoadScreenSetSinglePlayerMovieForTest\s*\(\s*const\s+char\s+\*campaignName/.test(line)),
+      137, "LoadScreen.cpp focused SinglePlayerLoadScreen movie setter hook");
+    assertExact(errors, facts.singlePlayer, "movieTestHookGetLine",
+      lineNumber(loadScreen.lines,
+        (line) => /CncPortLoadScreenGetSinglePlayerMovieForTest\s*\(\s*\)/.test(line)),
+      143, "LoadScreen.cpp focused SinglePlayerLoadScreen movie getter hook");
     assertExact(errors, facts.singlePlayer, "layoutCreateLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /winCreateFromScript\s*\(\s*AsciiString\s*\(\s*"Menus\/SinglePlayerLoadScreen\.wnd"\s*\)\s*\)/),
-      397, "SinglePlayerLoadScreen::init layout create");
+      420, "SinglePlayerLoadScreen::init layout create");
     assertExact(errors, facts.singlePlayer, "progressBarLookupLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /SinglePlayerLoadScreen\.wnd:ProgressLoad/),
-      403, "SinglePlayerLoadScreen::init progress bar lookup");
+      426, "SinglePlayerLoadScreen::init progress bar lookup");
     assertExact(errors, facts.singlePlayer, "missionLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /^\s*Mission\s*\*\s*mission\s*=\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)/),
-      417, "SinglePlayerLoadScreen::init current mission");
+      441, "SinglePlayerLoadScreen::init current mission");
     assertExact(errors, facts.singlePlayer, "ambientEventLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /m_ambientLoop\s*\.\s*setEventName\s*\(\s*"LoadScreenAmbient"\s*\)/),
-      483, "SinglePlayerLoadScreen::init ambient event");
+      521, "SinglePlayerLoadScreen::init ambient event");
+    assertExact(errors, facts.singlePlayer, "videoOpenTestHookLine",
+      firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
+        /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*s_singlePlayerLoadScreenMovieLabel\s*\)/),
+      524, "SinglePlayerLoadScreen::init focused test hook movie open");
     assertExact(errors, facts.singlePlayer, "videoOpenLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)\s*->\s*m_movieLabel\s*\)/),
-      485, "SinglePlayerLoadScreen::init TheVideoPlayer->open mission movie");
+      526, "SinglePlayerLoadScreen::init TheVideoPlayer->open mission movie");
     assertExact(errors, facts.singlePlayer, "nullStreamCheckLine",
-      firstMatchInRange(loadScreen.lines, 486, singleInitRange.end,
+      firstMatchInRange(loadScreen.lines, 528, singleInitRange.end,
         /if\s*\(\s*m_videoStream\s*==\s*NULL\s*\)/),
-      486, "SinglePlayerLoadScreen::init null stream guard");
+      528, "SinglePlayerLoadScreen::init null stream guard");
     assertExact(errors, facts.singlePlayer, "nullStreamReturnLine",
-      firstMatchInRange(loadScreen.lines, 486, 491, /^\s*return\s*;/),
-      489, "SinglePlayerLoadScreen::init null stream return");
+      firstMatchInRange(loadScreen.lines, 528, 533, /^\s*return\s*;/),
+      531, "SinglePlayerLoadScreen::init null stream return");
     assertExact(errors, facts.singlePlayer, "createBufferLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /m_videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/),
-      493, "SinglePlayerLoadScreen::init create video buffer");
+      535, "SinglePlayerLoadScreen::init create video buffer");
     assertExact(errors, facts.singlePlayer, "allocateWidthLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /m_videoBuffer\s*->\s*allocate\s*\(\s*m_videoStream\s*->\s*width\s*\(\s*\)/),
-      495, "SinglePlayerLoadScreen::init allocate width");
+      537, "SinglePlayerLoadScreen::init allocate width");
     assertExact(errors, facts.singlePlayer, "allocateHeightLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /m_videoStream\s*->\s*height\s*\(\s*\)/),
-      496, "SinglePlayerLoadScreen::init allocate height");
+      538, "SinglePlayerLoadScreen::init allocate height");
     assertExact(errors, facts.singlePlayer, "allocateFailureDeleteBufferLine",
-      firstMatchInRange(loadScreen.lines, 498, 507, /delete\s+m_videoBuffer\s*;/),
-      499, "SinglePlayerLoadScreen::init allocation failure delete buffer");
+      firstMatchInRange(loadScreen.lines, 540, 549, /delete\s+m_videoBuffer\s*;/),
+      541, "SinglePlayerLoadScreen::init allocation failure delete buffer");
     assertExact(errors, facts.singlePlayer, "allocateFailureCloseStreamLine",
-      firstMatchInRange(loadScreen.lines, 498, 507, /m_videoStream\s*->\s*close\s*\(\s*\)/),
-      503, "SinglePlayerLoadScreen::init allocation failure close stream");
+      firstMatchInRange(loadScreen.lines, 540, 549, /m_videoStream\s*->\s*close\s*\(\s*\)/),
+      545, "SinglePlayerLoadScreen::init allocation failure close stream");
     assertExact(errors, facts.singlePlayer, "allocateFailureReturnLine",
-      firstMatchInRange(loadScreen.lines, 498, 507, /^\s*return\s*;/),
-      506, "SinglePlayerLoadScreen::init allocation failure return");
+      firstMatchInRange(loadScreen.lines, 540, 549, /^\s*return\s*;/),
+      548, "SinglePlayerLoadScreen::init allocation failure return");
 
-    const singleLoop = orderedMatchesInRange(loadScreen.lines, 531, 588, [
+    const singleLoop = orderedMatchesInRange(loadScreen.lines, 577, 638, [
       /m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\/\s*FRAME_FUDGE_ADD/,
       /while\s*\(\s*m_videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
       /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
@@ -398,37 +414,37 @@ function main() {
     facts.singlePlayer.mainMovieLoopLines = singleLoop;
     assertOrdered(errors, "SinglePlayerLoadScreen::init main movie loop", singleLoop);
     [
-      ["progressUpdateCountLine", singleLoop[0], 533, "SinglePlayerLoadScreen::init progress update count"],
-      ["movieWhileLine", singleLoop[1], 535, "SinglePlayerLoadScreen::init movie while"],
-      ["loopServiceWindowsLine", singleLoop[2], 537, "SinglePlayerLoadScreen::init serviceWindowsOS"],
-      ["isFrameReadyLine", singleLoop[3], 539, "SinglePlayerLoadScreen::init isFrameReady"],
-      ["sleepLine", singleLoop[4], 541, "SinglePlayerLoadScreen::init Sleep(1)"],
-      ["inactiveCheckLine", singleLoop[5], 545, "SinglePlayerLoadScreen::init inactive check"],
-      ["inactiveBreakLine", singleLoop[6], 551, "SinglePlayerLoadScreen::init inactive break"],
-      ["frameDecompressLine", singleLoop[7], 554, "SinglePlayerLoadScreen::init frameDecompress"],
-      ["frameRenderLine", singleLoop[8], 555, "SinglePlayerLoadScreen::init frameRender"],
-      ["frameNextLine", singleLoop[9], 560, "SinglePlayerLoadScreen::init frameNext"],
-      ["attachVideoBufferLine", singleLoop[10], 563, "SinglePlayerLoadScreen::init attach video buffer"],
-      ["progressModuloLine", singleLoop[11], 564, "SinglePlayerLoadScreen::init progress modulo"],
-      ["windowUpdateLine", singleLoop[12], 577, "SinglePlayerLoadScreen::init TheWindowManager->update"],
-      ["displayDrawInLoopLine", singleLoop[13], 580, "SinglePlayerLoadScreen::init loop draw"],
-      ["closeAfterLoopLine", singleLoop[14], 584, "SinglePlayerLoadScreen::init close after loop"],
-      ["clearStreamAfterLoopLine", singleLoop[15], 585, "SinglePlayerLoadScreen::init clear stream after loop"],
-      ["detachVideoBufferAfterLoopLine", singleLoop[16], 586, "SinglePlayerLoadScreen::init detach video buffer"],
-      ["finalDrawAfterLoopLine", singleLoop[17], 587, "SinglePlayerLoadScreen::init final draw"],
+      ["progressUpdateCountLine", singleLoop[0], 583, "SinglePlayerLoadScreen::init progress update count"],
+      ["movieWhileLine", singleLoop[1], 585, "SinglePlayerLoadScreen::init movie while"],
+      ["loopServiceWindowsLine", singleLoop[2], 587, "SinglePlayerLoadScreen::init serviceWindowsOS"],
+      ["isFrameReadyLine", singleLoop[3], 589, "SinglePlayerLoadScreen::init isFrameReady"],
+      ["sleepLine", singleLoop[4], 591, "SinglePlayerLoadScreen::init Sleep(1)"],
+      ["inactiveCheckLine", singleLoop[5], 595, "SinglePlayerLoadScreen::init inactive check"],
+      ["inactiveBreakLine", singleLoop[6], 601, "SinglePlayerLoadScreen::init inactive break"],
+      ["frameDecompressLine", singleLoop[7], 604, "SinglePlayerLoadScreen::init frameDecompress"],
+      ["frameRenderLine", singleLoop[8], 605, "SinglePlayerLoadScreen::init frameRender"],
+      ["frameNextLine", singleLoop[9], 610, "SinglePlayerLoadScreen::init frameNext"],
+      ["attachVideoBufferLine", singleLoop[10], 613, "SinglePlayerLoadScreen::init attach video buffer"],
+      ["progressModuloLine", singleLoop[11], 614, "SinglePlayerLoadScreen::init progress modulo"],
+      ["windowUpdateLine", singleLoop[12], 627, "SinglePlayerLoadScreen::init TheWindowManager->update"],
+      ["displayDrawInLoopLine", singleLoop[13], 630, "SinglePlayerLoadScreen::init loop draw"],
+      ["closeAfterLoopLine", singleLoop[14], 634, "SinglePlayerLoadScreen::init close after loop"],
+      ["clearStreamAfterLoopLine", singleLoop[15], 635, "SinglePlayerLoadScreen::init clear stream after loop"],
+      ["detachVideoBufferAfterLoopLine", singleLoop[16], 636, "SinglePlayerLoadScreen::init detach video buffer"],
+      ["finalDrawAfterLoopLine", singleLoop[17], 637, "SinglePlayerLoadScreen::init final draw"],
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.singlePlayer, key, actual, expected, label));
     assertExact(errors, facts.singlePlayer, "minSpecNoMovieCommentLine",
       firstMatchInRange(loadScreen.lines, singleInitRange.start, singleInitRange.end,
         /if\s+we're\s+min\s+spec'ed\s+don't\s+play\s+a\s+movie/),
-      591, "SinglePlayerLoadScreen::init min-spec no-movie comment");
+      641, "SinglePlayerLoadScreen::init min-spec no-movie comment");
     assertExact(errors, facts.singlePlayer, "setFPModeLine",
-      firstMatchInRange(loadScreen.lines, 612, singleInitRange.end, /setFPMode\s*\(\s*\)/),
-      613, "SinglePlayerLoadScreen::init setFPMode");
+      firstMatchInRange(loadScreen.lines, 666, singleInitRange.end, /setFPMode\s*\(\s*\)/),
+      667, "SinglePlayerLoadScreen::init setFPMode");
     assertExact(errors, facts.singlePlayer, "ambientAddLine",
-      firstMatchInRange(loadScreen.lines, 612, singleInitRange.end,
+      firstMatchInRange(loadScreen.lines, 666, singleInitRange.end,
         /m_ambientLoopHandle\s*=\s*TheAudio\s*->\s*addAudioEvent\s*\(\s*&m_ambientLoop\s*\)/),
-      615, "SinglePlayerLoadScreen::init ambient add");
+      669, "SinglePlayerLoadScreen::init ambient add");
   }
 
   // ------------------------------------------------------------------
@@ -436,113 +452,113 @@ function main() {
   // ------------------------------------------------------------------
   const challengeCtorRange = assertFunctionRange(errors, facts.challenge, "ctor", loadScreen,
     /ChallengeLoadScreen\s*::\s*ChallengeLoadScreen\s*\(\s*void\s*\)/,
-    645, "ChallengeLoadScreen::ChallengeLoadScreen");
+    699, "ChallengeLoadScreen::ChallengeLoadScreen");
   if (challengeCtorRange) {
     assertExact(errors, facts.challenge, "streamNullInitLine",
       firstMatchInRange(loadScreen.lines, challengeCtorRange.start, challengeCtorRange.end,
         /m_videoStream\s*=\s*NULL\s*;/),
-      648, "ChallengeLoadScreen constructor m_videoStream init");
+      702, "ChallengeLoadScreen constructor m_videoStream init");
     assertExact(errors, facts.challenge, "bufferNullInitLine",
       firstMatchInRange(loadScreen.lines, challengeCtorRange.start, challengeCtorRange.end,
         /m_videoBuffer\s*=\s*NULL\s*;/),
-      649, "ChallengeLoadScreen constructor m_videoBuffer init");
+      703, "ChallengeLoadScreen constructor m_videoBuffer init");
     assertExact(errors, facts.challenge, "windowVideoManagerNullInitLine",
       firstMatchInRange(loadScreen.lines, challengeCtorRange.start, challengeCtorRange.end,
         /m_wndVideoManager\s*=\s*NULL\s*;/),
-      682, "ChallengeLoadScreen constructor m_wndVideoManager init");
+      736, "ChallengeLoadScreen constructor m_wndVideoManager init");
   }
 
   const challengeDtorRange = assertFunctionRange(errors, facts.challenge, "dtor", loadScreen,
     /ChallengeLoadScreen\s*::\s*~ChallengeLoadScreen\s*\(\s*void\s*\)/,
-    685, "ChallengeLoadScreen::~ChallengeLoadScreen");
+    739, "ChallengeLoadScreen::~ChallengeLoadScreen");
   if (challengeDtorRange) {
     assertExact(errors, facts.challenge, "deleteBufferLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /delete\s+m_videoBuffer\s*;/),
-      689, "ChallengeLoadScreen destructor delete m_videoBuffer");
+      743, "ChallengeLoadScreen destructor delete m_videoBuffer");
     assertExact(errors, facts.challenge, "clearBufferLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /m_videoBuffer\s*=\s*NULL\s*;/),
-      690, "ChallengeLoadScreen destructor clear m_videoBuffer");
+      744, "ChallengeLoadScreen destructor clear m_videoBuffer");
     assertExact(errors, facts.challenge, "closeStreamLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /m_videoStream\s*->\s*close\s*\(\s*\)/),
-      692, "ChallengeLoadScreen destructor close stream");
+      746, "ChallengeLoadScreen destructor close stream");
     assertExact(errors, facts.challenge, "clearStreamLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /m_videoStream\s*=\s*NULL\s*;/),
-      693, "ChallengeLoadScreen destructor clear stream");
+      747, "ChallengeLoadScreen destructor clear stream");
     assertExact(errors, facts.challenge, "deleteWindowVideoManagerLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /delete\s+m_wndVideoManager\s*;/),
-      728, "ChallengeLoadScreen destructor delete m_wndVideoManager");
+      782, "ChallengeLoadScreen destructor delete m_wndVideoManager");
     assertExact(errors, facts.challenge, "clearWindowVideoManagerLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /m_wndVideoManager\s*=\s*NULL\s*;/),
-      729, "ChallengeLoadScreen destructor clear m_wndVideoManager");
+      783, "ChallengeLoadScreen destructor clear m_wndVideoManager");
     assertExact(errors, facts.challenge, "removeAmbientLine",
       firstMatchInRange(loadScreen.lines, challengeDtorRange.start, challengeDtorRange.end,
         /TheAudio\s*->\s*removeAudioEvent\s*\(\s*m_ambientLoopHandle\s*\)/),
-      731, "ChallengeLoadScreen destructor remove ambient loop");
+      785, "ChallengeLoadScreen destructor remove ambient loop");
   }
 
   const activateRange = assertFunctionRange(errors, facts.challenge, "activatePieces", loadScreen,
     /void\s+ChallengeLoadScreen\s*::\s*activatePieces\s*\(\s*Int\s+frame/,
-    755, "ChallengeLoadScreen::activatePieces");
+    809, "ChallengeLoadScreen::activatePieces");
   if (activateRange) {
     assertExact(errors, facts.challenge, "portraitLeftMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
         /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieLeft\s*,\s*generalPlayer\s*->\s*getPortraitMovieLeftName\s*\(\s*\)/),
-      822, "ChallengeLoadScreen::activatePieces left portrait movie");
+      876, "ChallengeLoadScreen::activatePieces left portrait movie");
     assertExact(errors, facts.challenge, "portraitRightMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
         /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_portraitMovieRight\s*,\s*generalOpponent\s*->\s*getPortraitMovieRightName\s*\(\s*\)/),
-      823, "ChallengeLoadScreen::activatePieces right portrait movie");
+      877, "ChallengeLoadScreen::activatePieces right portrait movie");
     assertExact(errors, facts.challenge, "overlayVsMovieLine",
       firstMatchInRange(loadScreen.lines, activateRange.start, activateRange.end,
         /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_overlayVs\s*,\s*AsciiString\s*\(\s*"VSSmall"\s*\)/),
-      856, "ChallengeLoadScreen::activatePieces VS overlay movie");
+      910, "ChallengeLoadScreen::activatePieces VS overlay movie");
   }
 
   const activateMinRange = assertFunctionRange(errors, facts.challenge, "activatePiecesMinSpec", loadScreen,
     /void\s+ChallengeLoadScreen\s*::\s*activatePiecesMinSpec\s*\(/,
-    885, "ChallengeLoadScreen::activatePiecesMinSpec");
+    939, "ChallengeLoadScreen::activatePiecesMinSpec");
   if (activateMinRange) {
     assertExact(errors, facts.challenge, "minSpecOverlayVsMovieLine",
       firstMatchInRange(loadScreen.lines, activateMinRange.start, activateMinRange.end,
         /m_wndVideoManager\s*->\s*playMovie\s*\(\s*m_overlayVs\s*,\s*AsciiString\s*\(\s*"VSSmall"\s*\)/),
-      924, "ChallengeLoadScreen::activatePiecesMinSpec VS overlay movie");
+      978, "ChallengeLoadScreen::activatePiecesMinSpec VS overlay movie");
   }
 
   const challengeInitRange = assertFunctionRange(errors, facts.challenge, "init", loadScreen,
     /void\s+ChallengeLoadScreen\s*::\s*init\s*\(\s*GameInfo\s*\*\s*game\s*\)/,
-    928, "ChallengeLoadScreen::init");
+    982, "ChallengeLoadScreen::init");
   if (challengeInitRange) {
     [
-      ["campaignLine", /const\s+Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 930, "ChallengeLoadScreen::init current campaign"],
-      ["missionLine", /const\s+Mission\s*\*\s*mission\s*=\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)/, 931, "ChallengeLoadScreen::init current mission"],
-      ["playerGeneralLine", /getPlayerGeneralByCampaignName\s*\(\s*campaign\s*->\s*m_name\s*\)/, 934, "ChallengeLoadScreen::init player general"],
-      ["opponentGeneralLine", /getGeneralByGeneralName\s*\(\s*mission\s*->\s*m_generalName\s*\)/, 938, "ChallengeLoadScreen::init opponent general"],
-      ["layoutCreateLine", /winCreateFromScript\s*\(\s*AsciiString\s*\(\s*"Menus\/ChallengeLoadScreen\.wnd"\s*\)\s*\)/, 941, "ChallengeLoadScreen::init layout create"],
-      ["progressBarLookupLine", /ChallengeLoadScreen\.wnd:ProgressLoad/, 947, "ChallengeLoadScreen::init progress bar lookup"],
-      ["ambientEventLine", /m_ambientLoop\s*\.\s*setEventName\s*\(\s*"LoadScreenAmbient"\s*\)/, 951, "ChallengeLoadScreen::init ambient event"],
-      ["videoOpenLine", /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)\s*->\s*m_movieLabel\s*\)/, 954, "ChallengeLoadScreen::init TheVideoPlayer->open mission movie"],
-      ["createBufferLine", /m_videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/, 957, "ChallengeLoadScreen::init create video buffer"],
-      ["allocateLine", /m_videoBuffer\s*==\s*NULL\s*\|\|\s*!m_videoBuffer\s*->\s*allocate\s*\(\s*m_videoStream\s*->\s*width\s*\(\s*\)\s*,\s*m_videoStream\s*->\s*height\s*\(\s*\)\s*\)/, 958, "ChallengeLoadScreen::init allocate buffer"],
-      ["allocateFailureDeleteBufferLine", /delete\s+m_videoBuffer\s*;/, 960, "ChallengeLoadScreen::init allocation failure delete buffer"],
-      ["allocateFailureCloseStreamLine", /m_videoStream\s*->\s*close\s*\(\s*\)/, 964, "ChallengeLoadScreen::init allocation failure close stream"],
-      ["allocateFailureReturnLine", /^\s*return\s*;/, 967, "ChallengeLoadScreen::init allocation failure return"],
-      ["portraitMovieLeftLookupLine", /ChallengeLoadScreen\.wnd:PortraitMovieLeft/, 976, "ChallengeLoadScreen::init PortraitMovieLeft lookup"],
-      ["portraitMovieRightLookupLine", /ChallengeLoadScreen\.wnd:PortraitMovieRight/, 978, "ChallengeLoadScreen::init PortraitMovieRight lookup"],
-      ["overlayVsLookupLine", /ChallengeLoadScreen\.wnd:OverlayVs/, 995, "ChallengeLoadScreen::init OverlayVs lookup"],
-      ["newWindowVideoManagerLine", /m_wndVideoManager\s*=\s*NEW\s+WindowVideoManager\s*;/, 1044, "ChallengeLoadScreen::init new WindowVideoManager"],
-      ["windowVideoManagerInitLine", /m_wndVideoManager\s*->\s*init\s*\(\s*\)/, 1045, "ChallengeLoadScreen::init WindowVideoManager::init"],
+      ["campaignLine", /const\s+Campaign\s*\*\s*campaign\s*=\s*TheCampaignManager\s*->\s*getCurrentCampaign\s*\(\s*\)/, 984, "ChallengeLoadScreen::init current campaign"],
+      ["missionLine", /const\s+Mission\s*\*\s*mission\s*=\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)/, 985, "ChallengeLoadScreen::init current mission"],
+      ["playerGeneralLine", /getPlayerGeneralByCampaignName\s*\(\s*campaign\s*->\s*m_name\s*\)/, 988, "ChallengeLoadScreen::init player general"],
+      ["opponentGeneralLine", /getGeneralByGeneralName\s*\(\s*mission\s*->\s*m_generalName\s*\)/, 992, "ChallengeLoadScreen::init opponent general"],
+      ["layoutCreateLine", /winCreateFromScript\s*\(\s*AsciiString\s*\(\s*"Menus\/ChallengeLoadScreen\.wnd"\s*\)\s*\)/, 995, "ChallengeLoadScreen::init layout create"],
+      ["progressBarLookupLine", /ChallengeLoadScreen\.wnd:ProgressLoad/, 1001, "ChallengeLoadScreen::init progress bar lookup"],
+      ["ambientEventLine", /m_ambientLoop\s*\.\s*setEventName\s*\(\s*"LoadScreenAmbient"\s*\)/, 1005, "ChallengeLoadScreen::init ambient event"],
+      ["videoOpenLine", /m_videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*TheCampaignManager\s*->\s*getCurrentMission\s*\(\s*\)\s*->\s*m_movieLabel\s*\)/, 1008, "ChallengeLoadScreen::init TheVideoPlayer->open mission movie"],
+      ["createBufferLine", /m_videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/, 1011, "ChallengeLoadScreen::init create video buffer"],
+      ["allocateLine", /m_videoBuffer\s*==\s*NULL\s*\|\|\s*!m_videoBuffer\s*->\s*allocate\s*\(\s*m_videoStream\s*->\s*width\s*\(\s*\)\s*,\s*m_videoStream\s*->\s*height\s*\(\s*\)\s*\)/, 1012, "ChallengeLoadScreen::init allocate buffer"],
+      ["allocateFailureDeleteBufferLine", /delete\s+m_videoBuffer\s*;/, 1014, "ChallengeLoadScreen::init allocation failure delete buffer"],
+      ["allocateFailureCloseStreamLine", /m_videoStream\s*->\s*close\s*\(\s*\)/, 1018, "ChallengeLoadScreen::init allocation failure close stream"],
+      ["allocateFailureReturnLine", /^\s*return\s*;/, 1021, "ChallengeLoadScreen::init allocation failure return"],
+      ["portraitMovieLeftLookupLine", /ChallengeLoadScreen\.wnd:PortraitMovieLeft/, 1030, "ChallengeLoadScreen::init PortraitMovieLeft lookup"],
+      ["portraitMovieRightLookupLine", /ChallengeLoadScreen\.wnd:PortraitMovieRight/, 1032, "ChallengeLoadScreen::init PortraitMovieRight lookup"],
+      ["overlayVsLookupLine", /ChallengeLoadScreen\.wnd:OverlayVs/, 1049, "ChallengeLoadScreen::init OverlayVs lookup"],
+      ["newWindowVideoManagerLine", /m_wndVideoManager\s*=\s*NEW\s+WindowVideoManager\s*;/, 1098, "ChallengeLoadScreen::init new WindowVideoManager"],
+      ["windowVideoManagerInitLine", /m_wndVideoManager\s*->\s*init\s*\(\s*\)/, 1099, "ChallengeLoadScreen::init WindowVideoManager::init"],
     ].forEach(([key, pattern, expected, label]) =>
       assertExact(errors, facts.challenge, key,
         firstMatchInRange(loadScreen.lines, challengeInitRange.start, challengeInitRange.end, pattern),
         expected, label));
 
-    const challengeLoopPrefix = orderedMatchesInRange(loadScreen.lines, 1047, 1066, [
+    const challengeLoopPrefix = orderedMatchesInRange(loadScreen.lines, 1101, 1120, [
       /m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\/\s*FRAME_FUDGE_ADD/,
       /while\s*\(\s*m_videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
       /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
@@ -555,18 +571,18 @@ function main() {
     facts.challenge.mainMovieLoopPrefixLines = challengeLoopPrefix;
     assertOrdered(errors, "ChallengeLoadScreen::init movie loop prefix", challengeLoopPrefix);
     [
-      ["progressUpdateCountLine", challengeLoopPrefix[0], 1049, "ChallengeLoadScreen::init progress update count"],
-      ["movieWhileLine", challengeLoopPrefix[1], 1051, "ChallengeLoadScreen::init movie while"],
-      ["loopServiceWindowsLine", challengeLoopPrefix[2], 1053, "ChallengeLoadScreen::init serviceWindowsOS"],
-      ["isFrameReadyLine", challengeLoopPrefix[3], 1055, "ChallengeLoadScreen::init isFrameReady"],
-      ["sleepLine", challengeLoopPrefix[4], 1057, "ChallengeLoadScreen::init Sleep(1)"],
-      ["inactiveCheckLine", challengeLoopPrefix[5], 1061, "ChallengeLoadScreen::init inactive check"],
-      ["inactiveFrameNextLine", challengeLoopPrefix[6], 1063, "ChallengeLoadScreen::init inactive frameNext"],
-      ["inactiveFrameDecompressLine", challengeLoopPrefix[7], 1064, "ChallengeLoadScreen::init inactive frameDecompress"],
+      ["progressUpdateCountLine", challengeLoopPrefix[0], 1103, "ChallengeLoadScreen::init progress update count"],
+      ["movieWhileLine", challengeLoopPrefix[1], 1105, "ChallengeLoadScreen::init movie while"],
+      ["loopServiceWindowsLine", challengeLoopPrefix[2], 1107, "ChallengeLoadScreen::init serviceWindowsOS"],
+      ["isFrameReadyLine", challengeLoopPrefix[3], 1109, "ChallengeLoadScreen::init isFrameReady"],
+      ["sleepLine", challengeLoopPrefix[4], 1111, "ChallengeLoadScreen::init Sleep(1)"],
+      ["inactiveCheckLine", challengeLoopPrefix[5], 1115, "ChallengeLoadScreen::init inactive check"],
+      ["inactiveFrameNextLine", challengeLoopPrefix[6], 1117, "ChallengeLoadScreen::init inactive frameNext"],
+      ["inactiveFrameDecompressLine", challengeLoopPrefix[7], 1118, "ChallengeLoadScreen::init inactive frameDecompress"],
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
-    const challengeActiveLoop = orderedMatchesInRange(loadScreen.lines, 1066, 1096, [
+    const challengeActiveLoop = orderedMatchesInRange(loadScreen.lines, 1120, 1151, [
       /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
       /^\s*m_videoStream\s*->\s*frameRender\s*\(\s*m_videoBuffer\s*\)\s*;/,
       /^\s*m_videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
@@ -581,20 +597,20 @@ function main() {
     facts.challenge.mainMovieActiveLoopLines = challengeActiveLoop;
     assertOrdered(errors, "ChallengeLoadScreen::init active movie loop", challengeActiveLoop);
     [
-      ["frameDecompressLine", challengeActiveLoop[0], 1068, "ChallengeLoadScreen::init active frameDecompress"],
-      ["frameRenderLine", challengeActiveLoop[1], 1069, "ChallengeLoadScreen::init active frameRender"],
-      ["frameNextLine", challengeActiveLoop[2], 1070, "ChallengeLoadScreen::init active frameNext"],
-      ["attachVideoBufferLine", challengeActiveLoop[3], 1073, "ChallengeLoadScreen::init attach video buffer"],
-      ["frameVarLine", challengeActiveLoop[4], 1075, "ChallengeLoadScreen::init frame var"],
-      ["windowUpdateLine", challengeActiveLoop[5], 1087, "ChallengeLoadScreen::init TheWindowManager->update"],
-      ["activatePiecesLine", challengeActiveLoop[6], 1089, "ChallengeLoadScreen::init activatePieces"],
-      ["windowVideoManagerUpdateLine", challengeActiveLoop[7], 1090, "ChallengeLoadScreen::init WindowVideoManager update"],
-      ["displayDrawLine", challengeActiveLoop[8], 1093, "ChallengeLoadScreen::init display draw"],
-      ["audioUpdateLine", challengeActiveLoop[9], 1095, "ChallengeLoadScreen::init audio update"],
+      ["frameDecompressLine", challengeActiveLoop[0], 1122, "ChallengeLoadScreen::init active frameDecompress"],
+      ["frameRenderLine", challengeActiveLoop[1], 1123, "ChallengeLoadScreen::init active frameRender"],
+      ["frameNextLine", challengeActiveLoop[2], 1124, "ChallengeLoadScreen::init active frameNext"],
+      ["attachVideoBufferLine", challengeActiveLoop[3], 1127, "ChallengeLoadScreen::init attach video buffer"],
+      ["frameVarLine", challengeActiveLoop[4], 1129, "ChallengeLoadScreen::init frame var"],
+      ["windowUpdateLine", challengeActiveLoop[5], 1141, "ChallengeLoadScreen::init TheWindowManager->update"],
+      ["activatePiecesLine", challengeActiveLoop[6], 1143, "ChallengeLoadScreen::init activatePieces"],
+      ["windowVideoManagerUpdateLine", challengeActiveLoop[7], 1144, "ChallengeLoadScreen::init WindowVideoManager update"],
+      ["displayDrawLine", challengeActiveLoop[8], 1147, "ChallengeLoadScreen::init display draw"],
+      ["audioUpdateLine", challengeActiveLoop[9], 1149, "ChallengeLoadScreen::init audio update"],
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
-    const challengeMinSpec = orderedMatchesInRange(loadScreen.lines, 1098, 1130, [
+    const challengeMinSpec = orderedMatchesInRange(loadScreen.lines, 1152, 1183, [
       /m_videoStream\s*->\s*frameGoto\s*\(\s*m_videoStream\s*->\s*frameCount\s*\(\s*\)\s*\)/,
       /while\s*\(\s*!m_videoStream\s*->\s*isFrameReady\s*\(\s*\)\s*\)/,
       /^\s*m_videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
@@ -608,29 +624,29 @@ function main() {
     facts.challenge.minSpecLines = challengeMinSpec;
     assertOrdered(errors, "ChallengeLoadScreen::init min-spec frame path", challengeMinSpec);
     [
-      ["minSpecFrameGotoLine", challengeMinSpec[0], 1101, "ChallengeLoadScreen::init min-spec frameGoto"],
-      ["minSpecWaitReadyLine", challengeMinSpec[1], 1102, "ChallengeLoadScreen::init min-spec wait ready"],
-      ["minSpecFrameDecompressLine", challengeMinSpec[2], 1104, "ChallengeLoadScreen::init min-spec frameDecompress"],
-      ["minSpecFrameRenderLine", challengeMinSpec[3], 1105, "ChallengeLoadScreen::init min-spec frameRender"],
-      ["minSpecAttachBufferLine", challengeMinSpec[4], 1107, "ChallengeLoadScreen::init min-spec attach buffer"],
-      ["minSpecActivatePiecesLine", challengeMinSpec[5], 1109, "ChallengeLoadScreen::init min-spec activate pieces"],
-      ["minSpecWindowVideoManagerUpdateLine", challengeMinSpec[6], 1126, "ChallengeLoadScreen::init min-spec WindowVideoManager update"],
-      ["minSpecWindowUpdateLine", challengeMinSpec[7], 1127, "ChallengeLoadScreen::init min-spec window update"],
-      ["minSpecDisplayDrawLine", challengeMinSpec[8], 1128, "ChallengeLoadScreen::init min-spec display draw"],
+      ["minSpecFrameGotoLine", challengeMinSpec[0], 1155, "ChallengeLoadScreen::init min-spec frameGoto"],
+      ["minSpecWaitReadyLine", challengeMinSpec[1], 1156, "ChallengeLoadScreen::init min-spec wait ready"],
+      ["minSpecFrameDecompressLine", challengeMinSpec[2], 1158, "ChallengeLoadScreen::init min-spec frameDecompress"],
+      ["minSpecFrameRenderLine", challengeMinSpec[3], 1159, "ChallengeLoadScreen::init min-spec frameRender"],
+      ["minSpecAttachBufferLine", challengeMinSpec[4], 1161, "ChallengeLoadScreen::init min-spec attach buffer"],
+      ["minSpecActivatePiecesLine", challengeMinSpec[5], 1163, "ChallengeLoadScreen::init min-spec activate pieces"],
+      ["minSpecWindowVideoManagerUpdateLine", challengeMinSpec[6], 1180, "ChallengeLoadScreen::init min-spec WindowVideoManager update"],
+      ["minSpecWindowUpdateLine", challengeMinSpec[7], 1181, "ChallengeLoadScreen::init min-spec window update"],
+      ["minSpecDisplayDrawLine", challengeMinSpec[8], 1182, "ChallengeLoadScreen::init min-spec display draw"],
     ].forEach(([key, actual, expected, label]) =>
       assertExact(errors, facts.challenge, key, actual, expected, label));
 
     assertExact(errors, facts.challenge, "setFPModeLine",
-      firstMatchInRange(loadScreen.lines, 1129, challengeInitRange.end, /setFPMode\s*\(\s*\)/),
-      1130, "ChallengeLoadScreen::init setFPMode");
+      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end, /setFPMode\s*\(\s*\)/),
+      1184, "ChallengeLoadScreen::init setFPMode");
     assertExact(errors, facts.challenge, "tauntAudioLine",
-      firstMatchInRange(loadScreen.lines, 1129, challengeInitRange.end,
+      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end,
         /TheAudio\s*->\s*addAudioEvent\s*\(\s*&event\s*\)/),
-      1134, "ChallengeLoadScreen::init opponent taunt audio");
+      1188, "ChallengeLoadScreen::init opponent taunt audio");
     assertExact(errors, facts.challenge, "ambientAddLine",
-      firstMatchInRange(loadScreen.lines, 1129, challengeInitRange.end,
+      firstMatchInRange(loadScreen.lines, 1183, challengeInitRange.end,
         /m_ambientLoopHandle\s*=\s*TheAudio\s*->\s*addAudioEvent\s*\(\s*&m_ambientLoop\s*\)/),
-      1136, "ChallengeLoadScreen::init ambient add");
+      1190, "ChallengeLoadScreen::init ambient add");
   }
 
   // ------------------------------------------------------------------
@@ -801,115 +817,190 @@ function main() {
 
 	  // ------------------------------------------------------------------
 	  // 7. Focused runtime proof that now exercises original
-	  //    ScoreScreen::PlayMovieAndBlock without pulling in the full
-	  //    finishSinglePlayerInit/campaign dependency graph.
+	  //    ScoreScreen::PlayMovieAndBlock and SinglePlayerLoadScreen::init
+	  //    without pulling in the full finishSinglePlayerInit/campaign
+	  //    dependency graph.
 	  // ------------------------------------------------------------------
 	  assertExact(errors, facts.runtimeScoreScreen, "hookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*WindowLayout\s*\*layout\s*\)/.test(line)),
-	    50, "runtime ScoreScreen blank layout hook declaration");
+	    55, "runtime ScoreScreen blank layout hook declaration");
 	  assertExact(errors, facts.runtimeScoreScreen, "drawOverrideLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /void\s+draw\s*\(\s*\)\s+override/.test(line)),
-	    275, "runtime Display::draw override used by ScoreScreen");
+	    290, "runtime Display::draw override used by ScoreScreen");
 	  assertExact(errors, facts.runtimeScoreScreen, "drawPresentLine",
-	    firstMatchInRange(runtimeSmoke.lines, 275, 292,
+	    firstMatchInRange(runtimeSmoke.lines, 309, 324,
 	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/),
-	    289, "runtime ScoreScreen draw override presents W3DVideoBuffer");
+	    321, "runtime ScoreScreen draw override presents W3DVideoBuffer");
 	  assertExact(errors, facts.runtimeScoreScreen, "exerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_score_screen_play_movie_and_block\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
-	    1045, "runtime ScoreScreen PlayMovieAndBlock exercise");
+	    1166, "runtime ScoreScreen PlayMovieAndBlock exercise");
 	  assertExact(errors, facts.runtimeScoreScreen, "winCreateLayoutLine",
-	    firstMatchInRange(runtimeSmoke.lines, 1045, 1080,
+	    firstMatchInRange(runtimeSmoke.lines, 1166, 1190,
 	      /TheWindowManager\s*->\s*winCreateLayout\s*\(\s*AsciiString\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)\s*\)/),
-	    1058, "runtime ScoreScreen exercise creates BlankWindow layout");
+	    1179, "runtime ScoreScreen exercise creates BlankWindow layout");
 	  assertExact(errors, facts.runtimeScoreScreen, "hookInstallLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*layout\s*\)/.test(line)),
-	    1076, "runtime ScoreScreen exercise installs blank layout hook");
+	    1197, "runtime ScoreScreen exercise installs blank layout hook");
 	  assertExact(errors, facts.runtimeScoreScreen, "hookCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenGetBlankLayoutForMovie\s*\(\s*\)\s*==\s*layout/.test(line)),
-	    1077, "runtime ScoreScreen exercise verifies blank layout hook");
+	    1198, "runtime ScoreScreen exercise verifies blank layout hook");
 	  assertExact(errors, facts.runtimeScoreScreen, "playMovieCallLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /PlayMovieAndBlock\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)),
-	    1087, "runtime calls original PlayMovieAndBlock");
+	    1208, "runtime calls original PlayMovieAndBlock");
 	  assertExact(errors, facts.runtimeScoreScreen, "serviceWindowsCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not service the OS once per presented frame/.test(line)),
-	    1091, "runtime ScoreScreen serviceWindowsOS frame count check");
+	    1212, "runtime ScoreScreen serviceWindowsOS frame count check");
 	  assertExact(errors, facts.runtimeScoreScreen, "presentFrameCountCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not present the expected VS_small frames/.test(line)),
-	    1095, "runtime ScoreScreen 70-frame presentation count check");
+	    1216, "runtime ScoreScreen 70-frame presentation count check");
 	  assertExact(errors, facts.runtimeScoreScreen, "textureUpdateCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not upload the initial texture plus decoded frames/.test(line)),
-	    1099, "runtime ScoreScreen texture update count check");
+	    1220, "runtime ScoreScreen texture update count check");
 	  assertExact(errors, facts.runtimeScoreScreen, "drawCountCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not draw every decoded frame/.test(line)),
-	    1103, "runtime ScoreScreen draw count check");
+	    1224, "runtime ScoreScreen draw count check");
 	  assertExact(errors, facts.runtimeScoreScreen, "detachCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not detach the movie VideoBuffer/.test(line)),
-	    1105, "runtime ScoreScreen detaches movie VideoBuffer");
+	    1226, "runtime ScoreScreen detaches movie VideoBuffer");
 	  assertExact(errors, facts.runtimeScoreScreen, "closeStreamCheckLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen::PlayMovieAndBlock did not close the owned Bink stream/.test(line)),
-	    1109, "runtime ScoreScreen closes owned Bink stream");
+	    1230, "runtime ScoreScreen closes owned Bink stream");
 	  assertExact(errors, facts.runtimeScoreScreen, "summaryLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen PlayMovieAndBlock VS_small Bink W3D presentation ok/.test(line)),
-	    1120, "runtime ScoreScreen browser presentation summary");
+	    1241, "runtime ScoreScreen browser presentation summary");
 	  assertExact(errors, facts.runtimeScoreScreen, "clearHookLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*nullptr\s*\)/.test(line)),
-	    1131, "runtime ScoreScreen clears blank layout hook");
+	    1252, "runtime ScoreScreen clears blank layout hook");
 	  assertExact(errors, facts.runtimeScoreScreen, "exerciseCallLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_play_movie_and_block\s*\(\s*\*player\s*\)/.test(line)),
-	    1198, "runtime ScoreScreen exercise call");
+	    1423, "runtime ScoreScreen exercise call");
+
+	  assertExact(errors, facts.runtimeSinglePlayer, "hookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetSinglePlayerMovieForTest\s*\(\s*const\s+char\s+\*campaignName/.test(line)),
+	    57, "runtime SinglePlayerLoadScreen movie hook declaration");
+	  assertExact(errors, facts.runtimeSinglePlayer, "drawProbePresentLine",
+	    firstMatchInRange(runtimeSmoke.lines, 292, 307,
+	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer,\s*112,\s*84,\s*208,\s*204/),
+	    300, "runtime SinglePlayerLoadScreen draw probe presents W3DVideoBuffer");
+	  assertExact(errors, facts.runtimeSinglePlayer, "scriptCreateLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /Menus\/SinglePlayerLoadScreen\.wnd/.test(line)),
+	    448, "runtime SinglePlayerLoadScreen script layout gate");
+	  assertExact(errors, facts.runtimeSinglePlayer, "exerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_single_player_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    1268, "runtime SinglePlayerLoadScreen init exercise");
+	  assertExact(errors, facts.runtimeSinglePlayer, "hookSetLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortLoadScreenSetSinglePlayerMovieForTest\s*\(\s*"USA"\s*,\s*"VS_small"\s*\)/.test(line)),
+	    1294, "runtime SinglePlayerLoadScreen installs VS_small movie hook");
+	  assertExact(errors, facts.runtimeSinglePlayer, "initCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /load_screen\s*\.\s*init\s*\(\s*nullptr\s*\)/.test(line)),
+	    1307, "runtime calls original SinglePlayerLoadScreen::init");
+	  assertExact(errors, facts.runtimeSinglePlayer, "layoutCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not load SinglePlayerLoadScreen\.wnd/.test(line)),
+	    1314, "runtime SinglePlayerLoadScreen layout check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "serviceWindowsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not service the OS once per presented frame/.test(line)),
+	    1318, "runtime SinglePlayerLoadScreen serviceWindowsOS frame count check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "presentFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not present the expected VS_small frames/.test(line)),
+	    1322, "runtime SinglePlayerLoadScreen 70-frame presentation check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "textureUpdateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not upload the initial texture plus decoded frames/.test(line)),
+	    1326, "runtime SinglePlayerLoadScreen texture update count check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "drawCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not draw every decoded frame/.test(line)),
+	    1328, "runtime SinglePlayerLoadScreen draw count check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "detachCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not detach the load-screen VideoBuffer/.test(line)),
+	    1330, "runtime SinglePlayerLoadScreen detaches load-screen VideoBuffer");
+	  assertExact(errors, facts.runtimeSinglePlayer, "closeStreamCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen::init did not close the owned Bink stream/.test(line)),
+	    1332, "runtime SinglePlayerLoadScreen closes owned Bink stream");
+	  assertExact(errors, facts.runtimeSinglePlayer, "summaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen init VS_small Bink W3D presentation ok/.test(line)),
+	    1343, "runtime SinglePlayerLoadScreen browser presentation summary");
+	  assertExact(errors, facts.runtimeSinglePlayer, "releaseCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /SinglePlayerLoadScreen destructor did not release the W3DVideoBuffer texture/.test(line)),
+	    1358, "runtime SinglePlayerLoadScreen destructor texture release check");
+	  assertExact(errors, facts.runtimeSinglePlayer, "exerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_single_player_load_screen_init\s*\(\s*\*player\s*\)/.test(line)),
+	    1424, "runtime SinglePlayerLoadScreen exercise call");
 
 	  assertExact(errors, facts.runtimeBrowserHarness, "copyCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected seventy-five Bink copy events/.test(line)),
-	    402, "browser harness seventy-five-copy event count check");
+	      (line) => /Expected one hundred forty-five Bink copy events/.test(line)),
+	    402, "browser harness one-hundred-forty-five-copy event count check");
 	  assertExact(errors, facts.runtimeBrowserHarness, "lifecycleCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /openCount\s*!==\s*6\s*\|\|\s*closeCount\s*!==\s*6\s*\|\|\s*copyCompleteCount\s*!==\s*75/.test(line)),
-	    463, "browser harness six open/close lifecycles with seventy-five frame copies");
+	      (line) => /openCount\s*!==\s*7\s*\|\|\s*closeCount\s*!==\s*7\s*\|\|\s*copyCompleteCount\s*!==\s*145/.test(line)),
+	    463, "browser harness seven open/close lifecycles with one hundred forty-five frame copies");
 	  assertExact(errors, facts.runtimeBrowserHarness, "drawEventCountLine",
 	    lineNumber(runtimeBrowserHarness.lines,
-	      (line) => /Expected seventy-five W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
-	    473, "browser harness seventy-five W3DDisplay draw count check");
+	      (line) => /Expected one hundred forty-five W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
+	    473, "browser harness one-hundred-forty-five W3DDisplay draw count check");
+
+	  assertExact(errors, facts.cmake, "loadScreenRuntimeHookSourcePropertyLine",
+	    lineNumber(cmake.lines,
+	      (line) => /SOURCE\s+"\$\{GAMEENGINE_GAMECLIENT_DIR\}\/GUI\/LoadScreen\.cpp"/.test(line)),
+	    3347, "CMake focused LoadScreen source hook property");
+	  assertExact(errors, facts.cmake, "loadScreenRuntimeHookDefineLine",
+	    lineNumber(cmake.lines,
+	      (line) => /CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS=1/.test(line)),
+	    3348, "CMake focused LoadScreen hook define");
 
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeTargetLine",
 	    lineNumber(cmake.lines,
 	      (line) => /add_library\s*\(\s*zh_score_screen_movie_runtime/.test(line)),
-	    6516, "CMake ScoreScreen focused runtime target");
+	    6520, "CMake ScoreScreen focused runtime target");
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeSourceLine",
 	    firstMatchInRange(cmake.lines, facts.cmake.scoreScreenRuntimeTargetLine, facts.cmake.scoreScreenRuntimeTargetLine + 5,
 	      /ScoreScreen\.cpp/),
-	    6517, "CMake ScoreScreen focused runtime source");
+	    6521, "CMake ScoreScreen focused runtime source");
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeHookDefineLine",
 	    lineNumber(cmake.lines,
 	      (line) => /CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS=1/.test(line)),
-	    6522, "CMake focused ScoreScreen hook define");
+	    6526, "CMake focused ScoreScreen hook define");
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeLinkLine",
 	    lineNumber(cmake.lines,
 	      (line) => /zh_score_screen_movie_runtime/.test(line) && line.includes("zh_score_screen_movie_runtime")),
-	    6516, "CMake ScoreScreen focused runtime target name");
+	    6520, "CMake ScoreScreen focused runtime target name");
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeLinkedIntoSmokeLine",
-	    firstMatchInRange(cmake.lines, 6580, 6586,
+	    firstMatchInRange(cmake.lines, 6584, 6588,
 	      /zh_score_screen_movie_runtime/),
-	    6581, "CMake bink smoke links focused ScoreScreen runtime");
+	    6585, "CMake bink smoke links focused ScoreScreen runtime");
 	  assertExact(errors, facts.cmake, "scoreScreenRuntimeGcSectionsLine",
-	    firstMatchInRange(cmake.lines, 6643, 6654,
+	    firstMatchInRange(cmake.lines, 6647, 6657,
 	      /-Wl,--gc-sections/),
-	    6651, "CMake bink smoke drops unused ScoreScreen sections");
+	    6655, "CMake bink smoke drops unused ScoreScreen sections");
 
 	  // ------------------------------------------------------------------
 	  // 8. Package script registration.
@@ -929,7 +1020,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock. Full finishSinglePlayerInit/campaign ownership, original load-screen runtime ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock and SinglePlayerLoadScreen::init. Full finishSinglePlayerInit/campaign ownership, ChallengeLoadScreen runtime ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

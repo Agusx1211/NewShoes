@@ -3344,6 +3344,10 @@ set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/VideoStream.cpp" PROPE
   COMPILE_OPTIONS "-include;${WASM_SHIMS_DIR}/PreRTS.h"
 )
 
+set_property(SOURCE "${GAMEENGINE_GAMECLIENT_DIR}/GUI/LoadScreen.cpp" APPEND PROPERTY
+  COMPILE_DEFINITIONS CNC_PORT_LOAD_SCREEN_MOVIE_TEST_HOOKS=1
+)
+
 target_include_directories(zh_gameclient_utility PUBLIC
   "${WASM_SHIMS_DIR}"
   "${GAMEENGINE_INCLUDE_DIR}"
