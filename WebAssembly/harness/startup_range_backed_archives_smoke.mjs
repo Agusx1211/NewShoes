@@ -132,6 +132,12 @@ const optionalBaseArchiveSpecs = [
 ];
 
 const expectedMissingStartupFiles = baseIniStartupEntries;
+const expectedBaseAudioStartupMissing = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+];
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -234,6 +240,8 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
   const entries = frontier?.entries ?? [];
   const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
   const audioFiles = frontier?.audioStartupFiles;
+  const expectedAudioMissing = expected.audioStartupMissing ?? [];
+  const audioMissing = new Set(audioFiles?.missing ?? []);
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   if (!frontier
       || frontier.probeOnly !== true
@@ -266,6 +274,8 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
       || audioFiles?.defaultVoiceIni !== expected.audioStartupFilesReady
       || audioFiles?.voiceIni !== true
       || audioFiles?.miscAudioIni !== true
+      || audioMissing.size !== expectedAudioMissing.length
+      || expectedAudioMissing.some((path) => !audioMissing.has(path))
       || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
       || milesAudio?.ready !== false
       || milesAudio?.startupBoundaryReady !== true
@@ -314,6 +324,7 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
     mapCacheReady: false,
     setupReady: false,
     audioStartupFilesReady: false,
+    audioStartupMissing: expectedBaseAudioStartupMissing,
     milesNextRequired: "audioStartupFiles",
   });
   const files = startup.startupFiles;
@@ -381,6 +392,7 @@ function assertOriginalStartupWithBaseFiles(state, context) {
     mapCacheReady: false,
     setupReady: true,
     audioStartupFilesReady: true,
+    audioStartupMissing: [],
     milesNextRequired: "webAudioPlaybackBackend",
   });
   const files = startup.startupFiles;

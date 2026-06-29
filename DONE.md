@@ -1626,6 +1626,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       and `Default\SoundEffects.ini`, while `AudioSettings.ini` and the other
       default audio INIs remain absent until the base Generals startup archives
       are supplied.
+- [x] Expose the exact missing `AudioManager::init` startup INI paths directly
+      on `originalEngineStartup.deviceFactoryFrontier.audioStartupFiles.missing`.
+      The plain smoke asserts all ten paths missing before archives are mounted,
+      the runtime/archive smokes assert the current four optional-base audio INI
+      gaps, and the optional base archive path asserts the list clears before
+      advancing the frontier to the Web Audio backend blocker.
 - [x] Extend `npm run verify:gameengine-startup-order` to source-check the
       `AudioManager::init` audio INI load order and line anchors from
       `GameAudio.cpp`, keeping the harness-visible `audioStartupFiles` contract

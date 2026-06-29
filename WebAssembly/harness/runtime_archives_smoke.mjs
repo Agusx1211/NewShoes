@@ -39,6 +39,13 @@ const optionalBaseRuntimeArchives = [
   },
 ];
 
+const baseAudioStartupFiles = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+];
+
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
@@ -3486,6 +3493,10 @@ function assertOriginalEngineStartup(
   const audioFiles = frontier?.audioStartupFiles;
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   const milesCalls = milesAudio?.openDeviceCalls ?? [];
+  const expectedAudioStartupReady =
+    expectedStatus === "browser_device_layer_pending" && expectedSetupReady;
+  const expectedAudioMissing = expectedAudioStartupReady ? [] : baseAudioStartupFiles;
+  const audioMissing = new Set(audioFiles?.missing ?? []);
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
   const expectedStartupSingletonsReady = state.startupSingletons?.ok === true;
   const expectedSubsystemListReady =
@@ -3500,17 +3511,19 @@ function assertOriginalEngineStartup(
       || frontier.firstUnownedInitFactory !== "createAudioManager"
       || frontier.firstUnownedInitLine !== 434
       || audioFiles?.source !== "GameAudio.cpp::AudioManager::init"
-      || audioFiles?.ready !== false
-      || audioFiles?.audioSettingsIni !== false
-      || audioFiles?.defaultMusicIni !== false
+      || audioFiles?.ready !== expectedAudioStartupReady
+      || audioFiles?.audioSettingsIni !== expectedAudioStartupReady
+      || audioFiles?.defaultMusicIni !== expectedAudioStartupReady
       || audioFiles?.musicIni !== true
       || audioFiles?.defaultSoundEffectsIni !== true
       || audioFiles?.soundEffectsIni !== true
-      || audioFiles?.defaultSpeechIni !== false
+      || audioFiles?.defaultSpeechIni !== expectedAudioStartupReady
       || audioFiles?.speechIni !== true
-      || audioFiles?.defaultVoiceIni !== false
+      || audioFiles?.defaultVoiceIni !== expectedAudioStartupReady
       || audioFiles?.voiceIni !== true
       || audioFiles?.miscAudioIni !== true
+      || audioMissing.size !== expectedAudioMissing.length
+      || expectedAudioMissing.some((path) => !audioMissing.has(path))
       || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
       || milesAudio?.ready !== false
       || milesAudio?.runtimeReady !== false

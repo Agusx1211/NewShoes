@@ -67,7 +67,10 @@ archive path is checked before and after boot. That surface now includes
 missing details by expected source archive, the current
 `optionalBaseArchiveAbsent` classification for the four base `INI.big` audio
 startup gaps, and the `audioStartupArchives` next-required state until the
-optional base archive is mounted.
+optional base archive is mounted. The startup frontier mirrors the actionable
+subset as `originalEngineStartup.deviceFactoryFrontier.audioStartupFiles.missing`
+so no-asset, Zero Hour-only, and optional-base harness runs expose the exact
+audio startup paths blocking `createAudioManager`.
 
 `npm run verify:audio-format-frontier` pins the current real-asset audio
 payload encoding frontier. It enumerates every `Data\Audio\` payload in the

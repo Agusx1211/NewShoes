@@ -1259,6 +1259,34 @@ void append_missing_json_path(std::string &json, bool &first, bool present, cons
 	first = false;
 }
 
+std::string build_missing_audio_startup_files_json()
+{
+	std::string json = "[";
+	bool first = true;
+	append_missing_json_path(json, first, g_archive_probe.has_audio_settings_ini,
+		"Data\\INI\\AudioSettings.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_music_ini,
+		"Data\\INI\\Default\\Music.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_music_ini,
+		"Data\\INI\\Music.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_sound_effects_ini,
+		"Data\\INI\\Default\\SoundEffects.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_sound_effects_ini,
+		"Data\\INI\\SoundEffects.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_speech_ini,
+		"Data\\INI\\Default\\Speech.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_speech_ini,
+		"Data\\INI\\Speech.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_default_voice_ini,
+		"Data\\INI\\Default\\Voice.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_voice_ini,
+		"Data\\INI\\Voice.ini");
+	append_missing_json_path(json, first, g_archive_probe.has_misc_audio_ini,
+		"Data\\INI\\MiscAudio.ini");
+	json += "]";
+	return json;
+}
+
 std::string build_missing_base_ini_startup_files_json()
 {
 	if (!g_archive_probe.loaded) {
@@ -1456,6 +1484,8 @@ const char *build_device_factory_frontier_json()
 		g_file_system_probe.archive_ok;
 	const bool startup_files_ready = original_engine_startup_files_ready();
 	const bool audio_files_ready = audio_startup_files_ready();
+	const std::string missing_audio_startup_files_json =
+		build_missing_audio_startup_files_json();
 	const char *next_required = "startupAssets";
 	if (startup_assets_ready() && !startup_files_ready) {
 		next_required = "startupFiles";
@@ -1487,7 +1517,7 @@ const char *build_device_factory_frontier_json()
 		"\"createRadar\":\"W3DRadar\","
 		"\"createWebBrowser\":\"CComObject<W3DWebBrowser>\"},"
 		"\"audioStartupFiles\":{\"source\":\"GameAudio.cpp::AudioManager::init\","
-		"\"ready\":%s,\"audioSettingsIni\":%s,"
+		"\"ready\":%s,\"missing\":%s,\"audioSettingsIni\":%s,"
 		"\"defaultMusicIni\":%s,\"musicIni\":%s,"
 		"\"defaultSoundEffectsIni\":%s,\"soundEffectsIni\":%s,"
 		"\"defaultSpeechIni\":%s,\"speechIni\":%s,"
@@ -1551,6 +1581,7 @@ const char *build_device_factory_frontier_json()
 		"],\"fileSystemReady\":%s,\"startupFilesReady\":%s,\"startupSingletonsReady\":%s,\"setupReady\":%s}",
 		next_required,
 		json_bool(audio_files_ready),
+		missing_audio_startup_files_json.c_str(),
 		json_bool(g_archive_probe.has_audio_settings_ini),
 		json_bool(g_archive_probe.has_default_music_ini),
 		json_bool(g_archive_probe.has_music_ini),

@@ -80,6 +80,19 @@ const d3d8SpotLightCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-light-canvas.png",
 );
+
+const allAudioStartupFiles = [
+  "Data\\INI\\AudioSettings.ini",
+  "Data\\INI\\Default\\Music.ini",
+  "Data\\INI\\Music.ini",
+  "Data\\INI\\Default\\SoundEffects.ini",
+  "Data\\INI\\SoundEffects.ini",
+  "Data\\INI\\Default\\Speech.ini",
+  "Data\\INI\\Speech.ini",
+  "Data\\INI\\Default\\Voice.ini",
+  "Data\\INI\\Voice.ini",
+  "Data\\INI\\MiscAudio.ini",
+];
 const d3d8SpotFalloffCanvasScreenshot = resolve(
   screenshotDir,
   "harness-smoke-d3d8-spot-falloff-canvas.png",
@@ -827,6 +840,7 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
   const entries = frontier?.entries ?? [];
   const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
   const audioFiles = frontier?.audioStartupFiles;
+  const audioMissing = new Set(audioFiles?.missing ?? []);
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   const milesCalls = milesAudio?.openDeviceCalls ?? [];
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
@@ -848,6 +862,8 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || audioFiles?.defaultVoiceIni !== false
       || audioFiles?.voiceIni !== false
       || audioFiles?.miscAudioIni !== false
+      || audioMissing.size !== allAudioStartupFiles.length
+      || allAudioStartupFiles.some((path) => !audioMissing.has(path))
       || milesAudio?.source !== "MilesAudioManager.cpp::init/openDevice + Mss.H"
       || milesAudio?.ready !== false
       || milesAudio?.runtimeReady !== false
