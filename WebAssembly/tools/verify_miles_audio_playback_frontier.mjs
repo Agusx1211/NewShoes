@@ -638,9 +638,11 @@ function main() {
   }
   facts.headerDeclarations = headerFacts;
 
-  // ---- Shim facts: inert compile-only declarations ---------------------
+  // ---- Shim facts: current compile/frontier declarations ----------------
   // Every Miles call referenced by the playback-handle frontier above must
-  // have an inert compile-only declaration in Mss.H.
+  // have a declaration or browser-port shim body in Mss.H. Some of these
+  // entries are now stateful probe surfaces; this verifier only pins that the
+  // original playback frontier can still reach the expected API names.
   const shimFunctions = [
     "AIL_release_sample_handle",
     "AIL_release_3D_sample_handle",
@@ -665,20 +667,33 @@ function main() {
     const ln = lineNumber(shim.lines, (line) => re.test(line));
     shimInfo[fn] = { line: ln };
     if (ln === -1) {
-      errors.push(`shim Mss.H: missing inert declaration ${fn}`);
+      errors.push(`shim Mss.H: missing playback frontier function ${fn}`);
     }
   }
   const shimAllPresent = Object.values(shimInfo).every(
     (info) => info.line !== -1,
   );
   facts.mssShim = {
-    compileOnly: true,
+    compileOnly: false,
+    playbackReady: false,
     declarations: shimInfo,
-    allInertDeclarationsPresent: shimAllPresent,
+    statefulSubset: [
+      "AIL_allocate_sample_handle",
+      "AIL_release_sample_handle",
+      "AIL_init_sample",
+      "AIL_register_EOS_callback",
+      "AIL_start_sample",
+      "AIL_stop_sample",
+      "AIL_close_stream",
+      "AIL_set_stream_loop_count",
+      "AIL_register_stream_callback",
+      "AIL_start_stream",
+    ],
+    allPlaybackDeclarationsPresent: shimAllPresent,
   };
   if (!shimAllPresent) {
     errors.push(
-      "shim Mss.H: not all inert compile-only playback declarations are present",
+      "shim Mss.H: not all playback frontier declarations are present",
     );
   }
 

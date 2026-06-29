@@ -129,16 +129,16 @@ function main() {
   // line. Definitions, not references, must exist.
   // ========================================================================
   const mssBoundary = [
-    { name: "AIL_startup", line: 275 },
-    { name: "AIL_shutdown", line: 282 },
-    { name: "AIL_allocate_sample_handle", line: 331 },
-    { name: "AIL_allocate_3D_sample_handle", line: 531 },
-    { name: "AIL_open_3D_listener", line: 587 },
-    { name: "AIL_enumerate_3D_providers", line: 589 },
-    { name: "AIL_open_3D_provider", line: 610 },
-    { name: "AIL_set_file_callbacks", line: 671 },
-    { name: "AIL_quick_startup", line: 685 },
-    { name: "AIL_quick_handles", line: 711 },
+    { name: "AIL_startup", line: 341 },
+    { name: "AIL_shutdown", line: 348 },
+    { name: "AIL_allocate_sample_handle", line: 397 },
+    { name: "AIL_allocate_3D_sample_handle", line: 597 },
+    { name: "AIL_open_3D_listener", line: 653 },
+    { name: "AIL_enumerate_3D_providers", line: 655 },
+    { name: "AIL_open_3D_provider", line: 676 },
+    { name: "AIL_set_file_callbacks", line: 866 },
+    { name: "AIL_quick_startup", line: 880 },
+    { name: "AIL_quick_handles", line: 906 },
   ];
   const mssFacts = {};
   for (const { name, line } of mssBoundary) {
@@ -330,7 +330,7 @@ function main() {
     playbackNotReadyJson: requireLine(errors, probe.lines, 107, /playbackReady/, "probe playbackReady false JSON"),
     nextRequiredJson: requireLine(errors, probe.lines, 108, /nextRequired.*webAudioPlaybackBackend/, "probe nextRequired JSON"),
     cmakeSource: requireLine(errors, cmake.lines, 3691, /src\/wasm_mss_startup_probe\.cpp/, "CMake wasm_mss_startup_probe source"),
-    cmakeExport: requireLine(errors, cmake.lines, 3816, /_cnc_port_probe_mss_startup/, "CMake cnc_port_probe_mss_startup export"),
+    cmakeExport: requireLine(errors, cmake.lines, 3817, /_cnc_port_probe_mss_startup/, "CMake cnc_port_probe_mss_startup export"),
     bridgeCwrap: requireLine(
       errors,
       bridge.lines,
@@ -338,12 +338,12 @@ function main() {
       /probeMssStartup:\s*module\.cwrap\("cnc_port_probe_mss_startup",\s*"string",\s*\[\]\)/,
       "bridge probeMssStartup cwrap",
     ),
-    bridgeRpc: requireLine(errors, bridge.lines, 15556, /case "mssStartupProbe":/, "bridge mssStartupProbe RPC"),
-    bridgePlaybackGuard: requireLine(errors, bridge.lines, 15567, /probe\.playbackReady === false/, "bridge playbackReady false guard"),
+    bridgeRpc: requireLine(errors, bridge.lines, 15557, /case "mssStartupProbe":/, "bridge mssStartupProbe RPC"),
+    bridgePlaybackGuard: requireLine(errors, bridge.lines, 15568, /probe\.playbackReady === false/, "bridge playbackReady false guard"),
     bridgeNextRequiredGuard: requireLine(
       errors,
       bridge.lines,
-      15568,
+      15569,
       /probe\.nextRequired === "webAudioPlaybackBackend"/,
       "bridge nextRequired guard",
     ),

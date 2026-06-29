@@ -586,11 +586,16 @@ shares structure and follows behind.
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
       Bink-sharing handles. The startup boundary is no longer compile-only, but
-      playback, stream scheduling, and DirectSound speaker/device replacement
-      remain open. The 2D sample handle lifecycle is now stateful and
+      playback scheduling, decoded stream data, and DirectSound speaker/device
+      replacement remain open. The 2D sample handle lifecycle is now stateful and
       harness-probed by `mssSampleLifecycleProbe`, covering sample init, file
       assignment, callbacks, volume/pan/rate/loop settings, start/stop/resume,
-      status, and release without claiming Web Audio playback.
+      status, and release without claiming Web Audio playback. The HSTREAM
+      lifecycle is now stateful and harness-probed by
+      `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
+      registration, volume/pan/rate/loop/position state, start/pause/resume,
+      status, and close while still leaving real Web Audio stream scheduling
+      open.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;
