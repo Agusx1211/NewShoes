@@ -208,16 +208,19 @@ original `PlayMovieAndBlock("VS_small")` for 70 decoded frame presentations
 through `TheDisplay->draw()`. The same focused proof now drives the extracted
 ScoreScreen final-campaign movie helper through a real `CampaignManager` /
 `Campaign` / final-`Mission` transition for another 70 decoded
-`VS_small` presentations and blank-layout cleanup. It also compiles original
+`VS_small` presentations and blank-layout cleanup, and drives the non-final
+victorious `finishSinglePlayerInit` branch through a real two-mission
+`CampaignManager` graph with hook-counted mission-save, message-resource, and
+transition edges but no additional Bink frames. It also compiles original
 `LoadScreen.cpp` with a harness-only movie/campaign hook and drives original
 `SinglePlayerLoadScreen::init("VS_small")` for 70 decoded frame presentations,
 then drives original `ChallengeLoadScreen::init` with focused `GC_Background`
 and `VS_small`/`VSSmall` movie facts for 551 Challenge presentations. Full
 campaign-owned load-screen setup, campaign-owned Challenge persona setup, full
-`finishSinglePlayerInit` branch coverage, stats/LOD gates in the focused
-browser runtime, non-final mission save, challenge win/loss, defeat/retry, and
-the broader CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton
-surface remain open until they can be linked and harness-driven.
+non-test `finishSinglePlayerInit` subsystem ownership, stats/LOD gates in the
+focused browser runtime, challenge win/loss, defeat/retry, and the broader
+CampaignManager/GameInfo/GameWindow layout/LOD/shell/GUI singleton surface
+remain open until they can be linked and harness-driven.
 
 ## Runtime Targets
 

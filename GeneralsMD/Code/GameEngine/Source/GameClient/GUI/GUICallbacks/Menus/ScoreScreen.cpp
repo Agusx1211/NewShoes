@@ -159,8 +159,16 @@ static Bool buttonIsFinishCampaign = FALSE;
 static WindowLayout *s_blankLayout = NULL;
 static void finishSinglePlayerFinalCampaignMovie( void );
 static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup );
+static void finishSinglePlayerMissionSave( void );
+static void finishSinglePlayerFreeMessageResources( void );
+static void finishSinglePlayerSetTransitionGroup( AsciiString groupName );
 
 #if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+static Int s_finishSinglePlayerMissionSaveCalls = 0;
+static Int s_finishSinglePlayerFreeMessageResourcesCalls = 0;
+static Int s_finishSinglePlayerTransitionGroupCalls = 0;
+static AsciiString s_finishSinglePlayerLastTransitionGroup;
+
 extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout)
 {
 	s_blankLayout = layout;
@@ -195,9 +203,47 @@ extern "C" void CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(
 	buttonIsFinishCampaign = FALSE;
 }
 
+extern "C" void CncPortScoreScreenSetSavedTextForMovie(GameWindow *savedText)
+{
+	staticTextGameSaved = savedText;
+}
+
+extern "C" void CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie()
+{
+	s_finishSinglePlayerMissionSaveCalls = 0;
+	s_finishSinglePlayerFreeMessageResourcesCalls = 0;
+	s_finishSinglePlayerTransitionGroupCalls = 0;
+	s_finishSinglePlayerLastTransitionGroup.clear();
+}
+
+extern "C" Int CncPortScoreScreenGetMissionSaveCallsForMovie()
+{
+	return s_finishSinglePlayerMissionSaveCalls;
+}
+
+extern "C" Int CncPortScoreScreenGetFreeMessageResourcesCallsForMovie()
+{
+	return s_finishSinglePlayerFreeMessageResourcesCalls;
+}
+
+extern "C" Int CncPortScoreScreenGetTransitionGroupCallsForMovie()
+{
+	return s_finishSinglePlayerTransitionGroupCalls;
+}
+
+extern "C" const char *CncPortScoreScreenGetLastTransitionGroupForMovie()
+{
+	return s_finishSinglePlayerLastTransitionGroup.str();
+}
+
 extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie()
 {
 	return buttonIsFinishCampaign ? 1 : 0;
+}
+
+extern "C" void CncPortScoreScreenFinishSinglePlayerInitForMovie()
+{
+	finishSinglePlayerInit();
 }
 
 extern "C" void CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie()
@@ -898,6 +944,34 @@ static void finishSinglePlayerFinalCampaignMovie( void )
 	}
 }
 
+static void finishSinglePlayerMissionSave( void )
+{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	++s_finishSinglePlayerMissionSaveCalls;
+#else
+	TheGameState->missionSave();
+#endif
+}
+
+static void finishSinglePlayerFreeMessageResources( void )
+{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	++s_finishSinglePlayerFreeMessageResourcesCalls;
+#else
+	TheInGameUI->freeMessageResources();
+#endif
+}
+
+static void finishSinglePlayerSetTransitionGroup( AsciiString groupName )
+{
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+	++s_finishSinglePlayerTransitionGroupCalls;
+	s_finishSinglePlayerLastTransitionGroup = groupName;
+#else
+	TheTransitionHandler->setGroup(groupName);
+#endif
+}
+
 static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup )
 {
 	if (s_blankLayout)
@@ -937,7 +1011,7 @@ static void finishSinglePlayerMovieBlankLayoutCleanup( Bool setTransitionGroup )
 	if ( setTransitionGroup
 	 && TheCampaignManager->getCurrentCampaign()
 	 && !TheCampaignManager->getCurrentCampaign()->isChallengeCampaign())
-		TheTransitionHandler->setGroup("ScoreScreenShow");
+		finishSinglePlayerSetTransitionGroup("ScoreScreenShow");
 }
 
 void initSinglePlayer( void )
@@ -973,7 +1047,7 @@ void displayChallengeWinLoss( const Image *imageGeneral, const UnicodeString str
 void finishSinglePlayerInit( void )
 {
 	Bool copyProtectOK = TRUE;
-#ifdef DO_COPY_PROTECTION
+#if defined(DO_COPY_PROTECTION) && !defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
 	copyProtectOK = CopyProtect::validate();
 #endif
 	if(copyProtectOK && TheCampaignManager->isVictorious())
@@ -1006,7 +1080,7 @@ void finishSinglePlayerInit( void )
 			GadgetButtonSetText(buttonContinue, TheGameText->fetch("GUI:SaveAndContinue"));
 			
 			// auto save game
-			TheGameState->missionSave();
+			finishSinglePlayerMissionSave();
 			if(staticTextGameSaved)
 				staticTextGameSaved->winHide(FALSE);
 		}
@@ -1037,7 +1111,7 @@ void finishSinglePlayerInit( void )
 	//Added By Sadullah Nader
 	//Fix for the black screen text that appears after loading sequence
 
-	TheInGameUI->freeMessageResources();
+	finishSinglePlayerFreeMessageResources();
 
 	finishSinglePlayerMovieBlankLayoutCleanup(TRUE);
 }

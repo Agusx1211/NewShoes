@@ -8,9 +8,10 @@
 // already proves decoded sidecar frames can reach a real W3DVideoBuffer and
 // W3DDisplay::drawVideoBuffer. The focused browser smoke now drives the
 // original ScoreScreen::PlayMovieAndBlock, a focused ScoreScreen final-campaign
-// movie helper path, and SinglePlayerLoadScreen::init movie loops through
-// test-controlled layout/movie facts; full finishSinglePlayerInit branch
-// coverage, Challenge persona ownership, and InGameUI coverage remain open.
+// movie helper path, a hook-counted non-final victorious finishSinglePlayerInit
+// branch, and SinglePlayerLoadScreen::init movie loops through test-controlled
+// layout/movie facts; full non-test finishSinglePlayerInit subsystem edges,
+// Challenge persona ownership, and InGameUI coverage remain open.
 //
 // Pinned contract:
 //   1. LoadScreen.h stores VideoBuffer / VideoStreamInterface ownership fields
@@ -25,8 +26,9 @@
 //      creating Menus/BlankWindow.wnd, attaching a VideoBuffer to its first
 //      window, drawing each decompressed frame, and cleaning up the layout.
 //   5. The focused browser runtime drives the extracted final-campaign movie
-//      helper through a real CampaignManager/Campaign/Mission transition, while
-//      full finishSinglePlayerInit branches remain open.
+//      helper through a real CampaignManager/Campaign/Mission transition, and
+//      drives the full finishSinglePlayerInit non-final victorious branch with
+//      hook-counted GameState/InGameUI/transition edges.
 //   6. WindowLayout / GameWindowManager still expose the layout/window hooks
 //      those ScoreScreen ownership paths depend on.
 //
@@ -667,21 +669,39 @@ function main() {
   assertExact(errors, facts.scoreScreen, "initSinglePlayerDeclLine",
     lineNumber(scoreScreen.lines, (line) => /void\s+initSinglePlayer\s*\(\s*void\s*\)\s*;/.test(line)),
     155, "ScoreScreen.cpp initSinglePlayer declaration");
-  assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitDeclLine",
-    lineNumber(scoreScreen.lines, (line) => /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)\s*;/.test(line)),
-    156, "ScoreScreen.cpp finishSinglePlayerInit declaration");
-	  assertExact(errors, facts.scoreScreen, "blankLayoutStaticLine",
-	    lineNumber(scoreScreen.lines, (line) => /static\s+WindowLayout\s*\*\s*s_blankLayout\s*=\s*NULL\s*;/.test(line)),
-	    159, "ScoreScreen.cpp s_blankLayout static");
-	  assertExact(errors, facts.scoreScreen, "movieTestHookGuardLine",
-	    lineNumber(scoreScreen.lines, (line) => /defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/.test(line)),
-	    161, "ScoreScreen.cpp focused movie test hook guard");
-	  assertExact(errors, facts.scoreScreen, "movieTestHookSetLine",
-	    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*WindowLayout\s*\*layout\s*\)/.test(line)),
-	    162, "ScoreScreen.cpp focused blank layout setter hook");
-	  assertExact(errors, facts.scoreScreen, "movieTestHookGetLine",
-	    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetBlankLayoutForMovie\s*\(\s*\)/.test(line)),
-	    167, "ScoreScreen.cpp focused blank layout getter hook");
+	  assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitDeclLine",
+	    lineNumber(scoreScreen.lines, (line) => /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)\s*;/.test(line)),
+	    156, "ScoreScreen.cpp finishSinglePlayerInit declaration");
+		  assertExact(errors, facts.scoreScreen, "blankLayoutStaticLine",
+		    lineNumber(scoreScreen.lines, (line) => /static\s+WindowLayout\s*\*\s*s_blankLayout\s*=\s*NULL\s*;/.test(line)),
+		    159, "ScoreScreen.cpp s_blankLayout static");
+		  assertExact(errors, facts.scoreScreen, "movieTestHookGuardLine",
+		    lineNumber(scoreScreen.lines, (line) => /defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/.test(line)),
+		    161, "ScoreScreen.cpp focused movie test hook guard");
+		  assertExact(errors, facts.scoreScreen, "movieTestHookSetLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*WindowLayout\s*\*layout\s*\)/.test(line)),
+		    162, "ScoreScreen.cpp focused blank layout setter hook");
+		  assertExact(errors, facts.scoreScreen, "movieTestHookGetLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetBlankLayoutForMovie\s*\(\s*\)/.test(line)),
+		    167, "ScoreScreen.cpp focused blank layout getter hook");
+		  assertExact(errors, facts.scoreScreen, "savedTextHookSetLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenSetSavedTextForMovie\s*\(\s*GameWindow\s*\*savedText\s*\)/.test(line)),
+		    206, "ScoreScreen.cpp focused saved-game text hook");
+		  assertExact(errors, facts.scoreScreen, "branchCounterResetHookLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie\s*\(\s*\)/.test(line)),
+		    211, "ScoreScreen.cpp focused branch counter reset hook");
+		  assertExact(errors, facts.scoreScreen, "missionSaveCounterGetterLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetMissionSaveCallsForMovie\s*\(\s*\)/.test(line)),
+		    219, "ScoreScreen.cpp focused mission-save counter getter");
+		  assertExact(errors, facts.scoreScreen, "freeMessageCounterGetterLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetFreeMessageResourcesCallsForMovie\s*\(\s*\)/.test(line)),
+		    224, "ScoreScreen.cpp focused free-message counter getter");
+		  assertExact(errors, facts.scoreScreen, "transitionCounterGetterLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetTransitionGroupCallsForMovie\s*\(\s*\)/.test(line)),
+		    229, "ScoreScreen.cpp focused transition counter getter");
+		  assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitHookLine",
+		    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/.test(line)),
+		    244, "ScoreScreen.cpp focused finishSinglePlayerInit wrapper");
 
 	  const scoreUpdateRange = assertFunctionRange(errors, facts.scoreScreen, "scoreUpdate", scoreScreen,
 	    /void\s+ScoreScreenUpdate\s*\(\s*WindowLayout\s*\*\s*layout\s*,\s*void\s*\*\s*userData\s*\)/,
@@ -819,34 +839,78 @@ function main() {
   const cleanupRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerMovieBlankLayoutCleanup", scoreScreen,
     /static\s+void\s+finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*Bool\s+setTransitionGroup\s*\)/,
     901, "ScoreScreen finishSinglePlayerMovieBlankLayoutCleanup helper");
-  if (cleanupRange) {
-    [
-      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 905, "blank-layout cleanup destroys windows"],
-      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 906, "blank-layout cleanup deletes layout"],
-      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 907, "blank-layout cleanup clears pointer"],
-      ["focusParentLine", /TheWindowManager\s*->\s*winSetFocus\s*\(\s*parent\s*\)/, 911, "blank-layout cleanup restores parent focus"],
-      ["transitionGroupLine", /TheTransitionHandler\s*->\s*setGroup\s*\(\s*"ScoreScreenShow"\s*\)/, 940, "blank-layout cleanup restores transition group"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, cleanupRange.start, cleanupRange.end, pattern),
-        expected, label));
-  }
+	  if (cleanupRange) {
+	    [
+	      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 905, "blank-layout cleanup destroys windows"],
+	      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 906, "blank-layout cleanup deletes layout"],
+	      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 907, "blank-layout cleanup clears pointer"],
+	      ["focusParentLine", /TheWindowManager\s*->\s*winSetFocus\s*\(\s*parent\s*\)/, 911, "blank-layout cleanup restores parent focus"],
+	      ["transitionGroupLine", /finishSinglePlayerSetTransitionGroup\s*\(\s*"ScoreScreenShow"\s*\)/, 940, "blank-layout cleanup restores transition group"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, cleanupRange.start, cleanupRange.end, pattern),
+	        expected, label));
+	  }
 
-  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
-    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
-    973, "ScoreScreen finishSinglePlayerInit");
-  if (finishRange) {
-    [
-      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 979, "finishSinglePlayerInit victory check"],
-      ["gotoNextMissionLine", /TheCampaignManager\s*->\s*gotoNextMission\s*\(\s*\)/, 997, "finishSinglePlayerInit advances campaign mission"],
-      ["finalCampaignHelperCallLine", /finishSinglePlayerFinalCampaignMovie\s*\(\s*\)/, 1002, "finishSinglePlayerInit delegates final campaign movie helper"],
-      ["freeMessageResourcesLine", /TheInGameUI\s*->\s*freeMessageResources\s*\(\s*\)/, 1040, "finishSinglePlayerInit frees InGameUI message resources"],
-      ["cleanupHelperCallLine", /finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*TRUE\s*\)/, 1042, "finishSinglePlayerInit delegates blank layout cleanup"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
-        expected, label));
-  }
+	  const missionSaveRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerMissionSave", scoreScreen,
+	    /static\s+void\s+finishSinglePlayerMissionSave\s*\(\s*void\s*\)/,
+	    947, "ScoreScreen finishSinglePlayerMissionSave helper");
+	  if (missionSaveRange) {
+	    assertExact(errors, facts.scoreScreen, "missionSaveCounterIncrementLine",
+	      firstMatchInRange(scoreScreen.lines, missionSaveRange.start, missionSaveRange.end,
+	        /\+\+s_finishSinglePlayerMissionSaveCalls/),
+	      950, "finishSinglePlayerMissionSave hook counter increment");
+	    assertExact(errors, facts.scoreScreen, "missionSaveOriginalCallLine",
+	      firstMatchInRange(scoreScreen.lines, missionSaveRange.start, missionSaveRange.end,
+	        /TheGameState\s*->\s*missionSave\s*\(\s*\)/),
+	      952, "finishSinglePlayerMissionSave original GameState call");
+	  }
+	  const freeMessagesRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerFreeMessageResources", scoreScreen,
+	    /static\s+void\s+finishSinglePlayerFreeMessageResources\s*\(\s*void\s*\)/,
+	    956, "ScoreScreen finishSinglePlayerFreeMessageResources helper");
+	  if (freeMessagesRange) {
+	    assertExact(errors, facts.scoreScreen, "freeMessagesCounterIncrementLine",
+	      firstMatchInRange(scoreScreen.lines, freeMessagesRange.start, freeMessagesRange.end,
+	        /\+\+s_finishSinglePlayerFreeMessageResourcesCalls/),
+	      959, "finishSinglePlayerFreeMessageResources hook counter increment");
+	    assertExact(errors, facts.scoreScreen, "freeMessagesOriginalCallLine",
+	      firstMatchInRange(scoreScreen.lines, freeMessagesRange.start, freeMessagesRange.end,
+	        /TheInGameUI\s*->\s*freeMessageResources\s*\(\s*\)/),
+	      961, "finishSinglePlayerFreeMessageResources original InGameUI call");
+	  }
+	  const transitionRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerSetTransitionGroup", scoreScreen,
+	    /static\s+void\s+finishSinglePlayerSetTransitionGroup\s*\(\s*AsciiString\s+groupName\s*\)/,
+	    965, "ScoreScreen finishSinglePlayerSetTransitionGroup helper");
+	  if (transitionRange) {
+	    assertExact(errors, facts.scoreScreen, "transitionCounterIncrementLine",
+	      firstMatchInRange(scoreScreen.lines, transitionRange.start, transitionRange.end,
+	        /\+\+s_finishSinglePlayerTransitionGroupCalls/),
+	      968, "finishSinglePlayerSetTransitionGroup hook counter increment");
+	    assertExact(errors, facts.scoreScreen, "transitionOriginalCallLine",
+	      firstMatchInRange(scoreScreen.lines, transitionRange.start, transitionRange.end,
+	        /TheTransitionHandler\s*->\s*setGroup\s*\(\s*groupName\s*\)/),
+	      971, "finishSinglePlayerSetTransitionGroup original transition call");
+	  }
+
+	  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
+	    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
+	    973, "ScoreScreen finishSinglePlayerInit");
+	  if (finishRange) {
+	    [
+	      ["copyProtectionTestHookGuardLine", /defined\s*\(\s*DO_COPY_PROTECTION\s*\)\s*&&\s*!\s*defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/, 1050, "finishSinglePlayerInit copy protection test-hook guard"],
+	      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 979, "finishSinglePlayerInit victory check"],
+	      ["gotoNextMissionLine", /TheCampaignManager\s*->\s*gotoNextMission\s*\(\s*\)/, 997, "finishSinglePlayerInit advances campaign mission"],
+	      ["finalCampaignHelperCallLine", /finishSinglePlayerFinalCampaignMovie\s*\(\s*\)/, 1002, "finishSinglePlayerInit delegates final campaign movie helper"],
+	      ["saveAndContinueLine", /GadgetButtonSetText\s*\(\s*buttonContinue\s*,\s*TheGameText\s*->\s*fetch\s*\(\s*"GUI:SaveAndContinue"\s*\)\s*\)/, 1080, "finishSinglePlayerInit non-final SaveAndContinue text"],
+	      ["missionSaveHelperCallLine", /finishSinglePlayerMissionSave\s*\(\s*\)/, 1083, "finishSinglePlayerInit delegates non-final mission save"],
+	      ["savedTextRevealLine", /staticTextGameSaved\s*->\s*winHide\s*\(\s*FALSE\s*\)/, 1085, "finishSinglePlayerInit reveals saved-game text"],
+	      ["freeMessageResourcesLine", /finishSinglePlayerFreeMessageResources\s*\(\s*\)/, 1040, "finishSinglePlayerInit frees InGameUI message resources through helper"],
+	      ["cleanupHelperCallLine", /finishSinglePlayerMovieBlankLayoutCleanup\s*\(\s*TRUE\s*\)/, 1042, "finishSinglePlayerInit delegates blank layout cleanup"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
+	        expected, label));
+	  }
 
   // ------------------------------------------------------------------
   // 6. Layout/window interfaces that ScoreScreen depends on.
@@ -964,14 +1028,78 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /ScoreScreen finishSinglePlayerInit did not present the expected VS_small frames/.test(line)),
 	    1536, "runtime ScoreScreen final-campaign 70-frame presentation check");
-	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignSummaryLine",
-	    lineNumber(runtimeSmoke.lines,
-	      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)),
-	    1557, "runtime ScoreScreen final-campaign browser presentation summary");
+		  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignSummaryLine",
+		    lineNumber(runtimeSmoke.lines,
+		      (line) => /ScoreScreen finishSinglePlayerInit final VS_small Bink W3D presentation ok/.test(line)),
+		    1557, "runtime ScoreScreen final-campaign browser presentation summary");
 	  assertExact(errors, facts.runtimeScoreScreen, "finalCampaignExerciseCallLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)),
 	    1849, "runtime ScoreScreen final-campaign exercise call");
+	  assertExact(errors, facts.runtimeScoreScreen, "finishSinglePlayerInitHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/.test(line)),
+	    77, "runtime ScoreScreen finishSinglePlayerInit hook declaration");
+	  assertExact(errors, facts.runtimeScoreScreen, "branchCounterResetHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie\s*\(\s*\)/.test(line)),
+	    71, "runtime ScoreScreen branch counter reset hook declaration");
+	  assertExact(errors, facts.runtimeScoreScreen, "savedTextHookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetSavedTextForMovie\s*\(\s*GameWindow\s*\*savedText\s*\)/.test(line)),
+	    70, "runtime ScoreScreen saved text hook declaration");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)/.test(line)),
+	    1601, "runtime ScoreScreen non-final victory branch exercise");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalSavedTextHookInstallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetSavedTextForMovie\s*\(\s*static_text_game_saved\s*\)/.test(line)),
+	    1659, "runtime ScoreScreen non-final saved text hook install");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalCounterResetLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.nonFinalExerciseDefLine,
+	      facts.runtimeScoreScreen.nonFinalExerciseDefLine + 120,
+	      /CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie\s*\(\s*\)/),
+	    1690, "runtime ScoreScreen non-final branch counter reset");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalFinishInitCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeScoreScreen.nonFinalExerciseDefLine,
+	      facts.runtimeScoreScreen.nonFinalExerciseDefLine + 120,
+	      /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/),
+	    1692, "runtime calls focused full finishSinglePlayerInit wrapper");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalSaveAndContinueCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not set SaveAndContinue text/.test(line)),
+	    1698, "runtime ScoreScreen non-final SaveAndContinue check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalAdvanceMissionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not advance to mission2/.test(line)),
+	    1705, "runtime ScoreScreen non-final mission advance check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalMissionSaveCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not call GameState::missionSave once/.test(line)),
+	    1709, "runtime ScoreScreen non-final mission-save counter check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalFreeMessagesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not call InGameUI::freeMessageResources once/.test(line)),
+	    1711, "runtime ScoreScreen non-final free-message counter check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalTransitionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not request ScoreScreenShow transition/.test(line)),
+	    1714, "runtime ScoreScreen non-final transition counter check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalSavedTextRevealCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not reveal the saved-game text/.test(line)),
+	    1716, "runtime ScoreScreen non-final saved text reveal check");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit non-final victory branch ok/.test(line)),
+	    1722, "runtime ScoreScreen non-final victory branch summary");
+	  assertExact(errors, facts.runtimeScoreScreen, "nonFinalExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)\s*&&\s*ok/.test(line)),
+	    2008, "runtime ScoreScreen non-final exercise call");
 
 	  assertExact(errors, facts.runtimeSinglePlayer, "hookDeclLine",
 	    lineNumber(runtimeSmoke.lines,
@@ -1172,7 +1300,7 @@ function main() {
 	    errors,
 	    sources: SOURCES,
 	    facts,
-	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full finishSinglePlayerInit branch coverage, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock, the extracted ScoreScreen final-campaign movie helper, a hook-counted non-final victorious finishSinglePlayerInit branch, SinglePlayerLoadScreen::init, and ChallengeLoadScreen::init. Full non-test finishSinglePlayerInit subsystem edges, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
 	  }, null, 2));
 
   if (!ok) {

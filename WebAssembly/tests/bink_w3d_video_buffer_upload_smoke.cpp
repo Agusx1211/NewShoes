@@ -67,7 +67,14 @@ extern "C" void CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(
 	GameWindow *parentWindow,
 	GameWindow *continueButton,
 	GameWindow *okButton);
+extern "C" void CncPortScoreScreenSetSavedTextForMovie(GameWindow *savedText);
+extern "C" void CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
+extern "C" Int CncPortScoreScreenGetMissionSaveCallsForMovie();
+extern "C" Int CncPortScoreScreenGetFreeMessageResourcesCallsForMovie();
+extern "C" Int CncPortScoreScreenGetTransitionGroupCallsForMovie();
+extern "C" const char *CncPortScoreScreenGetLastTransitionGroupForMovie();
 extern "C" Int CncPortScoreScreenGetFinishCampaignForMovie();
+extern "C" void CncPortScoreScreenFinishSinglePlayerInitForMovie();
 extern "C" void CncPortScoreScreenFinishSinglePlayerFinalMovieForMovie();
 extern "C" void CncPortLoadScreenSetSinglePlayerMovieForTest(const char *campaignName, const char *movieLabel);
 extern "C" const char *CncPortLoadScreenGetSinglePlayerMovieForTest();
@@ -642,6 +649,11 @@ public:
 	GameWindow *createScoreScreenWindowForTest(AsciiString id, Int width, Int height)
 	{
 		return createWindowWithId(nullptr, id, width, height);
+	}
+
+	GameWindow *createScoreScreenWindowForTest(GameWindow *parent, AsciiString id, Int width, Int height)
+	{
+		return createWindowWithId(parent, id, width, height);
 	}
 
 	GameWindow *createScoreScreenButtonForTest(GameWindow *parent, AsciiString id, Int width, Int height)
@@ -1586,6 +1598,152 @@ bool exercise_score_screen_finish_single_player_final_movie(VideoPlayerInterface
 	return ok;
 }
 
+bool exercise_score_screen_finish_single_player_non_final_victory()
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	SmokeGameEngine game_engine;
+	NameKeyGenerator name_key_generator;
+	SmokeGameText game_text;
+	SmokeDisplayStringManager display_string_manager;
+	CampaignManager campaign_manager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	GameEngine *old_game_engine = TheGameEngine;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	GameTextInterface *old_game_text = TheGameText;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
+	TheWindowManager = &window_manager;
+	TheGameEngine = &game_engine;
+	TheNameKeyGenerator = &name_key_generator;
+	TheGameText = &game_text;
+	TheDisplayStringManager = &display_string_manager;
+	TheCampaignManager = &campaign_manager;
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch blank WindowLayout was not created") && ok;
+	ok = expect(movie_window != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch blank layout did not own a first GameWindow") && ok;
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	GameWindow *score_parent = window_manager.createScoreScreenWindowForTest(
+		AsciiString("ScoreScreen.wnd:ParentScoreScreen"), 800, 600);
+	GameWindow *button_continue = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonContinue"), 160, 32);
+	GameWindow *button_ok = window_manager.createScoreScreenButtonForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:ButtonOk"), 96, 32);
+	GameWindow *static_text_game_saved = window_manager.createScoreScreenWindowForTest(
+		score_parent, AsciiString("ScoreScreen.wnd:StaticTextGameSaved"), 240, 24);
+	ok = expect(score_parent != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not create the score parent window") && ok;
+	ok = expect(button_continue != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not create the continue button") && ok;
+	ok = expect(button_ok != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not create the ok button") && ok;
+	ok = expect(static_text_game_saved != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not create the saved-game text window") && ok;
+	if (static_text_game_saved != nullptr) {
+		static_text_game_saved->winHide(TRUE);
+	}
+
+	CncPortScoreScreenSetBlankLayoutForMovie(layout);
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(score_parent, button_continue, button_ok);
+	CncPortScoreScreenSetSavedTextForMovie(static_text_game_saved);
+
+	Campaign *campaign = campaign_manager.newCampaign(AsciiString("smoke_campaign"));
+	ok = expect(campaign != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not create a campaign") && ok;
+	if (campaign != nullptr) {
+		campaign->m_campaignNameLabel.set(AsciiString("GUI:SmokeCampaign"));
+		campaign->m_firstMission.set(AsciiString("mission1"));
+		Mission *mission1 = campaign->newMission(AsciiString("mission1"));
+		Mission *mission2 = campaign->newMission(AsciiString("mission2"));
+		ok = expect(mission1 != nullptr,
+			"ScoreScreen finishSinglePlayerInit non-final branch did not create mission1") && ok;
+		ok = expect(mission2 != nullptr,
+			"ScoreScreen finishSinglePlayerInit non-final branch did not create mission2") && ok;
+		if (mission1 != nullptr) {
+			mission1->m_mapName.set(AsciiString("Maps/Smoke/First.map"));
+			mission1->m_nextMission.set(AsciiString("mission2"));
+		}
+		if (mission2 != nullptr) {
+			mission2->m_mapName.set(AsciiString("Maps/Smoke/Next.map"));
+			mission2->m_nextMission.clear();
+		}
+		campaign_manager.setCampaignAndMission(AsciiString("smoke_campaign"), AsciiString("mission1"));
+	}
+	campaign_manager.setGameDifficulty(DIFFICULTY_NORMAL);
+	campaign_manager.SetVictorious(TRUE);
+	ok = expect(campaign_manager.isVictorious(),
+		"ScoreScreen finishSinglePlayerInit non-final branch did not mark the campaign victorious") && ok;
+	ok = expect(campaign_manager.getCurrentMission() != nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not select the current mission") && ok;
+
+	CncPortScoreScreenResetFinishSinglePlayerBranchCountersForMovie();
+
+	CncPortScoreScreenFinishSinglePlayerInitForMovie();
+
+	const UnicodeString continue_text = button_continue != nullptr ?
+		button_continue->winGetInstanceData()->getText() :
+		UnicodeString::TheEmptyString;
+	ok = expect(continue_text == game_text.fetch("GUI:SaveAndContinue"),
+		"ScoreScreen finishSinglePlayerInit non-final branch did not set SaveAndContinue text") && ok;
+	ok = expect(CncPortScoreScreenGetFinishCampaignForMovie() == 0,
+		"ScoreScreen finishSinglePlayerInit non-final branch incorrectly set finish-campaign state") && ok;
+	ok = expect(CncPortScoreScreenGetBlankLayoutForMovie() == nullptr,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not clear the blank layout pointer") && ok;
+	ok = expect(campaign_manager.getCurrentMission() != nullptr &&
+		campaign_manager.getCurrentMission()->m_name.compare(AsciiString("mission2")) == 0,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not advance to mission2") && ok;
+	ok = expect(campaign_manager.getCurrentMap().compare(AsciiString("Maps/Smoke/Next.map")) == 0,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not leave the next map selected") && ok;
+	ok = expect(CncPortScoreScreenGetMissionSaveCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not call GameState::missionSave once") && ok;
+	ok = expect(CncPortScoreScreenGetFreeMessageResourcesCallsForMovie() == 1,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not call InGameUI::freeMessageResources once") && ok;
+	ok = expect(CncPortScoreScreenGetTransitionGroupCallsForMovie() == 1 &&
+		std::strcmp(CncPortScoreScreenGetLastTransitionGroupForMovie(), "ScoreScreenShow") == 0,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not request ScoreScreenShow transition") && ok;
+	ok = expect(static_text_game_saved == nullptr || !static_text_game_saved->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit non-final branch did not reveal the saved-game text") && ok;
+	ok = expect(button_ok == nullptr || !button_ok->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit non-final branch did not restore the ok button") && ok;
+	ok = expect(button_continue == nullptr || !button_continue->winIsHidden(),
+		"ScoreScreen finishSinglePlayerInit non-final branch did not restore the continue button") && ok;
+
+	std::printf("ScoreScreen finishSinglePlayerInit non-final victory branch ok: missionSave=%d freeMessages=%d transition=%s currentMap=%s\n",
+		CncPortScoreScreenGetMissionSaveCallsForMovie(),
+		CncPortScoreScreenGetFreeMessageResourcesCallsForMovie(),
+		CncPortScoreScreenGetLastTransitionGroupForMovie(),
+		campaign_manager.getCurrentMap().str());
+
+	CncPortScoreScreenSetFinishSinglePlayerWindowsForMovie(nullptr, nullptr, nullptr);
+	CncPortScoreScreenSetSavedTextForMovie(nullptr);
+	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
+	if (score_parent != nullptr) {
+		window_manager.winDestroy(score_parent);
+		window_manager.update();
+	}
+	ok = expect(display_string_manager.free_count >= 1,
+		"ScoreScreen finishSinglePlayerInit non-final branch did not release button display strings during window cleanup") && ok;
+
+	TheCampaignManager = old_campaign_manager;
+	TheDisplayStringManager = old_display_string_manager;
+	TheGameText = old_game_text;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheGameEngine = old_game_engine;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 bool exercise_single_player_load_screen_init(VideoPlayerInterface &player)
 {
 	bool ok = true;
@@ -1847,6 +2005,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_blank_layout_movie_path(*player) && ok;
 		ok = exercise_score_screen_play_movie_and_block(*player) && ok;
 		ok = exercise_score_screen_finish_single_player_final_movie(*player) && ok;
+		ok = exercise_score_screen_finish_single_player_non_final_victory() && ok;
 		ok = exercise_single_player_load_screen_init(*player) && ok;
 		ok = exercise_challenge_load_screen_init(*player) && ok;
 	}

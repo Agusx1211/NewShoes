@@ -4155,6 +4155,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the Bink/W3D browser presentation smoke through the non-final
+      victorious `finishSinglePlayerInit` branch. The focused
+      `CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS` build now exposes a narrow
+      wrapper for `finishSinglePlayerInit`, a saved-game text hook, and
+      branch counters for the broad `GameState::missionSave`,
+      `InGameUI::freeMessageResources`, and `ScoreScreenShow` transition edges.
+      Normal non-test ScoreScreen behavior still calls the original subsystem
+      methods. The smoke builds a real two-mission `CampaignManager` graph,
+      advances from `mission1` to `mission2`, verifies `GUI:SaveAndContinue`,
+      saved-text visibility, blank-layout cleanup, next-map selection, restored
+      score buttons, and one counted save/message/transition edge. This branch
+      adds no Bink frames, so the aggregate browser harness still expects 12
+      Bink open/close lifecycles, 766 decoded frame copies, 766 indexed
+      video-buffer draws, 13 texture creates, 779 texture updates, and 12 texture
+      releases. Full non-test `GameState`/`InGameUI`/transition-handler runtime
+      ownership, stats/LOD gates, challenge win/loss, defeat/retry, InGameUI
+      movies, and Bink/audio sync remain open. Verified with
+      `npm run verify:bink-loadscore-movie-frontier`,
+      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+      `npm run verify:bink-w3d-video-presentation-frontier`, and
+      `npm run test:bink-w3d-video-presentation-browser`.
 
 ---
 

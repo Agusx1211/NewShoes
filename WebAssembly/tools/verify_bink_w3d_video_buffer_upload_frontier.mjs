@@ -45,10 +45,11 @@
 //
 // OPEN (explicitly not claimed complete by this verifier): the focused
 // `Display`, `WindowVideoManager`, blank-window, ScoreScreen,
-// focused ScoreScreen final-campaign helper, SinglePlayerLoadScreen, and
+// focused ScoreScreen final-campaign helper, a hook-counted non-final
+// victorious finishSinglePlayerInit branch, SinglePlayerLoadScreen, and
 // ChallengeLoadScreen paths now own real video buffers in the browser smoke,
-// but full finishSinglePlayerInit branch coverage, InGameUI movie loops, and
-// Bink/audio sync remain open. This verifier pins the
+// but full non-test finishSinglePlayerInit subsystem edges, InGameUI movie
+// loops, and Bink/audio sync remain open. This verifier pins the
 // upload contract plus the focused real-`W3DVideoBuffer` runtime smoke that
 // future presentation wiring must preserve.
 //
@@ -796,6 +797,36 @@ function main() {
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /exercise_score_screen_finish_single_player_final_movie\s*\(\s*\*player\s*\)/.test(line)), 1849,
 	    "runtime smoke ScoreScreen final-campaign exercise call");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalExerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)/.test(line)), 1601,
+	    "runtime smoke ScoreScreen non-final victory exercise function");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalFinishInitCallLine",
+	    firstMatchInRange(runtimeSmoke.lines,
+	      facts.runtimeSmoke.scoreScreenNonFinalExerciseDefLine,
+	      facts.runtimeSmoke.scoreScreenNonFinalExerciseDefLine + 120,
+	      /CncPortScoreScreenFinishSinglePlayerInitForMovie\s*\(\s*\)/), 1692,
+	    "runtime smoke full finishSinglePlayerInit wrapper call");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalMissionSaveCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not call GameState::missionSave once/.test(line)), 1709,
+	    "runtime smoke ScoreScreen non-final mission-save counter check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalFreeMessagesCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not call InGameUI::freeMessageResources once/.test(line)), 1711,
+	    "runtime smoke ScoreScreen non-final free-message counter check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalTransitionCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /finishSinglePlayerInit non-final branch did not request ScoreScreenShow transition/.test(line)), 1714,
+	    "runtime smoke ScoreScreen non-final transition counter check");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalSummaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen finishSinglePlayerInit non-final victory branch ok/.test(line)), 1722,
+	    "runtime smoke ScoreScreen non-final victory branch summary");
+	  assertExact(errors, facts.runtimeSmoke, "scoreScreenNonFinalExerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ok\s*=\s*exercise_score_screen_finish_single_player_non_final_victory\s*\(\s*\)\s*&&\s*ok/.test(line)), 2008,
+	    "runtime smoke ScoreScreen non-final exercise call");
 	  assertExact(errors, facts.runtimeSmoke, "singlePlayerExerciseDefLine",
 	    lineNumber(runtimeSmoke.lines,
 	      (line) => /bool\s+exercise_single_player_load_screen_init\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)), 1268,
@@ -965,11 +996,13 @@ function main() {
 	      "setVideoBuffer path, original ScoreScreen::PlayMovieAndBlock " +
 	      "loop for VS_small, and the extracted ScoreScreen final-campaign " +
 	      "movie helper through a real CampaignManager/Campaign/Mission " +
-	      "transition, each including 70 decoded-frame draw calls through " +
+	      "transition, and a hook-counted non-final victorious " +
+	      "finishSinglePlayerInit branch that advances to the next mission " +
+	      "without adding Bink frames. The movie paths each include 70 decoded-frame draw calls through " +
 	      "TheDisplay->draw(), plus original SinglePlayerLoadScreen::init for " +
 	      "VS_small through a focused layout/movie hook, plus original " +
 	      "ChallengeLoadScreen::init for GC_Background/VS_small through a focused " +
-	      "layout/movie hook. Full finishSinglePlayerInit branch coverage, " +
+	      "layout/movie hook. Full non-test finishSinglePlayerInit subsystem edges, " +
 	      "InGameUI movie-loop ownership, and " +
 	      "Bink/audio sync remain open M8 tasks.",
 	  };
