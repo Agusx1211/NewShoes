@@ -709,6 +709,45 @@ function assertMssSampleLifecycleProbe(probe, label) {
   }
 }
 
+function assertMssStreamLifecycleProbe(probe, label) {
+  if (!probe
+      || probe.ok !== true
+      || probe.source !== "Mss.H browser stream lifecycle contract probe"
+      || probe.runtimeReady !== false
+      || probe.streamLifecycleReady !== true
+      || probe.playbackReady !== false
+      || probe.nextRequired !== "webAudioPlaybackBackend"
+      || probe.quickStartup?.result !== 1
+      || probe.quickStartup?.digitalHandle !== true
+      || probe.calls?.AIL_open_stream !== true
+      || probe.calls?.AIL_open_stream_by_sample !== true
+      || probe.calls?.AIL_register_stream_callback !== true
+      || probe.calls?.AIL_set_stream_volume !== 88
+      || probe.calls?.AIL_set_stream_pan !== 48
+      || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.volume ?? 0) - 0.75) > 0.001
+      || Math.abs((probe.calls?.AIL_set_stream_volume_pan?.pan ?? 0) - 0.375) > 0.001
+      || probe.calls?.AIL_set_stream_playback_rate !== 32000
+      || probe.calls?.AIL_set_stream_loop_block?.start !== 5
+      || probe.calls?.AIL_set_stream_loop_block?.end !== 125
+      || probe.calls?.AIL_set_stream_loop_count !== 2
+      || probe.calls?.AIL_set_stream_ms_position !== 250
+      || probe.calls?.AIL_start_stream !== 2
+      || probe.calls?.AIL_pause_stream_stop !== 4
+      || probe.calls?.AIL_pause_stream_resume !== 2
+      || probe.calls?.AIL_close_stream !== true
+      || probe.callback?.count !== 0
+      || probe.callback?.lastHandle !== 0
+      || !Number.isFinite(probe.handle?.stream)
+      || !Number.isFinite(probe.handle?.bySampleStream)
+      || probe.handle?.validBeforeClose !== true
+      || probe.handle?.closed !== true
+      || probe.handle?.bySampleClosed !== true
+      || probe.handle?.statusAfterClose !== 1
+      || probe.handle?.panAfterClose !== 0) {
+    throw new Error(`${label} MSS stream lifecycle probe mismatch: ${JSON.stringify(probe)}`);
+  }
+}
+
 function assertOriginalEngineStartup(state, label, expectedStatus) {
   const startup = state.originalEngineStartup;
   if (!startup
@@ -943,6 +982,11 @@ try {
       throw new Error(`MSS sample lifecycle probe RPC failed: ${JSON.stringify(mssSampleLifecycleResult)}`);
     }
     assertMssSampleLifecycleProbe(mssSampleLifecycleResult.probe, "boot");
+    const mssStreamLifecycleResult = await page.evaluate(() => window.CnCPort.rpc("mssStreamLifecycleProbe"));
+    if (!mssStreamLifecycleResult.ok) {
+      throw new Error(`MSS stream lifecycle probe RPC failed: ${JSON.stringify(mssStreamLifecycleResult)}`);
+    }
+    assertMssStreamLifecycleProbe(mssStreamLifecycleResult.probe, "boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: boot");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug information");
     await assertHarnessLog(page, "wasm stdout", "cnc-port: wwdebug assert");

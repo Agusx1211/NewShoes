@@ -3579,6 +3579,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `WebAssembly/src/wasm_mss_sample_lifecycle_probe.cpp`
       (`cnc_port_probe_mss_sample_lifecycle` plus the key API calls). It emits
       JSON `{ ok, errors, sources, facts }` and exits nonzero on hard failure.
+- [x] Make the MSS HSTREAM lifecycle stateful and harness-observable. `Mss.H`
+      now tracks browser stream handles opened from filenames or 2D sample
+      handles, callback registration, volume/pan and float volume-pan, playback
+      rate, loop block, loop count, millisecond position, start/pause/resume
+      status, and close/release state. The wasm
+      `cnc_port_probe_mss_stream_lifecycle` export and harness
+      `mssStreamLifecycleProbe` RPC assert those transitions while still
+      reporting `playbackReady:false` and
+      `nextRequired:"webAudioPlaybackBackend"`; no browser audio node or stream
+      decoder is scheduled by this probe.
 
 ---
 
