@@ -158,6 +158,18 @@ static Bool s_needToFinishSinglePlayerInit = FALSE;
 static Bool buttonIsFinishCampaign = FALSE;
 static WindowLayout *s_blankLayout = NULL;
 
+#if defined(CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS)
+extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout)
+{
+	s_blankLayout = layout;
+}
+
+extern "C" WindowLayout *CncPortScoreScreenGetBlankLayoutForMovie()
+{
+	return s_blankLayout;
+}
+#endif
+
 void initSkirmish( void );
 void initLANMultiPlayer(void);
 void initInternetMultiPlayer(void);

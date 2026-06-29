@@ -375,7 +375,18 @@ try {
   });
 
   if (!runtimeResult.ok) {
-    throw new Error(`Bink W3DVideoBuffer upload smoke failed: ${JSON.stringify(runtimeResult)}`);
+    throw new Error(`Bink W3DVideoBuffer upload smoke failed: ${JSON.stringify({
+      status: runtimeResult.status,
+      recentBrowserEvents: browserEvents.slice(-20),
+      binkEventCount: runtimeResult.binkEvents?.length ?? 0,
+      copyEventCount: runtimeResult.copyEvents?.length ?? 0,
+      textureCreateCount: runtimeResult.textureCreates?.length ?? 0,
+      textureUpdateCount: runtimeResult.textureUpdates?.length ?? 0,
+      textureReleaseCount: runtimeResult.textureReleases?.length ?? 0,
+      textureBindCount: runtimeResult.textureBinds?.length ?? 0,
+      drawEventCount: runtimeResult.drawEvents?.length ?? 0,
+      lastDrawProbe: runtimeResult.lastDrawProbe ?? null,
+    })}`);
   }
 
   const binkEvents = runtimeResult.binkEvents ?? [];
@@ -387,8 +398,8 @@ try {
   const drawEvents = runtimeResult.drawEvents ?? [];
   const lastDrawProbe = runtimeResult.lastDrawProbe ?? null;
 
-  if (copyEvents.length !== 5) {
-    throw new Error(`Expected five Bink copy events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
+  if (copyEvents.length !== 75) {
+    throw new Error(`Expected seventy-five Bink copy events, got ${copyEvents.length}: ${JSON.stringify(copyEvents)}`);
   }
   for (const event of copyEvents) {
     if (event.bytesWritten <= 0 || event.checksum === 0) {
@@ -449,17 +460,17 @@ try {
   const openCount = binkEvents.filter((event) => event.type === "open").length;
   const closeCount = binkEvents.filter((event) => event.type === "close").length;
   const copyCompleteCount = binkEvents.filter((event) => event.type === "copyComplete").length;
-  if (openCount !== 5 || closeCount !== 5 || copyCompleteCount !== 5) {
+  if (openCount !== 6 || closeCount !== 6 || copyCompleteCount !== 75) {
     throw new Error(`Unexpected Bink lifecycle counts: ${JSON.stringify(binkEvents)}`);
   }
 
   const nonzeroTextureBinds = textureBinds.filter((event) => (event.id >>> 0) !== 0);
-  if (nonzeroTextureBinds.length < 5) {
-    throw new Error(`Expected W3DDisplay::drawVideoBuffer to bind all Bink textures: ${JSON.stringify(textureBinds)}`);
+  if (nonzeroTextureBinds.length < 6) {
+    throw new Error(`Expected W3DDisplay::drawVideoBuffer to bind each distinct Bink texture: ${JSON.stringify(textureBinds)}`);
   }
 
-  if (drawEvents.length < 5) {
-    throw new Error(`Expected five W3DDisplay::drawVideoBuffer indexed draws: ${JSON.stringify(drawEvents)}`);
+  if (drawEvents.length < 75) {
+    throw new Error(`Expected seventy-five W3DDisplay::drawVideoBuffer indexed draws: ${JSON.stringify(drawEvents)}`);
   }
 
   if (

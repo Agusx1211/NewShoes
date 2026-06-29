@@ -6513,6 +6513,62 @@ target_link_options(bink-videoplayer-browser-runtime-smoke PRIVATE
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )
 
+add_library(zh_score_screen_movie_runtime STATIC
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/ScoreScreen.cpp"
+)
+
+target_compile_definitions(zh_score_screen_movie_runtime PRIVATE
+  __PRERTS_H__
+  CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS=1
+)
+
+target_include_directories(zh_score_screen_movie_runtime PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+)
+
+target_compile_options(zh_score_screen_movie_runtime PRIVATE
+  -ffunction-sections
+  -fdata-sections
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
 add_executable(bink-w3d-video-buffer-browser-smoke
   tests/bink_w3d_video_buffer_upload_smoke.cpp
 )
@@ -6522,6 +6578,7 @@ set_target_properties(bink-w3d-video-buffer-browser-smoke PROPERTIES
 )
 
 target_link_libraries(bink-w3d-video-buffer-browser-smoke PRIVATE
+  zh_score_screen_movie_runtime
   zh_bink_video_device_compile_frontier
   zh_gameclient_utility
   zh_w3d_display_drawimage_runtime
@@ -6591,6 +6648,7 @@ target_link_options(bink-w3d-video-buffer-browser-smoke PRIVATE
   "SHELL:-sASSERTIONS=1"
   "SHELL:-sALLOW_MEMORY_GROWTH=1"
   "SHELL:-sINITIAL_MEMORY=134217728"
+  "SHELL:-Wl,--gc-sections"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_w3d_video_buffer_upload_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
 )

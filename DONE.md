@@ -4051,6 +4051,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       full original InGameUI, load-screen, score-screen loops, and Bink/audio
       sync open while proving the blank-window video-buffer ownership step in
       a harness screenshot. Verified with `npm run build:wasm`,
+	      `npm run verify:bink-w3d-video-buffer-upload-frontier`,
+	      `npm run verify:bink-w3d-video-presentation-frontier`,
+	      `npm run verify:bink-loadscore-movie-frontier`, and
+	      `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Extend the Bink/W3D browser presentation smoke through original
+      `ScoreScreen::PlayMovieAndBlock`. The focused browser smoke now links
+      original `ScoreScreen.cpp` as `zh_score_screen_movie_runtime` with a
+      gated `CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS` control surface that only
+      lets the harness install/clear the static `s_blankLayout`; normal
+      ScoreScreen behavior is unchanged. The smoke creates the real
+      `Menus/BlankWindow.wnd` layout, installs it on original `ScoreScreen`,
+      calls original `PlayMovieAndBlock("VS_small")`, verifies the original
+      loop services the game engine and presents 70 decoded frames through
+      `TheDisplay->draw()`, checks one real `W3DVideoBuffer` texture allocation,
+      71 texture uploads (initial clear plus decoded frames), one texture
+      release, 70 original `W3DDisplay::drawVideoBuffer` indexed draws, final
+      video-buffer detach, stream close, nonzero decoded texture checksum, and
+      a browser screenshot/pixel proof. The browser harness now expects six
+      Bink open/close lifecycles, 75 total decoded frame copies, and 75
+      draw-buffer indexed draws across direct, Display-owned, WindowVideoManager,
+      blank-layout, and original ScoreScreen paths. Full campaign
+      `finishSinglePlayerInit`, original load-screen runtime ownership,
+      InGameUI movies, and Bink/audio sync remain open. Verified with
+      `npm run build:wasm`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`,
       `npm run verify:bink-loadscore-movie-frontier`, and

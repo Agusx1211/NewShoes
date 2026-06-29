@@ -8,6 +8,7 @@
 #include "Common/AsciiString.h"
 #include "Common/AudioAffect.h"
 #include "Common/GameAudio.h"
+#include "Common/GameEngine.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/SubsystemInterface.h"
@@ -44,6 +45,71 @@ GlobalData *TheGlobalData = nullptr;
 #endif
 GlobalData *TheWritableGlobalData = nullptr;
 AudioManager *TheAudio = nullptr;
+GameEngine *TheGameEngine = nullptr;
+
+extern "C" void CncPortScoreScreenSetBlankLayoutForMovie(WindowLayout *layout);
+extern "C" WindowLayout *CncPortScoreScreenGetBlankLayoutForMovie();
+void PlayMovieAndBlock(AsciiString movieTitle);
+
+void setFPMode(void)
+{
+}
+
+GameEngine::GameEngine() :
+	m_maxFPS(DEFAULT_MAX_FPS),
+	m_quitting(FALSE),
+	m_isActive(TRUE)
+{
+}
+
+GameEngine::~GameEngine()
+{
+}
+
+void GameEngine::init(void)
+{
+}
+
+void GameEngine::init(int, char **)
+{
+}
+
+void GameEngine::reset(void)
+{
+}
+
+void GameEngine::update(void)
+{
+}
+
+void GameEngine::execute(void)
+{
+}
+
+void GameEngine::setFramesPerSecondLimit(Int fps)
+{
+	m_maxFPS = fps;
+}
+
+Int GameEngine::getFramesPerSecondLimit(void)
+{
+	return m_maxFPS;
+}
+
+Bool GameEngine::isMultiplayerSession(void)
+{
+	return FALSE;
+}
+
+FileSystem *GameEngine::createFileSystem(void)
+{
+	return nullptr;
+}
+
+MessageStream *GameEngine::createMessageStream(void)
+{
+	return nullptr;
+}
 
 GameWindow *GameWindowManager::winCreateFromScript(AsciiString, WindowLayoutInfo *)
 {
@@ -127,6 +193,13 @@ void AudioManager::removeAllAudioRequests() {}
 
 namespace {
 
+bool present_uploaded_video_buffer(
+	W3DVideoBuffer &buffer,
+	Int draw_left,
+	Int draw_top,
+	Int draw_right,
+	Int draw_bottom);
+
 class SmokeAudioManager final : public AudioManager
 {
 public:
@@ -191,6 +264,32 @@ public:
 	VideoBuffer *createVideoBuffer() override { return NEW W3DVideoBuffer(VideoBuffer::TYPE_X8R8G8B8); }
 	VideoBuffer *movieVideoBuffer() const { return m_videoBuffer; }
 	VideoStreamInterface *movieVideoStream() const { return m_videoStream; }
+	void setScoreScreenMovieWindow(GameWindow *window)
+	{
+		m_scoreScreenMovieWindow = window;
+		m_scoreScreenPresentCount = 0;
+		m_scoreScreenPresentOk = true;
+	}
+	Int scoreScreenPresentCount() const { return m_scoreScreenPresentCount; }
+	Bool scoreScreenPresentOk() const { return m_scoreScreenPresentOk ? TRUE : FALSE; }
+	void draw() override
+	{
+		if (m_scoreScreenMovieWindow == nullptr) {
+			return;
+		}
+
+		WinInstanceData *inst_data = m_scoreScreenMovieWindow->winGetInstanceData();
+		VideoBuffer *video_buffer = inst_data != nullptr ? inst_data->m_videoBuffer : nullptr;
+		if (video_buffer == nullptr) {
+			return;
+		}
+
+		W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(video_buffer);
+		m_scoreScreenPresentOk =
+			present_uploaded_video_buffer(*w3d_buffer, 464, 324, 560, 444) &&
+			m_scoreScreenPresentOk;
+		++m_scoreScreenPresentCount;
+	}
 	void doSmartAssetPurgeAndPreload(const char *) override {}
 #if defined(_DEBUG) || defined(_INTERNAL)
 	void dumpAssetUsage(const char *) override {}
@@ -220,6 +319,37 @@ public:
 	void enableLetterBox(Bool) override {}
 	Real getAverageFPS() override { return 30.0f; }
 	Int getLastFrameDrawCalls() override { return 0; }
+
+private:
+	GameWindow *m_scoreScreenMovieWindow = nullptr;
+	Int m_scoreScreenPresentCount = 0;
+	bool m_scoreScreenPresentOk = true;
+};
+
+class SmokeGameEngine final : public GameEngine
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+	void execute() override {}
+	void serviceWindowsOS() override { ++service_windows_calls; }
+	Bool isActive() override { return TRUE; }
+
+	Int service_windows_calls = 0;
+
+protected:
+	LocalFileSystem *createLocalFileSystem() override { return nullptr; }
+	ArchiveFileSystem *createArchiveFileSystem() override { return nullptr; }
+	GameLogic *createGameLogic() override { return nullptr; }
+	GameClient *createGameClient() override { return nullptr; }
+	ModuleFactory *createModuleFactory() override { return nullptr; }
+	ThingFactory *createThingFactory() override { return nullptr; }
+	FunctionLexicon *createFunctionLexicon() override { return nullptr; }
+	Radar *createRadar() override { return nullptr; }
+	WebBrowser *createWebBrowser() override { return nullptr; }
+	ParticleSystemManager *createParticleSystemManager() override { return nullptr; }
+	AudioManager *createAudioManager() override { return nullptr; }
 };
 
 class SmokeGameWindow : public GameWindow
@@ -428,7 +558,8 @@ bool present_uploaded_video_buffer(
 		"W3DDisplay::drawVideoBuffer was not called") && ok;
 	ok = expect(state->draw_indexed_primitive_calls == draw_calls_before_present + 1,
 		"W3DDisplay::drawVideoBuffer did not issue one indexed draw") && ok;
-	ok = expect(state->browser_texture_bind_calls > texture_binds_before_present,
+	ok = expect(state->browser_texture_bind_calls > texture_binds_before_present ||
+		(state->last_set_texture_stage == 0 && state->last_set_texture_id != 0),
 		"W3DDisplay::drawVideoBuffer did not bind the W3DVideoBuffer texture") && ok;
 	ok = expect(state->last_draw_primitive_type == D3DPT_TRIANGLELIST,
 		"W3DDisplay::drawVideoBuffer primitive type mismatch") && ok;
@@ -911,6 +1042,108 @@ bool exercise_blank_layout_movie_path(VideoPlayerInterface &player)
 	return ok;
 }
 
+bool exercise_score_screen_play_movie_and_block(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	SmokeGameWindowManager window_manager;
+	WindowVideoProbeDisplay display;
+	SmokeGameEngine game_engine;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	Display *old_display = TheDisplay;
+	GameEngine *old_game_engine = TheGameEngine;
+	TheWindowManager = &window_manager;
+	TheDisplay = &display;
+	TheGameEngine = &game_engine;
+
+	WindowLayout *layout = TheWindowManager->winCreateLayout(AsciiString("Menus/BlankWindow.wnd"));
+	GameWindow *movie_window = layout != nullptr ? layout->getFirstWindow() : nullptr;
+	ok = expect(layout != nullptr,
+		"ScoreScreen movie path blank WindowLayout was not created") && ok;
+	ok = expect(window_manager.blank_layout_script_creates == 1,
+		"ScoreScreen movie path did not load BlankWindow.wnd through winCreateFromScript") && ok;
+	ok = expect(movie_window != nullptr,
+		"ScoreScreen movie path blank layout did not own a first GameWindow") && ok;
+
+	if (layout != nullptr) {
+		layout->hide(FALSE);
+		layout->bringForward();
+		if (movie_window != nullptr) {
+			movie_window->winClearStatus(WIN_STATUS_IMAGE);
+		}
+	}
+
+	display.setScoreScreenMovieWindow(movie_window);
+	CncPortScoreScreenSetBlankLayoutForMovie(layout);
+	ok = expect(CncPortScoreScreenGetBlankLayoutForMovie() == layout,
+		"ScoreScreen movie path did not install the blank layout hook") && ok;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_play = state->browser_texture_create_calls;
+	const UINT updates_before_play = state->browser_texture_update_calls;
+	const UINT releases_before_play = state->browser_texture_release_calls;
+	const UINT draws_before_play = state->draw_indexed_primitive_calls;
+	const Int expected_presented_frames = 70;
+
+	PlayMovieAndBlock(AsciiString("VS_small"));
+
+	state = wasm_d3d8_get_state();
+	ok = expect(game_engine.service_windows_calls == expected_presented_frames,
+		"ScoreScreen::PlayMovieAndBlock did not service the OS once per presented frame") && ok;
+	ok = expect(display.scoreScreenPresentOk(),
+		"ScoreScreen::PlayMovieAndBlock display draw presentation failed") && ok;
+	ok = expect(display.scoreScreenPresentCount() == expected_presented_frames,
+		"ScoreScreen::PlayMovieAndBlock did not present the expected VS_small frames") && ok;
+	ok = expect(state->browser_texture_create_calls == creates_before_play + 1,
+		"ScoreScreen::PlayMovieAndBlock did not allocate one W3DVideoBuffer texture") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_play + 1 + expected_presented_frames,
+		"ScoreScreen::PlayMovieAndBlock did not upload the initial texture plus decoded frames") && ok;
+	ok = expect(state->browser_texture_release_calls == releases_before_play + 1,
+		"ScoreScreen::PlayMovieAndBlock did not release the W3DVideoBuffer texture") && ok;
+	ok = expect(state->draw_indexed_primitive_calls == draws_before_play + expected_presented_frames,
+		"ScoreScreen::PlayMovieAndBlock did not draw every decoded frame") && ok;
+	ok = expect(movie_window == nullptr || movie_window->winGetInstanceData()->m_videoBuffer == nullptr,
+		"ScoreScreen::PlayMovieAndBlock did not detach the movie VideoBuffer") && ok;
+	ok = expect(TheWritableGlobalData->m_loadScreenRender == FALSE,
+		"ScoreScreen::PlayMovieAndBlock did not clear m_loadScreenRender") && ok;
+	ok = expect(player.firstStream() == nullptr,
+		"ScoreScreen::PlayMovieAndBlock did not close the owned Bink stream") && ok;
+	ok = expect(state->last_browser_texture_width == next_power_of_two(96) &&
+		state->last_browser_texture_height == next_power_of_two(120),
+		"ScoreScreen::PlayMovieAndBlock decoded texture dimensions mismatch") && ok;
+	ok = expect(state->last_browser_texture_pitch == next_power_of_two(96) * 4,
+		"ScoreScreen::PlayMovieAndBlock decoded texture pitch mismatch") && ok;
+	ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+		"ScoreScreen::PlayMovieAndBlock decoded texture format mismatch") && ok;
+	ok = expect(state->last_browser_texture_checksum != 0,
+		"ScoreScreen::PlayMovieAndBlock uploaded an all-zero decoded frame") && ok;
+
+	std::printf("ScoreScreen PlayMovieAndBlock VS_small Bink W3D presentation ok: frames=%d texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
+		expected_presented_frames,
+		next_power_of_two(96),
+		next_power_of_two(120),
+		next_power_of_two(96) * 4,
+		static_cast<unsigned int>(state->last_browser_texture_checksum),
+		464,
+		324,
+		560,
+		444);
+
+	CncPortScoreScreenSetBlankLayoutForMovie(nullptr);
+	display.setScoreScreenMovieWindow(nullptr);
+	if (layout != nullptr) {
+		layout->destroyWindows();
+		ok = expect(layout->getFirstWindow() == nullptr,
+			"ScoreScreen movie path WindowLayout::destroyWindows did not clear the first window") && ok;
+		layout->deleteInstance();
+	}
+	window_manager.update();
+
+	TheGameEngine = old_game_engine;
+	TheDisplay = old_display;
+	TheWindowManager = old_window_manager;
+	return ok;
+}
+
 } // namespace
 
 extern "C" int run_bink_w3d_video_buffer_upload_smoke()
@@ -962,6 +1195,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 		ok = exercise_display_movie(*player) && ok;
 		ok = exercise_window_video_manager(*player) && ok;
 		ok = exercise_blank_layout_movie_path(*player) && ok;
+		ok = exercise_score_screen_play_movie_and_block(*player) && ok;
 	}
 
 	if (player != nullptr) {

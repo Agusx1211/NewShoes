@@ -44,6 +44,9 @@ const SOURCES = {
   windowLayoutH: "GeneralsMD/Code/GameEngine/Include/GameClient/WindowLayout.h",
   windowLayout:
     "GeneralsMD/Code/GameEngine/Source/GameClient/GUI/WindowLayout.cpp",
+  runtimeSmoke: "WebAssembly/tests/bink_w3d_video_buffer_upload_smoke.cpp",
+  runtimeBrowserHarness: "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
+  cmake: "WebAssembly/CMakeLists.txt",
   packageJson: "WebAssembly/package.json",
 };
 
@@ -159,6 +162,9 @@ function main() {
     challenge: {},
     scoreScreen: {},
     windowLayout: {},
+    runtimeScoreScreen: {},
+    runtimeBrowserHarness: {},
+    cmake: {},
     packageJson: {},
   };
 
@@ -168,6 +174,9 @@ function main() {
   const gameWindowManagerH = readSourceLines(SOURCES.gameWindowManagerH);
   const windowLayoutH = readSourceLines(SOURCES.windowLayoutH);
   const windowLayout = readSourceLines(SOURCES.windowLayout);
+  const runtimeSmoke = readSourceLines(SOURCES.runtimeSmoke);
+  const runtimeBrowserHarness = readSourceLines(SOURCES.runtimeBrowserHarness);
+  const cmake = readSourceLines(SOURCES.cmake);
   const packageJson = readSourceLines(SOURCES.packageJson);
 
   // ------------------------------------------------------------------
@@ -633,131 +642,140 @@ function main() {
   assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitDeclLine",
     lineNumber(scoreScreen.lines, (line) => /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)\s*;/.test(line)),
     156, "ScoreScreen.cpp finishSinglePlayerInit declaration");
-  assertExact(errors, facts.scoreScreen, "blankLayoutStaticLine",
-    lineNumber(scoreScreen.lines, (line) => /static\s+WindowLayout\s*\*\s*s_blankLayout\s*=\s*NULL\s*;/.test(line)),
-    159, "ScoreScreen.cpp s_blankLayout static");
+	  assertExact(errors, facts.scoreScreen, "blankLayoutStaticLine",
+	    lineNumber(scoreScreen.lines, (line) => /static\s+WindowLayout\s*\*\s*s_blankLayout\s*=\s*NULL\s*;/.test(line)),
+	    159, "ScoreScreen.cpp s_blankLayout static");
+	  assertExact(errors, facts.scoreScreen, "movieTestHookGuardLine",
+	    lineNumber(scoreScreen.lines, (line) => /defined\s*\(\s*CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS\s*\)/.test(line)),
+	    161, "ScoreScreen.cpp focused movie test hook guard");
+	  assertExact(errors, facts.scoreScreen, "movieTestHookSetLine",
+	    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*WindowLayout\s*\*layout\s*\)/.test(line)),
+	    162, "ScoreScreen.cpp focused blank layout setter hook");
+	  assertExact(errors, facts.scoreScreen, "movieTestHookGetLine",
+	    lineNumber(scoreScreen.lines, (line) => /CncPortScoreScreenGetBlankLayoutForMovie\s*\(\s*\)/.test(line)),
+	    167, "ScoreScreen.cpp focused blank layout getter hook");
 
-  const scoreUpdateRange = assertFunctionRange(errors, facts.scoreScreen, "scoreUpdate", scoreScreen,
-    /void\s+ScoreScreenUpdate\s*\(\s*WindowLayout\s*\*\s*layout\s*,\s*void\s*\*\s*userData\s*\)/,
-    415, "ScoreScreenUpdate");
-  if (scoreUpdateRange) {
-    assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitUpdateCallLine",
-      firstMatchInRange(scoreScreen.lines, scoreUpdateRange.start, scoreUpdateRange.end,
-        /finishSinglePlayerInit\s*\(\s*\)/),
-      426, "ScoreScreenUpdate finishSinglePlayerInit call");
-  }
+	  const scoreUpdateRange = assertFunctionRange(errors, facts.scoreScreen, "scoreUpdate", scoreScreen,
+	    /void\s+ScoreScreenUpdate\s*\(\s*WindowLayout\s*\*\s*layout\s*,\s*void\s*\*\s*userData\s*\)/,
+	    427, "ScoreScreenUpdate");
+	  if (scoreUpdateRange) {
+	    assertExact(errors, facts.scoreScreen, "finishSinglePlayerInitUpdateCallLine",
+	      firstMatchInRange(scoreScreen.lines, scoreUpdateRange.start, scoreUpdateRange.end,
+	        /finishSinglePlayerInit\s*\(\s*\)/),
+	      438, "ScoreScreenUpdate finishSinglePlayerInit call");
+	  }
 
-  const playMovieRange = assertFunctionRange(errors, facts.scoreScreen, "playMovieAndBlock", scoreScreen,
-    /void\s+PlayMovieAndBlock\s*\(\s*AsciiString\s+movieTitle\s*\)/,
-    685, "ScoreScreen PlayMovieAndBlock");
-  if (playMovieRange) {
-    [
-      ["videoOpenLine", /VideoStreamInterface\s*\*\s*videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*movieTitle\s*\)/, 687, "PlayMovieAndBlock TheVideoPlayer->open"],
-      ["nullStreamCheckLine", /if\s*\(\s*videoStream\s*==\s*NULL\s*\)/, 688, "PlayMovieAndBlock null stream check"],
-      ["nullStreamReturnLine", /^\s*return\s*;/, 690, "PlayMovieAndBlock null stream return"],
-      ["createBufferLine", /VideoBuffer\s*\*\s*videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/, 694, "PlayMovieAndBlock create video buffer"],
-      ["allocateWidthLine", /videoBuffer\s*->\s*allocate\s*\(\s*videoStream\s*->\s*width\s*\(\s*\)/, 696, "PlayMovieAndBlock allocate width"],
-      ["allocateHeightLine", /videoStream\s*->\s*height\s*\(\s*\)/, 697, "PlayMovieAndBlock allocate height"],
-      ["allocateFailureDeleteBufferLine", /delete\s+videoBuffer\s*;/, 700, "PlayMovieAndBlock allocation failure delete buffer"],
-      ["allocateFailureCloseStreamLine", /videoStream\s*->\s*close\s*\(\s*\)/, 704, "PlayMovieAndBlock allocation failure close stream"],
-      ["movieWindowLine", /GameWindow\s*\*\s*movieWindow\s*=\s*s_blankLayout\s*->\s*getFirstWindow\s*\(\s*\)/, 710, "PlayMovieAndBlock blank layout first window"],
-      ["loadScreenRenderTrueLine", /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*TRUE\s*;/, 711, "PlayMovieAndBlock loadScreenRender true"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, playMovieRange.start, playMovieRange.end, pattern),
-        expected, label));
-    assertExact(errors, facts.scoreScreen, "allocateFailureReturnLine",
-      firstMatchInRange(scoreScreen.lines, 699, 708, /^\s*return\s*;/),
-      707, "PlayMovieAndBlock allocation failure return");
+	  const playMovieRange = assertFunctionRange(errors, facts.scoreScreen, "playMovieAndBlock", scoreScreen,
+	    /void\s+PlayMovieAndBlock\s*\(\s*AsciiString\s+movieTitle\s*\)/,
+	    697, "ScoreScreen PlayMovieAndBlock");
+	  if (playMovieRange) {
+	    [
+	      ["videoOpenLine", /VideoStreamInterface\s*\*\s*videoStream\s*=\s*TheVideoPlayer\s*->\s*open\s*\(\s*movieTitle\s*\)/, 699, "PlayMovieAndBlock TheVideoPlayer->open"],
+	      ["nullStreamCheckLine", /if\s*\(\s*videoStream\s*==\s*NULL\s*\)/, 700, "PlayMovieAndBlock null stream check"],
+	      ["nullStreamReturnLine", /^\s*return\s*;/, 702, "PlayMovieAndBlock null stream return"],
+	      ["createBufferLine", /VideoBuffer\s*\*\s*videoBuffer\s*=\s*TheDisplay\s*->\s*createVideoBuffer\s*\(\s*\)/, 706, "PlayMovieAndBlock create video buffer"],
+	      ["allocateWidthLine", /videoBuffer\s*->\s*allocate\s*\(\s*videoStream\s*->\s*width\s*\(\s*\)/, 708, "PlayMovieAndBlock allocate width"],
+	      ["allocateHeightLine", /videoStream\s*->\s*height\s*\(\s*\)/, 709, "PlayMovieAndBlock allocate height"],
+	      ["allocateFailureDeleteBufferLine", /delete\s+videoBuffer\s*;/, 712, "PlayMovieAndBlock allocation failure delete buffer"],
+	      ["allocateFailureCloseStreamLine", /videoStream\s*->\s*close\s*\(\s*\)/, 716, "PlayMovieAndBlock allocation failure close stream"],
+	      ["movieWindowLine", /GameWindow\s*\*\s*movieWindow\s*=\s*s_blankLayout\s*->\s*getFirstWindow\s*\(\s*\)/, 722, "PlayMovieAndBlock blank layout first window"],
+	      ["loadScreenRenderTrueLine", /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*TRUE\s*;/, 723, "PlayMovieAndBlock loadScreenRender true"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, playMovieRange.start, playMovieRange.end, pattern),
+	        expected, label));
+	    assertExact(errors, facts.scoreScreen, "allocateFailureReturnLine",
+	      firstMatchInRange(scoreScreen.lines, 711, 721, /^\s*return\s*;/),
+	      719, "PlayMovieAndBlock allocation failure return");
 
-    const scoreLoopPrefix = orderedMatchesInRange(scoreScreen.lines, 711, 728, [
-      /while\s*\(\s*videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
-      /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
-      /videoStream\s*->\s*isFrameReady\s*\(\s*\)/,
+	    const scoreLoopPrefix = orderedMatchesInRange(scoreScreen.lines, 724, 739, [
+	      /while\s*\(\s*videoStream\s*->\s*frameIndex\s*\(\s*\)\s*<\s*videoStream\s*->\s*frameCount\s*\(\s*\)\s*-\s*1\s*\)/,
+	      /TheGameEngine\s*->\s*serviceWindowsOS\s*\(\s*\)/,
+	      /videoStream\s*->\s*isFrameReady\s*\(\s*\)/,
       /Sleep\s*\(\s*1\s*\)/,
       /TheGameEngine\s*->\s*isActive\s*\(\s*\)/,
       /^\s*videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
       /^\s*videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
     ]);
-    facts.scoreScreen.movieLoopPrefixLines = scoreLoopPrefix;
-    assertOrdered(errors, "PlayMovieAndBlock movie loop prefix", scoreLoopPrefix);
-    [
-      ["movieWhileLine", scoreLoopPrefix[0], 712, "PlayMovieAndBlock movie while"],
-      ["loopServiceWindowsLine", scoreLoopPrefix[1], 714, "PlayMovieAndBlock serviceWindowsOS"],
-      ["isFrameReadyLine", scoreLoopPrefix[2], 716, "PlayMovieAndBlock isFrameReady"],
-      ["sleepLine", scoreLoopPrefix[3], 718, "PlayMovieAndBlock Sleep(1)"],
-      ["inactiveCheckLine", scoreLoopPrefix[4], 722, "PlayMovieAndBlock inactive check"],
-      ["inactiveFrameNextLine", scoreLoopPrefix[5], 724, "PlayMovieAndBlock inactive frameNext"],
-      ["inactiveFrameDecompressLine", scoreLoopPrefix[6], 725, "PlayMovieAndBlock inactive frameDecompress"],
-    ].forEach(([key, actual, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key, actual, expected, label));
+	    facts.scoreScreen.movieLoopPrefixLines = scoreLoopPrefix;
+	    assertOrdered(errors, "PlayMovieAndBlock movie loop prefix", scoreLoopPrefix);
+	    [
+	      ["movieWhileLine", scoreLoopPrefix[0], 724, "PlayMovieAndBlock movie while"],
+	      ["loopServiceWindowsLine", scoreLoopPrefix[1], 726, "PlayMovieAndBlock serviceWindowsOS"],
+	      ["isFrameReadyLine", scoreLoopPrefix[2], 728, "PlayMovieAndBlock isFrameReady"],
+	      ["sleepLine", scoreLoopPrefix[3], 730, "PlayMovieAndBlock Sleep(1)"],
+	      ["inactiveCheckLine", scoreLoopPrefix[4], 734, "PlayMovieAndBlock inactive check"],
+	      ["inactiveFrameNextLine", scoreLoopPrefix[5], 736, "PlayMovieAndBlock inactive frameNext"],
+	      ["inactiveFrameDecompressLine", scoreLoopPrefix[6], 737, "PlayMovieAndBlock inactive frameDecompress"],
+	    ].forEach(([key, actual, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key, actual, expected, label));
 
-    const scoreActiveLoop = orderedMatchesInRange(scoreScreen.lines, 728, 739, [
-      /^\s*videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
-      /^\s*videoStream\s*->\s*frameRender\s*\(\s*videoBuffer\s*\)\s*;/,
-      /^\s*videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
+	    const scoreActiveLoop = orderedMatchesInRange(scoreScreen.lines, 741, 751, [
+	      /^\s*videoStream\s*->\s*frameDecompress\s*\(\s*\)\s*;/,
+	      /^\s*videoStream\s*->\s*frameRender\s*\(\s*videoBuffer\s*\)\s*;/,
+	      /^\s*videoStream\s*->\s*frameNext\s*\(\s*\)\s*;/,
       /movieWindow\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*videoBuffer\s*\)/,
       /TheDisplay\s*->\s*draw\s*\(\s*\)/,
     ]);
-    facts.scoreScreen.movieActiveLoopLines = scoreActiveLoop;
-    assertOrdered(errors, "PlayMovieAndBlock active movie loop", scoreActiveLoop);
-    [
-      ["frameDecompressLine", scoreActiveLoop[0], 729, "PlayMovieAndBlock active frameDecompress"],
-      ["frameRenderLine", scoreActiveLoop[1], 730, "PlayMovieAndBlock active frameRender"],
-      ["frameNextLine", scoreActiveLoop[2], 731, "PlayMovieAndBlock active frameNext"],
-      ["attachVideoBufferLine", scoreActiveLoop[3], 734, "PlayMovieAndBlock attach video buffer"],
-      ["displayDrawLine", scoreActiveLoop[4], 738, "PlayMovieAndBlock display draw"],
-    ].forEach(([key, actual, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key, actual, expected, label));
+	    facts.scoreScreen.movieActiveLoopLines = scoreActiveLoop;
+	    assertOrdered(errors, "PlayMovieAndBlock active movie loop", scoreActiveLoop);
+	    [
+	      ["frameDecompressLine", scoreActiveLoop[0], 741, "PlayMovieAndBlock active frameDecompress"],
+	      ["frameRenderLine", scoreActiveLoop[1], 742, "PlayMovieAndBlock active frameRender"],
+	      ["frameNextLine", scoreActiveLoop[2], 743, "PlayMovieAndBlock active frameNext"],
+	      ["attachVideoBufferLine", scoreActiveLoop[3], 746, "PlayMovieAndBlock attach video buffer"],
+	      ["displayDrawLine", scoreActiveLoop[4], 750, "PlayMovieAndBlock display draw"],
+	    ].forEach(([key, actual, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key, actual, expected, label));
 
-    [
-      ["loadScreenRenderFalseLine", /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*FALSE\s*;/, 740, "PlayMovieAndBlock loadScreenRender false"],
-      ["detachVideoBufferLine", /movieWindow\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*NULL\s*\)/, 741, "PlayMovieAndBlock detach video buffer"],
-      ["deleteBufferLine", /delete\s+videoBuffer\s*;/, 744, "PlayMovieAndBlock delete video buffer"],
-      ["closeStreamLine", /videoStream\s*->\s*close\s*\(\s*\)/, 749, "PlayMovieAndBlock close stream"],
-      ["setFPModeLine", /setFPMode\s*\(\s*\)/, 753, "PlayMovieAndBlock setFPMode"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, 739, playMovieRange.end, pattern),
+	    [
+	      ["loadScreenRenderFalseLine", /TheWritableGlobalData\s*->\s*m_loadScreenRender\s*=\s*FALSE\s*;/, 752, "PlayMovieAndBlock loadScreenRender false"],
+	      ["detachVideoBufferLine", /movieWindow\s*->\s*winGetInstanceData\s*\(\s*\)\s*->\s*setVideoBuffer\s*\(\s*NULL\s*\)/, 753, "PlayMovieAndBlock detach video buffer"],
+	      ["deleteBufferLine", /delete\s+videoBuffer\s*;/, 756, "PlayMovieAndBlock delete video buffer"],
+	      ["closeStreamLine", /videoStream\s*->\s*close\s*\(\s*\)/, 761, "PlayMovieAndBlock close stream"],
+	      ["setFPModeLine", /setFPMode\s*\(\s*\)/, 765, "PlayMovieAndBlock setFPMode"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, 751, playMovieRange.end, pattern),
+	        expected, label));
+	  }
+
+	  const initSingleRange = assertFunctionRange(errors, facts.scoreScreen, "initSinglePlayer", scoreScreen,
+	    /void\s+initSinglePlayer\s*\(\s*void\s*\)/,
+	    768, "ScoreScreen initSinglePlayer");
+	  if (initSingleRange) {
+	    [
+	      ["needFinishLine", /s_needToFinishSinglePlayerInit\s*=\s*TRUE\s*;/, 774, "initSinglePlayer need finish flag"],
+	      ["blankLayoutCreateLine", /s_blankLayout\s*=\s*TheWindowManager\s*->\s*winCreateLayout\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)/, 775, "initSinglePlayer blank layout create"],
+	      ["blankLayoutHideLine", /s_blankLayout\s*->\s*hide\s*\(\s*FALSE\s*\)/, 777, "initSinglePlayer blank layout show"],
+	      ["blankLayoutBringForwardLine", /s_blankLayout\s*->\s*bringForward\s*\(\s*\)/, 778, "initSinglePlayer blank layout bring forward"],
+	      ["blankLayoutClearImageLine", /s_blankLayout\s*->\s*getFirstWindow\s*\(\s*\)\s*->\s*winClearStatus\s*\(\s*WIN_STATUS_IMAGE\s*\)/, 779, "initSinglePlayer blank layout first-window clear image"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, initSingleRange.start, initSingleRange.end, pattern),
         expected, label));
   }
 
-  const initSingleRange = assertFunctionRange(errors, facts.scoreScreen, "initSinglePlayer", scoreScreen,
-    /void\s+initSinglePlayer\s*\(\s*void\s*\)/,
-    756, "ScoreScreen initSinglePlayer");
-  if (initSingleRange) {
-    [
-      ["needFinishLine", /s_needToFinishSinglePlayerInit\s*=\s*TRUE\s*;/, 762, "initSinglePlayer need finish flag"],
-      ["blankLayoutCreateLine", /s_blankLayout\s*=\s*TheWindowManager\s*->\s*winCreateLayout\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)/, 763, "initSinglePlayer blank layout create"],
-      ["blankLayoutHideLine", /s_blankLayout\s*->\s*hide\s*\(\s*FALSE\s*\)/, 765, "initSinglePlayer blank layout show"],
-      ["blankLayoutBringForwardLine", /s_blankLayout\s*->\s*bringForward\s*\(\s*\)/, 766, "initSinglePlayer blank layout bring forward"],
-      ["blankLayoutClearImageLine", /s_blankLayout\s*->\s*getFirstWindow\s*\(\s*\)\s*->\s*winClearStatus\s*\(\s*WIN_STATUS_IMAGE\s*\)/, 767, "initSinglePlayer blank layout first-window clear image"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, initSingleRange.start, initSingleRange.end, pattern),
-        expected, label));
-  }
-
-  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
-    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
-    786, "ScoreScreen finishSinglePlayerInit");
-  if (finishRange) {
-    [
-      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 792, "finishSinglePlayerInit victory check"],
-      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 878, "finishSinglePlayerInit final victory movie check"],
-      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 881, "finishSinglePlayerInit final victory movie assign"],
-      ["useLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 882, "finishSinglePlayerInit useLowRes init"],
-      ["memPassLowResLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 884, "finishSinglePlayerInit didMemPass low-res gate"],
-      ["staticFindLowResLine", /findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 887, "finishSinglePlayerInit findStaticLODLevel low-res gate"],
-      ["staticGetLowResLine", /getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 890, "finishSinglePlayerInit getStaticLODLevel low-res gate"],
-      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 894, "finishSinglePlayerInit non-low-res gate"],
-      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 895, "finishSinglePlayerInit PlayMovieAndBlock call"],
-      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 938, "finishSinglePlayerInit destroy blank layout windows"],
-      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 939, "finishSinglePlayerInit delete blank layout"],
-      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 940, "finishSinglePlayerInit clear blank layout"],
-    ].forEach(([key, pattern, expected, label]) =>
-      assertExact(errors, facts.scoreScreen, key,
-        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
+	  const finishRange = assertFunctionRange(errors, facts.scoreScreen, "finishSinglePlayerInit", scoreScreen,
+	    /void\s+finishSinglePlayerInit\s*\(\s*void\s*\)/,
+	    798, "ScoreScreen finishSinglePlayerInit");
+	  if (finishRange) {
+	    [
+	      ["victoryCheckLine", /if\s*\(\s*copyProtectOK\s*&&\s*TheCampaignManager\s*->\s*isVictorious\s*\(\s*\)\s*\)/, 804, "finishSinglePlayerInit victory check"],
+	      ["finalVictoryMovieCheckLine", /campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)\s*\.\s*isNotEmpty\s*\(\s*\)/, 890, "finishSinglePlayerInit final victory movie check"],
+	      ["finalVictoryMovieAssignLine", /vidName\s*=\s*campaign\s*->\s*getFinalVictoryMovie\s*\(\s*\)/, 893, "finishSinglePlayerInit final victory movie assign"],
+	      ["useLowResInitLine", /Bool\s+useLowRes\s*=\s*FALSE\s*;/, 894, "finishSinglePlayerInit useLowRes init"],
+	      ["memPassLowResLine", /TheGameLODManager\s*->\s*didMemPass\s*\(\s*\)/, 896, "finishSinglePlayerInit didMemPass low-res gate"],
+	      ["staticFindLowResLine", /findStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 899, "finishSinglePlayerInit findStaticLODLevel low-res gate"],
+	      ["staticGetLowResLine", /getStaticLODLevel\s*\(\s*\)\s*==\s*STATIC_GAME_LOD_LOW/, 902, "finishSinglePlayerInit getStaticLODLevel low-res gate"],
+	      ["playIfNotLowResLine", /if\s*\(\s*!useLowRes\s*\)/, 906, "finishSinglePlayerInit non-low-res gate"],
+	      ["playMovieAndBlockCallLine", /PlayMovieAndBlock\s*\(\s*vidName\s*\)/, 907, "finishSinglePlayerInit PlayMovieAndBlock call"],
+	      ["destroyBlankLayoutLine", /s_blankLayout\s*->\s*destroyWindows\s*\(\s*\)/, 950, "finishSinglePlayerInit destroy blank layout windows"],
+	      ["deleteBlankLayoutLine", /s_blankLayout\s*->\s*deleteInstance\s*\(\s*\)/, 951, "finishSinglePlayerInit delete blank layout"],
+	      ["clearBlankLayoutLine", /s_blankLayout\s*=\s*NULL\s*;/, 952, "finishSinglePlayerInit clear blank layout"],
+	    ].forEach(([key, pattern, expected, label]) =>
+	      assertExact(errors, facts.scoreScreen, key,
+	        firstMatchInRange(scoreScreen.lines, finishRange.start, finishRange.end, pattern),
         expected, label));
   }
 
@@ -781,12 +799,124 @@ function main() {
       (line) => /while\s*\(\s*\(\s*window\s*=\s*getFirstWindow\s*\(\s*\)\s*\)\s*!=\s*0\s*\)/.test(line)),
     182, "WindowLayout::destroyWindows getFirstWindow loop");
 
-  // ------------------------------------------------------------------
-  // 7. Package script registration.
-  // ------------------------------------------------------------------
-  assertPresent(errors, facts.packageJson, "scriptLine",
-    lineNumber(packageJson.lines,
-      (line) => /"verify:bink-loadscore-movie-frontier"\s*:\s*"node tools\/verify_bink_loadscore_movie_frontier\.mjs"/.test(line)),
+	  // ------------------------------------------------------------------
+	  // 7. Focused runtime proof that now exercises original
+	  //    ScoreScreen::PlayMovieAndBlock without pulling in the full
+	  //    finishSinglePlayerInit/campaign dependency graph.
+	  // ------------------------------------------------------------------
+	  assertExact(errors, facts.runtimeScoreScreen, "hookDeclLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*WindowLayout\s*\*layout\s*\)/.test(line)),
+	    50, "runtime ScoreScreen blank layout hook declaration");
+	  assertExact(errors, facts.runtimeScoreScreen, "drawOverrideLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /void\s+draw\s*\(\s*\)\s+override/.test(line)),
+	    275, "runtime Display::draw override used by ScoreScreen");
+	  assertExact(errors, facts.runtimeScoreScreen, "drawPresentLine",
+	    firstMatchInRange(runtimeSmoke.lines, 275, 292,
+	      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/),
+	    289, "runtime ScoreScreen draw override presents W3DVideoBuffer");
+	  assertExact(errors, facts.runtimeScoreScreen, "exerciseDefLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /bool\s+exercise_score_screen_play_movie_and_block\s*\(\s*VideoPlayerInterface\s*&player\s*\)/.test(line)),
+	    1045, "runtime ScoreScreen PlayMovieAndBlock exercise");
+	  assertExact(errors, facts.runtimeScoreScreen, "winCreateLayoutLine",
+	    firstMatchInRange(runtimeSmoke.lines, 1045, 1080,
+	      /TheWindowManager\s*->\s*winCreateLayout\s*\(\s*AsciiString\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)\s*\)/),
+	    1058, "runtime ScoreScreen exercise creates BlankWindow layout");
+	  assertExact(errors, facts.runtimeScoreScreen, "hookInstallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*layout\s*\)/.test(line)),
+	    1076, "runtime ScoreScreen exercise installs blank layout hook");
+	  assertExact(errors, facts.runtimeScoreScreen, "hookCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenGetBlankLayoutForMovie\s*\(\s*\)\s*==\s*layout/.test(line)),
+	    1077, "runtime ScoreScreen exercise verifies blank layout hook");
+	  assertExact(errors, facts.runtimeScoreScreen, "playMovieCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /PlayMovieAndBlock\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)),
+	    1087, "runtime calls original PlayMovieAndBlock");
+	  assertExact(errors, facts.runtimeScoreScreen, "serviceWindowsCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not service the OS once per presented frame/.test(line)),
+	    1091, "runtime ScoreScreen serviceWindowsOS frame count check");
+	  assertExact(errors, facts.runtimeScoreScreen, "presentFrameCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not present the expected VS_small frames/.test(line)),
+	    1095, "runtime ScoreScreen 70-frame presentation count check");
+	  assertExact(errors, facts.runtimeScoreScreen, "textureUpdateCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not upload the initial texture plus decoded frames/.test(line)),
+	    1099, "runtime ScoreScreen texture update count check");
+	  assertExact(errors, facts.runtimeScoreScreen, "drawCountCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not draw every decoded frame/.test(line)),
+	    1103, "runtime ScoreScreen draw count check");
+	  assertExact(errors, facts.runtimeScoreScreen, "detachCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not detach the movie VideoBuffer/.test(line)),
+	    1105, "runtime ScoreScreen detaches movie VideoBuffer");
+	  assertExact(errors, facts.runtimeScoreScreen, "closeStreamCheckLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen::PlayMovieAndBlock did not close the owned Bink stream/.test(line)),
+	    1109, "runtime ScoreScreen closes owned Bink stream");
+	  assertExact(errors, facts.runtimeScoreScreen, "summaryLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /ScoreScreen PlayMovieAndBlock VS_small Bink W3D presentation ok/.test(line)),
+	    1120, "runtime ScoreScreen browser presentation summary");
+	  assertExact(errors, facts.runtimeScoreScreen, "clearHookLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /CncPortScoreScreenSetBlankLayoutForMovie\s*\(\s*nullptr\s*\)/.test(line)),
+	    1131, "runtime ScoreScreen clears blank layout hook");
+	  assertExact(errors, facts.runtimeScoreScreen, "exerciseCallLine",
+	    lineNumber(runtimeSmoke.lines,
+	      (line) => /exercise_score_screen_play_movie_and_block\s*\(\s*\*player\s*\)/.test(line)),
+	    1198, "runtime ScoreScreen exercise call");
+
+	  assertExact(errors, facts.runtimeBrowserHarness, "copyCountLine",
+	    lineNumber(runtimeBrowserHarness.lines,
+	      (line) => /Expected seventy-five Bink copy events/.test(line)),
+	    402, "browser harness seventy-five-copy event count check");
+	  assertExact(errors, facts.runtimeBrowserHarness, "lifecycleCountLine",
+	    lineNumber(runtimeBrowserHarness.lines,
+	      (line) => /openCount\s*!==\s*6\s*\|\|\s*closeCount\s*!==\s*6\s*\|\|\s*copyCompleteCount\s*!==\s*75/.test(line)),
+	    463, "browser harness six open/close lifecycles with seventy-five frame copies");
+	  assertExact(errors, facts.runtimeBrowserHarness, "drawEventCountLine",
+	    lineNumber(runtimeBrowserHarness.lines,
+	      (line) => /Expected seventy-five W3DDisplay::drawVideoBuffer indexed draws/.test(line)),
+	    473, "browser harness seventy-five W3DDisplay draw count check");
+
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeTargetLine",
+	    lineNumber(cmake.lines,
+	      (line) => /add_library\s*\(\s*zh_score_screen_movie_runtime/.test(line)),
+	    6516, "CMake ScoreScreen focused runtime target");
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeSourceLine",
+	    firstMatchInRange(cmake.lines, facts.cmake.scoreScreenRuntimeTargetLine, facts.cmake.scoreScreenRuntimeTargetLine + 5,
+	      /ScoreScreen\.cpp/),
+	    6517, "CMake ScoreScreen focused runtime source");
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeHookDefineLine",
+	    lineNumber(cmake.lines,
+	      (line) => /CNC_PORT_SCORE_SCREEN_MOVIE_TEST_HOOKS=1/.test(line)),
+	    6522, "CMake focused ScoreScreen hook define");
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeLinkLine",
+	    lineNumber(cmake.lines,
+	      (line) => /zh_score_screen_movie_runtime/.test(line) && line.includes("zh_score_screen_movie_runtime")),
+	    6516, "CMake ScoreScreen focused runtime target name");
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeLinkedIntoSmokeLine",
+	    firstMatchInRange(cmake.lines, 6580, 6586,
+	      /zh_score_screen_movie_runtime/),
+	    6581, "CMake bink smoke links focused ScoreScreen runtime");
+	  assertExact(errors, facts.cmake, "scoreScreenRuntimeGcSectionsLine",
+	    firstMatchInRange(cmake.lines, 6643, 6654,
+	      /-Wl,--gc-sections/),
+	    6651, "CMake bink smoke drops unused ScoreScreen sections");
+
+	  // ------------------------------------------------------------------
+	  // 8. Package script registration.
+	  // ------------------------------------------------------------------
+	  assertPresent(errors, facts.packageJson, "scriptLine",
+	    lineNumber(packageJson.lines,
+	      (line) => /"verify:bink-loadscore-movie-frontier"\s*:\s*"node tools\/verify_bink_loadscore_movie_frontier\.mjs"/.test(line)),
     "WebAssembly/package.json verify:bink-loadscore-movie-frontier script");
   assertPresent(errors, facts.packageJson, "strictScriptLine",
     lineNumber(packageJson.lines,
@@ -796,11 +926,11 @@ function main() {
   const ok = errors.length === 0;
   console.log(JSON.stringify({
     ok,
-    errors,
-    sources: SOURCES,
-    facts,
-    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier; full runtime load-screen/score-screen playback remains open until the broader GUI/game singleton path can be harness-driven.",
-  }, null, 2));
+	    errors,
+	    sources: SOURCES,
+	    facts,
+	    note: "Source-only LoadScreen/ScoreScreen Bink ownership verifier with focused runtime pins for original ScoreScreen::PlayMovieAndBlock. Full finishSinglePlayerInit/campaign ownership, original load-screen runtime ownership, InGameUI movies, and Bink/audio sync remain open until the broader GUI/game singleton path can be harness-driven.",
+	  }, null, 2));
 
   if (!ok) {
     process.exitCode = 1;
