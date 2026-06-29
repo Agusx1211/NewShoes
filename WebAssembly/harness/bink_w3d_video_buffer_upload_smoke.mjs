@@ -486,13 +486,67 @@ try {
   }
 
   await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  // Keep green logs readable; thrown failures above still include full probes.
+  const texture0 = lastDrawProbe?.texture0 ?? null;
+  const lastDrawSummary = {
+    source: lastDrawProbe?.source ?? null,
+    primitiveType: lastDrawProbe?.primitiveType ?? null,
+    vertexCount: lastDrawProbe?.vertexCount ?? null,
+    indexCount: lastDrawProbe?.indexCount ?? null,
+    vertexStride: lastDrawProbe?.vertexStride ?? null,
+    texture0: {
+      id: texture0?.id ?? null,
+      format: texture0?.format ?? null,
+      storage: texture0?.storage ?? null,
+      ready: texture0?.ready ?? null,
+      sampled: texture0?.sampled ?? null,
+      combiner: {
+        colorOp: texture0?.combiner?.colorOp ?? null,
+        colorArg1: texture0?.combiner?.colorArg1 ?? null,
+        colorArg2: texture0?.combiner?.colorArg2 ?? null,
+      },
+    },
+    centerPixel: lastDrawProbe?.centerPixel ?? null,
+  };
+
   console.log(JSON.stringify({
     ok: true,
     source: "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
-    runtimeResult,
     manifestPath,
     screenshotPath,
     browserEvents,
+    counts: {
+      binkEvents: binkEvents.length,
+      binkOpen: binkEvents.filter((event) => event.type === "open").length,
+      binkClose: binkEvents.filter((event) => event.type === "close").length,
+      binkCopyComplete: binkEvents.filter((event) => event.type === "copyComplete").length,
+      copyEvents: copyEvents.length,
+      textureCreates: textureCreates.length,
+      textureUpdates: textureUpdates.length,
+      textureReleases: textureReleases.length,
+      textureBinds: textureBinds.length,
+      drawEvents: drawEvents.length,
+      liveTextureCount: runtimeResult.liveTextureCount ?? null,
+    },
+    drawSummaries: drawEvents,
+    lastDraw: lastDrawSummary,
+    copyChecksums: copyEvents.map((event) => ({
+      videoPath: event.videoPath,
+      copyWidth: event.copyWidth,
+      copyHeight: event.copyHeight,
+      bytesWritten: event.bytesWritten,
+      checksum: event.checksum,
+    })),
+    uploadChecksums: textureUpdates.map((event) => ({
+      id: event.id,
+      width: event.width,
+      height: event.height,
+      format: event.format,
+      byteLength: event.byteLength,
+      checksum: event.checksum,
+      samplePixel: event.samplePixel,
+    })),
   }, null, 2));
 } catch (error) {
   throw new Error(
