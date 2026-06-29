@@ -9,6 +9,7 @@
     "extract:runtime-archives": "bash tools/extract_zh_runtime_archives.sh",
     "inventory:startup-archives": "node tools/inventory_startup_archives.mjs artifacts/real-assets --expect-current-zh",
     "inventory:audio-payloads": "node tools/inventory_audio_payloads.mjs artifacts/real-assets --expect-current-zh",
+    "inventory:bink-video-payloads": "node tools/inventory_bink_video_payloads.mjs artifacts/real-assets --expect-current-zh",
     "verify:assets": "node tools/verify_real_assets.mjs",
     "verify:gameengine-startup-order": "node tools/verify_gameengine_startup_order.mjs",
     "verify:miles-audio-device-frontier": "node tools/verify_miles_audio_device_frontier.mjs",
