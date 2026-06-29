@@ -3669,6 +3669,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       mismatch. It does not decode, demux, or play Bink video, and does not
       invent decode behavior. Runtime WebCodecs/`<video>` decode, frame
       upload, and audio sync remain open.
+- [x] Add the first browser Bink provider implementation and smoke. `zh_browser_bink`
+      now defines the original Bink API functions for real-file open/header
+      parsing and frame-cursor lifecycle, and `zh_bink_video_device_compile_frontier`
+      links that provider behind the original `BinkVideoPlayer` call path.
+      `test:bink-video-provider` builds the wasm smoke, extracts runtime
+      archives, opens the real shipped `GC_Background.bik` and `VS_small.bik`
+      payloads, verifies their `HBINK` frame/dimension fields (`180` frames at
+      `800x600`; `71` frames at `96x120`), proves original-style
+      `Data\English\Movies\VS_small.bik` basename resolution, and reports
+      `decodeReady:false`. Runtime frame decode/copy, WebCodecs/`<video>`
+      presentation, and audio sync remain open.
 
 ---
 

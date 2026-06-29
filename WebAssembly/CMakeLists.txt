@@ -2525,6 +2525,25 @@ target_compile_options(zh_bink_video_device_compile_frontier PRIVATE
   -Wno-writable-strings
 )
 
+add_library(zh_browser_bink STATIC
+  src/wasm_bink_provider.cpp
+)
+
+target_include_directories(zh_browser_bink PUBLIC
+  "${WASM_SHIMS_DIR}"
+)
+
+target_compile_options(zh_browser_bink PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-unused-parameter
+)
+
+target_link_libraries(zh_bink_video_device_compile_frontier PUBLIC
+  zh_browser_bink
+)
+
 add_library(zh_wwaudio_compile_frontier STATIC
   "${WWAUDIO_DIR}/AudibleSound.cpp"
   "${WWAUDIO_DIR}/AudioSaveLoad.cpp"
@@ -6354,4 +6373,37 @@ target_link_options(gameengine-real-big-browser-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
   "SHELL:-sEXPORTED_FUNCTIONS=['_run_real_big_smoke','_run_real_big_index_smoke']"
   "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall','FS']"
+)
+
+add_executable(bink-video-provider-smoke
+  tests/bink_video_provider_smoke.cpp
+)
+
+set_target_properties(bink-video-provider-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(bink-video-provider-smoke PRIVATE
+  zh_browser_bink
+)
+
+target_compile_definitions(bink-video-provider-smoke PRIVATE
+  BINK_VIDEO_PROVIDER_SMOKE_NO_MAIN
+)
+
+target_compile_options(bink-video-provider-smoke PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+)
+
+target_link_options(bink-video-provider-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=33554432"
+  "SHELL:-sNODERAWFS=1"
+  "SHELL:-sEXPORTED_FUNCTIONS=['_run_bink_video_provider_smoke']"
+  "SHELL:-sEXPORTED_RUNTIME_METHODS=['ccall']"
 )
