@@ -3425,21 +3425,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       records that 2,556 unique IMA ADPCM WAV payloads still need decoding
       before the cache can become real Web Audio buffer storage.
 - [x] Add `audioPayloadInventory.requestedPayloadDecodeCacheProof`, a browser
-      harness-visible proof that creates real decoded PCM cache entries and
-      Web Audio `AudioBuffer` cache entries for representative requested
-      payload keys: PCM SFX, PCM voice, IMA ADPCM SFX, and IMA ADPCM speech.
-      The smoke pins four cache keys, decoded frame/sample counts,
-      1,096,144 decoded PCM bytes, first-sample anchors, and the corresponding
-      buffer upload statistics while leaving full requested-payload scheduling
-      open.
+      harness-visible proof that creates real decoded cache entries and Web
+      Audio `AudioBuffer` cache entries for representative requested payload
+      keys: MP3 music, PCM SFX, PCM voice, IMA ADPCM SFX, and IMA ADPCM
+      speech. The smoke pins five cache keys, decoded frame/sample counts,
+      1,096,144 decoded PCM bytes, 36,744,192 decoded MP3 float bytes,
+      first-sample anchors, and the corresponding buffer upload statistics
+      while leaving full requested-payload scheduling open.
 - [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with an
       OfflineAudioContext scheduling/render proof for the same requested
-      payload cache entries. The browser smoke now asserts four scheduled
-      `AudioBufferSourceNode`s, four completion callbacks, render timing,
-      non-silent rendered windows, and rendered sample anchors while leaving
-      engine-driven audio-event scheduling open.
+      payload cache entries. The browser smoke now asserts five scheduled
+      `AudioBufferSourceNode`s, five completion callbacks, render timing,
+      a capped 10-second music preview window, non-silent rendered windows, and
+      rendered sample anchors while leaving engine-driven audio-event
+      scheduling open.
 - [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
-      browser-visible requested audio event lifecycle proof for the same four
+      browser-visible requested audio event lifecycle proof for the same five
       requested payload cache entries. The smoke now pins synthetic event
       handles, AR_Play request state, sample vs stream playing types,
       `AudioBufferSourceNode` start windows, ordered completion callbacks,

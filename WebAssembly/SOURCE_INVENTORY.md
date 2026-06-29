@@ -66,17 +66,18 @@ the shipped INI music/SFX/voice/speech references into 3,335 unique resolved
 cache keys (360,615,268 bytes), with 779 direct Web Audio decode candidates
 and 2,556 IMA ADPCM payloads still requiring decode. This is a metadata-only
 cache plan. `audioPayloadInventory.requestedPayloadDecodeCacheProof` now uses
-that plan to build real decoded PCM and Web Audio `AudioBuffer` cache entries
-for representative requested SFX, voice, and speech keys (four entries,
-1,096,144 decoded PCM bytes), then schedules those buffers in an
-`OfflineAudioContext` and pins four `AudioBufferSourceNode` completion
-callbacks plus rendered sample-window statistics. It also exposes a browser
-requested audio event lifecycle proof tied to the request, update,
-sample-start, and completion frontier verifiers, pinning AR_Play request state,
-sample/stream playing types, ordered completion callbacks, `PS_Stopped`, and
-release paths for those four requested events. This is still representative
-proof coverage, not full requested-payload decode/cache or engine-driven
-audio-event scheduling/playback.
+that plan to build real decoded MP3/WAV Web Audio `AudioBuffer` cache entries
+for representative requested music, SFX, voice, and speech keys (five entries,
+1,096,144 decoded WAV PCM bytes plus 36,744,192 decoded MP3 float bytes), then
+schedules those buffers in an `OfflineAudioContext` and pins five
+`AudioBufferSourceNode` completion callbacks plus rendered sample-window
+statistics, including a capped 10-second music preview render for the long MP3
+track. It also exposes a browser requested audio event lifecycle proof tied to
+the request, update, sample-start, and completion frontier verifiers, pinning
+AR_Play request state, sample/stream playing types, ordered completion
+callbacks, `PS_Stopped`, and release paths for those five requested events.
+This is still representative proof coverage, not full requested-payload
+decode/cache or engine-driven audio-event scheduling/playback.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current
