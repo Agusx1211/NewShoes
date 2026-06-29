@@ -305,7 +305,92 @@ const harnessState = {
   logs: [],
 };
 
+const browserAudioRuntime = {
+  source: "browser Web Audio runtime user-gesture proof",
+  context: null,
+  created: false,
+  resumeAttempts: 0,
+  resumeSuccesses: 0,
+  lastResumeTrigger: null,
+  lastResumeError: null,
+};
+
 const wasmModulePromise = loadWasmModule();
+
+function browserAudioContextCtor() {
+  return globalThis.AudioContext || globalThis.webkitAudioContext || null;
+}
+
+function summarizeBrowserAudioRuntime() {
+  const AudioContextCtor = browserAudioContextCtor();
+  const context = browserAudioRuntime.context;
+  return {
+    source: browserAudioRuntime.source,
+    available: typeof AudioContextCtor === "function",
+    created: browserAudioRuntime.created,
+    constructor: context?.constructor?.name
+      ?? (typeof AudioContextCtor === "function" ? AudioContextCtor.name : null),
+    contextState: context?.state ?? null,
+    resumeSupported: typeof context?.resume === "function"
+      || typeof AudioContextCtor?.prototype?.resume === "function",
+    userGestureResumeHooked: true,
+    resumeAttempts: browserAudioRuntime.resumeAttempts,
+    resumeSuccesses: browserAudioRuntime.resumeSuccesses,
+    lastResumeTrigger: browserAudioRuntime.lastResumeTrigger,
+    lastResumeError: browserAudioRuntime.lastResumeError,
+    runtimePlayback: false,
+    engineDriven: false,
+    nextRequired: "engineDrivenBrowserAudioDevice",
+  };
+}
+
+function ensureBrowserAudioRuntimeContext(trigger) {
+  if (browserAudioRuntime.context) {
+    return browserAudioRuntime.context;
+  }
+
+  const AudioContextCtor = browserAudioContextCtor();
+  if (typeof AudioContextCtor !== "function") {
+    browserAudioRuntime.lastResumeTrigger = trigger;
+    browserAudioRuntime.lastResumeError = "AudioContext is unavailable";
+    return null;
+  }
+
+  try {
+    browserAudioRuntime.context = new AudioContextCtor();
+    browserAudioRuntime.created = true;
+    browserAudioRuntime.lastResumeError = null;
+    return browserAudioRuntime.context;
+  } catch (error) {
+    browserAudioRuntime.lastResumeTrigger = trigger;
+    browserAudioRuntime.lastResumeError = error?.message ?? String(error);
+    return null;
+  }
+}
+
+async function resumeBrowserAudioRuntime(trigger = "rpc.resumeBrowserAudioRuntime") {
+  browserAudioRuntime.resumeAttempts += 1;
+  browserAudioRuntime.lastResumeTrigger = String(trigger);
+  const context = ensureBrowserAudioRuntimeContext(browserAudioRuntime.lastResumeTrigger);
+  if (!context) {
+    return summarizeBrowserAudioRuntime();
+  }
+
+  try {
+    if (typeof context.resume === "function" && context.state !== "running") {
+      await context.resume();
+    }
+    if (context.state === "running") {
+      browserAudioRuntime.resumeSuccesses += 1;
+      browserAudioRuntime.lastResumeError = null;
+    } else {
+      browserAudioRuntime.lastResumeError = `AudioContext remained ${context.state}`;
+    }
+  } catch (error) {
+    browserAudioRuntime.lastResumeError = error?.message ?? String(error);
+  }
+  return summarizeBrowserAudioRuntime();
+}
 
 function getCanvasDisplaySize() {
   const rect = canvas.getBoundingClientRect();
@@ -5300,6 +5385,7 @@ function snapshotState() {
     archiveMount: harnessState.archiveMount,
     browserRuntimeAssets: harnessState.browserRuntimeAssets,
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
+    browserAudioRuntime: summarizeBrowserAudioRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -14792,6 +14878,23 @@ async function rpc(command, payload = {}) {
       }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotCanvas() };
+    case "browserAudioRuntime":
+      return {
+        ok: true,
+        command,
+        browserAudioRuntime: summarizeBrowserAudioRuntime(),
+        state: snapshotState(),
+      };
+    case "resumeBrowserAudioRuntime":
+      {
+        const runtime = await resumeBrowserAudioRuntime(payload.trigger ?? "rpc.resumeBrowserAudioRuntime");
+        return {
+          ok: runtime.available === true,
+          command,
+          browserAudioRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
     case "state":
       {
         const wasmModule = await wasmModulePromise;
@@ -14908,6 +15011,7 @@ canvas.addEventListener("pointermove", (event) => {
   });
 });
 canvas.addEventListener("pointerdown", (event) => {
+  void resumeBrowserAudioRuntime("canvas.pointerdown");
   canvas.focus();
   const point = canvasInputPointFromEvent(event);
   const message = mouseButtonMessage(event, true, point);
@@ -14968,6 +15072,7 @@ canvas.addEventListener("lostpointercapture", (event) => {
   });
 });
 window.addEventListener("keydown", (event) => {
+  void resumeBrowserAudioRuntime("window.keydown");
   const virtualKey = virtualKeyFromEvent(event);
   if (virtualKey < 0) {
     return;

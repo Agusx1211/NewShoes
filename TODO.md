@@ -617,7 +617,6 @@ shares structure and follows behind.
       source-default music/sound/3D/speech Web Audio `GainNode` buses against
       real requested payloads, but the engine/options UI still does not drive
       a live browser mixer.
-- [ ] Respect browser autoplay policy (resume AudioContext on user gesture).
 - [ ] Harness: assert audio events fire (state/log), not just sound.
 
 ---

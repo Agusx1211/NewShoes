@@ -1235,6 +1235,36 @@ function assertAudioRuntimeAssets(state, context) {
   }
 }
 
+function assertBrowserAudioRuntime(runtime, context, expected = {}) {
+  if (!runtime
+      || runtime.source !== "browser Web Audio runtime user-gesture proof"
+      || runtime.available !== true
+      || runtime.resumeSupported !== true
+      || runtime.userGestureResumeHooked !== true
+      || runtime.runtimePlayback !== false
+      || runtime.engineDriven !== false
+      || runtime.nextRequired !== "engineDrivenBrowserAudioDevice") {
+    throw new Error(`${context} browser audio runtime state mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(expected, "created") && runtime.created !== expected.created) {
+    throw new Error(`${context} browser audio runtime created mismatch: ${JSON.stringify(runtime)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(expected, "resumeAttempts") && runtime.resumeAttempts !== expected.resumeAttempts) {
+    throw new Error(`${context} browser audio runtime resume attempts mismatch: ${JSON.stringify(runtime)}`);
+  }
+  if (expected.afterGesture) {
+    if (runtime.created !== true
+        || runtime.resumeAttempts < 1
+        || runtime.resumeSuccesses < 1
+        || runtime.lastResumeTrigger !== "canvas.pointerdown"
+        || runtime.contextState !== "running"
+        || runtime.lastResumeError !== null) {
+      throw new Error(`${context} browser audio gesture resume mismatch: ${JSON.stringify(runtime)}`);
+    }
+  }
+}
+
 function assertSectionSummary(section, expected, context, name) {
   const summary = section?.summary;
   for (const [key, value] of Object.entries(expected)) {
@@ -3478,6 +3508,10 @@ try {
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
   assertAudioRuntimeAssets(bootResult.state, "runtime archive boot");
+  assertBrowserAudioRuntime(bootResult.state.browserAudioRuntime, "runtime archive boot before gesture", {
+    created: false,
+    resumeAttempts: 0,
+  });
   assertAudioPayloadInventory(bootResult.state, "runtime archive boot", hasBaseIniArchive);
   assertFileSystemProbe(bootResult.state, "runtime archive boot");
   assertDataSummary(bootResult.state, "runtime archive boot", true);
@@ -3486,6 +3520,39 @@ try {
   } else {
     assertOriginalEngineStartupMissingFiles(bootResult.state, "runtime archive boot");
   }
+
+  const audioGesturePoint = await page.evaluate(() => {
+    const target = document.querySelector("#viewport");
+    const rect = target.getBoundingClientRect();
+    return {
+      x: rect.left + Math.max(1, Math.min(rect.width - 1, rect.width / 2)),
+      y: rect.top + Math.max(1, Math.min(rect.height - 1, rect.height / 2)),
+    };
+  });
+  await page.mouse.click(audioGesturePoint.x, audioGesturePoint.y);
+  await page.waitForFunction(async () => {
+    const result = await window.CnCPort.rpc("browserAudioRuntime");
+    const runtime = result.browserAudioRuntime;
+    return runtime?.resumeAttempts >= 1
+      && runtime?.resumeSuccesses >= 1
+      && runtime?.contextState === "running"
+      && runtime?.lastResumeTrigger === "canvas.pointerdown";
+  }, null, { timeout: 5000 });
+  const audioGestureResult = await page.evaluate(() => window.CnCPort.rpc("browserAudioRuntime"));
+  if (!audioGestureResult.ok) {
+    throw new Error(`browser audio runtime RPC failed after gesture: ${JSON.stringify(audioGestureResult)}`);
+  }
+  assertBrowserAudioRuntime(
+    audioGestureResult.browserAudioRuntime,
+    "runtime archive boot after audio gesture",
+    { afterGesture: true },
+  );
+  assertBrowserAudioRuntime(
+    audioGestureResult.state.browserAudioRuntime,
+    "runtime archive state after audio gesture",
+    { afterGesture: true },
+  );
+  assertAudioRuntimeAssets(audioGestureResult.state, "runtime archive boot after audio gesture");
 
   console.log(JSON.stringify({
     ok: true,
@@ -3505,6 +3572,7 @@ try {
     bootArchiveMount,
     startupAssets: bootResult.state.startupAssets,
     audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
+    browserAudioRuntime: audioGestureResult.browserAudioRuntime,
     audioPayloadInventory: bootResult.state.audioPayloadInventory,
     dataSummary: bootResult.state.dataSummary,
     originalEngineStartup: bootResult.state.originalEngineStartup,

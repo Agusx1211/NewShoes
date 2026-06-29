@@ -3480,6 +3480,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       voice, 3D SFX, and speech payloads through `GainNode` buses, observes
       five completion callbacks, and asserts non-silent rendered windows while
       preserving that this is not yet engine-driven mixer playback.
+- [x] Add a browser Web Audio runtime user-gesture proof. The harness now
+      exposes `browserAudioRuntime`, resumes a real `AudioContext` from canvas
+      pointer or keyboard gestures, and `runtime_archives_smoke.mjs` drives a
+      Playwright canvas click to assert the context reaches `running` while the
+      original engine audio runtime still reports that the browser audio device
+      is future work.
+
 ---
 
 ## M8 — Video (Bink → WebCodecs)
