@@ -6384,6 +6384,270 @@ function buildBrowserAudioEventLifecycleProof(decodedPayloads, scheduleProof) {
   };
 }
 
+function buildBrowserAudioMixerDefaults() {
+  const scriptVolumes = {
+    music: 1,
+    sound: 1,
+    sound3D: 1,
+    speech: 1,
+  };
+  const systemVolumes = {
+    music: 0.55,
+    sound: 0.75,
+    sound3D: 0.75,
+    speech: 0.55,
+  };
+  const zoomVolume = 1;
+  return {
+    source: "GameAudio.cpp:269-282",
+    formula: "busVolume = scriptVolume * systemVolume; sound3DVolume = zoomVolume * scriptSound3DVolume * systemSound3DVolume",
+    scriptVolumes,
+    systemVolumes,
+    zoomVolume,
+    busGains: {
+      music: Number((scriptVolumes.music * systemVolumes.music).toFixed(6)),
+      sound: Number((scriptVolumes.sound * systemVolumes.sound).toFixed(6)),
+      sound3D: Number((zoomVolume * scriptVolumes.sound3D * systemVolumes.sound3D).toFixed(6)),
+      speech: Number((scriptVolumes.speech * systemVolumes.speech).toFixed(6)),
+    },
+  };
+}
+
+function requestedAudioMixerBusForDecoded(decoded) {
+  if (decoded.sections?.music) {
+    return {
+      bus: "music",
+      playingType: "PAT_Stream",
+      sourceRoute: "AT_Music stream -> m_musicVolume",
+    };
+  }
+  if (decoded.sections?.speech) {
+    return {
+      bus: "speech",
+      playingType: "PAT_Stream",
+      sourceRoute: "AT_Streaming stream -> m_speechVolume",
+    };
+  }
+  if (decoded.firstEvent === "ArtilleryBarrageIncomingWhistle") {
+    return {
+      bus: "sound3D",
+      playingType: "PAT_3DSample",
+      sourceRoute: "world SFX 3D sample -> m_sound3DVolume",
+    };
+  }
+  return {
+    bus: "sound",
+    playingType: "PAT_Sample",
+    sourceRoute: "2D sample -> m_soundVolume",
+  };
+}
+
+function requestedAudioMixerPreviewSeconds(decoded, durationSeconds) {
+  if (decoded.sections?.music) {
+    return Math.min(durationSeconds, 1);
+  }
+  return Math.min(durationSeconds, 0.75);
+}
+
+async function buildBrowserAudioMixerBusProof(decodedPayloads) {
+  const errors = [];
+  const OfflineAudioContextCtor =
+    globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+  if (typeof OfflineAudioContextCtor !== "function") {
+    return {
+      source: "browser requested audio Web Audio mixer bus proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "offlineAudioContext",
+      errors: ["OfflineAudioContext is unavailable"],
+      scheduled: [],
+      endedCallbacks: [],
+    };
+  }
+
+  const mixerDefaults = buildBrowserAudioMixerDefaults();
+  const buses = Object.keys(mixerDefaults.busGains);
+  const renderSampleRate = 44100;
+  const gapSeconds = 0.02;
+  const tailSeconds = 0.1;
+  const scheduled = [];
+  const scheduledByBus = Object.fromEntries(buses.map((bus) => [bus, 0]));
+  let cursorSeconds = 0;
+
+  for (const decoded of decodedPayloads) {
+    const route = requestedAudioMixerBusForDecoded(decoded);
+    const durationSeconds = decoded.decodedFrames / decoded.info.samplesPerSec;
+    const playbackSeconds = requestedAudioMixerPreviewSeconds(decoded, durationSeconds);
+    scheduledByBus[route.bus] = (scheduledByBus[route.bus] ?? 0) + 1;
+    scheduled.push({
+      cacheKey: decoded.cacheKey,
+      archive: decoded.archive,
+      path: decoded.path,
+      firstEvent: decoded.firstEvent,
+      firstSource: decoded.firstSource,
+      sections: decoded.sections,
+      bus: route.bus,
+      sourceRoute: route.sourceRoute,
+      playingType: route.playingType,
+      busGain: mixerDefaults.busGains[route.bus],
+      nodeGraph: [
+        "AudioBufferSourceNode",
+        `${route.bus}GainNode`,
+        "AudioDestinationNode",
+      ],
+      startSeconds: Number(cursorSeconds.toFixed(6)),
+      durationSeconds: Number(playbackSeconds.toFixed(6)),
+      fullDurationSeconds: Number(durationSeconds.toFixed(6)),
+      scheduledPreview: playbackSeconds < durationSeconds,
+      endSeconds: Number((cursorSeconds + playbackSeconds).toFixed(6)),
+      sourceSampleRate: decoded.info.samplesPerSec,
+      sourceFrames: decoded.decodedFrames,
+    });
+    cursorSeconds += playbackSeconds + gapSeconds;
+  }
+
+  for (const bus of buses) {
+    if (scheduledByBus[bus] <= 0) {
+      errors.push(`no requested payload routed to ${bus} bus`);
+    }
+  }
+
+  const renderLength = Math.max(1, Math.ceil((cursorSeconds + tailSeconds) * renderSampleRate));
+  let audioContext;
+  try {
+    audioContext = new OfflineAudioContextCtor(1, renderLength, renderSampleRate);
+  } catch (error) {
+    return {
+      source: "browser requested audio Web Audio mixer bus proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      nextRequired: "offlineAudioContext",
+      errors: [...errors, error?.message ?? String(error)],
+      scheduled,
+      endedCallbacks: [],
+    };
+  }
+
+  const endedCallbacks = [];
+  try {
+    const busNodes = {};
+    for (const bus of buses) {
+      const gain = audioContext.createGain();
+      gain.gain.setValueAtTime(mixerDefaults.busGains[bus], 0);
+      gain.connect(audioContext.destination);
+      busNodes[bus] = gain;
+    }
+
+    for (let index = 0; index < decodedPayloads.length; ++index) {
+      const decoded = decodedPayloads[index];
+      const schedule = scheduled[index];
+      const source = audioContext.createBufferSource();
+      source.buffer = createWebAudioBufferFromDecoded(audioContext, decoded);
+      source.connect(busNodes[schedule.bus]);
+      source.onended = () => {
+        endedCallbacks.push({
+          cacheKey: decoded.cacheKey,
+          bus: schedule.bus,
+          firstEvent: decoded.firstEvent,
+          order: endedCallbacks.length + 1,
+        });
+      };
+      if (schedule.scheduledPreview) {
+        source.start(schedule.startSeconds, 0, schedule.durationSeconds);
+      } else {
+        source.start(schedule.startSeconds);
+      }
+    }
+
+    const rendered = await audioContext.startRendering();
+    await Promise.resolve();
+    const firstChannel = rendered.getChannelData(0);
+    const renderSummary = summarizeRenderedAudioWindow(firstChannel, 0, firstChannel.length);
+    const renderedWindows = scheduled.map((schedule) => ({
+      cacheKey: schedule.cacheKey,
+      bus: schedule.bus,
+      busGain: schedule.busGain,
+      ...summarizeRenderedAudioWindow(
+        firstChannel,
+        Math.floor(schedule.startSeconds * rendered.sampleRate),
+        Math.min(
+          Math.ceil(schedule.endSeconds * rendered.sampleRate),
+          firstChannel.length,
+        ),
+      ),
+    }));
+    if (endedCallbacks.length !== scheduled.length) {
+      errors.push(
+        `expected ${scheduled.length} mixer ended callbacks, observed ${endedCallbacks.length}`,
+      );
+    }
+    if (renderSummary.nonZeroFrames <= 0 || renderSummary.maxAbsFloat <= 0) {
+      errors.push("mixer bus offline render was silent");
+    }
+    for (const window of renderedWindows) {
+      if (window.nonZeroFrames <= 0 || window.maxAbsFloat <= 0) {
+        errors.push(`${window.cacheKey}: mixer bus rendered window was silent`);
+      }
+    }
+
+    return {
+      source: "browser requested audio Web Audio mixer bus proof",
+      ready: errors.length === 0,
+      runtimePlayback: false,
+      engineDriven: false,
+      offlineRendered: true,
+      nextRequired: "engineDrivenWebAudioMixerBinding",
+      sourceFrontiers: [
+        "verify:miles-audio-volume-frontier",
+        "verify:audio-music-manager-frontier",
+        "verify:audio-3d-position-frontier",
+      ],
+      constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
+      mixerDefaults,
+      scheduledSources: scheduled.length,
+      scheduledByBus,
+      endedCallbacksObserved: endedCallbacks.length,
+      renderSampleRate: rendered.sampleRate,
+      renderLength: rendered.length,
+      renderDurationSeconds: Number(rendered.duration.toFixed(6)),
+      gapSeconds,
+      errors,
+      scheduled,
+      endedCallbacks,
+      renderSummary,
+      renderedWindows,
+    };
+  } catch (error) {
+    errors.push(error?.message ?? String(error));
+    return {
+      source: "browser requested audio Web Audio mixer bus proof",
+      ready: false,
+      runtimePlayback: false,
+      engineDriven: false,
+      offlineRendered: false,
+      nextRequired: "offlineAudioMixerRender",
+      sourceFrontiers: [
+        "verify:miles-audio-volume-frontier",
+        "verify:audio-music-manager-frontier",
+        "verify:audio-3d-position-frontier",
+      ],
+      constructor: audioContext.constructor?.name ?? "OfflineAudioContext",
+      mixerDefaults,
+      scheduledSources: scheduled.length,
+      scheduledByBus,
+      endedCallbacksObserved: endedCallbacks.length,
+      renderSampleRate,
+      renderLength,
+      gapSeconds,
+      errors,
+      scheduled,
+      endedCallbacks,
+    };
+  }
+}
+
 async function buildBrowserAudio3DPositioningProof(decodedPayloads) {
   const errors = [];
   const OfflineAudioContextCtor =
@@ -6760,6 +7024,9 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     [...decodedCache.values()],
     webAudioScheduleProof,
   );
+  const browserAudioMixerBusProof = await buildBrowserAudioMixerBusProof(
+    [...decodedCache.values()],
+  );
   const browserAudio3DPositioningProof = await buildBrowserAudio3DPositioningProof(
     [...decodedCache.values()],
   );
@@ -6774,6 +7041,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
       webAudioBufferCache.ready === true &&
       webAudioScheduleProof.ready === true &&
       browserAudioEventLifecycleProof.ready === true &&
+      browserAudioMixerBusProof.ready === true &&
       browserAudio3DPositioningProof.ready === true,
     metadataOnly: false,
     runtimeDecoded: true,
@@ -6803,6 +7071,7 @@ async function buildRequestedAudioDecodeCacheProof(requestedPayloadCachePlan, en
     webAudioBufferCache,
     webAudioScheduleProof,
     browserAudioEventLifecycleProof,
+    browserAudioMixerBusProof,
     browserAudio3DPositioningProof,
   };
 }
@@ -7296,7 +7565,7 @@ async function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archive
     requestedPayloadCachePlan,
     requestedPayloadDecodeCacheProof,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded MP3/WAV cache entries plus OfflineAudioContext preview scheduling, lifecycle, and PannerNode 3D-positioning proofs for requested payload keys without audible runtime playback.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers, decodeProofs decodes two WAV payloads to PCM metadata, webAudioBufferProofs uploads those decoded samples into Web Audio AudioBuffers, requestedPayloadCachePlan dedupes all resolved INI-requested payloads, and requestedPayloadDecodeCacheProof creates representative decoded MP3/WAV cache entries plus OfflineAudioContext preview scheduling, lifecycle, Web Audio mixer bus, and PannerNode 3D-positioning proofs for requested payload keys without audible runtime playback.",
   };
 }
 

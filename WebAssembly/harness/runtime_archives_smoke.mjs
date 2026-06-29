@@ -2334,6 +2334,263 @@ function assertAudioRequestedPayloadDecodeCacheProof(payloads, context) {
     }, `${context} requested audio lifecycle release log`);
   }
 
+  const mixer = proof.browserAudioMixerBusProof;
+  if (!mixer
+      || mixer.source !== "browser requested audio Web Audio mixer bus proof"
+      || mixer.ready !== true
+      || mixer.runtimePlayback !== false
+      || mixer.engineDriven !== false
+      || mixer.offlineRendered !== true
+      || mixer.nextRequired !== "engineDrivenWebAudioMixerBinding"
+      || mixer.constructor !== "OfflineAudioContext"
+      || mixer.scheduledSources !== 5
+      || mixer.endedCallbacksObserved !== 5
+      || mixer.renderSampleRate !== 44100
+      || mixer.renderLength !== 185220
+      || mixer.renderDurationSeconds !== 4.2
+      || mixer.gapSeconds !== 0.02
+      || !Array.isArray(mixer.sourceFrontiers)
+      || mixer.sourceFrontiers.length !== 3
+      || !Array.isArray(mixer.errors)
+      || mixer.errors.length !== 0
+      || !Array.isArray(mixer.scheduled)
+      || mixer.scheduled.length !== 5
+      || !Array.isArray(mixer.endedCallbacks)
+      || mixer.endedCallbacks.length !== 5
+      || !Array.isArray(mixer.renderedWindows)
+      || mixer.renderedWindows.length !== 5) {
+    throw new Error(`${context} requested audio mixer proof state mismatch: ${JSON.stringify(mixer)}`);
+  }
+  assertArrayPrefix(mixer.sourceFrontiers, [
+    "verify:miles-audio-volume-frontier",
+    "verify:audio-music-manager-frontier",
+    "verify:audio-3d-position-frontier",
+  ], `${context} requested audio mixer source frontiers`);
+  assertValueMatches(mixer.mixerDefaults, {
+    source: "GameAudio.cpp:269-282",
+    formula: "busVolume = scriptVolume * systemVolume; sound3DVolume = zoomVolume * scriptSound3DVolume * systemSound3DVolume",
+    scriptVolumes: {
+      music: 1,
+      sound: 1,
+      sound3D: 1,
+      speech: 1,
+    },
+    systemVolumes: {
+      music: 0.55,
+      sound: 0.75,
+      sound3D: 0.75,
+      speech: 0.55,
+    },
+    zoomVolume: 1,
+    busGains: {
+      music: 0.55,
+      sound: 0.75,
+      sound3D: 0.75,
+      speech: 0.55,
+    },
+  }, `${context} requested audio mixer defaults`);
+  assertValueMatches(mixer.scheduledByBus, {
+    music: 1,
+    sound: 2,
+    sound3D: 1,
+    speech: 1,
+  }, `${context} requested audio mixer bus counts`);
+  assertArrayPrefix(mixer.endedCallbacks.map((entry) => `${entry.bus}:${entry.cacheKey}`), [
+    "music:MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3",
+    "sound:AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav",
+    "sound:AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
+    "sound3D:AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav",
+    "speech:SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav",
+  ], `${context} requested audio mixer callback order`);
+
+  const mixerScheduled = new Map(mixer.scheduled.map((entry) => [entry.cacheKey, entry]));
+  assertValueMatches(mixerScheduled.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
+    firstEvent: "Cin_XChina01",
+    firstSource: "Data\\INI\\Music.ini:294",
+    sections: { music: 1 },
+    bus: "music",
+    sourceRoute: "AT_Music stream -> m_musicVolume",
+    playingType: "PAT_Stream",
+    busGain: 0.55,
+    nodeGraph: ["AudioBufferSourceNode", "musicGainNode", "AudioDestinationNode"],
+    startSeconds: 0,
+    durationSeconds: 1,
+    fullDurationSeconds: 104.150204,
+    scheduledPreview: true,
+    endSeconds: 1,
+    sourceSampleRate: 44100,
+    sourceFrames: 4593024,
+  }, `${context} requested mixer music schedule`);
+  assertValueMatches(mixerScheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    firstEvent: "Amb_DesertMarketWallaLoop3",
+    firstSource: "Data\\INI\\SoundEffects.ini:5587",
+    sections: { soundEffects: 4 },
+    bus: "sound",
+    sourceRoute: "2D sample -> m_soundVolume",
+    playingType: "PAT_Sample",
+    busGain: 0.75,
+    nodeGraph: ["AudioBufferSourceNode", "soundGainNode", "AudioDestinationNode"],
+    startSeconds: 1.02,
+    durationSeconds: 0.75,
+    fullDurationSeconds: 1.408345,
+    scheduledPreview: true,
+    endSeconds: 1.77,
+    sourceSampleRate: 22050,
+    sourceFrames: 31054,
+  }, `${context} requested mixer SFX schedule`);
+  assertValueMatches(mixerScheduled.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    firstEvent: "CIAAgentVoiceAttack",
+    firstSource: "Data\\INI\\Voice.ini:4500",
+    sections: { voices: 3 },
+    bus: "sound",
+    sourceRoute: "2D sample -> m_soundVolume",
+    playingType: "PAT_Sample",
+    busGain: 0.75,
+    nodeGraph: ["AudioBufferSourceNode", "soundGainNode", "AudioDestinationNode"],
+    startSeconds: 1.79,
+    durationSeconds: 0.75,
+    fullDurationSeconds: 1.199909,
+    scheduledPreview: true,
+    endSeconds: 2.54,
+    sourceSampleRate: 22050,
+    sourceFrames: 26458,
+  }, `${context} requested mixer voice schedule`);
+  assertValueMatches(mixerScheduled.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    firstEvent: "ArtilleryBarrageIncomingWhistle",
+    firstSource: "Data\\INI\\SoundEffects.ini:3571",
+    sections: { soundEffects: 4 },
+    bus: "sound3D",
+    sourceRoute: "world SFX 3D sample -> m_sound3DVolume",
+    playingType: "PAT_3DSample",
+    busGain: 0.75,
+    nodeGraph: ["AudioBufferSourceNode", "sound3DGainNode", "AudioDestinationNode"],
+    startSeconds: 2.56,
+    durationSeconds: 0.75,
+    fullDurationSeconds: 2.171066,
+    scheduledPreview: true,
+    endSeconds: 3.31,
+    sourceSampleRate: 44100,
+    sourceFrames: 95744,
+  }, `${context} requested mixer 3D SFX schedule`);
+  assertValueMatches(mixerScheduled.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    firstEvent: "Taunts_AirTrafficControl01",
+    firstSource: "Data\\INI\\Speech.ini:933",
+    sections: { speech: 2 },
+    bus: "speech",
+    sourceRoute: "AT_Streaming stream -> m_speechVolume",
+    playingType: "PAT_Stream",
+    busGain: 0.55,
+    nodeGraph: ["AudioBufferSourceNode", "speechGainNode", "AudioDestinationNode"],
+    startSeconds: 3.33,
+    durationSeconds: 0.75,
+    fullDurationSeconds: 8.952744,
+    scheduledPreview: true,
+    endSeconds: 4.08,
+    sourceSampleRate: 44100,
+    sourceFrames: 394816,
+  }, `${context} requested mixer speech schedule`);
+
+  assertValueMatches(mixer.renderSummary, {
+    frames: 185220,
+    minFloat: -0.749977,
+    maxFloat: 0.75,
+    maxAbsFloat: 0.75,
+    nonZeroFrames: 175031,
+    firstSamples: [
+      0, -0.000008, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested mixer render summary`);
+
+  const mixerWindows = new Map(mixer.renderedWindows.map((entry) => [entry.cacheKey, entry]));
+  assertValueMatches(mixerWindows.get("MusicZH.big|Data\\Audio\\Tracks\\C_Chix01.mp3"), {
+    bus: "music",
+    busGain: 0.55,
+    startFrame: 0,
+    endFrame: 44100,
+    frames: 44100,
+    minFloat: -0.207022,
+    maxFloat: 0.318155,
+    maxAbsFloat: 0.318155,
+    nonZeroFrames: 43837,
+    firstSamples: [
+      0, -0.000008, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested mixer music render`);
+  assertValueMatches(mixerWindows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\amarke2e.wav"), {
+    bus: "sound",
+    busGain: 0.75,
+    startFrame: 44982,
+    endFrame: 78057,
+    frames: 33075,
+    minFloat: -0.749977,
+    maxFloat: 0.700652,
+    maxAbsFloat: 0.749977,
+    nonZeroFrames: 33069,
+    firstSamples: [
+      -0.095833, -0.144585, -0.193336, -0.177509,
+      -0.161682, -0.131733, -0.101784, -0.121685,
+      -0.141586, -0.133163, -0.124741, -0.124043,
+      -0.123344, -0.108364, -0.093384, -0.052517,
+    ],
+  }, `${context} requested mixer SFX render`);
+  assertValueMatches(mixerWindows.get("AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav"), {
+    bus: "sound",
+    busGain: 0.75,
+    startFrame: 78939,
+    endFrame: 112014,
+    frames: 33075,
+    minFloat: -0.529953,
+    maxFloat: 0.75,
+    maxAbsFloat: 0.75,
+    nonZeroFrames: 33056,
+    firstSamples: [
+      0.000114, -0.000114, -0.000343, -0.000813,
+      -0.001282, -0.001717, -0.002151, -0.002335,
+      -0.002518, -0.002472, -0.002426, -0.002346,
+      -0.002266, -0.002209, -0.002151, -0.002186,
+    ],
+  }, `${context} requested mixer voice render`);
+  assertValueMatches(mixerWindows.get("AudioZH.big|Data\\Audio\\Sounds\\gshescre.wav"), {
+    bus: "sound3D",
+    busGain: 0.75,
+    startFrame: 112896,
+    endFrame: 145971,
+    frames: 33075,
+    minFloat: -0.574036,
+    maxFloat: 0.619785,
+    maxAbsFloat: 0.619785,
+    nonZeroFrames: 32155,
+    firstSamples: [
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+      0, 0, 0, 0,
+    ],
+  }, `${context} requested mixer 3D SFX render`);
+  assertValueMatches(mixerWindows.get("SpeechEnglishZH.big|Data\\Audio\\Speech\\English\\tairf066.wav"), {
+    bus: "speech",
+    busGain: 0.55,
+    startFrame: 146853,
+    endFrame: 179928,
+    frames: 33075,
+    minFloat: -0.415588,
+    maxFloat: 0.538217,
+    maxAbsFloat: 0.538217,
+    nonZeroFrames: 32912,
+    firstSamples: [
+      0.00047, 0.000655, 0.001158, 0.00193,
+      0.002031, 0.002115, 0.001863, 0.001645,
+      0.001444, 0.001024, 0.000739, 0.000487,
+      0.000369, 0.000168, 0.000067, -0.000034,
+    ],
+  }, `${context} requested mixer speech render`);
+
   const positioning = proof.browserAudio3DPositioningProof;
   if (!positioning
       || positioning.source !== "browser requested audio PannerNode 3D positioning proof"

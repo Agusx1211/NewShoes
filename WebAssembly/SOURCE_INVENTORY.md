@@ -35,6 +35,11 @@ frontier: `AudioEventRTS` position ownership, `SoundManager::canPlayNow`
 distance/shroud culling, listener position/orientation application, per-frame
 3D sample position updates, one-shot 3D sample distance/position setup, and 3D
 sample volume routing.
+`npm run verify:audio-3d-zoom-volume-frontier` pins the adjacent 3D
+zoom/volume-adjustment frontier: `AudioManager::setVolume` Sound3D recompute,
+`set3DVolumeAdjustment` multiply/clamp/volume-change flag behavior, the
+`m_zoomVolume` update-to-adjustment call path, and `MilesAudioManager`'s
+per-frame re-push of changed volume to playing 2D/3D/stream handles.
 `npm run verify:audio-music-manager-frontier` pins the original music
 streaming and transition frontier: `MusicTrack` fields/parse table,
 `MusicManager` AR_Play/AR_Stop request construction, `AudioManager` AT_Music
@@ -86,12 +91,14 @@ track. It also exposes a browser requested audio event lifecycle proof tied to
 the request, update, sample-start, and completion frontier verifiers, pinning
 AR_Play request state, sample/stream playing types, ordered completion
 callbacks, `PS_Stopped`, and release paths for those five requested events.
-The same proof surface now includes a browser `PannerNode` 3D-positioning proof
-for the real requested world SFX `ArtilleryBarrageIncomingWhistle`, carrying
-the source min/max range, listener/source coordinates, and stereo separation
-metrics through an OfflineAudioContext render. This is still representative
-proof coverage, not full requested-payload decode/cache or engine-driven
-audio-event scheduling/playback.
+The same proof surface now includes a Web Audio mixer-bus proof that routes
+real requested music, 2D SFX, voice, 3D SFX, and speech payloads through
+source-default `GainNode` buses, plus a browser `PannerNode` 3D-positioning
+proof for the real requested world SFX `ArtilleryBarrageIncomingWhistle`,
+carrying the source min/max range, listener/source coordinates, and stereo
+separation metrics through an OfflineAudioContext render. This is still
+representative proof coverage, not full requested-payload decode/cache or
+engine-driven audio-event scheduling/playback.
 
 `npm run inventory:startup-archives -- --require-audio-startup` reports the
 remaining audio startup blockers with expected source archives: the current

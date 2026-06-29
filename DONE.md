@@ -3372,6 +3372,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       listener position/orientation updates, one-shot 3D sample
       distance/position setup, per-frame 3D sample position updates, and 3D
       sample volume routing.
+- [x] Add `npm run verify:audio-3d-zoom-volume-frontier`, a source-only
+      verifier for the original 3D zoom/volume-adjustment path:
+      `AudioManager::setVolume` Sound3D recompute, `set3DVolumeAdjustment`
+      multiply/clamp/volume-change flag behavior, the fact that `m_zoomVolume`
+      is computed in `AudioManager::update` and passed as the adjustment
+      argument, and `MilesAudioManager::processPlayingList` re-pushing changed
+      volume into already-playing 2D/3D/stream handles.
 - [x] Add `npm run verify:audio-music-manager-frontier`, a source-only
       verifier for the original music playback/transition frontier:
       `MusicTrack` fields and parse table, `MusicManager` AR_Play/AR_Stop
@@ -3466,6 +3473,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with source min/max range, listener/source coordinates, and stereo
       separation metrics pinned, while preserving that this is not yet
       engine-driven 3D playback.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible Web Audio mixer-bus proof for the same requested payload
+      cache entries. The smoke now pins source-default `AudioManager::init`
+      music/sound/3D/speech bus gains, routes real requested music, 2D SFX,
+      voice, 3D SFX, and speech payloads through `GainNode` buses, observes
+      five completion callbacks, and asserts non-silent rendered windows while
+      preserving that this is not yet engine-driven mixer playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)
