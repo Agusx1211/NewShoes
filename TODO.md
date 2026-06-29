@@ -582,7 +582,11 @@ shares structure and follows behind.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
       callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists.
-- [ ] Decode original audio formats (WAV/MP3/Miles streams) via WebAudio/WebCodecs.
+- [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
+      IMA ADPCM WAV payloads) before Web Audio playback; the current
+      `verify:audio-format-frontier` / harness `payloadFormats` checks prove
+      the ADPCM majority must be decoded or transcoded before
+      `decodeAudioData`.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world.
 - [ ] Music playback + transitions.

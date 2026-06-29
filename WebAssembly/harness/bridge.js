@@ -5536,6 +5536,165 @@ function audioPayloadCandidatePaths(kind, leaf) {
   ])];
 }
 
+function audioPayloadExtension(path) {
+  const normalized = String(path ?? "").replaceAll("/", "\\");
+  const slash = normalized.lastIndexOf("\\");
+  const dot = normalized.lastIndexOf(".");
+  return dot > slash ? normalized.slice(dot + 1).toLowerCase() : "";
+}
+
+function audioPayloadMagic(header) {
+  const ascii = (start, end) => String.fromCharCode(...header.subarray(start, end));
+  if (header.byteLength >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE") {
+    return "riff-wave";
+  }
+  if (header.byteLength >= 3 && ascii(0, 3) === "ID3") {
+    return "mp3-id3";
+  }
+  if (header.byteLength >= 2 && header[0] === 0xff && (header[1] & 0xe0) === 0xe0) {
+    return "mp3-frame";
+  }
+  return "unknown";
+}
+
+function hexPrefix(bytes, limit = 12) {
+  return [...bytes.subarray(0, Math.min(limit, bytes.byteLength))]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function readU16LE(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readU32LE(bytes, offset) {
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  ) >>> 0;
+}
+
+function audioWavCodecName(tag) {
+  if (tag === 1) {
+    return "PCM";
+  }
+  if (tag === 17) {
+    return "IMA_ADPCM";
+  }
+  return `0x${tag.toString(16)}`;
+}
+
+function parseAudioWavFmt(header) {
+  if (header.byteLength < 12 || audioPayloadMagic(header) !== "riff-wave") {
+    return null;
+  }
+  let offset = 12;
+  while (offset + 8 <= header.byteLength) {
+    const chunkId = String.fromCharCode(...header.subarray(offset, offset + 4));
+    const chunkSize = readU32LE(header, offset + 4);
+    if (chunkId === "fmt ") {
+      if (offset + 24 > header.byteLength) {
+        return null;
+      }
+      const wFormatTag = readU16LE(header, offset + 8);
+      const channels = readU16LE(header, offset + 10);
+      const samplesPerSec = readU32LE(header, offset + 12);
+      const bitsPerSample = readU16LE(header, offset + 22);
+      return {
+        wFormatTag,
+        codec: audioWavCodecName(wFormatTag),
+        channels,
+        samplesPerSec,
+        bitsPerSample,
+        layout: `${channels}ch_${samplesPerSec}Hz_${bitsPerSample}bit`,
+      };
+    }
+    offset += 8 + chunkSize + (chunkSize & 1);
+  }
+  return null;
+}
+
+function classifyAudioPayloadFormat(archiveBytes, entry) {
+  const header = archiveBytes.subarray(entry.offset, Math.min(entry.offset + 64, archiveBytes.byteLength));
+  const extension = audioPayloadExtension(entry.path);
+  const magic = audioPayloadMagic(header);
+  const wavFmt = magic === "riff-wave" ? parseAudioWavFmt(header) : null;
+  const webAudioContainerCandidate =
+    (extension === "wav" && magic === "riff-wave") ||
+    (extension === "mp3" && (magic === "mp3-id3" || magic === "mp3-frame"));
+  const webAudioDecodeCandidate =
+    (extension === "wav" && magic === "riff-wave" && wavFmt?.wFormatTag === 1) ||
+    (extension === "mp3" && (magic === "mp3-id3" || magic === "mp3-frame"));
+  const requiresTranscode =
+    extension === "wav" && magic === "riff-wave" && wavFmt?.wFormatTag !== 1;
+  return {
+    extension,
+    magic,
+    headerHex: hexPrefix(header),
+    wavFmt,
+    webAudioContainerCandidate,
+    webAudioDecodeCandidate,
+    requiresTranscode,
+  };
+}
+
+function incrementCount(target, key, amount = 1) {
+  target[key] = (target[key] ?? 0) + amount;
+}
+
+function newAudioFormatSummary(source) {
+  return {
+    source,
+    entryCount: 0,
+    totalBytes: 0,
+    extensions: {},
+    magic: {},
+    wavCodec: {},
+    wavFmt: {},
+    webAudioContainerCandidates: 0,
+    webAudioDecodeCandidates: 0,
+    requiresTranscode: 0,
+    unsupported: 0,
+    examples: [],
+  };
+}
+
+function addAudioFormatSummaryEntry(summary, entry) {
+  const format = entry.format;
+  if (!format) {
+    return;
+  }
+  summary.entryCount += 1;
+  summary.totalBytes += entry.size;
+  incrementCount(summary.extensions, format.extension || "none");
+  incrementCount(summary.magic, format.magic || "unknown");
+  if (format.wavFmt) {
+    incrementCount(summary.wavCodec, String(format.wavFmt.wFormatTag));
+    incrementCount(summary.wavFmt, format.wavFmt.layout);
+  }
+  if (format.webAudioContainerCandidate) {
+    summary.webAudioContainerCandidates += 1;
+  }
+  if (format.webAudioDecodeCandidate) {
+    summary.webAudioDecodeCandidates += 1;
+  } else if (format.requiresTranscode) {
+    summary.requiresTranscode += 1;
+  } else {
+    summary.unsupported += 1;
+  }
+  if (summary.examples.length < 6) {
+    summary.examples.push({
+      archive: entry.archive,
+      path: entry.path,
+      size: entry.size,
+      offset: entry.offset,
+      format,
+    });
+  }
+}
+
 function resolveAudioPayloadCandidate(entryIndex, candidates) {
   for (const candidate of candidates) {
     const entry = entryIndex.get(normalizeBigPath(candidate));
@@ -5546,6 +5705,7 @@ function resolveAudioPayloadCandidate(entryIndex, candidates) {
         size: entry.size,
         offset: entry.offset,
         localized: normalizeBigPath(candidate).includes("\\english\\"),
+        format: entry.format ?? null,
       };
     }
   }
@@ -5585,8 +5745,11 @@ function summarizeAudioPayloadRefs(refs) {
   const missing = refs.filter((ref) => !ref.resolved);
   const uniqueLeaves = new Set(refs.map((ref) => ref.leaf.toLowerCase()));
   const archives = {};
+  const formats = {};
   for (const ref of resolved) {
     archives[ref.resolved.archive] = (archives[ref.resolved.archive] ?? 0) + 1;
+    const formatKey = ref.resolved.format?.extension ?? "unknown";
+    incrementCount(formats, formatKey);
   }
   return {
     references: refs.length,
@@ -5595,6 +5758,7 @@ function summarizeAudioPayloadRefs(refs) {
     localizedResolved: resolved.filter((ref) => ref.resolved.localized).length,
     missing: missing.length,
     archives,
+    formats,
     resolvedExamples: resolved.slice(0, 5),
     missingExamples: missing.slice(0, 5),
   };
@@ -5605,6 +5769,8 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const entryIndex = new Map();
   const iniFiles = {};
   const iniTexts = {};
+  const payloadFormats = newAudioFormatSummary("mounted BIG Data\\Audio entry headers");
+  payloadFormats.archives = {};
 
   for (const archive of archives.filter(isAudioPayloadRelevantArchive)) {
     let archiveBytes;
@@ -5629,17 +5795,28 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
       };
     }
 
-    mountedArchives.push({
-      name: archive.name,
-      sourceName: archive.sourceName,
-      entries: entries.length,
-      bytes: archive.bytes,
-    });
+    const archiveFormats = newAudioFormatSummary(`${archive.name} Data\\Audio entry headers`);
     for (const entry of entries) {
+      if (entry.normalizedPath.startsWith("data\\audio\\")) {
+        entry.format = classifyAudioPayloadFormat(archiveBytes, entry);
+        addAudioFormatSummaryEntry(archiveFormats, entry);
+        addAudioFormatSummaryEntry(payloadFormats, entry);
+      }
       if (!entryIndex.has(entry.normalizedPath)) {
         entryIndex.set(entry.normalizedPath, entry);
       }
     }
+    if (archiveFormats.entryCount > 0) {
+      payloadFormats.archives[archive.name] = archiveFormats;
+    }
+
+    mountedArchives.push({
+      name: archive.name,
+      sourceName: archive.sourceName,
+      entries: entries.length,
+      audioPayloadEntries: archiveFormats.entryCount,
+      bytes: archive.bytes,
+    });
 
     for (const iniPath of audioPayloadIniPaths) {
       if (iniTexts[iniPath]) {
@@ -5738,11 +5915,27 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
   const knownPayloads = Object.fromEntries(
     audioPayloadKnownPaths.map((path) => [path, entryIndex.has(normalizeBigPath(path))]),
   );
+  const knownPayloadFormats = Object.fromEntries(
+    audioPayloadKnownPaths.map((path) => {
+      const entry = entryIndex.get(normalizeBigPath(path));
+      return [path, entry?.format ?? null];
+    }),
+  );
   const audioArchivesReady = Object.values(requiredArchives).every(Boolean);
   const knownPayloadsReady = Object.values(knownPayloads).every(Boolean);
   const referencedPayloadsReady = Object.values(sections)
     .every((section) => section.summary.resolved > 0);
   const audioSettingsPresent = Boolean(iniFiles["Data\\INI\\AudioSettings.ini"]?.present);
+  payloadFormats.webAudioDecodeCandidateReady =
+    payloadFormats.entryCount > 0 &&
+    payloadFormats.requiresTranscode === 0 &&
+    payloadFormats.unsupported === 0;
+  payloadFormats.runtimeDecoded = false;
+  payloadFormats.nextRequired = payloadFormats.unsupported > 0
+    ? "unsupportedAudioFormat"
+    : payloadFormats.requiresTranscode > 0
+      ? "imaAdpcmDecoder"
+      : "decodeAudioDataHarness";
 
   return {
     ok: audioArchivesReady && knownPayloadsReady && referencedPayloadsReady,
@@ -5757,13 +5950,15 @@ function buildAudioPayloadInventoryFromMountedArchives(wasmModule, archives) {
     },
     requiredArchives,
     knownPayloads,
+    knownPayloadFormats,
     iniFiles,
     archiveCount: mountedArchives.length,
     indexedEntries: entryIndex.size,
     audioArchives: mountedArchives
       .filter((archive) => audioPayloadArchiveNames.includes(archive.name)),
+    payloadFormats,
     sections,
-    note: "Resolved means a candidate path exists in mounted BIG directories; this does not decode, schedule, or play audio.",
+    note: "Resolved means a candidate path exists in mounted BIG directories; payloadFormats sniffs container headers but does not decode, schedule, or play audio.",
   };
 }
 

@@ -3352,6 +3352,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Default\Speech.ini`, and `Default\Voice.ini` are now classified as
       absent optional base `INI.big` files, and the base archive readiness
       contract includes the base audio settings/default INIs.
+- [x] Add `npm run verify:audio-format-frontier`, a real-asset verifier that
+      pins the current audio payload encoding frontier before Web Audio decode:
+      3,530 `Data\Audio\` entries across the six current audio archives, split
+      into 3,523 wav and 7 mp3 entries with zero extension/magic divergence.
+      The verifier parses WAV `fmt ` chunks and pins the current codec split
+      at PCM (wFormatTag 1: 951) and IMA ADPCM (wFormatTag 17: 2,572). The
+      browser archive harness now mirrors this under
+      `audioPayloadInventory.payloadFormats`, reporting MP3/PCM WAV as direct
+      Web Audio decode candidates while keeping the IMA ADPCM majority blocked
+      on an ADPCM decode/transcode step. This still does not decode,
+      schedule, or play audio.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

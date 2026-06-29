@@ -1253,6 +1253,75 @@ function assertArchiveReferenceCounts(section, expected, context, name) {
   }
 }
 
+function assertAudioPayloadFormats(payloads, context) {
+  const formats = payloads.payloadFormats;
+  if (!formats
+      || formats.source !== "mounted BIG Data\\Audio entry headers"
+      || formats.entryCount !== 3530
+      || formats.webAudioContainerCandidates !== 3530
+      || formats.webAudioDecodeCandidates !== 958
+      || formats.requiresTranscode !== 2572
+      || formats.unsupported !== 0
+      || formats.webAudioDecodeCandidateReady !== false
+      || formats.runtimeDecoded !== false
+      || formats.nextRequired !== "imaAdpcmDecoder"
+      || formats.extensions?.wav !== 3523
+      || formats.extensions?.mp3 !== 7
+      || formats.magic?.["riff-wave"] !== 3523
+      || formats.magic?.["mp3-id3"] !== 7
+      || formats.wavCodec?.["1"] !== 951
+      || formats.wavCodec?.["17"] !== 2572
+      || formats.wavFmt?.["1ch_44100Hz_4bit"] !== 2521
+      || formats.wavFmt?.["1ch_22050Hz_16bit"] !== 904) {
+    throw new Error(`${context} audio payload format inventory mismatch: ${JSON.stringify(formats)}`);
+  }
+
+  const expectedArchives = {
+    "AudioEnglishZH.big": { entries: 794, wav: 794, riffWave: 794, decode: 762, transcode: 32 },
+    "AudioZH.big": { entries: 287, wav: 287, riffWave: 287, decode: 138, transcode: 149 },
+    "MusicZH.big": { entries: 7, mp3: 7, mp3Id3: 7, decode: 7, transcode: 0 },
+    "SpeechEnglishZH.big": { entries: 2430, wav: 2430, riffWave: 2430, decode: 43, transcode: 2387 },
+    "SpeechZH.big": { entries: 12, wav: 12, riffWave: 12, decode: 8, transcode: 4 },
+  };
+  for (const [archive, expected] of Object.entries(expectedArchives)) {
+    const archiveFormats = formats.archives?.[archive];
+    if (!archiveFormats
+        || archiveFormats.entryCount !== expected.entries
+        || archiveFormats.unsupported !== 0
+        || archiveFormats.webAudioDecodeCandidates !== expected.decode
+        || archiveFormats.requiresTranscode !== expected.transcode
+        || (expected.wav !== undefined && archiveFormats.extensions?.wav !== expected.wav)
+        || (expected.mp3 !== undefined && archiveFormats.extensions?.mp3 !== expected.mp3)
+        || (expected.riffWave !== undefined && archiveFormats.magic?.["riff-wave"] !== expected.riffWave)
+        || (expected.mp3Id3 !== undefined && archiveFormats.magic?.["mp3-id3"] !== expected.mp3Id3)) {
+      throw new Error(`${context} audio payload format archive ${archive} mismatch: ${JSON.stringify(archiveFormats)}`);
+    }
+  }
+
+  const known = payloads.knownPayloadFormats ?? {};
+  for (const path of [
+    "Data\\Audio\\Tracks\\USA_10.mp3",
+    "Data\\Audio\\Tracks\\CHI_10.mp3",
+  ]) {
+    if (known[path]?.extension !== "mp3" || known[path]?.magic !== "mp3-id3") {
+      throw new Error(`${context} known MP3 payload format mismatch for ${path}: ${JSON.stringify(known[path])}`);
+    }
+  }
+  for (const path of [
+    "Data\\Audio\\Sounds\\addnwi1a.wav",
+    "Data\\Audio\\Sounds\\English\\aangr01a.wav",
+    "Data\\Audio\\Speech\\English\\dxxoc001.wav",
+  ]) {
+    if (known[path]?.extension !== "wav" || known[path]?.magic !== "riff-wave") {
+      throw new Error(`${context} known WAV payload format mismatch for ${path}: ${JSON.stringify(known[path])}`);
+    }
+  }
+  if (known["Data\\Audio\\Sounds\\English\\aangr01a.wav"]?.wavFmt?.wFormatTag !== 1
+      || known["Data\\Audio\\Speech\\English\\dxxoc001.wav"]?.wavFmt?.wFormatTag !== 17) {
+    throw new Error(`${context} known WAV codec anchors mismatch: ${JSON.stringify(known)}`);
+  }
+}
+
 function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
   const payloads = state.audioPayloadInventory;
   if (!payloads
@@ -1287,6 +1356,8 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
       throw new Error(`${context} known audio payload ${path} missing: ${JSON.stringify(payloads)}`);
     }
   }
+
+  assertAudioPayloadFormats(payloads, context);
 
   if (hasBaseIniArchive) {
     if (payloads.audioSettings?.present !== true || payloads.nextRequired !== "browserAudioDevice") {
@@ -1334,6 +1405,13 @@ function assertAudioPayloadInventory(state, context, hasBaseIniArchive) {
     "SpeechEnglishZH.big": 2424,
     "SpeechZH.big": 11,
   }, context, "speech");
+
+  if (payloads.sections?.music?.summary?.formats?.mp3 !== 8
+      || payloads.sections?.soundEffects?.summary?.formats?.wav !== 628
+      || payloads.sections?.voices?.summary?.formats?.wav !== 398
+      || payloads.sections?.speech?.summary?.formats?.wav !== 2435) {
+    throw new Error(`${context} audio payload resolved format summary mismatch: ${JSON.stringify(payloads.sections)}`);
+  }
 }
 
 function assertFileSystemProbe(state, context) {
