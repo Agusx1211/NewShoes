@@ -3968,10 +3968,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `verify:bink-w3d-video-buffer-upload-frontier` and
       `verify:bink-w3d-video-presentation-frontier` now pin the new manager path
       while keeping full original `Display` / load-screen / score-screen movie
-      loops and Bink/audio sync open. Verified with `npm run build:wasm`,
+      loops and Bink/audio sync open at that point. Verified with
+      `npm run build:wasm`,
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-buffer-browser`.
+- [x] Extend the Bink/W3D browser presentation smoke through focused original
+      `Display::playMovie/update/stopMovie` ownership. The
+      `bink-w3d-video-buffer-browser-smoke` test now exposes narrow probe
+      accessors on the lightweight `Display` adapter, calls original
+      `Display::playMovie("VS_small")`, verifies it opens an original
+      `BinkVideoStream`, allocates a real `W3DVideoBuffer`, uploads the initial
+      texture, calls original `Display::update()` so the original display movie
+      loop drives `frameDecompress`, `frameRender(m_videoBuffer)`, and
+      `frameNext`, then presents that same buffer through original
+      `W3DDisplay::drawVideoBuffer` before calling original `Display::stopMovie`.
+      The browser harness now expects four Bink copy/open/close lifecycles and
+      four original `W3DDisplay::drawVideoBuffer` indexed draws: direct
+      `GC_Background`, direct `VS_small`, Display-owned `VS_small`, and
+      manager-owned `VS_small`. `verify:bink-w3d-video-buffer-upload-frontier`
+      and `verify:bink-w3d-video-presentation-frontier` now pin the new Display
+      path while keeping full original load-screen / score-screen movie loops
+      and Bink/audio sync open.
 
 ---
 

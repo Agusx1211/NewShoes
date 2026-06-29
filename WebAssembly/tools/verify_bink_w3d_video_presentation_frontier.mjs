@@ -422,36 +422,60 @@ function main() {
   // ------------------------------------------------------------------
   assertExact(errors, facts.runtimeSmoke ??= {}, "drawVideoBufferCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 377,
+      (line) => /display->W3DDisplay::drawVideoBuffer\s*\(\s*&buffer/.test(line)), 379,
     "runtime smoke original W3DDisplay::drawVideoBuffer call");
   assertExact(errors, facts.runtimeSmoke, "stage0CombinerCheckLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 414,
+      (line) => /drawVideoBuffer stage 0 texture combiner mismatch/.test(line)), 416,
     "runtime smoke drawVideoBuffer combiner check");
   assertExact(errors, facts.runtimeSmoke, "summaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /Bink W3D presentation ok/.test(line)), 503,
+      (line) => /Bink W3D presentation ok/.test(line)), 505,
     "runtime smoke Bink W3D presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "displayPlayLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /display\.Display::playMovie\s*\(\s*AsciiString\s*\(\s*"VS_small"\s*\)\s*\)/.test(line)), 531,
+    "runtime smoke Display::playMovie");
+  assertExact(errors, facts.runtimeSmoke, "displayUpdateLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /display\.Display::update\s*\(\s*\)/.test(line)), 573,
+    "runtime smoke Display::update");
+  assertExact(errors, facts.runtimeSmoke, "displayPresentLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/.test(line)), 600,
+    "runtime smoke Display W3D presentation call");
+  assertExact(errors, facts.runtimeSmoke, "displaySummaryLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /Display VS_small Bink W3D presentation ok/.test(line)), 601,
+    "runtime smoke Display presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "displayStopLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /display\.Display::stopMovie\s*\(\s*\)/.test(line)), 614,
+    "runtime smoke Display::stopMovie");
   assertExact(errors, facts.runtimeSmoke, "windowManagerPlayLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /video_manager\.playMovie\s*\(\s*window\s*,\s*AsciiString\s*\(\s*"VS_small"\s*\)/.test(line)), 545,
+      (line) => /video_manager\.playMovie\s*\(\s*window\s*,\s*AsciiString\s*\(\s*"VS_small"\s*\)/.test(line)), 655,
     "runtime smoke WindowVideoManager::playMovie");
   assertExact(errors, facts.runtimeSmoke, "windowManagerPresentLine",
-    lineNumber(runtimeSmoke.lines,
-      (line) => /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/.test(line)), 598,
+    firstMatchInRange(runtimeSmoke.lines, facts.runtimeSmoke.windowManagerPlayLine, facts.runtimeSmoke.windowManagerPlayLine + 80,
+      /present_uploaded_video_buffer\s*\(\s*\*w3d_buffer/), 708,
     "runtime smoke WindowVideoManager W3D presentation call");
   assertExact(errors, facts.runtimeSmoke, "windowManagerSummaryLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /WindowVideoManager VS_small Bink W3D presentation ok/.test(line)), 599,
+      (line) => /WindowVideoManager VS_small Bink W3D presentation ok/.test(line)), 709,
     "runtime smoke WindowVideoManager presentation summary");
+  assertExact(errors, facts.runtimeSmoke, "displayExerciseCallLine",
+    lineNumber(runtimeSmoke.lines,
+      (line) => /exercise_display_movie\s*\(\s*\*player\s*\)/.test(line)), 787,
+    "runtime smoke Display exercise call");
   assertExact(errors, facts.runtimeSmoke, "windowManagerExerciseCallLine",
     lineNumber(runtimeSmoke.lines,
-      (line) => /exercise_window_video_manager\s*\(\s*\*player\s*\)/.test(line)), 677,
+      (line) => /exercise_window_video_manager\s*\(\s*\*player\s*\)/.test(line)), 788,
     "runtime smoke WindowVideoManager exercise call");
 
   assertExact(errors, facts.runtimeBrowserHarness ??= {}, "drawEventCountLine",
     lineNumber(runtimeBrowserHarness.lines,
-      (line) => /Expected three W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
+      (line) => /Expected four W3DDisplay::drawVideoBuffer indexed draws/.test(line)), 462,
     "browser harness drawVideoBuffer draw count check");
   assertExact(errors, facts.runtimeBrowserHarness, "drawProbeLine",
     lineNumber(runtimeBrowserHarness.lines,
@@ -525,9 +549,10 @@ function main() {
       "presentation is covered by test:ww3d-display-video-buffer, and decoded " +
       "Bink sidecar frames now reach original W3DDisplay::drawVideoBuffer in " +
       "test:bink-w3d-video-presentation-browser, including a focused original " +
+      "Display::playMovie/update/stopMovie path and a focused original " +
       "WindowVideoManager::playMovie/update path that attaches the real W3DVideoBuffer " +
-      "to a GameWindow before presentation. Full original Display / load-screen / " +
-      "score-screen movie-loop ownership and Bink/audio sync remain open M8 tasks.",
+      "to a GameWindow before presentation. Full load-screen / score-screen movie-loop " +
+      "ownership and Bink/audio sync remain open M8 tasks.",
   };
 
   process.stdout.write(JSON.stringify(report, null, 2) + "\n");

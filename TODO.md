@@ -688,10 +688,11 @@ shares structure and follows behind.
       sidecar pixels into real `W3DVideoBuffer` textures and present them
       through original `W3DDisplay::drawVideoBuffer` with browser draw/pixel
       checks. That smoke now also exercises a focused original
+      `Display::playMovie/update/stopMovie` path and a focused original
       `WindowVideoManager::playMovie/update` path that attaches a real
       `W3DVideoBuffer` to a `GameWindow`; this item remains open until the
       final decoder/format policy is locked down and the full original
-      `Display` / load-screen / score-screen movie loops drive the same path.
+      load-screen / score-screen movie loops drive the same path.
 - [ ] Promote the provider-owned WebM sidecar manifest metadata into the
       original `BinkVideoPlayer` runtime path: connect a browser video
       presentation handle to `BinkVideoStream` open/play/seek/frame progression
@@ -715,9 +716,10 @@ shares structure and follows behind.
       Bink sidecar frames through real `W3DVideoBuffer` upload and original
       `W3DDisplay::drawVideoBuffer` presentation with a harness screenshot.
       The same smoke now also proves focused original
+      `Display::playMovie/update/stopMovie` ownership and focused original
       `WindowVideoManager::playMovie/update` ownership of a window-attached
-      real `W3DVideoBuffer`. Full original `Display` / load-screen /
-      score-screen movie playback ownership and Bink/audio sync remain open.
+      real `W3DVideoBuffer`. Full original load-screen / score-screen movie
+      playback ownership and Bink/audio sync remain open.
       `test:bink-videoplayer-runtime` now
       proves an original `BinkVideoPlayer`-owned wasm flow can `init`, register
       the shipped videos, open/load `BinkVideoStream`s, and exercise
@@ -750,9 +752,10 @@ shares structure and follows behind.
       `test:bink-w3d-video-buffer-browser` runtime proof; the same smoke now
       has the `test:bink-w3d-video-presentation-browser` alias for the joined
       display presentation proof and pins the focused original
+      `Display::playMovie/update/stopMovie` path plus the focused original
       `WindowVideoManager::playMovie/update/reset` path that owns a
-      `GameWindow` video buffer. Full original `Display` / load-screen /
-      score-screen movie-loop ownership remains open.
+      `GameWindow` video buffer. Full original load-screen / score-screen
+      movie-loop ownership remains open.
       `verify:bink-w3d-video-presentation-frontier` now pins the source-only
       *presentation* contract from the original Bink/W3D video-buffer upload
       to final `W3DDisplay::drawVideoBuffer` presentation: it asserts
@@ -767,10 +770,10 @@ shares structure and follows behind.
       browser-backed coverage via `test:ww3d-display-drawimage-file`, and
       `test:bink-w3d-video-presentation-browser` now provides the runtime
       decoded-Bink-frame screenshot proof for this focused path, including
+      focused original `Display::playMovie/update/stopMovie` ownership and
       focused original `WindowVideoManager::playMovie/update` ownership of
-      the attached `GameWindow` video buffer. The full original `Display` /
-      load-screen / score-screen movie playback loops still need to own that
-      path.
+      the attached `GameWindow` video buffer. The full original load-screen /
+      score-screen movie playback loops still need to own that path.
       `verify:bink-audio-sync-frontier` now pins the source-only Bink
       *audio-sync* handoff frontier that future browser Bink playback must
       preserve: `BinkVideoPlayer::init` calling `VideoPlayer::init()` then

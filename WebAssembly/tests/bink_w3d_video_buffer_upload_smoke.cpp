@@ -188,6 +188,8 @@ public:
 	}
 
 	VideoBuffer *createVideoBuffer() override { return NEW W3DVideoBuffer(VideoBuffer::TYPE_X8R8G8B8); }
+	VideoBuffer *movieVideoBuffer() const { return m_videoBuffer; }
+	VideoStreamInterface *movieVideoStream() const { return m_videoStream; }
 	void doSmartAssetPurgeAndPreload(const char *) override {}
 #if defined(_DEBUG) || defined(_INTERNAL)
 	void dumpAssetUsage(const char *) override {}
@@ -515,6 +517,114 @@ bool exercise_stream(
 	return ok;
 }
 
+bool exercise_display_movie(VideoPlayerInterface &player)
+{
+	bool ok = true;
+	WindowVideoProbeDisplay display;
+	Display *old_display = TheDisplay;
+	TheDisplay = &display;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const UINT creates_before_play = state->browser_texture_create_calls;
+	const UINT updates_before_play = state->browser_texture_update_calls;
+
+	display.Display::playMovie(AsciiString("VS_small"));
+
+	state = wasm_d3d8_get_state();
+	VideoBuffer *display_buffer = display.movieVideoBuffer();
+	VideoStreamInterface *display_stream = display.movieVideoStream();
+	W3DVideoBuffer *w3d_buffer = static_cast<W3DVideoBuffer *>(display_buffer);
+	const UnsignedInt expected_texture_width = next_power_of_two(96);
+	const UnsignedInt expected_texture_height = next_power_of_two(120);
+	ok = expect(display.Display::isMoviePlaying(),
+		"Display::playMovie did not leave the movie playing") && ok;
+	ok = expect(display_buffer != nullptr,
+		"Display::playMovie did not allocate a VideoBuffer") && ok;
+	ok = expect(display_stream != nullptr,
+		"Display::playMovie did not leave an owned Bink stream on the display") && ok;
+	ok = expect(player.firstStream() == display_stream,
+		"Display::playMovie stream was not owned by the BinkVideoPlayer stream list") && ok;
+	ok = expect(state->browser_texture_create_calls == creates_before_play + 1,
+		"Display::playMovie W3DVideoBuffer allocation did not create one browser texture") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_play + 1,
+		"Display::playMovie W3DVideoBuffer allocation did not upload the initial texture") && ok;
+	if (display_stream != nullptr) {
+		ok = expect(display_stream->width() == 96 && display_stream->height() == 120,
+			"Display::playMovie opened VS_small with unexpected dimensions") && ok;
+		ok = expect(display_stream->frameCount() == 71,
+			"Display::playMovie opened VS_small with unexpected frame count") && ok;
+		ok = expect(display_stream->frameIndex() == 0,
+			"Display::playMovie should start on the first frame") && ok;
+	}
+	if (w3d_buffer != nullptr) {
+		ok = expect(w3d_buffer->valid(), "Display W3DVideoBuffer is not valid after allocate") && ok;
+		ok = expect(w3d_buffer->texture() != nullptr,
+			"Display W3DVideoBuffer did not create a TextureClass") && ok;
+		ok = expect(w3d_buffer->width() == 96 && w3d_buffer->height() == 120,
+			"Display W3DVideoBuffer visible dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->textureWidth() == expected_texture_width &&
+			w3d_buffer->textureHeight() == expected_texture_height,
+			"Display W3DVideoBuffer backing texture dimensions mismatch") && ok;
+		ok = expect(w3d_buffer->pitch() == expected_texture_width * 4,
+			"Display W3DVideoBuffer pitch mismatch") && ok;
+	}
+
+	const UINT updates_before_update = state->browser_texture_update_calls;
+	display.Display::update();
+
+	state = wasm_d3d8_get_state();
+	ok = expect(display.movieVideoBuffer() == display_buffer,
+		"Display::update changed movie buffer ownership") && ok;
+	ok = expect(display.movieVideoStream() == display_stream,
+		"Display::update changed movie stream ownership") && ok;
+	ok = expect(display.Display::isMoviePlaying(),
+		"Display::update unexpectedly stopped a mid-stream movie") && ok;
+	ok = expect(state->browser_texture_update_calls == updates_before_update + 1,
+		"Display::update did not upload decoded Bink pixels through W3DVideoBuffer") && ok;
+	ok = expect(state->last_browser_texture_width == expected_texture_width &&
+		state->last_browser_texture_height == expected_texture_height,
+		"Display decoded texture upload dimensions mismatch") && ok;
+	ok = expect(state->last_browser_texture_pitch == expected_texture_width * 4,
+		"Display decoded texture upload pitch mismatch") && ok;
+	ok = expect(state->last_browser_texture_format == D3DFMT_X8R8G8B8,
+		"Display decoded texture upload format mismatch") && ok;
+	ok = expect(state->last_browser_texture_checksum != 0,
+		"Display::update uploaded an all-zero decoded frame") && ok;
+	if (display_stream != nullptr) {
+		ok = expect(display_stream->frameIndex() == 1,
+			"Display::update did not advance the Bink stream to frame index 1") && ok;
+	}
+	const UINT decoded_upload_checksum = state->last_browser_texture_checksum;
+
+	if (w3d_buffer != nullptr) {
+		ok = present_uploaded_video_buffer(*w3d_buffer, 464, 324, 560, 444) && ok;
+		std::printf("Display VS_small Bink W3D presentation ok: visible=%ux%u texture=%ux%u pitch=%u checksum=%u drawRect=%d,%d,%d,%d\n",
+			w3d_buffer->width(),
+			w3d_buffer->height(),
+			w3d_buffer->textureWidth(),
+			w3d_buffer->textureHeight(),
+			w3d_buffer->pitch(),
+			static_cast<unsigned int>(decoded_upload_checksum),
+			464,
+			324,
+			560,
+			444);
+	}
+
+	display.Display::stopMovie();
+	ok = expect(!display.Display::isMoviePlaying(),
+		"Display::stopMovie did not clear movie playback state") && ok;
+	ok = expect(display.movieVideoBuffer() == nullptr,
+		"Display::stopMovie did not clear the movie VideoBuffer") && ok;
+	ok = expect(display.movieVideoStream() == nullptr,
+		"Display::stopMovie did not clear the movie stream") && ok;
+	ok = expect(player.firstStream() == nullptr,
+		"Display::stopMovie did not close the owned Bink stream") && ok;
+
+	TheDisplay = old_display;
+	return ok;
+}
+
 bool exercise_window_video_manager(VideoPlayerInterface &player)
 {
 	bool ok = true;
@@ -674,6 +784,7 @@ extern "C" int run_bink_w3d_video_buffer_upload_smoke()
 			"GC_Background", 800, 600, 180, 112, 84, 912, 684) && ok;
 		ok = exercise_stream(*player, player->load(AsciiString("VS_small")),
 			"VS_small", 96, 120, 71, 464, 324, 560, 444) && ok;
+		ok = exercise_display_movie(*player) && ok;
 		ok = exercise_window_video_manager(*player) && ok;
 	}
 
