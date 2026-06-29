@@ -3466,6 +3466,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with source min/max range, listener/source coordinates, and stereo
       separation metrics pinned, while preserving that this is not yet
       engine-driven 3D playback.
+- [x] Extend `audioPayloadInventory.requestedPayloadDecodeCacheProof` with a
+      browser-visible Web Audio mixer-bus proof for the same requested payload
+      cache entries. The smoke now pins source-default `AudioManager::init`
+      music/sound/3D/speech bus gains, routes real requested music, 2D SFX,
+      voice, 3D SFX, and speech payloads through `GainNode` buses, observes
+      five completion callbacks, and asserts non-silent rendered windows while
+      preserving that this is not yet engine-driven mixer playback.
 ---
 
 ## M8 — Video (Bink → WebCodecs)

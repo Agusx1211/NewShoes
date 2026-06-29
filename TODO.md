@@ -593,10 +593,10 @@ shares structure and follows behind.
       ADPCM WAV payloads. `requestedPayloadCachePlan` is metadata-only, and
       `requestedPayloadDecodeCacheProof` now creates representative decoded
       MP3/WAV Web Audio buffer cache entries, an OfflineAudioContext preview
-      schedule render, and a browser lifecycle proof for requested
-      music/SFX/voice/speech keys. Expand that proof into full resolved
-      requested-payload decode/cache storage and engine-driven Web Audio
-      scheduling/lifecycle.
+      schedule render, a browser lifecycle proof, and a Web Audio mixer-bus
+      proof for requested music/SFX/3D SFX/voice/speech keys. Expand that proof
+      into full resolved requested-payload decode/cache storage and
+      engine-driven Web Audio scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo).
 - [ ] 3D positional audio (panning/attenuation) tied to camera/world;
       `verify:audio-3d-position-frontier` now pins the source listener/sample
@@ -610,7 +610,11 @@ shares structure and follows behind.
       contracts that the Web Audio stream backend must satisfy. Engine-driven
       music playback and transitions are still open.
 - [ ] EVA voice / unit voices.
-- [ ] Volume/mixer controls wired to options UI.
+- [ ] Volume/mixer controls wired to options UI; the representative
+      `requestedPayloadDecodeCacheProof.browserAudioMixerBusProof` now proves
+      source-default music/sound/3D/speech Web Audio `GainNode` buses against
+      real requested payloads, but the engine/options UI still does not drive
+      a live browser mixer.
 - [ ] Respect browser autoplay policy (resume AudioContext on user gesture).
 - [ ] Harness: assert audio events fire (state/log), not just sound.
 
