@@ -3345,6 +3345,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-tile-archive-canvas.png`. Real map height
       data and full `FlatHeightMapRenderObjClass` / scene ownership remain
       open.
+- [x] Add the archive-backed terrain tile render smoke to the vertical
+      integration runner: `test:vertical-integrations` now gates real
+      `TerrainZH.big` tile decoding through original `WorldHeightMap::readTiles`,
+      `W3DTerrainBackground` stage-1 texture bind/sample, indexed terrain FVF
+      draw submission, and browser WebGL2 colored pixels alongside the shell UI
+      and shipped mesh rendering verticals.
 - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
       ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
       `AABoxRenderObjClass` to a scene, renders through
