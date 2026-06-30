@@ -200,11 +200,17 @@ const steps = [
       expect(Array.isArray(payload.archiveLayouts)
         && payload.archiveLayouts.includes('Menus/MessageBox.wnd')
         && payload.archiveLayouts.includes('Menus/QuitMessageBox.wnd')
-        && payload.archiveLayouts.includes('Menus/MainMenu.wnd'),
-        'W3D window layout script smoke did not load real WindowZH message-box/MainMenu layouts');
+        && payload.archiveLayouts.includes('Menus/MainMenu.wnd')
+        && payload.archiveLayouts.includes('Menus/CreditsMenu.wnd'),
+        'W3D window layout script smoke did not load real WindowZH message-box/MainMenu/CreditsMenu layouts');
+      expect(Array.isArray(payload.assetArchives)
+        && payload.assetArchives.includes('WindowZH.big')
+        && payload.assetArchives.includes('INIZH.big'),
+        'W3D window layout script smoke did not prove WindowZH/INIZH archive ownership');
       expect(Array.isArray(payload.shellLayouts)
-        && payload.shellLayouts.includes('Menus/MainMenu.wnd'),
-        'W3D window layout script smoke did not prove original Shell::push MainMenu.wnd ownership');
+        && payload.shellLayouts.includes('Menus/MainMenu.wnd')
+        && payload.shellLayouts.includes('Menus/CreditsMenu.wnd'),
+        'W3D window layout script smoke did not prove original Shell::push MainMenu/CreditsMenu ownership');
       expect(Array.isArray(payload.callbackOwners)
         && payload.callbackOwners.includes('MessageBoxSystem')
         && payload.callbackOwners.includes('QuitMessageBoxSystem')
@@ -219,8 +225,11 @@ const steps = [
       expect(Array.isArray(payload.callbackPaths)
         && payload.callbackPaths.includes('W3DMainMenuInit->original MainMenuInit')
         && payload.callbackPaths.includes('MainMenuSystem(GWM_INPUT_FOCUS)')
-        && payload.callbackPaths.includes('MainMenuUpdate(first idle frame)'),
-        'W3D window layout script smoke did not execute original MainMenuInit/MainMenuSystem/MainMenuUpdate callback paths');
+        && payload.callbackPaths.includes('MainMenuUpdate(first idle frame)')
+        && payload.callbackPaths.includes('GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu')
+        && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original CreditsMenuInit')
+        && payload.callbackPaths.includes('CreditsMenuUpdate real callback'),
+        'W3D window layout script smoke did not execute original MainMenu/CreditsMenu callback paths');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
@@ -233,6 +242,8 @@ const steps = [
         'W3D window layout script smoke did not report original MainMenuSystem input-focus execution');
       expect(typeof payload.covered === 'string' && payload.covered.includes('MainMenuUpdate first idle frame'),
         'W3D window layout script smoke did not report original MainMenuUpdate idle-frame execution');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('CreditsManager load from INIZH.big'),
+        'W3D window layout script smoke did not report original CreditsManager INI loading');
     },
   },
 ];
@@ -256,10 +267,11 @@ console.log(JSON.stringify({
     'original W3DMainMenuInit executing original MainMenuInit first-run state mutation',
     'original MainMenuSystem input-focus handling',
     'original MainMenuUpdate first idle frame under shell GameLogic state',
+    'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
-    'advance the next vertical startup path outside the already-proven MainMenu first-frame slice',
+    'advance the next vertical startup path outside the already-proven shell menu slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
   ],
   sourceChecks: sourceResults.map(result => result.name),

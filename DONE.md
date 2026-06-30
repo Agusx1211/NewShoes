@@ -1799,6 +1799,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       transition/group, or game-start branches in the current harness state.
       Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`
       and `npm --prefix WebAssembly run test:startup-vertical`.
+- [x] Extend the Shell-owned menu vertical from MainMenu into the original
+      Credits menu. `w3d-window-layout-script-smoke` now links original
+      `Credits.cpp` and `GUI/GUICallbacks/Menus/CreditsMenu.cpp`, mounts real
+      `WindowZH.big` plus `INIZH.big`, drives `ButtonCredits` through original
+      `GameWindowManager::winSendInputMsg` / `MainMenuSystem`, runs
+      `MainMenuUpdate` through the pending `Shell::push`, and verifies
+      `Menus/CreditsMenu.wnd`, `CreditsMenuInit`, `CreditsMenuUpdate`,
+      `CreditsManager` loading `Data\INI\Credits.ini`, the local
+      `AudioManager` device boundary for the credits music event, and clean
+      `CreditsMenuShutdown` teardown. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

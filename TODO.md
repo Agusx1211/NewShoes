@@ -469,13 +469,14 @@ shares structure and follows behind.
       game-client global graph, so the full `W3DModuleFactory::init()` runtime
       proof should follow original `GameEngine.cpp` ownership of the
       pre-`createAudioManager` file/INI/CD frontier. Advance the next vertical
-      slice outside the already-proven `MainMenu` first-frame path unless a new
-      menu flow is driven through real original input/navigation.
+      slice outside the already-proven shell menu path unless a new menu flow
+      is driven through real original input/navigation and asset loading.
       `test:vertical-integrations` now gates runtime archive preload/startup
       asset consumption, range-backed startup archive delivery, WindowZH-backed
-      MainMenu layout callbacks, mapped-image W3DDisplay rendering, and shipped
-      W3D mesh rendering together so cross-subsystem regressions are visible
-      while the next feature slice moves to real menu input/navigation. The
+      MainMenu-to-CreditsMenu layout callbacks, mapped-image W3DDisplay
+      rendering, and shipped W3D mesh rendering together so cross-subsystem
+      regressions are visible while the next feature slice moves outside shell
+      menus or into another independently owned vertical. The
       focused `w3d-window-layout-script-smoke` now also sends a real
       `ButtonSinglePlayer` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through original
       `GameWindowManager::winSendInputMsg` and `GadgetPushButton`, then proves
@@ -483,7 +484,13 @@ shares structure and follows behind.
       dropdown and stops at the transition boundary without pushing campaign or
       skirmish screens. It then runs one original `MainMenuUpdate` to clear the
       transition lock and drives `ButtonSingleBack` through the same input path
-      to prove return navigation to the main dropdown.
+      to prove return navigation to the main dropdown. It now also mounts real
+      `INIZH.big`, loads `Menus/CreditsMenu.wnd` and `Data\INI\Credits.ini`,
+      drives `ButtonCredits` through the original input path, lets
+      `MainMenuUpdate` complete the pending `Shell::push`, and verifies
+      original `CreditsMenuInit`, `CreditsMenuUpdate`, CreditsManager
+      creation/loading, the local `AudioManager` device boundary, and clean
+      `CreditsMenuShutdown` teardown.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and

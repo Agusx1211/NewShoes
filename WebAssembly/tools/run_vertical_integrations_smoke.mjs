@@ -172,6 +172,10 @@ const steps = [
       expect(payload.ok === true, "W3D window layout script smoke did not report ok", payload);
       expect(payload.archiveLayouts?.includes("Menus/MainMenu.wnd"),
         "W3D window layout script smoke did not load MainMenu.wnd from WindowZH.big", payload);
+      expect(payload.archiveLayouts?.includes("Menus/CreditsMenu.wnd"),
+        "W3D window layout script smoke did not load CreditsMenu.wnd from WindowZH.big", payload);
+      expect(payload.assetArchives?.includes("INIZH.big"),
+        "W3D window layout script smoke did not mount INIZH.big for the CreditsMenu vertical", payload);
       expect(payload.callbackPaths?.includes("W3DMainMenuInit->original MainMenuInit"),
         "W3D window layout script smoke did not execute original MainMenuInit", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate(first idle frame)"),
@@ -180,6 +184,12 @@ const steps = [
         "W3D window layout script smoke did not execute real MainMenu button input/navigation", payload);
       expect(payload.callbackPaths?.includes("GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return"),
         "W3D window layout script smoke did not execute real MainMenu dropdown return navigation", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu"),
+        "W3D window layout script smoke did not execute real ButtonCredits submenu navigation", payload);
+      expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->original CreditsMenuInit"),
+        "W3D window layout script smoke did not execute original CreditsMenuInit through Shell::push", payload);
+      expect(payload.callbackPaths?.includes("CreditsMenuUpdate real callback"),
+        "W3D window layout script smoke did not execute original CreditsMenuUpdate", payload);
     },
   },
   {
@@ -229,13 +239,13 @@ console.log(JSON.stringify({
   covered: [
     "runtime archive preload, boot-time startup asset consumption, and startup singleton pre-audio frontier diagnostics",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
-    "WindowZH-backed Shell/MainMenu layout callback execution and MainMenu dropdown input navigation",
+    "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
   ],
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
-    "advance beyond MainMenu dropdown navigation to a real submenu selection without crossing into campaign/skirmish startup",
+    "advance another independent vertical beyond the shell menu path, preferably audio/video/network device ownership",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

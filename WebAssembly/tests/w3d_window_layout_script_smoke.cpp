@@ -13,11 +13,15 @@
 #endif
 #define NULL 0
 
+#include "Common/AudioEventRTS.h"
+#include "Common/AudioHandleSpecialValues.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/FunctionLexicon.h"
+#include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
@@ -26,6 +30,7 @@
 #include "GameClient/Display.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/CampaignManager.h"
+#include "GameClient/Credits.h"
 #include "GameClient/ExtendedMessageBox.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/GameText.h"
@@ -53,8 +58,8 @@
 class CampaignManager;
 class ChallengeGenerals;
 class DownloadManager;
+class GameClient;
 class GameEngine;
-class Credits;
 class DisplayStringManager;
 class GameTextInterface;
 class GlobalLanguage;
@@ -73,7 +78,14 @@ void W3DMainMenuInit(WindowLayout *layout, void *userData);
 void MainMenuInit(WindowLayout *layout, void *userData);
 void MainMenuUpdate(WindowLayout *layout, void *userData);
 void MainMenuShutdown(WindowLayout *layout, void *userData);
+void CreditsMenuInit(WindowLayout *layout, void *userData);
+void CreditsMenuUpdate(WindowLayout *layout, void *userData);
+void CreditsMenuShutdown(WindowLayout *layout, void *userData);
 WindowMsgHandledType MainMenuSystem(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+WindowMsgHandledType CreditsMenuInput(GameWindow *window, UnsignedInt msg,
+	WindowMsgData mData1, WindowMsgData mData2);
+WindowMsgHandledType CreditsMenuSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 WindowMsgHandledType MessageBoxSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
@@ -82,6 +94,7 @@ WindowMsgHandledType QuitMessageBoxSystem(GameWindow *window, UnsignedInt msg,
 
 GlobalData *TheGlobalData = nullptr;
 SubsystemInterfaceList *TheSubsystemList = nullptr;
+AudioManager *TheAudio = nullptr;
 GameLogic *TheGameLogic = nullptr;
 GameTextInterface *TheGameText = nullptr;
 GlobalLanguage *TheGlobalLanguageData = nullptr;
@@ -92,6 +105,7 @@ Keyboard *TheKeyboard = nullptr;
 CampaignManager *TheCampaignManager = nullptr;
 ChallengeGenerals *TheChallengeGenerals = nullptr;
 DownloadManager *TheDownloadManager = nullptr;
+GameClient *TheGameClient = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameSpyPeerMessageQueueInterface *TheGameSpyPeerMessageQueue = nullptr;
 MapCache *TheMapCache = nullptr;
@@ -100,7 +114,6 @@ ScriptEngine *TheScriptEngine = nullptr;
 VideoPlayerInterface *TheVideoPlayer = nullptr;
 View *TheTacticalView = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
-Credits *TheCredits = nullptr;
 GameWindowTransitionsHandler *TheTransitionHandler = nullptr;
 Bool DontShowMainMenu = FALSE;
 Bool dispChanged = FALSE;
@@ -479,6 +492,76 @@ public:
 
 protected:
 	UnsignedByte getMouseEvent(MouseIO *, Bool) override { return MOUSE_EVENT_NONE; }
+};
+
+class SmokeAudioManager final : public AudioManager
+{
+public:
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void audioDebugDisplay(DebugDisplayInterface *, void *, FILE * = NULL) override {}
+#endif
+	void stopAudio(AudioAffect) override {}
+	void pauseAudio(AudioAffect) override {}
+	void resumeAudio(AudioAffect) override {}
+	void pauseAmbient(Bool) override {}
+	AudioHandle addAudioEvent(const AudioEventRTS *event_to_add) override
+	{
+		++add_audio_event_calls;
+		last_audio_event_name = event_to_add != nullptr ? event_to_add->getEventName() : AsciiString::TheEmptyString;
+		return next_audio_handle++;
+	}
+	void removeAudioEvent(AudioHandle audio_event) override
+	{
+		++remove_audio_event_calls;
+		last_removed_audio_event = audio_event;
+	}
+	void killAudioEventImmediately(AudioHandle) override {}
+	void nextMusicTrack() override {}
+	void prevMusicTrack() override {}
+	Bool isMusicPlaying() const override { return FALSE; }
+	Bool hasMusicTrackCompleted(const AsciiString &, Int) const override { return FALSE; }
+	AsciiString getMusicTrackName() const override { return AsciiString::TheEmptyString; }
+	void openDevice() override {}
+	void closeDevice() override {}
+	void *getDevice() override { return nullptr; }
+	void notifyOfAudioCompletion(UnsignedInt, UnsignedInt) override {}
+	UnsignedInt getProviderCount() const override { return 1; }
+	AsciiString getProviderName(UnsignedInt) const override { return AsciiString("w3d-shell-smoke"); }
+	UnsignedInt getProviderIndex(AsciiString) const override { return 0; }
+	void selectProvider(UnsignedInt) override {}
+	void unselectProvider() override {}
+	UnsignedInt getSelectedProvider() const override { return 0; }
+	void setSpeakerType(UnsignedInt) override {}
+	UnsignedInt getSpeakerType() override { return 0; }
+	UnsignedInt getNum2DSamples() const override { return 0; }
+	UnsignedInt getNum3DSamples() const override { return 0; }
+	UnsignedInt getNumStreams() const override { return 0; }
+	Bool doesViolateLimit(AudioEventRTS *) const override { return FALSE; }
+	Bool isPlayingLowerPriority(AudioEventRTS *) const override { return FALSE; }
+	Bool isPlayingAlready(AudioEventRTS *) const override { return FALSE; }
+	Bool isObjectPlayingVoice(UnsignedInt) const override { return FALSE; }
+	void adjustVolumeOfPlayingAudio(AsciiString, Real) override {}
+	void removePlayingAudio(AsciiString) override {}
+	void removeAllDisabledAudio() override {}
+	Bool has3DSensitiveStreamsPlaying() const override { return FALSE; }
+	void *getHandleForBink() override { return nullptr; }
+	void releaseHandleForBink() override {}
+	void friend_forcePlayAudioEventRTS(const AudioEventRTS *) override {}
+	void setPreferredProvider(AsciiString) override {}
+	void setPreferredSpeaker(AsciiString) override {}
+	Real getFileLengthMS(AsciiString) const override { return 0.0f; }
+	void closeAnySamplesUsingFile(const void *) override {}
+
+	Int add_audio_event_calls = 0;
+	Int remove_audio_event_calls = 0;
+	AudioHandle last_removed_audio_event = AHSV_NoSound;
+	AsciiString last_audio_event_name;
+
+protected:
+	void setDeviceListenerPosition() override {}
+
+private:
+	AudioHandle next_audio_handle = 1;
 };
 
 class SmokeDisplay : public Display
@@ -873,8 +956,10 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SmokeFontLibrary font_library;
 	SmokeDisplayStringManager display_string_manager;
 	SmokeGameText game_text;
+	GlobalLanguage global_language;
 	GameLogic game_logic;
 	SmokeMouse mouse;
+	SmokeAudioManager audio;
 	HeaderTemplateManager header_templates;
 	GameWindowTransitionsHandler transition_handler;
 	SmokeGameWindowManager window_manager;
@@ -890,7 +975,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	FontLibrary *old_font_library = TheFontLibrary;
 	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
 	GameTextInterface *old_game_text = TheGameText;
+	GlobalLanguage *old_global_language = TheGlobalLanguageData;
 	GameLogic *old_game_logic = TheGameLogic;
+	AudioManager *old_audio = TheAudio;
 	DownloadManager *old_download_manager = TheDownloadManager;
 	Mouse *old_mouse = TheMouse;
 	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
@@ -909,7 +996,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheFontLibrary = &font_library;
 	TheDisplayStringManager = &display_string_manager;
 	TheGameText = &game_text;
+	TheGlobalLanguageData = &global_language;
 	TheGameLogic = &game_logic;
+	TheAudio = &audio;
 	TheDownloadManager = nullptr;
 	TheMouse = &mouse;
 	TheHeaderTemplateManager = &header_templates;
@@ -929,8 +1018,14 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 
 	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
 		"Win32BIGFileSystem did not load WindowZH.big for original Shell::showShell") && ok;
+	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, AsciiString("INIZH.big")),
+		"Win32BIGFileSystem did not load INIZH.big for original CreditsMenu path") && ok;
 	ok = expect(file_system.doesFileExist("Window\\Menus\\MainMenu.wnd"),
 		"WindowZH.big did not expose MainMenu.wnd through FileSystem") && ok;
+	ok = expect(file_system.doesFileExist("Window\\Menus\\CreditsMenu.wnd"),
+		"WindowZH.big did not expose CreditsMenu.wnd through FileSystem") && ok;
+	ok = expect(file_system.doesFileExist("Data\\INI\\Credits.ini"),
+		"INIZH.big did not expose Credits.ini through FileSystem") && ok;
 	ok = expect(TheFunctionLexicon->winLayoutInitFunc(
 			TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"))) == W3DMainMenuInit,
 		"FunctionLexicon did not resolve W3DMainMenuInit for MainMenu.wnd") && ok;
@@ -940,6 +1035,15 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	ok = expect(TheFunctionLexicon->winLayoutUpdateFunc(
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenuUpdate"))) == MainMenuUpdate,
 		"FunctionLexicon did not resolve MainMenuUpdate for MainMenu.wnd") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutInitFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("CreditsMenuInit"))) == CreditsMenuInit,
+		"FunctionLexicon did not resolve CreditsMenuInit to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutUpdateFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("CreditsMenuUpdate"))) == CreditsMenuUpdate,
+		"FunctionLexicon did not resolve CreditsMenuUpdate to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("CreditsMenuSystem"))) == CreditsMenuSystem,
+		"FunctionLexicon did not resolve CreditsMenuSystem to the original callback owner") && ok;
 
 	global_data.m_breakTheMovie = TRUE;
 	g_mouse_visibility_true_calls = 0;
@@ -1098,12 +1202,78 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					"original MainMenuSystem did not set MainMenuDefaultMenu for ButtonSingleBack") && ok;
 				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
 					"ButtonSingleBack input should stay inside the MainMenu shell layout") && ok;
+				}
+				if (top != nullptr) {
+					top->runUpdate();
+				}
+				game_logic.setGameMode(GAME_NONE);
+				ok = expect(!game_logic.isInGame(),
+					"focused GameLogic boundary did not leave shell-game mode before CreditsMenu showShellMap(FALSE)") && ok;
+				GameWindow *credits_button = TheWindowManager->winGetWindowFromId(main_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonCredits")));
+				ok = expect(credits_button != nullptr,
+					"MainMenu.wnd did not create ButtonCredits for submenu navigation") && ok;
+				if (credits_button != nullptr) {
+					const WindowMsgData packed_credits_click = center_click_data(credits_button);
+					const Int credits_transition_is_finished_before_click = g_transition_is_finished_calls;
+					const Int credits_transition_reverse_before_click = g_transition_reverse_calls;
+					const Int credits_audio_add_before_click = audio.add_audio_event_calls;
+					const Int credits_audio_remove_before_click = audio.remove_audio_event_calls;
+					ok = expect(TheWindowManager->winSendInputMsg(credits_button, GWM_LEFT_DOWN, packed_credits_click, 0) == MSG_HANDLED,
+						"ButtonCredits did not handle original GWM_LEFT_DOWN input") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(credits_button, GWM_LEFT_UP, packed_credits_click, 0) == MSG_HANDLED,
+						"ButtonCredits did not handle original GWM_LEFT_UP input") && ok;
+					ok = expect(g_transition_is_finished_calls == credits_transition_is_finished_before_click + 1,
+						"original MainMenuSystem did not query the transition boundary for ButtonCredits") && ok;
+					ok = expect(g_transition_reverse_calls == credits_transition_reverse_before_click + 1
+							&& g_last_transition_reverse_group == AsciiString("MainMenuDefaultMenu"),
+						"original MainMenuSystem did not reverse MainMenuDefaultMenu for ButtonCredits") && ok;
+					ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+						"ButtonCredits input should leave a pending Shell::push until MainMenuUpdate completes shutdown") && ok;
+					if (top != nullptr) {
+						top->runUpdate();
+					}
+					WindowLayout *credits_layout = shell.top();
+					GameWindow *credits_parent = TheWindowManager->winGetWindowFromId(nullptr,
+						TheNameKeyGenerator->nameToKey(AsciiString("CreditsMenu.wnd:ParentCreditsWindow")));
+					ok = expect(shell.getScreenCount() == 2,
+						"original Shell::push did not stack CreditsMenu.wnd above MainMenu.wnd") && ok;
+					ok = expect(credits_layout != nullptr
+							&& credits_layout != top
+							&& credits_layout->getFilename() == AsciiString("Menus/CreditsMenu.wnd"),
+						"original ButtonCredits path did not push Menus/CreditsMenu.wnd") && ok;
+					ok = expect(credits_parent != nullptr,
+						"CreditsMenu.wnd did not create ParentCreditsWindow through the original shell stack") && ok;
+					if (credits_parent != nullptr) {
+						ok = expect(credits_parent->winGetSystemFunc() == CreditsMenuSystem,
+							"CreditsMenu parent did not resolve CreditsMenuSystem through the original GUI lexicon") && ok;
+						ok = expect(TheWindowManager->winGetFocus() == credits_parent,
+							"original CreditsMenuInit did not set keyboard focus to ParentCreditsWindow") && ok;
+					}
+					ok = expect(TheCredits != nullptr,
+						"original CreditsMenuInit did not create the CreditsManager") && ok;
+					ok = expect(audio.remove_audio_event_calls == credits_audio_remove_before_click + 1
+							&& audio.last_removed_audio_event == AHSV_StopTheMusicFade,
+						"original CreditsMenuInit did not remove the existing music fade audio event") && ok;
+					ok = expect(audio.add_audio_event_calls > credits_audio_add_before_click
+							&& audio.last_audio_event_name == AsciiString("Credits"),
+						"original CreditsMenuInit did not request the Credits music audio event") && ok;
+					if (credits_layout != nullptr) {
+						credits_layout->runUpdate();
+						ok = expect(shell.top() == credits_layout
+								|| (shell.getScreenCount() == 1 && shell.top() == top),
+							"original CreditsMenuUpdate did not either keep CreditsMenu active or return to MainMenu through Shell::pop") && ok;
+					}
+				}
 			}
+			while (shell.getScreenCount() > 0) {
+				shell.popImmediate();
+			}
+			ok = expect(shell.getScreenCount() == 0,
+				"original Shell::popImmediate shutdowns did not clear the shell stack") && ok;
+			ok = expect(TheCredits == nullptr,
+				"original CreditsMenuShutdown did not release the CreditsManager") && ok;
 		}
-		shell.popImmediate();
-		ok = expect(shell.getScreenCount() == 0,
-			"original Shell::popImmediate/MainMenuShutdown did not clear the shell stack") && ok;
-	}
 	TheShell = old_shell;
 	window_manager.update();
 	ok = expect(window_manager.winGetWindowList() == nullptr,
@@ -1115,7 +1285,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheHeaderTemplateManager = old_header_templates;
 	TheMouse = old_mouse;
 	TheDownloadManager = old_download_manager;
+	TheAudio = old_audio;
 	TheGameLogic = old_game_logic;
+	TheGlobalLanguageData = old_global_language;
 	TheGameText = old_game_text;
 	TheDisplayStringManager = old_display_string_manager;
 	TheFontLibrary = old_font_library;
@@ -1135,9 +1307,288 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 // W3DFunctionLexicon::init() loads the base GUI lexicon tables before adding
 // W3D device entries. These test-local bodies satisfy unexecuted base callback
 // owners without linking the full shell/control-bar/network graph.
+AudioManager::AudioManager()
+{
+}
+
+AudioManager::~AudioManager()
+{
+}
+
+void AudioManager::init()
+{
+}
+
+void AudioManager::postProcessLoad()
+{
+}
+
+void AudioManager::reset()
+{
+}
+
+void AudioManager::update()
+{
+}
+
+void AudioManager::loseFocus()
+{
+}
+
+void AudioManager::regainFocus()
+{
+}
+
+AudioHandle AudioManager::addAudioEvent(const AudioEventRTS *)
+{
+	return AHSV_NoSound;
+}
+
+void AudioManager::removeAudioEvent(AudioHandle)
+{
+}
+
+Bool AudioManager::isValidAudioEvent(const AudioEventRTS *) const
+{
+	return FALSE;
+}
+
+Bool AudioManager::isValidAudioEvent(AudioEventRTS *) const
+{
+	return FALSE;
+}
+
+void AudioManager::addTrackName(const AsciiString &)
+{
+}
+
+AsciiString AudioManager::nextTrackName(const AsciiString &)
+{
+	return AsciiString::TheEmptyString;
+}
+
+AsciiString AudioManager::prevTrackName(const AsciiString &)
+{
+	return AsciiString::TheEmptyString;
+}
+
+void AudioManager::setAudioEventEnabled(AsciiString, Bool)
+{
+}
+
+void AudioManager::setAudioEventVolumeOverride(AsciiString, Real)
+{
+}
+
+void AudioManager::removeAudioEvent(AsciiString)
+{
+}
+
+void AudioManager::removeDisabledEvents()
+{
+}
+
+void AudioManager::getInfoForAudioEvent(const AudioEventRTS *) const
+{
+}
+
+Bool AudioManager::isCurrentlyPlaying(AudioHandle)
+{
+	return FALSE;
+}
+
+UnsignedInt AudioManager::translateSpeakerTypeToUnsignedInt(const AsciiString &)
+{
+	return 0;
+}
+
+AsciiString AudioManager::translateUnsignedIntToSpeakerType(UnsignedInt)
+{
+	return AsciiString("unknown");
+}
+
+Bool AudioManager::isOn(AudioAffect) const
+{
+	return TRUE;
+}
+
+void AudioManager::setOn(Bool, AudioAffect)
+{
+}
+
+void AudioManager::setVolume(Real, AudioAffect)
+{
+}
+
+Real AudioManager::getVolume(AudioAffect)
+{
+	return 1.0f;
+}
+
+void AudioManager::set3DVolumeAdjustment(Real)
+{
+}
+
+void AudioManager::setListenerPosition(const Coord3D *, const Coord3D *)
+{
+}
+
+const Coord3D *AudioManager::getListenerPosition() const
+{
+	return nullptr;
+}
+
+AudioRequest *AudioManager::allocateAudioRequest(Bool)
+{
+	return nullptr;
+}
+
+void AudioManager::releaseAudioRequest(AudioRequest *)
+{
+}
+
+void AudioManager::appendAudioRequest(AudioRequest *)
+{
+}
+
+void AudioManager::processRequestList()
+{
+}
+
+AudioEventInfo *AudioManager::newAudioEventInfo(AsciiString)
+{
+	return nullptr;
+}
+
+void AudioManager::addAudioEventInfo(AudioEventInfo *)
+{
+}
+
+AudioEventInfo *AudioManager::findAudioEventInfo(AsciiString) const
+{
+	return nullptr;
+}
+
+const AudioSettings *AudioManager::getAudioSettings() const
+{
+	return nullptr;
+}
+
+const MiscAudio *AudioManager::getMiscAudio() const
+{
+	return nullptr;
+}
+
+void AudioManager::releaseAudioEventRTS(AudioEventRTS *)
+{
+}
+
+AudioSettings *AudioManager::friend_getAudioSettings()
+{
+	return nullptr;
+}
+
+MiscAudio *AudioManager::friend_getMiscAudio()
+{
+	return nullptr;
+}
+
+const FieldParse *AudioManager::getFieldParseTable() const
+{
+	return nullptr;
+}
+
+void AudioManager::refreshCachedVariables()
+{
+}
+
+Real AudioManager::getAudioLengthMS(const AudioEventRTS *)
+{
+	return 0.0f;
+}
+
+Bool AudioManager::isMusicAlreadyLoaded() const
+{
+	return TRUE;
+}
+
+void AudioManager::findAllAudioEventsOfType(AudioType, std::vector<AudioEventInfo *> &)
+{
+}
+
+Bool AudioManager::isCurrentProviderHardwareAccelerated()
+{
+	return FALSE;
+}
+
+Bool AudioManager::isCurrentSpeakerTypeSurroundSound()
+{
+	return FALSE;
+}
+
+Bool AudioManager::shouldPlayLocally(const AudioEventRTS *)
+{
+	return FALSE;
+}
+
+AudioHandle AudioManager::allocateNewHandle()
+{
+	return 1;
+}
+
+void AudioManager::removeLevelSpecificAudioEventInfos()
+{
+}
+
+void AudioManager::removeAllAudioRequests()
+{
+}
+
+FontDesc::FontDesc() :
+	name("Arial"),
+	size(10),
+	bold(FALSE)
+{
+}
+
+GlobalLanguage::GlobalLanguage()
+{
+	m_unicodeFontName.clear();
+	m_unicodeFontFileName.clear();
+	m_useHardWrap = FALSE;
+	m_militaryCaptionSpeed = 0;
+	m_militaryCaptionDelayMS = 750;
+	m_resolutionFontSizeAdjustment = 1.0f;
+	m_creditsTitleFont.name = "Arial";
+	m_creditsTitleFont.size = 14;
+	m_creditsTitleFont.bold = TRUE;
+	m_creditsPositionFont.name = "Arial";
+	m_creditsPositionFont.size = 12;
+	m_creditsPositionFont.bold = TRUE;
+	m_creditsNormalFont.name = "Arial";
+	m_creditsNormalFont.size = 10;
+	m_creditsNormalFont.bold = FALSE;
+}
+
+GlobalLanguage::~GlobalLanguage()
+{
+}
+
+void GlobalLanguage::init()
+{
+}
+
+void GlobalLanguage::reset()
+{
+}
+
 Int GlobalLanguage::adjustFontSize(Int fontSize)
 {
 	return fontSize;
+}
+
+void INI::parseLanguageDefinition(INI *)
+{
 }
 
 const Image *ImageCollection::findImageByName(const AsciiString &)
@@ -1169,9 +1620,6 @@ DEFINE_DRAW_STUB(IMECandidateTextAreaDraw)
 DEFINE_LAYOUT_STUB(ChallengeMenuInit)
 DEFINE_LAYOUT_STUB(ChallengeMenuShutdown)
 DEFINE_LAYOUT_STUB(ChallengeMenuUpdate)
-DEFINE_LAYOUT_STUB(CreditsMenuInit)
-DEFINE_LAYOUT_STUB(CreditsMenuShutdown)
-DEFINE_LAYOUT_STUB(CreditsMenuUpdate)
 DEFINE_LAYOUT_STUB(DifficultySelectInit)
 DEFINE_LAYOUT_STUB(DownloadMenuInit)
 DEFINE_LAYOUT_STUB(DownloadMenuShutdown)
@@ -1277,8 +1725,6 @@ DEFINE_WINDOW_STUB(ChallengeMenuSystem)
 DEFINE_WINDOW_STUB(ControlBarInput)
 DEFINE_WINDOW_STUB(ControlBarObserverSystem)
 DEFINE_WINDOW_STUB(ControlBarSystem)
-DEFINE_WINDOW_STUB(CreditsMenuInput)
-DEFINE_WINDOW_STUB(CreditsMenuSystem)
 DEFINE_WINDOW_STUB(DifficultySelectInput)
 DEFINE_WINDOW_STUB(DifficultySelectSystem)
 DEFINE_WINDOW_STUB(DiplomacyInput)
@@ -1600,12 +2046,13 @@ int main()
 		<< "\"path\":\"WindowLayout::load->GameWindowManager::winCreateFromScript\","
 		<< "\"layout\":\"Menus/BlankWindow.wnd\","
 		<< "\"archive\":\"" << archive_path << "\","
-		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\"],"
-		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
-		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
-		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/update/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\"],"
+		<< "\"assetArchives\":[\"WindowZH.big\",\"INIZH.big\"],"
+		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\"],"
+		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"PassMessagesToParentSystem\"],"
+		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\"],"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }
