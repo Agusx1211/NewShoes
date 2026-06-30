@@ -10,9 +10,11 @@ const wasmRoot = resolve(harnessRoot, "..");
 const defaultWindowArchivePath = resolve(wasmRoot, "artifacts/real-assets/WindowZH.big");
 const defaultIniArchivePath = resolve(wasmRoot, "artifacts/real-assets/INIZH.big");
 const defaultEnglishArchivePath = resolve(wasmRoot, "artifacts/real-assets/EnglishZH.big");
+const defaultTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/TexturesZH.big");
 const windowArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultWindowArchivePath);
 const iniArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultIniArchivePath);
 const englishArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultEnglishArchivePath);
+const textureArchivePath = resolve(wasmRoot, process.argv[5] ?? defaultTextureArchivePath);
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const repaintScreenshot = resolve(
   screenshotDir,
@@ -28,8 +30,10 @@ const runtimeArchivePath = "/assets/runtime-main-menu-layout-image-repaint";
 const windowArchiveMemfsPath = `${runtimeArchivePath}/WindowZH.big`;
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const englishArchiveMemfsPath = `${runtimeArchivePath}/EnglishZH.big`;
+const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
 const layoutEntry = "Window\\Menus\\MainMenu.wnd";
 const logoTextureEntry = "Data\\English\\Art\\Textures\\SCSmShellUserInterface512_001.tga";
+const rulerTextureEntry = "Art\\Textures\\mainmenuruleruserinterface.tga";
 const logoMappedImageEntry =
   "Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI";
 const mappedImageIniEntries = [
@@ -71,13 +75,16 @@ function assertArchivePath(path, label) {
 assertArchivePath(windowArchivePath, "Window archive");
 assertArchivePath(iniArchivePath, "INI archive");
 assertArchivePath(englishArchivePath, "English archive");
+assertArchivePath(textureArchivePath, "texture archive");
 
 await access(windowArchivePath);
 await access(iniArchivePath);
 await access(englishArchivePath);
+await access(textureArchivePath);
 const windowArchiveStat = await stat(windowArchivePath);
 const iniArchiveStat = await stat(iniArchivePath);
 const englishArchiveStat = await stat(englishArchivePath);
+const textureArchiveStat = await stat(textureArchivePath);
 if (!windowArchiveStat.isFile() || windowArchiveStat.size <= 0) {
   throw new Error(`Window archive is not a readable file: ${windowArchivePath}`);
 }
@@ -87,12 +94,16 @@ if (!iniArchiveStat.isFile() || iniArchiveStat.size <= 0) {
 if (!englishArchiveStat.isFile() || englishArchiveStat.size <= 0) {
   throw new Error(`English archive is not a readable file: ${englishArchivePath}`);
 }
+if (!textureArchiveStat.isFile() || textureArchiveStat.size <= 0) {
+  throw new Error(`texture archive is not a readable file: ${textureArchivePath}`);
+}
 
 await mkdir(screenshotDir, { recursive: true });
 
 const windowArchiveRelativePath = relative(wasmRoot, windowArchivePath).split(sep).join("/");
 const iniArchiveRelativePath = relative(wasmRoot, iniArchivePath).split(sep).join("/");
 const englishArchiveRelativePath = relative(wasmRoot, englishArchivePath).split(sep).join("/");
+const textureArchiveRelativePath = relative(wasmRoot, textureArchivePath).split(sep).join("/");
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 const browserEvents = [];
@@ -114,6 +125,7 @@ try {
   const windowArchiveUrl = new URL(windowArchiveRelativePath, server.url).href;
   const iniArchiveUrl = new URL(iniArchiveRelativePath, server.url).href;
   const englishArchiveUrl = new URL(englishArchiveRelativePath, server.url).href;
+  const textureArchiveUrl = new URL(textureArchiveRelativePath, server.url).href;
 
   await page.goto(harnessUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(() => Boolean(window.CnCPort?.rpc));
@@ -151,26 +163,36 @@ try {
           sourceArchive: englishArchivePath,
           entries: [logoTextureEntry],
         },
+        {
+          url: textureArchiveUrl,
+          name: "TexturesZH.big",
+          expectedSourceBytes: textureArchiveStat.size,
+          sourceArchive: textureArchivePath,
+          entries: [rulerTextureEntry],
+        },
       ],
     });
   const rangeWindowArchive = archiveMountResult.archiveSet?.archives?.[0];
   const rangeIniArchive = archiveMountResult.archiveSet?.archives?.[1];
   const rangeEnglishArchive = archiveMountResult.archiveSet?.archives?.[2];
+  const rangeTextureArchive = archiveMountResult.archiveSet?.archives?.[3];
   const windowEntry = rangeWindowArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === layoutEntry.toLowerCase());
   const logoMappedImageArchiveEntry = rangeIniArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === logoMappedImageEntry.toLowerCase());
   const logoTextureArchiveEntry = rangeEnglishArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === logoTextureEntry.toLowerCase());
+  const rulerTextureArchiveEntry = rangeTextureArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === rulerTextureEntry.toLowerCase());
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
-      || archiveMountResult.archiveSet?.archiveCount !== 3
+      || archiveMountResult.archiveSet?.archiveCount !== 4
       || archiveMountResult.archiveSet?.storage !== "range-backed-subset-big"
       || archiveMountResult.archiveSet?.reader !== "browser fetch Range -> synthesized BIG"
       || archiveMountResult.archiveSet?.registered !== false
       || archiveMountResult.archiveSet?.sourceTotalBytes !==
-        windowArchiveStat.size + iniArchiveStat.size + englishArchiveStat.size
+        windowArchiveStat.size + iniArchiveStat.size + englishArchiveStat.size + textureArchiveStat.size
       || archiveMountResult.archiveSet?.totalBytes >= archiveMountResult.archiveSet?.sourceTotalBytes
       || archiveMountResult.archiveSet?.probes?.length !== 0
       || rangeWindowArchive?.path !== windowArchiveMemfsPath
@@ -188,6 +210,11 @@ try {
       || rangeEnglishArchive?.reader !== "browser fetch Range -> synthesized BIG"
       || rangeEnglishArchive?.sourceBytes !== englishArchiveStat.size
       || rangeEnglishArchive?.entryCount !== 1
+      || rangeTextureArchive?.path !== textureArchiveMemfsPath
+      || rangeTextureArchive?.storage !== "range-backed-subset-big"
+      || rangeTextureArchive?.reader !== "browser fetch Range -> synthesized BIG"
+      || rangeTextureArchive?.sourceBytes !== textureArchiveStat.size
+      || rangeTextureArchive?.entryCount !== 1
       || windowEntry?.sourceOffset !== 4140728
       || windowEntry?.bytes !== 208561
       || windowEntry?.reader !== "browser fetch Range"
@@ -196,7 +223,10 @@ try {
       || logoMappedImageArchiveEntry?.reader !== "browser fetch Range"
       || logoTextureArchiveEntry?.sourceOffset !== 61823560
       || logoTextureArchiveEntry?.bytes !== 1048620
-      || logoTextureArchiveEntry?.reader !== "browser fetch Range") {
+      || logoTextureArchiveEntry?.reader !== "browser fetch Range"
+      || rulerTextureArchiveEntry?.sourceOffset !== 152340144
+      || rulerTextureArchiveEntry?.bytes !== 4194348
+      || rulerTextureArchiveEntry?.reader !== "browser fetch Range") {
     throw new Error(`range-backed MainMenu image archive subset mount failed: ${JSON.stringify(archiveMountResult)}`);
   }
 
@@ -208,6 +238,7 @@ try {
         windowArchivePath: windowArchiveMemfsPath,
         iniArchivePath: iniArchiveMemfsPath,
         textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
       }),
       45000,
       "W3D MainMenu WindowLayout image repaint",
@@ -222,20 +253,33 @@ try {
       || repaintResult.command !== "ww3dMainMenuLayoutImageRepaint"
       || repaintResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
       || !repaintResult.probe?.originalPaths?.includes("parseDrawData IMAGE -> TheMappedImageCollection->findImageByName")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw")
       || repaintResult.probe?.archives?.windowEntry !== layoutEntry
       || repaintResult.probe?.archives?.mappedImageEntry !== logoMappedImageEntry
       || repaintResult.probe?.archives?.textureEntry !== logoTextureEntry
+      || repaintResult.probe?.archives?.rulerTextureEntry !== rulerTextureEntry
       || repaintResult.probe?.results?.runtimeAssetSystemInstalled !== true
       || repaintResult.probe?.results?.mappedCollectionLoaded !== true
-      || repaintResult.probe?.results?.mappedImages < 1
+      || repaintResult.probe?.results?.mappedImages < 2
       || repaintResult.probe?.results?.targetImageBound !== true
+      || repaintResult.probe?.results?.rulerImageBound !== true
       || repaintResult.probe?.results?.texturePreloaded !== true
+      || repaintResult.probe?.results?.rulerTexturePreloaded !== true
       || repaintResult.probe?.results?.textureResolved !== true
+      || repaintResult.probe?.results?.rulerTextureResolved !== true
       || repaintResult.probe?.results?.textureHasD3DSurface !== true
+      || repaintResult.probe?.results?.rulerTextureHasD3DSurface !== true
       || repaintResult.probe?.layout?.path !== "Menus/MainMenu.wnd"
       || repaintResult.probe?.layout?.root?.name !== "MainMenu.wnd:MainMenuParent"
       || repaintResult.probe?.layout?.root?.drawFunc !== "W3DNoDraw"
+      || repaintResult.probe?.layout?.ruler?.name !== "MainMenu.wnd:MainMenuRuler"
+      || repaintResult.probe?.layout?.ruler?.drawFunc !== "W3DGameWinDefaultDraw"
+      || repaintResult.probe?.layout?.ruler?.image !== "MainMenuRuler"
+      || repaintResult.probe?.layout?.ruler?.x !== 0
+      || repaintResult.probe?.layout?.ruler?.y !== 0
+      || repaintResult.probe?.layout?.ruler?.width !== 800
+      || repaintResult.probe?.layout?.ruler?.height !== 600
       || repaintResult.probe?.layout?.target?.name !== "MainMenu.wnd:Logo"
       || repaintResult.probe?.layout?.target?.drawFunc !== "W3DGameWinDefaultDraw"
       || repaintResult.probe?.layout?.target?.image !== "GeneralsLogo"
@@ -251,17 +295,31 @@ try {
       || repaintResult.probe?.image?.textureHeight !== 512
       || repaintResult.probe?.image?.width !== 370
       || repaintResult.probe?.image?.height !== 120
+      || repaintResult.probe?.rulerImage?.name !== "MainMenuRuler"
+      || repaintResult.probe?.rulerImage?.filename !== "MainMenuRuleruserinterface.tga"
+      || repaintResult.probe?.rulerImage?.status !== 0
+      || repaintResult.probe?.rulerImage?.rotated !== false
+      || repaintResult.probe?.rulerImage?.textureWidth !== 1024
+      || repaintResult.probe?.rulerImage?.textureHeight !== 1024
+      || repaintResult.probe?.rulerImage?.width !== 800
+      || repaintResult.probe?.rulerImage?.height !== 600
       || String(repaintResult.probe?.texture?.name ?? "").toLowerCase() !==
         "scsmshelluserinterface512_001.tga"
       || repaintResult.probe?.texture?.archiveEntry !== logoTextureEntry
       || repaintResult.probe?.texture?.width !== 512
       || repaintResult.probe?.texture?.height !== 512
       || repaintResult.probe?.texture?.uploadedLevels !== repaintResult.probe?.texture?.levels
-      || repaintResult.probe?.calls?.displayImageDraws < 1
-      || repaintResult.probe?.calls?.drawIndexed < 1
-      || repaintResult.probe?.calls?.browserTextureCreate < 1
-      || repaintResult.probe?.calls?.browserTextureUpdate < 1
-      || repaintResult.probe?.calls?.browserTextureBind < 1
+      || String(repaintResult.probe?.rulerTexture?.name ?? "").toLowerCase() !==
+        "mainmenuruleruserinterface.tga"
+      || repaintResult.probe?.rulerTexture?.archiveEntry !== rulerTextureEntry
+      || repaintResult.probe?.rulerTexture?.width !== 1024
+      || repaintResult.probe?.rulerTexture?.height !== 1024
+      || repaintResult.probe?.rulerTexture?.uploadedLevels !== repaintResult.probe?.rulerTexture?.levels
+      || repaintResult.probe?.calls?.displayImageDraws < 2
+      || repaintResult.probe?.calls?.drawIndexed < 2
+      || repaintResult.probe?.calls?.browserTextureCreate < 2
+      || repaintResult.probe?.calls?.browserTextureUpdate < 2
+      || repaintResult.probe?.calls?.browserTextureBind < 2
       || repaintResult.probe?.draw?.primitiveType !== D3DPT_TRIANGLELIST
       || repaintResult.probe?.draw?.vertexCount !== 4
       || repaintResult.probe?.draw?.primitiveCount !== 2
@@ -280,14 +338,16 @@ try {
       || repaintResult.browserProbe?.vertexStride !== 44
       || repaintResult.browserProbe?.indexCount !== 6
       || repaintResult.coloredLogoPixelCount < 1
-      || repaintResult.logoPixels?.outside?.some((component, index) => index < 3 && component > 8)) {
+      || repaintResult.coloredRulerPixelCount < 4) {
     throw new Error(`W3D MainMenu WindowLayout image repaint render failed: ${JSON.stringify({
       ok: repaintResult.ok,
       bridgeInputPaths: repaintResult.bridgeInputPaths,
       probe: repaintResult.probe,
       browserProbe: repaintResult.browserProbe,
       logoPixels: repaintResult.logoPixels,
+      rulerPixels: repaintResult.rulerPixels,
       coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
       screenshot: {
         width: repaintResult.screenshot?.width,
         height: repaintResult.screenshot?.height,
@@ -313,15 +373,21 @@ try {
       window: windowArchiveMemfsPath,
       ini: iniArchiveMemfsPath,
       texture: englishArchiveMemfsPath,
+      rulerTexture: textureArchiveMemfsPath,
     },
     originalPaths: repaintResult.probe.originalPaths,
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
+    rulerImage: repaintResult.probe.rulerImage,
     texture: repaintResult.probe.texture,
+    rulerTexture: repaintResult.probe.rulerTexture,
     calls: repaintResult.probe.calls,
     draw: repaintResult.probe.draw,
     logoPixels: repaintResult.logoPixels,
-    renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image binding, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
+    rulerPixels: repaintResult.rulerPixels,
+    coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
+    coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
+    renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image bindings, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
     browserEventCount: browserEvents.length,
   }));
 } finally {

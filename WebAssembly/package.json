@@ -131,7 +131,7 @@
     "test:ww3d-window-repaint": "npm run build:wasm && node harness/window_repaint_smoke.mjs",
     "test:ww3d-window-layout-repaint": "npm run build:wasm && npm run extract:runtime-archives && node harness/window_layout_repaint_smoke.mjs artifacts/real-assets/WindowZH.big",
     "test:ww3d-main-menu-layout-repaint": "npm run build:wasm && npm run extract:runtime-archives && node harness/main_menu_layout_repaint_smoke.mjs artifacts/real-assets/WindowZH.big",
-    "test:ww3d-main-menu-layout-image-repaint": "npm run build:wasm && npm run extract:runtime-archives && node harness/main_menu_layout_image_repaint_smoke.mjs artifacts/real-assets/WindowZH.big artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
+    "test:ww3d-main-menu-layout-image-repaint": "npm run build:wasm && npm run extract:runtime-archives && node harness/main_menu_layout_image_repaint_smoke.mjs artifacts/real-assets/WindowZH.big artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big artifacts/real-assets/TexturesZH.big",
     "test:ww3d-display-main-menu-ruler": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_main_menu_ruler_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/TexturesZH.big",
     "test:ww3d-terrain-tile-archive": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_tile_archive_smoke.mjs artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-tile-archive-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_tile_archive_scene_smoke.mjs artifacts/real-assets/TerrainZH.big",

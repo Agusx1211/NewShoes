@@ -3521,6 +3521,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DGameWinDefaultDraw`, `W3DDisplay::drawImage`, and browser
       D3D8/WebGL2 pixel path before the shell composite and shipped mesh
       smokes run.
+- [x] Promote the real full-screen `MainMenuRuler` WND image child into the
+      archive-backed `Menus/MainMenu.wnd` repaint smoke: the browser harness
+      now range-mounts `WindowZH.big`, `INIZH.big`, `EnglishZH.big`, and
+      `TexturesZH.big`, loads both the `GeneralsLogo` and `MainMenuRuler`
+      mapped-image blocks, keeps the real `MainMenu.wnd:MainMenuRuler` and
+      `MainMenu.wnd:Logo` children visible, and drives
+      `GameWindowManager::winRepaint` through two original
+      `W3DGameWinDefaultDraw` image calls into browser WebGL2 indexed draws.
+      `npm run test:ww3d-main-menu-layout-image-repaint` now proves the
+      full-screen ruler geometry `(0,0)-(800,600)`, logo overlay geometry
+      `(504,16)-(791,110)`, `TexturesZH.big`
+      `Art\Textures\mainmenuruleruserinterface.tga` upload as a 1024x1024
+      texture, at least two `W3DDisplay::drawImage` / browser draw calls,
+      colored ruler and logo pixels, and
+      `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

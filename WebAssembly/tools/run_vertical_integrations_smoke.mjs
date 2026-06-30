@@ -907,6 +907,7 @@ const steps = [
       "artifacts/real-assets/WindowZH.big",
       "artifacts/real-assets/INIZH.big",
       "artifacts/real-assets/EnglishZH.big",
+      "artifacts/real-assets/TexturesZH.big",
     ],
     validate(payload) {
       expect(payload.ok === true, "MainMenu layout image repaint smoke did not report ok", payload);
@@ -918,17 +919,24 @@ const steps = [
         "MainMenu layout image repaint smoke did not bind image draw data through parsed mapped images", payload.originalPaths);
       expect(payload.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw"),
         "MainMenu layout image repaint smoke did not target the real MainMenu Logo child", payload.originalPaths);
+      expect(payload.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw"),
+        "MainMenu layout image repaint smoke did not target the real MainMenuRuler child", payload.originalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
         "MainMenu layout image repaint smoke did not report the expected real WND image binding", payload);
-      expect(payload.calls?.displayImageDraws >= 1
-          && payload.calls?.drawIndexed >= 1
+      expect(payload.layout?.ruler?.name === "MainMenu.wnd:MainMenuRuler"
+          && payload.layout?.ruler?.image === "MainMenuRuler"
+          && payload.rulerImage?.filename === "MainMenuRuleruserinterface.tga"
+          && payload.rulerTexture?.archiveEntry === "Art\\Textures\\mainmenuruleruserinterface.tga",
+        "MainMenu layout image repaint smoke did not report the expected real ruler WND image binding", payload);
+      expect(payload.calls?.displayImageDraws >= 2
+          && payload.calls?.drawIndexed >= 2
           && payload.draw?.screenRect?.left === 504
           && payload.draw?.screenRect?.bottom === 110,
         "MainMenu layout image repaint smoke did not reach the W3DDisplay/WebGL draw path", payload);
-      expect(payload.logoPixels?.outside?.every((component, index) => index >= 3 || component <= 8),
-        "MainMenu layout image repaint smoke did not keep the pruned outside region black", payload.logoPixels);
+      expect(payload.coloredLogoPixelCount >= 1 && payload.coloredRulerPixelCount >= 4,
+        "MainMenu layout image repaint smoke did not capture both logo and ruler pixels", payload);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
     },

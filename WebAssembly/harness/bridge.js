@@ -16643,6 +16643,7 @@ async function rpc(command, payload = {}) {
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
         const iniArchivePath = String(payload.iniArchivePath ?? `${directoryPrefix}INIZH.big`);
         const textureArchivePath = String(payload.textureArchivePath ?? `${directoryPrefix}EnglishZH.big`);
+        const rulerTextureArchivePath = String(payload.rulerTextureArchivePath ?? `${directoryPrefix}TexturesZH.big`);
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
@@ -16665,6 +16666,16 @@ async function rpc(command, payload = {}) {
           rightMiddle: sampleVirtualCanvasPixel(right - 24, Math.floor((top + bottom) / 2)),
           outside: sampleVirtualCanvasPixel(left - 24, top + 24),
         };
+        const rulerPixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          topLeft: sampleVirtualCanvasPixel(20, 20),
+          topMiddle: sampleVirtualCanvasPixel(400, 4),
+          topRight: sampleVirtualCanvasPixel(780, 20),
+          bottomLeft: sampleVirtualCanvasPixel(20, 580),
+          bottomMiddle: sampleVirtualCanvasPixel(400, 596),
+          bottomRight: sampleVirtualCanvasPixel(780, 580),
+          behindLogoOutside: logoPixels.outside,
+        };
         const coloredLogoPixels = [
           logoPixels.center,
           logoPixels.upperLeft,
@@ -16672,10 +16683,13 @@ async function rpc(command, payload = {}) {
           logoPixels.lowerMiddle,
           logoPixels.rightMiddle,
         ].filter((pixel) => pixelHasColor(pixel, 10));
+        const coloredRulerPixels = Object.values(rulerPixels)
+          .filter((pixel) => pixelHasColor(pixel, 10));
         const textureAfter = snapshotState().graphics?.textures ?? {};
         const screenshot = {
           ...snapshotCanvas(),
           logoPixels,
+          rulerPixels,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const ok = Boolean(probe.ok)
@@ -16684,9 +16698,17 @@ async function rpc(command, payload = {}) {
           && probe?.archives?.window === windowArchivePath
           && probe?.archives?.ini === iniArchivePath
           && probe?.archives?.texture === textureArchivePath
+          && probe?.archives?.rulerTexture === rulerTextureArchivePath
           && probe?.layout?.path === "Menus/MainMenu.wnd"
           && probe?.layout?.root?.name === "MainMenu.wnd:MainMenuParent"
           && probe?.layout?.root?.drawFunc === "W3DNoDraw"
+          && probe?.layout?.ruler?.name === "MainMenu.wnd:MainMenuRuler"
+          && probe?.layout?.ruler?.drawFunc === "W3DGameWinDefaultDraw"
+          && probe?.layout?.ruler?.image === "MainMenuRuler"
+          && probe?.layout?.ruler?.x === 0
+          && probe?.layout?.ruler?.y === 0
+          && probe?.layout?.ruler?.width === 800
+          && probe?.layout?.ruler?.height === 600
           && probe?.layout?.target?.name === "MainMenu.wnd:Logo"
           && probe?.layout?.target?.drawFunc === "W3DGameWinDefaultDraw"
           && probe?.layout?.target?.image === "GeneralsLogo"
@@ -16694,15 +16716,23 @@ async function rpc(command, payload = {}) {
           && probe?.image?.filename === "SCSmShellUserInterface512_001.tga"
           && probe?.image?.width === 370
           && probe?.image?.height === 120
+          && probe?.rulerImage?.name === "MainMenuRuler"
+          && probe?.rulerImage?.filename === "MainMenuRuleruserinterface.tga"
+          && probe?.rulerImage?.width === 800
+          && probe?.rulerImage?.height === 600
+          && probe?.rulerTexture?.name?.toLowerCase?.() === "mainmenuruleruserinterface.tga"
+          && probe?.rulerTexture?.width === 1024
+          && probe?.rulerTexture?.height === 1024
           && probe?.texture?.name?.toLowerCase?.() === "scsmshelluserinterface512_001.tga"
           && probe?.texture?.width === 512
           && probe?.texture?.height === 512
           && probe?.results?.targetImageBound === true
-          && probe?.calls?.displayImageDraws >= 1
-          && probe?.calls?.drawIndexed >= 1
-          && probe?.calls?.browserTextureCreate >= 1
-          && probe?.calls?.browserTextureUpdate >= 1
-          && probe?.calls?.browserTextureBind >= 1
+          && probe?.results?.rulerImageBound === true
+          && probe?.calls?.displayImageDraws >= 2
+          && probe?.calls?.drawIndexed >= 2
+          && probe?.calls?.browserTextureCreate >= 2
+          && probe?.calls?.browserTextureUpdate >= 2
+          && probe?.calls?.browserTextureBind >= 2
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.usedPersistentBuffers === true
           && browserProbe?.usedTransforms === true
@@ -16712,7 +16742,7 @@ async function rpc(command, payload = {}) {
           && browserProbe?.indexCount === 6
           && browserProbe?.texture0?.sampled === true
           && coloredLogoPixels.length >= 1
-          && pixelLooksBlack(logoPixels.outside, 8);
+          && coloredRulerPixels.length >= 4;
         return {
           ok,
           command,
@@ -16722,10 +16752,13 @@ async function rpc(command, payload = {}) {
             window: windowArchivePath,
             ini: iniArchivePath,
             texture: textureArchivePath,
+            rulerTexture: rulerTextureArchivePath,
           },
           browserProbe,
           logoPixels,
+          rulerPixels,
           coloredLogoPixelCount: coloredLogoPixels.length,
+          coloredRulerPixelCount: coloredRulerPixels.length,
           textureBefore,
           textureAfter,
           screenshot,

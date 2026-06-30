@@ -369,6 +369,8 @@ constexpr const char *kMainMenuLayoutImageRuntimeIniArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/INIZH.big";
 constexpr const char *kMainMenuLayoutImageRuntimeTextureArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/EnglishZH.big";
+constexpr const char *kMainMenuLayoutImageRuntimeRulerTextureArchive =
+	"/assets/runtime-main-menu-layout-image-repaint/TexturesZH.big";
 constexpr const char *kMainMenuRulerImageName = "MainMenuRuler";
 constexpr const char *kMainMenuRulerTextureName = "MainMenuRuleruserinterface.tga";
 constexpr const char *kMainMenuRulerTextureArchiveEntry =
@@ -866,6 +868,34 @@ Int hide_message_box_non_rect_children(GameWindow *root, GameWindow *message_par
 	if (message_parent != nullptr) {
 		for (GameWindow *child = message_parent->winGetChild(); child != nullptr; child = child->winGetNext()) {
 			hidden_count += hide_window_tree_for_rect_probe(child);
+		}
+	}
+	return hidden_count;
+}
+
+Int hide_window_tree_except_targets(GameWindow *window, GameWindow *first_target, GameWindow *second_target)
+{
+	if (window == nullptr) {
+		return 0;
+	}
+
+	if (window == first_target || window == second_target) {
+		Int hidden_count = 0;
+		for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+			hidden_count += hide_window_tree_for_rect_probe(child);
+		}
+		return hidden_count;
+	}
+
+	return hide_window_tree_for_rect_probe(window);
+}
+
+Int hide_root_children_except_targets(GameWindow *root, GameWindow *first_target, GameWindow *second_target)
+{
+	Int hidden_count = 0;
+	if (root != nullptr) {
+		for (GameWindow *child = root->winGetChild(); child != nullptr; child = child->winGetNext()) {
+			hidden_count += hide_window_tree_except_targets(child, first_target, second_target);
 		}
 	}
 	return hidden_count;
@@ -6964,6 +6994,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	constexpr const char *archive_window_path = "Window\\Menus\\MainMenu.wnd";
 	constexpr const char *root_name = "MainMenu.wnd:MainMenuParent";
 	constexpr const char *target_name = "MainMenu.wnd:Logo";
+	constexpr const char *ruler_name = "MainMenu.wnd:MainMenuRuler";
 
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
@@ -7018,42 +7049,58 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	bool runtime_ini_installed = false;
 	bool runtime_window_installed = false;
 	bool runtime_texture_installed = false;
+	bool runtime_ruler_texture_installed = false;
 	bool runtime_asset_system_installed = false;
 	bool name_keys_ready = false;
 	bool archive_window_exists = false;
 	bool archive_window_openable = false;
 	bool mapped_ini_exists = false;
+	bool ruler_mapped_ini_exists = false;
 	bool texture_file_exists = false;
+	bool ruler_texture_file_exists = false;
 	bool texture_file_factory_installed = false;
 	bool function_lexicon_initialized = false;
 	bool callbacks_resolved = false;
 	bool mapped_collection_allocated = false;
 	bool mapped_collection_loaded = false;
 	bool mapped_image_found = false;
+	bool ruler_mapped_image_found = false;
 	bool mapped_image_rotated = false;
+	bool ruler_mapped_image_rotated = false;
 	bool image_raw_texture = false;
+	bool ruler_image_raw_texture = false;
 	bool texture_preloaded = false;
+	bool ruler_texture_preloaded = false;
 	bool texture_registered = false;
+	bool ruler_texture_registered = false;
 	bool texture_resolved = false;
+	bool ruler_texture_resolved = false;
 	bool texture_loaded = false;
+	bool ruler_texture_loaded = false;
 	bool texture_has_d3d_surface = false;
+	bool ruler_texture_has_d3d_surface = false;
 	bool display_allocated = false;
 	bool display_setup = false;
 	bool manager_allocated = false;
 	bool layout_loaded = false;
 	bool root_found = false;
 	bool target_found = false;
+	bool ruler_found = false;
 	bool root_callback_bound = false;
 	bool target_callback_bound = false;
+	bool ruler_callback_bound = false;
 	bool target_image_bound = false;
+	bool ruler_image_bound = false;
 	bool children_pruned = false;
 	bool begin_repaint_called = false;
 	bool repaint_called = false;
 	bool window_list_cleared = false;
 	bool drawimage_called = false;
 	bool target_hidden = false;
+	bool ruler_hidden = false;
 	std::size_t mapped_image_count = 0;
 	UnsignedInt image_status = 0;
+	UnsignedInt ruler_image_status = 0;
 	Int image_width = 0;
 	Int image_height = 0;
 	Int image_texture_width = 0;
@@ -7062,7 +7109,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	float image_uv_lo_y = 0.0f;
 	float image_uv_hi_x = 0.0f;
 	float image_uv_hi_y = 0.0f;
+	Int ruler_image_width = 0;
+	Int ruler_image_height = 0;
+	Int ruler_image_texture_width = 0;
+	Int ruler_image_texture_height = 0;
+	float ruler_image_uv_lo_x = 0.0f;
+	float ruler_image_uv_lo_y = 0.0f;
+	float ruler_image_uv_hi_x = 0.0f;
+	float ruler_image_uv_hi_y = 0.0f;
 	HRESULT texture_level_desc_result = E_FAIL;
+	HRESULT ruler_texture_level_desc_result = E_FAIL;
 	UINT texture_id = 0;
 	UINT texture_width = 0;
 	UINT texture_height = 0;
@@ -7070,12 +7126,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	UINT texture_uploaded_levels = 0;
 	DWORD texture_format = D3DFMT_UNKNOWN;
 	DWORD texture_upload_format = D3DFMT_UNKNOWN;
+	UINT ruler_texture_width = 0;
+	UINT ruler_texture_height = 0;
+	UINT ruler_texture_levels = 0;
+	UINT ruler_texture_uploaded_levels = 0;
+	DWORD ruler_texture_format = D3DFMT_UNKNOWN;
 	UINT texture_upload_width = 0;
 	UINT texture_upload_height = 0;
 	UINT texture_upload_bytes = 0;
 	DWORD texture_upload_checksum = 0;
 	std::string image_filename;
+	std::string ruler_image_filename;
 	std::string loaded_texture_name;
+	std::string ruler_loaded_texture_name;
 	Int layout_window_count = 0;
 	Int hidden_child_count = 0;
 	Int root_x = 0;
@@ -7086,6 +7149,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	Int target_y = 0;
 	Int target_width = 0;
 	Int target_height = 0;
+	Int ruler_x = 0;
+	Int ruler_y = 0;
+	Int ruler_width = 0;
+	Int ruler_height = 0;
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7097,8 +7164,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	WindowLayout *layout = nullptr;
 	GameWindow *root = nullptr;
 	GameWindow *target = nullptr;
+	GameWindow *ruler = nullptr;
 	const Image *target_image = nullptr;
+	const Image *ruler_image = nullptr;
 	const Image *target_enabled_image = nullptr;
+	const Image *ruler_enabled_image = nullptr;
 
 	if (succeeded(init_result)) {
 		asset_manager = WW3DAssetManager::Get_Instance();
@@ -7121,22 +7191,33 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				kMainMenuLayoutImageRuntimeTextureArchive);
 		runtime_texture_installed =
 			runtime_ini_installed;
+		runtime_ruler_texture_installed =
+			wasm_browser_runtime_assets_install_archive_paths(
+				kMainMenuLayoutImageRuntimeRulerTextureArchive,
+				nullptr);
 		runtime_asset_system_installed =
-			runtime_ini_installed && runtime_texture_installed;
+			runtime_ini_installed && runtime_texture_installed && runtime_ruler_texture_installed;
 		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
 		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
 		name_keys_ready = TheNameKeyGenerator != nullptr;
 		mapped_ini_exists =
 			runtime_ini_installed &&
 			wasm_browser_runtime_assets_file_exists(kMainMenuLogoSampleIni);
+		ruler_mapped_ini_exists =
+			runtime_ini_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuRulerSampleIni);
 		texture_file_exists =
 			runtime_texture_installed &&
 			wasm_browser_runtime_assets_file_exists(kMainMenuLogoTextureArchiveEntry);
+		ruler_texture_file_exists =
+			runtime_ruler_texture_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuRulerTextureArchiveEntry);
 		TheNameKeyGenerator = &name_key_generator;
 		name_keys_ready = TheNameKeyGenerator != nullptr;
 	}
 
-	if (mapped_ini_exists && texture_file_exists && name_keys_ready) {
+	if (mapped_ini_exists && ruler_mapped_ini_exists &&
+		texture_file_exists && ruler_texture_file_exists && name_keys_ready) {
 		function_lexicon.init();
 		function_lexicon_initialized = true;
 		callbacks_resolved =
@@ -7164,15 +7245,22 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			TheMappedImageCollection = mapped_image_collection;
 			GlobalData *mapped_image_load_global_data = TheGlobalData;
 			TheGlobalData = nullptr;
-			mapped_collection_loaded = load_mapped_image_ini_file(
+			const bool logo_loaded = load_mapped_image_ini_file(
 				*mapped_image_collection,
 				kMainMenuLogoSampleIni,
 				kMainMenuLogoImageName);
+			const bool ruler_loaded = load_mapped_image_ini_file(
+				*mapped_image_collection,
+				kMainMenuRulerSampleIni,
+				kMainMenuRulerImageName);
+			mapped_collection_loaded = logo_loaded && ruler_loaded;
 			TheGlobalData = mapped_image_load_global_data;
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
 				target_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
+				ruler_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuRulerImageName));
 				mapped_image_found = target_image != nullptr;
+				ruler_mapped_image_found = ruler_image != nullptr;
 			}
 			if (mapped_image_found) {
 				image_status = target_image->getStatus();
@@ -7190,6 +7278,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				image_uv_hi_y = image_uv->hi.y;
 				image_width = target_image->getImageWidth();
 				image_height = target_image->getImageHeight();
+			}
+			if (ruler_mapped_image_found) {
+				ruler_image_status = ruler_image->getStatus();
+				ruler_mapped_image_rotated =
+					BitTest(ruler_image_status, IMAGE_STATUS_ROTATED_90_CLOCKWISE);
+				ruler_image_raw_texture = BitTest(ruler_image_status, IMAGE_STATUS_RAW_TEXTURE);
+				ruler_image_filename =
+					ruler_image->getFilename().str() != nullptr ? ruler_image->getFilename().str() : "";
+				const ICoord2D *texture_size = ruler_image->getTextureSize();
+				ruler_image_texture_width = texture_size->x;
+				ruler_image_texture_height = texture_size->y;
+				const Region2D *image_uv = ruler_image->getUV();
+				ruler_image_uv_lo_x = image_uv->lo.x;
+				ruler_image_uv_lo_y = image_uv->lo.y;
+				ruler_image_uv_hi_x = image_uv->hi.x;
+				ruler_image_uv_hi_y = image_uv->hi.y;
+				ruler_image_width = ruler_image->getImageWidth();
+				ruler_image_height = ruler_image->getImageHeight();
 			}
 		}
 	}
@@ -7209,7 +7315,38 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		}
 	}
 
-	if (callbacks_resolved && texture_preloaded) {
+	if (asset_manager != nullptr && ruler_mapped_image_found && !ruler_image_filename.empty()) {
+		TextureClass *preloaded_ruler_texture =
+			asset_manager->Get_Texture(ruler_image_filename.c_str(), MIP_LEVELS_1);
+		if (preloaded_ruler_texture != nullptr) {
+			const char *registered_name = preloaded_ruler_texture->Get_Texture_Name();
+			ruler_loaded_texture_name = registered_name != nullptr ? registered_name : "";
+			ruler_texture_registered =
+				asset_manager->Texture_Hash().Get(ruler_image_filename.c_str()) == preloaded_ruler_texture ||
+				(registered_name != nullptr &&
+					asset_manager->Texture_Hash().Get(registered_name) == preloaded_ruler_texture);
+			preloaded_ruler_texture->Init();
+			ruler_texture_preloaded = preloaded_ruler_texture->Is_Initialized();
+			ruler_texture_loaded = preloaded_ruler_texture->Is_Initialized();
+			IDirect3DTexture8 *d3d_texture = preloaded_ruler_texture->Peek_D3D_Texture();
+			ruler_texture_has_d3d_surface = d3d_texture != nullptr;
+			if (d3d_texture != nullptr) {
+				ruler_texture_resolved = true;
+				ruler_texture_uploaded_levels = d3d_texture->GetLevelCount();
+				ruler_texture_levels = ruler_texture_uploaded_levels;
+				D3DSURFACE_DESC texture_desc = {};
+				ruler_texture_level_desc_result = d3d_texture->GetLevelDesc(0, &texture_desc);
+				if (SUCCEEDED(ruler_texture_level_desc_result)) {
+					ruler_texture_width = texture_desc.Width;
+					ruler_texture_height = texture_desc.Height;
+					ruler_texture_format = texture_desc.Format;
+				}
+			}
+			preloaded_ruler_texture->Release_Ref();
+		}
+	}
+
+	if (callbacks_resolved && texture_preloaded && ruler_texture_preloaded) {
 		display = display_storage.prepare_for_2d_probe();
 		display_allocated = display != nullptr;
 		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
@@ -7253,7 +7390,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	if (root != nullptr && name_keys_ready) {
 		target = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(target_name)));
+		ruler = manager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(ruler_name)));
 		target_found = target != nullptr;
+		ruler_found = ruler != nullptr;
 		root_callback_bound =
 			root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(root_name)) &&
 			root->winGetDrawFunc() == W3DNoDraw &&
@@ -7270,24 +7410,38 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			target_hidden = BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(target, target_x, target_y, target_width, target_height);
 		}
+		if (ruler != nullptr) {
+			ruler_callback_bound =
+				ruler->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				ruler->winGetSystemFunc() == GameWinDefaultSystem;
+			ruler_enabled_image = ruler->winGetEnabledImage(0);
+			ruler_image_bound =
+				ruler_enabled_image != nullptr &&
+				ruler_enabled_image == ruler_image;
+			ruler_hidden = BitTest(ruler->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(ruler, ruler_x, ruler_y, ruler_width, ruler_height);
+		}
 	}
 
-	if (root_found && target_found && root_callback_bound && target_callback_bound && target_image_bound) {
-		hidden_child_count = hide_message_box_non_rect_children(root, target);
+	if (root_found && target_found && ruler_found &&
+		root_callback_bound && target_callback_bound && ruler_callback_bound &&
+		target_image_bound && ruler_image_bound) {
+		hidden_child_count = hide_root_children_except_targets(root, target, ruler);
 		children_pruned = hidden_child_count >= 1;
 		target_hidden = target != nullptr ? BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		ruler_hidden = ruler != nullptr ? BitTest(ruler->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
 
 	const WasmD3D8ShimState *state_before = wasm_d3d8_get_state();
 	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
 
-	if (children_pruned && !target_hidden) {
+	if (children_pruned && !target_hidden && !ruler_hidden) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			begin_repaint_called = true;
 			manager->winRepaint();
 			repaint_called = true;
-			drawimage_called = display_adapter.imageDraws() >= 1;
+			drawimage_called = display_adapter.imageDraws() >= 2;
 			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
 			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
 			end_render_result = WW3D::End_Render(false);
@@ -7337,6 +7491,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		}
 		root = nullptr;
 		target = nullptr;
+		ruler = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
 	}
 
@@ -7398,32 +7553,49 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		runtime_ini_installed &&
 		runtime_window_installed &&
 		runtime_texture_installed &&
+		runtime_ruler_texture_installed &&
 		runtime_asset_system_installed &&
 		name_keys_ready &&
 		archive_window_exists &&
 		archive_window_openable &&
 		mapped_ini_exists &&
+		ruler_mapped_ini_exists &&
 		texture_file_exists &&
+		ruler_texture_file_exists &&
 		texture_file_factory_installed &&
 		function_lexicon_initialized &&
 		callbacks_resolved &&
 		mapped_collection_allocated &&
 		mapped_collection_loaded &&
-		mapped_image_count >= 1 &&
+		mapped_image_count >= 2 &&
 		mapped_image_found &&
+		ruler_mapped_image_found &&
 		!mapped_image_rotated &&
+		!ruler_mapped_image_rotated &&
 		!image_raw_texture &&
+		!ruler_image_raw_texture &&
 		image_status == IMAGE_STATUS_NONE &&
+		ruler_image_status == IMAGE_STATUS_NONE &&
 		image_filename == kMainMenuLogoTextureName &&
+		ruler_image_filename == kMainMenuRulerTextureName &&
 		image_texture_width == 512 &&
 		image_texture_height == 512 &&
 		image_width == 370 &&
 		image_height == 120 &&
+		ruler_image_texture_width == 1024 &&
+		ruler_image_texture_height == 1024 &&
+		ruler_image_width == 800 &&
+		ruler_image_height == 600 &&
 		texture_preloaded &&
+		ruler_texture_preloaded &&
 		texture_registered &&
+		ruler_texture_registered &&
 		texture_resolved &&
+		ruler_texture_resolved &&
 		texture_loaded &&
+		ruler_texture_loaded &&
 		texture_has_d3d_surface &&
+		ruler_texture_has_d3d_surface &&
 		display_allocated &&
 		display_setup &&
 		manager_allocated &&
@@ -7431,11 +7603,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		layout_window_count >= 1 &&
 		root_found &&
 		target_found &&
+		ruler_found &&
 		root_callback_bound &&
 		target_callback_bound &&
+		ruler_callback_bound &&
 		target_image_bound &&
+		ruler_image_bound &&
 		!target_hidden &&
+		!ruler_hidden &&
 		children_pruned &&
+		ruler_x == 0 &&
+		ruler_y == 0 &&
+		ruler_width == 800 &&
+		ruler_height == 600 &&
 		target_x == 504 &&
 		target_y == 16 &&
 		target_width == 287 &&
@@ -7447,13 +7627,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		succeeded(end_render_result) &&
 		destroy_result == WIN_ERR_OK &&
 		window_list_cleared &&
-		display_adapter.imageDraws() >= 1 &&
-		draw_calls_after_repaint >= draw_calls_before_repaint + 1 &&
-		state->draw_indexed_primitive_calls >= 1 &&
-		state->create_texture_calls >= 1 &&
-		state->browser_texture_create_calls >= 1 &&
-		state->browser_texture_update_calls >= texture_levels &&
-		state->browser_texture_bind_calls >= 1 &&
+		display_adapter.imageDraws() >= 2 &&
+		draw_calls_after_repaint >= draw_calls_before_repaint + 2 &&
+		state->draw_indexed_primitive_calls >= 2 &&
+		state->create_texture_calls >= 2 &&
+		state->browser_texture_create_calls >= 2 &&
+		state->browser_texture_update_calls >= texture_levels + ruler_texture_levels &&
+		state->browser_texture_bind_calls >= 2 &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
 		state->last_draw_vertex_count == 4 &&
 		state->last_draw_primitive_count == 2 &&
@@ -7467,7 +7647,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		texture_height == 512 &&
 		texture_levels > 0 &&
 		texture_uploaded_levels == texture_levels &&
+		ruler_texture_width == 1024 &&
+		ruler_texture_height == 1024 &&
+		ruler_texture_levels > 0 &&
+		ruler_texture_uploaded_levels == ruler_texture_levels &&
 		equals_ignore_ascii_case(loaded_texture_name, image_filename) &&
+		equals_ignore_ascii_case(ruler_loaded_texture_name, ruler_image_filename) &&
 		draw_state != nullptr &&
 		draw_state->alpha_blend_enable == TRUE &&
 		draw_state->src_blend == D3DBLEND_SRCALPHA &&
@@ -7485,15 +7670,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		json_escape(kMainMenuLayoutImageRuntimeIniArchive);
 	const std::string texture_archive_json =
 		json_escape(kMainMenuLayoutImageRuntimeTextureArchive);
+	const std::string ruler_texture_archive_json =
+		json_escape(kMainMenuLayoutImageRuntimeRulerTextureArchive);
 	const std::string image_filename_json = json_escape(image_filename);
+	const std::string ruler_image_filename_json = json_escape(ruler_image_filename);
 	const std::string loaded_texture_name_json = json_escape(loaded_texture_name);
+	const std::string ruler_loaded_texture_name_json = json_escape(ruler_loaded_texture_name);
 	const std::string archive_window_path_json = json_escape(archive_window_path);
 	const std::string mapped_image_entry_json = json_escape(kMainMenuLogoSampleIni);
+	const std::string ruler_mapped_image_entry_json = json_escape(kMainMenuRulerSampleIni);
 	const std::string texture_entry_json = json_escape(kMainMenuLogoTextureArchiveEntry);
+	const std::string ruler_texture_entry_json = json_escape(kMainMenuRulerTextureArchiveEntry);
 	const std::string image_name_json = json_escape(kMainMenuLogoImageName);
+	const std::string ruler_image_name_json = json_escape(kMainMenuRulerImageName);
+	const std::string ruler_window_name_json = json_escape(ruler_name);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[16000];
+	char buffer[24000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -7501,32 +7694,44 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"WindowLayout::load -> GameWindowManager::winCreateFromScript\","
 		"\"parseDrawData IMAGE -> TheMappedImageCollection->findImageByName\","
 		"\"Exact mapped-image INI block -> INIZH.big mapped-image entry\","
+		"\"MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
 		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawImage\","
-		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\"],"
+		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\","
+		"\"TextureClass::Init -> W3DFileSystem -> TexturesZH.big MainMenuRuler texture\"],"
 		"\"archives\":{\"window\":\"%s\",\"ini\":\"%s\",\"texture\":\"%s\","
-		"\"windowEntry\":\"%s\",\"mappedImageEntry\":\"%s\",\"textureEntry\":\"%s\"},"
+		"\"rulerTexture\":\"%s\","
+		"\"windowEntry\":\"%s\",\"mappedImageEntry\":\"%s\","
+		"\"rulerMappedImageEntry\":\"%s\","
+		"\"textureEntry\":\"%s\",\"rulerTextureEntry\":\"%s\"},"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
 		"\"assetManagerCreated\":%s,\"usedExistingAssetManager\":%s,"
 		"\"runtimeIniInstalled\":%s,\"runtimeWindowInstalled\":%s,"
 		"\"runtimeTextureInstalled\":%s,"
+		"\"runtimeRulerTextureInstalled\":%s,"
 		"\"runtimeAssetSystemInstalled\":%s,\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
-		"\"mappedIniExists\":%s,\"textureFileExists\":%s,"
+		"\"mappedIniExists\":%s,\"rulerMappedIniExists\":%s,"
+		"\"textureFileExists\":%s,\"rulerTextureFileExists\":%s,"
 		"\"textureFileFactoryInstalled\":%s,"
 		"\"functionLexiconInitialized\":%s,\"callbacksResolved\":%s,"
 		"\"mappedCollectionAllocated\":%s,\"mappedCollectionLoaded\":%s,"
 		"\"mappedImages\":%zu,\"mappedImageFound\":%s,"
+		"\"rulerMappedImageFound\":%s,"
 		"\"texturePreloaded\":%s,\"textureRegistered\":%s,"
 		"\"textureResolved\":%s,\"textureLoaded\":%s,"
 		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
+		"\"rulerTexturePreloaded\":%s,\"rulerTextureRegistered\":%s,"
+		"\"rulerTextureResolved\":%s,\"rulerTextureLoaded\":%s,"
+		"\"rulerTextureHasD3DSurface\":%s,\"rulerTextureLevelDesc\":%ld,"
 		"\"displayAllocated\":%s,\"displaySetup\":%s,"
 		"\"managerAllocated\":%s,\"layoutLoaded\":%s,"
 		"\"layoutWindowCount\":%d,\"rootFound\":%s,"
-		"\"targetFound\":%s,\"rootCallbackBound\":%s,"
-		"\"targetCallbackBound\":%s,\"targetImageBound\":%s,"
-		"\"targetHidden\":%s,\"childrenPruned\":%s,"
+		"\"targetFound\":%s,\"rulerFound\":%s,\"rootCallbackBound\":%s,"
+		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
+		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
+		"\"targetHidden\":%s,\"rulerHidden\":%s,\"childrenPruned\":%s,"
 		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
 		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
 		"\"drawImageCalled\":%s,\"endRender\":%d,"
@@ -7539,8 +7744,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GameWinDefaultSystem\","
 		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+		"\"image\":\"%s\"},"
+		"\"ruler\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"GameWinDefaultSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
 		"\"image\":\"%s\"},\"prunedChildren\":%d},"
 		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"rawTexture\":%s,\"status\":%u,\"rotated\":%s,"
+		"\"textureWidth\":%d,\"textureHeight\":%d,"
+		"\"uvLoX\":%.6f,\"uvLoY\":%.6f,\"uvHiX\":%.6f,\"uvHiY\":%.6f,"
+		"\"width\":%d,\"height\":%d},"
+		"\"rulerImage\":{\"name\":\"%s\",\"filename\":\"%s\","
 		"\"rawTexture\":%s,\"status\":%u,\"rotated\":%s,"
 		"\"textureWidth\":%d,\"textureHeight\":%d,"
 		"\"uvLoX\":%.6f,\"uvLoY\":%.6f,\"uvHiX\":%.6f,\"uvHiY\":%.6f,"
@@ -7552,6 +7767,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,"
 		"\"bytes\":%u,\"checksum\":%lu},"
 		"\"source\":\"Exact mapped-image INI block path via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
+		"\"rulerTexture\":{\"name\":\"%s\","
+		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
+		"\"levels\":%u,\"uploadedLevels\":%u,"
+		"\"format\":%lu,"
+		"\"source\":\"Exact MainMenuRuler HandCreated mapped-image INI block via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
 		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
 		"\"windowed\":%s,"
 		"\"path\":\"WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay::drawImage\"},"
@@ -7585,9 +7805,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		window_archive_json.c_str(),
 		ini_archive_json.c_str(),
 		texture_archive_json.c_str(),
+		ruler_texture_archive_json.c_str(),
 		archive_window_path_json.c_str(),
 		mapped_image_entry_json.c_str(),
+		ruler_mapped_image_entry_json.c_str(),
 		texture_entry_json.c_str(),
+		ruler_texture_entry_json.c_str(),
 		init_result,
 		set_device_result,
 		bool_json(asset_manager_created),
@@ -7595,12 +7818,15 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		bool_json(runtime_ini_installed),
 		bool_json(runtime_window_installed),
 		bool_json(runtime_texture_installed),
+		bool_json(runtime_ruler_texture_installed),
 		bool_json(runtime_asset_system_installed),
 		bool_json(name_keys_ready),
 		bool_json(archive_window_exists),
 		bool_json(archive_window_openable),
 		bool_json(mapped_ini_exists),
+		bool_json(ruler_mapped_ini_exists),
 		bool_json(texture_file_exists),
+		bool_json(ruler_texture_file_exists),
 		bool_json(texture_file_factory_installed),
 		bool_json(function_lexicon_initialized),
 		bool_json(callbacks_resolved),
@@ -7608,12 +7834,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		bool_json(mapped_collection_loaded),
 		mapped_image_count,
 		bool_json(mapped_image_found),
+		bool_json(ruler_mapped_image_found),
 		bool_json(texture_preloaded),
 		bool_json(texture_registered),
 		bool_json(texture_resolved),
 		bool_json(texture_loaded),
 		bool_json(texture_has_d3d_surface),
 		static_cast<long>(texture_level_desc_result),
+		bool_json(ruler_texture_preloaded),
+		bool_json(ruler_texture_registered),
+		bool_json(ruler_texture_resolved),
+		bool_json(ruler_texture_loaded),
+		bool_json(ruler_texture_has_d3d_surface),
+		static_cast<long>(ruler_texture_level_desc_result),
 		bool_json(display_allocated),
 		bool_json(display_setup),
 		bool_json(manager_allocated),
@@ -7621,10 +7854,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		layout_window_count,
 		bool_json(root_found),
 		bool_json(target_found),
+		bool_json(ruler_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
+		bool_json(ruler_callback_bound),
 		bool_json(target_image_bound),
+		bool_json(ruler_image_bound),
 		bool_json(target_hidden),
+		bool_json(ruler_hidden),
 		bool_json(children_pruned),
 		hidden_child_count,
 		begin_render_result,
@@ -7647,6 +7884,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		target_width,
 		target_height,
 		image_name_json.c_str(),
+		ruler_window_name_json.c_str(),
+		ruler_x,
+		ruler_y,
+		ruler_width,
+		ruler_height,
+		ruler_image_name_json.c_str(),
 		hidden_child_count,
 		image_name_json.c_str(),
 		image_filename_json.c_str(),
@@ -7661,6 +7904,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		image_uv_hi_y,
 		image_width,
 		image_height,
+		ruler_image_name_json.c_str(),
+		ruler_image_filename_json.c_str(),
+		bool_json(ruler_image_raw_texture),
+		ruler_image_status,
+		bool_json(ruler_mapped_image_rotated),
+		ruler_image_texture_width,
+		ruler_image_texture_height,
+		ruler_image_uv_lo_x,
+		ruler_image_uv_lo_y,
+		ruler_image_uv_hi_x,
+		ruler_image_uv_hi_y,
+		ruler_image_width,
+		ruler_image_height,
 		texture_id,
 		loaded_texture_name_json.c_str(),
 		texture_entry_json.c_str(),
@@ -7674,6 +7930,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		texture_upload_height,
 		texture_upload_bytes,
 		static_cast<unsigned long>(texture_upload_checksum),
+		ruler_loaded_texture_name_json.c_str(),
+		ruler_texture_entry_json.c_str(),
+		ruler_texture_width,
+		ruler_texture_height,
+		ruler_texture_levels,
+		ruler_texture_uploaded_levels,
+		static_cast<unsigned long>(ruler_texture_format),
 		display != nullptr ? display->m_width : 0,
 		display != nullptr ? display->m_height : 0,
 		display != nullptr ? display->m_bitDepth : 0,
