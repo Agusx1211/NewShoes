@@ -3371,6 +3371,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `RTS3DScene::Customized_Render`, reaches `W3DTerrainBackground`, samples
       the stage-1 terrain texture, and produces browser WebGL2 pixels in
       `harness-smoke-ww3d-terrain-tile-archive-scene-canvas.png`.
+- [x] Promote the real map terrain scene proof to the original heightmap render
+      object: `test:ww3d-terrain-map-patch-scene` now mounts `INIZH.big`,
+      `MapsZH.big`, and `TerrainZH.big`, parses
+      `Maps\MD_GLA03\MD_GLA03.map` through `WorldHeightMap`, selects a patch
+      with loaded source terrain tiles, initializes `HeightMapRenderObjClass`,
+      renders through `RTS3DScene::Customized_Render`, verifies the two
+      original base/blend terrain passes reach browser `DX8Wrapper` /
+      WebGL2 draw history, and captures non-black terrain coverage in
+      `harness-smoke-ww3d-terrain-map-patch-scene-canvas.png`.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

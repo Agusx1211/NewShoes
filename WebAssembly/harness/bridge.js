@@ -3249,6 +3249,21 @@ function sampleD3D8TexturePixel(resource, x, y) {
   return pixel;
 }
 
+function sampleD3D8TextureProbe(resource) {
+  if (!resource?.width || !resource?.height) {
+    return null;
+  }
+  return {
+    topLeft: sampleD3D8TexturePixel(resource, 0, 0),
+    center: sampleD3D8TexturePixel(
+      resource,
+      Math.floor(resource.width / 2),
+      Math.floor(resource.height / 2),
+    ),
+    bottomRight: sampleD3D8TexturePixel(resource, resource.width - 1, resource.height - 1),
+  };
+}
+
 function updateD3D8TextureSummary() {
   d3d8TextureStats.live = d3d8Textures.size;
   const boundTextures = {};
@@ -5176,6 +5191,240 @@ function isIdentityD3DMatrix(matrix) {
   return true;
 }
 
+function multiplyD3D8ColumnMatrixVector(matrix, vector) {
+  if (!matrix || matrix.length !== 16) {
+    return vector.slice();
+  }
+  const [x, y, z, w] = vector;
+  return [
+    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12] * w,
+    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13] * w,
+    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14] * w,
+    matrix[3] * x + matrix[7] * y + matrix[11] * z + matrix[15] * w,
+  ];
+}
+
+function readD3D8Float32(view, offset) {
+  if (!view || offset < 0 || offset + 4 > view.byteLength) {
+    return 0;
+  }
+  const value = view.getFloat32(offset, true);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function d3d8DiffuseRgbaFromBytes(bytes, offset) {
+  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.byteLength) {
+    return null;
+  }
+  return [
+    bytes[offset + 2],
+    bytes[offset + 1],
+    bytes[offset],
+    bytes[offset + 3],
+  ];
+}
+
+function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount, vertexLayout,
+    transforms, viewport) {
+  const bytes = resource?.bytes;
+  if (!(bytes instanceof Uint8Array) || vertexStride < 12 || vertexCount === 0) {
+    return null;
+  }
+  const availableVertices = Math.min(
+    vertexCount,
+    Math.floor(Math.max(0, bytes.byteLength - byteOffset) / vertexStride),
+  );
+  if (availableVertices <= 0) {
+    return null;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const bounds = {
+    min: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+    max: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
+  };
+  const diffuse = {
+    available: vertexLayout?.diffuseOffset !== null,
+    sampleCount: 0,
+    nonBlackRgb: 0,
+    min: [255, 255, 255, 255],
+    max: [0, 0, 0, 0],
+    average: [0, 0, 0, 0],
+  };
+  const projected = transforms ? {
+    sampleCount: 0,
+    visible: 0,
+    behindOrInvalidW: 0,
+    ndcMin: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+    ndcMax: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
+    screenMin: [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY],
+    screenMax: [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY],
+    clipWMin: Number.POSITIVE_INFINITY,
+    clipWMax: Number.NEGATIVE_INFINITY,
+  } : null;
+  const samples = [];
+  const sampleIndices = new Set(Array.from({ length: Math.min(8, availableVertices) }, (_, index) =>
+    Math.min(availableVertices - 1, Math.floor((index * (availableVertices - 1)) / 7))));
+
+  for (let vertexIndex = 0; vertexIndex < availableVertices; ++vertexIndex) {
+    const base = byteOffset + vertexIndex * vertexStride;
+    const position = [
+      readD3D8Float32(view, base),
+      readD3D8Float32(view, base + 4),
+      readD3D8Float32(view, base + 8),
+    ];
+    for (let axis = 0; axis < 3; ++axis) {
+      bounds.min[axis] = Math.min(bounds.min[axis], position[axis]);
+      bounds.max[axis] = Math.max(bounds.max[axis], position[axis]);
+    }
+
+    const diffuseOffset = vertexLayout?.diffuseOffset;
+    const rgba = diffuse.available
+      ? d3d8DiffuseRgbaFromBytes(bytes, base + diffuseOffset)
+      : null;
+    if (rgba) {
+      diffuse.sampleCount += 1;
+      if (rgba[0] > 0 || rgba[1] > 0 || rgba[2] > 0) {
+        diffuse.nonBlackRgb += 1;
+      }
+      for (let component = 0; component < 4; ++component) {
+        diffuse.min[component] = Math.min(diffuse.min[component], rgba[component]);
+        diffuse.max[component] = Math.max(diffuse.max[component], rgba[component]);
+        diffuse.average[component] += rgba[component];
+      }
+    }
+
+    if (projected) {
+      const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
+      const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
+      const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
+      const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
+      projected.sampleCount += 1;
+      projected.clipWMin = Math.min(projected.clipWMin, glClip[3]);
+      projected.clipWMax = Math.max(projected.clipWMax, glClip[3]);
+      if (Math.abs(glClip[3]) <= 0.000001) {
+        projected.behindOrInvalidW += 1;
+      } else {
+        const ndc = [glClip[0] / glClip[3], glClip[1] / glClip[3], glClip[2] / glClip[3]];
+        for (let axis = 0; axis < 3; ++axis) {
+          projected.ndcMin[axis] = Math.min(projected.ndcMin[axis], ndc[axis]);
+          projected.ndcMax[axis] = Math.max(projected.ndcMax[axis], ndc[axis]);
+        }
+        if (ndc[0] >= -1 && ndc[0] <= 1 && ndc[1] >= -1 && ndc[1] <= 1 && ndc[2] >= -1 && ndc[2] <= 1) {
+          projected.visible += 1;
+        }
+        if (viewport?.gl) {
+          const screenX = viewport.gl.x + (ndc[0] * 0.5 + 0.5) * viewport.gl.width;
+          const screenY = viewport.gl.y + (1.0 - (ndc[1] * 0.5 + 0.5)) * viewport.gl.height;
+          projected.screenMin[0] = Math.min(projected.screenMin[0], screenX);
+          projected.screenMin[1] = Math.min(projected.screenMin[1], screenY);
+          projected.screenMax[0] = Math.max(projected.screenMax[0], screenX);
+          projected.screenMax[1] = Math.max(projected.screenMax[1], screenY);
+        }
+      }
+    }
+
+    if (sampleIndices.has(vertexIndex)) {
+      const texCoords = [];
+      for (const texCoord of vertexLayout?.texCoords ?? []) {
+        if (texCoord.available) {
+          const coordBase = base + texCoord.offset;
+          texCoords.push({
+            coordSet: texCoord.coordSet,
+            uv: [
+              readD3D8Float32(view, coordBase),
+              readD3D8Float32(view, coordBase + 4),
+            ],
+          });
+        }
+      }
+      samples.push({
+        index: vertexIndex,
+        position,
+        diffuse: rgba,
+        texCoords,
+      });
+    }
+  }
+
+  if (diffuse.sampleCount > 0) {
+    for (let component = 0; component < 4; ++component) {
+      diffuse.average[component] = Number((diffuse.average[component] / diffuse.sampleCount).toFixed(3));
+    }
+  } else {
+    diffuse.min = null;
+    diffuse.max = null;
+    diffuse.average = null;
+  }
+
+  return {
+    availableVertices,
+    positionBounds: bounds,
+    diffuse,
+    projected,
+    samples,
+  };
+}
+
+function d3d8TextureStageDrawSummary(textureStage = {}) {
+  return {
+    colorOp: textureStage.colorOp,
+    colorArg0: textureStage.colorArg0,
+    colorArg1: textureStage.colorArg1,
+    colorArg2: textureStage.colorArg2,
+    alphaOp: textureStage.alphaOp,
+    alphaArg0: textureStage.alphaArg0,
+    alphaArg1: textureStage.alphaArg1,
+    alphaArg2: textureStage.alphaArg2,
+    texCoordIndex: textureStage.texCoordIndex,
+    addressU: textureStage.addressU,
+    addressV: textureStage.addressV,
+    minFilter: textureStage.minFilter,
+    magFilter: textureStage.magFilter,
+    mipFilter: textureStage.mipFilter,
+  };
+}
+
+function d3d8DrawVertexSummary(vertexDiagnostics) {
+  if (!vertexDiagnostics) {
+    return null;
+  }
+  return {
+    availableVertices: vertexDiagnostics.availableVertices,
+    positionBounds: vertexDiagnostics.positionBounds,
+    diffuse: vertexDiagnostics.diffuse,
+    projected: vertexDiagnostics.projected,
+    samples: vertexDiagnostics.samples,
+  };
+}
+
+function sampleD3D8TextureAtVertexSamples(resource, vertexDiagnostics, coordSet) {
+  if (!resource?.width || !resource?.height || !Array.isArray(vertexDiagnostics?.samples)) {
+    return [];
+  }
+  const samples = [];
+  for (const sample of vertexDiagnostics.samples) {
+    const texCoord = sample.texCoords?.find((coord) => coord.coordSet === coordSet);
+    if (!texCoord) {
+      continue;
+    }
+    const u = Number(texCoord.uv?.[0] ?? 0);
+    const v = Number(texCoord.uv?.[1] ?? 0);
+    if (!Number.isFinite(u) || !Number.isFinite(v)) {
+      continue;
+    }
+    const x = Math.max(0, Math.min(resource.width - 1, Math.floor(u * resource.width)));
+    const y = Math.max(0, Math.min(resource.height - 1, Math.floor(v * resource.height)));
+    samples.push({
+      vertexIndex: sample.index,
+      uv: [u, v],
+      xy: [x, y],
+      pixel: sampleD3D8TexturePixel(resource, x, y),
+    });
+  }
+  return samples;
+}
+
 function defaultD3D8TextureStageValue(stage, state) {
   switch (Number(state) >>> 0) {
     case D3DTSS_COLOROP:
@@ -5602,6 +5851,7 @@ function applyD3D8RenderState(renderState, options = {}) {
 }
 
 function paintD3D8DrawIndexed(payload = {}) {
+  const drawSequence = (Number(harnessState.graphics.d3d8DrawIndexedSequence ?? 0) >>> 0) + 1;
   const vertexByteSize = Number(payload.vertexBytes ?? 0) >>> 0;
   const indexByteSize = Number(payload.indexBytes ?? 0) >>> 0;
   const vertexBufferId = Number(payload.vertexBufferId ?? 0) >>> 0;
@@ -5675,10 +5925,21 @@ function paintD3D8DrawIndexed(payload = {}) {
   let appliedTexture1Sampler = null;
   let appliedFillMode = null;
   let appliedShadeMode = null;
+  let vertexDiagnostics = null;
   let drawOk = false;
   syncCanvasSize();
   appliedViewport = applyD3D8Viewport("draw");
-  let centerPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+  vertexDiagnostics = inspectD3D8DrawVertices(
+    vertexResource,
+    vertexByteOffset,
+    vertexStride,
+    vertexCount,
+    vertexLayout,
+    useTransforms ? { world, view, projection } : null,
+    appliedViewport,
+  );
+  const preDrawCenterPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
+  let centerPixel = preDrawCenterPixel;
 
   if (gl && baseGlPrimitive && usePersistentBuffers && vertexByteSize > 0 && indexByteSize > 0 &&
       vertexStride >= 12 && indexCount > 0 && (indexSize === 2 || indexSize === 4)) {
@@ -6107,6 +6368,7 @@ function paintD3D8DrawIndexed(payload = {}) {
   const probe = {
     ok: drawOk,
     source: "browser_d3d8_draw_indexed",
+    drawSequence,
     api: harnessState.graphics.api,
     viewport: appliedViewport,
     primitiveType: Number(payload.primitiveType ?? 0),
@@ -6117,6 +6379,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     vertexStride,
     vertexShaderFvf,
     vertexLayout,
+    vertexDiagnostics,
     indexBufferId,
     indexByteOffset,
     indexBytes: indexByteSize,
@@ -6167,6 +6430,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       semantic: texture0Resource?.semantic ?? null,
       semanticMode: texture0SemanticMode,
       uploads: texture0Resource?.uploads ?? 0,
+      samplePixels: sampleD3D8TextureProbe(texture0Resource),
+      sampleVertexPixels: sampleD3D8TextureAtVertexSamples(
+        texture0Resource,
+        vertexDiagnostics,
+        texture0Coordinates.coordSet,
+      ),
       sampler: appliedTexture0Sampler ?? texture0Resource?.samplerState ?? null,
       combiner: appliedTexture0Combiner,
     },
@@ -6202,15 +6471,81 @@ function paintD3D8DrawIndexed(payload = {}) {
       semantic: texture1Resource?.semantic ?? null,
       semanticMode: texture1SemanticMode,
       uploads: texture1Resource?.uploads ?? 0,
+      samplePixels: sampleD3D8TextureProbe(texture1Resource),
+      sampleVertexPixels: sampleD3D8TextureAtVertexSamples(
+        texture1Resource,
+        vertexDiagnostics,
+        texture1Coordinates.coordSet,
+      ),
       sampler: appliedTexture1Sampler ?? texture1Resource?.samplerState ?? null,
       combiner: appliedStage1Combiner,
     },
     stage1Combiner: appliedStage1Combiner,
     textureFactor: renderState.textureFactor,
+    preDrawCenterPixel,
     centerPixel,
   };
+  const drawHistory = [
+    ...(Array.isArray(harnessState.graphics.d3d8DrawHistory)
+      ? harnessState.graphics.d3d8DrawHistory
+      : []),
+    {
+      ok: probe.ok,
+      drawSequence: probe.drawSequence,
+      primitiveType: probe.primitiveType,
+      vertexBufferId: probe.vertexBufferId,
+      vertexCount: probe.vertexCount,
+      vertexStride: probe.vertexStride,
+      vertexShaderFvf: probe.vertexShaderFvf,
+      indexBufferId: probe.indexBufferId,
+      indexCount: probe.indexCount,
+      renderState: {
+        cullMode: renderState.cullMode,
+        zEnable: renderState.zEnable,
+        zWriteEnable: renderState.zWriteEnable,
+        zFunc: renderState.zFunc,
+        alphaBlendEnable: renderState.alphaBlendEnable,
+        srcBlend: renderState.srcBlend,
+        destBlend: renderState.destBlend,
+        colorWriteEnable: renderState.colorWriteEnable,
+        lighting: renderState.lighting,
+        textureStage0: d3d8TextureStageDrawSummary(renderState.textureStages[0]),
+        textureStage1: d3d8TextureStageDrawSummary(renderState.textureStages[1]),
+      },
+      appliedRenderState: {
+        cull: appliedRenderState?.cull ?? null,
+        depth: appliedRenderState?.depth ?? null,
+        blend: appliedRenderState?.blend ?? null,
+        colorWrite: appliedRenderState?.colorWrite ?? null,
+      },
+      boundTextures: probe.boundTextures,
+      texture0: {
+        id: probe.texture0.id,
+        sampled: probe.texture0.sampled,
+        texCoordIndex: probe.texture0.texCoordIndex,
+        texCoordSet: probe.texture0.texCoordSet,
+        samplePixels: probe.texture0.samplePixels,
+        sampleVertexPixels: probe.texture0.sampleVertexPixels,
+        combiner: probe.texture0.combiner,
+      },
+      texture1: {
+        id: probe.texture1.id,
+        sampled: probe.texture1.sampled,
+        texCoordIndex: probe.texture1.texCoordIndex,
+        texCoordSet: probe.texture1.texCoordSet,
+        samplePixels: probe.texture1.samplePixels,
+        sampleVertexPixels: probe.texture1.sampleVertexPixels,
+        combiner: probe.texture1.combiner,
+      },
+      vertexSummary: d3d8DrawVertexSummary(vertexDiagnostics),
+      preDrawCenterPixel,
+      centerPixel,
+    },
+  ].slice(-12);
   harnessState.graphics = {
     ...harnessState.graphics,
+    d3d8DrawIndexedSequence: drawSequence,
+    d3d8DrawHistory: drawHistory,
     lastD3D8DrawIndexed: probe,
   };
   return drawOk ? 1 : 0;
@@ -16899,6 +17234,8 @@ async function rpc(command, payload = {}) {
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          d3d8DrawIndexedSequence: 0,
           lastD3D8DrawIndexed: null,
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
@@ -16908,8 +17245,14 @@ async function rpc(command, payload = {}) {
           terrainArchivePath,
         ));
         const textureAfter = harnessState.graphics.d3d8Textures ?? null;
-        const screenshot = snapshotCanvas();
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
+          ? harnessState.graphics.d3d8DrawHistory
+          : [];
         const textureDelta = {
           creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
           updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
@@ -16929,7 +17272,7 @@ async function rpc(command, payload = {}) {
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
           && probe?.archives?.maps?.loaded === true
           && probe?.archives?.terrain?.loaded === true
-          && probe?.map?.entry === "Maps\\Tournament Desert\\Tournament Desert.map"
+          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
           && probe?.map?.entryExists === true
           && probe?.map?.entryOpenable === true
           && probe?.map?.streamOpen === true
@@ -16943,29 +17286,39 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.objectAdded === true
           && probe?.scene?.terrainClassId === 4
           && probe?.terrain?.tileSource === "shipped-map-heightmap"
-          && probe?.terrain?.verticesPerSide === 17
-          && probe?.terrain?.cellsPerSide === 16
+          && probe?.terrain?.renderObject === "HeightMapRenderObjClass"
+          && probe?.terrain?.verticesPerSide === 33
+          && probe?.terrain?.cellsPerSide === 32
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
           && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
           && browserProbe?.source === "browser_d3d8_draw_indexed"
-          && browserProbe?.ok === true
           && browserProbe?.usedPersistentBuffers === true
           && browserProbe?.usedTransforms === true
           && browserProbe?.vertexStride === 32
           && browserProbe?.vertexLayout?.source === "fvf"
           && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
-          && browserProbe?.texture1?.sampled === true
-          && browserProbe?.boundTextures?.["1"] === probe?.texture?.id
+          && browserProbe?.texture0?.sampled === true
+          && Array.isArray(drawHistory)
+          && drawHistory.length >= 2
+          && drawHistory[0]?.renderState?.alphaBlendEnable === 0
+          && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
+          && drawHistory[0]?.texture0?.sampled === true
+          && drawHistory[1]?.renderState?.alphaBlendEnable === 1
+          && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
+          && drawHistory[1]?.texture0?.sampled === true
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1
           && textureDelta.samplerApplications >= 1
-          && pixelHasColor(browserProbe?.centerPixel, 8)
-          && pixelHasColor(screenshot?.centerPixel, 8);
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
         return {
           ok,
           command,
           probe,
           browserProbe,
+          drawHistory,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,

@@ -25,7 +25,8 @@ const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
 const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
-const mapEntry = "Maps\\Tournament Desert\\Tournament Desert.map";
+const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
+const mapEntryBytes = 295065;
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -231,7 +232,7 @@ try {
       || rangeTerrainArchive?.entryCount !== terrainArchiveEntries.length
       || terrainIniMountedEntry?.bytes !== 25758
       || terrainIniMountedEntry?.reader !== "browser fetch Range"
-      || mapMountedEntry?.bytes !== 144534
+      || mapMountedEntry?.bytes !== mapEntryBytes
       || mapMountedEntry?.reader !== "browser fetch Range"
       || firstTerrainMountedEntry?.bytes <= 0
       || firstTerrainMountedEntry?.reader !== "browser fetch Range"
@@ -254,6 +255,7 @@ try {
   } catch (error) {
     throw new Error(`terrain map patch render RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
   }
+  await page.locator("#viewport").screenshot({ path: terrainScreenshot });
 
   if (!terrainResult.ok
       || terrainResult.command !== "ww3dTerrainMapPatchScene"
@@ -279,8 +281,12 @@ try {
       || terrainResult.probe?.scene?.objectAdded !== true
       || terrainResult.probe?.scene?.terrainClassId !== 4
       || terrainResult.probe?.terrain?.tileSource !== "shipped-map-heightmap"
-      || terrainResult.probe?.terrain?.verticesPerSide !== 17
-      || terrainResult.probe?.terrain?.cellsPerSide !== 16
+      || terrainResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || terrainResult.probe?.terrain?.verticesPerSide !== 33
+      || terrainResult.probe?.terrain?.cellsPerSide !== 32
+      || terrainResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
+      || terrainResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
+      || terrainResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource <= 0
       || terrainResult.probe?.terrain?.patchHeightChecksum <= 0
       || terrainResult.probe?.calls?.browserTextureCreate < 1
       || terrainResult.probe?.calls?.browserTextureUpdate < 1
@@ -288,28 +294,34 @@ try {
       || terrainResult.probe?.draw?.vertexShaderFvf !== 578
       || terrainResult.probe?.draw?.vertexStride !== 32
       || terrainResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
-      || terrainResult.browserProbe?.texture1?.sampled !== true
-      || terrainResult.browserProbe?.boundTextures?.["1"] !== terrainResult.probe?.texture?.id
+      || terrainResult.browserProbe?.texture0?.sampled !== true
+      || !Array.isArray(terrainResult.drawHistory)
+      || terrainResult.drawHistory.length < 2
+      || terrainResult.drawHistory[0]?.renderState?.alphaBlendEnable !== 0
+      || terrainResult.drawHistory[0]?.renderState?.textureStage0?.texCoordIndex !== 0
+      || terrainResult.drawHistory[0]?.texture0?.sampled !== true
+      || terrainResult.drawHistory[1]?.renderState?.alphaBlendEnable !== 1
+      || terrainResult.drawHistory[1]?.renderState?.textureStage0?.texCoordIndex !== 1
+      || terrainResult.drawHistory[1]?.texture0?.sampled !== true
       || terrainResult.textureDelta?.creates < 1
       || terrainResult.textureDelta?.updates < 1
       || terrainResult.textureDelta?.binds < 1
       || terrainResult.textureDelta?.samplerApplications < 1
-      || terrainResult.screenshot?.centerPixel?.slice(0, 3).every((component) => component <= 8)) {
+      || terrainResult.screenshot?.coverage?.coloredPixelCount <= 0) {
     throw new Error(`W3D real map terrain scene render failed: ${JSON.stringify({
       ok: terrainResult.ok,
       probe: terrainResult.probe,
       browserProbe: terrainResult.browserProbe,
+      drawHistory: terrainResult.drawHistory,
       textureDelta: terrainResult.textureDelta,
       screenshot: {
         width: terrainResult.screenshot?.width,
         height: terrainResult.screenshot?.height,
         centerPixel: terrainResult.screenshot?.centerPixel,
+        coverage: terrainResult.screenshot?.coverage,
       },
     })}`);
   }
-
-  await page.locator("#viewport").screenshot({ path: terrainScreenshot });
-
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
@@ -344,7 +356,8 @@ try {
     calls: terrainResult.probe.calls,
     draw: terrainResult.probe.draw,
     centerPixel: terrainResult.screenshot.centerPixel,
-    renderer: "original INI::load Terrain.ini terrain texture mappings + MapsZH Tournament Desert -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> W3DTerrainBackground -> browser D3D8/WebGL2",
+    coverage: terrainResult.screenshot.coverage,
+    renderer: "original INI::load Terrain.ini terrain texture mappings + MapsZH MD_GLA03 -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> HeightMapRenderObjClass -> browser D3D8/WebGL2",
     browserEventCount: browserEvents.length,
   }, null, 2));
 } finally {

@@ -26,8 +26,11 @@
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
 #include "GameClient/View.h"
+#include "GameClient/Water.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DScene.h"
+#include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "W3DDevice/GameClient/TileData.h"
 #include "W3DDevice/GameClient/W3DTerrainBackground.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
@@ -58,12 +61,17 @@ std::string g_ww3d_terrain_map_patch_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
+constexpr int kMapPatchCells = 32;
+constexpr int kMapPatchVertices = kMapPatchCells + 1;
 constexpr int kViewportWidth = 800;
 constexpr int kViewportHeight = 600;
 constexpr unsigned int kExpectedFlatTextureSize = kMapCells * 8;
+constexpr unsigned int kMapPatchExpectedFlatTextureSize = kMapPatchCells * 8;
 constexpr const char *kArchiveTerrainTileEntry = "Art\\Terrain\\PTBlossom01.tga";
-constexpr const char *kArchiveTerrainMapEntry = "Maps\\Tournament Desert\\Tournament Desert.map";
+constexpr const char *kArchiveTerrainMapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
+constexpr const char *kArchiveDefaultTerrainIniEntry = "Data\\INI\\Default\\Terrain.ini";
 constexpr const char *kArchiveTerrainIniEntry = "Data\\INI\\Terrain.ini";
+constexpr int kTextureClassDiagnosticsLimit = 6;
 
 bool succeeded(int result)
 {
@@ -73,6 +81,37 @@ bool succeeded(int result)
 const char *bool_json(bool value)
 {
 	return value ? "true" : "false";
+}
+
+std::string json_string(const std::string &value)
+{
+	std::string escaped;
+	escaped.reserve(value.size() + 2);
+	escaped.push_back('"');
+	for (char ch : value) {
+		switch (ch) {
+			case '\\':
+				escaped += "\\\\";
+				break;
+			case '"':
+				escaped += "\\\"";
+				break;
+			case '\n':
+				escaped += "\\n";
+				break;
+			case '\r':
+				escaped += "\\r";
+				break;
+			case '\t':
+				escaped += "\\t";
+				break;
+			default:
+				escaped.push_back(ch);
+				break;
+		}
+	}
+	escaped.push_back('"');
+	return escaped;
 }
 
 void split_archive_path_for_probe(
@@ -149,6 +188,8 @@ struct ProbeTerrainMapPatchLoad
 	bool iniArchiveLoaded = false;
 	bool mapsArchiveLoaded = false;
 	bool terrainArchiveLoaded = false;
+	bool defaultTerrainIniExists = false;
+	bool defaultTerrainIniParsed = false;
 	bool terrainIniExists = false;
 	bool terrainIniParsed = false;
 	bool nameKeysReady = false;
@@ -176,11 +217,26 @@ struct ProbeTerrainMapPatchLoad
 	Int drawHeight = 0;
 	Int patchOriginX = 0;
 	Int patchOriginY = 0;
-	Int patchCells = kMapCells;
+	Int patchCells = kMapPatchCells;
 	UnsignedByte firstHeight = 0;
 	UnsignedByte patchCenterHeight = 0;
 	unsigned long heightChecksum = 0;
 	unsigned long patchHeightChecksum = 0;
+	Int bitmapTileCount = 0;
+	Int textureClassCount = 0;
+	Int sourceTilesLoaded = 0;
+	Int sourceTilesPositioned = 0;
+	Int patchTileCells = 0;
+	Int patchTilesWithSource = 0;
+	Int patchTilesMissingSource = 0;
+	Int firstPatchTileIndex = -1;
+	Int firstPatchBaseTileIndex = -1;
+	Int firstPatchTextureClass = -1;
+	Int firstPatchTileTextureX = 0;
+	Int firstPatchTileTextureY = 0;
+	bool firstPatchSourceTileLoaded = false;
+	std::string firstPatchTextureClassName;
+	std::string textureClassesJson = "[]";
 	WorldHeightMap *map = nullptr;
 };
 
@@ -278,6 +334,272 @@ std::size_t count_terrain_types(TerrainTypeCollection *terrain_types)
 	return count;
 }
 
+void record_patch_height_metrics(ProbeTerrainMapPatchLoad &load);
+
+class ProbeWorldHeightMapInspector : public WorldHeightMap
+{
+public:
+	static void recordTextureClassLoadMetrics(
+		WorldHeightMap *map,
+		TerrainTypeCollection *terrain_types,
+		FileSystem *file_system,
+		ProbeTerrainMapPatchLoad &load)
+	{
+		if (map == nullptr) {
+			return;
+		}
+
+		ProbeWorldHeightMapInspector *probe =
+			reinterpret_cast<ProbeWorldHeightMapInspector *>(map);
+		load.bitmapTileCount = probe->m_numBitmapTiles;
+		load.textureClassCount = probe->m_numTextureClasses;
+		load.sourceTilesLoaded = 0;
+		for (Int index = 0; index < probe->m_numBitmapTiles && index < NUM_SOURCE_TILES; ++index) {
+			if (probe->m_sourceTiles[index] != nullptr) {
+				++load.sourceTilesLoaded;
+			}
+		}
+
+		std::string classes_json = "[";
+		const Int sample_count = std::min(probe->m_numTextureClasses, kTextureClassDiagnosticsLimit);
+		for (Int class_index = 0; class_index < sample_count; ++class_index) {
+			TXTextureClass &texture_class = probe->m_textureClasses[class_index];
+			TerrainType *terrain = terrain_types != nullptr
+				? terrain_types->findTerrain(texture_class.name)
+				: nullptr;
+			std::string texture_name = terrain != nullptr ? terrain->getTexture().str() : "";
+			std::string texture_path = texture_name.empty()
+				? ""
+				: std::string(TERRAIN_TGA_DIR_PATH) + texture_name;
+			bool path_exists = false;
+			bool path_openable = false;
+			Int path_bytes = 0;
+			if (!texture_path.empty() && file_system != nullptr) {
+				FileInfo texture_info = {};
+				path_exists =
+					file_system->getFileInfo(AsciiString(texture_path.c_str()), &texture_info) &&
+					texture_info.sizeHigh == 0 &&
+					texture_info.sizeLow > 0;
+				path_bytes = path_exists ? texture_info.sizeLow : 0;
+				File *texture_file = file_system->openFile(texture_path.c_str(), File::READ | File::BINARY);
+				path_openable = texture_file != nullptr;
+				if (texture_file != nullptr) {
+					texture_file->close();
+				}
+			}
+
+			Int loaded_tiles = 0;
+			const Int first_tile = texture_class.firstTile;
+			const Int last_tile = first_tile + texture_class.numTiles;
+			for (Int tile_index = std::max(0, first_tile);
+					tile_index < last_tile && tile_index < NUM_SOURCE_TILES;
+					++tile_index) {
+				if (probe->m_sourceTiles[tile_index] != nullptr) {
+					++loaded_tiles;
+				}
+			}
+
+			char class_buffer[1200];
+			std::snprintf(
+				class_buffer,
+				sizeof(class_buffer),
+				"%s{\"index\":%d,\"name\":%s,\"firstTile\":%d,"
+				"\"numTiles\":%d,\"width\":%d,\"terrainFound\":%s,"
+				"\"texture\":%s,\"path\":%s,\"pathExists\":%s,"
+				"\"pathOpenable\":%s,\"pathBytes\":%d,\"loadedTiles\":%d}",
+				class_index > 0 ? "," : "",
+				class_index,
+				json_string(texture_class.name.str()).c_str(),
+				texture_class.firstTile,
+				texture_class.numTiles,
+				texture_class.width,
+				bool_json(terrain != nullptr),
+				json_string(texture_name).c_str(),
+				json_string(texture_path).c_str(),
+				bool_json(path_exists),
+				bool_json(path_openable),
+				path_bytes,
+				loaded_tiles);
+			classes_json += class_buffer;
+		}
+		classes_json += "]";
+		load.textureClassesJson = classes_json;
+	}
+
+	static void selectLoadedPatchOrigin(WorldHeightMap *map, ProbeTerrainMapPatchLoad &load)
+	{
+		if (map == nullptr || load.width <= 0 || load.height <= 0) {
+			return;
+		}
+
+		ProbeWorldHeightMapInspector *probe =
+			reinterpret_cast<ProbeWorldHeightMapInspector *>(map);
+		if (probe->m_tileNdxes == nullptr) {
+			return;
+		}
+
+		const Int width = probe->m_width;
+		const Int height = probe->m_height;
+		if (width <= 0 || height <= 0) {
+			return;
+		}
+
+		std::vector<Int> prefix(static_cast<std::size_t>((width + 1) * (height + 1)), 0);
+		auto prefix_at = [width, &prefix](Int x, Int y) -> Int& {
+			return prefix[static_cast<std::size_t>(y * (width + 1) + x)];
+		};
+
+		for (Int y = 0; y < height; ++y) {
+			Int row_count = 0;
+			for (Int x = 0; x < width; ++x) {
+				const Short tile_index = probe->m_tileNdxes[y * width + x];
+				const Short base_index = tile_index >> 2;
+				const bool source_loaded =
+					base_index >= 0 &&
+					base_index < NUM_SOURCE_TILES &&
+					probe->m_sourceTiles[base_index] != nullptr;
+				if (source_loaded) {
+					++row_count;
+				}
+				prefix_at(x + 1, y + 1) = prefix_at(x + 1, y) + row_count;
+			}
+		}
+
+		auto loaded_count = [&prefix_at](Int x0, Int y0, Int x1, Int y1) -> Int {
+			return prefix_at(x1, y1) - prefix_at(x0, y1) - prefix_at(x1, y0) + prefix_at(x0, y0);
+		};
+
+		const Int max_origin_x = std::max(0, width - load.patchCells);
+		const Int max_origin_y = std::max(0, height - load.patchCells);
+		Int best_origin_x = load.patchOriginX;
+		Int best_origin_y = load.patchOriginY;
+		Int best_score = -1;
+		Int best_loaded = -1;
+
+		for (Int origin_y = 0; origin_y <= max_origin_y; ++origin_y) {
+			for (Int origin_x = 0; origin_x <= max_origin_x; ++origin_x) {
+				const Int x1 = std::min(origin_x + load.patchCells, width);
+				const Int y1 = std::min(origin_y + load.patchCells, height);
+				const Int cells_loaded = loaded_count(origin_x, origin_y, x1, y1);
+				if (cells_loaded <= 0) {
+					continue;
+				}
+
+				const Int center_x = std::min(origin_x + (load.patchCells / 2), width - 1);
+				const Int center_y = std::min(origin_y + (load.patchCells / 2), height - 1);
+				const Int center_loaded = loaded_count(center_x, center_y, center_x + 1, center_y + 1);
+				const Int score = cells_loaded + center_loaded * load.patchCells * load.patchCells;
+				if (score > best_score ||
+						(score == best_score && cells_loaded > best_loaded)) {
+					best_score = score;
+					best_loaded = cells_loaded;
+					best_origin_x = origin_x;
+					best_origin_y = origin_y;
+				}
+			}
+		}
+
+		if (best_score >= 0) {
+			load.patchOriginX = best_origin_x;
+			load.patchOriginY = best_origin_y;
+			record_patch_height_metrics(load);
+		}
+	}
+
+	static void recordRenderedTileMetrics(WorldHeightMap *map, ProbeTerrainMapPatchLoad &load)
+	{
+		if (map == nullptr) {
+			return;
+		}
+
+		ProbeWorldHeightMapInspector *probe =
+			reinterpret_cast<ProbeWorldHeightMapInspector *>(map);
+		load.sourceTilesPositioned = 0;
+		for (Int index = 0; index < probe->m_numBitmapTiles && index < NUM_SOURCE_TILES; ++index) {
+			TileData *tile = probe->m_sourceTiles[index];
+			if (tile != nullptr &&
+					(tile->m_tileLocationInTexture.x != 0 ||
+					 tile->m_tileLocationInTexture.y != 0)) {
+				++load.sourceTilesPositioned;
+			}
+		}
+
+		load.patchTileCells = 0;
+		load.patchTilesWithSource = 0;
+		load.patchTilesMissingSource = 0;
+		load.firstPatchTileIndex = -1;
+		load.firstPatchBaseTileIndex = -1;
+		load.firstPatchTextureClass = -1;
+		load.firstPatchTileTextureX = 0;
+		load.firstPatchTileTextureY = 0;
+		load.firstPatchSourceTileLoaded = false;
+		load.firstPatchTextureClassName.clear();
+
+		if (probe->m_tileNdxes == nullptr || probe->m_width <= 0 || probe->m_height <= 0) {
+			return;
+		}
+
+		for (Int y = 0; y < load.patchCells && load.patchOriginY + y < probe->m_height; ++y) {
+			for (Int x = 0; x < load.patchCells && load.patchOriginX + x < probe->m_width; ++x) {
+				const Int map_index = (load.patchOriginY + y) * probe->m_width + load.patchOriginX + x;
+				const Short tile_index = probe->m_tileNdxes[map_index];
+				const Short base_index = tile_index >> 2;
+				const bool source_loaded =
+					base_index >= 0 &&
+					base_index < NUM_SOURCE_TILES &&
+					probe->m_sourceTiles[base_index] != nullptr;
+				++load.patchTileCells;
+				if (source_loaded) {
+					++load.patchTilesWithSource;
+				} else {
+					++load.patchTilesMissingSource;
+				}
+
+				if (load.firstPatchTileIndex < 0) {
+					load.firstPatchTileIndex = tile_index;
+					load.firstPatchBaseTileIndex = base_index;
+					load.firstPatchSourceTileLoaded = source_loaded;
+					if (source_loaded) {
+						load.firstPatchTileTextureX =
+							probe->m_sourceTiles[base_index]->m_tileLocationInTexture.x;
+						load.firstPatchTileTextureY =
+							probe->m_sourceTiles[base_index]->m_tileLocationInTexture.y;
+					}
+					for (Int class_index = 0; class_index < probe->m_numTextureClasses; ++class_index) {
+						TXTextureClass &texture_class = probe->m_textureClasses[class_index];
+						if (base_index >= texture_class.firstTile &&
+								base_index < texture_class.firstTile + texture_class.numTiles) {
+							load.firstPatchTextureClass = class_index;
+							load.firstPatchTextureClassName = texture_class.name.str();
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+};
+
+void record_patch_height_metrics(ProbeTerrainMapPatchLoad &load)
+{
+	if (load.map == nullptr || load.map->getDataPtr() == nullptr || load.width <= 0 || load.height <= 0) {
+		return;
+	}
+
+	const Int center_x = std::min(load.patchOriginX + (load.patchCells / 2), load.width - 1);
+	const Int center_y = std::min(load.patchOriginY + (load.patchCells / 2), load.height - 1);
+	load.patchCenterHeight = load.map->getHeight(center_x, center_y);
+
+	unsigned long checksum = 2166136261UL;
+	for (Int y = 0; y <= load.patchCells && load.patchOriginY + y < load.height; ++y) {
+		for (Int x = 0; x <= load.patchCells && load.patchOriginX + x < load.width; ++x) {
+			checksum ^= load.map->getHeight(load.patchOriginX + x, load.patchOriginY + y);
+			checksum *= 16777619UL;
+		}
+	}
+	load.patchHeightChecksum = checksum;
+}
+
 void record_parsed_map_metrics(ProbeTerrainMapPatchLoad &load)
 {
 	if (load.map == nullptr || load.map->getDataPtr() == nullptr) {
@@ -297,18 +619,7 @@ void record_parsed_map_metrics(ProbeTerrainMapPatchLoad &load)
 	const Int max_origin_y = std::max(0, load.height - (load.patchCells + 1));
 	load.patchOriginX = std::min(std::max(load.border, 0), max_origin_x);
 	load.patchOriginY = std::min(std::max(load.border, 0), max_origin_y);
-	const Int center_x = std::min(load.patchOriginX + (load.patchCells / 2), load.width - 1);
-	const Int center_y = std::min(load.patchOriginY + (load.patchCells / 2), load.height - 1);
-	load.patchCenterHeight = load.map->getHeight(center_x, center_y);
-
-	unsigned long checksum = 2166136261UL;
-	for (Int y = 0; y <= load.patchCells && load.patchOriginY + y < load.height; ++y) {
-		for (Int x = 0; x <= load.patchCells && load.patchOriginX + x < load.width; ++x) {
-			checksum ^= load.map->getHeight(load.patchOriginX + x, load.patchOriginY + y);
-			checksum *= 16777619UL;
-		}
-	}
-	load.patchHeightChecksum = checksum;
+	record_patch_height_metrics(load);
 }
 
 WorldHeightMap *load_archive_terrain_map_patch(
@@ -353,6 +664,12 @@ WorldHeightMap *load_archive_terrain_map_patch(
 		load.iniArchiveMask);
 
 	if (load.iniArchiveLoaded && TheFileSystem != nullptr) {
+		FileInfo default_terrain_ini_info = {};
+		load.defaultTerrainIniExists =
+			archive_file_system.getFileInfo(AsciiString(kArchiveDefaultTerrainIniEntry), &default_terrain_ini_info) &&
+			default_terrain_ini_info.sizeHigh == 0 &&
+			default_terrain_ini_info.sizeLow > 0;
+
 		FileInfo terrain_ini_info = {};
 		load.terrainIniExists =
 			archive_file_system.getFileInfo(AsciiString(kArchiveTerrainIniEntry), &terrain_ini_info) &&
@@ -370,6 +687,11 @@ WorldHeightMap *load_archive_terrain_map_patch(
 						// The focused browser target needs the constructed separator table read before INI::load tokenizes.
 						volatile const char *ini_separators = ini->getSeps();
 						(void)ini_separators;
+						if (load.defaultTerrainIniExists) {
+							AsciiString default_terrain_ini_entry(kArchiveDefaultTerrainIniEntry);
+							ini->load(default_terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
+							load.defaultTerrainIniParsed = true;
+						}
 						ini->load(terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
 					}
 					load.terrainTypeCount = count_terrain_types(terrain_types);
@@ -430,6 +752,12 @@ WorldHeightMap *load_archive_terrain_map_patch(
 				load.map = NEW WorldHeightMap(&stream);
 				load.mapParsed = load.map != nullptr;
 				record_parsed_map_metrics(load);
+				ProbeWorldHeightMapInspector::recordTextureClassLoadMetrics(
+					load.map,
+					terrain_types,
+					TheFileSystem,
+					load);
+				ProbeWorldHeightMapInspector::selectLoadedPatchOrigin(load.map, load);
 			} catch (...) {
 				load.mapParseException = true;
 				REF_PTR_RELEASE(load.map);
@@ -658,8 +986,10 @@ void configure_global_data(GlobalData &global_data)
 	global_data.m_useCloudMap = FALSE;
 	global_data.m_useLightMap = FALSE;
 	global_data.m_showSoftWaterEdge = FALSE;
-	global_data.m_drawEntireTerrain = TRUE;
+	global_data.m_use3WayTerrainBlends = FALSE;
+	global_data.m_drawEntireTerrain = FALSE;
 	global_data.m_stretchTerrain = FALSE;
+	global_data.m_timeOfDay = TIME_OF_DAY_AFTERNOON;
 	global_data.m_numGlobalLights = 1;
 	global_data.m_terrainAmbient[0].red = 0.28f;
 	global_data.m_terrainAmbient[0].green = 0.32f;
@@ -675,6 +1005,14 @@ void configure_global_data(GlobalData &global_data)
 } // namespace
 
 View *TheTacticalView __attribute__((weak)) = nullptr;
+class WaterRenderObjClass;
+class TerrainTracksRenderObjClassSystem;
+class W3DSmudgeManager;
+class W3DProjectedShadowManager;
+WaterRenderObjClass *TheWaterRenderObj __attribute__((weak)) = nullptr;
+TerrainTracksRenderObjClassSystem *TheTerrainTracksRenderObjClassSystem __attribute__((weak)) = nullptr;
+W3DSmudgeManager *TheSmudgeManager __attribute__((weak)) = nullptr;
+W3DProjectedShadowManager *TheW3DProjectedShadowManager __attribute__((weak)) = nullptr;
 
 RefRenderObjListIterator *__attribute__((weak)) RTS3DScene::createLightsIterator()
 {
@@ -1004,13 +1342,14 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 
 	int init_result = WW3D_ERROR_GENERIC;
 	int set_device_result = WW3D_ERROR_GENERIC;
+	int init_height_data_result = WW3D_ERROR_GENERIC;
 	int begin_render_result = WW3D_ERROR_GENERIC;
 	int render_result = WW3D_ERROR_GENERIC;
 	int end_render_result = WW3D_ERROR_GENERIC;
 	bool map_created = false;
-	bool tile_created = false;
-	bool owner_created = false;
+	bool water_transparency_ready = false;
 	bool render_object_created = false;
+	bool render_object_initialized = false;
 	bool scene_created = false;
 	bool scene_object_added = false;
 
@@ -1030,12 +1369,14 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		}
 	}
 
-	ProbeTerrainBackground *tile = nullptr;
-	ProbeTerrainDiffuseOwner *diffuse_owner = nullptr;
+	WaterTransparencySetting *old_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+	WaterTransparencySetting *probe_water_transparency = nullptr;
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
-	ProbeTerrainTileRenderObj *render_object = nullptr;
+	HeightMapRenderObjClass *render_object = nullptr;
 	RTS3DScene *scene = nullptr;
 	CameraClass *camera = nullptr;
+	bool shader_manager_initialized = false;
 
 	if (map_created && global_data != nullptr) {
 		init_result = WW3D::Init(nullptr, nullptr, false);
@@ -1047,40 +1388,66 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 
 	if (succeeded(set_device_result) && map_created) {
 		WW3D::Set_Thumbnail_Enabled(false);
+		W3DShaderManager::init();
+		shader_manager_initialized = true;
 
-		diffuse_owner = ProbeTerrainDiffuseOwner::create(map);
-		owner_created = diffuse_owner != nullptr;
-		if (owner_created) {
-			TheTerrainRenderObject = diffuse_owner;
+		if (old_water_transparency != nullptr) {
+			water_transparency_ready = true;
+		} else {
+			probe_water_transparency = newInstance(WaterTransparencySetting);
+			TheWaterTransparency = probe_water_transparency;
+			water_transparency_ready = probe_water_transparency != nullptr;
 		}
-	}
-
-	if (owner_created) {
-		tile = W3DNEW ProbeTerrainBackground();
-		tile_created = tile != nullptr;
-	}
-
-	if (tile_created) {
-		IRegion2D full_range = {};
-		full_range.lo.x = map_load.patchOriginX;
-		full_range.lo.y = map_load.patchOriginY;
-		full_range.hi.x = map_load.patchOriginX + map_load.patchCells;
-		full_range.hi.y = map_load.patchOriginY + map_load.patchCells;
-		tile->allocateTerrainBuffers(map, map_load.patchOriginX, map_load.patchOriginY, map_load.patchCells);
-		tile->setFlip(map);
-		tile->doPartialUpdate(full_range, map, TRUE);
 
 		camera = W3DNEW CameraClass();
 		if (camera != nullptr) {
 			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
 			camera->Set_Clip_Planes(1.0f, 1000.0f);
+			const float terrain_center_z =
+				static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE - 180.0f;
+			Matrix3D camera_transform(true);
+			camera_transform.Look_At(
+				Vector3(0.0f, static_cast<float>(kMapPatchCells) * MAP_XY_FACTOR * 1.5f, terrain_center_z + 240.0f),
+				Vector3(0.0f, 0.0f, terrain_center_z),
+				0.0f);
+			camera->Set_Transform(camera_transform);
 		}
 
-		render_object = W3DNEW ProbeTerrainTileRenderObj(tile, FALSE);
-		render_object_created = render_object != nullptr && camera != nullptr;
+		if (water_transparency_ready && camera != nullptr) {
+			map->setDrawWidth(kMapPatchVertices);
+			map->setDrawHeight(kMapPatchVertices);
+			map->setDrawOrg(map_load.patchOriginX, map_load.patchOriginY);
+
+			render_object = NEW_REF(HeightMapRenderObjClass, ());
+			render_object_created = render_object != nullptr;
+			if (render_object_created) {
+				Matrix3D terrain_transform(true);
+				const float patch_center_x =
+					(static_cast<float>(map_load.patchOriginX) +
+					 static_cast<float>(kMapPatchCells) * 0.5f -
+					 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+				const float patch_center_y =
+					(static_cast<float>(map_load.patchOriginY) +
+					 static_cast<float>(kMapPatchCells) * 0.5f -
+					 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+				terrain_transform.Set_Translation(Vector3(
+					-patch_center_x,
+					-patch_center_y,
+					-180.0f));
+				render_object->Set_Transform(terrain_transform);
+				TheTerrainRenderObject = render_object;
+				init_height_data_result = render_object->initHeightData(
+					map->getDrawWidth(),
+					map->getDrawHeight(),
+					map,
+					nullptr,
+					TRUE);
+				render_object_initialized = init_height_data_result == 0;
+			}
+		}
 	}
 
-	if (render_object_created) {
+	if (render_object_initialized) {
 		scene = NEW_REF(RTS3DScene, ());
 		scene_created = scene != nullptr;
 		if (scene_created) {
@@ -1097,6 +1464,8 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		}
 	}
 
+	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
+
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
 	const bool ok =
 		state != nullptr &&
@@ -1112,15 +1481,16 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		map_load.mapStreamOpen &&
 		map_created &&
 		map_load.mapBytes > 0 &&
-		map_load.width > kMapCells &&
-		map_load.height > kMapCells &&
+		map_load.width > kMapPatchCells &&
+		map_load.height > kMapPatchCells &&
 		map_load.heightChecksum > 0 &&
 		map_load.patchHeightChecksum > 0 &&
-		tile_created &&
-		owner_created &&
+		water_transparency_ready &&
 		render_object_created &&
+		render_object_initialized &&
 		scene_created &&
 		scene_object_added &&
+		init_height_data_result == 0 &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
@@ -1138,15 +1508,23 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		state->last_draw_vertex_shader == DX8_FVF_XYZDUV2 &&
 		(state->last_draw_transform_mask & 7u) == 7u;
 
-	char buffer[9000];
+	const std::string first_patch_texture_class_json =
+		json_string(map_load.firstPatchTextureClassName);
+	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
+
+	char buffer[16000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_map_patch_scene_probe\","
 		"\"ok\":%s,"
-		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,\"beginRender\":%d,"
-		"\"render\":%d,\"endRender\":%d,\"mapCreated\":%s,\"tileCreated\":%s,"
-		"\"ownerCreated\":%s,\"renderObjectCreated\":%s},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"initHeightData\":%d,\"beginRender\":%d,"
+		"\"render\":%d,\"endRender\":%d,\"mapCreated\":%s,"
+			"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
+			"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s},"
 		"\"ini\":{\"attempted\":%s,\"argumentSupplied\":%s,"
 		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
+		"\"defaultEntry\":\"Data\\\\INI\\\\Default\\\\Terrain.ini\","
+		"\"defaultEntryExists\":%s,\"defaultEntryParsed\":%s,"
 		"\"entry\":\"Data\\\\INI\\\\Terrain.ini\",\"loaded\":%s,"
 		"\"entryExists\":%s,\"parsed\":%s,"
 		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
@@ -1156,17 +1534,30 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"directory\":\"%s\",\"mask\":\"%s\",\"loaded\":%s},"
 		"\"terrain\":{\"argumentSupplied\":%s,\"path\":\"%s\","
 		"\"directory\":\"%s\",\"mask\":\"%s\",\"loaded\":%s}},"
-		"\"map\":{\"entry\":\"Maps\\\\Tournament Desert\\\\Tournament Desert.map\","
+		"\"map\":{\"entry\":%s,"
 		"\"entryExists\":%s,\"entryOpenable\":%s,\"streamOpen\":%s,"
 		"\"parsed\":%s,\"parseException\":%s,\"bytes\":%d,"
 		"\"width\":%d,\"height\":%d,\"border\":%d,\"drawWidth\":%d,"
 		"\"drawHeight\":%d,\"firstHeight\":%u,\"heightChecksum\":%lu},"
 		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
 		"\"expectedFlatTextureSize\":%u,\"tileSource\":\"shipped-map-heightmap\","
+		"\"renderObject\":\"HeightMapRenderObjClass\","
+		"\"renderWindowWidth\":%d,\"renderWindowHeight\":%d,"
+		"\"renderOriginX\":%d,\"renderOriginY\":%d,"
 		"\"patchOriginX\":%d,\"patchOriginY\":%d,\"patchCenterHeight\":%u,"
-		"\"patchHeightChecksum\":%lu},"
+		"\"patchHeightChecksum\":%lu,"
+		"\"tileDiagnostics\":{\"bitmapTiles\":%d,\"textureClasses\":%d,"
+		"\"sourceTilesLoaded\":%d,\"sourceTilesPositioned\":%d,"
+		"\"patchCells\":%d,\"patchCellsWithSource\":%d,"
+		"\"patchCellsMissingSource\":%d,"
+		"\"firstPatchTile\":{\"tileIndex\":%d,\"baseTileIndex\":%d,"
+		"\"sourceTileLoaded\":%s,\"textureClass\":%d,"
+		"\"textureClassName\":%s,\"texturePositionX\":%d,"
+		"\"texturePositionY\":%d},"
+		"\"sampleTextureClasses\":%s}},"
 		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
-		"RTS3DScene::Customized_Render -> CLASSID_TILEMAP Render\","
+		"RTS3DScene::Customized_Render -> CLASSID_TILEMAP Render -> "
+		"HeightMapRenderObjClass::Render\","
 		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
@@ -1189,18 +1580,22 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		bool_json(ok),
 		init_result,
 		set_device_result,
+		init_height_data_result,
 		begin_render_result,
 		render_result,
 		end_render_result,
 		bool_json(map_created),
-		bool_json(tile_created),
-		bool_json(owner_created),
+		bool_json(water_transparency_ready),
+		bool_json(shader_manager_initialized),
 		bool_json(render_object_created),
+		bool_json(render_object_initialized),
 		bool_json(map_load.attempted),
 		bool_json(map_load.iniArgumentSupplied),
 		map_load.iniArchivePath.c_str(),
 		map_load.iniArchiveDirectory.c_str(),
 		map_load.iniArchiveMask.c_str(),
+		bool_json(map_load.defaultTerrainIniExists),
+		bool_json(map_load.defaultTerrainIniParsed),
 		bool_json(map_load.iniArchiveLoaded),
 		bool_json(map_load.terrainIniExists),
 		bool_json(map_load.terrainIniParsed),
@@ -1217,6 +1612,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		map_load.terrainArchiveDirectory.c_str(),
 		map_load.terrainArchiveMask.c_str(),
 		bool_json(map_load.terrainArchiveLoaded),
+		terrain_map_entry_json.c_str(),
 		bool_json(map_load.mapEntryExists),
 		bool_json(map_load.mapEntryOpenable),
 		bool_json(map_load.mapStreamOpen),
@@ -1230,13 +1626,32 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		map_load.drawHeight,
 		map_load.firstHeight,
 		static_cast<unsigned long>(map_load.heightChecksum),
-		kMapVertices,
-		kMapCells,
-		kExpectedFlatTextureSize,
+		kMapPatchVertices,
+		kMapPatchCells,
+		kMapPatchExpectedFlatTextureSize,
+		map != nullptr ? map->getDrawWidth() : 0,
+		map != nullptr ? map->getDrawHeight() : 0,
+		map != nullptr ? map->getDrawOrgX() : 0,
+		map != nullptr ? map->getDrawOrgY() : 0,
 		map_load.patchOriginX,
 		map_load.patchOriginY,
 		map_load.patchCenterHeight,
 		static_cast<unsigned long>(map_load.patchHeightChecksum),
+		map_load.bitmapTileCount,
+		map_load.textureClassCount,
+		map_load.sourceTilesLoaded,
+		map_load.sourceTilesPositioned,
+		map_load.patchTileCells,
+		map_load.patchTilesWithSource,
+		map_load.patchTilesMissingSource,
+		map_load.firstPatchTileIndex,
+		map_load.firstPatchBaseTileIndex,
+		bool_json(map_load.firstPatchSourceTileLoaded),
+		map_load.firstPatchTextureClass,
+		first_patch_texture_class_json.c_str(),
+		map_load.firstPatchTileTextureX,
+		map_load.firstPatchTileTextureY,
+		map_load.textureClassesJson.c_str(),
 		bool_json(scene_created),
 		bool_json(scene_object_added),
 		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
@@ -1295,13 +1710,18 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	REF_PTR_RELEASE(scene);
 	REF_PTR_RELEASE(render_object);
 	REF_PTR_RELEASE(camera);
-	delete tile;
-	ProbeTerrainDiffuseOwner::destroy(diffuse_owner);
 	TheTerrainRenderObject = old_terrain_render_object;
+	TheWaterTransparency = old_water_transparency;
+	if (probe_water_transparency != nullptr &&
+			probe_water_transparency != old_water_transparency) {
+		probe_water_transparency->deleteInstance();
+	}
 	REF_PTR_RELEASE(map_load.map);
 	map = nullptr;
 
 	if (succeeded(init_result)) {
+		if (shader_manager_initialized)
+			W3DShaderManager::shutdown();
 		wasm_shutdown_ww3d_probe();
 	}
 

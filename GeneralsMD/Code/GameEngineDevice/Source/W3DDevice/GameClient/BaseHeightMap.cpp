@@ -290,19 +290,30 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	TheTerrainRenderObject = this;
 	m_treeBuffer = NULL; 
 
+#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_treeBuffer = NEW W3DTreeBuffer;
+#endif
 
 	m_propBuffer = NULL; 
 
+#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_propBuffer = NEW W3DPropBuffer;
+#endif
 
 
 	m_bibBuffer = NULL;
+#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_bibBuffer = NEW W3DBibBuffer;
+#endif
 	m_curImpassableSlope = 45.0f;	// default to 45 degrees.
 	m_bridgeBuffer = NULL;
+#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_bridgeBuffer = NEW W3DBridgeBuffer;
+#endif
+	m_waypointBuffer = NULL;
+#ifndef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
 	m_waypointBuffer = NEW W3DWaypointBuffer;
+#endif
 #ifdef DO_ROADS
 	m_roadBuffer = NULL;
 	m_roadBuffer = NEW W3DRoadBuffer;
@@ -313,7 +324,9 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	m_scorchTexture = NULL;
 	clearAllScorches();
 #endif
-#if defined(_DEBUG) || defined(_INTERNAL)
+#ifdef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
+	m_shroud = NULL;
+#elif defined(_DEBUG) || defined(_INTERNAL)
 	if (TheGlobalData->m_shroudOn)
 		m_shroud = NEW W3DShroud;
 	else
@@ -384,7 +397,9 @@ void BaseHeightMapRenderObjClass::adjustTerrainLOD(Int adj)
 																					 NULL);
 		TheTerrainRenderObject = newROBJ;
 		newROBJ->staticLightingChanged();
+#ifdef DO_ROADS
 		newROBJ->m_roadBuffer->loadRoads();
+#endif
 	}
 	if (TheTacticalView) {
 		TheTacticalView->setAngle(TheTacticalView->getAngle() + 1);
@@ -2298,9 +2313,10 @@ void BaseHeightMapRenderObjClass::notifyShroudChanged(void)
 /** Adds a terrainBib to the bib buffer.*/
 //=============================================================================
 void BaseHeightMapRenderObjClass::addTerrainBib(Vector3 corners[4], 
-																						ObjectID id, Bool highlight)
+																							ObjectID id, Bool highlight)
 {
-	m_bibBuffer->addBib(corners, id, highlight); 
+	if (m_bibBuffer)
+		m_bibBuffer->addBib(corners, id, highlight);
 };
 
 //=============================================================================
@@ -2309,9 +2325,10 @@ void BaseHeightMapRenderObjClass::addTerrainBib(Vector3 corners[4],
 /** Adds a terrainBib to the bib buffer.*/
 //=============================================================================
 void BaseHeightMapRenderObjClass::addTerrainBibDrawable(Vector3 corners[4], 
-																						DrawableID id, Bool highlight)
+																							DrawableID id, Bool highlight)
 {
-	m_bibBuffer->addBibDrawable(corners, id, highlight); 
+	if (m_bibBuffer)
+		m_bibBuffer->addBibDrawable(corners, id, highlight);
 };
 
 //=============================================================================
@@ -2321,7 +2338,8 @@ void BaseHeightMapRenderObjClass::addTerrainBibDrawable(Vector3 corners[4],
 //=============================================================================
 void BaseHeightMapRenderObjClass::removeTerrainBibHighlighting()
 {
-	m_bibBuffer->removeHighlighting(  ); 
+	if (m_bibBuffer)
+		m_bibBuffer->removeHighlighting(  );
 };
 
 //=============================================================================
@@ -2331,7 +2349,8 @@ void BaseHeightMapRenderObjClass::removeTerrainBibHighlighting()
 //=============================================================================
 void BaseHeightMapRenderObjClass::removeAllTerrainBibs()
 {
-	m_bibBuffer->clearAllBibs(  ); 
+	if (m_bibBuffer)
+		m_bibBuffer->clearAllBibs(  );
 };
 
 //=============================================================================
@@ -2341,7 +2360,8 @@ void BaseHeightMapRenderObjClass::removeAllTerrainBibs()
 //=============================================================================
 void BaseHeightMapRenderObjClass::removeTerrainBib(ObjectID id)
 {
-	m_bibBuffer->removeBib( id ); 
+	if (m_bibBuffer)
+		m_bibBuffer->removeBib( id );
 };
 
 //=============================================================================
@@ -2351,7 +2371,8 @@ void BaseHeightMapRenderObjClass::removeTerrainBib(ObjectID id)
 //=============================================================================
 void BaseHeightMapRenderObjClass::removeTerrainBibDrawable(DrawableID id)
 {
-	m_bibBuffer->removeBibDrawable( id ); 
+	if (m_bibBuffer)
+		m_bibBuffer->removeBibDrawable( id );
 };
 
 //=============================================================================
@@ -2368,7 +2389,9 @@ void BaseHeightMapRenderObjClass::staticLightingChanged( void )
 	m_scorchesInBuffer = 0; // If we just allocated the buffers, we got no scorches in the buffer.
 	m_curNumScorchVertices=0;
 	m_curNumScorchIndices=0;
+#ifdef DO_ROADS
 	m_roadBuffer->updateLighting();
+#endif
 
 }
 
@@ -2425,12 +2448,15 @@ void BaseHeightMapRenderObjClass::updateCenter(CameraClass *camera , RefRenderOb
 	}
 #endif
 	if (m_needFullUpdate) {
-		m_bridgeBuffer->doFullUpdate();
-		m_bridgeBuffer->updateCenter(camera, pLightsIterator);
+		if (m_bridgeBuffer) {
+			m_bridgeBuffer->doFullUpdate();
+			m_bridgeBuffer->updateCenter(camera, pLightsIterator);
+		}
 		m_updating = false;
 		return;
 	}
-	m_bridgeBuffer->updateCenter(camera, pLightsIterator);
+	if (m_bridgeBuffer)
+		m_bridgeBuffer->updateCenter(camera, pLightsIterator);
 	m_updating = false;
 }
 

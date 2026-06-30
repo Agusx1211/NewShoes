@@ -1072,21 +1072,25 @@ const steps = [
           && payload.archives?.ini?.originalIniParser === true
           && payload.archives?.ini?.terrainTypeCount > 0,
         "terrain map patch scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
-      expect(payload.archives?.maps?.entry === "Maps\\Tournament Desert\\Tournament Desert.map"
+      expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
           && payload.map?.parsed === true
           && payload.map?.bytes > 0
           && payload.map?.width > 16
           && payload.map?.height > 16
           && payload.map?.heightChecksum > 0,
-        "terrain map patch scene render smoke did not parse the shipped Tournament Desert map", payload.map);
+        "terrain map patch scene render smoke did not parse the shipped MD_GLA03 map", payload.map);
       expect(payload.scene?.renderPath?.includes("RTS3DScene::Customized_Render")
           && payload.scene?.created === true
           && payload.scene?.objectAdded === true
           && payload.scene?.terrainClassId === 4,
         "terrain map patch scene render smoke did not use the RTS3DScene terrain-object path", payload.scene);
       expect(payload.terrain?.tileSource === "shipped-map-heightmap"
-          && payload.terrain?.verticesPerSide === 17
-          && payload.terrain?.cellsPerSide === 16
+          && payload.terrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.terrain?.verticesPerSide === 33
+          && payload.terrain?.cellsPerSide === 32
+          && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0
           && payload.terrain?.patchHeightChecksum > 0,
         "terrain map patch scene render smoke did not report real map patch geometry", payload.terrain);
       expect(payload.calls?.browserTextureCreate >= 1
@@ -1096,8 +1100,8 @@ const steps = [
       expect(payload.draw?.vertexShaderFvf === 578
           && payload.draw?.vertexStride === 32,
         "terrain map patch scene render smoke did not use the expected W3D terrain FVF draw", payload.draw);
-      expect((payload.centerPixel ?? []).some((component, index) => index < 3 && component > 8),
-        "terrain map patch scene render smoke did not produce colored browser pixels", payload.centerPixel);
+      expect(payload.coverage?.coloredPixelCount > 0,
+        "terrain map patch scene render smoke did not produce colored browser pixels", payload.coverage);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-map-patch-scene-canvas.png"),
         "terrain map patch scene render smoke did not capture the expected screenshot", payload);
     },
@@ -1207,7 +1211,7 @@ console.log(JSON.stringify({
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
-    "real INIZH.big Terrain.ini texture mappings plus MapsZH.big Tournament Desert height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, W3DTerrainBackground, and browser WebGL2 pixels",
+    "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],

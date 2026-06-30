@@ -72,7 +72,9 @@ class W3DDynamicLight;
 
 #define DO_SCORCH 1
 
+#ifndef CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS
 #define DO_ROADS 1
+#endif
 
 #ifdef DO_SCORCH
 typedef struct {

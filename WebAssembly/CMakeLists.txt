@@ -2297,13 +2297,24 @@ target_compile_options(zh_w3d_display_drawimage_runtime PRIVATE
 
 add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/FlatHeightMap.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/HeightMap.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TerrainTex.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/TileData.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DBibBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DBridgeBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DPropBuffer.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShroud.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/WorldHeightMap.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3dWaypointBuffer.cpp"
 )
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
+  CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS=1
+  CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS=1
   __PRERTS_H__
 )
 
@@ -3942,6 +3953,7 @@ add_executable(cnc-port
   src/wasm_ww3d_scene_probe.cpp
   src/wasm_ww3d_source_asset_probe.cpp
   src/wasm_ww3d_terrain_probe.cpp
+  src/wasm_ww3d_terrain_probe_stubs.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
   src/wasm_wwshade_probe.cpp
   "${GAMEENGINE_GAMENETWORK_DIR}/Network.cpp"
@@ -4033,6 +4045,7 @@ target_link_libraries(cnc-port PRIVATE
   zh_wwlib_refcount
   zh_wwlib_containers
   zh_wwlib_crc
+  zh_wwlib_cpudetect
   zh_wwlib_random
   zh_wwlib_thread
   zh_wwlib_mutex

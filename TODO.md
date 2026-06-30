@@ -680,15 +680,37 @@ shares structure and follows behind.
       dispatch. `test:ww3d-terrain-map-patch-scene` now mounts `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, parses real
       `Data\INI\Terrain.ini` through original `INI::load` /
-      `INITerrain.cpp`, parses `Maps\Tournament Desert\Tournament Desert.map`
-      through original `WorldHeightMap`, and renders a bounded shipped-map
-      height/blend patch through `W3DTerrainBackground` / `RTS3DScene` to
-      browser pixels. The remaining vertical is full real map/height ownership
-      inside
-      `BaseHeightMapRenderObjClass` / `HeightMapRenderObjClass`,
-      `W3DTerrainVisual`, `W3DScene::Customized_Render`, and
-      `DX8Wrapper::Draw_Triangles`; keep the first harness proof to real
-      WebGL-visible terrain pixels before broadening water, shroud, or objects.
+      `INITerrain.cpp`, parses `Maps\MD_GLA03\MD_GLA03.map` through original
+      `WorldHeightMap`, selects a patch with loaded shipped terrain source
+      tiles, initializes the original `HeightMapRenderObjClass`, and verifies
+      its two-pass `DX8Wrapper::Draw_Triangles` submission produces
+      WebGL-visible terrain pixels. The remaining vertical is normal
+      display-owned `W3DTerrainVisual` / `W3DDisplay` terrain ownership for a
+      full map, then broadening water, shroud, objects, and gameplay camera
+      flow on top of the same original heightmap path.
+- [ ] Replace the probe-only
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
+      `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and
+      `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
+      the real tree, prop, bib, bridge, waypoint, shroud, water, and road
+      runtime systems as those subsystems become browser-ready.
+- [ ] Extend runtime asset extraction/mounting to include the base Generals
+      terrain archives (for example `Terrain.big` when supplied) so base maps
+      such as Tournament Desert can render complete terrain texture classes
+      instead of relying on the subset of source-backed ZH campaign patches.
+- [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
+      INI probe and fix the real root cause of the `INI::load` member-read trap.
+      (from Claude note) The warm-up read only masks the symptom; the trap on
+      `INI::m_seps` is likely an ODR / ABI layout mismatch: `INI.cpp` and the
+      focused probe TU disagree on `class INI`'s layout, so the member sits at
+      the wrong offset. Likely cause is `#pragma pack`, the in-progress
+      STLport→libc++ split, or differing `-D` defines/header views between the
+      engine source and the probe. Confirm by logging `sizeof(INI)` (and a
+      member offset) from inside `INI.cpp` vs. the probe TU — if they differ,
+      ODR is proven. Real fix: make both TUs see an identical `INI` (same
+      headers, pack, STL, defines), then drop the warm-up hack. Tracks the
+      STLport→libc++ and pragma-pack items in M1; the same ABI mismatch can
+      resurface in any other probe that links `INI.cpp`.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

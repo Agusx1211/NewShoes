@@ -206,22 +206,6 @@ void __attribute__((weak)) ParticleSystemManager::queueParticleRender()
 {
 }
 
-void __attribute__((weak)) W3DShroudMaterialPassClass::Install_Materials(void) const
-{
-}
-
-void __attribute__((weak)) W3DShroudMaterialPassClass::UnInstall_Materials(void) const
-{
-}
-
-void __attribute__((weak)) W3DMaskMaterialPassClass::Install_Materials(void) const
-{
-}
-
-void __attribute__((weak)) W3DMaskMaterialPassClass::UnInstall_Materials(void) const
-{
-}
-
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
