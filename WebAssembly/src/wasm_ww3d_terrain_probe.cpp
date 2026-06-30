@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -10,8 +11,13 @@
 #include "windows.h"
 #include "mmsystem.h"
 #include "wwvegas_port.h"
+#include "Common/ArchiveFileSystem.h"
+#include "Common/File.h"
+#include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/LocalFileSystem.h"
+#include "Common/MapReaderWriterInfo.h"
 #include "GameClient/View.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/W3DScene.h"
@@ -26,6 +32,8 @@
 #include "vertmaterial.h"
 #include "wasm_d3d8_shim.h"
 #include "wasm_ww3d_probe_lifetime.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -37,12 +45,14 @@
 namespace {
 
 std::string g_ww3d_terrain_tile_probe_json;
+std::string g_ww3d_terrain_tile_archive_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
 constexpr int kViewportWidth = 800;
 constexpr int kViewportHeight = 600;
 constexpr unsigned int kExpectedFlatTextureSize = kMapCells * 8;
+constexpr const char *kArchiveTerrainTileEntry = "Art\\Terrain\\PTBlossom01.tga";
 
 bool succeeded(int result)
 {
@@ -52,6 +62,139 @@ bool succeeded(int result)
 const char *bool_json(bool value)
 {
 	return value ? "true" : "false";
+}
+
+void split_archive_path_for_probe(
+	const std::string &archive_path,
+	std::string &directory,
+	std::string &file_mask)
+{
+	std::string normalized = archive_path;
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash == std::string::npos) {
+		directory.clear();
+		file_mask = normalized;
+		return;
+	}
+
+	directory = normalized.substr(0, slash + 1);
+	file_mask = normalized.substr(slash + 1);
+}
+
+unsigned long checksum_bytes(const UnsignedByte *bytes, std::size_t size)
+{
+	unsigned long checksum = 2166136261UL;
+	for (std::size_t index = 0; index < size; ++index) {
+		checksum ^= bytes[index];
+		checksum *= 16777619UL;
+	}
+	return checksum;
+}
+
+class ProbeFileInputStream : public InputStream
+{
+public:
+	explicit ProbeFileInputStream(File *file) : m_file(file) {}
+
+	Int read(void *data, Int num_bytes) override
+	{
+		return m_file != nullptr ? m_file->read(data, num_bytes) : 0;
+	}
+
+private:
+	File *m_file;
+};
+
+struct ProbeTerrainArchiveTileLoad
+{
+	bool attempted = false;
+	bool argumentSupplied = false;
+	bool archiveLoaded = false;
+	bool entryExists = false;
+	bool entryOpenable = false;
+	bool countTilesOk = false;
+	bool readTilesOk = false;
+	Int countedTiles = 0;
+	Int readRows = 1;
+	std::string archivePath;
+	std::string archiveDirectory;
+	std::string archiveMask;
+	UnsignedByte firstPixelB = 0;
+	UnsignedByte firstPixelG = 0;
+	UnsignedByte firstPixelR = 0;
+	UnsignedByte firstPixelA = 0;
+	unsigned long tileChecksum = 0;
+	TileData *tile = nullptr;
+};
+
+TileData *load_archive_terrain_tile(const char *terrain_archive_path, ProbeTerrainArchiveTileLoad &load)
+{
+	load.attempted = true;
+	load.argumentSupplied = terrain_archive_path != nullptr && terrain_archive_path[0] != '\0';
+	if (!load.argumentSupplied) {
+		return nullptr;
+	}
+
+	load.archivePath = terrain_archive_path;
+	split_archive_path_for_probe(load.archivePath, load.archiveDirectory, load.archiveMask);
+	if (load.archiveMask.empty()) {
+		return nullptr;
+	}
+
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	FileSystem *old_file_system = TheFileSystem;
+
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	local_file_system.init();
+	archive_file_system.init();
+	file_system.init();
+
+	load.archiveLoaded = archive_file_system.loadBigFilesFromDirectory(
+		AsciiString(load.archiveDirectory.c_str()),
+		AsciiString(load.archiveMask.c_str()),
+		TRUE);
+	load.entryExists =
+		load.archiveLoaded &&
+		TheFileSystem != nullptr &&
+		TheFileSystem->doesFileExist(kArchiveTerrainTileEntry);
+
+	if (load.entryExists) {
+		File *file = TheFileSystem->openFile(kArchiveTerrainTileEntry, File::READ | File::BINARY);
+		load.entryOpenable = file != nullptr;
+		if (file != nullptr) {
+			ProbeFileInputStream stream(file);
+			load.countedTiles = WorldHeightMap::countTiles(&stream);
+			load.countTilesOk = load.countedTiles >= 1;
+			file->seek(0, File::START);
+			TileData *tiles[1] = { nullptr };
+			load.readTilesOk = WorldHeightMap::readTiles(&stream, tiles, load.readRows);
+			load.tile = tiles[0];
+			if (load.readTilesOk && load.tile != nullptr) {
+				const UnsignedByte *pixel = load.tile->getDataPtr();
+				load.firstPixelB = pixel[0];
+				load.firstPixelG = pixel[1];
+				load.firstPixelR = pixel[2];
+				load.firstPixelA = pixel[3];
+				load.tileChecksum = checksum_bytes(
+					load.tile->getDataPtr(),
+					TILE_PIXEL_EXTENT * TILE_PIXEL_EXTENT * TILE_BYTES_PER_PIXEL);
+			}
+			file->close();
+		}
+	}
+
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+	return load.tile;
 }
 
 struct ProbeWorldHeightMapBuffers
@@ -69,7 +212,7 @@ struct ProbeWorldHeightMapBuffers
 class ProbeWorldHeightMap : public WorldHeightMap
 {
 public:
-	static ProbeWorldHeightMap *create(ProbeWorldHeightMapBuffers &buffers)
+	static ProbeWorldHeightMap *create(ProbeWorldHeightMapBuffers &buffers, TileData *source_tile = nullptr)
 	{
 		// The real constructor validates map-side editor data. This probe only
 		// needs the plain fields read by getFlatTexture and doTesselatedUpdate.
@@ -117,12 +260,16 @@ public:
 			}
 		}
 
-		buffers.sourceTile = new TileData;
-		if (buffers.sourceTile == nullptr) {
-			std::free(map);
-			return nullptr;
+		if (source_tile != nullptr) {
+			buffers.sourceTile = source_tile;
+		} else {
+			buffers.sourceTile = new TileData;
+			if (buffers.sourceTile == nullptr) {
+				std::free(map);
+				return nullptr;
+			}
+			fillProbeTile(*buffers.sourceTile);
 		}
-		fillProbeTile(*buffers.sourceTile);
 		map->m_sourceTiles[0] = buffers.sourceTile;
 
 		return map;
@@ -189,8 +336,9 @@ public:
 class ProbeTerrainTileRenderObj : public RenderObjClass
 {
 public:
-	explicit ProbeTerrainTileRenderObj(W3DTerrainBackground *tile) :
-		m_tile(tile)
+	ProbeTerrainTileRenderObj(W3DTerrainBackground *tile, Bool disable_textures) :
+		m_tile(tile),
+		m_disableTextures(disable_textures)
 	{
 	}
 
@@ -220,12 +368,13 @@ public:
 		DX8Wrapper::Set_Texture(1, nullptr);
 
 		if (m_tile != nullptr) {
-			m_tile->drawVisiblePolys(rinfo, TRUE);
+			m_tile->drawVisiblePolys(rinfo, m_disableTextures);
 		}
 	}
 
 private:
 	W3DTerrainBackground *m_tile;
+	Bool m_disableTextures;
 };
 
 void configure_global_data(GlobalData &global_data)
@@ -261,9 +410,10 @@ void __attribute__((weak)) RTS3DScene::destroyLightsIterator(RefRenderObjListIte
 {
 }
 
-extern "C" {
-
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
+const char *run_ww3d_terrain_tile_probe(
+	std::string &target_json,
+	const char *source_name,
+	ProbeTerrainArchiveTileLoad *archive_tile_load)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -290,6 +440,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
 	ProbeTerrainTileRenderObj *render_object = nullptr;
 	CameraClass *camera = nullptr;
+	TileData *archive_tile = archive_tile_load != nullptr
+		? load_archive_terrain_tile(archive_tile_load->archivePath.c_str(), *archive_tile_load)
+		: nullptr;
+	const bool archive_tile_ready =
+		archive_tile_load != nullptr &&
+		archive_tile_load->readTilesOk &&
+		archive_tile != nullptr;
 
 	if (succeeded(init_result)) {
 		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
@@ -298,7 +455,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 	if (succeeded(set_device_result)) {
 		WW3D::Set_Thumbnail_Enabled(false);
 
-		map = ProbeWorldHeightMap::create(map_buffers);
+		map = ProbeWorldHeightMap::create(map_buffers, archive_tile);
 		map_created = map != nullptr;
 
 		if (map_created) {
@@ -329,7 +486,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 			camera->Set_Clip_Planes(1.0f, 1000.0f);
 		}
 
-		render_object = W3DNEW ProbeTerrainTileRenderObj(tile);
+		render_object = W3DNEW ProbeTerrainTileRenderObj(tile, archive_tile_load == nullptr);
 		render_object_created = render_object != nullptr && camera != nullptr;
 	}
 
@@ -347,6 +504,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		state != nullptr &&
 		succeeded(init_result) &&
 		succeeded(set_device_result) &&
+		(archive_tile_load == nullptr || archive_tile_ready) &&
 		map_created &&
 		tile_created &&
 		owner_created &&
@@ -368,15 +526,25 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		state->last_draw_vertex_shader == DX8_FVF_XYZDUV2 &&
 		(state->last_draw_transform_mask & 7u) == 7u;
 
-	char buffer[3600];
+	const char *tile_source = archive_tile_load != nullptr ? "archive-tga" : "synthetic-gradient";
+	const char *archive_path = archive_tile_load != nullptr ? archive_tile_load->archivePath.c_str() : "";
+	const char *archive_directory = archive_tile_load != nullptr ? archive_tile_load->archiveDirectory.c_str() : "";
+	const char *archive_mask = archive_tile_load != nullptr ? archive_tile_load->archiveMask.c_str() : "";
+	char buffer[5200];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_terrain_tile_probe\","
+		"{\"source\":\"%s\","
 		"\"ok\":%s,"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,\"beginRender\":%d,"
 		"\"render\":%d,\"endRender\":%d,\"mapCreated\":%s,\"tileCreated\":%s,"
 		"\"ownerCreated\":%s,\"renderObjectCreated\":%s},"
 		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
-		"\"expectedFlatTextureSize\":%u},"
+		"\"expectedFlatTextureSize\":%u,\"tileSource\":\"%s\"},"
+		"\"archive\":{\"attempted\":%s,\"argumentSupplied\":%s,"
+		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
+		"\"entry\":\"Art\\\\Terrain\\\\PTBlossom01.tga\",\"loaded\":%s,\"entryExists\":%s,"
+		"\"entryOpenable\":%s,\"countedTiles\":%d,\"countTilesOk\":%s,"
+		"\"readRows\":%d,\"readTilesOk\":%s,"
+		"\"firstPixelRgba\":[%u,%u,%u,%u],\"tileChecksum\":%lu},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
@@ -395,6 +563,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		"\"transformMask\":%u,\"renderState\":{\"cullMode\":%lu,"
 		"\"zEnable\":%lu,\"zWriteEnable\":%lu,\"zFunc\":%lu,"
 		"\"textureStage0ColorOp\":%lu,\"textureStage1ColorOp\":%lu}}}",
+		source_name,
 		bool_json(ok),
 		init_result,
 		set_device_result,
@@ -408,6 +577,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		kMapVertices,
 		kMapCells,
 		kExpectedFlatTextureSize,
+		tile_source,
+		bool_json(archive_tile_load != nullptr && archive_tile_load->attempted),
+		bool_json(archive_tile_load != nullptr && archive_tile_load->argumentSupplied),
+		archive_path,
+		archive_directory,
+		archive_mask,
+		bool_json(archive_tile_load != nullptr && archive_tile_load->archiveLoaded),
+		bool_json(archive_tile_load != nullptr && archive_tile_load->entryExists),
+		bool_json(archive_tile_load != nullptr && archive_tile_load->entryOpenable),
+		archive_tile_load != nullptr ? archive_tile_load->countedTiles : 0,
+		bool_json(archive_tile_load != nullptr && archive_tile_load->countTilesOk),
+		archive_tile_load != nullptr ? archive_tile_load->readRows : 0,
+		bool_json(archive_tile_load != nullptr && archive_tile_load->readTilesOk),
+		archive_tile_load != nullptr ? archive_tile_load->firstPixelR : 0,
+		archive_tile_load != nullptr ? archive_tile_load->firstPixelG : 0,
+		archive_tile_load != nullptr ? archive_tile_load->firstPixelB : 0,
+		archive_tile_load != nullptr ? archive_tile_load->firstPixelA : 0,
+		static_cast<unsigned long>(archive_tile_load != nullptr ? archive_tile_load->tileChecksum : 0),
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
 		state != nullptr ? state->texture_lock_rect_calls : 0,
@@ -455,7 +642,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.texture_stages[0].values[D3DTSS_COLOROP] : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.texture_stages[1].values[D3DTSS_COLOROP] : 0));
 
-	g_ww3d_terrain_tile_probe_json = buffer;
+	target_json = buffer;
 
 	REF_PTR_RELEASE(render_object);
 	REF_PTR_RELEASE(camera);
@@ -473,7 +660,27 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 
 	TheWritableGlobalData = old_global_data;
 
-	return g_ww3d_terrain_tile_probe_json.c_str();
+	return target_json.c_str();
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
+{
+	return run_ww3d_terrain_tile_probe(
+		g_ww3d_terrain_tile_probe_json,
+		"ww3d_terrain_tile_probe",
+		nullptr);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile_archive(const char *terrain_archive_path)
+{
+	ProbeTerrainArchiveTileLoad archive_tile_load;
+	archive_tile_load.archivePath = terrain_archive_path != nullptr ? terrain_archive_path : "";
+	return run_ww3d_terrain_tile_probe(
+		g_ww3d_terrain_tile_archive_probe_json,
+		"ww3d_terrain_tile_archive_probe",
+		&archive_tile_load);
 }
 
 }

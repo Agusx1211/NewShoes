@@ -655,12 +655,16 @@ shares structure and follows behind.
       image children that were hidden for the first repaint proof, and normal
       display-owned font/image lifetime.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
-      Start with a narrow original path from map/height data into
+      Current focused coverage includes the synthetic terrain tile proof plus
+      `test:ww3d-terrain-tile-archive`, which mounts real `TerrainZH.big`,
+      decodes `Art\Terrain\PTBlossom01.tga` through original
+      `WorldHeightMap::countTiles` / `readTiles`, and verifies the original
+      `W3DTerrainBackground` stage-1 texture bind/sample reaches WebGL pixels.
+      The remaining vertical is real map/height data into
       `BaseHeightMapRenderObjClass` / `HeightMapRenderObjClass`,
       `W3DTerrainVisual`, `W3DScene::Customized_Render`, and
       `DX8Wrapper::Draw_Triangles`; keep the first harness proof to real
-      WebGL-visible terrain pixels before broadening textures, water, shroud,
-      or objects.
+      WebGL-visible terrain pixels before broadening water, shroud, or objects.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

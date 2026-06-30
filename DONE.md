@@ -3332,6 +3332,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-tile-canvas.png`. Full
       `FlatHeightMapRenderObjClass` scene/display ownership remains the
       broader terrain item.
+- [x] Extend the terrain tile proof to real archive-backed tile data:
+      `test:ww3d-terrain-tile-archive` mounts `TerrainZH.big`, opens
+      `Art\Terrain\PTBlossom01.tga`, decodes it through original
+      `WorldHeightMap::countTiles` / `readTiles` into `TileData`, and feeds
+      that source tile into the existing `W3DTerrainBackground` partial-update
+      path. The Playwright smoke verifies the archive entry, tile checksum,
+      texture upload, original stage-1 terrain texture bind/sample, 32-byte
+      `DX8_FVF_XYZDUV2` vertex layout, colored canvas pixels, and
+      `harness-smoke-ww3d-terrain-tile-archive-canvas.png`. Real map height
+      data and full `FlatHeightMapRenderObjClass` / scene ownership remain
+      open.
 - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
       ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
       `AABoxRenderObjClass` to a scene, renders through
