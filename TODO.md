@@ -658,11 +658,12 @@ shares structure and follows behind.
       current direct display slices prove `MainMenu.wnd:Logo` and the
       `MainMenuRuler` HandCreated mapped image / `TexturesZH.big`
       `MainMenuRuleruserinterface.tga` texture path, and the WND image repaint
-      smoke now carries both the full-screen ruler and logo overlay through
-      `W3DGameWinDefaultDraw`. Remaining work is broader unpruned shell
-      composition (for example `MainMenuBackdrop`, button image states, and
-      text) under the normal display-owned lifecycle instead of curated target
-      visibility.
+      smoke now carries the full-screen ruler, logo overlay, and
+      `MainMenu.wnd:ButtonSinglePlayer` enabled three-piece button images
+      through `W3DGameWinDefaultDraw` / `W3DGadgetPushButtonImageDraw`.
+      Remaining work is broader unpruned shell composition (for example
+      `MainMenuBackdrop`, additional image states, and text) under the normal
+      display-owned lifecycle instead of curated target visibility.
 - [ ] Restore the generic original mapped-image directory load route for
       browser render smokes: replace the focused exact-block
       `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /

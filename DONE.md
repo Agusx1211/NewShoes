@@ -3560,6 +3560,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       texture, at least two `W3DDisplay::drawImage` / browser draw calls,
       colored ruler and logo pixels, and
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
+- [x] Broaden the archive-backed `Menus/MainMenu.wnd` image repaint smoke to a
+      nested real push-button image-state branch: the probe now keeps
+      `MainMenu.wnd:ButtonSinglePlayer` visible alongside the ruler and logo,
+      loads `Buttons-Left`, `Buttons-Middle`, and `Buttons-Right` from the
+      shipped `SCSmShellUserInterface512.INI` mapped-image atlas, verifies the
+      parsed `W3DGadgetPushButtonImageDraw` / `GadgetPushButtonSystem` /
+      `GadgetPushButtonInput` callbacks and enabled image pointers, and drives
+      the repaint to 16 `W3DDisplay::drawImage` calls and 20 browser indexed
+      draws. `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations` now gate the button layout
+      `(540,116)-(748,152)`, the three source atlas images, and a scanned
+      button-region pixel proof in
+      `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

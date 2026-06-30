@@ -255,15 +255,17 @@ try {
       || !repaintResult.probe?.originalPaths?.includes("parseDrawData IMAGE -> TheMappedImageCollection->findImageByName")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw")
       || repaintResult.probe?.archives?.windowEntry !== layoutEntry
       || repaintResult.probe?.archives?.mappedImageEntry !== logoMappedImageEntry
       || repaintResult.probe?.archives?.textureEntry !== logoTextureEntry
       || repaintResult.probe?.archives?.rulerTextureEntry !== rulerTextureEntry
       || repaintResult.probe?.results?.runtimeAssetSystemInstalled !== true
       || repaintResult.probe?.results?.mappedCollectionLoaded !== true
-      || repaintResult.probe?.results?.mappedImages < 2
+      || repaintResult.probe?.results?.mappedImages < 5
       || repaintResult.probe?.results?.targetImageBound !== true
       || repaintResult.probe?.results?.rulerImageBound !== true
+      || repaintResult.probe?.results?.buttonImagesBound !== true
       || repaintResult.probe?.results?.texturePreloaded !== true
       || repaintResult.probe?.results?.rulerTexturePreloaded !== true
       || repaintResult.probe?.results?.textureResolved !== true
@@ -287,6 +289,17 @@ try {
       || repaintResult.probe?.layout?.target?.y !== 16
       || repaintResult.probe?.layout?.target?.width !== 287
       || repaintResult.probe?.layout?.target?.height !== 94
+      || repaintResult.probe?.layout?.button?.name !== "MainMenu.wnd:ButtonSinglePlayer"
+      || repaintResult.probe?.layout?.button?.drawFunc !== "W3DGadgetPushButtonImageDraw"
+      || repaintResult.probe?.layout?.button?.systemFunc !== "GadgetPushButtonSystem"
+      || repaintResult.probe?.layout?.button?.inputFunc !== "GadgetPushButtonInput"
+      || repaintResult.probe?.layout?.button?.x !== 540
+      || repaintResult.probe?.layout?.button?.y !== 116
+      || repaintResult.probe?.layout?.button?.width !== 208
+      || repaintResult.probe?.layout?.button?.height !== 36
+      || repaintResult.probe?.layout?.button?.images?.[0] !== "Buttons-Left"
+      || repaintResult.probe?.layout?.button?.images?.[1] !== "Buttons-Middle"
+      || repaintResult.probe?.layout?.button?.images?.[2] !== "Buttons-Right"
       || repaintResult.probe?.image?.name !== "GeneralsLogo"
       || repaintResult.probe?.image?.filename !== "SCSmShellUserInterface512_001.tga"
       || repaintResult.probe?.image?.status !== 0
@@ -303,6 +316,12 @@ try {
       || repaintResult.probe?.rulerImage?.textureHeight !== 1024
       || repaintResult.probe?.rulerImage?.width !== 800
       || repaintResult.probe?.rulerImage?.height !== 600
+      || repaintResult.probe?.buttonImages?.left?.name !== "Buttons-Left"
+      || repaintResult.probe?.buttonImages?.left?.filename !== "SCSmShellUserInterface512_001.tga"
+      || repaintResult.probe?.buttonImages?.middle?.name !== "Buttons-Middle"
+      || repaintResult.probe?.buttonImages?.middle?.filename !== "SCSmShellUserInterface512_001.tga"
+      || repaintResult.probe?.buttonImages?.right?.name !== "Buttons-Right"
+      || repaintResult.probe?.buttonImages?.right?.filename !== "SCSmShellUserInterface512_001.tga"
       || String(repaintResult.probe?.texture?.name ?? "").toLowerCase() !==
         "scsmshelluserinterface512_001.tga"
       || repaintResult.probe?.texture?.archiveEntry !== logoTextureEntry
@@ -315,8 +334,8 @@ try {
       || repaintResult.probe?.rulerTexture?.width !== 1024
       || repaintResult.probe?.rulerTexture?.height !== 1024
       || repaintResult.probe?.rulerTexture?.uploadedLevels !== repaintResult.probe?.rulerTexture?.levels
-      || repaintResult.probe?.calls?.displayImageDraws < 2
-      || repaintResult.probe?.calls?.drawIndexed < 2
+      || repaintResult.probe?.calls?.displayImageDraws < 5
+      || repaintResult.probe?.calls?.drawIndexed < 5
       || repaintResult.probe?.calls?.browserTextureCreate < 2
       || repaintResult.probe?.calls?.browserTextureUpdate < 2
       || repaintResult.probe?.calls?.browserTextureBind < 2
@@ -338,7 +357,8 @@ try {
       || repaintResult.browserProbe?.vertexStride !== 44
       || repaintResult.browserProbe?.indexCount !== 6
       || repaintResult.coloredLogoPixelCount < 1
-      || repaintResult.coloredRulerPixelCount < 4) {
+      || repaintResult.coloredRulerPixelCount < 4
+      || repaintResult.buttonRegion?.coloredPixelCount < 20) {
     throw new Error(`W3D MainMenu WindowLayout image repaint render failed: ${JSON.stringify({
       ok: repaintResult.ok,
       bridgeInputPaths: repaintResult.bridgeInputPaths,
@@ -346,8 +366,11 @@ try {
       browserProbe: repaintResult.browserProbe,
       logoPixels: repaintResult.logoPixels,
       rulerPixels: repaintResult.rulerPixels,
+      buttonPixels: repaintResult.buttonPixels,
+      buttonRegion: repaintResult.buttonRegion,
       coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
       coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
+      coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
       screenshot: {
         width: repaintResult.screenshot?.width,
         height: repaintResult.screenshot?.height,
@@ -379,14 +402,18 @@ try {
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
+    buttonImages: repaintResult.probe.buttonImages,
     texture: repaintResult.probe.texture,
     rulerTexture: repaintResult.probe.rulerTexture,
     calls: repaintResult.probe.calls,
     draw: repaintResult.probe.draw,
     logoPixels: repaintResult.logoPixels,
     rulerPixels: repaintResult.rulerPixels,
+    buttonPixels: repaintResult.buttonPixels,
+    buttonRegion: repaintResult.buttonRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
     coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
+    coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
     renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image bindings, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
     browserEventCount: browserEvents.length,
   }));

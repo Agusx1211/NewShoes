@@ -926,6 +926,8 @@ const steps = [
         "MainMenu layout image repaint smoke did not target the real MainMenu Logo child", payload.originalPaths);
       expect(payload.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw"),
         "MainMenu layout image repaint smoke did not target the real MainMenuRuler child", payload.originalPaths);
+      expect(payload.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw"),
+        "MainMenu layout image repaint smoke did not target the real ButtonSinglePlayer image-state child", payload.originalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -935,13 +937,24 @@ const steps = [
           && payload.rulerImage?.filename === "MainMenuRuleruserinterface.tga"
           && payload.rulerTexture?.archiveEntry === "Art\\Textures\\mainmenuruleruserinterface.tga",
         "MainMenu layout image repaint smoke did not report the expected real ruler WND image binding", payload);
-      expect(payload.calls?.displayImageDraws >= 2
-          && payload.calls?.drawIndexed >= 2
+      expect(payload.layout?.button?.name === "MainMenu.wnd:ButtonSinglePlayer"
+          && payload.layout?.button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+          && payload.layout?.button?.images?.[0] === "Buttons-Left"
+          && payload.layout?.button?.images?.[1] === "Buttons-Middle"
+          && payload.layout?.button?.images?.[2] === "Buttons-Right"
+          && payload.buttonImages?.left?.filename === "SCSmShellUserInterface512_001.tga"
+          && payload.buttonImages?.middle?.filename === "SCSmShellUserInterface512_001.tga"
+          && payload.buttonImages?.right?.filename === "SCSmShellUserInterface512_001.tga",
+        "MainMenu layout image repaint smoke did not report the expected real ButtonSinglePlayer image-state binding", payload);
+      expect(payload.calls?.displayImageDraws >= 5
+          && payload.calls?.drawIndexed >= 5
           && payload.draw?.screenRect?.left === 504
           && payload.draw?.screenRect?.bottom === 110,
         "MainMenu layout image repaint smoke did not reach the W3DDisplay/WebGL draw path", payload);
-      expect(payload.coloredLogoPixelCount >= 1 && payload.coloredRulerPixelCount >= 4,
-        "MainMenu layout image repaint smoke did not capture both logo and ruler pixels", payload);
+      expect(payload.coloredLogoPixelCount >= 1
+          && payload.coloredRulerPixelCount >= 4
+          && payload.buttonRegion?.coloredPixelCount >= 20,
+        "MainMenu layout image repaint smoke did not capture logo, ruler, and button pixels", payload);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
     },

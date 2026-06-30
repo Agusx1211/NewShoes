@@ -16676,6 +16676,20 @@ async function rpc(command, payload = {}) {
           bottomRight: sampleVirtualCanvasPixel(780, 580),
           behindLogoOutside: logoPixels.outside,
         };
+        const button = probe?.layout?.button ?? {};
+        const buttonLeft = button.x ?? 540;
+        const buttonTop = button.y ?? 116;
+        const buttonWidth = button.width ?? 208;
+        const buttonHeight = button.height ?? 36;
+        const buttonRight = buttonLeft + buttonWidth;
+        const buttonBottom = buttonTop + buttonHeight;
+        const buttonPixels = {
+          left: sampleVirtualCanvasPixel(buttonLeft + 6, Math.floor((buttonTop + buttonBottom) / 2)),
+          middle: sampleVirtualCanvasPixel(Math.floor((buttonLeft + buttonRight) / 2), Math.floor((buttonTop + buttonBottom) / 2)),
+          right: sampleVirtualCanvasPixel(buttonRight - 6, Math.floor((buttonTop + buttonBottom) / 2)),
+          topMiddle: sampleVirtualCanvasPixel(Math.floor((buttonLeft + buttonRight) / 2), buttonTop + 4),
+          outsideLeft: sampleVirtualCanvasPixel(buttonLeft - 6, Math.floor((buttonTop + buttonBottom) / 2)),
+        };
         const coloredLogoPixels = [
           logoPixels.center,
           logoPixels.upperLeft,
@@ -16685,11 +16699,28 @@ async function rpc(command, payload = {}) {
         ].filter((pixel) => pixelHasColor(pixel, 10));
         const coloredRulerPixels = Object.values(rulerPixels)
           .filter((pixel) => pixelHasColor(pixel, 10));
+        const coloredButtonPixels = [
+          buttonPixels.left,
+          buttonPixels.middle,
+          buttonPixels.right,
+          buttonPixels.topMiddle,
+        ].filter((pixel) => pixelHasColor(pixel, 10));
         const textureAfter = snapshotState().graphics?.textures ?? {};
+        const canvasSnapshot = snapshotCanvas();
+        const virtualScaleX = canvasSnapshot.width / 800;
+        const virtualScaleY = canvasSnapshot.height / 600;
+        const buttonRegion = sampleCanvasRegion({
+          left: Math.floor(buttonLeft * virtualScaleX),
+          top: Math.floor(buttonTop * virtualScaleY),
+          right: Math.ceil(buttonRight * virtualScaleX),
+          bottom: Math.ceil(buttonBottom * virtualScaleY),
+        }, 10);
         const screenshot = {
-          ...snapshotCanvas(),
+          ...canvasSnapshot,
           logoPixels,
           rulerPixels,
+          buttonPixels,
+          buttonRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const ok = Boolean(probe.ok)
@@ -16712,6 +16743,17 @@ async function rpc(command, payload = {}) {
           && probe?.layout?.target?.name === "MainMenu.wnd:Logo"
           && probe?.layout?.target?.drawFunc === "W3DGameWinDefaultDraw"
           && probe?.layout?.target?.image === "GeneralsLogo"
+          && probe?.layout?.button?.name === "MainMenu.wnd:ButtonSinglePlayer"
+          && probe?.layout?.button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+          && probe?.layout?.button?.systemFunc === "GadgetPushButtonSystem"
+          && probe?.layout?.button?.inputFunc === "GadgetPushButtonInput"
+          && probe?.layout?.button?.x === 540
+          && probe?.layout?.button?.y === 116
+          && probe?.layout?.button?.width === 208
+          && probe?.layout?.button?.height === 36
+          && probe?.layout?.button?.images?.[0] === "Buttons-Left"
+          && probe?.layout?.button?.images?.[1] === "Buttons-Middle"
+          && probe?.layout?.button?.images?.[2] === "Buttons-Right"
           && probe?.image?.name === "GeneralsLogo"
           && probe?.image?.filename === "SCSmShellUserInterface512_001.tga"
           && probe?.image?.width === 370
@@ -16720,6 +16762,12 @@ async function rpc(command, payload = {}) {
           && probe?.rulerImage?.filename === "MainMenuRuleruserinterface.tga"
           && probe?.rulerImage?.width === 800
           && probe?.rulerImage?.height === 600
+          && probe?.buttonImages?.left?.name === "Buttons-Left"
+          && probe?.buttonImages?.left?.filename === "SCSmShellUserInterface512_001.tga"
+          && probe?.buttonImages?.middle?.name === "Buttons-Middle"
+          && probe?.buttonImages?.middle?.filename === "SCSmShellUserInterface512_001.tga"
+          && probe?.buttonImages?.right?.name === "Buttons-Right"
+          && probe?.buttonImages?.right?.filename === "SCSmShellUserInterface512_001.tga"
           && probe?.rulerTexture?.name?.toLowerCase?.() === "mainmenuruleruserinterface.tga"
           && probe?.rulerTexture?.width === 1024
           && probe?.rulerTexture?.height === 1024
@@ -16728,8 +16776,9 @@ async function rpc(command, payload = {}) {
           && probe?.texture?.height === 512
           && probe?.results?.targetImageBound === true
           && probe?.results?.rulerImageBound === true
-          && probe?.calls?.displayImageDraws >= 2
-          && probe?.calls?.drawIndexed >= 2
+          && probe?.results?.buttonImagesBound === true
+          && probe?.calls?.displayImageDraws >= 5
+          && probe?.calls?.drawIndexed >= 5
           && probe?.calls?.browserTextureCreate >= 2
           && probe?.calls?.browserTextureUpdate >= 2
           && probe?.calls?.browserTextureBind >= 2
@@ -16742,7 +16791,8 @@ async function rpc(command, payload = {}) {
           && browserProbe?.indexCount === 6
           && browserProbe?.texture0?.sampled === true
           && coloredLogoPixels.length >= 1
-          && coloredRulerPixels.length >= 4;
+          && coloredRulerPixels.length >= 4
+          && buttonRegion.coloredPixelCount >= 20;
         return {
           ok,
           command,
@@ -16757,8 +16807,11 @@ async function rpc(command, payload = {}) {
           browserProbe,
           logoPixels,
           rulerPixels,
+          buttonPixels,
+          buttonRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,
+          coloredButtonPixelCount: coloredButtonPixels.length,
           textureBefore,
           textureAfter,
           screenshot,

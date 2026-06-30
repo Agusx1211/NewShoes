@@ -363,6 +363,9 @@ constexpr const char *kMainMenuLogoTextureArchiveEntry =
 	"Data\\English\\Art\\Textures\\SCSmShellUserInterface512_001.tga";
 constexpr const char *kMainMenuLogoSampleIni =
 	"Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI";
+constexpr const char *kMainMenuButtonLeftImageName = "Buttons-Left";
+constexpr const char *kMainMenuButtonMiddleImageName = "Buttons-Middle";
+constexpr const char *kMainMenuButtonRightImageName = "Buttons-Right";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
 constexpr const char *kMainMenuLayoutImageRuntimeIniArchive =
@@ -873,13 +876,47 @@ Int hide_message_box_non_rect_children(GameWindow *root, GameWindow *message_par
 	return hidden_count;
 }
 
-Int hide_window_tree_except_targets(GameWindow *window, GameWindow *first_target, GameWindow *second_target)
+bool window_matches_target(
+	GameWindow *window,
+	GameWindow *first_target,
+	GameWindow *second_target,
+	GameWindow *third_target = nullptr)
+{
+	return window != nullptr &&
+		(window == first_target || window == second_target || window == third_target);
+}
+
+bool window_tree_contains_target(
+	GameWindow *window,
+	GameWindow *first_target,
+	GameWindow *second_target,
+	GameWindow *third_target = nullptr)
+{
+	if (window == nullptr) {
+		return false;
+	}
+	if (window_matches_target(window, first_target, second_target, third_target)) {
+		return true;
+	}
+	for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+		if (window_tree_contains_target(child, first_target, second_target, third_target)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Int hide_window_tree_except_targets(
+	GameWindow *window,
+	GameWindow *first_target,
+	GameWindow *second_target,
+	GameWindow *third_target = nullptr)
 {
 	if (window == nullptr) {
 		return 0;
 	}
 
-	if (window == first_target || window == second_target) {
+	if (window_matches_target(window, first_target, second_target, third_target)) {
 		Int hidden_count = 0;
 		for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
 			hidden_count += hide_window_tree_for_rect_probe(child);
@@ -887,15 +924,35 @@ Int hide_window_tree_except_targets(GameWindow *window, GameWindow *first_target
 		return hidden_count;
 	}
 
+	if (window_tree_contains_target(window, first_target, second_target, third_target)) {
+		Int hidden_count = 0;
+		for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+			hidden_count += hide_window_tree_except_targets(
+				child,
+				first_target,
+				second_target,
+				third_target);
+		}
+		return hidden_count;
+	}
+
 	return hide_window_tree_for_rect_probe(window);
 }
 
-Int hide_root_children_except_targets(GameWindow *root, GameWindow *first_target, GameWindow *second_target)
+Int hide_root_children_except_targets(
+	GameWindow *root,
+	GameWindow *first_target,
+	GameWindow *second_target,
+	GameWindow *third_target = nullptr)
 {
 	Int hidden_count = 0;
 	if (root != nullptr) {
 		for (GameWindow *child = root->winGetChild(); child != nullptr; child = child->winGetNext()) {
-			hidden_count += hide_window_tree_except_targets(child, first_target, second_target);
+			hidden_count += hide_window_tree_except_targets(
+				child,
+				first_target,
+				second_target,
+				third_target);
 		}
 	}
 	return hidden_count;
@@ -6623,6 +6680,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 			function_lexicon.gameWinDrawFunc(
 				TheNameKeyGenerator->nameToKey(AsciiString("W3DGameWinDefaultDraw"))) == W3DGameWinDefaultDraw &&
 			function_lexicon.gameWinDrawFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("W3DGadgetPushButtonImageDraw"))) ==
+				W3DGadgetPushButtonImageDraw &&
+			function_lexicon.gameWinDrawFunc(
 				TheNameKeyGenerator->nameToKey(AsciiString("W3DNoDraw"))) == W3DNoDraw &&
 			function_lexicon.winLayoutInitFunc(
 				TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"))) == ProbeW3DMainMenuInit &&
@@ -6996,6 +7056,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	constexpr const char *root_name = "MainMenu.wnd:MainMenuParent";
 	constexpr const char *target_name = "MainMenu.wnd:Logo";
 	constexpr const char *ruler_name = "MainMenu.wnd:MainMenuRuler";
+	constexpr const char *button_name = "MainMenu.wnd:ButtonSinglePlayer";
 
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
@@ -7066,6 +7127,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	bool mapped_collection_loaded = false;
 	bool mapped_image_found = false;
 	bool ruler_mapped_image_found = false;
+	bool button_mapped_images_found = false;
 	bool mapped_image_rotated = false;
 	bool ruler_mapped_image_rotated = false;
 	bool image_raw_texture = false;
@@ -7087,11 +7149,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	bool root_found = false;
 	bool target_found = false;
 	bool ruler_found = false;
+	bool button_found = false;
 	bool root_callback_bound = false;
 	bool target_callback_bound = false;
 	bool ruler_callback_bound = false;
+	bool button_callback_bound = false;
 	bool target_image_bound = false;
 	bool ruler_image_bound = false;
+	bool button_images_bound = false;
 	bool children_pruned = false;
 	bool begin_repaint_called = false;
 	bool repaint_called = false;
@@ -7099,6 +7164,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	bool drawimage_called = false;
 	bool target_hidden = false;
 	bool ruler_hidden = false;
+	bool button_hidden = false;
 	std::size_t mapped_image_count = 0;
 	UnsignedInt image_status = 0;
 	UnsignedInt ruler_image_status = 0;
@@ -7138,8 +7204,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	DWORD texture_upload_checksum = 0;
 	std::string image_filename;
 	std::string ruler_image_filename;
+	std::string button_left_image_filename;
+	std::string button_middle_image_filename;
+	std::string button_right_image_filename;
 	std::string loaded_texture_name;
 	std::string ruler_loaded_texture_name;
+	Int button_left_image_width = 0;
+	Int button_left_image_height = 0;
+	Int button_middle_image_width = 0;
+	Int button_middle_image_height = 0;
+	Int button_right_image_width = 0;
+	Int button_right_image_height = 0;
 	Int layout_window_count = 0;
 	Int hidden_child_count = 0;
 	Int root_x = 0;
@@ -7154,6 +7229,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	Int ruler_y = 0;
 	Int ruler_width = 0;
 	Int ruler_height = 0;
+	Int button_x = 0;
+	Int button_y = 0;
+	Int button_width = 0;
+	Int button_height = 0;
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7166,10 +7245,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	GameWindow *root = nullptr;
 	GameWindow *target = nullptr;
 	GameWindow *ruler = nullptr;
+	GameWindow *button = nullptr;
 	const Image *target_image = nullptr;
 	const Image *ruler_image = nullptr;
+	const Image *button_left_image = nullptr;
+	const Image *button_middle_image = nullptr;
+	const Image *button_right_image = nullptr;
 	const Image *target_enabled_image = nullptr;
 	const Image *ruler_enabled_image = nullptr;
+	const Image *button_left_enabled_image = nullptr;
+	const Image *button_middle_enabled_image = nullptr;
+	const Image *button_right_enabled_image = nullptr;
 
 	if (succeeded(init_result)) {
 		asset_manager = WW3DAssetManager::Get_Instance();
@@ -7250,18 +7336,45 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				*mapped_image_collection,
 				kMainMenuLogoSampleIni,
 				kMainMenuLogoImageName);
+			const bool button_left_loaded = load_mapped_image_ini_file(
+				*mapped_image_collection,
+				kMainMenuLogoSampleIni,
+				kMainMenuButtonLeftImageName);
+			const bool button_middle_loaded = load_mapped_image_ini_file(
+				*mapped_image_collection,
+				kMainMenuLogoSampleIni,
+				kMainMenuButtonMiddleImageName);
+			const bool button_right_loaded = load_mapped_image_ini_file(
+				*mapped_image_collection,
+				kMainMenuLogoSampleIni,
+				kMainMenuButtonRightImageName);
 			const bool ruler_loaded = load_mapped_image_ini_file(
 				*mapped_image_collection,
 				kMainMenuRulerSampleIni,
 				kMainMenuRulerImageName);
-			mapped_collection_loaded = logo_loaded && ruler_loaded;
+			mapped_collection_loaded =
+				logo_loaded &&
+				button_left_loaded &&
+				button_middle_loaded &&
+				button_right_loaded &&
+				ruler_loaded;
 			TheGlobalData = mapped_image_load_global_data;
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
 				target_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
+				button_left_image =
+					mapped_image_collection->findImageByName(AsciiString(kMainMenuButtonLeftImageName));
+				button_middle_image =
+					mapped_image_collection->findImageByName(AsciiString(kMainMenuButtonMiddleImageName));
+				button_right_image =
+					mapped_image_collection->findImageByName(AsciiString(kMainMenuButtonRightImageName));
 				ruler_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuRulerImageName));
 				mapped_image_found = target_image != nullptr;
 				ruler_mapped_image_found = ruler_image != nullptr;
+				button_mapped_images_found =
+					button_left_image != nullptr &&
+					button_middle_image != nullptr &&
+					button_right_image != nullptr;
 			}
 			if (mapped_image_found) {
 				image_status = target_image->getStatus();
@@ -7297,6 +7410,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				ruler_image_uv_hi_y = image_uv->hi.y;
 				ruler_image_width = ruler_image->getImageWidth();
 				ruler_image_height = ruler_image->getImageHeight();
+			}
+			if (button_mapped_images_found) {
+				button_left_image_filename =
+					button_left_image->getFilename().str() != nullptr ?
+						button_left_image->getFilename().str() : "";
+				button_middle_image_filename =
+					button_middle_image->getFilename().str() != nullptr ?
+						button_middle_image->getFilename().str() : "";
+				button_right_image_filename =
+					button_right_image->getFilename().str() != nullptr ?
+						button_right_image->getFilename().str() : "";
+				button_left_image_width = button_left_image->getImageWidth();
+				button_left_image_height = button_left_image->getImageHeight();
+				button_middle_image_width = button_middle_image->getImageWidth();
+				button_middle_image_height = button_middle_image->getImageHeight();
+				button_right_image_width = button_right_image->getImageWidth();
+				button_right_image_height = button_right_image->getImageHeight();
 			}
 		}
 	}
@@ -7393,8 +7523,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			root, TheNameKeyGenerator->nameToKey(AsciiString(target_name)));
 		ruler = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(ruler_name)));
+		button = manager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(button_name)));
 		target_found = target != nullptr;
 		ruler_found = ruler != nullptr;
+		button_found = button != nullptr;
 		root_callback_bound =
 			root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(root_name)) &&
 			root->winGetDrawFunc() == W3DNoDraw &&
@@ -7422,27 +7555,47 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			ruler_hidden = BitTest(ruler->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(ruler, ruler_x, ruler_y, ruler_width, ruler_height);
 		}
+		if (button != nullptr) {
+			button_callback_bound =
+				button->winGetDrawFunc() == W3DGadgetPushButtonImageDraw &&
+				button->winGetSystemFunc() == GadgetPushButtonSystem &&
+				button->winGetInputFunc() == GadgetPushButtonInput;
+			button_left_enabled_image = GadgetButtonGetLeftEnabledImage(button);
+			button_middle_enabled_image = GadgetButtonGetMiddleEnabledImage(button);
+			button_right_enabled_image = GadgetButtonGetRightEnabledImage(button);
+			button_images_bound =
+				button_left_enabled_image != nullptr &&
+				button_middle_enabled_image != nullptr &&
+				button_right_enabled_image != nullptr &&
+				button_left_enabled_image == button_left_image &&
+				button_middle_enabled_image == button_middle_image &&
+				button_right_enabled_image == button_right_image;
+			button_hidden = BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(button, button_x, button_y, button_width, button_height);
+		}
 	}
 
-	if (root_found && target_found && ruler_found &&
+	if (root_found && target_found && ruler_found && button_found &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
-		target_image_bound && ruler_image_bound) {
-		hidden_child_count = hide_root_children_except_targets(root, target, ruler);
+		button_callback_bound &&
+		target_image_bound && ruler_image_bound && button_images_bound) {
+		hidden_child_count = hide_root_children_except_targets(root, target, ruler, button);
 		children_pruned = hidden_child_count >= 1;
 		target_hidden = target != nullptr ? BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 		ruler_hidden = ruler != nullptr ? BitTest(ruler->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		button_hidden = button != nullptr ? BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
 
 	const WasmD3D8ShimState *state_before = wasm_d3d8_get_state();
 	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
 
-	if (children_pruned && !target_hidden && !ruler_hidden) {
+	if (children_pruned && !target_hidden && !ruler_hidden && !button_hidden) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			begin_repaint_called = true;
 			manager->winRepaint();
 			repaint_called = true;
-			drawimage_called = display_adapter.imageDraws() >= 2;
+			drawimage_called = display_adapter.imageDraws() >= 5;
 			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
 			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
 			end_render_result = WW3D::End_Render(false);
@@ -7493,6 +7646,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		root = nullptr;
 		target = nullptr;
 		ruler = nullptr;
+		button = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
 	}
 
@@ -7568,9 +7722,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		callbacks_resolved &&
 		mapped_collection_allocated &&
 		mapped_collection_loaded &&
-		mapped_image_count >= 2 &&
+		mapped_image_count >= 5 &&
 		mapped_image_found &&
 		ruler_mapped_image_found &&
+		button_mapped_images_found &&
 		!mapped_image_rotated &&
 		!ruler_mapped_image_rotated &&
 		!image_raw_texture &&
@@ -7605,13 +7760,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		root_found &&
 		target_found &&
 		ruler_found &&
+		button_found &&
 		root_callback_bound &&
 		target_callback_bound &&
 		ruler_callback_bound &&
+		button_callback_bound &&
 		target_image_bound &&
 		ruler_image_bound &&
+		button_images_bound &&
 		!target_hidden &&
 		!ruler_hidden &&
+		!button_hidden &&
 		children_pruned &&
 		ruler_x == 0 &&
 		ruler_y == 0 &&
@@ -7621,6 +7780,10 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		target_y == 16 &&
 		target_width == 287 &&
 		target_height == 94 &&
+		button_x == 540 &&
+		button_y == 116 &&
+		button_width == 208 &&
+		button_height == 36 &&
 		succeeded(begin_render_result) &&
 		begin_repaint_called &&
 		repaint_called &&
@@ -7628,9 +7791,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		succeeded(end_render_result) &&
 		destroy_result == WIN_ERR_OK &&
 		window_list_cleared &&
-		display_adapter.imageDraws() >= 2 &&
-		draw_calls_after_repaint >= draw_calls_before_repaint + 2 &&
-		state->draw_indexed_primitive_calls >= 2 &&
+		display_adapter.imageDraws() >= 5 &&
+		draw_calls_after_repaint >= draw_calls_before_repaint + 5 &&
+		state->draw_indexed_primitive_calls >= 5 &&
 		state->create_texture_calls >= 2 &&
 		state->browser_texture_create_calls >= 2 &&
 		state->browser_texture_update_calls >= texture_levels + ruler_texture_levels &&
@@ -7675,6 +7838,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		json_escape(kMainMenuLayoutImageRuntimeRulerTextureArchive);
 	const std::string image_filename_json = json_escape(image_filename);
 	const std::string ruler_image_filename_json = json_escape(ruler_image_filename);
+	const std::string button_left_image_filename_json = json_escape(button_left_image_filename);
+	const std::string button_middle_image_filename_json = json_escape(button_middle_image_filename);
+	const std::string button_right_image_filename_json = json_escape(button_right_image_filename);
 	const std::string loaded_texture_name_json = json_escape(loaded_texture_name);
 	const std::string ruler_loaded_texture_name_json = json_escape(ruler_loaded_texture_name);
 	const std::string archive_window_path_json = json_escape(archive_window_path);
@@ -7685,9 +7851,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	const std::string image_name_json = json_escape(kMainMenuLogoImageName);
 	const std::string ruler_image_name_json = json_escape(kMainMenuRulerImageName);
 	const std::string ruler_window_name_json = json_escape(ruler_name);
+	const std::string button_window_name_json = json_escape(button_name);
+	const std::string button_left_image_name_json = json_escape(kMainMenuButtonLeftImageName);
+	const std::string button_middle_image_name_json = json_escape(kMainMenuButtonMiddleImageName);
+	const std::string button_right_image_name_json = json_escape(kMainMenuButtonRightImageName);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[24000];
+	char buffer[28000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -7697,6 +7867,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"Exact mapped-image INI block -> INIZH.big mapped-image entry\","
 		"\"MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
+		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
 		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawImage\","
 		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\","
@@ -7719,7 +7890,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"functionLexiconInitialized\":%s,\"callbacksResolved\":%s,"
 		"\"mappedCollectionAllocated\":%s,\"mappedCollectionLoaded\":%s,"
 		"\"mappedImages\":%zu,\"mappedImageFound\":%s,"
-		"\"rulerMappedImageFound\":%s,"
+		"\"rulerMappedImageFound\":%s,\"buttonMappedImagesFound\":%s,"
 		"\"texturePreloaded\":%s,\"textureRegistered\":%s,"
 		"\"textureResolved\":%s,\"textureLoaded\":%s,"
 		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
@@ -7729,10 +7900,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"displayAllocated\":%s,\"displaySetup\":%s,"
 		"\"managerAllocated\":%s,\"layoutLoaded\":%s,"
 		"\"layoutWindowCount\":%d,\"rootFound\":%s,"
-		"\"targetFound\":%s,\"rulerFound\":%s,\"rootCallbackBound\":%s,"
+		"\"targetFound\":%s,\"rulerFound\":%s,\"buttonFound\":%s,"
+		"\"rootCallbackBound\":%s,"
 		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
+		"\"buttonCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
-		"\"targetHidden\":%s,\"rulerHidden\":%s,\"childrenPruned\":%s,"
+		"\"buttonImagesBound\":%s,"
+		"\"targetHidden\":%s,\"rulerHidden\":%s,\"buttonHidden\":%s,"
+		"\"childrenPruned\":%s,"
 		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
 		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
 		"\"drawImageCalled\":%s,\"endRender\":%d,"
@@ -7750,7 +7925,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GameWinDefaultSystem\","
 		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
-		"\"image\":\"%s\"},\"prunedChildren\":%d},"
+		"\"image\":\"%s\"},"
+		"\"button\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"GadgetPushButtonSystem\","
+		"\"inputFunc\":\"GadgetPushButtonInput\","
+		"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
+		"\"images\":[\"%s\",\"%s\",\"%s\"]},"
+		"\"prunedChildren\":%d},"
 		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\","
 		"\"rawTexture\":%s,\"status\":%u,\"rotated\":%s,"
 		"\"textureWidth\":%d,\"textureHeight\":%d,"
@@ -7761,6 +7943,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"textureWidth\":%d,\"textureHeight\":%d,"
 		"\"uvLoX\":%.6f,\"uvLoY\":%.6f,\"uvHiX\":%.6f,\"uvHiY\":%.6f,"
 		"\"width\":%d,\"height\":%d},"
+		"\"buttonImages\":{\"left\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d},"
+		"\"middle\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d},"
+		"\"right\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d}},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
 		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
 		"\"levels\":%u,\"uploadedLevels\":%u,"
@@ -7836,6 +8024,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		mapped_image_count,
 		bool_json(mapped_image_found),
 		bool_json(ruler_mapped_image_found),
+		bool_json(button_mapped_images_found),
 		bool_json(texture_preloaded),
 		bool_json(texture_registered),
 		bool_json(texture_resolved),
@@ -7856,13 +8045,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		bool_json(root_found),
 		bool_json(target_found),
 		bool_json(ruler_found),
+		bool_json(button_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
 		bool_json(ruler_callback_bound),
+		bool_json(button_callback_bound),
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
+		bool_json(button_images_bound),
 		bool_json(target_hidden),
 		bool_json(ruler_hidden),
+		bool_json(button_hidden),
 		bool_json(children_pruned),
 		hidden_child_count,
 		begin_render_result,
@@ -7891,6 +8084,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		ruler_width,
 		ruler_height,
 		ruler_image_name_json.c_str(),
+		button_window_name_json.c_str(),
+		button_x,
+		button_y,
+		button_width,
+		button_height,
+		button_left_image_name_json.c_str(),
+		button_middle_image_name_json.c_str(),
+		button_right_image_name_json.c_str(),
 		hidden_child_count,
 		image_name_json.c_str(),
 		image_filename_json.c_str(),
@@ -7918,6 +8119,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		ruler_image_uv_hi_y,
 		ruler_image_width,
 		ruler_image_height,
+		button_left_image_name_json.c_str(),
+		button_left_image_filename_json.c_str(),
+		button_left_image_width,
+		button_left_image_height,
+		button_middle_image_name_json.c_str(),
+		button_middle_image_filename_json.c_str(),
+		button_middle_image_width,
+		button_middle_image_height,
+		button_right_image_name_json.c_str(),
+		button_right_image_filename_json.c_str(),
+		button_right_image_width,
+		button_right_image_height,
 		texture_id,
 		loaded_texture_name_json.c_str(),
 		texture_entry_json.c_str(),
