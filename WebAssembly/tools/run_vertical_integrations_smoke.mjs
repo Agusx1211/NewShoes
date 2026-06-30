@@ -516,6 +516,62 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-websocket-flow",
+    file: "harness/lanapi_websocket_flow_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI WebSocket flow smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-websocket-flow"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.browserTransport === "browser WebSocket binary LANAPI relay"
+          && payload.relay?.serverTransport === "Node WebSocket relay server"
+          && payload.relay?.productionTransport === false
+          && payload.relay?.hexHandoff === false
+          && payload.relay?.binaryFrames === 5
+          && payload.announce?.originalSerializer === "LANMessage struct byte payload"
+          && payload.announce?.originalDispatch === "LANAPI::update"
+          && payload.announce?.originalHandler === "LANAPI::handleGameAnnounce"
+          && payload.announce?.originalParser === "ParseGameOptionsString"
+          && payload.announce?.originalCallback === "LANAPI::OnGameList"
+          && payload.announce?.packet?.messageType === "MSG_GAME_ANNOUNCE"
+          && payload.announce?.transport?.injected === true
+          && payload.announce?.lanApi?.updateDriven === true
+          && payload.announce?.game?.recorded === true
+          && payload.announce?.game?.slotsClosed === true
+          && payload.join?.originalRequest === "LANAPI::RequestGameJoin"
+          && payload.join?.originalHostHandler === "LANAPI::handleRequestJoin"
+          && payload.join?.originalReply === "LANAPI::RequestGameOptions"
+          && payload.join?.originalJoinerHandlers === "LANAPI::handleJoinAccept+LANAPI::handleGameOptions"
+          && payload.join?.originalJoinerCallbacks === "LANAPI::OnGameJoin+LANAPI::OnGameOptions"
+          && payload.join?.request?.messageType === "MSG_REQUEST_JOIN"
+          && payload.join?.reply?.joinAcceptType === "MSG_JOIN_ACCEPT"
+          && payload.join?.reply?.gameOptionsType === "MSG_GAME_OPTIONS"
+          && payload.join?.host?.transport?.injected === true
+          && payload.join?.host?.lanApi?.onPlayerJoinCalls === 1
+          && payload.join?.joiner?.transport?.joinAcceptInjected === true
+          && payload.join?.joiner?.transport?.gameOptionsInjected === true
+          && payload.join?.joiner?.game?.localSlot === 1
+          && payload.gameStart?.originalRequest === "LANAPI::RequestGameStart"
+          && payload.gameStart?.originalHostNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.gameStart?.originalJoinerHandler === "LANAPI::handleGameStart"
+          && payload.gameStart?.originalJoinerNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.gameStart?.packet?.messageType === "MSG_GAME_START"
+          && payload.gameStart?.packet?.activeBytes > 0
+          && payload.gameStart?.packet?.activeBytes <= 476
+          && payload.gameStart?.host?.lanApi?.onGameStartCalls === 1
+          && payload.gameStart?.host?.network?.setupReady === true
+          && payload.gameStart?.joiner?.transport?.injected === true
+          && payload.gameStart?.joiner?.lanApi?.onGameStartCalls === 1
+          && payload.gameStart?.joiner?.network?.setupReady === true
+          && payload.gameStart?.joiner?.callback?.sideEffectsReady === true
+          && payload.relayStats?.receivedFrames === 5
+          && payload.relayStats?.forwardedFrames === 5
+          && payload.relayStats?.receivedBytes > 0
+          && payload.relayStats?.forwardedBytes === payload.relayStats?.receivedBytes,
+        "browser LANAPI WebSocket flow smoke did not carry discovery/join/start through WebSocket binary frames into original LANAPI", payload);
+    },
+  },
+  {
     name: "browser-lanapi-network-update",
     file: "harness/lanapi_network_update_smoke.mjs",
     validate(payload) {
@@ -705,6 +761,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
+    "two isolated Playwright browser contexts carrying LANAPI announce, join/options, and game-start messages through browser WebSocket binary frames into original LANAPI handlers",
     "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
@@ -716,7 +773,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "wire browser WebSocket binary send/receive into the production Transport::doSend/doRecv ownership path or extend networking coverage to multi-frame deterministic sync/desync detection",
+    "wire browser WebSocket binary send/receive into the production Transport::doSend/doRecv and LANAPI ownership paths or extend networking coverage to multi-frame deterministic sync/desync detection",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

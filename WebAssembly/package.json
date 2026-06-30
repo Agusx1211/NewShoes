@@ -139,6 +139,7 @@
     "test:browser-lanapi-two-contexts": "npm run build:wasm && node harness/lanapi_announce_two_contexts_smoke.mjs",
     "test:browser-lanapi-join-options-two-contexts": "npm run build:wasm && node harness/lanapi_join_options_two_contexts_smoke.mjs",
     "test:browser-lanapi-game-start-two-contexts": "npm run build:wasm && node harness/lanapi_game_start_two_contexts_smoke.mjs",
+    "test:browser-lanapi-websocket-flow": "npm run build:wasm && node harness/lanapi_websocket_flow_smoke.mjs",
     "test:browser-lanapi-network-update": "npm run build:wasm && node harness/lanapi_network_update_smoke.mjs",
     "test:gamenetwork-download-manager": "npm run build:wasm && node dist/gamenetwork-download-manager-smoke.cjs",
     "test:gameclient-utility": "npm run build:wasm && node dist/gameclient-utility-smoke.cjs",

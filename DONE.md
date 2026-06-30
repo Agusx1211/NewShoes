@@ -4732,6 +4732,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       not yet wire WebSocket into production `Transport::doSend` / `doRecv`.
       `test:browser-network-websocket-transport` and
       `test:vertical-integrations` gate the new path.
+- [x] Carry the LANAPI discovery/join/game-start flow through browser
+      WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
+      isolated Playwright contexts, builds the existing original LAN announce,
+      join request, join accept/options, and game-start payloads, sends all
+      five LANMessage payloads through the browser WebSocket binary relay, and
+      then feeds the received bytes to the existing focused original LANAPI
+      accept paths. The smoke proves `LANAPI::update`,
+      `handleGameAnnounce`, `handleRequestJoin`, `handleJoinAccept`,
+      `handleGameOptions`, `handleGameStart`, `OnGameList`, `OnPlayerJoin`,
+      `OnGameJoin`, `OnGameOptions`, `OnGameStart`, and
+      `NetworkInterface::createNetwork -> Network::init/initTransport/
+      parseUserList` across browser-native binary frames. This still does not
+      wire WebSocket into production `Transport` / `LANAPI` ownership.
+      `test:browser-lanapi-websocket-flow` and `test:vertical-integrations`
+      gate the new path.
 
 ---
 

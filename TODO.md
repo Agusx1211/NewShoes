@@ -1198,8 +1198,11 @@ shares structure and follows behind.
       update slice now advances that setup through original `Network::update`
       into first-frame readiness. The WebSocket binary transport smoke removes
       the Node-mediated packet-hex handoff for the GameNetwork packet vertical,
-      but LANAPI still needs production WebSocket/WebRTC ownership instead of
-      focused harness packet delivery.
+      and `lanapi_websocket_flow_smoke.mjs` now carries LAN announce,
+      join/options, and game-start messages through browser `WebSocket` binary
+      frames before handing them to the original LANAPI accept paths. LANAPI
+      still needs production WebSocket/WebRTC ownership under the actual
+      transport path instead of focused harness packet delivery.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
