@@ -1544,6 +1544,63 @@ function assertBrowserAudioMixerRuntime(mixer, context, expected = {}) {
   }
 }
 
+function assertBrowserMssSamplePlaybackRuntime(runtime, context, expected = {}) {
+  if (!runtime
+      || runtime.source !== "MSS 2D sample Web Audio backend proof"
+      || runtime.engineDriven !== false
+      || runtime.mssDriven !== true
+      || runtime.nextRequired !== "realMilesAudioManagerSamplePlayback"
+      || !Array.isArray(runtime.nodeGraph)
+      || !runtime.nodeGraph.includes("AudioBufferSourceNode")
+      || !runtime.nodeGraph.includes("soundGainNode")
+      || !runtime.nodeGraph.includes("AudioDestinationNode")) {
+    throw new Error(`${context} MSS sample playback runtime state mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(expected, "ready") && runtime.ready !== expected.ready) {
+    throw new Error(`${context} MSS sample playback ready mismatch: ${JSON.stringify(runtime)}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(expected, "completed") && runtime.completed !== expected.completed) {
+    throw new Error(`${context} MSS sample playback completion count mismatch: ${JSON.stringify(runtime)}`);
+  }
+  if (expected.afterPlayback) {
+    const event = runtime.lastEvent;
+    if (runtime.ready !== true
+        || runtime.runtimePlayback !== true
+        || runtime.started !== 1
+        || runtime.completed !== 1
+        || runtime.ended !== 1
+        || runtime.released !== 1
+        || runtime.activeSources !== 0
+        || runtime.lastError !== null
+        || event?.handle !== expected.handle
+        || event?.webAudioNode !== "AudioBufferSourceNode"
+        || event?.payload?.codec !== "PCM"
+        || event?.payload?.frames !== 2205
+        || event?.payload?.sampleRate !== 44100
+        || event?.payload?.channels !== 2
+        || event?.payload?.bitsPerSample !== 16
+        || Math.abs((event?.sample?.volume ?? 0) - 0.5) > 0.001
+        || Math.abs((event?.sample?.panFloat ?? 0) - 0.75) > 0.001
+        || Math.abs((event?.sample?.stereoPan ?? 0) - 0.5) > 0.001
+        || event?.completion?.callback !== "AudioBufferSourceNode.onended") {
+      throw new Error(`${context} MSS sample playback mismatch: ${JSON.stringify(runtime)}`);
+    }
+    const phases = (runtime.eventLog ?? []).map((entry) => entry.phase);
+    for (const required of [
+      "AIL_start_sample",
+      "webAudioStart",
+      "completed",
+      "AIL_end_sample",
+      "AIL_release_sample_handle",
+    ]) {
+      if (!phases.includes(required)) {
+        throw new Error(`${context} MSS sample playback missing ${required}: ${JSON.stringify(runtime.eventLog)}`);
+      }
+    }
+  }
+}
+
 function assertBrowserAudioLiveEventRuntime(live, context, expected = {}) {
   if (!live
       || live.source !== "browser requested audio live AudioBufferSourceNode lifecycle proof"
@@ -4237,6 +4294,35 @@ try {
     "runtime archive state before request path playback",
     { ready: true, cacheEntries: 5, completed: 0 },
   );
+  assertBrowserMssSamplePlaybackRuntime(
+    mixerVolumeResult.state.browserMssSamplePlaybackRuntime,
+    "runtime archive state before MSS sample playback",
+    { ready: true, completed: 0 },
+  );
+  const mssSamplePlaybackResult = await page.evaluate(() => window.CnCPort.rpc("mssSamplePlaybackProbe"));
+  if (!mssSamplePlaybackResult.ok) {
+    throw new Error(`MSS sample playback RPC failed: ${JSON.stringify(mssSamplePlaybackResult)}`);
+  }
+  assertBrowserMssSamplePlaybackRuntime(
+    mssSamplePlaybackResult.browserMssSamplePlaybackRuntime,
+    "runtime archive MSS sample playback",
+    { afterPlayback: true, handle: mssSamplePlaybackResult.startProbe?.sample?.handle },
+  );
+  assertBrowserMssSamplePlaybackRuntime(
+    mssSamplePlaybackResult.state.browserMssSamplePlaybackRuntime,
+    "runtime archive state after MSS sample playback",
+    { afterPlayback: true, handle: mssSamplePlaybackResult.startProbe?.sample?.handle },
+  );
+  if (mssSamplePlaybackResult.startProbe?.playbackReady !== true
+      || mssSamplePlaybackResult.startProbe?.sample?.browserStartRequested !== true
+      || mssSamplePlaybackResult.startProbe?.payload?.codec !== "PCM"
+      || mssSamplePlaybackResult.startProbe?.payload?.frames !== 2205
+      || mssSamplePlaybackResult.finishProbe?.playbackReady !== true
+      || mssSamplePlaybackResult.finishProbe?.sample?.browserEndRequested !== true
+      || mssSamplePlaybackResult.finishProbe?.sample?.browserReleaseRequested !== true
+      || mssSamplePlaybackResult.finishProbe?.callback?.count !== 1) {
+    throw new Error(`MSS sample playback C++ probe mismatch: ${JSON.stringify(mssSamplePlaybackResult)}`);
+  }
   const liveEventTarget = {
     cacheKey: "AudioEnglishZH.big|Data\\Audio\\Sounds\\English\\iciaatd.wav",
     eventName: "CIAAgentVoiceAttack",
@@ -4363,6 +4449,7 @@ try {
     audioRuntimeAssets: bootResult.state.audioRuntimeAssets,
     browserAudioRuntime: audioGestureResult.browserAudioRuntime,
     browserAudioMixerRuntime: mixerVolumeResult.browserAudioMixerRuntime,
+    browserMssSamplePlaybackRuntime: mssSamplePlaybackResult.browserMssSamplePlaybackRuntime,
     browserAudioLiveEventRuntime: liveEventResult.browserAudioLiveEventRuntime,
     browserAudioRequestPathRuntime: requestPathResult.browserAudioRequestPathRuntime,
     audioPayloadInventory: bootResult.state.audioPayloadInventory,

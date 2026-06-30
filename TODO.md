@@ -730,8 +730,8 @@ shares structure and follows behind.
       and `node WebAssembly/dist/miles-audio-open-device-smoke.cjs` now
       instantiates the original `MilesAudioManager` and drives its real
       `openDevice()` path through shared browser MSS runtime state. Full
-      `AudioManager::init` INI-driven startup and the next required real Web
-      Audio playback backend owned by the original manager remain open.
+      `AudioManager::init` INI-driven startup plus Web Audio playback owned by
+      the original manager's event/sample/stream paths remain open.
 - [ ] Replace remaining `Mss.H`/`dsound.h` compatibility paths used by
       `MilesAudioManager.cpp` with a browser-backed audio device that owns real
       sample data, streams, provider/listener state, mixer state, and
@@ -740,7 +740,12 @@ shares structure and follows behind.
       replacement remain open. The 2D sample handle lifecycle is now stateful and
       harness-probed by `mssSampleLifecycleProbe`, covering sample init, file
       assignment, callbacks, volume/pan/rate/loop settings, start/stop/resume,
-      status, and release without claiming Web Audio playback. The HSTREAM
+      status, and release. The focused `mssSamplePlaybackProbe` now drives a
+      valid in-memory PCM WAV from `AIL_start_sample` into the browser
+      `AudioBufferSourceNode -> GainNode -> StereoPannerNode -> soundGainNode`
+      graph after the Web Audio gesture, then asserts Web Audio completion,
+      MSS end, EOS callback, and release; folding that backend into the real
+      `MilesAudioManager` play-sample/request path remains open. The HSTREAM
       lifecycle is now stateful and harness-probed by
       `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
       registration, volume/pan/rate/loop/position state, start/pause/resume,
@@ -758,9 +763,11 @@ shares structure and follows behind.
       itself, without implementing the filter DSP path.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
-      callbacks, and 2D/3D sample lifecycle once the Web Audio backend exists;
-      `verify:audio-sound-manager-counters-frontier` now pins the source-only
-      `SoundManager` counter contract that runtime playback must satisfy.
+      callbacks, and 2D/3D sample lifecycle once the focused MSS sample
+      backend is folded into the real `MilesAudioManager` request path and
+      the stream/3D playback backends exist; `verify:audio-sound-manager-
+      counters-frontier` now pins the source-only `SoundManager` counter
+      contract that runtime playback must satisfy.
 - [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove
@@ -773,9 +780,11 @@ shares structure and follows behind.
       schedule render, a browser lifecycle proof, and a Web Audio mixer-bus
       proof for requested music/SFX/3D SFX/voice/speech keys. The harness also
       retains that representative decoded cache for one live requested
-      `AudioBufferSourceNode` lifecycle proof through the runtime mixer. Expand
-      that proof into full resolved requested-payload decode/cache storage and
-      real engine-driven Web Audio scheduling/lifecycle.
+      `AudioBufferSourceNode` lifecycle proof through the runtime mixer, and
+      the MSS sample playback probe now schedules a valid synthetic PCM WAV
+      through the browser mixer from `AIL_start_sample`. Expand those proofs
+      into full resolved requested-payload decode/cache storage and real
+      engine-driven Web Audio scheduling/lifecycle.
 - [ ] 2D SFX playback with the engine's audio event system (INIAudioEventInfo);
       `verify:audio-playing-event-state-frontier` now pins the original
       `PlayingAudio` active-event record, list insertion, completion marker,

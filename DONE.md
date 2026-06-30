@@ -3799,6 +3799,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       phase, and live Web Audio start/completion/release assertions. This is a
       harness proof of the source request contract; the original
       `MilesAudioManager` runtime still needs a browser Web Audio backend.
+- [x] Add a focused MSS 2D sample Web Audio playback proof.
+      `Mss.H` now notifies the browser bridge when `AIL_start_sample`,
+      `AIL_stop_sample`, `AIL_end_sample`, and `AIL_release_sample_handle`
+      touch a sample. The wasm `cnc_port_probe_mss_sample_playback_start` /
+      `cnc_port_probe_mss_sample_playback_finish` exports drive a valid
+      in-memory PCM WAV through `AIL_start_sample`, the bridge schedules it
+      after the Web Audio gesture through `AudioBufferSourceNode`, `GainNode`,
+      `StereoPannerNode`, `soundGainNode`, and `AudioDestinationNode`, and
+      `runtime_archives_smoke.mjs` asserts
+      Web Audio completion, MSS end/release state, and the C++ EOS callback.
+      `test:vertical-integrations` now gates that runtime archive preload
+      includes MSS 2D Web Audio sample playback while preserving that full
+      original `MilesAudioManager` event/stream/3D playback remains open.
+      Verified with `npm --prefix WebAssembly run test:runtime-archives-browser`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Make the first MSS startup/device boundary stateful and
       harness-observable. `Mss.H` now records redist directory, startup,
       shutdown, quick-startup arguments, and file callbacks, and returns

@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 #include "Mss.H"
 
@@ -11,8 +12,23 @@
 
 namespace {
 char g_mss_sample_lifecycle_probe_json[4096] = {};
+char g_mss_sample_playback_start_json[4096] = {};
+char g_mss_sample_playback_finish_json[4096] = {};
 int g_sample_eos_count = 0;
 HSAMPLE g_sample_eos_last_handle = 0;
+int g_playback_sample_eos_count = 0;
+HSAMPLE g_playback_sample_eos_last_handle = 0;
+HSAMPLE g_playback_sample = 0;
+
+constexpr U32 kPlaybackSampleRate = 44100;
+constexpr U32 kPlaybackChannels = 2;
+constexpr U32 kPlaybackBitsPerSample = 16;
+constexpr U32 kPlaybackFrames = 2205;
+constexpr U32 kPlaybackDataBytes =
+	kPlaybackFrames * kPlaybackChannels * (kPlaybackBitsPerSample / 8);
+constexpr U32 kPlaybackWaveBytes = 44 + kPlaybackDataBytes;
+U8 g_playback_wave[kPlaybackWaveBytes] = {};
+bool g_playback_wave_ready = false;
 
 void AILCALLBACK probe_sample_eos(HSAMPLE sample)
 {
@@ -20,9 +36,61 @@ void AILCALLBACK probe_sample_eos(HSAMPLE sample)
 	g_sample_eos_last_handle = sample;
 }
 
+void AILCALLBACK playback_sample_eos(HSAMPLE sample)
+{
+	++g_playback_sample_eos_count;
+	g_playback_sample_eos_last_handle = sample;
+}
+
 bool handle_valid(std::uintptr_t handle)
 {
 	return MSSBrowserHandleValid(handle);
+}
+
+void write_u16_le(U8 *data, U32 offset, U16 value)
+{
+	data[offset] = static_cast<U8>(value & 0xff);
+	data[offset + 1] = static_cast<U8>((value >> 8) & 0xff);
+}
+
+void write_u32_le(U8 *data, U32 offset, U32 value)
+{
+	data[offset] = static_cast<U8>(value & 0xff);
+	data[offset + 1] = static_cast<U8>((value >> 8) & 0xff);
+	data[offset + 2] = static_cast<U8>((value >> 16) & 0xff);
+	data[offset + 3] = static_cast<U8>((value >> 24) & 0xff);
+}
+
+void prepare_playback_wave()
+{
+	if (g_playback_wave_ready) {
+		return;
+	}
+
+	std::memcpy(g_playback_wave + 0, "RIFF", 4);
+	write_u32_le(g_playback_wave, 4, 36 + kPlaybackDataBytes);
+	std::memcpy(g_playback_wave + 8, "WAVE", 4);
+	std::memcpy(g_playback_wave + 12, "fmt ", 4);
+	write_u32_le(g_playback_wave, 16, 16);
+	write_u16_le(g_playback_wave, 20, WAVE_FORMAT_PCM);
+	write_u16_le(g_playback_wave, 22, kPlaybackChannels);
+	write_u32_le(g_playback_wave, 24, kPlaybackSampleRate);
+	write_u32_le(g_playback_wave, 28, kPlaybackSampleRate * kPlaybackChannels * (kPlaybackBitsPerSample / 8));
+	write_u16_le(g_playback_wave, 32, kPlaybackChannels * (kPlaybackBitsPerSample / 8));
+	write_u16_le(g_playback_wave, 34, kPlaybackBitsPerSample);
+	std::memcpy(g_playback_wave + 36, "data", 4);
+	write_u32_le(g_playback_wave, 40, kPlaybackDataBytes);
+
+	U32 cursor = 44;
+	for (U32 frame = 0; frame < kPlaybackFrames; ++frame) {
+		const S16 sample = (frame % 80) < 40 ? 12000 : -12000;
+		for (U32 channel = 0; channel < kPlaybackChannels; ++channel) {
+			write_u16_le(g_playback_wave, cursor, static_cast<U16>(sample));
+			cursor += 2;
+		}
+	}
+
+	g_playback_wave_ready = true;
 }
 }
 
@@ -185,6 +253,130 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_sample_lifecycle()
 		user_data_after_release);
 
 	return g_mss_sample_lifecycle_probe_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_sample_playback_start()
+{
+	prepare_playback_wave();
+	MSSBrowserRuntimeReset();
+	g_playback_sample_eos_count = 0;
+	g_playback_sample_eos_last_handle = 0;
+	g_playback_sample = 0;
+
+	AIL_startup();
+	const S32 quick_startup_result = AIL_quick_startup(1, 0, kPlaybackSampleRate, 16, kPlaybackChannels);
+
+	HDIGDRIVER digital = nullptr;
+	AIL_quick_handles(&digital, nullptr, nullptr);
+
+	g_playback_sample = AIL_allocate_sample_handle(digital);
+	const bool allocated = handle_valid(g_playback_sample);
+
+	AIL_init_sample(g_playback_sample);
+	const S32 set_file_result = AIL_set_sample_file(g_playback_sample, g_playback_wave, 0);
+	AIL_register_EOS_callback(g_playback_sample, playback_sample_eos);
+	AIL_set_sample_volume_pan(g_playback_sample, 0.5f, 0.75f);
+	AIL_set_sample_playback_rate(g_playback_sample, kPlaybackSampleRate);
+	AIL_set_sample_loop_count(g_playback_sample, 1);
+
+	AIL_start_sample(g_playback_sample);
+	const S32 status_after_start = AIL_sample_status(g_playback_sample);
+	const MSSBrowserSampleState *after_start = MSSBrowserFindSample(g_playback_sample);
+	const bool browser_start_requested =
+		after_start != nullptr && after_start->browser_playback_requested;
+	const bool ok =
+		quick_startup_result == 1 &&
+		digital != nullptr &&
+		allocated &&
+		set_file_result == 1 &&
+		status_after_start == SMP_PLAYING &&
+		browser_start_requested;
+
+	std::snprintf(g_mss_sample_playback_start_json, sizeof(g_mss_sample_playback_start_json),
+		"{\"ok\":%s,"
+		"\"source\":\"Mss.H browser 2D sample Web Audio playback start probe\","
+		"\"runtimeReady\":false,"
+		"\"sampleLifecycleReady\":true,"
+		"\"playbackReady\":%s,"
+		"\"nextRequired\":\"realMilesAudioManagerSamplePlayback\","
+		"\"quickStartup\":{\"result\":%d,\"digitalHandle\":%s,"
+		"\"outputRate\":%u,\"outputBits\":16,\"outputChannels\":%u},"
+		"\"sample\":{\"handle\":%llu,\"statusAfterStart\":%d,"
+		"\"browserStartRequested\":%s,\"volume\":%.3f,\"pan\":%.3f,"
+		"\"playbackRate\":%u,\"loopCount\":1},"
+		"\"payload\":{\"container\":\"RIFF/WAVE\",\"codec\":\"PCM\","
+		"\"bytes\":%u,\"dataBytes\":%u,\"frames\":%u,"
+		"\"sampleRate\":%u,\"channels\":%u,\"bitsPerSample\":%u}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		quick_startup_result,
+		digital != nullptr ? "true" : "false",
+		kPlaybackSampleRate,
+		kPlaybackChannels,
+		static_cast<unsigned long long>(g_playback_sample),
+		status_after_start,
+		browser_start_requested ? "true" : "false",
+		0.5,
+		0.75,
+		kPlaybackSampleRate,
+		kPlaybackWaveBytes,
+		kPlaybackDataBytes,
+		kPlaybackFrames,
+		kPlaybackSampleRate,
+		kPlaybackChannels,
+		kPlaybackBitsPerSample);
+
+	return g_mss_sample_playback_start_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_mss_sample_playback_finish()
+{
+	const S32 status_before_end = AIL_sample_status(g_playback_sample);
+	AIL_end_sample(g_playback_sample);
+	const S32 status_after_end = AIL_sample_status(g_playback_sample);
+	MSSBrowserSampleState *before_release = MSSBrowserFindSample(g_playback_sample);
+	const bool browser_end_requested =
+		before_release != nullptr && before_release->browser_playback_ended;
+	AIL_release_sample_handle(g_playback_sample);
+	const bool browser_release_requested =
+		before_release != nullptr && before_release->browser_playback_released;
+	const bool released = MSSBrowserFindSample(g_playback_sample) == nullptr;
+	const S32 status_after_release = AIL_sample_status(g_playback_sample);
+	const bool ok =
+		handle_valid(g_playback_sample) &&
+		status_before_end == SMP_PLAYING &&
+		status_after_end == SMP_DONE &&
+		g_playback_sample_eos_count == 1 &&
+		g_playback_sample_eos_last_handle == g_playback_sample &&
+		browser_end_requested &&
+		browser_release_requested &&
+		released &&
+		status_after_release == SMP_DONE;
+
+	std::snprintf(g_mss_sample_playback_finish_json, sizeof(g_mss_sample_playback_finish_json),
+		"{\"ok\":%s,"
+		"\"source\":\"Mss.H browser 2D sample Web Audio playback finish probe\","
+		"\"playbackReady\":%s,"
+		"\"nextRequired\":\"realMilesAudioManagerSamplePlayback\","
+		"\"sample\":{\"handle\":%llu,\"statusBeforeEnd\":%d,"
+		"\"statusAfterEnd\":%d,\"statusAfterRelease\":%d,"
+		"\"browserEndRequested\":%s,\"browserReleaseRequested\":%s,"
+		"\"released\":%s},"
+		"\"callback\":{\"count\":%d,\"lastHandle\":%llu}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		static_cast<unsigned long long>(g_playback_sample),
+		status_before_end,
+		status_after_end,
+		status_after_release,
+		browser_end_requested ? "true" : "false",
+		browser_release_requested ? "true" : "false",
+		released ? "true" : "false",
+		g_playback_sample_eos_count,
+		static_cast<unsigned long long>(g_playback_sample_eos_last_handle));
+
+	g_playback_sample = 0;
+	return g_mss_sample_playback_finish_json;
 }
 
 }

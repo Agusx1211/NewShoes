@@ -144,6 +144,10 @@ const steps = [
         "runtime archive smoke did not load real GameText", payload.aggregateProbe);
       expect(payload.aggregateProbe?.mapCache?.ok === true,
         "runtime archive smoke did not load real MapCache metadata", payload.aggregateProbe);
+      expect(payload.browserMssSamplePlaybackRuntime?.runtimePlayback === true
+          && payload.browserMssSamplePlaybackRuntime?.mssDriven === true
+          && payload.browserMssSamplePlaybackRuntime?.lastEvent?.webAudioNode === "AudioBufferSourceNode",
+        "runtime archive smoke did not prove MSS 2D sample playback through Web Audio", payload.browserMssSamplePlaybackRuntime);
       assertDeviceFrontier(payload, "runtime archive smoke");
       assertStartupSingletonFrontier(payload, "runtime archive smoke");
     },
@@ -237,7 +241,7 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
-    "runtime archive preload, boot-time startup asset consumption, and startup singleton pre-audio frontier diagnostics",
+    "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",

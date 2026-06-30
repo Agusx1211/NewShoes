@@ -3,7 +3,16 @@
 #include <cstddef>
 #include <cstdint>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
+
 #include "windows.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdollar-in-identifier-extension"
+#endif
 
 using S8 = std::int8_t;
 using U8 = std::uint8_t;
@@ -196,6 +205,10 @@ struct MSSBrowserSampleState
 	bool started = false;
 	bool stopped = false;
 	bool resumed = false;
+	bool browser_playback_requested = false;
+	bool browser_playback_stopped = false;
+	bool browser_playback_ended = false;
+	bool browser_playback_released = false;
 	HSAMPLE handle = 0;
 	void *file_data = nullptr;
 	S32 file_flags = 0;
@@ -338,6 +351,111 @@ static inline bool MSSBrowserRuntimeStarted()
 static inline bool MSSBrowserHandleValid(std::uintptr_t handle)
 {
 	return handle != 0 && handle != MSSInvalidHandle();
+}
+
+static inline S32 MSSBrowserNotifySampleStart(const MSSBrowserSampleState &sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssSampleStart : null;
+		if (typeof bridge !== "function" || typeof Module === "undefined" || !Module.HEAPU8) {
+			return 0;
+		}
+		try {
+			return bridge({
+				handle: $0 >>> 0,
+				dataPtr: $1 >>> 0,
+				fileFlags: $2 | 0,
+				volume: $3 | 0,
+				pan: $4 | 0,
+				volumeFloat: Number($5),
+				panFloat: Number($6),
+				playbackRate: $7 | 0,
+				loopCount: $8 | 0,
+				msPosition: $9 | 0,
+			}, Module.HEAPU8) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssSampleStart failed", error);
+			return 0;
+		}
+	},
+		static_cast<unsigned int>(sample.handle),
+		static_cast<unsigned int>(reinterpret_cast<std::uintptr_t>(sample.file_data)),
+		sample.file_flags,
+		sample.volume,
+		sample.pan,
+		static_cast<double>(sample.volume_float),
+		static_cast<double>(sample.pan_float),
+		sample.playback_rate,
+		sample.loop_count,
+		sample.ms_position);
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotifySampleStop(HSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssSampleStop : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssSampleStop failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotifySampleEnd(HSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssSampleEnd : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssSampleEnd failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
+}
+
+static inline S32 MSSBrowserNotifySampleRelease(HSAMPLE sample)
+{
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		const bridge = typeof Module !== "undefined" ? Module.cncPortMssSampleRelease : null;
+		if (typeof bridge !== "function") {
+			return 0;
+		}
+		try {
+			return bridge({ handle: $0 >>> 0 }) ? 1 : 0;
+		} catch (error) {
+			console.error("cncPortMssSampleRelease failed", error);
+			return 0;
+		}
+	}, static_cast<unsigned int>(sample));
+#else
+	(void)sample;
+	return 0;
+#endif
 }
 
 static inline MSSBrowserSampleState *MSSBrowserFindSample(HSAMPLE handle)
@@ -544,6 +662,7 @@ static inline void AIL_release_sample_handle(HSAMPLE sample)
 {
 	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
 	if (state != nullptr) {
+		state->browser_playback_released = MSSBrowserNotifySampleRelease(sample) != 0;
 		state->released = true;
 		state->allocated = false;
 		state->status = SMP_DONE;
@@ -559,6 +678,10 @@ static inline void AIL_init_sample(HSAMPLE sample)
 		state->started = false;
 		state->stopped = false;
 		state->resumed = false;
+		state->browser_playback_requested = false;
+		state->browser_playback_stopped = false;
+		state->browser_playback_ended = false;
+		state->browser_playback_released = false;
 		state->file_data = nullptr;
 		state->file_flags = 0;
 		state->status = SMP_STOPPED;
@@ -588,6 +711,7 @@ static inline void AIL_start_sample(HSAMPLE sample)
 		state->stopped = false;
 		state->resumed = false;
 		state->status = SMP_PLAYING;
+		state->browser_playback_requested = MSSBrowserNotifySampleStart(*state) != 0;
 	}
 }
 static inline void AIL_stop_sample(HSAMPLE sample)
@@ -596,6 +720,7 @@ static inline void AIL_stop_sample(HSAMPLE sample)
 	if (state != nullptr) {
 		state->stopped = true;
 		state->status = SMP_STOPPED;
+		state->browser_playback_stopped = MSSBrowserNotifySampleStop(sample) != 0;
 	}
 }
 static inline void AIL_resume_sample(HSAMPLE sample)
@@ -605,6 +730,7 @@ static inline void AIL_resume_sample(HSAMPLE sample)
 		state->resumed = true;
 		state->stopped = false;
 		state->status = SMP_PLAYING;
+		state->browser_playback_requested = MSSBrowserNotifySampleStart(*state) != 0;
 	}
 }
 static inline void AIL_end_sample(HSAMPLE sample)
@@ -612,6 +738,7 @@ static inline void AIL_end_sample(HSAMPLE sample)
 	MSSBrowserSampleState *state = MSSBrowserFindSample(sample);
 	if (state != nullptr) {
 		state->status = SMP_DONE;
+		state->browser_playback_ended = MSSBrowserNotifySampleEnd(sample) != 0;
 		if (state->eos_callback != nullptr) {
 			state->eos_callback(sample);
 		}
@@ -1302,3 +1429,7 @@ static inline void AIL_get_DirectSound_info(HSAMPLE, void **directSound, void *)
 }
 static inline void AIL_stop_timer(HTIMER) {}
 static inline void AIL_release_timer_handle(HTIMER) {}
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif

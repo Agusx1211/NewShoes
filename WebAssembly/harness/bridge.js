@@ -356,6 +356,21 @@ const browserAudioRequestPathRuntime = {
   lastError: null,
 };
 
+const browserMssSamplePlaybackRuntime = {
+  source: "MSS 2D sample Web Audio backend proof",
+  started: 0,
+  completed: 0,
+  stopped: 0,
+  ended: 0,
+  released: 0,
+  resetGeneration: 0,
+  activeSources: new Map(),
+  pendingCompletions: new Map(),
+  lastEvent: null,
+  eventLog: [],
+  lastError: null,
+};
+
 const wasmModulePromise = loadWasmModule();
 
 function browserAudioContextCtor() {
@@ -662,6 +677,252 @@ function summarizeBrowserAudioRequestPathRuntime() {
     eventLog: [...browserAudioRequestPathRuntime.eventLog],
     lastError: browserAudioRequestPathRuntime.lastError,
   };
+}
+
+function resetBrowserMssSamplePlaybackRuntime() {
+  browserMssSamplePlaybackRuntime.resetGeneration += 1;
+  for (const entry of browserMssSamplePlaybackRuntime.activeSources.values()) {
+    try {
+      entry.source.stop();
+    } catch {
+      // Already ended or never started; reset still owns cleanup.
+    }
+    try {
+      entry.source.disconnect();
+    } catch {
+      // Some browsers disconnect completed source nodes automatically.
+    }
+  }
+  browserMssSamplePlaybackRuntime.started = 0;
+  browserMssSamplePlaybackRuntime.completed = 0;
+  browserMssSamplePlaybackRuntime.stopped = 0;
+  browserMssSamplePlaybackRuntime.ended = 0;
+  browserMssSamplePlaybackRuntime.released = 0;
+  browserMssSamplePlaybackRuntime.activeSources.clear();
+  browserMssSamplePlaybackRuntime.pendingCompletions.clear();
+  browserMssSamplePlaybackRuntime.lastEvent = null;
+  browserMssSamplePlaybackRuntime.eventLog = [];
+  browserMssSamplePlaybackRuntime.lastError = null;
+}
+
+function summarizeBrowserMssSamplePlaybackRuntime() {
+  return {
+    source: browserMssSamplePlaybackRuntime.source,
+    ready:
+      browserAudioRuntime.context?.state === "running" &&
+      browserAudioMixerRuntime.created === true,
+    runtimePlayback: browserMssSamplePlaybackRuntime.completed > 0,
+    engineDriven: false,
+    mssDriven: true,
+    nextRequired: "realMilesAudioManagerSamplePlayback",
+    nodeGraph: [
+      "AudioBufferSourceNode",
+      "GainNode",
+      "StereoPannerNode",
+      "soundGainNode",
+      "AudioDestinationNode",
+    ],
+    started: browserMssSamplePlaybackRuntime.started,
+    completed: browserMssSamplePlaybackRuntime.completed,
+    stopped: browserMssSamplePlaybackRuntime.stopped,
+    ended: browserMssSamplePlaybackRuntime.ended,
+    released: browserMssSamplePlaybackRuntime.released,
+    activeSources: browserMssSamplePlaybackRuntime.activeSources.size,
+    lastEvent: browserMssSamplePlaybackRuntime.lastEvent,
+    eventLog: [...browserMssSamplePlaybackRuntime.eventLog],
+    lastError: browserMssSamplePlaybackRuntime.lastError,
+  };
+}
+
+function readMssSampleWaveBytes(payload, heapu8) {
+  const dataPtr = Number(payload?.dataPtr ?? 0) >>> 0;
+  if (!dataPtr || !(heapu8 instanceof Uint8Array)) {
+    throw new Error("MSS sample payload pointer is unavailable");
+  }
+  if (dataPtr + 12 > heapu8.byteLength) {
+    throw new Error(`MSS sample payload pointer is outside wasm memory: ${dataPtr}`);
+  }
+  const riffSize = readU32LE(heapu8, dataPtr + 4) + 8;
+  if (riffSize < 44 || riffSize > 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
+    throw new Error(`MSS sample RIFF size is invalid: ${riffSize}`);
+  }
+  return heapu8.slice(dataPtr, dataPtr + riffSize);
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function cncPortMssSampleStart(payload, heapu8) {
+  const context = browserAudioRuntime.context;
+  if (!context || context.state !== "running") {
+    browserMssSamplePlaybackRuntime.lastError = "AudioContext is not running";
+    return false;
+  }
+  const mixer = ensureBrowserAudioMixerRuntime();
+  if (!mixer) {
+    browserMssSamplePlaybackRuntime.lastError = browserAudioMixerRuntime.lastError;
+    return false;
+  }
+  const busNode = mixer.busNodes?.sound ?? null;
+  if (!busNode) {
+    browserMssSamplePlaybackRuntime.lastError = "missing browser audio mixer sound bus";
+    return false;
+  }
+
+  try {
+    const bytes = readMssSampleWaveBytes(payload, heapu8);
+    const decoded = decodeAudioWavPayload(bytes);
+    const decodedFrames = Math.floor(decoded.samples.length / decoded.info.channels);
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    const panner = typeof context.createStereoPanner === "function"
+      ? context.createStereoPanner()
+      : null;
+    const volume = clamp01(Number(payload.volumeFloat ?? 1));
+    const panFloat = clamp01(Number(payload.panFloat ?? 0.5));
+    const pan = Number(((panFloat * 2) - 1).toFixed(6));
+    gain.gain.value = volume;
+    if (panner) {
+      panner.pan.value = pan;
+    }
+    source.buffer = createWebAudioBufferFromDecoded(context, {
+      info: decoded.info,
+      samples: decoded.samples,
+      decodedFrames,
+    });
+    source.connect(gain);
+    if (panner) {
+      gain.connect(panner);
+      panner.connect(busNode);
+    } else {
+      gain.connect(busNode);
+    }
+
+    const handle = Number(payload.handle ?? 0);
+    const generation = browserMssSamplePlaybackRuntime.resetGeneration;
+    const event = {
+      handle,
+      phase: "start",
+      webAudioNode: "AudioBufferSourceNode",
+      payload: {
+        container: "RIFF/WAVE",
+        codec: decoded.info.codec,
+        bytes: bytes.byteLength,
+        dataBytes: decoded.info.dataBytes,
+        frames: decodedFrames,
+        sampleRate: decoded.info.samplesPerSec,
+        channels: decoded.info.channels,
+        bitsPerSample: decoded.info.bitsPerSample,
+      },
+      sample: {
+        volume,
+        panFloat,
+        stereoPan: pan,
+        playbackRate: Number(payload.playbackRate ?? decoded.info.samplesPerSec),
+        loopCount: Number(payload.loopCount ?? 1),
+        msPosition: Number(payload.msPosition ?? 0),
+      },
+      startSeconds: Number(context.currentTime.toFixed(6)),
+      durationSeconds: Number(source.buffer.duration.toFixed(6)),
+      nodeGraph: panner
+        ? ["AudioBufferSourceNode", "GainNode", "StereoPannerNode", "soundGainNode", "AudioDestinationNode"]
+        : ["AudioBufferSourceNode", "GainNode", "soundGainNode", "AudioDestinationNode"],
+    };
+
+    const completion = new Promise((resolve) => {
+      source.onended = () => {
+        try {
+          source.disconnect();
+        } catch {
+          // Source may already be disconnected.
+        }
+        if (generation !== browserMssSamplePlaybackRuntime.resetGeneration) {
+          resolve({ handle, phase: "completed", ignoredAfterReset: true });
+          return;
+        }
+        browserMssSamplePlaybackRuntime.activeSources.delete(handle);
+        browserMssSamplePlaybackRuntime.pendingCompletions.delete(handle);
+        browserMssSamplePlaybackRuntime.completed += 1;
+        const ended = {
+          handle,
+          phase: "completed",
+          callback: "AudioBufferSourceNode.onended",
+          order: browserMssSamplePlaybackRuntime.completed,
+        };
+        browserMssSamplePlaybackRuntime.eventLog.push(ended);
+        browserMssSamplePlaybackRuntime.lastEvent = { ...event, completion: ended };
+        browserMssSamplePlaybackRuntime.lastError = null;
+        resolve(ended);
+      };
+    });
+
+    browserMssSamplePlaybackRuntime.started += 1;
+    browserMssSamplePlaybackRuntime.eventLog.push(
+      { handle, phase: "AIL_start_sample", node: "AudioBufferSourceNode" },
+      { handle, phase: "webAudioStart", volume, stereoPan: pan },
+    );
+    browserMssSamplePlaybackRuntime.lastEvent = event;
+    browserMssSamplePlaybackRuntime.activeSources.set(handle, { source, gain, panner });
+    browserMssSamplePlaybackRuntime.pendingCompletions.set(handle, completion);
+    source.start(context.currentTime);
+    return true;
+  } catch (error) {
+    browserMssSamplePlaybackRuntime.lastError = error?.message ?? String(error);
+    return false;
+  }
+}
+
+function cncPortMssSampleStop(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  const entry = browserMssSamplePlaybackRuntime.activeSources.get(handle);
+  if (!entry) {
+    return false;
+  }
+  browserMssSamplePlaybackRuntime.stopped += 1;
+  browserMssSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_stop_sample" });
+  try {
+    entry.source.stop();
+  } catch {
+    // Already ended; the C++ state machine still records the stop request.
+  }
+  return true;
+}
+
+function cncPortMssSampleEnd(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  browserMssSamplePlaybackRuntime.ended += 1;
+  browserMssSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_end_sample" });
+  return true;
+}
+
+function cncPortMssSampleRelease(payload) {
+  const handle = Number(payload?.handle ?? 0);
+  browserMssSamplePlaybackRuntime.released += 1;
+  browserMssSamplePlaybackRuntime.eventLog.push({ handle, phase: "AIL_release_sample_handle" });
+  return true;
+}
+
+async function waitForBrowserMssSamplePlayback(handle, timeoutMs = 2000) {
+  const completion = browserMssSamplePlaybackRuntime.pendingCompletions.get(Number(handle));
+  if (!completion) {
+    throw new Error(`MSS sample ${handle} has no pending Web Audio completion`);
+  }
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      completion,
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(`MSS sample ${handle} Web Audio completion timed out`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
 }
 
 function selectBrowserAudioLiveEventTarget(cacheKey) {
@@ -5725,6 +5986,10 @@ async function loadWasmModule() {
       cncPortD3D8TextureRelease: releaseD3D8Texture,
       cncPortD3D8TextureBind: bindD3D8Texture,
       cncPortD3D8DrawIndexed: paintD3D8DrawIndexed,
+      cncPortMssSampleStart,
+      cncPortMssSampleStop,
+      cncPortMssSampleEnd,
+      cncPortMssSampleRelease,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
     });
@@ -5756,6 +6021,8 @@ async function loadWasmModule() {
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
+      probeMssSamplePlaybackStart: module.cwrap("cnc_port_probe_mss_sample_playback_start", "string", []),
+      probeMssSamplePlaybackFinish: module.cwrap("cnc_port_probe_mss_sample_playback_finish", "string", []),
       probeMssStreamLifecycle: module.cwrap("cnc_port_probe_mss_stream_lifecycle", "string", []),
       probeMss3DSampleLifecycle: module.cwrap("cnc_port_probe_mss_3d_sample_lifecycle", "string", []),
       probeD3D8Clear: module.cwrap("cnc_port_probe_d3d8_clear", "string", ["number"]),
@@ -5997,6 +6264,7 @@ function snapshotState() {
     audioRuntimeAssets: harnessState.audioRuntimeAssets,
     browserAudioRuntime: summarizeBrowserAudioRuntime(),
     browserAudioMixerRuntime: summarizeBrowserAudioMixerRuntime(),
+    browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
@@ -15854,6 +16122,42 @@ async function rpc(command, payload = {}) {
             && probe.nextRequired === "webAudioPlaybackBackend",
           command,
           probe,
+          state: snapshotState(),
+        };
+      }
+    case "mssSamplePlaybackProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MSS sample playback probe cannot run" };
+        }
+        resetBrowserMssSamplePlaybackRuntime();
+        const startProbe = parseModuleState(wasmModule.probeMssSamplePlaybackStart());
+        let completion = null;
+        let completionError = null;
+        if (startProbe.ok && Number.isFinite(startProbe.sample?.handle)) {
+          try {
+            completion = await waitForBrowserMssSamplePlayback(startProbe.sample.handle);
+          } catch (error) {
+            completionError = error?.message ?? String(error);
+            browserMssSamplePlaybackRuntime.lastError = completionError;
+          }
+        }
+        const finishProbe = parseModuleState(wasmModule.probeMssSamplePlaybackFinish());
+        const runtime = summarizeBrowserMssSamplePlaybackRuntime();
+        return {
+          ok: Boolean(startProbe.ok)
+            && Boolean(finishProbe.ok)
+            && completionError === null
+            && runtime.runtimePlayback === true
+            && runtime.completed === 1
+            && runtime.ended === 1
+            && runtime.released === 1,
+          command,
+          startProbe,
+          completion,
+          finishProbe,
+          browserMssSamplePlaybackRuntime: runtime,
           state: snapshotState(),
         };
       }
