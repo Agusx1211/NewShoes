@@ -129,6 +129,10 @@ const steps = [
         "W3D window layout script smoke did not execute original MainMenuInit", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate(first idle frame)"),
         "W3D window layout script smoke did not execute MainMenuUpdate", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition"),
+        "W3D window layout script smoke did not execute real MainMenu button input/navigation", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return"),
+        "W3D window layout script smoke did not execute real MainMenu dropdown return navigation", payload);
     },
   },
   {
@@ -178,13 +182,13 @@ console.log(JSON.stringify({
   covered: [
     "runtime archive preload and boot-time startup asset consumption",
     "browser Range archive delivery through synthesized BIG files and original Win32BIGFileSystem",
-    "WindowZH-backed Shell/MainMenu layout callback execution",
+    "WindowZH-backed Shell/MainMenu layout callback execution and MainMenu dropdown input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
   ],
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
-    "drive a real MainMenu input/navigation action beyond the first idle frame",
+    "advance beyond MainMenu dropdown navigation to a real submenu selection without crossing into campaign/skirmish startup",
     "replace browser device-layer probe ownership with production CreateGameEngine/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

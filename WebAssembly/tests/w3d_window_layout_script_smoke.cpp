@@ -122,6 +122,10 @@ Int g_download_update_calls = 0;
 Int g_transition_set_group_calls = 0;
 Int g_transition_is_finished_calls = 0;
 Int g_transition_reverse_calls = 0;
+Int g_transition_remove_calls = 0;
+AsciiString g_last_transition_group;
+AsciiString g_last_transition_reverse_group;
+AsciiString g_last_transition_remove_group;
 
 std::string normalized_path(const Char *path)
 {
@@ -130,6 +134,17 @@ std::string normalized_path(const Char *path)
 	std::transform(result.begin(), result.end(), result.begin(),
 		[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 	return result;
+}
+
+WindowMsgData center_click_data(GameWindow *window)
+{
+	Int x = 0;
+	Int y = 0;
+	Int width = 0;
+	Int height = 0;
+	window->winGetScreenPosition(&x, &y);
+	window->winGetSize(&width, &height);
+	return SHORTTOLONG(x + width / 2, y + height / 2);
 }
 
 class MemoryScriptFile : public File
@@ -936,6 +951,10 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	g_transition_set_group_calls = 0;
 	g_transition_is_finished_calls = 0;
 	g_transition_reverse_calls = 0;
+	g_transition_remove_calls = 0;
+	g_last_transition_group.clear();
+	g_last_transition_reverse_group.clear();
+	g_last_transition_remove_group.clear();
 	{
 		Shell shell;
 		TheShell = &shell;
@@ -1000,6 +1019,87 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			"original MainMenuUpdate should not enter the download branch when TheDownloadManager is null") && ok;
 		ok = expect(g_transition_set_group_calls == 0 && g_transition_is_finished_calls == 0,
 			"original MainMenuUpdate first idle frame unexpectedly entered transition/game-start branches") && ok;
+		GameWindow *single_player_button = TheWindowManager->winGetWindowFromId(main_parent,
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonSinglePlayer")));
+		GameWindow *single_dropdown = TheWindowManager->winGetWindowFromId(main_parent,
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MapBorder")));
+		GameWindow *main_dropdown = TheWindowManager->winGetWindowFromId(main_parent,
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MapBorder2")));
+		ok = expect(single_player_button != nullptr,
+			"MainMenu.wnd did not create ButtonSinglePlayer for input navigation") && ok;
+		ok = expect(single_dropdown != nullptr,
+			"MainMenu.wnd did not create the single-player dropdown window") && ok;
+		ok = expect(main_dropdown != nullptr,
+			"MainMenu.wnd did not create the main dropdown window") && ok;
+		if (single_player_button != nullptr && single_dropdown != nullptr && main_dropdown != nullptr) {
+			const WindowMsgData packed_click = center_click_data(single_player_button);
+			const Int transition_is_finished_before_click = g_transition_is_finished_calls;
+			const Int transition_remove_before_click = g_transition_remove_calls;
+			const Int transition_reverse_before_click = g_transition_reverse_calls;
+			const Int transition_set_group_before_click = g_transition_set_group_calls;
+			ok = expect(BitTest(single_dropdown->winGetStatus(), WIN_STATUS_HIDDEN),
+				"single-player dropdown should start hidden after original MainMenuInit") && ok;
+			ok = expect(TheWindowManager->winSendInputMsg(single_player_button, GWM_LEFT_DOWN, packed_click, 0) == MSG_HANDLED,
+				"ButtonSinglePlayer did not handle original GWM_LEFT_DOWN input") && ok;
+			ok = expect(BitTest(single_player_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED),
+				"ButtonSinglePlayer did not enter selected state after original GWM_LEFT_DOWN") && ok;
+			ok = expect(TheWindowManager->winSendInputMsg(single_player_button, GWM_LEFT_UP, packed_click, 0) == MSG_HANDLED,
+				"ButtonSinglePlayer did not handle original GWM_LEFT_UP input") && ok;
+			ok = expect(BitTest(single_player_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+				"ButtonSinglePlayer did not clear selected state after original GWM_LEFT_UP") && ok;
+			ok = expect(BitTest(single_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+				"original MainMenuSystem did not unhide the single-player dropdown after ButtonSinglePlayer input") && ok;
+			ok = expect(g_transition_is_finished_calls == transition_is_finished_before_click + 1,
+				"original MainMenuSystem did not query the transition boundary for ButtonSinglePlayer") && ok;
+			ok = expect(g_transition_remove_calls == transition_remove_before_click + 1
+					&& g_last_transition_remove_group == AsciiString("MainMenuDefaultMenu"),
+				"original MainMenuSystem did not remove MainMenuDefaultMenu for ButtonSinglePlayer") && ok;
+			ok = expect(g_transition_reverse_calls == transition_reverse_before_click + 1
+					&& g_last_transition_reverse_group == AsciiString("MainMenuDefaultMenuBack"),
+				"original MainMenuSystem did not reverse MainMenuDefaultMenuBack for ButtonSinglePlayer") && ok;
+			ok = expect(g_transition_set_group_calls == transition_set_group_before_click + 1
+					&& g_last_transition_group == AsciiString("MainMenuSinglePlayerMenu"),
+				"original MainMenuSystem did not set MainMenuSinglePlayerMenu for ButtonSinglePlayer") && ok;
+			ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+				"ButtonSinglePlayer input should stop at the dropdown transition boundary without pushing another shell layout") && ok;
+			if (top != nullptr) {
+				top->runUpdate();
+			}
+			GameWindow *single_back_button = TheWindowManager->winGetWindowFromId(main_parent,
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonSingleBack")));
+			ok = expect(single_back_button != nullptr,
+				"MainMenu.wnd did not create ButtonSingleBack for dropdown return navigation") && ok;
+			if (single_back_button != nullptr) {
+				const WindowMsgData packed_back_click = center_click_data(single_back_button);
+				const Int back_transition_is_finished_before_click = g_transition_is_finished_calls;
+				const Int back_transition_remove_before_click = g_transition_remove_calls;
+				const Int back_transition_reverse_before_click = g_transition_reverse_calls;
+				const Int back_transition_set_group_before_click = g_transition_set_group_calls;
+				ok = expect(BitTest(main_dropdown->winGetStatus(), WIN_STATUS_HIDDEN),
+					"main dropdown should still be hidden before ButtonSingleBack input") && ok;
+				ok = expect(TheWindowManager->winSendInputMsg(single_back_button, GWM_LEFT_DOWN, packed_back_click, 0) == MSG_HANDLED,
+					"ButtonSingleBack did not handle original GWM_LEFT_DOWN input") && ok;
+				ok = expect(TheWindowManager->winSendInputMsg(single_back_button, GWM_LEFT_UP, packed_back_click, 0) == MSG_HANDLED,
+					"ButtonSingleBack did not handle original GWM_LEFT_UP input") && ok;
+				ok = expect(BitTest(single_back_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+					"ButtonSingleBack did not clear selected state after original GWM_LEFT_UP") && ok;
+				ok = expect(BitTest(main_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+					"original MainMenuSystem did not unhide the main dropdown after ButtonSingleBack input") && ok;
+				ok = expect(g_transition_is_finished_calls == back_transition_is_finished_before_click + 1,
+					"original MainMenuSystem did not query the transition boundary for ButtonSingleBack") && ok;
+				ok = expect(g_transition_remove_calls == back_transition_remove_before_click + 1
+						&& g_last_transition_remove_group == AsciiString("MainMenuSinglePlayerMenu"),
+					"original MainMenuSystem did not remove MainMenuSinglePlayerMenu for ButtonSingleBack") && ok;
+				ok = expect(g_transition_reverse_calls == back_transition_reverse_before_click + 1
+						&& g_last_transition_reverse_group == AsciiString("MainMenuSinglePlayerMenuBack"),
+					"original MainMenuSystem did not reverse MainMenuSinglePlayerMenuBack for ButtonSingleBack") && ok;
+				ok = expect(g_transition_set_group_calls == back_transition_set_group_before_click + 1
+						&& g_last_transition_group == AsciiString("MainMenuDefaultMenu"),
+					"original MainMenuSystem did not set MainMenuDefaultMenu for ButtonSingleBack") && ok;
+				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+					"ButtonSingleBack input should stay inside the MainMenu shell layout") && ok;
+			}
+		}
 		shell.popImmediate();
 		ok = expect(shell.getScreenCount() == 0,
 			"original Shell::popImmediate/MainMenuShutdown did not clear the shell stack") && ok;
@@ -1399,20 +1499,22 @@ void GameWindowTransitionsHandler::parseWindow(INI *, void *, void *, const void
 {
 }
 
-void GameWindowTransitionsHandler::setGroup(AsciiString, Bool)
+void GameWindowTransitionsHandler::setGroup(AsciiString groupName, Bool)
 {
 	++g_transition_set_group_calls;
+	g_last_transition_group = groupName;
 }
 
 void GameWindowTransitionsHandler::reverse(AsciiString groupName)
 {
-	if (groupName == AsciiString("FadeWholeScreen")) {
-		++g_transition_reverse_calls;
-	}
+	++g_transition_reverse_calls;
+	g_last_transition_reverse_group = groupName;
 }
 
-void GameWindowTransitionsHandler::remove(AsciiString, Bool)
+void GameWindowTransitionsHandler::remove(AsciiString groupName, Bool)
 {
+	++g_transition_remove_calls;
+	g_last_transition_remove_group = groupName;
 }
 
 TransitionGroup *GameWindowTransitionsHandler::getNewGroup(AsciiString)
@@ -1502,8 +1604,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/update/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original Shell::showShell/Shell::push MainMenu.wnd stack ownership, MainMenu.wnd W3D init/update/system/shutdown callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

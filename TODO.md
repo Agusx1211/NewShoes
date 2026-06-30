@@ -456,7 +456,15 @@ shares structure and follows behind.
       asset consumption, range-backed startup archive delivery, WindowZH-backed
       MainMenu layout callbacks, mapped-image W3DDisplay rendering, and shipped
       W3D mesh rendering together so cross-subsystem regressions are visible
-      while the next feature slice moves to real menu input/navigation.
+      while the next feature slice moves to real menu input/navigation. The
+      focused `w3d-window-layout-script-smoke` now also sends a real
+      `ButtonSinglePlayer` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through original
+      `GameWindowManager::winSendInputMsg` and `GadgetPushButton`, then proves
+      original `MainMenuSystem(GBM_SELECTED)` unhides the single-player
+      dropdown and stops at the transition boundary without pushing campaign or
+      skirmish screens. It then runs one original `MainMenuUpdate` to clear the
+      transition lock and drives `ButtonSingleBack` through the same input path
+      to prove return navigation to the main dropdown.
 - [ ] Advance the startup singleton frontier from browser-owned residency to
       original startup consumption: after the base `GameLODPresets.ini` source
       is mounted, load `GameLODManager` through the durable startup owner and
