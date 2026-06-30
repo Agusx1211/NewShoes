@@ -6543,6 +6543,16 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      probeBrowserLanApiLiveGameStartSend: module.cwrap(
+        "cnc_port_probe_browser_lanapi_live_game_start_send",
+        "string",
+        [],
+      ),
+      probeBrowserLanApiLiveGameStartReceive: module.cwrap(
+        "cnc_port_probe_browser_lanapi_live_game_start_receive",
+        "string",
+        [],
+      ),
       probeBrowserLanApiNetworkUpdate: module.cwrap(
         "cnc_port_probe_browser_lanapi_network_update",
         "string",
@@ -17061,6 +17071,49 @@ async function rpc(command, payload = {}) {
           ok: Boolean(clientProbe?.ok),
           command,
           clientProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiLiveGameStartSendProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI live game-start send cannot run" };
+        }
+        const sendProbe = parseModuleState(wasmModule.probeBrowserLanApiLiveGameStartSend());
+        const runtime = summarizeBrowserUdpEndpointRuntime();
+        return {
+          ok: Boolean(sendProbe?.ok)
+            && runtime.enabled === true
+            && runtime.connected === true
+            && runtime.sent === 1
+            && runtime.sentBytes === sendProbe.packet?.wireBytes
+            && runtime.lastSent?.bytes === runtime.sentBytes
+            && runtime.lastSent?.ip === sendProbe.packet?.remoteIp
+            && runtime.lastSent?.port === sendProbe.packet?.port,
+          command,
+          sendProbe,
+          browserUdpEndpointRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiLiveGameStartReceiveProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI live game-start receive cannot run" };
+        }
+        const receiveProbe = parseModuleState(wasmModule.probeBrowserLanApiLiveGameStartReceive());
+        const runtime = summarizeBrowserUdpEndpointRuntime();
+        return {
+          ok: Boolean(receiveProbe?.ok)
+            && runtime.enabled === true
+            && runtime.received >= 1
+            && runtime.delivered === 1
+            && runtime.deliveredBytes === receiveProbe.packet?.wireBytes,
+          command,
+          receiveProbe,
+          browserUdpEndpointRuntime: runtime,
           state: snapshotState(),
         };
       }

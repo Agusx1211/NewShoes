@@ -317,6 +317,8 @@ char g_browser_lanapi_join_accept_hex[(sizeof(LANMessage) * 2) + 1] = {};
 char g_browser_lanapi_game_options_hex[(sizeof(LANMessage) * 2) + 1] = {};
 char g_browser_lanapi_game_start_build_json[16384] = {};
 char g_browser_lanapi_game_start_client_json[16384] = {};
+char g_browser_lanapi_live_game_start_send_json[18000] = {};
+char g_browser_lanapi_live_game_start_receive_json[22000] = {};
 char g_browser_lanapi_game_start_hex[(sizeof(LANMessage) * 2) + 1] = {};
 char g_browser_lanapi_network_update_json[20000] = {};
 char g_browser_network_multiframe_lockstep_json[30000] = {};
@@ -565,6 +567,63 @@ bool inject_lan_message(Transport *transport, const LANMessage &lan_message, Uns
 	return message.length == static_cast<Int>(sizeof(lan_message)) &&
 		message.addr == addr &&
 		message.port == port;
+}
+
+Int active_lan_message_length(Int message_type)
+{
+	LANMessage message = {};
+	const char *base = reinterpret_cast<const char *>(&message);
+	switch (message_type) {
+		case LANMessage::MSG_REQUEST_JOIN:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(&message.GameToJoin) - base + sizeof(message.GameToJoin));
+		case LANMessage::MSG_JOIN_ACCEPT:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(&message.GameJoined) - base + sizeof(message.GameJoined));
+		case LANMessage::MSG_JOIN_DENY:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(&message.GameNotJoined) - base + sizeof(message.GameNotJoined));
+		case LANMessage::MSG_REQUEST_LOCATIONS:
+		case LANMessage::MSG_LOBBY_ANNOUNCE:
+		case LANMessage::MSG_REQUEST_LOBBY_LEAVE:
+		case LANMessage::MSG_GAME_START:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(message.hostName) - base + sizeof(message.hostName));
+		case LANMessage::MSG_GAME_START_TIMER:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(&message.StartTimer) - base + sizeof(message.StartTimer));
+		case LANMessage::MSG_GAME_OPTIONS:
+			return static_cast<Int>(
+				reinterpret_cast<const char *>(message.GameOptions.options) - base + 1);
+		default:
+			return static_cast<Int>(sizeof(message));
+	}
+}
+
+bool transport_out_buffer_empty(Transport *transport)
+{
+	if (transport == nullptr) {
+		return false;
+	}
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		if (transport->m_outBuffer[i].length != 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool transport_in_buffer_empty(Transport *transport)
+{
+	if (transport == nullptr) {
+		return false;
+	}
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		if (transport->m_inBuffer[i].length != 0) {
+			return false;
+		}
+	}
+	return true;
 }
 
 int first_invalid_hex_index(const char *hex)
@@ -3596,6 +3655,271 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_lanapi_game_start_packe
 		state.random_seed_ready ? "true" : "false",
 		state.map_cache_ready ? "true" : "false");
 	return g_browser_lanapi_game_start_client_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_lanapi_live_game_start_send()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	cnc_port_browser_udp_adapter_clear();
+
+	bool host_game_ready = false;
+	bool lan_transport_initialized = false;
+	bool lan_transport_out_cleared = false;
+	int on_game_start_calls = 0;
+	LANGameStartState state;
+	const Int active_length = active_lan_message_length(LANMessage::MSG_GAME_START);
+	const Int wire_length = active_length + static_cast<Int>(sizeof(TransportMessageHeader));
+
+	{
+		ScopedOriginalMemoryManager memory_manager_scope;
+		ProbeLANAPI host;
+		ScopedLANProbeGlobals globals(&host);
+		ScopedLANGameStartGlobals game_start_globals;
+		host.setLocalAddress(kLanApiRemoteIp);
+		host.setIdentity(kLanApiPlayerName, kLanApiUserName, kLanApiHostName);
+		lan_transport_initialized = host.transportForProbe() != nullptr &&
+			host.transportForProbe()->init(kLanApiRemoteIp, kLanApiLobbyPort);
+		probe_global_data()->m_pendingFile = AsciiString("");
+		probe_global_data()->m_useFpsLimit = TRUE;
+		LANGameInfo *game = create_probe_lan_game(TRUE, TRUE);
+		host.installGame(game, TRUE, FALSE);
+		host_game_ready = game != nullptr &&
+			game->isInGame() &&
+			!game->isGameInProgress() &&
+			game->getLocalSlotNum() == 0 &&
+			game->getIP(0) == kLanApiRemoteIp &&
+			game->getLANSlot(1)->isHuman() &&
+			game->getLANSlot(1)->getIP() == kLanApiJoinerIp;
+
+		host.RequestGameStart();
+		on_game_start_calls = host.onGameStartCalls();
+		lan_transport_out_cleared = transport_out_buffer_empty(host.transportForProbe());
+
+		collect_lan_game_start_state(
+			game,
+			0,
+			1,
+			kLanApiJoinerName,
+			game_start_globals,
+			state);
+	}
+
+	const int adapter_writes = cnc_port_browser_udp_adapter_write_count();
+	const int fallback_outgoing = cnc_port_browser_udp_adapter_outgoing_count();
+	const int adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
+	const bool ok = host_game_ready &&
+		lan_transport_initialized &&
+		lan_transport_out_cleared &&
+		adapter_writes == 1 &&
+		fallback_outgoing == 0 &&
+		adapter_dropped == 0 &&
+		on_game_start_calls == 1 &&
+		active_length > 0 &&
+		wire_length > active_length &&
+		state.network_setup_ready &&
+		state.callback_side_effects_ready;
+
+	std::snprintf(g_browser_lanapi_live_game_start_send_json, sizeof(g_browser_lanapi_live_game_start_send_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser LANAPI live game-start send probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket live UDP endpoint\","
+		"\"productionTransport\":true,"
+		"\"relayTransport\":true,"
+		"\"originalRequest\":\"LANAPI::RequestGameStart\","
+		"\"originalSerializer\":\"LANAPI::sendMessage -> Transport::queueSend\","
+		"\"originalTransport\":\"Transport::update\","
+		"\"originalWireSend\":\"Transport::doSend -> Module.cncPortBrowserUdpSend\","
+		"\"originalCallback\":\"LANAPI::OnGameStart\","
+		"\"originalNetwork\":\"NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList\","
+		"\"nextRequired\":\"liveEndpointLanApiGameStartReceiveIntoNetworkUpdate\","
+		"\"packet\":{\"messageType\":\"MSG_GAME_START\",\"activeBytes\":%d,"
+		"\"wireBytes\":%d,\"remoteIp\":%u,\"localIp\":%u,\"port\":%u},"
+		"\"transport\":{\"initialized\":%s,\"updateDriven\":true,"
+		"\"outBufferCleared\":%s,\"adapterWrites\":%d,"
+		"\"fallbackOutgoing\":%d,\"adapterDropped\":%d},"
+		"\"lanApi\":{\"hostGameReady\":%s,\"onGameStartCalls\":%d},"
+		"\"network\":{\"created\":%s,\"setupReady\":%s,\"localSlot\":%d,"
+		"\"numPlayers\":%d,\"runAhead\":%u,\"frameRate\":%u,"
+		"\"packetArrivalCushion\":%u,\"frameDataReady\":%s,"
+		"\"remoteNameReady\":%s},"
+		"\"callback\":{\"sideEffectsReady\":%s,\"gameInProgress\":%s,"
+		"\"pendingFileReady\":%s,\"useFpsLimitDisabled\":%s,"
+		"\"messageNewGame\":%s,\"messageArgumentReady\":%s,"
+		"\"messageType\":%d,\"messageArgument\":%d,"
+		"\"randomSeedReady\":%s,\"mapCacheReady\":%s}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		active_length,
+		wire_length,
+		INADDR_BROADCAST,
+		kLanApiRemoteIp,
+		kLanApiLobbyPort,
+		lan_transport_initialized ? "true" : "false",
+		lan_transport_out_cleared ? "true" : "false",
+		adapter_writes,
+		fallback_outgoing,
+		adapter_dropped,
+		host_game_ready ? "true" : "false",
+		on_game_start_calls,
+		state.network_created ? "true" : "false",
+		state.network_setup_ready ? "true" : "false",
+		state.local_slot,
+		state.num_players,
+		state.run_ahead,
+		state.frame_rate,
+		state.packet_arrival_cushion,
+		state.frame_data_ready ? "true" : "false",
+		state.remote_name_ready ? "true" : "false",
+		state.callback_side_effects_ready ? "true" : "false",
+		state.game_in_progress ? "true" : "false",
+		state.pending_file_ready ? "true" : "false",
+		state.use_fps_limit_disabled ? "true" : "false",
+		state.message_new_game ? "true" : "false",
+		state.message_argument_ready ? "true" : "false",
+		state.message_type,
+		state.message_argument,
+		state.random_seed_ready ? "true" : "false",
+		state.map_cache_ready ? "true" : "false");
+	return g_browser_lanapi_live_game_start_send_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_lanapi_live_game_start_receive()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	cnc_port_browser_udp_adapter_clear();
+
+	bool joined_game_ready = false;
+	bool lan_transport_initialized = false;
+	bool transport_cleared = false;
+	bool update_driven = false;
+	int on_game_start_calls = 0;
+	LANGameStartState state;
+	const Int active_length = active_lan_message_length(LANMessage::MSG_GAME_START);
+	const Int wire_length = active_length + static_cast<Int>(sizeof(TransportMessageHeader));
+
+	{
+		ScopedOriginalMemoryManager memory_manager_scope;
+		ProbeLANAPI joiner;
+		ScopedLANProbeGlobals globals(&joiner);
+		ScopedLANGameStartGlobals game_start_globals;
+		joiner.setLocalAddress(kLanApiJoinerIp);
+		joiner.setIdentity(kLanApiJoinerName, kLanApiJoinerUserName, kLanApiJoinerHostName);
+		lan_transport_initialized = joiner.transportForProbe() != nullptr &&
+			joiner.transportForProbe()->init(kLanApiJoinerIp, kLanApiLobbyPort);
+		probe_global_data()->m_pendingFile = AsciiString("");
+		probe_global_data()->m_useFpsLimit = TRUE;
+		LANGameInfo *game = create_probe_lan_game(TRUE, TRUE);
+		joiner.installGame(game, TRUE, FALSE);
+		joined_game_ready = game != nullptr &&
+			game->isInGame() &&
+			!game->isGameInProgress() &&
+			game->getLocalSlotNum() == 1 &&
+			game->getIP(0) == kLanApiRemoteIp &&
+			game->getLANSlot(1)->isHuman() &&
+			game->getLANSlot(1)->getIP() == kLanApiJoinerIp;
+
+		joiner.forceUpdateDelayElapsed();
+		joiner.update();
+		update_driven = true;
+		transport_cleared = transport_in_buffer_empty(joiner.transportForProbe());
+		on_game_start_calls = joiner.onGameStartCalls();
+
+		collect_lan_game_start_state(
+			game,
+			1,
+			0,
+			kLanApiPlayerName,
+			game_start_globals,
+			state);
+	}
+
+	const int adapter_reads = cnc_port_browser_udp_adapter_read_count();
+	const int fallback_incoming = cnc_port_browser_udp_adapter_incoming_count();
+	const int adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
+	const bool ok = joined_game_ready &&
+		lan_transport_initialized &&
+		transport_cleared &&
+		update_driven &&
+		adapter_reads == 1 &&
+		fallback_incoming == 0 &&
+		adapter_dropped == 0 &&
+		on_game_start_calls == 1 &&
+		active_length > 0 &&
+		wire_length > active_length &&
+		state.network_setup_ready &&
+		state.callback_side_effects_ready;
+
+	std::snprintf(g_browser_lanapi_live_game_start_receive_json, sizeof(g_browser_lanapi_live_game_start_receive_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser LANAPI live game-start receive probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket live UDP endpoint\","
+		"\"productionTransport\":true,"
+		"\"relayTransport\":true,"
+		"\"originalWireReceive\":\"Module.cncPortBrowserUdpRecv -> Transport::doRecv decryptBuf/isGeneralsPacket\","
+		"\"originalTransport\":\"Transport::m_inBuffer\","
+		"\"originalDispatch\":\"LANAPI::update\","
+		"\"originalHandler\":\"LANAPI::handleGameStart\","
+		"\"originalCallback\":\"LANAPI::OnGameStart\","
+		"\"originalNetwork\":\"NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList\","
+		"\"nextRequired\":\"liveEndpointNetworkUpdateTwoClientFrameSync\","
+		"\"packet\":{\"messageType\":\"MSG_GAME_START\",\"activeBytes\":%d,"
+		"\"wireBytes\":%d,\"remoteIp\":%u,\"localIp\":%u,\"port\":%u},"
+		"\"transport\":{\"initialized\":%s,\"updateDriven\":%s,"
+		"\"cleared\":%s,\"adapterReads\":%d,\"fallbackIncoming\":%d,"
+		"\"adapterDropped\":%d},"
+		"\"lanApi\":{\"joinedGameReady\":%s,\"onGameStartCalls\":%d},"
+		"\"network\":{\"created\":%s,\"setupReady\":%s,\"localSlot\":%d,"
+		"\"numPlayers\":%d,\"runAhead\":%u,\"frameRate\":%u,"
+		"\"packetArrivalCushion\":%u,\"frameDataReady\":%s,"
+		"\"remoteNameReady\":%s},"
+		"\"callback\":{\"sideEffectsReady\":%s,\"gameInProgress\":%s,"
+		"\"pendingFileReady\":%s,\"useFpsLimitDisabled\":%s,"
+		"\"messageNewGame\":%s,\"messageArgumentReady\":%s,"
+		"\"messageType\":%d,\"messageArgument\":%d,"
+		"\"randomSeedReady\":%s,\"mapCacheReady\":%s}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		active_length,
+		wire_length,
+		kLanApiRemoteIp,
+		kLanApiJoinerIp,
+		kLanApiLobbyPort,
+		lan_transport_initialized ? "true" : "false",
+		update_driven ? "true" : "false",
+		transport_cleared ? "true" : "false",
+		adapter_reads,
+		fallback_incoming,
+		adapter_dropped,
+		joined_game_ready ? "true" : "false",
+		on_game_start_calls,
+		state.network_created ? "true" : "false",
+		state.network_setup_ready ? "true" : "false",
+		state.local_slot,
+		state.num_players,
+		state.run_ahead,
+		state.frame_rate,
+		state.packet_arrival_cushion,
+		state.frame_data_ready ? "true" : "false",
+		state.remote_name_ready ? "true" : "false",
+		state.callback_side_effects_ready ? "true" : "false",
+		state.game_in_progress ? "true" : "false",
+		state.pending_file_ready ? "true" : "false",
+		state.use_fps_limit_disabled ? "true" : "false",
+		state.message_new_game ? "true" : "false",
+		state.message_argument_ready ? "true" : "false",
+		state.message_type,
+		state.message_argument,
+		state.random_seed_ready ? "true" : "false",
+		state.map_cache_ready ? "true" : "false");
+	return g_browser_lanapi_live_game_start_receive_json;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_lanapi_network_update()

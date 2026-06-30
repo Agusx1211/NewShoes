@@ -656,6 +656,70 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-live-game-start",
+    file: "harness/lanapi_live_game_start_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI live game-start smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-live-game-start"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.browserTransport === "browser WebSocket live UDP endpoint"
+          && payload.relay?.serverTransport === "Node WebSocket relay server"
+          && payload.relay?.productionTransport === true
+          && payload.relay?.productionTransportWire === true
+          && payload.relay?.hexHandoff === false
+          && payload.relay?.binaryFrames === 1
+          && payload.host?.client === "lanapi-live-host"
+          && payload.host?.wasm === "loaded"
+          && payload.host?.originalRequest === "LANAPI::RequestGameStart"
+          && payload.host?.originalSerializer === "LANAPI::sendMessage -> Transport::queueSend"
+          && payload.host?.originalTransport === "Transport::update"
+          && payload.host?.originalWireSend === "Transport::doSend -> Module.cncPortBrowserUdpSend"
+          && payload.host?.originalCallback === "LANAPI::OnGameStart"
+          && payload.host?.originalNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.host?.packet?.messageType === "MSG_GAME_START"
+          && payload.host?.packet?.activeBytes > 0
+          && payload.host?.packet?.wireBytes === payload.host?.packet?.activeBytes + 6
+          && payload.host?.endpoint?.sent === 1
+          && payload.host?.endpoint?.sentBytes === payload.host?.packet?.wireBytes
+          && payload.host?.transport?.initialized === true
+          && payload.host?.transport?.outBufferCleared === true
+          && payload.host?.transport?.adapterWrites === 1
+          && payload.host?.transport?.fallbackOutgoing === 0
+          && payload.host?.network?.setupReady === true
+          && payload.host?.callback?.sideEffectsReady === true
+          && payload.joiner?.client === "lanapi-live-joiner"
+          && payload.joiner?.wasm === "loaded"
+          && payload.joiner?.originalWireReceive === "Module.cncPortBrowserUdpRecv -> Transport::doRecv decryptBuf/isGeneralsPacket"
+          && payload.joiner?.originalTransport === "Transport::m_inBuffer"
+          && payload.joiner?.originalDispatch === "LANAPI::update"
+          && payload.joiner?.originalHandler === "LANAPI::handleGameStart"
+          && payload.joiner?.originalCallback === "LANAPI::OnGameStart"
+          && payload.joiner?.originalNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.joiner?.endpointBeforeRecv?.received === 1
+          && payload.joiner?.endpoint?.received === 1
+          && payload.joiner?.endpoint?.delivered === 1
+          && payload.joiner?.endpoint?.queuedIncoming === 0
+          && payload.joiner?.endpoint?.receivedBytes === payload.host?.endpoint?.sentBytes
+          && payload.joiner?.endpoint?.deliveredBytes === payload.host?.endpoint?.sentBytes
+          && payload.joiner?.packet?.messageType === payload.host?.packet?.messageType
+          && payload.joiner?.packet?.activeBytes === payload.host?.packet?.activeBytes
+          && payload.joiner?.packet?.wireBytes === payload.host?.packet?.wireBytes
+          && payload.joiner?.transport?.initialized === true
+          && payload.joiner?.transport?.updateDriven === true
+          && payload.joiner?.transport?.cleared === true
+          && payload.joiner?.transport?.adapterReads === 1
+          && payload.joiner?.transport?.fallbackIncoming === 0
+          && payload.joiner?.network?.setupReady === true
+          && payload.joiner?.network?.localSlot === 1
+          && payload.joiner?.callback?.sideEffectsReady === true
+          && payload.relayStats?.receivedFrames === 1
+          && payload.relayStats?.forwardedFrames === 1
+          && payload.relayStats?.receivedBytes === payload.host?.endpoint?.sentBytes,
+        "browser LANAPI live game-start smoke did not carry original LANAPI start through the JS UDP endpoint", payload);
+    },
+  },
+  {
     name: "browser-lanapi-network-update",
     file: "harness/lanapi_network_update_smoke.mjs",
     validate(payload) {
@@ -900,6 +964,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
     "two isolated Playwright browser contexts carrying LANAPI announce, join/options, and game-start messages through browser WebSocket binary frames into original LANAPI handlers",
+    "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart through Module.cncPortBrowserUdpSend/Recv into LANAPI::update, handleGameStart, and Network::initTransport/parseUserList",
     "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
     "original LANAPI game-start state driven through three Network::update frames plus original FrameData FRAMEDATA_NOTREADY and FRAMEDATA_RESEND desync states",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
@@ -912,7 +977,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "extend the live WebSocket UDP endpoint from focused Transport probes into LANAPI/Network::update two-client match-sync coverage",
+    "extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

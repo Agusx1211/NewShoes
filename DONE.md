@@ -4805,6 +4805,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-network-websocket-live-transport`,
       `npm --prefix WebAssembly run verify:websocket-transport-frontier`, and
       `npm --prefix WebAssembly run test:browser-network-websocket-transport`.
+- [x] Carry original LANAPI game-start over the live browser UDP endpoint.
+      `cnc_port_probe_browser_lanapi_live_game_start_send` now initializes the
+      host's real LANAPI `Transport`, calls original
+      `LANAPI::RequestGameStart`, and proves `Transport::update` flushes the
+      broadcast `MSG_GAME_START` datagram through
+      `Transport::doSend -> Module.cncPortBrowserUdpSend` with no fallback
+      C++ datagram queue use. `cnc_port_probe_browser_lanapi_live_game_start_receive`
+      initializes the joiner's real LANAPI `Transport`, lets
+      `LANAPI::update` pull the queued WebSocket datagram through
+      `Module.cncPortBrowserUdpRecv -> Transport::doRecv`, and verifies
+      original `handleGameStart` / `OnGameStart` create
+      `NetworkInterface::createNetwork -> Network::init/initTransport/
+      parseUserList` plus the `MSG_NEW_GAME`, map, seed, and FPS-limit side
+      effects. `lanapi_live_game_start_smoke.mjs` boots two isolated
+      Playwright browser contexts, connects both to the live JS endpoint, sends
+      one 66-byte encrypted original LAN game-start datagram through the local
+      WebSocket binary relay, and asserts host send and joiner receive endpoint
+      counters. The remaining networking gap is driving the running
+      `Network::update` frame-sync loop across two live-endpoint browser
+      clients. Verified with
+      `npm --prefix WebAssembly run test:browser-lanapi-live-game-start`.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

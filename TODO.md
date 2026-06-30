@@ -1183,8 +1183,17 @@ shares structure and follows behind.
       contexts can move the encrypted original Transport datagram through that
       live endpoint into destination `Transport::doRecv`,
       `ConnectionManager::doRelay`, and `FrameDataManager::allCommandsReady`.
-      The remaining production step is to extend this live endpoint into the
-      LANAPI/`Network::update` path and validate a two-client match-sync loop.
+      The LANAPI follow-on now uses the same live endpoint for original
+      `LANAPI::RequestGameStart`: `lanapi_live_game_start_smoke.mjs` boots two
+      isolated browser contexts, lets the host's original LANAPI transport send
+      a broadcast `MSG_GAME_START` datagram through
+      `Module.cncPortBrowserUdpSend`, lets the joiner receive it through
+      `Module.cncPortBrowserUdpRecv` during `LANAPI::update`, and verifies
+      `handleGameStart` / `OnGameStart` create the original
+      `Network::initTransport` / `parseUserList` state. The remaining
+      production step is to extend this live endpoint into the
+      `Network::update` frame-sync loop and validate a two-client match-sync
+      harness.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -1200,8 +1209,10 @@ shares structure and follows behind.
       readiness transition, observes later calls preserving the in-game
       connection state, and also proves the original
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
-      frontier. Next networking slices: route LANAPI and `Network::update`
-      over the live shared WebSocket/WebRTC endpoint and extend coverage from
+      frontier. The live endpoint now carries LANAPI game-start into
+      `OnGameStart` and original network setup across two browser contexts.
+      Next networking slice: route `Network::update` frame commands over the
+      live shared WebSocket/WebRTC endpoint and extend coverage from
       single-context frame readiness to a two-client match-sync harness.
       The current WebSocket binary vertical now proves the production encrypted
       `Transport::queueSend` / `Transport::doSend` and
@@ -1220,9 +1231,11 @@ shares structure and follows behind.
       the Node-mediated packet-hex handoff for the GameNetwork packet vertical,
       and `lanapi_websocket_flow_smoke.mjs` now carries LAN announce,
       join/options, and game-start messages through browser `WebSocket` binary
-      frames before handing them to the original LANAPI accept paths. LANAPI
-      still needs the live WebSocket/WebRTC endpoint wired through the actual
-      LANAPI/Network transport path instead of focused harness packet delivery.
+      frames before handing them to the original LANAPI accept paths. The live
+      endpoint follow-on now wires original LANAPI game-start send/receive
+      through `Transport::update` and `LANAPI::update`; LANAPI still needs that
+      live endpoint carried forward into the running `Network::update`
+      frame-sync loop.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
@@ -1234,9 +1247,11 @@ shares structure and follows behind.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
       The current browser network relay proofs now include two isolated
       Playwright contexts, a live WebSocket-backed UDP endpoint for original
-      `Transport::doSend`/`doRecv`, and original `ConnectionManager`
-      frame-info relay plus `FrameDataManager` readiness, but they are still
-      packet/frame readiness proofs rather than a match-sync test.
+      `Transport::doSend`/`doRecv`, live LANAPI game-start into
+      `Network::initTransport` / `parseUserList`, and original
+      `ConnectionManager` frame-info relay plus `FrameDataManager` readiness,
+      but they are still setup/packet/frame readiness proofs rather than a
+      match-sync test.
 
 ---
 
