@@ -170,6 +170,22 @@ const steps = [
           && relay?.packets?.[0]?.playerId === 2
           && relay?.packets?.[0]?.commandId === 314,
         "browser network relay smoke did not prove original NetPacket bytes through the relay", relay);
+      const transport = payload.state?.browserNetworkTransportRuntime;
+      expect(transport?.ready === true
+          && transport?.source === "GameNetwork browser Transport/FrameData frame sync proof"
+          && transport?.transportInjected === true
+          && transport?.connectionManagerDriven === true
+          && transport?.frameDataReady === true
+          && transport?.sent === 1
+          && transport?.delivered === 1
+          && transport?.received === 1
+          && transport?.packets?.[0]?.commandType === "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
+          && transport?.packets?.[0]?.commands === 2
+          && transport?.packets?.[0]?.executionFrame === 2470
+          && transport?.packets?.[0]?.playerId === 2
+          && transport?.packets?.[0]?.commandId === 315
+          && transport?.packets?.[0]?.runAheadCommandId === 316,
+        "browser network relay smoke did not drive original Transport/FrameData frame readiness", transport);
     },
   },
   {
@@ -262,7 +278,7 @@ console.log(JSON.stringify({
   path: "vertical-integrations",
   covered: [
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
-    "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes through wasm serializer/parser",
+    "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -271,7 +287,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance another independent vertical beyond the shell menu path, preferably audio/video/network device ownership",
-    "connect browser transport receives into original Transport/ConnectionManager/FrameDataManager ownership",
+    "split the browser networking proof across two Playwright contexts or route it through the original LANAPI surface",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

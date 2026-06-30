@@ -656,6 +656,63 @@ function assertBrowserNetworkRelayRuntime(runtime, context) {
   }
 }
 
+function assertBrowserNetworkTransportRuntime(runtime, context) {
+  if (!runtime
+      || runtime.source !== "GameNetwork browser Transport/FrameData frame sync proof"
+      || runtime.browserTransport !== "harness relay queue"
+      || runtime.productionTransport !== false
+      || runtime.relayTransport !== true
+      || runtime.originalSerializer !== "NetPacket::addCommand"
+      || runtime.originalTransport !== "Transport::m_inBuffer"
+      || runtime.originalRelay !== "ConnectionManager::doRelay"
+      || runtime.originalFrameData !== "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
+      || runtime.nextRequired !== "twoBrowserContextsOrLanApiRelay"
+      || runtime.ready !== true
+      || runtime.transportInjected !== true
+      || runtime.connectionManagerDriven !== true
+      || runtime.frameDataReady !== true
+      || runtime.sent !== 1
+      || runtime.delivered !== 1
+      || runtime.received !== 1
+      || runtime.bytes <= 0
+      || !Array.isArray(runtime.clients)
+      || runtime.clients.length !== 2
+      || runtime.lastError !== null) {
+    throw new Error(`${context} browser network transport runtime mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  const packet = runtime.packets?.[0];
+  if (!packet
+      || packet.from !== "browser-client-0"
+      || packet.to !== "browser-client-1"
+      || packet.commandType !== "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
+      || packet.commands !== 2
+      || packet.relay !== 4
+      || packet.executionFrame !== 2470
+      || packet.playerId !== 2
+      || packet.commandId !== 315
+      || packet.frameCommandCount !== 1
+      || packet.runAheadCommandId !== 316
+      || packet.runAhead !== 20
+      || packet.frameRate !== 30) {
+    throw new Error(`${context} browser network transport packet mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  const phases = (runtime.eventLog ?? []).map((entry) => entry.phase);
+  for (const required of [
+    "wasm-build",
+    "relay-send",
+    "relay-deliver",
+    "wasm-transport-inject",
+    "connection-manager-relay",
+    "frame-data-ready",
+  ]) {
+    if (!phases.includes(required)) {
+      throw new Error(`${context} browser network transport missing ${required}: ${JSON.stringify(runtime.eventLog)}`);
+    }
+  }
+}
+
 function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
@@ -6423,6 +6480,21 @@ try {
 
   await page.screenshot({ path: desktopScreenshot, fullPage: true });
   await page.locator("#viewport").screenshot({ path: canvasScreenshot });
+
+  const browserNetworkTransportResult = await page.evaluate(
+    () => window.CnCPort.rpc("browserNetworkTransportRelayProbe"),
+  );
+  if (!browserNetworkTransportResult.ok) {
+    throw new Error(`Browser network transport relay probe failed: ${JSON.stringify(browserNetworkTransportResult)}`);
+  }
+  assertBrowserNetworkTransportRuntime(
+    browserNetworkTransportResult.browserNetworkTransportRuntime,
+    "final",
+  );
+  assertBrowserNetworkTransportRuntime(
+    browserNetworkTransportResult.state.browserNetworkTransportRuntime,
+    "final state",
+  );
 
   const stateResult = await page.evaluate(() => window.CnCPort.rpc("state"));
   if (!stateResult.ok) {

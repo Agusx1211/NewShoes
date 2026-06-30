@@ -51,12 +51,12 @@ FrameMetrics::FrameMetrics()
 
 FrameMetrics::~FrameMetrics() {
 	if (m_fpsList != NULL) {
-		delete m_fpsList;
+		delete[] m_fpsList;
 		m_fpsList = NULL;
 	}
 
 	if (m_latencyList != NULL) {
-		delete m_latencyList;
+		delete[] m_latencyList;
 		m_latencyList = NULL;
 	}
 

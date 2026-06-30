@@ -1129,14 +1129,17 @@ shares structure and follows behind.
       carries the packet hex between two logical browser clients through a
       harness relay queue, then asks wasm to parse it with
       `NetPacket::ConstructNetCommandMsgFromRawData`. This proves the original
-      packet codec can cross the wasm/browser boundary, but it is not a
-      production WebSocket/WebRTC transport and it does not yet drive original
-      `Transport::m_inBuffer` or `ConnectionManager::doRelay`.
+      packet codec can cross the wasm/browser boundary. `browserNetworkTransportRelayProbe`
+      now carries a two-command original packet through the same relay queue,
+      injects a frame-info packet into `Transport::m_inBuffer`, runs
+      `ConnectionManager::doRelay` to seed the original frame command count,
+      then parses the delivered two-command packet and feeds its synchronized
+      `NETCOMMANDTYPE_RUNAHEAD` through `FrameDataManager::addNetCommandMsg` /
+      `allCommandsReady`.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients. Next networking slice: feed browser-delivered
-      bytes into an original `TransportMessage`/`Transport::m_inBuffer`, run the
-      original `ConnectionManager::doRelay`/`processNetCommand` path, and assert
-      the parsed command reaches `FrameDataManager` and `allCommandsReady`.
+      works across browser clients. Next networking slice: split the relay proof
+      into two Playwright browser contexts or route the same byte path through
+      the original `LANAPI` discovery/join surface.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
@@ -1144,7 +1147,9 @@ shares structure and follows behind.
 - [ ] File transfer / map transfer path.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
       The current browser network relay proof uses two logical clients inside
-      one harness page only; it is a byte-path precursor, not a match-sync test.
+      one harness page only; it now reaches original `ConnectionManager`
+      frame-info relay and `FrameDataManager` readiness but is still not a
+      match-sync test.
 
 ---
 
