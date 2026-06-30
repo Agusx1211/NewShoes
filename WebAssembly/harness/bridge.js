@@ -6308,6 +6308,16 @@ async function loadWasmModule() {
         "string",
         ["string", "string"],
       ),
+      buildBrowserLanApiGameStartPacket: module.cwrap(
+        "cnc_port_build_browser_lanapi_game_start_packet",
+        "string",
+        [],
+      ),
+      acceptBrowserLanApiGameStartPacket: module.cwrap(
+        "cnc_port_accept_browser_lanapi_game_start_packet",
+        "string",
+        ["string"],
+      ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -16681,6 +16691,35 @@ async function rpc(command, payload = {}) {
           ok: Boolean(joinerProbe?.ok),
           command,
           joinerProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiGameStartBuildPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI game-start build cannot run" };
+        }
+        const buildProbe = parseModuleState(wasmModule.buildBrowserLanApiGameStartPacket());
+        return {
+          ok: Boolean(buildProbe?.ok),
+          command,
+          buildProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiGameStartAcceptPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI game-start accept cannot run" };
+        }
+        const packetHex = String(payload?.packetHex ?? "");
+        const clientProbe = parseModuleState(wasmModule.acceptBrowserLanApiGameStartPacket(packetHex));
+        return {
+          ok: Boolean(clientProbe?.ok),
+          command,
+          clientProbe,
           state: snapshotState(),
         };
       }

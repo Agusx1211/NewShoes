@@ -393,6 +393,50 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-game-start-two-contexts",
+    file: "harness/lanapi_game_start_two_contexts_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI game-start smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-game-start-two-contexts"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.productionTransport === false
+          && payload.host?.client === "browser-client-0"
+          && payload.host?.wasm === "loaded"
+          && payload.host?.originalRequest === "LANAPI::RequestGameStart"
+          && payload.host?.originalTransport === "Transport::queueSend"
+          && payload.host?.originalCallback === "LANAPI::OnGameStart"
+          && payload.host?.originalNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.host?.packet?.messageType === "MSG_GAME_START"
+          && payload.host?.packet?.activeBytes > 0
+          && payload.host?.packet?.activeBytes <= 476
+          && payload.host?.lanApi?.hostGameReady === true
+          && payload.host?.lanApi?.onGameStartCalls === 1
+          && payload.host?.network?.setupReady === true
+          && payload.host?.network?.localSlot === 0
+          && payload.host?.network?.numPlayers === 2
+          && payload.host?.callback?.sideEffectsReady === true
+          && payload.host?.callback?.messageArgument === 1
+          && payload.joiner?.client === "browser-client-1"
+          && payload.joiner?.wasm === "loaded"
+          && payload.joiner?.originalTransport === "Transport::m_inBuffer"
+          && payload.joiner?.originalDispatch === "LANAPI::update"
+          && payload.joiner?.originalHandler === "LANAPI::handleGameStart"
+          && payload.joiner?.originalCallback === "LANAPI::OnGameStart"
+          && payload.joiner?.originalNetwork === "NetworkInterface::createNetwork -> Network::init/initTransport/parseUserList"
+          && payload.joiner?.transport?.injected === true
+          && payload.joiner?.transport?.cleared === true
+          && payload.joiner?.lanApi?.updateDriven === true
+          && payload.joiner?.lanApi?.onGameStartCalls === 1
+          && payload.joiner?.network?.setupReady === true
+          && payload.joiner?.network?.localSlot === 1
+          && payload.joiner?.network?.numPlayers === 2
+          && payload.joiner?.callback?.sideEffectsReady === true
+          && payload.joiner?.callback?.messageArgument === 1,
+        "browser LANAPI game-start smoke did not prove isolated game-start relay into original NetworkInterface", payload);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -540,6 +584,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
+    "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -550,7 +595,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "merge the original MilesAudioManager 2D sample leg with the browser Web Audio completion harness in one browser-owned smoke",
-    "drive LANAPI game-start into original NetworkInterface/frame-sync setup or replace the harness relay with production WebSocket/WebRTC transport",
+    "drive Network::update frame readiness after LANAPI game-start or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

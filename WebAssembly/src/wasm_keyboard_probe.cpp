@@ -404,8 +404,8 @@ GlobalData *ensure_frame_keyboard_global_data()
 	if (!isMemoryManagerOfficiallyInited()) {
 		initMemoryManager();
 	}
-	if (g_frame_keyboard_global_data == nullptr) {
-		g_frame_keyboard_global_data = new GlobalData;
+	if (g_frame_keyboard_global_data == nullptr && TheWritableGlobalData != nullptr) {
+		g_frame_keyboard_global_data = TheWritableGlobalData;
 	}
 	return g_frame_keyboard_global_data;
 }
@@ -416,13 +416,13 @@ void warm_frame_keyboard_stream()
 		return;
 	}
 
-	GlobalData global_data;
+	GlobalData *global_data = ensure_frame_keyboard_global_data();
 	MessageStream stream;
 
 	GlobalData *old_global_data = TheWritableGlobalData;
 	MessageStream *old_message_stream = TheMessageStream;
 	Keyboard *old_keyboard = TheKeyboard;
-	TheWritableGlobalData = &global_data;
+	TheWritableGlobalData = global_data;
 	TheMessageStream = &stream;
 	TheKeyboard = &g_browser_keyboard;
 
@@ -627,13 +627,13 @@ const char *reset_original_keyboard_frame_input()
 const char *probe_original_keyboard_stream()
 {
 	ScopedOriginalMemoryManager memory_scope;
-	GlobalData global_data;
+	GlobalData *global_data = ensure_frame_keyboard_global_data();
 	MessageStream stream;
 
 	GlobalData *old_global_data = TheWritableGlobalData;
 	MessageStream *old_message_stream = TheMessageStream;
 	Keyboard *old_keyboard = TheKeyboard;
-	TheWritableGlobalData = &global_data;
+	TheWritableGlobalData = global_data;
 	TheMessageStream = &stream;
 	TheKeyboard = &g_browser_keyboard;
 
@@ -688,13 +688,13 @@ const char *probe_original_keyboard_stream()
 const char *probe_original_keyboard_frame_tick()
 {
 	ScopedOriginalMemoryManager memory_scope;
-	GlobalData global_data;
+	GlobalData *global_data = ensure_frame_keyboard_global_data();
 	MessageStream stream;
 
 	GlobalData *old_global_data = TheWritableGlobalData;
 	MessageStream *old_message_stream = TheMessageStream;
 	Keyboard *old_keyboard = TheKeyboard;
-	TheWritableGlobalData = &global_data;
+	TheWritableGlobalData = global_data;
 	TheMessageStream = &stream;
 	TheKeyboard = &g_browser_keyboard;
 

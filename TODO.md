@@ -49,9 +49,10 @@ shares structure and follows behind.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths. The
-      focused LANAPI join/options vertical currently uses an Emscripten
-      active-message-prefix send path because 4-byte wasm `WideChar` makes
-      `sizeof(LANMessage)` exceed the original 476-byte UDP packet cap.
+      focused LANAPI join/options and game-start verticals currently use an
+      Emscripten active-message-prefix send path because 4-byte wasm
+      `WideChar` makes `sizeof(LANMessage)` exceed the original 476-byte UDP
+      packet cap.
 - [ ] Endianness audit for serialization paths (save game, net, CRC).
 
 ### Libraries (compile as-is where possible)
@@ -1165,18 +1166,23 @@ shares structure and follows behind.
       same original `Transport` / `ConnectionManager` / `FrameDataManager`
       readiness path.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients. Next networking slice: drive LAN
-      game-start into the original `NetworkInterface` / frame-sync setup or
-      replace the harness packet handoff with production WebSocket/WebRTC
-      transport.
+      works across browser clients. The LAN game-start vertical now reaches
+      original `NetworkInterface::createNetwork`, `Network::init`,
+      `Network::initTransport`, and `ConnectionManager::parseUserList` for
+      both host and joiner. Next networking slice: drive `Network::update` /
+      `ConnectionManager::allCommandsReady` far enough to prove frame-data
+      readiness, or replace the harness packet handoff with production
+      WebSocket/WebRTC transport.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
       join/options slice now drives `RequestGameJoin`, `handleRequestJoin`,
       `handleJoinAccept`, and `handleGameOptions` across two isolated browser
-      contexts via queued `Transport` bytes. Next slice is LAN game-start into
-      original network/frame-sync setup or a production WebSocket/WebRTC
-      transport.
+      contexts via queued `Transport` bytes; the game-start slice now drives
+      `RequestGameStart`, `handleGameStart`, and `OnGameStart` into original
+      `NetworkInterface` setup plus `MSG_NEW_GAME`/seed/map side effects.
+      Next slice is frame-readiness through `Network::update` or a production
+      WebSocket/WebRTC transport.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.

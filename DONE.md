@@ -4667,6 +4667,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-lanapi-join-options-two-contexts`;
       the aggregate `test:vertical-integrations` gate includes it as an
       independent networking vertical.
+- [x] Drive LANAPI game-start across two isolated browser contexts into
+      original network setup. The wasm bridge now exports
+      `cnc_port_build_browser_lanapi_game_start_packet` and
+      `cnc_port_accept_browser_lanapi_game_start_packet`: the host wasm runs
+      original `LANAPI::RequestGameStart` into `Transport::queueSend` using
+      the active-message-prefix length required by the current wasm
+      `WideChar` layout, and both host and joiner prove
+      `LANAPI::OnGameStart` creates the original `NetworkInterface` path
+      through `Network::init`, `Network::initTransport`, and
+      `ConnectionManager::parseUserList`. The two-context smoke asserts local
+      slots 0/1, two players, run-ahead/frame-rate setup, `MSG_NEW_GAME`
+      with `GAME_LAN`, pending map, seed, map-cache lookup, and FPS-limit
+      side effects. This proves LAN game-start to network setup, not
+      `Network::update` frame readiness, WebSocket/WebRTC, GameSpy, or a full
+      match sync. Verified with
+      `npm --prefix WebAssembly run test:browser-lanapi-game-start-two-contexts`;
+      the aggregate `test:vertical-integrations` gate includes it as an
+      independent networking vertical.
 
 ---
 
@@ -4681,11 +4699,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 ## Cross-cutting: harness & verification (ongoing, never "done")
 
 - [x] Make the original frame-owner reset RPCs safe as the first
-      original-memory-manager users after boot; minimal scripts that call
-      `resetOriginalKeyboardFrameInput` or `resetOriginalMouseFrameInput`
-      immediately after `boot` currently trip a wasm memory-pool free during
-      the bridge's full-state refresh, while the full `EXPECT_WASM=1`
-      smoke passes because earlier original probes initialize that state.
+      original-memory-manager users after boot. The keyboard frame owner no
+      longer constructs a throwaway original `GlobalData` just to warm an
+      empty keyboard stream; it reuses an existing global when one is present
+      and otherwise leaves the keyboard/mouse reset path independent of
+      original `GlobalData` construction. Verified with a fresh Playwright
+      boot followed immediately by `resetOriginalKeyboardFrameInput` and
+      `resetOriginalMouseFrameInput`, plus `EXPECT_WASM=1 node
+      harness/smoke.mjs`.
 - [x] Fix the plain `node harness/smoke.mjs` WW3D statistics teardown crash by
       making focused WW3D probes mirror `W3DDisplay` statistics cleanup before
       `WW3D::Shutdown()`. Verified with `npm run build:wasm`,

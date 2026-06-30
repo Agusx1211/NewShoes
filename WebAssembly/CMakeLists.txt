@@ -3857,6 +3857,7 @@ add_executable(cnc-port
   src/wasm_ww3d_terrain_probe.cpp
   src/wasm_ww3d_textured_mesh_probe.cpp
   src/wasm_wwshade_probe.cpp
+  "${GAMEENGINE_GAMENETWORK_DIR}/Network.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Input/Keyboard.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32CDManager.cpp"

@@ -199,6 +199,17 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 				messageLength = static_cast<Int>(
 					reinterpret_cast<const char *>(&msg->GameNotJoined) - base + sizeof(msg->GameNotJoined));
 				break;
+			case LANMessage::MSG_REQUEST_LOCATIONS:
+			case LANMessage::MSG_LOBBY_ANNOUNCE:
+			case LANMessage::MSG_REQUEST_LOBBY_LEAVE:
+			case LANMessage::MSG_GAME_START:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(msg->hostName) - base + sizeof(msg->hostName));
+				break;
+			case LANMessage::MSG_GAME_START_TIMER:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->StartTimer) - base + sizeof(msg->StartTimer));
+				break;
 			case LANMessage::MSG_GAME_OPTIONS:
 			{
 				Int optionsLength = 0;

@@ -124,6 +124,7 @@ public:
 		m_networkCushionHistoryLength(10),
 		m_networkRunAheadMetricsTime(2000),
 		m_networkRunAheadSlack(10),
+		m_networkKeepAliveDelay(20),
 		m_networkDisconnectTime(5000),
 		m_networkPlayerTimeoutTime(60000),
 		m_networkDisconnectScreenNotifyTime(15000),
@@ -248,6 +249,7 @@ public:
 	UnsignedInt m_networkCushionHistoryLength;
 	UnsignedInt m_networkRunAheadMetricsTime;
 	UnsignedInt m_networkRunAheadSlack;
+	UnsignedInt m_networkKeepAliveDelay;
 	UnsignedInt m_networkDisconnectTime;
 	UnsignedInt m_networkPlayerTimeoutTime;
 	UnsignedInt m_networkDisconnectScreenNotifyTime;
