@@ -422,7 +422,11 @@ shares structure and follows behind.
       327, 338, and 381 through `preAudioInitOwnership`, so
       `TheNameKeyGenerator`, `TheCommandList`, `XferCRC("lightCRC")`, and
       `parseCommandLine` readiness are checked before the still-unowned
-      `createAudioManager` call.
+      `createAudioManager` call. `test:vertical-integrations` now runs that
+      startup vertical as an aggregate gate before the archive, audio,
+      networking, rendering, and video verticals, so original
+      `GameEngine.cpp`/`Win32GameEngine` lifetime drift is visible in the
+      default cross-subsystem run.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
       ownership slice before marking `createFunctionLexicon` or
       `createModuleFactory` runtime-ready. The current focused

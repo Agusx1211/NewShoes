@@ -1812,6 +1812,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:w3d-window-layout-script`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Promote the startup vertical into the aggregate cross-subsystem gate.
+      `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
+      before the archive/audio/network/render/video steps and asserts the
+      browser `GameEngine.cpp` startup frontier, full original
+      `GameEngine.cpp` constructor/destructor lifetime, original
+      `MilesAudioManager::openDevice`, and original W3D window/layout smokes
+      remain covered. This does not complete production `GameEngine::init()`;
+      it makes the already-proven startup ownership vertical part of the
+      always-run integration ladder. Verified with
+      `npm --prefix WebAssembly run test:startup-vertical` and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Add the original `GlobalData` power-bar fields used by reached W3D
       control-bar code to the current browser shim: `m_powerBarBase`,
       `m_powerBarIntervals`, and `m_powerBarYellowRange`, with defaults matching

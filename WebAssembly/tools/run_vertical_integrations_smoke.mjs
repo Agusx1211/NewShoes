@@ -126,6 +126,32 @@ function assertStartupSingletonFrontier(payload, label) {
 
 const steps = [
   {
+    name: "startup-vertical",
+    file: "tools/run_startup_vertical_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "startup vertical smoke did not report ok", payload);
+      expect(payload.path === "startup-vertical",
+        "startup vertical smoke emitted the wrong path", payload);
+      expect(payload.covered?.includes("browser wasm original GameEngine.cpp startup frontier"),
+        "startup vertical smoke did not cover the browser GameEngine.cpp startup frontier", payload);
+      expect(payload.covered?.includes("original GameEngine.cpp constructor/destructor lifetime with global TheGameEngine ownership"),
+        "startup vertical smoke did not cover original GameEngine.cpp lifetime ownership", payload);
+      expect(payload.covered?.includes("original MilesAudioManager openDevice"),
+        "startup vertical smoke did not cover original MilesAudioManager openDevice", payload);
+      expect(payload.covered?.includes("original W3DGameWindowManager window and gadget ownership"),
+        "startup vertical smoke did not cover original W3DGameWindowManager ownership", payload);
+      expect(payload.sourceChecks?.includes("gameengine-startup-order")
+          && payload.sourceChecks?.includes("w3d-module-factory-frontier"),
+        "startup vertical smoke did not include the expected source frontier checks", payload);
+      expect(payload.browserChecks?.includes("startup-browser-frontier"),
+        "startup vertical smoke did not include the browser startup frontier check", payload);
+      expect(payload.smokes?.includes("win32-gameengine-original-lifetime")
+          && payload.smokes?.includes("miles-audio-open-device")
+          && payload.smokes?.includes("w3d-window-layout-script"),
+        "startup vertical smoke did not include the expected original lifetime/audio/W3D smokes", payload);
+    },
+  },
+  {
     name: "runtime-archives-startup-data",
     file: "harness/runtime_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -458,6 +484,7 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
+    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, and W3D window/layout ownership",
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
