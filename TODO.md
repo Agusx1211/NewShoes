@@ -300,6 +300,10 @@ shares structure and follows behind.
       loading against real fetched assets after original `Common/INI` and
       browser `FontFace`/fetch loading replace the current compatibility
       no-ops.
+- [ ] Replace the focused MainMenu/GameText `g_csfFile` lowercase path override
+      once browser archive/file lookup fully preserves the original Windows
+      case-insensitive CSF path contract (`data\%s\Generals.csf` versus the
+      indexed `data\english\generals.csf` entry).
 - [ ] Replace the current temporary `Common/INI.h` GameClient bridge helpers
       (`LookupListRec`, lookup-list parsing, coordinate parsing,
       `parseMappedImage`, credits and shell scheme declarations) with the
@@ -659,11 +663,13 @@ shares structure and follows behind.
       `MainMenuRuler` HandCreated mapped image / `TexturesZH.big`
       `MainMenuRuleruserinterface.tga` texture path, and the WND image repaint
       smoke now carries the full-screen ruler, logo overlay, and
-      `MainMenu.wnd:ButtonSinglePlayer` enabled three-piece button images
-      through `W3DGameWinDefaultDraw` / `W3DGadgetPushButtonImageDraw`.
+      `MainMenu.wnd:ButtonSinglePlayer` enabled three-piece button images plus
+      the real `GUI:SinglePlayer` label through `GameText::fetch` and
+      `W3DDisplayString::draw`.
       Remaining work is broader unpruned shell composition (for example
-      `MainMenuBackdrop`, additional image states, and text) under the normal
-      display-owned lifecycle instead of curated target visibility.
+      `MainMenuBackdrop`, additional image states, hidden/static/random text
+      children, and text under normal display-owned font/archive lifetime)
+      instead of curated target visibility.
 - [ ] Restore the generic original mapped-image directory load route for
       browser render smokes: replace the focused exact-block
       `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /

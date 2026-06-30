@@ -33,6 +33,7 @@ const englishArchiveMemfsPath = `${runtimeArchivePath}/EnglishZH.big`;
 const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
 const layoutEntry = "Window\\Menus\\MainMenu.wnd";
 const logoTextureEntry = "Data\\English\\Art\\Textures\\SCSmShellUserInterface512_001.tga";
+const gameTextCsfEntry = "Data\\English\\generals.csf";
 const rulerTextureEntry = "Art\\Textures\\mainmenuruleruserinterface.tga";
 const logoMappedImageEntry =
   "Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI";
@@ -161,7 +162,7 @@ try {
           name: "EnglishZH.big",
           expectedSourceBytes: englishArchiveStat.size,
           sourceArchive: englishArchivePath,
-          entries: [logoTextureEntry],
+          entries: [logoTextureEntry, gameTextCsfEntry],
         },
         {
           url: textureArchiveUrl,
@@ -182,6 +183,8 @@ try {
     entry.path.toLowerCase() === logoMappedImageEntry.toLowerCase());
   const logoTextureArchiveEntry = rangeEnglishArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === logoTextureEntry.toLowerCase());
+  const gameTextCsfArchiveEntry = rangeEnglishArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === gameTextCsfEntry.toLowerCase());
   const rulerTextureArchiveEntry = rangeTextureArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === rulerTextureEntry.toLowerCase());
   if (!archiveMountResult.ok
@@ -209,7 +212,7 @@ try {
       || rangeEnglishArchive?.storage !== "range-backed-subset-big"
       || rangeEnglishArchive?.reader !== "browser fetch Range -> synthesized BIG"
       || rangeEnglishArchive?.sourceBytes !== englishArchiveStat.size
-      || rangeEnglishArchive?.entryCount !== 1
+      || rangeEnglishArchive?.entryCount !== 2
       || rangeTextureArchive?.path !== textureArchiveMemfsPath
       || rangeTextureArchive?.storage !== "range-backed-subset-big"
       || rangeTextureArchive?.reader !== "browser fetch Range -> synthesized BIG"
@@ -224,6 +227,9 @@ try {
       || logoTextureArchiveEntry?.sourceOffset !== 61823560
       || logoTextureArchiveEntry?.bytes !== 1048620
       || logoTextureArchiveEntry?.reader !== "browser fetch Range"
+      || gameTextCsfArchiveEntry?.sourceOffset !== 24612
+      || gameTextCsfArchiveEntry?.bytes !== 925054
+      || gameTextCsfArchiveEntry?.reader !== "browser fetch Range"
       || rulerTextureArchiveEntry?.sourceOffset !== 152340144
       || rulerTextureArchiveEntry?.bytes !== 4194348
       || rulerTextureArchiveEntry?.reader !== "browser fetch Range") {
@@ -256,6 +262,7 @@ try {
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label")
       || repaintResult.probe?.archives?.windowEntry !== layoutEntry
       || repaintResult.probe?.archives?.mappedImageEntry !== logoMappedImageEntry
       || repaintResult.probe?.archives?.textureEntry !== logoTextureEntry
@@ -266,6 +273,13 @@ try {
       || repaintResult.probe?.results?.targetImageBound !== true
       || repaintResult.probe?.results?.rulerImageBound !== true
       || repaintResult.probe?.results?.buttonImagesBound !== true
+      || repaintResult.probe?.results?.gameTextCsfExists !== true
+      || repaintResult.probe?.results?.gameTextCreated !== true
+      || repaintResult.probe?.results?.gameTextInitialized !== true
+      || repaintResult.probe?.results?.buttonTextLabelExists !== true
+      || repaintResult.probe?.results?.buttonTextNonEmpty !== true
+      || repaintResult.probe?.results?.buttonTextDisplayStringBound !== true
+      || repaintResult.probe?.results?.buttonTextSizeComputed !== true
       || repaintResult.probe?.results?.texturePreloaded !== true
       || repaintResult.probe?.results?.rulerTexturePreloaded !== true
       || repaintResult.probe?.results?.textureResolved !== true
@@ -300,6 +314,10 @@ try {
       || repaintResult.probe?.layout?.button?.images?.[0] !== "Buttons-Left"
       || repaintResult.probe?.layout?.button?.images?.[1] !== "Buttons-Middle"
       || repaintResult.probe?.layout?.button?.images?.[2] !== "Buttons-Right"
+      || repaintResult.probe?.layout?.button?.text?.label !== "GUI:SinglePlayer"
+      || repaintResult.probe?.layout?.button?.text?.length <= 0
+      || repaintResult.probe?.layout?.button?.text?.width <= 0
+      || repaintResult.probe?.layout?.button?.text?.height <= 0
       || repaintResult.probe?.image?.name !== "GeneralsLogo"
       || repaintResult.probe?.image?.filename !== "SCSmShellUserInterface512_001.tga"
       || repaintResult.probe?.image?.status !== 0
@@ -322,6 +340,11 @@ try {
       || repaintResult.probe?.buttonImages?.middle?.filename !== "SCSmShellUserInterface512_001.tga"
       || repaintResult.probe?.buttonImages?.right?.name !== "Buttons-Right"
       || repaintResult.probe?.buttonImages?.right?.filename !== "SCSmShellUserInterface512_001.tga"
+      || repaintResult.probe?.gameText?.csfPath !== "data\\english\\generals.csf"
+      || repaintResult.probe?.gameText?.created !== true
+      || repaintResult.probe?.gameText?.initialized !== true
+      || repaintResult.probe?.gameText?.buttonLabelExists !== true
+      || repaintResult.probe?.gameText?.buttonTextNonEmpty !== true
       || String(repaintResult.probe?.texture?.name ?? "").toLowerCase() !==
         "scsmshelluserinterface512_001.tga"
       || repaintResult.probe?.texture?.archiveEntry !== logoTextureEntry
@@ -358,7 +381,9 @@ try {
       || repaintResult.browserProbe?.indexCount !== 6
       || repaintResult.coloredLogoPixelCount < 1
       || repaintResult.coloredRulerPixelCount < 4
-      || repaintResult.buttonRegion?.coloredPixelCount < 20) {
+      || repaintResult.buttonRegion?.coloredPixelCount < 20
+      || repaintResult.buttonTextRegion?.coloredPixelCount < 20
+      || repaintResult.buttonTextRegion?.maxComponent < 180) {
     throw new Error(`W3D MainMenu WindowLayout image repaint render failed: ${JSON.stringify({
       ok: repaintResult.ok,
       bridgeInputPaths: repaintResult.bridgeInputPaths,
@@ -368,6 +393,7 @@ try {
       rulerPixels: repaintResult.rulerPixels,
       buttonPixels: repaintResult.buttonPixels,
       buttonRegion: repaintResult.buttonRegion,
+      buttonTextRegion: repaintResult.buttonTextRegion,
       coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
       coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
       coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
@@ -403,6 +429,7 @@ try {
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
     buttonImages: repaintResult.probe.buttonImages,
+    gameText: repaintResult.probe.gameText,
     texture: repaintResult.probe.texture,
     rulerTexture: repaintResult.probe.rulerTexture,
     calls: repaintResult.probe.calls,
@@ -411,6 +438,7 @@ try {
     rulerPixels: repaintResult.rulerPixels,
     buttonPixels: repaintResult.buttonPixels,
     buttonRegion: repaintResult.buttonRegion,
+    buttonTextRegion: repaintResult.buttonTextRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
     coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
     coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,

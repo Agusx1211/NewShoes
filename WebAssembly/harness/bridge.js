@@ -16715,12 +16715,24 @@ async function rpc(command, payload = {}) {
           right: Math.ceil(buttonRight * virtualScaleX),
           bottom: Math.ceil(buttonBottom * virtualScaleY),
         }, 10);
+        const buttonText = button.text ?? {};
+        const buttonTextWidth = Number(buttonText.width ?? 96);
+        const buttonTextHeight = Number(buttonText.height ?? 18);
+        const buttonTextLeft = buttonLeft + Math.floor((buttonWidth - buttonTextWidth) / 2);
+        const buttonTextTop = buttonTop + Math.floor((buttonHeight - buttonTextHeight) / 2);
+        const buttonTextRegion = sampleCanvasRegion({
+          left: Math.floor(buttonTextLeft * virtualScaleX),
+          top: Math.floor(buttonTextTop * virtualScaleY),
+          right: Math.ceil((buttonTextLeft + buttonTextWidth) * virtualScaleX),
+          bottom: Math.ceil((buttonTextTop + buttonTextHeight) * virtualScaleY),
+        }, 10);
         const screenshot = {
           ...canvasSnapshot,
           logoPixels,
           rulerPixels,
           buttonPixels,
           buttonRegion,
+          buttonTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const ok = Boolean(probe.ok)
@@ -16754,6 +16766,12 @@ async function rpc(command, payload = {}) {
           && probe?.layout?.button?.images?.[0] === "Buttons-Left"
           && probe?.layout?.button?.images?.[1] === "Buttons-Middle"
           && probe?.layout?.button?.images?.[2] === "Buttons-Right"
+          && probe?.layout?.button?.text?.label === "GUI:SinglePlayer"
+          && typeof probe?.layout?.button?.text?.ascii === "string"
+          && probe.layout.button.text.ascii.length > 0
+          && probe?.layout?.button?.text?.length > 0
+          && probe?.layout?.button?.text?.width > 0
+          && probe?.layout?.button?.text?.height > 0
           && probe?.image?.name === "GeneralsLogo"
           && probe?.image?.filename === "SCSmShellUserInterface512_001.tga"
           && probe?.image?.width === 370
@@ -16777,6 +16795,18 @@ async function rpc(command, payload = {}) {
           && probe?.results?.targetImageBound === true
           && probe?.results?.rulerImageBound === true
           && probe?.results?.buttonImagesBound === true
+          && probe?.results?.gameTextCsfExists === true
+          && probe?.results?.gameTextCreated === true
+          && probe?.results?.gameTextInitialized === true
+          && probe?.results?.buttonTextLabelExists === true
+          && probe?.results?.buttonTextNonEmpty === true
+          && probe?.results?.buttonTextDisplayStringBound === true
+          && probe?.results?.buttonTextSizeComputed === true
+          && probe?.gameText?.csfPath === "data\\english\\generals.csf"
+          && probe?.gameText?.created === true
+          && probe?.gameText?.initialized === true
+          && probe?.gameText?.buttonLabelExists === true
+          && probe?.gameText?.buttonTextNonEmpty === true
           && probe?.calls?.displayImageDraws >= 5
           && probe?.calls?.drawIndexed >= 5
           && probe?.calls?.browserTextureCreate >= 2
@@ -16792,7 +16822,9 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.sampled === true
           && coloredLogoPixels.length >= 1
           && coloredRulerPixels.length >= 4
-          && buttonRegion.coloredPixelCount >= 20;
+          && buttonRegion.coloredPixelCount >= 20
+          && buttonTextRegion.coloredPixelCount >= 20
+          && buttonTextRegion.maxComponent >= 180;
         return {
           ok,
           command,
@@ -16809,6 +16841,7 @@ async function rpc(command, payload = {}) {
           rulerPixels,
           buttonPixels,
           buttonRegion,
+          buttonTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,
           coloredButtonPixelCount: coloredButtonPixels.length,

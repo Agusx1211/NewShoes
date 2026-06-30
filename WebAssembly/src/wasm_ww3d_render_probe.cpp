@@ -77,6 +77,7 @@
 #endif
 
 Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
+extern const Char *g_csfFile;
 
 using WindowLayoutScriptRuntimeAnchor =
 	Bool (*)(File *, char *, UnsignedInt, WindowLayoutInfo *);
@@ -366,6 +367,8 @@ constexpr const char *kMainMenuLogoSampleIni =
 constexpr const char *kMainMenuButtonLeftImageName = "Buttons-Left";
 constexpr const char *kMainMenuButtonMiddleImageName = "Buttons-Middle";
 constexpr const char *kMainMenuButtonRightImageName = "Buttons-Right";
+constexpr const char *kMainMenuButtonTextLabel = "GUI:SinglePlayer";
+constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
 constexpr const char *kMainMenuLayoutImageRuntimeIniArchive =
@@ -1098,6 +1101,31 @@ public:
 	{
 		DisplayString *string = newInstance(ProbeDisplayString);
 		link(string);
+		return string;
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		if (string == nullptr) {
+			return;
+		}
+		unLink(string);
+		string->deleteInstance();
+	}
+
+	DisplayString *getGroupNumeralString(Int) override { return newDisplayString(); }
+	DisplayString *getFormationLetterString() override { return newDisplayString(); }
+};
+
+class ProbeW3DDisplayStringManager : public DisplayStringManager
+{
+public:
+	DisplayString *newDisplayString() override
+	{
+		DisplayString *string = newInstance(W3DDisplayString);
+		if (string != nullptr) {
+			link(string);
+		}
 		return string;
 	}
 
@@ -7060,12 +7088,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
-	ProbeFontLibrary font_library;
-	ProbeDisplayStringManager display_string_manager;
-	ProbeEmptyGameText game_text;
+	W3DFontLibrary font_library;
+	ProbeW3DDisplayStringManager display_string_manager;
 	HeaderTemplateManager header_templates;
 	ProbeW3DWindowLayoutFunctionLexicon function_lexicon;
 	ImageCollection *mapped_image_collection = nullptr;
+	GameTextInterface *game_text = nullptr;
+	const Char *old_csf_file = g_csfFile;
 
 	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
@@ -7088,13 +7117,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	TheSubsystemList = &subsystem_list;
 	TheFontLibrary = &font_library;
 	TheDisplayStringManager = &display_string_manager;
-	TheGameText = &game_text;
+	TheGameText = nullptr;
 	TheHeaderTemplateManager = &header_templates;
 	TheFunctionLexicon = &function_lexicon;
 	TheTransitionHandler = nullptr;
 	font_library.init();
 	display_string_manager.init();
-	game_text.init();
 
 	FileFactoryClass *ww3d_init_file_factory = _TheFileFactory;
 	ProbeNullMissingFileFactory ww3d_init_null_missing_factory(ww3d_init_file_factory);
@@ -7113,6 +7141,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	bool runtime_texture_installed = false;
 	bool runtime_ruler_texture_installed = false;
 	bool runtime_asset_system_installed = false;
+	bool game_text_csf_exists = false;
+	bool game_text_created = false;
+	bool game_text_initialized = false;
+	bool button_text_label_exists = false;
+	bool button_text_nonempty = false;
+	bool button_text_display_string_bound = false;
+	bool button_text_size_computed = false;
 	bool name_keys_ready = false;
 	bool archive_window_exists = false;
 	bool archive_window_openable = false;
@@ -7207,6 +7242,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	std::string button_left_image_filename;
 	std::string button_middle_image_filename;
 	std::string button_right_image_filename;
+	std::string button_text_ascii;
 	std::string loaded_texture_name;
 	std::string ruler_loaded_texture_name;
 	Int button_left_image_width = 0;
@@ -7215,6 +7251,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	Int button_middle_image_height = 0;
 	Int button_right_image_width = 0;
 	Int button_right_image_height = 0;
+	Int button_text_length = 0;
+	Int button_text_width = 0;
+	Int button_text_height = 0;
 	Int layout_window_count = 0;
 	Int hidden_child_count = 0;
 	Int root_x = 0;
@@ -7278,6 +7317,25 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				kMainMenuLayoutImageRuntimeTextureArchive);
 		runtime_texture_installed =
 			runtime_ini_installed;
+		game_text_csf_exists =
+			runtime_texture_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuGameTextCsfPath);
+		if (game_text_csf_exists) {
+			game_text = CreateGameTextInterface();
+			game_text_created = game_text != nullptr;
+			TheGameText = game_text;
+			if (game_text != nullptr) {
+				// The browser archive index is currently lowercase-only; use that
+				// lookup form while keeping real GameText parsing.
+				g_csfFile = kMainMenuGameTextCsfPath;
+				game_text->init();
+				g_csfFile = old_csf_file;
+				game_text_initialized = true;
+				UnicodeString fetched_button_text =
+					game_text->fetch(kMainMenuButtonTextLabel, &button_text_label_exists);
+				button_text_nonempty = !fetched_button_text.isEmpty();
+			}
+		}
 		runtime_ruler_texture_installed =
 			wasm_browser_runtime_assets_install_archive_paths(
 				kMainMenuLayoutImageRuntimeRulerTextureArchive,
@@ -7304,7 +7362,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	}
 
 	if (mapped_ini_exists && ruler_mapped_ini_exists &&
-		texture_file_exists && ruler_texture_file_exists && name_keys_ready) {
+		texture_file_exists && ruler_texture_file_exists &&
+		game_text_initialized && button_text_label_exists &&
+		button_text_nonempty && name_keys_ready) {
 		function_lexicon.init();
 		function_lexicon_initialized = true;
 		callbacks_resolved =
@@ -7570,6 +7630,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 				button_left_enabled_image == button_left_image &&
 				button_middle_enabled_image == button_middle_image &&
 				button_right_enabled_image == button_right_image;
+			DisplayString *button_text = button->winGetInstanceData()->getTextDisplayString();
+			button_text_display_string_bound =
+				button_text != nullptr &&
+				button_text->getTextLength() > 0;
+			if (button_text_display_string_bound) {
+				button_text_length = button_text->getTextLength();
+				button_text->getSize(&button_text_width, &button_text_height);
+				button_text_size_computed = button_text_width > 0 && button_text_height > 0;
+				AsciiString ascii_text;
+				ascii_text.translate(button_text->getText());
+				button_text_ascii = ascii_text.str() != nullptr ? ascii_text.str() : "";
+			}
 			button_hidden = BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(button, button_x, button_y, button_width, button_height);
 		}
@@ -7604,6 +7676,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 
 	const WasmD3D8ShimState *state_after = wasm_d3d8_get_state();
 	draw_calls_after_repaint = state_after != nullptr ? state_after->draw_indexed_primitive_calls : 0;
+	if (button != nullptr && button_text_display_string_bound) {
+		DisplayString *button_text = button->winGetInstanceData()->getTextDisplayString();
+		if (button_text != nullptr) {
+			button_text->getSize(&button_text_width, &button_text_height);
+			button_text_size_computed = button_text_width > 0 && button_text_height > 0;
+		}
+	}
 
 	TextureClass *loaded_texture =
 		display_storage.render != nullptr ? display_storage.render->Peek_Texture() : nullptr;
@@ -7663,6 +7742,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		mapped_image_collection = nullptr;
 	}
 
+	display_string_manager.reset();
+	font_library.reset();
+	delete game_text;
+	game_text = nullptr;
+
 	TheMappedImageCollection = old_mapped_image_collection;
 	TheNameKeyGenerator = old_name_key_generator;
 	TheTransitionHandler = old_transition_handler;
@@ -7710,6 +7794,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		runtime_texture_installed &&
 		runtime_ruler_texture_installed &&
 		runtime_asset_system_installed &&
+		game_text_csf_exists &&
+		game_text_created &&
+		game_text_initialized &&
+		button_text_label_exists &&
+		button_text_nonempty &&
 		name_keys_ready &&
 		archive_window_exists &&
 		archive_window_openable &&
@@ -7768,6 +7857,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		target_image_bound &&
 		ruler_image_bound &&
 		button_images_bound &&
+		button_text_display_string_bound &&
+		button_text_size_computed &&
 		!target_hidden &&
 		!ruler_hidden &&
 		!button_hidden &&
@@ -7855,9 +7946,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	const std::string button_left_image_name_json = json_escape(kMainMenuButtonLeftImageName);
 	const std::string button_middle_image_name_json = json_escape(kMainMenuButtonMiddleImageName);
 	const std::string button_right_image_name_json = json_escape(kMainMenuButtonRightImageName);
+	const std::string button_text_label_json = json_escape(kMainMenuButtonTextLabel);
+	const std::string button_text_ascii_json = json_escape(button_text_ascii);
+	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[28000];
+	char buffer[30000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -7868,6 +7962,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
+		"\"GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
 		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawImage\","
 		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\","
@@ -7882,7 +7977,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"runtimeIniInstalled\":%s,\"runtimeWindowInstalled\":%s,"
 		"\"runtimeTextureInstalled\":%s,"
 		"\"runtimeRulerTextureInstalled\":%s,"
-		"\"runtimeAssetSystemInstalled\":%s,\"nameKeysReady\":%s,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"gameTextCsfExists\":%s,\"gameTextCreated\":%s,"
+		"\"gameTextInitialized\":%s,\"buttonTextLabelExists\":%s,"
+		"\"buttonTextNonEmpty\":%s,"
+		"\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
 		"\"mappedIniExists\":%s,\"rulerMappedIniExists\":%s,"
 		"\"textureFileExists\":%s,\"rulerTextureFileExists\":%s,"
@@ -7906,6 +8005,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"buttonCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
+		"\"buttonTextDisplayStringBound\":%s,"
+		"\"buttonTextSizeComputed\":%s,"
 		"\"targetHidden\":%s,\"rulerHidden\":%s,\"buttonHidden\":%s,"
 		"\"childrenPruned\":%s,"
 		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
@@ -7931,7 +8032,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"systemFunc\":\"GadgetPushButtonSystem\","
 		"\"inputFunc\":\"GadgetPushButtonInput\","
 		"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
-		"\"images\":[\"%s\",\"%s\",\"%s\"]},"
+		"\"images\":[\"%s\",\"%s\",\"%s\"],"
+		"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
+		"\"length\":%d,\"width\":%d,\"height\":%d}},"
 		"\"prunedChildren\":%d},"
 		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\","
 		"\"rawTexture\":%s,\"status\":%u,\"rotated\":%s,"
@@ -7949,6 +8052,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"width\":%d,\"height\":%d},"
 		"\"right\":{\"name\":\"%s\",\"filename\":\"%s\","
 		"\"width\":%d,\"height\":%d}},"
+		"\"gameText\":{\"csfPath\":\"%s\",\"created\":%s,"
+		"\"initialized\":%s,\"buttonLabelExists\":%s,"
+		"\"buttonTextNonEmpty\":%s},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
 		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
 		"\"levels\":%u,\"uploadedLevels\":%u,"
@@ -8009,6 +8115,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		bool_json(runtime_texture_installed),
 		bool_json(runtime_ruler_texture_installed),
 		bool_json(runtime_asset_system_installed),
+		bool_json(game_text_csf_exists),
+		bool_json(game_text_created),
+		bool_json(game_text_initialized),
+		bool_json(button_text_label_exists),
+		bool_json(button_text_nonempty),
 		bool_json(name_keys_ready),
 		bool_json(archive_window_exists),
 		bool_json(archive_window_openable),
@@ -8053,6 +8164,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
 		bool_json(button_images_bound),
+		bool_json(button_text_display_string_bound),
+		bool_json(button_text_size_computed),
 		bool_json(target_hidden),
 		bool_json(ruler_hidden),
 		bool_json(button_hidden),
@@ -8092,6 +8205,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		button_left_image_name_json.c_str(),
 		button_middle_image_name_json.c_str(),
 		button_right_image_name_json.c_str(),
+		button_text_label_json.c_str(),
+		button_text_ascii_json.c_str(),
+		button_text_length,
+		button_text_width,
+		button_text_height,
 		hidden_child_count,
 		image_name_json.c_str(),
 		image_filename_json.c_str(),
@@ -8131,6 +8249,11 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		button_right_image_filename_json.c_str(),
 		button_right_image_width,
 		button_right_image_height,
+		game_text_csf_path_json.c_str(),
+		bool_json(game_text_created),
+		bool_json(game_text_initialized),
+		bool_json(button_text_label_exists),
+		bool_json(button_text_nonempty),
 		texture_id,
 		loaded_texture_name_json.c_str(),
 		texture_entry_json.c_str(),

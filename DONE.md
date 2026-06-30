@@ -3573,6 +3573,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `(540,116)-(748,152)`, the three source atlas images, and a scanned
       button-region pixel proof in
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` image repaint smoke through
+      the real push-button text path: the range-backed `EnglishZH.big` subset
+      now includes `Data\English\generals.csf`, the probe creates the original
+      `GameTextInterface`, fetches `GUI:SinglePlayer` as `SOLO PLAY`, lets
+      `W3DGadgetPushButtonImageDraw` bind the parsed WND font, and renders the
+      label with a real `W3DDisplayString`. `npm run
+      test:ww3d-main-menu-layout-image-repaint` and `npm run
+      test:vertical-integrations` now gate the button text metrics
+      `(120x22)`, CSF/GameText readiness, the original path marker
+      `GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button
+      label`, 21 browser indexed draws, and a non-empty button text pixel
+      region in
+      `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

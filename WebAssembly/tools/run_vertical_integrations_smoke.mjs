@@ -928,6 +928,8 @@ const steps = [
         "MainMenu layout image repaint smoke did not target the real MainMenuRuler child", payload.originalPaths);
       expect(payload.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw"),
         "MainMenu layout image repaint smoke did not target the real ButtonSinglePlayer image-state child", payload.originalPaths);
+      expect(payload.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label"),
+        "MainMenu layout image repaint smoke did not render the real ButtonSinglePlayer text label", payload.originalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -942,10 +944,20 @@ const steps = [
           && payload.layout?.button?.images?.[0] === "Buttons-Left"
           && payload.layout?.button?.images?.[1] === "Buttons-Middle"
           && payload.layout?.button?.images?.[2] === "Buttons-Right"
+          && payload.layout?.button?.text?.label === "GUI:SinglePlayer"
+          && payload.layout?.button?.text?.length > 0
+          && payload.layout?.button?.text?.width > 0
+          && payload.layout?.button?.text?.height > 0
           && payload.buttonImages?.left?.filename === "SCSmShellUserInterface512_001.tga"
           && payload.buttonImages?.middle?.filename === "SCSmShellUserInterface512_001.tga"
           && payload.buttonImages?.right?.filename === "SCSmShellUserInterface512_001.tga",
-        "MainMenu layout image repaint smoke did not report the expected real ButtonSinglePlayer image-state binding", payload);
+        "MainMenu layout image repaint smoke did not report the expected real ButtonSinglePlayer image/text binding", payload);
+      expect(payload.gameText?.csfPath === "data\\english\\generals.csf"
+          && payload.gameText?.created === true
+          && payload.gameText?.initialized === true
+          && payload.gameText?.buttonLabelExists === true
+          && payload.gameText?.buttonTextNonEmpty === true,
+        "MainMenu layout image repaint smoke did not resolve button text through real GameText", payload);
       expect(payload.calls?.displayImageDraws >= 5
           && payload.calls?.drawIndexed >= 5
           && payload.draw?.screenRect?.left === 504
@@ -955,6 +967,9 @@ const steps = [
           && payload.coloredRulerPixelCount >= 4
           && payload.buttonRegion?.coloredPixelCount >= 20,
         "MainMenu layout image repaint smoke did not capture logo, ruler, and button pixels", payload);
+      expect(payload.buttonTextRegion?.coloredPixelCount >= 20
+          && payload.buttonTextRegion?.maxComponent >= 180,
+        "MainMenu layout image repaint smoke did not capture the real button text pixels", payload);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
     },
