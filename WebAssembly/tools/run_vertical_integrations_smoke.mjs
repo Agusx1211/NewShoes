@@ -856,6 +856,35 @@ const steps = [
     },
   },
   {
+    name: "w3d-window-repaint",
+    file: "harness/window_repaint_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "W3D window repaint smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-window-repaint",
+        "W3D window repaint smoke emitted the wrong path", payload);
+      expect(payload.originalPaths?.includes("W3DGameWindowManager::gogoGadgetPushButton"),
+        "W3D window repaint smoke did not include the original button creation path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("GameWindowManager::winRepaint -> W3DGadgetPushButtonDraw"),
+        "W3D window repaint smoke did not include the original repaint callback path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("GameWindowManager::winOpenRect/winFillRect -> TheDisplay virtual dispatch"),
+        "W3D window repaint smoke did not include the original Display dispatch path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("ProbeForwardingW3DDisplay -> W3DDisplay::drawOpenRect/drawFillRect"),
+        "W3D window repaint smoke did not include the W3DDisplay draw path", payload.originalPaths);
+      expect(payload.window?.manager === "W3DGameWindowManager"
+          && payload.window?.button?.drawFunc === "W3DGadgetPushButtonDraw"
+          && payload.window?.button?.inputFunc === "GadgetPushButtonInput",
+        "W3D window repaint smoke did not bind the expected W3D window/gadget callbacks", payload.window);
+      expect(payload.calls?.drawIndexed >= 2,
+        "W3D window repaint smoke did not issue both repaint draw calls", payload.calls);
+      expect(payload.calls?.displayOpenRect >= 1 && payload.calls?.displayFillRect >= 1,
+        "W3D window repaint smoke did not issue both Display repaint calls", payload.calls);
+      expect(payload.repaintPixels?.center?.[1] >= 160,
+        "W3D window repaint smoke did not produce a green button center pixel", payload.repaintPixels);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-window-repaint-canvas.png"),
+        "W3D window repaint smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "mapped-image-display",
     file: "harness/display_mapped_image_smoke.mjs",
     args: ["artifacts/real-assets/INIZH.big", "artifacts/real-assets/EnglishZH.big"],
@@ -996,13 +1025,14 @@ console.log(JSON.stringify({
     "original LANAPI game-start state driven through three Network::update frames plus original FrameData FRAMEDATA_NOTREADY and FRAMEDATA_RESEND desync states",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
+    "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
-    "advance real W3DDisplay-backed WindowLayout/GameWindowManager repaint so shell layouts produce browser pixels instead of SmokeDisplay counters",
+    "advance real W3DDisplay-backed WindowLayout repaint so archive-loaded shell layouts produce browser pixels instead of SmokeDisplay counters",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

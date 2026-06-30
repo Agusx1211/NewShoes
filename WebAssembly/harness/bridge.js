@@ -6654,6 +6654,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_mapped_image_unrotated", "string", ["string", "string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
+      probeWW3DWindowRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_window_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
       probeWW3DDisplayLineGradient: module.cwrap(
@@ -15804,6 +15806,67 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dWindowRepaint":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D window repaint cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DWindowRepaint());
+        const button = probe?.window?.button ?? {};
+        const left = button.x ?? 300;
+        const top = button.y ?? 220;
+        const right = left + (button.width ?? 200);
+        const bottom = top + (button.height ?? 160);
+        const repaintPixels = {
+          center: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), Math.floor((top + bottom) / 2)),
+          interior: sampleVirtualCanvasPixel(left + 12, top + 12),
+          borderTop: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), top),
+          borderLeft: sampleVirtualCanvasPixel(left, Math.floor((top + bottom) / 2)),
+          outside: sampleVirtualCanvasPixel(left - 16, top - 16),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          repaintPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_window_repaint_probe"
+          && probe?.display?.path === "GameWindowManager::winRepaint -> Display adapter -> W3DDisplay"
+          && probe?.window?.manager === "W3DGameWindowManager"
+          && probe?.window?.button?.drawFunc === "W3DGadgetPushButtonDraw"
+          && probe?.window?.button?.inputFunc === "GadgetPushButtonInput"
+          && probe?.calls?.drawIndexed >= 2
+          && probe?.calls?.displayOpenRect >= 1
+          && probe?.calls?.displayFillRect >= 1
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 6
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksGreen(browserProbe.centerPixel)
+          && pixelLooksGreen(repaintPixels.center)
+          && pixelLooksGreen(repaintPixels.interior)
+          && pixelLooksBlack(repaintPixels.outside);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          repaintPixels,
           screenshot,
           state: snapshotState(),
         };

@@ -8,10 +8,16 @@
 
 #include "Common/GlobalData.h"
 #include "Common/GameMemory.h"
+#include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
+#include "GameClient/GadgetPushButton.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/GameText.h"
+#include "GameClient/GameWindow.h"
+#include "GameClient/GameWindowManager.h"
+#include "GameClient/GameWindowTransitions.h"
 #include "GameClient/Image.h"
+#include "GameClient/WinInstanceData.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wkeyword-macro"
@@ -23,7 +29,9 @@
 #pragma clang diagnostic pop
 #endif
 #include "W3DDevice/GameClient/W3DDisplayString.h"
+#include "W3DDevice/GameClient/W3DGadget.h"
 #include "W3DDevice/GameClient/W3DGameFont.h"
+#include "W3DDevice/GameClient/W3DGameWindowManager.h"
 #include "ww3dformat.h"
 #include "W3DDevice/GameClient/W3DVideoBuffer.h"
 #include "assetmgr.h"
@@ -48,6 +56,103 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
+// This focused render target constructs a Display adapter without linking the
+// full Display.cpp movie/debug teardown graph. The weak definitions below are
+// replaced automatically if a broader target later links the original owner.
+__attribute__((weak)) Display::Display()
+{
+	m_viewList = nullptr;
+	m_width = 0;
+	m_height = 0;
+	m_bitDepth = 0;
+	m_windowed = FALSE;
+	m_videoBuffer = nullptr;
+	m_videoStream = nullptr;
+	m_debugDisplayCallback = nullptr;
+	m_debugDisplayUserData = nullptr;
+	m_debugDisplay = nullptr;
+	m_letterBoxFadeLevel = 0.0f;
+	m_letterBoxEnabled = FALSE;
+	m_cinematicText = AsciiString::TheEmptyString;
+	m_cinematicFont = nullptr;
+	m_cinematicTextFrames = 0;
+	m_movieHoldTime = -1;
+	m_copyrightHoldTime = -1;
+	m_elapsedMovieTime = 0;
+	m_elapsedCopywriteTime = 0;
+	m_copyrightDisplayString = nullptr;
+	m_currentlyPlayingMovie.clear();
+	m_letterBoxFadeStartTime = 0;
+}
+
+__attribute__((weak)) Display::~Display() {}
+
+__attribute__((weak)) void Display::deleteViews()
+{
+	m_viewList = nullptr;
+}
+
+__attribute__((weak)) void Display::attachView(View *view)
+{
+	m_viewList = view;
+}
+
+__attribute__((weak)) void Display::drawViews() {}
+
+__attribute__((weak)) void Display::updateViews() {}
+
+__attribute__((weak)) void Display::draw() {}
+
+__attribute__((weak)) void Display::setWidth(UnsignedInt width)
+{
+	m_width = width;
+}
+
+__attribute__((weak)) void Display::setHeight(UnsignedInt height)
+{
+	m_height = height;
+}
+
+__attribute__((weak)) Bool Display::setDisplayMode(UnsignedInt xres, UnsignedInt yres,
+	UnsignedInt bitdepth, Bool windowed)
+{
+	m_width = xres;
+	m_height = yres;
+	m_bitDepth = bitdepth;
+	m_windowed = windowed;
+	return TRUE;
+}
+
+__attribute__((weak)) void Display::playLogoMovie(AsciiString, Int, Int) {}
+
+__attribute__((weak)) void Display::playMovie(AsciiString) {}
+
+__attribute__((weak)) void Display::stopMovie() {}
+
+__attribute__((weak)) Bool Display::isMoviePlaying()
+{
+	return FALSE;
+}
+
+__attribute__((weak)) void Display::setDebugDisplayCallback(DebugDisplayCallback *callback,
+	void *userData)
+{
+	m_debugDisplayCallback = callback;
+	m_debugDisplayUserData = userData;
+}
+
+__attribute__((weak)) Display::DebugDisplayCallback *Display::getDebugDisplayCallback()
+{
+	return m_debugDisplayCallback;
+}
+
+__attribute__((weak)) void Display::reset()
+{
+	deleteViews();
+}
+
+__attribute__((weak)) void Display::update() {}
+
 namespace {
 
 std::string g_ww3d_aabox_probe_json;
@@ -63,6 +168,7 @@ std::string g_ww3d_display_mapped_image_probe_json;
 std::string g_ww3d_display_mapped_image_clip_probe_json;
 std::string g_ww3d_display_mapped_image_unrotated_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
+std::string g_ww3d_window_repaint_probe_json;
 std::string g_ww3d_display_line_probe_json;
 std::string g_ww3d_display_line_gradient_probe_json;
 std::string g_ww3d_display_openrect_probe_json;
@@ -260,6 +366,122 @@ void fill_xrgb_video_buffer_red(void *memory, unsigned int pitch, unsigned int w
 		}
 	}
 }
+
+class ProbeFontLibrary : public FontLibrary
+{
+protected:
+	Bool loadFontData(GameFont *font) override
+	{
+		if (font == nullptr) {
+			return FALSE;
+		}
+
+		font->height = font->pointSize;
+		font->fontData = nullptr;
+		return TRUE;
+	}
+};
+
+class ProbeForwardingW3DDisplay : public Display
+{
+public:
+	explicit ProbeForwardingW3DDisplay(W3DDisplay *display = nullptr) : m_w3dDisplay(display) {}
+
+	void setW3DDisplay(W3DDisplay *display)
+	{
+		m_w3dDisplay = display;
+	}
+
+	void configure(UnsignedInt width, UnsignedInt height, UnsignedInt bitDepth, Bool windowed)
+	{
+		m_width = width;
+		m_height = height;
+		m_bitDepth = bitDepth;
+		m_windowed = windowed;
+	}
+
+	void doSmartAssetPurgeAndPreload(const char *) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpAssetUsage(const char *) override {}
+#endif
+	VideoBuffer *createVideoBuffer() override { return nullptr; }
+	void setClipRegion(IRegion2D *region) override
+	{
+		if (m_w3dDisplay != nullptr && region != nullptr) {
+			m_w3dDisplay->W3DDisplay::setClipRegion(region);
+		}
+	}
+	Bool isClippingEnabled() override
+	{
+		return m_w3dDisplay != nullptr ? m_w3dDisplay->W3DDisplay::isClippingEnabled() : FALSE;
+	}
+	void enableClipping(Bool onoff) override
+	{
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::enableClipping(onoff);
+		}
+	}
+	void setTimeOfDay(TimeOfDay) override {}
+	void createLightPulse(const Coord3D *, const RGBColor *, Real, Real, UnsignedInt, UnsignedInt) override {}
+	void drawLine(Int startX, Int startY, Int endX, Int endY, Real lineWidth, UnsignedInt lineColor) override
+	{
+		++m_lineDraws;
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::drawLine(startX, startY, endX, endY, lineWidth, lineColor);
+		}
+	}
+	void drawLine(Int startX, Int startY, Int endX, Int endY, Real lineWidth,
+		UnsignedInt lineColor1, UnsignedInt lineColor2) override
+	{
+		++m_lineDraws;
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::drawLine(startX, startY, endX, endY, lineWidth,
+				lineColor1, lineColor2);
+		}
+	}
+	void drawOpenRect(Int startX, Int startY, Int width, Int height, Real lineWidth,
+		UnsignedInt lineColor) override
+	{
+		++m_openRectDraws;
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::drawOpenRect(startX, startY, width, height, lineWidth,
+				lineColor);
+		}
+	}
+	void drawFillRect(Int startX, Int startY, Int width, Int height, UnsignedInt color) override
+	{
+		++m_fillRectDraws;
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::drawFillRect(startX, startY, width, height, color);
+		}
+	}
+	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
+	void clearShroud() override {}
+	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void setBorderShroudLevel(UnsignedByte) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpModelAssets(const char *) override {}
+#endif
+	void preloadModelAssets(AsciiString) override {}
+	void preloadTextureAssets(AsciiString) override {}
+	void takeScreenShot() override {}
+	void toggleMovieCapture() override {}
+	void toggleLetterBox() override {}
+	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
+	Real getAverageFPS() override { return 0.0f; }
+	Int getLastFrameDrawCalls() override { return m_lineDraws + m_openRectDraws + m_fillRectDraws; }
+	Int openRectDraws() const { return m_openRectDraws; }
+	Int fillRectDraws() const { return m_fillRectDraws; }
+
+private:
+	W3DDisplay *m_w3dDisplay = nullptr;
+	Int m_lineDraws = 0;
+	Int m_openRectDraws = 0;
+	Int m_fillRectDraws = 0;
+};
 
 struct ProbeW3DDisplayStorage
 {
@@ -4389,6 +4611,322 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_fillrect()
 
 	g_ww3d_display_fillrect_probe_json = buffer;
 	return g_ww3d_display_fillrect_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_repaint()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	constexpr Int button_x = 300;
+	constexpr Int button_y = 220;
+	constexpr Int button_width = 200;
+	constexpr Int button_height = 160;
+	constexpr Color fill_color = static_cast<Color>(0xff00ff00UL);
+	constexpr Color border_color = static_cast<Color>(0xffffff00UL);
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	ProbeFontLibrary font_library;
+	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
+
+	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheFontLibrary = &font_library;
+	TheTransitionHandler = nullptr;
+	font_library.init();
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	Int destroy_result = WIN_ERR_GENERAL_FAILURE;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool manager_allocated = false;
+	bool root_allocated = false;
+	bool button_allocated = false;
+	bool callbacks_bound = false;
+	bool colors_set = false;
+	bool begin_repaint_called = false;
+	bool repaint_called = false;
+	bool window_list_cleared = false;
+	UnsignedInt draw_calls_before_repaint = 0;
+	UnsignedInt draw_calls_after_repaint = 0;
+
+	ProbeW3DDisplayStorage display_storage;
+	ProbeForwardingW3DDisplay display_adapter;
+	W3DDisplay *display = nullptr;
+	W3DGameWindowManager *manager = nullptr;
+	GameWindow *root = nullptr;
+	GameWindow *button = nullptr;
+	WinInstanceData button_instance;
+
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		display = display_storage.prepare_for_2d_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
+	}
+
+	if (display_setup) {
+		display_adapter.setW3DDisplay(display);
+		display_adapter.configure(display->m_width, display->m_height, display->m_bitDepth,
+			display->m_windowed);
+		TheDisplay = &display_adapter;
+		manager = NEW W3DGameWindowManager;
+		manager_allocated = manager != nullptr;
+		if (manager != nullptr) {
+			TheWindowManager = manager;
+		}
+	}
+
+	if (manager != nullptr) {
+		root = manager->winCreate(nullptr,
+			WIN_STATUS_ENABLED | WIN_STATUS_SEE_THRU,
+			0,
+			0,
+			800,
+			600,
+			nullptr,
+			nullptr);
+		root_allocated = root != nullptr;
+	}
+
+	if (root != nullptr) {
+		button_instance.init();
+		BitSet(button_instance.m_style, GWS_PUSH_BUTTON | GWS_MOUSE_TRACK);
+		button = manager->gogoGadgetPushButton(root,
+			WIN_STATUS_ENABLED,
+			button_x,
+			button_y,
+			button_width,
+			button_height,
+			&button_instance,
+			nullptr,
+			FALSE);
+		button_allocated = button != nullptr;
+	}
+
+	if (button != nullptr) {
+		callbacks_bound =
+			manager->getPushButtonDrawFunc() == W3DGadgetPushButtonDraw &&
+			button->winGetDrawFunc() == W3DGadgetPushButtonDraw &&
+			button->winGetInputFunc() == GadgetPushButtonInput &&
+			button->winGetParent() == root;
+		GadgetButtonSetEnabledColor(button, fill_color);
+		GadgetButtonSetEnabledBorderColor(button, border_color);
+		colors_set =
+			GadgetButtonGetEnabledColor(button) == fill_color &&
+			GadgetButtonGetEnabledBorderColor(button) == border_color;
+	}
+
+	const WasmD3D8ShimState *state_before = wasm_d3d8_get_state();
+	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
+
+	if (callbacks_bound && colors_set) {
+		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			begin_repaint_called = true;
+			manager->winRepaint();
+			repaint_called = true;
+			end_render_result = WW3D::End_Render(false);
+		}
+	}
+
+	const WasmD3D8ShimState *state_after = wasm_d3d8_get_state();
+	draw_calls_after_repaint = state_after != nullptr ? state_after->draw_indexed_primitive_calls : 0;
+
+	if (manager != nullptr && root != nullptr) {
+		destroy_result = manager->winDestroy(root);
+		manager->update();
+		window_list_cleared = manager->winGetWindowList() == nullptr;
+		root = nullptr;
+		button = nullptr;
+	}
+
+	if (manager != nullptr) {
+		TheTransitionHandler = nullptr;
+		delete manager;
+		manager = nullptr;
+	}
+
+	display_storage.release_probe_renderer();
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	font_library.reset();
+	TheTransitionHandler = old_transition_handler;
+	TheWindowManager = old_window_manager;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheSubsystemList = old_subsystem_list;
+	TheWritableGlobalData = old_writable_global_data;
+	TheGlobalData = old_global_data;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		display_allocated &&
+		display_setup &&
+		manager_allocated &&
+		root_allocated &&
+		button_allocated &&
+		callbacks_bound &&
+		colors_set &&
+		succeeded(begin_render_result) &&
+		begin_repaint_called &&
+		repaint_called &&
+		succeeded(end_render_result) &&
+		destroy_result == WIN_ERR_OK &&
+		window_list_cleared &&
+		display_adapter.openRectDraws() >= 1 &&
+		display_adapter.fillRectDraws() >= 1 &&
+		draw_calls_after_repaint >= draw_calls_before_repaint + 2 &&
+		state->draw_indexed_primitive_calls >= 2 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_SELECTARG2 &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[6400];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_window_repaint_probe\","
+		"\"ok\":%s,"
+		"\"originalPaths\":["
+		"\"W3DGameWindowManager::gogoGadgetPushButton\","
+		"\"GameWindowManager::winRepaint -> W3DGadgetPushButtonDraw\","
+		"\"GameWindowManager::winOpenRect/winFillRect -> TheDisplay virtual dispatch\","
+		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawOpenRect/drawFillRect\"],"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"displayAllocated\":%s,\"displaySetup\":%s,"
+		"\"managerAllocated\":%s,\"rootAllocated\":%s,"
+		"\"buttonAllocated\":%s,\"callbacksBound\":%s,"
+		"\"colorsSet\":%s,\"beginRender\":%d,"
+		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
+		"\"endRender\":%d,\"destroyResult\":%d,"
+		"\"windowListCleared\":%s},"
+		"\"window\":{\"manager\":\"W3DGameWindowManager\","
+		"\"rootSeeThrough\":%s,\"button\":{\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,\"drawFunc\":\"W3DGadgetPushButtonDraw\","
+		"\"inputFunc\":\"GadgetPushButtonInput\","
+		"\"fillColor\":[0,255,0,255],\"borderColor\":[255,255,0,255]}},"
+		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
+		"\"windowed\":%s,\"path\":\"GameWindowManager::winRepaint -> Display adapter -> W3DDisplay\"},"
+		"\"calls\":{\"createDevice\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
+		"\"setTexture\":%u,\"setTextureStageState\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,\"drawIndexed\":%u,"
+		"\"drawIndexedBeforeRepaint\":%u,\"drawIndexedAfterRepaint\":%u,"
+		"\"displayOpenRect\":%d,\"displayFillRect\":%d,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"expectedCenter\":[0,255,0,255],"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,"
+		"\"colorArg2\":%lu,\"alphaOp\":%lu,\"alphaArg1\":%lu,"
+		"\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
+		bool_json(ok),
+		init_result,
+		set_device_result,
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		bool_json(manager_allocated),
+		bool_json(root_allocated),
+		bool_json(button_allocated),
+		bool_json(callbacks_bound),
+		bool_json(colors_set),
+		begin_render_result,
+		bool_json(begin_repaint_called),
+		bool_json(repaint_called),
+		end_render_result,
+		destroy_result,
+		bool_json(window_list_cleared),
+		bool_json(root_allocated),
+		button_x,
+		button_y,
+		button_width,
+		button_height,
+		display != nullptr ? display->m_width : 0,
+		display != nullptr ? display->m_height : 0,
+		display != nullptr ? display->m_bitDepth : 0,
+		bool_json(display != nullptr && display->m_windowed == TRUE),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		draw_calls_before_repaint,
+		draw_calls_after_repaint,
+		display_adapter.openRectDraws(),
+		display_adapter.fillRectDraws(),
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
+
+	g_ww3d_window_repaint_probe_json = buffer;
+	return g_ww3d_window_repaint_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()

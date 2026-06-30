@@ -484,8 +484,9 @@ shares structure and follows behind.
       MainMenu-to-CreditsMenu layout callbacks, mapped-image W3DDisplay
       rendering, composed W3DDisplay scene + real shell UI art + GameText
       rendering, and shipped W3D mesh rendering together so cross-subsystem
-      regressions are visible while the next rendering slice replaces focused
-      shell display shims with a real W3DDisplay-backed window repaint path. The
+      regressions are visible while the next rendering slice extends the
+      browser-pixel repaint path into archive-loaded shell `WindowLayout`
+      files instead of focused shell display shims. The
       focused `w3d-window-layout-script-smoke` now also sends a real
       `ButtonSinglePlayer` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through original
       `GameWindowManager::winSendInputMsg` and `GadgetPushButton`, then proves
@@ -648,17 +649,25 @@ shares structure and follows behind.
       range-backed archive streaming path above.
 - [ ] Integrate browser-verified 2D blits / `Image` / `DisplayString` text
       rendering into the real GUI/window repaint path. Current coverage proves
-      the individual and composed browser draw paths; the remaining work is
-      replacing focused `SmokeDisplay` shell-layout smokes with real
-      `W3DDisplay` pixels from `GameWindowManager::winRepaint`.
+      the individual and composed browser draw paths, plus a synthetic
+      original `W3DGameWindowManager` push-button repaint through
+      `GameWindowManager::winRepaint`, `W3DGadgetPushButtonDraw`, a
+      vtable-safe `Display` adapter, and real `W3DDisplay`/WebGL2 pixels. The
+      remaining work is replacing focused `SmokeDisplay` shell-layout smokes
+      with real `W3DDisplay` pixels from archive-loaded `WindowZH.big`
+      `WindowLayout` / `.wnd` files, starting with the smallest practical
+      `Menus/BlankWindow.wnd` or `Menus/MainMenu.wnd` path.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,
       and `GameText`-backed `W3DDisplayString` text in one browser screenshot.
-      Full `WindowLayout` / `GameWindowManager::winRepaint` shell rendering with
-      `TheDisplay` set to real `W3DDisplay` instead of `SmokeDisplay` remains
-      the next rendering vertical.
+      A follow-up `test:ww3d-window-repaint` now proves a synthetic original
+      `W3DGameWindowManager` push-button repaints through
+      `GameWindowManager::winRepaint` and real `W3DDisplay`/WebGL2 pixels.
+      Full archive-backed `WindowLayout` /
+      `GameWindowManager::winRepaint` shell rendering remains the next
+      rendering vertical.
 - [ ] Add a vtable-safe original `W3DDisplay::setWidth` / `setHeight`
       or `setDisplayMode()` proof. Raw storage is not enough because the
       original setters call virtual `getWidth()` / `getHeight()`;

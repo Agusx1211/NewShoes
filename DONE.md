@@ -3373,6 +3373,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       rendering vertical toward shell/menu composition; full
       `WindowLayout` / `GameWindowManager::winRepaint` shell rendering with
       real `W3DDisplay` remains open.
+- [x] Add a browser-verified original window repaint vertical on the real W3D
+      draw bridge: `test:ww3d-window-repaint` creates a synthetic original
+      `W3DGameWindowManager` root plus `gogoGadgetPushButton`, verifies the
+      original `W3DGadgetPushButtonDraw` / `GadgetPushButtonInput` callbacks,
+      drives `GameWindowManager::winRepaint`, and forwards
+      `winOpenRect`/`winFillRect` through a focused vtable-safe `Display`
+      adapter into real `W3DDisplay::drawOpenRect` /
+      `W3DDisplay::drawFillRect`. The Playwright smoke verifies both Display
+      repaint calls, two browser `DrawIndexedPrimitive` calls, untextured
+      44-byte Render2D vertices, green button-center pixels, black outside
+      pixels, and
+      `harness-smoke-ww3d-window-repaint-canvas.png`. This removes the
+      counter-only `SmokeDisplay` gap for a minimal original widget repaint;
+      full archive-loaded `WindowLayout` / `.wnd` shell repaint remains open.
 ---
 
 ## M5 — Input & UI
