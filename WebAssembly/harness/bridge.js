@@ -16393,6 +16393,35 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "browserNetworkTransportBuildPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network transport packet build cannot run" };
+        }
+        const buildProbe = parseModuleState(wasmModule.buildBrowserNetworkTransportPacket());
+        return {
+          ok: Boolean(buildProbe?.ok),
+          command,
+          buildProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportAcceptPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network transport packet accept cannot run" };
+        }
+        const packetHex = String(payload?.packetHex ?? "");
+        const receiveProbe = parseModuleState(wasmModule.acceptBrowserNetworkTransportPacket(packetHex));
+        return {
+          ok: Boolean(receiveProbe?.ok),
+          command,
+          receiveProbe,
+          state: snapshotState(),
+        };
+      }
     case "browserAudioRuntime":
       return {
         ok: true,

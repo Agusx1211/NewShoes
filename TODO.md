@@ -1135,21 +1135,29 @@ shares structure and follows behind.
       `ConnectionManager::doRelay` to seed the original frame command count,
       then parses the delivered two-command packet and feeds its synchronized
       `NETCOMMANDTYPE_RUNAHEAD` through `FrameDataManager::addNetCommandMsg` /
-      `allCommandsReady`.
+      `allCommandsReady`. `network_two_contexts_smoke.mjs` now boots two
+      isolated Playwright browser contexts / wasm instances, relays only the
+      packet hex through Node, and proves the destination context reaches the
+      same original `Transport` / `ConnectionManager` / `FrameDataManager`
+      readiness path.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients. Next networking slice: split the relay proof
-      into two Playwright browser contexts or route the same byte path through
-      the original `LANAPI` discovery/join surface.
-- [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay.
+      works across browser clients. Next networking slice: route the two-context
+      byte path through the original `LANAPI` discovery/join surface or a
+      production WebSocket/WebRTC transport.
+- [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. First
+      focused slice: link `LANAPI.cpp` / `LANAPICallbacks.cpp`, inject a
+      browser-delivered `MSG_GAME_ANNOUNCE` `LANMessage` into
+      `LANAPI::m_transport->m_inBuffer`, call `LANAPI::update`, and assert
+      `handleGameAnnounce` / `OnGameList` records the announced game.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
 - [ ] File transfer / map transfer path.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
-      The current browser network relay proof uses two logical clients inside
-      one harness page only; it now reaches original `ConnectionManager`
-      frame-info relay and `FrameDataManager` readiness but is still not a
-      match-sync test.
+      The current browser network relay proof now includes two isolated
+      Playwright contexts and reaches original `ConnectionManager` frame-info
+      relay plus `FrameDataManager` readiness, but it is still a packet/frame
+      readiness proof rather than a match-sync test.
 
 ---
 

@@ -131,6 +131,7 @@
     "test:gameengine-common-core": "npm run build:wasm && node dist/gameengine-common-core-smoke.cjs",
     "test:miles-audio-open-device": "npm run build:wasm && node dist/miles-audio-open-device-smoke.cjs",
     "test:gamenetwork-core": "npm run build:wasm && node dist/gamenetwork-core-smoke.cjs",
+    "test:browser-network-two-contexts": "npm run build:wasm && node harness/network_two_contexts_smoke.mjs",
     "test:gamenetwork-download-manager": "npm run build:wasm && node dist/gamenetwork-download-manager-smoke.cjs",
     "test:gameclient-utility": "npm run build:wasm && node dist/gameclient-utility-smoke.cjs",
     "test:win32-mouse": "npm run build:wasm && node dist/win32-mouse-smoke.cjs",
