@@ -47,21 +47,21 @@ Shell *TheShell = nullptr;
 
 // Keep this browser GUI input probe focused on event routing without linking
 // the .wnd layout parser and function lexicon callback tables.
-GameWindow *GameWindowManager::winCreateFromScript(AsciiString, WindowLayoutInfo *)
+__attribute__((weak)) GameWindow *GameWindowManager::winCreateFromScript(AsciiString, WindowLayoutInfo *)
 {
 	return nullptr;
 }
 
-WindowLayout *GameWindowManager::winCreateLayout(AsciiString)
+__attribute__((weak)) WindowLayout *GameWindowManager::winCreateLayout(AsciiString)
 {
 	return nullptr;
 }
 
-void GameWindowManager::freeStaticStrings()
+__attribute__((weak)) void GameWindowManager::freeStaticStrings()
 {
 }
 
-WindowLayoutInfo::WindowLayoutInfo() :
+__attribute__((weak)) WindowLayoutInfo::WindowLayoutInfo() :
 	version(0),
 	init(NULL),
 	update(NULL),

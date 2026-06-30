@@ -1,23 +1,35 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <cctype>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "PreRTS.h"
 
+#include "Common/ArchiveFileSystem.h"
+#include "Common/File.h"
+#include "Common/FileSystem.h"
 #include "Common/GlobalData.h"
 #include "Common/GameMemory.h"
+#include "Common/LocalFileSystem.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UnicodeString.h"
+#include "GameClient/DisplayStringManager.h"
 #include "GameClient/GadgetPushButton.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GameFont.h"
 #include "GameClient/GameText.h"
+#include "GameClient/GUICallbacks.h"
+#include "GameClient/HeaderTemplate.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/GameWindowTransitions.h"
 #include "GameClient/Image.h"
 #include "GameClient/WinInstanceData.h"
+#include "GameClient/WindowLayout.h"
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wkeyword-macro"
@@ -29,9 +41,11 @@
 #pragma clang diagnostic pop
 #endif
 #include "W3DDevice/GameClient/W3DDisplayString.h"
+#include "W3DDevice/Common/W3DFunctionLexicon.h"
 #include "W3DDevice/GameClient/W3DGadget.h"
 #include "W3DDevice/GameClient/W3DGameFont.h"
 #include "W3DDevice/GameClient/W3DGameWindowManager.h"
+#include "W3DDevice/GameClient/W3DGUICallbacks.h"
 #include "ww3dformat.h"
 #include "W3DDevice/GameClient/W3DVideoBuffer.h"
 #include "assetmgr.h"
@@ -39,6 +53,7 @@
 #include "camera.h"
 #include "coltype.h"
 #include "ddsfile.h"
+#include "ffactory.h"
 #include "rect.h"
 #include "render2d.h"
 #include "render2dsentence.h"
@@ -48,6 +63,9 @@
 #include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
 #include "wasm_ww3d_probe_lifetime.h"
+#include "Win32Device/Common/Win32BIGFileSystem.h"
+#include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "wwfile.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -55,6 +73,13 @@
 #else
 #define EMSCRIPTEN_KEEPALIVE
 #endif
+
+Bool parseLayoutBlock(File *inFile, char *buffer, UnsignedInt version, WindowLayoutInfo *info);
+
+using WindowLayoutScriptRuntimeAnchor =
+	Bool (*)(File *, char *, UnsignedInt, WindowLayoutInfo *);
+__attribute__((used)) static WindowLayoutScriptRuntimeAnchor
+	g_force_window_layout_script_runtime_link = parseLayoutBlock;
 
 // This focused render target constructs a Display adapter without linking the
 // full Display.cpp movie/debug teardown graph. The weak definitions below are
@@ -153,6 +178,140 @@ __attribute__((weak)) void Display::reset()
 
 __attribute__((weak)) void Display::update() {}
 
+FunctionLexicon *TheFunctionLexicon = nullptr;
+
+FunctionLexicon::FunctionLexicon()
+{
+	for (Int index = 0; index < MAX_FUNCTION_TABLES; ++index) {
+		m_tables[index] = nullptr;
+	}
+}
+
+FunctionLexicon::~FunctionLexicon() {}
+
+void FunctionLexicon::init() {}
+
+void FunctionLexicon::reset()
+{
+	init();
+}
+
+void FunctionLexicon::update() {}
+
+Bool FunctionLexicon::validate()
+{
+	return TRUE;
+}
+
+void FunctionLexicon::loadTable(TableEntry *table, TableIndex tableIndex)
+{
+	if (table == nullptr || TheNameKeyGenerator == nullptr) {
+		return;
+	}
+
+	for (TableEntry *entry = table; entry->name != nullptr; ++entry) {
+		entry->key = TheNameKeyGenerator->nameToKey(AsciiString(entry->name));
+	}
+	m_tables[tableIndex] = table;
+}
+
+void *FunctionLexicon::keyToFunc(NameKeyType key, TableEntry *table)
+{
+	if (key == NAMEKEY_INVALID) {
+		return nullptr;
+	}
+
+	for (TableEntry *entry = table; entry != nullptr && entry->key != NAMEKEY_INVALID; ++entry) {
+		if (entry->key == key) {
+			return entry->func;
+		}
+	}
+	return nullptr;
+}
+
+void *FunctionLexicon::findFunction(NameKeyType key, TableIndex index)
+{
+	if (key == NAMEKEY_INVALID) {
+		return nullptr;
+	}
+
+	if (index == TABLE_ANY) {
+		for (Int table_index = 0; table_index < MAX_FUNCTION_TABLES; ++table_index) {
+			void *func = keyToFunc(key, m_tables[table_index]);
+			if (func != nullptr) {
+				return func;
+			}
+		}
+		return nullptr;
+	}
+
+	return keyToFunc(key, m_tables[index]);
+}
+
+GameWinDrawFunc FunctionLexicon::gameWinDrawFunc(NameKeyType key, TableIndex index)
+{
+	if (index == TABLE_ANY) {
+		GameWinDrawFunc func =
+			reinterpret_cast<GameWinDrawFunc>(findFunction(key, TABLE_GAME_WIN_DEVICEDRAW));
+		if (func == nullptr) {
+			func = reinterpret_cast<GameWinDrawFunc>(findFunction(key, TABLE_GAME_WIN_DRAW));
+		}
+		return func;
+	}
+	return reinterpret_cast<GameWinDrawFunc>(findFunction(key, index));
+}
+
+WindowLayoutInitFunc FunctionLexicon::winLayoutInitFunc(NameKeyType key, TableIndex index)
+{
+	if (index == TABLE_ANY) {
+		WindowLayoutInitFunc func =
+			reinterpret_cast<WindowLayoutInitFunc>(findFunction(key, TABLE_WIN_LAYOUT_DEVICEINIT));
+		if (func == nullptr) {
+			func = reinterpret_cast<WindowLayoutInitFunc>(findFunction(key, TABLE_WIN_LAYOUT_INIT));
+		}
+		return func;
+	}
+	return reinterpret_cast<WindowLayoutInitFunc>(findFunction(key, index));
+}
+
+DisplayStringManager::DisplayStringManager()
+{
+	m_stringList = nullptr;
+	m_currentCheckpoint = nullptr;
+}
+
+DisplayStringManager::~DisplayStringManager() {}
+
+void DisplayStringManager::link(DisplayString *string)
+{
+	if (string == nullptr) {
+		return;
+	}
+	string->m_next = m_stringList;
+	string->m_prev = nullptr;
+	if (m_stringList != nullptr) {
+		m_stringList->m_prev = string;
+	}
+	m_stringList = string;
+}
+
+void DisplayStringManager::unLink(DisplayString *string)
+{
+	if (string == nullptr) {
+		return;
+	}
+	if (string->m_next != nullptr) {
+		string->m_next->m_prev = string->m_prev;
+	}
+	if (string->m_prev != nullptr) {
+		string->m_prev->m_next = string->m_next;
+	} else if (m_stringList == string) {
+		m_stringList = string->m_next;
+	}
+	string->m_next = nullptr;
+	string->m_prev = nullptr;
+}
+
 namespace {
 
 std::string g_ww3d_aabox_probe_json;
@@ -169,6 +328,7 @@ std::string g_ww3d_display_mapped_image_clip_probe_json;
 std::string g_ww3d_display_mapped_image_unrotated_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_window_repaint_probe_json;
+std::string g_ww3d_window_layout_repaint_probe_json;
 std::string g_ww3d_display_line_probe_json;
 std::string g_ww3d_display_line_gradient_probe_json;
 std::string g_ww3d_display_openrect_probe_json;
@@ -291,6 +451,63 @@ std::string json_escape(const std::string &value)
 	return escaped;
 }
 
+class ProbeNullMissingFileFactory : public FileFactoryClass
+{
+public:
+	explicit ProbeNullMissingFileFactory(FileFactoryClass *inner) : m_inner(inner) {}
+
+	FileClass *Get_File(char const *filename) override
+	{
+		if (is_optional_startup_file(filename)) {
+			return nullptr;
+		}
+		if (m_inner == nullptr) {
+			return nullptr;
+		}
+
+		FileClass *file = m_inner->Get_File(filename);
+		if (file != nullptr && !file->Is_Available(false)) {
+			delete file;
+			return nullptr;
+		}
+		return file;
+	}
+
+	void Return_File(FileClass *file) override
+	{
+		if (m_inner != nullptr && file != nullptr) {
+			m_inner->Return_File(file);
+		}
+	}
+
+private:
+	static bool ascii_equals_ignore_case(const char *lhs, const char *rhs)
+	{
+		if (lhs == nullptr || rhs == nullptr) {
+			return lhs == rhs;
+		}
+
+		while (*lhs != '\0' && *rhs != '\0') {
+			const unsigned char left = static_cast<unsigned char>(*lhs);
+			const unsigned char right = static_cast<unsigned char>(*rhs);
+			if (std::tolower(left) != std::tolower(right)) {
+				return false;
+			}
+			++lhs;
+			++rhs;
+		}
+		return *lhs == '\0' && *rhs == '\0';
+	}
+
+	static bool is_optional_startup_file(const char *filename)
+	{
+		return ascii_equals_ignore_case(filename, "DAZZLE.INI") ||
+			ascii_equals_ignore_case(filename, "w3danimsound.ini");
+	}
+
+	FileFactoryClass *m_inner;
+};
+
 bool equals_ignore_ascii_case(const std::string &lhs, const std::string &rhs)
 {
 	if (lhs.size() != rhs.size()) {
@@ -306,6 +523,25 @@ bool equals_ignore_ascii_case(const std::string &lhs, const std::string &rhs)
 	return true;
 }
 
+void split_archive_path_for_probe(
+	const std::string &archive_path,
+	std::string &directory,
+	std::string &file_mask)
+{
+	std::string normalized = archive_path;
+	std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+	const std::size_t slash = normalized.find_last_of('/');
+	if (slash == std::string::npos) {
+		directory.clear();
+		file_mask = normalized;
+		return;
+	}
+
+	directory = normalized.substr(0, slash + 1);
+	file_mask = normalized.substr(slash + 1);
+}
+
 std::size_t count_mapped_images(ImageCollection &images)
 {
 	std::size_t count = 0;
@@ -313,6 +549,85 @@ std::size_t count_mapped_images(ImageCollection &images)
 		++count;
 	}
 	return count;
+}
+
+Int count_layout_windows(WindowLayout *layout)
+{
+	Int count = 0;
+	if (layout == nullptr) {
+		return count;
+	}
+
+	for (GameWindow *window = layout->getFirstWindow(); window != nullptr;
+		window = window->winGetNextInLayout()) {
+		++count;
+	}
+	return count;
+}
+
+Int hide_window_tree_for_rect_probe(GameWindow *window)
+{
+	if (window == nullptr) {
+		return 0;
+	}
+
+	Int hidden_count = 0;
+	for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
+		hidden_count += hide_window_tree_for_rect_probe(child);
+	}
+	window->winHide(TRUE);
+	return hidden_count + 1;
+}
+
+Int hide_message_box_non_rect_children(GameWindow *root, GameWindow *message_parent)
+{
+	Int hidden_count = 0;
+	if (root != nullptr) {
+		for (GameWindow *child = root->winGetChild(); child != nullptr; child = child->winGetNext()) {
+			if (child != message_parent) {
+				hidden_count += hide_window_tree_for_rect_probe(child);
+			}
+		}
+	}
+	if (message_parent != nullptr) {
+		for (GameWindow *child = message_parent->winGetChild(); child != nullptr; child = child->winGetNext()) {
+			hidden_count += hide_window_tree_for_rect_probe(child);
+		}
+	}
+	return hidden_count;
+}
+
+void get_window_rect(GameWindow *window, Int &x, Int &y, Int &width, Int &height)
+{
+	x = 0;
+	y = 0;
+	width = 0;
+	height = 0;
+	if (window == nullptr) {
+		return;
+	}
+	window->winGetScreenPosition(&x, &y);
+	window->winGetSize(&width, &height);
+}
+
+unsigned int color_red(Color color)
+{
+	return (static_cast<unsigned int>(color) >> 16u) & 0xffu;
+}
+
+unsigned int color_green(Color color)
+{
+	return (static_cast<unsigned int>(color) >> 8u) & 0xffu;
+}
+
+unsigned int color_blue(Color color)
+{
+	return static_cast<unsigned int>(color) & 0xffu;
+}
+
+unsigned int color_alpha(Color color)
+{
+	return (static_cast<unsigned int>(color) >> 24u) & 0xffu;
 }
 
 void fill_argb_texture_color(
@@ -380,6 +695,152 @@ protected:
 		font->fontData = nullptr;
 		return TRUE;
 	}
+};
+
+class ProbeDisplayString : public DisplayString
+{
+	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(ProbeDisplayString, "ProbeDisplayString", 1, 1)
+
+public:
+	void setWordWrap(Int wordWrap) override { m_wordWrap = wordWrap; }
+	void setWordWrapCentered(Bool isCentered) override { m_wordWrapCentered = isCentered; }
+	void draw(Int, Int, Color, Color) override {}
+	void draw(Int, Int, Color, Color, Int, Int) override {}
+	void getSize(Int *width, Int *height) override
+	{
+		if (width != nullptr) {
+			*width = getWidth();
+		}
+		if (height != nullptr) {
+			*height = m_font != nullptr ? m_font->height : 0;
+		}
+	}
+	Int getWidth(Int charPos = -1) override
+	{
+		const Int text_length = m_textString.getLength();
+		const Int chars = charPos >= 0 && charPos < text_length ? charPos : text_length;
+		return chars * 8;
+	}
+	void setUseHotkey(Bool, Color) override {}
+
+private:
+	Int m_wordWrap = 0;
+	Bool m_wordWrapCentered = FALSE;
+};
+
+EMPTY_DTOR(ProbeDisplayString)
+
+class ProbeDisplayStringManager : public DisplayStringManager
+{
+public:
+	DisplayString *newDisplayString() override
+	{
+		DisplayString *string = newInstance(ProbeDisplayString);
+		link(string);
+		return string;
+	}
+
+	void freeDisplayString(DisplayString *string) override
+	{
+		if (string == nullptr) {
+			return;
+		}
+		unLink(string);
+		string->deleteInstance();
+	}
+
+	DisplayString *getGroupNumeralString(Int) override { return newDisplayString(); }
+	DisplayString *getFormationLetterString() override { return newDisplayString(); }
+};
+
+class ProbeGameText : public GameTextInterface
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+	UnicodeString fetch(const Char *label, Bool *exists = nullptr) override
+	{
+		if (exists != nullptr) {
+			*exists = TRUE;
+		}
+		UnicodeString text;
+		text.translate(label != nullptr ? label : "");
+		return text;
+	}
+
+	UnicodeString fetch(AsciiString label, Bool *exists = nullptr) override
+	{
+		return fetch(label.str(), exists);
+	}
+
+	AsciiStringVec &getStringsWithLabelPrefix(AsciiString) override { return m_empty; }
+	void initMapStringFile(const AsciiString &) override {}
+
+private:
+	AsciiStringVec m_empty;
+};
+
+class ProbeW3DWindowLayoutFunctionLexicon : public FunctionLexicon
+{
+public:
+	void init() override
+	{
+		loadTable(m_systemTable, TABLE_GAME_WIN_SYSTEM);
+		loadTable(m_inputTable, TABLE_GAME_WIN_INPUT);
+		loadTable(m_drawTable, TABLE_GAME_WIN_DEVICEDRAW);
+		loadTable(m_layoutInitTable, TABLE_WIN_LAYOUT_DEVICEINIT);
+		loadTable(m_layoutUpdateTable, TABLE_WIN_LAYOUT_UPDATE);
+		loadTable(m_layoutShutdownTable, TABLE_WIN_LAYOUT_SHUTDOWN);
+	}
+
+	void reset() override { init(); }
+	void update() override {}
+
+private:
+	static TableEntry m_systemTable[];
+	static TableEntry m_inputTable[];
+	static TableEntry m_drawTable[];
+	static TableEntry m_layoutInitTable[];
+	static TableEntry m_layoutUpdateTable[];
+	static TableEntry m_layoutShutdownTable[];
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_systemTable[] = {
+	{ NAMEKEY_INVALID, "GameWinDefaultSystem", GameWinDefaultSystem },
+	{ NAMEKEY_INVALID, "PassMessagesToParentSystem", PassMessagesToParentSystem },
+	{ NAMEKEY_INVALID, "MessageBoxSystem", MessageBoxSystem },
+	{ NAMEKEY_INVALID, "QuitMessageBoxSystem", QuitMessageBoxSystem },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_inputTable[] = {
+	{ NAMEKEY_INVALID, "GameWinDefaultInput", GameWinDefaultInput },
+	{ NAMEKEY_INVALID, "GadgetPushButtonInput", GadgetPushButtonInput },
+	{ NAMEKEY_INVALID, "GadgetStaticTextInput", GadgetStaticTextInput },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_drawTable[] = {
+	{ NAMEKEY_INVALID, "W3DGameWinDefaultDraw", W3DGameWinDefaultDraw },
+	{ NAMEKEY_INVALID, "W3DGadgetPushButtonDraw", W3DGadgetPushButtonDraw },
+	{ NAMEKEY_INVALID, "W3DGadgetPushButtonImageDraw", W3DGadgetPushButtonImageDraw },
+	{ NAMEKEY_INVALID, "W3DGadgetStaticTextDraw", W3DGadgetStaticTextDraw },
+	{ NAMEKEY_INVALID, "W3DGadgetStaticTextImageDraw", W3DGadgetStaticTextImageDraw },
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_layoutInitTable[] = {
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_layoutUpdateTable[] = {
+	{ NAMEKEY_INVALID, nullptr, nullptr },
+};
+
+FunctionLexicon::TableEntry ProbeW3DWindowLayoutFunctionLexicon::m_layoutShutdownTable[] = {
+	{ NAMEKEY_INVALID, nullptr, nullptr },
 };
 
 class ProbeForwardingW3DDisplay : public Display
@@ -548,6 +1009,30 @@ struct ProbeW3DDisplayStorage
 };
 
 } // namespace
+
+__attribute__((weak)) void W3DLeftHUDDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCameoMovieDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DRightHUDDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DPowerDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuFourDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMetalBarMenuDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCreditsMenuDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DClockDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuMapBorder(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuButtonDropShadowDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuRandomTextDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DThinBorderDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DShellMenuSchemeDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarBackgroundDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarTopDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarGenExpDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarHelpPopupDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarGridDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DCommandBarForegroundDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DNoDraw(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DDrawMapPreview(GameWindow *, WinInstanceData *) {}
+__attribute__((weak)) void W3DMainMenuInit(WindowLayout *, void *) {}
 
 extern "C" {
 
@@ -4927,6 +5412,529 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_repaint()
 
 	g_ww3d_window_repaint_probe_json = buffer;
 	return g_ww3d_window_repaint_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_window_layout_repaint(const char *window_archive_path)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	constexpr const char *layout_path = "Menus/Defeat.wnd";
+	constexpr const char *archive_window_path = "Window\\Menus\\Defeat.wnd";
+	constexpr const char *root_name = "Defeat.wnd:Defeat";
+	constexpr const char *parent_name = "Defeat.wnd:Defeat";
+	constexpr const char *ok_button_name = "Defeat.wnd:DefeatImage";
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	ProbeFontLibrary font_library;
+	ProbeDisplayStringManager display_string_manager;
+	ProbeGameText game_text;
+	HeaderTemplateManager header_templates;
+	Win32LocalFileSystem local_file_system;
+	Win32BIGFileSystem archive_file_system;
+	FileSystem file_system;
+	NameKeyGenerator name_key_generator;
+	ProbeW3DWindowLayoutFunctionLexicon function_lexicon;
+	ImageCollection *mapped_image_collection = nullptr;
+
+	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
+	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	FileSystem *old_file_system = TheFileSystem;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GameTextInterface *old_game_text = TheGameText;
+	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
+	bool archive_path_argument_supplied = false;
+	bool runtime_asset_system_installed = false;
+	bool name_keys_ready = false;
+	bool archive_window_exists = false;
+	bool archive_window_openable = false;
+	std::string effective_archive_path;
+	std::string effective_archive_directory;
+	std::string effective_archive_mask;
+
+	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheFontLibrary = &font_library;
+	TheDisplayStringManager = &display_string_manager;
+	TheGameText = &game_text;
+	TheHeaderTemplateManager = &header_templates;
+	TheFunctionLexicon = &function_lexicon;
+	TheTransitionHandler = nullptr;
+	font_library.init();
+	display_string_manager.init();
+	game_text.init();
+
+	archive_path_argument_supplied =
+		window_archive_path != nullptr &&
+		window_archive_path[0] != '\0';
+	if (archive_path_argument_supplied) {
+		effective_archive_path = window_archive_path;
+		split_archive_path_for_probe(
+			effective_archive_path,
+			effective_archive_directory,
+			effective_archive_mask);
+	} else {
+		wasm_browser_runtime_assets_restore_globals();
+		const WasmBrowserRuntimeAssetsState &runtime_assets =
+			wasm_browser_runtime_assets_state();
+		effective_archive_directory = runtime_assets.archive_directory;
+		effective_archive_mask = runtime_assets.archive_file_mask;
+		effective_archive_path = runtime_assets.archive_directory;
+		effective_archive_path += runtime_assets.archive_file_mask;
+	}
+	TheLocalFileSystem = &local_file_system;
+	TheArchiveFileSystem = &archive_file_system;
+	TheFileSystem = &file_system;
+	TheNameKeyGenerator = &name_key_generator;
+	local_file_system.init();
+	archive_file_system.init();
+	file_system.init();
+	name_key_generator.init();
+	runtime_asset_system_installed =
+		!effective_archive_mask.empty() &&
+		archive_file_system.loadBigFilesFromDirectory(
+			AsciiString(effective_archive_directory.c_str()),
+			AsciiString(effective_archive_mask.c_str()),
+			TRUE);
+	name_keys_ready = TheNameKeyGenerator != nullptr;
+	archive_window_exists =
+		runtime_asset_system_installed &&
+		TheFileSystem != nullptr &&
+		TheFileSystem->doesFileExist(archive_window_path);
+
+	FileFactoryClass *ww3d_init_file_factory = _TheFileFactory;
+	ProbeNullMissingFileFactory ww3d_init_null_missing_factory(ww3d_init_file_factory);
+	_TheFileFactory = &ww3d_init_null_missing_factory;
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	_TheFileFactory = ww3d_init_file_factory;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	Int destroy_result = WIN_ERR_GENERAL_FAILURE;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool manager_allocated = false;
+	bool mapped_collection_allocated = false;
+	bool function_lexicon_initialized = false;
+	bool callbacks_resolved = false;
+	bool layout_loaded = false;
+	bool root_found = false;
+	bool parent_found = false;
+	bool ok_button_found = false;
+	bool root_callback_bound = false;
+	bool parent_callback_bound = false;
+	bool ok_button_hidden = false;
+	bool children_pruned = false;
+	bool begin_repaint_called = false;
+	bool repaint_called = false;
+	bool window_list_cleared = false;
+	Int layout_window_count = 0;
+	Int hidden_child_count = 0;
+	Int root_x = 0;
+	Int root_y = 0;
+	Int root_width = 0;
+	Int root_height = 0;
+	Int parent_x = 0;
+	Int parent_y = 0;
+	Int parent_width = 0;
+	Int parent_height = 0;
+	Color parent_color = WIN_COLOR_UNDEFINED;
+	Color parent_border_color = WIN_COLOR_UNDEFINED;
+	UnsignedInt draw_calls_before_repaint = 0;
+	UnsignedInt draw_calls_after_repaint = 0;
+
+	ProbeW3DDisplayStorage display_storage;
+	ProbeForwardingW3DDisplay display_adapter;
+	W3DDisplay *display = nullptr;
+	W3DGameWindowManager *manager = nullptr;
+	WindowLayout *layout = nullptr;
+	GameWindow *root = nullptr;
+	GameWindow *parent = nullptr;
+	GameWindow *ok_button = nullptr;
+
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+	}
+
+	if (archive_window_exists && name_keys_ready) {
+		function_lexicon.init();
+		function_lexicon_initialized = true;
+		callbacks_resolved =
+			function_lexicon.gameWinSystemFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("GameWinDefaultSystem"))) == GameWinDefaultSystem &&
+			function_lexicon.gameWinInputFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("GameWinDefaultInput"))) == GameWinDefaultInput &&
+			function_lexicon.gameWinDrawFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("W3DGameWinDefaultDraw"))) == W3DGameWinDefaultDraw;
+		mapped_image_collection = NEW ImageCollection;
+		mapped_collection_allocated = mapped_image_collection != nullptr;
+		if (mapped_collection_allocated) {
+			TheMappedImageCollection = mapped_image_collection;
+		}
+	}
+
+	if (callbacks_resolved && mapped_collection_allocated) {
+		display = display_storage.prepare_for_2d_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
+	}
+
+	if (display_setup) {
+		display_adapter.setW3DDisplay(display);
+		display_adapter.configure(display->m_width, display->m_height, display->m_bitDepth,
+			display->m_windowed);
+		TheDisplay = &display_adapter;
+		manager = NEW W3DGameWindowManager;
+		manager_allocated = manager != nullptr;
+		if (manager != nullptr) {
+			TheWindowManager = manager;
+		}
+	}
+
+	if (manager != nullptr) {
+		if (TheFileSystem != nullptr) {
+			File *archive_window_file = TheFileSystem->openFile(archive_window_path, File::READ);
+			archive_window_openable = archive_window_file != nullptr;
+			if (archive_window_file != nullptr) {
+				archive_window_file->close();
+			}
+		}
+		layout = manager->winCreateLayout(AsciiString(layout_path));
+		layout_loaded = layout != nullptr;
+		layout_window_count = count_layout_windows(layout);
+		root = layout != nullptr ? layout->getFirstWindow() : nullptr;
+		root_found = root != nullptr;
+	}
+
+	if (root != nullptr && name_keys_ready) {
+		parent = root;
+		ok_button = manager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(ok_button_name)));
+		parent_found = parent != nullptr;
+		ok_button_found = ok_button != nullptr;
+		root_callback_bound =
+			root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(root_name)) &&
+			root->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+			root->winGetSystemFunc() == GameWinDefaultSystem;
+		if (parent != nullptr) {
+			parent_callback_bound =
+				parent->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				parent->winGetSystemFunc() == GameWinDefaultSystem;
+			parent_color = parent->winGetEnabledColor(0);
+			parent_border_color = parent->winGetEnabledBorderColor(0);
+			get_window_rect(parent, parent_x, parent_y, parent_width, parent_height);
+		}
+		if (ok_button != nullptr) {
+			ok_button_hidden = BitTest(ok_button->winGetStatus(), WIN_STATUS_HIDDEN);
+		}
+		get_window_rect(root, root_x, root_y, root_width, root_height);
+	}
+
+	if (root_found && parent_found && root_callback_bound && parent_callback_bound) {
+		hidden_child_count = hide_message_box_non_rect_children(root, parent);
+		children_pruned = hidden_child_count >= 1;
+		if (ok_button != nullptr) {
+			ok_button_hidden = BitTest(ok_button->winGetStatus(), WIN_STATUS_HIDDEN);
+		}
+	}
+
+	const WasmD3D8ShimState *state_before = wasm_d3d8_get_state();
+	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
+
+	if (children_pruned) {
+		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			begin_repaint_called = true;
+			manager->winRepaint();
+			repaint_called = true;
+			end_render_result = WW3D::End_Render(false);
+		}
+	}
+
+	const WasmD3D8ShimState *state_after = wasm_d3d8_get_state();
+	draw_calls_after_repaint = state_after != nullptr ? state_after->draw_indexed_primitive_calls : 0;
+
+	if (layout != nullptr) {
+		layout->destroyWindows();
+		layout->deleteInstance();
+		layout = nullptr;
+		if (manager != nullptr) {
+			manager->update();
+			window_list_cleared = manager->winGetWindowList() == nullptr;
+		}
+		root = nullptr;
+		parent = nullptr;
+		ok_button = nullptr;
+		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
+	}
+
+	if (manager != nullptr) {
+		TheTransitionHandler = nullptr;
+		delete manager;
+		manager = nullptr;
+	}
+
+	display_storage.release_probe_renderer();
+
+	if (mapped_image_collection != nullptr) {
+		delete mapped_image_collection;
+		mapped_image_collection = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheTransitionHandler = old_transition_handler;
+	TheFunctionLexicon = old_function_lexicon;
+	TheWindowManager = old_window_manager;
+	TheHeaderTemplateManager = old_header_templates;
+	TheGameText = old_game_text;
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheFileSystem = old_file_system;
+	TheArchiveFileSystem = old_archive_file_system;
+	TheLocalFileSystem = old_local_file_system;
+	TheSubsystemList = old_subsystem_list;
+	TheWritableGlobalData = old_writable_global_data;
+	TheGlobalData = old_global_data;
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		name_keys_ready &&
+		archive_window_exists &&
+		function_lexicon_initialized &&
+		callbacks_resolved &&
+		mapped_collection_allocated &&
+		display_allocated &&
+		display_setup &&
+		manager_allocated &&
+		layout_loaded &&
+		layout_window_count >= 1 &&
+		root_found &&
+		parent_found &&
+		ok_button_found &&
+		root_callback_bound &&
+		parent_callback_bound &&
+		ok_button_hidden &&
+		children_pruned &&
+		parent_x == 96 &&
+		parent_y == 120 &&
+		parent_width == 604 &&
+		parent_height == 220 &&
+		parent_color == static_cast<Color>(0xff2f37a8UL) &&
+		parent_border_color == static_cast<Color>(0xff2f37a8UL) &&
+		succeeded(begin_render_result) &&
+		begin_repaint_called &&
+		repaint_called &&
+		succeeded(end_render_result) &&
+		destroy_result == WIN_ERR_OK &&
+		window_list_cleared &&
+		display_adapter.openRectDraws() >= 1 &&
+		display_adapter.fillRectDraws() >= 1 &&
+		draw_calls_after_repaint >= draw_calls_before_repaint + 2 &&
+		state->draw_indexed_primitive_calls >= 2 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_SELECTARG2 &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	const std::string archive_path_json = json_escape(effective_archive_path);
+	const std::string archive_window_path_json = json_escape(archive_window_path);
+	char buffer[8200];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_window_layout_repaint_probe\","
+		"\"ok\":%s,"
+		"\"originalPaths\":["
+		"\"WindowLayout::load -> GameWindowManager::winCreateFromScript\","
+		"\"Win32BIGFileSystem WindowZH.big -> Window\\\\Menus\\\\Defeat.wnd\","
+		"\"W3DGameWindowManager::allocateNewWindow -> W3DGameWindow\","
+		"\"GameWindowManager::winRepaint -> W3DGameWinDefaultDraw\","
+		"\"GameWindowManager::winOpenRect/winFillRect -> TheDisplay virtual dispatch\","
+		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawOpenRect/drawFillRect\"],"
+		"\"archive\":{\"path\":\"%s\",\"entry\":\"%s\",\"exists\":%s,"
+		"\"openable\":%s,\"runtimeInstalled\":%s,"
+		"\"pathArgumentSupplied\":%s},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"nameKeysReady\":%s,\"functionLexiconInitialized\":%s,"
+		"\"callbacksResolved\":%s,\"mappedCollectionAllocated\":%s,"
+		"\"displayAllocated\":%s,\"displaySetup\":%s,"
+		"\"managerAllocated\":%s,\"layoutLoaded\":%s,"
+		"\"layoutWindowCount\":%d,"
+		"\"rootFound\":%s,"
+		"\"parentFound\":%s,\"okButtonFound\":%s,"
+		"\"rootCallbackBound\":%s,\"parentCallbackBound\":%s,"
+		"\"okButtonHidden\":%s,\"childrenPruned\":%s,"
+		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
+		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
+		"\"endRender\":%d,\"destroyResult\":%d,"
+		"\"windowListCleared\":%s},"
+		"\"layout\":{\"path\":\"%s\",\"root\":{\"name\":\"%s\","
+		"\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"GameWinDefaultSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\"},"
+		"\"parent\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"GameWinDefaultSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+		"\"fillColor\":[%u,%u,%u,%u],"
+		"\"borderColor\":[%u,%u,%u,%u]},"
+		"\"prunedChildren\":%d},"
+		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
+		"\"windowed\":%s,\"path\":\"WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay\"},"
+		"\"calls\":{\"createDevice\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"browserBufferRelease\":%u,"
+		"\"setTexture\":%u,\"setTextureStageState\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,\"drawIndexed\":%u,"
+		"\"drawIndexedBeforeRepaint\":%u,\"drawIndexedAfterRepaint\":%u,"
+		"\"displayOpenRect\":%d,\"displayFillRect\":%d,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"expectedBorder\":[47,55,168,255],"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,\"textureStages\":["
+		"{\"stage\":0,\"colorOp\":%lu,\"colorArg1\":%lu,"
+		"\"colorArg2\":%lu,\"alphaOp\":%lu,\"alphaArg1\":%lu,"
+		"\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"texCoordIndex\":%lu}]}}}",
+		bool_json(ok),
+		archive_path_json.c_str(),
+		archive_window_path_json.c_str(),
+		bool_json(archive_window_exists),
+		bool_json(archive_window_openable),
+		bool_json(runtime_asset_system_installed),
+		bool_json(archive_path_argument_supplied),
+		init_result,
+		set_device_result,
+		bool_json(name_keys_ready),
+		bool_json(function_lexicon_initialized),
+		bool_json(callbacks_resolved),
+		bool_json(mapped_collection_allocated),
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		bool_json(manager_allocated),
+		bool_json(layout_loaded),
+		layout_window_count,
+		bool_json(root_found),
+		bool_json(parent_found),
+		bool_json(ok_button_found),
+		bool_json(root_callback_bound),
+		bool_json(parent_callback_bound),
+		bool_json(ok_button_hidden),
+		bool_json(children_pruned),
+		hidden_child_count,
+		begin_render_result,
+		bool_json(begin_repaint_called),
+		bool_json(repaint_called),
+		end_render_result,
+		destroy_result,
+		bool_json(window_list_cleared),
+		layout_path,
+		root_name,
+		root_x,
+		root_y,
+		root_width,
+		root_height,
+		parent_name,
+		parent_x,
+		parent_y,
+		parent_width,
+		parent_height,
+		color_red(parent_color),
+		color_green(parent_color),
+		color_blue(parent_color),
+		color_alpha(parent_color),
+		color_red(parent_border_color),
+		color_green(parent_border_color),
+		color_blue(parent_border_color),
+		color_alpha(parent_border_color),
+		hidden_child_count,
+		display != nullptr ? display->m_width : 0,
+		display != nullptr ? display->m_height : 0,
+		display != nullptr ? display->m_bitDepth : 0,
+		bool_json(display != nullptr && display->m_windowed == TRUE),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		draw_calls_before_repaint,
+		draw_calls_after_repaint,
+		display_adapter.openRectDraws(),
+		display_adapter.fillRectDraws(),
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
+
+	g_ww3d_window_layout_repaint_probe_json = buffer;
+	return g_ww3d_window_layout_repaint_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()

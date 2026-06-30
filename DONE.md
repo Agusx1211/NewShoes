@@ -3386,7 +3386,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       pixels, and
       `harness-smoke-ww3d-window-repaint-canvas.png`. This removes the
       counter-only `SmokeDisplay` gap for a minimal original widget repaint;
-      full archive-loaded `WindowLayout` / `.wnd` shell repaint remains open.
+      at that point, full archive-loaded `WindowLayout` / `.wnd` shell repaint
+      was still open.
+- [x] Replace the focused shell-layout repaint gap with an archive-backed
+      original `WindowLayout` browser repaint smoke: `test:ww3d-window-layout-repaint`
+      mounts real `WindowZH.big`, loads `Window\Menus\Defeat.wnd` through
+      original `WindowLayout::load -> GameWindowManager::winCreateFromScript`,
+      links the original layout parser while keeping legacy probe stubs weak,
+      creates real `W3DGameWindow` instances through `W3DGameWindowManager`,
+      and drives `GameWindowManager::winRepaint` into real
+      `W3DDisplay`/browser D3D8/WebGL2 pixels. The Playwright smoke verifies
+      the parsed root/parent callbacks, draw-call counts, blue dialog interior
+      pixels, black outside pixels, and
+      `harness-smoke-ww3d-window-layout-repaint-canvas.png`.
+
 ---
 
 ## M5 — Input & UI

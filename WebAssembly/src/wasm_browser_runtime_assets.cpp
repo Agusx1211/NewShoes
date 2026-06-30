@@ -23,7 +23,7 @@
 namespace {
 
 Win32LocalFileSystem g_runtime_local_file_system;
-Win32BIGFileSystem g_runtime_archive_file_system;
+Win32BIGFileSystem *g_runtime_archive_file_system = nullptr;
 FileSystem g_runtime_file_system;
 NameKeyGenerator g_runtime_name_key_generator;
 W3DFileSystem *g_runtime_w3d_file_system = nullptr;
@@ -190,6 +190,23 @@ void remember_archive_spec(const std::string &directory, const std::string &file
 	g_runtime_assets_state.loaded_archive_specs = g_loaded_archive_specs.size();
 }
 
+Win32BIGFileSystem &runtime_archive_file_system()
+{
+	if (g_runtime_archive_file_system == nullptr) {
+		g_runtime_archive_file_system = new Win32BIGFileSystem;
+	}
+	return *g_runtime_archive_file_system;
+}
+
+Win32BIGFileSystem &recreate_runtime_archive_file_system()
+{
+	// Archive files are original-engine objects; after a focused probe resets the
+	// original memory manager, reload the BIG tree into fresh objects instead of
+	// walking stale archive state.
+	g_runtime_archive_file_system = new Win32BIGFileSystem;
+	return *g_runtime_archive_file_system;
+}
+
 void probe_persistent_runtime_file_system()
 {
 	WasmBrowserRuntimeFileProbeState probe;
@@ -198,7 +215,7 @@ void probe_persistent_runtime_file_system()
 	probe.local_path = RUNTIME_LOCAL_PATH;
 	probe.archive_path = RUNTIME_ARCHIVE_PATH;
 	probe.local_file_system_global = TheLocalFileSystem == &g_runtime_local_file_system;
-	probe.archive_file_system_global = TheArchiveFileSystem == &g_runtime_archive_file_system;
+	probe.archive_file_system_global = TheArchiveFileSystem == g_runtime_archive_file_system;
 	probe.file_system_global = TheFileSystem == &g_runtime_file_system;
 	probe.name_key_generator_global = TheNameKeyGenerator == &g_runtime_name_key_generator;
 	probe.w3d_file_system_global =
@@ -285,7 +302,7 @@ void probe_persistent_runtime_file_system()
 	probe.archive_loaded = g_runtime_assets_state.archive_loaded;
 	if (g_runtime_assets_state.archive_loaded) {
 		FilenameList indexed_files;
-		g_runtime_archive_file_system.getFileListInDirectory(
+		runtime_archive_file_system().getFileListInDirectory(
 			AsciiString(""),
 			AsciiString(""),
 			AsciiString("*"),
@@ -294,7 +311,7 @@ void probe_persistent_runtime_file_system()
 		probe.archive_indexed_file_count = indexed_files.size();
 
 		probe.archive_owner =
-			g_runtime_archive_file_system.getArchiveFilenameForFile(RUNTIME_ARCHIVE_PATH).str();
+			runtime_archive_file_system().getArchiveFilenameForFile(RUNTIME_ARCHIVE_PATH).str();
 		probe.archive_owner_ok = !probe.archive_owner.empty();
 		if (probe.archive_owner_ok) {
 			probe.archive_attempted = true;
@@ -342,12 +359,10 @@ void probe_persistent_runtime_file_system()
 	g_runtime_assets_state.file_probe = probe;
 }
 
-void install_runtime_globals()
+void assign_runtime_globals()
 {
-	++g_runtime_assets_state.install_calls;
-
 	TheLocalFileSystem = &g_runtime_local_file_system;
-	TheArchiveFileSystem = &g_runtime_archive_file_system;
+	TheArchiveFileSystem = &runtime_archive_file_system();
 	TheFileSystem = &g_runtime_file_system;
 	TheNameKeyGenerator = &g_runtime_name_key_generator;
 
@@ -365,11 +380,13 @@ void install_runtime_globals()
 		g_runtime_w3d_file_system = new W3DFileSystem;
 		TheW3DFileSystem = g_runtime_w3d_file_system;
 		g_runtime_assets_state.owns_w3d_file_system = true;
+	} else if (_TheFileFactory != TheW3DFileSystem) {
+		_TheFileFactory = TheW3DFileSystem;
 	}
 
 	g_runtime_assets_state.installed =
 		TheLocalFileSystem == &g_runtime_local_file_system &&
-		TheArchiveFileSystem == &g_runtime_archive_file_system &&
+		TheArchiveFileSystem == g_runtime_archive_file_system &&
 		TheFileSystem == &g_runtime_file_system &&
 		TheNameKeyGenerator == &g_runtime_name_key_generator;
 	g_runtime_assets_state.w3d_file_system_installed =
@@ -377,6 +394,12 @@ void install_runtime_globals()
 		_TheFileFactory == TheW3DFileSystem;
 	g_runtime_assets_state.source =
 		"browser runtime original FileSystem + Win32BIGFileSystem + W3DFileSystem";
+}
+
+void install_runtime_globals()
+{
+	++g_runtime_assets_state.install_calls;
+	assign_runtime_globals();
 	probe_persistent_runtime_file_system();
 }
 
@@ -400,7 +423,7 @@ bool load_archive_set(const std::string &directory, const std::string &file_mask
 	g_runtime_assets_state.archive_directory = directory;
 	g_runtime_assets_state.archive_file_mask = file_mask;
 
-	const Bool loaded = g_runtime_archive_file_system.loadBigFilesFromDirectory(
+	const Bool loaded = runtime_archive_file_system().loadBigFilesFromDirectory(
 		directory.c_str(),
 		file_mask.c_str());
 	++g_runtime_assets_state.archive_load_calls;
@@ -441,11 +464,42 @@ bool wasm_browser_runtime_assets_install_archive_paths(
 	return first_loaded && second_loaded;
 }
 
+bool wasm_browser_runtime_assets_restore_globals()
+{
+	const bool reload_registered_archive =
+		g_runtime_assets_state.archive_loaded &&
+		!g_runtime_assets_state.archive_file_mask.empty();
+	++g_runtime_assets_state.install_calls;
+	if (reload_registered_archive) {
+		recreate_runtime_archive_file_system();
+	}
+	assign_runtime_globals();
+	if (reload_registered_archive) {
+		const Bool loaded = runtime_archive_file_system().loadBigFilesFromDirectory(
+			g_runtime_assets_state.archive_directory.c_str(),
+			g_runtime_assets_state.archive_file_mask.c_str(),
+			TRUE);
+		++g_runtime_assets_state.archive_load_calls;
+		g_runtime_assets_state.archive_loaded = loaded;
+	}
+	return g_runtime_assets_state.installed;
+}
+
 bool wasm_browser_runtime_assets_file_exists(const char *path)
 {
-	return TheFileSystem != nullptr &&
-		path != nullptr &&
-		TheFileSystem->doesFileExist(path);
+	if (path == nullptr) {
+		return false;
+	}
+
+	if (TheFileSystem != nullptr && TheFileSystem->doesFileExist(path)) {
+		return true;
+	}
+
+	if (TheLocalFileSystem != nullptr && TheLocalFileSystem->doesFileExist(path)) {
+		return true;
+	}
+
+	return TheArchiveFileSystem != nullptr && TheArchiveFileSystem->doesFileExist(path);
 }
 
 bool wasm_browser_runtime_assets_read_file(const char *path, std::vector<unsigned char> &data)

@@ -65,6 +65,7 @@ bool wasm_browser_runtime_assets_install_archive_set(
 bool wasm_browser_runtime_assets_install_archive_paths(
 	const char *first_archive_path,
 	const char *second_archive_path);
+bool wasm_browser_runtime_assets_restore_globals();
 bool wasm_browser_runtime_assets_file_exists(const char *path);
 bool wasm_browser_runtime_assets_read_file(const char *path, std::vector<unsigned char> &data);
 const WasmBrowserRuntimeAssetsState &wasm_browser_runtime_assets_state();
