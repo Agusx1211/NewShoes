@@ -16,21 +16,52 @@ enum XferMode
 	XFER_SAVE,
 	XFER_LOAD,
 	XFER_CRC,
+	NUM_XFER_TYPES,
 };
 
 enum XferStatus
 {
+	XFER_STATUS_INVALID = 0,
+	XFER_OK,
+	XFER_EOF,
+	XFER_FILE_NOT_FOUND,
+	XFER_FILE_NOT_OPEN,
+	XFER_FILE_ALREADY_OPEN,
 	XFER_READ_ERROR = 6,
+	XFER_WRITE_ERROR,
 	XFER_MODE_UNKNOWN = 8,
+	XFER_SKIP_ERROR,
+	XFER_BEGIN_END_MISMATCH,
+	XFER_OUT_OF_MEMORY,
+	XFER_STRING_ERROR,
+	XFER_INVALID_VERSION,
+	XFER_INVALID_PARAMETERS,
+	XFER_LIST_NOT_EMPTY,
+	XFER_UNKNOWN_STRING,
+	XFER_ERROR_UNKNOWN,
+	NUM_XFER_STATUS,
+};
+
+enum XferOptions
+{
+	XO_NONE = 0x00000000,
+	XO_NO_POST_PROCESSING = 0x00000001,
+	XO_ALL = 0xFFFFFFFF,
 };
 
 class Xfer
 {
 public:
-	Xfer() : m_mode(XFER_INVALID) {}
+	Xfer() : m_options(XO_NONE), m_xferMode(XFER_INVALID) {}
 	virtual ~Xfer() {}
 
-	virtual XferMode getXferMode() { return m_mode; }
+	virtual XferMode getXferMode() { return m_xferMode; }
+	AsciiString getIdentifier() { return m_identifier; }
+	virtual void setOptions(UnsignedInt options) { m_options |= options; }
+	virtual void clearOptions(UnsignedInt options) { m_options &= ~options; }
+	virtual UnsignedInt getOptions() { return m_options; }
+	virtual void open(AsciiString identifier) { m_identifier = identifier; }
+	virtual void close() { m_identifier.clear(); }
 	virtual Int beginBlock() { return 0; }
 	virtual void endBlock() {}
 	virtual void skip(Int) {}
@@ -66,7 +97,9 @@ public:
 	}
 
 protected:
-	XferMode m_mode;
+	UnsignedInt m_options;
+	XferMode m_xferMode;
+	AsciiString m_identifier;
 };
 
 #endif

@@ -1692,6 +1692,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       exercising `SubsystemInterfaceList::initSubsystem`, reports the owned
       list separately from the deferred init/shutdown proof, and exposes
       `startupSingletons.subsystemShutdownDeferred` when that later proof runs.
+- [x] Promote the original pre-audio startup ownership frontier inside the
+      browser-visible startup JSON. The durable startup probe now owns and
+      initializes original `TheCommandList`, links original
+      `Common/System/XferCRC.cpp`, opens `XferCRC("lightCRC")` with an initial
+      CRC of zero, and exposes `preAudioInitOwnership` for original
+      `GameEngine.cpp` lines 314 (`TheNameKeyGenerator`), 327
+      (`TheCommandList`), 338 (`XferCRC`), and 381 (`parseCommandLine`).
+      No-archive, runtime-archive, and range-backed archive harness paths now
+      assert those fields while preserving `createAudioManager` at line 434 as
+      the first unowned factory.
 - [x] Add a focused W3D GUI ownership smoke that moves the startup frontier
       beyond probe-only window-manager facts. `w3d-gamewindow-manager-smoke`
       links original `W3DGameWindowManager`, `W3DGameWindow`, and the W3D

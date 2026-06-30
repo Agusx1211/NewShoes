@@ -8,7 +8,10 @@
 #include "Common/GameLOD.h"
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
+#include "Common/MessageStream.h"
+#include "Common/NameKeyGenerator.h"
 #include "Common/SubsystemInterface.h"
+#include "Common/XferCRC.h"
 #include "GameClient/MapUtil.h"
 
 #include <cstddef>
@@ -26,8 +29,10 @@ constexpr const char MAP_CACHE_INI_PATH[] = "Maps\\MapCache.ini";
 StartupSingletonsProbeResult g_startup_singletons_state;
 GlobalData *g_startup_global_data = nullptr;
 SubsystemInterfaceList *g_startup_subsystem_list = nullptr;
+CommandList *g_startup_command_list = nullptr;
 GameLODManager *g_startup_game_lod_manager = nullptr;
 MapCache *g_startup_map_cache = nullptr;
+bool g_startup_command_list_initialized = false;
 int g_startup_probe_init_count = 0;
 int g_startup_probe_shutdown_count = 0;
 
@@ -134,6 +139,11 @@ void ensure_owned_instances()
 	if (g_startup_global_data == nullptr) {
 		g_startup_global_data = construct_persistent_startup_singleton<GlobalData>();
 	}
+	if (g_startup_command_list == nullptr) {
+		g_startup_command_list = construct_persistent_startup_singleton<CommandList>();
+		g_startup_command_list->init();
+		g_startup_command_list_initialized = true;
+	}
 	if (g_startup_game_lod_manager == nullptr) {
 		g_startup_game_lod_manager =
 			construct_persistent_startup_singleton<GameLODManager>();
@@ -143,6 +153,7 @@ void ensure_owned_instances()
 	}
 
 	TheWritableGlobalData = g_startup_global_data;
+	TheCommandList = g_startup_command_list;
 	TheGameLODManager = g_startup_game_lod_manager;
 	TheMapCache = g_startup_map_cache;
 }
@@ -190,6 +201,16 @@ bool run_subsystem_list_probe(StartupSingletonsProbeResult &result)
 	return g_startup_probe_init_count == 1 && result.subsystem_shutdown_deferred;
 }
 
+bool run_xfer_crc_probe(StartupSingletonsProbeResult &result)
+{
+	XferCRC xfer_crc;
+	xfer_crc.open(AsciiString("lightCRC"));
+	result.xfer_crc_initial = xfer_crc.getCRC();
+	result.xfer_crc_opened = result.xfer_crc_initial == 0;
+	xfer_crc.close();
+	return result.xfer_crc_opened;
+}
+
 bool run_game_lod_probe(StartupSingletonsProbeResult &result)
 {
 	result.game_lod_files_ready =
@@ -230,6 +251,11 @@ void finish_status(StartupSingletonsProbeResult &result)
 		return;
 	}
 	if (!result.heap_allocated ||
+		!result.name_key_generator_owned ||
+		!result.command_list_owned ||
+		!result.command_list_initialized ||
+		!result.command_list_empty ||
+		!result.xfer_crc_opened ||
 		!result.global_data_owned ||
 		!result.subsystem_list_owned ||
 		!result.game_lod_owned ||
@@ -295,7 +321,8 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 	StartupSingletonsProbeResult result;
 	result.attempted = true;
 	result.source =
-		"GameEngine.cpp startup singleton ownership: SubsystemInterfaceList + GameLODManager + MapCache";
+		"GameEngine.cpp startup singleton ownership: SubsystemInterfaceList + "
+		"CommandList + XferCRC + GameLODManager + MapCache";
 	result.runtime_archive_registered =
 		archive_directory != nullptr &&
 		archive_directory[0] != '\0' &&
@@ -329,21 +356,38 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 
 		ensure_owned_instances();
 		result.global_data_owned = TheWritableGlobalData == g_startup_global_data;
+		result.name_key_generator_owned =
+			runtime_assets.name_key_generator_initialized &&
+			runtime_assets.file_probe.name_key_generator_global;
+		result.command_list_owned = TheCommandList == g_startup_command_list;
+		result.command_list_initialized =
+			result.command_list_owned &&
+			g_startup_command_list_initialized;
+		result.command_list_empty =
+			result.command_list_owned &&
+			g_startup_command_list != nullptr &&
+			g_startup_command_list->getFirstMessage() == nullptr;
 		result.subsystem_list_owned = TheSubsystemList == g_startup_subsystem_list;
 		result.game_lod_owned = TheGameLODManager == g_startup_game_lod_manager;
 		result.map_cache_owned = TheMapCache == g_startup_map_cache;
 		result.heap_allocated =
 			g_startup_global_data != nullptr &&
 			g_startup_subsystem_list != nullptr &&
+			g_startup_command_list != nullptr &&
 			g_startup_game_lod_manager != nullptr &&
 			g_startup_map_cache != nullptr;
 
 		if (result.runtime_globals_installed &&
 			result.heap_allocated &&
+			result.name_key_generator_owned &&
+			result.command_list_owned &&
+			result.command_list_initialized &&
+			result.command_list_empty &&
 			result.global_data_owned &&
 			result.subsystem_list_owned &&
 			result.game_lod_owned &&
 			result.map_cache_owned) {
+			run_xfer_crc_probe(result);
 			result.game_lod_initialized = run_game_lod_probe(result);
 			if (result.game_lod_files_ready) {
 				result.subsystem_init_shutdown_ok = run_subsystem_list_probe(result);
@@ -359,6 +403,11 @@ const StartupSingletonsProbeResult &wasm_startup_singletons_install(
 		result.runtime_archive_registered &&
 		result.runtime_globals_installed &&
 		result.heap_allocated &&
+		result.name_key_generator_owned &&
+		result.command_list_owned &&
+		result.command_list_initialized &&
+		result.command_list_empty &&
+		result.xfer_crc_opened &&
 		result.global_data_owned &&
 		result.subsystem_list_owned &&
 		result.subsystem_init_shutdown_ok &&
@@ -388,6 +437,9 @@ const char *wasm_startup_singletons_state_json()
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
 		"\"runtimeArchiveRegistered\":%s,"
 		"\"runtimeGlobalsInstalled\":%s,\"heapAllocated\":%s,"
+		"\"nameKeyGeneratorOwned\":%s,"
+		"\"commandList\":{\"owned\":%s,\"initialized\":%s,\"empty\":%s},"
+		"\"xferCRC\":{\"opened\":%s,\"initialCRC\":%u},"
 		"\"globalDataOwned\":%s,"
 		"\"subsystemListOwned\":%s,\"subsystemInitShutdownOk\":%s,"
 		"\"subsystemShutdownDeferred\":%s,"
@@ -409,6 +461,12 @@ const char *wasm_startup_singletons_state_json()
 		json_bool(state.runtime_archive_registered),
 		json_bool(state.runtime_globals_installed),
 		json_bool(state.heap_allocated),
+		json_bool(state.name_key_generator_owned),
+		json_bool(state.command_list_owned),
+		json_bool(state.command_list_initialized),
+		json_bool(state.command_list_empty),
+		json_bool(state.xfer_crc_opened),
+		state.xfer_crc_initial,
 		json_bool(state.global_data_owned),
 		json_bool(state.subsystem_list_owned),
 		json_bool(state.subsystem_init_shutdown_ok),

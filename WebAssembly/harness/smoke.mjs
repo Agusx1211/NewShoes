@@ -630,7 +630,10 @@ function assertStartupSingletonsMissing(state, label) {
       || probe.nextRequired !== "runtimeArchiveSet"
       || probe.runtimeArchiveRegistered !== false
       || probe.runtimeGlobalsInstalled !== false
-      || probe.heapAllocated !== false) {
+      || probe.heapAllocated !== false
+      || probe.nameKeyGeneratorOwned !== false
+      || probe.commandList?.owned !== false
+      || probe.xferCRC?.opened !== false) {
     throw new Error(`${label} startup singleton state mismatch: ${JSON.stringify(probe)}`);
   }
 }
@@ -930,10 +933,30 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
       || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
+      || frontier.preAudioInitOwnership?.source !== "GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp lines 297-427"
+      || frontier.preAudioInitOwnership.nameKeyGenerator?.line !== 314
+      || frontier.preAudioInitOwnership.nameKeyGenerator.ready !== false
+      || frontier.preAudioInitOwnership.commandList?.line !== 327
+      || frontier.preAudioInitOwnership.commandList.ready !== false
+      || frontier.preAudioInitOwnership.xferCRC?.line !== 338
+      || frontier.preAudioInitOwnership.xferCRC.ready !== false
+      || frontier.preAudioInitOwnership.parseCommandLine?.line !== 381
+      || frontier.preAudioInitOwnership.parseCommandLine.ready !== true
+      || frontier.preAudioInitOwnership.firstUnownedFactory?.line !== 434
       || byFactory.get("CreateGameEngine")?.line !== 1122
       || byFactory.get("CreateGameEngine")?.ready !== true
+      || byFactory.get("SubsystemInterfaceList")?.line !== 297
+      || byFactory.get("SubsystemInterfaceList")?.ready !== false
+      || byFactory.get("NameKeyGenerator")?.line !== 314
+      || byFactory.get("NameKeyGenerator")?.ready !== false
+      || byFactory.get("CommandList")?.line !== 327
+      || byFactory.get("CommandList")?.ready !== false
+      || byFactory.get("XferCRC")?.line !== 338
+      || byFactory.get("XferCRC")?.ready !== false
       || byFactory.get("createLocalFileSystem")?.line !== 342
       || byFactory.get("createArchiveFileSystem")?.line !== 353
+      || byFactory.get("parseCommandLine")?.line !== 381
+      || byFactory.get("parseCommandLine")?.ready !== true
       || byFactory.get("createAudioManager")?.line !== 434
       || byFactory.get("createAudioManager")?.ready !== false
       || byFactory.get("createWebBrowser")?.called !== false) {

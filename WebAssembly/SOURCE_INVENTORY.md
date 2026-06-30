@@ -410,8 +410,11 @@ The wasm CMake skeleton currently builds:
   all-block INI loading beyond this preflight. The bootstrap now also reports
   `startupSingletons`, a vertical original-startup ownership probe that keeps
   browser-owned original `SubsystemInterfaceList`, `GlobalData`,
-  `GameLODManager`, and `MapCache` instances resident, exercises the original
-  subsystem-list init/reset/shutdown path, and exposes the next blocker before
+  `CommandList`, `GameLODManager`, and `MapCache` instances resident, exercises
+  the original subsystem-list init/reset/shutdown path, links original
+  `Common/System/XferCRC.cpp` for the `XferCRC("lightCRC")` pre-audio open,
+  and exposes `preAudioInitOwnership` for the original `GameEngine.cpp` line
+  314/327/338/381 ownership checks before the next blocker at
   `createAudioManager`. `Data\INI\GameLOD.ini` is present in the current Zero
   Hour archive set, while `Data\INI\GameLODPresets.ini` is classified as a base
   `INI.big` startup gap; `MapCache` residency is proven, but loading

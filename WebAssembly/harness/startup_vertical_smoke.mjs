@@ -42,6 +42,9 @@ function assertStartupSingletonsMissing(state) {
   expect(probe.runtimeArchiveRegistered === false, "startup singleton archive registration mismatch", probe);
   expect(probe.runtimeGlobalsInstalled === false, "startup singleton runtime globals mismatch", probe);
   expect(probe.heapAllocated === false, "startup singleton heap allocation mismatch", probe);
+  expect(probe.nameKeyGeneratorOwned === false, "startup singleton name-key ownership mismatch", probe);
+  expect(probe.commandList?.owned === false, "startup singleton command-list ownership mismatch", probe);
+  expect(probe.xferCRC?.opened === false, "startup singleton XferCRC mismatch", probe);
 }
 
 function assertOriginalStartupFrontier(state) {
@@ -92,16 +95,41 @@ function assertOriginalStartupFrontier(state) {
   expect(frontier.factoryMappings?.createModuleFactory === "W3DModuleFactory",
     "module factory mapping mismatch", frontier);
 
+  const preAudio = frontier.preAudioInitOwnership;
+  expect(preAudio?.source === "GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp lines 297-427",
+    "pre-audio init ownership source mismatch", frontier);
+  expect(preAudio.nameKeyGenerator?.line === 314 && preAudio.nameKeyGenerator.ready === false,
+    "pre-audio NameKeyGenerator ownership mismatch", frontier);
+  expect(preAudio.commandList?.line === 327 && preAudio.commandList.ready === false,
+    "pre-audio CommandList ownership mismatch", frontier);
+  expect(preAudio.xferCRC?.line === 338 && preAudio.xferCRC.ready === false,
+    "pre-audio XferCRC ownership mismatch", frontier);
+  expect(preAudio.parseCommandLine?.line === 381 && preAudio.parseCommandLine.ready === true,
+    "pre-audio parseCommandLine ownership mismatch", frontier);
+  expect(preAudio.firstUnownedFactory?.line === 434
+      && preAudio.firstUnownedFactory.factory === "createAudioManager",
+    "pre-audio first unowned factory mismatch", frontier);
+
   expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1122,
     "CreateGameEngine frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "CreateGameEngine")?.ready === true,
     "CreateGameEngine should be browser-construction ready", frontier);
+  expect(entryByFactory(frontier, "SubsystemInterfaceList")?.line === 297,
+    "SubsystemInterfaceList frontier line mismatch", frontier);
+  expect(entryByFactory(frontier, "NameKeyGenerator")?.line === 314,
+    "NameKeyGenerator frontier line mismatch", frontier);
+  expect(entryByFactory(frontier, "CommandList")?.line === 327,
+    "CommandList frontier line mismatch", frontier);
+  expect(entryByFactory(frontier, "XferCRC")?.line === 338,
+    "XferCRC frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "createFileSystem")?.line === 305,
     "createFileSystem frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "createLocalFileSystem")?.line === 342,
     "createLocalFileSystem frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "createArchiveFileSystem")?.line === 353,
     "createArchiveFileSystem frontier line mismatch", frontier);
+  expect(entryByFactory(frontier, "parseCommandLine")?.line === 381,
+    "parseCommandLine frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "GameLODManager")?.line === 384,
     "GameLODManager frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "CreateCDManager")?.line === 427,

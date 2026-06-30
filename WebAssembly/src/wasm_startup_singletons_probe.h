@@ -10,6 +10,12 @@ struct StartupSingletonsProbeResult
 	bool runtime_archive_registered = false;
 	bool runtime_globals_installed = false;
 	bool heap_allocated = false;
+	bool name_key_generator_owned = false;
+	bool command_list_owned = false;
+	bool command_list_initialized = false;
+	bool command_list_empty = false;
+	bool xfer_crc_opened = false;
+	unsigned int xfer_crc_initial = 0;
 	bool global_data_owned = false;
 	bool subsystem_list_owned = false;
 	bool subsystem_init_shutdown_ok = false;

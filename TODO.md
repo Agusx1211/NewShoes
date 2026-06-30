@@ -30,7 +30,7 @@ shares structure and follows behind.
       Once base Generals `INI.big`/`English.big` are supplied, rerun
       `npm run test:startup-range-backed-archives-browser` to verify the
       optional range-backed base archive branch advances original startup to
-      the `CreateGameEngine` browser-device frontier.
+      the post-`CreateGameEngine` original init ownership frontier.
 
 ---
 
@@ -99,7 +99,11 @@ shares structure and follows behind.
 ### GameEngine — Common
 - [ ] Replace the target-local `Common/INI.h`, `Common/Xfer.h`,
       `Common/GlobalData.h`, and `GameLogic/GameLogic.h` compile shims with the
-      original headers/sources as each real subsystem comes online.
+      original headers/sources as each real subsystem comes online. The runtime
+      now links original `Common/System/XferCRC.cpp` for the pre-audio
+      `XferCRC("lightCRC")` startup proof, but the full original `Common/Xfer`
+      base and save/load transfer stack still remain behind the current
+      focused shim.
 - [ ] Link and smoke-test original `Common/Xfer` and save-game behavior after
       `GameState`, `GameStateMap`, real `GlobalData`, browser persistence, and
       the full snapshot subsystem can link into the runtime.
@@ -413,7 +417,12 @@ shares structure and follows behind.
       `Win32GameEngine` to the global `TheGameEngine`, proves the owned pointer
       before `init()`, tears down through the original destructor, and clears the
       singleton afterward; `test:startup-vertical` gates that ownership/release
-      contract.
+      contract. The browser-visible `deviceFactoryFrontier` now also exposes
+      the original pre-audio ownership sequence for `GameEngine.cpp` lines 314,
+      327, 338, and 381 through `preAudioInitOwnership`, so
+      `TheNameKeyGenerator`, `TheCommandList`, `XferCRC("lightCRC")`, and
+      `parseCommandLine` readiness are checked before the still-unowned
+      `createAudioManager` call.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
       ownership slice before marking `createFunctionLexicon` or
       `createModuleFactory` runtime-ready. The current focused
@@ -486,7 +495,10 @@ shares structure and follows behind.
       startup archive paths keep `SubsystemInterfaceList` ready, make
       `GameLODManager` readiness depend on mounted base `INI.big`
       (`GameLODPresets.ini`), keep `MapCache` deferred, and preserve
-      `createAudioManager` as the first unowned factory.
+      `createAudioManager` as the first unowned factory. The same mounted
+      archive gates now require durable `TheCommandList` ownership and an
+      original `XferCRC("lightCRC")` open with initial CRC zero before marking
+      startup singleton residency ready.
 - [ ] Prove the startup singleton shutdown/destructor path through the original
       `GameEngine.cpp` allocator/free lifetime after archive preflight is safe.
       A direct `MSGNEW`/`delete` probe for durable `GlobalData`,

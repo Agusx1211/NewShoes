@@ -1227,6 +1227,12 @@ function assertStartupSingletons(state, context, expectedReady) {
     && probe.runtimeArchiveRegistered === true
     && probe.runtimeGlobalsInstalled === true
     && probe.heapAllocated === true
+    && probe.nameKeyGeneratorOwned === true
+    && probe.commandList?.owned === true
+    && probe.commandList.initialized === true
+    && probe.commandList.empty === true
+    && probe.xferCRC?.opened === true
+    && probe.xferCRC.initialCRC === 0
     && probe.globalDataOwned === true
     && probe.subsystemListOwned === true
     && probe.gameLOD?.owned === true
@@ -3510,8 +3516,16 @@ function assertOriginalEngineStartup(
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
   const expectedStartupSingletonsReady = state.startupSingletons?.ok === true;
   const expectedSubsystemListReady = state.startupSingletons?.subsystemListOwned === true;
+  const expectedNameKeyGeneratorReady = state.startupSingletons?.nameKeyGeneratorOwned === true;
+  const expectedCommandListReady = state.startupSingletons?.commandList?.owned === true
+    && state.startupSingletons.commandList.initialized === true
+    && state.startupSingletons.commandList.empty === true;
+  const expectedXferCRCReady = state.startupSingletons?.xferCRC?.opened === true
+    && state.startupSingletons.xferCRC.initialCRC === 0;
   const expectedGameLODReady = state.startupSingletons?.gameLOD?.initialized === true;
   const expectedMapCacheReady = state.startupSingletons?.mapCache?.loaded === true;
+  const expectedCommandLineReady = startup.originalSetup?.commandLine === true;
+  const preAudio = frontier?.preAudioInitOwnership;
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
@@ -3595,12 +3609,35 @@ function assertOriginalEngineStartup(
       || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
       || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
       || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
+      || preAudio?.source !== "GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp lines 297-427"
+      || preAudio.nameKeyGenerator?.line !== 314
+      || preAudio.nameKeyGenerator.ready !== expectedNameKeyGeneratorReady
+      || preAudio.commandList?.line !== 327
+      || preAudio.commandList.ready !== expectedCommandListReady
+      || preAudio.commandList.owned !== (state.startupSingletons?.commandList?.owned === true)
+      || preAudio.commandList.initialized !== (state.startupSingletons?.commandList?.initialized === true)
+      || preAudio.commandList.empty !== (state.startupSingletons?.commandList?.empty === true)
+      || preAudio.xferCRC?.line !== 338
+      || preAudio.xferCRC.ready !== expectedXferCRCReady
+      || preAudio.xferCRC.initialCRC !== (state.startupSingletons?.xferCRC?.initialCRC ?? 0)
+      || preAudio.parseCommandLine?.line !== 381
+      || preAudio.parseCommandLine.ready !== expectedCommandLineReady
+      || preAudio.firstUnownedFactory?.line !== 434
+      || preAudio.firstUnownedFactory.factory !== "createAudioManager"
       || byFactory.get("CreateGameEngine")?.line !== 1122
       || byFactory.get("CreateGameEngine")?.ready !== true
-      || byFactory.get("createLocalFileSystem")?.line !== 342
-      || byFactory.get("createArchiveFileSystem")?.line !== 353
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== expectedSubsystemListReady
+      || byFactory.get("NameKeyGenerator")?.line !== 314
+      || byFactory.get("NameKeyGenerator")?.ready !== expectedNameKeyGeneratorReady
+      || byFactory.get("CommandList")?.line !== 327
+      || byFactory.get("CommandList")?.ready !== expectedCommandListReady
+      || byFactory.get("XferCRC")?.line !== 338
+      || byFactory.get("XferCRC")?.ready !== expectedXferCRCReady
+      || byFactory.get("createLocalFileSystem")?.line !== 342
+      || byFactory.get("createArchiveFileSystem")?.line !== 353
+      || byFactory.get("parseCommandLine")?.line !== 381
+      || byFactory.get("parseCommandLine")?.ready !== expectedCommandLineReady
       || byFactory.get("GameLODManager")?.line !== 384
       || byFactory.get("GameLODManager")?.ready !== expectedGameLODReady
       || byFactory.get("MapCache")?.line !== 606

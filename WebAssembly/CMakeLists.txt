@@ -1376,6 +1376,7 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/System/Directory.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/AsciiString.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/UnicodeString.cpp"
+  "${GAMEENGINE_COMMON_DIR}/System/XferCRC.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/String.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SubsystemInterface.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/CDManager.cpp"

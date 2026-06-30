@@ -208,6 +208,12 @@ function assertStartupSingletons(state, context, expectedReady) {
     && probe.runtimeArchiveRegistered === true
     && probe.runtimeGlobalsInstalled === true
     && probe.heapAllocated === true
+    && probe.nameKeyGeneratorOwned === true
+    && probe.commandList?.owned === true
+    && probe.commandList.initialized === true
+    && probe.commandList.empty === true
+    && probe.xferCRC?.opened === true
+    && probe.xferCRC.initialCRC === 0
     && probe.globalDataOwned === true
     && probe.subsystemListOwned === true
     && probe.gameLOD?.owned === true
@@ -257,6 +263,7 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
   const expectedAudioMissing = expected.audioStartupMissing ?? [];
   const audioMissing = new Set(audioFiles?.missing ?? []);
   const milesAudio = frontier?.milesAudioDeviceFrontier;
+  const preAudio = frontier?.preAudioInitOwnership;
   if (!frontier
       || frontier.probeOnly !== true
       || frontier.ready !== false
@@ -270,10 +277,33 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
       || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
       || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || preAudio?.source !== "GeneralsMD/Code/GameEngine/Source/Common/GameEngine.cpp lines 297-427"
+      || preAudio.nameKeyGenerator?.line !== 314
+      || preAudio.nameKeyGenerator.ready !== true
+      || preAudio.commandList?.line !== 327
+      || preAudio.commandList.ready !== true
+      || preAudio.commandList.owned !== true
+      || preAudio.commandList.initialized !== true
+      || preAudio.commandList.empty !== true
+      || preAudio.xferCRC?.line !== 338
+      || preAudio.xferCRC.ready !== true
+      || preAudio.xferCRC.initialCRC !== 0
+      || preAudio.parseCommandLine?.line !== 381
+      || preAudio.parseCommandLine.ready !== true
+      || preAudio.firstUnownedFactory?.line !== 434
+      || preAudio.firstUnownedFactory.factory !== "createAudioManager"
       || byFactory.get("CreateGameEngine")?.line !== 1122
       || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== true
+      || byFactory.get("NameKeyGenerator")?.line !== 314
+      || byFactory.get("NameKeyGenerator")?.ready !== true
+      || byFactory.get("CommandList")?.line !== 327
+      || byFactory.get("CommandList")?.ready !== true
+      || byFactory.get("XferCRC")?.line !== 338
+      || byFactory.get("XferCRC")?.ready !== true
+      || byFactory.get("parseCommandLine")?.line !== 381
+      || byFactory.get("parseCommandLine")?.ready !== true
       || byFactory.get("GameLODManager")?.line !== 384
       || byFactory.get("GameLODManager")?.ready !== expected.gameLODReady
       || byFactory.get("MapCache")?.line !== 606
