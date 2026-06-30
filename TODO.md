@@ -850,7 +850,9 @@ shares structure and follows behind.
       shipped sidecars: original `BinkVideoPlayer` streams copy decoded WebM
       sidecar pixels into real `W3DVideoBuffer` textures and present them
       through original `W3DDisplay::drawVideoBuffer` with browser draw/pixel
-      checks. That smoke now also exercises a focused original
+      checks, and `test:vertical-integrations` now includes that Bink/W3D
+      presentation path as an independent video vertical gate. That smoke now
+      also exercises a focused original
       `Display::playMovie/update/stopMovie` path and a focused original
       `WindowVideoManager::playMovie/update` path that attaches a real
       `W3DVideoBuffer` to a `GameWindow`, plus a focused blank-window

@@ -332,6 +332,57 @@ const steps = [
         "shipped mesh render smoke did not exercise same-pass multi-texture rendering", payload.multiTextureProbe);
     },
   },
+  {
+    name: "bink-w3d-video-presentation",
+    file: "harness/bink_w3d_video_buffer_upload_smoke.mjs",
+    args: [
+      "artifacts/real-assets/GC_Background.bik",
+      "artifacts/real-assets/VS_small.bik",
+      "artifacts/browser-video/bink/bink-browser-video-manifest.json",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "Bink W3D video presentation smoke did not report ok", payload);
+      expect(payload.source === "WebAssembly/harness/bink_w3d_video_buffer_upload_smoke.mjs",
+        "Bink W3D video presentation smoke reported the wrong source", payload);
+      expect(payload.screenshotPath?.endsWith("harness-smoke-bink-w3d-video-buffer-upload.png"),
+        "Bink W3D video presentation smoke did not capture the expected screenshot", payload);
+      expect(payload.counts?.binkOpen === 12
+          && payload.counts?.binkClose === 12
+          && payload.counts?.binkCopyComplete === 766
+          && payload.counts?.copyEvents === 766
+          && payload.counts?.drawEvents >= 766
+          && payload.counts?.textureCreates === 13
+          && payload.counts?.textureUpdates === 779
+          && payload.counts?.textureReleases === 12
+          && payload.counts?.liveTextureCount === 1,
+        "Bink W3D video presentation smoke did not prove the expected original video lifecycle counts", payload.counts);
+      expect(payload.lastDraw?.source === "browser_d3d8_draw_indexed"
+          && payload.lastDraw?.primitiveType === 4
+          && payload.lastDraw?.vertexCount === 4
+          && payload.lastDraw?.indexCount === 6
+          && payload.lastDraw?.vertexStride === 44
+          && payload.lastDraw?.texture0?.format === 22
+          && payload.lastDraw?.texture0?.storage === "rgba8"
+          && payload.lastDraw?.texture0?.ready === true
+          && payload.lastDraw?.texture0?.sampled === true
+          && Array.isArray(payload.lastDraw?.centerPixel)
+          && payload.lastDraw.centerPixel.some((channel, index) => index < 3 && channel > 0),
+        "Bink W3D video presentation smoke did not reach browser D3D8/WebGL textured draw presentation", payload.lastDraw);
+      expect((payload.copyChecksums ?? []).some((event) =>
+            event.videoPath === "artifacts/browser-video/bink/GC_Background.webm"
+            && event.copyWidth === 800
+            && event.copyHeight === 600
+            && event.bytesWritten > 0
+            && event.checksum > 0)
+          && (payload.copyChecksums ?? []).some((event) =>
+            event.videoPath === "artifacts/browser-video/bink/VS_small.webm"
+            && event.copyWidth === 96
+            && event.copyHeight === 120
+            && event.bytesWritten > 0
+            && event.checksum > 0),
+        "Bink W3D video presentation smoke did not copy decoded shipped sidecar frames", payload.copyChecksums?.slice?.(0, 8));
+    },
+  },
 ];
 
 const results = steps.map((step) => runNodeStep(step, step.root ?? wasmRoot));
@@ -348,10 +399,11 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
+    "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
-    "advance another independent vertical beyond the shell menu path, preferably audio/video/network device ownership",
+    "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "advance LANAPI join/options over the browser relay or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],

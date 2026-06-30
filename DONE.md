@@ -4545,6 +4545,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm run verify:bink-w3d-video-buffer-upload-frontier`,
       `npm run verify:bink-w3d-video-presentation-frontier`, and
       `npm run test:bink-w3d-video-presentation-browser`.
+- [x] Promote the Bink/W3D video presentation path into the aggregate vertical
+      integration gate. `test:vertical-integrations` now prepares the browser
+      WebM sidecars via `transcode:bink-video`, then runs
+      `bink_w3d_video_buffer_upload_smoke.mjs` alongside the startup,
+      networking, shell/UI, mapped-image, and shipped-mesh verticals. The gate
+      asserts 12 original Bink open/close lifecycles, 766 decoded sidecar frame
+      copies, real `W3DVideoBuffer` texture create/update/release counts,
+      original `W3DDisplay::drawVideoBuffer` indexed draws, and a nonzero
+      browser D3D8/WebGL canvas pixel in
+      `harness-smoke-bink-w3d-video-buffer-upload.png`. This promotes an
+      existing focused video proof into the always-run vertical suite; it does
+      not complete production InGameUI movie ownership, full campaign-owned
+      load-screen setup, Bink/audio sync, or final WebCodecs/decoder policy.
+      Verified with `npm --prefix WebAssembly run
+      test:bink-w3d-video-presentation-browser`; the aggregate
+      `npm --prefix WebAssembly run test:vertical-integrations` gate includes
+      it as an independent video vertical.
 
 ---
 
