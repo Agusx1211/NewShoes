@@ -1510,7 +1510,7 @@ const char *build_device_factory_frontier_json()
 	} else if (startup_assets_ready() && startup_files_ready && !setup_ready) {
 		next_required = "originalSetupResidency";
 	} else if (startup_assets_ready() && startup_files_ready && setup_ready) {
-		next_required = "CreateGameEngine";
+		next_required = "originalGameEngineInitOwnership";
 	}
 
 	std::snprintf(buffer, sizeof(buffer),
@@ -1579,7 +1579,7 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":7,\"line\":1473,\"call\":\"refreshCachedVariables\",\"ready\":false,\"status\":\"blocked_until_original_audio_manager_runtime\"},"
 		"{\"order\":8,\"line\":1479,\"call\":\"initDelayFilter\",\"ready\":true,\"status\":\"browser_filter_enumeration_probe_ready\"}]},"
 		"\"entries\":["
-		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_engine\"},"
+		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":305,\"subsystem\":\"TheFileSystem\",\"factory\":\"createFileSystem\",\"originalConcrete\":\"FileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":3,\"line\":342,\"subsystem\":\"TheLocalFileSystem\",\"factory\":\"createLocalFileSystem\",\"originalConcrete\":\"Win32LocalFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
 		"{\"order\":4,\"line\":353,\"subsystem\":\"TheArchiveFileSystem\",\"factory\":\"createArchiveFileSystem\",\"originalConcrete\":\"Win32BIGFileSystem\",\"ready\":%s,\"called\":true,\"status\":\"bootstrap_probe_ready\"},"
@@ -1667,8 +1667,8 @@ const char *build_original_engine_startup_json()
 		"\"globalData\":%s,\"commandLine\":%s,"
 		"\"cdManager\":%s,\"startupSingletons\":%s,"
 		"\"subsystemList\":%s,\"gameLODManager\":%s,\"mapCache\":%s},"
-		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":false,"
-		"\"browserGameEngine\":false,\"cdManager\":%s,"
+		"\"browserDeviceLayer\":{\"ready\":false,\"createGameEngine\":true,"
+		"\"browserGameEngine\":true,\"cdManager\":%s,"
 		"\"localFileSystem\":%s,"
 		"\"archiveFileSystem\":%s,\"startupSingletons\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":false,"

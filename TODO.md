@@ -397,9 +397,14 @@ shares structure and follows behind.
       `Drawable::killStaticImages()` (plus original `Science.cpp` /
       `RankInfo.cpp` vtable owners) to prove constructor/destructor teardown
       calls `TheGameResultsQueue->endThreads()` without entering `init()`.
-      Remaining work is owned `TheGameEngine` singleton assignment,
-      full original `GameEngine.cpp` init consumption, and startup singleton
-      teardown contracts. `test:startup-vertical` now also boots the wasm
+      The browser `win32GameEngineProbe` now constructs the original
+      `Win32GameEngine` in Chromium over the focused browser `GameEngine`
+      lifetime, assigns the instance to `TheGameEngine`, dispatches
+      `Win32GameEngine::serviceWindowsOS`, deletes it, and clears the singleton;
+      the startup frontier marks `CreateGameEngine` ready while still requiring
+      full original `GameEngine.cpp` init consumption and startup singleton
+      teardown contracts before `createAudioManager`. `test:startup-vertical`
+      now also boots the wasm
       harness in Chromium and asserts the browser-visible original
       `GameEngine.cpp` startup frontier still stops at
       `createAudioManager` line 434 with no runtime archives mounted, so the
@@ -603,9 +608,9 @@ shares structure and follows behind.
       asset/data preflight is ready, and confirms the next frontier is the
       absent base Generals startup INI files. The same smoke now also mounts
       optional base Generals startup/audio entries from `INI.big`/`English.big`
-      when present and expects the `CreateGameEngine` frontier. The remaining
-      work is the normal on-demand full-archive streamer without a curated
-      entry list.
+      when present and expects the post-`CreateGameEngine` original
+      `GameEngine.cpp` init-ownership frontier. The remaining work is the normal
+      on-demand full-archive streamer without a curated entry list.
 - [ ] Hand runtime `W3DFileSystem` ownership over to the real
       `W3DDisplay` / browser display startup path once full display
       construction owns WW3D lifetime. The current smoke proves the

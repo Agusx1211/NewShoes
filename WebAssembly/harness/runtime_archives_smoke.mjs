@@ -3493,7 +3493,7 @@ function assertOriginalEngineStartup(
   }
 
   const expectedNextRequired = expectedStatus === "browser_device_layer_pending"
-    ? (expectedSetupReady ? "CreateGameEngine" : "originalSetupResidency")
+    ? (expectedSetupReady ? "originalGameEngineInitOwnership" : "originalSetupResidency")
     : expectedStatus === "missing_startup_files"
       ? "startupFiles"
       : "startupAssets";
@@ -3596,6 +3596,7 @@ function assertOriginalEngineStartup(
       || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
       || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
       || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("createLocalFileSystem")?.line !== 342
       || byFactory.get("createArchiveFileSystem")?.line !== 353
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
@@ -3615,8 +3616,8 @@ function assertOriginalEngineStartup(
   }
 
   if (startup.browserDeviceLayer?.ready !== false
-      || startup.browserDeviceLayer?.createGameEngine !== false
-      || startup.browserDeviceLayer?.browserGameEngine !== false
+      || startup.browserDeviceLayer?.createGameEngine !== true
+      || startup.browserDeviceLayer?.browserGameEngine !== true
       || startup.originalSetup?.probeOnly !== true
       || startup.originalSetup?.runtimeOwned !== false
       || startup.originalSetup?.globalData !== expectedCoreSetupReady

@@ -270,6 +270,8 @@ function assertDeviceFactoryFrontier(startup, context, expected) {
       || frontier.factoryMappings?.createLocalFileSystem !== "Win32LocalFileSystem"
       || frontier.factoryMappings?.createArchiveFileSystem !== "Win32BIGFileSystem"
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
+      || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("SubsystemInterfaceList")?.line !== 297
       || byFactory.get("SubsystemInterfaceList")?.ready !== true
       || byFactory.get("GameLODManager")?.line !== 384
@@ -317,6 +319,8 @@ function assertOriginalStartupHeader(state, context, expected) {
       || startup.originalSetup?.gameLODManager !== expected.gameLODReady
       || startup.originalSetup?.mapCache !== expected.mapCacheReady
       || startup.browserDeviceLayer?.ready !== false
+      || startup.browserDeviceLayer?.createGameEngine !== true
+      || startup.browserDeviceLayer?.browserGameEngine !== true
       || startup.browserDeviceLayer?.cdManager !== true
       || startup.browserDeviceLayer?.localFileSystem !== true
       || startup.browserDeviceLayer?.archiveFileSystem !== true
@@ -399,7 +403,7 @@ function assertOriginalStartupMissingOnlyBaseFiles(state, context) {
 function assertOriginalStartupWithBaseFiles(state, context) {
   const startup = assertOriginalStartupHeader(state, context, {
     status: "browser_device_layer_pending",
-    nextRequired: "CreateGameEngine",
+    nextRequired: "originalGameEngineInitOwnership",
     startupFilesReady: true,
     startupSingletonsReady: true,
     gameLODReady: true,

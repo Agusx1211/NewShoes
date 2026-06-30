@@ -63,7 +63,8 @@ function assertOriginalStartupFrontier(state) {
 
   const browserLayer = startup.browserDeviceLayer;
   expect(browserLayer?.ready === false, "browser device layer should not be ready", browserLayer);
-  expect(browserLayer.createGameEngine === false, "CreateGameEngine should remain probe-only", browserLayer);
+  expect(browserLayer.createGameEngine === true, "CreateGameEngine should be browser-construction ready", browserLayer);
+  expect(browserLayer.browserGameEngine === true, "browser GameEngine lifetime should be constructed", browserLayer);
   expect(browserLayer.localFileSystem === true, "browser local filesystem probe should be ready", browserLayer);
   expect(browserLayer.archiveFileSystem === false, "browser archive filesystem should lack runtime archives", browserLayer);
   expect(browserLayer.audioManager === false, "browser audio manager should not be runtime-ready", browserLayer);
@@ -93,6 +94,8 @@ function assertOriginalStartupFrontier(state) {
 
   expect(entryByFactory(frontier, "CreateGameEngine")?.line === 1122,
     "CreateGameEngine frontier line mismatch", frontier);
+  expect(entryByFactory(frontier, "CreateGameEngine")?.ready === true,
+    "CreateGameEngine should be browser-construction ready", frontier);
   expect(entryByFactory(frontier, "createFileSystem")?.line === 305,
     "createFileSystem frontier line mismatch", frontier);
   expect(entryByFactory(frontier, "createLocalFileSystem")?.line === 342,

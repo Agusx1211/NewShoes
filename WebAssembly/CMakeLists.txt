@@ -3870,6 +3870,10 @@ set_source_files_properties(src/wasm_wndproc_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-iquote${WINMAIN_WNDPROC_SHIMS_DIR};-iquote${WIN32_GAMEENGINE_SHIMS_DIR}"
 )
 
+set_source_files_properties(src/wasm_win32_gameengine_probe.cpp PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/PreRTS.h;-iquote${WIN32_GAMEENGINE_SHIMS_DIR};-Wno-implicit-exception-spec-mismatch;-Wno-new-returns-null;-Wno-undefined-bool-conversion"
+)
+
 set_source_files_properties(src/wasm_ww3d_terrain_probe.cpp PROPERTIES
   COMPILE_OPTIONS "-Wno-non-pod-varargs;-iquote${GAMEENGINE_INCLUDE_DIR};-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled;-iquote${GAMEENGINE_DIR}/Source;-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR};-iquote${MAIN_DIR};-iquote${ZH_LIB_INCLUDE_DIR};-iquote${ZH_CODE_DIR}/Libraries/Source;-iquote${WWVEGAS_DIR};-iquote${WWVEGAS_DIR}/WW3D2;-iquote${WWDEBUG_DIR};-iquote${WWLIB_DIR};-iquote${WWMATH_DIR};-iquote${WWSAVELOAD_DIR};-iquote${COMPRESSION_DIR};-iquote${COMPRESSION_EAC_DIR}"
 )

@@ -931,6 +931,7 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
       || frontier.factoryMappings?.createAudioManager !== "MilesAudioManager"
       || frontier.factoryMappings?.createGameClient !== "W3DGameClient"
       || byFactory.get("CreateGameEngine")?.line !== 1122
+      || byFactory.get("CreateGameEngine")?.ready !== true
       || byFactory.get("createLocalFileSystem")?.line !== 342
       || byFactory.get("createArchiveFileSystem")?.line !== 353
       || byFactory.get("createAudioManager")?.line !== 434
@@ -940,7 +941,8 @@ function assertOriginalEngineStartup(state, label, expectedStatus) {
   }
 
   if (startup.browserDeviceLayer?.ready !== false
-      || startup.browserDeviceLayer?.createGameEngine !== false
+      || startup.browserDeviceLayer?.createGameEngine !== true
+      || startup.browserDeviceLayer?.browserGameEngine !== true
       || startup.originalSetup?.probeOnly !== true
       || startup.originalSetup?.runtimeOwned !== false
       || startup.originalSetup?.globalData !== true

@@ -72,6 +72,8 @@ function assertDeviceFrontier(payload, label) {
     `${label} did not preserve the createAudioManager line`, frontier);
   expect(frontier.factoryMappings?.CreateGameEngine === "Win32GameEngine",
     `${label} did not preserve the Win32GameEngine mapping`, frontier);
+  expect((frontier.entries ?? []).find((entry) => entry.factory === "CreateGameEngine")?.ready === true,
+    `${label} did not preserve browser CreateGameEngine construction readiness`, frontier);
   expect(frontier.factoryMappings?.createArchiveFileSystem === "Win32BIGFileSystem",
     `${label} did not preserve the archive filesystem mapping`, frontier);
   expect(frontier.factoryMappings?.createAudioManager === "MilesAudioManager",
@@ -109,8 +111,8 @@ function assertStartupSingletonFrontier(payload, label) {
   if (baseIniMounted) {
     expect(startup.status === "browser_device_layer_pending",
       `${label} with base INI mounted should advance to browser device layer pending`, startup);
-    expect(frontier.nextRequired === "CreateGameEngine" && frontier.setupReady === true,
-      `${label} with base INI mounted should be ready for CreateGameEngine ownership`, frontier);
+    expect(frontier.nextRequired === "originalGameEngineInitOwnership" && frontier.setupReady === true,
+      `${label} with base INI mounted should be ready for original GameEngine init ownership`, frontier);
   } else {
     expect(startup.status === "missing_startup_files",
       `${label} without base INI should report missing startup files`, startup);
@@ -234,7 +236,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance beyond MainMenu dropdown navigation to a real submenu selection without crossing into campaign/skirmish startup",
-    "replace browser device-layer probe ownership with production CreateGameEngine/createAudioManager ownership",
+    "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),
 }));
