@@ -189,6 +189,46 @@ const steps = [
     },
   },
   {
+    name: "browser-audio-request-path",
+    file: "harness/audio_request_path_smoke.mjs",
+    args: ["artifacts/real-assets"],
+    validate(payload) {
+      expect(payload.ok === true, "browser audio request path smoke did not report ok", payload);
+      expect(payload.path === "browser-audio-request-path"
+          && payload.archiveCount >= 17
+          && payload.audioContext?.state === "running"
+          && payload.audioContext?.resumeTrigger === "canvas.pointerdown"
+          && payload.mixer?.source === "browser Web Audio runtime mixer GainNode proof"
+          && payload.mixer?.nodeGraph?.includes("GainNode")
+          && payload.mixer?.nodeGraph?.includes("AudioDestinationNode")
+          && payload.requestPath?.source === "browser source-shaped audio request queue live playback proof"
+          && payload.requestPath?.sourcePathDriven === true
+          && payload.requestPath?.engineDriven === false
+          && payload.requestPath?.nextRequired === "realMilesAudioManagerWebAudioBackend"
+          && payload.requestPath?.cacheEntries === 5
+          && payload.requestPath?.completed === 3
+          && payload.requestPath?.enqueued === 3
+          && payload.requestPath?.drained === 3
+          && payload.requestPath?.dispatched === 3
+          && payload.requestPath?.started === 3
+          && payload.requestPath?.released === 3
+          && payload.requestPath?.coveredPlayingTypes?.includes("PAT_Sample")
+          && payload.requestPath?.coveredPlayingTypes?.includes("PAT_3DSample")
+          && payload.requestPath?.coveredPlayingTypes?.includes("PAT_Stream")
+          && payload.requestPath?.coveredDeviceStarts?.includes("playSample")
+          && payload.requestPath?.coveredDeviceStarts?.includes("playSample3D")
+          && payload.requestPath?.coveredDeviceStarts?.includes("playStream")
+          && payload.requestPath?.coveredAudioTypes?.includes("AT_SoundEffect")
+          && payload.requestPath?.coveredAudioTypes?.includes("AT_Streaming")
+          && payload.requestPath?.coveredBuses?.includes("sound")
+          && payload.requestPath?.coveredBuses?.includes("sound3D")
+          && payload.requestPath?.coveredBuses?.includes("speech")
+          && payload.liveEventRuntime?.completed >= 3
+          && payload.liveEventRuntime?.released >= 3,
+        "browser audio request path smoke did not prove source-shaped audio request queue playback coverage", payload);
+    },
+  },
+  {
     name: "browser-network-two-contexts",
     file: "harness/network_two_contexts_smoke.mjs",
     validate(payload) {
@@ -392,6 +432,7 @@ console.log(JSON.stringify({
   path: "vertical-integrations",
   covered: [
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
+    "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
@@ -404,6 +445,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
+    "fold browser audio request-path scheduling into the real MilesAudioManager Web Audio backend instead of the current source-shaped harness path",
     "advance LANAPI join/options over the browser relay or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],

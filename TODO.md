@@ -745,7 +745,8 @@ shares structure and follows behind.
       `AudioBufferSourceNode -> GainNode -> StereoPannerNode -> soundGainNode`
       graph after the Web Audio gesture, then asserts Web Audio completion,
       MSS end, EOS callback, and release; folding that backend into the real
-      `MilesAudioManager` play-sample/request path remains open. The HSTREAM
+      `MilesAudioManager::playAudioEvent` 2D `playSample` request path is the
+      next concrete audio implementation slice. The HSTREAM
       lifecycle is now stateful and harness-probed by
       `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
       registration, volume/pan/rate/loop/position state, start/pause/resume,
@@ -821,8 +822,10 @@ shares structure and follows behind.
       `AudioManager::addAudioEvent` / `SoundManager::addAudioEvent` /
       `MilesAudioManager::processRequest` source contract around live
       playback for representative 2D sample, 3D sample, and stream playing
-      types. It is still harness-driven rather than executed by the original
-      `MilesAudioManager` runtime.
+      types. `test:browser-audio-request-path` now isolates that proof as a
+      focused browser smoke and `test:vertical-integrations` includes it as an
+      independent audio vertical. It is still harness-driven rather than
+      executed by the original `MilesAudioManager` runtime.
 
 ---
 

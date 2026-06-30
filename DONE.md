@@ -3924,6 +3924,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `PAT_3DSample` / `playSample3D`, and `PAT_Stream` / `playStream` live
       Web Audio completion/release paths. This remains harness-driven proof
       coverage, not original `MilesAudioManager` runtime scheduling.
+- [x] Split the browser audio request-path proof into a focused vertical gate.
+      `harness/audio_request_path_smoke.mjs` mounts the runtime BIG set, boots
+      the browser harness, resumes a real `AudioContext` from the canvas
+      gesture, creates the live music/sound/3D/speech `GainNode` mixer buses,
+      then drives three real requested decoded payloads through the
+      source-shaped `AudioManager::addAudioEvent` /
+      `SoundManager::addAudioEvent` / `MilesAudioManager::processRequestList`
+      / `MilesAudioManager::processRequest` path. The smoke asserts
+      `playSample`, `playSample3D`, and `playStream`, `PAT_Sample`,
+      `PAT_3DSample`, and `PAT_Stream`, sound/sound3D/speech buses, Web Audio
+      completion callbacks, and release counters. `test:vertical-integrations`
+      now includes this as an independent audio vertical. This still does not
+      claim the real original `MilesAudioManager` runtime owns Web Audio
+      scheduling. Verified with `npm --prefix WebAssembly run
+      test:browser-audio-request-path`; the aggregate
+      `npm --prefix WebAssembly run test:vertical-integrations` gate includes
+      it.
 
 ---
 
