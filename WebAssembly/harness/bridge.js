@@ -6675,6 +6675,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_display_mapped_image_clip", "string", ["string", "string"]),
       probeWW3DDisplayMappedImageUnrotated: module.cwrap(
         "cnc_port_probe_ww3d_display_mapped_image_unrotated", "string", ["string", "string"]),
+      probeWW3DDisplayMainMenuRuler: module.cwrap(
+        "cnc_port_probe_ww3d_display_main_menu_ruler", "string", ["string", "string"]),
       probeWW3DDisplayFillRect: module.cwrap(
         "cnc_port_probe_ww3d_display_fillrect", "string", []),
       probeWW3DWindowRepaint: module.cwrap(
@@ -15924,6 +15926,127 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dDisplayMainMenuRuler":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MainMenuRuler W3DDisplay drawImage cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "/assets/runtime-main-menu-ruler-mapped-image/INIZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime-main-menu-ruler-mapped-image/TexturesZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DDisplayMainMenuRuler(
+          iniArchivePath,
+          textureArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const rulerPixels = {
+          center: sampleVirtualCanvasPixel(400, 300),
+          topLeft: sampleVirtualCanvasPixel(20, 20),
+          topMiddle: sampleVirtualCanvasPixel(400, 4),
+          topRight: sampleVirtualCanvasPixel(780, 20),
+          bottomLeft: sampleVirtualCanvasPixel(20, 580),
+          bottomMiddle: sampleVirtualCanvasPixel(400, 596),
+          bottomRight: sampleVirtualCanvasPixel(780, 580),
+        };
+        const coloredRulerPixels = Object.values(rulerPixels)
+          .filter((pixel) => pixelHasColor(pixel, 10));
+        const screenshot = {
+          ...snapshotCanvas(),
+          rulerPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_display_main_menu_ruler_probe"
+          && probe?.archives?.ini === iniArchivePath
+          && probe?.archives?.texture === textureArchivePath
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.mappedIniExists === true
+          && probe?.results?.textureArchiveLoaded === true
+          && probe?.results?.textureFileExists === true
+          && probe?.results?.textureFileFactoryInstalled === true
+          && probe?.results?.mappedCollectionAllocated === true
+          && probe?.results?.mappedCollectionLoaded === true
+          && probe?.results?.mappedImages >= 1
+          && probe?.results?.mappedImageFound === true
+          && probe?.results?.mappedImageRotated === false
+          && probe?.results?.texturePreloaded === true
+          && probe?.results?.textureRegistered === true
+          && probe?.results?.textureResolved === true
+          && probe?.results?.textureLoaded === true
+          && probe?.results?.textureHasD3DSurface === true
+          && String(probe?.texture?.name ?? "").toLowerCase() === "mainmenuruleruserinterface.tga"
+          && probe?.texture?.archiveEntry === "Art\\Textures\\mainmenuruleruserinterface.tga"
+          && probe?.texture?.width === 1024
+          && probe?.texture?.height === 1024
+          && probe?.texture?.levels > 0
+          && probe?.texture?.uploadedLevels === probe?.texture?.levels
+          && probe?.runtimeAssets?.installed === true
+          && probe?.runtimeAssets?.archiveLoaded === true
+          && probe?.runtimeAssets?.w3dFileSystemInstalled === true
+          && probe?.image?.name === "MainMenuRuler"
+          && probe?.image?.filename === "MainMenuRuleruserinterface.tga"
+          && probe?.image?.rawTexture === false
+          && probe?.image?.status === 0
+          && probe?.image?.rotated === false
+          && probe?.image?.textureWidth === 1024
+          && probe?.image?.textureHeight === 1024
+          && probe?.image?.width === 800
+          && probe?.image?.height === 600
+          && probe?.draw?.primitiveType === 4
+          && probe?.draw?.vertexCount === 4
+          && probe?.draw?.primitiveCount === 2
+          && probe?.draw?.screenRect?.left === 0
+          && probe?.draw?.screenRect?.top === 0
+          && probe?.draw?.screenRect?.right === 800
+          && probe?.draw?.screenRect?.bottom === 600
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.fillMode?.supported === true
+          && browserProbe?.shadeMode?.supported === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.primitiveType === 4
+          && browserProbe?.texture0?.id === probe?.texture?.id
+          && browserProbe?.texture0?.ready === true
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.texture0?.combiner?.supported === true
+          && browserProbe?.renderState?.textureStages?.[0]?.colorOp === D3DTOP_MODULATE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg1 === D3DTA_TEXTURE
+          && browserProbe?.renderState?.textureStages?.[0]?.colorArg2 === D3DTA_DIFFUSE
+          && browserProbe?.renderState?.textureStages?.[1]?.colorOp === D3DTOP_DISABLE
+          && coloredRulerPixels.length >= 4
+          && pixelLooksBlack(rulerPixels.center)
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= probe?.texture?.levels
+          && textureDelta.binds >= 1;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          rulerPixels,
+          coloredRulerPixelCount: coloredRulerPixels.length,
           textureDelta,
           textureProbe: textureAfter,
           screenshot,

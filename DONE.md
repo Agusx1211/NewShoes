@@ -3477,6 +3477,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DGameWinDefaultDraw`, `W3DDisplay::drawImage`, and browser
       D3D8/WebGL2 pixel path before the shell composite and shipped mesh
       smokes run.
+- [x] Add a direct display-level MainMenuRuler mapped-image vertical:
+      `test:ww3d-display-main-menu-ruler` range-fetches the exact
+      `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`
+      block and `TexturesZH.big`
+      `Art\Textures\mainmenuruleruserinterface.tga`, resolves
+      `MainMenuRuler` through `ImageCollection::findImageByName`, preloads the
+      texture through `WW3DAssetManager` / `TextureClass::Init`, draws the
+      full-screen `(0,0)-(800,600)` image with `W3DDisplay::drawImage`, and
+      verifies browser WebGL2 edge pixels from the alpha ruler overlay while
+      the transparent center remains black.
 
 ---
 

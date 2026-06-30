@@ -654,13 +654,13 @@ shares structure and follows behind.
       `MapBorder4` rectangle repaint smokes into production shell/menu
       composition: cover text and image children that are hidden/pruned for the
       focused repaint proofs, and normal display-owned font/image lifetime. The
-      current narrow image slice proves `MainMenu.wnd:Logo`; remaining work is
-      broader unpruned shell composition (for example `MainMenuRuler`,
-      `MainMenuBackdrop`, button image states, and text) under the normal
-      display-owned lifecycle. Diagnose the focused `MainMenuRuler` repaint
-      crash against `MainMenuRuleruserinterface.tga` (1024x1024 from
-      `TexturesZH.big`) before promoting that full-screen image child into the
-      WND image repaint gate.
+      current direct display slices prove `MainMenu.wnd:Logo` and the
+      `MainMenuRuler` HandCreated mapped image / `TexturesZH.big`
+      `MainMenuRuleruserinterface.tga` texture path. Remaining work is broader
+      unpruned shell composition (for example `MainMenuBackdrop`, button image
+      states, and text) under the normal display-owned lifecycle. Diagnose the
+      focused `MainMenuRuler` WindowLayout repaint timeout/browser crash before
+      promoting the full-screen image child into the WND image repaint gate.
 - [ ] Restore the generic original mapped-image directory load route for
       browser render smokes: replace the focused exact-block
       `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /

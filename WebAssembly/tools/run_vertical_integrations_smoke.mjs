@@ -934,6 +934,38 @@ const steps = [
     },
   },
   {
+    name: "display-main-menu-ruler",
+    file: "harness/display_main_menu_ruler_smoke.mjs",
+    args: [
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/TexturesZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "MainMenuRuler display smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-display-main-menu-ruler",
+        "MainMenuRuler display smoke emitted the wrong path", payload);
+      expect(payload.originalPaths?.includes("HandCreatedMappedImages.INI -> ImageCollection::findImageByName(MainMenuRuler)"),
+        "MainMenuRuler display smoke did not use the HandCreated mapped-image route", payload.originalPaths);
+      expect(payload.originalPaths?.includes("W3DDisplay::drawImage -> TextureClass::Init(MainMenuRuleruserinterface.tga)"),
+        "MainMenuRuler display smoke did not use the W3DDisplay image draw path", payload.originalPaths);
+      expect(payload.probe?.image?.name === "MainMenuRuler"
+          && payload.probe?.image?.filename === "MainMenuRuleruserinterface.tga"
+          && payload.probe?.image?.textureWidth === 1024
+          && payload.probe?.texture?.archiveEntry === "Art\\Textures\\mainmenuruleruserinterface.tga",
+        "MainMenuRuler display smoke did not report the expected real mapped image binding", payload);
+      expect(payload.probe?.calls?.drawIndexed >= 1
+          && payload.probe?.draw?.screenRect?.left === 0
+          && payload.probe?.draw?.screenRect?.right === 800
+          && payload.probe?.draw?.screenRect?.bottom === 600
+          && payload.browserProbe?.source === "browser_d3d8_draw_indexed",
+        "MainMenuRuler display smoke did not reach the full-screen W3DDisplay/WebGL draw path", payload);
+      expect(payload.coloredRulerPixelCount >= 4,
+        "MainMenuRuler display smoke did not produce enough colored browser pixels", payload.rulerPixels);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-display-main-menu-ruler-canvas.png"),
+        "MainMenuRuler display smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shell-composite-render",
     file: "harness/display_shell_composite_smoke.mjs",
     args: ["artifacts/real-assets/INIZH.big", "artifacts/real-assets/EnglishZH.big"],
@@ -1171,6 +1203,7 @@ console.log(JSON.stringify({
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, and browser WebGL2 pixels",
+    "real MainMenuRuler HandCreated mapped image through TexturesZH.big, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",

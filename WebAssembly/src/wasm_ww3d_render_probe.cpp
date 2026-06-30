@@ -60,6 +60,7 @@
 #include "render2dsentence.h"
 #include "rinfo.h"
 #include "scene.h"
+#include "targa.h"
 #include "texture.h"
 #include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
@@ -327,6 +328,7 @@ std::string g_ww3d_display_drawimage_file_probe_json;
 std::string g_ww3d_display_mapped_image_probe_json;
 std::string g_ww3d_display_mapped_image_clip_probe_json;
 std::string g_ww3d_display_mapped_image_unrotated_probe_json;
+std::string g_ww3d_display_main_menu_ruler_probe_json;
 std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_window_repaint_probe_json;
 std::string g_ww3d_window_layout_repaint_probe_json;
@@ -367,10 +369,18 @@ constexpr const char *kMainMenuLayoutImageRuntimeIniArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/INIZH.big";
 constexpr const char *kMainMenuLayoutImageRuntimeTextureArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/EnglishZH.big";
+constexpr const char *kMainMenuRulerImageName = "MainMenuRuler";
+constexpr const char *kMainMenuRulerTextureName = "MainMenuRuleruserinterface.tga";
+constexpr const char *kMainMenuRulerTextureArchiveEntry =
+	"Art\\Textures\\mainmenuruleruserinterface.tga";
+constexpr const char *kMainMenuRulerSampleIni =
+	"Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI";
 constexpr const char *kMappedImageTextureSource =
 	"Exact mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 constexpr const char *kUnrotatedMappedImageTextureSource =
 	"Exact non-rotated mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+constexpr const char *kMainMenuRulerTextureSource =
+	"Exact MainMenuRuler HandCreated mapped-image INI block via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 
 struct MappedImageDrawProbeSpec
 {
@@ -384,6 +394,8 @@ struct MappedImageDrawProbeSpec
 	bool expected_rotated;
 	Int expected_width;
 	Int expected_height;
+	Int expected_texture_width;
+	Int expected_texture_height;
 	UINT expected_vertex_count;
 	Int draw_left;
 	Int draw_top;
@@ -402,6 +414,8 @@ constexpr MappedImageDrawProbeSpec kMappedImageProbeSpec = {
 	true,
 	160,
 	96,
+	512,
+	512,
 	6,
 	320,
 	252,
@@ -420,11 +434,33 @@ constexpr MappedImageDrawProbeSpec kUnrotatedMappedImageProbeSpec = {
 	false,
 	120,
 	96,
+	512,
+	512,
 	4,
 	340,
 	252,
 	460,
 	348,
+};
+
+constexpr MappedImageDrawProbeSpec kMainMenuRulerMappedImageProbeSpec = {
+	"ww3d_display_main_menu_ruler_probe",
+	kMainMenuRulerImageName,
+	kMainMenuRulerTextureName,
+	kMainMenuRulerTextureArchiveEntry,
+	kMainMenuRulerSampleIni,
+	kMainMenuRulerTextureSource,
+	IMAGE_STATUS_NONE,
+	false,
+	800,
+	600,
+	1024,
+	1024,
+	4,
+	0,
+	0,
+	800,
+	600,
 };
 
 bool succeeded(int result)
@@ -4765,6 +4801,25 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	UINT texture_upload_height = 0;
 	UINT texture_upload_bytes = 0;
 	DWORD texture_upload_checksum = 0;
+	bool texture_factory_file_created = false;
+	bool texture_factory_file_available = false;
+	bool texture_factory_file_opened = false;
+	int texture_factory_file_size = 0;
+	int texture_factory_header_bytes = 0;
+	int texture_factory_header_image_type = 0;
+	int texture_factory_header_width = 0;
+	int texture_factory_header_height = 0;
+	int texture_factory_header_pixel_depth = 0;
+	int texture_factory_header_descriptor = 0;
+	int texture_factory_footer_seek = -1;
+	int texture_factory_footer_bytes = 0;
+	bool texture_factory_footer_tga2 = false;
+	int targa_open_result = -1;
+	int targa_header_image_type = 0;
+	int targa_header_width = 0;
+	int targa_header_height = 0;
+	int targa_header_pixel_depth = 0;
+	int targa_header_descriptor = 0;
 	std::string image_filename;
 	std::string loaded_texture_name;
 
@@ -4871,6 +4926,50 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		}
 	}
 
+	if (texture_file_factory_installed && _TheFileFactory != nullptr && spec.texture_name != nullptr) {
+		FileClass *factory_file = _TheFileFactory->Get_File(spec.texture_name);
+		texture_factory_file_created = factory_file != nullptr;
+		if (factory_file != nullptr) {
+			texture_factory_file_available = factory_file->Is_Available();
+			texture_factory_file_opened = factory_file->Open(FileClass::READ) != 0;
+			if (texture_factory_file_opened) {
+				texture_factory_file_size = factory_file->Size();
+				unsigned char header[18] = {};
+				texture_factory_header_bytes = factory_file->Read(header, sizeof(header));
+				if (texture_factory_header_bytes == static_cast<int>(sizeof(header))) {
+					texture_factory_header_image_type = header[2];
+					texture_factory_header_width =
+						static_cast<int>(header[12]) | (static_cast<int>(header[13]) << 8);
+					texture_factory_header_height =
+						static_cast<int>(header[14]) | (static_cast<int>(header[15]) << 8);
+					texture_factory_header_pixel_depth = header[16];
+					texture_factory_header_descriptor = header[17];
+				}
+				texture_factory_footer_seek = factory_file->Seek(-26, SEEK_END);
+				char footer[26] = {};
+				if (texture_factory_footer_seek >= 0) {
+					texture_factory_footer_bytes = factory_file->Read(footer, sizeof(footer));
+					texture_factory_footer_tga2 =
+						texture_factory_footer_bytes == static_cast<int>(sizeof(footer)) &&
+						std::memcmp(footer + 8, "TRUEVISION-XFILE", 16) == 0;
+				}
+				factory_file->Close();
+			}
+			_TheFileFactory->Return_File(factory_file);
+		}
+
+		Targa targa;
+		targa_open_result = static_cast<int>(targa.Open(spec.texture_name, TGA_READMODE));
+		if (targa_open_result == 0) {
+			targa_header_image_type = targa.Header.ImageType;
+			targa_header_width = targa.Header.Width;
+			targa_header_height = targa.Header.Height;
+			targa_header_pixel_depth = targa.Header.PixelDepth;
+			targa_header_descriptor = targa.Header.ImageDescriptor;
+			targa.Close();
+		}
+	}
+
 	if (asset_manager != nullptr && mapped_image_found && !image_filename.empty()) {
 		TextureClass *preloaded_texture =
 			asset_manager->Get_Texture(image_filename.c_str(), MIP_LEVELS_1);
@@ -4948,6 +5047,12 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		}
 	}
 
+	const WasmD3D8ShimState *upload_state_before_release = wasm_d3d8_get_state();
+	if (upload_state_before_release != nullptr) {
+		texture_upload_bytes = upload_state_before_release->last_browser_texture_bytes;
+		texture_upload_checksum = upload_state_before_release->last_browser_texture_checksum;
+	}
+
 	display_storage.release_probe_renderer();
 
 	if (mapped_image_collection != nullptr) {
@@ -4973,8 +5078,10 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		if (texture_id == 0) {
 			texture_id = state->last_set_texture_id;
 		}
-		texture_upload_bytes = state->last_browser_texture_bytes;
-		texture_upload_checksum = state->last_browser_texture_checksum;
+		if (texture_upload_bytes == 0) {
+			texture_upload_bytes = state->last_browser_texture_bytes;
+			texture_upload_checksum = state->last_browser_texture_checksum;
+		}
 	}
 	const WasmD3D8DrawRenderState *draw_state =
 		state != nullptr ? &state->last_draw_render_state : nullptr;
@@ -5001,8 +5108,8 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		!image_raw_texture &&
 		image_status == spec.expected_status &&
 		image_filename == spec.texture_name &&
-		image_texture_width == 512 &&
-		image_texture_height == 512 &&
+		image_texture_width == spec.expected_texture_width &&
+		image_texture_height == spec.expected_texture_height &&
 		image_width == spec.expected_width &&
 		image_height == spec.expected_height &&
 		texture_preloaded &&
@@ -5018,8 +5125,8 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		succeeded(end_render_result) &&
 		equals_ignore_ascii_case(loaded_texture_name, image_filename) &&
 		texture_id != 0 &&
-		texture_width == 512 &&
-		texture_height == 512 &&
+		texture_width == static_cast<UINT>(spec.expected_texture_width) &&
+		texture_height == static_cast<UINT>(spec.expected_texture_height) &&
 		texture_levels > 0 &&
 		texture_uploaded_levels == texture_levels &&
 		state->create_device_calls >= 1 &&
@@ -5062,7 +5169,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		"ww3d_display_mapped_image_clip_probe" :
 		spec.source_name;
 
-	char buffer[14000];
+	char buffer[17000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -5096,6 +5203,14 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,\"bytes\":%u,"
 		"\"checksum\":%lu},"
 		"\"source\":\"%s\"},"
+		"\"fileFactory\":{\"created\":%s,\"available\":%s,"
+		"\"opened\":%s,\"size\":%d,\"headerBytes\":%d,"
+		"\"imageType\":%d,\"width\":%d,\"height\":%d,"
+		"\"pixelDepth\":%d,\"descriptor\":%d,"
+		"\"footerSeek\":%d,\"footerBytes\":%d,\"footerTga2\":%s},"
+		"\"targa\":{\"openResult\":%d,\"imageType\":%d,"
+		"\"width\":%d,\"height\":%d,\"pixelDepth\":%d,"
+		"\"descriptor\":%d},"
 		"\"runtimeAssets\":%s,"
 		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\",\"rawTexture\":%s,"
 		"\"status\":%u,\"rotated\":%s,\"textureWidth\":%d,\"textureHeight\":%d,"
@@ -5181,6 +5296,25 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		texture_upload_bytes,
 		static_cast<unsigned long>(texture_upload_checksum),
 		texture_source_json.c_str(),
+		bool_json(texture_factory_file_created),
+		bool_json(texture_factory_file_available),
+		bool_json(texture_factory_file_opened),
+		texture_factory_file_size,
+		texture_factory_header_bytes,
+		texture_factory_header_image_type,
+		texture_factory_header_width,
+		texture_factory_header_height,
+		texture_factory_header_pixel_depth,
+		texture_factory_header_descriptor,
+		texture_factory_footer_seek,
+		texture_factory_footer_bytes,
+		bool_json(texture_factory_footer_tga2),
+		targa_open_result,
+		targa_header_image_type,
+		targa_header_width,
+		targa_header_height,
+		targa_header_pixel_depth,
+		targa_header_descriptor,
 		runtime_assets_json.c_str(),
 		image_name_json.c_str(),
 		image_filename_json.c_str(),
@@ -5239,6 +5373,8 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		probe_json = &g_ww3d_display_mapped_image_clip_probe_json;
 	} else if (&spec == &kUnrotatedMappedImageProbeSpec) {
 		probe_json = &g_ww3d_display_mapped_image_unrotated_probe_json;
+	} else if (&spec == &kMainMenuRulerMappedImageProbeSpec) {
+		probe_json = &g_ww3d_display_main_menu_ruler_probe_json;
 	}
 	*probe_json = buffer;
 	return probe_json->c_str();
@@ -5274,6 +5410,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_mapped_image_unrota
 		ini_archive_path,
 		texture_archive_path,
 		kUnrotatedMappedImageProbeSpec,
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_main_menu_ruler(
+	const char *ini_archive_path,
+	const char *texture_archive_path)
+{
+	return cnc_port_probe_ww3d_display_mapped_image_internal(
+		ini_archive_path,
+		texture_archive_path,
+		kMainMenuRulerMappedImageProbeSpec,
 		false);
 }
 
@@ -6950,7 +7097,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	WindowLayout *layout = nullptr;
 	GameWindow *root = nullptr;
 	GameWindow *target = nullptr;
-	const Image *logo_image = nullptr;
+	const Image *target_image = nullptr;
 	const Image *target_enabled_image = nullptr;
 
 	if (succeeded(init_result)) {
@@ -7024,25 +7171,25 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			TheGlobalData = mapped_image_load_global_data;
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
-				logo_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
-				mapped_image_found = logo_image != nullptr;
+				target_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
+				mapped_image_found = target_image != nullptr;
 			}
 			if (mapped_image_found) {
-				image_status = logo_image->getStatus();
+				image_status = target_image->getStatus();
 				mapped_image_rotated = BitTest(image_status, IMAGE_STATUS_ROTATED_90_CLOCKWISE);
 				image_raw_texture = BitTest(image_status, IMAGE_STATUS_RAW_TEXTURE);
 				image_filename =
-					logo_image->getFilename().str() != nullptr ? logo_image->getFilename().str() : "";
-				const ICoord2D *texture_size = logo_image->getTextureSize();
+					target_image->getFilename().str() != nullptr ? target_image->getFilename().str() : "";
+				const ICoord2D *texture_size = target_image->getTextureSize();
 				image_texture_width = texture_size->x;
 				image_texture_height = texture_size->y;
-				const Region2D *image_uv = logo_image->getUV();
+				const Region2D *image_uv = target_image->getUV();
 				image_uv_lo_x = image_uv->lo.x;
 				image_uv_lo_y = image_uv->lo.y;
 				image_uv_hi_x = image_uv->hi.x;
 				image_uv_hi_y = image_uv->hi.y;
-				image_width = logo_image->getImageWidth();
-				image_height = logo_image->getImageHeight();
+				image_width = target_image->getImageWidth();
+				image_height = target_image->getImageHeight();
 			}
 		}
 	}
@@ -7119,7 +7266,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 			target_enabled_image = target->winGetEnabledImage(0);
 			target_image_bound =
 				target_enabled_image != nullptr &&
-				target_enabled_image == logo_image;
+				target_enabled_image == target_image;
 			target_hidden = BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(target, target_x, target_y, target_width, target_height);
 		}
@@ -7341,14 +7488,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 	const std::string image_filename_json = json_escape(image_filename);
 	const std::string loaded_texture_name_json = json_escape(loaded_texture_name);
 	const std::string archive_window_path_json = json_escape(archive_window_path);
-	const std::string logo_mapped_image_entry_json = json_escape(kMainMenuLogoSampleIni);
-	const std::string logo_texture_entry_json = json_escape(kMainMenuLogoTextureArchiveEntry);
-	const std::string logo_image_name_json = json_escape(kMainMenuLogoImageName);
+	const std::string mapped_image_entry_json = json_escape(kMainMenuLogoSampleIni);
+	const std::string texture_entry_json = json_escape(kMainMenuLogoTextureArchiveEntry);
+	const std::string image_name_json = json_escape(kMainMenuLogoImageName);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
 	char buffer[16000];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_main_menu_layout_image_repaint_probe\","
+		"{\"source\":\"%s\","
 		"\"ok\":%s,"
 		"\"originalPaths\":["
 		"\"WindowLayout::load -> GameWindowManager::winCreateFromScript\","
@@ -7433,13 +7580,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		"\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
 		"{\"stage\":1,\"colorOp\":%lu,"
 		"\"texCoordIndex\":%lu}]}}}",
+		"ww3d_main_menu_layout_image_repaint_probe",
 		bool_json(ok),
 		window_archive_json.c_str(),
 		ini_archive_json.c_str(),
 		texture_archive_json.c_str(),
 		archive_window_path_json.c_str(),
-		logo_mapped_image_entry_json.c_str(),
-		logo_texture_entry_json.c_str(),
+		mapped_image_entry_json.c_str(),
+		texture_entry_json.c_str(),
 		init_result,
 		set_device_result,
 		bool_json(asset_manager_created),
@@ -7498,9 +7646,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		target_y,
 		target_width,
 		target_height,
-		logo_image_name_json.c_str(),
+		image_name_json.c_str(),
 		hidden_child_count,
-		logo_image_name_json.c_str(),
+		image_name_json.c_str(),
 		image_filename_json.c_str(),
 		bool_json(image_raw_texture),
 		image_status,
@@ -7515,7 +7663,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 		image_height,
 		texture_id,
 		loaded_texture_name_json.c_str(),
-		logo_texture_entry_json.c_str(),
+		texture_entry_json.c_str(),
 		texture_width,
 		texture_height,
 		texture_levels,
