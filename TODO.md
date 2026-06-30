@@ -482,9 +482,10 @@ shares structure and follows behind.
       `test:vertical-integrations` now gates runtime archive preload/startup
       asset consumption, range-backed startup archive delivery, WindowZH-backed
       MainMenu-to-CreditsMenu layout callbacks, mapped-image W3DDisplay
+      rendering, composed W3DDisplay scene + real shell UI art + GameText
       rendering, and shipped W3D mesh rendering together so cross-subsystem
-      regressions are visible while the next feature slice moves outside shell
-      menus or into another independently owned vertical. The
+      regressions are visible while the next rendering slice replaces focused
+      shell display shims with a real W3DDisplay-backed window repaint path. The
       focused `w3d-window-layout-script-smoke` now also sends a real
       `ButtonSinglePlayer` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through original
       `GameWindowManager::winSendInputMsg` and `GadgetPushButton`, then proves
@@ -645,9 +646,19 @@ shares structure and follows behind.
       assets through the normal file/archive system, but final startup
       still needs display-owned WW3D file-factory lifetime and the open
       range-backed archive streaming path above.
-- [ ] 2D blits / `Image`/`DisplayString` text rendering.
+- [ ] Integrate browser-verified 2D blits / `Image` / `DisplayString` text
+      rendering into the real GUI/window repaint path. Current coverage proves
+      the individual and composed browser draw paths; the remaining work is
+      replacing focused `SmokeDisplay` shell-layout smokes with real
+      `W3DDisplay` pixels from `GameWindowManager::winRepaint`.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
+      Current coverage: `test:ww3d-display-shell-composite` layers a focused
+      `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,
+      and `GameText`-backed `W3DDisplayString` text in one browser screenshot.
+      Full `WindowLayout` / `GameWindowManager::winRepaint` shell rendering with
+      `TheDisplay` set to real `W3DDisplay` instead of `SmokeDisplay` remains
+      the next rendering vertical.
 - [ ] Add a vtable-safe original `W3DDisplay::setWidth` / `setHeight`
       or `setDisplayMode()` proof. Raw storage is not enough because the
       original setters call virtual `getWidth()` / `getHeight()`;
@@ -1211,9 +1222,10 @@ shares structure and follows behind.
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
       frontier. The live endpoint now carries LANAPI game-start into
       `OnGameStart` and original network setup across two browser contexts.
-      Next networking slice: route `Network::update` frame commands over the
-      live shared WebSocket/WebRTC endpoint and extend coverage from
-      single-context frame readiness to a two-client match-sync harness.
+      Deferred next networking slice: route `Network::update` frame commands
+      over the live shared WebSocket/WebRTC endpoint and extend coverage from
+      single-context frame readiness to a two-client match-sync harness after
+      the rendering/input/gameplay verticals are further along.
       The current WebSocket binary vertical now proves the production encrypted
       `Transport::queueSend` / `Transport::doSend` and
       `Transport::doRecv` path over browser binary frames through the wasm UDP

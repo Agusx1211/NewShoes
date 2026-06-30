@@ -872,6 +872,33 @@ const steps = [
     },
   },
   {
+    name: "shell-composite-render",
+    file: "harness/display_shell_composite_smoke.mjs",
+    args: ["artifacts/real-assets/INIZH.big", "artifacts/real-assets/EnglishZH.big"],
+    validate(payload) {
+      expect(payload.ok === true, "shell composite render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-display-shell-composite",
+        "shell composite render smoke emitted the wrong path", payload);
+      expect(payload.reader === "browser Range subset BIG loaded by runtime-owned Win32BIGFileSystem",
+        "shell composite render smoke did not use range-backed BIG assets", payload);
+      expect(payload.originalPaths?.includes("W3DDisplay::m_3DScene -> WW3D::Render"),
+        "shell composite render smoke did not include the W3DDisplay scene path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("ImageCollection::load -> W3DDisplay::drawImage"),
+        "shell composite render smoke did not include the mapped-image draw path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("GameText::fetch -> W3DDisplayString::draw"),
+        "shell composite render smoke did not include the GameText draw path", payload.originalPaths);
+      expect(payload.checks?.sceneOk === true
+          && payload.checks?.mappedOk === true
+          && payload.checks?.textOk === true,
+        "shell composite render smoke did not pass all composed rendering checks", payload.checks);
+      expect(payload.mappedImage?.image?.name === "WatermarkChina"
+          && payload.gameText?.label === "GUI:Command&ConquerGenerals",
+        "shell composite render smoke did not draw the expected shell UI art/text", payload);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-display-shell-composite-canvas.png"),
+        "shell composite render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],
@@ -970,15 +997,17 @@ console.log(JSON.stringify({
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
+    "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
+    "advance real W3DDisplay-backed WindowLayout/GameWindowManager repaint so shell layouts produce browser pixels instead of SmokeDisplay counters",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
+    "deferred networking-last item: extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
   ],
   steps: results.map((result) => result.name),
 }));

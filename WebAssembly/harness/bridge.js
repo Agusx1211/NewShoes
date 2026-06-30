@@ -14936,6 +14936,133 @@ async function rpc(command, payload = {}) {
           state: snapshotState(),
         };
       }
+    case "ww3dDisplayShellComposite":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D shell composite cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "/assets/runtime-shell-composite/INIZH.big");
+        const englishArchivePath = String(payload.englishArchivePath ?? "/assets/runtime-shell-composite/EnglishZH.big");
+        const cloneState = (value) => value == null ? null : JSON.parse(JSON.stringify(value));
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const sceneProbe = parseModuleState(wasmModule.probeWW3DDisplayScene());
+        const sceneBrowserProbe = cloneState(harnessState.graphics.lastD3D8DrawIndexed ?? null);
+        const sceneCenterPixel = sampleVirtualCanvasPixel(400, 300);
+
+        const mappedProbe = parseModuleState(wasmModule.probeWW3DDisplayMappedImage(
+          iniArchivePath,
+          englishArchivePath,
+        ));
+        const mappedBrowserProbe = cloneState(harnessState.graphics.lastD3D8DrawIndexed ?? null);
+        const mappedRect = mappedProbe?.draw?.screenRect ?? {};
+        const mappedCenter = {
+          x: Math.floor(((mappedRect.left ?? 300) + (mappedRect.right ?? 500)) / 2),
+          y: Math.floor(((mappedRect.top ?? 220) + (mappedRect.bottom ?? 380)) / 2),
+        };
+        const mappedCenterPixel = sampleVirtualCanvasPixel(mappedCenter.x, mappedCenter.y);
+
+        const gameTextProbe = parseModuleState(wasmModule.probeWW3DDisplayGameText(englishArchivePath));
+        const textBrowserProbe = cloneState(harnessState.graphics.lastD3D8DrawIndexed ?? null);
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const virtualDrawRect = gameTextProbe?.drawRegion ?? {};
+        const scaleX = screenshot.width / 800;
+        const scaleY = screenshot.height / 600;
+        const textRect = {
+          left: (virtualDrawRect.left ?? 0) * scaleX,
+          top: (virtualDrawRect.top ?? 0) * scaleY,
+          right: (virtualDrawRect.right ?? 0) * scaleX,
+          bottom: (virtualDrawRect.bottom ?? 0) * scaleY,
+        };
+        const textRegion = sampleCanvasRegion(textRect, 8);
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const sceneOk = Boolean(sceneProbe?.ok)
+          && sceneProbe?.source === "ww3d_display_scene_probe"
+          && sceneProbe?.display?.path === "W3DDisplay::m_3DScene"
+          && sceneProbe?.scene?.type === "RTS3DScene"
+          && sceneBrowserProbe?.source === "browser_d3d8_draw_indexed"
+          && sceneBrowserProbe?.ok === true
+          && sceneBrowserProbe?.usedTransforms === true
+          && pixelHasColor(sceneCenterPixel);
+        const mappedOk = Boolean(mappedProbe?.ok)
+          && mappedProbe?.source === "ww3d_display_mapped_image_probe"
+          && mappedProbe?.image?.name === "WatermarkChina"
+          && mappedProbe?.results?.mappedCollectionLoaded === true
+          && mappedProbe?.results?.drawImageCalled === true
+          && mappedBrowserProbe?.source === "browser_d3d8_draw_indexed"
+          && mappedBrowserProbe?.texture0?.sampled === true
+          && pixelHasColor(mappedCenterPixel, 8);
+        const textOk = Boolean(gameTextProbe?.ok)
+          && gameTextProbe?.source === "ww3d_display_game_text_probe"
+          && gameTextProbe?.gameText?.label === "GUI:Command&ConquerGenerals"
+          && gameTextProbe?.results?.drawCalled === true
+          && textBrowserProbe?.source === "browser_d3d8_draw_indexed"
+          && textBrowserProbe?.texture0?.sampled === true
+          && (textRegion.coloredPixelCount ?? 0) > 16
+          && (textRegion.maxComponent ?? 0) > 32;
+        const ok = sceneOk
+          && mappedOk
+          && textOk
+          && pixelHasColor(screenshot.centerPixel, 8)
+          && textureDelta.creates >= 2
+          && textureDelta.updates >= 2
+          && textureDelta.binds >= 2;
+        return {
+          ok,
+          command,
+          source: "ww3d_display_shell_composite",
+          browserTransport: "Playwright WebGL2 screenshot",
+          originalPaths: [
+            "W3DDisplay::m_3DScene -> WW3D::Render",
+            "ImageCollection::load -> W3DDisplay::drawImage",
+            "GameText::fetch -> W3DDisplayString::draw",
+          ],
+          archives: {
+            ini: iniArchivePath,
+            english: englishArchivePath,
+          },
+          checks: {
+            sceneOk,
+            mappedOk,
+            textOk,
+          },
+          scene: {
+            probe: sceneProbe,
+            browserProbe: sceneBrowserProbe,
+            centerPixel: sceneCenterPixel,
+          },
+          mappedImage: {
+            probe: mappedProbe,
+            browserProbe: mappedBrowserProbe,
+            center: mappedCenter,
+            centerPixel: mappedCenterPixel,
+          },
+          gameText: {
+            probe: gameTextProbe,
+            browserProbe: textBrowserProbe,
+            textRegion,
+          },
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
     case "ww3dDisplayDrawImage":
       {
         const wasmModule = await wasmModulePromise;

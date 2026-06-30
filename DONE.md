@@ -3359,6 +3359,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       transform capture, colored pixels, and
       `harness-smoke-ww3d-display-scene-canvas.png`. Full
       `W3DDisplay::init()` / shell-map rendering remains open.
+- [x] Add a composed browser rendering vertical that layers existing original
+      shell-facing paths in one screenshot: `test:ww3d-display-shell-composite`
+      range-fetches the needed `INIZH.big` mapped-image INI entries,
+      `EnglishZH.big` `SCShellUserInterface512_001.tga`, and
+      `Generals.csf`, then calls the browser `ww3dDisplayShellComposite` RPC.
+      The RPC renders `W3DDisplay::m_3DScene -> WW3D::Render`, real
+      `ImageCollection::load -> W3DDisplay::drawImage` shell UI art
+      (`WatermarkChina`), and `GameText::fetch -> W3DDisplayString::draw` text
+      without clearing between probes, and verifies scene, mapped-image, text,
+      texture-upload, and center-pixel checks through
+      `harness-smoke-ww3d-display-shell-composite-canvas.png`. This is a
+      rendering vertical toward shell/menu composition; full
+      `WindowLayout` / `GameWindowManager::winRepaint` shell rendering with
+      real `W3DDisplay` remains open.
 ---
 
 ## M5 — Input & UI
