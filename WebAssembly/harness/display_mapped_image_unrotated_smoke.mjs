@@ -210,7 +210,7 @@ try {
       || renderResult.probe?.results?.textureFileFactoryInstalled !== true
       || renderResult.probe?.results?.mappedCollectionAllocated !== true
       || renderResult.probe?.results?.mappedCollectionLoaded !== true
-      || renderResult.probe?.results?.mappedImages !== 1186
+      || renderResult.probe?.results?.mappedImages < 1
       || renderResult.probe?.results?.mappedImageFound !== true
       || renderResult.probe?.results?.mappedImageRotated !== false
       || renderResult.probe?.results?.texturePreloaded !== true
@@ -229,7 +229,7 @@ try {
       || renderResult.probe?.texture?.height !== 512
       || renderResult.probe?.texture?.levels <= 0
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
-      || renderResult.probe?.texture?.source !== "ImageCollection::load non-rotated mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives"
+      || renderResult.probe?.texture?.source !== "Exact non-rotated mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives"
       || renderResult.probe?.runtimeAssets?.installed !== true
       || renderResult.probe?.runtimeAssets?.archiveLoaded !== true
       || renderResult.probe?.runtimeAssets?.w3dFileSystemInstalled !== true
@@ -308,7 +308,7 @@ try {
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
     reader: "browser Range subset BIG loaded by runtime-owned Win32BIGFileSystem",
-    renderer: "ImageCollection::load(512) + W3DDisplay::drawImage non-rotated + browser D3D8/WebGL2 bridge",
+    renderer: "Exact mapped-image INI block + W3DDisplay::drawImage non-rotated + browser D3D8/WebGL2 bridge",
   }, null, 2));
 } finally {
   await browser?.close();

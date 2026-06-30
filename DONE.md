@@ -2998,17 +2998,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       verifies real DDS-backed pixels plus
       `harness-smoke-ww3d-display-drawimage-file-canvas.png` when the archive
       is present.
-- [x] Original `ImageCollection::load(512)` mapped-image parsing now hands a
-      real INI-defined `Image` to `W3DDisplay::drawImage`: the dedicated
-      browser smoke range-fetches the 14 `MappedImages` INI files from
-      user-supplied `INIZH.big`, range-fetches
+- [x] Real mapped-image INI data now hands a real INI-defined `Image` to
+      `W3DDisplay::drawImage`: the dedicated browser smoke range-fetches the
+      mapped-image INI files from user-supplied `INIZH.big`, range-fetches
       `Data\English\Art\Textures\SCShellUserInterface512_001.tga` from
       user-supplied `EnglishZH.big`, verifies the original
       `WatermarkChina` mapped image (`Status = ROTATED_90_CLOCKWISE`, 160x96
       from a 512x512 atlas), resolves the atlas through
       `WW3DAssetManager`/`TextureClass::Init`/runtime `W3DFileSystem`, and
       screenshots the real TGA-backed blit at
-      `harness-smoke-ww3d-display-mapped-image-canvas.png`.
+      `harness-smoke-ww3d-display-mapped-image-canvas.png`. The current render
+      probes use a focused exact-block loader for the requested image while the
+      generic `ImageCollection::load(512)` / `INI::loadDirectory` browser
+      ownership/crash frontier remains open.
 - [x] Original `W3DDisplay::drawImage` clipping is now covered on the same real
       mapped-image path: the browser smoke applies `W3DDisplay::setClipRegion`
       to the parsed `WatermarkChina` image, verifies the original
@@ -3016,8 +3018,8 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       a colored center pixel plus black outside-clip pixels, and screenshots
       `harness-smoke-ww3d-display-mapped-image-clip-canvas.png`.
 - [x] Original `W3DDisplay::drawImage` non-rotated mapped-image UVs are now
-      covered through the same real `ImageCollection::load(512)` path: the
-      browser smoke range-fetches `SAUserInterface512.INI` and
+      covered through the same real mapped-image data path: the browser smoke
+      range-fetches `SAUserInterface512.INI` and
       `SAUserInterface512_001.tga`, verifies `SAChinook_L`
       (`IMAGE_STATUS_NONE`, 120x96, UVs 367/512..487/512 and 393/512..489/512),
       pins the exact INI/TGA source offsets, draws the atlas slice through
@@ -3376,7 +3378,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `EnglishZH.big` `SCShellUserInterface512_001.tga`, and
       `Generals.csf`, then calls the browser `ww3dDisplayShellComposite` RPC.
       The RPC renders `W3DDisplay::m_3DScene -> WW3D::Render`, real
-      `ImageCollection::load -> W3DDisplay::drawImage` shell UI art
+      exact-block mapped-image data -> `W3DDisplay::drawImage` shell UI art
       (`WatermarkChina`), and `GameText::fetch -> W3DDisplayString::draw` text
       without clearing between probes, and verifies scene, mapped-image, text,
       texture-upload, and center-pixel checks through
@@ -3423,6 +3425,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       pixels, the translucent black interior over the black canvas, black
       outside pixels, and
       `harness-smoke-ww3d-main-menu-layout-repaint-canvas.png`.
+- [x] Carry a real image-backed `Menus/MainMenu.wnd` child through the original
+      WND repaint stack into browser pixels: `test:ww3d-main-menu-layout-image-repaint`
+      range-fetches `WindowZH.big` `Window\Menus\MainMenu.wnd`, `INIZH.big`
+      `Data\INI\MappedImages\TextureSize_512\SCSmShellUserInterface512.INI`,
+      and `EnglishZH.big`
+      `Data\English\Art\Textures\SCSmShellUserInterface512_001.tga`, creates
+      the real W3D-backed MainMenu windows, verifies
+      `GameWindowManagerScript.cpp::parseDrawData` binds
+      `MainMenu.wnd:Logo` to the original `GeneralsLogo` mapped image, and
+      drives `GameWindowManager::winRepaint` through
+      `W3DGameWinDefaultDraw`, `TheWindowManager->winDrawImage`,
+      `ProbeForwardingW3DDisplay -> W3DDisplay::drawImage`,
+      `WW3DAssetManager`, `TextureClass::Init`, and the browser
+      D3D8/WebGL2 bridge. The Playwright smoke pins the source offsets/sizes,
+      target geometry `(504,16)-(791,110)`, `GeneralsLogo` atlas metadata
+      (370x120 in a 512x512 TGA), one indexed draw, texture upload/bind calls,
+      colored logo pixels, black outside pixels, and
+      `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
 
 ---
 

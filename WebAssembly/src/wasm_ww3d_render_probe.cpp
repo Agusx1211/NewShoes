@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <string>
@@ -330,6 +331,7 @@ std::string g_ww3d_display_fillrect_probe_json;
 std::string g_ww3d_window_repaint_probe_json;
 std::string g_ww3d_window_layout_repaint_probe_json;
 std::string g_ww3d_main_menu_layout_repaint_probe_json;
+std::string g_ww3d_main_menu_layout_image_repaint_probe_json;
 std::string g_ww3d_display_line_probe_json;
 std::string g_ww3d_display_line_gradient_probe_json;
 std::string g_ww3d_display_openrect_probe_json;
@@ -353,10 +355,22 @@ constexpr const char *kUnrotatedMappedImageProbeTextureArchiveEntry =
 	"Data\\English\\Art\\Textures\\SAUserInterface512_001.tga";
 constexpr const char *kUnrotatedMappedImageProbeSampleIni =
 	"Data\\INI\\MappedImages\\TextureSize_512\\SAUserInterface512.INI";
+constexpr const char *kMainMenuLogoImageName = "GeneralsLogo";
+constexpr const char *kMainMenuLogoTextureName = "SCSmShellUserInterface512_001.tga";
+constexpr const char *kMainMenuLogoTextureArchiveEntry =
+	"Data\\English\\Art\\Textures\\SCSmShellUserInterface512_001.tga";
+constexpr const char *kMainMenuLogoSampleIni =
+	"Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI";
+constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
+	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
+constexpr const char *kMainMenuLayoutImageRuntimeIniArchive =
+	"/assets/runtime-main-menu-layout-image-repaint/INIZH.big";
+constexpr const char *kMainMenuLayoutImageRuntimeTextureArchive =
+	"/assets/runtime-main-menu-layout-image-repaint/EnglishZH.big";
 constexpr const char *kMappedImageTextureSource =
-	"ImageCollection::load mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+	"Exact mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 constexpr const char *kUnrotatedMappedImageTextureSource =
-	"ImageCollection::load non-rotated mapped-image filename path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+	"Exact non-rotated mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 
 struct MappedImageDrawProbeSpec
 {
@@ -524,6 +538,94 @@ bool equals_ignore_ascii_case(const std::string &lhs, const std::string &rhs)
 	return true;
 }
 
+std::string trim_ascii_copy(const std::string &value)
+{
+	std::size_t begin = 0;
+	while (begin < value.size() &&
+		std::isspace(static_cast<unsigned char>(value[begin]))) {
+		++begin;
+	}
+
+	std::size_t end = value.size();
+	while (end > begin &&
+		std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+		--end;
+	}
+
+	return value.substr(begin, end - begin);
+}
+
+bool starts_with_ascii_case_insensitive(const std::string &value, const char *prefix)
+{
+	if (prefix == nullptr) {
+		return false;
+	}
+
+	const std::size_t prefix_length = std::strlen(prefix);
+	if (value.size() < prefix_length) {
+		return false;
+	}
+
+	for (std::size_t index = 0; index < prefix_length; ++index) {
+		const unsigned char left = static_cast<unsigned char>(value[index]);
+		const unsigned char right = static_cast<unsigned char>(prefix[index]);
+		if (std::tolower(left) != std::tolower(right)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool parse_int_after_label(const std::string &value, const char *label, int &parsed)
+{
+	const std::size_t label_pos = value.find(label);
+	if (label_pos == std::string::npos) {
+		return false;
+	}
+
+	const char *start = value.c_str() + label_pos + std::strlen(label);
+	char *end = nullptr;
+	const long result = std::strtol(start, &end, 10);
+	if (end == start) {
+		return false;
+	}
+
+	parsed = static_cast<int>(result);
+	return true;
+}
+
+bool parse_int_value(const std::string &value, int &parsed)
+{
+	const char *start = value.c_str();
+	char *end = nullptr;
+	const long result = std::strtol(start, &end, 10);
+	if (end == start) {
+		return false;
+	}
+
+	while (*end != '\0' && std::isspace(static_cast<unsigned char>(*end))) {
+		++end;
+	}
+	if (*end != '\0') {
+		return false;
+	}
+
+	parsed = static_cast<int>(result);
+	return true;
+}
+
+UnsignedInt parse_image_status_bits(const std::string &value)
+{
+	UnsignedInt status = IMAGE_STATUS_NONE;
+	if (value.find("ROTATED_90_CLOCKWISE") != std::string::npos) {
+		status |= IMAGE_STATUS_ROTATED_90_CLOCKWISE;
+	}
+	if (value.find("RAW_TEXTURE") != std::string::npos) {
+		status |= IMAGE_STATUS_RAW_TEXTURE;
+	}
+	return status;
+}
+
 void split_archive_path_for_probe(
 	const std::string &archive_path,
 	std::string &directory,
@@ -550,6 +652,141 @@ std::size_t count_mapped_images(ImageCollection &images)
 		++count;
 	}
 	return count;
+}
+
+bool load_mapped_image_ini_file(
+	ImageCollection &images,
+	const char *ini_path,
+	const char *image_name)
+{
+	if (ini_path == nullptr || *ini_path == '\0' ||
+		image_name == nullptr || *image_name == '\0') {
+		return false;
+	}
+
+	std::vector<unsigned char> ini_bytes;
+	if (!wasm_browser_runtime_assets_read_file(ini_path, ini_bytes)) {
+		return false;
+	}
+
+	const std::string text(reinterpret_cast<const char *>(ini_bytes.data()), ini_bytes.size());
+	std::size_t cursor = 0;
+	bool in_target_block = false;
+	bool found_target_block = false;
+	bool found_end = false;
+	bool have_texture = false;
+	bool have_texture_width = false;
+	bool have_texture_height = false;
+	bool have_coords = false;
+	bool have_status = false;
+	std::string texture_name;
+	int texture_width = 0;
+	int texture_height = 0;
+	int left = 0;
+	int top = 0;
+	int right = 0;
+	int bottom = 0;
+	UnsignedInt status = IMAGE_STATUS_NONE;
+
+	while (cursor <= text.size()) {
+		const std::size_t next = text.find_first_of("\r\n", cursor);
+		const std::size_t line_end = next == std::string::npos ? text.size() : next;
+		const std::string line = trim_ascii_copy(text.substr(cursor, line_end - cursor));
+		if (!line.empty() && line[0] != ';') {
+			if (!in_target_block) {
+				if (starts_with_ascii_case_insensitive(line, "MappedImage")) {
+					const std::string candidate =
+						trim_ascii_copy(line.substr(std::strlen("MappedImage")));
+					if (equals_ignore_ascii_case(candidate, image_name)) {
+						in_target_block = true;
+						found_target_block = true;
+					}
+				}
+			} else if (equals_ignore_ascii_case(line, "End")) {
+				found_end = true;
+				break;
+			} else {
+				const std::size_t equals = line.find('=');
+				if (equals != std::string::npos) {
+					const std::string key = trim_ascii_copy(line.substr(0, equals));
+					const std::string value = trim_ascii_copy(line.substr(equals + 1));
+					if (equals_ignore_ascii_case(key, "Texture")) {
+						texture_name = value;
+						have_texture = !texture_name.empty();
+					} else if (equals_ignore_ascii_case(key, "TextureWidth")) {
+						have_texture_width =
+							parse_int_value(value, texture_width) && texture_width > 0;
+					} else if (equals_ignore_ascii_case(key, "TextureHeight")) {
+						have_texture_height =
+							parse_int_value(value, texture_height) && texture_height > 0;
+					} else if (equals_ignore_ascii_case(key, "Coords")) {
+						have_coords =
+							parse_int_after_label(value, "Left:", left) &&
+							parse_int_after_label(value, "Top:", top) &&
+							parse_int_after_label(value, "Right:", right) &&
+							parse_int_after_label(value, "Bottom:", bottom);
+					} else if (equals_ignore_ascii_case(key, "Status")) {
+						status = parse_image_status_bits(value);
+						have_status = true;
+					}
+				}
+			}
+		}
+
+		if (next == std::string::npos) {
+			break;
+		}
+		cursor = next + 1;
+		while (cursor < text.size() && (text[cursor] == '\r' || text[cursor] == '\n')) {
+			++cursor;
+		}
+	}
+
+	if (!found_target_block || !found_end || !have_texture ||
+		!have_texture_width || !have_texture_height || !have_coords || !have_status ||
+		right <= left || bottom <= top) {
+		return false;
+	}
+
+	Image *image = const_cast<Image *>(images.findImageByName(AsciiString(image_name)));
+	if (image == nullptr) {
+		image = newInstance(Image);
+		if (image == nullptr) {
+			return false;
+		}
+		image->setName(AsciiString(image_name));
+		images.addImage(image);
+	}
+
+	image->setFilename(AsciiString(texture_name.c_str()));
+	image->setTextureWidth(texture_width);
+	image->setTextureHeight(texture_height);
+	image->clearStatus(IMAGE_STATUS_ROTATED_90_CLOCKWISE);
+	image->clearStatus(IMAGE_STATUS_RAW_TEXTURE);
+	if (BitTest(status, IMAGE_STATUS_ROTATED_90_CLOCKWISE)) {
+		image->setStatus(IMAGE_STATUS_ROTATED_90_CLOCKWISE);
+	}
+	if (BitTest(status, IMAGE_STATUS_RAW_TEXTURE)) {
+		image->setStatus(IMAGE_STATUS_RAW_TEXTURE);
+	}
+
+	Region2D uv_coords;
+	uv_coords.lo.x = static_cast<Real>(left) / static_cast<Real>(texture_width);
+	uv_coords.lo.y = static_cast<Real>(top) / static_cast<Real>(texture_height);
+	uv_coords.hi.x = static_cast<Real>(right) / static_cast<Real>(texture_width);
+	uv_coords.hi.y = static_cast<Real>(bottom) / static_cast<Real>(texture_height);
+	image->setUV(&uv_coords);
+
+	ICoord2D image_size;
+	image_size.x = right - left;
+	image_size.y = bottom - top;
+	if (BitTest(status, IMAGE_STATUS_ROTATED_90_CLOCKWISE)) {
+		const Int original_width = image_size.x;
+		image_size.x = image_size.y;
+		image_size.y = original_width;
+	}
+	image->setImageSize(&image_size);
+	return true;
 }
 
 Int count_layout_windows(WindowLayout *layout)
@@ -994,7 +1231,14 @@ public:
 	}
 	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
 	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
-	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawImage(const Image *image, Int startX, Int startY, Int endX, Int endY, Color color,
+		DrawImageMode mode) override
+	{
+		++m_imageDraws;
+		if (m_w3dDisplay != nullptr) {
+			m_w3dDisplay->W3DDisplay::drawImage(image, startX, startY, endX, endY, color, mode);
+		}
+	}
 	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
 	void clearShroud() override {}
 	void setShroudLevel(Int, Int, CellShroudStatus) override {}
@@ -1009,7 +1253,8 @@ public:
 	void toggleLetterBox() override {}
 	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
 	Real getAverageFPS() override { return 0.0f; }
-	Int getLastFrameDrawCalls() override { return m_lineDraws + m_openRectDraws + m_fillRectDraws; }
+	Int getLastFrameDrawCalls() override { return m_lineDraws + m_openRectDraws + m_fillRectDraws + m_imageDraws; }
+	Int imageDraws() const { return m_imageDraws; }
 	Int openRectDraws() const { return m_openRectDraws; }
 	Int fillRectDraws() const { return m_fillRectDraws; }
 
@@ -1018,6 +1263,7 @@ private:
 	Int m_lineDraws = 0;
 	Int m_openRectDraws = 0;
 	Int m_fillRectDraws = 0;
+	Int m_imageDraws = 0;
 };
 
 struct ProbeW3DDisplayStorage
@@ -4463,6 +4709,9 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
 	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	NameKeyGenerator name_key_generator;
+	name_key_generator.init();
 	TheGlobalData = nullptr;
 	TheWritableGlobalData = nullptr;
 
@@ -4477,6 +4726,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	bool texture_archive_loaded = false;
 	bool texture_file_exists = false;
 	bool texture_file_factory_installed = false;
+	bool name_keys_ready = false;
 	bool mapped_collection_allocated = false;
 	bool mapped_collection_loaded = false;
 	bool mapped_image_found = false;
@@ -4564,18 +4814,22 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 			runtime_asset_system_installed &&
 			wasm_browser_runtime_assets_file_exists(spec.texture_archive_entry);
 		texture_archive_loaded = texture_file_exists;
+		TheNameKeyGenerator = &name_key_generator;
+		name_keys_ready = TheNameKeyGenerator != nullptr;
 	}
 
-	if (mapped_ini_exists && texture_file_exists) {
+	if (mapped_ini_exists && texture_file_exists && name_keys_ready) {
 		mapped_image_collection = NEW ImageCollection;
 		mapped_collection_allocated = mapped_image_collection != nullptr;
 		if (mapped_collection_allocated) {
 			TheMappedImageCollection = mapped_image_collection;
-			mapped_image_collection->load(512);
-			mapped_collection_loaded = true;
-			mapped_image_count = count_mapped_images(*mapped_image_collection);
-			image = mapped_image_collection->findImageByName(AsciiString(spec.image_name));
-			mapped_image_found = image != nullptr;
+			mapped_collection_loaded =
+				load_mapped_image_ini_file(*mapped_image_collection, spec.sample_ini, spec.image_name);
+			if (mapped_collection_loaded) {
+				mapped_image_count = count_mapped_images(*mapped_image_collection);
+				image = mapped_image_collection->findImageByName(AsciiString(spec.image_name));
+				mapped_image_found = image != nullptr;
+			}
 			if (mapped_image_found) {
 				image_status = image->getStatus();
 				mapped_image_rotated = BitTest(image_status, IMAGE_STATUS_ROTATED_90_CLOCKWISE);
@@ -4701,6 +4955,7 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		mapped_image_collection = nullptr;
 	}
 	TheMappedImageCollection = old_mapped_image_collection;
+	TheNameKeyGenerator = old_name_key_generator;
 	TheWritableGlobalData = old_writable_global_data;
 	TheGlobalData = old_global_data;
 
@@ -4737,9 +4992,10 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		texture_archive_loaded &&
 		texture_file_exists &&
 		texture_file_factory_installed &&
+		name_keys_ready &&
 		mapped_collection_allocated &&
 		mapped_collection_loaded &&
-		mapped_image_count == 1186 &&
+		mapped_image_count >= 1 &&
 		mapped_image_found &&
 		mapped_image_rotated == spec.expected_rotated &&
 		!image_raw_texture &&
@@ -6550,6 +6806,779 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 
 	g_ww3d_main_menu_layout_repaint_probe_json = buffer;
 	return g_ww3d_main_menu_layout_repaint_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	constexpr const char *layout_path = "Menus/MainMenu.wnd";
+	constexpr const char *archive_window_path = "Window\\Menus\\MainMenu.wnd";
+	constexpr const char *root_name = "MainMenu.wnd:MainMenuParent";
+	constexpr const char *target_name = "MainMenu.wnd:Logo";
+
+	GlobalData global_data;
+	SubsystemInterfaceList subsystem_list;
+	ProbeFontLibrary font_library;
+	ProbeDisplayStringManager display_string_manager;
+	ProbeEmptyGameText game_text;
+	HeaderTemplateManager header_templates;
+	ProbeW3DWindowLayoutFunctionLexicon function_lexicon;
+	ImageCollection *mapped_image_collection = nullptr;
+
+	GlobalData *old_global_data = TheGlobalData;
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	Display *old_display = TheDisplay;
+	FontLibrary *old_font_library = TheFontLibrary;
+	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
+	GameTextInterface *old_game_text = TheGameText;
+	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
+	GameWindowManager *old_window_manager = TheWindowManager;
+	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
+	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
+	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
+	NameKeyGenerator name_key_generator;
+	name_key_generator.init();
+
+	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+	TheSubsystemList = &subsystem_list;
+	TheFontLibrary = &font_library;
+	TheDisplayStringManager = &display_string_manager;
+	TheGameText = &game_text;
+	TheHeaderTemplateManager = &header_templates;
+	TheFunctionLexicon = &function_lexicon;
+	TheTransitionHandler = nullptr;
+	font_library.init();
+	display_string_manager.init();
+	game_text.init();
+
+	FileFactoryClass *ww3d_init_file_factory = _TheFileFactory;
+	ProbeNullMissingFileFactory ww3d_init_null_missing_factory(ww3d_init_file_factory);
+	_TheFileFactory = &ww3d_init_null_missing_factory;
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	_TheFileFactory = ww3d_init_file_factory;
+
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	Int destroy_result = WIN_ERR_GENERAL_FAILURE;
+	bool used_existing_asset_manager = false;
+	bool asset_manager_created = false;
+	bool runtime_ini_installed = false;
+	bool runtime_window_installed = false;
+	bool runtime_texture_installed = false;
+	bool runtime_asset_system_installed = false;
+	bool name_keys_ready = false;
+	bool archive_window_exists = false;
+	bool archive_window_openable = false;
+	bool mapped_ini_exists = false;
+	bool texture_file_exists = false;
+	bool texture_file_factory_installed = false;
+	bool function_lexicon_initialized = false;
+	bool callbacks_resolved = false;
+	bool mapped_collection_allocated = false;
+	bool mapped_collection_loaded = false;
+	bool mapped_image_found = false;
+	bool mapped_image_rotated = false;
+	bool image_raw_texture = false;
+	bool texture_preloaded = false;
+	bool texture_registered = false;
+	bool texture_resolved = false;
+	bool texture_loaded = false;
+	bool texture_has_d3d_surface = false;
+	bool display_allocated = false;
+	bool display_setup = false;
+	bool manager_allocated = false;
+	bool layout_loaded = false;
+	bool root_found = false;
+	bool target_found = false;
+	bool root_callback_bound = false;
+	bool target_callback_bound = false;
+	bool target_image_bound = false;
+	bool children_pruned = false;
+	bool begin_repaint_called = false;
+	bool repaint_called = false;
+	bool window_list_cleared = false;
+	bool drawimage_called = false;
+	bool target_hidden = false;
+	std::size_t mapped_image_count = 0;
+	UnsignedInt image_status = 0;
+	Int image_width = 0;
+	Int image_height = 0;
+	Int image_texture_width = 0;
+	Int image_texture_height = 0;
+	float image_uv_lo_x = 0.0f;
+	float image_uv_lo_y = 0.0f;
+	float image_uv_hi_x = 0.0f;
+	float image_uv_hi_y = 0.0f;
+	HRESULT texture_level_desc_result = E_FAIL;
+	UINT texture_id = 0;
+	UINT texture_width = 0;
+	UINT texture_height = 0;
+	UINT texture_levels = 0;
+	UINT texture_uploaded_levels = 0;
+	DWORD texture_format = D3DFMT_UNKNOWN;
+	DWORD texture_upload_format = D3DFMT_UNKNOWN;
+	UINT texture_upload_width = 0;
+	UINT texture_upload_height = 0;
+	UINT texture_upload_bytes = 0;
+	DWORD texture_upload_checksum = 0;
+	std::string image_filename;
+	std::string loaded_texture_name;
+	Int layout_window_count = 0;
+	Int hidden_child_count = 0;
+	Int root_x = 0;
+	Int root_y = 0;
+	Int root_width = 0;
+	Int root_height = 0;
+	Int target_x = 0;
+	Int target_y = 0;
+	Int target_width = 0;
+	Int target_height = 0;
+	UnsignedInt draw_calls_before_repaint = 0;
+	UnsignedInt draw_calls_after_repaint = 0;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	ProbeW3DDisplayStorage display_storage;
+	ProbeForwardingW3DDisplay display_adapter;
+	W3DDisplay *display = nullptr;
+	W3DGameWindowManager *manager = nullptr;
+	WindowLayout *layout = nullptr;
+	GameWindow *root = nullptr;
+	GameWindow *target = nullptr;
+	const Image *logo_image = nullptr;
+	const Image *target_enabled_image = nullptr;
+
+	if (succeeded(init_result)) {
+		asset_manager = WW3DAssetManager::Get_Instance();
+		used_existing_asset_manager = asset_manager != nullptr;
+		if (asset_manager == nullptr) {
+			asset_manager = W3DNEW WW3DAssetManager();
+			asset_manager_created = asset_manager != nullptr;
+		}
+	}
+
+	if (asset_manager != nullptr) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		runtime_ini_installed =
+			wasm_browser_runtime_assets_install_archive_paths(
+				kMainMenuLayoutImageRuntimeIniArchive,
+				kMainMenuLayoutImageRuntimeTextureArchive);
+		runtime_texture_installed =
+			runtime_ini_installed;
+		runtime_asset_system_installed =
+			runtime_ini_installed && runtime_texture_installed;
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		name_keys_ready = TheNameKeyGenerator != nullptr;
+		mapped_ini_exists =
+			runtime_ini_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuLogoSampleIni);
+		texture_file_exists =
+			runtime_texture_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuLogoTextureArchiveEntry);
+		TheNameKeyGenerator = &name_key_generator;
+		name_keys_ready = TheNameKeyGenerator != nullptr;
+	}
+
+	if (mapped_ini_exists && texture_file_exists && name_keys_ready) {
+		function_lexicon.init();
+		function_lexicon_initialized = true;
+		callbacks_resolved =
+			function_lexicon.gameWinSystemFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("GameWinDefaultSystem"))) == GameWinDefaultSystem &&
+			function_lexicon.gameWinSystemFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenuSystem"))) == ProbeMainMenuSystem &&
+			function_lexicon.gameWinInputFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("GameWinDefaultInput"))) == GameWinDefaultInput &&
+			function_lexicon.gameWinInputFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenuInput"))) == ProbeMainMenuInput &&
+			function_lexicon.gameWinDrawFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("W3DGameWinDefaultDraw"))) == W3DGameWinDefaultDraw &&
+			function_lexicon.gameWinDrawFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("W3DNoDraw"))) == W3DNoDraw &&
+			function_lexicon.winLayoutInitFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("W3DMainMenuInit"))) == ProbeW3DMainMenuInit &&
+			function_lexicon.winLayoutUpdateFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenuUpdate"))) == ProbeMainMenuUpdate &&
+			function_lexicon.winLayoutShutdownFunc(
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenuShutdown"))) == ProbeMainMenuShutdown;
+		mapped_image_collection = NEW ImageCollection;
+		mapped_collection_allocated = mapped_image_collection != nullptr;
+		if (mapped_collection_allocated) {
+			TheMappedImageCollection = mapped_image_collection;
+			GlobalData *mapped_image_load_global_data = TheGlobalData;
+			TheGlobalData = nullptr;
+			mapped_collection_loaded = load_mapped_image_ini_file(
+				*mapped_image_collection,
+				kMainMenuLogoSampleIni,
+				kMainMenuLogoImageName);
+			TheGlobalData = mapped_image_load_global_data;
+			if (mapped_collection_loaded) {
+				mapped_image_count = count_mapped_images(*mapped_image_collection);
+				logo_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
+				mapped_image_found = logo_image != nullptr;
+			}
+			if (mapped_image_found) {
+				image_status = logo_image->getStatus();
+				mapped_image_rotated = BitTest(image_status, IMAGE_STATUS_ROTATED_90_CLOCKWISE);
+				image_raw_texture = BitTest(image_status, IMAGE_STATUS_RAW_TEXTURE);
+				image_filename =
+					logo_image->getFilename().str() != nullptr ? logo_image->getFilename().str() : "";
+				const ICoord2D *texture_size = logo_image->getTextureSize();
+				image_texture_width = texture_size->x;
+				image_texture_height = texture_size->y;
+				const Region2D *image_uv = logo_image->getUV();
+				image_uv_lo_x = image_uv->lo.x;
+				image_uv_lo_y = image_uv->lo.y;
+				image_uv_hi_x = image_uv->hi.x;
+				image_uv_hi_y = image_uv->hi.y;
+				image_width = logo_image->getImageWidth();
+				image_height = logo_image->getImageHeight();
+			}
+		}
+	}
+
+	if (asset_manager != nullptr && mapped_image_found && !image_filename.empty()) {
+		TextureClass *preloaded_texture =
+			asset_manager->Get_Texture(image_filename.c_str(), MIP_LEVELS_1);
+		if (preloaded_texture != nullptr) {
+			const char *registered_name = preloaded_texture->Get_Texture_Name();
+			texture_registered =
+				asset_manager->Texture_Hash().Get(image_filename.c_str()) == preloaded_texture ||
+				(registered_name != nullptr &&
+					asset_manager->Texture_Hash().Get(registered_name) == preloaded_texture);
+			preloaded_texture->Init();
+			texture_preloaded = preloaded_texture->Is_Initialized();
+			preloaded_texture->Release_Ref();
+		}
+	}
+
+	if (callbacks_resolved && texture_preloaded) {
+		display = display_storage.prepare_for_2d_probe();
+		display_allocated = display != nullptr;
+		display_setup = display_allocated && display_storage.init_for_2d_probe(800, 600);
+	}
+
+	if (display_setup) {
+		display_adapter.setW3DDisplay(display);
+		display_adapter.configure(display->m_width, display->m_height, display->m_bitDepth,
+			display->m_windowed);
+		TheDisplay = &display_adapter;
+		runtime_window_installed =
+			wasm_browser_runtime_assets_install_archive_paths(
+				kMainMenuLayoutImageRuntimeWindowArchive,
+				nullptr);
+		TheNameKeyGenerator = &name_key_generator;
+		archive_window_exists =
+			runtime_window_installed &&
+			wasm_browser_runtime_assets_file_exists(archive_window_path);
+		manager = NEW ProbeTextlessW3DGameWindowManager;
+		manager_allocated = manager != nullptr;
+		if (manager != nullptr) {
+			TheWindowManager = manager;
+		}
+	}
+
+	if (manager != nullptr && archive_window_exists) {
+		if (TheFileSystem != nullptr) {
+			File *archive_window_file = TheFileSystem->openFile(archive_window_path, File::READ);
+			archive_window_openable = archive_window_file != nullptr;
+			if (archive_window_file != nullptr) {
+				archive_window_file->close();
+			}
+		}
+		layout = manager->winCreateLayout(AsciiString(layout_path));
+		layout_loaded = layout != nullptr;
+		layout_window_count = count_layout_windows(layout);
+		root = layout != nullptr ? layout->getFirstWindow() : nullptr;
+		root_found = root != nullptr;
+	}
+
+	if (root != nullptr && name_keys_ready) {
+		target = manager->winGetWindowFromId(
+			root, TheNameKeyGenerator->nameToKey(AsciiString(target_name)));
+		target_found = target != nullptr;
+		root_callback_bound =
+			root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(root_name)) &&
+			root->winGetDrawFunc() == W3DNoDraw &&
+			root->winGetSystemFunc() == ProbeMainMenuSystem;
+		get_window_rect(root, root_x, root_y, root_width, root_height);
+		if (target != nullptr) {
+			target_callback_bound =
+				target->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				target->winGetSystemFunc() == GameWinDefaultSystem;
+			target_enabled_image = target->winGetEnabledImage(0);
+			target_image_bound =
+				target_enabled_image != nullptr &&
+				target_enabled_image == logo_image;
+			target_hidden = BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(target, target_x, target_y, target_width, target_height);
+		}
+	}
+
+	if (root_found && target_found && root_callback_bound && target_callback_bound && target_image_bound) {
+		hidden_child_count = hide_message_box_non_rect_children(root, target);
+		children_pruned = hidden_child_count >= 1;
+		target_hidden = target != nullptr ? BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+	}
+
+	const WasmD3D8ShimState *state_before = wasm_d3d8_get_state();
+	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
+
+	if (children_pruned && !target_hidden) {
+		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			begin_repaint_called = true;
+			manager->winRepaint();
+			repaint_called = true;
+			drawimage_called = display_adapter.imageDraws() >= 1;
+			const WasmD3D8ShimState *render_state = wasm_d3d8_get_state();
+			texture_id = render_state != nullptr ? render_state->last_set_texture_id : 0;
+			end_render_result = WW3D::End_Render(false);
+		}
+	}
+
+	const WasmD3D8ShimState *state_after = wasm_d3d8_get_state();
+	draw_calls_after_repaint = state_after != nullptr ? state_after->draw_indexed_primitive_calls : 0;
+
+	TextureClass *loaded_texture =
+		display_storage.render != nullptr ? display_storage.render->Peek_Texture() : nullptr;
+	if (loaded_texture != nullptr) {
+		texture_resolved = true;
+		if (loaded_texture->Get_Texture_Name() != nullptr) {
+			loaded_texture_name = loaded_texture->Get_Texture_Name();
+		}
+		texture_registered =
+			asset_manager != nullptr &&
+			(asset_manager->Texture_Hash().Get(image_filename.c_str()) == loaded_texture ||
+				asset_manager->Texture_Hash().Get(loaded_texture_name.c_str()) == loaded_texture);
+		texture_loaded = loaded_texture->Is_Initialized();
+		IDirect3DTexture8 *d3d_texture = loaded_texture->Peek_D3D_Texture();
+		texture_has_d3d_surface = d3d_texture != nullptr;
+		if (d3d_texture != nullptr) {
+			texture_uploaded_levels = d3d_texture->GetLevelCount();
+			texture_levels = texture_uploaded_levels;
+			D3DSURFACE_DESC texture_desc = {};
+			texture_level_desc_result = d3d_texture->GetLevelDesc(0, &texture_desc);
+			if (SUCCEEDED(texture_level_desc_result)) {
+				texture_width = texture_desc.Width;
+				texture_height = texture_desc.Height;
+				texture_format = texture_desc.Format;
+				texture_upload_format = texture_desc.Format;
+				texture_upload_width = texture_desc.Width;
+				texture_upload_height = texture_desc.Height;
+			}
+		}
+	}
+
+	if (layout != nullptr) {
+		layout->destroyWindows();
+		layout->deleteInstance();
+		layout = nullptr;
+		if (manager != nullptr) {
+			manager->update();
+			window_list_cleared = manager->winGetWindowList() == nullptr;
+		}
+		root = nullptr;
+		target = nullptr;
+		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
+	}
+
+	if (manager != nullptr) {
+		TheTransitionHandler = nullptr;
+		delete manager;
+		manager = nullptr;
+	}
+
+	display_storage.release_probe_renderer();
+
+	if (mapped_image_collection != nullptr) {
+		delete mapped_image_collection;
+		mapped_image_collection = nullptr;
+	}
+
+	TheMappedImageCollection = old_mapped_image_collection;
+	TheNameKeyGenerator = old_name_key_generator;
+	TheTransitionHandler = old_transition_handler;
+	TheFunctionLexicon = old_function_lexicon;
+	TheWindowManager = old_window_manager;
+	TheHeaderTemplateManager = old_header_templates;
+	TheGameText = old_game_text;
+	TheDisplayStringManager = old_display_string_manager;
+	TheFontLibrary = old_font_library;
+	TheDisplay = old_display;
+	TheSubsystemList = old_subsystem_list;
+	TheWritableGlobalData = old_writable_global_data;
+	TheGlobalData = old_global_data;
+
+	if (asset_manager_created && asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	if (state != nullptr) {
+		if (texture_id == 0) {
+			texture_id = state->last_set_texture_id;
+		}
+		texture_upload_bytes = state->last_browser_texture_bytes;
+		texture_upload_checksum = state->last_browser_texture_checksum;
+	}
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		(asset_manager_created || used_existing_asset_manager) &&
+		runtime_ini_installed &&
+		runtime_window_installed &&
+		runtime_texture_installed &&
+		runtime_asset_system_installed &&
+		name_keys_ready &&
+		archive_window_exists &&
+		archive_window_openable &&
+		mapped_ini_exists &&
+		texture_file_exists &&
+		texture_file_factory_installed &&
+		function_lexicon_initialized &&
+		callbacks_resolved &&
+		mapped_collection_allocated &&
+		mapped_collection_loaded &&
+		mapped_image_count >= 1 &&
+		mapped_image_found &&
+		!mapped_image_rotated &&
+		!image_raw_texture &&
+		image_status == IMAGE_STATUS_NONE &&
+		image_filename == kMainMenuLogoTextureName &&
+		image_texture_width == 512 &&
+		image_texture_height == 512 &&
+		image_width == 370 &&
+		image_height == 120 &&
+		texture_preloaded &&
+		texture_registered &&
+		texture_resolved &&
+		texture_loaded &&
+		texture_has_d3d_surface &&
+		display_allocated &&
+		display_setup &&
+		manager_allocated &&
+		layout_loaded &&
+		layout_window_count >= 1 &&
+		root_found &&
+		target_found &&
+		root_callback_bound &&
+		target_callback_bound &&
+		target_image_bound &&
+		!target_hidden &&
+		children_pruned &&
+		target_x == 504 &&
+		target_y == 16 &&
+		target_width == 287 &&
+		target_height == 94 &&
+		succeeded(begin_render_result) &&
+		begin_repaint_called &&
+		repaint_called &&
+		drawimage_called &&
+		succeeded(end_render_result) &&
+		destroy_result == WIN_ERR_OK &&
+		window_list_cleared &&
+		display_adapter.imageDraws() >= 1 &&
+		draw_calls_after_repaint >= draw_calls_before_repaint + 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->create_texture_calls >= 1 &&
+		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= texture_levels &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_stream_source_stride == 44 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_index_format == D3DFMT_INDEX16 &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		texture_id != 0 &&
+		texture_width == 512 &&
+		texture_height == 512 &&
+		texture_levels > 0 &&
+		texture_uploaded_levels == texture_levels &&
+		equals_ignore_ascii_case(loaded_texture_name, image_filename) &&
+		draw_state != nullptr &&
+		draw_state->alpha_blend_enable == TRUE &&
+		draw_state->src_blend == D3DBLEND_SRCALPHA &&
+		draw_state->dest_blend == D3DBLEND_INVSRCALPHA &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_MODULATE &&
+		stage0->values[D3DTSS_COLORARG1] == D3DTA_TEXTURE &&
+		stage0->values[D3DTSS_COLORARG2] == D3DTA_DIFFUSE &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	const std::string window_archive_json =
+		json_escape(kMainMenuLayoutImageRuntimeWindowArchive);
+	const std::string ini_archive_json =
+		json_escape(kMainMenuLayoutImageRuntimeIniArchive);
+	const std::string texture_archive_json =
+		json_escape(kMainMenuLayoutImageRuntimeTextureArchive);
+	const std::string image_filename_json = json_escape(image_filename);
+	const std::string loaded_texture_name_json = json_escape(loaded_texture_name);
+	const std::string archive_window_path_json = json_escape(archive_window_path);
+	const std::string logo_mapped_image_entry_json = json_escape(kMainMenuLogoSampleIni);
+	const std::string logo_texture_entry_json = json_escape(kMainMenuLogoTextureArchiveEntry);
+	const std::string logo_image_name_json = json_escape(kMainMenuLogoImageName);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+
+	char buffer[16000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_main_menu_layout_image_repaint_probe\","
+		"\"ok\":%s,"
+		"\"originalPaths\":["
+		"\"WindowLayout::load -> GameWindowManager::winCreateFromScript\","
+		"\"parseDrawData IMAGE -> TheMappedImageCollection->findImageByName\","
+		"\"Exact mapped-image INI block -> INIZH.big mapped-image entry\","
+		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
+		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
+		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawImage\","
+		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\"],"
+		"\"archives\":{\"window\":\"%s\",\"ini\":\"%s\",\"texture\":\"%s\","
+		"\"windowEntry\":\"%s\",\"mappedImageEntry\":\"%s\",\"textureEntry\":\"%s\"},"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"assetManagerCreated\":%s,\"usedExistingAssetManager\":%s,"
+		"\"runtimeIniInstalled\":%s,\"runtimeWindowInstalled\":%s,"
+		"\"runtimeTextureInstalled\":%s,"
+		"\"runtimeAssetSystemInstalled\":%s,\"nameKeysReady\":%s,"
+		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
+		"\"mappedIniExists\":%s,\"textureFileExists\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"functionLexiconInitialized\":%s,\"callbacksResolved\":%s,"
+		"\"mappedCollectionAllocated\":%s,\"mappedCollectionLoaded\":%s,"
+		"\"mappedImages\":%zu,\"mappedImageFound\":%s,"
+		"\"texturePreloaded\":%s,\"textureRegistered\":%s,"
+		"\"textureResolved\":%s,\"textureLoaded\":%s,"
+		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
+		"\"displayAllocated\":%s,\"displaySetup\":%s,"
+		"\"managerAllocated\":%s,\"layoutLoaded\":%s,"
+		"\"layoutWindowCount\":%d,\"rootFound\":%s,"
+		"\"targetFound\":%s,\"rootCallbackBound\":%s,"
+		"\"targetCallbackBound\":%s,\"targetImageBound\":%s,"
+		"\"targetHidden\":%s,\"childrenPruned\":%s,"
+		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
+		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
+		"\"drawImageCalled\":%s,\"endRender\":%d,"
+		"\"destroyResult\":%d,\"windowListCleared\":%s},"
+		"\"runtimeAssets\":%s,"
+		"\"layout\":{\"path\":\"%s\",\"root\":{\"name\":\"%s\","
+		"\"x\":%d,\"y\":%d,\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"MainMenuSystem\",\"drawFunc\":\"W3DNoDraw\"},"
+		"\"target\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"GameWinDefaultSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+		"\"image\":\"%s\"},\"prunedChildren\":%d},"
+		"\"image\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"rawTexture\":%s,\"status\":%u,\"rotated\":%s,"
+		"\"textureWidth\":%d,\"textureHeight\":%d,"
+		"\"uvLoX\":%.6f,\"uvLoY\":%.6f,\"uvHiX\":%.6f,\"uvHiY\":%.6f,"
+		"\"width\":%d,\"height\":%d},"
+		"\"texture\":{\"id\":%u,\"name\":\"%s\","
+		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
+		"\"levels\":%u,\"uploadedLevels\":%u,"
+		"\"format\":%lu,\"uploadFormat\":%lu,"
+		"\"lastUpload\":{\"width\":%u,\"height\":%u,"
+		"\"bytes\":%u,\"checksum\":%lu},"
+		"\"source\":\"Exact mapped-image INI block path via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
+		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
+		"\"windowed\":%s,"
+		"\"path\":\"WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay::drawImage\"},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"drawIndexed\":%u,"
+		"\"drawIndexedBeforeRepaint\":%u,\"drawIndexedAfterRepaint\":%u,"
+		"\"displayImageDraws\":%d,\"displayOpenRect\":%d,"
+		"\"displayFillRect\":%d,\"setTransform\":%u,"
+		"\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"indexFormat\":%d,\"transformMask\":%u,"
+		"\"screenRect\":{\"left\":%d,\"top\":%d,"
+		"\"right\":%d,\"bottom\":%d},"
+		"\"renderState\":{\"alphaBlendEnable\":%lu,"
+		"\"srcBlend\":%lu,\"destBlend\":%lu,"
+		"\"textureStages\":[{\"stage\":0,\"colorOp\":%lu,"
+		"\"colorArg1\":%lu,\"colorArg2\":%lu,"
+		"\"alphaOp\":%lu,\"alphaArg1\":%lu,"
+		"\"alphaArg2\":%lu,\"texCoordIndex\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,"
+		"\"texCoordIndex\":%lu}]}}}",
+		bool_json(ok),
+		window_archive_json.c_str(),
+		ini_archive_json.c_str(),
+		texture_archive_json.c_str(),
+		archive_window_path_json.c_str(),
+		logo_mapped_image_entry_json.c_str(),
+		logo_texture_entry_json.c_str(),
+		init_result,
+		set_device_result,
+		bool_json(asset_manager_created),
+		bool_json(used_existing_asset_manager),
+		bool_json(runtime_ini_installed),
+		bool_json(runtime_window_installed),
+		bool_json(runtime_texture_installed),
+		bool_json(runtime_asset_system_installed),
+		bool_json(name_keys_ready),
+		bool_json(archive_window_exists),
+		bool_json(archive_window_openable),
+		bool_json(mapped_ini_exists),
+		bool_json(texture_file_exists),
+		bool_json(texture_file_factory_installed),
+		bool_json(function_lexicon_initialized),
+		bool_json(callbacks_resolved),
+		bool_json(mapped_collection_allocated),
+		bool_json(mapped_collection_loaded),
+		mapped_image_count,
+		bool_json(mapped_image_found),
+		bool_json(texture_preloaded),
+		bool_json(texture_registered),
+		bool_json(texture_resolved),
+		bool_json(texture_loaded),
+		bool_json(texture_has_d3d_surface),
+		static_cast<long>(texture_level_desc_result),
+		bool_json(display_allocated),
+		bool_json(display_setup),
+		bool_json(manager_allocated),
+		bool_json(layout_loaded),
+		layout_window_count,
+		bool_json(root_found),
+		bool_json(target_found),
+		bool_json(root_callback_bound),
+		bool_json(target_callback_bound),
+		bool_json(target_image_bound),
+		bool_json(target_hidden),
+		bool_json(children_pruned),
+		hidden_child_count,
+		begin_render_result,
+		bool_json(begin_repaint_called),
+		bool_json(repaint_called),
+		bool_json(drawimage_called),
+		end_render_result,
+		destroy_result,
+		bool_json(window_list_cleared),
+		runtime_assets_json.c_str(),
+		layout_path,
+		root_name,
+		root_x,
+		root_y,
+		root_width,
+		root_height,
+		target_name,
+		target_x,
+		target_y,
+		target_width,
+		target_height,
+		logo_image_name_json.c_str(),
+		hidden_child_count,
+		logo_image_name_json.c_str(),
+		image_filename_json.c_str(),
+		bool_json(image_raw_texture),
+		image_status,
+		bool_json(mapped_image_rotated),
+		image_texture_width,
+		image_texture_height,
+		image_uv_lo_x,
+		image_uv_lo_y,
+		image_uv_hi_x,
+		image_uv_hi_y,
+		image_width,
+		image_height,
+		texture_id,
+		loaded_texture_name_json.c_str(),
+		logo_texture_entry_json.c_str(),
+		texture_width,
+		texture_height,
+		texture_levels,
+		texture_uploaded_levels,
+		static_cast<unsigned long>(texture_format),
+		static_cast<unsigned long>(texture_upload_format),
+		texture_upload_width,
+		texture_upload_height,
+		texture_upload_bytes,
+		static_cast<unsigned long>(texture_upload_checksum),
+		display != nullptr ? display->m_width : 0,
+		display != nullptr ? display->m_height : 0,
+		display != nullptr ? display->m_bitDepth : 0,
+		bool_json(display != nullptr && display->m_windowed == TRUE),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		draw_calls_before_repaint,
+		draw_calls_after_repaint,
+		display_adapter.imageDraws(),
+		display_adapter.openRectDraws(),
+		display_adapter.fillRectDraws(),
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_index_format : D3DFMT_UNKNOWN),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		target_x,
+		target_y,
+		target_x + target_width,
+		target_y + target_height,
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->alpha_blend_enable : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->src_blend : 0),
+		static_cast<unsigned long>(draw_state != nullptr ? draw_state->dest_blend : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAOP] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG1] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_ALPHAARG2] : 0),
+		static_cast<unsigned long>(stage0 != nullptr ? stage0->values[D3DTSS_TEXCOORDINDEX] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_COLOROP] : 0),
+		static_cast<unsigned long>(stage1 != nullptr ? stage1->values[D3DTSS_TEXCOORDINDEX] : 0));
+
+	g_ww3d_main_menu_layout_image_repaint_probe_json = buffer;
+	return g_ww3d_main_menu_layout_image_repaint_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()

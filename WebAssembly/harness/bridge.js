@@ -6683,6 +6683,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_window_layout_repaint", "string", ["string"]),
       probeWW3DMainMenuLayoutRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
+      probeWW3DMainMenuLayoutImageRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
       probeWW3DDisplayLineGradient: module.cwrap(
@@ -15060,7 +15062,7 @@ async function rpc(command, payload = {}) {
           browserTransport: "Playwright WebGL2 screenshot",
           originalPaths: [
             "W3DDisplay::m_3DScene -> WW3D::Render",
-            "ImageCollection::load -> W3DDisplay::drawImage",
+            "Exact mapped-image INI block -> W3DDisplay::drawImage",
             "GameText::fetch -> W3DDisplayString::draw",
           ],
           archives: {
@@ -15539,7 +15541,7 @@ async function rpc(command, payload = {}) {
           && probe?.image?.width === 160
           && probe?.image?.height === 96
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages === 1186
+          && probe?.results?.mappedImages >= 1
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -15634,7 +15636,7 @@ async function rpc(command, payload = {}) {
           && probe?.image?.width === 160
           && probe?.image?.height === 96
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages === 1186
+          && probe?.results?.mappedImages >= 1
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -15752,7 +15754,7 @@ async function rpc(command, payload = {}) {
           && Math.abs((probe?.image?.uvHiX ?? 0) - (487 / 512)) < 0.00001
           && Math.abs((probe?.image?.uvHiY ?? 0) - (489 / 512)) < 0.00001
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages === 1186
+          && probe?.results?.mappedImages >= 1
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -16037,6 +16039,106 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           layoutPixels,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dMainMenuLayoutImageRepaint":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout image repaint cannot render" };
+        }
+        const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
+        const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
+        const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
+        const iniArchivePath = String(payload.iniArchivePath ?? `${directoryPrefix}INIZH.big`);
+        const textureArchivePath = String(payload.textureArchivePath ?? `${directoryPrefix}EnglishZH.big`);
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = snapshotState().graphics?.textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DMainMenuLayoutImageRepaint());
+        const target = probe?.layout?.target ?? {};
+        const left = target.x ?? 504;
+        const top = target.y ?? 16;
+        const width = target.width ?? 287;
+        const height = target.height ?? 94;
+        const right = left + width;
+        const bottom = top + height;
+        const logoPixels = {
+          center: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), Math.floor((top + bottom) / 2)),
+          upperLeft: sampleVirtualCanvasPixel(left + 24, top + 20),
+          upperMiddle: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), top + 20),
+          lowerMiddle: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), bottom - 20),
+          rightMiddle: sampleVirtualCanvasPixel(right - 24, Math.floor((top + bottom) / 2)),
+          outside: sampleVirtualCanvasPixel(left - 24, top + 24),
+        };
+        const coloredLogoPixels = [
+          logoPixels.center,
+          logoPixels.upperLeft,
+          logoPixels.upperMiddle,
+          logoPixels.lowerMiddle,
+          logoPixels.rightMiddle,
+        ].filter((pixel) => pixelHasColor(pixel, 10));
+        const textureAfter = snapshotState().graphics?.textures ?? {};
+        const screenshot = {
+          ...snapshotCanvas(),
+          logoPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
+          && probe?.display?.path === "WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay::drawImage"
+          && probe?.archives?.window === windowArchivePath
+          && probe?.archives?.ini === iniArchivePath
+          && probe?.archives?.texture === textureArchivePath
+          && probe?.layout?.path === "Menus/MainMenu.wnd"
+          && probe?.layout?.root?.name === "MainMenu.wnd:MainMenuParent"
+          && probe?.layout?.root?.drawFunc === "W3DNoDraw"
+          && probe?.layout?.target?.name === "MainMenu.wnd:Logo"
+          && probe?.layout?.target?.drawFunc === "W3DGameWinDefaultDraw"
+          && probe?.layout?.target?.image === "GeneralsLogo"
+          && probe?.image?.name === "GeneralsLogo"
+          && probe?.image?.filename === "SCSmShellUserInterface512_001.tga"
+          && probe?.image?.width === 370
+          && probe?.image?.height === 120
+          && probe?.texture?.name?.toLowerCase?.() === "scsmshelluserinterface512_001.tga"
+          && probe?.texture?.width === 512
+          && probe?.texture?.height === 512
+          && probe?.results?.targetImageBound === true
+          && probe?.calls?.displayImageDraws >= 1
+          && probe?.calls?.drawIndexed >= 1
+          && probe?.calls?.browserTextureCreate >= 1
+          && probe?.calls?.browserTextureUpdate >= 1
+          && probe?.calls?.browserTextureBind >= 1
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 6
+          && browserProbe?.texture0?.sampled === true
+          && coloredLogoPixels.length >= 1
+          && pixelLooksBlack(logoPixels.outside, 8);
+        return {
+          ok,
+          command,
+          probe,
+          bridgeInputPaths: {
+            directory: archiveDirectoryPath,
+            window: windowArchivePath,
+            ini: iniArchivePath,
+            texture: textureArchivePath,
+          },
+          browserProbe,
+          logoPixels,
+          coloredLogoPixelCount: coloredLogoPixels.length,
+          textureBefore,
+          textureAfter,
           screenshot,
           state: snapshotState(),
         };

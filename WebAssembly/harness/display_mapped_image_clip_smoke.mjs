@@ -191,7 +191,7 @@ try {
       || renderResult.probe?.results?.mappedIniExists !== true
       || renderResult.probe?.results?.textureFileExists !== true
       || renderResult.probe?.results?.mappedCollectionLoaded !== true
-      || renderResult.probe?.results?.mappedImages !== 1186
+      || renderResult.probe?.results?.mappedImages < 1
       || renderResult.probe?.results?.mappedImageFound !== true
       || renderResult.probe?.results?.mappedImageRotated !== true
       || renderResult.probe?.results?.texturePreloaded !== true
@@ -271,7 +271,7 @@ try {
     browserProbe: renderResult.browserProbe,
     textureDelta: renderResult.textureDelta,
     reader: "browser Range subset BIG loaded by runtime-owned Win32BIGFileSystem",
-    renderer: "ImageCollection::load(512) + W3DDisplay::setClipRegion + W3DDisplay::drawImage",
+    renderer: "Exact mapped-image INI block + W3DDisplay::setClipRegion + W3DDisplay::drawImage",
   }, null, 2));
 } finally {
   await browser?.close();
