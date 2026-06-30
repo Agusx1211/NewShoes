@@ -990,6 +990,40 @@ const steps = [
     },
   },
   {
+    name: "terrain-tile-archive-scene-render",
+    file: "harness/terrain_tile_archive_scene_smoke.mjs",
+    args: ["artifacts/real-assets/TerrainZH.big"],
+    validate(payload) {
+      expect(payload.ok === true, "terrain tile archive scene render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-tile-archive-scene",
+        "terrain tile archive scene render smoke emitted the wrong path", payload);
+      expect(payload.archive?.entry === "Art\\Terrain\\PTBlossom01.tga"
+          && payload.archive?.countedTiles >= 1
+          && payload.archive?.tileChecksum > 0,
+        "terrain tile archive scene render smoke did not consume the expected real TerrainZH tile", payload.archive);
+      expect(payload.scene?.renderPath?.includes("RTS3DScene::Customized_Render")
+          && payload.scene?.created === true
+          && payload.scene?.objectAdded === true
+          && payload.scene?.terrainClassId === 4,
+        "terrain tile archive scene render smoke did not use the RTS3DScene terrain-object path", payload.scene);
+      expect(payload.terrain?.tileSource === "archive-tga"
+          && payload.terrain?.verticesPerSide === 17
+          && payload.terrain?.cellsPerSide === 16,
+        "terrain tile archive scene render smoke did not report the expected original terrain tile geometry", payload.terrain);
+      expect(payload.calls?.browserTextureCreate >= 1
+          && payload.calls?.browserTextureUpdate >= 1
+          && payload.calls?.drawIndexed >= 1,
+        "terrain tile archive scene render smoke did not reach texture upload and indexed draw", payload.calls);
+      expect(payload.draw?.vertexShaderFvf === 578
+          && payload.draw?.vertexStride === 32,
+        "terrain tile archive scene render smoke did not use the expected W3D terrain FVF draw", payload.draw);
+      expect((payload.centerPixel ?? []).some((component, index) => index < 3 && component > 8),
+        "terrain tile archive scene render smoke did not produce colored browser pixels", payload.centerPixel);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-tile-archive-scene-canvas.png"),
+        "terrain tile archive scene render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],
@@ -1092,6 +1126,7 @@ console.log(JSON.stringify({
     "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
+    "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],

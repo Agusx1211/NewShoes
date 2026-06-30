@@ -3351,6 +3351,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DTerrainBackground` stage-1 texture bind/sample, indexed terrain FVF
       draw submission, and browser WebGL2 colored pixels alongside the shell UI
       and shipped mesh rendering verticals.
+- [x] Carry the same real archive-backed terrain tile through the original RTS
+      scene terrain-object dispatch: `test:ww3d-terrain-tile-archive-scene`
+      mounts `TerrainZH.big`, decodes `Art\Terrain\PTBlossom01.tga` through
+      `WorldHeightMap::readTiles`, registers a `CLASSID_TILEMAP` render object
+      with `RTS3DScene`, and verifies `WW3D::Render(scene, camera)` enters
+      `RTS3DScene::Customized_Render`, reaches `W3DTerrainBackground`, samples
+      the stage-1 terrain texture, and produces browser WebGL2 pixels in
+      `harness-smoke-ww3d-terrain-tile-archive-scene-canvas.png`.
 - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
       ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
       `AABoxRenderObjClass` to a scene, renders through

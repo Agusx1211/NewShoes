@@ -674,8 +674,9 @@ shares structure and follows behind.
       `WorldHeightMap::countTiles` / `readTiles`, and verifies the original
       `W3DTerrainBackground` stage-1 texture bind/sample reaches WebGL pixels.
       `test:vertical-integrations` now gates that real archive-backed tile
-      render beside the other rendering verticals. The remaining vertical is
-      real map/height data into
+      render beside the other rendering verticals; it also gates the same real
+      tile data through `RTS3DScene::Customized_Render` `CLASSID_TILEMAP`
+      dispatch. The remaining vertical is real map/height data into
       `BaseHeightMapRenderObjClass` / `HeightMapRenderObjClass`,
       `W3DTerrainVisual`, `W3DScene::Customized_Render`, and
       `DX8Wrapper::Draw_Triangles`; keep the first harness proof to real

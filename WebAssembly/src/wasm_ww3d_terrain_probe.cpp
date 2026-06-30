@@ -46,6 +46,7 @@ namespace {
 
 std::string g_ww3d_terrain_tile_probe_json;
 std::string g_ww3d_terrain_tile_archive_probe_json;
+std::string g_ww3d_terrain_tile_archive_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -347,6 +348,27 @@ public:
 		return nullptr;
 	}
 
+	int Class_ID() const override
+	{
+		return RenderObjClass::CLASSID_TILEMAP;
+	}
+
+	void Notify_Added(SceneClass *scene) override
+	{
+		RenderObjClass::Notify_Added(scene);
+		if (scene != nullptr) {
+			scene->Register(this, SceneClass::ON_FRAME_UPDATE);
+		}
+	}
+
+	void Notify_Removed(SceneClass *scene) override
+	{
+		if (scene != nullptr) {
+			scene->Unregister(this, SceneClass::ON_FRAME_UPDATE);
+		}
+		RenderObjClass::Notify_Removed(scene);
+	}
+
 	void Render(RenderInfoClass &rinfo) override
 	{
 		Matrix3D terrain_transform(true);
@@ -413,7 +435,8 @@ void __attribute__((weak)) RTS3DScene::destroyLightsIterator(RefRenderObjListIte
 const char *run_ww3d_terrain_tile_probe(
 	std::string &target_json,
 	const char *source_name,
-	ProbeTerrainArchiveTileLoad *archive_tile_load)
+	ProbeTerrainArchiveTileLoad *archive_tile_load,
+	bool render_via_scene = false)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -432,6 +455,8 @@ const char *run_ww3d_terrain_tile_probe(
 	bool tile_created = false;
 	bool owner_created = false;
 	bool render_object_created = false;
+	bool scene_created = false;
+	bool scene_object_added = false;
 
 	ProbeWorldHeightMapBuffers map_buffers;
 	ProbeWorldHeightMap *map = nullptr;
@@ -439,6 +464,7 @@ const char *run_ww3d_terrain_tile_probe(
 	ProbeTerrainDiffuseOwner *diffuse_owner = nullptr;
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
 	ProbeTerrainTileRenderObj *render_object = nullptr;
+	RTS3DScene *scene = nullptr;
 	CameraClass *camera = nullptr;
 	TileData *archive_tile = archive_tile_load != nullptr
 		? load_archive_terrain_tile(archive_tile_load->archivePath.c_str(), *archive_tile_load)
@@ -490,11 +516,24 @@ const char *run_ww3d_terrain_tile_probe(
 		render_object_created = render_object != nullptr && camera != nullptr;
 	}
 
+	if (render_object_created && render_via_scene) {
+		scene = NEW_REF(RTS3DScene, ());
+		scene_created = scene != nullptr;
+		if (scene_created) {
+			scene->Add_Render_Object(render_object);
+			scene_object_added = render_object->Peek_Scene() == scene;
+		}
+	}
+
 	if (render_object_created) {
 		RenderInfoClass render_info(*camera);
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
-			render_result = WW3D::Render(*render_object, render_info);
+			if (render_via_scene && scene_object_added) {
+				render_result = WW3D::Render(scene, camera);
+			} else if (!render_via_scene) {
+				render_result = WW3D::Render(*render_object, render_info);
+			}
 			end_render_result = WW3D::End_Render(false);
 		}
 	}
@@ -509,6 +548,7 @@ const char *run_ww3d_terrain_tile_probe(
 		tile_created &&
 		owner_created &&
 		render_object_created &&
+		(!render_via_scene || (scene_created && scene_object_added)) &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
@@ -530,7 +570,7 @@ const char *run_ww3d_terrain_tile_probe(
 	const char *archive_path = archive_tile_load != nullptr ? archive_tile_load->archivePath.c_str() : "";
 	const char *archive_directory = archive_tile_load != nullptr ? archive_tile_load->archiveDirectory.c_str() : "";
 	const char *archive_mask = archive_tile_load != nullptr ? archive_tile_load->archiveMask.c_str() : "";
-	char buffer[5200];
+	char buffer[6400];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -539,6 +579,8 @@ const char *run_ww3d_terrain_tile_probe(
 		"\"ownerCreated\":%s,\"renderObjectCreated\":%s},"
 		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
 		"\"expectedFlatTextureSize\":%u,\"tileSource\":\"%s\"},"
+		"\"scene\":{\"renderPath\":\"%s\",\"created\":%s,\"objectAdded\":%s,"
+		"\"terrainClassId\":%d},"
 		"\"archive\":{\"attempted\":%s,\"argumentSupplied\":%s,"
 		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
 		"\"entry\":\"Art\\\\Terrain\\\\PTBlossom01.tga\",\"loaded\":%s,\"entryExists\":%s,"
@@ -578,6 +620,12 @@ const char *run_ww3d_terrain_tile_probe(
 		kMapCells,
 		kExpectedFlatTextureSize,
 		tile_source,
+		render_via_scene
+			? "WW3D::Render(RTS3DScene,CameraClass) -> RTS3DScene::Customized_Render -> CLASSID_TILEMAP Render"
+			: "WW3D::Render(RenderObjClass,RenderInfoClass) -> ProbeTerrainTileRenderObj::Render",
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
 		bool_json(archive_tile_load != nullptr && archive_tile_load->attempted),
 		bool_json(archive_tile_load != nullptr && archive_tile_load->argumentSupplied),
 		archive_path,
@@ -644,6 +692,10 @@ const char *run_ww3d_terrain_tile_probe(
 
 	target_json = buffer;
 
+	if (scene != nullptr && render_object != nullptr && scene_object_added) {
+		scene->Remove_Render_Object(render_object);
+	}
+	REF_PTR_RELEASE(scene);
 	REF_PTR_RELEASE(render_object);
 	REF_PTR_RELEASE(camera);
 	if (tile != nullptr) {
@@ -670,7 +722,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
 	return run_ww3d_terrain_tile_probe(
 		g_ww3d_terrain_tile_probe_json,
 		"ww3d_terrain_tile_probe",
-		nullptr);
+		nullptr,
+		false);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile_archive(const char *terrain_archive_path)
@@ -680,7 +733,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile_archive(const 
 	return run_ww3d_terrain_tile_probe(
 		g_ww3d_terrain_tile_archive_probe_json,
 		"ww3d_terrain_tile_archive_probe",
-		&archive_tile_load);
+		&archive_tile_load,
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile_archive_scene(const char *terrain_archive_path)
+{
+	ProbeTerrainArchiveTileLoad archive_tile_load;
+	archive_tile_load.archivePath = terrain_archive_path != nullptr ? terrain_archive_path : "";
+	return run_ww3d_terrain_tile_probe(
+		g_ww3d_terrain_tile_archive_scene_probe_json,
+		"ww3d_terrain_tile_archive_scene_probe",
+		&archive_tile_load,
+		true);
 }
 
 }
