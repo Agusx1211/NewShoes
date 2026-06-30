@@ -6293,6 +6293,21 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      buildBrowserLanApiJoinRequestPacket: module.cwrap(
+        "cnc_port_build_browser_lanapi_join_request_packet",
+        "string",
+        [],
+      ),
+      acceptBrowserLanApiJoinRequestPacket: module.cwrap(
+        "cnc_port_accept_browser_lanapi_join_request_packet",
+        "string",
+        ["string"],
+      ),
+      acceptBrowserLanApiJoinAcceptPacket: module.cwrap(
+        "cnc_port_accept_browser_lanapi_join_accept_packet",
+        "string",
+        ["string", "string"],
+      ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -16621,6 +16636,51 @@ async function rpc(command, payload = {}) {
           ok: Boolean(receiveProbe?.ok),
           command,
           receiveProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiJoinRequestBuildPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI join request build cannot run" };
+        }
+        const buildProbe = parseModuleState(wasmModule.buildBrowserLanApiJoinRequestPacket());
+        return {
+          ok: Boolean(buildProbe?.ok),
+          command,
+          buildProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiJoinRequestAcceptPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI join request accept cannot run" };
+        }
+        const packetHex = String(payload?.packetHex ?? "");
+        const hostProbe = parseModuleState(wasmModule.acceptBrowserLanApiJoinRequestPacket(packetHex));
+        return {
+          ok: Boolean(hostProbe?.ok),
+          command,
+          hostProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiJoinAcceptAcceptPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI join accept/options accept cannot run" };
+        }
+        const joinAcceptHex = String(payload?.joinAcceptHex ?? "");
+        const gameOptionsHex = String(payload?.gameOptionsHex ?? "");
+        const joinerProbe = parseModuleState(wasmModule.acceptBrowserLanApiJoinAcceptPacket(joinAcceptHex, gameOptionsHex));
+        return {
+          ok: Boolean(joinerProbe?.ok),
+          command,
+          joinerProbe,
           state: snapshotState(),
         };
       }

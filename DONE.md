@@ -4647,6 +4647,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-lanapi-two-contexts`; the
       aggregate `test:vertical-integrations` gate includes it as an
       independent networking vertical.
+- [x] Drive LANAPI join/options across two isolated browser contexts. The wasm
+      bridge now exports
+      `cnc_port_build_browser_lanapi_join_request_packet`,
+      `cnc_port_accept_browser_lanapi_join_request_packet`, and
+      `cnc_port_accept_browser_lanapi_join_accept_packet`: the joiner wasm runs
+      original `LANAPI::RequestGameJoin` into `Transport::queueSend` using an
+      Emscripten active-message-prefix length to stay under the original
+      476-byte UDP packet cap while wasm `WideChar` is still 4 bytes, the host
+      wasm injects the delivered request into `Transport::m_inBuffer` and runs
+      `LANAPI::update` / `handleRequestJoin`, then the joiner consumes the
+      original `MSG_JOIN_ACCEPT` and `MSG_GAME_OPTIONS` replies through
+      `handleJoinAccept`, `GameInfoToAsciiString`,
+      `ParseAsciiStringToGameInfo`, `OnGameJoin`, and `OnGameOptions`.
+      `lanapi_join_options_two_contexts_smoke.mjs` relays only message hex
+      through Node between isolated Playwright contexts. This proves LAN
+      setup-room join/options plumbing, not LAN game-start, WebSocket/WebRTC,
+      GameSpy, or full match sync. Verified with
+      `npm --prefix WebAssembly run test:browser-lanapi-join-options-two-contexts`;
+      the aggregate `test:vertical-integrations` gate includes it as an
+      independent networking vertical.
 
 ---
 

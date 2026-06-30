@@ -179,9 +179,45 @@ void LANAPI::reset( void )
 
 void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 {
+	Int messageLength = sizeof(LANMessage);
+#ifdef __EMSCRIPTEN__
+	// Wasm WideChar is still 4 bytes here; keep active LAN payloads under the original UDP cap.
+	if (msg != NULL)
+	{
+		const char *base = reinterpret_cast<const char *>(msg);
+		switch (msg->LANMessageType)
+		{
+			case LANMessage::MSG_REQUEST_JOIN:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->GameToJoin) - base + sizeof(msg->GameToJoin));
+				break;
+			case LANMessage::MSG_JOIN_ACCEPT:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->GameJoined) - base + sizeof(msg->GameJoined));
+				break;
+			case LANMessage::MSG_JOIN_DENY:
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(&msg->GameNotJoined) - base + sizeof(msg->GameNotJoined));
+				break;
+			case LANMessage::MSG_GAME_OPTIONS:
+			{
+				Int optionsLength = 0;
+				while (optionsLength < m_lanMaxOptionsLength && msg->GameOptions.options[optionsLength] != 0)
+				{
+					++optionsLength;
+				}
+				messageLength = static_cast<Int>(
+					reinterpret_cast<const char *>(msg->GameOptions.options) - base + optionsLength + 1);
+				break;
+			}
+			default:
+				break;
+		}
+	}
+#endif
 	if (ip != 0)
 	{
-		m_transport->queueSend(ip, lobbyPort, (unsigned char *)msg, sizeof(LANMessage) /*, 0, 0 */);
+		m_transport->queueSend(ip, lobbyPort, (unsigned char *)msg, messageLength /*, 0, 0 */);
 	}
 	else if ((m_currentGame != NULL) && (m_currentGame->getIsDirectConnect()))
 	{
@@ -191,14 +227,14 @@ void LANAPI::sendMessage(LANMessage *msg, UnsignedInt ip /* = 0 */)
 			if (i != localSlot) {
 				GameSlot *slot = m_currentGame->getSlot(i);
 				if ((slot != NULL) && (slot->isHuman())) {
-					m_transport->queueSend(slot->getIP(), lobbyPort, (unsigned char *)msg, sizeof(LANMessage) /*, 0, 0 */);
+					m_transport->queueSend(slot->getIP(), lobbyPort, (unsigned char *)msg, messageLength /*, 0, 0 */);
 				}
 			}
 		}
 	}
 	else
 	{
-		m_transport->queueSend(m_broadcastAddr, lobbyPort, (unsigned char *)msg, sizeof(LANMessage) /*, 0, 0 */);
+		m_transport->queueSend(m_broadcastAddr, lobbyPort, (unsigned char *)msg, messageLength /*, 0, 0 */);
 	}
 }
 

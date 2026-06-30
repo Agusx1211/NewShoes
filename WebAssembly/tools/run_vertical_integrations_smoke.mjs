@@ -345,6 +345,54 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-join-options-two-contexts",
+    file: "harness/lanapi_join_options_two_contexts_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI join/options smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-join-options-two-contexts"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.productionTransport === false
+          && payload.source?.client === "browser-client-1"
+          && payload.source?.wasm === "loaded"
+          && payload.source?.originalRequest === "LANAPI::RequestGameJoin"
+          && payload.source?.originalTransport === "Transport::queueSend"
+          && payload.source?.packet?.messageType === "MSG_REQUEST_JOIN"
+          && payload.source?.packet?.remoteIp === 0x7f000002
+          && payload.source?.packet?.localIp === 0x7f000003
+          && payload.source?.packet?.gameIP === 0x7f000002
+          && payload.host?.client === "browser-client-0"
+          && payload.host?.wasm === "loaded"
+          && payload.host?.originalTransport === "Transport::m_inBuffer"
+          && payload.host?.originalDispatch === "LANAPI::update"
+          && payload.host?.originalHandler === "LANAPI::handleRequestJoin"
+          && payload.host?.originalCallback === "LANAPI::OnPlayerJoin"
+          && payload.host?.originalReply === "LANAPI::RequestGameOptions"
+          && payload.host?.transport?.injected === true
+          && payload.host?.lanApi?.updateDriven === true
+          && payload.host?.game?.joinerAdded === true
+          && payload.host?.reply?.joinAcceptType === "MSG_JOIN_ACCEPT"
+          && payload.host?.reply?.gameOptionsType === "MSG_GAME_OPTIONS"
+          && payload.host?.reply?.optionsLength > 0
+          && payload.joiner?.client === "browser-client-1"
+          && payload.joiner?.wasm === "loaded"
+          && payload.joiner?.originalTransport === "Transport::m_inBuffer"
+          && payload.joiner?.originalDispatch === "LANAPI::update"
+          && payload.joiner?.originalHandlers === "LANAPI::handleJoinAccept+LANAPI::handleGameOptions"
+          && payload.joiner?.originalParser === "GameInfoToAsciiString -> ParseAsciiStringToGameInfo"
+          && payload.joiner?.originalCallbacks === "LANAPI::OnGameJoin+LANAPI::OnGameOptions"
+          && payload.joiner?.transport?.joinAcceptInjected === true
+          && payload.joiner?.transport?.gameOptionsInjected === true
+          && payload.joiner?.lanApi?.inLobby === false
+          && payload.joiner?.lanApi?.onGameJoinCalls === 1
+          && payload.joiner?.lanApi?.onGameOptionsCalls >= 1
+          && payload.joiner?.game?.joinRecorded === true
+          && payload.joiner?.game?.optionsParsed === true
+          && payload.joiner?.game?.localSlot === 1,
+        "browser LANAPI join/options smoke did not prove isolated join/options relay into original LANAPI", payload);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -491,6 +539,7 @@ console.log(JSON.stringify({
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
+    "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -501,7 +550,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "merge the original MilesAudioManager 2D sample leg with the browser Web Audio completion harness in one browser-owned smoke",
-    "advance LANAPI join/options over the browser relay or replace the harness relay with production WebSocket/WebRTC transport",
+    "drive LANAPI game-start into original NetworkInterface/frame-sync setup or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

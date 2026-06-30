@@ -11,7 +11,9 @@
 #include "Common/GameMemory.h"
 #include "Common/GameState.h"
 #include "Common/GlobalData.h"
+#include "Common/MultiplayerSettings.h"
 #include "Common/Player.h"
+#include "Common/PlayerTemplate.h"
 #include "Common/Recorder.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/DisconnectMenu.h"
@@ -253,6 +255,12 @@ char g_browser_network_transport_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_lanapi_build_json[8192] = {};
 char g_browser_lanapi_receive_json[8192] = {};
 char g_browser_lanapi_packet_hex[(sizeof(LANMessage) * 2) + 1] = {};
+char g_browser_lanapi_join_build_json[8192] = {};
+char g_browser_lanapi_join_host_json[16384] = {};
+char g_browser_lanapi_join_client_json[16384] = {};
+char g_browser_lanapi_join_request_hex[(sizeof(LANMessage) * 2) + 1] = {};
+char g_browser_lanapi_join_accept_hex[(sizeof(LANMessage) * 2) + 1] = {};
+char g_browser_lanapi_game_options_hex[(sizeof(LANMessage) * 2) + 1] = {};
 constexpr int kRelayExecutionFrame = 2468;
 constexpr int kRelayPlayerId = 2;
 constexpr int kRelayCommandId = 314;
@@ -268,6 +276,7 @@ constexpr int kTransportFrameRate = 30;
 constexpr int kTransportRelayMask = 1 << kTransportPlayerId;
 constexpr UnsignedInt kLanApiLocalIp = 0x7f000001;
 constexpr UnsignedInt kLanApiRemoteIp = 0x7f000002;
+constexpr UnsignedInt kLanApiJoinerIp = 0x7f000003;
 constexpr UnsignedShort kLanApiLobbyPort = 8086;
 constexpr UnsignedInt kLanApiSeed = 98765;
 constexpr UnsignedInt kLanApiMapCrc = 0x1234abcd;
@@ -279,8 +288,11 @@ constexpr const char *kLanApiParsedMap = "Maps\\TournamentDesert\\TournamentDese
 constexpr const char *kLanApiParsedMapJson = "Maps/TournamentDesert/TournamentDesert.map";
 constexpr const WideChar kLanApiGameName[] = L"Browser LAN Game";
 constexpr const WideChar kLanApiPlayerName[] = L"Browser Host";
+constexpr const WideChar kLanApiJoinerName[] = L"Guest";
 constexpr const char *kLanApiUserName = "browser-host";
 constexpr const char *kLanApiHostName = "browser-client-0";
+constexpr const char *kLanApiJoinerUserName = "browser-guest";
+constexpr const char *kLanApiJoinerHostName = "browser-client-1";
 
 const char *net_command_type_name(NetCommandType type)
 {
@@ -293,6 +305,46 @@ const char *net_command_type_name(NetCommandType type)
 			return "NETCOMMANDTYPE_GAMECOMMAND";
 		case NETCOMMANDTYPE_RUNAHEAD:
 			return "NETCOMMANDTYPE_RUNAHEAD";
+		default:
+			return "UNKNOWN";
+	}
+}
+
+const char *lan_message_type_name(int type)
+{
+	switch (type) {
+		case LANMessage::MSG_REQUEST_LOCATIONS:
+			return "MSG_REQUEST_LOCATIONS";
+		case LANMessage::MSG_GAME_ANNOUNCE:
+			return "MSG_GAME_ANNOUNCE";
+		case LANMessage::MSG_LOBBY_ANNOUNCE:
+			return "MSG_LOBBY_ANNOUNCE";
+		case LANMessage::MSG_REQUEST_JOIN:
+			return "MSG_REQUEST_JOIN";
+		case LANMessage::MSG_JOIN_ACCEPT:
+			return "MSG_JOIN_ACCEPT";
+		case LANMessage::MSG_JOIN_DENY:
+			return "MSG_JOIN_DENY";
+		case LANMessage::MSG_REQUEST_GAME_LEAVE:
+			return "MSG_REQUEST_GAME_LEAVE";
+		case LANMessage::MSG_REQUEST_LOBBY_LEAVE:
+			return "MSG_REQUEST_LOBBY_LEAVE";
+		case LANMessage::MSG_SET_ACCEPT:
+			return "MSG_SET_ACCEPT";
+		case LANMessage::MSG_MAP_AVAILABILITY:
+			return "MSG_MAP_AVAILABILITY";
+		case LANMessage::MSG_CHAT:
+			return "MSG_CHAT";
+		case LANMessage::MSG_GAME_START:
+			return "MSG_GAME_START";
+		case LANMessage::MSG_GAME_START_TIMER:
+			return "MSG_GAME_START_TIMER";
+		case LANMessage::MSG_GAME_OPTIONS:
+			return "MSG_GAME_OPTIONS";
+		case LANMessage::MSG_INACTIVE:
+			return "MSG_INACTIVE";
+		case LANMessage::MSG_REQUEST_GAME_INFO:
+			return "MSG_REQUEST_GAME_INFO";
 		default:
 			return "UNKNOWN";
 	}
@@ -356,6 +408,81 @@ bool decode_hex_with_capacity(const char *hex, UnsignedByte *bytes, int capacity
 bool decode_hex(const char *hex, UnsignedByte *bytes, int &length)
 {
 	return decode_hex_with_capacity(hex, bytes, MAX_PACKET_SIZE, length);
+}
+
+void decrypt_transport_message_copy(TransportMessage &message)
+{
+	UnsignedInt mask = 0x0000fade;
+	const int encrypted_length = message.length + static_cast<int>(sizeof(TransportMessageHeader));
+	UnsignedByte *bytes = reinterpret_cast<UnsignedByte *>(&message);
+	for (int offset = 0; offset + 4 <= encrypted_length; offset += 4) {
+		UnsignedInt word = 0;
+		std::memcpy(&word, bytes + offset, sizeof(word));
+		word = htonl(word);
+		word ^= mask;
+		std::memcpy(bytes + offset, &word, sizeof(word));
+		mask += 0x00000321;
+	}
+}
+
+bool decode_queued_lan_message(
+	Transport *transport,
+	int message_type,
+	LANMessage &out,
+	char *hex_out,
+	int hex_out_size,
+	UnsignedInt *addr = nullptr,
+	UnsignedShort *port = nullptr)
+{
+	if (transport == nullptr) {
+		return false;
+	}
+
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		const TransportMessage &queued = transport->m_outBuffer[i];
+		if (queued.length <= 0 || queued.length > static_cast<Int>(sizeof(LANMessage))) {
+			continue;
+		}
+
+		TransportMessage decoded = queued;
+		decrypt_transport_message_copy(decoded);
+		LANMessage message = {};
+		std::memcpy(&message, decoded.data, static_cast<size_t>(decoded.length));
+		if (message.LANMessageType != message_type) {
+			continue;
+		}
+
+		out = message;
+		if (addr != nullptr) {
+			*addr = queued.addr;
+		}
+		if (port != nullptr) {
+			*port = queued.port;
+		}
+		return encode_hex(
+			reinterpret_cast<const UnsignedByte *>(&out),
+			static_cast<int>(sizeof(out)),
+			hex_out,
+			hex_out_size);
+	}
+	return false;
+}
+
+bool inject_lan_message(Transport *transport, const LANMessage &lan_message, UnsignedInt addr, UnsignedShort port)
+{
+	if (transport == nullptr) {
+		return false;
+	}
+
+	std::memset(transport->m_inBuffer, 0, sizeof(transport->m_inBuffer));
+	TransportMessage &message = transport->m_inBuffer[0];
+	std::memcpy(message.data, &lan_message, sizeof(lan_message));
+	message.length = static_cast<Int>(sizeof(lan_message));
+	message.addr = addr;
+	message.port = port;
+	return message.length == static_cast<Int>(sizeof(lan_message)) &&
+		message.addr == addr &&
+		message.port == port;
 }
 
 int first_invalid_hex_index(const char *hex)
@@ -512,6 +639,13 @@ public:
 		m_localIP = ip;
 	}
 
+	void setIdentity(const WideChar *name, const char *userName, const char *hostName)
+	{
+		m_name = name != nullptr ? name : L"";
+		m_userName = userName != nullptr ? userName : "";
+		m_hostName = hostName != nullptr ? hostName : "";
+	}
+
 	Transport *transportForProbe()
 	{
 		return m_transport;
@@ -555,9 +689,92 @@ public:
 		return m_lastGameList;
 	}
 
+	void installGame(LANGameInfo *game, Bool currentGame, Bool inLobby)
+	{
+		if (game == nullptr) {
+			return;
+		}
+		addGame(game);
+		if (currentGame) {
+			m_currentGame = game;
+		}
+		m_inLobby = inLobby;
+	}
+
+	void markPendingJoin()
+	{
+		m_pendingAction = ACT_JOIN;
+		m_expiration = timeGetTime() + m_actionTimeout;
+	}
+
+	LANGameInfo *currentGameForProbe() const
+	{
+		return m_currentGame;
+	}
+
+	Bool inLobbyForProbe() const
+	{
+		return m_inLobby;
+	}
+
+	void OnGameJoin(ReturnType ret, LANGameInfo *theGame) override
+	{
+		++m_onGameJoinCalls;
+		m_lastGameJoinReturn = ret;
+		m_lastJoinedGame = theGame;
+	}
+
+	void OnPlayerJoin(Int slot, UnicodeString playerName) override
+	{
+		++m_onPlayerJoinCalls;
+		m_lastPlayerJoinSlot = slot;
+		m_lastPlayerJoinName = playerName;
+		LANAPI::OnPlayerJoin(slot, playerName);
+	}
+
+	void OnGameOptions(UnsignedInt playerIP, Int playerSlot, AsciiString options) override
+	{
+		++m_onGameOptionsCalls;
+		m_lastGameOptionsPlayerIP = playerIP;
+		m_lastGameOptionsPlayerSlot = playerSlot;
+		m_lastGameOptions = options;
+		LANAPI::OnGameOptions(playerIP, playerSlot, options);
+	}
+
+	void OnGameCreate(ReturnType ret) override
+	{
+		++m_onGameCreateCalls;
+		m_lastGameCreateReturn = ret;
+	}
+
+	int onGameJoinCalls() const { return m_onGameJoinCalls; }
+	ReturnType lastGameJoinReturn() const { return m_lastGameJoinReturn; }
+	LANGameInfo *lastJoinedGame() const { return m_lastJoinedGame; }
+	int onPlayerJoinCalls() const { return m_onPlayerJoinCalls; }
+	Int lastPlayerJoinSlot() const { return m_lastPlayerJoinSlot; }
+	UnicodeString lastPlayerJoinName() const { return m_lastPlayerJoinName; }
+	int onGameOptionsCalls() const { return m_onGameOptionsCalls; }
+	UnsignedInt lastGameOptionsPlayerIP() const { return m_lastGameOptionsPlayerIP; }
+	Int lastGameOptionsPlayerSlot() const { return m_lastGameOptionsPlayerSlot; }
+	AsciiString lastGameOptions() const { return m_lastGameOptions; }
+	int onGameCreateCalls() const { return m_onGameCreateCalls; }
+	ReturnType lastGameCreateReturn() const { return m_lastGameCreateReturn; }
+
 private:
 	int m_onGameListCalls = 0;
 	LANGameInfo *m_lastGameList = nullptr;
+	int m_onGameJoinCalls = 0;
+	ReturnType m_lastGameJoinReturn = RET_UNKNOWN;
+	LANGameInfo *m_lastJoinedGame = nullptr;
+	int m_onPlayerJoinCalls = 0;
+	Int m_lastPlayerJoinSlot = -1;
+	UnicodeString m_lastPlayerJoinName;
+	int m_onGameOptionsCalls = 0;
+	UnsignedInt m_lastGameOptionsPlayerIP = 0;
+	Int m_lastGameOptionsPlayerSlot = -1;
+	AsciiString m_lastGameOptions;
+	int m_onGameCreateCalls = 0;
+	ReturnType m_lastGameCreateReturn = RET_UNKNOWN;
 };
 
 AsciiString build_lanapi_options_string()
@@ -617,6 +834,128 @@ ProbeGameText *probe_game_text()
 {
 	static ProbeGameText game_text;
 	return &game_text;
+}
+
+MultiplayerSettings *probe_multiplayer_settings()
+{
+	static MultiplayerSettings settings;
+	return &settings;
+}
+
+PlayerTemplateStore *probe_player_template_store()
+{
+	static PlayerTemplateStore player_template_store;
+	return &player_template_store;
+}
+
+class ScopedLANProbeGlobals
+{
+public:
+	explicit ScopedLANProbeGlobals(LANAPI *lan) :
+		m_oldGameText(TheGameText),
+		m_oldGameState(TheGameState),
+		m_oldGlobalData(TheWritableGlobalData),
+		m_oldMapCache(TheMapCache),
+		m_oldMultiplayerSettings(TheMultiplayerSettings),
+		m_oldPlayerTemplateStore(ThePlayerTemplateStore),
+		m_oldLAN(TheLAN),
+		m_oldButtonPushed(LANbuttonPushed)
+	{
+		GlobalData *global_data = probe_global_data();
+		global_data->m_iniCRC = 0x13572468;
+		global_data->m_exeCRC = 0x24681357;
+		TheGameText = probe_game_text();
+		TheGameState = TheGameState != nullptr ? TheGameState : reinterpret_cast<GameState *>(1);
+		TheWritableGlobalData = global_data;
+		TheMapCache = probe_map_cache();
+		TheMultiplayerSettings = probe_multiplayer_settings();
+		ThePlayerTemplateStore = probe_player_template_store();
+		TheLAN = lan;
+		LANbuttonPushed = false;
+	}
+
+	~ScopedLANProbeGlobals()
+	{
+		TheGameText = m_oldGameText;
+		TheGameState = m_oldGameState;
+		TheWritableGlobalData = m_oldGlobalData;
+		TheMapCache = m_oldMapCache;
+		TheMultiplayerSettings = m_oldMultiplayerSettings;
+		ThePlayerTemplateStore = m_oldPlayerTemplateStore;
+		TheLAN = m_oldLAN;
+		LANbuttonPushed = m_oldButtonPushed;
+	}
+
+private:
+	GameTextInterface *m_oldGameText;
+	GameState *m_oldGameState;
+	GlobalData *m_oldGlobalData;
+	MapCache *m_oldMapCache;
+	MultiplayerSettings *m_oldMultiplayerSettings;
+	PlayerTemplateStore *m_oldPlayerTemplateStore;
+	LANAPI *m_oldLAN;
+	Bool m_oldButtonPushed;
+};
+
+void configure_probe_slot(LANGameSlot &slot, SlotState state, const WideChar *name, UnsignedInt ip)
+{
+	slot.setState(state, UnicodeString(name != nullptr ? name : L""), ip);
+	slot.setPort(NETWORK_BASE_PORT_NUMBER);
+	slot.setLastHeard(timeGetTime());
+	slot.setLogin(state == SLOT_PLAYER && ip == kLanApiJoinerIp ? kLanApiJoinerUserName : kLanApiUserName);
+	slot.setHost(state == SLOT_PLAYER && ip == kLanApiJoinerIp ? kLanApiJoinerHostName : kLanApiHostName);
+	slot.setColor(-1);
+	slot.setPlayerTemplate(PLAYERTEMPLATE_OBSERVER);
+	slot.setStartPos(-1);
+	slot.setTeamNumber(-1);
+	slot.setNATBehavior(FirewallHelperClass::FIREWALL_TYPE_SIMPLE);
+}
+
+LANGameInfo *create_probe_lan_game(Bool in_game)
+{
+	LANGameInfo *game = NEW LANGameInfo;
+	if (game == nullptr) {
+		return nullptr;
+	}
+
+	if (in_game) {
+		game->enterGame();
+	}
+
+	game->setName(UnicodeString(kLanApiGameName));
+	game->setIsDirectConnect(FALSE);
+	game->setMap(AsciiString(kLanApiParsedMap));
+	game->setMapCRC(kLanApiMapCrc);
+	game->setMapSize(kLanApiMapSize);
+	game->setMapContentsMask(0);
+	game->setSeed(static_cast<Int>(kLanApiSeed));
+	game->setCRCInterval(static_cast<Int>(kLanApiCrcInterval));
+	game->setUseStats(1);
+	game->setSuperweaponRestriction(0);
+	Money starting_cash;
+	starting_cash.init();
+	starting_cash.deposit(kLanApiStartingCash, FALSE);
+	game->setStartingCash(starting_cash);
+	game->setOldFactionsOnly(FALSE);
+	game->setLastHeard(timeGetTime());
+
+	LANGameSlot host_slot;
+	configure_probe_slot(host_slot, SLOT_PLAYER, kLanApiPlayerName, kLanApiRemoteIp);
+	host_slot.setAccept();
+	host_slot.setMapAvailability(TRUE);
+	game->setSlot(0, host_slot);
+
+	LANGameSlot second_slot;
+	configure_probe_slot(second_slot, SLOT_OPEN, nullptr, 0);
+	game->setSlot(1, second_slot);
+
+	for (Int slot = 2; slot < MAX_SLOTS; ++slot) {
+		LANGameSlot closed_slot;
+		configure_probe_slot(closed_slot, SLOT_CLOSED, nullptr, 0);
+		game->setSlot(slot, closed_slot);
+	}
+
+	return game;
 }
 
 bool probe_command_ids(GameNetworkProbeResult &result)
@@ -1363,6 +1702,468 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_lanapi_announce_packet(
 		parsed_slots_closed,
 		slots_closed ? "true" : "false");
 	return g_browser_lanapi_receive_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_lanapi_join_request_packet()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	ScopedOriginalMemoryManager memory_manager_scope;
+	ProbeLANAPI joiner;
+	ScopedLANProbeGlobals globals(&joiner);
+	joiner.setLocalAddress(kLanApiJoinerIp);
+	joiner.setIdentity(kLanApiJoinerName, kLanApiJoinerUserName, kLanApiJoinerHostName);
+	LANGameInfo *game = create_probe_lan_game(FALSE);
+	joiner.installGame(game, FALSE, TRUE);
+	joiner.RequestGameJoin(game, kLanApiRemoteIp);
+
+	LANMessage request_message = {};
+	UnsignedInt request_addr = 0;
+	UnsignedShort request_port = 0;
+	const bool request_decoded = decode_queued_lan_message(
+		joiner.transportForProbe(),
+		LANMessage::MSG_REQUEST_JOIN,
+		request_message,
+		g_browser_lanapi_join_request_hex,
+		sizeof(g_browser_lanapi_join_request_hex),
+		&request_addr,
+		&request_port);
+
+	const bool ok = game != nullptr &&
+		joiner.gameCount() == 1 &&
+		request_decoded &&
+		request_message.GameToJoin.gameIP == kLanApiRemoteIp &&
+		request_message.GameToJoin.iniCRC == probe_global_data()->m_iniCRC &&
+		request_message.GameToJoin.exeCRC == probe_global_data()->m_exeCRC &&
+		request_addr == kLanApiRemoteIp &&
+		request_port == kLanApiLobbyPort;
+
+	std::snprintf(g_browser_lanapi_join_build_json, sizeof(g_browser_lanapi_join_build_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser LANAPI join request build probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"originalRequest\":\"LANAPI::RequestGameJoin\","
+		"\"originalSerializer\":\"LANMessage::MSG_REQUEST_JOIN\","
+		"\"originalTransport\":\"Transport::queueSend\","
+		"\"nextRequired\":\"lanApiJoinAcceptAndGameOptions\","
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%zu,\"messageType\":\"%s\","
+		"\"remoteIp\":%u,\"localIp\":%u,\"port\":%u,"
+		"\"gameIP\":%u,\"iniCRC\":%u,\"exeCRC\":%u,"
+		"\"gameName\":\"Browser LAN Game\",\"playerName\":\"Guest\"},"
+		"\"lanApi\":{\"gamesSeen\":%d,\"pendingJoinQueued\":%s}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		request_decoded ? g_browser_lanapi_join_request_hex : "",
+		sizeof(request_message),
+		lan_message_type_name(request_message.LANMessageType),
+		request_addr,
+		kLanApiJoinerIp,
+		request_port,
+		request_message.GameToJoin.gameIP,
+		request_message.GameToJoin.iniCRC,
+		request_message.GameToJoin.exeCRC,
+		joiner.gameCount(),
+		request_decoded ? "true" : "false");
+	return g_browser_lanapi_join_build_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_lanapi_join_request_packet(const char *packet_hex)
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	UnsignedByte packet_bytes[sizeof(LANMessage)] = {};
+	int length = 0;
+	const int input_hex_length = packet_hex != nullptr ? static_cast<int>(std::strlen(packet_hex)) : -1;
+	const int invalid_hex_index = first_invalid_hex_index(packet_hex);
+	const bool decoded = decode_hex_with_capacity(packet_hex, packet_bytes, sizeof(packet_bytes), length);
+
+	LANMessage request_message = {};
+	if (decoded && length == static_cast<int>(sizeof(LANMessage))) {
+		std::memcpy(&request_message, packet_bytes, sizeof(request_message));
+	}
+
+	bool transport_injected = false;
+	bool transport_cleared = false;
+	bool update_driven = false;
+	bool join_accept_decoded = false;
+	bool game_options_decoded = false;
+	bool host_game_ready = false;
+	bool joiner_added = false;
+	bool callback_recorded = false;
+	int games_seen = 0;
+	int on_player_join_calls = 0;
+	int joined_slot = -1;
+	int game_options_length = 0;
+	UnsignedInt join_accept_addr = 0;
+	UnsignedShort join_accept_port = 0;
+	UnsignedInt game_options_addr = 0;
+	UnsignedShort game_options_port = 0;
+	LANMessage join_accept_message = {};
+	LANMessage game_options_message = {};
+
+	if (decoded && length == static_cast<int>(sizeof(LANMessage))) {
+		ScopedOriginalMemoryManager memory_manager_scope;
+		ProbeLANAPI host;
+		ScopedLANProbeGlobals globals(&host);
+		host.setLocalAddress(kLanApiRemoteIp);
+		host.setIdentity(kLanApiPlayerName, kLanApiUserName, kLanApiHostName);
+		LANGameInfo *game = create_probe_lan_game(TRUE);
+		host.installGame(game, TRUE, FALSE);
+		host_game_ready = game != nullptr && game->isInGame() && !game->isGameInProgress() &&
+			game->getIP(0) == kLanApiRemoteIp && game->getLANSlot(1)->isOpen();
+
+		transport_injected = inject_lan_message(
+			host.transportForProbe(),
+			request_message,
+			kLanApiJoinerIp,
+			kLanApiLobbyPort);
+		host.forceUpdateDelayElapsed();
+		host.update();
+		update_driven = true;
+		transport_cleared = host.transportForProbe() != nullptr &&
+			host.transportForProbe()->m_inBuffer[0].length == 0;
+
+		join_accept_decoded = decode_queued_lan_message(
+			host.transportForProbe(),
+			LANMessage::MSG_JOIN_ACCEPT,
+			join_accept_message,
+			g_browser_lanapi_join_accept_hex,
+			sizeof(g_browser_lanapi_join_accept_hex),
+			&join_accept_addr,
+			&join_accept_port);
+		game_options_decoded = decode_queued_lan_message(
+			host.transportForProbe(),
+			LANMessage::MSG_GAME_OPTIONS,
+			game_options_message,
+			g_browser_lanapi_game_options_hex,
+			sizeof(g_browser_lanapi_game_options_hex),
+			&game_options_addr,
+			&game_options_port);
+		game_options_length = game_options_decoded ?
+			static_cast<int>(std::strlen(game_options_message.GameOptions.options)) : 0;
+
+		games_seen = host.gameCount();
+		on_player_join_calls = host.onPlayerJoinCalls();
+		joined_slot = join_accept_decoded ? join_accept_message.GameJoined.slotPosition : -1;
+		LANGameInfo *current_game = host.currentGameForProbe();
+		LANGameSlot *slot = current_game != nullptr && joined_slot >= 0 && joined_slot < MAX_SLOTS ?
+			current_game->getLANSlot(joined_slot) : nullptr;
+		joiner_added = slot != nullptr &&
+			slot->isHuman() &&
+			slot->getIP() == kLanApiJoinerIp &&
+			slot->getName().compare(kLanApiJoinerName) == 0;
+		callback_recorded = on_player_join_calls > 0 &&
+			host.lastPlayerJoinSlot() == joined_slot &&
+			host.lastPlayerJoinName().compare(kLanApiJoinerName) == 0;
+	}
+
+	const bool ok = decoded &&
+		length == static_cast<int>(sizeof(LANMessage)) &&
+		request_message.LANMessageType == LANMessage::MSG_REQUEST_JOIN &&
+		request_message.GameToJoin.gameIP == kLanApiRemoteIp &&
+		host_game_ready &&
+		transport_injected &&
+		update_driven &&
+		transport_cleared &&
+		join_accept_decoded &&
+		game_options_decoded &&
+		join_accept_message.GameJoined.playerIP == kLanApiJoinerIp &&
+		join_accept_message.GameJoined.gameIP == kLanApiRemoteIp &&
+		joined_slot == 1 &&
+		joiner_added &&
+		callback_recorded &&
+		game_options_length > 0;
+
+	std::snprintf(g_browser_lanapi_join_host_json, sizeof(g_browser_lanapi_join_host_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser LANAPI join request relay probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"originalTransport\":\"Transport::m_inBuffer\","
+		"\"originalDispatch\":\"LANAPI::update\","
+		"\"originalHandler\":\"LANAPI::handleRequestJoin\","
+		"\"originalCallback\":\"LANAPI::OnPlayerJoin\","
+		"\"originalReply\":\"LANAPI::RequestGameOptions\","
+		"\"nextRequired\":\"lanApiJoinAcceptIntoClient\","
+		"\"packet\":{\"decoded\":%s,\"inputHexLength\":%d,\"invalidHexIndex\":%d,"
+		"\"bytes\":%d,\"messageType\":\"%s\",\"remoteIp\":%u,\"localIp\":%u,\"port\":%u,"
+		"\"gameIP\":%u,\"iniCRC\":%u,\"exeCRC\":%u},"
+		"\"transport\":{\"injected\":%s,\"cleared\":%s},"
+		"\"lanApi\":{\"updateDriven\":%s,\"gamesSeen\":%d,\"onPlayerJoinCalls\":%d,"
+		"\"hostGameReady\":%s},"
+		"\"game\":{\"joinerAdded\":%s,\"slotPosition\":%d,\"playerIP\":%u,"
+		"\"playerName\":\"Guest\"},"
+		"\"reply\":{\"joinAcceptHex\":\"%s\",\"gameOptionsHex\":\"%s\","
+		"\"joinAcceptType\":\"%s\",\"gameOptionsType\":\"%s\","
+		"\"joinAcceptAddr\":%u,\"joinAcceptPort\":%u,"
+		"\"gameOptionsAddr\":%u,\"gameOptionsPort\":%u,"
+		"\"optionsLength\":%d}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		decoded ? "true" : "false",
+		input_hex_length,
+		invalid_hex_index,
+		length,
+		lan_message_type_name(request_message.LANMessageType),
+		kLanApiJoinerIp,
+		kLanApiRemoteIp,
+		kLanApiLobbyPort,
+		request_message.GameToJoin.gameIP,
+		request_message.GameToJoin.iniCRC,
+		request_message.GameToJoin.exeCRC,
+		transport_injected ? "true" : "false",
+		transport_cleared ? "true" : "false",
+		update_driven ? "true" : "false",
+		games_seen,
+		on_player_join_calls,
+		host_game_ready ? "true" : "false",
+		joiner_added ? "true" : "false",
+		joined_slot,
+		kLanApiJoinerIp,
+		join_accept_decoded ? g_browser_lanapi_join_accept_hex : "",
+		game_options_decoded ? g_browser_lanapi_game_options_hex : "",
+		lan_message_type_name(join_accept_message.LANMessageType),
+		lan_message_type_name(game_options_message.LANMessageType),
+		join_accept_addr,
+		join_accept_port,
+		game_options_addr,
+		game_options_port,
+		game_options_length);
+	return g_browser_lanapi_join_host_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_lanapi_join_accept_packet(
+	const char *accept_hex,
+	const char *options_hex)
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	UnsignedByte accept_bytes[sizeof(LANMessage)] = {};
+	UnsignedByte options_bytes[sizeof(LANMessage)] = {};
+	int accept_length = 0;
+	int options_length = 0;
+	const int accept_hex_length = accept_hex != nullptr ? static_cast<int>(std::strlen(accept_hex)) : -1;
+	const int options_hex_length = options_hex != nullptr ? static_cast<int>(std::strlen(options_hex)) : -1;
+	const int accept_invalid_hex_index = first_invalid_hex_index(accept_hex);
+	const int options_invalid_hex_index = first_invalid_hex_index(options_hex);
+	const bool accept_decoded = decode_hex_with_capacity(accept_hex, accept_bytes, sizeof(accept_bytes), accept_length);
+	const bool options_decoded = decode_hex_with_capacity(options_hex, options_bytes, sizeof(options_bytes), options_length);
+
+	LANMessage accept_message = {};
+	LANMessage options_message = {};
+	if (accept_decoded && accept_length == static_cast<int>(sizeof(LANMessage))) {
+		std::memcpy(&accept_message, accept_bytes, sizeof(accept_message));
+	}
+	if (options_decoded && options_length == static_cast<int>(sizeof(LANMessage))) {
+		std::memcpy(&options_message, options_bytes, sizeof(options_message));
+	}
+
+	bool accept_injected = false;
+	bool accept_cleared = false;
+	bool options_injected = false;
+	bool options_cleared = false;
+	bool accept_update_driven = false;
+	bool options_update_driven = false;
+	bool discovered_game_ready = false;
+	bool join_recorded = false;
+	bool options_recorded = false;
+	bool options_parsed = false;
+	bool joiner_slot_ready = false;
+	bool host_slot_ready = false;
+	bool in_lobby = true;
+	int games_seen = 0;
+	int local_slot = -1;
+	int on_game_join_calls = 0;
+	int on_game_options_calls = 0;
+	int last_game_join_return = -1;
+	int last_game_options_slot = -1;
+	UnsignedInt last_game_options_ip = 0;
+	int parsed_map_crc = -1;
+	int parsed_map_size = -1;
+	int parsed_seed = -1;
+	int parsed_crc_interval = -1;
+	int parsed_options_length = 0;
+	char parsed_map_json[256] = {};
+
+	if (accept_decoded && options_decoded &&
+		accept_length == static_cast<int>(sizeof(LANMessage)) &&
+		options_length == static_cast<int>(sizeof(LANMessage))) {
+		ScopedOriginalMemoryManager memory_manager_scope;
+		ProbeLANAPI joiner;
+		ScopedLANProbeGlobals globals(&joiner);
+		joiner.setLocalAddress(kLanApiJoinerIp);
+		joiner.setIdentity(kLanApiJoinerName, kLanApiJoinerUserName, kLanApiJoinerHostName);
+		LANGameInfo *game = create_probe_lan_game(FALSE);
+		joiner.installGame(game, FALSE, TRUE);
+		joiner.markPendingJoin();
+		discovered_game_ready = game != nullptr && !game->isInGame() &&
+			game->getIP(0) == kLanApiRemoteIp && game->getLANSlot(1)->isOpen();
+
+		accept_injected = inject_lan_message(
+			joiner.transportForProbe(),
+			accept_message,
+			kLanApiRemoteIp,
+			kLanApiLobbyPort);
+		joiner.forceUpdateDelayElapsed();
+		joiner.update();
+		accept_update_driven = true;
+		accept_cleared = joiner.transportForProbe() != nullptr &&
+			joiner.transportForProbe()->m_inBuffer[0].length == 0;
+
+		options_injected = inject_lan_message(
+			joiner.transportForProbe(),
+			options_message,
+			kLanApiRemoteIp,
+			kLanApiLobbyPort);
+		joiner.forceUpdateDelayElapsed();
+		joiner.update();
+		options_update_driven = true;
+		options_cleared = joiner.transportForProbe() != nullptr &&
+			joiner.transportForProbe()->m_inBuffer[0].length == 0;
+
+		LANGameInfo *current_game = joiner.currentGameForProbe();
+		games_seen = joiner.gameCount();
+		in_lobby = joiner.inLobbyForProbe();
+		on_game_join_calls = joiner.onGameJoinCalls();
+		on_game_options_calls = joiner.onGameOptionsCalls();
+		last_game_join_return = joiner.lastGameJoinReturn();
+		last_game_options_slot = joiner.lastGameOptionsPlayerSlot();
+		last_game_options_ip = joiner.lastGameOptionsPlayerIP();
+		parsed_options_length = joiner.lastGameOptions().getLength();
+
+		if (current_game != nullptr) {
+			local_slot = current_game->getLocalSlotNum();
+			copy_json_path(parsed_map_json, sizeof(parsed_map_json), current_game->getMap().str());
+			parsed_map_crc = static_cast<int>(current_game->getMapCRC());
+			parsed_map_size = static_cast<int>(current_game->getMapSize());
+			parsed_seed = current_game->getSeed();
+			parsed_crc_interval = current_game->getCRCInterval();
+			LANGameSlot *host_slot = current_game->getLANSlot(0);
+			LANGameSlot *joiner_slot = current_game->getLANSlot(1);
+			host_slot_ready = host_slot != nullptr &&
+				host_slot->isHuman() &&
+				host_slot->getIP() == kLanApiRemoteIp;
+			joiner_slot_ready = joiner_slot != nullptr &&
+				joiner_slot->isHuman() &&
+				joiner_slot->getIP() == kLanApiJoinerIp &&
+				joiner_slot->getName().compare(kLanApiJoinerName) == 0;
+			options_parsed =
+				current_game->isInGame() &&
+				!current_game->isGameInProgress() &&
+				parsed_map_crc == static_cast<int>(kLanApiMapCrc) &&
+				parsed_map_size == static_cast<int>(kLanApiMapSize) &&
+				parsed_seed == static_cast<int>(kLanApiSeed) &&
+				parsed_crc_interval == static_cast<int>(kLanApiCrcInterval) &&
+				host_slot_ready &&
+				joiner_slot_ready;
+		}
+
+		join_recorded = on_game_join_calls == 1 &&
+			last_game_join_return == LANAPIInterface::RET_OK &&
+			joiner.lastJoinedGame() == current_game &&
+			!in_lobby &&
+			local_slot == 1;
+		options_recorded = on_game_options_calls > 0 &&
+			last_game_options_ip == kLanApiRemoteIp &&
+			last_game_options_slot == 0 &&
+			parsed_options_length > 0;
+	}
+
+	const bool ok = accept_decoded &&
+		options_decoded &&
+		accept_length == static_cast<int>(sizeof(LANMessage)) &&
+		options_length == static_cast<int>(sizeof(LANMessage)) &&
+		accept_message.LANMessageType == LANMessage::MSG_JOIN_ACCEPT &&
+		options_message.LANMessageType == LANMessage::MSG_GAME_OPTIONS &&
+		accept_message.GameJoined.playerIP == kLanApiJoinerIp &&
+		accept_message.GameJoined.gameIP == kLanApiRemoteIp &&
+		accept_message.GameJoined.slotPosition == 1 &&
+		discovered_game_ready &&
+		accept_injected &&
+		accept_cleared &&
+		accept_update_driven &&
+		options_injected &&
+		options_cleared &&
+		options_update_driven &&
+		join_recorded &&
+		options_recorded &&
+		options_parsed;
+
+	std::snprintf(g_browser_lanapi_join_client_json, sizeof(g_browser_lanapi_join_client_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser LANAPI join accept/options relay probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"originalTransport\":\"Transport::m_inBuffer\","
+		"\"originalDispatch\":\"LANAPI::update\","
+		"\"originalHandlers\":\"LANAPI::handleJoinAccept+LANAPI::handleGameOptions\","
+		"\"originalParser\":\"GameInfoToAsciiString -> ParseAsciiStringToGameInfo\","
+		"\"originalCallbacks\":\"LANAPI::OnGameJoin+LANAPI::OnGameOptions\","
+		"\"nextRequired\":\"lanApiGameStartOrProductionTransport\","
+		"\"packets\":{\"joinAcceptDecoded\":%s,\"gameOptionsDecoded\":%s,"
+		"\"joinAcceptHexLength\":%d,\"gameOptionsHexLength\":%d,"
+		"\"joinAcceptInvalidHexIndex\":%d,\"gameOptionsInvalidHexIndex\":%d,"
+		"\"joinAcceptBytes\":%d,\"gameOptionsBytes\":%d,"
+		"\"joinAcceptType\":\"%s\",\"gameOptionsType\":\"%s\","
+		"\"slotPosition\":%d,\"playerIP\":%u,\"gameIP\":%u},"
+		"\"transport\":{\"joinAcceptInjected\":%s,\"joinAcceptCleared\":%s,"
+		"\"gameOptionsInjected\":%s,\"gameOptionsCleared\":%s},"
+		"\"lanApi\":{\"acceptUpdateDriven\":%s,\"optionsUpdateDriven\":%s,"
+		"\"gamesSeen\":%d,\"inLobby\":%s,\"onGameJoinCalls\":%d,"
+		"\"lastGameJoinReturn\":%d,\"onGameOptionsCalls\":%d,"
+		"\"lastGameOptionsPlayerIP\":%u,\"lastGameOptionsPlayerSlot\":%d,"
+		"\"lastGameOptionsLength\":%d},"
+		"\"game\":{\"joinRecorded\":%s,\"optionsRecorded\":%s,\"optionsParsed\":%s,"
+		"\"localSlot\":%d,\"hostSlotReady\":%s,\"joinerSlotReady\":%s,"
+		"\"map\":\"%s\",\"mapCRC\":%d,\"mapSize\":%d,\"seed\":%d,\"crcInterval\":%d}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		accept_decoded ? "true" : "false",
+		options_decoded ? "true" : "false",
+		accept_hex_length,
+		options_hex_length,
+		accept_invalid_hex_index,
+		options_invalid_hex_index,
+		accept_length,
+		options_length,
+		lan_message_type_name(accept_message.LANMessageType),
+		lan_message_type_name(options_message.LANMessageType),
+		accept_message.GameJoined.slotPosition,
+		accept_message.GameJoined.playerIP,
+		accept_message.GameJoined.gameIP,
+		accept_injected ? "true" : "false",
+		accept_cleared ? "true" : "false",
+		options_injected ? "true" : "false",
+		options_cleared ? "true" : "false",
+		accept_update_driven ? "true" : "false",
+		options_update_driven ? "true" : "false",
+		games_seen,
+		in_lobby ? "true" : "false",
+		on_game_join_calls,
+		last_game_join_return,
+		on_game_options_calls,
+		last_game_options_ip,
+		last_game_options_slot,
+		parsed_options_length,
+		join_recorded ? "true" : "false",
+		options_recorded ? "true" : "false",
+		options_parsed ? "true" : "false",
+		local_slot,
+		host_slot_ready ? "true" : "false",
+		joiner_slot_ready ? "true" : "false",
+		parsed_map_json,
+		parsed_map_crc,
+		parsed_map_size,
+		parsed_seed,
+		parsed_crc_interval);
+	return g_browser_lanapi_join_client_json;
 }
 
 }
