@@ -901,6 +901,39 @@ const steps = [
     },
   },
   {
+    name: "main-menu-layout-image-repaint",
+    file: "harness/main_menu_layout_image_repaint_smoke.mjs",
+    args: [
+      "artifacts/real-assets/WindowZH.big",
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/EnglishZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "MainMenu layout image repaint smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-main-menu-layout-image-repaint",
+        "MainMenu layout image repaint smoke emitted the wrong path", payload);
+      expect(payload.originalPaths?.includes("WindowLayout::load -> GameWindowManager::winCreateFromScript"),
+        "MainMenu layout image repaint smoke did not use the original WindowLayout load path", payload.originalPaths);
+      expect(payload.originalPaths?.includes("parseDrawData IMAGE -> TheMappedImageCollection->findImageByName"),
+        "MainMenu layout image repaint smoke did not bind image draw data through parsed mapped images", payload.originalPaths);
+      expect(payload.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw"),
+        "MainMenu layout image repaint smoke did not target the real MainMenu Logo child", payload.originalPaths);
+      expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
+          && payload.layout?.target?.image === "GeneralsLogo"
+          && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
+        "MainMenu layout image repaint smoke did not report the expected real WND image binding", payload);
+      expect(payload.calls?.displayImageDraws >= 1
+          && payload.calls?.drawIndexed >= 1
+          && payload.draw?.screenRect?.left === 504
+          && payload.draw?.screenRect?.bottom === 110,
+        "MainMenu layout image repaint smoke did not reach the W3DDisplay/WebGL draw path", payload);
+      expect(payload.logoPixels?.outside?.every((component, index) => index >= 3 || component <= 8),
+        "MainMenu layout image repaint smoke did not keep the pruned outside region black", payload.logoPixels);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png"),
+        "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shell-composite-render",
     file: "harness/display_shell_composite_smoke.mjs",
     args: ["artifacts/real-assets/INIZH.big", "artifacts/real-assets/EnglishZH.big"],
@@ -1027,6 +1060,7 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
+    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",

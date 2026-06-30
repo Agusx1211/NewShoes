@@ -3443,6 +3443,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       (370x120 in a 512x512 TGA), one indexed draw, texture upload/bind calls,
       colored logo pixels, black outside pixels, and
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
+- [x] Add the real MainMenu WND image repaint smoke to the vertical integration
+      runner: `test:vertical-integrations` now gates the
+      `MainMenu.wnd:Logo` slice alongside the other rendering verticals,
+      validating the original `WindowLayout::load`,
+      `GameWindowManagerScript.cpp::parseDrawData`,
+      `W3DGameWinDefaultDraw`, `W3DDisplay::drawImage`, and browser
+      D3D8/WebGL2 pixel path before the shell composite and shipped mesh
+      smokes run.
 
 ---
 

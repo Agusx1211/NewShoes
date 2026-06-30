@@ -657,7 +657,10 @@ shares structure and follows behind.
       current narrow image slice proves `MainMenu.wnd:Logo`; remaining work is
       broader unpruned shell composition (for example `MainMenuRuler`,
       `MainMenuBackdrop`, button image states, and text) under the normal
-      display-owned lifecycle.
+      display-owned lifecycle. Diagnose the focused `MainMenuRuler` repaint
+      crash against `MainMenuRuleruserinterface.tga` (1024x1024 from
+      `TexturesZH.big`) before promoting that full-screen image child into the
+      WND image repaint gate.
 - [ ] Restore the generic original mapped-image directory load route for
       browser render smokes: replace the focused exact-block
       `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /
