@@ -6318,6 +6318,11 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      probeBrowserLanApiNetworkUpdate: module.cwrap(
+        "cnc_port_probe_browser_lanapi_network_update",
+        "string",
+        [],
+      ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -16720,6 +16725,20 @@ async function rpc(command, payload = {}) {
           ok: Boolean(clientProbe?.ok),
           command,
           clientProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiNetworkUpdateProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI Network::update probe cannot run" };
+        }
+        const probe = parseModuleState(wasmModule.probeBrowserLanApiNetworkUpdate());
+        return {
+          ok: Boolean(probe?.ok),
+          command,
+          probe,
           state: snapshotState(),
         };
       }

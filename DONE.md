@@ -4685,6 +4685,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-lanapi-game-start-two-contexts`;
       the aggregate `test:vertical-integrations` gate includes it as an
       independent networking vertical.
+- [x] Drive LANAPI game-start state through original `Network::update` into
+      first-frame readiness. The wasm bridge now exports
+      `cnc_port_probe_browser_lanapi_network_update`, and the harness RPC
+      `browserLanApiNetworkUpdateProbe` starts from the same host
+      `LANAPI::RequestGameStart` / `LANAPI::OnGameStart` setup as the
+      two-context game-start vertical, then sets the probe logic frame to 1,
+      appends a real `MSG_FRAME_TICK` to `TheCommandList`, and calls
+      `Network::update`. The smoke asserts the original path crosses
+      `GetCommandsFromCommandList`, `processCommand`,
+      `ConnectionManager::allCommandsReady`,
+      `FrameDataManager::allCommandsReady`, `timeForNewFrame`, and
+      `RelayCommandsToCommandList`, promoting the local player from pregame to
+      connected and flipping `isFrameDataReady()` from false to true. This
+      proves first-frame readiness after LAN game-start; it does not claim
+      production WebSocket/WebRTC transport, multi-frame deterministic sync,
+      desync detection, GameSpy, or a full playable match. Verified with
+      `npm --prefix WebAssembly run test:browser-lanapi-network-update`,
+      `npm --prefix WebAssembly run test:browser-lanapi-game-start-two-contexts`,
+      and `npm --prefix WebAssembly run test:vertical-integrations`.
 
 ---
 

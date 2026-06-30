@@ -437,6 +437,45 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-network-update",
+    file: "harness/lanapi_network_update_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI Network::update smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-network-update"
+          && payload.relay?.productionTransport === false
+          && payload.originalSetup === "LANAPI::RequestGameStart -> LANAPI::OnGameStart"
+          && payload.originalUpdate === "Network::update"
+          && payload.originalCommandPath === "Network::GetCommandsFromCommandList -> Network::processCommand"
+          && payload.originalFrameReadiness === "Network::AllCommandsReady -> ConnectionManager::allCommandsReady -> FrameDataManager::allCommandsReady"
+          && payload.originalTiming === "Network::timeForNewFrame"
+          && payload.originalRelay === "Network::RelayCommandsToCommandList"
+          && payload.lanApi?.hostGameReady === true
+          && payload.lanApi?.onGameStartCalls === 1
+          && payload.lanApi?.gameStartMessageDecoded === true
+          && payload.before?.network?.setupReady === true
+          && payload.before?.network?.localSlot === 0
+          && payload.before?.network?.frameDataReady === false
+          && payload.before?.callback?.sideEffectsReady === true
+          && payload.update?.commandListInjected === true
+          && payload.update?.updateDriven === true
+          && payload.update?.logicFrameBefore === 0
+          && payload.update?.logicFrameForUpdate === 1
+          && payload.update?.tickMessageType === 1
+          && payload.update?.commandListCountBefore === 1
+          && payload.update?.commandListCountAfter === 1
+          && payload.update?.localConnectedBefore === false
+          && payload.update?.localConnectedAfter === true
+          && payload.update?.beforeFrameDataReady === false
+          && payload.update?.afterFrameDataReady === true
+          && payload.update?.readinessTransition === true
+          && payload.update?.inGamePromoted === true
+          && payload.after?.network?.setupReady === true
+          && payload.after?.network?.frameDataReady === true
+          && payload.after?.callback?.sideEffectsReady === true,
+        "browser LANAPI Network::update smoke did not prove first-frame readiness through the original network loop", payload);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -585,6 +624,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
+    "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -595,7 +635,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "merge the original MilesAudioManager 2D sample leg with the browser Web Audio completion harness in one browser-owned smoke",
-    "drive Network::update frame readiness after LANAPI game-start or replace the harness relay with production WebSocket/WebRTC transport",
+    "replace the harness relay with production WebSocket/WebRTC transport or extend networking coverage to multi-frame deterministic sync/desync detection",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

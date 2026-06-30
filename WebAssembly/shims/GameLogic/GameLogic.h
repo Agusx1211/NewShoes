@@ -23,7 +23,8 @@ enum
 class GameLogic
 {
 public:
-	int getFrame() const { return 0; }
+	int getFrame() const { return m_frame; }
+	void setFrameForProbe(UnsignedInt frame) { m_frame = static_cast<Int>(frame); }
 	Int getGameMode() const { return m_gameMode; }
 	void setGameMode(Int mode) { m_gameMode = mode; }
 	Bool getDrawIconUI() const { return TRUE; }
@@ -60,6 +61,7 @@ public:
 
 private:
 	Int m_gameMode = GAME_NONE;
+	Int m_frame = 0;
 };
 
 extern GameLogic *TheGameLogic;

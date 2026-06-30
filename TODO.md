@@ -1169,10 +1169,14 @@ shares structure and follows behind.
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
       `Network::initTransport`, and `ConnectionManager::parseUserList` for
-      both host and joiner. Next networking slice: drive `Network::update` /
-      `ConnectionManager::allCommandsReady` far enough to prove frame-data
-      readiness, or replace the harness packet handoff with production
-      WebSocket/WebRTC transport.
+      both host and joiner, and the single-context follow-on now drives
+      `Network::update` through `GetCommandsFromCommandList`,
+      `processCommand`, `ConnectionManager::allCommandsReady`,
+      `FrameDataManager::allCommandsReady`, `timeForNewFrame`, and
+      `RelayCommandsToCommandList` far enough to prove the first
+      `frameDataReady` transition. Next networking slices: replace the harness
+      packet handoff with production WebSocket/WebRTC transport and extend the
+      lockstep harness to multi-frame deterministic sync/desync detection.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
@@ -1180,9 +1184,10 @@ shares structure and follows behind.
       `handleJoinAccept`, and `handleGameOptions` across two isolated browser
       contexts via queued `Transport` bytes; the game-start slice now drives
       `RequestGameStart`, `handleGameStart`, and `OnGameStart` into original
-      `NetworkInterface` setup plus `MSG_NEW_GAME`/seed/map side effects.
-      Next slice is frame-readiness through `Network::update` or a production
-      WebSocket/WebRTC transport.
+      `NetworkInterface` setup plus `MSG_NEW_GAME`/seed/map side effects; the
+      update slice now advances that setup through original `Network::update`
+      into first-frame readiness. Next slice is a production WebSocket/WebRTC
+      transport, not a Node-mediated packet handoff.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
