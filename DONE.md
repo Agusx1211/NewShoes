@@ -3380,6 +3380,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       original base/blend terrain passes reach browser `DX8Wrapper` /
       WebGL2 draw history, and captures non-black terrain coverage in
       `harness-smoke-ww3d-terrain-map-patch-scene-canvas.png`.
+- [x] Promote the real map terrain scene proof into original
+      `W3DTerrainVisual::load` ownership: `test:ww3d-terrain-visual-scene`
+      links original `TerrainVisual.cpp` and `W3DTerrainVisual.cpp`, mounts
+      `INIZH.big`, `MapsZH.big`, and `TerrainZH.big`, parses
+      `Data\INI\Terrain.ini` through original `INI::load` / `INITerrain.cpp`,
+      calls `W3DTerrainVisual::load` for `Maps\MD_GLA03\MD_GLA03.map`, proves
+      the visual-owned `HeightMapRenderObjClass` is attached by
+      `W3DDisplay::m_3DScene`, then renders the source-backed 32x32 terrain
+      patch through `WW3D::Render(W3DDisplay::m_3DScene, camera)` to browser
+      WebGL2. The Playwright smoke verifies two original terrain draw passes,
+      510 colored canvas pixels, and
+      `harness-smoke-ww3d-terrain-visual-scene-canvas.png`. Full production
+      `W3DTerrainVisual::init` water/tracks/shadow/smudge ownership, full-map
+      camera paging, shroud, objects, and gameplay flow remain open.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

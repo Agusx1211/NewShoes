@@ -7040,6 +7040,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_tile_archive_scene", "string", ["string"]),
       probeWW3DTerrainMapPatchScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_map_patch_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainVisualScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -17284,6 +17286,114 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.renderPath?.includes("RTS3DScene::Customized_Render")
           && probe?.scene?.created === true
           && probe?.scene?.objectAdded === true
+          && probe?.scene?.terrainClassId === 4
+          && probe?.terrain?.tileSource === "shipped-map-heightmap"
+          && probe?.terrain?.renderObject === "HeightMapRenderObjClass"
+          && probe?.terrain?.verticesPerSide === 33
+          && probe?.terrain?.cellsPerSide === 32
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+          && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexStride === 32
+          && browserProbe?.vertexLayout?.source === "fvf"
+          && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
+          && browserProbe?.texture0?.sampled === true
+          && Array.isArray(drawHistory)
+          && drawHistory.length >= 2
+          && drawHistory[0]?.renderState?.alphaBlendEnable === 0
+          && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
+          && drawHistory[0]?.texture0?.sampled === true
+          && drawHistory[1]?.renderState?.alphaBlendEnable === 1
+          && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
+          && drawHistory[1]?.texture0?.sampled === true
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && textureDelta.binds >= 1
+          && textureDelta.samplerApplications >= 1
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          drawHistory,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainVisualScene":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "");
+        const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
+        const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          d3d8DrawIndexedSequence: 0,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainVisualScene(
+          iniArchivePath,
+          mapsArchivePath,
+          terrainArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
+          ? harnessState.graphics.d3d8DrawHistory
+          : [];
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_visual_scene_probe"
+          && probe?.visual?.class === "W3DTerrainVisual"
+          && probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
+          && probe?.visual?.ownedTerrainRenderObject === true
+          && probe?.visual?.waterRenderObjectNull === true
+          && probe?.ini?.loaded === true
+          && probe?.ini?.entryExists === true
+          && probe?.ini?.parsed === true
+          && probe?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && probe?.ini?.originalIniParser === true
+          && (probe?.ini?.terrainTypeCount ?? 0) > 0
+          && probe?.archives?.maps?.loaded === true
+          && probe?.archives?.terrain?.loaded === true
+          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.entryExists === true
+          && probe?.map?.entryOpenable === true
+          && probe?.map?.streamOpen === true
+          && probe?.map?.parsed === true
+          && (probe?.map?.bytes ?? 0) > 0
+          && (probe?.map?.width ?? 0) > 16
+          && (probe?.map?.height ?? 0) > 16
+          && (probe?.map?.heightChecksum ?? 0) > 0
+          && probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && probe?.scene?.created === true
+          && probe?.scene?.objectAddedByVisualLoad === true
+          && probe?.scene?.path === "W3DDisplay::m_3DScene"
           && probe?.scene?.terrainClassId === 4
           && probe?.terrain?.tileSource === "shipped-map-heightmap"
           && probe?.terrain?.renderObject === "HeightMapRenderObjClass"

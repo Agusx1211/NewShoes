@@ -684,16 +684,24 @@ shares structure and follows behind.
       `WorldHeightMap`, selects a patch with loaded shipped terrain source
       tiles, initializes the original `HeightMapRenderObjClass`, and verifies
       its two-pass `DX8Wrapper::Draw_Triangles` submission produces
-      WebGL-visible terrain pixels. The remaining vertical is normal
-      display-owned `W3DTerrainVisual` / `W3DDisplay` terrain ownership for a
-      full map, then broadening water, shroud, objects, and gameplay camera
-      flow on top of the same original heightmap path.
+      WebGL-visible terrain pixels. `test:ww3d-terrain-visual-scene` now links
+      original `TerrainVisual.cpp` / `W3DTerrainVisual.cpp`, calls
+      `W3DTerrainVisual::load` against the same real map/archive set, proves the
+      visual-owned `HeightMapRenderObjClass` is attached by
+      `W3DDisplay::m_3DScene`, and captures browser WebGL2 terrain pixels. The
+      remaining vertical is production/full-map display ownership without
+      probe-installed render objects or patch reinitialization, then broadening
+      water, shroud, objects, and gameplay camera flow on top of the same
+      original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
       `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
       the real tree, prop, bib, bridge, waypoint, shroud, water, and road
-      runtime systems as those subsystems become browser-ready.
+      runtime systems as those subsystems become browser-ready. The
+      `W3DTerrainVisual::load` smoke currently also keeps cold
+      water/tracks/shadow/smudge methods weakly stubbed because the focused
+      proof keeps water null and does not call full `W3DTerrainVisual::init`.
 - [ ] Extend runtime asset extraction/mounting to include the base Generals
       terrain archives (for example `Terrain.big` when supplied) so base maps
       such as Tournament Desert can render complete terrain texture classes
