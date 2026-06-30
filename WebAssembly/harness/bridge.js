@@ -6735,6 +6735,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ws_environment_mapper_apply", "string", []),
       probeWWShadeCubeMapApply: module.cwrap(
         "cnc_port_probe_wwshade_cubemap_apply", "string", []),
+      probeLaunchWebBrowser: module.cwrap(
+        "cnc_port_probe_launch_web_browser", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -17137,6 +17139,33 @@ async function rpc(command, payload = {}) {
           ok,
           command,
           probe,
+          state: snapshotState(),
+        };
+      }
+    case "launchWebBrowserProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; LaunchWebBrowser bridge cannot run" };
+        }
+        const before = window.__cncLaunchWebBrowserLast ?? null;
+        const probe = parseModuleState(wasmModule.probeLaunchWebBrowser());
+        const last = window.__cncLaunchWebBrowserLast ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "GeneralsMD original WWLib LaunchWeb.cpp"
+          && probe?.bridge === "window.open"
+          && probe?.nullUrl === false
+          && probe?.emptyUrl === false
+          && probe?.browserLaunch === true
+          && last?.url === probe.browserUrl
+          && last?.target === "_blank"
+          && last?.features === "noopener"
+          && last?.opened === true;
+        return {
+          ok,
+          command,
+          probe,
+          launchWeb: { before, last },
           state: snapshotState(),
         };
       }

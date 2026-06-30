@@ -85,6 +85,7 @@
     "test:wwlib-hash": "npm run build:wasm && node dist/wwlib-hash-smoke.cjs",
     "test:wwlib-image-misc": "npm run build:wasm && node dist/wwlib-image-misc-smoke.cjs",
     "test:wwlib-launchweb": "npm run build:wasm && node dist/wwlib-launchweb-smoke.cjs",
+    "test:wwlib-launchweb-browser": "npm run build:wasm && node harness/launch_web_browser_smoke.mjs",
     "test:wwlib-lzo": "npm run build:wasm && node dist/wwlib-lzo-smoke.cjs",
     "test:wwlib-md5": "npm run build:wasm && node dist/wwlib-md5-smoke.cjs",
     "test:wwlib-platform-compat": "npm run build:wasm && node dist/wwlib-platform-compat-smoke.cjs",

@@ -358,6 +358,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MultiListClass`, and `PriorityMultiListIterator` behavior under wasm.
 - [x] `WWVegas/WWLib` debug `RefCountClass` tracking (`refcount.cpp`) compiles
       under wasm and is exercised through lookup-table lifetime cleanup.
+- [x] Replace the browser `LaunchWebBrowser` no-native-process fallback with a
+      harness-observable `window.open` bridge: original WWLib `LaunchWeb.cpp`
+      now calls `window.open` under Emscripten when a browser window exists,
+      keeps null/empty/non-browser Node calls false, and `cnc-port` exposes a
+      Playwright-smoked `launchWebBrowserProbe` that verifies URL, target,
+      features, and return path.
 - [x] `WWVegas/WWLib` system timer wrappers (`_timer.cpp`, `systimer.cpp`,
       `stimer.cpp`) compile against browser WinMM timing shims and
       smoke-test the legacy `FrameTimer`/`TickCount` globals.

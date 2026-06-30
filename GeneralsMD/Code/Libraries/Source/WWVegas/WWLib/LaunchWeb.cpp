@@ -36,6 +36,9 @@
 #include <shellapi.h>
 #include <stdio.h>
 #include <assert.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 
 /******************************************************************************
 *
@@ -63,6 +66,29 @@ bool LaunchWebBrowser(const char* url)
 		return false;
 		}
 
+#ifdef __EMSCRIPTEN__
+	return EM_ASM_INT({
+		var url = UTF8ToString($0);
+		if (typeof window === 'undefined' || typeof window.open !== 'function') {
+			return 0;
+		}
+		var record = {};
+		record.url = url;
+		record.target = '_blank';
+		record.features = 'noopener';
+		try {
+			var opened = window.open(url, '_blank', 'noopener');
+			record.opened = !!opened;
+			window.__cncLaunchWebBrowserLast = record;
+			return opened ? 1 : 0;
+		} catch (error) {
+			record.opened = false;
+			record.error = String(error && error.message ? error.message : error);
+			window.__cncLaunchWebBrowserLast = record;
+			return 0;
+		}
+	}, url) != 0;
+#else
 	// Create a temporary file with HTML content
 	char tempPath[MAX_PATH];
 	GetWindowsDirectory(tempPath, MAX_PATH);
@@ -117,4 +143,5 @@ bool LaunchWebBrowser(const char* url)
 	assert(createSuccess && "Failed to launch default WebBrowser.");
 
 	return (TRUE == createSuccess);
+#endif
 	}

@@ -85,9 +85,10 @@ shares structure and follows behind.
 - [ ] Replace the current browser no-resource/no-registry WWLib fallbacks with
       a real resource lookup and persistence contract before relying on
       `ResourceFileClass` or `RegistryClass` for runtime settings/data.
-- [ ] Replace the current `LaunchWebBrowser` no-native-process fallback with a
-      harness-observable `window.open` / external-link browser bridge before
-      relying on original URL-launching UI flows.
+- [ ] Drive original URL-launching UI flows through the browser
+      `LaunchWebBrowser` bridge once the relevant shell/WOL/embedded-browser
+      menu callbacks are runtime-owned; current coverage proves the direct
+      WWLib call crosses to `window.open`.
 - [ ] Compile remaining original WWLib DirectDraw-backed 2D conversion helpers
       (`convert.cpp`, `dsurface.cpp`) after the browser `DSurface`/pixel-format
       abstraction is defined, instead of stubbing draw behavior.
