@@ -676,11 +676,23 @@ shares structure and follows behind.
       `test:vertical-integrations` now gates that real archive-backed tile
       render beside the other rendering verticals; it also gates the same real
       tile data through `RTS3DScene::Customized_Render` `CLASSID_TILEMAP`
-      dispatch. The remaining vertical is real map/height data into
+      dispatch. `test:ww3d-terrain-map-patch-scene` now mounts `INIZH.big`,
+      `MapsZH.big`, and `TerrainZH.big`, reads real `Terrain.ini` terrain
+      texture mappings, parses `Maps\Tournament Desert\Tournament Desert.map`
+      through original `WorldHeightMap`, and renders a bounded shipped-map
+      height/blend patch through `W3DTerrainBackground` / `RTS3DScene` to
+      browser pixels. The remaining vertical is full real map/height ownership
+      inside
       `BaseHeightMapRenderObjClass` / `HeightMapRenderObjClass`,
       `W3DTerrainVisual`, `W3DScene::Customized_Render`, and
       `DX8Wrapper::Draw_Triangles`; keep the first harness proof to real
       WebGL-visible terrain pixels before broadening water, shroud, or objects.
+- [ ] Replace the focused `terrain-texture-mapping-reader` used by
+      `test:ww3d-terrain-map-patch-scene` with the original `INI::load`
+      terrain parser once the W3D probe owns the required parser lifetime and
+      singleton dependencies; keep the smoke green against real
+      `Data\INI\Terrain.ini`, `WorldHeightMap`, `RTS3DScene`, and browser
+      pixels.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

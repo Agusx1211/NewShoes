@@ -3359,6 +3359,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `RTS3DScene::Customized_Render`, reaches `W3DTerrainBackground`, samples
       the stage-1 terrain texture, and produces browser WebGL2 pixels in
       `harness-smoke-ww3d-terrain-tile-archive-scene-canvas.png`.
+- [x] Feed shipped map height/blend data into the terrain scene proof:
+      `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
+      and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture
+      mappings into `TerrainTypeCollection`, parses
+      `Maps\Tournament Desert\Tournament Desert.map` through the original
+      `WorldHeightMap` constructor, and renders a bounded map patch through
+      `W3DTerrainBackground` registered as `CLASSID_TILEMAP` in `RTS3DScene`.
+      The Playwright smoke verifies map bytes/dimensions/checksums, stage-1
+      terrain texture upload/sample, 32-byte terrain FVF draw submission, and
+      browser WebGL2 pixels in
+      `harness-smoke-ww3d-terrain-map-patch-scene-canvas.png`. Full
+      `HeightMapRenderObjClass` / `W3DTerrainVisual` ownership remains open.
 - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
       ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
       `AABoxRenderObjClass` to a scene, renders through

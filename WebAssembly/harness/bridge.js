@@ -6701,6 +6701,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_tile_archive", "string", ["string"]),
       probeWW3DTerrainTileArchiveScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tile_archive_scene", "string", ["string"]),
+      probeWW3DTerrainMapPatchScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_map_patch_scene", "string", ["string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -10483,6 +10485,129 @@ async function extractBigEntryFromUrl(url, entryName) {
   throw new Error(`${entryName} was not found in ${url}`);
 }
 
+async function indexBigArchiveUrl(url) {
+  const header = await fetchByteRange(url, 0, 15);
+  const magic = String.fromCharCode(...header.subarray(0, 4));
+  if (magic !== "BIGF") {
+    throw new Error(`${url} is not a BIGF archive`);
+  }
+
+  const count = readBigUInt32BE(header, 8);
+  if (count === 0 || count > 1000000) {
+    throw new Error(`${url} has an invalid BIGF entry count: ${count}`);
+  }
+
+  const decoder = new TextDecoder("ascii");
+  const directoryStart = 0x10;
+  const chunkSize = 64 * 1024;
+  let directoryBytes = new Uint8Array(0);
+  let cursor = 0;
+  const entries = new Map();
+
+  const ensureDirectoryBytes = async (requiredLength) => {
+    while (directoryBytes.byteLength < requiredLength) {
+      const start = directoryStart + directoryBytes.byteLength;
+      const next = await fetchByteRange(url, start, start + chunkSize - 1);
+      if (next.byteLength === 0) {
+        throw new Error(`${url} ended before BIGF directory entry ${entries.size + 1}`);
+      }
+      directoryBytes = appendBytes(directoryBytes, next);
+    }
+  };
+
+  for (let index = 0; index < count; ++index) {
+    await ensureDirectoryBytes(cursor + 9);
+    const offset = readBigUInt32BE(directoryBytes, cursor);
+    const size = readBigUInt32BE(directoryBytes, cursor + 4);
+    const pathStart = cursor + 8;
+    let pathEnd = -1;
+    while (pathEnd < 0) {
+      for (let scan = pathStart; scan < directoryBytes.byteLength; ++scan) {
+        if (directoryBytes[scan] === 0) {
+          pathEnd = scan;
+          break;
+        }
+      }
+      if (pathEnd < 0) {
+        await ensureDirectoryBytes(directoryBytes.byteLength + 1);
+      }
+    }
+
+    const path = decoder.decode(directoryBytes.subarray(pathStart, pathEnd));
+    cursor = pathEnd + 1;
+    entries.set(path.replaceAll("/", "\\").toLowerCase(), {
+      path,
+      offset,
+      size,
+      indexedEntries: index + 1,
+    });
+  }
+
+  return {
+    entries,
+    directoryBytes: directoryBytes.byteLength,
+    indexedEntries: count,
+  };
+}
+
+async function extractBigEntriesFromUrl(url, entryNames) {
+  const requestedEntries = entryNames.map((entryName, index) => {
+    const wanted = String(entryName ?? "").replaceAll("/", "\\").toLowerCase();
+    if (!wanted) {
+      throw new Error("Missing BIG archive entry name");
+    }
+    return { wanted, entryName, index };
+  });
+
+  const archiveIndex = await indexBigArchiveUrl(url);
+  const matchedEntries = requestedEntries.map((request) => {
+    const entry = archiveIndex.entries.get(request.wanted);
+    if (!entry) {
+      throw new Error(`${request.entryName} was not found in ${url}`);
+    }
+    return {
+      ...entry,
+      requestIndex: request.index,
+    };
+  });
+
+  const coalesceGapBytes = 64 * 1024;
+  const groups = [];
+  for (const entry of [...matchedEntries].sort((left, right) => left.offset - right.offset)) {
+    const endExclusive = entry.offset + entry.size;
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && entry.offset <= lastGroup.endExclusive + coalesceGapBytes) {
+      lastGroup.endExclusive = Math.max(lastGroup.endExclusive, endExclusive);
+      lastGroup.entries.push(entry);
+    } else {
+      groups.push({
+        start: entry.offset,
+        endExclusive,
+        entries: [entry],
+      });
+    }
+  }
+
+  const extractedEntries = new Array(matchedEntries.length);
+  for (const group of groups) {
+    const groupBytes = await fetchByteRange(url, group.start, group.endExclusive - 1);
+    for (const entry of group.entries) {
+      const start = entry.offset - group.start;
+      const bytes = groupBytes.subarray(start, start + entry.size);
+      extractedEntries[entry.requestIndex] = {
+        path: entry.path,
+        offset: entry.offset,
+        size: entry.size,
+        bytes,
+        directoryBytes: archiveIndex.directoryBytes,
+        indexedEntries: archiveIndex.indexedEntries,
+      };
+    }
+  }
+
+  return extractedEntries;
+}
+
 function buildBigArchive(entries) {
   const encoder = new TextEncoder();
   const normalizedEntries = entries.map((entry) => {
@@ -10592,13 +10717,11 @@ async function mountRangeBackedArchiveSet(payload = {}) {
 
     const entries = [];
     try {
-      for (const entryName of entryNames) {
-        const entry = await extractBigEntryFromUrl(archive.url, entryName);
-        entries.push({
-          ...entry,
-          sourceArchive: String(input.sourceArchive ?? archive.url),
-        });
-      }
+      const extractedEntries = await extractBigEntriesFromUrl(archive.url, entryNames);
+      entries.push(...extractedEntries.map((entry) => ({
+        ...entry,
+        sourceArchive: String(input.sourceArchive ?? archive.url),
+      })));
     } catch (error) {
       return {
         ok: false,
@@ -16611,6 +16734,91 @@ async function rpc(command, payload = {}) {
           && probe?.archive?.countTilesOk === true
           && probe?.archive?.readTilesOk === true
           && probe?.archive?.tileChecksum > 0
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexStride === 32
+          && browserProbe?.vertexLayout?.source === "fvf"
+          && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
+          && browserProbe?.texture1?.sampled === true
+          && browserProbe?.boundTextures?.["1"] === probe?.texture?.id
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && textureDelta.binds >= 1
+          && textureDelta.samplerApplications >= 1
+          && pixelHasColor(browserProbe?.centerPixel, 8)
+          && pixelHasColor(screenshot?.centerPixel, 8);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainMapPatchScene":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; real-map WW3D terrain scene cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "");
+        const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
+        const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainMapPatchScene(
+          iniArchivePath,
+          mapsArchivePath,
+          terrainArchivePath,
+        ));
+        const textureAfter = harnessState.graphics.d3d8Textures ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_map_patch_scene_probe"
+          && probe?.ini?.loaded === true
+          && probe?.ini?.entryExists === true
+          && probe?.ini?.parsed === true
+          && probe?.ini?.parser === "terrain-texture-mapping-reader"
+          && probe?.ini?.originalIniParser === false
+          && (probe?.ini?.terrainTypeCount ?? 0) > 0
+          && probe?.archives?.maps?.loaded === true
+          && probe?.archives?.terrain?.loaded === true
+          && probe?.map?.entry === "Maps\\Tournament Desert\\Tournament Desert.map"
+          && probe?.map?.entryExists === true
+          && probe?.map?.entryOpenable === true
+          && probe?.map?.streamOpen === true
+          && probe?.map?.parsed === true
+          && (probe?.map?.bytes ?? 0) > 0
+          && (probe?.map?.width ?? 0) > 16
+          && (probe?.map?.height ?? 0) > 16
+          && (probe?.map?.heightChecksum ?? 0) > 0
+          && probe?.scene?.renderPath?.includes("RTS3DScene::Customized_Render")
+          && probe?.scene?.created === true
+          && probe?.scene?.objectAdded === true
+          && probe?.scene?.terrainClassId === 4
+          && probe?.terrain?.tileSource === "shipped-map-heightmap"
+          && probe?.terrain?.verticesPerSide === 17
+          && probe?.terrain?.cellsPerSide === 16
+          && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.ok === true
           && browserProbe?.usedPersistentBuffers === true
