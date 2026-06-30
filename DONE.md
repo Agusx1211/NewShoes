@@ -4732,6 +4732,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       not yet wire WebSocket into production `Transport::doSend` / `doRecv`.
       `test:browser-network-websocket-transport` and
       `test:vertical-integrations` gate the new path.
+- [x] Upgrade the GameNetwork WebSocket vertical from raw `NetPacket` payload
+      bytes to the production `Transport::queueSend` wire image. The wasm
+      probe now exports
+      `cnc_port_build_browser_network_transport_wire_packet` and
+      `cnc_port_accept_browser_network_transport_wire_packet`: source wasm
+      builds the two-command original packet, queues it through
+      `Transport::queueSend`, sends exactly the encrypted
+      `TransportMessageHeader` + payload bytes that `Transport::doSend` would
+      pass to `UDP::Write`, and destination wasm decrypts the delivered bytes,
+      validates the original CRC/magic contract, then feeds the decoded packet
+      to the existing focused `Transport::m_inBuffer` /
+      `ConnectionManager::doRelay` / `FrameDataManager::allCommandsReady`
+      path. `verify:websocket-transport-frontier` pins the remaining blocker:
+      original `Transport` still directly allocates concrete non-virtual
+      `UDP`, so real production ownership still needs a browser
+      WebSocket/WebRTC adapter under `Transport::doSend` / `doRecv`.
+      `test:browser-network-websocket-transport`,
+      `test:vertical-integrations`, and
+      `verify:websocket-transport-frontier` gate this frontier.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

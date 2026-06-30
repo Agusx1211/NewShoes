@@ -9,6 +9,7 @@
 #include <string>
 
 #include "Common/GameMemory.h"
+#include "Common/CRC.h"
 #include "Common/MessageStream.h"
 #include "Common/GameState.h"
 #include "Common/GlobalData.h"
@@ -280,6 +281,10 @@ char g_browser_network_relay_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_network_transport_build_json[4096] = {};
 char g_browser_network_transport_receive_json[8192] = {};
 char g_browser_network_transport_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
+char g_browser_network_transport_wire_build_json[8192] = {};
+char g_browser_network_transport_wire_receive_json[20000] = {};
+char g_browser_network_transport_wire_hex[((MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)) * 2) + 1] = {};
+char g_browser_network_transport_wire_payload_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_lanapi_build_json[8192] = {};
 char g_browser_lanapi_receive_json[8192] = {};
 char g_browser_lanapi_packet_hex[(sizeof(LANMessage) * 2) + 1] = {};
@@ -306,6 +311,8 @@ constexpr int kTransportFrameCommandCount = 1;
 constexpr int kTransportRunAhead = 20;
 constexpr int kTransportFrameRate = 30;
 constexpr int kTransportRelayMask = 1 << kTransportPlayerId;
+constexpr UnsignedInt kTransportWireRemoteIp = 0x7f000002;
+constexpr UnsignedShort kTransportWireRemotePort = NETWORK_BASE_PORT_NUMBER;
 constexpr UnsignedInt kLanApiLocalIp = 0x7f000001;
 constexpr UnsignedInt kLanApiRemoteIp = 0x7f000002;
 constexpr UnsignedInt kLanApiJoinerIp = 0x7f000003;
@@ -455,6 +462,20 @@ void decrypt_transport_message_copy(TransportMessage &message)
 		std::memcpy(bytes + offset, &word, sizeof(word));
 		mask += 0x00000321;
 	}
+}
+
+bool transport_message_has_valid_crc(const TransportMessage &message)
+{
+	if (message.length < 0 || message.length > MAX_MESSAGE_LEN) {
+		return false;
+	}
+
+	CRC crc;
+	crc.computeCRC(
+		&(message.header.magic),
+		message.length + static_cast<Int>(sizeof(TransportMessageHeader)) - static_cast<Int>(sizeof(UnsignedInt)));
+	return crc.get() == message.header.crc &&
+		message.header.magic == GENERALS_MAGIC_NUMBER;
 }
 
 bool decode_queued_lan_message(
@@ -1747,6 +1768,206 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_packe
 		stored_run_ahead,
 		stored_frame_rate);
 	return g_browser_network_transport_receive_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_packet()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	NetPacket *packet = build_transport_connection_packet();
+	if (packet == nullptr) {
+		std::snprintf(g_browser_network_transport_wire_build_json, sizeof(g_browser_network_transport_wire_build_json),
+			"{\"ok\":false,\"source\":\"GameNetwork browser production Transport wire build probe\","
+			"\"transportReady\":false,\"productionTransportWire\":false,"
+			"\"nextRequired\":\"buildOriginalNetPacketBeforeTransportQueue\"}");
+		return g_browser_network_transport_wire_build_json;
+	}
+
+	const int packet_length = packet->getLength();
+	const int commands = packet->getNumCommands();
+
+	Transport transport;
+	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
+	const bool queued = transport.queueSend(
+		kTransportWireRemoteIp,
+		kTransportWireRemotePort,
+		packet->getData(),
+		packet_length);
+	packet->deleteInstance();
+	packet = nullptr;
+
+	const TransportMessage *queued_message = nullptr;
+	int queued_slot = -1;
+	for (Int i = 0; i < MAX_MESSAGES; ++i) {
+		if (transport.m_outBuffer[i].length > 0) {
+			queued_message = &transport.m_outBuffer[i];
+			queued_slot = i;
+			break;
+		}
+	}
+
+	TransportMessage decoded = {};
+	int wire_length = 0;
+	bool wire_encoded = false;
+	bool payload_encoded = false;
+	bool crc_valid = false;
+	bool encrypted = false;
+	if (queued_message != nullptr) {
+		wire_length = queued_message->length + static_cast<int>(sizeof(TransportMessageHeader));
+		wire_encoded = encode_hex(
+			reinterpret_cast<const UnsignedByte *>(queued_message),
+			wire_length,
+			g_browser_network_transport_wire_hex,
+			sizeof(g_browser_network_transport_wire_hex));
+		decoded = *queued_message;
+		decrypt_transport_message_copy(decoded);
+		crc_valid = transport_message_has_valid_crc(decoded);
+		payload_encoded = encode_hex(
+			decoded.data,
+			decoded.length,
+			g_browser_network_transport_wire_payload_hex,
+			sizeof(g_browser_network_transport_wire_payload_hex));
+		encrypted = wire_length >= static_cast<int>(sizeof(UnsignedInt)) &&
+			std::memcmp(&(queued_message->header.crc), &(decoded.header.crc), sizeof(UnsignedInt)) != 0;
+	}
+
+	const bool ok = queued &&
+		queued_slot == 0 &&
+		wire_encoded &&
+		payload_encoded &&
+		crc_valid &&
+		encrypted &&
+		commands == 2 &&
+		decoded.length == packet_length &&
+		wire_length == packet_length + static_cast<int>(sizeof(TransportMessageHeader)) &&
+		decoded.addr == kTransportWireRemoteIp &&
+		decoded.port == kTransportWireRemotePort;
+
+	std::snprintf(g_browser_network_transport_wire_build_json, sizeof(g_browser_network_transport_wire_build_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser production Transport wire build probe\","
+		"\"transportReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket binary relay\","
+		"\"productionTransport\":false,"
+		"\"productionTransportWire\":true,"
+		"\"originalSerializer\":\"Transport::queueSend\","
+		"\"originalWireSend\":\"Transport::doSend -> UDP::Write header+payload\","
+		"\"nextRequired\":\"replaceConcreteUDPWithBrowserTransportAdapterForDoSendDoRecv\","
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"commands\":%d,"
+		"\"commandType\":\"NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD\","
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d,"
+		"\"runAheadCommandId\":%d,\"runAhead\":%d,\"frameRate\":%d},"
+		"\"wire\":{\"hex\":\"%s\",\"bytes\":%d,\"headerBytes\":%zu,"
+		"\"queuedSlot\":%d,\"encrypted\":%s,\"crcValidAfterDecrypt\":%s,"
+		"\"magic\":\"0x%04x\",\"addr\":%u,\"port\":%u}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		payload_encoded ? g_browser_network_transport_wire_payload_hex : "",
+		decoded.length,
+		commands,
+		kTransportRelayMask,
+		kTransportExecutionFrame,
+		kTransportPlayerId,
+		kTransportFrameInfoCommandId,
+		kTransportFrameCommandCount,
+		kTransportRunAheadCommandId,
+		kTransportRunAhead,
+		kTransportFrameRate,
+		wire_encoded ? g_browser_network_transport_wire_hex : "",
+		wire_length,
+		sizeof(TransportMessageHeader),
+		queued_slot,
+		encrypted ? "true" : "false",
+		crc_valid ? "true" : "false",
+		static_cast<unsigned int>(decoded.header.magic),
+		queued_message != nullptr ? queued_message->addr : 0u,
+		queued_message != nullptr ? queued_message->port : 0u);
+	return g_browser_network_transport_wire_build_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_packet(const char *wire_hex)
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	UnsignedByte wire_bytes[MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)] = {};
+	int length = 0;
+	const int input_hex_length = wire_hex != nullptr ? static_cast<int>(std::strlen(wire_hex)) : -1;
+	const int invalid_hex_index = first_invalid_hex_index(wire_hex);
+	const bool decoded_hex = decode_hex_with_capacity(
+		wire_hex,
+		wire_bytes,
+		static_cast<int>(sizeof(wire_bytes)),
+		length);
+
+	TransportMessage message = {};
+	bool decrypted = false;
+	bool crc_valid = false;
+	bool payload_encoded = false;
+	bool packet_accept_ok = false;
+	const char *packet_accept_json = "null";
+
+	if (decoded_hex && length > static_cast<int>(sizeof(TransportMessageHeader))) {
+		std::memcpy(&message, wire_bytes, static_cast<size_t>(length));
+		message.length = length - static_cast<int>(sizeof(TransportMessageHeader));
+		decrypt_transport_message_copy(message);
+		decrypted = true;
+		crc_valid = transport_message_has_valid_crc(message);
+		payload_encoded = encode_hex(
+			message.data,
+			message.length,
+			g_browser_network_transport_wire_payload_hex,
+			sizeof(g_browser_network_transport_wire_payload_hex));
+		if (crc_valid && payload_encoded) {
+			packet_accept_json = cnc_port_accept_browser_network_transport_packet(
+				g_browser_network_transport_wire_payload_hex);
+			packet_accept_ok = packet_accept_json != nullptr &&
+				std::strstr(packet_accept_json, "\"ok\":true") != nullptr;
+		}
+	}
+
+	const bool ok = decoded_hex &&
+		decrypted &&
+		crc_valid &&
+		payload_encoded &&
+		packet_accept_ok &&
+		message.length > 0 &&
+		message.length <= MAX_PACKET_SIZE;
+
+	std::snprintf(g_browser_network_transport_wire_receive_json, sizeof(g_browser_network_transport_wire_receive_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser production Transport wire receive probe\","
+		"\"transportReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket binary relay\","
+		"\"productionTransport\":false,"
+		"\"productionTransportWire\":true,"
+		"\"originalWireReceive\":\"Transport::doRecv decryptBuf/isGeneralsPacket contract\","
+		"\"originalTransport\":\"Transport::m_inBuffer\","
+		"\"nextRequired\":\"replaceConcreteUDPWithBrowserTransportAdapterForDoSendDoRecv\","
+		"\"wire\":{\"decoded\":%s,\"inputHexLength\":%d,\"invalidHexIndex\":%d,"
+		"\"bytes\":%d,\"headerBytes\":%zu,\"decrypted\":%s,"
+		"\"crcValid\":%s,\"magic\":\"0x%04x\"},"
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"decoded\":%s},"
+		"\"packetAccept\":%s}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		decoded_hex ? "true" : "false",
+		input_hex_length,
+		invalid_hex_index,
+		length,
+		sizeof(TransportMessageHeader),
+		decrypted ? "true" : "false",
+		crc_valid ? "true" : "false",
+		static_cast<unsigned int>(message.header.magic),
+		payload_encoded ? g_browser_network_transport_wire_payload_hex : "",
+		message.length,
+		packet_accept_ok ? "true" : "false",
+		packet_accept_json != nullptr ? packet_accept_json : "null");
+	return g_browser_network_transport_wire_receive_json;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_lanapi_announce_packet()

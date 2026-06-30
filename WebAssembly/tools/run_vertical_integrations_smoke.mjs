@@ -359,13 +359,19 @@ const steps = [
           && payload.relay?.browserTransport === "browser WebSocket binary relay"
           && payload.relay?.serverTransport === "Node WebSocket relay server"
           && payload.relay?.productionTransport === false
+          && payload.relay?.productionTransportWire === true
           && payload.relay?.hexHandoff === false
           && payload.relay?.binaryFrames === 1
           && payload.source?.client === "websocket-source"
           && payload.source?.wasm === "loaded"
-          && payload.source?.originalSerializer === "NetPacket::addCommand"
+          && payload.source?.originalSerializer === "Transport::queueSend"
+          && payload.source?.originalWireSend === "Transport::doSend -> UDP::Write header+payload"
           && payload.source?.websocket?.binaryType === "arraybuffer"
-          && payload.source?.websocket?.sentBytes === payload.source?.packet?.bytes
+          && payload.source?.websocket?.sentBytes === payload.source?.wire?.bytes
+          && payload.source?.wire?.bytes === payload.source?.packet?.bytes + payload.source?.wire?.headerBytes
+          && payload.source?.wire?.headerBytes === 6
+          && payload.source?.wire?.encrypted === true
+          && payload.source?.wire?.crcValidAfterDecrypt === true
           && payload.source?.packet?.commandType === "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
           && payload.source?.packet?.commands === 2
           && payload.source?.packet?.executionFrame === 2470
@@ -374,7 +380,11 @@ const steps = [
           && payload.destination?.client === "websocket-destination"
           && payload.destination?.wasm === "loaded"
           && payload.destination?.websocket?.binaryType === "arraybuffer"
-          && payload.destination?.websocket?.receivedBytes === payload.source?.packet?.bytes
+          && payload.destination?.websocket?.receivedBytes === payload.source?.wire?.bytes
+          && payload.destination?.originalWireReceive === "Transport::doRecv decryptBuf/isGeneralsPacket contract"
+          && payload.destination?.wire?.bytes === payload.source?.wire?.bytes
+          && payload.destination?.wire?.crcValid === true
+          && payload.destination?.packet?.bytes === payload.source?.packet?.bytes
           && payload.destination?.originalTransport === "Transport::m_inBuffer"
           && payload.destination?.originalRelay === "ConnectionManager::doRelay"
           && payload.destination?.originalFrameData === "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
@@ -385,9 +395,9 @@ const steps = [
           && payload.destination?.frameData?.storedCommandType === "NETCOMMANDTYPE_RUNAHEAD"
           && payload.relayStats?.receivedFrames === 1
           && payload.relayStats?.forwardedFrames === 1
-          && payload.relayStats?.receivedBytes === payload.source?.packet?.bytes
-          && payload.relayStats?.forwardedBytes === payload.source?.packet?.bytes,
-        "browser WebSocket transport smoke did not carry original packet bytes into original frame-data readiness", payload);
+          && payload.relayStats?.receivedBytes === payload.source?.wire?.bytes
+          && payload.relayStats?.forwardedBytes === payload.source?.wire?.bytes,
+        "browser WebSocket transport smoke did not carry encrypted original Transport wire bytes into original frame-data readiness", payload);
     },
   },
   {
@@ -757,7 +767,7 @@ console.log(JSON.stringify({
     "paired audio vertical proving the original MilesAudioManager 2D sample leg beside browser MSS AudioBufferSourceNode completion/release in one Playwright-owned gate",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
-    "two isolated Playwright browser contexts carrying original GameNetwork transport bytes through a browser WebSocket binary relay into original frame-data readiness",
+    "two isolated Playwright browser contexts carrying encrypted original Transport::queueSend wire bytes through a browser WebSocket binary relay into original frame-data readiness",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
@@ -773,7 +783,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "wire browser WebSocket binary send/receive into the production Transport::doSend/doRecv and LANAPI ownership paths or extend networking coverage to multi-frame deterministic sync/desync detection",
+    "replace the concrete UDP socket under Transport::doSend/doRecv with a browser WebSocket/WebRTC adapter or extend networking coverage to multi-frame deterministic sync/desync detection",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

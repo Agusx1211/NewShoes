@@ -6283,6 +6283,16 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      buildBrowserNetworkTransportWirePacket: module.cwrap(
+        "cnc_port_build_browser_network_transport_wire_packet",
+        "string",
+        [],
+      ),
+      acceptBrowserNetworkTransportWirePacket: module.cwrap(
+        "cnc_port_accept_browser_network_transport_wire_packet",
+        "string",
+        ["string"],
+      ),
       buildBrowserLanApiAnnouncePacket: module.cwrap(
         "cnc_port_build_browser_lanapi_announce_packet",
         "string",
@@ -16531,6 +16541,35 @@ async function rpc(command, payload = {}) {
         }
         const packetHex = String(payload?.packetHex ?? "");
         const receiveProbe = parseModuleState(wasmModule.acceptBrowserNetworkTransportPacket(packetHex));
+        return {
+          ok: Boolean(receiveProbe?.ok),
+          command,
+          receiveProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportBuildWirePacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network transport wire build cannot run" };
+        }
+        const buildProbe = parseModuleState(wasmModule.buildBrowserNetworkTransportWirePacket());
+        return {
+          ok: Boolean(buildProbe?.ok),
+          command,
+          buildProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportAcceptWirePacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network transport wire accept cannot run" };
+        }
+        const wireHex = String(payload?.wireHex ?? "");
+        const receiveProbe = parseModuleState(wasmModule.acceptBrowserNetworkTransportWirePacket(wireHex));
         return {
           ok: Boolean(receiveProbe?.ok),
           command,

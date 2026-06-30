@@ -1166,13 +1166,18 @@ shares structure and follows behind.
       isolated Playwright browser contexts / wasm instances, relays only the
       packet hex through Node, and proves the destination context reaches the
       same original `Transport` / `ConnectionManager` / `FrameDataManager`
-      readiness path. `network_websocket_transport_smoke.mjs` now replaces that
-      inter-context hex handoff with a browser-native `WebSocket` binary frame
-      through a local relay server, while still handing the received bytes to
-      the existing original `Transport` / `ConnectionManager` / `FrameData`
-      accept path; the remaining production step is to wire WebSocket send/
-      receive into `Transport::doSend` / `doRecv` ownership instead of a
-      harness accept RPC.
+      readiness path. `network_websocket_transport_smoke.mjs` now sends the
+      encrypted `Transport::queueSend` wire image (`TransportMessageHeader` +
+      payload, including original CRC/magic/encryption) as a browser-native
+      `WebSocket` binary frame through a local relay server, then validates the
+      receive-side `Transport::doRecv` decrypt/CRC/magic contract before
+      feeding the decoded payload to the focused original `Transport` /
+      `ConnectionManager` / `FrameData` accept path. `npm run
+      verify:websocket-transport-frontier` pins that `Transport` still owns a
+      concrete non-virtual `UDP` (`m_udpsock = NEW UDP()`), so the remaining
+      production step is to replace that socket seam with a browser
+      WebSocket/WebRTC adapter owned by `Transport::doSend` / `doRecv` instead
+      of a harness accept RPC.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -1185,8 +1190,10 @@ shares structure and follows behind.
       `frameDataReady` transition. Next networking slices: replace the harness
       packet handoff with production WebSocket/WebRTC transport ownership and
       extend the lockstep harness to multi-frame deterministic sync/desync
-      detection. The current WebSocket binary vertical proves browser-native
-      binary framing only; it still uses the focused accept RPC after delivery.
+      detection. The current WebSocket binary vertical now proves the
+      production encrypted `Transport::queueSend` wire image over browser
+      binary frames, but it still uses the focused accept RPC after delivery
+      because the production `UDP` socket seam has not yet been replaced.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
