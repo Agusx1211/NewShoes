@@ -781,14 +781,16 @@ shares structure and follows behind.
       the stream/3D playback backends exist; `verify:audio-sound-manager-
       counters-frontier` now pins the source-only `SoundManager` counter
       contract that runtime playback must satisfy.
-- [ ] Merge the original `MilesAudioManager` 2D sample leg with the browser
-      Web Audio completion harness in one browser-owned smoke: original
-      `processRequest -> playAudioEvent -> playSample` should load sample bytes
-      through `AudioFileCache`, call `AIL_start_sample`, schedule an
-      `AudioBufferSourceNode`, observe Web Audio `onended`, drive the MSS EOS
-      callback, and release the `PlayingAudio` without the current split
-      between the node-only original-manager smoke and the browser-only MSS
-      sample playback proof.
+- [ ] Move original `MilesAudioManager` 2D sample playback into the same
+      browser `cnc-port` runtime/Web Audio backend. The paired
+      `test:browser-audio-miles-webaudio-vertical` gate now runs the original
+      `processRequest -> playAudioEvent -> playSample` smoke beside a browser
+      MSS `AudioBufferSourceNode` completion/release proof in one Playwright
+      harness, but the original manager still runs as a standalone node smoke.
+      Next, link that manager-owned 2D sample leg into the browser runtime so
+      its `AudioFileCache` bytes call `AIL_start_sample`, schedule Web Audio,
+      observe `onended`, drive the MSS EOS callback, and release
+      `PlayingAudio` without the paired standalone/browser split.
 - [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove

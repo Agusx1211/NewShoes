@@ -282,6 +282,43 @@ const steps = [
     },
   },
   {
+    name: "browser-audio-miles-webaudio-vertical",
+    file: "harness/audio_miles_webaudio_vertical_smoke.mjs",
+    args: ["artifacts/real-assets"],
+    validate(payload) {
+      expect(payload.ok === true, "paired Miles/Web Audio vertical did not report ok", payload);
+      expect(payload.path === "browser-audio-miles-webaudio-vertical"
+          && payload.archiveCount >= 17
+          && payload.originalMilesManager?.path === "MilesAudioManager::processRequest->playAudioEvent->playSample"
+          && payload.originalMilesManager?.event === "PortSmoke2D"
+          && payload.originalMilesManager?.filename === "Data\\Audio\\Sounds\\PortSmoke.wav"
+          && payload.originalMilesManager?.sample?.browserPlaybackRequested === false
+          && payload.originalMilesManager?.sample?.statusAfterStart === 2
+          && payload.originalMilesManager?.sample?.statusAfterEnd === 1
+          && payload.originalMilesManager?.wav?.format === "PCM"
+          && payload.originalMilesManager?.wav?.rate === 44100
+          && payload.originalMilesManager?.wav?.channels === 2
+          && payload.originalMilesManager?.wav?.bits === 16
+          && payload.originalMilesManager?.manager?.audioEventReleases === 1
+          && payload.browserMssSamplePlayback?.runtimePlayback === true
+          && payload.browserMssSamplePlayback?.completed === 1
+          && payload.browserMssSamplePlayback?.released === 1
+          && payload.browserMssSamplePlayback?.webAudioNode === "AudioBufferSourceNode"
+          && payload.browserMssSamplePlayback?.completionCallback === "AudioBufferSourceNode.onended"
+          && payload.requestPath?.sourcePathDriven === true
+          && payload.requestPath?.engineDriven === false
+          && payload.requestPath?.completed === 1
+          && payload.requestPath?.released === 1
+          && payload.requestPath?.eventName === "CIAAgentVoiceAttack"
+          && payload.requestPath?.audioType === "AT_SoundEffect"
+          && payload.requestPath?.deviceStart === "playSample"
+          && payload.requestPath?.playingType === "PAT_Sample"
+          && payload.requestPath?.bus === "sound"
+          && payload.nextRequired === "sameRuntimeMilesAudioManagerWebAudioBackend",
+        "paired Miles/Web Audio vertical did not prove the original-manager leg beside browser Web Audio completion", payload);
+    },
+  },
+  {
     name: "browser-network-two-contexts",
     file: "harness/network_two_contexts_smoke.mjs",
     validate(payload) {
@@ -619,6 +656,7 @@ console.log(JSON.stringify({
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
+    "paired audio vertical proving the original MilesAudioManager 2D sample leg beside browser MSS AudioBufferSourceNode completion/release in one Playwright-owned gate",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
@@ -634,7 +672,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
-    "merge the original MilesAudioManager 2D sample leg with the browser Web Audio completion harness in one browser-owned smoke",
+    "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace the harness relay with production WebSocket/WebRTC transport or extend networking coverage to multi-frame deterministic sync/desync detection",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],

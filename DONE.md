@@ -3971,6 +3971,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with the existing browser MSS `AudioBufferSourceNode` completion harness.
       Verified with `npm --prefix WebAssembly run test:miles-audio-play-sample`
       and `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add a paired Miles/Web Audio browser-owned vertical gate.
+      `WebAssembly/harness/audio_miles_webaudio_vertical_smoke.mjs` first runs
+      the original standalone `MilesAudioManager::processRequest ->
+      playAudioEvent -> playSample` 2D sample smoke, then boots the browser
+      `cnc-port` harness with the real runtime archive set, resumes Web Audio
+      from the canvas gesture, drives the MSS sample playback probe through
+      `AudioBufferSourceNode.onended`, and plays a source-shaped
+      `CIAAgentVoiceAttack` 2D request path event through browser Web Audio.
+      `test:browser-audio-miles-webaudio-vertical` and
+      `test:vertical-integrations` now gate the paired proof. This is a
+      vertical integration of the existing original-manager leg beside browser
+      Web Audio completion/release, not yet same-runtime ownership by the
+      original `MilesAudioManager`; the standalone original-manager leg still
+      reports `browserPlaybackRequested:false`.
 
 ---
 
