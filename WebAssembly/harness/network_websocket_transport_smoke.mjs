@@ -19,12 +19,21 @@ function expect(condition, message, payload) {
 function assertBuildProbe(buildProbe) {
   const packet = buildProbe?.packet;
   const wire = buildProbe?.wire;
+  const transport = buildProbe?.transport;
   expect(buildProbe?.ok === true
-      && buildProbe.source === "GameNetwork browser production Transport wire build probe"
+      && buildProbe.source === "GameNetwork browser production Transport UDP adapter send probe"
       && buildProbe.transportReady === true
+      && buildProbe.productionTransport === true
       && buildProbe.productionTransportWire === true
       && buildProbe.originalSerializer === "Transport::queueSend"
-      && buildProbe.originalWireSend === "Transport::doSend -> UDP::Write header+payload"
+      && buildProbe.originalWireSend === "Transport::doSend -> browser UDP adapter Write"
+      && transport?.initialized === true
+      && transport?.queued === true
+      && transport?.doSendDriven === true
+      && transport?.adapterWrites === 1
+      && transport?.outgoingBeforePop === 1
+      && transport?.outgoingAfterPop === 0
+      && transport?.adapterDropped === 0
       && typeof packet?.hex === "string"
       && packet.hex.length === packet.bytes * 2
       && packet.bytes > 0
@@ -54,42 +63,52 @@ function assertBuildProbe(buildProbe) {
 function assertReceiveProbe(receiveProbe, buildProbe) {
   const packet = receiveProbe?.packet;
   const wire = receiveProbe?.wire;
-  const packetAccept = receiveProbe?.packetAccept;
-  const frameData = packetAccept?.frameData;
+  const transport = receiveProbe?.transport;
+  const connectionManager = receiveProbe?.connectionManager;
+  const frameData = receiveProbe?.frameData;
   const buildPacket = buildProbe?.packet;
   const buildWire = buildProbe?.wire;
   expect(receiveProbe?.ok === true
-      && receiveProbe.source === "GameNetwork browser production Transport wire receive probe"
+      && receiveProbe.source === "GameNetwork browser production Transport UDP adapter receive probe"
       && receiveProbe.transportReady === true
+      && receiveProbe.productionTransport === true
       && receiveProbe.productionTransportWire === true
-      && receiveProbe.originalWireReceive === "Transport::doRecv decryptBuf/isGeneralsPacket contract"
+      && receiveProbe.originalWireReceive === "browser UDP adapter Read -> Transport::doRecv decryptBuf/isGeneralsPacket"
+      && receiveProbe.originalTransport === "Transport::m_inBuffer"
+      && receiveProbe.originalRelay === "ConnectionManager::doRelay"
+      && receiveProbe.originalFrameData === "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
       && wire?.decoded === true
       && wire.bytes === buildWire.bytes
       && wire.headerBytes === buildWire.headerBytes
+      && wire.pushResult === buildWire.bytes
+      && wire.incomingBeforeRecv === 1
+      && wire.incomingAfterRecv === 0
+      && wire.adapterReads === 1
+      && wire.adapterDropped === 0
+      && wire.doRecvDriven === true
       && wire.decrypted === true
       && wire.crcValid === true
       && wire.magic === buildWire.magic
       && packet?.decoded === true
       && packet.bytes === buildPacket.bytes
       && packet.hex === buildPacket.hex
-      && packetAccept?.ok === true
-      && packetAccept.originalTransport === "Transport::m_inBuffer"
-      && packetAccept.originalRelay === "ConnectionManager::doRelay"
-      && packetAccept.originalFrameData === "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
-      && packetAccept.packet?.bytes === buildPacket.bytes
-      && packetAccept.packet?.commands === buildPacket.commands
-      && packetAccept.packet?.commandType === buildPacket.commandType
-      && packetAccept.packet?.relay === buildPacket.relay
-      && packetAccept.packet?.executionFrame === buildPacket.executionFrame
-      && packetAccept.packet?.playerId === buildPacket.playerId
-      && packetAccept.packet?.commandId === buildPacket.commandId
-      && packetAccept.packet?.frameCommandCount === buildPacket.frameCommandCount
-      && packetAccept.packet?.runAheadCommandId === buildPacket.runAheadCommandId
-      && packetAccept.packet?.runAhead === buildPacket.runAhead
-      && packetAccept.packet?.frameRate === buildPacket.frameRate
-      && packetAccept.transport?.injected === true
-      && packetAccept.transport?.cleared === true
-      && packetAccept.connectionManager?.doRelayDriven === true
+      && packet.commands === buildPacket.commands
+      && packet.commandType === buildPacket.commandType
+      && packet.relay === buildPacket.relay
+      && packet.executionFrame === buildPacket.executionFrame
+      && packet.playerId === buildPacket.playerId
+      && packet.commandId === buildPacket.commandId
+      && packet.frameCommandCount === buildPacket.frameCommandCount
+      && packet.runAheadCommandId === buildPacket.runAheadCommandId
+      && packet.runAhead === buildPacket.runAhead
+      && packet.frameRate === buildPacket.frameRate
+      && transport?.initialized === true
+      && transport?.buffered === true
+      && transport?.bufferedSlot === 0
+      && transport?.cleared === true
+      && transport?.addr === 2130706433
+      && transport?.port === 8088
+      && connectionManager?.doRelayDriven === true
       && frameData?.ready === true
       && frameData?.managerReady === true
       && frameData?.readyState === 2
@@ -243,17 +262,18 @@ try {
     relay: {
       browserTransport: "browser WebSocket binary relay",
       serverTransport: "Node WebSocket relay server",
-      productionTransport: false,
+      productionTransport: true,
       productionTransportWire: true,
       hexHandoff: false,
       binaryFrames: relayStats.forwardedFrames,
-      nextRequired: "replaceConcreteUDPWithBrowserTransportAdapterForDoSendDoRecv",
+      nextRequired: "twoBrowserClientsShareProductionTransportAdapter",
     },
     source: {
       client: "websocket-source",
       wasm: buildResult.state?.wasm,
       originalSerializer: buildResult.buildProbe.originalSerializer,
       originalWireSend: buildResult.buildProbe.originalWireSend,
+      transport: buildResult.buildProbe.transport,
       websocket: {
         binaryType: sendResult.binaryType,
         sentBytes: sendResult.sentBytes,
@@ -286,11 +306,11 @@ try {
       originalTransport: destinationResult.acceptResult.receiveProbe.originalTransport,
       wire: destinationResult.acceptResult.receiveProbe.wire,
       packet: destinationResult.acceptResult.receiveProbe.packet,
-      originalRelay: destinationResult.acceptResult.receiveProbe.packetAccept.originalRelay,
-      originalFrameData: destinationResult.acceptResult.receiveProbe.packetAccept.originalFrameData,
-      transport: destinationResult.acceptResult.receiveProbe.packetAccept.transport,
-      connectionManager: destinationResult.acceptResult.receiveProbe.packetAccept.connectionManager,
-      frameData: destinationResult.acceptResult.receiveProbe.packetAccept.frameData,
+      originalRelay: destinationResult.acceptResult.receiveProbe.originalRelay,
+      originalFrameData: destinationResult.acceptResult.receiveProbe.originalFrameData,
+      transport: destinationResult.acceptResult.receiveProbe.transport,
+      connectionManager: destinationResult.acceptResult.receiveProbe.connectionManager,
+      frameData: destinationResult.acceptResult.receiveProbe.frameData,
     },
     relayStats: finalRelayStats,
     browserEventCount: browserEvents.length,

@@ -1166,18 +1166,18 @@ shares structure and follows behind.
       isolated Playwright browser contexts / wasm instances, relays only the
       packet hex through Node, and proves the destination context reaches the
       same original `Transport` / `ConnectionManager` / `FrameDataManager`
-      readiness path. `network_websocket_transport_smoke.mjs` now sends the
-      encrypted `Transport::queueSend` wire image (`TransportMessageHeader` +
-      payload, including original CRC/magic/encryption) as a browser-native
-      `WebSocket` binary frame through a local relay server, then validates the
-      receive-side `Transport::doRecv` decrypt/CRC/magic contract before
-      feeding the decoded payload to the focused original `Transport` /
-      `ConnectionManager` / `FrameData` accept path. `npm run
-      verify:websocket-transport-frontier` pins that `Transport` still owns a
-      concrete non-virtual `UDP` (`m_udpsock = NEW UDP()`), so the remaining
-      production step is to replace that socket seam with a browser
-      WebSocket/WebRTC adapter owned by `Transport::doSend` / `doRecv` instead
-      of a harness accept RPC.
+      readiness path. `network_websocket_transport_smoke.mjs` now initializes
+      original `Transport`, calls `Transport::queueSend` and
+      `Transport::doSend` so the wasm browser UDP adapter captures one
+      encrypted `TransportMessageHeader` + payload datagram, carries that
+      datagram as a browser-native `WebSocket` binary frame through the relay,
+      pushes it into the destination adapter, calls original
+      `Transport::doRecv`, and hands that populated transport to
+      `ConnectionManager::doRelay` / `FrameDataManager::allCommandsReady`.
+      `npm run verify:websocket-transport-frontier` now pins the wasm UDP
+      adapter behind the original concrete non-virtual `UDP` API. The
+      remaining production step is to replace the harness in-memory datagram
+      handoff with a live WebSocket/WebRTC endpoint shared by browser clients.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -1193,13 +1193,13 @@ shares structure and follows behind.
       readiness transition, observes later calls preserving the in-game
       connection state, and also proves the original
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
-      frontier. Next networking slices: replace the harness packet handoff
-      with production WebSocket/WebRTC transport ownership and extend coverage
+      frontier. Next networking slices: replace the harness datagram queue
+      handoff with a live shared WebSocket/WebRTC endpoint and extend coverage
       from single-context frame readiness to a two-client match-sync harness.
       The current WebSocket binary vertical now proves the production encrypted
-      `Transport::queueSend` wire image over browser binary frames, but it
-      still uses the focused accept RPC after delivery because the production
-      `UDP` socket seam has not yet been replaced.
+      `Transport::queueSend` / `Transport::doSend` and
+      `Transport::doRecv` path over browser binary frames through the wasm UDP
+      adapter.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the

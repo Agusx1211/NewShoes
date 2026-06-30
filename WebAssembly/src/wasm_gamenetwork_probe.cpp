@@ -80,6 +80,25 @@ WindowLayout *mapSelectLayout __attribute__((weak)) = nullptr;
 NameKeyType listboxChatWindowScoreScreenID __attribute__((weak)) = NAMEKEY_INVALID;
 GameWindow *listboxChatWindowScoreScreen __attribute__((weak)) = nullptr;
 
+extern "C" {
+void cnc_port_browser_udp_adapter_clear();
+Int cnc_port_browser_udp_adapter_push_incoming(
+	const UnsignedByte *bytes,
+	Int length,
+	UnsignedInt ip,
+	UnsignedShort port);
+Int cnc_port_browser_udp_adapter_pop_outgoing(
+	UnsignedByte *bytes,
+	Int capacity,
+	UnsignedInt *ip,
+	UnsignedShort *port);
+Int cnc_port_browser_udp_adapter_outgoing_count();
+Int cnc_port_browser_udp_adapter_incoming_count();
+Int cnc_port_browser_udp_adapter_write_count();
+Int cnc_port_browser_udp_adapter_read_count();
+Int cnc_port_browser_udp_adapter_dropped_count();
+}
+
 __attribute__((weak)) DisconnectMenu::DisconnectMenu() :
 	m_disconnectManager(nullptr),
 	m_menuState(DISCONNECTMENUSTATETYPE_SCREENOFF)
@@ -281,8 +300,8 @@ char g_browser_network_relay_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_network_transport_build_json[4096] = {};
 char g_browser_network_transport_receive_json[8192] = {};
 char g_browser_network_transport_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
-char g_browser_network_transport_wire_build_json[8192] = {};
-char g_browser_network_transport_wire_receive_json[20000] = {};
+char g_browser_network_transport_wire_build_json[12000] = {};
+char g_browser_network_transport_wire_receive_json[30000] = {};
 char g_browser_network_transport_wire_hex[((MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)) * 2) + 1] = {};
 char g_browser_network_transport_wire_payload_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_lanapi_build_json[8192] = {};
@@ -1859,11 +1878,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 		initMemoryManager();
 	}
 
+	cnc_port_browser_udp_adapter_clear();
+
 	NetPacket *packet = build_transport_connection_packet();
 	if (packet == nullptr) {
 		std::snprintf(g_browser_network_transport_wire_build_json, sizeof(g_browser_network_transport_wire_build_json),
-			"{\"ok\":false,\"source\":\"GameNetwork browser production Transport wire build probe\","
-			"\"transportReady\":false,\"productionTransportWire\":false,"
+			"{\"ok\":false,\"source\":\"GameNetwork browser production Transport UDP adapter send probe\","
+			"\"transportReady\":false,\"productionTransport\":true,\"productionTransportWire\":false,"
 			"\"nextRequired\":\"buildOriginalNetPacketBeforeTransportQueue\"}");
 		return g_browser_network_transport_wire_build_json;
 	}
@@ -1872,39 +1893,54 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 	const int commands = packet->getNumCommands();
 
 	Transport transport;
-	std::memset(transport.m_outBuffer, 0, sizeof(transport.m_outBuffer));
-	const bool queued = transport.queueSend(
-		kTransportWireRemoteIp,
-		kTransportWireRemotePort,
-		packet->getData(),
-		packet_length);
+	const bool initialized = transport.init(kLanApiLocalIp, NETWORK_BASE_PORT_NUMBER);
+	bool queued = false;
+	bool sent = false;
+	int queued_slot = -1;
+	if (initialized) {
+		queued = transport.queueSend(
+			kTransportWireRemoteIp,
+			kTransportWireRemotePort,
+			packet->getData(),
+			packet_length);
+		for (Int i = 0; i < MAX_MESSAGES; ++i) {
+			if (transport.m_outBuffer[i].length > 0) {
+				queued_slot = i;
+				break;
+			}
+		}
+		sent = queued && transport.doSend();
+	}
 	packet->deleteInstance();
 	packet = nullptr;
 
-	const TransportMessage *queued_message = nullptr;
-	int queued_slot = -1;
-	for (Int i = 0; i < MAX_MESSAGES; ++i) {
-		if (transport.m_outBuffer[i].length > 0) {
-			queued_message = &transport.m_outBuffer[i];
-			queued_slot = i;
-			break;
-		}
-	}
-
+	UnsignedByte wire_bytes[MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)] = {};
+	UnsignedInt adapter_addr = 0;
+	UnsignedShort adapter_port = 0;
+	const int adapter_writes = cnc_port_browser_udp_adapter_write_count();
+	const int outgoing_before_pop = cnc_port_browser_udp_adapter_outgoing_count();
+	const int wire_length = cnc_port_browser_udp_adapter_pop_outgoing(
+		wire_bytes,
+		static_cast<Int>(sizeof(wire_bytes)),
+		&adapter_addr,
+		&adapter_port);
+	const int outgoing_after_pop = cnc_port_browser_udp_adapter_outgoing_count();
+	const int adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
 	TransportMessage decoded = {};
-	int wire_length = 0;
 	bool wire_encoded = false;
 	bool payload_encoded = false;
 	bool crc_valid = false;
 	bool encrypted = false;
-	if (queued_message != nullptr) {
-		wire_length = queued_message->length + static_cast<int>(sizeof(TransportMessageHeader));
+	if (wire_length > static_cast<int>(sizeof(TransportMessageHeader))) {
 		wire_encoded = encode_hex(
-			reinterpret_cast<const UnsignedByte *>(queued_message),
+			wire_bytes,
 			wire_length,
 			g_browser_network_transport_wire_hex,
 			sizeof(g_browser_network_transport_wire_hex));
-		decoded = *queued_message;
+		std::memcpy(&decoded, wire_bytes, static_cast<size_t>(wire_length));
+		decoded.length = wire_length - static_cast<int>(sizeof(TransportMessageHeader));
+		decoded.addr = adapter_addr;
+		decoded.port = adapter_port;
 		decrypt_transport_message_copy(decoded);
 		crc_valid = transport_message_has_valid_crc(decoded);
 		payload_encoded = encode_hex(
@@ -1913,11 +1949,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 			g_browser_network_transport_wire_payload_hex,
 			sizeof(g_browser_network_transport_wire_payload_hex));
 		encrypted = wire_length >= static_cast<int>(sizeof(UnsignedInt)) &&
-			std::memcmp(&(queued_message->header.crc), &(decoded.header.crc), sizeof(UnsignedInt)) != 0;
+			std::memcmp(wire_bytes, &(decoded.header.crc), sizeof(UnsignedInt)) != 0;
 	}
 
-	const bool ok = queued &&
+	const bool ok = initialized &&
+		queued &&
+		sent &&
 		queued_slot == 0 &&
+		adapter_writes == 1 &&
+		outgoing_before_pop == 1 &&
+		outgoing_after_pop == 0 &&
+		adapter_dropped == 0 &&
 		wire_encoded &&
 		payload_encoded &&
 		crc_valid &&
@@ -1930,19 +1972,22 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 
 	std::snprintf(g_browser_network_transport_wire_build_json, sizeof(g_browser_network_transport_wire_build_json),
 		"{\"ok\":%s,"
-		"\"source\":\"GameNetwork browser production Transport wire build probe\","
+		"\"source\":\"GameNetwork browser production Transport UDP adapter send probe\","
 		"\"transportReady\":%s,"
 		"\"browserTransport\":\"browser WebSocket binary relay\","
-		"\"productionTransport\":false,"
+		"\"productionTransport\":true,"
 		"\"productionTransportWire\":true,"
 		"\"originalSerializer\":\"Transport::queueSend\","
-		"\"originalWireSend\":\"Transport::doSend -> UDP::Write header+payload\","
-		"\"nextRequired\":\"replaceConcreteUDPWithBrowserTransportAdapterForDoSendDoRecv\","
+		"\"originalWireSend\":\"Transport::doSend -> browser UDP adapter Write\","
+		"\"nextRequired\":\"browserWebSocketRelayIntoTransportDoRecv\","
 		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"commands\":%d,"
 		"\"commandType\":\"NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD\","
 		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
 		"\"commandId\":%d,\"frameCommandCount\":%d,"
 		"\"runAheadCommandId\":%d,\"runAhead\":%d,\"frameRate\":%d},"
+		"\"transport\":{\"initialized\":%s,\"queued\":%s,\"doSendDriven\":%s,"
+		"\"adapterWrites\":%d,\"outgoingBeforePop\":%d,\"outgoingAfterPop\":%d,"
+		"\"adapterDropped\":%d},"
 		"\"wire\":{\"hex\":\"%s\",\"bytes\":%d,\"headerBytes\":%zu,"
 		"\"queuedSlot\":%d,\"encrypted\":%s,\"crcValidAfterDecrypt\":%s,"
 		"\"magic\":\"0x%04x\",\"addr\":%u,\"port\":%u}}",
@@ -1959,6 +2004,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 		kTransportRunAheadCommandId,
 		kTransportRunAhead,
 		kTransportFrameRate,
+		initialized ? "true" : "false",
+		queued ? "true" : "false",
+		sent ? "true" : "false",
+		adapter_writes,
+		outgoing_before_pop,
+		outgoing_after_pop,
+		adapter_dropped,
 		wire_encoded ? g_browser_network_transport_wire_hex : "",
 		wire_length,
 		sizeof(TransportMessageHeader),
@@ -1966,8 +2018,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 		encrypted ? "true" : "false",
 		crc_valid ? "true" : "false",
 		static_cast<unsigned int>(decoded.header.magic),
-		queued_message != nullptr ? queued_message->addr : 0u,
-		queued_message != nullptr ? queued_message->port : 0u);
+		adapter_addr,
+		adapter_port);
 	return g_browser_network_transport_wire_build_json;
 }
 
@@ -1976,6 +2028,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_
 	if (!isMemoryManagerOfficiallyInited()) {
 		initMemoryManager();
 	}
+
+	cnc_port_browser_udp_adapter_clear();
 
 	UnsignedByte wire_bytes[MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)] = {};
 	int length = 0;
@@ -1988,54 +2042,211 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_
 		length);
 
 	TransportMessage message = {};
+	Transport *transport = nullptr;
+	Int push_result = 0;
+	int incoming_before_recv = 0;
+	int incoming_after_recv = 0;
+	int adapter_reads = 0;
+	int adapter_dropped = 0;
+	int buffered_slot = -1;
+	bool transport_initialized = false;
+	bool recv_driven = false;
+	bool transport_buffered = false;
+	bool transport_cleared = false;
 	bool decrypted = false;
 	bool crc_valid = false;
 	bool payload_encoded = false;
-	bool packet_accept_ok = false;
-	const char *packet_accept_json = "null";
+	bool relay_driven = false;
+	bool manager_ready = false;
+	int frame_command_count = -1;
+	int command_count = -1;
+	int ready_state = -1;
+	int stored_command_type = -1;
+	int stored_execution_frame = -1;
+	int stored_player_id = -1;
+	int stored_command_id = -1;
+	int stored_run_ahead = -1;
+	int stored_frame_rate = -1;
+	unsigned int smallest_cushion = 0;
 
 	if (decoded_hex && length > static_cast<int>(sizeof(TransportMessageHeader))) {
-		std::memcpy(&message, wire_bytes, static_cast<size_t>(length));
-		message.length = length - static_cast<int>(sizeof(TransportMessageHeader));
-		decrypt_transport_message_copy(message);
-		decrypted = true;
-		crc_valid = transport_message_has_valid_crc(message);
-		payload_encoded = encode_hex(
-			message.data,
-			message.length,
-			g_browser_network_transport_wire_payload_hex,
-			sizeof(g_browser_network_transport_wire_payload_hex));
-		if (crc_valid && payload_encoded) {
-			packet_accept_json = cnc_port_accept_browser_network_transport_packet(
-				g_browser_network_transport_wire_payload_hex);
-			packet_accept_ok = packet_accept_json != nullptr &&
-				std::strstr(packet_accept_json, "\"ok\":true") != nullptr;
+		push_result = cnc_port_browser_udp_adapter_push_incoming(
+			wire_bytes,
+			length,
+			kLanApiLocalIp,
+			NETWORK_BASE_PORT_NUMBER);
+		incoming_before_recv = cnc_port_browser_udp_adapter_incoming_count();
+		transport = new Transport;
+		transport_initialized = transport->init(kTransportWireRemoteIp, kTransportWireRemotePort);
+		recv_driven = transport_initialized && push_result == length && transport->doRecv();
+		incoming_after_recv = cnc_port_browser_udp_adapter_incoming_count();
+		adapter_reads = cnc_port_browser_udp_adapter_read_count();
+		adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
+
+		for (Int i = 0; i < MAX_MESSAGES; ++i) {
+			if (transport->m_inBuffer[i].length > 0) {
+				message = transport->m_inBuffer[i];
+				buffered_slot = i;
+				transport_buffered = true;
+				break;
+			}
+		}
+		if (transport_buffered) {
+			decrypted = true;
+			crc_valid = transport_message_has_valid_crc(message);
+			payload_encoded = encode_hex(
+				message.data,
+				message.length,
+				g_browser_network_transport_wire_payload_hex,
+				sizeof(g_browser_network_transport_wire_payload_hex));
 		}
 	}
 
+	if (transport_buffered && crc_valid && payload_encoded && transport != nullptr) {
+		static GameLogic *probe_logic = nullptr;
+		alignas(GlobalData) static UnsignedByte probe_global_data_storage[sizeof(GlobalData)] = {};
+		GameLogic *old_game_logic = TheGameLogic;
+		GlobalData *old_global_data = TheWritableGlobalData;
+		if (probe_logic == nullptr) {
+			probe_logic = new GameLogic;
+		}
+		TheGameLogic = probe_logic;
+		TheWritableGlobalData = reinterpret_cast<GlobalData *>(probe_global_data_storage);
+		TheWritableGlobalData->m_networkFPSHistoryLength = 30;
+		TheWritableGlobalData->m_networkLatencyHistoryLength = 200;
+		TheWritableGlobalData->m_networkCushionHistoryLength = 10;
+
+		{
+			ConnectionManager *manager = new ConnectionManager;
+			for (Int i = 0; i < MAX_SLOTS; ++i) {
+				manager->m_connections[i] = nullptr;
+				manager->m_frameData[i] = nullptr;
+				manager->m_packetRouterFallback[i] = static_cast<UnsignedInt>(-1);
+				manager->m_latencyAverages[i] = 0.0f;
+				manager->m_fpsAverages[i] = -1;
+			}
+			manager->m_localSlot = kTransportPlayerId;
+			manager->m_packetRouterSlot = kTransportPlayerId;
+			manager->m_localAddr = kTransportWireRemoteIp;
+			manager->m_localPort = kTransportWireRemotePort;
+			manager->m_minFpsPlayer = -1;
+			manager->m_minFps = -1;
+			manager->m_smallestPacketArrivalCushion = static_cast<UnsignedInt>(-1);
+			manager->m_didSelfSlug = FALSE;
+			manager->m_frameMetrics.init();
+			manager->m_transport = transport;
+
+			manager->m_pendingCommands = newInstance(NetCommandList);
+			manager->m_pendingCommands->init();
+			manager->m_relayedCommands = newInstance(NetCommandList);
+			manager->m_relayedCommands->init();
+			manager->m_netCommandWrapperList = newInstance(NetCommandWrapperList);
+			manager->m_netCommandWrapperList->init();
+
+			FrameDataManager *frame_data = newInstance(FrameDataManager)(FALSE);
+			frame_data->init();
+			manager->m_frameData[kTransportPlayerId] = frame_data;
+
+			manager->doRelay();
+			relay_driven = true;
+			transport_cleared = true;
+			for (Int i = 0; i < MAX_MESSAGES; ++i) {
+				if (transport->m_inBuffer[i].length != 0) {
+					transport_cleared = false;
+					break;
+				}
+			}
+
+			frame_command_count = static_cast<int>(frame_data->getFrameCommandCount(kTransportExecutionFrame));
+			command_count = static_cast<int>(frame_data->getCommandCount(kTransportExecutionFrame));
+			ready_state = static_cast<int>(frame_data->allCommandsReady(kTransportExecutionFrame, FALSE));
+			manager_ready = manager->allCommandsReady(kTransportExecutionFrame, TRUE);
+			smallest_cushion = manager->m_smallestPacketArrivalCushion;
+
+			NetCommandList *frame_commands = frame_data->getFrameCommandList(kTransportExecutionFrame);
+			NetCommandRef *first = frame_commands != nullptr ? frame_commands->getFirstMessage() : nullptr;
+			NetCommandMsg *stored = first != nullptr ? first->getCommand() : nullptr;
+			if (stored != nullptr) {
+				stored_command_type = static_cast<int>(stored->getNetCommandType());
+				stored_execution_frame = static_cast<int>(stored->getExecutionFrame());
+				stored_player_id = static_cast<int>(stored->getPlayerID());
+				stored_command_id = static_cast<int>(stored->getID());
+				if (stored->getNetCommandType() == NETCOMMANDTYPE_RUNAHEAD) {
+					NetRunAheadCommandMsg *run_ahead = static_cast<NetRunAheadCommandMsg *>(stored);
+					stored_run_ahead = static_cast<int>(run_ahead->getRunAhead());
+					stored_frame_rate = static_cast<int>(run_ahead->getFrameRate());
+				}
+			}
+			// Keep this probe-owned partial ConnectionManager alive for the page lifetime.
+			// Its destructor expects a fuller network runtime than this vertical smoke builds.
+		}
+
+		TheWritableGlobalData = old_global_data;
+		TheGameLogic = old_game_logic;
+	}
+
+	const bool frame_data_ready =
+		frame_command_count == kTransportFrameCommandCount &&
+		command_count == kTransportFrameCommandCount &&
+		ready_state == FRAMEDATA_READY &&
+		manager_ready;
+	const bool stored_command_ok =
+		stored_command_type == NETCOMMANDTYPE_RUNAHEAD &&
+		stored_execution_frame == kTransportExecutionFrame &&
+		stored_player_id == kTransportPlayerId &&
+		stored_command_id == kTransportRunAheadCommandId &&
+		stored_run_ahead == kTransportRunAhead &&
+		stored_frame_rate == kTransportFrameRate;
 	const bool ok = decoded_hex &&
+		push_result == length &&
+		incoming_before_recv == 1 &&
+		incoming_after_recv == 0 &&
+		adapter_reads == 1 &&
+		adapter_dropped == 0 &&
+		transport_initialized &&
+		recv_driven &&
+		transport_buffered &&
+		transport_cleared &&
 		decrypted &&
 		crc_valid &&
 		payload_encoded &&
-		packet_accept_ok &&
 		message.length > 0 &&
-		message.length <= MAX_PACKET_SIZE;
+		message.length <= MAX_PACKET_SIZE &&
+		relay_driven &&
+		frame_data_ready &&
+		stored_command_ok;
 
 	std::snprintf(g_browser_network_transport_wire_receive_json, sizeof(g_browser_network_transport_wire_receive_json),
 		"{\"ok\":%s,"
-		"\"source\":\"GameNetwork browser production Transport wire receive probe\","
+		"\"source\":\"GameNetwork browser production Transport UDP adapter receive probe\","
 		"\"transportReady\":%s,"
 		"\"browserTransport\":\"browser WebSocket binary relay\","
-		"\"productionTransport\":false,"
+		"\"productionTransport\":true,"
 		"\"productionTransportWire\":true,"
-		"\"originalWireReceive\":\"Transport::doRecv decryptBuf/isGeneralsPacket contract\","
+		"\"originalWireReceive\":\"browser UDP adapter Read -> Transport::doRecv decryptBuf/isGeneralsPacket\","
 		"\"originalTransport\":\"Transport::m_inBuffer\","
-		"\"nextRequired\":\"replaceConcreteUDPWithBrowserTransportAdapterForDoSendDoRecv\","
+		"\"originalRelay\":\"ConnectionManager::doRelay\","
+		"\"originalFrameData\":\"NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady\","
+		"\"nextRequired\":\"twoBrowserClientsShareProductionTransportAdapter\","
 		"\"wire\":{\"decoded\":%s,\"inputHexLength\":%d,\"invalidHexIndex\":%d,"
-		"\"bytes\":%d,\"headerBytes\":%zu,\"decrypted\":%s,"
+		"\"bytes\":%d,\"headerBytes\":%zu,\"pushResult\":%d,"
+		"\"incomingBeforeRecv\":%d,\"incomingAfterRecv\":%d,"
+		"\"adapterReads\":%d,\"adapterDropped\":%d,"
+		"\"doRecvDriven\":%s,\"decrypted\":%s,"
 		"\"crcValid\":%s,\"magic\":\"0x%04x\"},"
-		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"decoded\":%s},"
-		"\"packetAccept\":%s}",
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"decoded\":%s,"
+		"\"commands\":2,\"commandType\":\"NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD\","
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d,"
+		"\"runAheadCommandId\":%d,\"runAhead\":%d,\"frameRate\":%d},"
+		"\"transport\":{\"initialized\":%s,\"buffered\":%s,\"bufferedSlot\":%d,"
+		"\"cleared\":%s,\"addr\":%u,\"port\":%u},"
+		"\"connectionManager\":{\"doRelayDriven\":%s,\"smallestPacketArrivalCushion\":%u},"
+		"\"frameData\":{\"ready\":%s,\"managerReady\":%s,\"readyState\":%d,"
+		"\"frameCommandCount\":%d,\"commandCount\":%d,"
+		"\"storedCommandType\":\"%s\",\"storedCommandId\":%d,"
+		"\"storedExecutionFrame\":%d,\"storedPlayerId\":%d,"
+		"\"storedRunAhead\":%d,\"storedFrameRate\":%d}}",
 		ok ? "true" : "false",
 		ok ? "true" : "false",
 		decoded_hex ? "true" : "false",
@@ -2043,13 +2254,45 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_
 		invalid_hex_index,
 		length,
 		sizeof(TransportMessageHeader),
+		push_result,
+		incoming_before_recv,
+		incoming_after_recv,
+		adapter_reads,
+		adapter_dropped,
+		recv_driven ? "true" : "false",
 		decrypted ? "true" : "false",
 		crc_valid ? "true" : "false",
 		static_cast<unsigned int>(message.header.magic),
 		payload_encoded ? g_browser_network_transport_wire_payload_hex : "",
 		message.length,
-		packet_accept_ok ? "true" : "false",
-		packet_accept_json != nullptr ? packet_accept_json : "null");
+		payload_encoded ? "true" : "false",
+		kTransportRelayMask,
+		kTransportExecutionFrame,
+		kTransportPlayerId,
+		kTransportFrameInfoCommandId,
+		kTransportFrameCommandCount,
+		kTransportRunAheadCommandId,
+		kTransportRunAhead,
+		kTransportFrameRate,
+		transport_initialized ? "true" : "false",
+		transport_buffered ? "true" : "false",
+		buffered_slot,
+		transport_cleared ? "true" : "false",
+		message.addr,
+		message.port,
+		relay_driven ? "true" : "false",
+		smallest_cushion,
+		frame_data_ready ? "true" : "false",
+		manager_ready ? "true" : "false",
+		ready_state,
+		frame_command_count,
+		command_count,
+		net_command_type_name(static_cast<NetCommandType>(stored_command_type)),
+		stored_command_id,
+		stored_execution_frame,
+		stored_player_id,
+		stored_run_ahead,
+		stored_frame_rate);
 	return g_browser_network_transport_wire_receive_json;
 }
 

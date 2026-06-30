@@ -4766,6 +4766,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `test:browser-network-websocket-transport`,
       `test:vertical-integrations`, and
       `verify:websocket-transport-frontier` gate this frontier.
+- [x] Retarget the original UDP transport path to a wasm browser adapter and
+      prove it through the WebSocket vertical. `udp.cpp` now keeps native
+      socket behavior outside Emscripten, while the wasm build implements the
+      original `UDP` API with deterministic incoming/outgoing datagram queues.
+      The WebSocket transport probe now initializes original `Transport`,
+      queues a two-command packet, drives `Transport::doSend` so
+      `UDP::Write` captures one encrypted `TransportMessageHeader` + payload
+      datagram, forwards that datagram as a browser `WebSocket` binary frame,
+      pushes it into the destination adapter, then drives original
+      `Transport::doRecv` and `ConnectionManager::doRelay` into
+      `FrameDataManager::allCommandsReady`. This removes the focused
+      post-WebSocket packet accept dependency from the WebSocket transport
+      smoke; the remaining networking gap is replacing the harness datagram
+      queue with a live shared WebSocket/WebRTC endpoint and extending to a
+      two-client match-sync harness. Verified with
+      `npm --prefix WebAssembly run verify:websocket-transport-frontier`,
+      `npm --prefix WebAssembly run test:browser-network-websocket-transport`,
+      and `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

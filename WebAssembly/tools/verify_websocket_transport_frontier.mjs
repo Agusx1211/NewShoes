@@ -1,23 +1,16 @@
 #!/usr/bin/env node
 // verify_websocket_transport_frontier.mjs
 //
-// Source-only verifier for the current browser networking transport frontier.
-// It pins two facts that must stay true until the production browser transport
-// adapter replaces the original native socket path:
+// Source-only verifier for the browser networking transport vertical.
+// It pins the current production-shaped path:
 //
-//   1. Original `Transport` still owns a concrete, non-virtual `UDP` instance
-//      and `doSend`/`doRecv` write/read `TransportMessageHeader + payload`
-//      through `UDP::Write` / `UDP::Read`.
-//   2. The browser WebSocket smoke now carries the encrypted
-//      `Transport::queueSend` wire image, then validates the receive-side
-//      decrypt/CRC/magic contract before feeding the focused original
-//      `Transport::m_inBuffer` / `ConnectionManager` / `FrameDataManager`
-//      readiness path.
-//
-// Open (NOT claimed complete by this verifier):
-//   - Replacing `m_udpsock = NEW UDP()` with a browser WebSocket/WebRTC
-//     transport adapter/factory that `Transport::doSend` and `doRecv` own.
-//   - Removing the focused accept RPC that injects after WebSocket delivery.
+//   1. Original `Transport` still owns the original concrete `UDP` object and
+//      still calls `UDP::Write` / `UDP::Read` from `doSend` / `doRecv`.
+//   2. The wasm build retargets `UDP` behind that original API to browser-owned
+//      datagram queues.
+//   3. The WebSocket smoke carries the encrypted wire image between two browser
+//      contexts, then proves destination bytes enter `Transport::doRecv` before
+//      `ConnectionManager::doRelay` reaches `FrameDataManager`.
 //
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -30,6 +23,7 @@ const SOURCES = {
   transportH: "GeneralsMD/Code/GameEngine/Include/GameNetwork/Transport.h",
   transportCpp: "GeneralsMD/Code/GameEngine/Source/GameNetwork/Transport.cpp",
   udpH: "GeneralsMD/Code/GameEngine/Include/GameNetwork/udp.h",
+  udpCpp: "GeneralsMD/Code/GameEngine/Source/GameNetwork/udp.cpp",
   wasmProbe: "WebAssembly/src/wasm_gamenetwork_probe.cpp",
   bridge: "WebAssembly/harness/bridge.js",
   websocketSmoke: "WebAssembly/harness/network_websocket_transport_smoke.mjs",
@@ -127,56 +121,43 @@ const sourceEntries = Object.fromEntries(
 const errors = [];
 const facts = {
   sources: SOURCES,
-  udp: {},
-  transportHeader: {},
-  transportCpp: {},
-  wasmWireProbe: {},
+  udpHeader: {},
+  udpBackend: {},
+  transport: {},
+  wasmProbe: {},
   browserHarness: {},
 };
 
 const udpBody = classBody(sourceEntries.udpH, "UDP");
 assertPresent(
   errors,
-  facts.udp,
+  facts.udpHeader,
   "classLine",
   lineNumber(sourceEntries.udpH.lines, (line) => /^\s*class\s+UDP\b/.test(line)),
   "UDP class",
 );
-assertAbsent(errors, facts.udp, "hasVirtualMethod", /\bvirtual\b/.test(udpBody), "UDP virtual method");
+assertAbsent(errors, facts.udpHeader, "hasVirtualMethod", /\bvirtual\b/.test(udpBody), "UDP virtual method");
 
+const transportH = sourceEntries.transportH;
 assertPresent(
   errors,
-  facts.transportHeader,
-  "udpIncludeLine",
-  lineNumber(sourceEntries.transportH.lines, (line) => /#include\s+"GameNetwork\/udp\.h"/.test(line)),
-  "Transport.h UDP include",
-);
-assertPresent(
-  errors,
-  facts.transportHeader,
+  facts.transport,
   "udpMemberLine",
-  lineNumber(sourceEntries.transportH.lines, (line) => /\bUDP\s*\*\s*m_udpsock\b/.test(line)),
+  lineNumber(transportH.lines, (line) => /\bUDP\s*\*\s*m_udpsock\b/.test(line)),
   "Transport concrete UDP member",
 );
 assertPresent(
   errors,
-  facts.transportHeader,
-  "queueSendDeclLine",
-  lineNumber(sourceEntries.transportH.lines, (line) => /\bBool\s+queueSend\b/.test(line)),
-  "Transport::queueSend declaration",
-);
-assertPresent(
-  errors,
-  facts.transportHeader,
+  facts.transport,
   "doSendDeclLine",
-  lineNumber(sourceEntries.transportH.lines, (line) => /\bBool\s+doSend\b/.test(line)),
+  lineNumber(transportH.lines, (line) => /\bBool\s+doSend\b/.test(line)),
   "Transport::doSend declaration",
 );
 assertPresent(
   errors,
-  facts.transportHeader,
+  facts.transport,
   "doRecvDeclLine",
-  lineNumber(sourceEntries.transportH.lines, (line) => /\bBool\s+doRecv\b/.test(line)),
+  lineNumber(transportH.lines, (line) => /\bBool\s+doRecv\b/.test(line)),
   "Transport::doRecv declaration",
 );
 
@@ -185,53 +166,72 @@ const initLine = lineNumber(transport.lines, (line) => /\bBool\s+Transport::init
 const doSendLine = lineNumber(transport.lines, (line) => /\bBool\s+Transport::doSend\s*\(/.test(line));
 const doRecvLine = lineNumber(transport.lines, (line) => /\bBool\s+Transport::doRecv\s*\(/.test(line));
 const queueSendLine = lineNumber(transport.lines, (line) => /\bBool\s+Transport::queueSend\s*\(/.test(line));
-const isGeneralsPacketLine = lineNumber(transport.lines, (line) => /\bBool\s+Transport::isGeneralsPacket\s*\(/.test(line));
-facts.transportCpp.definitions = { initLine, doSendLine, doRecvLine, queueSendLine, isGeneralsPacketLine };
-
 const initRange = functionBodyLineRange(transport.lines, initLine);
 const doSendRange = functionBodyLineRange(transport.lines, doSendLine);
 const doRecvRange = functionBodyLineRange(transport.lines, doRecvLine);
 const queueSendRange = functionBodyLineRange(transport.lines, queueSendLine);
-const isGeneralsPacketRange = functionBodyLineRange(transport.lines, isGeneralsPacketLine);
 
-assertRangeContains(errors, facts.transportCpp, transport, initRange, "newUdpLine", /m_udpsock\s*=\s*NEW\s+UDP\s*\(\s*\)/, "Transport::init concrete UDP allocation");
-assertRangeContains(errors, facts.transportCpp, transport, initRange, "bindLine", /m_udpsock->Bind\s*\(/, "Transport::init UDP bind");
-assertRangeContains(errors, facts.transportCpp, transport, doSendRange, "writeLine", /m_udpsock->Write\s*\(/, "Transport::doSend UDP write");
-assertRangeContains(errors, facts.transportCpp, transport, doSendRange, "headerPayloadSendLine", /m_outBuffer\[i\]\.length\s*\+\s*sizeof\s*\(\s*TransportMessageHeader\s*\)/, "Transport::doSend header+payload byte count");
-assertRangeContains(errors, facts.transportCpp, transport, doRecvRange, "readLine", /m_udpsock->Read\s*\(/, "Transport::doRecv UDP read");
-assertRangeContains(errors, facts.transportCpp, transport, doRecvRange, "decryptLine", /decryptBuf\s*\(\s*buf\s*,\s*len\s*\)/, "Transport::doRecv decrypt");
-assertRangeContains(errors, facts.transportCpp, transport, doRecvRange, "lengthLine", /incomingMessage\.length\s*=\s*len\s*-\s*sizeof\s*\(\s*TransportMessageHeader\s*\)/, "Transport::doRecv payload length assignment");
-assertRangeContains(errors, facts.transportCpp, transport, doRecvRange, "packetCheckLine", /isGeneralsPacket\s*\(\s*&incomingMessage\s*\)/, "Transport::doRecv packet validation");
-assertRangeContains(errors, facts.transportCpp, transport, queueSendRange, "magicLine", /header\.magic\s*=\s*GENERALS_MAGIC_NUMBER/, "Transport::queueSend magic");
-assertRangeContains(errors, facts.transportCpp, transport, queueSendRange, "crcLine", /computeCRC\s*\(/, "Transport::queueSend CRC");
-assertRangeContains(errors, facts.transportCpp, transport, queueSendRange, "encryptLine", /encryptBuf\s*\(\s*\(unsigned char \*\)&m_outBuffer\[i\]/, "Transport::queueSend encryption");
-assertRangeContains(errors, facts.transportCpp, transport, isGeneralsPacketRange, "magicCheckLine", /header\.magic\s*!=\s*GENERALS_MAGIC_NUMBER/, "Transport::isGeneralsPacket magic check");
-assertRangeContains(errors, facts.transportCpp, transport, isGeneralsPacketRange, "crcCheckLine", /crc\.get\(\)\s*!=\s*msg->header\.crc/, "Transport::isGeneralsPacket CRC check");
+assertRangeContains(errors, facts.transport, transport, initRange, "newUdpLine", /m_udpsock\s*=\s*NEW\s+UDP\s*\(\s*\)/, "Transport::init concrete UDP allocation");
+assertRangeContains(errors, facts.transport, transport, doSendRange, "writeLine", /m_udpsock->Write\s*\(/, "Transport::doSend UDP write");
+assertRangeContains(errors, facts.transport, transport, doRecvRange, "readLine", /m_udpsock->Read\s*\(/, "Transport::doRecv UDP read");
+assertRangeContains(errors, facts.transport, transport, doRecvRange, "decryptLine", /decryptBuf\s*\(\s*buf\s*,\s*len\s*\)/, "Transport::doRecv decrypt");
+assertRangeContains(errors, facts.transport, transport, queueSendRange, "encryptLine", /encryptBuf\s*\(\s*\(unsigned char \*\)&m_outBuffer\[i\]/, "Transport::queueSend encryption");
+
+const udpCpp = sourceEntries.udpCpp;
+const udpWriteLine = lineNumber(udpCpp.lines, (line) => /\bInt\s+UDP::Write\s*\(/.test(line));
+const udpReadLine = lineNumber(udpCpp.lines, (line) => /\bInt\s+UDP::Read\s*\(/.test(line));
+const udpWriteRange = functionBodyLineRange(udpCpp.lines, udpWriteLine);
+const udpReadRange = functionBodyLineRange(udpCpp.lines, udpReadLine);
+assertPresent(
+  errors,
+  facts.udpBackend,
+  "emscriptenBranchLine",
+  lineNumber(udpCpp.lines, (line) => /#ifdef\s+__EMSCRIPTEN__/.test(line)),
+  "wasm UDP backend branch",
+);
+assertPresent(
+  errors,
+  facts.udpBackend,
+  "adapterStateLine",
+  lineNumber(udpCpp.lines, (line) => /BrowserUdpAdapterState\s+g_browser_udp_adapter/.test(line)),
+  "browser UDP adapter state",
+);
+assertPresent(
+  errors,
+  facts.udpBackend,
+  "pushIncomingExportLine",
+  lineNumber(udpCpp.lines, (line) => /cnc_port_browser_udp_adapter_push_incoming/.test(line)),
+  "browser UDP incoming push hook",
+);
+assertPresent(
+  errors,
+  facts.udpBackend,
+  "popOutgoingExportLine",
+  lineNumber(udpCpp.lines, (line) => /cnc_port_browser_udp_adapter_pop_outgoing/.test(line)),
+  "browser UDP outgoing pop hook",
+);
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpWriteRange, "writePushOutgoingLine", /g_browser_udp_adapter\.outgoing/, "UDP::Write pushes outgoing adapter datagram");
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpWriteRange, "writeCountLine", /g_browser_udp_adapter\.writes/, "UDP::Write records adapter write");
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpReadRange, "readPopIncomingLine", /g_browser_udp_adapter\.incoming/, "UDP::Read pops incoming adapter datagram");
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpReadRange, "readSockaddrLine", /from->sin_addr\.s_addr\s*=\s*htonl\s*\(\s*ip\s*\)/, "UDP::Read fills sockaddr source");
 
 const wasm = sourceEntries.wasmProbe;
 const wireBuildLine = lineNumber(wasm.lines, (line) => /cnc_port_build_browser_network_transport_wire_packet/.test(line));
 const wireAcceptLine = lineNumber(wasm.lines, (line) => /cnc_port_accept_browser_network_transport_wire_packet/.test(line));
 const wireBuildRange = functionBodyLineRange(wasm.lines, wireBuildLine);
 const wireAcceptRange = functionBodyLineRange(wasm.lines, wireAcceptLine);
-assertPresent(
-  errors,
-  facts.wasmWireProbe,
-  "buildExportLine",
-  wireBuildLine,
-  "wasm wire build export",
-);
-assertPresent(
-  errors,
-  facts.wasmWireProbe,
-  "acceptExportLine",
-  wireAcceptLine,
-  "wasm wire accept export",
-);
-assertRangeContains(errors, facts.wasmWireProbe, wasm, wireBuildRange, "queueSendLine", /transport\.queueSend\s*\(/, "wasm Transport::queueSend wire builder");
-assertRangeContains(errors, facts.wasmWireProbe, wasm, wireBuildRange, "wireEncodeLine", /g_browser_network_transport_wire_hex/, "wasm encrypted wire hex export");
-assertRangeContains(errors, facts.wasmWireProbe, wasm, wireAcceptRange, "wireDecodeLine", /decode_hex_with_capacity\s*\(/, "wasm encrypted wire hex decode");
-assertRangeContains(errors, facts.wasmWireProbe, wasm, wireAcceptRange, "crcValidateLine", /transport_message_has_valid_crc\s*\(/, "wasm transport CRC validation in wire accept");
-assertRangeContains(errors, facts.wasmWireProbe, wasm, wireAcceptRange, "oldAcceptBridgeLine", /packet_accept_json\s*=\s*cnc_port_accept_browser_network_transport_packet\s*\(/, "wasm wire accept feeds existing focused frame-data accept path");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "clearBeforeSendLine", /cnc_port_browser_udp_adapter_clear\s*\(/, "wire build clears browser UDP adapter");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "transportInitLine", /transport\.init\s*\(/, "wire build initializes original Transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "queueSendLine", /transport\.queueSend\s*\(/, "wire build queues through original Transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "doSendLine", /transport\.doSend\s*\(/, "wire build drives original Transport::doSend");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "popOutgoingLine", /cnc_port_browser_udp_adapter_pop_outgoing\s*\(/, "wire build pops adapter outgoing datagram");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "productionTrueLine", /\\"productionTransport\\":true/, "wire build reports production transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "pushIncomingLine", /cnc_port_browser_udp_adapter_push_incoming\s*\(/, "wire accept pushes adapter incoming datagram");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "transportPointerInitLine", /transport->init\s*\(/, "wire accept initializes original Transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "doRecvLine", /transport->doRecv\s*\(/, "wire accept drives original Transport::doRecv");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "managerTransportLine", /manager->m_transport\s*=\s*transport/, "wire accept gives doRecv transport to ConnectionManager");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "doRelayLine", /manager->doRelay\s*\(/, "wire accept drives original ConnectionManager::doRelay");
+assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "acceptProductionTrueLine", /\\"productionTransport\\":true/, "wire accept reports production transport");
 
 const bridge = sourceEntries.bridge;
 assertPresent(
@@ -248,35 +248,28 @@ assertPresent(
   lineNumber(bridge.lines, (line) => /cnc_port_accept_browser_network_transport_wire_packet/.test(line)),
   "bridge wire accept cwrap",
 );
-assertPresent(
-  errors,
-  facts.browserHarness,
-  "buildRpcLine",
-  lineNumber(bridge.lines, (line) => /browserNetworkTransportBuildWirePacket/.test(line)),
-  "bridge wire build RPC",
-);
-assertPresent(
-  errors,
-  facts.browserHarness,
-  "acceptRpcLine",
-  lineNumber(bridge.lines, (line) => /browserNetworkTransportAcceptWirePacket/.test(line)),
-  "bridge wire accept RPC",
-);
 
 const smoke = sourceEntries.websocketSmoke;
 assertPresent(
   errors,
   facts.browserHarness,
-  "smokeBuildRpcLine",
-  lineNumber(smoke.lines, (line) => /browserNetworkTransportBuildWirePacket/.test(line)),
-  "WebSocket smoke wire build RPC",
+  "smokeProductionRelayLine",
+  lineNumber(smoke.lines, (line) => /productionTransport:\s*true/.test(line)),
+  "WebSocket smoke production transport report",
 );
 assertPresent(
   errors,
   facts.browserHarness,
-  "smokeAcceptRpcLine",
-  lineNumber(smoke.lines, (line) => /browserNetworkTransportAcceptWirePacket/.test(line)),
-  "WebSocket smoke wire accept RPC",
+  "smokeDoSendAdapterLine",
+  lineNumber(smoke.lines, (line) => /Transport::doSend -> browser UDP adapter Write/.test(line)),
+  "WebSocket smoke doSend adapter assertion",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "smokeDoRecvAdapterLine",
+  lineNumber(smoke.lines, (line) => /browser UDP adapter Read -> Transport::doRecv/.test(line)),
+  "WebSocket smoke doRecv adapter assertion",
 );
 assertPresent(
   errors,
@@ -285,7 +278,13 @@ assertPresent(
   lineNumber(smoke.lines, (line) => /socket\.send\s*\(\s*bytes\s*\)/.test(line)),
   "WebSocket smoke binary send",
 );
-
+assertAbsent(
+  errors,
+  facts.browserHarness,
+  "smokePacketAcceptDependency",
+  /packetAccept/.test(smoke.text),
+  "WebSocket smoke focused packetAccept dependency",
+);
 assertPresent(
   errors,
   facts.browserHarness,
@@ -312,9 +311,9 @@ const report = {
   ok: errors.length === 0,
   source: "websocket-transport-frontier",
   verified:
-    "Original Transport still owns concrete UDP, while the browser WebSocket smoke carries encrypted Transport::queueSend wire bytes through receive-side decrypt/CRC validation into the focused original frame-data readiness path.",
+    "Original Transport doSend/doRecv now move encrypted wire bytes through a wasm browser UDP adapter, with WebSocket delivery into ConnectionManager/FrameData readiness.",
   open:
-    "Replace concrete UDP allocation/read/write under Transport::doSend/doRecv with a browser WebSocket/WebRTC adapter/factory.",
+    "Replace the harness datagram queue handoff with a live WebSocket/WebRTC endpoint shared by two browser game clients.",
   facts,
   errors,
 };

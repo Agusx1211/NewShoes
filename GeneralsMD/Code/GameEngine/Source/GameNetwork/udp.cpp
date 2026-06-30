@@ -37,6 +37,10 @@
 //#include "GameNetwork/NetworkInterface.h"
 #include "GameNetwork/udp.h"
 
+#ifdef __EMSCRIPTEN__
+#include <cstring>
+#endif
+
 #ifdef _INTERNAL
 // for occasional debugging...
 //#pragma optimize("", off)
@@ -120,6 +124,314 @@ AsciiString GetWSAErrorString( Int error )
 #endif // defined(_DEBUG) || defined(_INTERNAL)
 
 //-------------------------------------------------------------------------
+
+#ifdef __EMSCRIPTEN__
+
+namespace {
+
+constexpr Int kBrowserUdpQueueCapacity = 64;
+constexpr Int kBrowserUdpDatagramBytes = 2048;
+
+struct BrowserUdpDatagram
+{
+	UnsignedByte bytes[kBrowserUdpDatagramBytes];
+	Int length;
+	UnsignedInt ip;
+	UnsignedShort port;
+};
+
+struct BrowserUdpQueue
+{
+	BrowserUdpDatagram datagrams[kBrowserUdpQueueCapacity];
+	Int head;
+	Int count;
+};
+
+struct BrowserUdpAdapterState
+{
+	BrowserUdpQueue outgoing;
+	BrowserUdpQueue incoming;
+	Int writes;
+	Int reads;
+	Int dropped;
+};
+
+BrowserUdpAdapterState g_browser_udp_adapter = {};
+
+void clear_browser_udp_queue(BrowserUdpQueue &queue)
+{
+	queue.head = 0;
+	queue.count = 0;
+	for (Int i = 0; i < kBrowserUdpQueueCapacity; ++i) {
+		queue.datagrams[i].length = 0;
+		queue.datagrams[i].ip = 0;
+		queue.datagrams[i].port = 0;
+	}
+}
+
+void clear_browser_udp_adapter()
+{
+	clear_browser_udp_queue(g_browser_udp_adapter.outgoing);
+	clear_browser_udp_queue(g_browser_udp_adapter.incoming);
+	g_browser_udp_adapter.writes = 0;
+	g_browser_udp_adapter.reads = 0;
+	g_browser_udp_adapter.dropped = 0;
+}
+
+Int push_browser_udp_queue(
+	BrowserUdpQueue &queue,
+	const UnsignedByte *bytes,
+	Int length,
+	UnsignedInt ip,
+	UnsignedShort port)
+{
+	if (bytes == nullptr || length <= 0 || length > kBrowserUdpDatagramBytes) {
+		return UDP::INVAL;
+	}
+	if (queue.count >= kBrowserUdpQueueCapacity) {
+		++g_browser_udp_adapter.dropped;
+		return UDP::AGAIN;
+	}
+
+	const Int slot = (queue.head + queue.count) % kBrowserUdpQueueCapacity;
+	std::memcpy(queue.datagrams[slot].bytes, bytes, static_cast<size_t>(length));
+	queue.datagrams[slot].length = length;
+	queue.datagrams[slot].ip = ip;
+	queue.datagrams[slot].port = port;
+	++queue.count;
+	return length;
+}
+
+Int pop_browser_udp_queue(
+	BrowserUdpQueue &queue,
+	UnsignedByte *bytes,
+	Int capacity,
+	UnsignedInt *ip,
+	UnsignedShort *port)
+{
+	if (queue.count <= 0) {
+		return 0;
+	}
+	if (bytes == nullptr || capacity <= 0) {
+		return UDP::INVAL;
+	}
+
+	BrowserUdpDatagram &datagram = queue.datagrams[queue.head];
+	if (datagram.length > capacity) {
+		return UDP::INVAL;
+	}
+
+	std::memcpy(bytes, datagram.bytes, static_cast<size_t>(datagram.length));
+	if (ip != nullptr) {
+		*ip = datagram.ip;
+	}
+	if (port != nullptr) {
+		*port = datagram.port;
+	}
+	const Int length = datagram.length;
+	datagram.length = 0;
+	datagram.ip = 0;
+	datagram.port = 0;
+	queue.head = (queue.head + 1) % kBrowserUdpQueueCapacity;
+	--queue.count;
+	return length;
+}
+
+}
+
+extern "C" {
+
+void cnc_port_browser_udp_adapter_clear()
+{
+	clear_browser_udp_adapter();
+}
+
+Int cnc_port_browser_udp_adapter_push_incoming(
+	const UnsignedByte *bytes,
+	Int length,
+	UnsignedInt ip,
+	UnsignedShort port)
+{
+	return push_browser_udp_queue(g_browser_udp_adapter.incoming, bytes, length, ip, port);
+}
+
+Int cnc_port_browser_udp_adapter_pop_outgoing(
+	UnsignedByte *bytes,
+	Int capacity,
+	UnsignedInt *ip,
+	UnsignedShort *port)
+{
+	return pop_browser_udp_queue(g_browser_udp_adapter.outgoing, bytes, capacity, ip, port);
+}
+
+Int cnc_port_browser_udp_adapter_outgoing_count()
+{
+	return g_browser_udp_adapter.outgoing.count;
+}
+
+Int cnc_port_browser_udp_adapter_incoming_count()
+{
+	return g_browser_udp_adapter.incoming.count;
+}
+
+Int cnc_port_browser_udp_adapter_write_count()
+{
+	return g_browser_udp_adapter.writes;
+}
+
+Int cnc_port_browser_udp_adapter_read_count()
+{
+	return g_browser_udp_adapter.reads;
+}
+
+Int cnc_port_browser_udp_adapter_dropped_count()
+{
+	return g_browser_udp_adapter.dropped;
+}
+
+}
+
+UDP::UDP()
+{
+	fd = 0;
+	myIP = 0;
+	myPort = 0;
+	std::memset(&addr, 0, sizeof(addr));
+	m_lastError = OK;
+}
+
+UDP::~UDP()
+{
+	fd = 0;
+}
+
+Int UDP::Bind(const char *Host, UnsignedShort port)
+{
+	if (Host == nullptr || Host[0] == '\0') {
+		return Bind(static_cast<UnsignedInt>(0), port);
+	}
+	if (isdigit(Host[0])) {
+		return Bind(ntohl(inet_addr(Host)), port);
+	}
+	m_lastError = ADDRNOTAVAIL;
+	return ADDRNOTAVAIL;
+}
+
+Int UDP::Bind(UnsignedInt IP, UnsignedShort Port)
+{
+	myIP = IP;
+	myPort = Port;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(Port);
+	addr.sin_addr.s_addr = htonl(IP);
+	fd = 1;
+	m_lastError = OK;
+	return OK;
+}
+
+Int UDP::getLocalAddr(UnsignedInt &ip, UnsignedShort &port)
+{
+	ip = myIP;
+	port = myPort;
+	return OK;
+}
+
+Int UDP::SetBlocking(Int)
+{
+	return OK;
+}
+
+Int UDP::Write(const unsigned char *msg, UnsignedInt len, UnsignedInt IP, UnsignedShort port)
+{
+	if ((IP == 0) || (port == 0)) {
+		m_lastError = ADDRNOTAVAIL;
+		return ADDRNOTAVAIL;
+	}
+
+	const Int written = push_browser_udp_queue(
+		g_browser_udp_adapter.outgoing,
+		reinterpret_cast<const UnsignedByte *>(msg),
+		static_cast<Int>(len),
+		IP,
+		port);
+	if (written > 0) {
+		++g_browser_udp_adapter.writes;
+		m_lastError = OK;
+	} else if (written < 0) {
+		m_lastError = written;
+	}
+	return written;
+}
+
+Int UDP::Read(unsigned char *msg, UnsignedInt len, sockaddr_in *from)
+{
+	UnsignedInt ip = 0;
+	UnsignedShort port = 0;
+	const Int read = pop_browser_udp_queue(
+		g_browser_udp_adapter.incoming,
+		reinterpret_cast<UnsignedByte *>(msg),
+		static_cast<Int>(len),
+		&ip,
+		&port);
+	if (read > 0) {
+		if (from != nullptr) {
+			std::memset(from, 0, sizeof(sockaddr_in));
+			from->sin_family = AF_INET;
+			from->sin_addr.s_addr = htonl(ip);
+			from->sin_port = htons(port);
+		}
+		++g_browser_udp_adapter.reads;
+		m_lastError = OK;
+	} else if (read == 0) {
+		m_lastError = OK;
+	} else {
+		m_lastError = read;
+	}
+	return read;
+}
+
+void UDP::ClearStatus(void)
+{
+	m_lastError = OK;
+}
+
+UDP::sockStat UDP::GetStatus(void)
+{
+	if (m_lastError == OK) {
+		return OK;
+	}
+	if (m_lastError < 0) {
+		return static_cast<UDP::sockStat>(m_lastError);
+	}
+	return UNKNOWN;
+}
+
+Int UDP::SetInputBuffer(UnsignedInt)
+{
+	return TRUE;
+}
+
+Int UDP::SetOutputBuffer(UnsignedInt)
+{
+	return TRUE;
+}
+
+int UDP::GetInputBuffer(void)
+{
+	return kBrowserUdpDatagramBytes * kBrowserUdpQueueCapacity;
+}
+
+int UDP::GetOutputBuffer(void)
+{
+	return kBrowserUdpDatagramBytes * kBrowserUdpQueueCapacity;
+}
+
+Int UDP::AllowBroadcasts(Bool)
+{
+	return TRUE;
+}
+
+#else
 
 UDP::UDP()
 {
@@ -515,3 +827,5 @@ Int UDP::AllowBroadcasts(Bool status)
 	else
 		return FALSE;
 }
+
+#endif // __EMSCRIPTEN__
