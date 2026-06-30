@@ -650,10 +650,15 @@ shares structure and follows behind.
       still needs display-owned WW3D file-factory lifetime and the open
       range-backed archive streaming path above.
 - [ ] Expand the archive-backed `WindowLayout` repaint path from the current
-      real `WindowZH.big` `Menus/Defeat.wnd` smoke into production shell/menu
-      composition: cover larger layouts such as `Menus/MainMenu.wnd`, text and
-      image children that were hidden for the first repaint proof, and normal
-      display-owned font/image lifetime.
+      real `WindowZH.big` `Menus/Defeat.wnd` and `Menus/MainMenu.wnd`
+      `MapBorder4` rectangle repaint smokes into production shell/menu
+      composition: cover text and image children that are hidden/pruned for the
+      focused repaint proofs, and normal display-owned font/image lifetime.
+      The next narrow image slice should verify real archive placement for
+      mapped-image INI and bitmap assets, then carry a MainMenu WND `IMAGE`
+      field through `GameWindowManagerScript.cpp::parseDrawData`,
+      `ImageCollection::findImageByName`, `W3DGameWinDefaultDraw`, and
+      `W3DDisplay::drawImage` into visible WebGL pixels.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
       Current focused coverage includes the synthetic terrain tile proof plus
       `test:ww3d-terrain-tile-archive`, which mounts real `TerrainZH.big`,
@@ -674,8 +679,9 @@ shares structure and follows behind.
       `GameWindowManager::winRepaint` and real `W3DDisplay`/WebGL2 pixels, and
       `test:ww3d-window-layout-repaint` now proves an archive-loaded
       `WindowZH.big` `WindowLayout` can repaint through the same browser W3D
-      path. Keep the next scene/camera work focused on either larger shell
-      composition or terrain first pixels.
+      path; `test:ww3d-main-menu-layout-repaint` now extends that to the real
+      `Menus/MainMenu.wnd` `MapBorder4` rectangle. Keep the next scene/camera
+      work focused on either fuller shell composition or terrain first pixels.
 - [ ] Add a vtable-safe original `W3DDisplay::setWidth` / `setHeight`
       or `setDisplayMode()` proof. Raw storage is not enough because the
       original setters call virtual `getWidth()` / `getHeight()`;

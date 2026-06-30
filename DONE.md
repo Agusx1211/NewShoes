@@ -3410,6 +3410,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the parsed root/parent callbacks, draw-call counts, blue dialog interior
       pixels, black outside pixels, and
       `harness-smoke-ww3d-window-layout-repaint-canvas.png`.
+- [x] Extend archive-backed `WindowLayout` repaint coverage to the real
+      MainMenu shell layout: `test:ww3d-main-menu-layout-repaint` mounts
+      `WindowZH.big`, loads `Window\Menus\MainMenu.wnd`, resolves the
+      `MainMenuSystem`, `MainMenuInput`, `W3DMainMenuInit`, `MainMenuUpdate`,
+      and `MainMenuShutdown` callback names, creates W3D-backed windows, prunes
+      the focused proof to `MainMenu.wnd:MapBorder4`, and drives
+      `GameWindowManager::winRepaint` through `W3DGameWinDefaultDraw`,
+      `W3DDisplay::drawOpenRect` / `drawFillRect`, and the browser D3D8/WebGL2
+      bridge. The Playwright smoke verifies the parsed MainMenu root and
+      MapBorder4 geometry/callbacks/colors, two W3D draw calls, blue border
+      pixels, the translucent black interior over the black canvas, black
+      outside pixels, and
+      `harness-smoke-ww3d-main-menu-layout-repaint-canvas.png`.
 
 ---
 

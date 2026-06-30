@@ -5141,6 +5141,18 @@ function pixelLooksMessageBoxBlue(pixel) {
     && pixel[3] >= 200;
 }
 
+function pixelLooksMessageBoxBlueTint(pixel) {
+  return pixelLooksMessageBoxBlue(pixel)
+    || (Array.isArray(pixel)
+      && pixel[0] >= 16
+      && pixel[0] <= 40
+      && pixel[1] >= 20
+      && pixel[1] <= 48
+      && pixel[2] >= 72
+      && pixel[2] <= 112
+      && pixel[3] >= 200);
+}
+
 function normalizeD3DMatrix(matrix) {
   if (!Array.isArray(matrix) || matrix.length !== 16) {
     return null;
@@ -6669,6 +6681,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_window_repaint", "string", []),
       probeWW3DWindowLayoutRepaint: module.cwrap(
         "cnc_port_probe_ww3d_window_layout_repaint", "string", ["string"]),
+      probeWW3DMainMenuLayoutRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
       probeWW3DDisplayLineGradient: module.cwrap(
@@ -15940,6 +15954,82 @@ async function rpc(command, payload = {}) {
           && browserProbe?.indexCount === 6
           && browserProbe?.texture0?.sampled !== true
           && pixelLooksMessageBoxBlue(layoutPixels.parentInterior)
+          && pixelLooksBlack(layoutPixels.outside, 8);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          layoutPixels,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dMainMenuLayoutRepaint":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout repaint cannot render" };
+        }
+        const archivePath = String(payload.windowArchivePath ?? payload.archivePath ?? "");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DMainMenuLayoutRepaint(archivePath));
+        const parent = probe?.layout?.parent ?? {};
+        const left = parent.x ?? 532;
+        const top = parent.y ?? 108;
+        const width = parent.width ?? 224;
+        const height = parent.height ?? 212;
+        const right = left + width;
+        const bottom = top + height;
+        const layoutPixels = {
+          parentBorderCorner: sampleVirtualCanvasPixel(left + 1, top + 1),
+          parentBorderTop: sampleVirtualCanvasPixel(Math.floor((left + right) / 2), top + 1),
+          parentBorderLeft: sampleVirtualCanvasPixel(left + 1, Math.floor((top + bottom) / 2)),
+          parentInterior: sampleVirtualCanvasPixel(left + 24, top + 24),
+          outside: sampleVirtualCanvasPixel(left - 24, top - 24),
+        };
+        const screenshot = {
+          ...snapshotCanvas(),
+          layoutPixels,
+        };
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_main_menu_layout_repaint_probe"
+          && probe?.display?.path === "WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay"
+          && probe?.archive?.exists === true
+          && probe?.layout?.path === "Menus/MainMenu.wnd"
+          && probe?.layout?.root?.name === "MainMenu.wnd:MainMenuParent"
+          && probe?.layout?.root?.systemFunc === "MainMenuSystem"
+          && probe?.layout?.root?.drawFunc === "W3DNoDraw"
+          && probe?.layout?.parent?.name === "MainMenu.wnd:MapBorder4"
+          && probe?.layout?.parent?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && probe?.layout?.parent?.drawFunc === "W3DGameWinDefaultDraw"
+          && probe?.layout?.parent?.x === 532
+          && probe?.layout?.parent?.y === 108
+          && probe?.layout?.parent?.width === 224
+          && probe?.layout?.parent?.height === 212
+          && probe?.layout?.parent?.fillColor?.[3] === 126
+          && probe?.layout?.parent?.borderColor?.[2] === 168
+          && probe?.layout?.prunedChildren >= 1
+          && probe?.calls?.drawIndexed >= 2
+          && probe?.calls?.displayOpenRect >= 1
+          && probe?.calls?.displayFillRect >= 1
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.usedIdentityClipSpace === true
+          && browserProbe?.vertexCount === 4
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 6
+          && browserProbe?.texture0?.sampled !== true
+          && pixelLooksMessageBoxBlue(layoutPixels.parentBorderCorner)
+          && pixelLooksMessageBoxBlueTint(layoutPixels.parentBorderTop)
+          && pixelLooksMessageBoxBlueTint(layoutPixels.parentBorderLeft)
+          && pixelLooksBlack(layoutPixels.parentInterior, 8)
           && pixelLooksBlack(layoutPixels.outside, 8);
         return {
           ok,
