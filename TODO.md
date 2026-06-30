@@ -472,6 +472,11 @@ shares structure and follows behind.
       mutation path and verify the next blocker is `createAudioManager`. Keep
       `Maps\MapCache.ini` loading deferred to its original post-audio
       `GameEngine.cpp` point (`MapCache::updateCache` at line 607).
+      `test:vertical-integrations` now asserts the runtime and range-backed
+      startup archive paths keep `SubsystemInterfaceList` ready, make
+      `GameLODManager` readiness depend on mounted base `INI.big`
+      (`GameLODPresets.ini`), keep `MapCache` deferred, and preserve
+      `createAudioManager` as the first unowned factory.
 - [ ] Prove the startup singleton shutdown/destructor path through the original
       `GameEngine.cpp` allocator/free lifetime after archive preflight is safe.
       A direct `MSGNEW`/`delete` probe for durable `GlobalData`,

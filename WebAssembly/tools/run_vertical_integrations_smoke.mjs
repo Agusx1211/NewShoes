@@ -78,6 +78,49 @@ function assertDeviceFrontier(payload, label) {
     `${label} did not preserve the Miles audio mapping`, frontier);
 }
 
+function hasBaseIniArchive(payload) {
+  return (payload.optionalBaseArchives ?? []).some((archive) =>
+    archive.sourceName === "INI.big" && archive.mountName === "ZZBase_INI.big");
+}
+
+function assertStartupSingletonFrontier(payload, label) {
+  const startup = payload.originalEngineStartup;
+  const frontier = startup?.deviceFactoryFrontier;
+  const entries = frontier?.entries ?? [];
+  const byFactory = new Map(entries.map((entry) => [entry.factory, entry]));
+  const baseIniMounted = hasBaseIniArchive(payload);
+  const expectedSingletonReady = baseIniMounted;
+
+  expect(startup?.originalSetup?.subsystemList === true,
+    `${label} did not preserve browser-owned SubsystemInterfaceList setup`, startup?.originalSetup);
+  expect(startup.originalSetup?.startupSingletons === expectedSingletonReady,
+    `${label} startup singleton readiness did not match base INI availability`, startup?.originalSetup);
+  expect(startup.browserDeviceLayer?.startupSingletons === expectedSingletonReady,
+    `${label} browser device layer startup singleton readiness mismatch`, startup?.browserDeviceLayer);
+  expect(frontier.startupSingletonsReady === expectedSingletonReady,
+    `${label} device frontier startup singleton readiness mismatch`, frontier);
+  expect(byFactory.get("SubsystemInterfaceList")?.ready === true,
+    `${label} did not mark SubsystemInterfaceList ready at the GameEngine.cpp line`, frontier);
+  expect(byFactory.get("GameLODManager")?.ready === expectedSingletonReady,
+    `${label} GameLODManager readiness did not track base GameLODPresets.ini availability`, frontier);
+  expect(byFactory.get("MapCache")?.ready === false,
+    `${label} should keep MapCache::updateCache deferred until the post-audio GameEngine.cpp point`, frontier);
+
+  if (baseIniMounted) {
+    expect(startup.status === "browser_device_layer_pending",
+      `${label} with base INI mounted should advance to browser device layer pending`, startup);
+    expect(frontier.nextRequired === "CreateGameEngine" && frontier.setupReady === true,
+      `${label} with base INI mounted should be ready for CreateGameEngine ownership`, frontier);
+  } else {
+    expect(startup.status === "missing_startup_files",
+      `${label} without base INI should report missing startup files`, startup);
+    expect(frontier.nextRequired === "startupFiles" && frontier.setupReady === false,
+      `${label} without base INI should keep startup files as next required`, frontier);
+    expect(startup.startupFiles?.baseIniArchive?.missing?.includes("Data\\INI\\GameLODPresets.ini"),
+      `${label} should name base GameLODPresets.ini as the GameLOD blocker`, startup.startupFiles);
+  }
+}
+
 const steps = [
   {
     name: "runtime-archives-startup-data",
@@ -100,6 +143,7 @@ const steps = [
       expect(payload.aggregateProbe?.mapCache?.ok === true,
         "runtime archive smoke did not load real MapCache metadata", payload.aggregateProbe);
       assertDeviceFrontier(payload, "runtime archive smoke");
+      assertStartupSingletonFrontier(payload, "runtime archive smoke");
     },
   },
   {
@@ -115,6 +159,7 @@ const steps = [
       expect(payload.startupAssets?.status === "ready" && payload.startupAssets?.ok === true,
         "range-backed startup archive smoke did not reach startup asset readiness", payload.startupAssets);
       assertDeviceFrontier(payload, "range-backed startup archive smoke");
+      assertStartupSingletonFrontier(payload, "range-backed startup archive smoke");
     },
   },
   {
@@ -180,8 +225,8 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
-    "runtime archive preload and boot-time startup asset consumption",
-    "browser Range archive delivery through synthesized BIG files and original Win32BIGFileSystem",
+    "runtime archive preload, boot-time startup asset consumption, and startup singleton pre-audio frontier diagnostics",
+    "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH-backed Shell/MainMenu layout callback execution and MainMenu dropdown input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
