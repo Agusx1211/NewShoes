@@ -4718,6 +4718,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-lanapi-network-update`,
       `npm --prefix WebAssembly run test:browser-lanapi-game-start-two-contexts`,
       and `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Carry original GameNetwork transport bytes through a browser WebSocket
+      binary relay. `WebAssembly/harness/websocket-binary-relay-server.mjs`
+      implements the minimal RFC 6455 handshake/frame path needed by the
+      harness, and `network_websocket_transport_smoke.mjs` boots two isolated
+      Playwright contexts, builds the existing two-command original `NetPacket`
+      with `NetPacket::addCommand`, sends its bytes as a browser `WebSocket`
+      binary frame through the relay, then converts the received bytes back to
+      the existing focused accept RPC so the destination still proves
+      `Transport::m_inBuffer`, `ConnectionManager::doRelay`, and
+      `FrameDataManager::allCommandsReady`. This removes the packet-hex
+      inter-context handoff from the GameNetwork transport vertical, but does
+      not yet wire WebSocket into production `Transport::doSend` / `doRecv`.
+      `test:browser-network-websocket-transport` and
+      `test:vertical-integrations` gate the new path.
 
 ---
 

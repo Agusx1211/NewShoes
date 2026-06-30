@@ -349,6 +349,48 @@ const steps = [
     },
   },
   {
+    name: "browser-network-websocket-transport",
+    file: "harness/network_websocket_transport_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser WebSocket transport smoke did not report ok", payload);
+      expect(payload.path === "browser-network-websocket-transport"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.browserTransport === "browser WebSocket binary relay"
+          && payload.relay?.serverTransport === "Node WebSocket relay server"
+          && payload.relay?.productionTransport === false
+          && payload.relay?.hexHandoff === false
+          && payload.relay?.binaryFrames === 1
+          && payload.source?.client === "websocket-source"
+          && payload.source?.wasm === "loaded"
+          && payload.source?.originalSerializer === "NetPacket::addCommand"
+          && payload.source?.websocket?.binaryType === "arraybuffer"
+          && payload.source?.websocket?.sentBytes === payload.source?.packet?.bytes
+          && payload.source?.packet?.commandType === "NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD"
+          && payload.source?.packet?.commands === 2
+          && payload.source?.packet?.executionFrame === 2470
+          && payload.source?.packet?.playerId === 2
+          && payload.source?.packet?.runAheadCommandId === 316
+          && payload.destination?.client === "websocket-destination"
+          && payload.destination?.wasm === "loaded"
+          && payload.destination?.websocket?.binaryType === "arraybuffer"
+          && payload.destination?.websocket?.receivedBytes === payload.source?.packet?.bytes
+          && payload.destination?.originalTransport === "Transport::m_inBuffer"
+          && payload.destination?.originalRelay === "ConnectionManager::doRelay"
+          && payload.destination?.originalFrameData === "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
+          && payload.destination?.transport?.injected === true
+          && payload.destination?.connectionManager?.doRelayDriven === true
+          && payload.destination?.frameData?.ready === true
+          && payload.destination?.frameData?.managerReady === true
+          && payload.destination?.frameData?.storedCommandType === "NETCOMMANDTYPE_RUNAHEAD"
+          && payload.relayStats?.receivedFrames === 1
+          && payload.relayStats?.forwardedFrames === 1
+          && payload.relayStats?.receivedBytes === payload.source?.packet?.bytes
+          && payload.relayStats?.forwardedBytes === payload.source?.packet?.bytes,
+        "browser WebSocket transport smoke did not carry original packet bytes into original frame-data readiness", payload);
+    },
+  },
+  {
     name: "browser-lanapi-announce-two-contexts",
     file: "harness/lanapi_announce_two_contexts_smoke.mjs",
     validate(payload) {
@@ -659,6 +701,7 @@ console.log(JSON.stringify({
     "paired audio vertical proving the original MilesAudioManager 2D sample leg beside browser MSS AudioBufferSourceNode completion/release in one Playwright-owned gate",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
+    "two isolated Playwright browser contexts carrying original GameNetwork transport bytes through a browser WebSocket binary relay into original frame-data readiness",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
@@ -673,7 +716,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "replace the harness relay with production WebSocket/WebRTC transport or extend networking coverage to multi-frame deterministic sync/desync detection",
+    "wire browser WebSocket binary send/receive into the production Transport::doSend/doRecv ownership path or extend networking coverage to multi-frame deterministic sync/desync detection",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

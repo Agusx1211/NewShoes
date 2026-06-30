@@ -135,6 +135,7 @@
     "test:browser-audio-miles-webaudio-vertical": "npm run build:wasm && npm run extract:runtime-archives && node harness/audio_miles_webaudio_vertical_smoke.mjs",
     "test:gamenetwork-core": "npm run build:wasm && node dist/gamenetwork-core-smoke.cjs",
     "test:browser-network-two-contexts": "npm run build:wasm && node harness/network_two_contexts_smoke.mjs",
+    "test:browser-network-websocket-transport": "npm run build:wasm && node harness/network_websocket_transport_smoke.mjs",
     "test:browser-lanapi-two-contexts": "npm run build:wasm && node harness/lanapi_announce_two_contexts_smoke.mjs",
     "test:browser-lanapi-join-options-two-contexts": "npm run build:wasm && node harness/lanapi_join_options_two_contexts_smoke.mjs",
     "test:browser-lanapi-game-start-two-contexts": "npm run build:wasm && node harness/lanapi_game_start_two_contexts_smoke.mjs",

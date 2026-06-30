@@ -1166,7 +1166,13 @@ shares structure and follows behind.
       isolated Playwright browser contexts / wasm instances, relays only the
       packet hex through Node, and proves the destination context reaches the
       same original `Transport` / `ConnectionManager` / `FrameDataManager`
-      readiness path.
+      readiness path. `network_websocket_transport_smoke.mjs` now replaces that
+      inter-context hex handoff with a browser-native `WebSocket` binary frame
+      through a local relay server, while still handing the received bytes to
+      the existing original `Transport` / `ConnectionManager` / `FrameData`
+      accept path; the remaining production step is to wire WebSocket send/
+      receive into `Transport::doSend` / `doRecv` ownership instead of a
+      harness accept RPC.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -1177,8 +1183,10 @@ shares structure and follows behind.
       `FrameDataManager::allCommandsReady`, `timeForNewFrame`, and
       `RelayCommandsToCommandList` far enough to prove the first
       `frameDataReady` transition. Next networking slices: replace the harness
-      packet handoff with production WebSocket/WebRTC transport and extend the
-      lockstep harness to multi-frame deterministic sync/desync detection.
+      packet handoff with production WebSocket/WebRTC transport ownership and
+      extend the lockstep harness to multi-frame deterministic sync/desync
+      detection. The current WebSocket binary vertical proves browser-native
+      binary framing only; it still uses the focused accept RPC after delivery.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
@@ -1188,8 +1196,10 @@ shares structure and follows behind.
       `RequestGameStart`, `handleGameStart`, and `OnGameStart` into original
       `NetworkInterface` setup plus `MSG_NEW_GAME`/seed/map side effects; the
       update slice now advances that setup through original `Network::update`
-      into first-frame readiness. Next slice is a production WebSocket/WebRTC
-      transport, not a Node-mediated packet handoff.
+      into first-frame readiness. The WebSocket binary transport smoke removes
+      the Node-mediated packet-hex handoff for the GameNetwork packet vertical,
+      but LANAPI still needs production WebSocket/WebRTC ownership instead of
+      focused harness packet delivery.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
