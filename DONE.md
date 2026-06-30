@@ -3029,6 +3029,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       rotated-image clipped UV slice, disables clipping after the draw, samples
       a colored center pixel plus black outside-clip pixels, and screenshots
       `harness-smoke-ww3d-display-mapped-image-clip-canvas.png`.
+- [x] Restored the direct `WatermarkChina` mapped-image display smoke to the
+      real 512x512 atlas texture instead of the WW3D 128x128 missing texture.
+      The regression was a browser runtime ownership mismatch: the focused
+      mapped-image probe installed the persistent runtime `FileSystem` /
+      `W3DFileSystem` owner, then swapped/restored a different
+      `NameKeyGenerator`, so `FileSystem::doesFileExist` cache keys and W3D
+      `GameFileClass` lookups could disagree. The mapped-image probe now keeps
+      the runtime file-system/name-key owner consistent, and the runtime archive
+      owner recreates/reloads recorded range-backed BIG specs when later focused
+      WW3D probes ask for an already-loaded archive after `WW3D::Shutdown`.
+      This also keeps the shell composite sequence alive when it runs scene,
+      mapped-image, and GameText probes in one browser page. The vertical
+      validator now matches the current exact-block mapped-image loader while
+      the generic `ImageCollection::load(512)` route remains an open TODO.
+      Verified with `npm run build:wasm`,
+      `node harness/display_mapped_image_smoke.mjs
+      artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big`,
+      `node harness/display_mapped_image_clip_smoke.mjs
+      artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big`,
+      `node harness/display_game_text_smoke.mjs
+      artifacts/real-assets/EnglishZH.big`,
+      `node harness/display_shell_composite_smoke.mjs
+      artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big`,
+      and `node tools/run_vertical_integrations_smoke.mjs`.
 - [x] Original `W3DDisplay::drawImage` non-rotated mapped-image UVs are now
       covered through the same real mapped-image data path: the browser smoke
       range-fetches `SAUserInterface512.INI` and

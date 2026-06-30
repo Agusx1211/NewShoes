@@ -669,12 +669,6 @@ shares structure and follows behind.
       `INI::loadDirectory` once its current browser ownership/crash frontier is
       resolved, while keeping the real archive-backed WND image repaint smokes
       green.
-- [ ] Investigate the current direct mapped-image display smoke regression
-      before relying on the broad vertical gate for rendering: `WatermarkChina`
-      still parses as a 160x96 image from a 512x512 atlas, but
-      `test:ww3d-display-mapped-image` / `test:vertical-integrations` currently
-      observe `SCShellUserInterface512_001.tga` resolving/uploading as a
-      128x128 texture instead of the expected 512x512 atlas.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
       Current focused coverage includes the synthetic terrain tile proof plus
       `test:ww3d-terrain-tile-archive`, which mounts real `TerrainZH.big`,

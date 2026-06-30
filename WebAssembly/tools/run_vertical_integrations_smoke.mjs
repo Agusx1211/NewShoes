@@ -892,8 +892,13 @@ const steps = [
       expect(payload.ok === true, "mapped-image display smoke did not report ok", payload);
       expect(payload.reader === "browser Range subset BIG loaded by runtime-owned Win32BIGFileSystem",
         "mapped-image display smoke did not use range-backed BIG assets", payload);
-      expect(payload.probe?.results?.mappedImages === 1186,
-        "mapped-image display smoke did not load the expected mapped-image collection", payload.probe);
+      expect(payload.probe?.results?.mappedImages >= 1
+          && payload.probe?.image?.name === "WatermarkChina"
+          && payload.probe?.image?.filename === "SCShellUserInterface512_001.tga",
+        "mapped-image display smoke did not load the expected exact mapped-image block", payload.probe);
+      expect(payload.probe?.texture?.width === 512
+          && payload.probe?.texture?.height === 512,
+        "mapped-image display smoke did not upload the expected 512x512 atlas texture", payload.probe?.texture);
       expect(payload.probe?.results?.drawImageCalled === true,
         "mapped-image display smoke did not exercise W3DDisplay::drawImage", payload.probe);
       expect(payload.browserProbe?.source === "browser_d3d8_draw_indexed",
@@ -985,7 +990,7 @@ const steps = [
         "shell composite render smoke did not use range-backed BIG assets", payload);
       expect(payload.originalPaths?.includes("W3DDisplay::m_3DScene -> WW3D::Render"),
         "shell composite render smoke did not include the W3DDisplay scene path", payload.originalPaths);
-      expect(payload.originalPaths?.includes("ImageCollection::load -> W3DDisplay::drawImage"),
+      expect(payload.originalPaths?.includes("Exact mapped-image INI block -> W3DDisplay::drawImage"),
         "shell composite render smoke did not include the mapped-image draw path", payload.originalPaths);
       expect(payload.originalPaths?.includes("GameText::fetch -> W3DDisplayString::draw"),
         "shell composite render smoke did not include the GameText draw path", payload.originalPaths);

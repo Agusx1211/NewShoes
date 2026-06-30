@@ -4776,8 +4776,6 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 	GlobalData *old_global_data = TheGlobalData;
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	NameKeyGenerator *old_name_key_generator = TheNameKeyGenerator;
-	NameKeyGenerator name_key_generator;
-	name_key_generator.init();
 	TheGlobalData = nullptr;
 	TheWritableGlobalData = nullptr;
 
@@ -4899,7 +4897,6 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 			runtime_asset_system_installed &&
 			wasm_browser_runtime_assets_file_exists(spec.texture_archive_entry);
 		texture_archive_loaded = texture_file_exists;
-		TheNameKeyGenerator = &name_key_generator;
 		name_keys_ready = TheNameKeyGenerator != nullptr;
 	}
 
@@ -5090,17 +5087,21 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		mapped_image_collection = nullptr;
 	}
 	TheMappedImageCollection = old_mapped_image_collection;
-	TheNameKeyGenerator = old_name_key_generator;
+	if (!runtime_asset_system_installed) {
+		TheNameKeyGenerator = old_name_key_generator;
+	}
 	TheWritableGlobalData = old_writable_global_data;
 	TheGlobalData = old_global_data;
 
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+	if (runtime_asset_system_installed) {
+		wasm_browser_runtime_assets_restore_globals();
+	}
 	if (asset_manager_created && asset_manager != nullptr) {
 		delete asset_manager;
 		asset_manager = nullptr;
-	}
-
-	if (succeeded(init_result)) {
-		wasm_shutdown_ww3d_probe();
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();

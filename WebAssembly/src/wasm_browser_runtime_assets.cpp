@@ -182,12 +182,41 @@ bool archive_spec_already_loaded(const std::string &directory, const std::string
 	return false;
 }
 
+Win32BIGFileSystem &runtime_archive_file_system();
+Win32BIGFileSystem &recreate_runtime_archive_file_system();
+void probe_persistent_runtime_file_system();
+void assign_runtime_globals();
+
 void remember_archive_spec(const std::string &directory, const std::string &file_mask)
 {
 	if (!archive_spec_already_loaded(directory, file_mask)) {
 		g_loaded_archive_specs.emplace_back(directory, file_mask);
 	}
 	g_runtime_assets_state.loaded_archive_specs = g_loaded_archive_specs.size();
+}
+
+bool reload_loaded_archive_specs()
+{
+	if (g_loaded_archive_specs.empty()) {
+		return false;
+	}
+
+	recreate_runtime_archive_file_system();
+	assign_runtime_globals();
+
+	bool loaded = true;
+	for (const auto &spec : g_loaded_archive_specs) {
+		const Bool spec_loaded = runtime_archive_file_system().loadBigFilesFromDirectory(
+			spec.first.c_str(),
+			spec.second.c_str(),
+			TRUE);
+		++g_runtime_assets_state.archive_load_calls;
+		loaded = loaded && spec_loaded;
+	}
+	g_runtime_assets_state.archive_loaded = loaded;
+	g_runtime_assets_state.loaded_archive_specs = g_loaded_archive_specs.size();
+	probe_persistent_runtime_file_system();
+	return loaded;
 }
 
 Win32BIGFileSystem &runtime_archive_file_system()
@@ -411,13 +440,9 @@ bool load_archive_set(const std::string &directory, const std::string &file_mask
 
 	install_runtime_globals();
 	if (archive_spec_already_loaded(directory, file_mask)) {
-		if (g_runtime_assets_state.archive_file_mask.empty()) {
-			g_runtime_assets_state.archive_directory = directory;
-			g_runtime_assets_state.archive_file_mask = file_mask;
-		}
-		g_runtime_assets_state.archive_loaded = true;
-		probe_persistent_runtime_file_system();
-		return true;
+		g_runtime_assets_state.archive_directory = directory;
+		g_runtime_assets_state.archive_file_mask = file_mask;
+		return reload_loaded_archive_specs();
 	}
 
 	g_runtime_assets_state.archive_directory = directory;
@@ -468,20 +493,12 @@ bool wasm_browser_runtime_assets_restore_globals()
 {
 	const bool reload_registered_archive =
 		g_runtime_assets_state.archive_loaded &&
-		!g_runtime_assets_state.archive_file_mask.empty();
+		!g_loaded_archive_specs.empty();
 	++g_runtime_assets_state.install_calls;
 	if (reload_registered_archive) {
-		recreate_runtime_archive_file_system();
+		return reload_loaded_archive_specs() && g_runtime_assets_state.installed;
 	}
 	assign_runtime_globals();
-	if (reload_registered_archive) {
-		const Bool loaded = runtime_archive_file_system().loadBigFilesFromDirectory(
-			g_runtime_assets_state.archive_directory.c_str(),
-			g_runtime_assets_state.archive_file_mask.c_str(),
-			TRUE);
-		++g_runtime_assets_state.archive_load_calls;
-		g_runtime_assets_state.archive_loaded = loaded;
-	}
 	return g_runtime_assets_state.installed;
 }
 
