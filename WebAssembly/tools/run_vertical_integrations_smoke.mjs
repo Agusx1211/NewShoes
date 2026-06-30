@@ -219,6 +219,39 @@ const steps = [
     },
   },
   {
+    name: "browser-lanapi-announce-two-contexts",
+    file: "harness/lanapi_announce_two_contexts_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser LANAPI announce smoke did not report ok", payload);
+      expect(payload.path === "browser-lanapi-announce-two-contexts"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.productionTransport === false
+          && payload.source?.client === "browser-client-0"
+          && payload.source?.wasm === "loaded"
+          && payload.source?.originalSerializer === "LANMessage struct byte payload"
+          && payload.source?.packet?.messageType === "MSG_GAME_ANNOUNCE"
+          && payload.source?.packet?.remoteIp === 0x7f000002
+          && payload.source?.packet?.localIp === 0x7f000001
+          && payload.source?.packet?.port === 8086
+          && payload.source?.packet?.gameName === "Browser LAN Game"
+          && payload.destination?.client === "browser-client-1"
+          && payload.destination?.wasm === "loaded"
+          && payload.destination?.originalTransport === "Transport::m_inBuffer"
+          && payload.destination?.originalDispatch === "LANAPI::update"
+          && payload.destination?.originalHandler === "LANAPI::handleGameAnnounce"
+          && payload.destination?.originalParser === "ParseGameOptionsString"
+          && payload.destination?.originalCallback === "LANAPI::OnGameList"
+          && payload.destination?.transport?.injected === true
+          && payload.destination?.lanApi?.updateDriven === true
+          && payload.destination?.lanApi?.handleGameAnnounceRecorded === true
+          && payload.destination?.game?.recorded === true
+          && payload.destination?.game?.mapOk === true
+          && payload.destination?.game?.slotsClosed === true,
+        "browser LANAPI announce smoke did not prove isolated LANMessage relay into original LANAPI game discovery", payload);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -310,6 +343,7 @@ console.log(JSON.stringify({
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
+    "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -318,7 +352,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance another independent vertical beyond the shell menu path, preferably audio/video/network device ownership",
-    "route the browser networking proof through the original LANAPI surface or a production WebSocket/WebRTC transport",
+    "advance LANAPI join/options over the browser relay or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

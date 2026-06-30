@@ -399,6 +399,32 @@ const browserNetworkTransportRuntime = {
   frameDataReady: false,
 };
 
+const browserLanApiRuntime = {
+  source: "GameNetwork browser LANAPI announce discovery proof",
+  browserTransport: "harness relay queue",
+  productionTransport: false,
+  relayTransport: true,
+  originalSerializer: "LANMessage struct byte payload",
+  originalTransport: "Transport::m_inBuffer",
+  originalDispatch: "LANAPI::update",
+  originalHandler: "LANAPI::handleGameAnnounce",
+  originalParser: "ParseGameOptionsString",
+  originalCallback: "LANAPI::OnGameList",
+  nextRequired: "lanApiJoinOrProductionTransport",
+  clients: ["browser-client-0", "browser-client-1"],
+  sent: 0,
+  delivered: 0,
+  received: 0,
+  bytes: 0,
+  packets: [],
+  eventLog: [],
+  lastEvent: null,
+  lastError: null,
+  transportInjected: false,
+  lanApiUpdated: false,
+  gameListRecorded: false,
+};
+
 const browserMssSamplePlaybackRuntime = {
   source: "MSS 2D sample Web Audio backend proof",
   started: 0,
@@ -796,12 +822,55 @@ function summarizeBrowserNetworkTransportRuntime() {
   };
 }
 
+function resetBrowserLanApiRuntime() {
+  browserLanApiRuntime.sent = 0;
+  browserLanApiRuntime.delivered = 0;
+  browserLanApiRuntime.received = 0;
+  browserLanApiRuntime.bytes = 0;
+  browserLanApiRuntime.packets = [];
+  browserLanApiRuntime.eventLog = [];
+  browserLanApiRuntime.lastEvent = null;
+  browserLanApiRuntime.lastError = null;
+  browserLanApiRuntime.transportInjected = false;
+  browserLanApiRuntime.lanApiUpdated = false;
+  browserLanApiRuntime.gameListRecorded = false;
+}
+
+function summarizeBrowserLanApiRuntime() {
+  return {
+    source: browserLanApiRuntime.source,
+    ready: browserLanApiRuntime.received > 0 && browserLanApiRuntime.gameListRecorded,
+    browserTransport: browserLanApiRuntime.browserTransport,
+    productionTransport: browserLanApiRuntime.productionTransport,
+    relayTransport: browserLanApiRuntime.relayTransport,
+    originalSerializer: browserLanApiRuntime.originalSerializer,
+    originalTransport: browserLanApiRuntime.originalTransport,
+    originalDispatch: browserLanApiRuntime.originalDispatch,
+    originalHandler: browserLanApiRuntime.originalHandler,
+    originalParser: browserLanApiRuntime.originalParser,
+    originalCallback: browserLanApiRuntime.originalCallback,
+    nextRequired: browserLanApiRuntime.nextRequired,
+    clients: [...browserLanApiRuntime.clients],
+    sent: browserLanApiRuntime.sent,
+    delivered: browserLanApiRuntime.delivered,
+    received: browserLanApiRuntime.received,
+    bytes: browserLanApiRuntime.bytes,
+    packets: [...browserLanApiRuntime.packets],
+    eventLog: [...browserLanApiRuntime.eventLog],
+    lastEvent: browserLanApiRuntime.lastEvent,
+    lastError: browserLanApiRuntime.lastError,
+    transportInjected: browserLanApiRuntime.transportInjected,
+    lanApiUpdated: browserLanApiRuntime.lanApiUpdated,
+    gameListRecorded: browserLanApiRuntime.gameListRecorded,
+  };
+}
+
 function relayBrowserNetworkPacket(buildProbe, runtime = browserNetworkRelayRuntime) {
   const packet = buildProbe?.packet ?? {};
   const packetHex = String(packet.hex ?? "");
   const bytes = Number(packet.bytes ?? 0);
   if (!buildProbe?.ok || packetHex.length === 0 || bytes <= 0 || packetHex.length !== bytes * 2) {
-    throw new Error(`original NetPacket build probe did not produce a relay payload: ${JSON.stringify(buildProbe)}`);
+    throw new Error(`original network build probe did not produce a relay payload: ${JSON.stringify(buildProbe)}`);
   }
 
   const event = {
@@ -812,6 +881,7 @@ function relayBrowserNetworkPacket(buildProbe, runtime = browserNetworkRelayRunt
     bytes,
     commands: packet.commands,
     commandType: packet.commandType,
+    messageType: packet.messageType,
     relay: packet.relay,
     executionFrame: packet.executionFrame,
     playerId: packet.playerId,
@@ -820,6 +890,8 @@ function relayBrowserNetworkPacket(buildProbe, runtime = browserNetworkRelayRunt
     runAheadCommandId: packet.runAheadCommandId,
     runAhead: packet.runAhead,
     frameRate: packet.frameRate,
+    gameName: packet.gameName,
+    optionsLength: packet.optionsLength,
   };
 
   runtime.sent += 1;
@@ -831,6 +903,7 @@ function relayBrowserNetworkPacket(buildProbe, runtime = browserNetworkRelayRunt
     bytes,
     commands: event.commands,
     commandType: event.commandType,
+    messageType: event.messageType,
     relay: event.relay,
     executionFrame: event.executionFrame,
     playerId: event.playerId,
@@ -839,6 +912,8 @@ function relayBrowserNetworkPacket(buildProbe, runtime = browserNetworkRelayRunt
     runAheadCommandId: event.runAheadCommandId,
     runAhead: event.runAhead,
     frameRate: event.frameRate,
+    gameName: event.gameName,
+    optionsLength: event.optionsLength,
   });
   runtime.eventLog.push(
     { phase: "wasm-build", client: event.from, serializer: buildProbe.originalSerializer, bytes },
@@ -6208,6 +6283,16 @@ async function loadWasmModule() {
         "string",
         ["string"],
       ),
+      buildBrowserLanApiAnnouncePacket: module.cwrap(
+        "cnc_port_build_browser_lanapi_announce_packet",
+        "string",
+        [],
+      ),
+      acceptBrowserLanApiAnnouncePacket: module.cwrap(
+        "cnc_port_accept_browser_lanapi_announce_packet",
+        "string",
+        ["string"],
+      ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -6459,6 +6544,7 @@ function snapshotState() {
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
     browserNetworkTransportRuntime: summarizeBrowserNetworkTransportRuntime(),
+    browserLanApiRuntime: summarizeBrowserLanApiRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -16415,6 +16501,122 @@ async function rpc(command, payload = {}) {
         }
         const packetHex = String(payload?.packetHex ?? "");
         const receiveProbe = parseModuleState(wasmModule.acceptBrowserNetworkTransportPacket(packetHex));
+        return {
+          ok: Boolean(receiveProbe?.ok),
+          command,
+          receiveProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiAnnounceRelayProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI announce relay cannot run" };
+        }
+        resetBrowserLanApiRuntime();
+        let buildProbe = null;
+        let relayEvent = null;
+        let receiveProbe = null;
+        try {
+          buildProbe = parseModuleState(wasmModule.buildBrowserLanApiAnnouncePacket());
+          relayEvent = relayBrowserNetworkPacket(buildProbe, browserLanApiRuntime);
+          receiveProbe = parseModuleState(wasmModule.acceptBrowserLanApiAnnouncePacket(relayEvent.packetHex));
+          if (receiveProbe?.ok) {
+            browserLanApiRuntime.received += 1;
+            browserLanApiRuntime.transportInjected = receiveProbe.transport?.injected === true;
+            browserLanApiRuntime.lanApiUpdated = receiveProbe.lanApi?.updateDriven === true;
+            browserLanApiRuntime.gameListRecorded = receiveProbe.game?.recorded === true
+              && receiveProbe.lanApi?.handleGameAnnounceRecorded === true;
+            browserLanApiRuntime.eventLog.push(
+              {
+                phase: "wasm-lanapi-transport-inject",
+                client: relayEvent.to,
+                transport: receiveProbe.originalTransport,
+                bytes: receiveProbe.packet?.bytes,
+              },
+              {
+                phase: "lanapi-update",
+                dispatch: receiveProbe.originalDispatch,
+                handler: receiveProbe.originalHandler,
+                gamesSeen: receiveProbe.lanApi?.gamesSeen,
+              },
+              {
+                phase: "lanapi-game-list",
+                parser: receiveProbe.originalParser,
+                callback: receiveProbe.originalCallback,
+                gameName: receiveProbe.game?.gameName,
+              },
+            );
+            browserLanApiRuntime.lastError = null;
+          } else {
+            browserLanApiRuntime.lastError = "original LANAPI announce receive probe failed";
+          }
+        } catch (error) {
+          browserLanApiRuntime.lastError = error?.message ?? String(error);
+        }
+        const runtime = summarizeBrowserLanApiRuntime();
+        const buildPacket = buildProbe?.packet ?? {};
+        const receivePacket = receiveProbe?.packet ?? {};
+        const packetMatches = Boolean(buildProbe?.ok)
+          && Boolean(receiveProbe?.ok)
+          && runtime.sent === 1
+          && runtime.delivered === 1
+          && runtime.received === 1
+          && runtime.transportInjected === true
+          && runtime.lanApiUpdated === true
+          && runtime.gameListRecorded === true
+          && runtime.bytes === buildPacket.bytes
+          && buildPacket.bytes === receivePacket.bytes
+          && buildPacket.messageType === "MSG_GAME_ANNOUNCE"
+          && receivePacket.messageType === buildPacket.messageType
+          && receivePacket.remoteIp === buildPacket.remoteIp
+          && receivePacket.localIp === buildPacket.localIp
+          && receivePacket.port === buildPacket.port
+          && receiveProbe.originalDispatch === "LANAPI::update"
+          && receiveProbe.originalHandler === "LANAPI::handleGameAnnounce"
+          && receiveProbe.originalParser === "ParseGameOptionsString"
+          && receiveProbe.originalCallback === "LANAPI::OnGameList"
+          && receiveProbe.game?.recorded === true
+          && receiveProbe.game?.mapOk === true
+          && receiveProbe.game?.seed === buildPacket.seed
+          && receiveProbe.game?.mapCRC === buildPacket.mapCRC
+          && receiveProbe.game?.mapSize === buildPacket.mapSize
+          && receiveProbe.game?.crcInterval === buildPacket.crcInterval
+          && receiveProbe.game?.startingCash === buildPacket.startingCash
+          && receiveProbe.game?.slotsClosed === true;
+        return {
+          ok: packetMatches,
+          command,
+          buildProbe,
+          relayEvent,
+          receiveProbe,
+          browserLanApiRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiAnnounceBuildPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI announce packet build cannot run" };
+        }
+        const buildProbe = parseModuleState(wasmModule.buildBrowserLanApiAnnouncePacket());
+        return {
+          ok: Boolean(buildProbe?.ok),
+          command,
+          buildProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserLanApiAnnounceAcceptPacket":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser LANAPI announce packet accept cannot run" };
+        }
+        const packetHex = String(payload?.packetHex ?? "");
+        const receiveProbe = parseModuleState(wasmModule.acceptBrowserLanApiAnnouncePacket(packetHex));
         return {
           ok: Boolean(receiveProbe?.ok),
           command,

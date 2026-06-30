@@ -1141,14 +1141,14 @@ shares structure and follows behind.
       same original `Transport` / `ConnectionManager` / `FrameDataManager`
       readiness path.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients. Next networking slice: route the two-context
-      byte path through the original `LANAPI` discovery/join surface or a
-      production WebSocket/WebRTC transport.
-- [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. First
-      focused slice: link `LANAPI.cpp` / `LANAPICallbacks.cpp`, inject a
-      browser-delivered `MSG_GAME_ANNOUNCE` `LANMessage` into
-      `LANAPI::m_transport->m_inBuffer`, call `LANAPI::update`, and assert
-      `handleGameAnnounce` / `OnGameList` records the announced game.
+      works across browser clients. Next networking slice: drive frame sync
+      from a real LANAPI join/options flow or a production WebSocket/WebRTC
+      transport rather than a harness packet handoff.
+- [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
+      first announce/discovery slice now reaches `LANAPI::update`,
+      `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; next
+      slice is `RequestGameJoin` / options propagation over the same browser
+      relay or replacing the harness relay with WebSocket/WebRTC.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.

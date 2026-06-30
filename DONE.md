@@ -4568,6 +4568,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:gamenetwork-core`; the aggregate
       `npm --prefix WebAssembly run test:vertical-integrations` gate also
       includes the browser-network-relay step.
+- [x] Route a browser-relayed LAN announce through the original `LANAPI`
+      discovery surface. The wasm bridge now exports
+      `cnc_port_build_browser_lanapi_announce_packet` /
+      `cnc_port_accept_browser_lanapi_announce_packet`: the source wasm builds
+      a real `LANMessage::MSG_GAME_ANNOUNCE`, the destination wasm injects the
+      delivered bytes into `LANAPI::m_transport->m_inBuffer`, calls
+      `LANAPI::update`, and asserts `handleGameAnnounce`,
+      `ParseGameOptionsString`, and `OnGameList` record one announced game.
+      `lanapi_announce_two_contexts_smoke.mjs` boots two isolated Playwright
+      contexts / wasm instances and relays only the message hex through Node.
+      This proves LAN discovery plumbing, not LAN join/options, GameSpy,
+      WebSocket/WebRTC, or a full match sync. Verified with
+      `npm --prefix WebAssembly run test:browser-lanapi-two-contexts`; the
+      aggregate `test:vertical-integrations` gate includes it as an
+      independent networking vertical.
 
 ---
 
