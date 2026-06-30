@@ -1123,15 +1123,28 @@ shares structure and follows behind.
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
 - [ ] Re-target UDP transport (`udp.cpp`, `Transport`) onto WebRTC DataChannel
-      or a WebSocket relay.
+      or a WebSocket relay. The browser harness now has a first relay-shaped
+      byte-path proof: `browserNetworkRelayProbe` asks wasm to serialize a
+      real original `NetPacket` frame-info command with `NetPacket::addCommand`,
+      carries the packet hex between two logical browser clients through a
+      harness relay queue, then asks wasm to parse it with
+      `NetPacket::ConstructNetCommandMsgFromRawData`. This proves the original
+      packet codec can cross the wasm/browser boundary, but it is not a
+      production WebSocket/WebRTC transport and it does not yet drive original
+      `Transport::m_inBuffer` or `ConnectionManager::doRelay`.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
-      works across browser clients.
+      works across browser clients. Next networking slice: feed browser-delivered
+      bytes into an original `TransportMessage`/`Transport::m_inBuffer`, run the
+      original `ConnectionManager::doRelay`/`processNetCommand` path, and assert
+      the parsed command reaches `FrameDataManager` and `allCommandsReady`.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
 - [ ] File transfer / map transfer path.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
+      The current browser network relay proof uses two logical clients inside
+      one harness page only; it is a byte-path precursor, not a match-sync test.
 
 ---
 

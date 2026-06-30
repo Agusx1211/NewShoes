@@ -39,6 +39,7 @@ function runNodeStep(step, root = wasmRoot) {
   console.log(`\n== ${step.name} ==`);
   const result = spawnSync(process.execPath, [executable, ...(step.args ?? [])], {
     cwd: wasmRoot,
+    env: { ...process.env, ...(step.env ?? {}) },
     encoding: "utf8",
   });
 
@@ -153,6 +154,25 @@ const steps = [
     },
   },
   {
+    name: "browser-network-relay",
+    file: "harness/smoke.mjs",
+    env: { EXPECT_WASM: "1" },
+    validate(payload) {
+      expect(payload.ok === true, "browser network relay smoke did not report ok", payload);
+      const relay = payload.state?.browserNetworkRelayRuntime;
+      expect(relay?.ready === true
+          && relay?.source === "GameNetwork browser relay NetPacket byte path proof"
+          && relay?.sent === 1
+          && relay?.delivered === 1
+          && relay?.received === 1
+          && relay?.packets?.[0]?.commandType === "NETCOMMANDTYPE_FRAMEINFO"
+          && relay?.packets?.[0]?.executionFrame === 2468
+          && relay?.packets?.[0]?.playerId === 2
+          && relay?.packets?.[0]?.commandId === 314,
+        "browser network relay smoke did not prove original NetPacket bytes through the relay", relay);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -242,6 +262,7 @@ console.log(JSON.stringify({
   path: "vertical-integrations",
   covered: [
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
+    "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes through wasm serializer/parser",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -250,6 +271,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance another independent vertical beyond the shell menu path, preferably audio/video/network device ownership",
+    "connect browser transport receives into original Transport/ConnectionManager/FrameDataManager ownership",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

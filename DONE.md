@@ -4550,6 +4550,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 
 ## M9 — Networking (GameSpy / LAN → WS/WebRTC)
 
+- [x] Add the first browser relay-shaped GameNetwork byte-path proof.
+      The `cnc_port_build_browser_network_relay_packet` wasm export builds a
+      real original `NETCOMMANDTYPE_FRAMEINFO` packet through
+      `NetPacket::addCommand`, and
+      `cnc_port_accept_browser_network_relay_packet` parses a relayed packet
+      through `NetPacket::ConstructNetCommandMsgFromRawData`. The harness
+      `browserNetworkRelayProbe` RPC carries that serialized packet between two
+      logical browser clients through a relay queue, then asserts byte length,
+      relay mask, execution frame, player id, command id, frame-command count,
+      and relay phases. `test:wasm` now exercises this under Playwright, and
+      `test:vertical-integrations` includes it as an independent networking
+      vertical. This does not claim WebSocket/WebRTC transport,
+      `Transport::m_inBuffer`, `ConnectionManager::doRelay`, frame-sync
+      storage, or a two-context match complete. Verified with
+      `npm --prefix WebAssembly run test:wasm` and
+      `npm --prefix WebAssembly run test:gamenetwork-core`; the aggregate
+      `npm --prefix WebAssembly run test:vertical-integrations` gate also
+      includes the browser-network-relay step.
+
 ---
 
 ## M10 — Hardening, content, polish

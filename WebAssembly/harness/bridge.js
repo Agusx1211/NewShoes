@@ -356,6 +356,25 @@ const browserAudioRequestPathRuntime = {
   lastError: null,
 };
 
+const browserNetworkRelayRuntime = {
+  source: "GameNetwork browser relay NetPacket byte path proof",
+  browserTransport: "harness relay queue",
+  productionTransport: false,
+  relayTransport: true,
+  originalSerializer: "NetPacket::addCommand",
+  originalParser: "NetPacket::ConstructNetCommandMsgFromRawData",
+  nextRequired: "browserTransportReceiveIntoConnectionManager",
+  clients: ["browser-client-0", "browser-client-1"],
+  sent: 0,
+  delivered: 0,
+  received: 0,
+  bytes: 0,
+  packets: [],
+  eventLog: [],
+  lastEvent: null,
+  lastError: null,
+};
+
 const browserMssSamplePlaybackRuntime = {
   source: "MSS 2D sample Web Audio backend proof",
   started: 0,
@@ -677,6 +696,83 @@ function summarizeBrowserAudioRequestPathRuntime() {
     eventLog: [...browserAudioRequestPathRuntime.eventLog],
     lastError: browserAudioRequestPathRuntime.lastError,
   };
+}
+
+function resetBrowserNetworkRelayRuntime() {
+  browserNetworkRelayRuntime.sent = 0;
+  browserNetworkRelayRuntime.delivered = 0;
+  browserNetworkRelayRuntime.received = 0;
+  browserNetworkRelayRuntime.bytes = 0;
+  browserNetworkRelayRuntime.packets = [];
+  browserNetworkRelayRuntime.eventLog = [];
+  browserNetworkRelayRuntime.lastEvent = null;
+  browserNetworkRelayRuntime.lastError = null;
+}
+
+function summarizeBrowserNetworkRelayRuntime() {
+  return {
+    source: browserNetworkRelayRuntime.source,
+    ready: browserNetworkRelayRuntime.received > 0,
+    browserTransport: browserNetworkRelayRuntime.browserTransport,
+    productionTransport: browserNetworkRelayRuntime.productionTransport,
+    relayTransport: browserNetworkRelayRuntime.relayTransport,
+    originalSerializer: browserNetworkRelayRuntime.originalSerializer,
+    originalParser: browserNetworkRelayRuntime.originalParser,
+    nextRequired: browserNetworkRelayRuntime.nextRequired,
+    clients: [...browserNetworkRelayRuntime.clients],
+    sent: browserNetworkRelayRuntime.sent,
+    delivered: browserNetworkRelayRuntime.delivered,
+    received: browserNetworkRelayRuntime.received,
+    bytes: browserNetworkRelayRuntime.bytes,
+    packets: [...browserNetworkRelayRuntime.packets],
+    eventLog: [...browserNetworkRelayRuntime.eventLog],
+    lastEvent: browserNetworkRelayRuntime.lastEvent,
+    lastError: browserNetworkRelayRuntime.lastError,
+  };
+}
+
+function relayBrowserNetworkPacket(buildProbe) {
+  const packet = buildProbe?.packet ?? {};
+  const packetHex = String(packet.hex ?? "");
+  const bytes = Number(packet.bytes ?? 0);
+  if (!buildProbe?.ok || packetHex.length === 0 || bytes <= 0 || packetHex.length !== bytes * 2) {
+    throw new Error(`original NetPacket build probe did not produce a relay payload: ${JSON.stringify(buildProbe)}`);
+  }
+
+  const event = {
+    from: browserNetworkRelayRuntime.clients[0],
+    to: browserNetworkRelayRuntime.clients[1],
+    phase: "relay-deliver",
+    packetHex,
+    bytes,
+    commandType: packet.commandType,
+    relay: packet.relay,
+    executionFrame: packet.executionFrame,
+    playerId: packet.playerId,
+    commandId: packet.commandId,
+    frameCommandCount: packet.frameCommandCount,
+  };
+
+  browserNetworkRelayRuntime.sent += 1;
+  browserNetworkRelayRuntime.delivered += 1;
+  browserNetworkRelayRuntime.bytes += bytes;
+  browserNetworkRelayRuntime.packets.push({
+    from: event.from,
+    to: event.to,
+    bytes,
+    commandType: event.commandType,
+    relay: event.relay,
+    executionFrame: event.executionFrame,
+    playerId: event.playerId,
+    commandId: event.commandId,
+  });
+  browserNetworkRelayRuntime.eventLog.push(
+    { phase: "wasm-build", client: event.from, serializer: buildProbe.originalSerializer, bytes },
+    { phase: "relay-send", from: event.from, to: event.to, bytes },
+    { phase: "relay-deliver", to: event.to, bytes },
+  );
+  browserNetworkRelayRuntime.lastEvent = event;
+  return event;
 }
 
 function resetBrowserMssSamplePlaybackRuntime() {
@@ -6018,6 +6114,16 @@ async function loadWasmModule() {
       ),
       probeBrowserMessageQueue: module.cwrap("cnc_port_probe_browser_message_queue", "string", []),
       probeBrowserInput: module.cwrap("cnc_port_probe_browser_input", "string", []),
+      buildBrowserNetworkRelayPacket: module.cwrap(
+        "cnc_port_build_browser_network_relay_packet",
+        "string",
+        [],
+      ),
+      acceptBrowserNetworkRelayPacket: module.cwrap(
+        "cnc_port_accept_browser_network_relay_packet",
+        "string",
+        ["string"],
+      ),
       probeWin32GameEngine: module.cwrap("cnc_port_probe_win32_gameengine", "string", []),
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
@@ -6267,6 +6373,7 @@ function snapshotState() {
     browserMssSamplePlaybackRuntime: summarizeBrowserMssSamplePlaybackRuntime(),
     browserAudioLiveEventRuntime: summarizeBrowserAudioLiveEventRuntime(),
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
+    browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
     dataSummary: harnessState.dataSummary,
@@ -16061,6 +16168,62 @@ async function rpc(command, payload = {}) {
       }
     case "screenshot":
       return { ok: true, command, screenshot: snapshotCanvas() };
+    case "browserNetworkRelayProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network relay cannot run" };
+        }
+        resetBrowserNetworkRelayRuntime();
+        let buildProbe = null;
+        let relayEvent = null;
+        let receiveProbe = null;
+        try {
+          buildProbe = parseModuleState(wasmModule.buildBrowserNetworkRelayPacket());
+          relayEvent = relayBrowserNetworkPacket(buildProbe);
+          receiveProbe = parseModuleState(wasmModule.acceptBrowserNetworkRelayPacket(relayEvent.packetHex));
+          if (receiveProbe?.ok) {
+            browserNetworkRelayRuntime.received += 1;
+            browserNetworkRelayRuntime.eventLog.push({
+              phase: "wasm-receive",
+              client: relayEvent.to,
+              parser: receiveProbe.originalParser,
+              bytes: receiveProbe.packet?.bytes,
+            });
+            browserNetworkRelayRuntime.lastError = null;
+          } else {
+            browserNetworkRelayRuntime.lastError = "original NetPacket receive probe failed";
+          }
+        } catch (error) {
+          browserNetworkRelayRuntime.lastError = error?.message ?? String(error);
+        }
+        const runtime = summarizeBrowserNetworkRelayRuntime();
+        const buildPacket = buildProbe?.packet ?? {};
+        const receivePacket = receiveProbe?.packet ?? {};
+        const packetMatches = Boolean(buildProbe?.ok)
+          && Boolean(receiveProbe?.ok)
+          && runtime.sent === 1
+          && runtime.delivered === 1
+          && runtime.received === 1
+          && runtime.bytes === buildPacket.bytes
+          && buildPacket.bytes === receivePacket.bytes
+          && buildPacket.commandType === "NETCOMMANDTYPE_FRAMEINFO"
+          && receivePacket.commandType === buildPacket.commandType
+          && receivePacket.relay === buildPacket.relay
+          && receivePacket.executionFrame === buildPacket.executionFrame
+          && receivePacket.playerId === buildPacket.playerId
+          && receivePacket.commandId === buildPacket.commandId
+          && receivePacket.frameCommandCount === buildPacket.frameCommandCount;
+        return {
+          ok: packetMatches,
+          command,
+          buildProbe,
+          relayEvent,
+          receiveProbe,
+          browserNetworkRelayRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
     case "browserAudioRuntime":
       return {
         ok: true,

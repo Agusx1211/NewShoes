@@ -614,6 +614,48 @@ function assertGameNetworkProbe(state, label) {
   }
 }
 
+function assertBrowserNetworkRelayRuntime(runtime, context) {
+  if (!runtime
+      || runtime.source !== "GameNetwork browser relay NetPacket byte path proof"
+      || runtime.browserTransport !== "harness relay queue"
+      || runtime.productionTransport !== false
+      || runtime.relayTransport !== true
+      || runtime.originalSerializer !== "NetPacket::addCommand"
+      || runtime.originalParser !== "NetPacket::ConstructNetCommandMsgFromRawData"
+      || runtime.nextRequired !== "browserTransportReceiveIntoConnectionManager"
+      || runtime.ready !== true
+      || runtime.sent !== 1
+      || runtime.delivered !== 1
+      || runtime.received !== 1
+      || runtime.bytes <= 0
+      || !Array.isArray(runtime.clients)
+      || runtime.clients.length !== 2
+      || runtime.clients[0] !== "browser-client-0"
+      || runtime.clients[1] !== "browser-client-1"
+      || runtime.lastError !== null) {
+    throw new Error(`${context} browser network relay runtime mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  const packet = runtime.packets?.[0];
+  if (!packet
+      || packet.from !== "browser-client-0"
+      || packet.to !== "browser-client-1"
+      || packet.commandType !== "NETCOMMANDTYPE_FRAMEINFO"
+      || packet.relay !== 5
+      || packet.executionFrame !== 2468
+      || packet.playerId !== 2
+      || packet.commandId !== 314) {
+    throw new Error(`${context} browser network relay packet mismatch: ${JSON.stringify(runtime)}`);
+  }
+
+  const phases = (runtime.eventLog ?? []).map((entry) => entry.phase);
+  for (const required of ["wasm-build", "relay-send", "relay-deliver", "wasm-receive"]) {
+    if (!phases.includes(required)) {
+      throw new Error(`${context} browser network relay missing ${required}: ${JSON.stringify(runtime.eventLog)}`);
+    }
+  }
+}
+
 function assertStartupAssets(state, label, expectedStatus, expectedOk = false) {
   const startupAssets = state.startupAssets;
   if (startupAssets?.ok !== expectedOk || startupAssets.status !== expectedStatus) {
@@ -1090,6 +1132,18 @@ try {
     assertCDManagerProbe(bootResult.state, "boot");
     assertFileSystemProbe(bootResult.state, "boot");
     assertGameNetworkProbe(bootResult.state, "boot");
+    const browserNetworkRelayResult = await page.evaluate(() => window.CnCPort.rpc("browserNetworkRelayProbe"));
+    if (!browserNetworkRelayResult.ok) {
+      throw new Error(`Browser network relay probe failed: ${JSON.stringify(browserNetworkRelayResult)}`);
+    }
+    assertBrowserNetworkRelayRuntime(
+      browserNetworkRelayResult.browserNetworkRelayRuntime,
+      "boot",
+    );
+    assertBrowserNetworkRelayRuntime(
+      browserNetworkRelayResult.state.browserNetworkRelayRuntime,
+      "boot state",
+    );
     assertBrowserInputInitial(bootResult.state, "boot");
     const mssStartupResult = await page.evaluate(() => window.CnCPort.rpc("mssStartupProbe"));
     if (!mssStartupResult.ok) {

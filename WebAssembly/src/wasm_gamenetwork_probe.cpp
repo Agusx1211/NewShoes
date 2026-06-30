@@ -4,6 +4,9 @@
 
 #include "wasm_memory_manager_scope.h"
 
+#include <cstdio>
+#include <cstring>
+
 #include "Common/GameMemory.h"
 #include "GameNetwork/FrameData.h"
 #include "GameNetwork/FrameDataManager.h"
@@ -12,7 +15,113 @@
 #include "GameNetwork/NetPacket.h"
 #include "GameNetwork/NetworkUtil.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
+#endif
+
 namespace {
+char g_browser_network_relay_build_json[4096] = {};
+char g_browser_network_relay_receive_json[4096] = {};
+char g_browser_network_relay_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
+constexpr int kRelayExecutionFrame = 2468;
+constexpr int kRelayPlayerId = 2;
+constexpr int kRelayCommandId = 314;
+constexpr int kRelayCommandCount = 9;
+constexpr int kRelayMask = 0x05;
+
+const char *net_command_type_name(NetCommandType type)
+{
+	switch (type) {
+		case NETCOMMANDTYPE_FRAMEINFO:
+			return "NETCOMMANDTYPE_FRAMEINFO";
+		case NETCOMMANDTYPE_ACKBOTH:
+			return "NETCOMMANDTYPE_ACKBOTH";
+		case NETCOMMANDTYPE_GAMECOMMAND:
+			return "NETCOMMANDTYPE_GAMECOMMAND";
+		default:
+			return "UNKNOWN";
+	}
+}
+
+int hex_value(char c)
+{
+	if (c >= '0' && c <= '9') {
+		return c - '0';
+	}
+	if (c >= 'a' && c <= 'f') {
+		return 10 + (c - 'a');
+	}
+	if (c >= 'A' && c <= 'F') {
+		return 10 + (c - 'A');
+	}
+	return -1;
+}
+
+bool encode_hex(const UnsignedByte *bytes, int length, char *out, int out_size)
+{
+	if (bytes == nullptr || length <= 0 || (length * 2 + 1) > out_size) {
+		return false;
+	}
+
+	static const char kHex[] = "0123456789abcdef";
+	for (int i = 0; i < length; ++i) {
+		out[i * 2] = kHex[(bytes[i] >> 4) & 0x0f];
+		out[(i * 2) + 1] = kHex[bytes[i] & 0x0f];
+	}
+	out[length * 2] = '\0';
+	return true;
+}
+
+bool decode_hex(const char *hex, UnsignedByte *bytes, int &length)
+{
+	if (hex == nullptr || bytes == nullptr) {
+		length = 0;
+		return false;
+	}
+
+	const int hex_length = static_cast<int>(std::strlen(hex));
+	if (hex_length <= 0 || (hex_length % 2) != 0 || (hex_length / 2) > MAX_PACKET_SIZE) {
+		length = 0;
+		return false;
+	}
+
+	length = hex_length / 2;
+	for (int i = 0; i < length; ++i) {
+		const int hi = hex_value(hex[i * 2]);
+		const int lo = hex_value(hex[(i * 2) + 1]);
+		if (hi < 0 || lo < 0) {
+			length = 0;
+			return false;
+		}
+		bytes[i] = static_cast<UnsignedByte>((hi << 4) | lo);
+	}
+	return true;
+}
+
+NetPacket *build_relay_packet(int execution_frame, int player_id, int command_id, int command_count, int relay)
+{
+	NetFrameCommandMsg *frame = newInstance(NetFrameCommandMsg);
+	frame->setExecutionFrame(static_cast<UnsignedInt>(execution_frame));
+	frame->setPlayerID(static_cast<UnsignedInt>(player_id));
+	frame->setID(static_cast<UnsignedShort>(command_id));
+	frame->setCommandCount(static_cast<UnsignedShort>(command_count));
+
+	NetPacket *packet = newInstance(NetPacket);
+	NetCommandRef *ref = NEW_NETCOMMANDREF(frame);
+	ref->setRelay(static_cast<UnsignedByte>(relay));
+	const Bool added = packet->addCommand(ref);
+	ref->deleteInstance();
+	frame->detach();
+
+	if (!added) {
+		packet->deleteInstance();
+		return nullptr;
+	}
+	return packet;
+}
+
 bool probe_command_ids(GameNetworkProbeResult &result)
 {
 	result.first_command_id = GenerateNextCommandID();
@@ -129,6 +238,122 @@ bool probe_packet_round_trip(GameNetworkProbeResult &result)
 		result.packet_frame_command_count == 5;
 	parsed->deleteInstance();
 	return ok;
+}
+
+}
+
+extern "C" {
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_relay_packet()
+{
+	ScopedOriginalMemoryManager memory_manager_scope;
+
+	NetPacket *packet =
+		build_relay_packet(kRelayExecutionFrame, kRelayPlayerId, kRelayCommandId, kRelayCommandCount, kRelayMask);
+
+	if (packet == nullptr) {
+		std::snprintf(g_browser_network_relay_build_json, sizeof(g_browser_network_relay_build_json),
+			"{\"ok\":false,\"source\":\"GameNetwork browser relay NetPacket build probe\","
+			"\"relayReady\":false,\"nextRequired\":\"browserTransportReceiveIntoConnectionManager\"}");
+		return g_browser_network_relay_build_json;
+	}
+
+	const int length = packet->getLength();
+	const int commands = packet->getNumCommands();
+	const bool encoded = encode_hex(packet->getData(), length,
+		g_browser_network_relay_packet_hex, sizeof(g_browser_network_relay_packet_hex));
+	packet->deleteInstance();
+
+	const bool ok = encoded && commands == 1 && length > 0 && length <= MAX_PACKET_SIZE;
+	std::snprintf(g_browser_network_relay_build_json, sizeof(g_browser_network_relay_build_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser relay NetPacket build probe\","
+		"\"relayReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"originalSerializer\":\"NetPacket::addCommand\","
+		"\"nextRequired\":\"browserTransportReceiveIntoConnectionManager\","
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"commands\":%d,"
+		"\"commandType\":\"%s\",\"relay\":%d,\"executionFrame\":%d,"
+		"\"playerId\":%d,\"commandId\":%d,\"frameCommandCount\":%d}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		encoded ? g_browser_network_relay_packet_hex : "",
+		length,
+		commands,
+		net_command_type_name(NETCOMMANDTYPE_FRAMEINFO),
+		kRelayMask,
+		kRelayExecutionFrame,
+		kRelayPlayerId,
+		kRelayCommandId,
+		kRelayCommandCount);
+	return g_browser_network_relay_build_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_relay_packet(const char *packet_hex)
+{
+	ScopedOriginalMemoryManager memory_manager_scope;
+
+	UnsignedByte packet_bytes[MAX_PACKET_SIZE] = {};
+	int length = 0;
+	const bool decoded = decode_hex(packet_hex, packet_bytes, length);
+	NetCommandRef *parsed = decoded
+		? NetPacket::ConstructNetCommandMsgFromRawData(packet_bytes, static_cast<UnsignedShort>(length))
+		: nullptr;
+
+	bool parsed_ok = false;
+	int relay = -1;
+	int execution_frame = -1;
+	int player_id = -1;
+	int command_id = -1;
+	int command_count = -1;
+	const char *command_type = "UNKNOWN";
+
+	if (parsed != nullptr && parsed->getCommand() != nullptr) {
+		NetCommandMsg *command = parsed->getCommand();
+		command_type = net_command_type_name(command->getNetCommandType());
+		relay = parsed->getRelay();
+		execution_frame = static_cast<int>(command->getExecutionFrame());
+		player_id = static_cast<int>(command->getPlayerID());
+		command_id = static_cast<int>(command->getID());
+		if (command->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO) {
+			NetFrameCommandMsg *frame = static_cast<NetFrameCommandMsg *>(command);
+			command_count = static_cast<int>(frame->getCommandCount());
+		}
+		parsed_ok =
+			command->getNetCommandType() == NETCOMMANDTYPE_FRAMEINFO &&
+			relay == kRelayMask &&
+			execution_frame == kRelayExecutionFrame &&
+			player_id == kRelayPlayerId &&
+			command_id == kRelayCommandId &&
+			command_count == kRelayCommandCount;
+	}
+
+	const bool ok = decoded && parsed_ok;
+	std::snprintf(g_browser_network_relay_receive_json, sizeof(g_browser_network_relay_receive_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser relay NetPacket receive probe\","
+		"\"relayReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"originalParser\":\"NetPacket::ConstructNetCommandMsgFromRawData\","
+		"\"nextRequired\":\"browserTransportReceiveIntoConnectionManager\","
+		"\"packet\":{\"decoded\":%s,\"bytes\":%d,\"commandType\":\"%s\","
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		decoded ? "true" : "false",
+		length,
+		command_type,
+		relay,
+		execution_frame,
+		player_id,
+		command_id,
+		command_count);
+
+	if (parsed != nullptr) {
+		parsed->deleteInstance();
+	}
+	return g_browser_network_relay_receive_json;
 }
 
 }
