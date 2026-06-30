@@ -3383,6 +3383,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser WebGL2 pixels in
       `harness-smoke-ww3d-terrain-map-patch-scene-canvas.png`. Full
       `HeightMapRenderObjClass` / `W3DTerrainVisual` ownership remains open.
+- [x] Replace the focused `terrain-texture-mapping-reader` in
+      `test:ww3d-terrain-map-patch-scene` with the original
+      `INI::load` / `INITerrain.cpp` terrain parser: the browser smoke now
+      reads `Data\INI\Terrain.ini` from `INIZH.big` into the original
+      `TerrainTypeCollection`, reports 247 terrain types, parses
+      `Maps\Tournament Desert\Tournament Desert.map` through
+      `WorldHeightMap`, and renders the `RTS3DScene` / `W3DTerrainBackground`
+      patch to browser pixels in
+      `harness-smoke-ww3d-terrain-map-patch-scene-canvas.png`.
 - [x] Add a focused original WW3D `SimpleSceneClass` / `CameraClass`
       ownership proof: `cnc_port_probe_ww3d_scene_camera` adds an
       `AABoxRenderObjClass` to a scene, renders through

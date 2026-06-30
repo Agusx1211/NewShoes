@@ -24,7 +24,7 @@ const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
 const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
-const terrainIniParser = "terrain-texture-mapping-reader";
+const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\Tournament Desert\\Tournament Desert.map";
 
 function isInside(parent, child) {
@@ -263,7 +263,7 @@ try {
       || terrainResult.probe?.ini?.entryExists !== true
       || terrainResult.probe?.ini?.parsed !== true
       || terrainResult.probe?.ini?.parser !== terrainIniParser
-      || terrainResult.probe?.ini?.originalIniParser !== false
+      || terrainResult.probe?.ini?.originalIniParser !== true
       || terrainResult.probe?.ini?.terrainTypeCount <= 0
       || terrainResult.probe?.map?.entry !== mapEntry
       || terrainResult.probe?.map?.entryExists !== true
@@ -344,7 +344,7 @@ try {
     calls: terrainResult.probe.calls,
     draw: terrainResult.probe.draw,
     centerPixel: terrainResult.screenshot.centerPixel,
-    renderer: "INIZH Terrain.ini terrain texture mappings + MapsZH Tournament Desert -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> W3DTerrainBackground -> browser D3D8/WebGL2",
+    renderer: "original INI::load Terrain.ini terrain texture mappings + MapsZH Tournament Desert -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> W3DTerrainBackground -> browser D3D8/WebGL2",
     browserEventCount: browserEvents.length,
   }, null, 2));
 } finally {

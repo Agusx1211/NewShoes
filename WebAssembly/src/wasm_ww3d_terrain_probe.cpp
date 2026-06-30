@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -18,6 +17,7 @@
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
+#include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/NameKeyGenerator.h"
@@ -264,139 +264,17 @@ Bool load_big_archive_path(Win32BIGFileSystem &archive_file_system, const std::s
 		TRUE);
 }
 
-std::string trim_ascii(const std::string &value)
+std::size_t count_terrain_types(TerrainTypeCollection *terrain_types)
 {
-	std::size_t first = 0;
-	while (first < value.size() && std::isspace(static_cast<unsigned char>(value[first]))) {
-		++first;
-	}
-
-	std::size_t last = value.size();
-	while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) {
-		--last;
-	}
-
-	return value.substr(first, last - first);
-}
-
-bool starts_with_token_ci(const std::string &line, const char *token)
-{
-	const std::size_t token_len = std::strlen(token);
-	if (line.size() < token_len) {
-		return false;
-	}
-
-	for (std::size_t index = 0; index < token_len; ++index) {
-		const char left = static_cast<char>(std::tolower(static_cast<unsigned char>(line[index])));
-		const char right = static_cast<char>(std::tolower(static_cast<unsigned char>(token[index])));
-		if (left != right) {
-			return false;
-		}
-	}
-
-	return line.size() == token_len || std::isspace(static_cast<unsigned char>(line[token_len]));
-}
-
-bool starts_with_assignment_ci(const std::string &line, const char *key)
-{
-	const std::size_t key_len = std::strlen(key);
-	if (line.size() < key_len) {
-		return false;
-	}
-
-	for (std::size_t index = 0; index < key_len; ++index) {
-		const char left = static_cast<char>(std::tolower(static_cast<unsigned char>(line[index])));
-		const char right = static_cast<char>(std::tolower(static_cast<unsigned char>(key[index])));
-		if (left != right) {
-			return false;
-		}
-	}
-
-	std::size_t cursor = key_len;
-	while (cursor < line.size() && std::isspace(static_cast<unsigned char>(line[cursor]))) {
-		++cursor;
-	}
-	return cursor < line.size() && line[cursor] == '=';
-}
-
-std::string assignment_value(const std::string &line)
-{
-	const std::size_t equals = line.find('=');
-	if (equals == std::string::npos) {
-		return std::string();
-	}
-	return trim_ascii(line.substr(equals + 1));
-}
-
-// Focused render smoke: seed the original terrain collection with shipped
-// Terrain/Texture pairs while full INI parser ownership remains separate.
-std::size_t load_terrain_texture_mappings_from_ini(TerrainTypeCollection *terrain_types)
-{
-	if (terrain_types == nullptr || TheFileSystem == nullptr) {
+	if (terrain_types == nullptr) {
 		return 0;
 	}
-
-	File *file = TheFileSystem->openFile(kArchiveTerrainIniEntry, File::READ | File::BINARY);
-	if (file == nullptr) {
-		return 0;
-	}
-
-	const Int file_size = file->size();
-	if (file_size <= 0) {
-		file->close();
-		return 0;
-	}
-
-	std::string contents;
-	contents.resize(static_cast<std::size_t>(file_size));
-	const Int bytes_read = file->read(contents.data(), file_size);
-	file->close();
-	if (bytes_read <= 0) {
-		return 0;
-	}
-	contents.resize(static_cast<std::size_t>(bytes_read));
 
 	std::size_t count = 0;
-	TerrainType *current_terrain = nullptr;
-	std::size_t cursor = 0;
-	while (cursor <= contents.size()) {
-		const std::size_t next = contents.find('\n', cursor);
-		std::string line = contents.substr(
-			cursor,
-			next == std::string::npos ? std::string::npos : next - cursor);
-		cursor = next == std::string::npos ? contents.size() + 1 : next + 1;
-
-		const std::size_t comment = line.find(';');
-		if (comment != std::string::npos) {
-			line.resize(comment);
-		}
-		line = trim_ascii(line);
-		if (line.empty()) {
-			continue;
-		}
-
-		if (starts_with_token_ci(line, "Terrain")) {
-			const std::string name = trim_ascii(line.substr(std::strlen("Terrain")));
-			if (!name.empty()) {
-				current_terrain = terrain_types->findTerrain(AsciiString(name.c_str()));
-				if (current_terrain == nullptr) {
-					current_terrain = terrain_types->newTerrain(AsciiString(name.c_str()));
-					if (current_terrain != nullptr) {
-						++count;
-					}
-				}
-			}
-			continue;
-		}
-
-		if (current_terrain != nullptr && starts_with_assignment_ci(line, "Texture")) {
-			const std::string texture = assignment_value(line);
-			if (!texture.empty()) {
-				current_terrain->friend_setTexture(AsciiString(texture.c_str()));
-			}
-		}
+	for (TerrainType *terrain = terrain_types->firstTerrain(); terrain != nullptr;
+			terrain = terrain_types->nextTerrain(terrain)) {
+		++count;
 	}
-
 	return count;
 }
 
@@ -484,12 +362,22 @@ WorldHeightMap *load_archive_terrain_map_patch(
 			terrain_types = NEW TerrainTypeCollection;
 			if (terrain_types != nullptr) {
 				TheTerrainTypes = terrain_types;
+				INI *ini = nullptr;
 				try {
-					load.terrainTypeCount = load_terrain_texture_mappings_from_ini(terrain_types);
+					ini = NEW INI;
+					AsciiString terrain_ini_entry(kArchiveTerrainIniEntry);
+					if (ini != nullptr) {
+						// The focused browser target needs the constructed separator table read before INI::load tokenizes.
+						volatile const char *ini_separators = ini->getSeps();
+						(void)ini_separators;
+						ini->load(terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
+					}
+					load.terrainTypeCount = count_terrain_types(terrain_types);
 					load.terrainIniParsed = load.terrainTypeCount > 0;
 				} catch (...) {
 					load.terrainIniParsed = false;
 				}
+				delete ini;
 			}
 		}
 	}
@@ -1111,10 +999,8 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	initMemoryManager();
 	wasm_d3d8_reset_state();
 
-	GlobalData global_data;
-	configure_global_data(global_data);
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
-	TheWritableGlobalData = &global_data;
+	GlobalData *global_data = nullptr;
 
 	int init_result = WW3D_ERROR_GENERIC;
 	int set_device_result = WW3D_ERROR_GENERIC;
@@ -1136,6 +1022,14 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		map_load);
 	map_created = map_load.mapParsed && map != nullptr;
 
+	if (map_created) {
+		global_data = NEW GlobalData;
+		if (global_data != nullptr) {
+			configure_global_data(*global_data);
+			TheWritableGlobalData = global_data;
+		}
+	}
+
 	ProbeTerrainBackground *tile = nullptr;
 	ProbeTerrainDiffuseOwner *diffuse_owner = nullptr;
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
@@ -1143,7 +1037,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	RTS3DScene *scene = nullptr;
 	CameraClass *camera = nullptr;
 
-	if (map_created) {
+	if (map_created && global_data != nullptr) {
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 
@@ -1255,8 +1149,8 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
 		"\"entry\":\"Data\\\\INI\\\\Terrain.ini\",\"loaded\":%s,"
 		"\"entryExists\":%s,\"parsed\":%s,"
-		"\"parser\":\"terrain-texture-mapping-reader\","
-		"\"originalIniParser\":false,\"terrainTypeCount\":%lu,"
+		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
+		"\"originalIniParser\":true,\"terrainTypeCount\":%lu,"
 		"\"nameKeysReady\":%s,\"sidesListReady\":%s},"
 		"\"archives\":{\"maps\":{\"argumentSupplied\":%s,\"path\":\"%s\","
 		"\"directory\":\"%s\",\"mask\":\"%s\",\"loaded\":%s},"
@@ -1412,6 +1306,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
 
 	return target_json.c_str();
 }

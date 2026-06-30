@@ -1068,8 +1068,8 @@ const steps = [
       expect(payload.path === "browser-ww3d-terrain-map-patch-scene",
         "terrain map patch scene render smoke emitted the wrong path", payload);
       expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
-          && payload.archives?.ini?.parser === "terrain-texture-mapping-reader"
-          && payload.archives?.ini?.originalIniParser === false
+          && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && payload.archives?.ini?.originalIniParser === true
           && payload.archives?.ini?.terrainTypeCount > 0,
         "terrain map patch scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
       expect(payload.archives?.maps?.entry === "Maps\\Tournament Desert\\Tournament Desert.map"

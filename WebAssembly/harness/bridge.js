@@ -16924,8 +16924,8 @@ async function rpc(command, payload = {}) {
           && probe?.ini?.loaded === true
           && probe?.ini?.entryExists === true
           && probe?.ini?.parsed === true
-          && probe?.ini?.parser === "terrain-texture-mapping-reader"
-          && probe?.ini?.originalIniParser === false
+          && probe?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && probe?.ini?.originalIniParser === true
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
           && probe?.archives?.maps?.loaded === true
           && probe?.archives?.terrain?.loaded === true
