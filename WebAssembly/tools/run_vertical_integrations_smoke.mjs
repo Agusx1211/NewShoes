@@ -229,6 +229,33 @@ const steps = [
     },
   },
   {
+    name: "miles-audio-play-sample",
+    file: "miles-audio-play-sample-smoke.cjs",
+    root: distRoot,
+    validate(payload) {
+      expect(payload.ok === true, "MilesAudioManager play-sample smoke did not report ok", payload);
+      expect(payload.path === "MilesAudioManager::processRequest->playAudioEvent->playSample"
+          && payload.request === "AR_Play"
+          && payload.event === "PortSmoke2D"
+          && payload.filename === "Data\\Audio\\Sounds\\PortSmoke.wav"
+          && payload.sample?.statusAfterStart === 2
+          && payload.sample?.statusAfterEnd === 1
+          && payload.sample?.volume > 0.499
+          && payload.sample?.volume < 0.501
+          && payload.sample?.pan > 0.499
+          && payload.sample?.pan < 0.501
+          && payload.wav?.format === "PCM"
+          && payload.wav?.rate === 44100
+          && payload.wav?.channels === 2
+          && payload.wav?.bits === 16
+          && payload.manager?.samples2D === 2
+          && payload.manager?.available2DAfterRelease === 2
+          && payload.manager?.playingSoundsAfterRelease === 0
+          && payload.manager?.audioEventReleases === 1,
+        "MilesAudioManager play-sample smoke did not prove original processRequest/playAudioEvent/playSample lifecycle", payload);
+    },
+  },
+  {
     name: "browser-network-two-contexts",
     file: "harness/network_two_contexts_smoke.mjs",
     validate(payload) {
@@ -433,6 +460,7 @@ console.log(JSON.stringify({
   covered: [
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
+    "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
@@ -445,7 +473,7 @@ console.log(JSON.stringify({
   nextRequired: [
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
-    "fold browser audio request-path scheduling into the real MilesAudioManager Web Audio backend instead of the current source-shaped harness path",
+    "merge the original MilesAudioManager 2D sample leg with the browser Web Audio completion harness in one browser-owned smoke",
     "advance LANAPI join/options over the browser relay or replace the harness relay with production WebSocket/WebRTC transport",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],

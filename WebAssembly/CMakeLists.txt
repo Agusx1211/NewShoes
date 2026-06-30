@@ -6712,6 +6712,63 @@ target_link_options(miles-audio-open-device-smoke PRIVATE
   "SHELL:-sINITIAL_MEMORY=67108864"
 )
 
+add_executable(miles-audio-play-sample-smoke
+  tests/miles_audio_play_sample_smoke.cpp
+)
+
+set_target_properties(miles-audio-play-sample-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(miles-audio-play-sample-smoke PRIVATE
+  zh_miles_audio_device_compile_frontier
+  zh_gameengine_common_core
+  zh_wwmath_core
+)
+
+target_compile_options(miles-audio-play-sample-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/Miles6/include"
+  "-iquote${WWAUDIO_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(miles-audio-play-sample-smoke PRIVATE
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(gamenetwork-core-smoke
   tests/gamenetwork_core_smoke.cpp
 )

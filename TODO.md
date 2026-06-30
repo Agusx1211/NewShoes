@@ -745,8 +745,12 @@ shares structure and follows behind.
       `AudioBufferSourceNode -> GainNode -> StereoPannerNode -> soundGainNode`
       graph after the Web Audio gesture, then asserts Web Audio completion,
       MSS end, EOS callback, and release; folding that backend into the real
-      `MilesAudioManager::playAudioEvent` 2D `playSample` request path is the
-      next concrete audio implementation slice. The HSTREAM
+      `MilesAudioManager::playAudioEvent` 2D `playSample` request path now has
+      a focused original-manager smoke that drives
+      `processRequest -> playAudioEvent -> playSample` through
+      `AudioFileCache`, `AIL_WAV_info`, `AIL_set_sample_file`,
+      `AIL_start_sample`, MSS completion callback, and sample release in the
+      manager-owned 2D pool. The HSTREAM
       lifecycle is now stateful and harness-probed by
       `mssStreamLifecycleProbe`, covering open/open-by-sample, callback
       registration, volume/pan/rate/loop/position state, start/pause/resume,
@@ -764,11 +768,19 @@ shares structure and follows behind.
       itself, without implementing the filter DSP path.
 - [ ] Harness-drive `MilesAudioManager` through the engine audio event path and
       assert observable playback state, mixer volume changes, completion
-      callbacks, and 2D/3D sample lifecycle once the focused MSS sample
-      backend is folded into the real `MilesAudioManager` request path and
+      callbacks, and 2D/3D sample lifecycle once the original manager 2D
+      sample leg is merged with the browser Web Audio completion harness and
       the stream/3D playback backends exist; `verify:audio-sound-manager-
       counters-frontier` now pins the source-only `SoundManager` counter
       contract that runtime playback must satisfy.
+- [ ] Merge the original `MilesAudioManager` 2D sample leg with the browser
+      Web Audio completion harness in one browser-owned smoke: original
+      `processRequest -> playAudioEvent -> playSample` should load sample bytes
+      through `AudioFileCache`, call `AIL_start_sample`, schedule an
+      `AudioBufferSourceNode`, observe Web Audio `onended`, drive the MSS EOS
+      callback, and release the `PlayingAudio` without the current split
+      between the node-only original-manager smoke and the browser-only MSS
+      sample playback proof.
 - [ ] Decode original audio formats (MP3, PCM WAV, and the current 2,572
       IMA ADPCM WAV payloads) before Web Audio playback; the current
       `verify:audio-format-frontier` / harness `payloadFormats` checks prove

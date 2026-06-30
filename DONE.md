@@ -3941,6 +3941,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       test:browser-audio-request-path`; the aggregate
       `npm --prefix WebAssembly run test:vertical-integrations` gate includes
       it.
+- [x] Drive the original `MilesAudioManager` 2D sample request leg into the
+      stateful MSS sample backend. `WebAssembly/tests/miles_audio_play_sample_smoke.cpp`
+      installs minimal original file-system/audio singletons, constructs an
+      `AudioEventRTS` with `AudioEventInfo`, and calls the protected original
+      `MilesAudioManager::processRequest` with an `AR_Play` request. The smoke
+      proves `processRequest -> playAudioEvent -> playSample` consumes one
+      manager-owned 2D sample handle, loads a valid PCM WAV through
+      `AudioFileCache`, parses it with the new `Mss.H` `AIL_WAV_info`, calls
+      `AIL_set_sample_file` / `AIL_start_sample`, observes MSS `SMP_PLAYING`,
+      drives `AIL_end_sample` through the original EOS callback and
+      `notifyOfAudioCompletion`, then releases the `PlayingAudio` back to the
+      2D pool. `test:miles-audio-play-sample` runs the focused proof, and
+      `test:vertical-integrations` now includes it between the browser audio
+      request-path proof and the network verticals. This proves the
+      original-manager 2D sample device leg, not the combined browser Web Audio
+      completion path; the next audio vertical should merge this manager leg
+      with the existing browser MSS `AudioBufferSourceNode` completion harness.
+      Verified with `npm --prefix WebAssembly run test:miles-audio-play-sample`
+      and `npm --prefix WebAssembly run test:vertical-integrations`.
 
 ---
 

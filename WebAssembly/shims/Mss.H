@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -631,7 +632,69 @@ static inline char *AIL_last_error()
 	static char error[] = "Miles runtime is not available in the wasm compile shim";
 	return error;
 }
-static inline S32 AIL_WAV_info(U8 *, AILSOUNDINFO *) { return 0; }
+static inline U16 MSSReadU16LE(const U8 *data)
+{
+	return static_cast<U16>(static_cast<U16>(data[0]) | (static_cast<U16>(data[1]) << 8));
+}
+static inline U32 MSSReadU32LE(const U8 *data)
+{
+	return static_cast<U32>(data[0]) |
+		(static_cast<U32>(data[1]) << 8) |
+		(static_cast<U32>(data[2]) << 16) |
+		(static_cast<U32>(data[3]) << 24);
+}
+static inline bool MSSFourCCEquals(const U8 *data, const char *fourcc)
+{
+	return std::memcmp(data, fourcc, 4) == 0;
+}
+static inline S32 AIL_WAV_info(U8 *data, AILSOUNDINFO *info)
+{
+	if (data == nullptr || info == nullptr) {
+		return 0;
+	}
+
+	info->format = 0;
+	info->rate = 0;
+	info->bits = 0;
+	info->channels = 0;
+
+	if (!MSSFourCCEquals(data, "RIFF") || !MSSFourCCEquals(data + 8, "WAVE")) {
+		return 0;
+	}
+
+	const U32 riff_size = MSSReadU32LE(data + 4);
+	if (riff_size < 4) {
+		return 0;
+	}
+
+	const U32 end = 8 + riff_size;
+	U32 offset = 12;
+	while (offset + 8 <= end) {
+		const U8 *chunk = data + offset;
+		const U32 chunk_size = MSSReadU32LE(chunk + 4);
+		const U32 chunk_data = offset + 8;
+		if (chunk_data + chunk_size > end) {
+			return 0;
+		}
+		if (MSSFourCCEquals(chunk, "fmt ")) {
+			if (chunk_size < 16) {
+				return 0;
+			}
+			info->format = MSSReadU16LE(data + chunk_data);
+			info->channels = MSSReadU16LE(data + chunk_data + 2);
+			info->rate = static_cast<S32>(MSSReadU32LE(data + chunk_data + 4));
+			info->bits = MSSReadU16LE(data + chunk_data + 14);
+			return 1;
+		}
+		const U32 next_offset = chunk_data + chunk_size + (chunk_size & 1);
+		if (next_offset <= offset) {
+			return 0;
+		}
+		offset = next_offset;
+	}
+
+	return 0;
+}
 static inline S32 AIL_WAV_info(char *data, AILSOUNDINFO *info)
 {
 	return AIL_WAV_info(reinterpret_cast<U8 *>(data), info);
