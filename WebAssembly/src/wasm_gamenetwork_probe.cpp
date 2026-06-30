@@ -298,6 +298,7 @@ char g_browser_lanapi_game_start_build_json[16384] = {};
 char g_browser_lanapi_game_start_client_json[16384] = {};
 char g_browser_lanapi_game_start_hex[(sizeof(LANMessage) * 2) + 1] = {};
 char g_browser_lanapi_network_update_json[20000] = {};
+char g_browser_network_multiframe_lockstep_json[30000] = {};
 constexpr int kRelayExecutionFrame = 2468;
 constexpr int kRelayPlayerId = 2;
 constexpr int kRelayCommandId = 314;
@@ -311,6 +312,9 @@ constexpr int kTransportFrameCommandCount = 1;
 constexpr int kTransportRunAhead = 20;
 constexpr int kTransportFrameRate = 30;
 constexpr int kTransportRelayMask = 1 << kTransportPlayerId;
+constexpr UnsignedInt kNetworkMultiFrameCount = 3;
+constexpr UnsignedInt kNetworkDesyncNotReadyFrame = 9001;
+constexpr UnsignedInt kNetworkDesyncResendFrame = 9002;
 constexpr UnsignedInt kTransportWireRemoteIp = 0x7f000002;
 constexpr UnsignedShort kTransportWireRemotePort = NETWORK_BASE_PORT_NUMBER;
 constexpr UnsignedInt kLanApiLocalIp = 0x7f000001;
@@ -1196,6 +1200,7 @@ unsigned int count_probe_game_messages(GameMessage *first)
 
 struct LANNetworkUpdateState
 {
+	bool command_list_reset_before = false;
 	bool command_list_injected = false;
 	bool update_driven = false;
 	bool before_frame_data_ready = false;
@@ -1219,7 +1224,9 @@ struct LANNetworkUpdateState
 void drive_lan_network_update_frame_readiness(
 	ScopedLANGameStartGlobals &globals,
 	LANNetworkUpdateState &state,
-	Int expected_local_slot)
+	Int expected_local_slot,
+	UnsignedInt logic_frame = 1,
+	Bool reset_command_list_before = FALSE)
 {
 	state.logic_frame_before = TheGameLogic != nullptr ? TheGameLogic->getFrame() : -1;
 	state.before_frame_data_ready = TheNetwork != nullptr && TheNetwork->isFrameDataReady();
@@ -1231,7 +1238,12 @@ void drive_lan_network_update_frame_readiness(
 		state.frame_rate = TheNetwork->getFrameRate();
 	}
 
-	globals.setLogicFrame(1);
+	if (reset_command_list_before && globals.commandList() != nullptr) {
+		globals.commandList()->reset();
+		state.command_list_reset_before = true;
+	}
+
+	globals.setLogicFrame(logic_frame);
 	GameMessage *tick = newInstance(GameMessage)(GameMessage::MSG_FRAME_TICK);
 	if (tick != nullptr) {
 		globals.commandList()->appendMessage(tick);
@@ -1254,6 +1266,77 @@ void drive_lan_network_update_frame_readiness(
 	state.packet_arrival_cushion_after = TheNetwork != nullptr ? TheNetwork->getPacketArrivalCushion() : 0;
 	state.readiness_transition = !state.before_frame_data_ready && state.after_frame_data_ready;
 	state.in_game_promoted = !state.local_connected_before && state.local_connected_after;
+}
+
+struct FrameDataDesyncProbeState
+{
+	bool not_ready_ok = false;
+	bool resend_ok = false;
+	bool extra_command_inserted = false;
+	Int not_ready_result = -1;
+	Int resend_result = -1;
+	UnsignedInt not_ready_frame = 0;
+	UnsignedInt not_ready_command_count = 0;
+	UnsignedInt not_ready_frame_command_count = 0;
+	UnsignedInt resend_frame = 0;
+	UnsignedInt resend_command_count_before = 0;
+	UnsignedInt resend_frame_command_count_before = 0;
+	UnsignedInt resend_command_count_after = 0;
+	UnsignedInt resend_frame_command_count_after = 0;
+	Int resend_command_type = NETCOMMANDTYPE_UNKNOWN;
+};
+
+FrameDataDesyncProbeState probe_original_frame_data_desync_states()
+{
+	FrameDataDesyncProbeState state;
+
+	FrameData not_ready;
+	not_ready.init();
+	not_ready.setFrame(kNetworkDesyncNotReadyFrame);
+	not_ready.setFrameCommandCount(1);
+	state.not_ready_frame = not_ready.getFrame();
+	state.not_ready_command_count = not_ready.getCommandCount();
+	state.not_ready_frame_command_count = not_ready.getFrameCommandCount();
+	state.not_ready_result = static_cast<Int>(not_ready.allCommandsReady(FALSE));
+	state.not_ready_ok =
+		state.not_ready_frame == kNetworkDesyncNotReadyFrame &&
+		state.not_ready_command_count == 0 &&
+		state.not_ready_frame_command_count == 1 &&
+		state.not_ready_result == FRAMEDATA_NOTREADY;
+	not_ready.destroyGameMessages();
+
+	FrameData resend;
+	resend.init();
+	resend.setFrame(kNetworkDesyncResendFrame);
+	resend.setFrameCommandCount(0);
+	NetRunAheadCommandMsg *extra = newInstance(NetRunAheadCommandMsg);
+	if (extra != nullptr) {
+		extra->setExecutionFrame(kNetworkDesyncResendFrame);
+		extra->setPlayerID(kTransportPlayerId);
+		extra->setID(kTransportRunAheadCommandId);
+		extra->setRunAhead(kTransportRunAhead);
+		extra->setFrameRate(kTransportFrameRate);
+		resend.addCommand(extra);
+		extra->detach();
+		state.extra_command_inserted = true;
+		state.resend_command_type = NETCOMMANDTYPE_RUNAHEAD;
+	}
+	state.resend_frame = resend.getFrame();
+	state.resend_command_count_before = resend.getCommandCount();
+	state.resend_frame_command_count_before = resend.getFrameCommandCount();
+	state.resend_result = static_cast<Int>(resend.allCommandsReady(FALSE));
+	state.resend_command_count_after = resend.getCommandCount();
+	state.resend_frame_command_count_after = resend.getFrameCommandCount();
+	state.resend_ok =
+		state.resend_frame == kNetworkDesyncResendFrame &&
+		state.extra_command_inserted &&
+		state.resend_command_count_before == 1 &&
+		state.resend_frame_command_count_before == 0 &&
+		state.resend_result == FRAMEDATA_RESEND &&
+		state.resend_command_count_after == 0;
+	resend.destroyGameMessages();
+
+	return state;
 }
 
 bool probe_command_ids(GameNetworkProbeResult &result)
@@ -3040,7 +3123,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_lanapi_network_update()
 		"\"originalFrameReadiness\":\"Network::AllCommandsReady -> ConnectionManager::allCommandsReady -> FrameDataManager::allCommandsReady\","
 		"\"originalTiming\":\"Network::timeForNewFrame\","
 		"\"originalRelay\":\"Network::RelayCommandsToCommandList\","
-		"\"nextRequired\":\"productionWebSocketWebRTCTransportOrMultiFrameDesyncHarness\","
+		"\"nextRequired\":\"productionWebSocketWebRTCTransportOrTwoClientMatchSync\","
 		"\"lanApi\":{\"hostGameReady\":%s,\"onGameStartCalls\":%d,"
 		"\"gameStartMessageDecoded\":%s,\"messageType\":\"%s\","
 		"\"activeBytes\":%d,\"remoteIp\":%u,\"localIp\":%u,\"port\":%u},"
@@ -3137,6 +3220,293 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_lanapi_network_update()
 		after_state.random_seed_ready ? "true" : "false",
 		after_state.map_cache_ready ? "true" : "false");
 	return g_browser_lanapi_network_update_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_multiframe_lockstep()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	bool host_game_ready = false;
+	bool game_start_decoded = false;
+	Int game_start_active_length = 0;
+	UnsignedInt game_start_addr = 0;
+	UnsignedShort game_start_port = 0;
+	int on_game_start_calls = 0;
+	LANMessage game_start_message = {};
+	char game_start_hex[(sizeof(LANMessage) * 2) + 1] = {};
+	LANGameStartState before_state;
+	LANGameStartState after_state;
+	LANNetworkUpdateState frame_states[kNetworkMultiFrameCount];
+	bool frame_ready[kNetworkMultiFrameCount] = {};
+	FrameDataDesyncProbeState desync_state;
+
+	{
+		ScopedOriginalMemoryManager memory_manager_scope;
+		ProbeLANAPI host;
+		ScopedLANProbeGlobals globals(&host);
+		ScopedLANGameStartGlobals game_start_globals;
+		host.setLocalAddress(kLanApiRemoteIp);
+		host.setIdentity(kLanApiPlayerName, kLanApiUserName, kLanApiHostName);
+		probe_global_data()->m_pendingFile = AsciiString("");
+		probe_global_data()->m_useFpsLimit = TRUE;
+		LANGameInfo *game = create_probe_lan_game(TRUE, TRUE);
+		host.installGame(game, TRUE, FALSE);
+		host_game_ready = game != nullptr &&
+			game->isInGame() &&
+			!game->isGameInProgress() &&
+			game->getLocalSlotNum() == 0 &&
+			game->getIP(0) == kLanApiRemoteIp &&
+			game->getLANSlot(1)->isHuman() &&
+			game->getLANSlot(1)->getIP() == kLanApiJoinerIp;
+
+		host.RequestGameStart();
+		on_game_start_calls = host.onGameStartCalls();
+		game_start_decoded = decode_queued_lan_message(
+			host.transportForProbe(),
+			LANMessage::MSG_GAME_START,
+			game_start_message,
+			game_start_hex,
+			sizeof(game_start_hex),
+			&game_start_addr,
+			&game_start_port,
+			&game_start_active_length);
+
+		collect_lan_game_start_state(
+			game,
+			0,
+			1,
+			kLanApiJoinerName,
+			game_start_globals,
+			before_state);
+
+		for (UnsignedInt index = 0; index < kNetworkMultiFrameCount; ++index) {
+			drive_lan_network_update_frame_readiness(
+				game_start_globals,
+				frame_states[index],
+				0,
+				index + 1,
+				TRUE);
+		}
+
+		collect_lan_game_start_state(
+			game,
+			0,
+			1,
+			kLanApiJoinerName,
+			game_start_globals,
+			after_state);
+		desync_state = probe_original_frame_data_desync_states();
+	}
+
+	const bool setup_ready = host_game_ready &&
+		game_start_decoded &&
+		game_start_message.LANMessageType == LANMessage::MSG_GAME_START &&
+		game_start_port == kLanApiLobbyPort &&
+		on_game_start_calls == 1 &&
+		before_state.network_setup_ready &&
+		before_state.callback_side_effects_ready &&
+		!before_state.frame_data_ready;
+	bool frames_ready = true;
+	for (UnsignedInt index = 0; index < kNetworkMultiFrameCount; ++index) {
+		const LANNetworkUpdateState &state = frame_states[index];
+		const Int frame = static_cast<Int>(index + 1);
+		frame_ready[index] =
+			state.command_list_reset_before &&
+			state.command_list_injected &&
+			state.update_driven &&
+			state.logic_frame_before == static_cast<Int>(index) &&
+			state.logic_frame_for_update == frame &&
+			state.tick_message_type == GameMessage::MSG_FRAME_TICK &&
+			state.command_list_count_before == 1 &&
+			state.command_list_count_after == 1 &&
+			state.local_slot == 0 &&
+			state.num_players == 2 &&
+			state.run_ahead == 30 &&
+			state.frame_rate == 30 &&
+			state.local_connected_after;
+		if (index == 0) {
+			frame_ready[index] =
+				frame_ready[index] &&
+				state.after_frame_data_ready &&
+				!state.before_frame_data_ready &&
+				!state.local_connected_before &&
+				state.readiness_transition &&
+				state.in_game_promoted;
+		} else {
+			frame_ready[index] =
+				frame_ready[index] &&
+				state.local_connected_before &&
+				!state.readiness_transition &&
+				!state.in_game_promoted;
+		}
+		frames_ready = frames_ready && frame_ready[index];
+	}
+	const bool after_ready =
+		after_state.network_setup_ready &&
+		after_state.callback_side_effects_ready &&
+		after_state.local_slot == 0 &&
+		after_state.num_players == 2 &&
+		after_state.run_ahead == 30 &&
+		after_state.frame_rate == 30;
+	const bool desync_ready = desync_state.not_ready_ok && desync_state.resend_ok;
+	const bool ok = setup_ready && frames_ready && after_ready && desync_ready;
+
+	char frame_json[kNetworkMultiFrameCount][1600] = {};
+	for (UnsignedInt index = 0; index < kNetworkMultiFrameCount; ++index) {
+		const LANNetworkUpdateState &state = frame_states[index];
+		std::snprintf(frame_json[index], sizeof(frame_json[index]),
+			"{\"frame\":%u,\"ready\":%s,\"commandListResetBefore\":%s,"
+			"\"commandListInjected\":%s,\"updateDriven\":%s,"
+			"\"logicFrameBefore\":%d,\"logicFrameForUpdate\":%d,"
+			"\"tickMessageType\":%d,\"commandListCountBefore\":%d,"
+			"\"commandListCountAfter\":%d,\"localSlot\":%d,\"numPlayers\":%d,"
+			"\"runAhead\":%u,\"frameRate\":%u,\"packetArrivalCushionAfter\":%u,"
+			"\"beforeFrameDataReady\":%s,\"afterFrameDataReady\":%s,"
+			"\"localConnectedBefore\":%s,\"localConnectedAfter\":%s,"
+			"\"readinessTransition\":%s,\"inGamePromoted\":%s}",
+			index + 1,
+			frame_ready[index] ? "true" : "false",
+			state.command_list_reset_before ? "true" : "false",
+			state.command_list_injected ? "true" : "false",
+			state.update_driven ? "true" : "false",
+			state.logic_frame_before,
+			state.logic_frame_for_update,
+			state.tick_message_type,
+			state.command_list_count_before,
+			state.command_list_count_after,
+			state.local_slot,
+			state.num_players,
+			state.run_ahead,
+			state.frame_rate,
+			state.packet_arrival_cushion_after,
+			state.before_frame_data_ready ? "true" : "false",
+			state.after_frame_data_ready ? "true" : "false",
+			state.local_connected_before ? "true" : "false",
+			state.local_connected_after ? "true" : "false",
+			state.readiness_transition ? "true" : "false",
+			state.in_game_promoted ? "true" : "false");
+	}
+
+	std::snprintf(g_browser_network_multiframe_lockstep_json, sizeof(g_browser_network_multiframe_lockstep_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser multi-frame Network::update/desync probe\","
+		"\"lanApiReady\":%s,"
+		"\"browserTransport\":\"harness relay queue\","
+		"\"productionTransport\":false,"
+		"\"relayTransport\":true,"
+		"\"framesDriven\":%u,"
+		"\"originalSetup\":\"LANAPI::RequestGameStart -> LANAPI::OnGameStart\","
+		"\"originalUpdate\":\"Network::update\","
+		"\"originalCommandPath\":\"Network::GetCommandsFromCommandList -> Network::processCommand\","
+		"\"originalFrameReadiness\":\"Network::AllCommandsReady -> ConnectionManager::allCommandsReady -> FrameDataManager::allCommandsReady\","
+		"\"originalTiming\":\"Network::timeForNewFrame\","
+		"\"originalRelay\":\"Network::RelayCommandsToCommandList\","
+		"\"originalDesync\":\"FrameData::allCommandsReady FRAMEDATA_NOTREADY/FRAMEDATA_RESEND\","
+		"\"nextRequired\":\"productionWebSocketWebRTCTransportOrTwoClientMatchSync\","
+		"\"lanApi\":{\"hostGameReady\":%s,\"onGameStartCalls\":%d,"
+		"\"gameStartMessageDecoded\":%s,\"messageType\":\"%s\","
+		"\"activeBytes\":%d,\"remoteIp\":%u,\"localIp\":%u,\"port\":%u},"
+		"\"before\":{\"network\":{\"created\":%s,\"setupReady\":%s,"
+		"\"localSlot\":%d,\"numPlayers\":%d,\"runAhead\":%u,\"frameRate\":%u,"
+		"\"packetArrivalCushion\":%u,\"frameDataReady\":%s,"
+		"\"remoteNameReady\":%s},"
+		"\"callback\":{\"sideEffectsReady\":%s,\"gameInProgress\":%s,"
+		"\"pendingFileReady\":%s,\"useFpsLimitDisabled\":%s,"
+		"\"messageNewGame\":%s,\"messageArgumentReady\":%s,"
+		"\"messageType\":%d,\"messageArgument\":%d,"
+		"\"randomSeedReady\":%s,\"mapCacheReady\":%s}},"
+		"\"frames\":[%s,%s,%s],"
+		"\"after\":{\"network\":{\"created\":%s,\"setupReady\":%s,"
+		"\"localSlot\":%d,\"numPlayers\":%d,\"runAhead\":%u,\"frameRate\":%u,"
+		"\"packetArrivalCushion\":%u,\"frameDataReady\":%s,"
+		"\"remoteNameReady\":%s},"
+		"\"callback\":{\"sideEffectsReady\":%s,\"gameInProgress\":%s,"
+		"\"pendingFileReady\":%s,\"useFpsLimitDisabled\":%s,"
+		"\"messageNewGame\":%s,\"messageArgumentReady\":%s,"
+		"\"messageType\":%d,\"messageArgument\":%d,"
+		"\"randomSeedReady\":%s,\"mapCacheReady\":%s}},"
+		"\"desync\":{\"ok\":%s,\"source\":\"FrameData::allCommandsReady\","
+		"\"frameDataNotReady\":%d,\"frameDataResend\":%d,\"frameDataReady\":%d,"
+		"\"notReady\":{\"ok\":%s,\"frame\":%u,\"result\":%d,"
+		"\"commandCount\":%u,\"frameCommandCount\":%u},"
+		"\"resend\":{\"ok\":%s,\"frame\":%u,\"result\":%d,"
+		"\"commandType\":\"NETCOMMANDTYPE_RUNAHEAD\",\"commandTypeValue\":%d,"
+		"\"commandInserted\":%s,\"commandCountBefore\":%u,"
+		"\"frameCommandCountBefore\":%u,\"commandCountAfter\":%u,"
+		"\"frameCommandCountAfter\":%u}}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		kNetworkMultiFrameCount,
+		host_game_ready ? "true" : "false",
+		on_game_start_calls,
+		game_start_decoded ? "true" : "false",
+		lan_message_type_name(game_start_message.LANMessageType),
+		game_start_active_length,
+		game_start_addr,
+		kLanApiRemoteIp,
+		game_start_port,
+		before_state.network_created ? "true" : "false",
+		before_state.network_setup_ready ? "true" : "false",
+		before_state.local_slot,
+		before_state.num_players,
+		before_state.run_ahead,
+		before_state.frame_rate,
+		before_state.packet_arrival_cushion,
+		before_state.frame_data_ready ? "true" : "false",
+		before_state.remote_name_ready ? "true" : "false",
+		before_state.callback_side_effects_ready ? "true" : "false",
+		before_state.game_in_progress ? "true" : "false",
+		before_state.pending_file_ready ? "true" : "false",
+		before_state.use_fps_limit_disabled ? "true" : "false",
+		before_state.message_new_game ? "true" : "false",
+		before_state.message_argument_ready ? "true" : "false",
+		before_state.message_type,
+		before_state.message_argument,
+		before_state.random_seed_ready ? "true" : "false",
+		before_state.map_cache_ready ? "true" : "false",
+		frame_json[0],
+		frame_json[1],
+		frame_json[2],
+		after_state.network_created ? "true" : "false",
+		after_state.network_setup_ready ? "true" : "false",
+		after_state.local_slot,
+		after_state.num_players,
+		after_state.run_ahead,
+		after_state.frame_rate,
+		after_state.packet_arrival_cushion,
+		after_state.frame_data_ready ? "true" : "false",
+		after_state.remote_name_ready ? "true" : "false",
+		after_state.callback_side_effects_ready ? "true" : "false",
+		after_state.game_in_progress ? "true" : "false",
+		after_state.pending_file_ready ? "true" : "false",
+		after_state.use_fps_limit_disabled ? "true" : "false",
+		after_state.message_new_game ? "true" : "false",
+		after_state.message_argument_ready ? "true" : "false",
+		after_state.message_type,
+		after_state.message_argument,
+		after_state.random_seed_ready ? "true" : "false",
+		after_state.map_cache_ready ? "true" : "false",
+		desync_ready ? "true" : "false",
+		FRAMEDATA_NOTREADY,
+		FRAMEDATA_RESEND,
+		FRAMEDATA_READY,
+		desync_state.not_ready_ok ? "true" : "false",
+		desync_state.not_ready_frame,
+		desync_state.not_ready_result,
+		desync_state.not_ready_command_count,
+		desync_state.not_ready_frame_command_count,
+		desync_state.resend_ok ? "true" : "false",
+		desync_state.resend_frame,
+		desync_state.resend_result,
+		desync_state.resend_command_type,
+		desync_state.extra_command_inserted ? "true" : "false",
+		desync_state.resend_command_count_before,
+		desync_state.resend_frame_command_count_before,
+		desync_state.resend_command_count_after,
+		desync_state.resend_frame_command_count_after);
+	return g_browser_network_multiframe_lockstep_json;
 }
 
 }

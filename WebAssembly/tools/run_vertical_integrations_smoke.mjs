@@ -621,6 +621,59 @@ const steps = [
     },
   },
   {
+    name: "browser-network-multiframe-lockstep",
+    file: "harness/network_multiframe_lockstep_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser multi-frame lockstep smoke did not report ok", payload);
+      expect(payload.path === "browser-network-multiframe-lockstep"
+          && payload.relay?.productionTransport === false
+          && payload.originalSetup === "LANAPI::RequestGameStart -> LANAPI::OnGameStart"
+          && payload.originalUpdate === "Network::update"
+          && payload.originalCommandPath === "Network::GetCommandsFromCommandList -> Network::processCommand"
+          && payload.originalFrameReadiness === "Network::AllCommandsReady -> ConnectionManager::allCommandsReady -> FrameDataManager::allCommandsReady"
+          && payload.originalTiming === "Network::timeForNewFrame"
+          && payload.originalRelay === "Network::RelayCommandsToCommandList"
+          && payload.originalDesync === "FrameData::allCommandsReady FRAMEDATA_NOTREADY/FRAMEDATA_RESEND"
+          && payload.lanApi?.hostGameReady === true
+          && payload.lanApi?.onGameStartCalls === 1
+          && payload.before?.network?.setupReady === true
+          && payload.before?.network?.frameDataReady === false
+          && payload.before?.callback?.sideEffectsReady === true
+          && Array.isArray(payload.frames)
+          && payload.frames.length === 3
+          && payload.frames.every((frame, index) =>
+            frame.ready === true
+            && frame.frame === index + 1
+            && frame.commandListResetBefore === true
+            && frame.commandListInjected === true
+            && frame.updateDriven === true
+            && frame.logicFrameBefore === index
+            && frame.logicFrameForUpdate === index + 1
+            && frame.tickMessageType === 1
+            && frame.commandListCountBefore === 1
+            && frame.commandListCountAfter === 1
+            && frame.localConnectedAfter === true)
+          && payload.frames[0]?.beforeFrameDataReady === false
+          && payload.frames[0]?.afterFrameDataReady === true
+          && payload.frames[0]?.readinessTransition === true
+          && payload.frames[0]?.inGamePromoted === true
+          && payload.frames[1]?.localConnectedBefore === true
+          && payload.frames[2]?.localConnectedBefore === true
+          && payload.after?.network?.setupReady === true
+          && payload.after?.callback?.sideEffectsReady === true
+          && payload.desync?.ok === true
+          && payload.desync?.notReady?.result === 0
+          && payload.desync?.notReady?.commandCount === 0
+          && payload.desync?.notReady?.frameCommandCount === 1
+          && payload.desync?.resend?.result === 1
+          && payload.desync?.resend?.commandType === "NETCOMMANDTYPE_RUNAHEAD"
+          && payload.desync?.resend?.commandCountBefore === 1
+          && payload.desync?.resend?.frameCommandCountBefore === 0
+          && payload.desync?.resend?.commandCountAfter === 0,
+        "browser multi-frame lockstep smoke did not prove multi-frame update progression plus original FrameData desync states", payload);
+    },
+  },
+  {
     name: "range-backed-startup-archives",
     file: "harness/startup_range_backed_archives_smoke.mjs",
     args: ["artifacts/real-assets"],
@@ -773,6 +826,7 @@ console.log(JSON.stringify({
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
     "two isolated Playwright browser contexts carrying LANAPI announce, join/options, and game-start messages through browser WebSocket binary frames into original LANAPI handlers",
     "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
+    "original LANAPI game-start state driven through three Network::update frames plus original FrameData FRAMEDATA_NOTREADY and FRAMEDATA_RESEND desync states",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
@@ -783,7 +837,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "replace the concrete UDP socket under Transport::doSend/doRecv with a browser WebSocket/WebRTC adapter or extend networking coverage to multi-frame deterministic sync/desync detection",
+    "replace the concrete UDP socket under Transport::doSend/doRecv with a browser WebSocket/WebRTC adapter or extend networking coverage to a two-client match-sync harness",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

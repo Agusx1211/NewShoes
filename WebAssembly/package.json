@@ -142,6 +142,7 @@
     "test:browser-lanapi-game-start-two-contexts": "npm run build:wasm && node harness/lanapi_game_start_two_contexts_smoke.mjs",
     "test:browser-lanapi-websocket-flow": "npm run build:wasm && node harness/lanapi_websocket_flow_smoke.mjs",
     "test:browser-lanapi-network-update": "npm run build:wasm && node harness/lanapi_network_update_smoke.mjs",
+    "test:browser-network-multiframe-lockstep": "npm run build:wasm && node harness/network_multiframe_lockstep_smoke.mjs",
     "test:gamenetwork-download-manager": "npm run build:wasm && node dist/gamenetwork-download-manager-smoke.cjs",
     "test:gameclient-utility": "npm run build:wasm && node dist/gameclient-utility-smoke.cjs",
     "test:win32-mouse": "npm run build:wasm && node dist/win32-mouse-smoke.cjs",

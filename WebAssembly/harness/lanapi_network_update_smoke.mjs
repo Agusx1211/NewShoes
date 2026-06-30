@@ -32,7 +32,7 @@ function assertNetworkUpdateProbe(probe) {
       && probe.originalFrameReadiness === "Network::AllCommandsReady -> ConnectionManager::allCommandsReady -> FrameDataManager::allCommandsReady"
       && probe.originalTiming === "Network::timeForNewFrame"
       && probe.originalRelay === "Network::RelayCommandsToCommandList"
-      && probe.nextRequired === "productionWebSocketWebRTCTransportOrMultiFrameDesyncHarness"
+      && probe.nextRequired === "productionWebSocketWebRTCTransportOrTwoClientMatchSync"
       && probe.lanApi?.hostGameReady === true
       && probe.lanApi?.onGameStartCalls === 1
       && probe.lanApi?.gameStartMessageDecoded === true

@@ -1187,13 +1187,19 @@ shares structure and follows behind.
       `processCommand`, `ConnectionManager::allCommandsReady`,
       `FrameDataManager::allCommandsReady`, `timeForNewFrame`, and
       `RelayCommandsToCommandList` far enough to prove the first
-      `frameDataReady` transition. Next networking slices: replace the harness
-      packet handoff with production WebSocket/WebRTC transport ownership and
-      extend the lockstep harness to multi-frame deterministic sync/desync
-      detection. The current WebSocket binary vertical now proves the
-      production encrypted `Transport::queueSend` wire image over browser
-      binary frames, but it still uses the focused accept RPC after delivery
-      because the production `UDP` socket seam has not yet been replaced.
+      `frameDataReady` transition. The multi-frame follow-on now drives three
+      `Network::update` calls after LAN game-start, resets `TheCommandList`
+      between calls to model command consumption, hard-asserts the first-frame
+      readiness transition, observes later calls preserving the in-game
+      connection state, and also proves the original
+      `FrameData::allCommandsReady` not-ready/resend states used at the desync
+      frontier. Next networking slices: replace the harness packet handoff
+      with production WebSocket/WebRTC transport ownership and extend coverage
+      from single-context frame readiness to a two-client match-sync harness.
+      The current WebSocket binary vertical now proves the production encrypted
+      `Transport::queueSend` wire image over browser binary frames, but it
+      still uses the focused accept RPC after delivery because the production
+      `UDP` socket seam has not yet been replaced.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
@@ -1213,6 +1219,10 @@ shares structure and follows behind.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
+      The current multi-frame update/desync smoke is still single-context: it
+      proves original `Network::update` progression, first-frame readiness,
+      and `FrameData` not-ready/resend states, not two browser clients staying
+      synchronized in a running match.
 - [ ] File transfer / map transfer path.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
       The current browser network relay proof now includes two isolated

@@ -4718,6 +4718,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:browser-lanapi-network-update`,
       `npm --prefix WebAssembly run test:browser-lanapi-game-start-two-contexts`,
       and `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Extend the LAN game-start network vertical to multi-frame update/desync
+      progression. The wasm bridge now exports
+      `cnc_port_probe_browser_network_multiframe_lockstep`, and
+      `network_multiframe_lockstep_smoke.mjs` starts from the original
+      `LANAPI::RequestGameStart` / `LANAPI::OnGameStart` setup, drives frames
+      1-3 through original `Network::update`, and resets `TheCommandList`
+      between frames to model command consumption. The smoke hard-asserts the
+      first-frame `frameDataReady` transition, observes later update calls
+      preserving in-game connection state, and exercises original
+      `FrameData::allCommandsReady` return states: `FRAMEDATA_NOTREADY` for a
+      missing command and `FRAMEDATA_RESEND` for an over-count frame carrying a
+      real `NetRunAheadCommandMsg`. This proves single-context multi-frame
+      update progression and the original desync frontier; it does not claim
+      production WebSocket/WebRTC transport ownership or a two-client match
+      staying synchronized.
 - [x] Carry original GameNetwork transport bytes through a browser WebSocket
       binary relay. `WebAssembly/harness/websocket-binary-relay-server.mjs`
       implements the minimal RFC 6455 handshake/frame path needed by the
