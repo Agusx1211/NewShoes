@@ -663,6 +663,12 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `Common/Audio/GameAudio.cpp`, and `Common/Audio/GameSounds.cpp` into the
       wasm Common core with the current audio, INI, Xfer, GameLogic, and
       object-lookup compatibility surface.
+- [x] Compile original `Common/Audio/urllaunch.cpp` into the wasm Common core
+      and route `LaunchURL` through a browser `window.open` bridge under
+      Emscripten. The Common-core smoke now covers `MakeEscapedURL` and the
+      non-browser failure path, while a Playwright harness probe verifies the
+      direct original `LaunchURL` call reaches `window.open` with URL, target,
+      and features preserved.
 - [x] Compile original INI leaf parser sources for currently covered Common
       data (`INIAudioEventInfo.cpp`, `INIMiscAudio.cpp`, and
       `INIMultiplayer.cpp`) after extending the temporary `Common/INI.h`

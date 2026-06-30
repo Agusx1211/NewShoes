@@ -1438,10 +1438,15 @@ add_library(zh_gameengine_common_core STATIC
   "${GAMEENGINE_COMMON_DIR}/Audio/GameSounds.cpp"
   "${GAMEENGINE_COMMON_DIR}/Audio/AudioRequest.cpp"
   "${GAMEENGINE_COMMON_DIR}/Audio/DynamicAudioEventInfo.cpp"
+  "${GAMEENGINE_COMMON_DIR}/Audio/urllaunch.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFile.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32LocalFileSystem.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFile.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/Win32Device/Common/Win32BIGFileSystem.cpp"
+)
+
+set_source_files_properties("${GAMEENGINE_COMMON_DIR}/Audio/urllaunch.cpp" PROPERTIES
+  COMPILE_OPTIONS "-include${WASM_SHIMS_DIR}/windows.h"
 )
 
 target_include_directories(zh_gameengine_common_core PUBLIC
@@ -3913,6 +3918,7 @@ add_executable(cnc-port
   src/wasm_gui_mouse_stream_probe.cpp
   src/wasm_keyboard_probe.cpp
   src/wasm_launchweb_probe.cpp
+  src/wasm_url_launch_probe.cpp
   src/wasm_mss_startup_probe.cpp
   src/wasm_mss_sample_lifecycle_probe.cpp
   src/wasm_mss_stream_lifecycle_probe.cpp

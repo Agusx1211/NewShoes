@@ -43,6 +43,7 @@
 #include "Common/string.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/TerrainTypes.h"
+#include "Common/URLLaunch.h"
 #include "Common/UnicodeString.h"
 #include "Common/Version.h"
 #include "Common/encrypt.h"
@@ -1269,6 +1270,24 @@ bool exercise_registry_defaults()
 		expect(GetRegistryMapPackVersion() == 65536, "registry map pack default failed");
 }
 
+bool exercise_url_launch()
+{
+	WCHAR local_url[] = L"license path/file #1.wma";
+	LPWSTR escaped_url = nullptr;
+	const HRESULT escaped_result = MakeEscapedURL(local_url, &escaped_url);
+	const bool escaped_ok = expect(SUCCEEDED(escaped_result), "MakeEscapedURL should succeed") &&
+		expect(escaped_url != nullptr, "MakeEscapedURL should allocate output") &&
+		expect(std::wcscmp(escaped_url, L"file://license%20path/file%20%231.wma") == 0,
+			"MakeEscapedURL escaped output mismatch");
+	delete[] escaped_url;
+
+	const HRESULT null_launch = LaunchURL(nullptr);
+	const HRESULT node_launch = LaunchURL(L"https://www.ea.com/games/command-and-conquer?source=common-core-smoke");
+	return escaped_ok &&
+		expect(FAILED(null_launch), "LaunchURL null URL should fail") &&
+		expect(FAILED(node_launch), "LaunchURL should fail outside a browser window");
+}
+
 bool exercise_version()
 {
 	SmokeGameText game_text;
@@ -1930,6 +1949,7 @@ int main()
 		exercise_data_chunk_output() &&
 		exercise_ram_file() &&
 		exercise_registry_defaults() &&
+		exercise_url_launch() &&
 		exercise_version() &&
 		exercise_audio_request() &&
 		exercise_cd_manager() &&
@@ -1961,7 +1981,7 @@ int main()
 		"FileSystem,RAMFile,StreamingArchiveFile,ArchiveFile,ArchiveFileSystem,"
 		"Win32BIGFile,Win32BIGFileSystem,"
 		"SubsystemInterface,CDManager,Registry,"
-		"Version,AudioRequest,Directory,StackDump,"
+		"URLLaunch,Version,AudioRequest,Directory,StackDump,"
 		"GameType,GameCommon,Trig,QuickTrig,List,DisabledTypes,KindOf,ObjectStatusTypes,"
 		"BitFlags,Snapshot,Geometry,Compression,DataChunkInput,DataChunkOutput,MiniLog,Dict,"
 		"DiscreteCircle,BezierSegment,BezFwdIterator,MemoryInit,Language,QuotedPrintable,"

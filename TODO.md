@@ -201,11 +201,11 @@ shares structure and follows behind.
       subset to full `Crate.ini` after real `ThingFactory` / `ThingTemplate`
       object-template parsing can consume the file's `Object` blocks without
       target-local parser stubs.
-- [ ] Decide the browser replacement contract for original Windows Media /
-      shell URL helpers before compiling `Common/Audio/simpleplayer.cpp` and
-      `Common/Audio/urllaunch.cpp`; their case-correct headers now resolve, but
-      the bodies still require `wmsdk.h`, `HRESULT`/wide Win32 shell types, and
-      browser-safe launch/playback behavior.
+- [ ] Decide the browser replacement contract for original Windows Media
+      playback before compiling `Common/Audio/simpleplayer.cpp`; the shell URL
+      helper now compiles and browser-smokes through `window.open`, but
+      `simpleplayer.cpp` still requires `wmsdk.h`, wave-output types, and
+      browser-safe media playback behavior.
 - [ ] Compile original `Common/Audio/GameSpeech.cpp` after the WPAudio
       attribute header/backend dependency is replaced with the browser audio
       contract.

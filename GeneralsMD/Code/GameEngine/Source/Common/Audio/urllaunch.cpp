@@ -19,7 +19,52 @@
 
 #include "Common/URLLaunch.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#include <string>
+#endif
+
 #define FILE_PREFIX     L"file://"
+
+#ifdef __EMSCRIPTEN__
+namespace {
+
+void AppendUTF8(std::string &output, unsigned int codepoint)
+{
+    if (codepoint <= 0x7f) {
+        output.push_back(static_cast<char>(codepoint));
+    } else if (codepoint <= 0x7ff) {
+        output.push_back(static_cast<char>(0xc0 | (codepoint >> 6)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    } else if (codepoint <= 0xffff) {
+        output.push_back(static_cast<char>(0xe0 | (codepoint >> 12)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    } else if (codepoint <= 0x10ffff) {
+        output.push_back(static_cast<char>(0xf0 | (codepoint >> 18)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3f)));
+        output.push_back(static_cast<char>(0x80 | (codepoint & 0x3f)));
+    } else {
+        AppendUTF8(output, 0xfffd);
+    }
+}
+
+std::string WideURLToUTF8(LPCWSTR url)
+{
+    std::string output;
+    if (url == NULL) {
+        return output;
+    }
+
+    for (const WCHAR *cursor = url; *cursor != L'\0'; ++cursor) {
+        AppendUTF8(output, static_cast<unsigned int>(*cursor));
+    }
+    return output;
+}
+
+} // namespace
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,7 +158,20 @@ HRESULT MakeEscapedURL( LPWSTR pszInURL, LPWSTR *ppszOutURL )
         //
         // Expand this character into an escape code and move on
         //
+#ifdef __EMSCRIPTEN__
+        WCHAR escaped[ 4 ];
+        int cchEscaped = swprintf( escaped, 4, L"%%%02x", static_cast< unsigned int >( *pchToEscape ) );
+        if( 3 != cchEscaped )
+        {
+            delete [] *ppszOutURL;
+            *ppszOutURL = NULL;
+            return( E_FAIL );
+        }
+        wmemcpy( pchNext, escaped, cchEscaped );
+        pchNext += cchEscaped;
+#else
         pchNext += swprintf( pchNext, L"%%%02x", *pchToEscape );
+#endif
 
         pszTemp = pchToEscape + 1;
     }
@@ -123,6 +181,7 @@ HRESULT MakeEscapedURL( LPWSTR pszInURL, LPWSTR *ppszOutURL )
 
 
 ///////////////////////////////////////////////////////////////////////////////
+#ifndef __EMSCRIPTEN__
 HRESULT GetShellOpenCommand( LPTSTR ptszShellOpenCommand, DWORD cbShellOpenCommand )
 {
     LONG lResult;
@@ -222,11 +281,48 @@ HRESULT GetShellOpenCommand( LPTSTR ptszShellOpenCommand, DWORD cbShellOpenComma
 
     return( HRESULT_FROM_WIN32( lResult ) );
 }
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////////
 HRESULT LaunchURL( LPCWSTR pszURL )
 {
+#ifdef __EMSCRIPTEN__
+    if( NULL == pszURL )
+    {
+        return( E_INVALIDARG );
+    }
+
+    std::string narrowURL = WideURLToUTF8( pszURL );
+    if( narrowURL.empty() )
+    {
+        return( E_INVALIDARG );
+    }
+
+    int launched = EM_ASM_INT({
+        var url = UTF8ToString($0);
+        if (typeof window === 'undefined' || typeof window.open !== 'function') {
+            return 0;
+        }
+        var record = {};
+        record.url = url;
+        record.target = '_blank';
+        record.features = 'noopener';
+        try {
+            var opened = window.open(url, '_blank', 'noopener');
+            record.opened = !!opened;
+            window.__cncURLLaunchLast = record;
+            return opened ? 1 : 0;
+        } catch (error) {
+            record.opened = false;
+            record.error = String(error && error.message ? error.message : error);
+            window.__cncURLLaunchLast = record;
+            return 0;
+        }
+    }, narrowURL.c_str());
+
+    return( launched ? S_OK : E_FAIL );
+#else
     HRESULT hr;
 
     //
@@ -335,4 +431,5 @@ HRESULT LaunchURL( LPCWSTR pszURL )
     }
 
     return( hr );
+#endif
 }

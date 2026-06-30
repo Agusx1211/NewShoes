@@ -92,6 +92,7 @@ using HRESULT = LONG;
 using WCHAR = wchar_t;
 using LPCSTR = const char *;
 using LPCWSTR = const WCHAR *;
+using LPWSTR = WCHAR *;
 using LPCVOID = const void *;
 using PBYTE = BYTE *;
 using LPBYTE = BYTE *;
@@ -130,6 +131,24 @@ struct GUID
 
 #ifndef E_FAIL
 #define E_FAIL static_cast<HRESULT>(0x80004005L)
+#endif
+
+#ifndef E_INVALIDARG
+#define E_INVALIDARG static_cast<HRESULT>(0x80070057L)
+#endif
+
+#ifndef E_OUTOFMEMORY
+#define E_OUTOFMEMORY static_cast<HRESULT>(0x8007000EL)
+#endif
+
+#ifndef E_UNEXPECTED
+#define E_UNEXPECTED static_cast<HRESULT>(0x8000FFFFL)
+#endif
+
+#ifndef HRESULT_FROM_WIN32
+#define HRESULT_FROM_WIN32(error) \
+	((error) <= 0 ? static_cast<HRESULT>(error) : \
+		static_cast<HRESULT>(((static_cast<unsigned long>(error) & 0xffffUL) | (7UL << 16) | 0x80000000UL)))
 #endif
 
 #ifndef SEVERITY_ERROR

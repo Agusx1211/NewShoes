@@ -6737,6 +6737,8 @@ async function loadWasmModule() {
         "cnc_port_probe_wwshade_cubemap_apply", "string", []),
       probeLaunchWebBrowser: module.cwrap(
         "cnc_port_probe_launch_web_browser", "string", []),
+      probeURLLaunch: module.cwrap(
+        "cnc_port_probe_url_launch", "string", []),
       initOriginalWndProcInput: module.cwrap(
         "cnc_port_init_original_wndproc_input",
         "string",
@@ -17166,6 +17168,33 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           launchWeb: { before, last },
+          state: snapshotState(),
+        };
+      }
+    case "urlLaunchProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; URLLaunch bridge cannot run" };
+        }
+        const before = window.__cncURLLaunchLast ?? null;
+        const probe = parseModuleState(wasmModule.probeURLLaunch());
+        const last = window.__cncURLLaunchLast ?? null;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "GeneralsMD original Common/Audio/urllaunch.cpp"
+          && probe?.bridge === "window.open"
+          && probe?.escaped === true
+          && probe?.nullLaunchFailed === true
+          && probe?.browserLaunch === true
+          && last?.url === probe.browserURL
+          && last?.target === "_blank"
+          && last?.features === "noopener"
+          && last?.opened === true;
+        return {
+          ok,
+          command,
+          probe,
+          urlLaunch: { before, last },
           state: snapshotState(),
         };
       }
