@@ -155,6 +155,8 @@ const steps = [
         'Original GameEngine lifetime smoke did not report RankInfo.cpp support');
       expect(payload.fullOriginalGameEngineCppLinked === true,
         'Original GameEngine lifetime smoke did not link full GameEngine.cpp');
+      expect(payload.globalTheGameEngineOwned === true && payload.globalTheGameEngineCleared === true,
+        'Original GameEngine lifetime smoke did not prove global TheGameEngine ownership/release');
       expect(payload.initAttempted === false,
         'Original GameEngine lifetime smoke should not enter GameEngine::init yet');
       expect(payload.gameResultsEndThreads === 1,
@@ -245,7 +247,7 @@ console.log(JSON.stringify({
   covered: [
     'browser wasm original GameEngine.cpp startup frontier',
     'original Win32GameEngine lifetime',
-    'original GameEngine.cpp constructor/destructor lifetime',
+    'original GameEngine.cpp constructor/destructor lifetime with global TheGameEngine ownership',
     'original MilesAudioManager openDevice',
     'original W3DGameWindowManager window and gadget ownership',
     'original WindowLayout .wnd parsing through W3DFunctionLexicon layout-init lookup',

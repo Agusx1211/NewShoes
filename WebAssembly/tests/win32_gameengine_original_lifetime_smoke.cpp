@@ -204,8 +204,9 @@ int main()
 	if (!expect(engine != nullptr, "original Win32GameEngine construction should succeed")) {
 		return 1;
 	}
-	if (!expect(TheGameEngine == nullptr,
-			"constructor smoke should not claim global TheGameEngine ownership")) {
+	TheGameEngine = engine;
+	if (!expect(TheGameEngine == engine,
+			"constructor smoke should claim owned global TheGameEngine before init")) {
 		return 1;
 	}
 	if (!expect(before_construct == 0x0040,
@@ -240,6 +241,7 @@ int main()
 	}
 
 	delete engine;
+	TheGameEngine = nullptr;
 	const UINT after_destruct = GetErrorMode();
 	SetErrorMode(previous_error_mode);
 
@@ -253,6 +255,10 @@ int main()
 	}
 	if (!expect(TheSubsystemList == nullptr,
 			"original GameEngine destructor should delete and clear TheSubsystemList")) {
+		return 1;
+	}
+	if (!expect(TheGameEngine == nullptr,
+			"constructor smoke should release global TheGameEngine after teardown")) {
 		return 1;
 	}
 
@@ -271,6 +277,8 @@ int main()
 		<< "\"constructed\":true,"
 		<< "\"destructed\":true,"
 		<< "\"fullOriginalGameEngineCppLinked\":true,"
+		<< "\"globalTheGameEngineOwned\":true,"
+		<< "\"globalTheGameEngineCleared\":true,"
 		<< "\"initAttempted\":false,"
 		<< "\"gameResultsEndThreads\":" << game_results_queue.endThreadsCount() << ","
 		<< "\"nextRequired\":\"original GameEngine.cpp init ownership before createAudioManager\"}"

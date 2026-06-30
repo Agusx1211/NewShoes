@@ -404,6 +404,11 @@ shares structure and follows behind.
       `GameEngine.cpp` startup frontier still stops at
       `createAudioManager` line 434 with no runtime archives mounted, so the
       focused C++ smokes cannot drift away from the actual browser boot state.
+      The original lifetime smoke now assigns the constructed original
+      `Win32GameEngine` to the global `TheGameEngine`, proves the owned pointer
+      before `init()`, tears down through the original destructor, and clears the
+      singleton afterward; `test:startup-vertical` gates that ownership/release
+      contract.
 - [ ] Advance beyond `createAudioManager` through a real W3D GUI/display
       ownership slice before marking `createFunctionLexicon` or
       `createModuleFactory` runtime-ready. The current focused
