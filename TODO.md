@@ -1175,9 +1175,16 @@ shares structure and follows behind.
       `Transport::doRecv`, and hands that populated transport to
       `ConnectionManager::doRelay` / `FrameDataManager::allCommandsReady`.
       `npm run verify:websocket-transport-frontier` now pins the wasm UDP
-      adapter behind the original concrete non-virtual `UDP` API. The
-      remaining production step is to replace the harness in-memory datagram
-      handoff with a live WebSocket/WebRTC endpoint shared by browser clients.
+      adapter behind the original concrete non-virtual `UDP` API. The live
+      endpoint follow-on now uses `EM_JS` hooks in `UDP::Write` / `UDP::Read`
+      (`Module.cncPortBrowserUdpSend` / `Module.cncPortBrowserUdpRecv`) plus
+      a JS-owned WebSocket endpoint queue in `bridge.js`; the new
+      `network_websocket_live_transport_smoke.mjs` proves two isolated browser
+      contexts can move the encrypted original Transport datagram through that
+      live endpoint into destination `Transport::doRecv`,
+      `ConnectionManager::doRelay`, and `FrameDataManager::allCommandsReady`.
+      The remaining production step is to extend this live endpoint into the
+      LANAPI/`Network::update` path and validate a two-client match-sync loop.
 - [ ] Lockstep frame sync (`FrameData`/`FrameDataManager`/`ConnectionManager`)
       works across browser clients. The LAN game-start vertical now reaches
       original `NetworkInterface::createNetwork`, `Network::init`,
@@ -1193,13 +1200,13 @@ shares structure and follows behind.
       readiness transition, observes later calls preserving the in-game
       connection state, and also proves the original
       `FrameData::allCommandsReady` not-ready/resend states used at the desync
-      frontier. Next networking slices: replace the harness datagram queue
-      handoff with a live shared WebSocket/WebRTC endpoint and extend coverage
-      from single-context frame readiness to a two-client match-sync harness.
+      frontier. Next networking slices: route LANAPI and `Network::update`
+      over the live shared WebSocket/WebRTC endpoint and extend coverage from
+      single-context frame readiness to a two-client match-sync harness.
       The current WebSocket binary vertical now proves the production encrypted
       `Transport::queueSend` / `Transport::doSend` and
       `Transport::doRecv` path over browser binary frames through the wasm UDP
-      adapter.
+      adapter and live JS endpoint.
 - [ ] LAN API (`LANAPI`) over a browser-discoverable transport / relay. The
       first announce/discovery slice now reaches `LANAPI::update`,
       `handleGameAnnounce`, `ParseGameOptionsString`, and `OnGameList`; the
@@ -1214,21 +1221,22 @@ shares structure and follows behind.
       and `lanapi_websocket_flow_smoke.mjs` now carries LAN announce,
       join/options, and game-start messages through browser `WebSocket` binary
       frames before handing them to the original LANAPI accept paths. LANAPI
-      still needs production WebSocket/WebRTC ownership under the actual
-      transport path instead of focused harness packet delivery.
+      still needs the live WebSocket/WebRTC endpoint wired through the actual
+      LANAPI/Network transport path instead of focused harness packet delivery.
 - [ ] GameSpy matchmaking/chat (`GameSpy*`) → modern relay or stub gracefully.
 - [ ] NAT/firewall helpers replaced by WebRTC ICE.
 - [ ] Cross-client **determinism** validated (no desync) over many frames.
       The current multi-frame update/desync smoke is still single-context: it
       proves original `Network::update` progression, first-frame readiness,
-      and `FrameData` not-ready/resend states, not two browser clients staying
-      synchronized in a running match.
+      and `FrameData` not-ready/resend states, not two browser clients using
+      the live endpoint to stay synchronized in a running match.
 - [ ] File transfer / map transfer path.
 - [ ] Harness: drive a 2-client match in two headless contexts; assert in sync.
-      The current browser network relay proof now includes two isolated
-      Playwright contexts and reaches original `ConnectionManager` frame-info
-      relay plus `FrameDataManager` readiness, but it is still a packet/frame
-      readiness proof rather than a match-sync test.
+      The current browser network relay proofs now include two isolated
+      Playwright contexts, a live WebSocket-backed UDP endpoint for original
+      `Transport::doSend`/`doRecv`, and original `ConnectionManager`
+      frame-info relay plus `FrameDataManager` readiness, but they are still
+      packet/frame readiness proofs rather than a match-sync test.
 
 ---
 

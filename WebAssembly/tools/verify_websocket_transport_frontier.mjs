@@ -7,9 +7,11 @@
 //   1. Original `Transport` still owns the original concrete `UDP` object and
 //      still calls `UDP::Write` / `UDP::Read` from `doSend` / `doRecv`.
 //   2. The wasm build retargets `UDP` behind that original API to browser-owned
-//      datagram queues.
-//   3. The WebSocket smoke carries the encrypted wire image between two browser
-//      contexts, then proves destination bytes enter `Transport::doRecv` before
+//      datagram queues plus optional JS send/receive callbacks.
+//   3. The WebSocket smokes carry encrypted wire bytes between two browser
+//      contexts through both the deterministic fallback queue proof and the
+//      live `Module.cncPortBrowserUdpSend/Recv` endpoint, then prove
+//      destination bytes enter `Transport::doRecv` before
 //      `ConnectionManager::doRelay` reaches `FrameDataManager`.
 //
 import { readFileSync } from "node:fs";
@@ -27,6 +29,7 @@ const SOURCES = {
   wasmProbe: "WebAssembly/src/wasm_gamenetwork_probe.cpp",
   bridge: "WebAssembly/harness/bridge.js",
   websocketSmoke: "WebAssembly/harness/network_websocket_transport_smoke.mjs",
+  websocketLiveSmoke: "WebAssembly/harness/network_websocket_live_transport_smoke.mjs",
   packageJson: "WebAssembly/package.json",
   cmake: "WebAssembly/CMakeLists.txt",
 };
@@ -199,6 +202,20 @@ assertPresent(
 assertPresent(
   errors,
   facts.udpBackend,
+  "sendJsLine",
+  lineNumber(udpCpp.lines, (line) => /browser_udp_adapter_send_js/.test(line)),
+  "browser UDP JS send hook",
+);
+assertPresent(
+  errors,
+  facts.udpBackend,
+  "recvJsLine",
+  lineNumber(udpCpp.lines, (line) => /browser_udp_adapter_recv_js/.test(line)),
+  "browser UDP JS receive hook",
+);
+assertPresent(
+  errors,
+  facts.udpBackend,
   "pushIncomingExportLine",
   lineNumber(udpCpp.lines, (line) => /cnc_port_browser_udp_adapter_push_incoming/.test(line)),
   "browser UDP incoming push hook",
@@ -211,15 +228,21 @@ assertPresent(
   "browser UDP outgoing pop hook",
 );
 assertRangeContains(errors, facts.udpBackend, udpCpp, udpWriteRange, "writePushOutgoingLine", /g_browser_udp_adapter\.outgoing/, "UDP::Write pushes outgoing adapter datagram");
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpWriteRange, "writeJsFirstLine", /browser_udp_adapter_send_js\s*\(/, "UDP::Write tries JS send hook before fallback queue");
 assertRangeContains(errors, facts.udpBackend, udpCpp, udpWriteRange, "writeCountLine", /g_browser_udp_adapter\.writes/, "UDP::Write records adapter write");
 assertRangeContains(errors, facts.udpBackend, udpCpp, udpReadRange, "readPopIncomingLine", /g_browser_udp_adapter\.incoming/, "UDP::Read pops incoming adapter datagram");
+assertRangeContains(errors, facts.udpBackend, udpCpp, udpReadRange, "readJsFirstLine", /browser_udp_adapter_recv_js\s*\(/, "UDP::Read tries JS receive hook before fallback queue");
 assertRangeContains(errors, facts.udpBackend, udpCpp, udpReadRange, "readSockaddrLine", /from->sin_addr\.s_addr\s*=\s*htonl\s*\(\s*ip\s*\)/, "UDP::Read fills sockaddr source");
 
 const wasm = sourceEntries.wasmProbe;
 const wireBuildLine = lineNumber(wasm.lines, (line) => /cnc_port_build_browser_network_transport_wire_packet/.test(line));
 const wireAcceptLine = lineNumber(wasm.lines, (line) => /cnc_port_accept_browser_network_transport_wire_packet/.test(line));
+const liveSendLine = lineNumber(wasm.lines, (line) => /cnc_port_probe_browser_network_transport_live_send/.test(line));
+const liveReceiveLine = lineNumber(wasm.lines, (line) => /cnc_port_probe_browser_network_transport_live_receive/.test(line));
 const wireBuildRange = functionBodyLineRange(wasm.lines, wireBuildLine);
 const wireAcceptRange = functionBodyLineRange(wasm.lines, wireAcceptLine);
+const liveSendRange = functionBodyLineRange(wasm.lines, liveSendLine);
+const liveReceiveRange = functionBodyLineRange(wasm.lines, liveReceiveLine);
 assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "clearBeforeSendLine", /cnc_port_browser_udp_adapter_clear\s*\(/, "wire build clears browser UDP adapter");
 assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "transportInitLine", /transport\.init\s*\(/, "wire build initializes original Transport");
 assertRangeContains(errors, facts.wasmProbe, wasm, wireBuildRange, "queueSendLine", /transport\.queueSend\s*\(/, "wire build queues through original Transport");
@@ -232,6 +255,13 @@ assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "doRecvLine"
 assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "managerTransportLine", /manager->m_transport\s*=\s*transport/, "wire accept gives doRecv transport to ConnectionManager");
 assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "doRelayLine", /manager->doRelay\s*\(/, "wire accept drives original ConnectionManager::doRelay");
 assertRangeContains(errors, facts.wasmProbe, wasm, wireAcceptRange, "acceptProductionTrueLine", /\\"productionTransport\\":true/, "wire accept reports production transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveSendRange, "liveSendInitLine", /transport\.init\s*\(/, "live send initializes original Transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveSendRange, "liveSendDoSendLine", /transport\.doSend\s*\(/, "live send drives original Transport::doSend");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveSendRange, "liveSendJsReportLine", /Module\.cncPortBrowserUdpSend/, "live send reports JS UDP send ownership");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveReceiveRange, "liveReceiveInitLine", /transport->init\s*\(/, "live receive initializes original Transport");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveReceiveRange, "liveReceiveDoRecvLine", /transport->doRecv\s*\(/, "live receive drives original Transport::doRecv");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveReceiveRange, "liveReceiveJsReportLine", /Module\.cncPortBrowserUdpRecv/, "live receive reports JS UDP receive ownership");
+assertRangeContains(errors, facts.wasmProbe, wasm, liveReceiveRange, "liveReceiveDoRelayLine", /manager->doRelay\s*\(/, "live receive drives original ConnectionManager::doRelay");
 
 const bridge = sourceEntries.bridge;
 assertPresent(
@@ -247,6 +277,41 @@ assertPresent(
   "bridgeAcceptCwrapLine",
   lineNumber(bridge.lines, (line) => /cnc_port_accept_browser_network_transport_wire_packet/.test(line)),
   "bridge wire accept cwrap",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "bridgeUdpSendLine",
+  lineNumber(bridge.lines, (line) => /function\s+cncPortBrowserUdpSend/.test(line)),
+  "bridge live UDP send callback",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "bridgeUdpRecvLine",
+  lineNumber(bridge.lines, (line) => /function\s+cncPortBrowserUdpRecv/.test(line)),
+  "bridge live UDP receive callback",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "bridgeUdpConnectRpcLine",
+  lineNumber(bridge.lines, (line) => /browserUdpEndpointConnect/.test(line)),
+  "bridge live UDP endpoint connect RPC",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "bridgeLiveSendCwrapLine",
+  lineNumber(bridge.lines, (line) => /cnc_port_probe_browser_network_transport_live_send/.test(line)),
+  "bridge live send cwrap",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "bridgeLiveReceiveCwrapLine",
+  lineNumber(bridge.lines, (line) => /cnc_port_probe_browser_network_transport_live_receive/.test(line)),
+  "bridge live receive cwrap",
 );
 
 const smoke = sourceEntries.websocketSmoke;
@@ -285,12 +350,63 @@ assertAbsent(
   /packetAccept/.test(smoke.text),
   "WebSocket smoke focused packetAccept dependency",
 );
+
+const liveSmoke = sourceEntries.websocketLiveSmoke;
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokePathLine",
+  lineNumber(liveSmoke.lines, (line) => /browser-network-websocket-live-transport/.test(line)),
+  "live WebSocket smoke path",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokeConnectRpcLine",
+  lineNumber(liveSmoke.lines, (line) => /browserUdpEndpointConnect/.test(line)),
+  "live WebSocket smoke endpoint connect RPC",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokeSendRpcLine",
+  lineNumber(liveSmoke.lines, (line) => /browserNetworkTransportLiveSendProbe/.test(line)),
+  "live WebSocket smoke send RPC",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokeReceiveRpcLine",
+  lineNumber(liveSmoke.lines, (line) => /browserNetworkTransportLiveReceiveProbe/.test(line)),
+  "live WebSocket smoke receive RPC",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokeJsSendLine",
+  lineNumber(liveSmoke.lines, (line) => /Module\.cncPortBrowserUdpSend/.test(line)),
+  "live WebSocket smoke JS send assertion",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "liveSmokeJsRecvLine",
+  lineNumber(liveSmoke.lines, (line) => /Module\.cncPortBrowserUdpRecv/.test(line)),
+  "live WebSocket smoke JS receive assertion",
+);
 assertPresent(
   errors,
   facts.browserHarness,
   "packageScriptLine",
   lineNumber(sourceEntries.packageJson.lines, (line) => /"verify:websocket-transport-frontier"\s*:/.test(line)),
   "package verify:websocket-transport-frontier script",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "packageLiveSmokeLine",
+  lineNumber(sourceEntries.packageJson.lines, (line) => /"test:browser-network-websocket-live-transport"\s*:/.test(line)),
+  "package live WebSocket transport script",
 );
 assertPresent(
   errors,
@@ -306,14 +422,28 @@ assertPresent(
   lineNumber(sourceEntries.cmake.lines, (line) => /_cnc_port_accept_browser_network_transport_wire_packet/.test(line)),
   "CMake wire accept export",
 );
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "cmakeLiveSendExportLine",
+  lineNumber(sourceEntries.cmake.lines, (line) => /_cnc_port_probe_browser_network_transport_live_send/.test(line)),
+  "CMake live send export",
+);
+assertPresent(
+  errors,
+  facts.browserHarness,
+  "cmakeLiveReceiveExportLine",
+  lineNumber(sourceEntries.cmake.lines, (line) => /_cnc_port_probe_browser_network_transport_live_receive/.test(line)),
+  "CMake live receive export",
+);
 
 const report = {
   ok: errors.length === 0,
   source: "websocket-transport-frontier",
   verified:
-    "Original Transport doSend/doRecv now move encrypted wire bytes through a wasm browser UDP adapter, with WebSocket delivery into ConnectionManager/FrameData readiness.",
+    "Original Transport doSend/doRecv now move encrypted wire bytes through the wasm UDP adapter and live JS WebSocket endpoint into ConnectionManager/FrameData readiness.",
   open:
-    "Replace the harness datagram queue handoff with a live WebSocket/WebRTC endpoint shared by two browser game clients.",
+    "Extend the live WebSocket/WebRTC endpoint from focused Transport probes into LANAPI/Network::update two-client match-sync coverage.",
   facts,
   errors,
 };

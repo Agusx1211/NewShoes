@@ -4784,6 +4784,27 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run verify:websocket-transport-frontier`,
       `npm --prefix WebAssembly run test:browser-network-websocket-transport`,
       and `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Promote the browser UDP adapter from harness queue handoff to a live JS
+      WebSocket endpoint. The wasm `UDP::Write` path now first calls
+      `Module.cncPortBrowserUdpSend` through the same `EM_JS` bridge pattern
+      used by the renderer/audio/video shims, and `UDP::Read` first calls
+      `Module.cncPortBrowserUdpRecv`; both still fall back to the deterministic
+      C++ datagram queues when the live endpoint is disabled. `bridge.js` owns
+      the per-page WebSocket endpoint, sends encrypted datagrams synchronously
+      from `Transport::doSend`, queues incoming browser WebSocket frames, and
+      supplies them to `Transport::doRecv`. The new
+      `network_websocket_live_transport_smoke.mjs` boots two isolated
+      Playwright contexts, connects both to the local binary WebSocket relay,
+      drives source `Transport::queueSend` / `Transport::doSend`, observes the
+      JS endpoint send one 29-byte encrypted datagram, waits for destination JS
+      to queue that frame, then drives destination `Transport::doRecv` and
+      `ConnectionManager::doRelay` into `FrameDataManager::allCommandsReady`.
+      The older fallback-queue WebSocket transport smoke remains green. The
+      remaining networking gap is extending this live endpoint into the
+      LANAPI/`Network::update` two-client match-sync path. Verified with
+      `npm --prefix WebAssembly run test:browser-network-websocket-live-transport`,
+      `npm --prefix WebAssembly run verify:websocket-transport-frontier`, and
+      `npm --prefix WebAssembly run test:browser-network-websocket-transport`.
 - [x] Carry the LANAPI discovery/join/game-start flow through browser
       WebSocket binary frames. `lanapi_websocket_flow_smoke.mjs` boots two
       isolated Playwright contexts, builds the existing original LAN announce,

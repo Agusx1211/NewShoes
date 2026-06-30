@@ -415,6 +415,66 @@ const steps = [
     },
   },
   {
+    name: "browser-network-websocket-live-transport",
+    file: "harness/network_websocket_live_transport_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "browser live WebSocket transport smoke did not report ok", payload);
+      expect(payload.path === "browser-network-websocket-live-transport"
+          && payload.browserContexts === 2
+          && payload.isolatedContexts === true
+          && payload.relay?.browserTransport === "browser WebSocket live UDP endpoint"
+          && payload.relay?.serverTransport === "Node WebSocket relay server"
+          && payload.relay?.productionTransport === true
+          && payload.relay?.productionTransportWire === true
+          && payload.relay?.binaryFrames === 1
+          && payload.relay?.hexHandoff === false
+          && payload.source?.client === "live-websocket-source"
+          && payload.source?.wasm === "loaded"
+          && payload.source?.originalSerializer === "Transport::queueSend"
+          && payload.source?.originalWireSend === "Transport::doSend -> Module.cncPortBrowserUdpSend"
+          && payload.source?.transport?.initialized === true
+          && payload.source?.transport?.queued === true
+          && payload.source?.transport?.doSendDriven === true
+          && payload.source?.transport?.outBufferCleared === true
+          && payload.source?.transport?.adapterWrites === 1
+          && payload.source?.transport?.fallbackOutgoing === 0
+          && payload.source?.endpoint?.sent === 1
+          && payload.source?.endpoint?.sentBytes === payload.source?.packet?.bytes + 6
+          && payload.source?.endpoint?.lastSent?.ip === 2130706434
+          && payload.source?.endpoint?.lastSent?.port === 8088
+          && payload.destination?.client === "live-websocket-destination"
+          && payload.destination?.wasm === "loaded"
+          && payload.destination?.originalWireReceive === "Module.cncPortBrowserUdpRecv -> Transport::doRecv decryptBuf/isGeneralsPacket"
+          && payload.destination?.originalTransport === "Transport::m_inBuffer"
+          && payload.destination?.originalRelay === "ConnectionManager::doRelay"
+          && payload.destination?.originalFrameData === "NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady"
+          && payload.destination?.endpointBeforeRecv?.received === 1
+          && payload.destination?.endpoint?.received === 1
+          && payload.destination?.endpoint?.delivered === 1
+          && payload.destination?.endpoint?.queuedIncoming === 0
+          && payload.destination?.endpoint?.receivedBytes === payload.source?.endpoint?.sentBytes
+          && payload.destination?.endpoint?.deliveredBytes === payload.source?.endpoint?.sentBytes
+          && payload.destination?.packet?.bytes === payload.source?.packet?.bytes
+          && payload.destination?.packet?.hex === payload.source?.packet?.hex
+          && payload.destination?.transport?.initialized === true
+          && payload.destination?.transport?.doRecvDriven === true
+          && payload.destination?.transport?.buffered === true
+          && payload.destination?.transport?.bufferedSlot === 0
+          && payload.destination?.transport?.cleared === true
+          && payload.destination?.transport?.adapterReads === 1
+          && payload.destination?.transport?.fallbackIncoming === 0
+          && payload.destination?.transport?.crcValid === true
+          && payload.destination?.connectionManager?.doRelayDriven === true
+          && payload.destination?.frameData?.ready === true
+          && payload.destination?.frameData?.managerReady === true
+          && payload.destination?.frameData?.storedCommandType === "NETCOMMANDTYPE_RUNAHEAD"
+          && payload.relayStats?.receivedFrames === 1
+          && payload.relayStats?.forwardedFrames === 1
+          && payload.relayStats?.receivedBytes === payload.source?.endpoint?.sentBytes,
+        "browser live WebSocket transport smoke did not use the JS endpoint to pump original Transport doSend/doRecv bytes", payload);
+    },
+  },
+  {
     name: "browser-lanapi-announce-two-contexts",
     file: "harness/lanapi_announce_two_contexts_smoke.mjs",
     validate(payload) {
@@ -835,6 +895,7 @@ console.log(JSON.stringify({
     "browser relay-shaped networking path carrying original GameNetwork NetPacket bytes into Transport::m_inBuffer, ConnectionManager::doRelay, and FrameDataManager readiness",
     "two isolated Playwright browser contexts carrying original GameNetwork transport bytes from one wasm instance into another",
     "two isolated Playwright browser contexts carrying encrypted original Transport::queueSend/doSend wire bytes through a browser WebSocket binary relay into Transport::doRecv, ConnectionManager::doRelay, and frame-data readiness",
+    "two isolated Playwright browser contexts using Module.cncPortBrowserUdpSend/Recv as a live WebSocket endpoint for original Transport::doSend/doRecv datagrams",
     "two isolated Playwright browser contexts carrying a LANMessage MSG_GAME_ANNOUNCE into original LANAPI::update, handleGameAnnounce, ParseGameOptionsString, and OnGameList",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameJoin, handleRequestJoin, handleJoinAccept, and handleGameOptions through queued Transport bytes",
     "two isolated Playwright browser contexts carrying original LANAPI RequestGameStart and handleGameStart into OnGameStart, Network::init/initTransport/parseUserList, and MSG_NEW_GAME setup",
@@ -851,7 +912,7 @@ console.log(JSON.stringify({
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
-    "replace the harness datagram queue with a live shared WebSocket/WebRTC endpoint or extend networking coverage to a two-client match-sync harness",
+    "extend the live WebSocket UDP endpoint from focused Transport probes into LANAPI/Network::update two-client match-sync coverage",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
   ],
   steps: results.map((result) => result.name),

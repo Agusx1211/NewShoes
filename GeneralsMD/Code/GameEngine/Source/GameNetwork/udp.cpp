@@ -39,6 +39,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <cstring>
+#include <emscripten/emscripten.h>
 #endif
 
 #ifdef _INTERNAL
@@ -157,6 +158,63 @@ struct BrowserUdpAdapterState
 };
 
 BrowserUdpAdapterState g_browser_udp_adapter = {};
+
+EM_JS(Int, browser_udp_adapter_send_js, (
+	const UnsignedByte *msg,
+	Int length,
+	UnsignedInt ip,
+	UnsignedShort port), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpSend : null;
+	if (typeof bridge !== "function" || !msg || length <= 0) {
+		return 0;
+	}
+	try {
+		const bytes = HEAPU8.slice(msg, msg + length);
+		const written = bridge({
+			bytes,
+			ip: ip >>> 0,
+			port: port & 0xffff,
+		});
+		return written | 0;
+	} catch (error) {
+		console.error("cncPortBrowserUdpSend failed", error);
+		return -1;
+	}
+});
+
+EM_JS(Int, browser_udp_adapter_recv_js, (
+	UnsignedByte *msg,
+	Int capacity,
+	UnsignedInt *ip,
+	UnsignedShort *port), {
+	const bridge = typeof Module !== "undefined" ? Module.cncPortBrowserUdpRecv : null;
+	if (typeof bridge !== "function" || !msg || capacity <= 0) {
+		return 0;
+	}
+	try {
+		const datagram = bridge({ capacity });
+		if (!datagram || !datagram.bytes) {
+			return 0;
+		}
+		const bytes = datagram.bytes instanceof Uint8Array
+			? datagram.bytes
+			: new Uint8Array(datagram.bytes);
+		if (bytes.length > capacity) {
+			return -14;
+		}
+		HEAPU8.set(bytes, msg);
+		if (ip) {
+			HEAPU32[ip >> 2] = datagram.ip >>> 0;
+		}
+		if (port) {
+			HEAPU16[port >> 1] = datagram.port & 0xffff;
+		}
+		return bytes.length | 0;
+	} catch (error) {
+		console.error("cncPortBrowserUdpRecv failed", error);
+		return -1;
+	}
+});
 
 void clear_browser_udp_queue(BrowserUdpQueue &queue)
 {
@@ -348,6 +406,21 @@ Int UDP::Write(const unsigned char *msg, UnsignedInt len, UnsignedInt IP, Unsign
 		return ADDRNOTAVAIL;
 	}
 
+	const Int browser_written = browser_udp_adapter_send_js(
+		reinterpret_cast<const UnsignedByte *>(msg),
+		static_cast<Int>(len),
+		IP,
+		port);
+	if (browser_written > 0) {
+		++g_browser_udp_adapter.writes;
+		m_lastError = OK;
+		return browser_written;
+	}
+	if (browser_written < 0) {
+		m_lastError = browser_written;
+		return browser_written;
+	}
+
 	const Int written = push_browser_udp_queue(
 		g_browser_udp_adapter.outgoing,
 		reinterpret_cast<const UnsignedByte *>(msg),
@@ -367,6 +440,27 @@ Int UDP::Read(unsigned char *msg, UnsignedInt len, sockaddr_in *from)
 {
 	UnsignedInt ip = 0;
 	UnsignedShort port = 0;
+	const Int browser_read = browser_udp_adapter_recv_js(
+		reinterpret_cast<UnsignedByte *>(msg),
+		static_cast<Int>(len),
+		&ip,
+		&port);
+	if (browser_read > 0) {
+		if (from != nullptr) {
+			std::memset(from, 0, sizeof(sockaddr_in));
+			from->sin_family = AF_INET;
+			from->sin_addr.s_addr = htonl(ip);
+			from->sin_port = htons(port);
+		}
+		++g_browser_udp_adapter.reads;
+		m_lastError = OK;
+		return browser_read;
+	}
+	if (browser_read < 0) {
+		m_lastError = browser_read;
+		return browser_read;
+	}
+
 	const Int read = pop_browser_udp_queue(
 		g_browser_udp_adapter.incoming,
 		reinterpret_cast<UnsignedByte *>(msg),

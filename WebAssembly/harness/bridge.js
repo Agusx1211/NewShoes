@@ -399,6 +399,32 @@ const browserNetworkTransportRuntime = {
   frameDataReady: false,
 };
 
+const browserUdpEndpointRuntime = {
+  source: "GameNetwork browser live UDP endpoint",
+  browserTransport: "browser WebSocket live UDP endpoint",
+  productionTransport: true,
+  relayTransport: true,
+  enabled: false,
+  connected: false,
+  client: null,
+  url: null,
+  socket: null,
+  incoming: [],
+  sent: 0,
+  received: 0,
+  delivered: 0,
+  sentBytes: 0,
+  receivedBytes: 0,
+  deliveredBytes: 0,
+  lastSent: null,
+  lastReceived: null,
+  lastDelivered: null,
+  eventLog: [],
+  lastError: null,
+  defaultIncomingIp: 0x7f000001,
+  defaultIncomingPort: 8088,
+};
+
 const browserLanApiRuntime = {
   source: "GameNetwork browser LANAPI announce discovery proof",
   browserTransport: "harness relay queue",
@@ -820,6 +846,183 @@ function summarizeBrowserNetworkTransportRuntime() {
     connectionManagerDriven: browserNetworkTransportRuntime.connectionManagerDriven,
     frameDataReady: browserNetworkTransportRuntime.frameDataReady,
   };
+}
+
+function resetBrowserUdpEndpointRuntime({ enabled = false } = {}) {
+  if (browserUdpEndpointRuntime.socket) {
+    try {
+      browserUdpEndpointRuntime.socket.close();
+    } catch {
+      // Ignore close errors while resetting a test-owned endpoint.
+    }
+  }
+  browserUdpEndpointRuntime.enabled = enabled;
+  browserUdpEndpointRuntime.connected = false;
+  browserUdpEndpointRuntime.client = null;
+  browserUdpEndpointRuntime.url = null;
+  browserUdpEndpointRuntime.socket = null;
+  browserUdpEndpointRuntime.incoming = [];
+  browserUdpEndpointRuntime.sent = 0;
+  browserUdpEndpointRuntime.received = 0;
+  browserUdpEndpointRuntime.delivered = 0;
+  browserUdpEndpointRuntime.sentBytes = 0;
+  browserUdpEndpointRuntime.receivedBytes = 0;
+  browserUdpEndpointRuntime.deliveredBytes = 0;
+  browserUdpEndpointRuntime.lastSent = null;
+  browserUdpEndpointRuntime.lastReceived = null;
+  browserUdpEndpointRuntime.lastDelivered = null;
+  browserUdpEndpointRuntime.eventLog = [];
+  browserUdpEndpointRuntime.lastError = null;
+}
+
+function summarizeBrowserUdpEndpointRuntime() {
+  return {
+    source: browserUdpEndpointRuntime.source,
+    ready: browserUdpEndpointRuntime.enabled
+      && browserUdpEndpointRuntime.connected
+      && browserUdpEndpointRuntime.delivered > 0,
+    browserTransport: browserUdpEndpointRuntime.browserTransport,
+    productionTransport: browserUdpEndpointRuntime.productionTransport,
+    relayTransport: browserUdpEndpointRuntime.relayTransport,
+    enabled: browserUdpEndpointRuntime.enabled,
+    connected: browserUdpEndpointRuntime.connected,
+    client: browserUdpEndpointRuntime.client,
+    url: browserUdpEndpointRuntime.url,
+    queuedIncoming: browserUdpEndpointRuntime.incoming.length,
+    sent: browserUdpEndpointRuntime.sent,
+    received: browserUdpEndpointRuntime.received,
+    delivered: browserUdpEndpointRuntime.delivered,
+    sentBytes: browserUdpEndpointRuntime.sentBytes,
+    receivedBytes: browserUdpEndpointRuntime.receivedBytes,
+    deliveredBytes: browserUdpEndpointRuntime.deliveredBytes,
+    lastSent: browserUdpEndpointRuntime.lastSent,
+    lastReceived: browserUdpEndpointRuntime.lastReceived,
+    lastDelivered: browserUdpEndpointRuntime.lastDelivered,
+    eventLog: [...browserUdpEndpointRuntime.eventLog],
+    lastError: browserUdpEndpointRuntime.lastError,
+  };
+}
+
+function browserUdpWireSummary(bytes, ip, port) {
+  return {
+    bytes: bytes.byteLength,
+    hexPrefix: hexPrefix(bytes),
+    ip,
+    port,
+  };
+}
+
+function cncPortBrowserUdpSend({ bytes, ip, port }) {
+  if (!browserUdpEndpointRuntime.enabled) {
+    return 0;
+  }
+  const socket = browserUdpEndpointRuntime.socket;
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    browserUdpEndpointRuntime.lastError = "browser UDP WebSocket endpoint is not open";
+    return -7;
+  }
+  const datagram = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  socket.send(datagram);
+  browserUdpEndpointRuntime.sent += 1;
+  browserUdpEndpointRuntime.sentBytes += datagram.byteLength;
+  browserUdpEndpointRuntime.lastSent = browserUdpWireSummary(datagram, ip >>> 0, port & 0xffff);
+  browserUdpEndpointRuntime.eventLog.push({
+    phase: "udp-write-websocket-send",
+    client: browserUdpEndpointRuntime.client,
+    ...browserUdpEndpointRuntime.lastSent,
+  });
+  browserUdpEndpointRuntime.lastError = null;
+  return datagram.byteLength;
+}
+
+function cncPortBrowserUdpRecv({ capacity }) {
+  if (!browserUdpEndpointRuntime.enabled) {
+    return null;
+  }
+  const datagram = browserUdpEndpointRuntime.incoming.shift();
+  if (!datagram) {
+    return null;
+  }
+  if (datagram.bytes.byteLength > capacity) {
+    browserUdpEndpointRuntime.lastError = "browser UDP incoming datagram exceeds wasm receive capacity";
+    return null;
+  }
+  browserUdpEndpointRuntime.delivered += 1;
+  browserUdpEndpointRuntime.deliveredBytes += datagram.bytes.byteLength;
+  browserUdpEndpointRuntime.lastDelivered = browserUdpWireSummary(datagram.bytes, datagram.ip, datagram.port);
+  browserUdpEndpointRuntime.eventLog.push({
+    phase: "udp-read-websocket-deliver",
+    client: browserUdpEndpointRuntime.client,
+    ...browserUdpEndpointRuntime.lastDelivered,
+  });
+  browserUdpEndpointRuntime.lastError = null;
+  return datagram;
+}
+
+function connectBrowserUdpEndpoint({ webSocketUrl, client, incomingIp, incomingPort }) {
+  if (typeof webSocketUrl !== "string" || webSocketUrl.length === 0) {
+    throw new Error("browser UDP endpoint requires a WebSocket URL");
+  }
+  resetBrowserUdpEndpointRuntime({ enabled: true });
+  browserUdpEndpointRuntime.client = client ?? "browser-udp-client";
+  browserUdpEndpointRuntime.url = webSocketUrl;
+  browserUdpEndpointRuntime.defaultIncomingIp = Number.isFinite(Number(incomingIp))
+    ? Number(incomingIp) >>> 0
+    : 0x7f000001;
+  browserUdpEndpointRuntime.defaultIncomingPort = Number.isFinite(Number(incomingPort))
+    ? Number(incomingPort) & 0xffff
+    : 8088;
+
+  return new Promise((resolveConnect, rejectConnect) => {
+    const socket = new WebSocket(webSocketUrl);
+    const timeout = setTimeout(() => {
+      browserUdpEndpointRuntime.lastError = "timed out opening browser UDP WebSocket endpoint";
+      socket.close();
+      rejectConnect(new Error(browserUdpEndpointRuntime.lastError));
+    }, 5000);
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => {
+      clearTimeout(timeout);
+      browserUdpEndpointRuntime.socket = socket;
+      browserUdpEndpointRuntime.connected = true;
+      browserUdpEndpointRuntime.eventLog.push({
+        phase: "udp-websocket-open",
+        client: browserUdpEndpointRuntime.client,
+        url: webSocketUrl,
+      });
+      resolveConnect(summarizeBrowserUdpEndpointRuntime());
+    };
+    socket.onmessage = (event) => {
+      const bytes = new Uint8Array(event.data);
+      const datagram = {
+        bytes,
+        ip: browserUdpEndpointRuntime.defaultIncomingIp,
+        port: browserUdpEndpointRuntime.defaultIncomingPort,
+      };
+      browserUdpEndpointRuntime.incoming.push(datagram);
+      browserUdpEndpointRuntime.received += 1;
+      browserUdpEndpointRuntime.receivedBytes += bytes.byteLength;
+      browserUdpEndpointRuntime.lastReceived = browserUdpWireSummary(datagram.bytes, datagram.ip, datagram.port);
+      browserUdpEndpointRuntime.eventLog.push({
+        phase: "udp-websocket-receive",
+        client: browserUdpEndpointRuntime.client,
+        ...browserUdpEndpointRuntime.lastReceived,
+      });
+      browserUdpEndpointRuntime.lastError = null;
+    };
+    socket.onerror = () => {
+      browserUdpEndpointRuntime.lastError = "browser UDP WebSocket endpoint error";
+      clearTimeout(timeout);
+      rejectConnect(new Error(browserUdpEndpointRuntime.lastError));
+    };
+    socket.onclose = () => {
+      browserUdpEndpointRuntime.connected = false;
+      browserUdpEndpointRuntime.eventLog.push({
+        phase: "udp-websocket-close",
+        client: browserUdpEndpointRuntime.client,
+      });
+    };
+  });
 }
 
 function resetBrowserLanApiRuntime() {
@@ -6235,6 +6438,8 @@ async function loadWasmModule() {
       cncPortMssSampleStop,
       cncPortMssSampleEnd,
       cncPortMssSampleRelease,
+      cncPortBrowserUdpSend,
+      cncPortBrowserUdpRecv,
       cncGdiMeasure,
       cncGdiRasterizeGlyph,
     });
@@ -6292,6 +6497,16 @@ async function loadWasmModule() {
         "cnc_port_accept_browser_network_transport_wire_packet",
         "string",
         ["string"],
+      ),
+      probeBrowserNetworkTransportLiveSend: module.cwrap(
+        "cnc_port_probe_browser_network_transport_live_send",
+        "string",
+        [],
+      ),
+      probeBrowserNetworkTransportLiveReceive: module.cwrap(
+        "cnc_port_probe_browser_network_transport_live_receive",
+        "string",
+        [],
       ),
       buildBrowserLanApiAnnouncePacket: module.cwrap(
         "cnc_port_build_browser_lanapi_announce_packet",
@@ -6589,6 +6804,7 @@ function snapshotState() {
     browserAudioRequestPathRuntime: summarizeBrowserAudioRequestPathRuntime(),
     browserNetworkRelayRuntime: summarizeBrowserNetworkRelayRuntime(),
     browserNetworkTransportRuntime: summarizeBrowserNetworkTransportRuntime(),
+    browserUdpEndpointRuntime: summarizeBrowserUdpEndpointRuntime(),
     browserLanApiRuntime: summarizeBrowserLanApiRuntime(),
     audioPayloadInventory: harnessState.audioPayloadInventory,
     startupAssets: harnessState.startupAssets,
@@ -16579,6 +16795,82 @@ async function rpc(command, payload = {}) {
           ok: Boolean(receiveProbe?.ok),
           command,
           receiveProbe,
+          state: snapshotState(),
+        };
+      }
+    case "browserUdpEndpointConnect":
+      {
+        try {
+          const runtime = await connectBrowserUdpEndpoint({
+            webSocketUrl: String(payload?.webSocketUrl ?? ""),
+            client: String(payload?.client ?? "browser-udp-client"),
+            incomingIp: payload?.incomingIp,
+            incomingPort: payload?.incomingPort,
+          });
+          return {
+            ok: runtime.enabled === true && runtime.connected === true,
+            command,
+            runtime,
+            state: snapshotState(),
+          };
+        } catch (error) {
+          browserUdpEndpointRuntime.lastError = error?.message ?? String(error);
+          return {
+            ok: false,
+            command,
+            error: browserUdpEndpointRuntime.lastError,
+            runtime: summarizeBrowserUdpEndpointRuntime(),
+            state: snapshotState(),
+          };
+        }
+      }
+    case "browserUdpEndpointState":
+      {
+        return {
+          ok: true,
+          command,
+          runtime: summarizeBrowserUdpEndpointRuntime(),
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportLiveSendProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network live send cannot run" };
+        }
+        const sendProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveSend());
+        const runtime = summarizeBrowserUdpEndpointRuntime();
+        return {
+          ok: Boolean(sendProbe?.ok)
+            && runtime.enabled === true
+            && runtime.connected === true
+            && runtime.sent === 1
+            && runtime.sentBytes > 0
+            && runtime.lastSent?.bytes === runtime.sentBytes,
+          command,
+          sendProbe,
+          browserUdpEndpointRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "browserNetworkTransportLiveReceiveProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; browser network live receive cannot run" };
+        }
+        const receiveProbe = parseModuleState(wasmModule.probeBrowserNetworkTransportLiveReceive());
+        const runtime = summarizeBrowserUdpEndpointRuntime();
+        return {
+          ok: Boolean(receiveProbe?.ok)
+            && runtime.enabled === true
+            && runtime.delivered === 1
+            && runtime.received >= 1
+            && runtime.deliveredBytes === receiveProbe.packet?.bytes + 6,
+          command,
+          receiveProbe,
+          browserUdpEndpointRuntime: runtime,
           state: snapshotState(),
         };
       }

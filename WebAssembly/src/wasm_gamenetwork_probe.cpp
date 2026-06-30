@@ -302,6 +302,8 @@ char g_browser_network_transport_receive_json[8192] = {};
 char g_browser_network_transport_packet_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_network_transport_wire_build_json[12000] = {};
 char g_browser_network_transport_wire_receive_json[30000] = {};
+char g_browser_network_transport_live_send_json[12000] = {};
+char g_browser_network_transport_live_receive_json[30000] = {};
 char g_browser_network_transport_wire_hex[((MAX_MESSAGE_LEN + sizeof(TransportMessageHeader)) * 2) + 1] = {};
 char g_browser_network_transport_wire_payload_hex[(MAX_PACKET_SIZE * 2) + 1] = {};
 char g_browser_lanapi_build_json[8192] = {};
@@ -2023,6 +2025,122 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_network_transport_wire_p
 	return g_browser_network_transport_wire_build_json;
 }
 
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_send()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	cnc_port_browser_udp_adapter_clear();
+
+	NetPacket *packet = build_transport_connection_packet();
+	if (packet == nullptr) {
+		std::snprintf(g_browser_network_transport_live_send_json, sizeof(g_browser_network_transport_live_send_json),
+			"{\"ok\":false,\"source\":\"GameNetwork browser live WebSocket Transport send probe\","
+			"\"transportReady\":false,\"productionTransport\":true,"
+			"\"nextRequired\":\"buildOriginalNetPacketBeforeTransportQueue\"}");
+		return g_browser_network_transport_live_send_json;
+	}
+
+	const int packet_length = packet->getLength();
+	const int commands = packet->getNumCommands();
+	const bool payload_encoded = encode_hex(
+		packet->getData(),
+		packet_length,
+		g_browser_network_transport_wire_payload_hex,
+		sizeof(g_browser_network_transport_wire_payload_hex));
+
+	Transport transport;
+	const bool initialized = transport.init(kLanApiLocalIp, NETWORK_BASE_PORT_NUMBER);
+	bool queued = false;
+	bool sent = false;
+	bool out_buffer_cleared = false;
+	int queued_slot = -1;
+	if (initialized) {
+		queued = transport.queueSend(
+			kTransportWireRemoteIp,
+			kTransportWireRemotePort,
+			packet->getData(),
+			packet_length);
+		for (Int i = 0; i < MAX_MESSAGES; ++i) {
+			if (transport.m_outBuffer[i].length > 0) {
+				queued_slot = i;
+				break;
+			}
+		}
+		sent = queued && transport.doSend();
+		out_buffer_cleared = true;
+		for (Int i = 0; i < MAX_MESSAGES; ++i) {
+			if (transport.m_outBuffer[i].length != 0) {
+				out_buffer_cleared = false;
+				break;
+			}
+		}
+	}
+	packet->deleteInstance();
+	packet = nullptr;
+
+	const int adapter_writes = cnc_port_browser_udp_adapter_write_count();
+	const int fallback_outgoing = cnc_port_browser_udp_adapter_outgoing_count();
+	const int adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
+	const bool ok = initialized &&
+		queued &&
+		sent &&
+		out_buffer_cleared &&
+		queued_slot == 0 &&
+		adapter_writes == 1 &&
+		fallback_outgoing == 0 &&
+		adapter_dropped == 0 &&
+		payload_encoded &&
+		commands == 2 &&
+		packet_length > 0 &&
+		packet_length <= MAX_PACKET_SIZE;
+
+	std::snprintf(g_browser_network_transport_live_send_json, sizeof(g_browser_network_transport_live_send_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser live WebSocket Transport send probe\","
+		"\"transportReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket live UDP endpoint\","
+		"\"productionTransport\":true,"
+		"\"productionTransportWire\":true,"
+		"\"originalSerializer\":\"Transport::queueSend\","
+		"\"originalWireSend\":\"Transport::doSend -> Module.cncPortBrowserUdpSend\","
+		"\"nextRequired\":\"browserWebSocketLiveEndpointIntoTransportDoRecv\","
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"commands\":%d,"
+		"\"commandType\":\"NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD\","
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d,"
+		"\"runAheadCommandId\":%d,\"runAhead\":%d,\"frameRate\":%d},"
+		"\"transport\":{\"initialized\":%s,\"queued\":%s,\"doSendDriven\":%s,"
+		"\"queuedSlot\":%d,\"outBufferCleared\":%s,"
+		"\"adapterWrites\":%d,\"fallbackOutgoing\":%d,\"adapterDropped\":%d,"
+		"\"addr\":%u,\"port\":%u}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		payload_encoded ? g_browser_network_transport_wire_payload_hex : "",
+		packet_length,
+		commands,
+		kTransportRelayMask,
+		kTransportExecutionFrame,
+		kTransportPlayerId,
+		kTransportFrameInfoCommandId,
+		kTransportFrameCommandCount,
+		kTransportRunAheadCommandId,
+		kTransportRunAhead,
+		kTransportFrameRate,
+		initialized ? "true" : "false",
+		queued ? "true" : "false",
+		sent ? "true" : "false",
+		queued_slot,
+		out_buffer_cleared ? "true" : "false",
+		adapter_writes,
+		fallback_outgoing,
+		adapter_dropped,
+		kTransportWireRemoteIp,
+		kTransportWireRemotePort);
+	return g_browser_network_transport_live_send_json;
+}
+
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_packet(const char *wire_hex)
 {
 	if (!isMemoryManagerOfficiallyInited()) {
@@ -2294,6 +2412,233 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_accept_browser_network_transport_wire_
 		stored_run_ahead,
 		stored_frame_rate);
 	return g_browser_network_transport_wire_receive_json;
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_browser_network_transport_live_receive()
+{
+	if (!isMemoryManagerOfficiallyInited()) {
+		initMemoryManager();
+	}
+
+	TransportMessage message = {};
+	Transport *transport = new Transport;
+	const bool transport_initialized = transport->init(kTransportWireRemoteIp, kTransportWireRemotePort);
+	const bool recv_driven = transport_initialized && transport->doRecv();
+	const int adapter_reads = cnc_port_browser_udp_adapter_read_count();
+	const int fallback_incoming = cnc_port_browser_udp_adapter_incoming_count();
+	const int adapter_dropped = cnc_port_browser_udp_adapter_dropped_count();
+	int buffered_slot = -1;
+	bool transport_buffered = false;
+	bool transport_cleared = false;
+	bool crc_valid = false;
+	bool payload_encoded = false;
+	bool relay_driven = false;
+	bool manager_ready = false;
+	int frame_command_count = -1;
+	int command_count = -1;
+	int ready_state = -1;
+	int stored_command_type = -1;
+	int stored_execution_frame = -1;
+	int stored_player_id = -1;
+	int stored_command_id = -1;
+	int stored_run_ahead = -1;
+	int stored_frame_rate = -1;
+	unsigned int smallest_cushion = 0;
+
+	if (recv_driven) {
+		for (Int i = 0; i < MAX_MESSAGES; ++i) {
+			if (transport->m_inBuffer[i].length > 0) {
+				message = transport->m_inBuffer[i];
+				buffered_slot = i;
+				transport_buffered = true;
+				break;
+			}
+		}
+		if (transport_buffered) {
+			crc_valid = transport_message_has_valid_crc(message);
+			payload_encoded = encode_hex(
+				message.data,
+				message.length,
+				g_browser_network_transport_wire_payload_hex,
+				sizeof(g_browser_network_transport_wire_payload_hex));
+		}
+	}
+
+	if (transport_buffered && crc_valid && payload_encoded) {
+		static GameLogic *probe_logic = nullptr;
+		alignas(GlobalData) static UnsignedByte probe_global_data_storage[sizeof(GlobalData)] = {};
+		GameLogic *old_game_logic = TheGameLogic;
+		GlobalData *old_global_data = TheWritableGlobalData;
+		if (probe_logic == nullptr) {
+			probe_logic = new GameLogic;
+		}
+		TheGameLogic = probe_logic;
+		TheWritableGlobalData = reinterpret_cast<GlobalData *>(probe_global_data_storage);
+		TheWritableGlobalData->m_networkFPSHistoryLength = 30;
+		TheWritableGlobalData->m_networkLatencyHistoryLength = 200;
+		TheWritableGlobalData->m_networkCushionHistoryLength = 10;
+
+		{
+			ConnectionManager *manager = new ConnectionManager;
+			for (Int i = 0; i < MAX_SLOTS; ++i) {
+				manager->m_connections[i] = nullptr;
+				manager->m_frameData[i] = nullptr;
+				manager->m_packetRouterFallback[i] = static_cast<UnsignedInt>(-1);
+				manager->m_latencyAverages[i] = 0.0f;
+				manager->m_fpsAverages[i] = -1;
+			}
+			manager->m_localSlot = kTransportPlayerId;
+			manager->m_packetRouterSlot = kTransportPlayerId;
+			manager->m_localAddr = kTransportWireRemoteIp;
+			manager->m_localPort = kTransportWireRemotePort;
+			manager->m_minFpsPlayer = -1;
+			manager->m_minFps = -1;
+			manager->m_smallestPacketArrivalCushion = static_cast<UnsignedInt>(-1);
+			manager->m_didSelfSlug = FALSE;
+			manager->m_frameMetrics.init();
+			manager->m_transport = transport;
+
+			manager->m_pendingCommands = newInstance(NetCommandList);
+			manager->m_pendingCommands->init();
+			manager->m_relayedCommands = newInstance(NetCommandList);
+			manager->m_relayedCommands->init();
+			manager->m_netCommandWrapperList = newInstance(NetCommandWrapperList);
+			manager->m_netCommandWrapperList->init();
+
+			FrameDataManager *frame_data = newInstance(FrameDataManager)(FALSE);
+			frame_data->init();
+			manager->m_frameData[kTransportPlayerId] = frame_data;
+
+			manager->doRelay();
+			relay_driven = true;
+			transport_cleared = true;
+			for (Int i = 0; i < MAX_MESSAGES; ++i) {
+				if (transport->m_inBuffer[i].length != 0) {
+					transport_cleared = false;
+					break;
+				}
+			}
+
+			frame_command_count = static_cast<int>(frame_data->getFrameCommandCount(kTransportExecutionFrame));
+			command_count = static_cast<int>(frame_data->getCommandCount(kTransportExecutionFrame));
+			ready_state = static_cast<int>(frame_data->allCommandsReady(kTransportExecutionFrame, FALSE));
+			manager_ready = manager->allCommandsReady(kTransportExecutionFrame, TRUE);
+			smallest_cushion = manager->m_smallestPacketArrivalCushion;
+
+			NetCommandList *frame_commands = frame_data->getFrameCommandList(kTransportExecutionFrame);
+			NetCommandRef *first = frame_commands != nullptr ? frame_commands->getFirstMessage() : nullptr;
+			NetCommandMsg *stored = first != nullptr ? first->getCommand() : nullptr;
+			if (stored != nullptr) {
+				stored_command_type = static_cast<int>(stored->getNetCommandType());
+				stored_execution_frame = static_cast<int>(stored->getExecutionFrame());
+				stored_player_id = static_cast<int>(stored->getPlayerID());
+				stored_command_id = static_cast<int>(stored->getID());
+				if (stored->getNetCommandType() == NETCOMMANDTYPE_RUNAHEAD) {
+					NetRunAheadCommandMsg *run_ahead = static_cast<NetRunAheadCommandMsg *>(stored);
+					stored_run_ahead = static_cast<int>(run_ahead->getRunAhead());
+					stored_frame_rate = static_cast<int>(run_ahead->getFrameRate());
+				}
+			}
+			// Keep this probe-owned partial ConnectionManager alive for the page lifetime.
+			// Its destructor expects a fuller network runtime than this vertical smoke builds.
+		}
+
+		TheWritableGlobalData = old_global_data;
+		TheGameLogic = old_game_logic;
+	}
+
+	const bool frame_data_ready =
+		frame_command_count == kTransportFrameCommandCount &&
+		command_count == kTransportFrameCommandCount &&
+		ready_state == FRAMEDATA_READY &&
+		manager_ready;
+	const bool stored_command_ok =
+		stored_command_type == NETCOMMANDTYPE_RUNAHEAD &&
+		stored_execution_frame == kTransportExecutionFrame &&
+		stored_player_id == kTransportPlayerId &&
+		stored_command_id == kTransportRunAheadCommandId &&
+		stored_run_ahead == kTransportRunAhead &&
+		stored_frame_rate == kTransportFrameRate;
+	const bool ok = transport_initialized &&
+		recv_driven &&
+		transport_buffered &&
+		transport_cleared &&
+		adapter_reads == 1 &&
+		fallback_incoming == 0 &&
+		adapter_dropped == 0 &&
+		crc_valid &&
+		payload_encoded &&
+		message.length > 0 &&
+		message.length <= MAX_PACKET_SIZE &&
+		relay_driven &&
+		frame_data_ready &&
+		stored_command_ok;
+
+	std::snprintf(g_browser_network_transport_live_receive_json, sizeof(g_browser_network_transport_live_receive_json),
+		"{\"ok\":%s,"
+		"\"source\":\"GameNetwork browser live WebSocket Transport receive probe\","
+		"\"transportReady\":%s,"
+		"\"browserTransport\":\"browser WebSocket live UDP endpoint\","
+		"\"productionTransport\":true,"
+		"\"productionTransportWire\":true,"
+		"\"originalWireReceive\":\"Module.cncPortBrowserUdpRecv -> Transport::doRecv decryptBuf/isGeneralsPacket\","
+		"\"originalTransport\":\"Transport::m_inBuffer\","
+		"\"originalRelay\":\"ConnectionManager::doRelay\","
+		"\"originalFrameData\":\"NetPacket::getCommandList -> FrameDataManager::addNetCommandMsg/allCommandsReady\","
+		"\"nextRequired\":\"twoBrowserClientsShareProductionTransportAdapterForNetworkUpdate\","
+		"\"packet\":{\"hex\":\"%s\",\"bytes\":%d,\"decoded\":%s,"
+		"\"commands\":2,\"commandType\":\"NETCOMMANDTYPE_FRAMEINFO+NETCOMMANDTYPE_RUNAHEAD\","
+		"\"relay\":%d,\"executionFrame\":%d,\"playerId\":%d,"
+		"\"commandId\":%d,\"frameCommandCount\":%d,"
+		"\"runAheadCommandId\":%d,\"runAhead\":%d,\"frameRate\":%d},"
+		"\"transport\":{\"initialized\":%s,\"doRecvDriven\":%s,"
+		"\"buffered\":%s,\"bufferedSlot\":%d,\"cleared\":%s,"
+		"\"adapterReads\":%d,\"fallbackIncoming\":%d,\"adapterDropped\":%d,"
+		"\"crcValid\":%s,\"addr\":%u,\"port\":%u},"
+		"\"connectionManager\":{\"doRelayDriven\":%s,\"smallestPacketArrivalCushion\":%u},"
+		"\"frameData\":{\"ready\":%s,\"managerReady\":%s,\"readyState\":%d,"
+		"\"frameCommandCount\":%d,\"commandCount\":%d,"
+		"\"storedCommandType\":\"%s\",\"storedCommandId\":%d,"
+		"\"storedExecutionFrame\":%d,\"storedPlayerId\":%d,"
+		"\"storedRunAhead\":%d,\"storedFrameRate\":%d}}",
+		ok ? "true" : "false",
+		ok ? "true" : "false",
+		payload_encoded ? g_browser_network_transport_wire_payload_hex : "",
+		message.length,
+		payload_encoded ? "true" : "false",
+		kTransportRelayMask,
+		kTransportExecutionFrame,
+		kTransportPlayerId,
+		kTransportFrameInfoCommandId,
+		kTransportFrameCommandCount,
+		kTransportRunAheadCommandId,
+		kTransportRunAhead,
+		kTransportFrameRate,
+		transport_initialized ? "true" : "false",
+		recv_driven ? "true" : "false",
+		transport_buffered ? "true" : "false",
+		buffered_slot,
+		transport_cleared ? "true" : "false",
+		adapter_reads,
+		fallback_incoming,
+		adapter_dropped,
+		crc_valid ? "true" : "false",
+		message.addr,
+		message.port,
+		relay_driven ? "true" : "false",
+		smallest_cushion,
+		frame_data_ready ? "true" : "false",
+		manager_ready ? "true" : "false",
+		ready_state,
+		frame_command_count,
+		command_count,
+		net_command_type_name(static_cast<NetCommandType>(stored_command_type)),
+		stored_command_id,
+		stored_execution_frame,
+		stored_player_id,
+		stored_run_ahead,
+		stored_frame_rate);
+	return g_browser_network_transport_live_receive_json;
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_build_browser_lanapi_announce_packet()
