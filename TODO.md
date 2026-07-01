@@ -715,12 +715,6 @@ shares structure and follows behind.
       `Menus/MainMenu.wnd` asset does not contain those windows, and
       `W3DMainMenuInit` leaves the random-text setup commented out, so the next
       proof must be asset-backed rather than synthesized solely for completion.
-- [ ] Restore the generic original mapped-image directory load route for
-      browser render smokes: replace the focused exact-block
-      `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /
-      `INI::loadDirectory` once its current browser ownership/crash frontier is
-      resolved, while keeping the real archive-backed WND image repaint smokes
-      green.
 - [ ] Terrain heightmap (`BaseHeightMap`/`HeightMap`/`FlatHeightMap`) renders.
       Current focused coverage includes the synthetic terrain tile proof plus
       `test:ww3d-terrain-tile-archive`, which mounts real `TerrainZH.big`,

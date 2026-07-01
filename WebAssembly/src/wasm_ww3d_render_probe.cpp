@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <string>
@@ -551,12 +550,13 @@ constexpr const char *kMainMenuRulerTextureArchiveEntry =
 	"Art\\Textures\\mainmenuruleruserinterface.tga";
 constexpr const char *kMainMenuRulerSampleIni =
 	"Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI";
+constexpr Int kMappedImageTextureSize = 512;
 constexpr const char *kMappedImageTextureSource =
-	"Exact mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+	"Original ImageCollection::load(512) / INI::loadDirectory path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 constexpr const char *kUnrotatedMappedImageTextureSource =
-	"Exact non-rotated mapped-image INI block path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+	"Original ImageCollection::load(512) / INI::loadDirectory non-rotated path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 constexpr const char *kMainMenuRulerTextureSource =
-	"Exact MainMenuRuler HandCreated mapped-image INI block via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
+	"Original ImageCollection::load(512) / INI::loadDirectory HandCreated path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives";
 
 struct MappedImageDrawProbeSpec
 {
@@ -750,94 +750,6 @@ bool equals_ignore_ascii_case(const std::string &lhs, const std::string &rhs)
 	return true;
 }
 
-std::string trim_ascii_copy(const std::string &value)
-{
-	std::size_t begin = 0;
-	while (begin < value.size() &&
-		std::isspace(static_cast<unsigned char>(value[begin]))) {
-		++begin;
-	}
-
-	std::size_t end = value.size();
-	while (end > begin &&
-		std::isspace(static_cast<unsigned char>(value[end - 1]))) {
-		--end;
-	}
-
-	return value.substr(begin, end - begin);
-}
-
-bool starts_with_ascii_case_insensitive(const std::string &value, const char *prefix)
-{
-	if (prefix == nullptr) {
-		return false;
-	}
-
-	const std::size_t prefix_length = std::strlen(prefix);
-	if (value.size() < prefix_length) {
-		return false;
-	}
-
-	for (std::size_t index = 0; index < prefix_length; ++index) {
-		const unsigned char left = static_cast<unsigned char>(value[index]);
-		const unsigned char right = static_cast<unsigned char>(prefix[index]);
-		if (std::tolower(left) != std::tolower(right)) {
-			return false;
-		}
-	}
-	return true;
-}
-
-bool parse_int_after_label(const std::string &value, const char *label, int &parsed)
-{
-	const std::size_t label_pos = value.find(label);
-	if (label_pos == std::string::npos) {
-		return false;
-	}
-
-	const char *start = value.c_str() + label_pos + std::strlen(label);
-	char *end = nullptr;
-	const long result = std::strtol(start, &end, 10);
-	if (end == start) {
-		return false;
-	}
-
-	parsed = static_cast<int>(result);
-	return true;
-}
-
-bool parse_int_value(const std::string &value, int &parsed)
-{
-	const char *start = value.c_str();
-	char *end = nullptr;
-	const long result = std::strtol(start, &end, 10);
-	if (end == start) {
-		return false;
-	}
-
-	while (*end != '\0' && std::isspace(static_cast<unsigned char>(*end))) {
-		++end;
-	}
-	if (*end != '\0') {
-		return false;
-	}
-
-	parsed = static_cast<int>(result);
-	return true;
-}
-
-UnsignedInt parse_image_status_bits(const std::string &value)
-{
-	UnsignedInt status = IMAGE_STATUS_NONE;
-	if (value.find("ROTATED_90_CLOCKWISE") != std::string::npos) {
-		status |= IMAGE_STATUS_ROTATED_90_CLOCKWISE;
-	}
-	if (value.find("RAW_TEXTURE") != std::string::npos) {
-		status |= IMAGE_STATUS_RAW_TEXTURE;
-	}
-	return status;
-}
-
 void split_archive_path_for_probe(
 	const std::string &archive_path,
 	std::string &directory,
@@ -866,139 +778,24 @@ std::size_t count_mapped_images(ImageCollection &images)
 	return count;
 }
 
-bool load_mapped_image_ini_file(
-	ImageCollection &images,
-	const char *ini_path,
-	const char *image_name)
+bool load_original_mapped_image_directory(ImageCollection &images, Int texture_size)
 {
-	if (ini_path == nullptr || *ini_path == '\0' ||
-		image_name == nullptr || *image_name == '\0') {
+	if (TheFileSystem == nullptr || TheNameKeyGenerator == nullptr) {
 		return false;
 	}
 
-	std::vector<unsigned char> ini_bytes;
-	if (!wasm_browser_runtime_assets_read_file(ini_path, ini_bytes)) {
+	GlobalData *old_global_data = TheGlobalData;
+	// Keep browser probes on the mounted shipped INI directory; user-data probing
+	// behind TheGlobalData is not available in this harness.
+	TheGlobalData = nullptr;
+	try {
+		images.load(texture_size);
+	} catch (...) {
+		TheGlobalData = old_global_data;
 		return false;
 	}
-
-	const std::string text(reinterpret_cast<const char *>(ini_bytes.data()), ini_bytes.size());
-	std::size_t cursor = 0;
-	bool in_target_block = false;
-	bool found_target_block = false;
-	bool found_end = false;
-	bool have_texture = false;
-	bool have_texture_width = false;
-	bool have_texture_height = false;
-	bool have_coords = false;
-	bool have_status = false;
-	std::string texture_name;
-	int texture_width = 0;
-	int texture_height = 0;
-	int left = 0;
-	int top = 0;
-	int right = 0;
-	int bottom = 0;
-	UnsignedInt status = IMAGE_STATUS_NONE;
-
-	while (cursor <= text.size()) {
-		const std::size_t next = text.find_first_of("\r\n", cursor);
-		const std::size_t line_end = next == std::string::npos ? text.size() : next;
-		const std::string line = trim_ascii_copy(text.substr(cursor, line_end - cursor));
-		if (!line.empty() && line[0] != ';') {
-			if (!in_target_block) {
-				if (starts_with_ascii_case_insensitive(line, "MappedImage")) {
-					const std::string candidate =
-						trim_ascii_copy(line.substr(std::strlen("MappedImage")));
-					if (equals_ignore_ascii_case(candidate, image_name)) {
-						in_target_block = true;
-						found_target_block = true;
-					}
-				}
-			} else if (equals_ignore_ascii_case(line, "End")) {
-				found_end = true;
-				break;
-			} else {
-				const std::size_t equals = line.find('=');
-				if (equals != std::string::npos) {
-					const std::string key = trim_ascii_copy(line.substr(0, equals));
-					const std::string value = trim_ascii_copy(line.substr(equals + 1));
-					if (equals_ignore_ascii_case(key, "Texture")) {
-						texture_name = value;
-						have_texture = !texture_name.empty();
-					} else if (equals_ignore_ascii_case(key, "TextureWidth")) {
-						have_texture_width =
-							parse_int_value(value, texture_width) && texture_width > 0;
-					} else if (equals_ignore_ascii_case(key, "TextureHeight")) {
-						have_texture_height =
-							parse_int_value(value, texture_height) && texture_height > 0;
-					} else if (equals_ignore_ascii_case(key, "Coords")) {
-						have_coords =
-							parse_int_after_label(value, "Left:", left) &&
-							parse_int_after_label(value, "Top:", top) &&
-							parse_int_after_label(value, "Right:", right) &&
-							parse_int_after_label(value, "Bottom:", bottom);
-					} else if (equals_ignore_ascii_case(key, "Status")) {
-						status = parse_image_status_bits(value);
-						have_status = true;
-					}
-				}
-			}
-		}
-
-		if (next == std::string::npos) {
-			break;
-		}
-		cursor = next + 1;
-		while (cursor < text.size() && (text[cursor] == '\r' || text[cursor] == '\n')) {
-			++cursor;
-		}
-	}
-
-	if (!found_target_block || !found_end || !have_texture ||
-		!have_texture_width || !have_texture_height || !have_coords || !have_status ||
-		right <= left || bottom <= top) {
-		return false;
-	}
-
-	Image *image = const_cast<Image *>(images.findImageByName(AsciiString(image_name)));
-	if (image == nullptr) {
-		image = newInstance(Image);
-		if (image == nullptr) {
-			return false;
-		}
-		image->setName(AsciiString(image_name));
-		images.addImage(image);
-	}
-
-	image->setFilename(AsciiString(texture_name.c_str()));
-	image->setTextureWidth(texture_width);
-	image->setTextureHeight(texture_height);
-	image->clearStatus(IMAGE_STATUS_ROTATED_90_CLOCKWISE);
-	image->clearStatus(IMAGE_STATUS_RAW_TEXTURE);
-	if (BitTest(status, IMAGE_STATUS_ROTATED_90_CLOCKWISE)) {
-		image->setStatus(IMAGE_STATUS_ROTATED_90_CLOCKWISE);
-	}
-	if (BitTest(status, IMAGE_STATUS_RAW_TEXTURE)) {
-		image->setStatus(IMAGE_STATUS_RAW_TEXTURE);
-	}
-
-	Region2D uv_coords;
-	uv_coords.lo.x = static_cast<Real>(left) / static_cast<Real>(texture_width);
-	uv_coords.lo.y = static_cast<Real>(top) / static_cast<Real>(texture_height);
-	uv_coords.hi.x = static_cast<Real>(right) / static_cast<Real>(texture_width);
-	uv_coords.hi.y = static_cast<Real>(bottom) / static_cast<Real>(texture_height);
-	image->setUV(&uv_coords);
-
-	ICoord2D image_size;
-	image_size.x = right - left;
-	image_size.y = bottom - top;
-	if (BitTest(status, IMAGE_STATUS_ROTATED_90_CLOCKWISE)) {
-		const Int original_width = image_size.x;
-		image_size.x = image_size.y;
-		image_size.y = original_width;
-	}
-	image->setImageSize(&image_size);
-	return true;
+	TheGlobalData = old_global_data;
+	return count_mapped_images(images) > 0;
 }
 
 Int count_layout_windows(WindowLayout *layout)
@@ -5144,7 +4941,9 @@ const char *cnc_port_probe_ww3d_display_mapped_image_internal(
 		if (mapped_collection_allocated) {
 			TheMappedImageCollection = mapped_image_collection;
 			mapped_collection_loaded =
-				load_mapped_image_ini_file(*mapped_image_collection, spec.sample_ini, spec.image_name);
+				load_original_mapped_image_directory(
+					*mapped_image_collection,
+					kMappedImageTextureSize);
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
 				image = mapped_image_collection->findImageByName(AsciiString(spec.image_name));
@@ -7817,47 +7616,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		mapped_collection_allocated = mapped_image_collection != nullptr;
 		if (mapped_collection_allocated) {
 			TheMappedImageCollection = mapped_image_collection;
-			GlobalData *mapped_image_load_global_data = TheGlobalData;
-			TheGlobalData = nullptr;
-			const bool logo_loaded = load_mapped_image_ini_file(
-				*mapped_image_collection,
-				kMainMenuLogoSampleIni,
-				kMainMenuLogoImageName);
-			const bool button_left_loaded = load_mapped_image_ini_file(
-				*mapped_image_collection,
-				kMainMenuLogoSampleIni,
-				kMainMenuButtonLeftImageName);
-			const bool button_middle_loaded = load_mapped_image_ini_file(
-				*mapped_image_collection,
-				kMainMenuLogoSampleIni,
-				kMainMenuButtonMiddleImageName);
-			const bool button_right_loaded = load_mapped_image_ini_file(
-				*mapped_image_collection,
-				kMainMenuLogoSampleIni,
-				kMainMenuButtonRightImageName);
-			const bool ruler_loaded = load_mapped_image_ini_file(
-				*mapped_image_collection,
-				kMainMenuRulerSampleIni,
-				kMainMenuRulerImageName);
-			bool faction_logos_loaded = true;
-			if (main_menu_layout_image_repaint_is_faction_logos()) {
-				for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
-					faction_logos_loaded =
-						load_mapped_image_ini_file(
-							*mapped_image_collection,
-							kMainMenuFactionLogoSampleIni,
-							kMainMenuFactionLogoImageNames[i]) &&
-						faction_logos_loaded;
-				}
-			}
 			mapped_collection_loaded =
-				logo_loaded &&
-				button_left_loaded &&
-				button_middle_loaded &&
-				button_right_loaded &&
-				ruler_loaded &&
-				faction_logos_loaded;
-			TheGlobalData = mapped_image_load_global_data;
+				load_original_mapped_image_directory(
+					*mapped_image_collection,
+					kMappedImageTextureSize);
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
 				target_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuLogoImageName));
@@ -9722,7 +9484,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"originalPaths\":["
 		"\"WindowLayout::load -> GameWindowManager::winCreateFromScript\","
 		"\"parseDrawData IMAGE -> TheMappedImageCollection->findImageByName\","
-		"\"Exact mapped-image INI block -> INIZH.big mapped-image entry\","
+		"\"ImageCollection::load(512) -> INI::loadDirectory(Data\\\\INI\\\\MappedImages)\","
 		"\"MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
@@ -9953,12 +9715,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"format\":%lu,\"uploadFormat\":%lu,"
 		"\"lastUpload\":{\"width\":%u,\"height\":%u,"
 		"\"bytes\":%u,\"checksum\":%lu},"
-		"\"source\":\"Exact mapped-image INI block path via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
+		"\"source\":\"Original ImageCollection::load(512) / INI::loadDirectory path via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
 		"\"rulerTexture\":{\"name\":\"%s\","
 		"\"archiveEntry\":\"%s\",\"width\":%u,\"height\":%u,"
 		"\"levels\":%u,\"uploadedLevels\":%u,"
 		"\"format\":%lu,"
-		"\"source\":\"Exact MainMenuRuler HandCreated mapped-image INI block via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
+		"\"source\":\"Original ImageCollection::load(512) / INI::loadDirectory HandCreated path via W3DGameWinDefaultDraw, W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives\"},"
 		"\"display\":{\"width\":%u,\"height\":%u,\"bitDepth\":%u,"
 		"\"windowed\":%s,"
 		"\"path\":\"WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay::drawImage\"},"

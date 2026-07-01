@@ -27,6 +27,22 @@ const runtimeArchivePath = "/assets/runtime-main-menu-ruler-mapped-image";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
 const rulerMappedImageEntry = "Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI";
+const mappedImageIniEntries = [
+  rulerMappedImageEntry,
+  "Data\\INI\\MappedImages\\TextureSize_512\\HandCreatedMappedImages.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SAUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGameUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeLoad512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeSelect512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeWinLoss512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCPurchasePowers512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCShellUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SNUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SSUserInterface512.INI",
+  "Data\\INI\\MappedImages\\TextureSize_512\\SUUserInterface512.INI",
+];
 const rulerTextureEntry = "Art\\Textures\\mainmenuruleruserinterface.tga";
 
 function isInside(parent, child) {
@@ -117,9 +133,7 @@ try {
           name: "INIZH.big",
           expectedSourceBytes: iniArchiveStat.size,
           sourceArchive: iniArchivePath,
-          entries: [
-            rulerMappedImageEntry,
-          ],
+          entries: mappedImageIniEntries,
         },
         {
           url: textureArchiveUrl,
@@ -152,7 +166,7 @@ try {
       || rangeIniArchive?.storage !== "range-backed-subset-big"
       || rangeIniArchive?.reader !== "browser fetch Range -> synthesized BIG"
       || rangeIniArchive?.sourceBytes !== iniArchiveStat.size
-      || rangeIniArchive?.entryCount !== 1
+      || rangeIniArchive?.entryCount !== mappedImageIniEntries.length
       || rangeTextureArchive?.path !== textureArchiveMemfsPath
       || rangeTextureArchive?.storage !== "range-backed-subset-big"
       || rangeTextureArchive?.reader !== "browser fetch Range -> synthesized BIG"
@@ -195,7 +209,7 @@ try {
       || renderResult.probe?.results?.textureFileFactoryInstalled !== true
       || renderResult.probe?.results?.mappedCollectionAllocated !== true
       || renderResult.probe?.results?.mappedCollectionLoaded !== true
-      || renderResult.probe?.results?.mappedImages < 1
+      || renderResult.probe?.results?.mappedImages !== 1186
       || renderResult.probe?.results?.mappedImageFound !== true
       || renderResult.probe?.results?.mappedImageRotated !== false
       || renderResult.probe?.results?.texturePreloaded !== true
@@ -213,7 +227,7 @@ try {
       || renderResult.probe?.texture?.height !== 1024
       || renderResult.probe?.texture?.levels <= 0
       || renderResult.probe?.texture?.uploadedLevels !== renderResult.probe?.texture?.levels
-      || renderResult.probe?.texture?.source !== "Exact MainMenuRuler HandCreated mapped-image INI block via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives"
+      || renderResult.probe?.texture?.source !== "Original ImageCollection::load(512) / INI::loadDirectory HandCreated path via W3DDisplay::drawImage, WW3DAssetManager, TextureClass::Init, and runtime W3DFileSystem BIG archives"
       || renderResult.probe?.runtimeAssets?.installed !== true
       || renderResult.probe?.runtimeAssets?.archiveLoaded !== true
       || renderResult.probe?.runtimeAssets?.w3dFileSystemInstalled !== true

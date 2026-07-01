@@ -1289,7 +1289,8 @@ const steps = [
         "shell composite render smoke did not use range-backed BIG assets", payload);
       expect(payload.originalPaths?.includes("W3DDisplay::m_3DScene -> WW3D::Render"),
         "shell composite render smoke did not include the W3DDisplay scene path", payload.originalPaths);
-      expect(payload.originalPaths?.includes("Exact mapped-image INI block -> W3DDisplay::drawImage"),
+      expect(payload.originalPaths?.includes(
+        "ImageCollection::load(512) -> INI::loadDirectory -> W3DDisplay::drawImage"),
         "shell composite render smoke did not include the mapped-image draw path", payload.originalPaths);
       expect(payload.originalPaths?.includes("GameText::fetch -> W3DDisplayString::draw"),
         "shell composite render smoke did not include the GameText draw path", payload.originalPaths);

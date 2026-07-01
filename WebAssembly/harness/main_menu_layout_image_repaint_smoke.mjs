@@ -339,7 +339,7 @@ try {
       || repaintResult.probe?.archives?.rulerTextureEntry !== rulerTextureEntry
       || repaintResult.probe?.results?.runtimeAssetSystemInstalled !== true
       || repaintResult.probe?.results?.mappedCollectionLoaded !== true
-      || repaintResult.probe?.results?.mappedImages < 5
+      || repaintResult.probe?.results?.mappedImages !== 1186
       || repaintResult.probe?.results?.targetImageBound !== true
       || repaintResult.probe?.results?.rulerImageBound !== true
       || repaintResult.probe?.results?.buttonImagesBound !== true
@@ -955,6 +955,7 @@ try {
       || factionLogoResult.probe?.archives?.factionLogoTextureEntry !== factionLogoTextureEntry
       || factionLogoResult.probe?.results?.factionLogoMappedIniExists !== true
       || factionLogoResult.probe?.results?.factionLogoTextureFileExists !== true
+      || factionLogoResult.probe?.results?.mappedImages !== 1186
       || factionLogoResult.probe?.results?.factionLogoMappedImagesFound !== true
       || factionLogoResult.probe?.results?.factionLogoWindowsFound !== true
       || factionLogoResult.probe?.results?.factionLogoWindowsCallbackBound !== true

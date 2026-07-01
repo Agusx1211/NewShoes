@@ -196,14 +196,14 @@ try {
       || renderResult.checks?.mappedOk !== true
       || renderResult.checks?.textOk !== true
       || !renderResult.originalPaths?.includes("W3DDisplay::m_3DScene -> WW3D::Render")
-      || !renderResult.originalPaths?.includes("Exact mapped-image INI block -> W3DDisplay::drawImage")
+      || !renderResult.originalPaths?.includes("ImageCollection::load(512) -> INI::loadDirectory -> W3DDisplay::drawImage")
       || !renderResult.originalPaths?.includes("GameText::fetch -> W3DDisplayString::draw")
       || renderResult.scene?.probe?.source !== "ww3d_display_scene_probe"
       || renderResult.scene?.probe?.scene?.type !== "RTS3DScene"
       || renderResult.scene?.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || !pixelHasColor(renderResult.scene?.centerPixel)
       || renderResult.mappedImage?.probe?.source !== "ww3d_display_mapped_image_probe"
-      || renderResult.mappedImage?.probe?.results?.mappedImages < 1
+      || renderResult.mappedImage?.probe?.results?.mappedImages !== 1186
       || renderResult.mappedImage?.probe?.image?.name !== "WatermarkChina"
       || renderResult.mappedImage?.browserProbe?.texture0?.sampled !== true
       || !pixelHasColor(renderResult.mappedImage?.centerPixel, 8)

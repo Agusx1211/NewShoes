@@ -3291,6 +3291,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       pins the exact INI/TGA source offsets, draws the atlas slice through
       `W3DDisplay::drawImage`, and screenshots
       `harness-smoke-ww3d-display-mapped-image-unrotated-canvas.png`.
+- [x] Browser render smokes now use the original mapped-image directory load
+      route instead of the focused exact-block bridge. The shared render probe
+      calls `ImageCollection::load(512)`, which drives original
+      `INI::loadDirectory` / `INIMappedImage.cpp` over the mounted
+      `Data\INI\MappedImages` directory, and the old
+      `load_mapped_image_ini_file` parser was removed. Direct mapped-image,
+      clipped, non-rotated, MainMenuRuler, shell-composite, and archive-backed
+      `MainMenu.wnd` repaint smokes assert the shipped 1,186-image collection,
+      then draw through `W3DDisplay::drawImage`, `WW3DAssetManager`,
+      `TextureClass::Init`, runtime `W3DFileSystem`, and browser WebGL2. The
+      dedicated MainMenuRuler harness now mounts the full mapped-image INI
+      directory subset while still drawing the real HandCreated
+      `MainMenuRuler` texture. Verified with
+      `npm run test:ww3d-display-mapped-image`,
+      `npm run test:ww3d-display-mapped-image-clip`,
+      `npm run test:ww3d-display-mapped-image-unrotated`,
+      `npm run test:ww3d-display-main-menu-ruler`,
+      `npm run test:ww3d-display-shell-composite`, and
+      `npm run test:ww3d-main-menu-layout-image-repaint`, plus
+      `npm run test:vertical-integrations`.
 - [x] Original `W3DDisplay::drawFillRect` renders an untextured 2D primitive
       through the display-owned `Render2DClass` helper without using the
       raw-storage-unsafe virtual size setters, verified by
@@ -3979,9 +3999,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
-      `test:ww3d-display-main-menu-ruler` range-fetches the exact
-      `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`
-      block and `TexturesZH.big`
+      `test:ww3d-display-main-menu-ruler` range-fetches the full shipped
+      `INIZH.big` `Data\INI\MappedImages` directory subset needed by
+      `ImageCollection::load(512)` plus `TexturesZH.big`
       `Art\Textures\mainmenuruleruserinterface.tga`, resolves
       `MainMenuRuler` through `ImageCollection::findImageByName`, preloads the
       texture through `WW3DAssetManager` / `TextureClass::Init`, draws the

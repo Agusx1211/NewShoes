@@ -15544,7 +15544,7 @@ async function rpc(command, payload = {}) {
           browserTransport: "Playwright WebGL2 screenshot",
           originalPaths: [
             "W3DDisplay::m_3DScene -> WW3D::Render",
-            "Exact mapped-image INI block -> W3DDisplay::drawImage",
+            "ImageCollection::load(512) -> INI::loadDirectory -> W3DDisplay::drawImage",
             "GameText::fetch -> W3DDisplayString::draw",
           ],
           archives: {
@@ -16023,7 +16023,7 @@ async function rpc(command, payload = {}) {
           && probe?.image?.width === 160
           && probe?.image?.height === 96
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages >= 1
+          && probe?.results?.mappedImages === 1186
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -16118,7 +16118,7 @@ async function rpc(command, payload = {}) {
           && probe?.image?.width === 160
           && probe?.image?.height === 96
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages >= 1
+          && probe?.results?.mappedImages === 1186
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -16236,7 +16236,7 @@ async function rpc(command, payload = {}) {
           && Math.abs((probe?.image?.uvHiX ?? 0) - (487 / 512)) < 0.00001
           && Math.abs((probe?.image?.uvHiY ?? 0) - (489 / 512)) < 0.00001
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages >= 1
+          && probe?.results?.mappedImages === 1186
           && probe?.results?.texturePreloaded === true
           && probe?.results?.textureLoaded === true
           && probe?.results?.textureResolved === true
@@ -16342,7 +16342,7 @@ async function rpc(command, payload = {}) {
           && probe?.results?.textureFileFactoryInstalled === true
           && probe?.results?.mappedCollectionAllocated === true
           && probe?.results?.mappedCollectionLoaded === true
-          && probe?.results?.mappedImages >= 1
+          && probe?.results?.mappedImages === 1186
           && probe?.results?.mappedImageFound === true
           && probe?.results?.mappedImageRotated === false
           && probe?.results?.texturePreloaded === true
