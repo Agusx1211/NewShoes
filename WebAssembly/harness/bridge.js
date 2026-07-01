@@ -16736,6 +16736,37 @@ async function rpc(command, payload = {}) {
           right: Math.ceil((buttonTextLeft + buttonTextWidth) * virtualScaleX),
           bottom: Math.ceil((buttonTextTop + buttonTextHeight) * virtualScaleY),
         }, 10);
+        const extraButtons = Array.isArray(probe?.layout?.extraButtons)
+          ? probe.layout.extraButtons
+          : [];
+        const sampleButtonRegions = (buttonInfo) => {
+          const x = Number(buttonInfo?.x ?? 0);
+          const y = Number(buttonInfo?.y ?? 0);
+          const w = Number(buttonInfo?.width ?? 0);
+          const h = Number(buttonInfo?.height ?? 0);
+          const text = buttonInfo?.text ?? {};
+          const textWidth = Number(text.width ?? 0);
+          const textHeight = Number(text.height ?? 0);
+          const textLeft = x + Math.floor((w - textWidth) / 2);
+          const textTop = y + Math.floor((h - textHeight) / 2);
+          return {
+            name: buttonInfo?.name ?? null,
+            label: text.label ?? null,
+            region: sampleCanvasRegion({
+              left: Math.floor(x * virtualScaleX),
+              top: Math.floor(y * virtualScaleY),
+              right: Math.ceil((x + w) * virtualScaleX),
+              bottom: Math.ceil((y + h) * virtualScaleY),
+            }, 10),
+            textRegion: sampleCanvasRegion({
+              left: Math.floor(textLeft * virtualScaleX),
+              top: Math.floor(textTop * virtualScaleY),
+              right: Math.ceil((textLeft + textWidth) * virtualScaleX),
+              bottom: Math.ceil((textTop + textHeight) * virtualScaleY),
+            }, 10),
+          };
+        };
+        const extraButtonRegions = extraButtons.map(sampleButtonRegions);
         const staticText = probe?.layout?.staticText ?? {};
         const staticTextLeft = staticText.x ?? 540;
         const staticTextTop = staticText.y ?? 116;
@@ -16764,6 +16795,7 @@ async function rpc(command, payload = {}) {
           buttonPixels,
           buttonRegion,
           buttonTextRegion,
+          extraButtonRegions,
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
@@ -16805,12 +16837,61 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
             && probe?.results?.buttonTextSizeComputed === true);
+        const expectedExtraButtons = [
+          ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
+          ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
+          ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
+          ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+        ];
+        const extraButtonsProbeOk = staticTextMode
+          || (probe?.results?.extraButtonLabelsExist === true
+            && probe?.results?.extraButtonTextNonEmpty === true
+            && probe?.results?.extraButtonsFound === true
+            && probe?.results?.extraButtonsCallbackBound === true
+            && probe?.results?.extraButtonsImagesBound === true
+            && probe?.results?.extraButtonsTextDisplayStringBound === true
+            && probe?.results?.extraButtonsTextSizeComputed === true
+            && probe?.results?.extraButtonsVisible === true
+            && probe?.gameText?.extraButtonLabelsExist === true
+            && probe?.gameText?.extraButtonTextNonEmpty === true
+            && extraButtons.length === expectedExtraButtons.length
+            && expectedExtraButtons.every(([name, label, y], index) => {
+              const extraButton = extraButtons[index];
+              return extraButton?.name === name
+                && extraButton?.x === 540
+                && extraButton?.y === y
+                && extraButton?.width === 208
+                && extraButton?.height === 36
+                && extraButton?.drawFunc === "W3DGadgetPushButtonImageDraw"
+                && extraButton?.systemFunc === "GadgetPushButtonSystem"
+                && extraButton?.inputFunc === "GadgetPushButtonInput"
+                && extraButton?.hidden === false
+                && extraButton?.labelExists === true
+                && extraButton?.textNonEmpty === true
+                && extraButton?.imagesBound === true
+                && extraButton?.images?.[0] === "Buttons-Left"
+                && extraButton?.images?.[1] === "Buttons-Middle"
+                && extraButton?.images?.[2] === "Buttons-Right"
+                && extraButton?.text?.label === label
+                && typeof extraButton?.text?.ascii === "string"
+                && extraButton.text.ascii.length > 0
+                && extraButton?.text?.length > 0
+                && extraButton?.text?.width > 0
+                && extraButton?.text?.height > 0;
+            }));
+        const extraButtonsPixelOk = staticTextMode
+          || (extraButtonRegions.length === expectedExtraButtons.length
+            && extraButtonRegions.every((entry) =>
+              entry.region.coloredPixelCount >= 20
+              && entry.textRegion.coloredPixelCount >= 20
+              && entry.textRegion.maxComponent >= 180));
         const focusedPixelOk = staticTextMode
           ? (staticTextRegion.coloredPixelCount >= 20
             && staticTextRegion.maxComponent >= 180)
           : (buttonRegion.coloredPixelCount >= 20
             && buttonTextRegion.coloredPixelCount >= 20
-            && buttonTextRegion.maxComponent >= 180);
+            && buttonTextRegion.maxComponent >= 180
+            && extraButtonsPixelOk);
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -16881,6 +16962,7 @@ async function rpc(command, payload = {}) {
           && probe?.gameText?.buttonLabelExists === true
           && probe?.gameText?.buttonTextNonEmpty === true
           && buttonTextProbeOk
+          && extraButtonsProbeOk
           && staticTextProbeOk
           && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
           && probe?.calls?.drawIndexed >= expectedDrawIndexed
@@ -16915,6 +16997,7 @@ async function rpc(command, payload = {}) {
           buttonPixels,
           buttonRegion,
           buttonTextRegion,
+          extraButtonRegions,
           staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,

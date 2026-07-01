@@ -369,6 +369,20 @@ constexpr const char *kMainMenuButtonLeftImageName = "Buttons-Left";
 constexpr const char *kMainMenuButtonMiddleImageName = "Buttons-Middle";
 constexpr const char *kMainMenuButtonRightImageName = "Buttons-Right";
 constexpr const char *kMainMenuButtonTextLabel = "GUI:SinglePlayer";
+constexpr std::size_t kMainMenuExtraButtonCount = 4;
+constexpr const char *kMainMenuExtraButtonNames[kMainMenuExtraButtonCount] = {
+	"MainMenu.wnd:ButtonMultiplayer",
+	"MainMenu.wnd:ButtonOptions",
+	"MainMenu.wnd:ButtonCredits",
+	"MainMenu.wnd:ButtonExit",
+};
+constexpr const char *kMainMenuExtraButtonLabels[kMainMenuExtraButtonCount] = {
+	"GUI:Multiplayer",
+	"GUI:Options",
+	"GUI:Credits",
+	"GUI:Exit",
+};
+constexpr Int kMainMenuExtraButtonY[kMainMenuExtraButtonCount] = { 156, 236, 276, 316 };
 constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
@@ -880,66 +894,37 @@ Int hide_message_box_non_rect_children(GameWindow *root, GameWindow *message_par
 	return hidden_count;
 }
 
-bool window_matches_target(
-	GameWindow *window,
-	GameWindow *first_target,
-	GameWindow *second_target,
-	GameWindow *third_target = nullptr,
-	GameWindow *fourth_target = nullptr)
-{
-	return window != nullptr &&
-		(window == first_target || window == second_target ||
-			window == third_target || window == fourth_target);
-}
-
-bool window_tree_contains_target(
-	GameWindow *window,
-	GameWindow *first_target,
-	GameWindow *second_target,
-	GameWindow *third_target = nullptr,
-	GameWindow *fourth_target = nullptr)
+bool window_matches_any_target(GameWindow *window, const std::vector<GameWindow *> &targets)
 {
 	if (window == nullptr) {
 		return false;
 	}
-	if (window_matches_target(
-		window,
-		first_target,
-		second_target,
-		third_target,
-		fourth_target)) {
+	return std::find(targets.begin(), targets.end(), window) != targets.end();
+}
+
+bool window_tree_contains_any_target(GameWindow *window, const std::vector<GameWindow *> &targets)
+{
+	if (window == nullptr) {
+		return false;
+	}
+	if (window_matches_any_target(window, targets)) {
 		return true;
 	}
 	for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
-		if (window_tree_contains_target(
-			child,
-			first_target,
-			second_target,
-			third_target,
-			fourth_target)) {
+		if (window_tree_contains_any_target(child, targets)) {
 			return true;
 		}
 	}
 	return false;
 }
 
-Int hide_window_tree_except_targets(
-	GameWindow *window,
-	GameWindow *first_target,
-	GameWindow *second_target,
-	GameWindow *third_target = nullptr,
-	GameWindow *fourth_target = nullptr)
+Int hide_window_tree_except_targets(GameWindow *window, const std::vector<GameWindow *> &targets)
 {
 	if (window == nullptr) {
 		return 0;
 	}
 
-	if (window_matches_target(
-		window,
-		first_target,
-		second_target,
-		third_target,
-		fourth_target)) {
+	if (window_matches_any_target(window, targets)) {
 		Int hidden_count = 0;
 		for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
 			hidden_count += hide_window_tree_for_rect_probe(child);
@@ -947,20 +932,10 @@ Int hide_window_tree_except_targets(
 		return hidden_count;
 	}
 
-	if (window_tree_contains_target(
-		window,
-		first_target,
-		second_target,
-		third_target,
-		fourth_target)) {
+	if (window_tree_contains_any_target(window, targets)) {
 		Int hidden_count = 0;
 		for (GameWindow *child = window->winGetChild(); child != nullptr; child = child->winGetNext()) {
-			hidden_count += hide_window_tree_except_targets(
-				child,
-				first_target,
-				second_target,
-				third_target,
-				fourth_target);
+			hidden_count += hide_window_tree_except_targets(child, targets);
 		}
 		return hidden_count;
 	}
@@ -968,22 +943,12 @@ Int hide_window_tree_except_targets(
 	return hide_window_tree_for_rect_probe(window);
 }
 
-Int hide_root_children_except_targets(
-	GameWindow *root,
-	GameWindow *first_target,
-	GameWindow *second_target,
-	GameWindow *third_target = nullptr,
-	GameWindow *fourth_target = nullptr)
+Int hide_root_children_except_targets(GameWindow *root, const std::vector<GameWindow *> &targets)
 {
 	Int hidden_count = 0;
 	if (root != nullptr) {
 		for (GameWindow *child = root->winGetChild(); child != nullptr; child = child->winGetNext()) {
-			hidden_count += hide_window_tree_except_targets(
-				child,
-				first_target,
-				second_target,
-				third_target,
-				fourth_target);
+			hidden_count += hide_window_tree_except_targets(child, targets);
 		}
 	}
 	return hidden_count;
@@ -7189,6 +7154,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	bool button_text_nonempty = false;
 	bool button_text_display_string_bound = false;
 	bool button_text_size_computed = false;
+	bool extra_button_labels_exist = false;
+	bool extra_buttons_text_nonempty = false;
+	bool extra_buttons_found = false;
+	bool extra_buttons_callback_bound = false;
+	bool extra_buttons_images_bound = false;
+	bool extra_buttons_text_display_string_bound = false;
+	bool extra_buttons_text_size_computed = false;
+	bool extra_buttons_visible = false;
 	bool static_text_label_exists = false;
 	bool static_text_nonempty = false;
 	bool static_text_callback_bound = false;
@@ -7297,6 +7270,15 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	std::string static_text_ascii;
 	std::string loaded_texture_name;
 	std::string ruler_loaded_texture_name;
+	std::string extra_button_ascii[kMainMenuExtraButtonCount];
+	bool extra_button_label_exists[kMainMenuExtraButtonCount] = {};
+	bool extra_button_text_nonempty[kMainMenuExtraButtonCount] = {};
+	bool extra_button_found[kMainMenuExtraButtonCount] = {};
+	bool extra_button_callback_bound[kMainMenuExtraButtonCount] = {};
+	bool extra_button_images_bound[kMainMenuExtraButtonCount] = {};
+	bool extra_button_text_display_string_bound[kMainMenuExtraButtonCount] = {};
+	bool extra_button_text_size_computed[kMainMenuExtraButtonCount] = {};
+	bool extra_button_hidden[kMainMenuExtraButtonCount] = {};
 	Int button_left_image_width = 0;
 	Int button_left_image_height = 0;
 	Int button_middle_image_width = 0;
@@ -7335,6 +7317,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	Int static_text_y = 0;
 	Int static_text_window_width = 0;
 	Int static_text_window_height = 0;
+	Int extra_button_x[kMainMenuExtraButtonCount] = {};
+	Int extra_button_y[kMainMenuExtraButtonCount] = {};
+	Int extra_button_width[kMainMenuExtraButtonCount] = {};
+	Int extra_button_height[kMainMenuExtraButtonCount] = {};
+	Int extra_button_text_length[kMainMenuExtraButtonCount] = {};
+	Int extra_button_text_width[kMainMenuExtraButtonCount] = {};
+	Int extra_button_text_height[kMainMenuExtraButtonCount] = {};
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7348,6 +7337,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	GameWindow *target = nullptr;
 	GameWindow *ruler = nullptr;
 	GameWindow *button = nullptr;
+	GameWindow *extra_buttons[kMainMenuExtraButtonCount] = {};
 	GameWindow *static_text = nullptr;
 	const Image *target_image = nullptr;
 	const Image *ruler_image = nullptr;
@@ -7401,6 +7391,17 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 				UnicodeString fetched_static_text =
 					game_text->fetch(static_text_label, &static_text_label_exists);
 				static_text_nonempty = !fetched_static_text.isEmpty();
+				extra_button_labels_exist = true;
+				extra_buttons_text_nonempty = true;
+				for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+					UnicodeString fetched_extra_text =
+						game_text->fetch(kMainMenuExtraButtonLabels[i], &extra_button_label_exists[i]);
+					extra_button_text_nonempty[i] = !fetched_extra_text.isEmpty();
+					extra_button_labels_exist =
+						extra_button_labels_exist && extra_button_label_exists[i];
+					extra_buttons_text_nonempty =
+						extra_buttons_text_nonempty && extra_button_text_nonempty[i];
+				}
 			}
 		}
 		runtime_ruler_texture_installed =
@@ -7432,6 +7433,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		texture_file_exists && ruler_texture_file_exists &&
 		game_text_initialized && button_text_label_exists &&
 		button_text_nonempty &&
+		(g_ww3d_main_menu_layout_image_repaint_static_mode ||
+			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
 		(!g_ww3d_main_menu_layout_image_repaint_static_mode ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready) {
@@ -7658,11 +7661,21 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			root, TheNameKeyGenerator->nameToKey(AsciiString(ruler_name)));
 		button = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(button_name)));
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			extra_buttons[i] = manager->winGetWindowFromId(
+				root,
+				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuExtraButtonNames[i])));
+		}
 		static_text = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(static_text_name)));
 		target_found = target != nullptr;
 		ruler_found = ruler != nullptr;
 		button_found = button != nullptr;
+		extra_buttons_found = true;
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			extra_button_found[i] = extra_buttons[i] != nullptr;
+			extra_buttons_found = extra_buttons_found && extra_button_found[i];
+		}
 		static_text_found = static_text != nullptr;
 		root_callback_bound =
 			root->winGetWindowId() == TheNameKeyGenerator->nameToKey(AsciiString(root_name)) &&
@@ -7721,6 +7734,67 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			button_hidden = BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(button, button_x, button_y, button_width, button_height);
 		}
+		extra_buttons_callback_bound = true;
+		extra_buttons_images_bound = true;
+		extra_buttons_text_display_string_bound = true;
+		extra_buttons_text_size_computed = true;
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			GameWindow *extra_button = extra_buttons[i];
+			if (extra_button == nullptr) {
+				extra_buttons_callback_bound = false;
+				extra_buttons_images_bound = false;
+				extra_buttons_text_display_string_bound = false;
+				extra_buttons_text_size_computed = false;
+				continue;
+			}
+			extra_button_callback_bound[i] =
+				extra_button->winGetDrawFunc() == W3DGadgetPushButtonImageDraw &&
+				extra_button->winGetSystemFunc() == GadgetPushButtonSystem &&
+				extra_button->winGetInputFunc() == GadgetPushButtonInput;
+			const Image *extra_left_image = GadgetButtonGetLeftEnabledImage(extra_button);
+			const Image *extra_middle_image = GadgetButtonGetMiddleEnabledImage(extra_button);
+			const Image *extra_right_image = GadgetButtonGetRightEnabledImage(extra_button);
+			extra_button_images_bound[i] =
+				extra_left_image != nullptr &&
+				extra_middle_image != nullptr &&
+				extra_right_image != nullptr &&
+				extra_left_image == button_left_image &&
+				extra_middle_image == button_middle_image &&
+				extra_right_image == button_right_image;
+			DisplayString *extra_text =
+				extra_button->winGetInstanceData()->getTextDisplayString();
+			extra_button_text_display_string_bound[i] =
+				extra_text != nullptr &&
+				extra_text->getTextLength() > 0;
+			if (extra_button_text_display_string_bound[i]) {
+				extra_button_text_length[i] = extra_text->getTextLength();
+				extra_text->getSize(&extra_button_text_width[i], &extra_button_text_height[i]);
+				extra_button_text_size_computed[i] =
+					extra_button_text_width[i] > 0 &&
+					extra_button_text_height[i] > 0;
+				AsciiString ascii_text;
+				ascii_text.translate(extra_text->getText());
+				extra_button_ascii[i] =
+					ascii_text.str() != nullptr ? ascii_text.str() : "";
+			}
+			extra_button_hidden[i] = BitTest(extra_button->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				extra_button,
+				extra_button_x[i],
+				extra_button_y[i],
+				extra_button_width[i],
+				extra_button_height[i]);
+			extra_buttons_callback_bound =
+				extra_buttons_callback_bound && extra_button_callback_bound[i];
+			extra_buttons_images_bound =
+				extra_buttons_images_bound && extra_button_images_bound[i];
+			extra_buttons_text_display_string_bound =
+				extra_buttons_text_display_string_bound &&
+				extra_button_text_display_string_bound[i] &&
+				extra_button_ascii[i].length() > 0;
+			extra_buttons_text_size_computed =
+				extra_buttons_text_size_computed && extra_button_text_size_computed[i];
+		}
 		if (static_text != nullptr) {
 			static_text_callback_bound =
 				static_text->winGetDrawFunc() == W3DGadgetStaticTextDraw &&
@@ -7766,16 +7840,26 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 				static_text_ascii.length() > 0) :
 			(button_found && button_callback_bound &&
 				button_images_bound && button_text_display_string_bound &&
-				button_text_ascii.length() > 0);
+				button_text_ascii.length() > 0 &&
+				extra_buttons_found && extra_buttons_callback_bound &&
+				extra_buttons_images_bound &&
+				extra_buttons_text_display_string_bound);
 
 	if (root_found && target_found && ruler_found && focused_window_ready &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
 		target_image_bound && ruler_image_bound) {
-		hidden_child_count = hide_root_children_except_targets(
-			root,
-			target,
-			ruler,
-			g_ww3d_main_menu_layout_image_repaint_static_mode ? static_text : button);
+		std::vector<GameWindow *> repaint_targets;
+		repaint_targets.push_back(target);
+		repaint_targets.push_back(ruler);
+		if (g_ww3d_main_menu_layout_image_repaint_static_mode) {
+			repaint_targets.push_back(static_text);
+		} else {
+			repaint_targets.push_back(button);
+			for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+				repaint_targets.push_back(extra_buttons[i]);
+			}
+		}
+		hidden_child_count = hide_root_children_except_targets(root, repaint_targets);
 		if (g_ww3d_main_menu_layout_image_repaint_static_mode && static_text != nullptr) {
 			show_window_and_ancestors(static_text);
 			static_text_visibility_focused = true;
@@ -7784,6 +7868,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		target_hidden = target != nullptr ? BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 		ruler_hidden = ruler != nullptr ? BitTest(ruler->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 		button_hidden = button != nullptr ? BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		extra_buttons_visible = true;
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			extra_button_hidden[i] =
+				extra_buttons[i] != nullptr ?
+					BitTest(extra_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+			extra_buttons_visible = extra_buttons_visible && !extra_button_hidden[i];
+		}
 		static_text_hidden =
 			static_text != nullptr ? BitTest(static_text->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
@@ -7796,7 +7887,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	const UnsignedInt expected_indexed_draws =
 		g_ww3d_main_menu_layout_image_repaint_static_mode ? 3u : 5u;
 	const bool focused_window_visible =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ? !static_text_hidden : !button_hidden;
+		g_ww3d_main_menu_layout_image_repaint_static_mode ?
+			!static_text_hidden :
+			(!button_hidden && extra_buttons_visible);
 
 	if (children_pruned && !target_hidden && !ruler_hidden && focused_window_visible) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
@@ -7827,6 +7920,23 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			text->getSize(&static_text_width, &static_text_height);
 			static_text_size_computed = static_text_width > 0 && static_text_height > 0;
 		}
+	}
+	for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+		if (extra_buttons[i] != nullptr && extra_button_text_display_string_bound[i]) {
+			DisplayString *extra_text =
+				extra_buttons[i]->winGetInstanceData()->getTextDisplayString();
+			if (extra_text != nullptr) {
+				extra_text->getSize(&extra_button_text_width[i], &extra_button_text_height[i]);
+				extra_button_text_size_computed[i] =
+					extra_button_text_width[i] > 0 &&
+					extra_button_text_height[i] > 0;
+			}
+		}
+	}
+	extra_buttons_text_size_computed = true;
+	for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+		extra_buttons_text_size_computed =
+			extra_buttons_text_size_computed && extra_button_text_size_computed[i];
 	}
 
 	TextureClass *loaded_texture =
@@ -7871,6 +7981,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		target = nullptr;
 		ruler = nullptr;
 		button = nullptr;
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			extra_buttons[i] = nullptr;
+		}
 		static_text = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
 	}
@@ -7930,6 +8043,30 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
 	const WasmD3D8DrawTextureStageState *stage1 =
 		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	bool extra_buttons_focus_ok = g_ww3d_main_menu_layout_image_repaint_static_mode;
+	if (!g_ww3d_main_menu_layout_image_repaint_static_mode) {
+		extra_buttons_focus_ok =
+			extra_button_labels_exist &&
+			extra_buttons_text_nonempty &&
+			extra_buttons_found &&
+			extra_buttons_callback_bound &&
+			extra_buttons_images_bound &&
+			extra_buttons_text_display_string_bound &&
+			extra_buttons_visible;
+		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+			extra_buttons_focus_ok =
+				extra_buttons_focus_ok &&
+				extra_button_label_exists[i] &&
+				extra_button_text_nonempty[i] &&
+				extra_button_text_size_computed[i] &&
+				extra_button_ascii[i].length() > 0 &&
+				!extra_button_hidden[i] &&
+				extra_button_x[i] == 540 &&
+				extra_button_y[i] == kMainMenuExtraButtonY[i] &&
+				extra_button_width[i] == 208 &&
+				extra_button_height[i] == 36;
+		}
+	}
 	const bool button_focus_ok =
 		g_ww3d_main_menu_layout_image_repaint_static_mode ||
 		(button_found &&
@@ -7974,6 +8111,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		game_text_initialized &&
 		button_text_label_exists &&
 		button_text_nonempty &&
+		(g_ww3d_main_menu_layout_image_repaint_static_mode ||
+			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
 		(!g_ww3d_main_menu_layout_image_repaint_static_mode ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready &&
@@ -8033,6 +8172,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		target_image_bound &&
 		ruler_image_bound &&
 		button_focus_ok &&
+		extra_buttons_focus_ok &&
 		static_text_focus_ok &&
 		!target_hidden &&
 		!ruler_hidden &&
@@ -8121,10 +8261,52 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	const std::string static_text_window_name_json = json_escape(static_text_name);
 	const std::string static_text_label_json = json_escape(static_text_label);
 	const std::string static_text_ascii_json = json_escape(static_text_ascii);
+	std::string extra_buttons_json = "[";
+	for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
+		if (i > 0) {
+			extra_buttons_json += ",";
+		}
+		const std::string name_json = json_escape(kMainMenuExtraButtonNames[i]);
+		const std::string label_json = json_escape(kMainMenuExtraButtonLabels[i]);
+		const std::string ascii_json = json_escape(extra_button_ascii[i]);
+		char extra_button_buffer[1400];
+		std::snprintf(
+			extra_button_buffer,
+			sizeof(extra_button_buffer),
+			"{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+			"\"width\":%d,\"height\":%d,"
+			"\"systemFunc\":\"GadgetPushButtonSystem\","
+			"\"inputFunc\":\"GadgetPushButtonInput\","
+			"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
+			"\"hidden\":%s,\"labelExists\":%s,\"textNonEmpty\":%s,"
+			"\"imagesBound\":%s,"
+			"\"images\":[\"%s\",\"%s\",\"%s\"],"
+			"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
+			"\"length\":%d,\"width\":%d,\"height\":%d}}",
+			name_json.c_str(),
+			extra_button_x[i],
+			extra_button_y[i],
+			extra_button_width[i],
+			extra_button_height[i],
+			bool_json(extra_button_hidden[i]),
+			bool_json(extra_button_label_exists[i]),
+			bool_json(extra_button_text_nonempty[i]),
+			bool_json(extra_button_images_bound[i]),
+			button_left_image_name_json.c_str(),
+			button_middle_image_name_json.c_str(),
+			button_right_image_name_json.c_str(),
+			label_json.c_str(),
+			ascii_json.c_str(),
+			extra_button_text_length[i],
+			extra_button_text_width[i],
+			extra_button_text_height[i]);
+		extra_buttons_json += extra_button_buffer;
+	}
+	extra_buttons_json += "]";
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[38000];
+	char buffer[46000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -8137,6 +8319,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
 		"\"GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label\","
+		"\"MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw\","
+		"\"GameText::fetch(main visible button labels) -> W3DDisplayString::draw button labels\","
 		"\"MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw\","
 		"\"GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
@@ -8157,6 +8344,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"gameTextCsfExists\":%s,\"gameTextCreated\":%s,"
 		"\"gameTextInitialized\":%s,\"buttonTextLabelExists\":%s,"
 		"\"buttonTextNonEmpty\":%s,"
+		"\"extraButtonLabelsExist\":%s,"
+		"\"extraButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,\"staticTextNonEmpty\":%s,"
 		"\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
@@ -8177,19 +8366,25 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"managerAllocated\":%s,\"layoutLoaded\":%s,"
 		"\"layoutWindowCount\":%d,\"rootFound\":%s,"
 		"\"targetFound\":%s,\"rulerFound\":%s,\"buttonFound\":%s,"
+		"\"extraButtonsFound\":%s,"
 		"\"staticTextFound\":%s,"
 		"\"rootCallbackBound\":%s,"
 		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
 		"\"buttonCallbackBound\":%s,"
+		"\"extraButtonsCallbackBound\":%s,"
 		"\"staticTextCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
+		"\"extraButtonsImagesBound\":%s,"
 		"\"buttonTextDisplayStringBound\":%s,"
 		"\"buttonTextSizeComputed\":%s,"
+		"\"extraButtonsTextDisplayStringBound\":%s,"
+		"\"extraButtonsTextSizeComputed\":%s,"
 		"\"staticTextUserDataBound\":%s,"
 		"\"staticTextDisplayStringBound\":%s,"
 		"\"staticTextSizeComputed\":%s,"
 		"\"targetHidden\":%s,\"rulerHidden\":%s,\"buttonHidden\":%s,"
+		"\"extraButtonsVisible\":%s,"
 		"\"staticTextInitialHidden\":%s,\"staticTextHidden\":%s,"
 		"\"staticTextVisibilityFocused\":%s,"
 		"\"childrenPruned\":%s,"
@@ -8219,6 +8414,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"images\":[\"%s\",\"%s\",\"%s\"],"
 		"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
 		"\"length\":%d,\"width\":%d,\"height\":%d}},"
+		"\"extraButtons\":%s,"
 		"\"staticText\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GadgetStaticTextSystem\","
@@ -8250,6 +8446,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"gameText\":{\"csfPath\":\"%s\",\"created\":%s,"
 		"\"initialized\":%s,\"buttonLabelExists\":%s,"
 		"\"buttonTextNonEmpty\":%s,"
+		"\"extraButtonLabelsExist\":%s,"
+		"\"extraButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,"
 		"\"staticTextNonEmpty\":%s},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
@@ -8318,6 +8516,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(game_text_initialized),
 		bool_json(button_text_label_exists),
 		bool_json(button_text_nonempty),
+		bool_json(extra_button_labels_exist),
+		bool_json(extra_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		bool_json(name_keys_ready),
@@ -8357,23 +8557,29 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(target_found),
 		bool_json(ruler_found),
 		bool_json(button_found),
+		bool_json(extra_buttons_found),
 		bool_json(static_text_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
 		bool_json(ruler_callback_bound),
 		bool_json(button_callback_bound),
+		bool_json(extra_buttons_callback_bound),
 		bool_json(static_text_callback_bound),
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
 		bool_json(button_images_bound),
+		bool_json(extra_buttons_images_bound),
 		bool_json(button_text_display_string_bound),
 		bool_json(button_text_size_computed),
+		bool_json(extra_buttons_text_display_string_bound),
+		bool_json(extra_buttons_text_size_computed),
 		bool_json(static_text_user_data_bound),
 		bool_json(static_text_display_string_bound),
 		bool_json(static_text_size_computed),
 		bool_json(target_hidden),
 		bool_json(ruler_hidden),
 		bool_json(button_hidden),
+		bool_json(extra_buttons_visible),
 		bool_json(static_text_initial_hidden),
 		bool_json(static_text_hidden),
 		bool_json(static_text_visibility_focused),
@@ -8418,6 +8624,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		button_text_length,
 		button_text_width,
 		button_text_height,
+		extra_buttons_json.c_str(),
 		static_text_window_name_json.c_str(),
 		static_text_x,
 		static_text_y,
@@ -8479,6 +8686,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(game_text_initialized),
 		bool_json(button_text_label_exists),
 		bool_json(button_text_nonempty),
+		bool_json(extra_button_labels_exist),
+		bool_json(extra_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		texture_id,

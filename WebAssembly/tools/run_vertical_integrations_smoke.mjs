@@ -930,6 +930,12 @@ const steps = [
         "MainMenu layout image repaint smoke did not target the real ButtonSinglePlayer image-state child", payload.originalPaths);
       expect(payload.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label"),
         "MainMenu layout image repaint smoke did not render the real ButtonSinglePlayer text label", payload.originalPaths);
+      expect(payload.originalPaths?.includes("MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw")
+          && payload.originalPaths?.includes("MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw")
+          && payload.originalPaths?.includes("MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw")
+          && payload.originalPaths?.includes("MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw")
+          && payload.originalPaths?.includes("GameText::fetch(main visible button labels) -> W3DDisplayString::draw button labels"),
+        "MainMenu layout image repaint smoke did not render the other real visible main buttons", payload.originalPaths);
       expect(payload.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
           && payload.originalPaths?.includes("GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text"),
         "MainMenu layout image repaint smoke did not render the real hidden static text child", payload.originalPaths);
@@ -960,9 +966,39 @@ const steps = [
           && payload.gameText?.initialized === true
           && payload.gameText?.buttonLabelExists === true
           && payload.gameText?.buttonTextNonEmpty === true
+          && payload.gameText?.extraButtonLabelsExist === true
+          && payload.gameText?.extraButtonTextNonEmpty === true
           && payload.gameText?.staticTextLabelExists === true
           && payload.gameText?.staticTextNonEmpty === true,
         "MainMenu layout image repaint smoke did not resolve button/static text through real GameText", payload);
+      const expectedExtraButtons = [
+        ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
+        ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
+        ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
+        ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+      ];
+      expect(Array.isArray(payload.extraButtons)
+          && payload.extraButtons.length === expectedExtraButtons.length
+          && expectedExtraButtons.every(([name, label, y], index) => {
+            const button = payload.extraButtons[index];
+            const proof = payload.extraButtonRegions?.[index];
+            return button?.name === name
+              && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+              && button?.x === 540
+              && button?.y === y
+              && button?.width === 208
+              && button?.height === 36
+              && button?.hidden === false
+              && button?.imagesBound === true
+              && button?.text?.label === label
+              && button?.text?.length > 0
+              && button?.text?.width > 0
+              && button?.text?.height > 0
+              && proof?.region?.coloredPixelCount >= 20
+              && proof?.textRegion?.coloredPixelCount >= 20
+              && proof?.textRegion?.maxComponent >= 180;
+          }),
+        "MainMenu layout image repaint smoke did not report/pixel-prove the other visible main buttons", payload);
       expect(payload.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
           && payload.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
           && payload.staticText?.initialHidden === true
@@ -1267,7 +1303,7 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
-    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, and browser WebGL2 pixels",
+    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels, and browser WebGL2 pixels",
     "real MainMenuRuler HandCreated mapped image through TexturesZH.big, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
@@ -1277,7 +1313,7 @@ console.log(JSON.stringify({
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
-    "advance real W3DDisplay-backed WindowLayout repaint so archive-loaded shell layouts produce browser pixels instead of SmokeDisplay counters",
+    "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",

@@ -259,6 +259,39 @@ try {
 
   const stage0 = repaintResult.probe?.draw?.renderState?.textureStages?.[0];
   const stage1 = repaintResult.probe?.draw?.renderState?.textureStages?.[1];
+  const expectedExtraButtons = [
+    ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
+    ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
+    ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
+    ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+  ];
+  const extraButtons = repaintResult.probe?.layout?.extraButtons ?? [];
+  const extraButtonsValid = expectedExtraButtons.every(([name, label, y], index) => {
+    const button = extraButtons[index];
+    const proof = repaintResult.extraButtonRegions?.[index];
+    return button?.name === name
+      && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+      && button?.systemFunc === "GadgetPushButtonSystem"
+      && button?.inputFunc === "GadgetPushButtonInput"
+      && button?.x === 540
+      && button?.y === y
+      && button?.width === 208
+      && button?.height === 36
+      && button?.hidden === false
+      && button?.labelExists === true
+      && button?.textNonEmpty === true
+      && button?.imagesBound === true
+      && button?.images?.[0] === "Buttons-Left"
+      && button?.images?.[1] === "Buttons-Middle"
+      && button?.images?.[2] === "Buttons-Right"
+      && button?.text?.label === label
+      && button?.text?.length > 0
+      && button?.text?.width > 0
+      && button?.text?.height > 0
+      && proof?.region?.coloredPixelCount >= 20
+      && proof?.textRegion?.coloredPixelCount >= 20
+      && proof?.textRegion?.maxComponent >= 180;
+  });
   if (!repaintResult.ok
       || repaintResult.command !== "ww3dMainMenuLayoutImageRepaint"
       || repaintResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
@@ -268,6 +301,11 @@ try {
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("GameText::fetch(main visible button labels) -> W3DDisplayString::draw button labels")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
       || repaintResult.probe?.archives?.windowEntry !== layoutEntry
       || repaintResult.probe?.archives?.mappedImageEntry !== logoMappedImageEntry
@@ -286,6 +324,14 @@ try {
       || repaintResult.probe?.results?.buttonTextNonEmpty !== true
       || repaintResult.probe?.results?.buttonTextDisplayStringBound !== true
       || repaintResult.probe?.results?.buttonTextSizeComputed !== true
+      || repaintResult.probe?.results?.extraButtonLabelsExist !== true
+      || repaintResult.probe?.results?.extraButtonTextNonEmpty !== true
+      || repaintResult.probe?.results?.extraButtonsFound !== true
+      || repaintResult.probe?.results?.extraButtonsCallbackBound !== true
+      || repaintResult.probe?.results?.extraButtonsImagesBound !== true
+      || repaintResult.probe?.results?.extraButtonsTextDisplayStringBound !== true
+      || repaintResult.probe?.results?.extraButtonsTextSizeComputed !== true
+      || repaintResult.probe?.results?.extraButtonsVisible !== true
       || repaintResult.probe?.results?.texturePreloaded !== true
       || repaintResult.probe?.results?.rulerTexturePreloaded !== true
       || repaintResult.probe?.results?.textureResolved !== true
@@ -351,6 +397,10 @@ try {
       || repaintResult.probe?.gameText?.initialized !== true
       || repaintResult.probe?.gameText?.buttonLabelExists !== true
       || repaintResult.probe?.gameText?.buttonTextNonEmpty !== true
+      || repaintResult.probe?.gameText?.extraButtonLabelsExist !== true
+      || repaintResult.probe?.gameText?.extraButtonTextNonEmpty !== true
+      || extraButtons.length !== expectedExtraButtons.length
+      || !extraButtonsValid
       || String(repaintResult.probe?.texture?.name ?? "").toLowerCase() !==
         "scsmshelluserinterface512_001.tga"
       || repaintResult.probe?.texture?.archiveEntry !== logoTextureEntry
@@ -400,6 +450,7 @@ try {
       buttonPixels: repaintResult.buttonPixels,
       buttonRegion: repaintResult.buttonRegion,
       buttonTextRegion: repaintResult.buttonTextRegion,
+      extraButtonRegions: repaintResult.extraButtonRegions,
       coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
       coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
       coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
@@ -514,6 +565,8 @@ try {
     buttonPixels: repaintResult.buttonPixels,
     buttonRegion: repaintResult.buttonRegion,
     buttonTextRegion: repaintResult.buttonTextRegion,
+    extraButtons,
+    extraButtonRegions: repaintResult.extraButtonRegions,
     staticText: staticTextResult.probe.layout.staticText,
     staticTextRegion: staticTextResult.staticTextRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,

@@ -3586,6 +3586,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       label`, 21 browser indexed draws, and a non-empty button text pixel
       region in
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
+- [x] Broaden the same `Menus/MainMenu.wnd` repaint smoke from one visible
+      push-button to the real main-menu button stack. The image-mode probe now
+      keeps `ButtonSinglePlayer`, `ButtonMultiplayer`, `ButtonOptions`,
+      `ButtonCredits`, and `ButtonExit` visible alongside the ruler and logo,
+      verifies each child has the original `W3DGadgetPushButtonImageDraw` /
+      `GadgetPushButtonSystem` / `GadgetPushButtonInput` callbacks, confirms
+      all five use the shipped `Buttons-Left` / `Buttons-Middle` /
+      `Buttons-Right` mapped images, and fetches their CSF labels through the
+      original `GameTextInterface` before rendering them with
+      `W3DDisplayString`. The Playwright harness now samples every added
+      button body and text region, gating 72 `W3DDisplay::drawImage` calls, 82
+      browser indexed draws, and non-empty pixels for `MULTIPLAYER`, `OPTIONS`,
+      `CREDITS`, and `EXIT GAME` in
+      `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`. Verified
+      with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
       real hidden static text child: the probe now finds the shipped
       `MainMenu.wnd:StaticTextSelectDifficulty` window, verifies its original

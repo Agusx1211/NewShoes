@@ -662,11 +662,12 @@ shares structure and follows behind.
       current direct display slices prove `MainMenu.wnd:Logo` and the
       `MainMenuRuler` HandCreated mapped image / `TexturesZH.big`
       `MainMenuRuleruserinterface.tga` texture path, and the WND image repaint
-      smoke now carries the full-screen ruler, logo overlay, and
-      `MainMenu.wnd:ButtonSinglePlayer` enabled three-piece button images plus
-      the real `GUI:SinglePlayer` label through `GameText::fetch` and
-      `W3DDisplayString::draw`; its static-text-focused mode also unhides the
-      shipped `MainMenu.wnd:StaticTextSelectDifficulty` child and renders
+      smoke now carries the full-screen ruler, logo overlay, and the visible
+      main button stack (`ButtonSinglePlayer`, `ButtonMultiplayer`,
+      `ButtonOptions`, `ButtonCredits`, and `ButtonExit`) through enabled
+      three-piece button images plus real CSF labels through `GameText::fetch`
+      and `W3DDisplayString::draw`; its static-text-focused mode also unhides
+      the shipped `MainMenu.wnd:StaticTextSelectDifficulty` child and renders
       `GUI:SelectDifficulty` through original `W3DGadgetStaticTextDraw` /
       `GadgetStaticTextSystem` / `W3DDisplayString`.
       Remaining work is broader unpruned shell composition (for example
