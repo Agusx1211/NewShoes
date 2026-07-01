@@ -53,6 +53,7 @@ loose_video_payloads=(
 base_data_archives=(
   INI.big
   Terrain.big
+  Window.big
 )
 
 base_language_archives=(

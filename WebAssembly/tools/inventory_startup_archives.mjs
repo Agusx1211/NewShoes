@@ -97,6 +97,13 @@ function usage() {
     "                          base-owned audio settings/default INIs. Current",
     "                          Zero Hour-only assets fail under this mode by",
     "                          design.",
+    "  --require-blank-window-layout",
+    "                          Bounded verification mode for the original",
+    "                          Menus\\BlankWindow.wnd gameplay/loading layout.",
+    "                          Fails nonzero (ok=false) unless a mounted archive",
+    "                          supplies Window\\Menus\\BlankWindow.wnd. Current",
+    "                          Zero Hour-only assets fail under this mode by",
+    "                          design.",
   ].join("\n");
 }
 
@@ -115,6 +122,7 @@ function parseArgs(argv) {
   let strict = false;
   let requireBaseStartup = false;
   let requireAudioStartup = false;
+  let requireBlankWindowLayout = false;
 
   for (const arg of argv) {
     if (arg === "--expect-current-zh") {
@@ -125,6 +133,8 @@ function parseArgs(argv) {
       requireBaseStartup = true;
     } else if (arg === "--require-audio-startup") {
       requireAudioStartup = true;
+    } else if (arg === "--require-blank-window-layout") {
+      requireBlankWindowLayout = true;
     } else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -144,6 +154,7 @@ function parseArgs(argv) {
     strict,
     requireBaseStartup,
     requireAudioStartup,
+    requireBlankWindowLayout,
   };
 }
 
@@ -252,6 +263,9 @@ function archiveRecord(archive, entry) {
 }
 
 const optionalBaseArchives = ["INI.big", "English.big"];
+const optionalBaseLayoutArchives = ["Window.big"];
+const blankWindowLayoutPath = "Window\\Menus\\BlankWindow.wnd";
+const blankWindowRequestedPath = "Menus\\BlankWindow.wnd";
 
 const baseArchiveStartupPaths = new Set([
   "data\\ini\\default\\gamedata.ini",
@@ -338,6 +352,10 @@ function buildInventory(assetsDir, archives) {
 
   const presentArchiveNames = new Set(archives.map((archive) => archive.name));
   const optionalBaseArchiveState = optionalBaseArchives.map((name) => ({
+    name,
+    present: presentArchiveNames.has(name),
+  }));
+  const optionalBaseLayoutArchiveState = optionalBaseLayoutArchives.map((name) => ({
     name,
     present: presentArchiveNames.has(name),
   }));
@@ -449,6 +467,25 @@ function buildInventory(assetsDir, archives) {
     ++missingAudioByReason[detail.reason];
   }
   const audioStartupReady = missingAudioStartupFiles.length === 0;
+  const blankWindowEntries = byPath.get(normalizeEntryPath(blankWindowLayoutPath)) ?? [];
+  const blankWindowReady = blankWindowEntries.length > 0;
+  const baseWindowArchivePresent = presentArchiveNames.has("Window.big");
+  const blankWindowLayout = {
+    source:
+      "GameLogicDispatch.cpp::prepareNewGame / GameEngine.cpp / Shell.cpp / ScoreScreen.cpp",
+    requestedPath: blankWindowRequestedPath,
+    archivePath: blankWindowLayoutPath,
+    ready: blankWindowReady,
+    archives: blankWindowEntries,
+    optionalBase: true,
+    expectedSource: "Window.big",
+    reason: blankWindowReady
+      ? null
+      : baseWindowArchivePresent ? "missingFromBaseArchive" : "optionalBaseArchiveAbsent",
+    mountName: baseWindowArchivePresent ? "ZZBase_Window.big" : null,
+    note:
+      "Zero Hour WindowZH.big does not ship this layout in the current asset set; original Win32BIGFileSystem also mounts base Generals *.big archives from the installed base game.",
+  };
 
   return {
     ok: true,
@@ -462,6 +499,8 @@ function buildInventory(assetsDir, archives) {
       entryCount: archive.entryCount,
     })),
     optionalBaseArchives: optionalBaseArchiveState,
+    optionalBaseLayoutArchives: optionalBaseLayoutArchiveState,
+    blankWindowLayout,
     baseArchiveReadiness,
     baseArchiveStartupReady,
     missingBaseFiles,
@@ -516,6 +555,21 @@ function assertShapeForCurrentZh(inventory) {
   }
   if (inventory.optionalBaseArchives?.some((archive) => archive.present)) {
     failures.push("current Zero Hour-only inventory should not include optional base archives");
+  }
+  if (!Array.isArray(inventory.optionalBaseLayoutArchives) ||
+      inventory.optionalBaseLayoutArchives.length !== optionalBaseLayoutArchives.length ||
+      inventory.optionalBaseLayoutArchives[0]?.name !== "Window.big" ||
+      inventory.optionalBaseLayoutArchives[0]?.present !== false) {
+    failures.push("current Zero Hour-only inventory should report absent optional base Window.big");
+  }
+  if (inventory.blankWindowLayout?.ready !== false ||
+      inventory.blankWindowLayout?.requestedPath !== blankWindowRequestedPath ||
+      inventory.blankWindowLayout?.archivePath !== blankWindowLayoutPath ||
+      inventory.blankWindowLayout?.expectedSource !== "Window.big" ||
+      inventory.blankWindowLayout?.reason !== "optionalBaseArchiveAbsent" ||
+      inventory.blankWindowLayout?.mountName !== null ||
+      inventory.blankWindowLayout?.archives?.length !== 0) {
+    failures.push("current Zero Hour-only inventory should classify BlankWindow as an absent optional base Window.big layout");
   }
   if (inventory.missingByReason?.optionalBaseArchiveAbsent !== 16 ||
       inventory.missingByReason?.missingFromBaseArchive !== 0 ||
@@ -613,6 +667,7 @@ async function main() {
     strict,
     requireBaseStartup,
     requireAudioStartup,
+    requireBlankWindowLayout,
   } = parseArgs(process.argv.slice(2));
   const archivePaths = await findBigArchives(assetsDir);
   const archives = [];
@@ -686,6 +741,15 @@ async function main() {
     fail(
       `Required audio startup-archive verification failed: missing ` +
       `${inventory.missingAudioStartupFiles.join(", ")}`,
+    );
+  }
+  if (requireBlankWindowLayout && !inventory.blankWindowLayout.ready) {
+    inventory.ok = false;
+    inventory.blankWindowLayoutFailure = inventory.blankWindowLayout;
+    fail(
+      `BlankWindow layout archive inventory failed: ` +
+      `${inventory.blankWindowLayout.archivePath} is not available from ` +
+      `${inventory.blankWindowLayout.expectedSource} (${inventory.blankWindowLayout.reason})`,
     );
   }
   console.log(JSON.stringify(inventory, null, 2));

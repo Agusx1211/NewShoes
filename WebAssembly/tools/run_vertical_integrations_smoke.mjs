@@ -1615,11 +1615,11 @@ console.log(JSON.stringify({
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
+    "supply base Generals Window.big to replace the focused runtime BlankWindow layout adapter through the archive-backed layout path",
     "supply base Generals terrain archives in this workspace and tighten the W3DTerrainVisual load-window gate to require source-backed cells once Terrain.big is available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
-    "replace focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load",
     "deferred networking-last item: extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
   ],
   steps: results.map((result) => result.name),

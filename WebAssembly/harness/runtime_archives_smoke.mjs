@@ -37,6 +37,11 @@ const optionalBaseRuntimeArchives = [
     mountName: "ZZBase_English.big",
     description: "base Generals English localization data",
   },
+  {
+    sourceName: "Window.big",
+    mountName: "ZZBase_Window.big",
+    description: "base Generals shell/loading window layouts",
+  },
 ];
 
 const baseAudioStartupFiles = [

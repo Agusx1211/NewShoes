@@ -384,7 +384,7 @@ console.log(JSON.stringify({
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
-    'replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
+    'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

@@ -220,12 +220,12 @@ function main() {
     /^const\s+baseArchiveAudioStartupPaths\s*=\s*new\s+Set\s*\(\s*\[/.test(line),
   );
   facts.inventoryBaseArchiveAudioStartupPathsDefLine = {
-    expectedLine: 279,
+    expectedLine: 293,
     line: baseAudioPathsDefLine,
   };
-  if (baseAudioPathsDefLine !== 279) {
+  if (baseAudioPathsDefLine !== 293) {
     errors.push(
-      `inventory baseArchiveAudioStartupPaths expected at line 279 but found at ${baseAudioPathsDefLine}`,
+      `inventory baseArchiveAudioStartupPaths expected at line 293 but found at ${baseAudioPathsDefLine}`,
     );
   }
   // These normalized (lowercased) paths also appear as doubled-backslash JS
@@ -255,56 +255,57 @@ function main() {
     /arg\s*===\s*"--require-audio-startup"/.test(line),
   );
   facts.inventoryRequireAudioStartupArgLine = {
-    expectedLine: 126,
+    expectedLine: 134,
     line: requireAudioStartupArgLine,
   };
-  if (requireAudioStartupArgLine !== 126) {
+  if (requireAudioStartupArgLine !== 134) {
     errors.push(
-      `inventory --require-audio-startup arg branch expected at line 126 but found at ${requireAudioStartupArgLine}`,
+      `inventory --require-audio-startup arg branch expected at line 134 but found at ${requireAudioStartupArgLine}`,
     );
   }
   const requireAudioStartupDestructureLine = lineNumber(inventory.lines, (line) =>
     /^\s*requireAudioStartup,/.test(line),
   );
   facts.inventoryRequireAudioStartupDestructureLine = {
-    expectedLine: 146,
+    expectedLine: 156,
     line: requireAudioStartupDestructureLine,
   };
-  if (requireAudioStartupDestructureLine !== 146) {
+  if (requireAudioStartupDestructureLine !== 156) {
     errors.push(
-      `inventory requireAudioStartup destructure expected at line 146 but found at ${requireAudioStartupDestructureLine}`,
+      `inventory requireAudioStartup destructure expected at line 156 but found at ${requireAudioStartupDestructureLine}`,
     );
   }
   const requireAudioStartupCheckLine = lineNumber(inventory.lines, (line) =>
     /requireAudioStartup\s*&&\s*!inventory\.audioStartupReady/.test(line),
   );
   facts.inventoryRequireAudioStartupCheckLine = {
-    expectedLine: 683,
+    expectedLine: 738,
     line: requireAudioStartupCheckLine,
   };
-  if (requireAudioStartupCheckLine !== 683) {
+  if (requireAudioStartupCheckLine !== 738) {
     errors.push(
-      `inventory requireAudioStartup check expected at line 683 but found at ${requireAudioStartupCheckLine}`,
+      `inventory requireAudioStartup check expected at line 738 but found at ${requireAudioStartupCheckLine}`,
     );
   }
   const audioStartupSourceLine = lineNumber(inventory.lines, (line) =>
     /audioStartupSource:\s*"GameAudio\.cpp::AudioManager::init"/.test(line),
   );
   facts.inventoryAudioStartupSourceLine = {
-    expectedLine: 468,
+    expectedLine: 507,
     line: audioStartupSourceLine,
   };
-  if (audioStartupSourceLine !== 468) {
+  if (audioStartupSourceLine !== 507) {
     errors.push(
-      `inventory audioStartupSource anchor expected at line 468 but found at ${audioStartupSourceLine}`,
+      `inventory audioStartupSource anchor expected at line 507 but found at ${audioStartupSourceLine}`,
     );
   }
 
   // ========================================================================
   // 3) extract_zh_runtime_archives.sh recognizes optional base Generals
-  //    inputs. Pin the base_data_archives (INI.big) / base_language_archives
-  //    (English.big) declarations, the disc-discovery helper, the optional
-  //    base extraction function, and the optional-base missing messages.
+  //    inputs. Pin the base_data_archives (INI.big/Terrain.big/Window.big) /
+  //    base_language_archives (English.big) declarations, the disc-discovery
+  //    helper, the optional base extraction function, and the optional-base
+  //    missing messages.
   // ========================================================================
   const baseDataArchivesLine = lineNumber(extract.lines, (line) =>
     /^base_data_archives=\(/.test(line),
@@ -323,70 +324,75 @@ function main() {
   if (iniBigLine !== 54) {
     errors.push(`extract INI.big entry expected at line 54 but found at ${iniBigLine}`);
   }
+  const windowBigLine = lineNumber(extract.lines, (line) => /^\s*Window\.big\s*$/.test(line));
+  facts.extractWindowBigEntryLine = { expectedLine: 56, line: windowBigLine };
+  if (windowBigLine !== 56) {
+    errors.push(`extract Window.big entry expected at line 56 but found at ${windowBigLine}`);
+  }
   const baseLanguageArchivesLine = lineNumber(extract.lines, (line) =>
     /^base_language_archives=\(/.test(line),
   );
   facts.extractBaseLanguageArchivesLine = {
-    expectedLine: 57,
+    expectedLine: 59,
     line: baseLanguageArchivesLine,
   };
-  if (baseLanguageArchivesLine !== 57) {
+  if (baseLanguageArchivesLine !== 59) {
     errors.push(
-      `extract base_language_archives expected at line 57 but found at ${baseLanguageArchivesLine}`,
+      `extract base_language_archives expected at line 59 but found at ${baseLanguageArchivesLine}`,
     );
   }
   const englishBigLine = lineNumber(extract.lines, (line) =>
     /^\s*English\.big\s*$/.test(line),
   );
-  facts.extractEnglishBigEntryLine = { expectedLine: 58, line: englishBigLine };
-  if (englishBigLine !== 58) {
+  facts.extractEnglishBigEntryLine = { expectedLine: 60, line: englishBigLine };
+  if (englishBigLine !== 60) {
     errors.push(
-      `extract English.big entry expected at line 58 but found at ${englishBigLine}`,
+      `extract English.big entry expected at line 60 but found at ${englishBigLine}`,
     );
   }
   const findOptionalBaseDiscLine = lineNumber(extract.lines, (line) =>
     /^find_optional_base_disc\(\)/.test(line),
   );
   facts.extractFindOptionalBaseDiscLine = {
-    expectedLine: 82,
+    expectedLine: 84,
     line: findOptionalBaseDiscLine,
   };
-  if (findOptionalBaseDiscLine !== 82) {
+  if (findOptionalBaseDiscLine !== 84) {
     errors.push(
-      `extract find_optional_base_disc expected at line 82 but found at ${findOptionalBaseDiscLine}`,
+      `extract find_optional_base_disc expected at line 84 but found at ${findOptionalBaseDiscLine}`,
     );
   }
   const extractOptionalBaseLine = lineNumber(extract.lines, (line) =>
     /^extract_optional_base_startup_archives\(\)/.test(line),
   );
   facts.extractOptionalBaseStartupArchivesLine = {
-    expectedLine: 162,
+    expectedLine: 164,
     line: extractOptionalBaseLine,
   };
-  if (extractOptionalBaseLine !== 162) {
+  if (extractOptionalBaseLine !== 164) {
     errors.push(
-      `extract extract_optional_base_startup_archives expected at line 162 but found at ${extractOptionalBaseLine}`,
+      `extract extract_optional_base_startup_archives expected at line 164 but found at ${extractOptionalBaseLine}`,
     );
   }
   // Optional base missing/skip messages - the script either extracts/copies
   // base INI.big/English.big or emits these messages.
   const skipBothLine = lineNumber(
     extract.lines,
-    (line) => /Optional base Generals disc images not found; skipping INI\.big\/English\.big extraction/.test(line),
+    (line) => /Optional base Generals disc images not found; skipping base Generals BIG extraction/.test(line),
   );
   facts.extractSkipBothMessageLine = { line: skipBothLine };
   if (skipBothLine === -1) {
     errors.push(
-      "extract optional-base INI.big/English.big skip message not found",
+      "extract optional-base BIG skip message not found",
     );
   }
   const skipIniLine = lineNumber(
     extract.lines,
-    (line) => /Optional base Generals disc 1 image not found; INI\.big was not extracted/.test(line),
+    (line) => /Optional base Generals disc 1 image not found; \$\{archive\} was not extracted/.test(line),
   );
-  facts.extractSkipIniMessageLine = { line: skipIniLine };
+  facts.extractSkipBaseDataArchiveMessageLine = { line: skipIniLine };
   if (skipIniLine === -1) {
-    errors.push("extract optional-base INI.big missing message not found");
+    errors.push("extract optional-base disc 1 archive-loop missing message not found");
   }
   const skipEnglishLine = lineNumber(
     extract.lines,
@@ -399,10 +405,10 @@ function main() {
 
   // ========================================================================
   // 4) runtime_archives_smoke.mjs declares optional base runtime archives for
-  //    INI.big and English.big with mount names ZZBase_INI.big /
-  //    ZZBase_English.big, and asserts startup behavior differs when base INI
-  //    is mounted. Pin the declaration entries and the startup-behavior
-  //    branch.
+  //    INI.big, English.big, and Window.big with mount names ZZBase_INI.big /
+  //    ZZBase_English.big / ZZBase_Window.big, and asserts startup behavior
+  //    differs when base INI is mounted. Pin the declaration entries and the
+  //    startup-behavior branch.
   // ========================================================================
   const optionalBaseDeclLine = lineNumber(smoke.lines, (line) =>
     /^const\s+optionalBaseRuntimeArchives\s*=\s*\[/.test(line),
@@ -464,6 +470,30 @@ function main() {
       `smoke ZZBase_English.big mountName expected at line 37 but found at ${englishMountNameLine}`,
     );
   }
+  const windowMountSourceLine = lineNumber(smoke.lines, (line) =>
+    /^\s*sourceName:\s*"Window\.big",/.test(line),
+  );
+  facts.smokeWindowMountSourceLine = {
+    expectedLine: 41,
+    line: windowMountSourceLine,
+  };
+  if (windowMountSourceLine !== 41) {
+    errors.push(
+      `smoke Window.big sourceName expected at line 41 but found at ${windowMountSourceLine}`,
+    );
+  }
+  const windowMountNameLine = lineNumber(smoke.lines, (line) =>
+    /^\s*mountName:\s*"ZZBase_Window\.big",/.test(line),
+  );
+  facts.smokeWindowMountNameLine = {
+    expectedLine: 42,
+    line: windowMountNameLine,
+  };
+  if (windowMountNameLine !== 42) {
+    errors.push(
+      `smoke ZZBase_Window.big mountName expected at line 42 but found at ${windowMountNameLine}`,
+    );
+  }
 
   // hasBaseIniArchive predicate + the boot-time startup-behavior branch that
   // differs when base INI is mounted (with-base vs missing-files assertions).
@@ -471,12 +501,12 @@ function main() {
     /^const\s+hasBaseIniArchive\s*=/.test(line),
   );
   facts.smokeHasBaseIniArchiveLine = {
-    expectedLine: 3847,
+    expectedLine: 3956,
     line: hasBaseIniArchiveLine,
   };
-  if (hasBaseIniArchiveLine !== 3847) {
+  if (hasBaseIniArchiveLine !== 3956) {
     errors.push(
-      `smoke hasBaseIniArchive expected at line 3847 but found at ${hasBaseIniArchiveLine}`,
+      `smoke hasBaseIniArchive expected at line 3956 but found at ${hasBaseIniArchiveLine}`,
     );
   }
   // The boot-time startup-behavior branch is the `if (hasBaseIniArchive)` in
@@ -494,12 +524,12 @@ function main() {
     }
   }
   facts.smokeStartupBranchCheckLine = {
-    expectedLine: 4075,
+    expectedLine: 4184,
     line: startupBranchCheckLine,
   };
-  if (startupBranchCheckLine !== 4075) {
+  if (startupBranchCheckLine !== 4184) {
     errors.push(
-      `smoke hasBaseIniArchive startup branch expected at line 4075 but found at ${startupBranchCheckLine}`,
+      `smoke hasBaseIniArchive startup branch expected at line 4184 but found at ${startupBranchCheckLine}`,
     );
   }
   // The two distinct startup assertion paths must exist, with the base-INI
@@ -508,24 +538,24 @@ function main() {
     /^function\s+assertOriginalEngineStartupMissingFiles\s*\(/.test(line),
   );
   facts.smokeAssertOriginalEngineStartupMissingFilesLine = {
-    expectedLine: 3632,
+    expectedLine: 3741,
     line: missingFilesAssertLine,
   };
-  if (missingFilesAssertLine !== 3632) {
+  if (missingFilesAssertLine !== 3741) {
     errors.push(
-      `smoke assertOriginalEngineStartupMissingFiles expected at line 3632 but found at ${missingFilesAssertLine}`,
+      `smoke assertOriginalEngineStartupMissingFiles expected at line 3741 but found at ${missingFilesAssertLine}`,
     );
   }
   const withBaseIniAssertLine = lineNumber(smoke.lines, (line) =>
     /^function\s+assertOriginalEngineStartupWithBaseIni\s*\(/.test(line),
   );
   facts.smokeAssertOriginalEngineStartupWithBaseIniLine = {
-    expectedLine: 3730,
+    expectedLine: 3839,
     line: withBaseIniAssertLine,
   };
-  if (withBaseIniAssertLine !== 3730) {
+  if (withBaseIniAssertLine !== 3839) {
     errors.push(
-      `smoke assertOriginalEngineStartupWithBaseIni expected at line 3730 but found at ${withBaseIniAssertLine}`,
+      `smoke assertOriginalEngineStartupWithBaseIni expected at line 3839 but found at ${withBaseIniAssertLine}`,
     );
   }
   if (

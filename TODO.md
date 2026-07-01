@@ -30,7 +30,12 @@ shares structure and follows behind.
       Once base Generals `INI.big`/`English.big` are supplied, rerun
       `npm run test:startup-range-backed-archives-browser` to verify the
       optional range-backed base archive branch advances original startup to
-      the post-`CreateGameEngine` original init ownership frontier.
+      the post-`CreateGameEngine` original init ownership frontier. The
+      inventory now also reports `Window\Menus\BlankWindow.wnd` readiness
+      separately as an optional base `Window.big` layout gap; when base
+      `Window.big` is supplied, run
+      `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-blank-window-layout`
+      before replacing the runtime BlankWindow adapter.
 
 ---
 
@@ -854,10 +859,16 @@ shares structure and follows behind.
       runtime still uses a focused in-memory BlankWindow adapter; replace that
       with a real owner before continuing the deferred update into
       terrain/player/script map-load ownership. A
-      current scan of the extracted runtime `.big` archives found no
-      `Menus/BlankWindow.wnd`, so replacing the in-memory BlankWindow adapter
-      requires locating the original shipped layout/archive path or proving a
-      real engine path to an available layout rather than inventing one.
+      current inventory of the extracted Zero Hour runtime `.big` archives
+      finds no `Window\Menus\BlankWindow.wnd` and classifies the path as an
+      absent optional base `Window.big` layout, matching the original
+      `Win32BIGFileSystem::init` behavior that also mounts base Generals
+      `*.big` archives. Supply or preserve base `Window.big`, prove
+      `blankWindowLayout.ready` with
+      `--require-blank-window-layout`, then replace the in-memory BlankWindow
+      adapter through the archive-backed `WindowLayout::load` path before
+      continuing the deferred update into terrain/player/script map-load
+      ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

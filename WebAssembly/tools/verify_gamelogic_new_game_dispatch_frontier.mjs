@@ -685,7 +685,7 @@ console.log(JSON.stringify({
     "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, PlayerList, ScriptEngine, and Shell ownership",
   ],
   nextRequired: [
-    "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
+    "supply base Generals Window.big and replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
   ],
 }, null, 2));

@@ -2036,6 +2036,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Promote the `Menus/BlankWindow.wnd` gameplay/loading layout blocker into
+      the real asset pipeline instead of leaving it as an unexplained in-memory
+      smoke adapter. `extract_zh_runtime_archives.sh` now extracts or preserves
+      optional base Generals `Window.big`, `runtime_archives_smoke.mjs` mounts
+      it as `ZZBase_Window.big` when present, and
+      `inventory_startup_archives.mjs` now reports
+      `blankWindowLayout.ready` for `Window\Menus\BlankWindow.wnd` with an
+      explicit `--require-blank-window-layout` proof mode. The current Zero
+      Hour-only asset set is still honest: `WindowZH.big` has no BlankWindow
+      layout, so the runtime `gamelogic-new-game-dispatch-smoke` still uses the
+      focused in-memory BlankWindow adapter until base `Window.big` is supplied
+      and the archive-backed `WindowLayout::load` path can replace it. Verified
+      with `npm --prefix WebAssembly run inventory:startup-archives`,
+      `npm --prefix WebAssembly run verify:audio-startup-archive-contract`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:runtime-archives-browser`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
