@@ -1836,6 +1836,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Extend the Shell-owned `Menus/MainMenu.wnd` input vertical from Single
+      Player faction selection into Difficulty and back. The
+      `w3d-window-layout-script-smoke` now owns a local `CampaignManager`
+      boundary, drives the real `ButtonUSA` `GWM_LEFT_DOWN`/`GWM_LEFT_UP`
+      pair through original `GameWindowManager::winSendInputMsg`,
+      `GadgetPushButton`, and `MainMenuSystem`, verifies the original
+      `MainMenuFactionUS`, `MainMenuSinglePlayerMenuBackUS`, and
+      `MainMenuDifficultyMenuUS` transition calls, then drives
+      `ButtonDiffBack` to clear the campaign and return through
+      `MainMenuDifficultyMenuUSBack` /
+      `MainMenuSinglePlayerUSAMenuFromDiff`. The startup vertical and
+      aggregate vertical integration gate both require the new callback paths.
+      Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

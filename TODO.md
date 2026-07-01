@@ -504,7 +504,10 @@ shares structure and follows behind.
       to prove return navigation to the main dropdown. It now also drives
       `ButtonLoadReplay` and `ButtonLoadReplayBack` through the same original
       input path, proving the load-replay dropdown transition and return stay
-      inside the `MainMenu.wnd` shell layout. It now also mounts real
+      inside the `MainMenu.wnd` shell layout. It now also drives `ButtonUSA`
+      into the original `MainMenuDifficultyMenuUS` transition and drives
+      `ButtonDiffBack` through `MainMenuSinglePlayerUSAMenuFromDiff` while
+      recording the local `CampaignManager` boundary. It now also mounts real
       `INIZH.big`, loads `Menus/CreditsMenu.wnd` and `Data\INI\Credits.ini`,
       drives `ButtonCredits` through the original input path, lets
       `MainMenuUpdate` complete the pending `Shell::push`, and verifies
@@ -823,9 +826,10 @@ shares structure and follows behind.
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
       Current original-input coverage includes Single Player dropdown/back,
-      Load Replay dropdown/back, and MainMenu-to-CreditsMenu. Before driving
-      `ButtonSkirmish`, provide a real or owned `ScriptEngine` UI-interaction
-      path because original `MainMenuSystem` calls
+      USA faction selection into Difficulty/back, Load Replay dropdown/back,
+      and MainMenu-to-CreditsMenu. Before driving `ButtonSkirmish`, provide a
+      real or owned `ScriptEngine` UI-interaction path because original
+      `MainMenuSystem` calls
       `TheScriptEngine->signalUIInteract` after pushing
       `Menus/SkirmishGameOptionsMenu.wnd`.
 - [ ] Harness: click named UI elements through the engine command path.

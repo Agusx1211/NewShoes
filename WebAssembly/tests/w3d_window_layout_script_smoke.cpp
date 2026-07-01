@@ -136,9 +136,11 @@ Int g_transition_set_group_calls = 0;
 Int g_transition_is_finished_calls = 0;
 Int g_transition_reverse_calls = 0;
 Int g_transition_remove_calls = 0;
+Int g_campaign_set_calls = 0;
 AsciiString g_last_transition_group;
 AsciiString g_last_transition_reverse_group;
 AsciiString g_last_transition_remove_group;
+AsciiString g_last_campaign_name;
 
 std::string normalized_path(const Char *path)
 {
@@ -960,6 +962,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	GameLogic game_logic;
 	SmokeMouse mouse;
 	SmokeAudioManager audio;
+	CampaignManager campaign_manager;
 	HeaderTemplateManager header_templates;
 	GameWindowTransitionsHandler transition_handler;
 	SmokeGameWindowManager window_manager;
@@ -978,6 +981,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	GlobalLanguage *old_global_language = TheGlobalLanguageData;
 	GameLogic *old_game_logic = TheGameLogic;
 	AudioManager *old_audio = TheAudio;
+	CampaignManager *old_campaign_manager = TheCampaignManager;
 	DownloadManager *old_download_manager = TheDownloadManager;
 	Mouse *old_mouse = TheMouse;
 	HeaderTemplateManager *old_header_templates = TheHeaderTemplateManager;
@@ -999,6 +1003,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheGlobalLanguageData = &global_language;
 	TheGameLogic = &game_logic;
 	TheAudio = &audio;
+	TheCampaignManager = &campaign_manager;
 	TheDownloadManager = nullptr;
 	TheMouse = &mouse;
 	TheHeaderTemplateManager = &header_templates;
@@ -1056,9 +1061,11 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	g_transition_is_finished_calls = 0;
 	g_transition_reverse_calls = 0;
 	g_transition_remove_calls = 0;
+	g_campaign_set_calls = 0;
 	g_last_transition_group.clear();
 	g_last_transition_reverse_group.clear();
 	g_last_transition_remove_group.clear();
+	g_last_campaign_name.clear();
 	{
 		Shell shell;
 		TheShell = &shell;
@@ -1175,6 +1182,72 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 				"ButtonSinglePlayer input should stop at the dropdown transition boundary without pushing another shell layout") && ok;
 			if (top != nullptr) {
 				top->runUpdate();
+			}
+			GameWindow *usa_button = TheWindowManager->winGetWindowFromId(main_parent,
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonUSA")));
+			GameWindow *difficulty_back_button = TheWindowManager->winGetWindowFromId(main_parent,
+				TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonDiffBack")));
+			ok = expect(usa_button != nullptr,
+				"MainMenu.wnd did not create ButtonUSA for faction-to-difficulty navigation") && ok;
+			ok = expect(difficulty_back_button != nullptr,
+				"MainMenu.wnd did not create ButtonDiffBack for difficulty return navigation") && ok;
+			if (usa_button != nullptr && difficulty_back_button != nullptr) {
+				const WindowMsgData packed_usa_click = center_click_data(usa_button);
+				const Int usa_transition_is_finished_before_click = g_transition_is_finished_calls;
+				const Int usa_transition_remove_before_click = g_transition_remove_calls;
+				const Int usa_transition_reverse_before_click = g_transition_reverse_calls;
+				const Int usa_transition_set_group_before_click = g_transition_set_group_calls;
+				const Int usa_campaign_set_before_click = g_campaign_set_calls;
+				ok = expect(TheWindowManager->winSendInputMsg(usa_button, GWM_LEFT_DOWN, packed_usa_click, 0) == MSG_HANDLED,
+					"ButtonUSA did not handle original GWM_LEFT_DOWN input") && ok;
+				ok = expect(TheWindowManager->winSendInputMsg(usa_button, GWM_LEFT_UP, packed_usa_click, 0) == MSG_HANDLED,
+					"ButtonUSA did not handle original GWM_LEFT_UP input") && ok;
+				ok = expect(BitTest(usa_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+					"ButtonUSA did not clear selected state after original GWM_LEFT_UP") && ok;
+				ok = expect(g_campaign_set_calls == usa_campaign_set_before_click + 1
+						&& g_last_campaign_name == AsciiString("USA"),
+					"original MainMenuSystem did not select the USA campaign before opening difficulty") && ok;
+				ok = expect(g_transition_is_finished_calls == usa_transition_is_finished_before_click + 1,
+					"original MainMenuSystem did not query the transition boundary for ButtonUSA") && ok;
+				ok = expect(g_transition_remove_calls == usa_transition_remove_before_click + 1
+						&& g_last_transition_remove_group == AsciiString("MainMenuFactionUS"),
+					"original MainMenuSystem did not remove MainMenuFactionUS for ButtonUSA") && ok;
+				ok = expect(g_transition_reverse_calls == usa_transition_reverse_before_click + 1
+						&& g_last_transition_reverse_group == AsciiString("MainMenuSinglePlayerMenuBackUS"),
+					"original MainMenuSystem did not reverse MainMenuSinglePlayerMenuBackUS for ButtonUSA") && ok;
+				ok = expect(g_transition_set_group_calls == usa_transition_set_group_before_click + 2
+						&& g_last_transition_group == AsciiString("MainMenuDifficultyMenuUS"),
+					"original MainMenuSystem did not set MainMenuDifficultyMenuUS for ButtonUSA") && ok;
+				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+					"ButtonUSA input should stay inside the MainMenu shell layout") && ok;
+
+				const WindowMsgData packed_diff_back_click = center_click_data(difficulty_back_button);
+				const Int diff_back_transition_is_finished_before_click = g_transition_is_finished_calls;
+				const Int diff_back_transition_reverse_before_click = g_transition_reverse_calls;
+				const Int diff_back_transition_set_group_before_click = g_transition_set_group_calls;
+				const Int diff_back_campaign_set_before_click = g_campaign_set_calls;
+				ok = expect(TheWindowManager->winSendInputMsg(difficulty_back_button, GWM_LEFT_DOWN, packed_diff_back_click, 0) == MSG_HANDLED,
+					"ButtonDiffBack did not handle original GWM_LEFT_DOWN input") && ok;
+				ok = expect(TheWindowManager->winSendInputMsg(difficulty_back_button, GWM_LEFT_UP, packed_diff_back_click, 0) == MSG_HANDLED,
+					"ButtonDiffBack did not handle original GWM_LEFT_UP input") && ok;
+				ok = expect(BitTest(difficulty_back_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+					"ButtonDiffBack did not clear selected state after original GWM_LEFT_UP") && ok;
+				ok = expect(g_campaign_set_calls == diff_back_campaign_set_before_click + 1
+						&& g_last_campaign_name == AsciiString::TheEmptyString,
+					"original MainMenuSystem did not clear the campaign for ButtonDiffBack") && ok;
+				ok = expect(g_transition_is_finished_calls == diff_back_transition_is_finished_before_click + 1,
+					"original MainMenuSystem did not query the transition boundary for ButtonDiffBack") && ok;
+				ok = expect(g_transition_reverse_calls == diff_back_transition_reverse_before_click + 1
+						&& g_last_transition_reverse_group == AsciiString("MainMenuDifficultyMenuUSBack"),
+					"original MainMenuSystem did not reverse MainMenuDifficultyMenuUSBack for ButtonDiffBack") && ok;
+				ok = expect(g_transition_set_group_calls == diff_back_transition_set_group_before_click + 1
+						&& g_last_transition_group == AsciiString("MainMenuSinglePlayerUSAMenuFromDiff"),
+					"original MainMenuSystem did not set MainMenuSinglePlayerUSAMenuFromDiff for ButtonDiffBack") && ok;
+				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+					"ButtonDiffBack input should stay inside the MainMenu shell layout") && ok;
+				if (top != nullptr) {
+					top->runUpdate();
+				}
 			}
 			GameWindow *single_back_button = TheWindowManager->winGetWindowFromId(main_parent,
 				TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonSingleBack")));
@@ -1364,6 +1437,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheHeaderTemplateManager = old_header_templates;
 	TheMouse = old_mouse;
 	TheDownloadManager = old_download_manager;
+	TheCampaignManager = old_campaign_manager;
 	TheAudio = old_audio;
 	TheGameLogic = old_game_logic;
 	TheGlobalLanguageData = old_global_language;
@@ -2056,8 +2130,36 @@ void ScriptEngine::setGlobalDifficulty(GameDifficulty)
 {
 }
 
-void CampaignManager::setCampaign(AsciiString)
+CampaignManager::CampaignManager()
 {
+	m_campaignList.clear();
+	m_currentCampaign = nullptr;
+	m_currentMission = nullptr;
+	m_victorious = FALSE;
+	m_currentRankPoints = 0;
+	m_difficulty = DIFFICULTY_NORMAL;
+	m_xferChallengeGeneralsPlayerTemplateNum = 0;
+}
+
+CampaignManager::~CampaignManager()
+{
+	m_campaignList.clear();
+	m_currentCampaign = nullptr;
+	m_currentMission = nullptr;
+}
+
+void CampaignManager::xfer(Xfer *)
+{
+}
+
+void CampaignManager::loadPostProcess()
+{
+}
+
+void CampaignManager::setCampaign(AsciiString campaign)
+{
+	++g_campaign_set_calls;
+	g_last_campaign_name = campaign;
 }
 
 AsciiString CampaignManager::getCurrentMap()
@@ -2130,8 +2232,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }
