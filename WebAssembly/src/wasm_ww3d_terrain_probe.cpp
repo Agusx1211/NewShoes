@@ -17,6 +17,7 @@
 #include "wwvegas_port.h"
 #include "Common/ArchiveFileSystem.h"
 #include "Common/DataChunk.h"
+#include "Common/Errors.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/GameMemory.h"
@@ -26,12 +27,15 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/ThingFactory.h"
 #include "Common/TerrainTypes.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameClient/GameClient.h"
+#include "GameClient/MapUtil.h"
 #include "GameClient/TerrainRoads.h"
 #include "GameClient/View.h"
 #include "GameClient/Water.h"
@@ -50,6 +54,7 @@
 #include "W3DDevice/GameClient/Module/W3DTreeDraw.h"
 #include "W3DDevice/GameClient/W3DTerrainBackground.h"
 #include "W3DDevice/GameClient/W3DTerrainVisual.h"
+#include "W3DDevice/GameLogic/W3DTerrainLogic.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "assetmgr.h"
 #include "camera.h"
@@ -90,6 +95,178 @@ static bool g_ww3d_terrain_probe_shroud_enabled = false;
 extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 {
 	return g_ww3d_terrain_probe_shroud_enabled;
+}
+
+GameClient::GameClient()
+{
+	for (Int index = 0; index < MAX_CLIENT_TRANSLATORS; ++index) {
+		m_translators[index] = TRANSLATOR_ID_INVALID;
+	}
+	m_numTranslators = 0;
+	m_commandTranslator = nullptr;
+	m_frame = 0;
+	m_drawableList = nullptr;
+	m_drawableVector.clear();
+	m_nextDrawableID = static_cast<DrawableID>(1);
+	m_renderedObjectCount = 0;
+}
+
+GameClient::~GameClient()
+{
+}
+
+void GameClient::init()
+{
+}
+
+void GameClient::update()
+{
+}
+
+void GameClient::reset()
+{
+}
+
+void GameClient::registerDrawable(Drawable *)
+{
+}
+
+void GameClient::iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *)
+{
+}
+
+void GameClient::destroyDrawable(Drawable *)
+{
+}
+
+Bool GameClient::loadMap(AsciiString)
+{
+	return FALSE;
+}
+
+void GameClient::unloadMap(AsciiString)
+{
+}
+
+void GameClient::setTimeOfDay(TimeOfDay)
+{
+}
+
+GameMessage::Type GameClient::evaluateContextCommand(
+	Drawable *,
+	const Coord3D *,
+	CommandTranslator::CommandEvaluateType)
+{
+	return GameMessage::MSG_INVALID;
+}
+
+void GameClient::getRayEffectData(Drawable *, RayEffectData *)
+{
+}
+
+void GameClient::removeFromRayEffects(Drawable *)
+{
+}
+
+void GameClient::releaseShadows()
+{
+}
+
+void GameClient::allocateShadows()
+{
+}
+
+void GameClient::preloadAssets(TimeOfDay)
+{
+}
+
+void GameClient::selectDrawablesInGroup(Int)
+{
+}
+
+void GameClient::assignSelectedDrawablesToGroup(Int)
+{
+}
+
+void GameClient::crc(Xfer *)
+{
+}
+
+void GameClient::xfer(Xfer *)
+{
+}
+
+void GameClient::loadPostProcess()
+{
+}
+
+ThingFactory::ThingFactory() :
+	m_firstTemplate(nullptr),
+	m_nextTemplateID(1)
+{
+	m_templateHashMap.clear();
+}
+
+ThingFactory::~ThingFactory()
+{
+}
+
+void ThingFactory::init()
+{
+}
+
+void ThingFactory::postProcessLoad()
+{
+}
+
+void ThingFactory::reset()
+{
+}
+
+void ThingFactory::update()
+{
+}
+
+ThingTemplate *ThingFactory::newTemplate(const AsciiString &)
+{
+	return nullptr;
+}
+
+const ThingTemplate *ThingFactory::findByTemplateID(UnsignedShort)
+{
+	return nullptr;
+}
+
+Object *ThingFactory::newObject(const ThingTemplate *, Team *, ObjectStatusMaskType)
+{
+	return nullptr;
+}
+
+Drawable *ThingFactory::newDrawable(const ThingTemplate *, DrawableStatus)
+{
+	return nullptr;
+}
+
+void ThingFactory::parseObjectDefinition(INI *, const AsciiString &, const AsciiString &)
+{
+}
+
+ThingTemplate *ThingFactory::findTemplateInternal(const AsciiString &, Bool)
+{
+	return nullptr;
+}
+
+void ThingFactory::freeDatabase()
+{
+}
+
+void ThingFactory::addTemplate(ThingTemplate *)
+{
+}
+
+ThingTemplate *ThingFactory::newOverride(ThingTemplate *)
+{
+	return nullptr;
 }
 
 namespace {
@@ -151,6 +328,119 @@ const char *bool_json(bool value)
 {
 	return value ? "true" : "false";
 }
+
+class ProbeTerrainLogicGameClient final : public GameClient
+{
+public:
+	void init() override {}
+	void update() override {}
+	void reset() override {}
+	void setFrame(UnsignedInt frame) override { m_frame = frame; }
+	void registerDrawable(Drawable *) override {}
+	Drawable *findDrawableByID(const DrawableID) override { return nullptr; }
+	Drawable *firstDrawable() override { return nullptr; }
+	GameMessage::Type evaluateContextCommand(
+		Drawable *,
+		const Coord3D *,
+		CommandTranslator::CommandEvaluateType) override
+	{
+		return GameMessage::MSG_INVALID;
+	}
+	void removeFromRayEffects(Drawable *) override {}
+	void getRayEffectData(Drawable *, RayEffectData *) override {}
+	void createRayEffectByTemplate(const Coord3D *, const Coord3D *, const ThingTemplate *) override {}
+	void addScorch(const Coord3D *, Real, Scorches) override {}
+	Bool loadMap(AsciiString) override { return FALSE; }
+	void unloadMap(AsciiString) override {}
+	void iterateDrawablesInRegion(Region3D *, GameClientFuncPtr, void *) override {}
+	Drawable *friend_createDrawable(const ThingTemplate *, DrawableStatus) override { return nullptr; }
+	void destroyDrawable(Drawable *) override {}
+	void setTimeOfDay(TimeOfDay tod) override
+	{
+		m_timeOfDayNotified = true;
+		m_timeOfDay = tod;
+	}
+	void selectDrawablesInGroup(Int) override {}
+	void assignSelectedDrawablesToGroup(Int) override {}
+	UnsignedInt getFrame() override { return m_frame; }
+	void setTeamColor(Int, Int, Int) override {}
+	void adjustLOD(Int) override {}
+	void releaseShadows() override {}
+	void allocateShadows() override {}
+	void preloadAssets(TimeOfDay) override {}
+	Drawable *getDrawableList() override { return nullptr; }
+	void notifyTerrainObjectMoved(Object *) override {}
+
+	bool timeOfDayNotified() const { return m_timeOfDayNotified; }
+	TimeOfDay notifiedTimeOfDay() const { return m_timeOfDay; }
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+private:
+	Display *createGameDisplay() override { return nullptr; }
+	InGameUI *createInGameUI() override { return nullptr; }
+	GameWindowManager *createWindowManager() override { return nullptr; }
+	FontLibrary *createFontLibrary() override { return nullptr; }
+	DisplayStringManager *createDisplayStringManager() override { return nullptr; }
+	VideoPlayerInterface *createVideoPlayer() override { return nullptr; }
+	TerrainVisual *createTerrainVisual() override { return nullptr; }
+	Keyboard *createKeyboard() override { return nullptr; }
+	Mouse *createMouse() override { return nullptr; }
+	SnowManager *createSnowManager() override { return nullptr; }
+	void setFrameRate(Real) override {}
+
+	bool m_timeOfDayNotified = false;
+	TimeOfDay m_timeOfDay = TIME_OF_DAY_INVALID;
+};
+
+struct ProbeLogicalTerrainLoadMetrics
+{
+	bool attempted = false;
+	bool mapCacheInstalled = false;
+	bool terrainLogicInstalled = false;
+	bool gameClientInstalled = false;
+	bool thingFactoryInstalled = false;
+	bool scriptEngineInstalled = false;
+	bool logicalHeightMapPreflightAttempted = false;
+	bool logicalHeightMapPreflightStreamOpen = false;
+	bool logicalHeightMapPreflightReturned = false;
+	bool logicalHeightMapPreflightException = false;
+	bool logicalHeightMapParsedHeightMap = false;
+	bool logicalHeightMapParsedWorldInfo = false;
+	bool logicalHeightMapParsedObjects = false;
+	bool logicalHeightMapParsedPolygonTriggers = false;
+	bool logicalHeightMapParsedSides = false;
+	bool loadReturned = false;
+	bool loadException = false;
+	bool sourceFilenameMatches = false;
+	bool extentMatchesVisual = false;
+	bool heightRangeMatchesVisual = false;
+	bool timeOfDayNotified = false;
+	bool mapObjectsPresentAfterLoad = false;
+	bool firstWaypointPresent = false;
+	Int mapDx = 0;
+	Int mapDy = 0;
+	float extentHiX = 0.0f;
+	float extentHiY = 0.0f;
+	float extentLoZ = 0.0f;
+	float extentHiZ = 0.0f;
+	float expectedExtentHiX = 0.0f;
+	float expectedExtentHiY = 0.0f;
+	float expectedMinZ = 0.0f;
+	float expectedMaxZ = 0.0f;
+	TimeOfDay mapTimeOfDay = TIME_OF_DAY_INVALID;
+	TimeOfDay notifiedTimeOfDay = TIME_OF_DAY_INVALID;
+	Int mapObjectCount = 0;
+	Int waypointCount = 0;
+	Int logicalHeightMapPreflightError = 0;
+	Int loadError = 0;
+	std::string sourceFilename;
+	std::string failurePhase;
+	std::string logicalHeightMapFailedParser;
+};
 
 class ProbeINILayoutView final : public INI
 {
@@ -2115,6 +2405,331 @@ void record_parsed_map_metrics(ProbeTerrainMapPatchLoad &load)
 	record_patch_height_metrics(load);
 }
 
+class ProbeLogicalScriptEngineScope
+{
+public:
+	ProbeLogicalScriptEngineScope() :
+		m_oldScriptEngine(TheScriptEngine),
+		m_scriptEngine(sharedScriptEngine())
+	{
+		TheScriptEngine = m_scriptEngine;
+	}
+
+	~ProbeLogicalScriptEngineScope()
+	{
+		TheScriptEngine = m_oldScriptEngine;
+	}
+
+	bool installed() const
+	{
+		return m_scriptEngine != nullptr && TheScriptEngine == m_scriptEngine;
+	}
+
+private:
+	static ScriptEngine *sharedScriptEngine()
+	{
+		alignas(ScriptEngine) static unsigned char storage[sizeof(ScriptEngine)];
+		static ScriptEngine *script_engine = nullptr;
+		static bool initialized = false;
+		if (!initialized) {
+			script_engine = new (storage) ScriptEngine();
+			if (TheWritableGlobalData != nullptr) {
+				script_engine->init();
+			}
+			initialized = true;
+		}
+		return script_engine;
+	}
+
+	ScriptEngine *m_oldScriptEngine = nullptr;
+	ScriptEngine *m_scriptEngine = nullptr;
+};
+
+class ProbeLogicalTerrainGlobalScope
+{
+public:
+	ProbeLogicalTerrainGlobalScope(
+		MapCache *mapCache,
+		GameClient *gameClient,
+		ThingFactory *thingFactory,
+		TerrainLogic *terrainLogic) :
+		m_oldTerrainLogic(TheTerrainLogic),
+		m_oldMapCache(TheMapCache),
+		m_oldGameClient(TheGameClient),
+		m_oldThingFactory(TheThingFactory)
+	{
+		TheMapCache = mapCache;
+		TheGameClient = gameClient;
+		TheThingFactory = thingFactory;
+		TheTerrainLogic = terrainLogic;
+	}
+
+	~ProbeLogicalTerrainGlobalScope()
+	{
+		TheTerrainLogic = m_oldTerrainLogic;
+		TheThingFactory = m_oldThingFactory;
+		TheGameClient = m_oldGameClient;
+		TheMapCache = m_oldMapCache;
+	}
+
+private:
+	TerrainLogic *m_oldTerrainLogic = nullptr;
+	MapCache *m_oldMapCache = nullptr;
+	GameClient *m_oldGameClient = nullptr;
+	ThingFactory *m_oldThingFactory = nullptr;
+};
+
+struct ProbeLogicalHeightMapParseTrace
+{
+	ProbeLogicalTerrainLoadMetrics *metrics = nullptr;
+	const char *activeParser = nullptr;
+};
+
+ProbeLogicalHeightMapParseTrace *g_logical_height_map_parse_trace = nullptr;
+
+class ProbeLogicalWorldHeightMapReader : public WorldHeightMap
+{
+public:
+	ProbeLogicalWorldHeightMapReader() :
+		WorldHeightMap()
+	{
+	}
+
+	static Bool parseHeightMap(DataChunkInput &file, DataChunkInfo *info, void *userData)
+	{
+		recordParser("HeightMapData");
+		Bool result = WorldHeightMap::ParseSizeOnlyInChunk(file, info, userData);
+		if (g_logical_height_map_parse_trace != nullptr &&
+				g_logical_height_map_parse_trace->metrics != nullptr &&
+				result) {
+			g_logical_height_map_parse_trace->metrics->logicalHeightMapParsedHeightMap = true;
+		}
+		return result;
+	}
+
+	static Bool parseWorldInfo(DataChunkInput &file, DataChunkInfo *info, void *userData)
+	{
+		recordParser("WorldInfo");
+		Bool result = WorldHeightMap::ParseWorldDictDataChunk(file, info, userData);
+		if (g_logical_height_map_parse_trace != nullptr &&
+				g_logical_height_map_parse_trace->metrics != nullptr &&
+				result) {
+			g_logical_height_map_parse_trace->metrics->logicalHeightMapParsedWorldInfo = true;
+		}
+		return result;
+	}
+
+	static Bool parseObjects(DataChunkInput &file, DataChunkInfo *info, void *userData)
+	{
+		recordParser("ObjectsList");
+		Bool result = WorldHeightMap::ParseObjectsDataChunk(file, info, userData);
+		if (g_logical_height_map_parse_trace != nullptr &&
+				g_logical_height_map_parse_trace->metrics != nullptr &&
+				result) {
+			g_logical_height_map_parse_trace->metrics->logicalHeightMapParsedObjects = true;
+		}
+		return result;
+	}
+
+	static Bool parsePolygonTriggers(DataChunkInput &file, DataChunkInfo *info, void *userData)
+	{
+		recordParser("PolygonTriggers");
+		Bool result = PolygonTrigger::ParsePolygonTriggersDataChunk(file, info, userData);
+		if (g_logical_height_map_parse_trace != nullptr &&
+				g_logical_height_map_parse_trace->metrics != nullptr &&
+				result) {
+			g_logical_height_map_parse_trace->metrics->logicalHeightMapParsedPolygonTriggers = true;
+		}
+		return result;
+	}
+
+	static Bool parseSides(DataChunkInput &file, DataChunkInfo *info, void *userData)
+	{
+		recordParser("SidesList");
+		Bool result = SidesList::ParseSidesDataChunk(file, info, userData);
+		if (g_logical_height_map_parse_trace != nullptr &&
+				g_logical_height_map_parse_trace->metrics != nullptr &&
+				result) {
+			g_logical_height_map_parse_trace->metrics->logicalHeightMapParsedSides = true;
+		}
+		return result;
+	}
+
+private:
+	static void recordParser(const char *name)
+	{
+		if (g_logical_height_map_parse_trace != nullptr) {
+			g_logical_height_map_parse_trace->activeParser = name;
+		}
+	}
+};
+
+ProbeLogicalTerrainLoadMetrics run_logical_terrain_load_probe(
+	WorldHeightMap *visual_map,
+	const char *map_entry)
+{
+	ProbeLogicalTerrainLoadMetrics metrics;
+	metrics.attempted = true;
+	if (visual_map == nullptr ||
+			visual_map->getDataPtr() == nullptr ||
+			TheWritableGlobalData == nullptr ||
+			map_entry == nullptr ||
+			map_entry[0] == '\0') {
+		return metrics;
+	}
+
+	const VecICoord2D &boundaries = visual_map->getAllBoundaries();
+	if (!boundaries.empty()) {
+		metrics.expectedExtentHiX =
+			static_cast<float>(boundaries[0].x) * MAP_XY_FACTOR;
+		metrics.expectedExtentHiY =
+			static_cast<float>(boundaries[0].y) * MAP_XY_FACTOR;
+	}
+
+	UnsignedByte min_height = visual_map->getMaxHeightValue();
+	UnsignedByte max_height = 0;
+	const Int visual_width = visual_map->getXExtent();
+	const Int visual_height = visual_map->getYExtent();
+	for (Int y = 0; y < visual_height; ++y) {
+		for (Int x = 0; x < visual_width; ++x) {
+			const UnsignedByte height = visual_map->getHeight(x, y);
+			min_height = std::min(min_height, height);
+			max_height = std::max(max_height, height);
+		}
+	}
+	metrics.expectedMinZ = static_cast<float>(min_height) * MAP_HEIGHT_SCALE;
+	metrics.expectedMaxZ = static_cast<float>(max_height) * MAP_HEIGHT_SCALE;
+
+	MapCache map_cache;
+	ProbeTerrainLogicGameClient game_client;
+	ThingFactory thing_factory;
+	ProbeLogicalScriptEngineScope script_engine_scope;
+	W3DTerrainLogic terrain_logic;
+	ProbeLogicalTerrainGlobalScope global_scope(
+		&map_cache,
+		&game_client,
+		&thing_factory,
+		&terrain_logic);
+
+	metrics.mapCacheInstalled = TheMapCache == &map_cache;
+	metrics.gameClientInstalled = TheGameClient == &game_client;
+	metrics.thingFactoryInstalled = TheThingFactory == &thing_factory;
+	metrics.terrainLogicInstalled = TheTerrainLogic == &terrain_logic;
+	metrics.scriptEngineInstalled = script_engine_scope.installed();
+
+	WorldHeightMap::freeListOfMapObjects();
+	metrics.failurePhase = "W3DTerrainLogic::init";
+	terrain_logic.init();
+	metrics.logicalHeightMapPreflightAttempted = true;
+	metrics.failurePhase = "WorldHeightMap(logic-only-preflight)";
+	CachedFileInputStream preflight_stream;
+	metrics.logicalHeightMapPreflightStreamOpen =
+		preflight_stream.open(AsciiString(map_entry)) == TRUE;
+	if (metrics.logicalHeightMapPreflightStreamOpen) {
+		ProbeLogicalWorldHeightMapReader *preflight_map =
+			NEW_REF(ProbeLogicalWorldHeightMapReader, ());
+		DataChunkInput preflight_file(&preflight_stream);
+		preflight_file.registerParser(
+			AsciiString("HeightMapData"),
+			AsciiString::TheEmptyString,
+			ProbeLogicalWorldHeightMapReader::parseHeightMap);
+		preflight_file.registerParser(
+			AsciiString("WorldInfo"),
+			AsciiString::TheEmptyString,
+			ProbeLogicalWorldHeightMapReader::parseWorldInfo);
+		preflight_file.registerParser(
+			AsciiString("ObjectsList"),
+			AsciiString::TheEmptyString,
+			ProbeLogicalWorldHeightMapReader::parseObjects);
+		preflight_file.registerParser(
+			AsciiString("PolygonTriggers"),
+			AsciiString::TheEmptyString,
+			ProbeLogicalWorldHeightMapReader::parsePolygonTriggers);
+		preflight_file.registerParser(
+			AsciiString("SidesList"),
+			AsciiString::TheEmptyString,
+			ProbeLogicalWorldHeightMapReader::parseSides);
+		ProbeLogicalHeightMapParseTrace parse_trace;
+		parse_trace.metrics = &metrics;
+		g_logical_height_map_parse_trace = &parse_trace;
+		try {
+			WorldHeightMap::freeListOfMapObjects();
+			PolygonTrigger::deleteTriggers();
+			if (TheSidesList != nullptr) {
+				TheSidesList->emptySides();
+			}
+			metrics.logicalHeightMapPreflightReturned =
+				preflight_file.parse(preflight_map) == TRUE;
+			metrics.failurePhase.clear();
+		} catch (ErrorCode error) {
+			metrics.logicalHeightMapPreflightException = true;
+			metrics.logicalHeightMapPreflightError = static_cast<Int>(error);
+			metrics.logicalHeightMapFailedParser =
+				parse_trace.activeParser != nullptr ? parse_trace.activeParser : "";
+		} catch (...) {
+			metrics.logicalHeightMapPreflightException = true;
+			metrics.logicalHeightMapFailedParser =
+				parse_trace.activeParser != nullptr ? parse_trace.activeParser : "";
+		}
+		if (!metrics.logicalHeightMapPreflightReturned &&
+				metrics.logicalHeightMapFailedParser.empty() &&
+				parse_trace.activeParser != nullptr) {
+			metrics.logicalHeightMapFailedParser = parse_trace.activeParser;
+		}
+		g_logical_height_map_parse_trace = nullptr;
+		REF_PTR_RELEASE(preflight_map);
+	}
+	preflight_stream.close();
+	WorldHeightMap::freeListOfMapObjects();
+	metrics.failurePhase = "W3DTerrainLogic::loadMap";
+	try {
+		metrics.loadReturned =
+			terrain_logic.loadMap(AsciiString(map_entry), TRUE) == TRUE;
+		metrics.failurePhase.clear();
+	} catch (ErrorCode error) {
+		metrics.loadException = true;
+		metrics.loadReturned = false;
+		metrics.loadError = static_cast<Int>(error);
+	} catch (...) {
+		metrics.loadException = true;
+		metrics.loadReturned = false;
+	}
+
+	if (metrics.loadReturned) {
+		Region3D extent;
+		terrain_logic.getExtent(&extent);
+		metrics.extentHiX = extent.hi.x;
+		metrics.extentHiY = extent.hi.y;
+		metrics.extentLoZ = extent.lo.z;
+		metrics.extentHiZ = extent.hi.z;
+		metrics.sourceFilename = terrain_logic.getSourceFilename().str();
+		metrics.sourceFilenameMatches =
+			terrain_logic.getSourceFilename().compareNoCase(map_entry) == 0;
+		metrics.extentMatchesVisual =
+			std::fabs(metrics.extentHiX - metrics.expectedExtentHiX) < 0.001f &&
+			std::fabs(metrics.extentHiY - metrics.expectedExtentHiY) < 0.001f;
+		metrics.heightRangeMatchesVisual =
+			std::fabs(metrics.extentLoZ - metrics.expectedMinZ) < 0.001f &&
+			std::fabs(metrics.extentHiZ - metrics.expectedMaxZ) < 0.001f;
+		metrics.mapTimeOfDay = TheGlobalData->m_timeOfDay;
+		metrics.timeOfDayNotified = game_client.timeOfDayNotified();
+		metrics.notifiedTimeOfDay = game_client.notifiedTimeOfDay();
+		metrics.firstWaypointPresent = terrain_logic.getFirstWaypoint() != nullptr;
+		for (Waypoint *waypoint = terrain_logic.getFirstWaypoint(); waypoint != nullptr;
+				waypoint = waypoint->getNext()) {
+			++metrics.waypointCount;
+		}
+	}
+
+	for (MapObject *object = MapObject::getFirstMapObject(); object != nullptr;
+			object = object->getNext()) {
+		++metrics.mapObjectCount;
+	}
+	metrics.mapObjectsPresentAfterLoad = metrics.mapObjectCount > 0;
+	WorldHeightMap::freeListOfMapObjects();
+	return metrics;
+}
+
 WorldHeightMap *load_archive_terrain_map_patch(
 	const char *ini_archive_path,
 	const char *maps_archive_path,
@@ -3491,6 +4106,9 @@ void configure_global_data(GlobalData &global_data, bool enable_shroud = false)
 	global_data.m_useWaterPlane = TRUE;
 	global_data.m_useCloudPlane = FALSE;
 	global_data.m_showSoftWaterEdge = FALSE;
+	global_data.m_windowed = FALSE;
+	global_data.m_scriptDebug = FALSE;
+	global_data.m_particleEdit = FALSE;
 	global_data.m_use3WayTerrainBlends = FALSE;
 	global_data.m_drawEntireTerrain = FALSE;
 	global_data.m_stretchTerrain = FALSE;
@@ -4526,6 +5144,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	ProbeTerrainCameraView primary_camera_view;
 	ProbeTerrainCameraView camera_pan_view;
 	ProbePolygonTriggerMetrics polygon_metrics;
+	ProbeLogicalTerrainLoadMetrics logical_terrain_load;
 
 	ProbeTerrainMapPatchLoad map_load;
 	ProbeTerrainArchiveContext archive_context;
@@ -4835,6 +5454,11 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		}
 	}
 
+	if (map_created) {
+		logical_terrain_load =
+			run_logical_terrain_load_probe(map, kArchiveTerrainMapEntry);
+	}
+
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
@@ -4869,6 +5493,20 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		visual_load_returned &&
 		!visual_load_exception &&
 		map_created &&
+		logical_terrain_load.attempted &&
+		logical_terrain_load.mapCacheInstalled &&
+		logical_terrain_load.terrainLogicInstalled &&
+		logical_terrain_load.gameClientInstalled &&
+		logical_terrain_load.thingFactoryInstalled &&
+		logical_terrain_load.scriptEngineInstalled &&
+		logical_terrain_load.loadReturned &&
+		!logical_terrain_load.loadException &&
+		logical_terrain_load.sourceFilenameMatches &&
+		logical_terrain_load.extentMatchesVisual &&
+		logical_terrain_load.heightRangeMatchesVisual &&
+		logical_terrain_load.timeOfDayNotified &&
+		logical_terrain_load.notifiedTimeOfDay == logical_terrain_load.mapTimeOfDay &&
+		logical_terrain_load.mapObjectsPresentAfterLoad &&
 		visual_load_initialized_render_object &&
 		scene_created &&
 		visual_scene_object_added &&
@@ -4914,6 +5552,12 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		json_string(map_load.firstPatchTextureClassName);
 	const std::string first_missing_water_texture_json =
 		json_string(water_asset_metrics.firstMissingTexture);
+	const std::string logical_source_filename_json =
+		json_string(logical_terrain_load.sourceFilename);
+	const std::string logical_failure_phase_json =
+		json_string(logical_terrain_load.failurePhase);
+	const std::string logical_failed_parser_json =
+		json_string(logical_terrain_load.logicalHeightMapFailedParser);
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 	const char *source_name = use_full_init ?
@@ -4936,7 +5580,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		(succeeded(end_render_result) ? 1u : 0u) +
 		(camera_pan_requested && succeeded(camera_pan_end_render_result) ? 1u : 0u);
 
-	char buffer[28000];
+	char buffer[32000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -4972,6 +5616,34 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"waterRenderObjectNull\":%s,"
 		"\"loadDrawWidth\":%d,\"loadDrawHeight\":%d,"
 		"\"loadDrawOriginX\":%d,\"loadDrawOriginY\":%d},"
+		"\"logicalTerrain\":{\"path\":\"W3DTerrainLogic::loadMap(query=true) -> "
+		"CachedFileInputStream -> WorldHeightMap(logic-only) -> TerrainLogic::loadMap\","
+		"\"attempted\":%s,\"mapCacheInstalled\":%s,"
+		"\"terrainLogicInstalled\":%s,\"gameClientInstalled\":%s,"
+		"\"thingFactoryInstalled\":%s,\"scriptEngineInstalled\":%s,"
+		"\"logicalHeightMapPreflightAttempted\":%s,"
+		"\"logicalHeightMapPreflightStreamOpen\":%s,"
+		"\"logicalHeightMapPreflightReturned\":%s,"
+		"\"logicalHeightMapPreflightException\":%s,"
+		"\"logicalHeightMapPreflightError\":%d,"
+		"\"logicalHeightMapFailedParser\":%s,"
+		"\"logicalHeightMapParsedHeightMap\":%s,"
+		"\"logicalHeightMapParsedWorldInfo\":%s,"
+		"\"logicalHeightMapParsedObjects\":%s,"
+		"\"logicalHeightMapParsedPolygonTriggers\":%s,"
+		"\"logicalHeightMapParsedSides\":%s,"
+		"\"loadReturned\":%s,\"loadException\":%s,\"loadError\":%d,"
+		"\"failurePhase\":%s,"
+		"\"sourceFilename\":%s,\"sourceFilenameMatches\":%s,"
+		"\"extentMatchesVisual\":%s,\"heightRangeMatchesVisual\":%s,"
+		"\"mapObjectsPresentAfterLoad\":%s,\"mapObjectCount\":%d,"
+		"\"firstWaypointPresent\":%s,\"waypointCount\":%d,"
+		"\"timeOfDayNotified\":%s,\"mapTimeOfDay\":%d,"
+		"\"notifiedTimeOfDay\":%d,"
+		"\"expectedExtentHiX\":%.3f,\"expectedExtentHiY\":%.3f,"
+		"\"extentHiX\":%.3f,\"extentHiY\":%.3f,"
+		"\"expectedMinZ\":%.3f,\"expectedMaxZ\":%.3f,"
+		"\"extentLoZ\":%.3f,\"extentHiZ\":%.3f},"
 		"\"water\":{\"iniEntry\":\"Data\\\\INI\\\\Water.ini\","
 		"\"iniEntryExists\":%s,\"iniBytes\":%u,"
 		"\"iniLoaded\":%s,\"iniException\":%s,\"iniError\":%s,"
@@ -5100,6 +5772,46 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		visual_load_draw_height,
 		visual_load_draw_origin_x,
 		visual_load_draw_origin_y,
+		bool_json(logical_terrain_load.attempted),
+		bool_json(logical_terrain_load.mapCacheInstalled),
+		bool_json(logical_terrain_load.terrainLogicInstalled),
+		bool_json(logical_terrain_load.gameClientInstalled),
+		bool_json(logical_terrain_load.thingFactoryInstalled),
+		bool_json(logical_terrain_load.scriptEngineInstalled),
+		bool_json(logical_terrain_load.logicalHeightMapPreflightAttempted),
+		bool_json(logical_terrain_load.logicalHeightMapPreflightStreamOpen),
+		bool_json(logical_terrain_load.logicalHeightMapPreflightReturned),
+		bool_json(logical_terrain_load.logicalHeightMapPreflightException),
+		logical_terrain_load.logicalHeightMapPreflightError,
+		logical_failed_parser_json.c_str(),
+		bool_json(logical_terrain_load.logicalHeightMapParsedHeightMap),
+		bool_json(logical_terrain_load.logicalHeightMapParsedWorldInfo),
+		bool_json(logical_terrain_load.logicalHeightMapParsedObjects),
+		bool_json(logical_terrain_load.logicalHeightMapParsedPolygonTriggers),
+		bool_json(logical_terrain_load.logicalHeightMapParsedSides),
+		bool_json(logical_terrain_load.loadReturned),
+		bool_json(logical_terrain_load.loadException),
+		logical_terrain_load.loadError,
+		logical_failure_phase_json.c_str(),
+		logical_source_filename_json.c_str(),
+		bool_json(logical_terrain_load.sourceFilenameMatches),
+		bool_json(logical_terrain_load.extentMatchesVisual),
+		bool_json(logical_terrain_load.heightRangeMatchesVisual),
+		bool_json(logical_terrain_load.mapObjectsPresentAfterLoad),
+		logical_terrain_load.mapObjectCount,
+		bool_json(logical_terrain_load.firstWaypointPresent),
+		logical_terrain_load.waypointCount,
+		bool_json(logical_terrain_load.timeOfDayNotified),
+		static_cast<int>(logical_terrain_load.mapTimeOfDay),
+		static_cast<int>(logical_terrain_load.notifiedTimeOfDay),
+		static_cast<double>(logical_terrain_load.expectedExtentHiX),
+		static_cast<double>(logical_terrain_load.expectedExtentHiY),
+		static_cast<double>(logical_terrain_load.extentHiX),
+		static_cast<double>(logical_terrain_load.extentHiY),
+		static_cast<double>(logical_terrain_load.expectedMinZ),
+		static_cast<double>(logical_terrain_load.expectedMaxZ),
+		static_cast<double>(logical_terrain_load.extentLoZ),
+		static_cast<double>(logical_terrain_load.extentHiZ),
 		bool_json(water_ini_entry_exists),
 		water_ini_bytes,
 		bool_json(water_ini_loaded),

@@ -2296,7 +2296,11 @@ target_compile_options(zh_w3d_display_drawimage_runtime PRIVATE
 )
 
 add_library(zh_w3d_terrain_probe_runtime STATIC
+  "${GAMEENGINE_GAMELOGIC_DIR}/Map/TerrainLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/ObjectTypes.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DAssetManager.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
@@ -2317,6 +2321,7 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3dWaypointBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWaterTracks.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DTerrainLogic.cpp"
 )
 
 target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC

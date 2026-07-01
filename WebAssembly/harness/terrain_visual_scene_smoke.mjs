@@ -95,6 +95,24 @@ function hasTerrainPass(drawHistory, { alphaBlendEnable, texCoordIndex, firstInd
   return drawHistory.some(matches);
 }
 
+function logicalTerrainMatches(probe) {
+  const logicalTerrain = probe?.logicalTerrain;
+  return logicalTerrain?.loadReturned === true
+    && logicalTerrain?.loadException === false
+    && logicalTerrain?.mapCacheInstalled === true
+    && logicalTerrain?.terrainLogicInstalled === true
+    && logicalTerrain?.gameClientInstalled === true
+    && logicalTerrain?.thingFactoryInstalled === true
+    && logicalTerrain?.scriptEngineInstalled === true
+    && logicalTerrain?.sourceFilenameMatches === true
+    && logicalTerrain?.extentMatchesVisual === true
+    && logicalTerrain?.heightRangeMatchesVisual === true
+    && logicalTerrain?.mapObjectsPresentAfterLoad === true
+    && logicalTerrain?.mapObjectCount > 0
+    && logicalTerrain?.timeOfDayNotified === true
+    && logicalTerrain?.notifiedTimeOfDay === logicalTerrain?.mapTimeOfDay;
+}
+
 function summarizeDrawHistory(drawHistory) {
   return {
     count: drawHistory.length,
@@ -419,6 +437,7 @@ try {
       || terrainResult.probe?.map?.width <= 16
       || terrainResult.probe?.map?.height <= 16
       || terrainResult.probe?.map?.heightChecksum <= 0
+      || !logicalTerrainMatches(terrainResult.probe)
       || !terrainResult.probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
       || terrainResult.probe?.scene?.created !== true
       || terrainResult.probe?.scene?.objectAddedByVisualLoad !== true
@@ -528,6 +547,7 @@ try {
       || fullSceneResult.probe?.map?.entryExists !== true
       || fullSceneResult.probe?.map?.entryOpenable !== true
       || fullSceneResult.probe?.map?.parsed !== true
+      || !logicalTerrainMatches(fullSceneResult.probe)
       || fullSceneResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
       || fullSceneResult.probe?.terrain?.verticesPerSide !== 33
       || fullSceneResult.probe?.terrain?.cellsPerSide !== 32
@@ -633,6 +653,7 @@ try {
       || cameraPanResult.probe?.map?.width <= 16
       || cameraPanResult.probe?.map?.height <= 16
       || cameraPanResult.probe?.map?.heightChecksum <= 0
+      || !logicalTerrainMatches(cameraPanResult.probe)
       || !cameraPanResult.probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
       || cameraPanResult.probe?.scene?.created !== true
       || cameraPanResult.probe?.scene?.objectAddedByVisualLoad !== true
@@ -737,6 +758,7 @@ try {
       || loadWindowResult.probe?.map?.width <= 16
       || loadWindowResult.probe?.map?.height <= 16
       || loadWindowResult.probe?.map?.heightChecksum <= 0
+      || !logicalTerrainMatches(loadWindowResult.probe)
       || !loadWindowResult.probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
       || loadWindowResult.probe?.scene?.created !== true
       || loadWindowResult.probe?.scene?.objectAddedByVisualLoad !== true
@@ -839,10 +861,12 @@ try {
       },
     },
     visual: terrainResult.probe.visual,
+    logicalTerrain: terrainResult.probe.logicalTerrain,
     map: terrainResult.probe.map,
     scene: terrainResult.probe.scene,
     terrain: terrainResult.probe.terrain,
     fullSceneScreenshot: terrainFullSceneScreenshot,
+    fullSceneLogicalTerrain: fullSceneResult.probe.logicalTerrain,
     fullSceneVisual: fullSceneResult.probe.visual,
     fullSceneWater: fullSceneResult.probe.water,
     fullSceneScene: fullSceneResult.probe.scene,
@@ -852,6 +876,7 @@ try {
     fullSceneCenterPixel: fullSceneResult.screenshot.centerPixel,
     fullSceneCoverage: fullSceneResult.screenshot.coverage,
     cameraPanScreenshot: terrainCameraPanScreenshot,
+    cameraPanLogicalTerrain: cameraPanResult.probe.logicalTerrain,
     cameraPanScene: cameraPanResult.probe.scene,
     cameraPanTerrain: cameraPanResult.probe.terrain,
     cameraPanCamera: cameraPanResult.probe.camera,
@@ -861,6 +886,7 @@ try {
     cameraPanCenterPixel: cameraPanResult.screenshot.centerPixel,
     cameraPanCoverage: cameraPanResult.screenshot.coverage,
     loadWindowScreenshot: terrainLoadWindowScreenshot,
+    loadWindowLogicalTerrain: loadWindowResult.probe.logicalTerrain,
     loadWindowVisual: loadWindowResult.probe.visual,
     loadWindowMap: loadWindowResult.probe.map,
     loadWindowScene: loadWindowResult.probe.scene,

@@ -59,6 +59,10 @@ shares structure and follows behind.
 - [ ] Audit 32-bit assumptions: struct packing, `int`/`long` sizes, alignment.
 - [ ] Define and verify the browser-port `WCHAR`/UTF-16 compatibility contract
       before compiling wide-string serialization and save/load paths. The
+      original chunky-map `UnicodeString` path now reads/writes explicit
+      16-bit little-endian code units for wasm, but the broader contract still
+      needs coverage for every save/load and network structure that embeds wide
+      strings. The
       focused LANAPI join/options and game-start verticals currently use an
       Emscripten active-message-prefix send path because 4-byte wasm
       `WideChar` makes `sizeof(LANMessage)` exceed the original 476-byte UDP
@@ -748,6 +752,11 @@ shares structure and follows behind.
       `WW3D::Render(W3DDisplay::m_3DScene, camera)` frames, gates two
       base/blend terrain pass pairs, and captures
       `harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png`.
+      The same visual-scene smoke now also proves original
+      `W3DTerrainLogic::loadMap(query=true)` against the same shipped map,
+      including logic-only `WorldHeightMap` parser sections, map-object
+      presence, extents, height range, source filename, and time-of-day
+      notification agreement with the visual load.
       The selected 32x32 patch remains source-backed. The terrain visual
       harness can now
       mount optional base Generals `Terrain.big` alongside `TerrainZH.big`
@@ -804,6 +813,10 @@ shares structure and follows behind.
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
+      Its logical terrain load proof also uses probe-local `GameClient`,
+      `ThingFactory`, and `ScriptEngine` ownership plus weak adjacent-script
+      symbols only to reach query-mode map load; replace those with full
+      original runtime ownership before treating the path as gameplay-owned.
 - [ ] Promote the browser-proven terrain shroud path from focused
       source-backed map-patch ownership into full `W3DTerrainVisual::init` /
       partition gameplay ownership. The current

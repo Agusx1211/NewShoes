@@ -366,7 +366,16 @@ void DataChunkOutput::writeUnicodeString( UnicodeString theString )
 { 
 	UnsignedShort len = theString.getLength();
 	::fwrite( (const char *)&len, sizeof(UnsignedShort) , 1, m_tmp_file );
-	::fwrite( theString.str(), len*sizeof(WideChar) , 1, m_tmp_file ); 
+	const WideChar *source = theString.str();
+	// Chunky files store Windows-format 16-bit wide characters, independent of host WideChar size.
+	for (UnsignedShort i = 0; i < len; ++i) {
+		UnsignedShort codeUnit = static_cast<UnsignedShort>(source[i]);
+		UnsignedByte encoded[2] = {
+			static_cast<UnsignedByte>(codeUnit & 0xff),
+			static_cast<UnsignedByte>((codeUnit >> 8) & 0xff)
+		};
+		::fwrite(encoded, sizeof(encoded), 1, m_tmp_file);
+	}
 }
 
 void DataChunkOutput::writeNameKey( const NameKeyType key ) 
@@ -975,12 +984,21 @@ UnicodeString DataChunkInput::readUnicodeString(void)
 	DEBUG_ASSERTCRASH(m_chunkStack->dataLeft>=sizeof(UnsignedShort), ("Read past end of chunk."));
 	m_file->read( &len, sizeof(UnsignedShort) );
 	decrementDataLeft( sizeof(UnsignedShort) );
-	DEBUG_ASSERTCRASH(m_chunkStack->dataLeft>=len, ("Read past end of chunk."));
+	const Int serializedBytes = static_cast<Int>(len) * sizeof(UnsignedShort);
+	DEBUG_ASSERTCRASH(m_chunkStack->dataLeft>=serializedBytes, ("Read past end of chunk."));
 	UnicodeString theString;
 	if (len>0) {
 		WideChar *str = theString.getBufferForRead(len);
-		m_file->read( (char*)str, len*sizeof(WideChar) );
-		decrementDataLeft( len*sizeof(WideChar) );
+		// Chunky files store Windows-format 16-bit wide characters, independent of host WideChar size.
+		for (UnsignedShort i = 0; i < len; ++i) {
+			UnsignedByte encoded[2] = { 0, 0 };
+			m_file->read(encoded, sizeof(encoded));
+			const UnsignedShort codeUnit = static_cast<UnsignedShort>(
+				static_cast<UnsignedShort>(encoded[0]) |
+				(static_cast<UnsignedShort>(encoded[1]) << 8));
+			str[i] = static_cast<WideChar>(codeUnit);
+		}
+		decrementDataLeft( serializedBytes );
 		// add null delimiter to string.  Note that getBufferForRead allocates space for terminating null.
 		str[len] = '\000';
 	}

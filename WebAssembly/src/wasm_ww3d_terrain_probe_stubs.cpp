@@ -1,5 +1,19 @@
 #include <cstddef>
 
+class GhostObjectManager;
+class Radar;
+class CampaignManager;
+class ScriptActionsInterface;
+class ScriptConditionsInterface;
+class TeamFactory;
+
+GhostObjectManager *TheGhostObjectManager __attribute__((weak)) = nullptr;
+Radar *TheRadar __attribute__((weak)) = nullptr;
+CampaignManager *TheCampaignManager __attribute__((weak)) = nullptr;
+ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
+ScriptConditionsInterface *TheScriptConditions __attribute__((weak)) = nullptr;
+TeamFactory *TheTeamFactory __attribute__((weak)) = nullptr;
+
 extern "C" int __attribute__((weak)) RunBenchmark(
 	int,
 	char **,
@@ -23,8 +37,25 @@ extern "C" int __attribute__((weak)) RunBenchmark(
 // by the focused HeightMapRenderObjClass smoke yet.
 extern "C" void *cnc_port_bridge_info_ctor_c1(void *) __asm__("_ZN10BridgeInfoC1Ev") __attribute__((weak));
 extern "C" void *cnc_port_bridge_info_ctor_c2(void *) __asm__("_ZN10BridgeInfoC2Ev") __attribute__((weak));
+extern "C" void cnc_port_reload_all_textures(void) __asm__("_Z17ReloadAllTexturesv") __attribute__((weak));
 extern "C" int cnc_port_script_engine_time_frozen_debug(void *) __asm__("_ZN12ScriptEngine17isTimeFrozenDebugEv") __attribute__((weak));
 extern "C" int cnc_port_script_engine_time_frozen_script(void *) __asm__("_ZN12ScriptEngine18isTimeFrozenScriptEv") __attribute__((weak));
+extern "C" void *cnc_port_team_factory_find_team_by_id(void *, unsigned int) __asm__("_ZN11TeamFactory12findTeamByIDEj") __attribute__((weak));
+extern "C" void *cnc_port_team_factory_find_prototype(void *, const void *) __asm__("_ZN11TeamFactory17findTeamPrototypeERK11AsciiString") __attribute__((weak));
+extern "C" int cnc_port_team_prototype_count_instances(void *) __asm__("_ZN13TeamPrototype18countTeamInstancesEv") __attribute__((weak));
+extern "C" void *cnc_port_campaign_manager_current_campaign(void *) __asm__("_ZN15CampaignManager18getCurrentCampaignEv") __attribute__((weak));
+extern "C" void cnc_port_team_get_as_ai_group(void *, void *) __asm__("_ZN4Team16getTeamAsAIGroupEP7AIGroup") __attribute__((weak));
+extern "C" void *cnc_port_team_get_controlling_player(const void *) __asm__("_ZNK4Team20getControllingPlayerEv") __attribute__((weak));
+extern "C" void cnc_port_object_set_indicator(void *, int) __asm__("_ZN6Object23setCustomIndicatorColorEi") __attribute__((weak));
+extern "C" void cnc_port_object_remove_indicator(void *) __asm__("_ZN6Object26removeCustomIndicatorColorEv") __attribute__((weak));
+extern "C" int cnc_port_object_get_indicator(const void *) __asm__("_ZNK6Object17getIndicatorColorEv") __attribute__((weak));
+extern "C" void *cnc_port_player_current_enemy(void *) __asm__("_ZN6Player15getCurrentEnemyEv") __attribute__((weak));
+extern "C" void cnc_port_player_update_team_states(void *) __asm__("_ZN6Player16updateTeamStatesEv") __attribute__((weak));
+extern "C" int cnc_port_player_is_skirmish_ai(void *) __asm__("_ZN6Player18isSkirmishAIPlayerEv") __attribute__((weak));
+extern "C" int cnc_port_player_difficulty(const void *) __asm__("_ZNK6Player19getPlayerDifficultyEv") __attribute__((weak));
+extern "C" void *cnc_port_ai_group_ctor_c1(void *) __asm__("_ZN7AIGroupC1Ev") __attribute__((weak));
+extern "C" int cnc_port_ai_group_is_dead(const void *) __asm__("_ZNK7AIGroup13isGroupAiDeadEv") __attribute__((weak));
+extern "C" int cnc_port_ai_group_is_idle(const void *) __asm__("_ZNK7AIGroup6isIdleEv") __attribute__((weak));
 extern "C" void cnc_port_w3d_snow_release(void *) __asm__("_ZN14W3DSnowManager16ReleaseResourcesEv") __attribute__((weak));
 extern "C" int cnc_port_w3d_snow_reacquire(void *) __asm__("_ZN14W3DSnowManager18ReAcquireResourcesEv") __attribute__((weak));
 extern "C" void cnc_port_partition_refresh_shroud(void *) __asm__("_ZN16PartitionManager27refreshShroudForLocalPlayerEv") __attribute__((weak));
@@ -80,19 +111,54 @@ extern "C" int cnc_port_game_logic_is_paused(void *) __asm__("_ZN9GameLogic12isG
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) __asm__("_ZNK14AIStateMachine19getGoalPathPositionEi") __attribute__((weak));
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) __asm__("_ZNK16PartitionManager20geomCollidesWithGeomEPK7Coord3DRK12GeometryInfofS2_S5_f") __attribute__((weak));
 extern "C" int cnc_port_partition_prop_shroud_status(const void *, int, const void *) __asm__("_ZNK16PartitionManager28getPropShroudStatusForPlayerEiPK7Coord3D") __attribute__((weak));
+extern "C" void cnc_port_partition_restore_fogged_cells(void *, const void *, bool) __asm__("_ZN16PartitionManager18restoreFoggedCellsERK24ShroudStatusStoreRestoreb") __attribute__((weak));
+extern "C" void *cnc_port_partition_iterate_objects_in_range(void *, const void *, float, int, void *, int) __asm__("_ZN16PartitionManager21iterateObjectsInRangeEPK7Coord3Df23DistanceCalculationTypePP15PartitionFilter13IterOrderType") __attribute__((weak));
+extern "C" void cnc_port_partition_process_pending_undo_shroud(void *) __asm__("_ZN16PartitionManager41processEntirePendingUndoShroudRevealQueueEv") __attribute__((weak));
+extern "C" void cnc_port_partition_store_fogged_cells(const void *, void *, bool) __asm__("_ZNK16PartitionManager16storeFoggedCellsER24ShroudStatusStoreRestoreb") __attribute__((weak));
 extern "C" int cnc_port_ai_update_waypoint_goal_path_size(const void *) __asm__("_ZNK17AIUpdateInterface30friend_getWaypointGoalPathSizeEv") __attribute__((weak));
 extern "C" void cnc_port_w3d_model_draw_best_model_name_for_wb(void *, const void *, const void *) __asm__("_ZNK22W3DModelDrawModuleData21getBestModelNameForWBERK8BitFlagsILm117EE") __attribute__((weak));
 extern "C" const void *cnc_port_thing_get_template(const void *) __asm__("_ZNK5Thing11getTemplateEv") __attribute__((weak));
+extern "C" void cnc_port_thing_set_position(void *, const void *) __asm__("_ZN5Thing11setPositionEPK7Coord3D") __attribute__((weak));
+extern "C" void cnc_port_thing_set_orientation(void *, float) __asm__("_ZN5Thing14setOrientationEf") __attribute__((weak));
 extern "C" unsigned int cnc_port_drawable_get_id(const void *) __asm__("_ZNK8Drawable5getIDEv") __attribute__((weak));
 extern "C" float cnc_port_object_vision_range(const void *) __asm__("_ZNK6Object14getVisionRangeEv") __attribute__((weak));
 extern "C" int cnc_port_object_relationship(const void *, const void *) __asm__("_ZNK6Object15getRelationshipEPKS_") __attribute__((weak));
 extern "C" int cnc_port_object_is_locally_controlled(const void *) __asm__("_ZNK6Object19isLocallyControlledEv") __attribute__((weak));
 extern "C" void *cnc_port_object_exit_interface(const void *) __asm__("_ZNK6Object22getObjectExitInterfaceEv") __attribute__((weak));
+extern "C" void cnc_port_object_attempt_damage(void *, void *) __asm__("_ZN6Object13attemptDamageEP10DamageInfo") __attribute__((weak));
+extern "C" void cnc_port_object_friend_notify_boundary(void *) __asm__("_ZN6Object29friend_notifyOfNewMapBoundaryEv") __attribute__((weak));
+extern "C" void cnc_port_object_update_values_from_map(void *, void *) __asm__("_ZN6Object32updateObjValuesFromMapPropertiesEP4Dict") __attribute__((weak));
+extern "C" void cnc_port_object_friend_prepare_boundary(void *) __asm__("_ZN6Object34friend_prepareForMapBoundaryAdjustEv") __attribute__((weak));
+extern "C" int cnc_port_pathfinder_is_point_on_wall(void *, const void *) __asm__("_ZN10Pathfinder13isPointOnWallEPK7Coord3D") __attribute__((weak));
+extern "C" void cnc_port_pathfinder_change_bridge_state(void *, int, bool) __asm__("_ZN10Pathfinder17changeBridgeStateE17PathfindLayerEnumb") __attribute__((weak));
+extern "C" void cnc_port_pathfinder_force_map_recalculation(void *) __asm__("_ZN10Pathfinder21forceMapRecalculationEv") __attribute__((weak));
+extern "C" int cnc_port_pathfinder_add_bridge(void *, void *) __asm__("_ZN10Pathfinder9addBridgeEP6Bridge") __attribute__((weak));
+extern "C" void *cnc_port_bridge_behavior_interface(void *) __asm__("_ZN14BridgeBehavior36getBridgeBehaviorInterfaceFromObjectEP6Object") __attribute__((weak));
+extern "C" void *cnc_port_bridge_tower_behavior_interface(void *) __asm__("_ZN19BridgeTowerBehavior41getBridgeTowerBehaviorInterfaceFromObjectEP6Object") __attribute__((weak));
+extern "C" void cnc_port_game_logic_destroy_object(void *, void *) __asm__("_ZN9GameLogic13destroyObjectEP6Object") __attribute__((weak));
+extern "C" void *cnc_port_game_logic_get_first_object(void *) __asm__("_ZN9GameLogic14getFirstObjectEv") __attribute__((weak));
 
 extern "C" void *cnc_port_bridge_info_ctor_c1(void *self) { return self; }
 extern "C" void *cnc_port_bridge_info_ctor_c2(void *self) { return self; }
+extern "C" void cnc_port_reload_all_textures(void) {}
 extern "C" int cnc_port_script_engine_time_frozen_debug(void *) { return 0; }
 extern "C" int cnc_port_script_engine_time_frozen_script(void *) { return 0; }
+extern "C" void *cnc_port_team_factory_find_team_by_id(void *, unsigned int) { return nullptr; }
+extern "C" void *cnc_port_team_factory_find_prototype(void *, const void *) { return nullptr; }
+extern "C" int cnc_port_team_prototype_count_instances(void *) { return 0; }
+extern "C" void *cnc_port_campaign_manager_current_campaign(void *) { return nullptr; }
+extern "C" void cnc_port_team_get_as_ai_group(void *, void *) {}
+extern "C" void *cnc_port_team_get_controlling_player(const void *) { return nullptr; }
+extern "C" void cnc_port_object_set_indicator(void *, int) {}
+extern "C" void cnc_port_object_remove_indicator(void *) {}
+extern "C" int cnc_port_object_get_indicator(const void *) { return 0; }
+extern "C" void *cnc_port_player_current_enemy(void *) { return nullptr; }
+extern "C" void cnc_port_player_update_team_states(void *) {}
+extern "C" int cnc_port_player_is_skirmish_ai(void *) { return 0; }
+extern "C" int cnc_port_player_difficulty(const void *) { return 1; }
+extern "C" void *cnc_port_ai_group_ctor_c1(void *self) { return self; }
+extern "C" int cnc_port_ai_group_is_dead(const void *) { return 1; }
+extern "C" int cnc_port_ai_group_is_idle(const void *) { return 1; }
 extern "C" void cnc_port_w3d_snow_release(void *) {}
 extern "C" int cnc_port_w3d_snow_reacquire(void *) { return 1; }
 extern "C" void cnc_port_partition_refresh_shroud(void *) {}
@@ -159,11 +225,29 @@ extern "C" int cnc_port_game_logic_is_paused(void *) { return 0; }
 extern "C" const void *cnc_port_ai_state_goal_path_position(const void *, int) { return nullptr; }
 extern "C" int cnc_port_partition_geom_collides(const void *, const void *, const void *, float, const void *, const void *, float) { return 0; }
 extern "C" int cnc_port_partition_prop_shroud_status(const void *, int, const void *) { return 0; }
+extern "C" void cnc_port_partition_restore_fogged_cells(void *, const void *, bool) {}
+extern "C" void *cnc_port_partition_iterate_objects_in_range(void *, const void *, float, int, void *, int) { return nullptr; }
+extern "C" void cnc_port_partition_process_pending_undo_shroud(void *) {}
+extern "C" void cnc_port_partition_store_fogged_cells(const void *, void *, bool) {}
 extern "C" int cnc_port_ai_update_waypoint_goal_path_size(const void *) { return 0; }
 extern "C" void cnc_port_w3d_model_draw_best_model_name_for_wb(void *, const void *, const void *) {}
 extern "C" const void *cnc_port_thing_get_template(const void *) { return nullptr; }
+extern "C" void cnc_port_thing_set_position(void *, const void *) {}
+extern "C" void cnc_port_thing_set_orientation(void *, float) {}
 extern "C" unsigned int cnc_port_drawable_get_id(const void *) { return 0; }
 extern "C" float cnc_port_object_vision_range(const void *) { return 0.0f; }
 extern "C" int cnc_port_object_relationship(const void *, const void *) { return 1; }
 extern "C" int cnc_port_object_is_locally_controlled(const void *) { return 0; }
 extern "C" void *cnc_port_object_exit_interface(const void *) { return nullptr; }
+extern "C" void cnc_port_object_attempt_damage(void *, void *) {}
+extern "C" void cnc_port_object_friend_notify_boundary(void *) {}
+extern "C" void cnc_port_object_update_values_from_map(void *, void *) {}
+extern "C" void cnc_port_object_friend_prepare_boundary(void *) {}
+extern "C" int cnc_port_pathfinder_is_point_on_wall(void *, const void *) { return 0; }
+extern "C" void cnc_port_pathfinder_change_bridge_state(void *, int, bool) {}
+extern "C" void cnc_port_pathfinder_force_map_recalculation(void *) {}
+extern "C" int cnc_port_pathfinder_add_bridge(void *, void *) { return 0; }
+extern "C" void *cnc_port_bridge_behavior_interface(void *) { return nullptr; }
+extern "C" void *cnc_port_bridge_tower_behavior_interface(void *) { return nullptr; }
+extern "C" void cnc_port_game_logic_destroy_object(void *, void *) {}
+extern "C" void *cnc_port_game_logic_get_first_object(void *) { return nullptr; }

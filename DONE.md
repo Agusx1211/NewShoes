@@ -263,6 +263,13 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Make original `GameClient/GameText.cpp` read and decode CSF string
       payloads as explicit 16-bit code units under wasm's 32-bit `WideChar`,
       with browser real-asset coverage against `Data\English\Generals.csf`.
+- [x] Make original `DataChunkInput` / `DataChunkOutput` chunky
+      `UnicodeString` serialization read and write explicit 16-bit
+      little-endian code units instead of host `sizeof(WideChar)`, preserving
+      the original Windows map-file wire format under wasm's 32-bit
+      `WideChar`. Verified through `test:ww3d-terrain-visual-scene`, whose
+      logic-only map preflight and original `W3DTerrainLogic::loadMap` path now
+      parse shipped map dictionaries, scripts, polygon triggers, and sides.
 - [x] Audit original WWLib `Buffer` ownership/deallocation semantics under
       libc++/wasm with focused runtime smoke coverage for borrowed stack
       buffers, shallow-copy borrowing, assignment release/borrow transfer, and
@@ -3707,6 +3714,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `test:vertical-integrations` now checks the camera positions, frame
       counters, terrain draw metadata, and non-black WebGL2 pixels. Continuous
       gameplay-owned camera/update flow remains open.
+- [x] Broaden the visual-owned terrain scene smoke into the original logical
+      terrain load path. `test:ww3d-terrain-visual-scene` now links original
+      `TerrainLogic.cpp`, `W3DTerrainLogic.cpp`, `Scripts.cpp`,
+      `ScriptEngine.cpp`, and `ObjectTypes.cpp`, installs focused
+      `MapCache` / `GameClient` / `ThingFactory` / `ScriptEngine` ownership,
+      preflights the logic-only `WorldHeightMap` parser sections
+      (`HeightMapData`, `WorldInfo`, `ObjectsList`, `PolygonTriggers`,
+      `SidesList`), then calls original `W3DTerrainLogic::loadMap(query=true)`
+      for `Maps\MD_GLA03\MD_GLA03.map`. The harness now requires parser
+      completion, source filename, extents, height range, map object count, and
+      time-of-day notification to agree with the visual terrain load. Verified
+      with `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
 - [x] Extend optional base Generals terrain archive extraction and mounting.
       `extract_zh_runtime_archives.sh` now extracts or preserves `Terrain.big`
       from base Generals disc 1 when supplied, and
