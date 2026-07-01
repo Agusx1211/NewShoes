@@ -382,6 +382,14 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original GameState.cpp",
 );
 expect(
+  /ScriptEngine\/ScriptEngine\.cpp|ScriptEngine\\ScriptEngine\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original ScriptEngine.cpp",
+);
+expect(
+  /ScriptEngine\/Scripts\.cpp|ScriptEngine\\Scripts\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Scripts.cpp for ScriptEngine templates",
+);
+expect(
   /Display\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original Display.cpp for Shell display-size ownership",
 );
@@ -427,6 +435,25 @@ const runtimeGameLogicLine = lineOf(
 expect(
   !/void\s+Shell::hideShell\s*\(/.test(runtimeSmoke),
   "runtime smoke still provides a focused Shell::hideShell body",
+);
+expect(
+  !/void\s+ScriptEngine::setGlobalDifficulty\s*\(/.test(runtimeSmoke),
+  "runtime smoke still provides a focused ScriptEngine::setGlobalDifficulty body",
+);
+const runtimeScriptEngineLine = lineOf(
+  runtimeSmoke,
+  /ScriptEngine\s*\*\s*script_engine\s*=\s*new\s+ScriptEngine\s*;/,
+  "runtime smoke original ScriptEngine allocation",
+);
+const runtimeScriptNormalLine = lineOf(
+  runtimeSmoke,
+  /script_engine->getGlobalDifficulty\s*\(\s*\)\s*==\s*DIFFICULTY_NORMAL/,
+  "runtime smoke original ScriptEngine constructor difficulty proof",
+);
+const runtimeScriptHardLine = lineOf(
+  runtimeSmoke,
+  /script_engine->getGlobalDifficulty\s*\(\s*\)\s*==\s*DIFFICULTY_HARD/,
+  "runtime smoke original ScriptEngine prepareNewGame difficulty proof",
 );
 const runtimeShellLine = lineOf(
   runtimeSmoke,
@@ -499,12 +526,17 @@ console.log(JSON.stringify({
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
+    originalScriptEngineCppLinked: true,
+    originalScriptsCppLinked: true,
     originalDisplayCppLinked: true,
     originalShellCppLinked: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     focusedPlayerLookupWrapLine: runtimePlayerWrapLine,
     gameLogicAllocationLine: runtimeGameLogicLine,
+    scriptEngineAllocationLine: runtimeScriptEngineLine,
+    scriptEngineConstructorDifficultyLine: runtimeScriptNormalLine,
+    scriptEnginePrepareDifficultyLine: runtimeScriptHardLine,
     shellAllocationLine: runtimeShellLine,
     shellPushLine: runtimeShellPushLine,
     shellHideStateProofLine: runtimeShellHideProofLine,
@@ -515,14 +547,13 @@ console.log(JSON.stringify({
     "GameLogic::processCommandList dispatches CommandList messages through logicMessageDispatcher",
     "MSG_NEW_GAME reads game mode, difficulty, rank points, and game speed arguments",
     "MSG_NEW_GAME applies the FPS limit, calls prepareNewGame, then calls startNewGame(FALSE)",
-    "prepareNewGame owns difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
+    "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original Shell::push/hideShell ownership",
+    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original ScriptEngine and Shell ownership",
   ],
   nextRequired: [
     "replace the runtime PlayerList::getNthPlayer linker wrap with real PlayerList/Player ownership",
-    "replace the runtime focused ScriptEngine adapter with original ScriptEngine ownership",
     "replace the runtime shim GlobalData bridge with original GlobalData ownership",
     "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",

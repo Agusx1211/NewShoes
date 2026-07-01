@@ -843,14 +843,15 @@ shares structure and follows behind.
       handoff to `TheCommandList` and `CommandList::reset` cleanup. The
       `verify:gamelogic-new-game-dispatch-frontier` gate now pins that original
       source path, and `gamelogic-new-game-dispatch-smoke` links original
-      `GameLogic.cpp`, `GameLogicDispatch.cpp`, and `GameState.cpp` to drive
+      `GameLogic.cpp`, `GameLogicDispatch.cpp`, `GameState.cpp`,
+      `ScriptEngine.cpp`, and `Scripts.cpp` to drive
       `GameLogic::processCommandList` on a real `MSG_NEW_GAME` through
-      `prepareNewGame`, original `Shell::hideShell`, and the first-call
-      `startNewGame(FALSE)` deferral before terrain load. That runtime still
-      uses focused `PlayerList::getNthPlayer`, `ScriptEngine`, `GlobalData`,
-      and BlankWindow adapters; replace those with real owners before
-      continuing the deferred update into terrain/player/script map-load
-      ownership.
+      original `ScriptEngine::setGlobalDifficulty`, original
+      `Shell::hideShell`, and the first-call `startNewGame(FALSE)` deferral
+      before terrain load. That runtime still uses focused
+      `PlayerList::getNthPlayer`, `GlobalData`, and BlankWindow adapters;
+      replace those with real owners before continuing the deferred update
+      into terrain/player/script map-load ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

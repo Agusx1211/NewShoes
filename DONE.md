@@ -1987,6 +1987,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the focused `ScriptEngine::setGlobalDifficulty` adapter in the
+      `MSG_NEW_GAME` runtime dispatch smoke with original ScriptEngine
+      ownership. `gamelogic-new-game-dispatch-smoke` now links original
+      `ScriptEngine.cpp` and `Scripts.cpp`, constructs a real `ScriptEngine`
+      without entering full `ScriptEngine::init`, proves the constructor starts
+      at `DIFFICULTY_NORMAL`, and verifies original
+      `GameLogic::prepareNewGame` forwards the `MSG_NEW_GAME` difficulty to
+      original `ScriptEngine::setGlobalDifficulty`. The smoke still honestly
+      reports focused `PlayerList::getNthPlayer`, `GlobalData`, and
+      BlankWindow adapter boundaries before the deferred terrain/player/script
+      load. Verified with
+      `node --check WebAssembly/tools/verify_gamelogic_new_game_dispatch_frontier.mjs`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`,
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

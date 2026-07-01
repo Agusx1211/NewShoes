@@ -167,13 +167,11 @@ OVERRIDE<WeatherSetting> TheWeatherSetting WEAK_SINGLETON = nullptr;
 
 GlobalData *TheGlobalData = nullptr;
 GameEngine *TheGameEngine = nullptr;
-ScriptEngine *TheScriptEngine = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
 IMEManagerInterface *TheIMEManager = nullptr;
 
 namespace {
 
-int g_last_script_difficulty = -1;
 int g_player_lookup_index = -999;
 int g_blank_layout_creates = 0;
 int g_layout_shutdowns = 0;
@@ -402,11 +400,6 @@ extern "C" Player *__wrap__ZN10PlayerList12getNthPlayerEi(PlayerList *, Int i)
 	return i == 0 ? reinterpret_cast<Player *>(1) : nullptr;
 }
 
-void ScriptEngine::setGlobalDifficulty(GameDifficulty difficulty)
-{
-	g_last_script_difficulty = difficulty;
-}
-
 void GameSpyCloseAllOverlays()
 {
 }
@@ -442,6 +435,13 @@ int main()
 	GameLogic *logic = new GameLogic;
 	TheGameLogic = logic;
 
+	ScriptEngine *script_engine = new ScriptEngine;
+	TheScriptEngine = script_engine;
+	if (!expect(script_engine->getGlobalDifficulty() == DIFFICULTY_NORMAL,
+			"original ScriptEngine constructor should initialize normal difficulty")) {
+		return 1;
+	}
+
 	Shell *shell = new Shell;
 	TheShell = shell;
 	shell->push("Menus/BlankWindow.wnd");
@@ -474,7 +474,6 @@ int main()
 		return 1;
 	}
 
-	TheScriptEngine = reinterpret_cast<ScriptEngine *>(1);
 	ThePlayerList = reinterpret_cast<PlayerList *>(1);
 
 	logic->processCommandList(TheCommandList);
@@ -482,8 +481,8 @@ int main()
 	bool ok = true;
 	ok = expect(g_player_lookup_index == 0,
 		"logicMessageDispatcher should ask PlayerList for the message player") && ok;
-	ok = expect(g_last_script_difficulty == DIFFICULTY_HARD,
-		"prepareNewGame should forward MSG_NEW_GAME difficulty to ScriptEngine") && ok;
+	ok = expect(script_engine->getGlobalDifficulty() == DIFFICULTY_HARD,
+		"prepareNewGame should forward MSG_NEW_GAME difficulty to original ScriptEngine") && ok;
 	ok = expect(g_blank_layout_creates == 2
 			&& g_last_layout_name.compareNoCase("Menus/BlankWindow.wnd") == 0,
 		"prepareNewGame should request the BlankWindow background after the Shell seed layout") && ok;
@@ -513,10 +512,10 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GameLogic.cpp/GameLogicDispatch.cpp\","
+		<< "\"source\":\"GeneralsMD original GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":" << g_player_lookup_index << ","
-		<< "\"difficulty\":" << g_last_script_difficulty << ","
+		<< "\"difficulty\":" << script_engine->getGlobalDifficulty() << ","
 		<< "\"blankLayoutCreates\":" << g_blank_layout_creates << ","
 		<< "\"shellActive\":false,"
 		<< "\"shellScreenCount\":" << shell->getScreenCount() << ","
@@ -529,11 +528,10 @@ int main()
 		<< "\"mapName\":\"" << jsonEscape(global_data.m_mapName.str()) << "\","
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
 		<< "\"runtimeBoundaries\":["
-		<< "\"focused ScriptEngine::setGlobalDifficulty\","
 		<< "\"focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch\","
 		<< "\"shim GlobalData bridge\"],"
-		<< "\"originalOwners\":[\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
-		<< "\"nextRequired\":\"replace focused PlayerList/ScriptEngine and shim GlobalData before deferred terrain load\"}"
+		<< "\"originalOwners\":[\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
+		<< "\"nextRequired\":\"replace focused PlayerList and shim GlobalData before deferred terrain load\"}"
 		<< "\n";
 
 	return 0;
