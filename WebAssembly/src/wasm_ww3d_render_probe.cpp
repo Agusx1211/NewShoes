@@ -320,6 +320,7 @@ namespace {
 enum MainMenuLayoutImageRepaintMode
 {
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT,
 };
@@ -331,6 +332,8 @@ const char *main_menu_layout_image_repaint_mode_name(MainMenuLayoutImageRepaintM
 			return "staticTextSelectDifficulty";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN:
 			return "loadReplayDropdown";
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN:
+			return "singlePlayerDropdown";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK:
 			return "buttonSinglePlayer";
 		default:
@@ -363,6 +366,12 @@ bool main_menu_layout_image_repaint_is_button_stack()
 {
 	return g_ww3d_main_menu_layout_image_repaint_mode ==
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK;
+}
+
+bool main_menu_layout_image_repaint_is_single_player()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN;
 }
 
 bool main_menu_layout_image_repaint_is_load_replay()
@@ -427,6 +436,31 @@ constexpr const char *kMainMenuExtraButtonLabels[kMainMenuExtraButtonCount] = {
 };
 constexpr Int kMainMenuExtraButtonY[kMainMenuExtraButtonCount] = { 156, 196, 236, 276, 316 };
 constexpr Int kMainMenuExtraButtonHeight[kMainMenuExtraButtonCount] = { 36, 35, 36, 36, 36 };
+constexpr const char *kMainMenuSinglePlayerDropdownName = "MainMenu.wnd:MapBorder";
+constexpr const char *kMainMenuSinglePlayerEarthMapName = "MainMenu.wnd:EarthMap";
+constexpr std::size_t kMainMenuSinglePlayerButtonCount = 6;
+constexpr const char *kMainMenuSinglePlayerButtonNames[kMainMenuSinglePlayerButtonCount] = {
+	"MainMenu.wnd:ButtonUSA",
+	"MainMenu.wnd:ButtonGLA",
+	"MainMenu.wnd:ButtonChina",
+	"MainMenu.wnd:ButtonChallenge",
+	"MainMenu.wnd:ButtonSkirmish",
+	"MainMenu.wnd:ButtonSingleBack",
+};
+constexpr const char *kMainMenuSinglePlayerButtonLabels[kMainMenuSinglePlayerButtonCount] = {
+	"GUI:USA",
+	"GUI:GLA",
+	"GUI:CHINA_Caps",
+	"GUI:Generals_Challenge",
+	"GUI:Skirmish",
+	"GUI:Back",
+};
+constexpr Int kMainMenuSinglePlayerButtonY[kMainMenuSinglePlayerButtonCount] = {
+	116, 156, 196, 236, 276, 316
+};
+constexpr Int kMainMenuSinglePlayerButtonHeight[kMainMenuSinglePlayerButtonCount] = {
+	36, 36, 35, 36, 36, 35
+};
 constexpr const char *kMainMenuLoadReplayDropdownName = "MainMenu.wnd:MapBorder3";
 constexpr std::size_t kMainMenuLoadReplayButtonCount = 3;
 constexpr const char *kMainMenuLoadReplayButtonNames[kMainMenuLoadReplayButtonCount] = {
@@ -7218,6 +7252,18 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool extra_buttons_text_display_string_bound = false;
 	bool extra_buttons_text_size_computed = false;
 	bool extra_buttons_visible = false;
+	bool single_player_button_labels_exist = false;
+	bool single_player_buttons_text_nonempty = false;
+	bool single_player_dropdown_found = false;
+	bool single_player_dropdown_callback_bound = false;
+	bool single_player_earth_map_found = false;
+	bool single_player_earth_map_callback_bound = false;
+	bool single_player_buttons_found = false;
+	bool single_player_buttons_callback_bound = false;
+	bool single_player_buttons_images_bound = false;
+	bool single_player_buttons_text_display_string_bound = false;
+	bool single_player_buttons_text_size_computed = false;
+	bool single_player_buttons_visible = false;
 	bool load_replay_button_labels_exist = false;
 	bool load_replay_buttons_text_nonempty = false;
 	bool load_replay_dropdown_found = false;
@@ -7288,6 +7334,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool target_hidden = false;
 	bool ruler_hidden = false;
 	bool button_hidden = false;
+	bool single_player_dropdown_hidden = false;
+	bool single_player_earth_map_hidden = false;
 	bool load_replay_dropdown_hidden = false;
 	bool static_text_hidden = false;
 	bool static_text_visibility_focused = false;
@@ -7338,6 +7386,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	std::string loaded_texture_name;
 	std::string ruler_loaded_texture_name;
 	std::string extra_button_ascii[kMainMenuExtraButtonCount];
+	std::string single_player_button_ascii[kMainMenuSinglePlayerButtonCount];
 	std::string load_replay_button_ascii[kMainMenuLoadReplayButtonCount];
 	bool extra_button_label_exists[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_nonempty[kMainMenuExtraButtonCount] = {};
@@ -7347,6 +7396,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool extra_button_text_display_string_bound[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_size_computed[kMainMenuExtraButtonCount] = {};
 	bool extra_button_hidden[kMainMenuExtraButtonCount] = {};
+	bool single_player_button_label_exists[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_text_nonempty[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_found[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_callback_bound[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_images_bound[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_text_display_string_bound[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_text_size_computed[kMainMenuSinglePlayerButtonCount] = {};
+	bool single_player_button_hidden[kMainMenuSinglePlayerButtonCount] = {};
 	bool load_replay_button_label_exists[kMainMenuLoadReplayButtonCount] = {};
 	bool load_replay_button_text_nonempty[kMainMenuLoadReplayButtonCount] = {};
 	bool load_replay_button_found[kMainMenuLoadReplayButtonCount] = {};
@@ -7389,6 +7446,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int button_y = 0;
 	Int button_width = 0;
 	Int button_height = 0;
+	Int single_player_dropdown_x = 0;
+	Int single_player_dropdown_y = 0;
+	Int single_player_dropdown_width = 0;
+	Int single_player_dropdown_height = 0;
+	Int single_player_earth_map_x = 0;
+	Int single_player_earth_map_y = 0;
+	Int single_player_earth_map_width = 0;
+	Int single_player_earth_map_height = 0;
 	Int load_replay_dropdown_x = 0;
 	Int load_replay_dropdown_y = 0;
 	Int load_replay_dropdown_width = 0;
@@ -7404,6 +7469,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int extra_button_text_length[kMainMenuExtraButtonCount] = {};
 	Int extra_button_text_width[kMainMenuExtraButtonCount] = {};
 	Int extra_button_text_height[kMainMenuExtraButtonCount] = {};
+	Int single_player_button_x[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_y[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_width[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_height[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_text_length[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_text_width[kMainMenuSinglePlayerButtonCount] = {};
+	Int single_player_button_text_height[kMainMenuSinglePlayerButtonCount] = {};
 	Int load_replay_button_x[kMainMenuLoadReplayButtonCount] = {};
 	Int load_replay_button_y[kMainMenuLoadReplayButtonCount] = {};
 	Int load_replay_button_width[kMainMenuLoadReplayButtonCount] = {};
@@ -7425,6 +7497,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	GameWindow *ruler = nullptr;
 	GameWindow *button = nullptr;
 	GameWindow *extra_buttons[kMainMenuExtraButtonCount] = {};
+	GameWindow *single_player_dropdown = nullptr;
+	GameWindow *single_player_earth_map = nullptr;
+	GameWindow *single_player_buttons[kMainMenuSinglePlayerButtonCount] = {};
 	GameWindow *load_replay_dropdown = nullptr;
 	GameWindow *load_replay_buttons[kMainMenuLoadReplayButtonCount] = {};
 	GameWindow *static_text = nullptr;
@@ -7491,6 +7566,22 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					extra_buttons_text_nonempty =
 						extra_buttons_text_nonempty && extra_button_text_nonempty[i];
 				}
+				single_player_button_labels_exist = true;
+				single_player_buttons_text_nonempty = true;
+				for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+					UnicodeString fetched_single_player_text =
+						game_text->fetch(
+							kMainMenuSinglePlayerButtonLabels[i],
+							&single_player_button_label_exists[i]);
+					single_player_button_text_nonempty[i] =
+						!fetched_single_player_text.isEmpty();
+					single_player_button_labels_exist =
+						single_player_button_labels_exist &&
+						single_player_button_label_exists[i];
+					single_player_buttons_text_nonempty =
+						single_player_buttons_text_nonempty &&
+						single_player_button_text_nonempty[i];
+				}
 				load_replay_button_labels_exist = true;
 				load_replay_buttons_text_nonempty = true;
 				for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
@@ -7538,6 +7629,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_text_nonempty &&
 		(!main_menu_layout_image_repaint_is_button_stack() ||
 			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_single_player() ||
+			(single_player_button_labels_exist && single_player_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_load_replay() ||
 			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_static_text() ||
@@ -7771,6 +7864,17 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				root,
 				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuExtraButtonNames[i])));
 		}
+		single_player_dropdown = manager->winGetWindowFromId(
+			root,
+			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuSinglePlayerDropdownName)));
+		single_player_earth_map = manager->winGetWindowFromId(
+			root,
+			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuSinglePlayerEarthMapName)));
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			single_player_buttons[i] = manager->winGetWindowFromId(
+				root,
+				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuSinglePlayerButtonNames[i])));
+		}
 		load_replay_dropdown = manager->winGetWindowFromId(
 			root,
 			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuLoadReplayDropdownName)));
@@ -7788,6 +7892,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 			extra_button_found[i] = extra_buttons[i] != nullptr;
 			extra_buttons_found = extra_buttons_found && extra_button_found[i];
+		}
+		single_player_dropdown_found = single_player_dropdown != nullptr;
+		single_player_earth_map_found = single_player_earth_map != nullptr;
+		single_player_buttons_found = true;
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			single_player_button_found[i] = single_player_buttons[i] != nullptr;
+			single_player_buttons_found =
+				single_player_buttons_found && single_player_button_found[i];
 		}
 		load_replay_dropdown_found = load_replay_dropdown != nullptr;
 		load_replay_buttons_found = true;
@@ -7866,6 +7978,31 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				load_replay_dropdown_width,
 				load_replay_dropdown_height);
 		}
+		if (single_player_dropdown != nullptr) {
+			single_player_dropdown_callback_bound =
+				single_player_dropdown->winGetSystemFunc() == PassSelectedButtonsToParentSystem;
+			single_player_dropdown_hidden =
+				BitTest(single_player_dropdown->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				single_player_dropdown,
+				single_player_dropdown_x,
+				single_player_dropdown_y,
+				single_player_dropdown_width,
+				single_player_dropdown_height);
+		}
+		if (single_player_earth_map != nullptr) {
+			single_player_earth_map_callback_bound =
+				single_player_earth_map->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				single_player_earth_map->winGetSystemFunc() == PassSelectedButtonsToParentSystem;
+			single_player_earth_map_hidden =
+				BitTest(single_player_earth_map->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				single_player_earth_map,
+				single_player_earth_map_x,
+				single_player_earth_map_y,
+				single_player_earth_map_width,
+				single_player_earth_map_height);
+		}
 		extra_buttons_callback_bound = true;
 		extra_buttons_images_bound = true;
 		extra_buttons_text_display_string_bound = true;
@@ -7926,6 +8063,76 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				extra_button_ascii[i].length() > 0;
 			extra_buttons_text_size_computed =
 				extra_buttons_text_size_computed && extra_button_text_size_computed[i];
+		}
+		single_player_buttons_callback_bound = true;
+		single_player_buttons_images_bound = true;
+		single_player_buttons_text_display_string_bound = true;
+		single_player_buttons_text_size_computed = true;
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			GameWindow *single_player_button = single_player_buttons[i];
+			if (single_player_button == nullptr) {
+				single_player_buttons_callback_bound = false;
+				single_player_buttons_images_bound = false;
+				single_player_buttons_text_display_string_bound = false;
+				single_player_buttons_text_size_computed = false;
+				continue;
+			}
+			single_player_button_callback_bound[i] =
+				single_player_button->winGetDrawFunc() == W3DGadgetPushButtonImageDraw &&
+				single_player_button->winGetSystemFunc() == GadgetPushButtonSystem &&
+				single_player_button->winGetInputFunc() == GadgetPushButtonInput;
+			const Image *single_player_left_image =
+				GadgetButtonGetLeftEnabledImage(single_player_button);
+			const Image *single_player_middle_image =
+				GadgetButtonGetMiddleEnabledImage(single_player_button);
+			const Image *single_player_right_image =
+				GadgetButtonGetRightEnabledImage(single_player_button);
+			single_player_button_images_bound[i] =
+				single_player_left_image != nullptr &&
+				single_player_middle_image != nullptr &&
+				single_player_right_image != nullptr &&
+				single_player_left_image == button_left_image &&
+				single_player_middle_image == button_middle_image &&
+				single_player_right_image == button_right_image;
+			DisplayString *single_player_text =
+				single_player_button->winGetInstanceData()->getTextDisplayString();
+			single_player_button_text_display_string_bound[i] =
+				single_player_text != nullptr &&
+				single_player_text->getTextLength() > 0;
+			if (single_player_button_text_display_string_bound[i]) {
+				single_player_button_text_length[i] = single_player_text->getTextLength();
+				single_player_text->getSize(
+					&single_player_button_text_width[i],
+					&single_player_button_text_height[i]);
+				single_player_button_text_size_computed[i] =
+					single_player_button_text_width[i] > 0 &&
+					single_player_button_text_height[i] > 0;
+				AsciiString ascii_text;
+				ascii_text.translate(single_player_text->getText());
+				single_player_button_ascii[i] =
+					ascii_text.str() != nullptr ? ascii_text.str() : "";
+			}
+			single_player_button_hidden[i] =
+				BitTest(single_player_button->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				single_player_button,
+				single_player_button_x[i],
+				single_player_button_y[i],
+				single_player_button_width[i],
+				single_player_button_height[i]);
+			single_player_buttons_callback_bound =
+				single_player_buttons_callback_bound &&
+				single_player_button_callback_bound[i];
+			single_player_buttons_images_bound =
+				single_player_buttons_images_bound &&
+				single_player_button_images_bound[i];
+			single_player_buttons_text_display_string_bound =
+				single_player_buttons_text_display_string_bound &&
+				single_player_button_text_display_string_bound[i] &&
+				single_player_button_ascii[i].length() > 0;
+			single_player_buttons_text_size_computed =
+				single_player_buttons_text_size_computed &&
+				single_player_button_text_size_computed[i];
 		}
 		load_replay_buttons_callback_bound = true;
 		load_replay_buttons_images_bound = true;
@@ -8040,6 +8247,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			(static_text_found && static_text_callback_bound &&
 				static_text_user_data_bound && static_text_display_string_bound &&
 				static_text_ascii.length() > 0) :
+			(main_menu_layout_image_repaint_is_single_player() ?
+				(single_player_dropdown_found && single_player_dropdown_callback_bound &&
+					single_player_earth_map_found && single_player_earth_map_callback_bound &&
+					single_player_buttons_found && single_player_buttons_callback_bound &&
+					single_player_buttons_images_bound &&
+					single_player_buttons_text_display_string_bound) :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(load_replay_dropdown_found && load_replay_dropdown_callback_bound &&
 					load_replay_buttons_found && load_replay_buttons_callback_bound &&
@@ -8050,7 +8263,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_text_ascii.length() > 0 &&
 					extra_buttons_found && extra_buttons_callback_bound &&
 					extra_buttons_images_bound &&
-					extra_buttons_text_display_string_bound));
+					extra_buttons_text_display_string_bound)));
 
 	if (root_found && target_found && ruler_found && focused_window_ready &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
@@ -8060,6 +8273,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		repaint_targets.push_back(ruler);
 		if (main_menu_layout_image_repaint_is_static_text()) {
 			repaint_targets.push_back(static_text);
+		} else if (main_menu_layout_image_repaint_is_single_player()) {
+			for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+				repaint_targets.push_back(single_player_buttons[i]);
+			}
 		} else if (main_menu_layout_image_repaint_is_load_replay()) {
 			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
 				repaint_targets.push_back(load_replay_buttons[i]);
@@ -8074,6 +8291,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		if (main_menu_layout_image_repaint_is_static_text() && static_text != nullptr) {
 			show_window_and_ancestors(static_text);
 			static_text_visibility_focused = true;
+		}
+		if (main_menu_layout_image_repaint_is_single_player()) {
+			for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+				if (single_player_buttons[i] != nullptr) {
+					show_window_and_ancestors(single_player_buttons[i]);
+				}
+			}
 		}
 		if (main_menu_layout_image_repaint_is_load_replay()) {
 			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
@@ -8092,6 +8316,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				extra_buttons[i] != nullptr ?
 					BitTest(extra_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 			extra_buttons_visible = extra_buttons_visible && !extra_button_hidden[i];
+		}
+		single_player_dropdown_hidden =
+			single_player_dropdown != nullptr ?
+				BitTest(single_player_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		single_player_earth_map_hidden =
+			single_player_earth_map != nullptr ?
+				BitTest(single_player_earth_map->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		single_player_buttons_visible = true;
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			single_player_button_hidden[i] =
+				single_player_buttons[i] != nullptr ?
+					BitTest(single_player_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+			single_player_buttons_visible =
+				single_player_buttons_visible && !single_player_button_hidden[i];
 		}
 		load_replay_dropdown_hidden =
 			load_replay_dropdown != nullptr ?
@@ -8112,14 +8350,22 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
 
 	const Int expected_image_draws =
-		main_menu_layout_image_repaint_is_static_text() ? 2 : (main_menu_layout_image_repaint_is_load_replay() ? 5 : 6);
+		main_menu_layout_image_repaint_is_static_text() ? 2 :
+			(main_menu_layout_image_repaint_is_single_player() ? 8 :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5 : 6));
 	const UnsignedInt expected_indexed_draws =
-		main_menu_layout_image_repaint_is_static_text() ? 3u : (main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u);
+		main_menu_layout_image_repaint_is_static_text() ? 3u :
+			(main_menu_layout_image_repaint_is_single_player() ? 8u :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u));
 	const bool focused_window_visible =
 		main_menu_layout_image_repaint_is_static_text() ? !static_text_hidden :
+			(main_menu_layout_image_repaint_is_single_player() ?
+				(!single_player_dropdown_hidden &&
+					!single_player_earth_map_hidden &&
+					single_player_buttons_visible) :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(!load_replay_dropdown_hidden && load_replay_buttons_visible) :
-				(!button_hidden && extra_buttons_visible));
+				(!button_hidden && extra_buttons_visible)));
 
 	if (children_pruned && !target_hidden && !ruler_hidden && focused_window_visible) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
@@ -8167,6 +8413,27 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 		extra_buttons_text_size_computed =
 			extra_buttons_text_size_computed && extra_button_text_size_computed[i];
+	}
+	for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+		if (single_player_buttons[i] != nullptr &&
+			single_player_button_text_display_string_bound[i]) {
+			DisplayString *single_player_text =
+				single_player_buttons[i]->winGetInstanceData()->getTextDisplayString();
+			if (single_player_text != nullptr) {
+				single_player_text->getSize(
+					&single_player_button_text_width[i],
+					&single_player_button_text_height[i]);
+				single_player_button_text_size_computed[i] =
+					single_player_button_text_width[i] > 0 &&
+					single_player_button_text_height[i] > 0;
+			}
+		}
+	}
+	single_player_buttons_text_size_computed = true;
+	for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+		single_player_buttons_text_size_computed =
+			single_player_buttons_text_size_computed &&
+			single_player_button_text_size_computed[i];
 	}
 	for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
 		if (load_replay_buttons[i] != nullptr &&
@@ -8234,6 +8501,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button = nullptr;
 		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 			extra_buttons[i] = nullptr;
+		}
+		single_player_dropdown = nullptr;
+		single_player_earth_map = nullptr;
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			single_player_buttons[i] = nullptr;
 		}
 		load_replay_dropdown = nullptr;
 		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
@@ -8322,6 +8594,44 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				extra_button_height[i] == kMainMenuExtraButtonHeight[i];
 		}
 	}
+	bool single_player_buttons_focus_ok = !main_menu_layout_image_repaint_is_single_player();
+	if (main_menu_layout_image_repaint_is_single_player()) {
+		single_player_buttons_focus_ok =
+			single_player_button_labels_exist &&
+			single_player_buttons_text_nonempty &&
+			single_player_dropdown_found &&
+			single_player_dropdown_callback_bound &&
+			!single_player_dropdown_hidden &&
+			single_player_dropdown_x == 532 &&
+			single_player_dropdown_y == 108 &&
+			single_player_dropdown_width == 224 &&
+			single_player_dropdown_height == 252 &&
+			single_player_earth_map_found &&
+			single_player_earth_map_callback_bound &&
+			!single_player_earth_map_hidden &&
+			single_player_earth_map_x == 532 &&
+			single_player_earth_map_y == 108 &&
+			single_player_earth_map_width == 224 &&
+			single_player_earth_map_height == 244 &&
+			single_player_buttons_found &&
+			single_player_buttons_callback_bound &&
+			single_player_buttons_images_bound &&
+			single_player_buttons_text_display_string_bound &&
+			single_player_buttons_visible;
+		for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+			single_player_buttons_focus_ok =
+				single_player_buttons_focus_ok &&
+				single_player_button_label_exists[i] &&
+				single_player_button_text_nonempty[i] &&
+				single_player_button_text_size_computed[i] &&
+				single_player_button_ascii[i].length() > 0 &&
+				!single_player_button_hidden[i] &&
+				single_player_button_x[i] == 540 &&
+				single_player_button_y[i] == kMainMenuSinglePlayerButtonY[i] &&
+				single_player_button_width[i] == 208 &&
+				single_player_button_height[i] == kMainMenuSinglePlayerButtonHeight[i];
+		}
+	}
 	bool load_replay_buttons_focus_ok = !main_menu_layout_image_repaint_is_load_replay();
 	if (main_menu_layout_image_repaint_is_load_replay()) {
 		load_replay_buttons_focus_ok =
@@ -8399,6 +8709,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_text_nonempty &&
 		(!main_menu_layout_image_repaint_is_button_stack() ||
 			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_single_player() ||
+			(single_player_button_labels_exist && single_player_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_load_replay() ||
 			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_static_text() ||
@@ -8461,6 +8773,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		ruler_image_bound &&
 		button_focus_ok &&
 		extra_buttons_focus_ok &&
+		single_player_buttons_focus_ok &&
 		load_replay_buttons_focus_ok &&
 		static_text_focus_ok &&
 		!target_hidden &&
@@ -8552,6 +8865,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const std::string static_text_ascii_json = json_escape(static_text_ascii);
 	const std::string load_replay_dropdown_name_json =
 		json_escape(kMainMenuLoadReplayDropdownName);
+	const std::string single_player_dropdown_name_json =
+		json_escape(kMainMenuSinglePlayerDropdownName);
+	const std::string single_player_earth_map_name_json =
+		json_escape(kMainMenuSinglePlayerEarthMapName);
 	const std::string probe_mode_json =
 		json_escape(main_menu_layout_image_repaint_mode_name(
 			g_ww3d_main_menu_layout_image_repaint_mode));
@@ -8597,6 +8914,48 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		extra_buttons_json += extra_button_buffer;
 	}
 	extra_buttons_json += "]";
+	std::string single_player_buttons_json = "[";
+	for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
+		if (i > 0) {
+			single_player_buttons_json += ",";
+		}
+		const std::string name_json = json_escape(kMainMenuSinglePlayerButtonNames[i]);
+		const std::string label_json = json_escape(kMainMenuSinglePlayerButtonLabels[i]);
+		const std::string ascii_json = json_escape(single_player_button_ascii[i]);
+		char single_player_button_buffer[1400];
+		std::snprintf(
+			single_player_button_buffer,
+			sizeof(single_player_button_buffer),
+			"{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+			"\"width\":%d,\"height\":%d,"
+			"\"systemFunc\":\"GadgetPushButtonSystem\","
+			"\"inputFunc\":\"GadgetPushButtonInput\","
+			"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
+			"\"hidden\":%s,\"labelExists\":%s,\"textNonEmpty\":%s,"
+			"\"imagesBound\":%s,"
+			"\"images\":[\"%s\",\"%s\",\"%s\"],"
+			"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
+			"\"length\":%d,\"width\":%d,\"height\":%d}}",
+			name_json.c_str(),
+			single_player_button_x[i],
+			single_player_button_y[i],
+			single_player_button_width[i],
+			single_player_button_height[i],
+			bool_json(single_player_button_hidden[i]),
+			bool_json(single_player_button_label_exists[i]),
+			bool_json(single_player_button_text_nonempty[i]),
+			bool_json(single_player_button_images_bound[i]),
+			button_left_image_name_json.c_str(),
+			button_middle_image_name_json.c_str(),
+			button_right_image_name_json.c_str(),
+			label_json.c_str(),
+			ascii_json.c_str(),
+			single_player_button_text_length[i],
+			single_player_button_text_width[i],
+			single_player_button_text_height[i]);
+		single_player_buttons_json += single_player_button_buffer;
+	}
+	single_player_buttons_json += "]";
 	std::string load_replay_buttons_json = "[";
 	for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
 		if (i > 0) {
@@ -8639,10 +8998,52 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		load_replay_buttons_json += load_replay_button_buffer;
 	}
 	load_replay_buttons_json += "]";
+	char single_player_results_buffer[2400];
+	std::snprintf(
+		single_player_results_buffer,
+		sizeof(single_player_results_buffer),
+		"\"singlePlayerButtonLabelsExist\":%s,"
+		"\"singlePlayerButtonTextNonEmpty\":%s,"
+		"\"singlePlayerDropdownFound\":%s,"
+		"\"singlePlayerDropdownCallbackBound\":%s,"
+		"\"singlePlayerEarthMapFound\":%s,"
+		"\"singlePlayerEarthMapCallbackBound\":%s,"
+		"\"singlePlayerButtonsFound\":%s,"
+		"\"singlePlayerButtonsCallbackBound\":%s,"
+		"\"singlePlayerButtonsImagesBound\":%s,"
+		"\"singlePlayerButtonsTextDisplayStringBound\":%s,"
+		"\"singlePlayerButtonsTextSizeComputed\":%s,"
+		"\"singlePlayerDropdownHidden\":%s,"
+		"\"singlePlayerEarthMapHidden\":%s,"
+		"\"singlePlayerButtonsVisible\":%s,",
+		bool_json(single_player_button_labels_exist),
+		bool_json(single_player_buttons_text_nonempty),
+		bool_json(single_player_dropdown_found),
+		bool_json(single_player_dropdown_callback_bound),
+		bool_json(single_player_earth_map_found),
+		bool_json(single_player_earth_map_callback_bound),
+		bool_json(single_player_buttons_found),
+		bool_json(single_player_buttons_callback_bound),
+		bool_json(single_player_buttons_images_bound),
+		bool_json(single_player_buttons_text_display_string_bound),
+		bool_json(single_player_buttons_text_size_computed),
+		bool_json(single_player_dropdown_hidden),
+		bool_json(single_player_earth_map_hidden),
+		bool_json(single_player_buttons_visible));
+	const std::string single_player_results_json = single_player_results_buffer;
+	char single_player_game_text_buffer[400];
+	std::snprintf(
+		single_player_game_text_buffer,
+		sizeof(single_player_game_text_buffer),
+		"\"singlePlayerButtonLabelsExist\":%s,"
+		"\"singlePlayerButtonTextNonEmpty\":%s,",
+		bool_json(single_player_button_labels_exist),
+		bool_json(single_player_buttons_text_nonempty));
+	const std::string single_player_game_text_json = single_player_game_text_buffer;
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[56000];
+	char buffer[70000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -8661,6 +9062,15 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw\","
 		"\"GameText::fetch(main visible button labels) -> W3DDisplayString::draw button labels\","
+		"\"MainMenu.wnd:MapBorder -> PassSelectedButtonsToParentSystem\","
+		"\"MainMenu.wnd:EarthMap -> PassSelectedButtonsToParentSystem\","
+		"\"MainMenu.wnd:ButtonUSA -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonGLA -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonChina -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonChallenge -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonSkirmish -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonSingleBack -> W3DGadgetPushButtonImageDraw\","
+		"\"GameText::fetch(single-player dropdown button labels) -> W3DDisplayString::draw button labels\","
 		"\"MainMenu.wnd:MapBorder3 -> PassSelectedButtonsToParentSystem\","
 		"\"MainMenu.wnd:ButtonLoadGame -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonReplay -> W3DGadgetPushButtonImageDraw\","
@@ -8688,6 +9098,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"buttonTextNonEmpty\":%s,"
 		"\"extraButtonLabelsExist\":%s,"
 		"\"extraButtonTextNonEmpty\":%s,"
+		"%s"
 		"\"loadReplayButtonLabelsExist\":%s,"
 		"\"loadReplayButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,\"staticTextNonEmpty\":%s,"
@@ -8768,6 +9179,16 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
 		"\"length\":%d,\"width\":%d,\"height\":%d}},"
 		"\"extraButtons\":%s,"
+		"\"singlePlayerDropdown\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
+		"\"hidden\":%s},"
+		"\"singlePlayerEarthMap\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+		"\"hidden\":%s},"
+		"\"singlePlayerButtons\":%s,"
 		"\"loadReplayDropdown\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
@@ -8806,6 +9227,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"buttonTextNonEmpty\":%s,"
 		"\"extraButtonLabelsExist\":%s,"
 		"\"extraButtonTextNonEmpty\":%s,"
+		"%s"
 		"\"loadReplayButtonLabelsExist\":%s,"
 		"\"loadReplayButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,"
@@ -8878,6 +9300,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(button_text_nonempty),
 		bool_json(extra_button_labels_exist),
 		bool_json(extra_buttons_text_nonempty),
+		single_player_results_json.c_str(),
 		bool_json(load_replay_button_labels_exist),
 		bool_json(load_replay_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
@@ -8996,6 +9419,19 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_text_width,
 		button_text_height,
 		extra_buttons_json.c_str(),
+		single_player_dropdown_name_json.c_str(),
+		single_player_dropdown_x,
+		single_player_dropdown_y,
+		single_player_dropdown_width,
+		single_player_dropdown_height,
+		bool_json(single_player_dropdown_hidden),
+		single_player_earth_map_name_json.c_str(),
+		single_player_earth_map_x,
+		single_player_earth_map_y,
+		single_player_earth_map_width,
+		single_player_earth_map_height,
+		bool_json(single_player_earth_map_hidden),
+		single_player_buttons_json.c_str(),
 		load_replay_dropdown_name_json.c_str(),
 		load_replay_dropdown_x,
 		load_replay_dropdown_y,
@@ -9066,6 +9502,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(button_text_nonempty),
 		bool_json(extra_button_labels_exist),
 		bool_json(extra_buttons_text_nonempty),
+		single_player_game_text_json.c_str(),
 		bool_json(load_replay_button_labels_exist),
 		bool_json(load_replay_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
@@ -9149,6 +9586,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repa
 {
 	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_single_player_repaint()
+{
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint()

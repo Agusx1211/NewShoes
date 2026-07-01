@@ -3657,6 +3657,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      real Single Player dropdown controls: the probe now runs a dedicated
+      Single Player focused mode that unhides `MainMenu.wnd:MapBorder`,
+      `MainMenu.wnd:EarthMap`, and the shipped `ButtonUSA`, `ButtonGLA`,
+      `ButtonChina`, `ButtonChallenge`, `ButtonSkirmish`, and
+      `ButtonSingleBack` children. The harness verifies the
+      `PassSelectedButtonsToParentSystem` ancestry, each
+      `W3DGadgetPushButtonImageDraw` / `GadgetPushButtonSystem` /
+      `GadgetPushButtonInput` binding, the original `Buttons-Left` /
+      `Buttons-Middle` / `Buttons-Right` mapped images, CSF labels
+      `GUI:USA`, `GUI:GLA`, `GUI:CHINA_Caps`,
+      `GUI:Generals_Challenge`, `GUI:Skirmish`, and `GUI:Back`, and
+      non-empty button and text pixels in
+      `harness-smoke-ww3d-main-menu-layout-single-player-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

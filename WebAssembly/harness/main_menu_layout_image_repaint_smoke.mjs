@@ -24,6 +24,10 @@ const staticTextScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
 );
+const singlePlayerScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-single-player-repaint-canvas.png",
+);
 const loadReplayScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png",
@@ -538,6 +542,119 @@ try {
 
   await page.locator("#viewport").screenshot({ path: staticTextScreenshot });
 
+  let singlePlayerResult;
+  try {
+    singlePlayerResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutSinglePlayerRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout Single Player dropdown repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout Single Player dropdown repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  const expectedSinglePlayerButtons = [
+    ["MainMenu.wnd:ButtonUSA", "GUI:USA", 116, 36],
+    ["MainMenu.wnd:ButtonGLA", "GUI:GLA", 156, 36],
+    ["MainMenu.wnd:ButtonChina", "GUI:CHINA_Caps", 196, 35],
+    ["MainMenu.wnd:ButtonChallenge", "GUI:Generals_Challenge", 236, 36],
+    ["MainMenu.wnd:ButtonSkirmish", "GUI:Skirmish", 276, 36],
+    ["MainMenu.wnd:ButtonSingleBack", "GUI:Back", 316, 35],
+  ];
+  const singlePlayerButtons = singlePlayerResult.probe?.layout?.singlePlayerButtons ?? [];
+  const singlePlayerButtonsValid = expectedSinglePlayerButtons.every(([name, label, y, height], index) => {
+    const button = singlePlayerButtons[index];
+    const proof = singlePlayerResult.singlePlayerButtonRegions?.[index];
+    return button?.name === name
+      && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+      && button?.systemFunc === "GadgetPushButtonSystem"
+      && button?.inputFunc === "GadgetPushButtonInput"
+      && button?.x === 540
+      && button?.y === y
+      && button?.width === 208
+      && button?.height === height
+      && button?.hidden === false
+      && button?.labelExists === true
+      && button?.textNonEmpty === true
+      && button?.imagesBound === true
+      && button?.images?.[0] === "Buttons-Left"
+      && button?.images?.[1] === "Buttons-Middle"
+      && button?.images?.[2] === "Buttons-Right"
+      && button?.text?.label === label
+      && button?.text?.length > 0
+      && button?.text?.width > 0
+      && button?.text?.height > 0
+      && proof?.region?.coloredPixelCount >= 20
+      && proof?.textRegion?.coloredPixelCount >= 20
+      && proof?.textRegion?.maxComponent >= 180;
+  });
+  if (!singlePlayerResult.ok
+      || singlePlayerResult.command !== "ww3dMainMenuLayoutSinglePlayerRepaint"
+      || singlePlayerResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || singlePlayerResult.probe?.mode !== "singlePlayerDropdown"
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:MapBorder -> PassSelectedButtonsToParentSystem")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:EarthMap -> PassSelectedButtonsToParentSystem")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonUSA -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonGLA -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonChina -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonChallenge -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSkirmish -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSingleBack -> W3DGadgetPushButtonImageDraw")
+      || !singlePlayerResult.probe?.originalPaths?.includes("GameText::fetch(single-player dropdown button labels) -> W3DDisplayString::draw button labels")
+      || singlePlayerResult.probe?.results?.singlePlayerButtonLabelsExist !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonTextNonEmpty !== true
+      || singlePlayerResult.probe?.results?.singlePlayerDropdownFound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerDropdownCallbackBound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerEarthMapFound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerEarthMapCallbackBound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsFound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsCallbackBound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsImagesBound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsTextDisplayStringBound !== true
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsTextSizeComputed !== true
+      || singlePlayerResult.probe?.results?.singlePlayerDropdownHidden !== false
+      || singlePlayerResult.probe?.results?.singlePlayerEarthMapHidden !== false
+      || singlePlayerResult.probe?.results?.singlePlayerButtonsVisible !== true
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.name !== "MainMenu.wnd:MapBorder"
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.x !== 532
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.y !== 108
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.width !== 224
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.height !== 252
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.systemFunc !== "PassSelectedButtonsToParentSystem"
+      || singlePlayerResult.probe?.layout?.singlePlayerDropdown?.hidden !== false
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.name !== "MainMenu.wnd:EarthMap"
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.x !== 532
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.y !== 108
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.width !== 224
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.height !== 244
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.systemFunc !== "PassSelectedButtonsToParentSystem"
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.drawFunc !== "W3DGameWinDefaultDraw"
+      || singlePlayerResult.probe?.layout?.singlePlayerEarthMap?.hidden !== false
+      || singlePlayerResult.probe?.gameText?.singlePlayerButtonLabelsExist !== true
+      || singlePlayerResult.probe?.gameText?.singlePlayerButtonTextNonEmpty !== true
+      || singlePlayerButtons.length !== expectedSinglePlayerButtons.length
+      || !singlePlayerButtonsValid
+      || singlePlayerResult.probe?.calls?.displayImageDraws < 8
+      || singlePlayerResult.probe?.calls?.drawIndexed < 8
+      || singlePlayerResult.coloredLogoPixelCount < 1
+      || singlePlayerResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu WindowLayout Single Player dropdown repaint failed: ${JSON.stringify({
+      ok: singlePlayerResult.ok,
+      probe: singlePlayerResult.probe,
+      singlePlayerButtonRegions: singlePlayerResult.singlePlayerButtonRegions,
+      coloredLogoPixelCount: singlePlayerResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: singlePlayerResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: singlePlayerScreenshot });
+
   let loadReplayResult;
   try {
     loadReplayResult = await withTimeout(
@@ -645,6 +762,7 @@ try {
     url: harnessUrl,
     screenshot: repaintScreenshot,
     staticTextScreenshot,
+    singlePlayerScreenshot,
     loadReplayScreenshot,
     archives: {
       window: windowArchiveMemfsPath,
@@ -653,6 +771,7 @@ try {
       rulerTexture: textureArchiveMemfsPath,
     },
     originalPaths: repaintResult.probe.originalPaths,
+    singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
@@ -670,6 +789,10 @@ try {
     buttonTextRegion: repaintResult.buttonTextRegion,
     extraButtons,
     extraButtonRegions: repaintResult.extraButtonRegions,
+    singlePlayerDropdown: singlePlayerResult.probe.layout.singlePlayerDropdown,
+    singlePlayerEarthMap: singlePlayerResult.probe.layout.singlePlayerEarthMap,
+    singlePlayerButtons,
+    singlePlayerButtonRegions: singlePlayerResult.singlePlayerButtonRegions,
     loadReplayDropdown: loadReplayResult.probe.layout.loadReplayDropdown,
     loadReplayButtons,
     loadReplayButtonRegions: loadReplayResult.loadReplayButtonRegions,

@@ -7022,6 +7022,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
       probeWW3DMainMenuLayoutImageRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
+      probeWW3DMainMenuLayoutSinglePlayerRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_single_player_repaint", "string", []),
       probeWW3DMainMenuLayoutLoadReplayRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint", "string", []),
       probeWW3DMainMenuLayoutStaticTextRepaint: module.cwrap(
@@ -16637,6 +16639,7 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dMainMenuLayoutImageRepaint":
+    case "ww3dMainMenuLayoutSinglePlayerRepaint":
     case "ww3dMainMenuLayoutLoadReplayRepaint":
     case "ww3dMainMenuLayoutStaticTextRepaint":
       {
@@ -16645,10 +16648,13 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout image repaint cannot render" };
         }
         const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
+        const singlePlayerMode = command === "ww3dMainMenuLayoutSinglePlayerRepaint";
         const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
         const probeMode = staticTextMode
           ? "staticTextSelectDifficulty"
-          : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer");
+          : (singlePlayerMode
+              ? "singlePlayerDropdown"
+              : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer"));
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -16663,9 +16669,11 @@ async function rpc(command, payload = {}) {
         const textureBefore = snapshotState().graphics?.textures ?? {};
         const probe = parseModuleState(staticTextMode
           ? wasmModule.probeWW3DMainMenuLayoutStaticTextRepaint()
-          : (loadReplayMode
-              ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
-              : wasmModule.probeWW3DMainMenuLayoutImageRepaint()));
+          : (singlePlayerMode
+              ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
+              : (loadReplayMode
+                  ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
+                  : wasmModule.probeWW3DMainMenuLayoutImageRepaint())));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -16772,6 +16780,10 @@ async function rpc(command, payload = {}) {
           };
         };
         const extraButtonRegions = extraButtons.map(sampleButtonRegions);
+        const singlePlayerButtons = Array.isArray(probe?.layout?.singlePlayerButtons)
+          ? probe.layout.singlePlayerButtons
+          : [];
+        const singlePlayerButtonRegions = singlePlayerButtons.map(sampleButtonRegions);
         const loadReplayButtons = Array.isArray(probe?.layout?.loadReplayButtons)
           ? probe.layout.loadReplayButtons
           : [];
@@ -16805,12 +16817,17 @@ async function rpc(command, payload = {}) {
           buttonRegion,
           buttonTextRegion,
           extraButtonRegions,
+          singlePlayerButtonRegions,
           loadReplayButtonRegions,
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
-        const expectedDisplayImageDraws = staticTextMode ? 2 : (loadReplayMode ? 5 : 6);
-        const expectedDrawIndexed = staticTextMode ? 3 : (loadReplayMode ? 5 : 6);
+        const expectedDisplayImageDraws = staticTextMode
+          ? 2
+          : (singlePlayerMode ? 8 : (loadReplayMode ? 5 : 6));
+        const expectedDrawIndexed = staticTextMode
+          ? 3
+          : (singlePlayerMode ? 8 : (loadReplayMode ? 5 : 6));
         const staticTextProbeOk = !staticTextMode
           || (probe?.results?.staticTextLabelExists === true
             && probe?.results?.staticTextNonEmpty === true
@@ -16842,7 +16859,7 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.staticText?.text?.height > 0
             && probe?.gameText?.staticTextLabelExists === true
             && probe?.gameText?.staticTextNonEmpty === true);
-        const buttonTextProbeOk = staticTextMode || loadReplayMode
+        const buttonTextProbeOk = staticTextMode || singlePlayerMode || loadReplayMode
           || (probe?.layout?.button?.text?.width > 0
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
@@ -16854,7 +16871,7 @@ async function rpc(command, payload = {}) {
           ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
           ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
         ];
-        const extraButtonsProbeOk = staticTextMode || loadReplayMode
+        const extraButtonsProbeOk = staticTextMode || singlePlayerMode || loadReplayMode
           || (probe?.results?.extraButtonLabelsExist === true
             && probe?.results?.extraButtonTextNonEmpty === true
             && probe?.results?.extraButtonsFound === true
@@ -16890,9 +16907,80 @@ async function rpc(command, payload = {}) {
                 && extraButton?.text?.width > 0
                 && extraButton?.text?.height > 0;
             }));
-        const extraButtonsPixelOk = staticTextMode || loadReplayMode
+        const extraButtonsPixelOk = staticTextMode || singlePlayerMode || loadReplayMode
           || (extraButtonRegions.length === expectedExtraButtons.length
             && extraButtonRegions.every((entry) =>
+              entry.region.coloredPixelCount >= 20
+              && entry.textRegion.coloredPixelCount >= 20
+              && entry.textRegion.maxComponent >= 180));
+        const expectedSinglePlayerButtons = [
+          ["MainMenu.wnd:ButtonUSA", "GUI:USA", 116, 36],
+          ["MainMenu.wnd:ButtonGLA", "GUI:GLA", 156, 36],
+          ["MainMenu.wnd:ButtonChina", "GUI:CHINA_Caps", 196, 35],
+          ["MainMenu.wnd:ButtonChallenge", "GUI:Generals_Challenge", 236, 36],
+          ["MainMenu.wnd:ButtonSkirmish", "GUI:Skirmish", 276, 36],
+          ["MainMenu.wnd:ButtonSingleBack", "GUI:Back", 316, 35],
+        ];
+        const singlePlayerButtonsProbeOk = !singlePlayerMode
+          || (probe?.results?.singlePlayerButtonLabelsExist === true
+            && probe?.results?.singlePlayerButtonTextNonEmpty === true
+            && probe?.results?.singlePlayerDropdownFound === true
+            && probe?.results?.singlePlayerDropdownCallbackBound === true
+            && probe?.results?.singlePlayerEarthMapFound === true
+            && probe?.results?.singlePlayerEarthMapCallbackBound === true
+            && probe?.results?.singlePlayerButtonsFound === true
+            && probe?.results?.singlePlayerButtonsCallbackBound === true
+            && probe?.results?.singlePlayerButtonsImagesBound === true
+            && probe?.results?.singlePlayerButtonsTextDisplayStringBound === true
+            && probe?.results?.singlePlayerButtonsTextSizeComputed === true
+            && probe?.results?.singlePlayerDropdownHidden === false
+            && probe?.results?.singlePlayerEarthMapHidden === false
+            && probe?.results?.singlePlayerButtonsVisible === true
+            && probe?.layout?.singlePlayerDropdown?.name === "MainMenu.wnd:MapBorder"
+            && probe?.layout?.singlePlayerDropdown?.x === 532
+            && probe?.layout?.singlePlayerDropdown?.y === 108
+            && probe?.layout?.singlePlayerDropdown?.width === 224
+            && probe?.layout?.singlePlayerDropdown?.height === 252
+            && probe?.layout?.singlePlayerDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+            && probe?.layout?.singlePlayerDropdown?.hidden === false
+            && probe?.layout?.singlePlayerEarthMap?.name === "MainMenu.wnd:EarthMap"
+            && probe?.layout?.singlePlayerEarthMap?.x === 532
+            && probe?.layout?.singlePlayerEarthMap?.y === 108
+            && probe?.layout?.singlePlayerEarthMap?.width === 224
+            && probe?.layout?.singlePlayerEarthMap?.height === 244
+            && probe?.layout?.singlePlayerEarthMap?.systemFunc === "PassSelectedButtonsToParentSystem"
+            && probe?.layout?.singlePlayerEarthMap?.drawFunc === "W3DGameWinDefaultDraw"
+            && probe?.layout?.singlePlayerEarthMap?.hidden === false
+            && probe?.gameText?.singlePlayerButtonLabelsExist === true
+            && probe?.gameText?.singlePlayerButtonTextNonEmpty === true
+            && singlePlayerButtons.length === expectedSinglePlayerButtons.length
+            && expectedSinglePlayerButtons.every(([name, label, y, height], index) => {
+              const singlePlayerButton = singlePlayerButtons[index];
+              return singlePlayerButton?.name === name
+                && singlePlayerButton?.x === 540
+                && singlePlayerButton?.y === y
+                && singlePlayerButton?.width === 208
+                && singlePlayerButton?.height === height
+                && singlePlayerButton?.drawFunc === "W3DGadgetPushButtonImageDraw"
+                && singlePlayerButton?.systemFunc === "GadgetPushButtonSystem"
+                && singlePlayerButton?.inputFunc === "GadgetPushButtonInput"
+                && singlePlayerButton?.hidden === false
+                && singlePlayerButton?.labelExists === true
+                && singlePlayerButton?.textNonEmpty === true
+                && singlePlayerButton?.imagesBound === true
+                && singlePlayerButton?.images?.[0] === "Buttons-Left"
+                && singlePlayerButton?.images?.[1] === "Buttons-Middle"
+                && singlePlayerButton?.images?.[2] === "Buttons-Right"
+                && singlePlayerButton?.text?.label === label
+                && typeof singlePlayerButton?.text?.ascii === "string"
+                && singlePlayerButton.text.ascii.length > 0
+                && singlePlayerButton?.text?.length > 0
+                && singlePlayerButton?.text?.width > 0
+                && singlePlayerButton?.text?.height > 0;
+            }));
+        const singlePlayerButtonsPixelOk = !singlePlayerMode
+          || (singlePlayerButtonRegions.length === expectedSinglePlayerButtons.length
+            && singlePlayerButtonRegions.every((entry) =>
               entry.region.coloredPixelCount >= 20
               && entry.textRegion.coloredPixelCount >= 20
               && entry.textRegion.maxComponent >= 180));
@@ -16956,12 +17044,14 @@ async function rpc(command, payload = {}) {
         const focusedPixelOk = staticTextMode
           ? (staticTextRegion.coloredPixelCount >= 20
             && staticTextRegion.maxComponent >= 180)
-          : (loadReplayMode
-              ? loadReplayButtonsPixelOk
-              : (buttonRegion.coloredPixelCount >= 20
-                && buttonTextRegion.coloredPixelCount >= 20
-                && buttonTextRegion.maxComponent >= 180
-                && extraButtonsPixelOk));
+          : (singlePlayerMode
+              ? singlePlayerButtonsPixelOk
+              : (loadReplayMode
+                  ? loadReplayButtonsPixelOk
+                  : (buttonRegion.coloredPixelCount >= 20
+                    && buttonTextRegion.coloredPixelCount >= 20
+                    && buttonTextRegion.maxComponent >= 180
+                    && extraButtonsPixelOk)));
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -17033,6 +17123,7 @@ async function rpc(command, payload = {}) {
           && probe?.gameText?.buttonTextNonEmpty === true
           && buttonTextProbeOk
           && extraButtonsProbeOk
+          && singlePlayerButtonsProbeOk
           && loadReplayButtonsProbeOk
           && staticTextProbeOk
           && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
@@ -17069,6 +17160,7 @@ async function rpc(command, payload = {}) {
           buttonRegion,
           buttonTextRegion,
           extraButtonRegions,
+          singlePlayerButtonRegions,
           loadReplayButtonRegions,
           staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,

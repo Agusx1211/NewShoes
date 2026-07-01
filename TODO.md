@@ -676,7 +676,11 @@ shares structure and follows behind.
       `GadgetStaticTextSystem` / `W3DDisplayString`, and its Load Replay
       focused mode unhides the shipped `MainMenu.wnd:MapBorder3`,
       `ButtonLoadGame`, `ButtonReplay`, and `ButtonLoadReplayBack` controls
-      with real button images and CSF labels. Current archive inspection
+      with real button images and CSF labels. Its Single Player focused mode
+      now also unhides `MainMenu.wnd:MapBorder`, `EarthMap`, `ButtonUSA`,
+      `ButtonGLA`, `ButtonChina`, `ButtonChallenge`, `ButtonSkirmish`, and
+      `ButtonSingleBack`, including real button images, CSF labels, and
+      browser pixel proofs. Current archive inspection
       shows `MainMenuBackdrop` is parent `ENABLEDDRAWDATA` behind a shipped
       `W3DNoDraw` callback, and the `MainMenuBackdropuserinterface.tga` /
       `MainMenuBackdrop.tga` texture is absent from the current ZH-only runtime

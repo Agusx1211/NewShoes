@@ -950,6 +950,16 @@ const steps = [
           && payload.loadReplayOriginalPaths?.includes("MainMenu.wnd:ButtonLoadReplayBack -> W3DGadgetPushButtonImageDraw")
           && payload.loadReplayOriginalPaths?.includes("GameText::fetch(load-replay dropdown button labels) -> W3DDisplayString::draw button labels"),
         "MainMenu layout image repaint smoke did not render the real Load Replay dropdown controls", payload.loadReplayOriginalPaths);
+      expect(payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:MapBorder -> PassSelectedButtonsToParentSystem")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:EarthMap -> PassSelectedButtonsToParentSystem")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonUSA -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonGLA -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonChina -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonChallenge -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonSkirmish -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonSingleBack -> W3DGadgetPushButtonImageDraw")
+          && payload.singlePlayerOriginalPaths?.includes("GameText::fetch(single-player dropdown button labels) -> W3DDisplayString::draw button labels"),
+        "MainMenu layout image repaint smoke did not render the real Single Player dropdown controls", payload.singlePlayerOriginalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -1045,6 +1055,51 @@ const steps = [
               && proof?.textRegion?.maxComponent >= 180;
           }),
         "MainMenu layout image repaint smoke did not report/pixel-prove the real Load Replay dropdown buttons", payload);
+      const expectedSinglePlayerButtons = [
+        ["MainMenu.wnd:ButtonUSA", "GUI:USA", 116, 36],
+        ["MainMenu.wnd:ButtonGLA", "GUI:GLA", 156, 36],
+        ["MainMenu.wnd:ButtonChina", "GUI:CHINA_Caps", 196, 35],
+        ["MainMenu.wnd:ButtonChallenge", "GUI:Generals_Challenge", 236, 36],
+        ["MainMenu.wnd:ButtonSkirmish", "GUI:Skirmish", 276, 36],
+        ["MainMenu.wnd:ButtonSingleBack", "GUI:Back", 316, 35],
+      ];
+      expect(payload.singlePlayerDropdown?.name === "MainMenu.wnd:MapBorder"
+          && payload.singlePlayerDropdown?.x === 532
+          && payload.singlePlayerDropdown?.y === 108
+          && payload.singlePlayerDropdown?.width === 224
+          && payload.singlePlayerDropdown?.height === 252
+          && payload.singlePlayerDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && payload.singlePlayerDropdown?.hidden === false
+          && payload.singlePlayerEarthMap?.name === "MainMenu.wnd:EarthMap"
+          && payload.singlePlayerEarthMap?.x === 532
+          && payload.singlePlayerEarthMap?.y === 108
+          && payload.singlePlayerEarthMap?.width === 224
+          && payload.singlePlayerEarthMap?.height === 244
+          && payload.singlePlayerEarthMap?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && payload.singlePlayerEarthMap?.drawFunc === "W3DGameWinDefaultDraw"
+          && payload.singlePlayerEarthMap?.hidden === false
+          && Array.isArray(payload.singlePlayerButtons)
+          && payload.singlePlayerButtons.length === expectedSinglePlayerButtons.length
+          && expectedSinglePlayerButtons.every(([name, label, y, height], index) => {
+            const button = payload.singlePlayerButtons[index];
+            const proof = payload.singlePlayerButtonRegions?.[index];
+            return button?.name === name
+              && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+              && button?.x === 540
+              && button?.y === y
+              && button?.width === 208
+              && button?.height === height
+              && button?.hidden === false
+              && button?.imagesBound === true
+              && button?.text?.label === label
+              && button?.text?.length > 0
+              && button?.text?.width > 0
+              && button?.text?.height > 0
+              && proof?.region?.coloredPixelCount >= 20
+              && proof?.textRegion?.coloredPixelCount >= 20
+              && proof?.textRegion?.maxComponent >= 180;
+          }),
+        "MainMenu layout image repaint smoke did not report/pixel-prove the real Single Player dropdown buttons", payload);
       expect(payload.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
           && payload.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
           && payload.staticText?.initialHidden === true
@@ -1074,6 +1129,8 @@ const steps = [
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
       expect(payload.staticTextScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected static text screenshot", payload);
+      expect(payload.singlePlayerScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-single-player-repaint-canvas.png"),
+        "MainMenu layout image repaint smoke did not capture the expected Single Player dropdown screenshot", payload);
       expect(payload.loadReplayScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected Load Replay dropdown screenshot", payload);
     },
@@ -1408,7 +1465,7 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu Load Replay dropdown/back and CreditsMenu callback execution through real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
-    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels including ButtonLoadReplay, and browser WebGL2 pixels",
+    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels plus Single Player and Load Replay dropdown controls, and browser WebGL2 pixels",
     "real MainMenuRuler HandCreated mapped image through TexturesZH.big, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
