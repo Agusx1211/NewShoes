@@ -839,9 +839,12 @@ shares structure and follows behind.
       `ButtonStart` path is now driven through `SkirmishGameOptionsMenuSystem`,
       `CheckForCDAtGameStart`, `SkirmishGameInfo::startGame`, selected-map
       `GlobalData` write, and `MessageStream` `MSG_NEW_GAME` argument
-      queueing. Drive `MSG_NEW_GAME` consumption into the next real
-      map-load/gameplay transition once the `MessageStream` / `CommandList`
-      lifecycle can be owned by the broader runtime.
+      queueing, followed by original `MessageStream::propagateMessages`
+      handoff to `TheCommandList` and `CommandList::reset` cleanup. Drive
+      `GameLogic::processCommandList` / `prepareNewGame` into the next real
+      map-load/gameplay transition once `GameState`, load-screen/background,
+      and later terrain/player/script ownership can be real instead of
+      shell-smoke sentinels.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

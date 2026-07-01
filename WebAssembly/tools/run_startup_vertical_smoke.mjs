@@ -238,6 +238,7 @@ const steps = [
         && payload.callbackPaths.includes('SkirmishGameOptionsMenuShutdown real callback')
         && payload.callbackPaths.includes('SkirmishGameOptionsMenuUpdate shutdownComplete->MainMenu.wnd')
         && payload.callbackPaths.includes('GadgetPushButton ButtonStart click->SkirmishGameOptionsMenuSystem MSG_NEW_GAME')
+        && payload.callbackPaths.includes('MessageStream::propagateMessages->CommandList MSG_NEW_GAME')
         && payload.callbackPaths.includes('GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu')
         && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original CreditsMenuInit')
         && payload.callbackPaths.includes('CreditsMenuUpdate real callback'),
@@ -256,6 +257,8 @@ const steps = [
         'W3D window layout script smoke did not report original MainMenuUpdate idle-frame execution');
       expect(typeof payload.covered === 'string' && payload.covered.includes('MessageStream MSG_NEW_GAME argument queueing'),
         'W3D window layout script smoke did not report original Skirmish ButtonStart MSG_NEW_GAME coverage');
+      expect(typeof payload.covered === 'string' && payload.covered.includes('MessageStream::propagateMessages handoff to CommandList'),
+        'W3D window layout script smoke did not report original MessageStream-to-CommandList handoff coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('CreditsManager load from INIZH.big'),
         'W3D window layout script smoke did not report original CreditsManager INI loading');
     },

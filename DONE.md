@@ -1921,6 +1921,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
       `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Extend the Skirmish `ButtonStart` smoke through the original
+      `MessageStream` to `CommandList` handoff. After the real button click
+      appends `MSG_NEW_GAME`, `w3d-window-layout-script-smoke` now calls
+      `MessageStream::propagateMessages()`, verifies the stream is drained,
+      verifies the same `MSG_NEW_GAME` is owned by `TheCommandList`, and
+      exercises original `CommandList::reset` cleanup. The startup and
+      aggregate vertical gates now require the
+      `MessageStream::propagateMessages->CommandList MSG_NEW_GAME` marker and
+      coverage text. This intentionally stops before
+      `GameLogic::processCommandList`, because the current shell smoke still
+      uses a sentinel `TheGameState` and does not yet own the load-screen,
+      terrain, player, or script systems needed for the real map-load leg.
+      Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`,
+      `git diff --check`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
