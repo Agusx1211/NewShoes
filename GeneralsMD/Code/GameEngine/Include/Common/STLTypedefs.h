@@ -191,9 +191,21 @@ namespace rts
 	template<> struct hash<AsciiString>
 	{
 		size_t operator()(AsciiString ast) const
-		{ 
+		{
+#ifdef __EMSCRIPTEN__
+			// The game shipped against STLport, whose std::hash<const char*>
+			// hashes the string CONTENTS (__stl_hash_string).  libc++'s
+			// std::hash<const char*> hashes the pointer value instead, which
+			// breaks every by-name hash_map lookup (e.g. the ThingFactory
+			// template map).  Reproduce STLport 4.5.3's original hash exactly.
+			unsigned long __h = 0;
+			for (const char *__s = ast.str(); *__s; ++__s)
+				__h = 5 * __h + *__s;
+			return size_t(__h);
+#else
 			std::hash<const char *> tmp;
 			return tmp((const char *) ast.str());
+#endif
 		}
 	};
 

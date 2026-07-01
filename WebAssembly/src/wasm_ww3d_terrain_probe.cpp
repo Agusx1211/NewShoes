@@ -102,16 +102,9 @@ extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 	return g_ww3d_terrain_probe_shroud_enabled;
 }
 
-Radar::Radar() = default;
-Radar::~Radar() = default;
-void Radar::reset() {}
-void Radar::update() {}
-void Radar::refreshTerrain(TerrainLogic *) {}
-void Radar::queueTerrainRefresh() {}
-void Radar::newMap(TerrainLogic *) {}
-void Radar::crc(Xfer *) {}
-void Radar::xfer(Xfer *) {}
-void Radar::loadPostProcess() {}
+// Radar base-class implementations now come from the real
+// GameEngine/Source/Common/System/Radar.cpp linked through
+// zh_gameengine_real_object_ini_runtime.
 
 GameClient::GameClient()
 {
@@ -216,74 +209,9 @@ void GameClient::loadPostProcess()
 {
 }
 
-ThingFactory::ThingFactory() :
-	m_firstTemplate(nullptr),
-	m_nextTemplateID(1)
-{
-	m_templateHashMap.clear();
-}
-
-ThingFactory::~ThingFactory()
-{
-}
-
-void ThingFactory::init()
-{
-}
-
-void ThingFactory::postProcessLoad()
-{
-}
-
-void ThingFactory::reset()
-{
-}
-
-void ThingFactory::update()
-{
-}
-
-ThingTemplate *ThingFactory::newTemplate(const AsciiString &)
-{
-	return nullptr;
-}
-
-const ThingTemplate *ThingFactory::findByTemplateID(UnsignedShort)
-{
-	return nullptr;
-}
-
-Object *ThingFactory::newObject(const ThingTemplate *, Team *, ObjectStatusMaskType)
-{
-	return nullptr;
-}
-
-Drawable *ThingFactory::newDrawable(const ThingTemplate *, DrawableStatus)
-{
-	return nullptr;
-}
-
-void ThingFactory::parseObjectDefinition(INI *, const AsciiString &, const AsciiString &)
-{
-}
-
-ThingTemplate *ThingFactory::findTemplateInternal(const AsciiString &, Bool)
-{
-	return nullptr;
-}
-
-void ThingFactory::freeDatabase()
-{
-}
-
-void ThingFactory::addTemplate(ThingTemplate *)
-{
-}
-
-ThingTemplate *ThingFactory::newOverride(ThingTemplate *)
-{
-	return nullptr;
-}
+// ThingFactory implementations now come from the real
+// GameEngine/Source/Common/Thing/ThingFactory.cpp linked through
+// zh_gameengine_real_object_ini_runtime.
 
 namespace {
 

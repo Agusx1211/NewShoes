@@ -289,6 +289,7 @@ const harnessState = {
   debugProbe: null,
   commonDebugLog: null,
   assetProbe: null,
+  objectIniProbe: null,
   archiveMount: null,
   browserRuntimeAssets: null,
   startupSingletons: null,
@@ -7064,6 +7065,12 @@ async function loadWasmModule() {
       startMainLoop: module.cwrap("cnc_port_start_main_loop", "string", []),
       stopMainLoop: module.cwrap("cnc_port_stop_main_loop", "string", []),
       probeArchive: module.cwrap("cnc_port_probe_archive", "string", ["string"]),
+      probeObjectIni: module.cwrap("cnc_port_probe_object_ini", "string", ["string"]),
+      probeObjectIniSnippet: module.cwrap(
+        "cnc_port_probe_object_ini_snippet",
+        "string",
+        ["string", "string"],
+      ),
       registerArchiveSet: module.cwrap(
         "cnc_port_register_archive_set",
         "string",
@@ -9931,6 +9938,19 @@ async function writeArchiveToMemfs(wasmModule, payload, baseDirectory = "/assets
   };
 }
 
+function probeObjectIni(wasmModule, archivePath) {
+  const raw = wasmModule.probeObjectIni(archivePath);
+  let probe = null;
+  try {
+    probe = JSON.parse(raw);
+  } catch (error) {
+    probe = { ok: false, error: `object INI probe returned invalid JSON: ${error}`, raw };
+  }
+  harnessState.objectIniProbe = probe;
+  harnessState.wasm = "loaded";
+  return probe;
+}
+
 function probeArchive(wasmModule, archivePath) {
   applyModuleState(parseModuleState(wasmModule.probeArchive(archivePath)));
   harnessState.wasm = "loaded";
@@ -11567,6 +11587,43 @@ async function rpc(command, payload = {}) {
       return { ok: true, command, state: await stepFrames(payload) };
     case "mountArchive":
       return mountArchive(payload);
+    case "probeObjectIniSnippet":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeObjectIniSnippet");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const snippetPath = "/assets/__object_ini_snippet.ini";
+        moduleResult.wasmModule.fs.writeFile(snippetPath, String(payload.snippetText ?? ""));
+        const raw = moduleResult.wasmModule.probeObjectIniSnippet(path, snippetPath);
+        let probe = null;
+        try {
+          probe = JSON.parse(raw);
+        } catch (error) {
+          probe = { ok: false, error: `snippet probe returned invalid JSON: ${error}`, raw };
+        }
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
+    case "probeObjectIni":
+      {
+        const moduleResult = await getWasmModuleForArchives("probeObjectIni");
+        if (moduleResult.error) {
+          return { ok: false, command, error: moduleResult.error };
+        }
+        const path = typeof payload.path === "string" && payload.path.length > 0
+          ? payload.path
+          : "/assets/INIZH.big";
+        const probe = probeObjectIni(moduleResult.wasmModule, path);
+        recordLog("object INI probe", {
+          path,
+          ok: Boolean(probe?.ok),
+          templateCount: probe?.templateCount ?? 0,
+        });
+        return { ok: Boolean(probe?.ok), command, probe, state: snapshotState() };
+      }
     case "mountArchives":
       return mountArchives(payload);
     case "mountRangeBackedArchiveSet":

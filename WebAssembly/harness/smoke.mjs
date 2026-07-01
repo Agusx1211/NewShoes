@@ -5465,7 +5465,9 @@ try {
       || displaySceneResult.probe?.display?.windowed !== true
       || displaySceneResult.probe?.scene?.type !== "RTS3DScene"
       || displaySceneResult.probe?.scene?.path !== "WW3D::Render(W3DDisplay::m_3DScene,camera)"
-      || displaySceneResult.probe?.scene?.shadowFlushes < 2
+      // The real W3DShadow.cpp DoShadows implementation is linked now, so the
+      // probe's weak counting hook must stay dormant (0 = real code linked).
+      || displaySceneResult.probe?.scene?.shadowFlushes !== 0
       || displaySceneResult.probe?.scene?.particleFlushes < 1
       || displaySceneResult.probe?.results?.displayPrepared !== true
       || displaySceneResult.probe?.results?.sceneOwned !== true
