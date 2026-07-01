@@ -208,7 +208,11 @@ void __attribute__((weak)) ParticleSystemManager::queueParticleRender()
 
 extern "C" {
 
-EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
+const char *probe_ww3d_rts_scene_extra_pass(
+	SceneClass::ExtraPassPolyRenderType extra_pass_mode,
+	const char *extra_pass_name,
+	const char *source,
+	bool expect_clear_line)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -255,7 +259,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 	}
 
 	if (scene_created && camera_created && render_object_created) {
-		scene->Set_Extra_Pass_Polygon_Mode(SceneClass::EXTRA_PASS_LINE);
+		scene->Set_Extra_Pass_Polygon_Mode(extra_pass_mode);
 		box->Set_Position(Vector3(0.0f, 0.0f, 0.0f));
 		box->Set_Local_Center_Extent(Vector3(0.0f, 0.0f, 0.0f), Vector3(2.0f, 2.0f, 2.0f));
 		box->Set_Color(Vector3(0.1f, 0.85f, 0.3f));
@@ -282,6 +286,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 	}
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const DWORD rgb_color_write =
+		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE;
+	const bool draw_state_ok =
+		state != nullptr &&
+		state->last_draw_render_state.fill_mode == D3DFILL_WIREFRAME &&
+		state->last_draw_render_state.z_bias == (expect_clear_line ? 0u : 7u) &&
+		state->last_draw_render_state.color_write_enable == rgb_color_write;
+	const bool clear_line_state_ok =
+		!expect_clear_line ||
+		(state != nullptr &&
+		 state->clear_calls >= 2 &&
+		 state->last_clear_flags == D3DCLEAR_TARGET &&
+		 (state->last_clear_color & 0x00ffffffu) == 0 &&
+		 state->last_clear_z == 1.0f &&
+		 state->viewport.MinZ == 0.0f &&
+		 state->viewport.MaxZ == 1.0f &&
+		 state->set_viewport_calls >= 3);
 	const bool ok =
 		state != nullptr &&
 		succeeded(init_result) &&
@@ -291,7 +312,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		render_object_created &&
 		object_added &&
 		object_visible_after_render &&
-		scene->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_LINE &&
+		scene->Get_Extra_Pass_Polygon_Mode() == extra_pass_mode &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
@@ -309,27 +330,29 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		state->last_draw_primitive_count == 12 &&
 		state->last_draw_index_format == D3DFMT_INDEX16 &&
 		(state->last_draw_transform_mask & 7u) == 7u &&
-		state->last_draw_render_state.fill_mode == D3DFILL_WIREFRAME &&
-		state->last_draw_render_state.z_bias == 7 &&
-		state->last_draw_render_state.color_write_enable ==
-			(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+		draw_state_ok &&
+		clear_line_state_ok;
 
-	char buffer[4300];
+	char buffer[5200];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_rts_scene_probe\","
+		"{\"source\":\"%s\","
 		"\"ok\":%s,"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,\"beginRender\":%d,"
 		"\"render\":%d,\"endRender\":%d,\"sceneCreated\":%s,"
 		"\"cameraCreated\":%s,\"renderObjectCreated\":%s,\"objectAdded\":%s,"
 		"\"objectVisibleAfterRender\":%s},"
 		"\"scene\":{\"type\":\"RTS3DScene\",\"path\":\"WW3D::Render(scene,camera)\","
-		"\"extraPassMode\":%d,\"extraPassName\":\"EXTRA_PASS_LINE\","
+		"\"extraPassMode\":%d,\"extraPassName\":\"%s\","
 		"\"treeFlushes\":%u,\"shadowFlushes\":%u,\"particleFlushes\":%u},"
 		"\"calls\":{\"createDevice\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"setStreamSource\":%u,\"setIndices\":%u,"
 		"\"drawIndexed\":%u,\"setTransform\":%u,\"lastTransformState\":%d,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
-		"\"browserBufferRelease\":%u,\"clear\":%u,\"present\":%u},"
+		"\"browserBufferRelease\":%u,\"clear\":%u,\"present\":%u,"
+		"\"setViewport\":%u},"
+		"\"clear\":{\"flags\":%lu,\"color\":%lu,\"z\":%.6f,\"stencil\":%lu},"
+		"\"viewport\":{\"x\":%lu,\"y\":%lu,\"width\":%lu,\"height\":%lu,"
+		"\"minZ\":%.6f,\"maxZ\":%.6f},"
 		"\"draw\":{\"primitiveType\":%d,\"startVertex\":%u,\"minVertexIndex\":%u,"
 		"\"vertexCount\":%u,\"primitiveCount\":%u,\"vertexStride\":%u,"
 		"\"vertexBufferId\":%u,\"vertexOffset\":%u,\"vertexBytes\":%u,"
@@ -341,6 +364,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		"\"srcBlend\":%lu,\"destBlend\":%lu,\"blendOp\":%lu,"
 		"\"alphaTestEnable\":%lu,\"alphaFunc\":%lu,\"alphaRef\":%lu,"
 		"\"colorWriteEnable\":%lu}}}",
+		source,
 		bool_json(ok),
 		init_result,
 		set_device_result,
@@ -352,7 +376,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		bool_json(render_object_created),
 		bool_json(object_added),
 		bool_json(object_visible_after_render),
-		static_cast<int>(SceneClass::EXTRA_PASS_LINE),
+		static_cast<int>(extra_pass_mode),
+		extra_pass_name,
 		g_scene_probe_tree_flushes,
 		g_scene_probe_shadow_flushes,
 		g_scene_probe_particle_flushes,
@@ -369,6 +394,17 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		state != nullptr ? state->browser_buffer_release_calls : 0,
 		state != nullptr ? state->clear_calls : 0,
 		state != nullptr ? state->present_calls : 0,
+		state != nullptr ? state->set_viewport_calls : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_flags : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_color : 0),
+		state != nullptr ? state->last_clear_z : 0.0f,
+		static_cast<unsigned long>(state != nullptr ? state->last_clear_stencil : 0),
+		static_cast<unsigned long>(state != nullptr ? state->viewport.X : 0),
+		static_cast<unsigned long>(state != nullptr ? state->viewport.Y : 0),
+		static_cast<unsigned long>(state != nullptr ? state->viewport.Width : 0),
+		static_cast<unsigned long>(state != nullptr ? state->viewport.Height : 0),
+		state != nullptr ? state->viewport.MinZ : 0.0f,
+		state != nullptr ? state->viewport.MaxZ : 0.0f,
 		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
 		state != nullptr ? state->last_draw_start_vertex : 0,
 		state != nullptr ? state->last_draw_min_vertex_index : 0,
@@ -416,6 +452,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 	TheWritableGlobalData = old_global_data;
 
 	return g_ww3d_rts_scene_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
+{
+	return probe_ww3d_rts_scene_extra_pass(
+		SceneClass::EXTRA_PASS_LINE,
+		"EXTRA_PASS_LINE",
+		"ww3d_rts_scene_probe",
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene_clear_line()
+{
+	return probe_ww3d_rts_scene_extra_pass(
+		SceneClass::EXTRA_PASS_CLEAR_LINE,
+		"EXTRA_PASS_CLEAR_LINE",
+		"ww3d_rts_scene_clear_line_probe",
+		true);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_scene()

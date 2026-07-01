@@ -4055,6 +4055,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-rts-scene-canvas.png`. Verified with
       `npm --prefix WebAssembly run build:wasm`, a focused Playwright
       `ww3dRTSScene` RPC check, and `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Prove original W3D `EXTRA_PASS_CLEAR_LINE` selection/outline rendering
+      in a real `RTS3DScene`. The new `ww3dRTSSceneClearLine` RPC shares the
+      real scene setup, sets `SceneClass::EXTRA_PASS_CLEAR_LINE`, and verifies
+      the original clear-line branch's target-only black clear, alpha-mask
+      pass, RGB wireframe overlay, restored native viewport, and browser draw
+      under the camera z-range overlay bias (`MaxZ=0.9998999834060669`) with
+      `D3DFILL_WIREFRAME` and `D3DRS_ZBIAS=0`. The browser bridge again expands
+      the 12 source triangles into 24 GL line indices after culling 8 triangles
+      and emitting 4, then proves visible canvas coverage with 4,899 colored
+      pixels and brightest pixel `[25,216,76,255]` in
+      `harness-smoke-ww3d-rts-scene-clear-line-canvas.png`. Verified with
+      `npm --prefix WebAssembly run build:wasm`, a focused Playwright
+      `ww3dRTSSceneClearLine` RPC check, and
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

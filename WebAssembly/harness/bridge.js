@@ -37,6 +37,7 @@ const D3DFMT_DXT3 = 0x33545844;
 const D3DFMT_DXT4 = 0x34545844;
 const D3DFMT_DXT5 = 0x35545844;
 const GL_GREEN = 0x1904;
+const D3DCLEAR_TARGET = 0x00000001;
 const D3DZB_FALSE = 0;
 const D3DZB_TRUE = 1;
 const D3DZB_USEW = 2;
@@ -7238,6 +7239,7 @@ async function loadWasmModule() {
       probeWW3DAABox: module.cwrap("cnc_port_probe_ww3d_aabox", "string", []),
       probeWW3DSceneCamera: module.cwrap("cnc_port_probe_ww3d_scene_camera", "string", []),
       probeWW3DRTSScene: module.cwrap("cnc_port_probe_ww3d_rts_scene", "string", []),
+      probeWW3DRTSSceneClearLine: module.cwrap("cnc_port_probe_ww3d_rts_scene_clear_line", "string", []),
       probeWW3DDisplayScene: module.cwrap("cnc_port_probe_ww3d_display_scene", "string", []),
       probeWW3DRender2DTexturedQuad: module.cwrap(
         "cnc_port_probe_ww3d_render2d_textured_quad", "string", []),
@@ -15489,6 +15491,84 @@ async function rpc(command, payload = {}) {
           && depthBias.clamped === 7
           && typeof depthBias.ndc === "number"
           && depthBias.ndc > 0
+          && fillMode.mode === D3DFILL_WIREFRAME
+          && fillMode.wireframe === true
+          && fillMode.temporaryIndexBuffer === true
+          && fillMode.glPrimitiveName === "lines"
+          && fillMode.generatedIndexCount === 24
+          && fillMode.sourceTriangleCount === 12
+          && fillMode.emittedTriangleCount === 4
+          && fillMode.culledTriangleCount === 8
+          && fillMode.cullingApplied === true
+          && coverage.coloredPixelCount > 0
+          && pixelHasColor(coverage.brightestPixel);
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          screenshot,
+          coverage,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dRTSSceneClearLine":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; WW3D RTS clear-line scene cannot render" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const probe = parseModuleState(wasmModule.probeWW3DRTSSceneClearLine());
+        const screenshot = snapshotCanvas();
+        const coverage = sampleCanvasRegion({
+          left: 0,
+          top: 0,
+          width: canvas.width,
+          height: canvas.height,
+        });
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const renderState = browserProbe?.renderState ?? {};
+        const fillMode = browserProbe?.fillMode ?? {};
+        const depthBias = browserProbe?.appliedRenderState?.depth?.bias ?? {};
+        const drawViewport = browserProbe?.viewport ?? {};
+        const drawDepthRange = drawViewport?.actual?.depthRange ?? [];
+        const expectedOverlayMaxZ = 0.9999;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_rts_scene_clear_line_probe"
+          && probe?.scene?.type === "RTS3DScene"
+          && probe?.scene?.extraPassMode === 2
+          && probe?.scene?.extraPassName === "EXTRA_PASS_CLEAR_LINE"
+          && probe?.calls?.drawIndexed >= 2
+          && probe?.calls?.clear >= 2
+          && probe?.calls?.setViewport >= 3
+          && probe?.clear?.flags === D3DCLEAR_TARGET
+          && (probe?.clear?.color & 0x00ffffff) === 0
+          && Math.abs((probe?.clear?.z ?? -1) - 1) < 0.00001
+          && Math.abs((probe?.viewport?.maxZ ?? -1) - 1) < 0.00001
+          && probe?.draw?.renderState?.fillMode === D3DFILL_WIREFRAME
+          && probe?.draw?.renderState?.zBias === 0
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.indexCount === 36
+          && renderState.fillMode === D3DFILL_WIREFRAME
+          && renderState.zBias === 0
+          && renderState.colorWriteEnable === (
+            D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE)
+          && depthBias.raw === 0
+          && depthBias.clamped === 0
+          && depthBias.ndc === 0
+          && drawViewport?.source === "browser_d3d8_viewport"
+          && drawViewport?.reason === "draw"
+          && Math.abs((drawViewport?.d3d?.minZ ?? -1) - 0) < 0.00001
+          && Math.abs((drawViewport?.d3d?.maxZ ?? -1) - expectedOverlayMaxZ) < 0.00001
+          && viewportArraysEqual(drawDepthRange, [0, expectedOverlayMaxZ], 0.00001)
           && fillMode.mode === D3DFILL_WIREFRAME
           && fillMode.wireframe === true
           && fillMode.temporaryIndexBuffer === true

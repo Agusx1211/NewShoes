@@ -674,12 +674,6 @@ flow below.
       parity proof, especially original-runtime emissive/`COLOR2` paths, and
       other fixed-function lighting/render-state variants) and other W3D draw
       states → GL/shader state.
-- [ ] Drive original W3D `EXTRA_PASS_CLEAR_LINE` selection/outline rendering
-      in a real scene through the harness. `EXTRA_PASS_LINE` is now covered by
-      the `ww3dRTSScene` real-scene RPC with a depth prepass and biased
-      wireframe overlay; the clear-line path still needs a real scene/RPC state
-      check plus screenshot for its color-clear, alpha-mask, and camera
-      z-range overlay behavior.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.
