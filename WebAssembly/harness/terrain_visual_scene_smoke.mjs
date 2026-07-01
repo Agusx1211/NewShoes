@@ -18,6 +18,10 @@ const terrainScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-visual-scene-canvas.png",
 );
+const terrainLoadWindowScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png",
+);
 
 const runtimeArchivePath = "/assets/runtime-terrain-visual-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
@@ -26,6 +30,37 @@ const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
+
+function hasTerrainPass(drawHistory, { alphaBlendEnable, texCoordIndex, firstIndex = null }) {
+  const matches = (draw) =>
+    draw?.renderState?.alphaBlendEnable === alphaBlendEnable
+      && draw?.renderState?.textureStage0?.texCoordIndex === texCoordIndex
+      && draw?.texture0?.sampled === true;
+  if (firstIndex !== null) {
+    return matches(drawHistory[firstIndex]);
+  }
+  return drawHistory.some(matches);
+}
+
+function summarizeDrawHistory(drawHistory) {
+  return {
+    count: drawHistory.length,
+    first: drawHistory.slice(0, 4).map((draw) => ({
+      drawSequence: draw?.drawSequence,
+      ok: draw?.ok,
+      alphaBlendEnable: draw?.renderState?.alphaBlendEnable,
+      texCoordIndex: draw?.renderState?.textureStage0?.texCoordIndex,
+      sampled: draw?.texture0?.sampled,
+    })),
+    last: drawHistory.slice(-4).map((draw) => ({
+      drawSequence: draw?.drawSequence,
+      ok: draw?.ok,
+      alphaBlendEnable: draw?.renderState?.alphaBlendEnable,
+      texCoordIndex: draw?.renderState?.textureStage0?.texCoordIndex,
+      sampled: draw?.texture0?.sampled,
+    })),
+  };
+}
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -211,13 +246,19 @@ try {
   }
   await page.locator("#viewport").screenshot({ path: terrainScreenshot });
 
+  const terrainDrawHistory = Array.isArray(terrainResult.drawHistory)
+    ? terrainResult.drawHistory
+    : [];
   if (!terrainResult.ok
       || terrainResult.command !== "ww3dTerrainVisualScene"
       || terrainResult.probe?.source !== "ww3d_terrain_visual_scene_probe"
+      || terrainResult.probe?.renderMode !== "selected-source-patch"
       || terrainResult.probe?.visual?.class !== "W3DTerrainVisual"
       || !terrainResult.probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
       || terrainResult.probe?.visual?.ownedTerrainRenderObject !== true
       || terrainResult.probe?.visual?.waterRenderObjectNull !== true
+      || terrainResult.probe?.results?.loadWindowRenderSelected !== false
+      || terrainResult.probe?.results?.patchReinitialized !== true
       || terrainResult.probe?.ini?.entry !== terrainIniEntry
       || terrainResult.probe?.ini?.loaded !== true
       || terrainResult.probe?.ini?.entryExists !== true
@@ -254,10 +295,9 @@ try {
       || terrainResult.probe?.draw?.vertexStride !== 32
       || terrainResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || terrainResult.browserProbe?.texture0?.sampled !== true
-      || !Array.isArray(terrainResult.drawHistory)
-      || terrainResult.drawHistory.length < 2
-      || terrainResult.drawHistory[0]?.renderState?.alphaBlendEnable !== 0
-      || terrainResult.drawHistory[1]?.renderState?.alphaBlendEnable !== 1
+      || terrainDrawHistory.length < 2
+      || !hasTerrainPass(terrainDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0, firstIndex: 0 })
+      || !hasTerrainPass(terrainDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1, firstIndex: 1 })
       || terrainResult.textureDelta?.creates < 1
       || terrainResult.textureDelta?.updates < 1
       || terrainResult.textureDelta?.binds < 1
@@ -267,7 +307,11 @@ try {
       ok: terrainResult.ok,
       probe: terrainResult.probe,
       browserProbe: terrainResult.browserProbe,
-      drawHistory: terrainResult.drawHistory,
+      drawHistory: summarizeDrawHistory(terrainDrawHistory),
+      passChecks: {
+        base: hasTerrainPass(terrainDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0, firstIndex: 0 }),
+        blend: hasTerrainPass(terrainDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1, firstIndex: 1 }),
+      },
       textureDelta: terrainResult.textureDelta,
       screenshot: {
         width: terrainResult.screenshot?.width,
@@ -281,6 +325,109 @@ try {
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
     throw new Error(`browser failures during W3D visual terrain scene: ${JSON.stringify(browserFailures)}`);
+  }
+
+  let loadWindowResult;
+  try {
+    loadWindowResult = await withTimeout(
+      "terrain visual load-window render RPC",
+      page.evaluate((payload) =>
+        window.CnCPort.rpc("ww3dTerrainVisualLoadWindowScene", payload), {
+          iniArchivePath: iniArchiveMemfsPath,
+          mapsArchivePath: mapsArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsPath,
+        }),
+      240000,
+    );
+  } catch (error) {
+    throw new Error(`terrain visual load-window render RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
+  }
+  await page.locator("#viewport").screenshot({ path: terrainLoadWindowScreenshot });
+
+  const loadWindowDrawHistory = Array.isArray(loadWindowResult.drawHistory)
+    ? loadWindowResult.drawHistory
+    : [];
+  if (!loadWindowResult.ok
+      || loadWindowResult.command !== "ww3dTerrainVisualLoadWindowScene"
+      || loadWindowResult.probe?.source !== "ww3d_terrain_visual_load_window_scene_probe"
+      || loadWindowResult.probe?.renderMode !== "visual-load-window"
+      || loadWindowResult.probe?.visual?.class !== "W3DTerrainVisual"
+      || !loadWindowResult.probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
+      || loadWindowResult.probe?.visual?.ownedTerrainRenderObject !== true
+      || loadWindowResult.probe?.visual?.waterRenderObjectNull !== true
+      || loadWindowResult.probe?.results?.loadWindowRenderSelected !== true
+      || loadWindowResult.probe?.results?.patchReinitialized !== false
+      || loadWindowResult.probe?.ini?.entry !== terrainIniEntry
+      || loadWindowResult.probe?.ini?.loaded !== true
+      || loadWindowResult.probe?.ini?.entryExists !== true
+      || loadWindowResult.probe?.ini?.parsed !== true
+      || loadWindowResult.probe?.ini?.parser !== terrainIniParser
+      || loadWindowResult.probe?.ini?.originalIniParser !== true
+      || loadWindowResult.probe?.ini?.terrainTypeCount <= 0
+      || loadWindowResult.probe?.map?.entry !== mapEntry
+      || loadWindowResult.probe?.map?.entryExists !== true
+      || loadWindowResult.probe?.map?.entryOpenable !== true
+      || loadWindowResult.probe?.map?.streamOpen !== true
+      || loadWindowResult.probe?.map?.parsed !== true
+      || loadWindowResult.probe?.map?.bytes <= 0
+      || loadWindowResult.probe?.map?.width <= 16
+      || loadWindowResult.probe?.map?.height <= 16
+      || loadWindowResult.probe?.map?.heightChecksum <= 0
+      || !loadWindowResult.probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
+      || loadWindowResult.probe?.scene?.created !== true
+      || loadWindowResult.probe?.scene?.objectAddedByVisualLoad !== true
+      || loadWindowResult.probe?.scene?.path !== "W3DDisplay::m_3DScene"
+      || loadWindowResult.probe?.scene?.terrainClassId !== 4
+      || loadWindowResult.probe?.terrain?.tileSource !== "shipped-map-heightmap"
+      || loadWindowResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || loadWindowResult.probe?.terrain?.verticesPerSide !== 129
+      || loadWindowResult.probe?.terrain?.cellsPerSide !== 128
+      || loadWindowResult.probe?.terrain?.renderWindowWidth !== loadWindowResult.probe?.visual?.loadDrawWidth
+      || loadWindowResult.probe?.terrain?.renderWindowHeight !== loadWindowResult.probe?.visual?.loadDrawHeight
+      || loadWindowResult.probe?.terrain?.renderOriginX !== loadWindowResult.probe?.visual?.loadDrawOriginX
+      || loadWindowResult.probe?.terrain?.renderOriginY !== loadWindowResult.probe?.visual?.loadDrawOriginY
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCells !== 16384
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource !== 16384
+      || loadWindowResult.probe?.terrain?.patchHeightChecksum <= 0
+      || loadWindowResult.probe?.calls?.browserTextureCreate < 1
+      || loadWindowResult.probe?.calls?.browserTextureUpdate < 1
+      || loadWindowResult.probe?.calls?.drawIndexed < 1
+      || loadWindowResult.probe?.draw?.vertexShaderFvf !== 578
+      || loadWindowResult.probe?.draw?.vertexStride !== 32
+      || loadWindowResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || loadWindowResult.browserProbe?.texture0?.sampled !== true
+      || loadWindowDrawHistory.length < 2
+      || !hasTerrainPass(loadWindowDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 })
+      || !hasTerrainPass(loadWindowDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 })
+      || loadWindowResult.textureDelta?.creates < 1
+      || loadWindowResult.textureDelta?.updates < 1
+      || loadWindowResult.textureDelta?.binds < 1
+      || loadWindowResult.textureDelta?.samplerApplications < 1
+      || loadWindowResult.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D visual-owned terrain load-window render failed: ${JSON.stringify({
+      ok: loadWindowResult.ok,
+      probe: loadWindowResult.probe,
+      browserProbe: loadWindowResult.browserProbe,
+      drawHistory: summarizeDrawHistory(loadWindowDrawHistory),
+      passChecks: {
+        base: hasTerrainPass(loadWindowDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 }),
+        blend: hasTerrainPass(loadWindowDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 }),
+      },
+      textureDelta: loadWindowResult.textureDelta,
+      screenshot: {
+        width: loadWindowResult.screenshot?.width,
+        height: loadWindowResult.screenshot?.height,
+        centerPixel: loadWindowResult.screenshot?.centerPixel,
+        coverage: loadWindowResult.screenshot?.coverage,
+      },
+    })}`);
+  }
+  const loadWindowBrowserFailures = browserEvents.filter((event) =>
+    event.type === "pageerror" || event.type === "crash");
+  if (loadWindowBrowserFailures.length > 0) {
+    throw new Error(`browser failures during W3D visual terrain load-window scene: ${JSON.stringify(loadWindowBrowserFailures)}`);
   }
 
   console.log(JSON.stringify({
@@ -309,6 +456,15 @@ try {
     map: terrainResult.probe.map,
     scene: terrainResult.probe.scene,
     terrain: terrainResult.probe.terrain,
+    loadWindowScreenshot: terrainLoadWindowScreenshot,
+    loadWindowVisual: loadWindowResult.probe.visual,
+    loadWindowMap: loadWindowResult.probe.map,
+    loadWindowScene: loadWindowResult.probe.scene,
+    loadWindowTerrain: loadWindowResult.probe.terrain,
+    loadWindowCalls: loadWindowResult.probe.calls,
+    loadWindowDraw: loadWindowResult.probe.draw,
+    loadWindowCenterPixel: loadWindowResult.screenshot.centerPixel,
+    loadWindowCoverage: loadWindowResult.screenshot.coverage,
     calls: terrainResult.probe.calls,
     draw: terrainResult.probe.draw,
     centerPixel: terrainResult.screenshot.centerPixel,

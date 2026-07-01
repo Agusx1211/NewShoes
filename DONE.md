@@ -3439,6 +3439,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DDisplay::m_3DScene`, browser texture upload/indexed terrain draws,
       and non-black screenshot coverage in
       `harness-smoke-ww3d-terrain-visual-scene-canvas.png`.
+- [x] Extend the visual-owned terrain scene smoke to the original
+      `W3DTerrainVisual::load` draw window without post-load patch
+      reinitialization. `test:ww3d-terrain-visual-scene` now runs a second
+      `ww3dTerrainVisualLoadWindowScene` RPC that keeps the 129x129 draw window
+      and origin produced by `W3DTerrainVisual::load`, renders the
+      visual-owned `HeightMapRenderObjClass` through `W3DDisplay::m_3DScene`,
+      verifies 32 indexed terrain draws and colored WebGL2 pixels, and captures
+      `harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png`. The
+      proof intentionally records the current ZH-only archive limitation:
+      0/16,384 load-window cells have source-backed terrain tiles, while the
+      selected 32x32 visual patch remains source-backed.
+- [x] Add the no-reinit `W3DTerrainVisual::load` window proof to the vertical
+      integration runner. `test:vertical-integrations` now checks the original
+      129x129 load draw dimensions/origin, `HeightMapRenderObjClass` scene
+      attachment through `W3DDisplay::m_3DScene`, indexed terrain draws,
+      non-black screenshot coverage, and the explicit 16,384-cell missing
+      source-backed texture gap under the current ZH-only `TerrainZH.big`
+      archive set.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

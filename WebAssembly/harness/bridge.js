@@ -6541,7 +6541,7 @@ function paintD3D8DrawIndexed(payload = {}) {
       preDrawCenterPixel,
       centerPixel,
     },
-  ].slice(-12);
+  ].slice(-64);
   harnessState.graphics = {
     ...harnessState.graphics,
     d3d8DrawIndexedSequence: drawSequence,
@@ -7048,6 +7048,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_map_patch_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_visual_load_window_scene", "string", ["string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -17768,11 +17770,19 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dTerrainVisualScene":
+    case "ww3dTerrainVisualLoadWindowScene":
       {
         const wasmModule = await wasmModulePromise;
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
+        const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
+        const expectedSource = loadWindowMode
+          ? "ww3d_terrain_visual_load_window_scene_probe"
+          : "ww3d_terrain_visual_scene_probe";
+        const expectedRenderMode = loadWindowMode ? "visual-load-window" : "selected-source-patch";
+        const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
+        const expectedCellsPerSide = loadWindowMode ? 128 : 32;
         const iniArchivePath = String(payload.iniArchivePath ?? "");
         const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
@@ -17784,11 +17794,15 @@ async function rpc(command, payload = {}) {
           lastD3D8DrawIndexed: null,
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
-        const probe = parseModuleState(wasmModule.probeWW3DTerrainVisualScene(
-          iniArchivePath,
-          mapsArchivePath,
-          terrainArchivePath,
-        ));
+        const probe = parseModuleState(
+          (loadWindowMode
+            ? wasmModule.probeWW3DTerrainVisualLoadWindowScene
+            : wasmModule.probeWW3DTerrainVisualScene)(
+            iniArchivePath,
+            mapsArchivePath,
+            terrainArchivePath,
+          ),
+        );
         const textureAfter = harnessState.graphics.d3d8Textures ?? null;
         const screenshot = {
           ...snapshotCanvas(),
@@ -17807,12 +17821,31 @@ async function rpc(command, payload = {}) {
           samplerApplications: (textureAfter?.samplerApplications ?? 0) -
             (textureBefore.samplerApplications ?? 0),
         };
+        const hasBaseTerrainPass = loadWindowMode
+          ? drawHistory.some((draw) =>
+            draw?.renderState?.alphaBlendEnable === 0
+              && draw?.renderState?.textureStage0?.texCoordIndex === 0
+              && draw?.texture0?.sampled === true)
+          : drawHistory[0]?.renderState?.alphaBlendEnable === 0
+            && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
+            && drawHistory[0]?.texture0?.sampled === true;
+        const hasBlendTerrainPass = loadWindowMode
+          ? drawHistory.some((draw) =>
+            draw?.renderState?.alphaBlendEnable === 1
+              && draw?.renderState?.textureStage0?.texCoordIndex === 1
+              && draw?.texture0?.sampled === true)
+          : drawHistory[1]?.renderState?.alphaBlendEnable === 1
+            && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
+            && drawHistory[1]?.texture0?.sampled === true;
         const ok = Boolean(probe.ok)
-          && probe?.source === "ww3d_terrain_visual_scene_probe"
+          && probe?.source === expectedSource
+          && probe?.renderMode === expectedRenderMode
           && probe?.visual?.class === "W3DTerrainVisual"
           && probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
           && probe?.visual?.ownedTerrainRenderObject === true
           && probe?.visual?.waterRenderObjectNull === true
+          && probe?.results?.loadWindowRenderSelected === loadWindowMode
+          && probe?.results?.patchReinitialized === !loadWindowMode
           && probe?.ini?.loaded === true
           && probe?.ini?.entryExists === true
           && probe?.ini?.parsed === true
@@ -17837,11 +17870,19 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.terrainClassId === 4
           && probe?.terrain?.tileSource === "shipped-map-heightmap"
           && probe?.terrain?.renderObject === "HeightMapRenderObjClass"
-          && probe?.terrain?.verticesPerSide === 33
-          && probe?.terrain?.cellsPerSide === 32
+          && probe?.terrain?.verticesPerSide === expectedVerticesPerSide
+          && probe?.terrain?.cellsPerSide === expectedCellsPerSide
+          && (!loadWindowMode
+            || (probe?.terrain?.renderWindowWidth === probe?.visual?.loadDrawWidth
+              && probe?.terrain?.renderWindowHeight === probe?.visual?.loadDrawHeight
+              && probe?.terrain?.renderOriginX === probe?.visual?.loadDrawOriginX
+              && probe?.terrain?.renderOriginY === probe?.visual?.loadDrawOriginY))
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
           && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
-          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+          && (!loadWindowMode
+            ? (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+            : ((probe?.terrain?.tileDiagnostics?.patchCells ?? 0) === 16384
+              && (probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384))
           && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.usedPersistentBuffers === true
@@ -17852,12 +17893,8 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.sampled === true
           && Array.isArray(drawHistory)
           && drawHistory.length >= 2
-          && drawHistory[0]?.renderState?.alphaBlendEnable === 0
-          && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
-          && drawHistory[0]?.texture0?.sampled === true
-          && drawHistory[1]?.renderState?.alphaBlendEnable === 1
-          && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
-          && drawHistory[1]?.texture0?.sampled === true
+          && hasBaseTerrainPass
+          && hasBlendTerrainPass
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1

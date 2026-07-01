@@ -722,13 +722,17 @@ shares structure and follows behind.
       original `TerrainVisual.cpp` / `W3DTerrainVisual.cpp`, calls
       `W3DTerrainVisual::load` against the same real map/archive set, proves the
       visual-owned `HeightMapRenderObjClass` is attached by
-      `W3DDisplay::m_3DScene`, and captures browser WebGL2 terrain pixels. The
-      `test:vertical-integrations` gate now includes that visual-owned terrain
-      scene beside the lower-level tile, scene-dispatch, and map-patch terrain
-      proofs. The remaining terrain vertical work is production/full-map display
-      ownership without probe-installed render objects or patch reinitialization,
-      then broadening water, shroud, objects, and gameplay camera flow on top of
-      the same original heightmap path.
+      `W3DDisplay::m_3DScene`, captures browser WebGL2 terrain pixels, and now
+      also renders the original 129x129 `W3DTerrainVisual::load` draw window
+      without post-load patch `initHeightData` reinitialization. The selected
+      32x32 patch remains source-backed, while the current ZH-only archive set
+      honestly records the load window as 0/16,384 source-backed terrain cells.
+      `test:vertical-integrations` now includes that visual-owned terrain scene
+      plus the no-reinit load-window proof beside the lower-level tile,
+      scene-dispatch, and map-patch terrain proofs. The remaining terrain
+      vertical work is production/full-map display ownership with source-backed
+      coverage across the load window, then broadening water, shroud, objects,
+      and gameplay camera flow on top of the same original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
       `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and
@@ -741,7 +745,10 @@ shares structure and follows behind.
 - [ ] Extend runtime asset extraction/mounting to include the base Generals
       terrain archives (for example `Terrain.big` when supplied) so base maps
       such as Tournament Desert can render complete terrain texture classes
-      instead of relying on the subset of source-backed ZH campaign patches.
+      instead of relying on the subset of source-backed ZH campaign patches. The
+      current `W3DTerrainVisual::load` 129x129 load-window proof renders geometry
+      and browser pixels, but its 16,384 terrain cells all miss source-backed
+      tile textures under the current ZH-only `TerrainZH.big` set.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the `INI::load` member-read trap.
       (from Claude note) The warm-up read only masks the symptom; the trap on

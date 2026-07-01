@@ -1363,6 +1363,47 @@ const steps = [
         "terrain visual scene render smoke did not produce colored browser pixels", payload.coverage);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-visual-scene-canvas.png"),
         "terrain visual scene render smoke did not capture the expected screenshot", payload);
+      expect(payload.loadWindowVisual?.class === "W3DTerrainVisual"
+          && payload.loadWindowVisual?.loadPath?.includes("W3DTerrainVisual::load")
+          && payload.loadWindowVisual?.ownedTerrainRenderObject === true
+          && payload.loadWindowVisual?.waterRenderObjectNull === true
+          && payload.loadWindowVisual?.loadDrawWidth === 129
+          && payload.loadWindowVisual?.loadDrawHeight === 129
+          && payload.loadWindowVisual?.loadDrawOriginX === 0
+          && payload.loadWindowVisual?.loadDrawOriginY === 0,
+        "terrain visual load-window smoke did not keep the original W3DTerrainVisual::load draw window", payload.loadWindowVisual);
+      expect(payload.loadWindowScene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.loadWindowScene?.created === true
+          && payload.loadWindowScene?.objectAddedByVisualLoad === true
+          && payload.loadWindowScene?.path === "W3DDisplay::m_3DScene"
+          && payload.loadWindowScene?.terrainClassId === 4,
+        "terrain visual load-window smoke did not render through the visual-owned W3DDisplay scene", payload.loadWindowScene);
+      expect(payload.loadWindowTerrain?.tileSource === "shipped-map-heightmap"
+          && payload.loadWindowTerrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.loadWindowTerrain?.verticesPerSide === 129
+          && payload.loadWindowTerrain?.cellsPerSide === 128
+          && payload.loadWindowTerrain?.renderWindowWidth === payload.loadWindowVisual?.loadDrawWidth
+          && payload.loadWindowTerrain?.renderWindowHeight === payload.loadWindowVisual?.loadDrawHeight
+          && payload.loadWindowTerrain?.renderOriginX === payload.loadWindowVisual?.loadDrawOriginX
+          && payload.loadWindowTerrain?.renderOriginY === payload.loadWindowVisual?.loadDrawOriginY
+          && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.loadWindowTerrain?.tileDiagnostics?.patchCells === 16384
+          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsWithSource === 0
+          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsMissingSource === 16384
+          && payload.loadWindowTerrain?.patchHeightChecksum > 0,
+        "terrain visual load-window smoke did not report the expected no-reinit 129x129 terrain window and current source-backed gap", payload.loadWindowTerrain);
+      expect(payload.loadWindowCalls?.browserTextureCreate >= 1
+          && payload.loadWindowCalls?.browserTextureUpdate >= 1
+          && payload.loadWindowCalls?.drawIndexed >= 1,
+        "terrain visual load-window smoke did not reach texture upload and indexed draws", payload.loadWindowCalls);
+      expect(payload.loadWindowDraw?.vertexShaderFvf === 578
+          && payload.loadWindowDraw?.vertexStride === 32,
+        "terrain visual load-window smoke did not use the expected W3D terrain FVF draw", payload.loadWindowDraw);
+      expect(payload.loadWindowCoverage?.coloredPixelCount > 0,
+        "terrain visual load-window smoke did not produce colored browser pixels", payload.loadWindowCoverage);
+      expect(payload.loadWindowScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png"),
+        "terrain visual load-window smoke did not capture the expected screenshot", payload);
     },
   },
   {
@@ -1471,13 +1512,14 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
-    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window without patch reinitialization and browser WebGL2 pixels",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
+    "supply base Generals terrain archives so the W3DTerrainVisual load window can become source-backed beyond the current 0/16384-cell ZH-only texture coverage",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
