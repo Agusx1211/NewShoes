@@ -2317,7 +2317,6 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
 
 target_compile_definitions(zh_w3d_terrain_probe_runtime PRIVATE
   CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS=1
-  CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS=1
   __PRERTS_H__
 )
 

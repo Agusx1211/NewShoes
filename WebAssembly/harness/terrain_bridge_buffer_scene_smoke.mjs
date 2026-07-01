@@ -33,6 +33,9 @@ const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const roadsIniEntry = "Data\\INI\\Roads.ini";
 const mapEntry = process.env.CNC_PORT_BRIDGE_MAP_ENTRY ?? "Maps\\MD_CHI01\\MD_CHI01.map";
 const renderTimeoutMs = Number(process.env.CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS ?? 240000);
+const D3DCMP_EQUAL = 3;
+const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
+const D3DTTFF_COUNT2 = 2;
 
 function iniLayoutMatches(layout) {
   return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
@@ -63,10 +66,12 @@ function summarizeDrawHistory(drawHistory) {
     alphaBlendEnable: draw?.renderState?.alphaBlendEnable,
     zEnable: draw?.renderState?.zEnable,
     zWriteEnable: draw?.renderState?.zWriteEnable,
+    zFunc: draw?.renderState?.zFunc,
     cullMode: draw?.renderState?.cullMode,
     texture0Id: draw?.texture0?.id,
     texture0Sampled: draw?.texture0?.sampled,
     texture0TexCoordIndex: draw?.texture0?.texCoordIndex,
+    texture0TextureTransformFlags: draw?.texture0?.textureTransformFlags,
     projected: draw?.vertexSummary?.projected,
     triangles: draw?.vertexSummary?.triangles,
     positionBounds: draw?.vertexSummary?.positionBounds,
@@ -399,16 +404,18 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(wireframe) -> W3DBridge::renderBridge"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
       || result.probe?.results?.terrainLogicClearedForDraw !== true
       || result.probe?.results?.bridgeDrawWrapperInvoked !== true
-      || result.probe?.results?.bridgeDrawWrapperWireframe !== true
+      || result.probe?.results?.bridgeDrawWrapperWireframe !== false
       || result.probe?.results?.bridgeTerrainRenderObjectPinned !== true
-      || result.probe?.results?.bridgeShroudOverlaySuppressed !== true
-      || (result.probe?.results?.bridgeDrawCallDelta ?? 0) <= 0
+      || result.probe?.results?.bridgeShroudOverlaySuppressed !== false
+      || result.probe?.results?.bridgeShroudTextureReady !== true
+      || result.probe?.results?.bridgeShroudDrawSeen !== true
+      || (result.probe?.results?.bridgeDrawCallDelta ?? 0) < 2
       || result.probe?.results?.bridgeSceneDrawFlushed !== true
       || result.probe?.ini?.roadsParsed !== true
       || result.probe?.ini?.bridgeCount <= 0
@@ -423,15 +430,19 @@ try {
       || result.probe?.bridges?.afterLoad <= 0
       || result.probe?.bridges?.verticesAfterUpdate <= 0
       || result.probe?.bridges?.indicesAfterUpdate <= 0
-      || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(wireframe)") !== true
+      || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)") !== true
       || result.probe?.scene?.renderPath?.includes("W3DBridge::renderBridge") !== true
       || result.probe?.draw?.vertexShaderFvf !== 338
       || result.probe?.draw?.vertexStride !== 36
       || result.browserProbe?.vertexShaderFvf !== 338
       || result.browserProbe?.vertexStride !== 36
-      || result.browserProbe?.texture0?.sampled !== false
+      || result.browserProbe?.texture0?.sampled !== true
+      || result.browserProbe?.renderState?.zFunc !== D3DCMP_EQUAL
+      || result.browserProbe?.texture0?.texCoordIndex !== D3DTSS_TCI_CAMERASPACEPOSITION
+      || result.browserProbe?.texture0?.textureTransformFlags !== D3DTTFF_COUNT2
       || result.browserProbe?.vertexDiagnostics?.projected?.visible <= 0
       || result.drawSequence?.bridgeAfterTerrain !== true
+      || result.drawSequence?.bridgeShroudAfterBridge !== true
       || result.screenshot?.coverage?.coloredPixelCount <= 0) {
     throw new Error(`terrain bridge-buffer scene smoke failed: ${JSON.stringify({
       ok: result.ok,

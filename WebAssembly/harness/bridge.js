@@ -18996,31 +18996,46 @@ async function rpc(command, payload = {}) {
             (textureBefore.samplerApplications ?? 0),
         };
         const bridgeFvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const textureStage0 = (draw) =>
+          draw?.renderState?.textureStage0 ?? draw?.renderState?.textureStages?.[0] ?? {};
         const isBaseTerrainPass = (draw) =>
           draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
             && draw?.renderState?.alphaBlendEnable === 0
-            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && textureStage0(draw)?.texCoordIndex === 0
             && draw?.texture0?.sampled === true;
         const isBlendTerrainPass = (draw) =>
           draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
             && draw?.renderState?.alphaBlendEnable === 1
-            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && textureStage0(draw)?.texCoordIndex === 1
             && draw?.texture0?.sampled === true;
-        const isBridgePass = (draw) =>
+        const isBridgeBasePass = (draw) =>
           draw?.vertexShaderFvf === bridgeFvf
             && draw?.vertexStride === 36
-            && draw?.renderState?.textureStage0?.texCoordIndex === 0
-            && (probe?.results?.bridgeDrawWrapperWireframe === true
-              || draw?.texture0?.sampled === true);
+            && textureStage0(draw)?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBridgeShroudPass = (draw) => {
+          const stage0 = textureStage0(draw);
+          return draw?.vertexShaderFvf === bridgeFvf
+            && draw?.vertexStride === 36
+            && draw?.renderState?.zFunc === D3DCMP_EQUAL
+            && (stage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+              || draw?.texture0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION)
+            && (stage0?.textureTransformFlags === D3DTTFF_COUNT2
+              || draw?.texture0?.textureTransformFlags === D3DTTFF_COUNT2)
+            && draw?.texture0?.sampled === true;
+        };
         const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
         const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
-        const bridgeIndex = drawHistory.findIndex(isBridgePass);
+        const bridgeIndex = drawHistory.findIndex(isBridgeBasePass);
+        const bridgeShroudIndex = drawHistory.findIndex(isBridgeShroudPass);
         const bridgeAfterTerrain = baseTerrainIndex >= 0
           && blendTerrainIndex >= 0
           && bridgeIndex > baseTerrainIndex
           && bridgeIndex > blendTerrainIndex;
+        const bridgeShroudAfterBridge = bridgeAfterTerrain
+          && bridgeShroudIndex > bridgeIndex;
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_terrain_bridge_buffer_scene_probe"
           && probe?.path?.includes("W3DBridgeBuffer::")
@@ -19035,10 +19050,12 @@ async function rpc(command, payload = {}) {
           && probe?.results?.sceneCreated === true
           && probe?.results?.sceneObjectAdded === true
           && probe?.results?.bridgeDrawWrapperInvoked === true
-          && probe?.results?.bridgeDrawWrapperWireframe === true
+          && probe?.results?.bridgeDrawWrapperWireframe === false
           && probe?.results?.bridgeTerrainRenderObjectPinned === true
-          && probe?.results?.bridgeShroudOverlaySuppressed === true
-          && (probe?.results?.bridgeDrawCallDelta ?? 0) > 0
+          && probe?.results?.bridgeShroudOverlaySuppressed === false
+          && probe?.results?.bridgeShroudTextureReady === true
+          && probe?.results?.bridgeShroudDrawSeen === true
+          && (probe?.results?.bridgeDrawCallDelta ?? 0) >= 2
           && probe?.results?.bridgeSceneDrawFlushed === true
           && probe?.ini?.roadsParsed === true
           && probe?.ini?.originalIniParser === true
@@ -19053,7 +19070,7 @@ async function rpc(command, payload = {}) {
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
           && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
           && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
-          && probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(wireframe)")
+          && probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)")
           && probe?.scene?.renderPath?.includes("W3DBridge::renderBridge")
           && probe?.scene?.created === true
           && probe?.scene?.objectAdded === true
@@ -19074,10 +19091,11 @@ async function rpc(command, payload = {}) {
           && browserProbe?.usedTransforms === true
           && browserProbe?.vertexShaderFvf === bridgeFvf
           && browserProbe?.vertexStride === 36
-          && browserProbe?.texture0?.sampled !== true
+          && isBridgeShroudPass(browserProbe)
           && Array.isArray(drawHistory)
-          && drawHistory.length >= 3
+          && drawHistory.length >= 4
           && bridgeAfterTerrain
+          && bridgeShroudAfterBridge
           && bufferDelta.creates >= 4
           && bufferDelta.updates >= 4
           && textureDelta.binds >= 1
@@ -19093,7 +19111,9 @@ async function rpc(command, payload = {}) {
             baseTerrainIndex,
             blendTerrainIndex,
             bridgeIndex,
+            bridgeShroudIndex,
             bridgeAfterTerrain,
+            bridgeShroudAfterBridge,
           },
           bufferDelta,
           textureDelta,

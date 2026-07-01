@@ -3836,10 +3836,30 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `bridgeTerrainRenderObjectPinned`, `bridgeShroudOverlaySuppressed`, and a
       positive wrapper draw-call delta, then verifies the bridge draw follows
       the terrain base/blend passes with browser-visible FVF 338/36-byte bridge
-      vertices. The full textured `drawBridges(FALSE, nullptr)` branch still
-      crashes after entering the wrapper and remains tracked in `TODO.md`.
+      vertices. This was the stepping stone for the following textured wrapper
+      proof.
       Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Broaden the bridge-buffer terrain scene proof to the original textured
+      `W3DBridgeBuffer::drawBridges(FALSE, nullptr)` wrapper and bridge shroud
+      overlay branch. The focused terrain probe runtime now keeps the same
+      `BaseHeightMapRenderObjClass` layout as the probe translation unit by
+      removing the road-disable compile definition, so `m_bridgeBuffer` and
+      `m_shroud` line up under the original road-enabled heightmap fields. The
+      bridge scene enables a real base-owned `W3DShroud`, uploads/fills its
+      shroud texture through `W3DShroud::render`, pins
+      `TheTerrainRenderObject`, and calls the original non-wireframe bridge
+      wrapper from `HeightMapRenderObjClass::Render` without suppressing the
+      shroud. The browser harness now verifies terrain base/blend draws, the
+      textured bridge base draw, then a bridge shroud overlay draw using FVF
+      338 36-byte vertices, sampled shroud texture, `D3DCMP_EQUAL`,
+      camera-space texture coordinates, and `D3DTTFF_COUNT2`; the C++ probe
+      records the bridge draw-call delta and shroud draw-call delta separately.
+      Verified with
+      `cmake --build WebAssembly/build/wasm --target cnc-port -j 8`,
+      `node WebAssembly/harness/terrain_bridge_buffer_scene_smoke.mjs`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene`, and
+      `CNC_PORT_TERRAIN_SCENE_MODE=shroud node WebAssembly/harness/terrain_map_patch_scene_smoke.mjs`.
 - [x] Add a browser-verified real-map terrain shroud scene proof. The new
       `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, parses

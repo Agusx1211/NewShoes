@@ -36,6 +36,11 @@ shares structure and follows behind.
       `Window.big` is supplied, run
       `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-blank-window-layout`
       before replacing the runtime BlankWindow adapter.
+- [ ] Make `extract_zh_runtime_archives.sh` safe for parallel smoke-test
+      invocations, or serialize the npm scripts that call it. Concurrent
+      terrain smokes can race while extracting the shared loose `Data1.cab`
+      payload and fail with `errno=17` even when the renderer path itself is
+      healthy.
 
 ---
 
@@ -762,8 +767,7 @@ shares structure and follows behind.
       shroud, objects, and continuous gameplay-owned camera flow on top of the
       same original heightmap path.
 - [ ] Replace the probe-only
-      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
-      `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and
+      `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
       the real tree, prop, bib, bridge, waypoint, shroud, water, and road
       runtime systems as those subsystems become browser-ready. The original
@@ -792,8 +796,8 @@ shares structure and follows behind.
       on a real `Maps\MD_CHI01\MD_CHI01.map` bridge pair with shipped bridge
       model/texture assets available from the mounted Zero Hour archives.
       Production map/object tree placement, production logical-map road
-      ownership through the normal `DO_ROADS` terrain path, textured/non-wireframe
-      bridge-buffer wrapper ownership, and shroud-aware tree behavior remain open. A
+      ownership through the normal `DO_ROADS` terrain path, TerrainLogic-owned
+      bridge damage states, and shroud-aware tree behavior remain open. A
       direct broad removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
@@ -811,17 +815,20 @@ shares structure and follows behind.
       probe direct-D3D fallback. Remaining work is to wire the full terrain
       visual, partition, and shroud owners, then let gameplay fog updates come
       from `PartitionManager::refreshShroudForLocalPlayer`.
-- [ ] Finish the remaining non-wireframe bridge-buffer wrapper branches in the
-      focused browser terrain scene. The current bridge-buffer smoke now drives
-      original `W3DBridgeBuffer::drawBridges(wireframe)` from
-      `HeightMapRenderObjClass::Render`, but the full textured
-      `drawBridges(FALSE, nullptr)` path still crashes Chromium after entering
-      the wrapper, and the original TerrainLogic damage-state and bridge shroud
-      overlay branches remain deferred until they can run safely. Start by
-      proving whether the bridge shroud branch has a valid
-      `getShroudTexture()` before `W3DShaderManager::ST_SHROUD_TEXTURE`, then
-      add browser assertions for the shroud texture bind/reset path once it is
-      safe.
+- [ ] Promote bridge-buffer drawing from the focused
+      `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned
+      damage-state behavior. The focused browser scene now verifies the
+      textured bridge base pass and bridge shroud overlay, but still clears
+      `TheTerrainLogic` and does not exercise damaged/repaired bridge state
+      lookup from real gameplay objects.
+- [ ] Add a combined terrain-full-scene harness that promotes full
+      `W3DTerrainVisual::init`, gameplay-owned shroud updates, and first water
+      rendering in one source-backed map scene instead of continuing separate
+      one-buffer proofs. Start from `test:ww3d-terrain-visual-scene`,
+      `test:ww3d-terrain-shroud-scene`, and the existing terrain/water
+      projection probes; verify base/blend terrain ordering, shroud overlay,
+      water draw submission, and a browser screenshot before adding it to
+      `test:vertical-integrations`.
 - [ ] Once a base Generals `Terrain.big` artifact is available in this
       workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
       archive mounted and tighten the load-window gate to require nonzero
