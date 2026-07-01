@@ -3806,6 +3806,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene`,
       `node WebAssembly/harness/terrain_road_buffer_scene_smoke.mjs`, and
       `node WebAssembly/harness/terrain_visual_scene_smoke.mjs`.
+- [x] Add a browser-verified scene proof for original terrain bridge-buffer
+      geometry. The new `ww3dTerrainBridgeBufferScene` RPC mounts range-backed
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
+      `TexturesZH.big` subsets, parses real `Terrain.ini` / `Roads.ini` with
+      the original terrain loaders, parses a real bridge pair from
+      `Maps\MD_CHI01\MD_CHI01.map`, and drives original
+      `W3DBridgeBuffer::loadBridges` / `updateCenter` before drawing the
+      enabled bridge geometry through original `W3DBridge::renderBridge`.
+      Because optional base Generals archives are not present in this
+      workspace, the smoke records the real map bridge template and substitutes
+      an available shipped Zero Hour bridge template instead of inventing
+      assets. The harness verifies terrain base/blend draws precede the bridge
+      draw, bridge geometry uses `XYZNDUV1`/FVF 338 with 36-byte vertices, the
+      bridge texture samples in browser WebGL2, projected bridge vertices land
+      on the canvas, and
+      `harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png` is captured.
+      Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

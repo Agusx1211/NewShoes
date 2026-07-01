@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +37,7 @@
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DPropBuffer.h"
 #include "W3DDevice/GameClient/W3DBibBuffer.h"
+#include "W3DDevice/GameClient/W3DBridgeBuffer.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
 #include "W3DDevice/GameClient/W3DScene.h"
@@ -61,6 +63,7 @@
 #include "wasm_ww3d_probe_lifetime.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
+#include "WWLIB/ffactory.h"
 #include "ww3d.h"
 
 #ifdef __EMSCRIPTEN__
@@ -93,6 +96,7 @@ std::string g_ww3d_terrain_prop_buffer_render_probe_json;
 std::string g_ww3d_terrain_prop_buffer_scene_probe_json;
 std::string g_ww3d_terrain_tree_buffer_scene_probe_json;
 std::string g_ww3d_terrain_road_buffer_scene_probe_json;
+std::string g_ww3d_terrain_bridge_buffer_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -105,6 +109,7 @@ constexpr unsigned int kMapPatchExpectedFlatTextureSize = kMapPatchCells * 8;
 constexpr const char *kArchiveTerrainTileEntry = "Art\\Terrain\\PTBlossom01.tga";
 constexpr const char *kArchiveTerrainMapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
 constexpr const char *kArchiveRoadTerrainMapEntry = "Maps\\MD_CHI01\\MD_CHI01.map";
+constexpr const char *kArchiveBridgeTerrainMapEntry = "Maps\\MD_CHI01\\MD_CHI01.map";
 constexpr const char *kArchiveDefaultTerrainIniEntry = "Data\\INI\\Default\\Terrain.ini";
 constexpr const char *kArchiveTerrainIniEntry = "Data\\INI\\Terrain.ini";
 constexpr const char *kArchiveDefaultRoadsIniEntry = "Data\\INI\\Default\\Roads.ini";
@@ -617,11 +622,57 @@ struct ProbeRoadPairCandidate
 	bool textureAvailable = false;
 };
 
+struct ProbeBridgePairCandidate
+{
+	ProbeRoadObjectSnapshot first;
+	ProbeRoadObjectSnapshot second;
+	Int patchOriginX = 0;
+	Int patchOriginY = 0;
+	Int loadedSourceCells = 0;
+	bool modelAvailable = false;
+	bool textureAvailable = false;
+};
+
+struct ProbeBridgeAssetDiagnostics
+{
+	bool modelArchiveExists = false;
+	bool textureArchiveExists = false;
+	bool bareModelFileAvailable = false;
+	bool bareTextureFileAvailable = false;
+	bool loadBareModel = false;
+	bool createModel = false;
+	bool modelHasLeft = false;
+	bool modelHasSpan = false;
+	bool modelHasRight = false;
+	bool createLeft = false;
+	bool createSpan = false;
+	bool createRight = false;
+	bool createTexture = false;
+	Int modelClassId = RenderObjClass::CLASSID_UNKNOWN;
+	Int leftClassId = RenderObjClass::CLASSID_UNKNOWN;
+	Int spanClassId = RenderObjClass::CLASSID_UNKNOWN;
+	Int rightClassId = RenderObjClass::CLASSID_UNKNOWN;
+	Int modelSubObjects = 0;
+	Int leftVertices = 0;
+	Int spanVertices = 0;
+	Int rightVertices = 0;
+	Int leftPolygons = 0;
+	Int spanPolygons = 0;
+	Int rightPolygons = 0;
+};
+
 struct ProbeMapObjectParserState
 {
 	ProbeRoadObjectSnapshot pendingPoint1;
 	bool hasPendingPoint1 = false;
 	std::vector<ProbeRoadPairCandidate> *candidates = nullptr;
+};
+
+struct ProbeBridgeMapObjectParserState
+{
+	ProbeRoadObjectSnapshot pendingPoint1;
+	bool hasPendingPoint1 = false;
+	std::vector<ProbeBridgePairCandidate> *candidates = nullptr;
 };
 
 Bool parse_probe_map_object_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *)
@@ -731,7 +782,145 @@ bool parse_probe_map_objects_from_archive(
 	return parsed;
 }
 
+Bool parse_probe_bridge_map_object_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *)
+{
+	Coord3D location;
+	location.x = file.readReal();
+	location.y = file.readReal();
+	location.z = file.readReal();
+	if (info != nullptr && info->version <= K_OBJECTS_VERSION_2) {
+		location.z = 0.0f;
+	}
+
+	const Real angle = file.readReal();
+	const Int flags = file.readInt();
+	const AsciiString name = file.readAsciiString();
+	Dict properties;
+	if (info != nullptr && info->version >= K_OBJECTS_VERSION_2) {
+		properties = file.readDict();
+	}
+
+	ProbeBridgeMapObjectParserState *state =
+		static_cast<ProbeBridgeMapObjectParserState *>(file.m_userData);
+	if (state == nullptr || state->candidates == nullptr) {
+		return TRUE;
+	}
+
+	const bool is_point1 = (flags & FLAG_BRIDGE_POINT1) != 0;
+	const bool is_point2 = (flags & FLAG_BRIDGE_POINT2) != 0;
+	if (is_point1) {
+		if (TheTerrainRoads != nullptr && TheTerrainRoads->findBridge(name) == nullptr) {
+			state->hasPendingPoint1 = false;
+			return TRUE;
+		}
+		state->pendingPoint1.location = location;
+		state->pendingPoint1.angle = angle;
+		state->pendingPoint1.flags = flags;
+		state->pendingPoint1.name = name;
+		state->pendingPoint1.properties = properties;
+		state->hasPendingPoint1 = true;
+		return TRUE;
+	}
+
+	if (is_point2 && state->hasPendingPoint1) {
+		ProbeBridgePairCandidate candidate;
+		candidate.first = state->pendingPoint1;
+		candidate.second.location = location;
+		candidate.second.angle = angle;
+		candidate.second.flags = flags;
+		candidate.second.name = name;
+		candidate.second.properties = properties;
+		state->candidates->push_back(candidate);
+		state->hasPendingPoint1 = false;
+		return TRUE;
+	}
+
+	state->hasPendingPoint1 = false;
+	return TRUE;
+}
+
+Bool parse_probe_bridge_map_objects_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *user_data)
+{
+	file.m_currentObject = nullptr;
+	file.registerParser(
+		AsciiString("Object"),
+		info != nullptr ? info->label : AsciiString::TheEmptyString,
+		parse_probe_bridge_map_object_data_chunk);
+	return file.parse(user_data);
+}
+
+bool parse_probe_bridge_map_objects_from_archive(
+	const char *map_entry,
+	std::vector<ProbeBridgePairCandidate> &candidates,
+	bool &stream_open,
+	bool &parsed,
+	bool &parse_exception)
+{
+	stream_open = false;
+	parsed = false;
+	parse_exception = false;
+	if (map_entry == nullptr || map_entry[0] == '\0') {
+		return false;
+	}
+
+	CachedFileInputStream stream;
+	stream_open = stream.open(AsciiString(map_entry));
+	if (!stream_open) {
+		return false;
+	}
+
+	ProbeBridgeMapObjectParserState state;
+	state.candidates = &candidates;
+	try {
+		DataChunkInput file(&stream);
+		file.m_userData = &state;
+		file.registerParser(
+			AsciiString("ObjectsList"),
+			AsciiString::TheEmptyString,
+			parse_probe_bridge_map_objects_data_chunk);
+		parsed = file.parse(nullptr);
+	} catch (...) {
+		parse_exception = true;
+		parsed = false;
+		WorldHeightMap::freeListOfMapObjects();
+	}
+	stream.close();
+	parsed = parsed && !candidates.empty();
+	return parsed;
+}
+
 bool install_probe_road_pair_map_objects(const ProbeRoadPairCandidate &candidate)
+{
+	WorldHeightMap::freeListOfMapObjects();
+	MapObject *point1 = newInstance(MapObject)(
+		candidate.first.location,
+		candidate.first.name,
+		candidate.first.angle,
+		candidate.first.flags,
+		&candidate.first.properties,
+		nullptr);
+	if (point1 == nullptr) {
+		return false;
+	}
+
+	MapObject *point2 = newInstance(MapObject)(
+		candidate.second.location,
+		candidate.second.name,
+		candidate.second.angle,
+		candidate.second.flags,
+		&candidate.second.properties,
+		nullptr);
+	if (point2 == nullptr) {
+		point1->deleteInstance();
+		return false;
+	}
+
+	point1->setNextMap(point2);
+	MapObject::TheMapObjectListPtr = point1;
+	return true;
+}
+
+bool install_probe_bridge_pair_map_objects(const ProbeBridgePairCandidate &candidate)
 {
 	WorldHeightMap::freeListOfMapObjects();
 	MapObject *point1 = newInstance(MapObject)(
@@ -818,6 +1007,267 @@ std::string probe_road_texture_name(
 
 	TerrainRoadType *road = terrain_roads->findRoad(road_name);
 	return road != nullptr ? road->getTexture().str() : "";
+}
+
+std::string probe_bridge_texture_name(
+	TerrainRoadCollection *terrain_roads,
+	AsciiString bridge_name)
+{
+	if (terrain_roads == nullptr) {
+		return "";
+	}
+
+	TerrainRoadType *bridge = terrain_roads->findBridge(bridge_name);
+	return bridge != nullptr ? bridge->getTexture().str() : "";
+}
+
+std::string probe_bridge_model_name(
+	TerrainRoadCollection *terrain_roads,
+	AsciiString bridge_name)
+{
+	if (terrain_roads == nullptr) {
+		return "";
+	}
+
+	TerrainRoadType *bridge = terrain_roads->findBridge(bridge_name);
+	return bridge != nullptr ? bridge->getBridgeModel().str() : "";
+}
+
+bool probe_bridge_texture_available(
+	TerrainRoadCollection *terrain_roads,
+	FileSystem *file_system,
+	AsciiString bridge_name)
+{
+	if (terrain_roads == nullptr || file_system == nullptr) {
+		return false;
+	}
+
+	const std::string texture = probe_bridge_texture_name(terrain_roads, bridge_name);
+	if (texture.empty()) {
+		return false;
+	}
+
+	const std::string texture_path = std::string("Art\\Textures\\") + texture;
+	if (probe_file_exists(file_system, texture_path)) {
+		return true;
+	}
+
+	std::string dds_path = texture_path;
+	const std::size_t dot = dds_path.find_last_of('.');
+	if (dot != std::string::npos) {
+		dds_path.replace(dot, std::string::npos, ".dds");
+	} else {
+		dds_path += ".dds";
+	}
+	return probe_file_exists(file_system, dds_path);
+}
+
+bool probe_bridge_model_available(
+	TerrainRoadCollection *terrain_roads,
+	FileSystem *file_system,
+	AsciiString bridge_name)
+{
+	if (terrain_roads == nullptr || file_system == nullptr) {
+		return false;
+	}
+
+	const std::string model = probe_bridge_model_name(terrain_roads, bridge_name);
+	if (model.empty()) {
+		return false;
+	}
+
+	return probe_file_exists(file_system, std::string("Art\\W3D\\") + model + ".w3d");
+}
+
+bool probe_file_factory_file_available(const std::string &filename)
+{
+	if (_TheFileFactory == nullptr || filename.empty()) {
+		return false;
+	}
+
+	FileClass *file = _TheFileFactory->Get_File(filename.c_str());
+	const bool available = file != nullptr && file->Is_Available();
+	if (file != nullptr) {
+		_TheFileFactory->Return_File(file);
+	}
+	return available;
+}
+
+void probe_bridge_mesh_metrics(
+	RenderObjClass *render_object,
+	Int &class_id,
+	Int &vertices,
+	Int &polygons)
+{
+	class_id = render_object != nullptr ?
+		render_object->Class_ID() :
+		RenderObjClass::CLASSID_UNKNOWN;
+	vertices = 0;
+	polygons = 0;
+	if (render_object == nullptr || class_id != RenderObjClass::CLASSID_MESH) {
+		return;
+	}
+
+	MeshClass *mesh = static_cast<MeshClass *>(render_object);
+	MeshModelClass *model = mesh->Peek_Model();
+	if (model == nullptr) {
+		return;
+	}
+	vertices = model->Get_Vertex_Count();
+	polygons = model->Get_Polygon_Count();
+}
+
+ProbeBridgeAssetDiagnostics probe_bridge_asset_runtime_diagnostics(
+	WW3DAssetManager *asset_manager,
+	TerrainRoadCollection *terrain_roads,
+	FileSystem *file_system,
+	const std::string &bridge_name)
+{
+	ProbeBridgeAssetDiagnostics diagnostics;
+	if (asset_manager == nullptr || terrain_roads == nullptr || bridge_name.empty()) {
+		return diagnostics;
+	}
+
+	const AsciiString bridge_ascii(bridge_name.c_str());
+	const std::string model = probe_bridge_model_name(terrain_roads, bridge_ascii);
+	const std::string texture = probe_bridge_texture_name(terrain_roads, bridge_ascii);
+	if (model.empty()) {
+		return diagnostics;
+	}
+
+	const std::string model_file = model + ".w3d";
+	const std::string left_name = model + ".BRIDGE_LEFT";
+	const std::string span_name = model + ".BRIDGE_SPAN";
+	const std::string right_name = model + ".BRIDGE_RIGHT";
+	diagnostics.modelArchiveExists =
+		probe_file_exists(file_system, std::string("Art\\W3D\\") + model_file);
+	diagnostics.textureArchiveExists =
+		probe_bridge_texture_available(terrain_roads, file_system, bridge_ascii);
+	diagnostics.bareModelFileAvailable = probe_file_factory_file_available(model_file);
+	diagnostics.bareTextureFileAvailable =
+		!texture.empty() && probe_file_factory_file_available(texture);
+	diagnostics.loadBareModel = asset_manager->Load_3D_Assets(model_file.c_str());
+
+	RenderObjClass *model_object = asset_manager->Create_Render_Obj(model.c_str());
+	diagnostics.createModel = model_object != nullptr;
+	if (model_object != nullptr) {
+		diagnostics.modelClassId = model_object->Class_ID();
+		diagnostics.modelSubObjects = model_object->Get_Num_Sub_Objects();
+		for (Int index = 0; index < diagnostics.modelSubObjects; ++index) {
+			RenderObjClass *sub_object = model_object->Get_Sub_Object(index);
+			if (sub_object != nullptr && sub_object->Get_Name() != nullptr) {
+				const char *sub_name = sub_object->Get_Name();
+				diagnostics.modelHasLeft =
+					diagnostics.modelHasLeft ||
+					strnicmp(left_name.c_str(), sub_name, left_name.size()) == 0;
+				diagnostics.modelHasSpan =
+					diagnostics.modelHasSpan ||
+					strnicmp(span_name.c_str(), sub_name, span_name.size()) == 0;
+				diagnostics.modelHasRight =
+					diagnostics.modelHasRight ||
+					strnicmp(right_name.c_str(), sub_name, right_name.size()) == 0;
+			}
+			REF_PTR_RELEASE(sub_object);
+		}
+	}
+	REF_PTR_RELEASE(model_object);
+
+	RenderObjClass *left_object = asset_manager->Create_Render_Obj(left_name.c_str());
+	diagnostics.createLeft = left_object != nullptr;
+	probe_bridge_mesh_metrics(
+		left_object,
+		diagnostics.leftClassId,
+		diagnostics.leftVertices,
+		diagnostics.leftPolygons);
+	REF_PTR_RELEASE(left_object);
+
+	RenderObjClass *span_object = asset_manager->Create_Render_Obj(span_name.c_str());
+	diagnostics.createSpan = span_object != nullptr;
+	probe_bridge_mesh_metrics(
+		span_object,
+		diagnostics.spanClassId,
+		diagnostics.spanVertices,
+		diagnostics.spanPolygons);
+	REF_PTR_RELEASE(span_object);
+
+	RenderObjClass *right_object = asset_manager->Create_Render_Obj(right_name.c_str());
+	diagnostics.createRight = right_object != nullptr;
+	probe_bridge_mesh_metrics(
+		right_object,
+		diagnostics.rightClassId,
+		diagnostics.rightVertices,
+		diagnostics.rightPolygons);
+	REF_PTR_RELEASE(right_object);
+
+	if (!texture.empty()) {
+		TextureClass *bridge_texture = asset_manager->Get_Texture(texture.c_str(), MIP_LEVELS_3);
+		diagnostics.createTexture = bridge_texture != nullptr;
+		REF_PTR_RELEASE(bridge_texture);
+	}
+
+	return diagnostics;
+}
+
+AsciiString probe_first_loadable_bridge_name(
+	TerrainRoadCollection *terrain_roads,
+	FileSystem *file_system)
+{
+	if (terrain_roads == nullptr || file_system == nullptr) {
+		return AsciiString::TheEmptyString;
+	}
+
+	const char *preferred_bridges[] = {
+		"ConcreteTwoLane",
+		"ConcreteOneLane",
+		"ConcreteWide",
+		"WoodenSectional",
+		"EuropeanBridgeWRailing",
+		"EuropeanBridgeAsphalt"
+	};
+	for (const char *name : preferred_bridges) {
+		AsciiString bridge_name(name);
+		if (terrain_roads->findBridge(bridge_name) != nullptr &&
+				probe_bridge_model_available(terrain_roads, file_system, bridge_name) &&
+				probe_bridge_texture_available(terrain_roads, file_system, bridge_name)) {
+			return bridge_name;
+		}
+	}
+
+	for (TerrainRoadType *bridge = terrain_roads->firstBridge(); bridge != nullptr;
+			bridge = terrain_roads->nextBridge(bridge)) {
+		AsciiString bridge_name = bridge->getName();
+		if (probe_bridge_model_available(terrain_roads, file_system, bridge_name) &&
+				probe_bridge_texture_available(terrain_roads, file_system, bridge_name)) {
+			return bridge_name;
+		}
+	}
+	return AsciiString::TheEmptyString;
+}
+
+void probe_bridge_phase_log(const char *phase)
+{
+	std::fprintf(stderr, "cnc-port bridge probe phase=%s\n", phase != nullptr ? phase : "");
+	std::fflush(stderr);
+}
+
+void probe_bridge_metric_log(
+	const char *label,
+	const std::string &original_name,
+	const std::string &installed_name,
+	float length,
+	Int vertices,
+	Int indices)
+{
+	std::fprintf(
+		stderr,
+		"cnc-port bridge probe %s original=%s installed=%s length=%.4f vertices=%d indices=%d\n",
+		label != nullptr ? label : "",
+		original_name.c_str(),
+		installed_name.c_str(),
+		length,
+		vertices,
+		indices);
+	std::fflush(stderr);
 }
 
 std::string probe_ascii_lower(std::string value)
@@ -913,6 +1363,84 @@ std::string probe_road_pair_candidate_summary_json(
 	return json;
 }
 
+std::string probe_bridge_pair_candidate_summary_json(
+	const std::vector<ProbeBridgePairCandidate> &candidates,
+	TerrainRoadCollection *terrain_roads,
+	Int selected_candidate_index)
+{
+	std::vector<std::size_t> candidate_indices;
+	for (std::size_t index = 0; index < candidates.size(); ++index) {
+		const ProbeBridgePairCandidate &candidate = candidates[index];
+		if (candidate.modelAvailable && candidate.textureAvailable && candidate.loadedSourceCells > 0) {
+			candidate_indices.push_back(index);
+		}
+	}
+	if (candidate_indices.empty()) {
+		for (std::size_t index = 0; index < candidates.size(); ++index) {
+			const ProbeBridgePairCandidate &candidate = candidates[index];
+			if (candidate.loadedSourceCells > 0) {
+				candidate_indices.push_back(index);
+			}
+		}
+	}
+	std::sort(candidate_indices.begin(), candidate_indices.end(),
+		[&candidates](std::size_t left, std::size_t right) {
+			const ProbeBridgePairCandidate &left_candidate = candidates[left];
+			const ProbeBridgePairCandidate &right_candidate = candidates[right];
+			const bool left_assets =
+				left_candidate.modelAvailable && left_candidate.textureAvailable;
+			const bool right_assets =
+				right_candidate.modelAvailable && right_candidate.textureAvailable;
+			if (left_assets != right_assets) {
+				return left_assets;
+			}
+			if (left_candidate.loadedSourceCells != right_candidate.loadedSourceCells) {
+				return left_candidate.loadedSourceCells > right_candidate.loadedSourceCells;
+			}
+			return left < right;
+		});
+
+	std::string json = "[";
+	const std::size_t limit = std::min<std::size_t>(candidate_indices.size(), 12);
+	for (std::size_t rank = 0; rank < limit; ++rank) {
+		const std::size_t index = candidate_indices[rank];
+		const ProbeBridgePairCandidate &candidate = candidates[index];
+		const std::string name = candidate.first.name.str();
+		const std::string texture =
+			probe_bridge_texture_name(terrain_roads, candidate.first.name);
+		const std::string model =
+			probe_bridge_model_name(terrain_roads, candidate.first.name);
+		char buffer[900];
+		std::snprintf(
+			buffer,
+			sizeof(buffer),
+			"%s{\"index\":%lu,\"name\":%s,\"model\":%s,"
+			"\"texture\":%s,\"modelAvailable\":%s,"
+			"\"textureAvailable\":%s,\"sourceCells\":%d,"
+			"\"patchOrigin\":[%d,%d],"
+			"\"first\":[%.4f,%.4f],\"second\":[%.4f,%.4f],"
+			"\"selected\":%s}",
+			rank == 0 ? "" : ",",
+			static_cast<unsigned long>(index),
+			json_string(name).c_str(),
+			json_string(model).c_str(),
+			json_string(texture).c_str(),
+			bool_json(candidate.modelAvailable),
+			bool_json(candidate.textureAvailable),
+			candidate.loadedSourceCells,
+			candidate.patchOriginX,
+			candidate.patchOriginY,
+			candidate.first.location.x,
+			candidate.first.location.y,
+			candidate.second.location.x,
+			candidate.second.location.y,
+			bool_json(static_cast<Int>(index) == selected_candidate_index));
+		json += buffer;
+	}
+	json += "]";
+	return json;
+}
+
 struct ProbeMapRoadObjectMetrics
 {
 	Int mapObjects = 0;
@@ -926,6 +1454,21 @@ struct ProbeMapRoadObjectMetrics
 	float secondRoadX = 0.0f;
 	float secondRoadY = 0.0f;
 	std::string firstRoadName;
+};
+
+struct ProbeMapBridgeObjectMetrics
+{
+	Int mapObjects = 0;
+	Int bridgePoint1 = 0;
+	Int bridgePoint2 = 0;
+	Int bridgePairs = 0;
+	Int bridgePairsWithBridgeType = 0;
+	Int firstBridgeFlags = 0;
+	float firstBridgeX = 0.0f;
+	float firstBridgeY = 0.0f;
+	float secondBridgeX = 0.0f;
+	float secondBridgeY = 0.0f;
+	std::string firstBridgeName;
 };
 
 ProbeMapRoadObjectMetrics inspect_map_road_objects(TerrainRoadCollection *terrain_roads)
@@ -964,6 +1507,47 @@ ProbeMapRoadObjectMetrics inspect_map_road_objects(TerrainRoadCollection *terrai
 		}
 		if (object->getFlag(FLAG_ROAD_POINT2)) {
 			++metrics.roadPoint2;
+		}
+	}
+	return metrics;
+}
+
+ProbeMapBridgeObjectMetrics inspect_map_bridge_objects(TerrainRoadCollection *terrain_roads)
+{
+	ProbeMapBridgeObjectMetrics metrics;
+	bool recorded_first_pair = false;
+	for (MapObject *object = MapObject::getFirstMapObject(); object != nullptr; object = object->getNext()) {
+		++metrics.mapObjects;
+		if (object->getFlag(FLAG_BRIDGE_POINT1)) {
+			++metrics.bridgePoint1;
+			MapObject *next = object->getNext();
+			if (next != nullptr && next->getFlag(FLAG_BRIDGE_POINT2)) {
+				++metrics.bridgePairs;
+				TerrainRoadType *bridge = terrain_roads != nullptr ?
+					terrain_roads->findBridge(object->getName()) :
+					nullptr;
+				if (bridge != nullptr) {
+					++metrics.bridgePairsWithBridgeType;
+				}
+				if (!recorded_first_pair) {
+					const Coord3D *first_location = object->getLocation();
+					const Coord3D *second_location = next->getLocation();
+					metrics.firstBridgeName = object->getName().str();
+					metrics.firstBridgeFlags = object->getFlags();
+					if (first_location != nullptr) {
+						metrics.firstBridgeX = first_location->x;
+						metrics.firstBridgeY = first_location->y;
+					}
+					if (second_location != nullptr) {
+						metrics.secondBridgeX = second_location->x;
+						metrics.secondBridgeY = second_location->y;
+					}
+					recorded_first_pair = true;
+				}
+			}
+		}
+		if (object->getFlag(FLAG_BRIDGE_POINT2)) {
+			++metrics.bridgePoint2;
 		}
 	}
 	return metrics;
@@ -1352,6 +1936,85 @@ bool select_probe_road_pair_for_loaded_patch(
 	selected_candidate_index = best_index;
 	selected_candidate_source_cells = best_loaded;
 	ProbeRoadPairCandidate &selected =
+		candidates[static_cast<std::size_t>(best_index)];
+	load.patchOriginX = selected.patchOriginX;
+	load.patchOriginY = selected.patchOriginY;
+	record_patch_height_metrics(load);
+	return true;
+}
+
+bool select_probe_bridge_pair_for_loaded_patch(
+	WorldHeightMap *map,
+	ProbeTerrainMapPatchLoad &load,
+	std::vector<ProbeBridgePairCandidate> &candidates,
+	TerrainRoadCollection *terrain_roads,
+	FileSystem *file_system,
+	Int &selected_candidate_index,
+	Int &selected_candidate_source_cells)
+{
+	selected_candidate_index = -1;
+	selected_candidate_source_cells = 0;
+	if (map == nullptr || candidates.empty() || load.width <= 0 || load.height <= 0) {
+		return false;
+	}
+
+	const Int max_origin_x = std::max(0, load.width - (load.patchCells + 1));
+	const Int max_origin_y = std::max(0, load.height - (load.patchCells + 1));
+	Int best_loaded = -1;
+	Int best_index = -1;
+	bool best_has_available_assets = false;
+
+	for (std::size_t index = 0; index < candidates.size(); ++index) {
+		ProbeBridgePairCandidate &candidate = candidates[index];
+		const float bridge_center_x =
+			(candidate.first.location.x + candidate.second.location.x) * 0.5f;
+		const float bridge_center_y =
+			(candidate.first.location.y + candidate.second.location.y) * 0.5f;
+		const Int bridge_cell_x =
+			static_cast<Int>(bridge_center_x / MAP_XY_FACTOR) + load.border;
+		const Int bridge_cell_y =
+			static_cast<Int>(bridge_center_y / MAP_XY_FACTOR) + load.border;
+		candidate.patchOriginX =
+			std::min(std::max(bridge_cell_x - load.patchCells / 2, load.border), max_origin_x);
+		candidate.patchOriginY =
+			std::min(std::max(bridge_cell_y - load.patchCells / 2, load.border), max_origin_y);
+		candidate.loadedSourceCells =
+			ProbeWorldHeightMapInspector::countLoadedSourceCells(
+				map,
+				candidate.patchOriginX,
+				candidate.patchOriginY,
+				load.patchCells);
+		candidate.modelAvailable =
+			probe_bridge_model_available(
+				terrain_roads,
+				file_system,
+				candidate.first.name);
+		candidate.textureAvailable =
+			probe_bridge_texture_available(
+				terrain_roads,
+				file_system,
+				candidate.first.name);
+		const bool has_available_assets_and_source =
+			candidate.modelAvailable && candidate.textureAvailable && candidate.loadedSourceCells > 0;
+		const bool better_candidate =
+			best_index < 0 ||
+			(has_available_assets_and_source && !best_has_available_assets) ||
+			(has_available_assets_and_source == best_has_available_assets &&
+				candidate.loadedSourceCells > best_loaded);
+		if (better_candidate) {
+			best_loaded = candidate.loadedSourceCells;
+			best_index = static_cast<Int>(index);
+			best_has_available_assets = has_available_assets_and_source;
+		}
+	}
+
+	if (best_index < 0) {
+		return false;
+	}
+
+	selected_candidate_index = best_index;
+	selected_candidate_source_cells = best_loaded;
+	ProbeBridgePairCandidate &selected =
 		candidates[static_cast<std::size_t>(best_index)];
 	load.patchOriginX = selected.patchOriginX;
 	load.patchOriginY = selected.patchOriginY;
@@ -2182,6 +2845,87 @@ public:
 	}
 };
 
+class ProbeW3DBridgeBuffer final : public W3DBridgeBuffer
+{
+public:
+	bool initialized() const { return m_initialized; }
+	Int numBridges() const { return m_numBridges; }
+	Int curNumBridgeVertices() const { return m_curNumBridgeVertices; }
+	Int curNumBridgeIndices() const { return m_curNumBridgeIndices; }
+	bool hasVertexBuffer() const { return m_vertexBridge != nullptr; }
+	bool hasIndexBuffer() const { return m_indexBridge != nullptr; }
+
+	bool drawBridgeGeometryStepwise(CameraClass *camera, Bool wireframe)
+	{
+		probe_bridge_phase_log("bridge-draw-cull");
+		cull(camera);
+		if (m_curNumBridgeIndices == 0 || m_numBridges <= 0) {
+			return false;
+		}
+
+		static ShaderClass detail_alpha_shader(SHADE_CNST(
+			ShaderClass::PASS_LEQUAL,
+			ShaderClass::DEPTH_WRITE_ENABLE,
+			ShaderClass::COLOR_WRITE_ENABLE,
+			ShaderClass::SRCBLEND_SRC_ALPHA,
+			ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA,
+			ShaderClass::FOG_DISABLE,
+			ShaderClass::GRADIENT_MODULATE,
+			ShaderClass::SECONDARY_GRADIENT_DISABLE,
+			ShaderClass::TEXTURING_ENABLE,
+			ShaderClass::ALPHATEST_ENABLE,
+			ShaderClass::CULL_MODE_DISABLE,
+			ShaderClass::DETAILCOLOR_DISABLE,
+			ShaderClass::DETAILALPHA_DISABLE));
+
+		probe_bridge_phase_log("bridge-draw-material");
+		DX8Wrapper::Set_Material(m_vertexMaterial);
+		probe_bridge_phase_log("bridge-draw-index-buffer");
+		DX8Wrapper::Set_Index_Buffer(m_indexBridge, 0);
+		probe_bridge_phase_log("bridge-draw-vertex-buffer");
+		DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
+		probe_bridge_phase_log("bridge-draw-shader");
+		DX8Wrapper::Set_Shader(detail_alpha_shader);
+		probe_bridge_phase_log("bridge-draw-apply");
+		DX8Wrapper::Apply_Render_State_Changes();
+		probe_bridge_phase_log("bridge-draw-render-bridge");
+		for (Int index = 0; index < m_numBridges; ++index) {
+			if (m_bridges[index].isEnabled() && m_bridges[index].isVisible()) {
+				m_bridges[index].renderBridge(wireframe);
+			}
+		}
+		probe_bridge_phase_log("bridge-draw-render-bridge-done");
+		return true;
+	}
+
+	bool firstBridgeManualGeometry(Int &vertices, Int &indices, bool &exception)
+	{
+		vertices = 0;
+		indices = 0;
+		exception = false;
+		if (m_numBridges <= 0) {
+			return false;
+		}
+
+		std::vector<VertexFormatXYZNDUV1> vb(MAX_BRIDGE_VERTEX + 4);
+		std::vector<UnsignedShort> ib(MAX_BRIDGE_INDEX + 4);
+		try {
+			m_bridges[0].getIndicesNVertices(
+				ib.data(),
+				vb.data(),
+				&indices,
+				&vertices,
+				nullptr);
+		} catch (...) {
+			exception = true;
+			vertices = 0;
+			indices = 0;
+			return false;
+		}
+		return vertices > 0 && indices > 0;
+	}
+};
+
 class ProbeHeightMapRenderObjWithPropBuffer final : public HeightMapRenderObjClass
 {
 public:
@@ -2282,6 +3026,59 @@ private:
 	Int m_probeRoadDrawMaxX = 0;
 	Int m_probeRoadDrawMinY = 0;
 	Int m_probeRoadDrawMaxY = 0;
+};
+
+class ProbeHeightMapRenderObjWithBridgeBuffer final : public HeightMapRenderObjClass
+{
+public:
+	ProbeHeightMapRenderObjWithBridgeBuffer()
+	{
+		m_bridgeBuffer = nullptr;
+	}
+
+	~ProbeHeightMapRenderObjWithBridgeBuffer() override
+	{
+		if (m_bridgeBuffer != nullptr) {
+			delete m_bridgeBuffer;
+			m_bridgeBuffer = nullptr;
+		}
+	}
+
+	ProbeW3DBridgeBuffer *installProbeBridgeBuffer()
+	{
+		if (m_bridgeBuffer != nullptr) {
+			delete m_bridgeBuffer;
+		}
+		m_bridgeBuffer = NEW ProbeW3DBridgeBuffer;
+		return static_cast<ProbeW3DBridgeBuffer *>(m_bridgeBuffer);
+	}
+
+	void Render(RenderInfoClass &rinfo) override
+	{
+		W3DBridgeBuffer *bridge_buffer = m_bridgeBuffer;
+		m_probeBridgeDrawInvoked = false;
+		m_bridgeBuffer = nullptr;
+		probe_bridge_phase_log("render-object-terrain");
+		HeightMapRenderObjClass::Render(rinfo);
+		probe_bridge_phase_log("render-object-bridge");
+		m_bridgeBuffer = bridge_buffer;
+		if (m_bridgeBuffer == nullptr || ShaderClass::Is_Backface_Culling_Inverted()) {
+			return;
+		}
+
+		DX8Wrapper::Set_Texture(0, nullptr);
+		DX8Wrapper::Set_Texture(1, nullptr);
+		ShaderClass::Invalidate();
+		DX8Wrapper::Apply_Render_State_Changes();
+		m_probeBridgeDrawInvoked = true;
+		static_cast<ProbeW3DBridgeBuffer *>(m_bridgeBuffer)->drawBridgeGeometryStepwise(&rinfo.Camera, m_disableTextures);
+		probe_bridge_phase_log("render-object-bridge-done");
+	}
+
+	bool probeBridgeDrawInvoked() const { return m_probeBridgeDrawInvoked; }
+
+private:
+	bool m_probeBridgeDrawInvoked = false;
 };
 
 class ProbeScriptEngineView : public ScriptEngine
@@ -3240,6 +4037,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 
 	ProbeTerrainMapPatchLoad map_load;
 	ProbeTerrainArchiveContext archive_context;
+	probe_bridge_phase_log("prepare");
 	archive_context_ready = archive_context.prepare(
 		ini_archive_path,
 		maps_archive_path,
@@ -5187,6 +5985,7 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		map_load,
 		road_map_entry);
 	if (archive_context_ready) {
+		probe_bridge_phase_log("load-runtime-archive-set");
 		runtime_archive_set_loaded_for_selection =
 			archive_context.loadRuntimeArchiveSet(
 				runtime_archive_directory,
@@ -5195,6 +5994,7 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 
 	WorldHeightMap *map = nullptr;
 	if (archive_context_ready && map_load.roadsIniParsed) {
+		probe_bridge_phase_log("parse-world-height-map");
 		WorldHeightMap::freeListOfMapObjects();
 		CachedFileInputStream stream;
 		map_load.mapStreamOpen = stream.open(AsciiString(road_map_entry));
@@ -5803,6 +6603,876 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	return target_json.c_str();
 }
 
+const char *run_ww3d_terrain_bridge_buffer_scene_probe(
+	std::string &target_json,
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *runtime_archive_directory,
+	const char *runtime_archive_mask,
+	const char *map_entry)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+	const char *bridge_map_entry =
+		map_entry != nullptr && map_entry[0] != '\0' ?
+			map_entry :
+			kArchiveBridgeTerrainMapEntry;
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = nullptr;
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int init_height_data_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool archive_context_ready = false;
+	bool runtime_archive_set_loaded_for_selection = false;
+	bool map_created = false;
+	bool global_data_ready = false;
+	bool asset_manager_created = false;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
+	bool water_transparency_ready = false;
+	bool shader_manager_initialized = false;
+	bool render_object_created = false;
+	bool render_object_initialized = false;
+	bool bridge_buffer_installed = false;
+	bool bridge_buffer_initialized = false;
+	bool load_bridges_invoked = false;
+	bool update_center_invoked = false;
+	bool scene_created = false;
+	bool scene_object_added = false;
+	bool bridge_scene_draw_flushed = false;
+	Int bridges_after_load = -1;
+	Int bridge_vertices_after_update = -1;
+	Int bridge_indices_after_update = -1;
+	Int bridge_manual_vertices_after_load = -1;
+	Int bridge_manual_indices_after_load = -1;
+	bool bridge_manual_geometry_after_load = false;
+	bool bridge_manual_geometry_exception = false;
+	float bridge_center_x = 0.0f;
+	float bridge_center_y = 0.0f;
+	float bridge_center_z = 0.0f;
+	float bridge_length_xy = 0.0f;
+	float camera_eye_x = 0.0f;
+	float camera_eye_y = 0.0f;
+	float camera_eye_z = 0.0f;
+	float camera_target_x = 0.0f;
+	float camera_target_y = 0.0f;
+	float camera_target_z = 0.0f;
+	bool logical_map_stream_open = false;
+	bool logical_map_parsed = false;
+	bool logical_map_parse_exception = false;
+	bool bridge_pair_candidate_selected = false;
+	bool bridge_pair_map_objects_installed = false;
+	Int bridge_pair_candidate_count = 0;
+	Int selected_bridge_pair_candidate = -1;
+	Int selected_bridge_pair_source_cells = 0;
+	Int bridge_pair_candidates_with_source = 0;
+	Int bridge_pair_candidates_with_model = 0;
+	Int bridge_pair_candidates_with_texture = 0;
+	Int bridge_pair_candidates_with_assets = 0;
+	Int bridge_pair_candidates_with_assets_and_source = 0;
+	bool selected_bridge_pair_model_available = false;
+	bool selected_bridge_pair_texture_available = false;
+	bool bridge_template_substituted = false;
+	std::string selected_bridge_original_name;
+	std::string selected_bridge_installed_name;
+	std::string bridge_pair_candidate_summaries_json = "[]";
+	std::vector<ProbeBridgePairCandidate> bridge_pair_candidates;
+	ProbeBridgeAssetDiagnostics bridge_asset_diagnostics;
+
+	ProbeTerrainMapPatchLoad map_load;
+	ProbeTerrainArchiveContext archive_context;
+	archive_context_ready = archive_context.prepare(
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		map_load,
+		bridge_map_entry);
+	if (archive_context_ready) {
+		runtime_archive_set_loaded_for_selection =
+			archive_context.loadRuntimeArchiveSet(
+				runtime_archive_directory,
+				runtime_archive_mask);
+	}
+
+	WorldHeightMap *map = nullptr;
+	if (archive_context_ready && map_load.roadsIniParsed) {
+		WorldHeightMap::freeListOfMapObjects();
+		CachedFileInputStream stream;
+		map_load.mapStreamOpen = stream.open(AsciiString(bridge_map_entry));
+		if (map_load.mapStreamOpen) {
+			try {
+				map_load.map = NEW WorldHeightMap(&stream);
+				map = map_load.map;
+				map_created = map != nullptr;
+				map_load.mapParsed = map_created;
+				if (map_created) {
+					record_parsed_map_metrics(map_load);
+				}
+			} catch (...) {
+				map_load.mapParseException = true;
+				REF_PTR_RELEASE(map_load.map);
+				map = nullptr;
+			}
+			stream.close();
+		}
+	}
+	if (map_created) {
+		probe_bridge_phase_log("parse-bridge-map-objects");
+		parse_probe_bridge_map_objects_from_archive(
+			bridge_map_entry,
+			bridge_pair_candidates,
+			logical_map_stream_open,
+			logical_map_parsed,
+			logical_map_parse_exception);
+	}
+	bridge_pair_candidate_count =
+		static_cast<Int>(std::min<std::size_t>(
+			bridge_pair_candidates.size(),
+			static_cast<std::size_t>(2147483647)));
+
+	if (map_created) {
+		ProbeWorldHeightMapInspector::recordTextureClassLoadMetrics(
+			map,
+			archive_context.terrainTypes(),
+			archive_context.fileSystem(),
+			map_load);
+	}
+
+	if (map_created && logical_map_parsed) {
+		probe_bridge_phase_log("select-bridge-pair");
+		bridge_pair_candidate_selected =
+			select_probe_bridge_pair_for_loaded_patch(
+				map,
+				map_load,
+				bridge_pair_candidates,
+				archive_context.terrainRoads(),
+				archive_context.fileSystem(),
+				selected_bridge_pair_candidate,
+				selected_bridge_pair_source_cells);
+		if (bridge_pair_candidate_selected) {
+			for (const ProbeBridgePairCandidate &candidate : bridge_pair_candidates) {
+				if (candidate.loadedSourceCells > 0) {
+					++bridge_pair_candidates_with_source;
+				}
+				if (candidate.modelAvailable) {
+					++bridge_pair_candidates_with_model;
+				}
+				if (candidate.textureAvailable) {
+					++bridge_pair_candidates_with_texture;
+				}
+				if (candidate.modelAvailable && candidate.textureAvailable) {
+					++bridge_pair_candidates_with_assets;
+				}
+				if (candidate.modelAvailable &&
+						candidate.textureAvailable &&
+						candidate.loadedSourceCells > 0) {
+					++bridge_pair_candidates_with_assets_and_source;
+				}
+			}
+			const ProbeBridgePairCandidate &selected =
+				bridge_pair_candidates[
+					static_cast<std::size_t>(selected_bridge_pair_candidate)];
+			selected_bridge_pair_model_available = selected.modelAvailable;
+			selected_bridge_pair_texture_available = selected.textureAvailable;
+			bridge_pair_candidate_summaries_json =
+				probe_bridge_pair_candidate_summary_json(
+					bridge_pair_candidates,
+					archive_context.terrainRoads(),
+					selected_bridge_pair_candidate);
+			selected_bridge_original_name = selected.first.name.str();
+			ProbeBridgePairCandidate installed = selected;
+			if (!selected_bridge_pair_model_available ||
+					!selected_bridge_pair_texture_available) {
+				probe_bridge_phase_log("select-loadable-bridge-fallback");
+				AsciiString fallback_bridge_name =
+					probe_first_loadable_bridge_name(
+						archive_context.terrainRoads(),
+						archive_context.fileSystem());
+				if (!fallback_bridge_name.isEmpty()) {
+					installed.first.name = fallback_bridge_name;
+					installed.second.name = fallback_bridge_name;
+					selected_bridge_installed_name = fallback_bridge_name.str();
+					selected_bridge_pair_model_available =
+						probe_bridge_model_available(
+							archive_context.terrainRoads(),
+							archive_context.fileSystem(),
+							fallback_bridge_name);
+					selected_bridge_pair_texture_available =
+						probe_bridge_texture_available(
+							archive_context.terrainRoads(),
+							archive_context.fileSystem(),
+							fallback_bridge_name);
+					bridge_template_substituted =
+						selected_bridge_installed_name != selected_bridge_original_name;
+				}
+			} else {
+				selected_bridge_installed_name = selected_bridge_original_name;
+			}
+			probe_bridge_phase_log("install-bridge-map-objects");
+			bridge_pair_map_objects_installed =
+				install_probe_bridge_pair_map_objects(installed);
+			bridge_center_x = (selected.first.location.x + selected.second.location.x) * 0.5f;
+			bridge_center_y = (selected.first.location.y + selected.second.location.y) * 0.5f;
+			const float bridge_delta_x = selected.second.location.x - selected.first.location.x;
+			const float bridge_delta_y = selected.second.location.y - selected.first.location.y;
+			bridge_length_xy = std::sqrt(bridge_delta_x * bridge_delta_x + bridge_delta_y * bridge_delta_y);
+			probe_bridge_metric_log(
+				"selected",
+				selected_bridge_original_name,
+				selected_bridge_installed_name,
+				bridge_length_xy,
+				0,
+				0);
+		}
+	}
+
+	ProbeMapBridgeObjectMetrics bridge_object_metrics =
+		inspect_map_bridge_objects(archive_context.terrainRoads());
+	if (map_created && bridge_object_metrics.bridgePairs > 0) {
+		if (!bridge_pair_candidate_selected) {
+			bridge_center_x =
+				(bridge_object_metrics.firstBridgeX + bridge_object_metrics.secondBridgeX) * 0.5f;
+			bridge_center_y =
+				(bridge_object_metrics.firstBridgeY + bridge_object_metrics.secondBridgeY) * 0.5f;
+		}
+		record_patch_height_metrics(map_load);
+	}
+
+	if (map_created) {
+		global_data = NEW GlobalData;
+		if (global_data != nullptr) {
+			configure_global_data(*global_data);
+			TheWritableGlobalData = global_data;
+			global_data_ready = true;
+		}
+	}
+
+	WaterTransparencySetting *old_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+	WaterTransparencySetting *probe_water_transparency = nullptr;
+	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
+	ProbeHeightMapRenderObjWithBridgeBuffer *render_object = nullptr;
+	ProbeW3DBridgeBuffer *bridge_buffer = nullptr;
+	RTS3DScene *scene = nullptr;
+	CameraClass *camera = nullptr;
+	WW3DAssetManager *asset_manager = nullptr;
+
+	if (global_data_ready) {
+		probe_bridge_phase_log("ww3d-init");
+		init_result = WW3D::Init(nullptr, nullptr, false);
+	}
+	if (succeeded(init_result)) {
+		probe_bridge_phase_log("asset-manager");
+		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager_created = asset_manager != nullptr;
+	}
+	if (asset_manager != nullptr) {
+		asset_manager->Set_WW3D_Load_On_Demand(true);
+	}
+	if (asset_manager_created) {
+		probe_bridge_phase_log("set-render-device");
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		probe_bridge_phase_log("install-runtime-assets");
+		WW3D::Set_Thumbnail_Enabled(false);
+		W3DShaderManager::init();
+		shader_manager_initialized = true;
+
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_set(runtime_archive_directory, runtime_archive_mask);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+	}
+
+	if (runtime_asset_system_installed && texture_file_factory_installed) {
+		probe_bridge_phase_log("asset-manager-bridge-diagnostics");
+		const std::string diagnostics_bridge_name =
+			!selected_bridge_installed_name.empty() ?
+				selected_bridge_installed_name :
+				selected_bridge_original_name;
+		bridge_asset_diagnostics =
+			probe_bridge_asset_runtime_diagnostics(
+				asset_manager,
+				archive_context.terrainRoads(),
+				archive_context.fileSystem(),
+				diagnostics_bridge_name);
+	}
+
+	if (succeeded(set_device_result) &&
+			map_created &&
+			bridge_pair_map_objects_installed &&
+			bridge_object_metrics.bridgePairs > 0) {
+		probe_bridge_phase_log("init-height-data");
+		if (old_water_transparency != nullptr) {
+			water_transparency_ready = true;
+		} else {
+			probe_water_transparency = newInstance(WaterTransparencySetting);
+			TheWaterTransparency = probe_water_transparency;
+			water_transparency_ready = probe_water_transparency != nullptr;
+		}
+
+		map->setDrawWidth(kMapPatchVertices);
+		map->setDrawHeight(kMapPatchVertices);
+		map->setDrawOrg(map_load.patchOriginX, map_load.patchOriginY);
+
+		render_object = NEW_REF(ProbeHeightMapRenderObjWithBridgeBuffer, ());
+		render_object_created = render_object != nullptr;
+		if (render_object_created) {
+			Matrix3D terrain_transform(true);
+			render_object->Set_Transform(terrain_transform);
+			TheTerrainRenderObject = render_object;
+			init_height_data_result = render_object->initHeightData(
+				map->getDrawWidth(),
+				map->getDrawHeight(),
+				map,
+				nullptr,
+				TRUE);
+			render_object_initialized = init_height_data_result == 0;
+		}
+	}
+
+	if (water_transparency_ready && render_object_initialized) {
+		probe_bridge_phase_log("install-bridge-buffer");
+		bridge_buffer = render_object->installProbeBridgeBuffer();
+		bridge_buffer_installed = bridge_buffer != nullptr;
+		bridge_buffer_initialized = bridge_buffer_installed && bridge_buffer->initialized();
+	}
+
+	if (bridge_buffer_initialized) {
+		probe_bridge_phase_log("load-bridges");
+		bridge_buffer->loadBridges(nullptr, FALSE);
+		probe_bridge_phase_log("load-bridges-done");
+		load_bridges_invoked = true;
+		bridges_after_load = bridge_buffer->numBridges();
+		bridge_manual_geometry_after_load =
+			bridge_buffer->firstBridgeManualGeometry(
+				bridge_manual_vertices_after_load,
+				bridge_manual_indices_after_load,
+				bridge_manual_geometry_exception);
+		probe_bridge_metric_log(
+			"after-load",
+			selected_bridge_original_name,
+			selected_bridge_installed_name,
+			bridge_length_xy,
+			bridges_after_load,
+			bridge_manual_vertices_after_load);
+
+		bridge_center_z = static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE + 60.0f;
+		camera_target_x = bridge_center_x;
+		camera_target_y = bridge_center_y;
+		camera_target_z = bridge_center_z;
+		camera_eye_x = bridge_center_x;
+		camera_eye_y = bridge_center_y - 360.0f;
+		camera_eye_z = bridge_center_z + 300.0f;
+
+		camera = W3DNEW CameraClass();
+		if (camera != nullptr) {
+			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
+			camera->Set_Clip_Planes(1.0f, 5000.0f);
+			Matrix3D camera_transform(true);
+			camera_transform.Look_At(
+				Vector3(camera_eye_x, camera_eye_y, camera_eye_z),
+				Vector3(camera_target_x, camera_target_y, camera_target_z),
+				0.0f);
+			camera->Set_Transform(camera_transform);
+		}
+	}
+
+	if (camera != nullptr && load_bridges_invoked) {
+		probe_bridge_phase_log("update-center");
+		if (bridge_buffer != nullptr) {
+			bridge_buffer->doFullUpdate();
+		}
+		render_object->updateCenter(camera, nullptr);
+		if (bridge_buffer != nullptr) {
+			bridge_buffer->updateCenter(camera, nullptr);
+		}
+		probe_bridge_phase_log("update-center-done");
+		update_center_invoked = true;
+		bridge_vertices_after_update =
+			bridge_buffer != nullptr ? bridge_buffer->curNumBridgeVertices() : -1;
+		bridge_indices_after_update =
+			bridge_buffer != nullptr ? bridge_buffer->curNumBridgeIndices() : -1;
+		probe_bridge_metric_log(
+			"after-update",
+			selected_bridge_original_name,
+			selected_bridge_installed_name,
+			bridge_length_xy,
+			bridge_vertices_after_update,
+			bridge_indices_after_update);
+	}
+
+	if (camera != nullptr &&
+			update_center_invoked &&
+			bridge_vertices_after_update > 0 &&
+			bridge_indices_after_update > 0) {
+		scene = NEW_REF(RTS3DScene, ());
+		scene_created = scene != nullptr;
+		if (scene_created) {
+			scene->Add_Render_Object(render_object);
+			scene_object_added = render_object->Peek_Scene() == scene;
+		}
+	}
+
+	if (scene_object_added) {
+		probe_bridge_phase_log("render-scene");
+		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			render_result = WW3D::Render(scene, camera);
+			end_render_result = WW3D::End_Render(false);
+		}
+		probe_bridge_phase_log("render-scene-done");
+	}
+
+	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	bridge_scene_draw_flushed =
+		state != nullptr &&
+		state->draw_indexed_primitive_calls >= 3 &&
+		state->last_draw_stream_source_stride == sizeof(VertexFormatXYZNDUV1) &&
+		state->last_draw_vertex_shader == DX8_FVF_XYZNDUV1 &&
+		state->last_draw_vertex_count > 0 &&
+		state->last_draw_primitive_count > 0 &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE;
+	const IniLayoutComparison ini_layout = compare_ini_layout();
+	const bool ok =
+		state != nullptr &&
+		ini_layout.matches &&
+		archive_context_ready &&
+		runtime_archive_set_loaded_for_selection &&
+		global_data_ready &&
+		succeeded(init_result) &&
+		asset_manager_created &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		texture_file_factory_installed &&
+		map_load.iniArchiveLoaded &&
+		map_load.mapsArchiveLoaded &&
+		map_load.terrainArchiveLoaded &&
+		map_load.terrainIniParsed &&
+		map_load.terrainTypeCount > 0 &&
+		map_load.roadsIniExists &&
+		map_load.roadsIniParsed &&
+		map_load.terrainBridgeCount > 0 &&
+		map_load.mapEntryExists &&
+		map_load.mapEntryOpenable &&
+		map_load.mapStreamOpen &&
+		map_created &&
+		logical_map_stream_open &&
+		logical_map_parsed &&
+		!logical_map_parse_exception &&
+		bridge_pair_candidate_count > 0 &&
+		bridge_pair_candidate_selected &&
+		bridge_pair_map_objects_installed &&
+		selected_bridge_pair_candidate >= 0 &&
+		selected_bridge_pair_model_available &&
+		selected_bridge_pair_texture_available &&
+		map_load.mapBytes > 0 &&
+		map_load.width > kMapPatchCells &&
+		map_load.height > kMapPatchCells &&
+		map_load.heightChecksum > 0 &&
+		map_load.patchHeightChecksum > 0 &&
+		bridge_object_metrics.mapObjects > 0 &&
+		bridge_object_metrics.bridgePairs > 0 &&
+		bridge_object_metrics.bridgePairsWithBridgeType > 0 &&
+		water_transparency_ready &&
+		shader_manager_initialized &&
+		render_object_created &&
+		render_object_initialized &&
+		bridge_buffer_installed &&
+		bridge_buffer_initialized &&
+		load_bridges_invoked &&
+		bridges_after_load > 0 &&
+		update_center_invoked &&
+		bridge_vertices_after_update > 0 &&
+		bridge_indices_after_update > 0 &&
+		scene_created &&
+		scene_object_added &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		render_object != nullptr &&
+		render_object->probeBridgeDrawInvoked() &&
+		bridge_scene_draw_flushed &&
+		state->browser_buffer_create_calls >= 4 &&
+		state->browser_buffer_update_calls >= 4 &&
+		state->set_stream_source_calls >= 2 &&
+		state->set_indices_calls >= 2 &&
+		state->set_texture_calls >= 1;
+
+	const std::string runtime_archive_directory_json =
+		json_string(runtime_archive_directory != nullptr ? runtime_archive_directory : "");
+	const std::string runtime_archive_mask_json =
+		json_string(runtime_archive_mask != nullptr ? runtime_archive_mask : "");
+	const std::string terrain_map_entry_json = json_string(bridge_map_entry);
+	const std::string first_patch_texture_class_json =
+		json_string(map_load.firstPatchTextureClassName);
+	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+	const std::string first_bridge_name_json = json_string(bridge_object_metrics.firstBridgeName);
+	const std::string selected_bridge_original_name_json =
+		json_string(selected_bridge_original_name);
+	const std::string selected_bridge_installed_name_json =
+		json_string(selected_bridge_installed_name);
+	const AsciiString selected_bridge_installed_ascii(
+		selected_bridge_installed_name.empty() ?
+			selected_bridge_original_name.c_str() :
+			selected_bridge_installed_name.c_str());
+	const std::string selected_bridge_model_json =
+		json_string(selected_bridge_pair_candidate >= 0 ?
+			probe_bridge_model_name(
+				archive_context.terrainRoads(),
+				selected_bridge_installed_ascii) :
+			"");
+	const std::string selected_bridge_texture_json =
+		json_string(selected_bridge_pair_candidate >= 0 ?
+			probe_bridge_texture_name(
+				archive_context.terrainRoads(),
+				selected_bridge_installed_ascii) :
+			"");
+
+	char buffer[30000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
+		"W3DBridgeBuffer::loadBridges/updateCenter -> W3DBridge::renderBridge\","
+		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
+		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
+		"\"results\":{\"archiveContextReady\":%s,\"globalDataReady\":%s,"
+		"\"runtimeArchiveSetLoadedForSelection\":%s,"
+		"\"init\":%d,\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"logicalMapStreamOpen\":%s,\"logicalMapParsed\":%s,"
+		"\"logicalMapParseException\":%s,"
+		"\"bridgePairCandidateSelected\":%s,"
+		"\"bridgePairMapObjectsInstalled\":%s,"
+		"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
+		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
+		"\"initHeightData\":%d,\"bridgeBufferInstalled\":%s,"
+		"\"bridgeBufferInitialized\":%s,\"loadBridgesInvoked\":%s,"
+		"\"updateCenterInvoked\":%s,\"sceneCreated\":%s,"
+		"\"sceneObjectAdded\":%s,\"beginRender\":%d,\"render\":%d,"
+			"\"endRender\":%d,\"bridgeDrawInvoked\":%s,"
+			"\"bridgeSceneDrawFlushed\":%s},"
+		"\"ini\":{\"terrainEntry\":\"Data\\\\INI\\\\Terrain.ini\","
+		"\"terrainLoaded\":%s,\"terrainEntryExists\":%s,"
+		"\"terrainParsed\":%s,"
+		"\"roadsEntry\":\"Data\\\\INI\\\\Roads.ini\","
+		"\"defaultRoadsEntry\":\"Data\\\\INI\\\\Default\\\\Roads.ini\","
+		"\"defaultRoadsEntryExists\":%s,\"defaultRoadsParsed\":%s,"
+		"\"roadsEntryExists\":%s,\"roadsParsed\":%s,"
+		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp + "
+		"INITerrainRoad.cpp + INITerrainBridge.cpp + TerrainRoads.cpp\","
+		"\"originalIniParser\":true,\"terrainTypeCount\":%lu,"
+		"\"roadCount\":%lu,\"bridgeCount\":%lu},"
+		"\"iniLayout\":%s,"
+		"\"map\":{\"entry\":%s,\"entryExists\":%s,\"entryOpenable\":%s,"
+		"\"streamOpen\":%s,\"parsed\":%s,\"bytes\":%d,"
+		"\"width\":%d,\"height\":%d,\"border\":%d,"
+		"\"heightChecksum\":%lu},"
+		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
+		"\"tileSource\":\"shipped-map-heightmap\","
+		"\"renderObject\":\"ProbeHeightMapRenderObjWithBridgeBuffer\","
+		"\"transform\":\"identity\","
+		"\"renderWindowWidth\":%d,\"renderWindowHeight\":%d,"
+		"\"renderOriginX\":%d,\"renderOriginY\":%d,"
+		"\"patchOriginX\":%d,\"patchOriginY\":%d,"
+		"\"patchCenterHeight\":%u,\"patchHeightChecksum\":%lu,"
+		"\"tileDiagnostics\":{\"bitmapTiles\":%d,\"textureClasses\":%d,"
+		"\"sourceTilesLoaded\":%d,\"sourceTilesPositioned\":%d,"
+		"\"patchCells\":%d,\"patchCellsWithSource\":%d,"
+		"\"patchCellsMissingSource\":%d,"
+		"\"firstPatchTile\":{\"tileIndex\":%d,\"baseTileIndex\":%d,"
+		"\"sourceTileLoaded\":%s,\"textureClass\":%d,"
+		"\"textureClassName\":%s,\"texturePositionX\":%d,"
+		"\"texturePositionY\":%d}}},"
+		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
+		"RTS3DScene::Customized_Render -> ProbeHeightMapRenderObjWithBridgeBuffer::Render -> "
+		"HeightMapRenderObjClass::Render -> W3DBridge::renderBridge\","
+		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
+		"\"bridgeObjects\":{\"mapObjects\":%d,\"point1\":%d,\"point2\":%d,"
+		"\"candidatePairs\":%d,\"selectedCandidate\":%d,"
+		"\"candidatesWithSource\":%d,"
+		"\"candidatesWithModel\":%d,\"candidatesWithTexture\":%d,"
+		"\"candidatesWithAssets\":%d,"
+		"\"candidatesWithAssetsAndSource\":%d,"
+			"\"selectedPatchSourceCells\":%d,"
+			"\"selectedModelAvailable\":%s,"
+			"\"selectedTextureAvailable\":%s,"
+			"\"templateSubstitutedForAvailableAssets\":%s,"
+			"\"selectedOriginalName\":%s,\"selectedInstalledName\":%s,"
+			"\"selectedModel\":%s,\"selectedTexture\":%s,"
+			"\"assetManager\":{\"modelArchiveExists\":%s,"
+			"\"textureArchiveExists\":%s,"
+			"\"bareModelFileAvailable\":%s,"
+			"\"bareTextureFileAvailable\":%s,"
+			"\"loadBareModel\":%s,\"createModel\":%s,"
+			"\"modelClassId\":%d,\"modelSubObjects\":%d,"
+			"\"modelHasLeft\":%s,\"modelHasSpan\":%s,"
+			"\"modelHasRight\":%s,\"createLeft\":%s,"
+			"\"createSpan\":%s,\"createRight\":%s,"
+			"\"leftClassId\":%d,\"spanClassId\":%d,"
+			"\"rightClassId\":%d,\"leftVertices\":%d,"
+			"\"spanVertices\":%d,\"rightVertices\":%d,"
+			"\"leftPolygons\":%d,\"spanPolygons\":%d,"
+			"\"rightPolygons\":%d,\"createTexture\":%s},"
+			"\"topAssetSourceCandidates\":%s,"
+			"\"pairs\":%d,\"pairsWithBridgeType\":%d,\"firstName\":%s,"
+		"\"firstFlags\":%d,\"first\":[%.4f,%.4f],\"second\":[%.4f,%.4f],"
+		"\"center\":[%.4f,%.4f,%.4f]},"
+			"\"bridges\":{\"afterLoad\":%d,\"manualGeometryAfterLoad\":%s,"
+			"\"manualGeometryException\":%s,"
+			"\"manualVerticesAfterLoad\":%d,"
+			"\"manualIndicesAfterLoad\":%d,"
+			"\"verticesAfterUpdate\":%d,"
+			"\"indicesAfterUpdate\":%d,\"hasVertexBuffer\":%s,"
+			"\"hasIndexBuffer\":%s},"
+		"\"camera\":{\"eye\":[%.4f,%.4f,%.4f],"
+		"\"target\":[%.4f,%.4f,%.4f]},"
+		"\"runtimeAssets\":%s,"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,"
+		"\"setVertexShader\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexShaderFvf\":%lu,"
+		"\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"texture0ColorOp\":%lu,"
+		"\"texture0ColorArg1\":%lu,\"texture0ColorArg2\":%lu}}",
+		bool_json(ok),
+		ini_archive_path != nullptr ? ini_archive_path : "",
+		maps_archive_path != nullptr ? maps_archive_path : "",
+		terrain_archive_path != nullptr ? terrain_archive_path : "",
+		runtime_archive_directory_json.c_str(),
+		runtime_archive_mask_json.c_str(),
+		bool_json(archive_context_ready),
+		bool_json(global_data_ready),
+		bool_json(runtime_archive_set_loaded_for_selection),
+		init_result,
+		bool_json(asset_manager_created),
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(texture_file_factory_installed),
+		bool_json(logical_map_stream_open),
+		bool_json(logical_map_parsed),
+		bool_json(logical_map_parse_exception),
+		bool_json(bridge_pair_candidate_selected),
+		bool_json(bridge_pair_map_objects_installed),
+		bool_json(water_transparency_ready),
+		bool_json(shader_manager_initialized),
+		bool_json(render_object_created),
+		bool_json(render_object_initialized),
+		init_height_data_result,
+		bool_json(bridge_buffer_installed),
+		bool_json(bridge_buffer_initialized),
+		bool_json(load_bridges_invoked),
+		bool_json(update_center_invoked),
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		bool_json(render_object != nullptr && render_object->probeBridgeDrawInvoked()),
+		bool_json(bridge_scene_draw_flushed),
+		bool_json(map_load.iniArchiveLoaded),
+		bool_json(map_load.terrainIniExists),
+		bool_json(map_load.terrainIniParsed),
+		bool_json(map_load.defaultRoadsIniExists),
+		bool_json(map_load.defaultRoadsIniParsed),
+		bool_json(map_load.roadsIniExists),
+		bool_json(map_load.roadsIniParsed),
+		static_cast<unsigned long>(map_load.terrainTypeCount),
+		static_cast<unsigned long>(map_load.terrainRoadCount),
+		static_cast<unsigned long>(map_load.terrainBridgeCount),
+		ini_layout_report_json.c_str(),
+		terrain_map_entry_json.c_str(),
+		bool_json(map_load.mapEntryExists),
+		bool_json(map_load.mapEntryOpenable),
+		bool_json(map_load.mapStreamOpen),
+		bool_json(map_load.mapParsed),
+		map_load.mapBytes,
+		map_load.width,
+		map_load.height,
+		map_load.border,
+		static_cast<unsigned long>(map_load.heightChecksum),
+		kMapPatchVertices,
+		kMapPatchCells,
+		map != nullptr ? map->getDrawWidth() : 0,
+		map != nullptr ? map->getDrawHeight() : 0,
+		map != nullptr ? map->getDrawOrgX() : 0,
+		map != nullptr ? map->getDrawOrgY() : 0,
+		map_load.patchOriginX,
+		map_load.patchOriginY,
+		map_load.patchCenterHeight,
+		static_cast<unsigned long>(map_load.patchHeightChecksum),
+		map_load.bitmapTileCount,
+		map_load.textureClassCount,
+		map_load.sourceTilesLoaded,
+		map_load.sourceTilesPositioned,
+		map_load.patchTileCells,
+		map_load.patchTilesWithSource,
+		map_load.patchTilesMissingSource,
+		map_load.firstPatchTileIndex,
+		map_load.firstPatchBaseTileIndex,
+		bool_json(map_load.firstPatchSourceTileLoaded),
+		map_load.firstPatchTextureClass,
+		first_patch_texture_class_json.c_str(),
+		map_load.firstPatchTileTextureX,
+		map_load.firstPatchTileTextureY,
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
+		bridge_object_metrics.mapObjects,
+		bridge_object_metrics.bridgePoint1,
+		bridge_object_metrics.bridgePoint2,
+		bridge_pair_candidate_count,
+		selected_bridge_pair_candidate,
+		bridge_pair_candidates_with_source,
+		bridge_pair_candidates_with_model,
+		bridge_pair_candidates_with_texture,
+		bridge_pair_candidates_with_assets,
+		bridge_pair_candidates_with_assets_and_source,
+		selected_bridge_pair_source_cells,
+		bool_json(selected_bridge_pair_model_available),
+		bool_json(selected_bridge_pair_texture_available),
+		bool_json(bridge_template_substituted),
+		selected_bridge_original_name_json.c_str(),
+		selected_bridge_installed_name_json.c_str(),
+		selected_bridge_model_json.c_str(),
+		selected_bridge_texture_json.c_str(),
+		bool_json(bridge_asset_diagnostics.modelArchiveExists),
+		bool_json(bridge_asset_diagnostics.textureArchiveExists),
+		bool_json(bridge_asset_diagnostics.bareModelFileAvailable),
+		bool_json(bridge_asset_diagnostics.bareTextureFileAvailable),
+		bool_json(bridge_asset_diagnostics.loadBareModel),
+		bool_json(bridge_asset_diagnostics.createModel),
+		bridge_asset_diagnostics.modelClassId,
+		bridge_asset_diagnostics.modelSubObjects,
+		bool_json(bridge_asset_diagnostics.modelHasLeft),
+		bool_json(bridge_asset_diagnostics.modelHasSpan),
+		bool_json(bridge_asset_diagnostics.modelHasRight),
+		bool_json(bridge_asset_diagnostics.createLeft),
+		bool_json(bridge_asset_diagnostics.createSpan),
+		bool_json(bridge_asset_diagnostics.createRight),
+		bridge_asset_diagnostics.leftClassId,
+		bridge_asset_diagnostics.spanClassId,
+		bridge_asset_diagnostics.rightClassId,
+		bridge_asset_diagnostics.leftVertices,
+		bridge_asset_diagnostics.spanVertices,
+		bridge_asset_diagnostics.rightVertices,
+		bridge_asset_diagnostics.leftPolygons,
+		bridge_asset_diagnostics.spanPolygons,
+		bridge_asset_diagnostics.rightPolygons,
+		bool_json(bridge_asset_diagnostics.createTexture),
+		bridge_pair_candidate_summaries_json.c_str(),
+		bridge_object_metrics.bridgePairs,
+		bridge_object_metrics.bridgePairsWithBridgeType,
+		first_bridge_name_json.c_str(),
+		bridge_object_metrics.firstBridgeFlags,
+		bridge_object_metrics.firstBridgeX,
+		bridge_object_metrics.firstBridgeY,
+		bridge_object_metrics.secondBridgeX,
+		bridge_object_metrics.secondBridgeY,
+		bridge_center_x,
+		bridge_center_y,
+		bridge_center_z,
+		bridges_after_load,
+		bool_json(bridge_manual_geometry_after_load),
+		bool_json(bridge_manual_geometry_exception),
+		bridge_manual_vertices_after_load,
+		bridge_manual_indices_after_load,
+		bridge_vertices_after_update,
+		bridge_indices_after_update,
+		bool_json(bridge_buffer != nullptr && bridge_buffer->hasVertexBuffer()),
+		bool_json(bridge_buffer != nullptr && bridge_buffer->hasIndexBuffer()),
+		camera_eye_x,
+		camera_eye_y,
+		camera_eye_z,
+		camera_target_x,
+		camera_target_y,
+		camera_target_z,
+		runtime_assets_json.c_str(),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		state != nullptr ? state->last_draw_primitive_type : 0,
+		state != nullptr ? state->last_draw_vertex_shader : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0);
+
+	target_json = buffer;
+
+	if (scene != nullptr && render_object != nullptr && scene_object_added) {
+		scene->Remove_Render_Object(render_object);
+	}
+	REF_PTR_RELEASE(scene);
+	REF_PTR_RELEASE(render_object);
+	REF_PTR_RELEASE(camera);
+	TheTerrainRenderObject = old_terrain_render_object;
+	TheWaterTransparency = old_water_transparency;
+	if (probe_water_transparency != nullptr &&
+			probe_water_transparency != old_water_transparency) {
+		probe_water_transparency->deleteInstance();
+	}
+	REF_PTR_RELEASE(map_load.map);
+	map = nullptr;
+	WorldHeightMap::freeListOfMapObjects();
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		if (shader_manager_initialized)
+			W3DShaderManager::shutdown();
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+	return target_json.c_str();
+}
+
 const char *run_ww3d_terrain_prop_buffer_render_probe(
 	std::string &target_json,
 	const char *archive_path,
@@ -6277,6 +7947,24 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_road_buffer_scene(
 {
 	return run_ww3d_terrain_road_buffer_scene_probe(
 		g_ww3d_terrain_road_buffer_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		runtime_archive_directory,
+		runtime_archive_mask,
+		map_entry);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_bridge_buffer_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *runtime_archive_directory,
+	const char *runtime_archive_mask,
+	const char *map_entry)
+{
+	return run_ww3d_terrain_bridge_buffer_scene_probe(
+		g_ww3d_terrain_bridge_buffer_scene_probe_json,
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path,

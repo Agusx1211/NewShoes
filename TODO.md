@@ -786,19 +786,33 @@ shares structure and follows behind.
       the probe parses real map road endpoints, installs one selected
       `MapObject` point pair for original `W3DRoadBuffer::loadRoads`, samples
       the shipped `TRThickLine` road texture from `TexturesZH.big`, and proves
-      the road draw follows the terrain base/blend passes. Production map/object
-      tree placement, production logical-map road ownership through the normal
-      `DO_ROADS` terrain path, and shroud-aware tree behavior remain open. A
+      the road draw follows the terrain base/blend passes. The original
+      `W3DBridgeBuffer::loadBridges` / `updateCenter` plus
+      `W3DBridge::renderBridge` geometry path is now browser-harness verified
+      on a real `Maps\MD_CHI01\MD_CHI01.map` bridge pair with shipped bridge
+      model/texture assets available from the mounted Zero Hour archives.
+      Production map/object tree placement, production logical-map road
+      ownership through the normal `DO_ROADS` terrain path, full bridge-buffer
+      wrapper ownership, and shroud-aware tree behavior remain open. A
       direct broad removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
+- [ ] Broaden the bridge-buffer scene proof from the current focused
+      `W3DBridge::renderBridge` geometry route to the full
+      `W3DBridgeBuffer::drawBridges` wrapper once its optional
+      TerrainLogic/shroud/damage-state branch can run safely in the focused
+      browser terrain scene.
 - [ ] Once a base Generals `Terrain.big` artifact is available in this
       workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
       archive mounted and tighten the load-window gate to require nonzero
       source-backed terrain cells.
+- [ ] Once optional base Generals runtime archives are available in this
+      workspace, rerun `test:ww3d-terrain-bridge-buffer-scene` without Zero
+      Hour bridge-template substitution and tighten it to require source-backed
+      selected terrain cells for the bridge scene patch.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the browser `INI::load` trap.
       The terrain smokes now report and gate a direct `INI` layout comparison
