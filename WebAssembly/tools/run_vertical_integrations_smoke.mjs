@@ -1599,6 +1599,50 @@ const steps = [
     },
   },
   {
+    name: "terrain-prop-buffer-render",
+    file: "harness/terrain_prop_buffer_render_smoke.mjs",
+    args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],
+    validate(payload) {
+      expect(payload.ok === true, "terrain prop-buffer render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-prop-buffer-render",
+        "terrain prop-buffer render smoke emitted the wrong path", payload);
+      expect(payload.probe?.source === "ww3d_terrain_prop_buffer_render_probe"
+          && payload.probe?.path?.includes("W3DPropBuffer addProp")
+          && payload.probe?.asset?.model === "CINE_MOON"
+          && payload.probe?.results?.runtimeAssetSystemInstalled === true
+          && payload.probe?.results?.textureFileFactoryInstalled === true
+          && payload.probe?.results?.meshFileExists === true
+          && payload.probe?.results?.textureFileExists === true,
+        "terrain prop-buffer render smoke did not use shipped W3D/texture assets", payload.probe);
+      expect(payload.probe?.results?.initialized === true
+          && payload.probe?.results?.propTypeCreated === true
+          && payload.probe?.results?.propRenderObjectCreated === true
+          && payload.probe?.results?.propRenderObjectClassId === 0
+          && payload.probe?.results?.propMeshNormalized === true
+          && payload.probe?.props?.afterAdd === 1
+          && payload.probe?.props?.typesAfterAdd === 1,
+        "terrain prop-buffer render smoke did not create an original W3DPropBuffer prop", payload.probe?.props);
+      expect(payload.probe?.results?.propVisibleForCamera === true
+          && payload.probe?.calls?.drawIndexed >= 1
+          && payload.browserProbe?.ok === true
+          && payload.browserProbe?.texture0?.sampled === true
+          && payload.browserProbe?.usedPersistentBuffers === true
+          && payload.coverage?.coloredPixelCount > 0,
+        "terrain prop-buffer render smoke did not draw browser-visible prop pixels", {
+          calls: payload.probe?.calls,
+          browserProbe: payload.browserProbe,
+          coverage: payload.coverage,
+        });
+      expect(payload.probe?.results?.removePropInvoked === true
+          && payload.probe?.results?.propRemoved === true
+          && payload.probe?.results?.clearPropsInvoked === true
+          && payload.probe?.props?.afterClear === 0,
+        "terrain prop-buffer render smoke did not clean up original prop state", payload.probe?.results);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-prop-buffer-render-canvas.png"),
+        "terrain prop-buffer render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],

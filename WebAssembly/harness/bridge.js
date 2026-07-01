@@ -7058,6 +7058,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_camera_pan_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainBibBufferLifecycle: module.cwrap(
         "cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle", "string", []),
+      probeWW3DTerrainPropBufferRender: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_prop_buffer_render", "string", ["string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -18186,6 +18188,79 @@ async function rpc(command, payload = {}) {
           probe,
           bufferDelta,
           textureDelta,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainPropBufferRender":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D prop buffer render cannot run" };
+        }
+        const archivePath = String(payload.archivePath ?? "/assets/runtime/W3DZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime/TexturesZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainPropBufferRender(
+          archivePath,
+          textureArchivePath,
+        ));
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? {};
+        const textureAfter = harnessState.graphics.d3d8Textures ?? {};
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_prop_buffer_render_probe"
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.meshFileExists === true
+          && probe?.results?.textureFileExists === true
+          && probe?.results?.propRenderObjectCreated === true
+          && probe?.results?.propRenderObjectClassId === 0
+          && probe?.results?.propMeshNormalized === true
+          && probe?.results?.propVisibleForCamera === true
+          && probe?.props?.afterAdd === 1
+          && probe?.props?.typesAfterAdd === 1
+          && probe?.props?.afterClear === 0
+          && Boolean(browserProbe?.ok)
+          && browserProbe?.texture0?.sampled === true
+          && browserProbe?.usedPersistentBuffers === true
+          && bufferDelta.creates >= 2
+          && bufferDelta.updates >= 2
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && textureDelta.binds >= 1
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          bufferDelta,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
           state: snapshotState(),
         };
       }

@@ -3732,6 +3732,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:ww3d-terrain-bib-buffer-lifecycle`,
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add a browser-verified render-object proof for the original terrain prop
+      buffer path. The new `ww3dTerrainPropBufferRender` RPC mounts range-backed
+      `W3DZH.big` and `TexturesZH.big` subsets, constructs original
+      `W3DPropBuffer`, drives `addProp`, `updatePropPosition`, `doFullUpdate`,
+      protected cull, `removeProp`, and `clearAllProps` for shipped
+      `CINE_MOON`, and verifies the prop buffer creates a cloned
+      `MeshClass` render object from the original `WW3DAssetManager`. The
+      focused proof renders that cloned prop object through `WW3D::Render` and
+      the browser D3D8/WebGL2 bridge, gates persistent buffers, shipped DXT5
+      texture sampling, cleanup deltas, and 158,069 colored screenshot pixels in
+      `harness-smoke-ww3d-terrain-prop-buffer-render-canvas.png`, and adds the
+      step to `test:vertical-integrations`. Full production
+      `W3DPropBuffer::drawProps` queued scene/mesh-renderer flushing remains
+      open. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-render`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

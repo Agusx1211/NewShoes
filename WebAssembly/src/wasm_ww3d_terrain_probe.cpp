@@ -30,6 +30,7 @@
 #include "GameClient/Water.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/HeightMap.h"
+#include "W3DDevice/GameClient/W3DPropBuffer.h"
 #include "W3DDevice/GameClient/W3DBibBuffer.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DScene.h"
@@ -38,13 +39,17 @@
 #include "W3DDevice/GameClient/W3DTerrainBackground.h"
 #include "W3DDevice/GameClient/W3DTerrainVisual.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
+#include "assetmgr.h"
 #include "camera.h"
 #include "coltype.h"
 #include "dx8fvf.h"
 #include "dx8wrapper.h"
+#include "mesh.h"
+#include "meshmdl.h"
 #include "rinfo.h"
 #include "shader.h"
 #include "vertmaterial.h"
+#include "wasm_browser_runtime_assets.h"
 #include "wasm_d3d8_shim.h"
 #include "wasm_ww3d_probe_lifetime.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
@@ -77,6 +82,7 @@ std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
+std::string g_ww3d_terrain_prop_buffer_render_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -90,6 +96,10 @@ constexpr const char *kArchiveTerrainTileEntry = "Art\\Terrain\\PTBlossom01.tga"
 constexpr const char *kArchiveTerrainMapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
 constexpr const char *kArchiveDefaultTerrainIniEntry = "Data\\INI\\Default\\Terrain.ini";
 constexpr const char *kArchiveTerrainIniEntry = "Data\\INI\\Terrain.ini";
+constexpr const char *kPropModelName = "CINE_MOON";
+constexpr const char *kPropMeshArchiveEntry = "art\\w3d\\cine_moon.w3d";
+constexpr const char *kPropTextureArchiveEntry = "art\\textures\\cine_moon.dds";
+constexpr Int kPropProbeId = 77;
 constexpr int kTextureClassDiagnosticsLimit = 6;
 
 bool succeeded(int result)
@@ -1445,6 +1455,42 @@ public:
 	}
 };
 
+class ProbeW3DPropBuffer final : public W3DPropBuffer
+{
+public:
+	bool initialized() const { return m_initialized; }
+	Int numProps() const { return m_numProps; }
+	Int numPropTypes() const { return m_numPropTypes; }
+	bool hasPropRenderObject(Int index) const
+	{
+		return index >= 0 && index < m_numProps && m_props[index].m_robj != nullptr;
+	}
+	bool hasPropTypeRenderObject(Int index) const
+	{
+		return index >= 0 && index < m_numPropTypes && m_propTypes[index].m_robj != nullptr;
+	}
+	bool propVisible(Int index) const
+	{
+		return index >= 0 && index < m_numProps && m_props[index].visible;
+	}
+	void cullForProbe(CameraClass *camera)
+	{
+		cull(camera);
+	}
+	RenderObjClass *propRenderObject(Int index) const
+	{
+		return index >= 0 && index < m_numProps ? m_props[index].m_robj : nullptr;
+	}
+	bool anythingChanged() const { return m_anythingChanged; }
+	SphereClass propBounds(Int index) const
+	{
+		if (index >= 0 && index < m_numProps) {
+			return m_props[index].bounds;
+		}
+		return SphereClass(Vector3(0.0f, 0.0f, 0.0f), 1.0f);
+	}
+};
+
 void configure_global_data(GlobalData &global_data)
 {
 	global_data.m_textureReductionFactor = 0;
@@ -1465,6 +1511,19 @@ void configure_global_data(GlobalData &global_data)
 	global_data.m_terrainLightPos[0].x = -0.35f;
 	global_data.m_terrainLightPos[0].y = 0.25f;
 	global_data.m_terrainLightPos[0].z = -1.0f;
+	for (int time_of_day = 0; time_of_day < TIME_OF_DAY_COUNT; ++time_of_day) {
+		for (int light_index = 0; light_index < MAX_GLOBAL_LIGHTS; ++light_index) {
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].ambient.red = 0.35f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].ambient.green = 0.35f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].ambient.blue = 0.35f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].diffuse.red = light_index == 0 ? 0.85f : 0.0f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].diffuse.green = light_index == 0 ? 0.90f : 0.0f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].diffuse.blue = light_index == 0 ? 0.80f : 0.0f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].lightPos.x = -0.35f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].lightPos.y = 0.25f;
+			global_data.m_terrainObjectsLighting[time_of_day][light_index].lightPos.z = -1.0f;
+		}
+	}
 }
 
 } // namespace
@@ -3007,6 +3066,354 @@ const char *run_ww3d_terrain_bib_buffer_lifecycle_probe(std::string &target_json
 	return target_json.c_str();
 }
 
+const char *run_ww3d_terrain_prop_buffer_render_probe(
+	std::string &target_json,
+	const char *archive_path,
+	const char *texture_archive_path)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = NEW GlobalData;
+	bool global_data_ready = global_data != nullptr;
+	if (global_data_ready) {
+		configure_global_data(*global_data);
+		TheWritableGlobalData = global_data;
+	}
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
+	bool mesh_file_exists = false;
+	bool texture_file_exists = false;
+	bool asset_manager_created = false;
+	bool buffer_created = false;
+	bool initialized = false;
+	bool add_prop_invoked = false;
+	bool update_prop_invoked = false;
+	bool do_full_update_invoked = false;
+	bool prop_type_created = false;
+	bool prop_render_object_created = false;
+	bool prop_visible_for_camera = false;
+	int prop_render_object_class_id = RenderObjClass::CLASSID_UNKNOWN;
+	bool prop_mesh_normalized = false;
+	bool remove_prop_invoked = false;
+	bool clear_props_invoked = false;
+	bool prop_removed = false;
+	Int prop_types_after_add = -1;
+	Int props_after_add = -1;
+	Int props_after_update = -1;
+	Int props_after_remove = -1;
+	Int props_after_clear = -1;
+	float prop_bounds_center_x = 0.0f;
+	float prop_bounds_center_y = 0.0f;
+	float prop_bounds_center_z = 0.0f;
+	float prop_bounds_radius = 0.0f;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	ProbeW3DPropBuffer *prop_buffer = nullptr;
+	CameraClass *camera = nullptr;
+
+	if (global_data_ready) {
+		init_result = WW3D::Init(nullptr, nullptr, false);
+	}
+	if (succeeded(init_result)) {
+		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager_created = asset_manager != nullptr;
+	}
+
+	if (asset_manager != nullptr) {
+		asset_manager->Set_WW3D_Load_On_Demand(true);
+	}
+	if (asset_manager_created) {
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_paths(archive_path, texture_archive_path);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		mesh_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kPropMeshArchiveEntry);
+		texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kPropTextureArchiveEntry);
+	}
+
+	if (mesh_file_exists && texture_file_exists) {
+		prop_buffer = NEW ProbeW3DPropBuffer;
+		buffer_created = prop_buffer != nullptr;
+	}
+
+	if (buffer_created) {
+		initialized = prop_buffer->initialized();
+		Coord3D location;
+		location.set(0.0f, 0.0f, 0.0f);
+		prop_buffer->addProp(kPropProbeId, location, 0.0f, 1.0f, AsciiString(kPropModelName));
+		add_prop_invoked = true;
+		props_after_add = prop_buffer->numProps();
+		prop_types_after_add = prop_buffer->numPropTypes();
+		prop_type_created = prop_buffer->hasPropTypeRenderObject(0);
+		prop_render_object_created = prop_buffer->hasPropRenderObject(0);
+		RenderObjClass *prop_render_object = prop_buffer->propRenderObject(0);
+		if (prop_render_object != nullptr) {
+			prop_render_object_class_id = prop_render_object->Class_ID();
+			if (prop_render_object_class_id == RenderObjClass::CLASSID_MESH) {
+				MeshClass *mesh = static_cast<MeshClass *>(prop_render_object);
+				MeshModelClass *model = mesh->Peek_Model();
+				if (model != nullptr) {
+					ShaderClass shader;
+					shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
+					shader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
+					shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_ENABLE);
+					shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+					shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
+					model->Set_Single_Shader(shader);
+
+					VertexMaterialClass *vmat = NEW_REF(VertexMaterialClass, ());
+					model->Set_Single_Material(vmat, 0);
+					vmat->Release_Ref();
+					prop_mesh_normalized = true;
+				}
+			}
+		}
+
+		location.set(0.0f, 0.0f, 0.0f);
+		update_prop_invoked = prop_buffer->updatePropPosition(kPropProbeId, location, 0.0f, 1.0f);
+		props_after_update = prop_buffer->numProps();
+		const SphereClass bounds = prop_buffer->propBounds(0);
+		prop_bounds_center_x = bounds.Center.X;
+		prop_bounds_center_y = bounds.Center.Y;
+		prop_bounds_center_z = bounds.Center.Z;
+		prop_bounds_radius = bounds.Radius > 0.001f ? bounds.Radius : 1.0f;
+
+		camera = W3DNEW CameraClass();
+		if (camera != nullptr) {
+			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
+			camera->Set_Clip_Planes(1.0f, std::max(1000.0f, prop_bounds_radius * 8.0f));
+			Matrix3D camera_transform(true);
+			const Vector3 target(prop_bounds_center_x, prop_bounds_center_y, prop_bounds_center_z);
+			const Vector3 eye(
+				prop_bounds_center_x,
+				prop_bounds_center_y - prop_bounds_radius * 0.25f,
+				prop_bounds_center_z + prop_bounds_radius * 3.0f);
+			camera_transform.Look_At(eye, target, 0.0f);
+			camera->Set_Transform(camera_transform);
+		}
+	}
+
+	if (camera != nullptr && prop_render_object_created) {
+		prop_buffer->doFullUpdate();
+		do_full_update_invoked = true;
+		prop_buffer->cullForProbe(camera);
+		prop_visible_for_camera = prop_buffer->propVisible(0);
+		RenderInfoClass render_info(*camera);
+		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			RenderObjClass *prop_render_object = prop_buffer->propRenderObject(0);
+			render_result =
+				prop_render_object != nullptr ? WW3D::Render(*prop_render_object, render_info) : WW3D_ERROR_GENERIC;
+			end_render_result = WW3D::End_Render(false);
+		}
+
+		prop_buffer->removeProp(kPropProbeId);
+		remove_prop_invoked = true;
+		props_after_remove = prop_buffer->numProps();
+		prop_removed = !prop_buffer->hasPropRenderObject(0);
+		prop_buffer->clearAllProps();
+		clear_props_invoked = true;
+		props_after_clear = prop_buffer->numProps();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const bool ok =
+		state != nullptr &&
+		global_data_ready &&
+		succeeded(init_result) &&
+		asset_manager_created &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		texture_file_factory_installed &&
+		mesh_file_exists &&
+		texture_file_exists &&
+		buffer_created &&
+		initialized &&
+		add_prop_invoked &&
+		props_after_add == 1 &&
+		prop_types_after_add == 1 &&
+		prop_type_created &&
+		prop_render_object_created &&
+		prop_render_object_class_id == RenderObjClass::CLASSID_MESH &&
+		prop_mesh_normalized &&
+		update_prop_invoked &&
+		props_after_update == 1 &&
+		do_full_update_invoked &&
+		prop_visible_for_camera &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		remove_prop_invoked &&
+		props_after_remove == 1 &&
+		prop_removed &&
+		clear_props_invoked &&
+		props_after_clear == 0 &&
+		state->browser_texture_create_calls >= 1 &&
+		state->browser_texture_update_calls >= 1 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->browser_buffer_create_calls >= 2 &&
+		state->browser_buffer_update_calls >= 2 &&
+		state->set_stream_source_calls >= 1 &&
+		state->set_indices_calls >= 1 &&
+		state->set_texture_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE;
+
+	const std::string archive_json = json_string(archive_path != nullptr ? archive_path : "");
+	const std::string texture_archive_json =
+		json_string(texture_archive_path != nullptr ? texture_archive_path : "");
+	const std::string prop_model_json = json_string(kPropModelName);
+	const std::string prop_mesh_entry_json = json_string(kPropMeshArchiveEntry);
+	const std::string prop_texture_entry_json = json_string(kPropTextureArchiveEntry);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+
+	char buffer[10000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_terrain_prop_buffer_render_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"original W3DPropBuffer addProp -> updatePropPosition -> "
+		"doFullUpdate/cull -> WW3D::Render prop render object -> "
+		"removeProp -> clearAllProps\","
+		"\"archives\":{\"mesh\":%s,\"texture\":%s},"
+		"\"asset\":{\"model\":%s,\"meshEntry\":%s,"
+		"\"textureEntry\":%s},"
+		"\"results\":{\"globalDataReady\":%s,\"init\":%d,"
+		"\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"meshFileExists\":%s,\"textureFileExists\":%s,"
+		"\"bufferCreated\":%s,\"initialized\":%s,"
+		"\"addPropInvoked\":%s,\"updatePropInvoked\":%s,"
+		"\"doFullUpdateInvoked\":%s,\"propTypeCreated\":%s,"
+		"\"propRenderObjectCreated\":%s,\"propVisibleForCamera\":%s,"
+		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
+		"\"removePropInvoked\":%s,\"propRemoved\":%s,"
+		"\"clearPropsInvoked\":%s,\"propRenderObjectClassId\":%d,"
+		"\"propMeshNormalized\":%s},"
+		"\"props\":{\"afterAdd\":%d,\"typesAfterAdd\":%d,"
+		"\"afterUpdate\":%d,\"afterRemove\":%d,\"afterClear\":%d,"
+		"\"bounds\":{\"center\":[%.4f,%.4f,%.4f],\"radius\":%.4f}},"
+		"\"runtimeAssets\":%s,"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserTextureRelease\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserBufferRelease\":%u,\"setTexture\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,"
+		"\"drawIndexed\":%u,\"setTransform\":%u,\"clear\":%u},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,"
+		"\"vertexBufferId\":%u,\"indexBufferId\":%u,"
+		"\"texture0ColorOp\":%lu,\"texture0ColorArg1\":%lu,"
+		"\"texture0ColorArg2\":%lu}}",
+		bool_json(ok),
+		archive_json.c_str(),
+		texture_archive_json.c_str(),
+		prop_model_json.c_str(),
+		prop_mesh_entry_json.c_str(),
+		prop_texture_entry_json.c_str(),
+		bool_json(global_data_ready),
+		init_result,
+		bool_json(asset_manager_created),
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(texture_file_factory_installed),
+		bool_json(mesh_file_exists),
+		bool_json(texture_file_exists),
+		bool_json(buffer_created),
+		bool_json(initialized),
+		bool_json(add_prop_invoked),
+		bool_json(update_prop_invoked),
+		bool_json(do_full_update_invoked),
+		bool_json(prop_type_created),
+		bool_json(prop_render_object_created),
+		bool_json(prop_visible_for_camera),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		bool_json(remove_prop_invoked),
+		bool_json(prop_removed),
+		bool_json(clear_props_invoked),
+		prop_render_object_class_id,
+		bool_json(prop_mesh_normalized),
+		props_after_add,
+		prop_types_after_add,
+		props_after_update,
+		props_after_remove,
+		props_after_clear,
+		prop_bounds_center_x,
+		prop_bounds_center_y,
+		prop_bounds_center_z,
+		prop_bounds_radius,
+		runtime_assets_json.c_str(),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_texture_release_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_buffer_release_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->last_draw_primitive_type : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0);
+
+	target_json = buffer;
+
+	delete prop_buffer;
+	prop_buffer = nullptr;
+	REF_PTR_RELEASE(camera);
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+
+	return target_json.c_str();
+}
+
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
@@ -3098,6 +3505,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_bib_buffer_lifecycl
 {
 	return run_ww3d_terrain_bib_buffer_lifecycle_probe(
 		g_ww3d_terrain_bib_buffer_lifecycle_probe_json);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_prop_buffer_render(
+	const char *archive_path,
+	const char *texture_archive_path)
+{
+	return run_ww3d_terrain_prop_buffer_render_probe(
+		g_ww3d_terrain_prop_buffer_render_probe_json,
+		archive_path,
+		texture_archive_path);
 }
 
 }
