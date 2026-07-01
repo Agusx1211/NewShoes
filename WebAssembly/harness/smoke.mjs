@@ -7,6 +7,10 @@ import { startStaticServer } from "./static-server.mjs";
 const harnessRoot = dirname(fileURLToPath(import.meta.url));
 const wasmRoot = resolve(harnessRoot, "..");
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
+const D3DMCS_MATERIAL = 0;
+const D3DMCS_COLOR2 = 2;
+const D3DTOP_SELECTARG2 = 3;
+const D3DFVF_SPECULAR = 0x080;
 const desktopScreenshot = resolve(screenshotDir, "harness-smoke-desktop.png");
 const canvasScreenshot = resolve(screenshotDir, "harness-smoke-canvas.png");
 const clearCanvasScreenshot = resolve(screenshotDir, "harness-smoke-clear-canvas.png");
@@ -159,6 +163,10 @@ const ww3dDisplayRemainingRectClockCanvasScreenshot = resolve(
   "harness-smoke-ww3d-display-remaining-rectclock-canvas.png",
 );
 const ww3dTexturedMeshCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-textured-mesh-canvas.png");
+const ww3dEmissiveColor2MaterialSourceCanvasScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-emissive-color2-material-source-canvas.png",
+);
 const ww3dTerrainTileCanvasScreenshot = resolve(screenshotDir, "harness-smoke-ww3d-terrain-tile-canvas.png");
 const gdiFontCanvasScreenshot = resolve(screenshotDir, "harness-smoke-gdi-font-canvas.png");
 const cursorCanvasScreenshot = resolve(screenshotDir, "harness-smoke-cursor-css-canvas.png");
@@ -6143,6 +6151,60 @@ try {
 
   await page.locator("#viewport").screenshot({ path: ww3dTexturedMeshCanvasScreenshot });
 
+  const emissiveColor2Result = await page.evaluate(() =>
+    window.CnCPort.rpc("ww3dEmissiveColor2MaterialSource"));
+  if (!emissiveColor2Result.ok
+      || emissiveColor2Result.probe?.source !== "ww3d_emissive_color2_material_source_probe"
+      || emissiveColor2Result.probe?.results?.meshLoaded !== true
+      || emissiveColor2Result.probe?.results?.meshLoad !== 0
+      || emissiveColor2Result.probe?.results?.color1Written !== true
+      || emissiveColor2Result.probe?.results?.color2Written !== true
+      || emissiveColor2Result.probe?.materialSources?.diffuse !== D3DMCS_MATERIAL
+      || emissiveColor2Result.probe?.materialSources?.ambient !== D3DMCS_MATERIAL
+      || emissiveColor2Result.probe?.materialSources?.emissive !== D3DMCS_COLOR2
+      || emissiveColor2Result.probe?.calls?.drawIndexed < 1
+      || emissiveColor2Result.probe?.calls?.setMaterial < 1
+      || emissiveColor2Result.probe?.calls?.setLight < 1
+      || emissiveColor2Result.probe?.calls?.lightEnable < 1
+      || emissiveColor2Result.probe?.draw?.primitiveType !== 4
+      || emissiveColor2Result.probe?.draw?.vertexCount !== 4
+      || emissiveColor2Result.probe?.draw?.primitiveCount !== 2
+      || emissiveColor2Result.probe?.draw?.vertexStride !== 40
+      || emissiveColor2Result.probe?.draw?.hasSpecularFvf !== true
+      || emissiveColor2Result.probe?.renderState?.lighting !== 1
+      || emissiveColor2Result.probe?.renderState?.diffuseMaterialSource !== D3DMCS_MATERIAL
+      || emissiveColor2Result.probe?.renderState?.ambientMaterialSource !== D3DMCS_MATERIAL
+      || emissiveColor2Result.probe?.renderState?.emissiveMaterialSource !== D3DMCS_COLOR2
+      || emissiveColor2Result.probe?.renderState?.textureStages?.[0]?.colorOp !== D3DTOP_SELECTARG2
+      || emissiveColor2Result.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || emissiveColor2Result.browserProbe?.usedPersistentBuffers !== true
+      || emissiveColor2Result.browserProbe?.usedTransforms !== true
+      || emissiveColor2Result.browserProbe?.vertexShaderFvf !==
+        emissiveColor2Result.probe?.draw?.vertexShaderFvf
+      || (emissiveColor2Result.browserProbe?.vertexShaderFvf & D3DFVF_SPECULAR) !== D3DFVF_SPECULAR
+      || emissiveColor2Result.browserProbe?.vertexLayout?.normalOffset !== 12
+      || emissiveColor2Result.browserProbe?.vertexLayout?.diffuseOffset !== 24
+      || emissiveColor2Result.browserProbe?.vertexLayout?.specularOffset !== 28
+      || emissiveColor2Result.browserProbe?.renderState?.lighting !== 1
+      || emissiveColor2Result.browserProbe?.renderState?.diffuseMaterialSource !== D3DMCS_MATERIAL
+      || emissiveColor2Result.browserProbe?.renderState?.ambientMaterialSource !== D3DMCS_MATERIAL
+      || emissiveColor2Result.browserProbe?.renderState?.emissiveMaterialSource !== D3DMCS_COLOR2
+      || emissiveColor2Result.browserProbe?.appliedRenderState?.materialSources?.emissive?.name !== "color2"
+      || emissiveColor2Result.browserProbe?.appliedRenderState?.lighting?.shaderEnabled !== true
+      || emissiveColor2Result.browserProbe?.texture0?.sampled === true
+      || !pixelLooksGreen(emissiveColor2Result.browserProbe?.centerPixel)
+      || !pixelLooksGreen(emissiveColor2Result.screenshot?.centerPixel)
+      || emissiveColor2Result.bufferDelta?.creates < 2
+      || emissiveColor2Result.bufferDelta?.updates < 2) {
+    throw new Error(
+      `WW3D emissive COLOR2 material-source probe failed: ${JSON.stringify(emissiveColor2Result)}`,
+    );
+  }
+
+  await page.locator("#viewport").screenshot({
+    path: ww3dEmissiveColor2MaterialSourceCanvasScreenshot,
+  });
+
   const terrainTileResult = await page.evaluate(() => window.CnCPort.rpc("ww3dTerrainTile"));
   if (!terrainTileResult.ok
       || terrainTileResult.probe?.source !== "ww3d_terrain_tile_probe"
@@ -6649,6 +6711,7 @@ try {
       ww3dDisplayRectClockCanvasScreenshot,
       ww3dDisplayRemainingRectClockCanvasScreenshot,
       ww3dTexturedMeshCanvasScreenshot,
+      ww3dEmissiveColor2MaterialSourceCanvasScreenshot,
       ww3dTerrainTileCanvasScreenshot,
       gdiFontCanvasScreenshot,
       cursorCanvasScreenshot,

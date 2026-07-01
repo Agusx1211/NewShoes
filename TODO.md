@@ -670,10 +670,10 @@ flow below.
       W3D point-light attenuation variants beyond the verified linear and
       pure quadratic point-light proofs plus the verified finite-range clip
       and mixed coefficient proofs, lit material-source variants beyond the
-      verified diffuse/ambient `COLOR1` path and the specular-source D3D8
-      parity proof, especially original-runtime emissive/`COLOR2` paths, and
-      other fixed-function lighting/render-state variants) and other W3D draw
-      states → GL/shader state.
+      verified diffuse/ambient `COLOR1` path, the specular-source D3D8
+      parity proof, and the original-runtime WW3D emissive/`COLOR2` proof,
+      and other fixed-function lighting/render-state variants) and other W3D
+      draw states → GL/shader state.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

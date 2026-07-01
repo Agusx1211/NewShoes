@@ -3367,6 +3367,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Add the `cnc_port_probe_ww3d_textured_mesh` wasm export,
       `ww3dTexturedMesh` bridge RPC, and Playwright smoke coverage
       analogous to the AABox and Render2D probes.
+- [x] Prove original-runtime WW3D emissive `COLOR2` material-source rendering.
+      The `cnc_port_probe_ww3d_emissive_color2_material_source` runtime path
+      builds a synthetic W3D mesh through original chunk load/render ownership,
+      adds a real second color array so `DX8FVFCategoryContainer::Define_FVF`
+      emits `D3DFVF_SPECULAR`, then applies a `VertexMaterialClass` with
+      diffuse/ambient sources on `MATERIAL` and emissive on `COLOR2`. The
+      `ww3dEmissiveColor2MaterialSource` bridge RPC and Playwright smoke verify
+      the final browser draw has specular/COLOR2 at byte offset 28,
+      `D3DRS_EMISSIVEMATERIALSOURCE == D3DMCS_COLOR2`, fixed-function lighting
+      enabled through the original WW3D material path, no texture sampling, and
+      green emissive-only pixels in
+      `harness-smoke-ww3d-emissive-color2-material-source-canvas.png`.
 - [x] Load a real source-tree WW3D required asset through the original
       W3D hierarchy parser in browser wasm: `ShatterPlanes0.w3d` is
       embedded from

@@ -7335,6 +7335,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_bridge_buffer_scene", "string", ["string", "string", "string", "string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
+      probeWW3DEmissiveColor2MaterialSource: module.cwrap(
+        "cnc_port_probe_ww3d_emissive_color2_material_source", "string", []),
       probeWW3DShippedMesh: module.cwrap(
         "cnc_port_probe_ww3d_shipped_mesh", "string", ["string", "string"]),
       probeWW3DShippedMultiTextureMesh: module.cwrap(
@@ -18063,6 +18065,75 @@ async function rpc(command, payload = {}) {
           browserProbe,
           textureDelta,
           textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dEmissiveColor2MaterialSource":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return {
+            ok: false,
+            command,
+            error: "Wasm module unavailable; WW3D emissive COLOR2 material-source probe cannot render",
+          };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DEmissiveColor2MaterialSource());
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? null;
+        const screenshot = snapshotCanvas();
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const vertexLayout = browserProbe?.vertexLayout ?? {};
+        const renderState = browserProbe?.renderState ?? {};
+        const appliedSources = browserProbe?.appliedRenderState?.materialSources ?? {};
+        const expectedSources = probe?.materialSources ?? {};
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_emissive_color2_material_source_probe"
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
+          && (browserProbe?.vertexShaderFvf & D3DFVF_SPECULAR) === D3DFVF_SPECULAR
+          && vertexLayout.source === "fvf"
+          && vertexLayout.normalOffset === 12
+          && vertexLayout.diffuseOffset === 24
+          && vertexLayout.specularOffset === 28
+          && vertexLayout.computedStride === probe?.draw?.vertexStride
+          && renderState.lighting === 1
+          && renderState.colorVertex === 1
+          && renderState.diffuseMaterialSource === D3DMCS_MATERIAL
+          && renderState.ambientMaterialSource === D3DMCS_MATERIAL
+          && renderState.emissiveMaterialSource === D3DMCS_COLOR2
+          && appliedSources.emissive?.source === D3DMCS_COLOR2
+          && appliedSources.emissive?.name === "color2"
+          && expectedSources.emissive === D3DMCS_COLOR2
+          && browserProbe?.appliedRenderState?.lighting?.shaderEnabled === true
+          && browserProbe?.appliedRenderState?.lighting?.fixedFunctionLightSupported === true
+          && browserProbe?.texture0?.sampled !== true
+          && browserProbe?.texture1?.sampled !== true
+          && pixelLooksGreen(browserProbe.centerPixel)
+          && pixelLooksGreen(screenshot.centerPixel)
+          && bufferDelta.creates >= 2
+          && bufferDelta.updates >= 2;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          bufferDelta,
+          bufferProbe: bufferAfter,
           screenshot,
           state: snapshotState(),
         };

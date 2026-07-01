@@ -34,12 +34,15 @@
 namespace {
 
 std::string g_ww3d_textured_mesh_probe_json;
+std::string g_ww3d_emissive_color2_material_source_probe_json;
 std::string g_ww3d_shipped_mesh_probe_json;
 std::string g_ww3d_shipped_multi_texture_mesh_probe_json;
 
 constexpr const char *kProbeMeshTextureName = "probe_mesh_red.tga";
 constexpr unsigned int kProbeMeshTextureWidth = 2;
 constexpr unsigned int kProbeMeshTextureHeight = 2;
+constexpr unsigned int kEmissiveColor1Diffuse = 0xffff0000u;
+constexpr unsigned int kEmissiveColor2Specular = 0xff00ff00u;
 constexpr const char *kShippedMeshPath = "art\\w3d\\cine_moon.w3d";
 constexpr const char *kShippedMeshName = "CINE_MOON";
 constexpr const char *kShippedMeshTextureName = "cine_moon.tga";
@@ -697,6 +700,280 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_textured_mesh()
 
 	g_ww3d_textured_mesh_probe_json = buffer;
 	return g_ww3d_textured_mesh_probe_json.c_str();
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_emissive_color2_material_source()
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	const int init_result = WW3D::Init(nullptr, nullptr, false);
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	int load_result = WW3D_ERROR_GENERIC;
+	bool mesh_written = false;
+	bool mesh_loaded = false;
+	bool color1_written = false;
+	bool color2_written = false;
+	VertexMaterialClass::ColorSourceType diffuse_source = VertexMaterialClass::MATERIAL;
+	VertexMaterialClass::ColorSourceType ambient_source = VertexMaterialClass::MATERIAL;
+	VertexMaterialClass::ColorSourceType emissive_source = VertexMaterialClass::MATERIAL;
+
+	WW3DAssetManager *asset_manager = nullptr;
+	MeshClass *mesh = nullptr;
+	CameraClass *camera = nullptr;
+
+	if (succeeded(init_result)) {
+		asset_manager = W3DNEW WW3DAssetManager();
+	}
+
+	if (asset_manager != nullptr) {
+		set_device_result = WW3D::Set_Render_Device(0, 800, 600, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+
+		RAMFileClass file(nullptr, 4096);
+		mesh_written = write_probe_mesh_w3d(file);
+
+		if (mesh_written) {
+			file.Open(static_cast<int>(FileClass::READ));
+			ChunkLoadClass cload(&file);
+
+			if (cload.Open_Chunk() && cload.Cur_Chunk_ID() == W3D_CHUNK_MESH) {
+				mesh = NEW_REF(MeshClass, ());
+				load_result = mesh->Load_W3D(cload);
+				mesh_loaded = succeeded(load_result);
+				cload.Close_Chunk();
+			}
+			file.Close();
+		}
+	}
+
+	if (mesh_loaded && mesh->Peek_Model() != nullptr) {
+		MeshModelClass *model = mesh->Peek_Model();
+		unsigned *color1 = model->Get_Color_Array(0, false);
+		unsigned *color2 = model->Get_Color_Array(1, true);
+		if (color1 != nullptr) {
+			for (int i = 0; i < model->Get_Vertex_Count(); ++i) {
+				color1[i] = kEmissiveColor1Diffuse;
+			}
+			color1_written = true;
+		}
+		if (color2 != nullptr) {
+			for (int i = 0; i < model->Get_Vertex_Count(); ++i) {
+				color2[i] = kEmissiveColor2Specular;
+			}
+			color2_written = true;
+		}
+
+		model->Set_Single_Texture(nullptr, 0, 0);
+
+		ShaderClass shader;
+		shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
+		shader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
+		shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_ENABLE);
+		shader.Set_Texturing(ShaderClass::TEXTURING_DISABLE);
+		shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
+		model->Set_Single_Shader(shader);
+
+		VertexMaterialClass *vmat = NEW_REF(VertexMaterialClass, ());
+		vmat->Set_Lighting(true);
+		vmat->Set_Diffuse(0.0f, 0.0f, 0.0f);
+		vmat->Set_Ambient(0.0f, 0.0f, 0.0f);
+		vmat->Set_Emissive(0.0f, 0.0f, 0.0f);
+		vmat->Set_Diffuse_Color_Source(VertexMaterialClass::MATERIAL);
+		vmat->Set_Ambient_Color_Source(VertexMaterialClass::MATERIAL);
+		vmat->Set_Emissive_Color_Source(VertexMaterialClass::COLOR2);
+		model->Set_Single_Material(vmat, 0);
+		diffuse_source = vmat->Get_Diffuse_Color_Source();
+		ambient_source = vmat->Get_Ambient_Color_Source();
+		emissive_source = vmat->Get_Emissive_Color_Source();
+		vmat->Release_Ref();
+	}
+
+	if (mesh_loaded) {
+		camera = W3DNEW CameraClass();
+		camera->Set_Aspect_Ratio(800.0f / 600.0f);
+
+		LightEnvironmentClass light_env;
+		light_env.Reset(Vector3(0.0f, 0.0f, -5.0f), Vector3(0.0f, 0.0f, 0.0f));
+
+		LightClass *light = W3DNEW LightClass(LightClass::DIRECTIONAL);
+		light->Set_Ambient(Vector3(0.0f, 0.0f, 0.0f));
+		light->Set_Diffuse(Vector3(1.0f, 1.0f, 1.0f));
+		light_env.Add_Light(*light);
+		light_env.Pre_Render_Update(camera->Get_Transform());
+
+		RenderInfoClass render_info(*camera);
+		render_info.light_environment = &light_env;
+
+		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			render_result = WW3D::Render(*mesh, render_info);
+			end_render_result = WW3D::End_Render(false);
+		}
+
+		light->Release_Ref();
+	}
+
+	REF_PTR_RELEASE(camera);
+	REF_PTR_RELEASE(mesh);
+
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const WasmD3D8DrawTextureStageState *stage1 =
+		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
+	const bool has_specular_fvf =
+		state != nullptr && (state->last_draw_vertex_shader & D3DFVF_SPECULAR) == D3DFVF_SPECULAR;
+
+	const bool ok =
+		state != nullptr &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		asset_manager == nullptr &&
+		mesh_written &&
+		mesh_loaded &&
+		color1_written &&
+		color2_written &&
+		diffuse_source == VertexMaterialClass::MATERIAL &&
+		ambient_source == VertexMaterialClass::MATERIAL &&
+		emissive_source == VertexMaterialClass::COLOR2 &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		state->create_device_calls >= 1 &&
+		state->create_vertex_buffer_calls >= 1 &&
+		state->create_index_buffer_calls >= 1 &&
+		state->set_stream_source_calls >= 1 &&
+		state->set_indices_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 1 &&
+		state->set_transform_calls >= 3 &&
+		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		state->last_draw_vertex_count == 4 &&
+		state->last_draw_primitive_count == 2 &&
+		state->last_draw_vertex_buffer_id != 0 &&
+		state->last_draw_index_buffer_id != 0 &&
+		state->last_draw_stream_source_stride == 40 &&
+		has_specular_fvf &&
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		draw_state != nullptr &&
+		draw_state->lighting == TRUE &&
+		draw_state->color_vertex == TRUE &&
+		draw_state->diffuse_material_source == D3DMCS_MATERIAL &&
+		draw_state->ambient_material_source == D3DMCS_MATERIAL &&
+		draw_state->emissive_material_source == D3DMCS_COLOR2 &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] == D3DTOP_SELECTARG2 &&
+		stage1 != nullptr &&
+		stage1->values[D3DTSS_COLOROP] == D3DTOP_DISABLE;
+
+	char buffer[7200];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_emissive_color2_material_source_probe\","
+		"\"ok\":%s,"
+		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
+		"\"meshWritten\":%s,\"meshLoad\":%d,\"meshLoaded\":%s,"
+		"\"color1Written\":%s,\"color2Written\":%s,"
+		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d},"
+		"\"materialSources\":{\"diffuse\":%d,\"ambient\":%d,\"emissive\":%d,"
+		"\"expectedDiffuse\":%d,\"expectedAmbient\":%d,\"expectedEmissive\":%d},"
+		"\"colors\":{\"color1\":%u,\"color2\":%u,\"expectedCenter\":[0,255,0,255]},"
+		"\"calls\":{\"createDevice\":%u,\"createVertexBuffer\":%u,"
+		"\"createIndexBuffer\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setTextureStageState\":%u,\"setStreamSource\":%u,"
+		"\"setIndices\":%u,\"setVertexShader\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"setRenderState\":%u,\"setMaterial\":%u,"
+		"\"setLight\":%u,\"lightEnable\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%d,\"vertexCount\":%u,"
+		"\"primitiveCount\":%u,\"vertexStride\":%u,\"vertexShaderFvf\":%lu,"
+		"\"hasSpecularFvf\":%s,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"vertexBytes\":%u,\"vertexChecksum\":%lu,"
+		"\"indexBytes\":%u,\"indexChecksum\":%lu,\"transformMask\":%u},"
+		"\"renderState\":{\"lighting\":%lu,\"colorVertex\":%lu,"
+		"\"diffuseMaterialSource\":%lu,\"specularMaterialSource\":%lu,"
+		"\"ambientMaterialSource\":%lu,\"emissiveMaterialSource\":%lu,"
+		"\"textureStages\":[{\"stage\":0,\"colorOp\":%lu,\"alphaOp\":%lu},"
+		"{\"stage\":1,\"colorOp\":%lu,\"alphaOp\":%lu}]}}",
+		bool_json(ok),
+		init_result,
+		set_device_result,
+		bool_json(mesh_written),
+		load_result,
+		bool_json(mesh_loaded),
+		bool_json(color1_written),
+		bool_json(color2_written),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		static_cast<int>(diffuse_source),
+		static_cast<int>(ambient_source),
+		static_cast<int>(emissive_source),
+		static_cast<int>(VertexMaterialClass::MATERIAL),
+		static_cast<int>(VertexMaterialClass::MATERIAL),
+		static_cast<int>(VertexMaterialClass::COLOR2),
+		kEmissiveColor1Diffuse,
+		kEmissiveColor2Specular,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_texture_stage_state_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->set_render_state_calls : 0,
+		state != nullptr ? state->set_material_calls : 0,
+		state != nullptr ? state->set_light_calls : 0,
+		state != nullptr ? state->light_enable_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		static_cast<int>(state != nullptr ? state->last_draw_primitive_type : D3DPT_FORCE_DWORD),
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_shader : 0),
+		bool_json(has_specular_fvf),
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_bytes : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_vertex_buffer_checksum : 0),
+		state != nullptr ? state->last_draw_index_buffer_bytes : 0,
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_index_buffer_checksum : 0),
+		state != nullptr ? state->last_draw_transform_mask : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->lighting) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->color_vertex) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->diffuse_material_source) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->specular_material_source) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->ambient_material_source) : 0,
+		draw_state != nullptr ? static_cast<unsigned long>(draw_state->emissive_material_source) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_COLOROP]) : 0,
+		stage0 != nullptr ? static_cast<unsigned long>(stage0->values[D3DTSS_ALPHAOP]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_COLOROP]) : 0,
+		stage1 != nullptr ? static_cast<unsigned long>(stage1->values[D3DTSS_ALPHAOP]) : 0);
+
+	g_ww3d_emissive_color2_material_source_probe_json = buffer;
+	return g_ww3d_emissive_color2_material_source_probe_json.c_str();
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_shipped_mesh(
