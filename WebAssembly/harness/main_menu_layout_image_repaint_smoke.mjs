@@ -28,6 +28,10 @@ const hiliteButtonScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-hilite-button-repaint-canvas.png",
 );
+const pushedButtonScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-pushed-button-repaint-canvas.png",
+);
 const staticTextScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
@@ -625,6 +629,73 @@ try {
 
   await page.locator("#viewport").screenshot({ path: hiliteButtonScreenshot });
 
+  let pushedButtonResult;
+  try {
+    pushedButtonResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutPushedButtonRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout pushed button image repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout pushed button image repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  if (!pushedButtonResult.ok
+      || pushedButtonResult.command !== "ww3dMainMenuLayoutPushedButtonRepaint"
+      || pushedButtonResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || pushedButtonResult.probe?.mode !== "pushedButtonSinglePlayer"
+      || !pushedButtonResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer pushed -> W3DGadgetPushButtonImageDraw hilite-selected image triplet")
+      || pushedButtonResult.probe?.results?.buttonPushedMappedImagesFound !== true
+      || pushedButtonResult.probe?.results?.buttonPushedImagesBound !== true
+      || pushedButtonResult.probe?.results?.buttonPushedStateRequested !== true
+      || pushedButtonResult.probe?.results?.buttonHilitedBeforeStateChange !== false
+      || pushedButtonResult.probe?.results?.buttonSelectedBeforeStateChange !== false
+      || pushedButtonResult.probe?.results?.buttonHilitedAfterStateChange !== true
+      || pushedButtonResult.probe?.results?.buttonSelectedAfterStateChange !== true
+      || pushedButtonResult.probe?.results?.buttonRenderedPushedState !== true
+      || pushedButtonResult.probe?.layout?.button?.name !== "MainMenu.wnd:ButtonSinglePlayer"
+      || pushedButtonResult.probe?.layout?.button?.enabled !== true
+      || pushedButtonResult.probe?.layout?.button?.renderState !== "pushed"
+      || pushedButtonResult.probe?.layout?.button?.pushedStateRequested !== true
+      || pushedButtonResult.probe?.layout?.button?.hilited !== true
+      || pushedButtonResult.probe?.layout?.button?.selected !== true
+      || pushedButtonResult.probe?.layout?.button?.pushedImagesBound !== true
+      || pushedButtonResult.probe?.layout?.button?.images?.[0] !== "Buttons-Pushed-Left"
+      || pushedButtonResult.probe?.layout?.button?.images?.[1] !== "Buttons-Pushed-Middle"
+      || pushedButtonResult.probe?.layout?.button?.images?.[2] !== "Buttons-Pushed-Right"
+      || pushedButtonResult.probe?.pushedButtonImages?.left?.name !== "Buttons-Pushed-Left"
+      || pushedButtonResult.probe?.pushedButtonImages?.middle?.name !== "Buttons-Pushed-Middle"
+      || pushedButtonResult.probe?.pushedButtonImages?.right?.name !== "Buttons-Pushed-Right"
+      || pushedButtonResult.probe?.pushedButtonImages?.left?.filename !== "SCSmShellUserInterface512_001.tga"
+      || pushedButtonResult.probe?.pushedButtonImages?.middle?.filename !== "SCSmShellUserInterface512_001.tga"
+      || pushedButtonResult.probe?.pushedButtonImages?.right?.filename !== "SCSmShellUserInterface512_001.tga"
+      || !Array.isArray(pushedButtonResult.probe?.display?.imageDrawNames)
+      || !pushedButtonResult.probe.display.imageDrawNames.includes("Buttons-Pushed-Left")
+      || !pushedButtonResult.probe.display.imageDrawNames.includes("Buttons-Pushed-Middle")
+      || !pushedButtonResult.probe.display.imageDrawNames.includes("Buttons-Pushed-Right")
+      || pushedButtonResult.buttonRegion?.coloredPixelCount < 20
+      || pushedButtonResult.buttonTextRegion?.coloredPixelCount < 20
+      || pushedButtonResult.buttonTextRegion?.maxComponent < 180
+      || pushedButtonResult.coloredLogoPixelCount < 1
+      || pushedButtonResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu pushed button repaint did not prove the original pushed image path: ${JSON.stringify({
+      ok: pushedButtonResult.ok,
+      probe: pushedButtonResult.probe,
+      buttonRegion: pushedButtonResult.buttonRegion,
+      buttonTextRegion: pushedButtonResult.buttonTextRegion,
+      coloredLogoPixelCount: pushedButtonResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: pushedButtonResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: pushedButtonScreenshot });
+
   let staticTextResult;
   try {
     staticTextResult = await withTimeout(
@@ -1129,6 +1200,7 @@ try {
     screenshot: repaintScreenshot,
     disabledButtonScreenshot,
     hiliteButtonScreenshot,
+    pushedButtonScreenshot,
     staticTextScreenshot,
     singlePlayerScreenshot,
     loadReplayScreenshot,
@@ -1143,6 +1215,7 @@ try {
     originalPaths: repaintResult.probe.originalPaths,
     disabledButtonOriginalPaths: disabledButtonResult.probe.originalPaths,
     hiliteButtonOriginalPaths: hiliteButtonResult.probe.originalPaths,
+    pushedButtonOriginalPaths: pushedButtonResult.probe.originalPaths,
     singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     difficultyOriginalPaths: difficultyResult.probe.originalPaths,
@@ -1157,6 +1230,9 @@ try {
     hiliteButtonImages: hiliteButtonResult.probe.hiliteButtonImages,
     hiliteButtonLayout: hiliteButtonResult.probe.layout.button,
     hiliteButtonImageDrawNames: hiliteButtonResult.probe.display.imageDrawNames,
+    pushedButtonImages: pushedButtonResult.probe.pushedButtonImages,
+    pushedButtonLayout: pushedButtonResult.probe.layout.button,
+    pushedButtonImageDrawNames: pushedButtonResult.probe.display.imageDrawNames,
     gameText: repaintResult.probe.gameText,
     difficultyGameText: difficultyResult.probe.gameText,
     texture: repaintResult.probe.texture,
@@ -1172,6 +1248,8 @@ try {
     disabledButtonTextRegion: disabledButtonResult.buttonTextRegion,
     hiliteButtonRegion: hiliteButtonResult.buttonRegion,
     hiliteButtonTextRegion: hiliteButtonResult.buttonTextRegion,
+    pushedButtonRegion: pushedButtonResult.buttonRegion,
+    pushedButtonTextRegion: pushedButtonResult.buttonTextRegion,
     extraButtons,
     extraButtonRegions: repaintResult.extraButtonRegions,
     singlePlayerDropdown: singlePlayerResult.probe.layout.singlePlayerDropdown,
