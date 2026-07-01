@@ -25,6 +25,10 @@ const terrainLoadWindowScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png",
 );
+const terrainCameraPanScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png",
+);
 
 const runtimeArchivePath = "/assets/runtime-terrain-visual-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
@@ -386,6 +390,125 @@ try {
     throw new Error(`browser failures during W3D visual terrain scene: ${JSON.stringify(browserFailures)}`);
   }
 
+  let cameraPanResult;
+  try {
+    cameraPanResult = await withTimeout(
+      "terrain visual camera-pan render RPC",
+      page.evaluate((payload) =>
+        window.CnCPort.rpc("ww3dTerrainVisualCameraPanScene", payload), {
+          iniArchivePath: iniArchiveMemfsPath,
+          mapsArchivePath: mapsArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsMaskPath,
+        }),
+      240000,
+    );
+  } catch (error) {
+    throw new Error(`terrain visual camera-pan render RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
+  }
+  await page.locator("#viewport").screenshot({ path: terrainCameraPanScreenshot });
+
+  const cameraPanDrawHistory = Array.isArray(cameraPanResult.drawHistory)
+    ? cameraPanResult.drawHistory
+    : [];
+  const cameraPanSecondFrameDraws = cameraPanDrawHistory.slice(2);
+  if (!cameraPanResult.ok
+      || cameraPanResult.command !== "ww3dTerrainVisualCameraPanScene"
+      || cameraPanResult.probe?.source !== "ww3d_terrain_visual_camera_pan_scene_probe"
+      || cameraPanResult.probe?.renderMode !== "selected-source-patch-camera-pan"
+      || cameraPanResult.probe?.visual?.class !== "W3DTerrainVisual"
+      || !cameraPanResult.probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
+      || cameraPanResult.probe?.visual?.ownedTerrainRenderObject !== true
+      || cameraPanResult.probe?.visual?.waterRenderObjectNull !== true
+      || cameraPanResult.probe?.results?.loadWindowRenderSelected !== false
+      || cameraPanResult.probe?.results?.patchReinitialized !== true
+      || cameraPanResult.probe?.results?.cameraConfigured !== true
+      || cameraPanResult.probe?.results?.cameraPanRequested !== true
+      || cameraPanResult.probe?.results?.cameraPanMoved !== true
+      || cameraPanResult.probe?.results?.cameraPanBeginRender !== 0
+      || cameraPanResult.probe?.results?.cameraPanRender !== 0
+      || cameraPanResult.probe?.results?.cameraPanEndRender !== 0
+      || cameraPanResult.probe?.renderFrames?.count !== 2
+      || cameraPanResult.probe?.renderFrames?.firstDrawIndexed < 2
+      || cameraPanResult.probe?.renderFrames?.secondDrawIndexed < 4
+      || cameraPanResult.probe?.renderFrames?.firstClear < 1
+      || cameraPanResult.probe?.renderFrames?.secondClear < 2
+      || cameraPanResult.probe?.camera?.pan?.targetX <= cameraPanResult.probe?.camera?.primary?.targetX
+      || cameraPanResult.probe?.camera?.pan?.targetY >= cameraPanResult.probe?.camera?.primary?.targetY
+      || cameraPanResult.probe?.camera?.pan?.eyeX <= cameraPanResult.probe?.camera?.primary?.eyeX
+      || cameraPanResult.probe?.ini?.entry !== terrainIniEntry
+      || cameraPanResult.probe?.ini?.loaded !== true
+      || cameraPanResult.probe?.ini?.entryExists !== true
+      || cameraPanResult.probe?.ini?.parsed !== true
+      || cameraPanResult.probe?.ini?.parser !== terrainIniParser
+      || cameraPanResult.probe?.ini?.originalIniParser !== true
+      || cameraPanResult.probe?.ini?.terrainTypeCount <= 0
+      || !iniLayoutMatches(cameraPanResult.probe?.iniLayout)
+      || cameraPanResult.probe?.map?.entry !== mapEntry
+      || cameraPanResult.probe?.map?.entryExists !== true
+      || cameraPanResult.probe?.map?.entryOpenable !== true
+      || cameraPanResult.probe?.map?.streamOpen !== true
+      || cameraPanResult.probe?.map?.parsed !== true
+      || cameraPanResult.probe?.map?.bytes <= 0
+      || cameraPanResult.probe?.map?.width <= 16
+      || cameraPanResult.probe?.map?.height <= 16
+      || cameraPanResult.probe?.map?.heightChecksum <= 0
+      || !cameraPanResult.probe?.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
+      || cameraPanResult.probe?.scene?.created !== true
+      || cameraPanResult.probe?.scene?.objectAddedByVisualLoad !== true
+      || cameraPanResult.probe?.scene?.path !== "W3DDisplay::m_3DScene"
+      || cameraPanResult.probe?.scene?.terrainClassId !== 4
+      || cameraPanResult.probe?.terrain?.tileSource !== "shipped-map-heightmap"
+      || cameraPanResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || cameraPanResult.probe?.terrain?.verticesPerSide !== 33
+      || cameraPanResult.probe?.terrain?.cellsPerSide !== 32
+      || cameraPanResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
+      || cameraPanResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
+      || cameraPanResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource <= 0
+      || cameraPanResult.probe?.terrain?.patchHeightChecksum <= 0
+      || cameraPanResult.probe?.calls?.browserTextureCreate < 1
+      || cameraPanResult.probe?.calls?.browserTextureUpdate < 1
+      || cameraPanResult.probe?.calls?.drawIndexed < 4
+      || cameraPanResult.probe?.calls?.clear < 2
+      || cameraPanResult.probe?.draw?.vertexShaderFvf !== 578
+      || cameraPanResult.probe?.draw?.vertexStride !== 32
+      || cameraPanResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || cameraPanResult.browserProbe?.texture0?.sampled !== true
+      || cameraPanDrawHistory.length < 4
+      || !hasTerrainPass(cameraPanDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0, firstIndex: 0 })
+      || !hasTerrainPass(cameraPanDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1, firstIndex: 1 })
+      || !hasTerrainPass(cameraPanSecondFrameDraws, { alphaBlendEnable: 0, texCoordIndex: 0 })
+      || !hasTerrainPass(cameraPanSecondFrameDraws, { alphaBlendEnable: 1, texCoordIndex: 1 })
+      || cameraPanResult.textureDelta?.creates < 1
+      || cameraPanResult.textureDelta?.updates < 1
+      || cameraPanResult.textureDelta?.binds < 1
+      || cameraPanResult.textureDelta?.samplerApplications < 1
+      || cameraPanResult.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D visual-owned terrain camera-pan render failed: ${JSON.stringify({
+      ok: cameraPanResult.ok,
+      probe: cameraPanResult.probe,
+      browserProbe: cameraPanResult.browserProbe,
+      drawHistory: summarizeDrawHistory(cameraPanDrawHistory),
+      passChecks: {
+        firstBase: hasTerrainPass(cameraPanDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0, firstIndex: 0 }),
+        firstBlend: hasTerrainPass(cameraPanDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1, firstIndex: 1 }),
+        secondBase: hasTerrainPass(cameraPanSecondFrameDraws, { alphaBlendEnable: 0, texCoordIndex: 0 }),
+        secondBlend: hasTerrainPass(cameraPanSecondFrameDraws, { alphaBlendEnable: 1, texCoordIndex: 1 }),
+      },
+      textureDelta: cameraPanResult.textureDelta,
+      screenshot: {
+        width: cameraPanResult.screenshot?.width,
+        height: cameraPanResult.screenshot?.height,
+        centerPixel: cameraPanResult.screenshot?.centerPixel,
+        coverage: cameraPanResult.screenshot?.coverage,
+      },
+    })}`);
+  }
+  const cameraPanBrowserFailures = browserEvents.filter((event) =>
+    event.type === "pageerror" || event.type === "crash");
+  if (cameraPanBrowserFailures.length > 0) {
+    throw new Error(`browser failures during W3D visual terrain camera-pan scene: ${JSON.stringify(cameraPanBrowserFailures)}`);
+  }
+
   let loadWindowResult;
   try {
     loadWindowResult = await withTimeout(
@@ -526,6 +649,15 @@ try {
     map: terrainResult.probe.map,
     scene: terrainResult.probe.scene,
     terrain: terrainResult.probe.terrain,
+    cameraPanScreenshot: terrainCameraPanScreenshot,
+    cameraPanScene: cameraPanResult.probe.scene,
+    cameraPanTerrain: cameraPanResult.probe.terrain,
+    cameraPanCamera: cameraPanResult.probe.camera,
+    cameraPanFrames: cameraPanResult.probe.renderFrames,
+    cameraPanCalls: cameraPanResult.probe.calls,
+    cameraPanDraw: cameraPanResult.probe.draw,
+    cameraPanCenterPixel: cameraPanResult.screenshot.centerPixel,
+    cameraPanCoverage: cameraPanResult.screenshot.coverage,
     loadWindowScreenshot: terrainLoadWindowScreenshot,
     loadWindowVisual: loadWindowResult.probe.visual,
     loadWindowMap: loadWindowResult.probe.map,

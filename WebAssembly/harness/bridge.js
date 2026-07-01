@@ -7054,6 +7054,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_load_window_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainVisualCameraPanScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_visual_camera_pan_scene", "string", ["string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -17936,16 +17938,22 @@ async function rpc(command, payload = {}) {
       }
     case "ww3dTerrainVisualScene":
     case "ww3dTerrainVisualLoadWindowScene":
+    case "ww3dTerrainVisualCameraPanScene":
       {
         const wasmModule = await wasmModulePromise;
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
+        const cameraPanMode = command === "ww3dTerrainVisualCameraPanScene";
         const expectedSource = loadWindowMode
           ? "ww3d_terrain_visual_load_window_scene_probe"
-          : "ww3d_terrain_visual_scene_probe";
-        const expectedRenderMode = loadWindowMode ? "visual-load-window" : "selected-source-patch";
+          : (cameraPanMode
+              ? "ww3d_terrain_visual_camera_pan_scene_probe"
+              : "ww3d_terrain_visual_scene_probe");
+        const expectedRenderMode = loadWindowMode
+          ? "visual-load-window"
+          : (cameraPanMode ? "selected-source-patch-camera-pan" : "selected-source-patch");
         const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
         const expectedCellsPerSide = loadWindowMode ? 128 : 32;
         const iniArchivePath = String(payload.iniArchivePath ?? "");
@@ -17962,7 +17970,9 @@ async function rpc(command, payload = {}) {
         const probe = parseModuleState(
           (loadWindowMode
             ? wasmModule.probeWW3DTerrainVisualLoadWindowScene
-            : wasmModule.probeWW3DTerrainVisualScene)(
+            : (cameraPanMode
+                ? wasmModule.probeWW3DTerrainVisualCameraPanScene
+                : wasmModule.probeWW3DTerrainVisualScene))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,
@@ -18002,6 +18012,34 @@ async function rpc(command, payload = {}) {
           : drawHistory[1]?.renderState?.alphaBlendEnable === 1
             && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
             && drawHistory[1]?.texture0?.sampled === true;
+        const isBaseTerrainPass = (draw) =>
+          draw?.renderState?.alphaBlendEnable === 0
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBlendTerrainPass = (draw) =>
+          draw?.renderState?.alphaBlendEnable === 1
+            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && draw?.texture0?.sampled === true;
+        const cameraPanProbeOk = !cameraPanMode
+          || (probe?.results?.cameraConfigured === true
+            && probe?.results?.cameraPanRequested === true
+            && probe?.results?.cameraPanMoved === true
+            && probe?.results?.cameraPanBeginRender === 0
+            && probe?.results?.cameraPanRender === 0
+            && probe?.results?.cameraPanEndRender === 0
+            && probe?.renderFrames?.count === 2
+            && probe?.renderFrames?.firstDrawIndexed >= 2
+            && probe?.renderFrames?.secondDrawIndexed >= 4
+            && probe?.renderFrames?.firstClear >= 1
+            && probe?.renderFrames?.secondClear >= 2
+            && probe?.calls?.clear >= 2
+            && probe?.calls?.drawIndexed >= 4
+            && probe?.camera?.pan?.targetX > probe?.camera?.primary?.targetX
+            && probe?.camera?.pan?.targetY < probe?.camera?.primary?.targetY
+            && probe?.camera?.pan?.eyeX > probe?.camera?.primary?.eyeX
+            && drawHistory.length >= 4
+            && drawHistory.slice(2).some(isBaseTerrainPass)
+            && drawHistory.slice(2).some(isBlendTerrainPass));
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
           && probe?.renderMode === expectedRenderMode
@@ -18011,6 +18049,8 @@ async function rpc(command, payload = {}) {
           && probe?.visual?.waterRenderObjectNull === true
           && probe?.results?.loadWindowRenderSelected === loadWindowMode
           && probe?.results?.patchReinitialized === !loadWindowMode
+          && probe?.results?.cameraConfigured === true
+          && probe?.results?.cameraPanRequested === cameraPanMode
           && probe?.ini?.loaded === true
           && probe?.ini?.entryExists === true
           && probe?.ini?.parsed === true
@@ -18061,6 +18101,7 @@ async function rpc(command, payload = {}) {
           && drawHistory.length >= 2
           && hasBaseTerrainPass
           && hasBlendTerrainPass
+          && cameraPanProbeOk
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1

@@ -1475,6 +1475,43 @@ const steps = [
         "terrain visual scene render smoke did not produce colored browser pixels", payload.coverage);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-visual-scene-canvas.png"),
         "terrain visual scene render smoke did not capture the expected screenshot", payload);
+      expect(payload.cameraPanTerrain?.tileSource === "shipped-map-heightmap"
+          && payload.cameraPanTerrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.cameraPanTerrain?.verticesPerSide === 33
+          && payload.cameraPanTerrain?.cellsPerSide === 32
+          && payload.cameraPanTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.cameraPanTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.cameraPanTerrain?.tileDiagnostics?.patchCellsWithSource > 0
+          && payload.cameraPanTerrain?.patchHeightChecksum > 0,
+        "terrain visual camera-pan smoke did not keep source-backed visual terrain geometry", payload.cameraPanTerrain);
+      expect(payload.cameraPanScene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.cameraPanScene?.created === true
+          && payload.cameraPanScene?.objectAddedByVisualLoad === true
+          && payload.cameraPanScene?.path === "W3DDisplay::m_3DScene"
+          && payload.cameraPanScene?.terrainClassId === 4,
+        "terrain visual camera-pan smoke did not render through the visual-owned W3DDisplay scene", payload.cameraPanScene);
+      expect(payload.cameraPanFrames?.count === 2
+          && payload.cameraPanFrames?.firstDrawIndexed >= 2
+          && payload.cameraPanFrames?.secondDrawIndexed >= 4
+          && payload.cameraPanFrames?.firstClear >= 1
+          && payload.cameraPanFrames?.secondClear >= 2,
+        "terrain visual camera-pan smoke did not prove two rendered camera frames", payload.cameraPanFrames);
+      expect(payload.cameraPanCamera?.pan?.targetX > payload.cameraPanCamera?.primary?.targetX
+          && payload.cameraPanCamera?.pan?.targetY < payload.cameraPanCamera?.primary?.targetY
+          && payload.cameraPanCamera?.pan?.eyeX > payload.cameraPanCamera?.primary?.eyeX,
+        "terrain visual camera-pan smoke did not report a moved gameplay-style camera target", payload.cameraPanCamera);
+      expect(payload.cameraPanCalls?.browserTextureCreate >= 1
+          && payload.cameraPanCalls?.browserTextureUpdate >= 1
+          && payload.cameraPanCalls?.drawIndexed >= 4
+          && payload.cameraPanCalls?.clear >= 2,
+        "terrain visual camera-pan smoke did not reach two texture-backed indexed terrain renders", payload.cameraPanCalls);
+      expect(payload.cameraPanDraw?.vertexShaderFvf === 578
+          && payload.cameraPanDraw?.vertexStride === 32,
+        "terrain visual camera-pan smoke did not use the expected W3D terrain FVF draw", payload.cameraPanDraw);
+      expect(payload.cameraPanCoverage?.coloredPixelCount > 0,
+        "terrain visual camera-pan smoke did not produce colored browser pixels", payload.cameraPanCoverage);
+      expect(payload.cameraPanScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png"),
+        "terrain visual camera-pan smoke did not capture the expected screenshot", payload);
       expect(payload.loadWindowVisual?.class === "W3DTerrainVisual"
           && payload.loadWindowVisual?.loadPath?.includes("W3DTerrainVisual::load")
           && payload.loadWindowVisual?.ownedTerrainRenderObject === true

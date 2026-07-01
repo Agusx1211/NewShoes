@@ -743,18 +743,25 @@ shares structure and follows behind.
       visual-owned `HeightMapRenderObjClass` is attached by
       `W3DDisplay::m_3DScene`, captures browser WebGL2 terrain pixels, and now
       also renders the original 129x129 `W3DTerrainVisual::load` draw window
-      without post-load patch `initHeightData` reinitialization. The selected
-      32x32 patch remains source-backed. The terrain visual harness can now
+      without post-load patch `initHeightData` reinitialization. It also runs a
+      camera-pan render mode over the same visual-owned source-backed 32x32
+      patch: the probe moves a real `CameraClass` target/eye, renders two
+      `WW3D::Render(W3DDisplay::m_3DScene, camera)` frames, gates two
+      base/blend terrain pass pairs, and captures
+      `harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png`.
+      The selected 32x32 patch remains source-backed. The terrain visual
+      harness can now
       mount optional base Generals `Terrain.big` alongside `TerrainZH.big`
       through the same `Terrain*.big` archive mask, while the current ZH-only
       archive set honestly records the load window as 0/16,384 source-backed
       terrain cells.
       `test:vertical-integrations` now includes that visual-owned terrain scene
-      plus the no-reinit load-window proof beside the lower-level tile,
-      scene-dispatch, and map-patch terrain proofs. The remaining terrain
-      vertical work is production/full-map display ownership with source-backed
-      coverage across the load window, then broadening water, shroud, objects,
-      and gameplay camera flow on top of the same original heightmap path.
+      plus the no-reinit load-window proof and camera-pan proof beside the
+      lower-level tile, scene-dispatch, and map-patch terrain proofs. The
+      remaining terrain vertical work is production/full-map display ownership
+      with source-backed coverage across the load window, then broadening water,
+      shroud, objects, and continuous gameplay-owned camera flow on top of the
+      same original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
       `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and

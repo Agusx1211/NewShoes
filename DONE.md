@@ -3675,6 +3675,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       non-black screenshot coverage, and the explicit 16,384-cell missing
       source-backed texture gap under the current ZH-only `TerrainZH.big`
       archive set.
+- [x] Add a browser-verified terrain camera-pan proof on top of the
+      visual-owned map scene. `test:ww3d-terrain-visual-scene` now runs a
+      `ww3dTerrainVisualCameraPanScene` RPC after the source-backed selected
+      patch render, moves a real `CameraClass` eye/target over the same
+      `W3DTerrainVisual::load` / `HeightMapRenderObjClass` scene, renders two
+      `WW3D::Render(W3DDisplay::m_3DScene, camera)` frames, verifies two
+      base/blend terrain pass pairs, gates two clears and four indexed terrain
+      draws, and captures
+      `harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png`.
+      `test:vertical-integrations` now checks the camera positions, frame
+      counters, terrain draw metadata, and non-black WebGL2 pixels. Continuous
+      gameplay-owned camera/update flow remains open.
 - [x] Extend optional base Generals terrain archive extraction and mounting.
       `extract_zh_runtime_archives.sh` now extracts or preserves `Terrain.big`
       from base Generals disc 1 when supplied, and

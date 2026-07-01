@@ -74,6 +74,7 @@ std::string g_ww3d_terrain_tile_archive_scene_probe_json;
 std::string g_ww3d_terrain_map_patch_scene_probe_json;
 std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
+std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -792,6 +793,64 @@ void record_patch_height_metrics(ProbeTerrainMapPatchLoad &load)
 		}
 	}
 	load.patchHeightChecksum = checksum;
+}
+
+struct ProbeTerrainCameraView
+{
+	float eyeX = 0.0f;
+	float eyeY = 0.0f;
+	float eyeZ = 0.0f;
+	float targetX = 0.0f;
+	float targetY = 0.0f;
+	float targetZ = 0.0f;
+	float renderSpan = 0.0f;
+	float lift = 0.0f;
+};
+
+void configure_terrain_visual_camera(
+	CameraClass *camera,
+	const ProbeTerrainMapPatchLoad &load,
+	bool use_load_window,
+	Int render_window_cells,
+	float target_offset_x,
+	float target_offset_y,
+	ProbeTerrainCameraView &view)
+{
+	if (camera == nullptr) {
+		return;
+	}
+
+	camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
+	const float camera_far_clip = use_load_window ? 6000.0f : 1000.0f;
+	camera->Set_Clip_Planes(1.0f, camera_far_clip);
+	const float terrain_center_z = static_cast<float>(load.patchCenterHeight) * MAP_HEIGHT_SCALE;
+	const float render_span = static_cast<float>(std::max(1, render_window_cells)) * MAP_XY_FACTOR;
+	const float camera_lift = use_load_window ? std::max(360.0f, render_span * 0.7f) : 240.0f;
+	const float base_target_x = use_load_window ?
+		(static_cast<float>(load.patchOriginX) +
+		 static_cast<float>(render_window_cells) * 0.5f -
+		 static_cast<float>(load.border)) * MAP_XY_FACTOR :
+		0.0f;
+	const float base_target_y = use_load_window ?
+		(static_cast<float>(load.patchOriginY) +
+		 static_cast<float>(render_window_cells) * 0.5f -
+		 static_cast<float>(load.border)) * MAP_XY_FACTOR :
+		0.0f;
+	view.targetX = base_target_x + target_offset_x;
+	view.targetY = base_target_y + target_offset_y;
+	view.targetZ = use_load_window ? terrain_center_z : terrain_center_z - 180.0f;
+	view.eyeX = view.targetX;
+	view.eyeY = view.targetY + render_span * 1.5f;
+	view.eyeZ = view.targetZ + camera_lift;
+	view.renderSpan = render_span;
+	view.lift = camera_lift;
+
+	Matrix3D camera_transform(true);
+	camera_transform.Look_At(
+		Vector3(view.eyeX, view.eyeY, view.eyeZ),
+		Vector3(view.targetX, view.targetY, view.targetZ),
+		0.0f);
+	camera->Set_Transform(camera_transform);
 }
 
 void record_parsed_map_metrics(ProbeTerrainMapPatchLoad &load)
@@ -2128,7 +2187,8 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const char *ini_archive_path,
 	const char *maps_archive_path,
 	const char *terrain_archive_path,
-	bool use_load_window)
+	bool use_load_window,
+	bool use_camera_pan)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -2146,6 +2206,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	int begin_render_result = WW3D_ERROR_GENERIC;
 	int render_result = WW3D_ERROR_GENERIC;
 	int end_render_result = WW3D_ERROR_GENERIC;
+	int camera_pan_begin_render_result = WW3D_ERROR_GENERIC;
+	int camera_pan_render_result = WW3D_ERROR_GENERIC;
+	int camera_pan_end_render_result = WW3D_ERROR_GENERIC;
 	bool archive_context_ready = false;
 	bool map_created = false;
 	bool water_transparency_ready = false;
@@ -2159,6 +2222,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	bool visual_scene_object_added = false;
 	bool load_window_render_selected = false;
 	bool patch_reinitialized = false;
+	bool camera_configured = false;
+	bool camera_pan_requested = false;
+	bool camera_pan_moved = false;
 	bool shader_manager_initialized = false;
 	Int visual_load_draw_width = 0;
 	Int visual_load_draw_height = 0;
@@ -2168,6 +2234,12 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	Int render_window_height = 0;
 	Int render_window_cells = 0;
 	UnsignedInt render_expected_flat_texture_size = 0;
+	UnsignedInt draw_indexed_after_first_render = 0;
+	UnsignedInt draw_indexed_after_camera_pan = 0;
+	UnsignedInt clear_after_first_render = 0;
+	UnsignedInt clear_after_camera_pan = 0;
+	ProbeTerrainCameraView primary_camera_view;
+	ProbeTerrainCameraView camera_pan_view;
 
 	ProbeTerrainMapPatchLoad map_load;
 	ProbeTerrainArchiveContext archive_context;
@@ -2319,29 +2391,15 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	if ((use_load_window && load_window_render_selected) || (!use_load_window && patch_reinitialized)) {
 		camera = W3DNEW CameraClass();
 		if (camera != nullptr) {
-			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
-			const float camera_far_clip = use_load_window ? 6000.0f : 1000.0f;
-			camera->Set_Clip_Planes(1.0f, camera_far_clip);
-			const float terrain_center_z = static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE;
-			const float render_span = static_cast<float>(std::max(1, render_window_cells)) * MAP_XY_FACTOR;
-			const float camera_lift = use_load_window ? std::max(360.0f, render_span * 0.7f) : 240.0f;
-			const float target_x = use_load_window ?
-				(static_cast<float>(map_load.patchOriginX) +
-				 static_cast<float>(render_window_cells) * 0.5f -
-				 static_cast<float>(map_load.border)) * MAP_XY_FACTOR :
-				0.0f;
-			const float target_y = use_load_window ?
-				(static_cast<float>(map_load.patchOriginY) +
-				 static_cast<float>(render_window_cells) * 0.5f -
-				 static_cast<float>(map_load.border)) * MAP_XY_FACTOR :
-				0.0f;
-			const float target_z = use_load_window ? terrain_center_z : terrain_center_z - 180.0f;
-			Matrix3D camera_transform(true);
-			camera_transform.Look_At(
-				Vector3(target_x, target_y + render_span * 1.5f, target_z + camera_lift),
-				Vector3(target_x, target_y, target_z),
-				0.0f);
-			camera->Set_Transform(camera_transform);
+			configure_terrain_visual_camera(
+				camera,
+				map_load,
+				use_load_window,
+				render_window_cells,
+				0.0f,
+				0.0f,
+				primary_camera_view);
+			camera_configured = true;
 		}
 	}
 
@@ -2350,6 +2408,43 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		if (succeeded(begin_render_result)) {
 			render_result = WW3D::Render(W3DDisplay::m_3DScene, camera);
 			end_render_result = WW3D::End_Render(false);
+			const WasmD3D8ShimState *state_after_first_render = wasm_d3d8_get_state();
+			if (state_after_first_render != nullptr) {
+				draw_indexed_after_first_render = state_after_first_render->draw_indexed_primitive_calls;
+				clear_after_first_render = state_after_first_render->clear_calls;
+			}
+		}
+	}
+
+	camera_pan_requested = use_camera_pan && !use_load_window;
+	if (camera_pan_requested &&
+			camera != nullptr &&
+			W3DDisplay::m_3DScene != nullptr &&
+			succeeded(end_render_result)) {
+		const float pan_offset_x = primary_camera_view.renderSpan * 0.10f;
+		const float pan_offset_y = primary_camera_view.renderSpan * -0.04f;
+		configure_terrain_visual_camera(
+			camera,
+			map_load,
+			false,
+			render_window_cells,
+			pan_offset_x,
+			pan_offset_y,
+			camera_pan_view);
+		camera_pan_moved =
+			camera_pan_view.targetX > primary_camera_view.targetX + 0.1f &&
+			camera_pan_view.targetY < primary_camera_view.targetY - 0.1f &&
+			camera_pan_view.eyeX > primary_camera_view.eyeX + 0.1f &&
+			camera_pan_view.eyeY < primary_camera_view.eyeY;
+		camera_pan_begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(camera_pan_begin_render_result)) {
+			camera_pan_render_result = WW3D::Render(W3DDisplay::m_3DScene, camera);
+			camera_pan_end_render_result = WW3D::End_Render(false);
+			const WasmD3D8ShimState *state_after_camera_pan = wasm_d3d8_get_state();
+			if (state_after_camera_pan != nullptr) {
+				draw_indexed_after_camera_pan = state_after_camera_pan->draw_indexed_primitive_calls;
+				clear_after_camera_pan = state_after_camera_pan->clear_calls;
+			}
 		}
 	}
 
@@ -2383,9 +2478,15 @@ const char *run_ww3d_terrain_visual_scene_probe(
 			(!use_load_window && patch_reinitialized && patch_init_height_data_result == 0)) &&
 		water_transparency_ready &&
 		!visual->hasWaterRenderObject() &&
+		camera_configured &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
+		(!camera_pan_requested ||
+			(camera_pan_moved &&
+			 succeeded(camera_pan_begin_render_result) &&
+			 succeeded(camera_pan_render_result) &&
+			 succeeded(camera_pan_end_render_result))) &&
 		state->browser_texture_create_calls >= 1 &&
 		state->browser_texture_update_calls >= 1 &&
 		state->browser_buffer_create_calls >= 2 &&
@@ -2398,7 +2499,14 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		state->last_draw_primitive_count > 0 &&
 		state->last_draw_stream_source_stride == sizeof(VertexFormatXYZDUV2) &&
 		state->last_draw_vertex_shader == DX8_FVF_XYZDUV2 &&
-		(state->last_draw_transform_mask & 7u) == 7u;
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		(!camera_pan_requested ||
+			(state->draw_indexed_primitive_calls >= 4 &&
+			 state->clear_calls >= 2 &&
+			 draw_indexed_after_first_render >= 2 &&
+			 draw_indexed_after_camera_pan >= 4 &&
+			 clear_after_first_render >= 1 &&
+			 clear_after_camera_pan >= 2));
 
 	const std::string first_patch_texture_class_json =
 		json_string(map_load.firstPatchTextureClassName);
@@ -2406,10 +2514,19 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 	const char *source_name = use_load_window ?
 		"ww3d_terrain_visual_load_window_scene_probe" :
-		"ww3d_terrain_visual_scene_probe";
-	const char *render_mode = use_load_window ? "visual-load-window" : "selected-source-patch";
+		(camera_pan_requested ?
+			"ww3d_terrain_visual_camera_pan_scene_probe" :
+			"ww3d_terrain_visual_scene_probe");
+	const char *render_mode = use_load_window ?
+		"visual-load-window" :
+		(camera_pan_requested ?
+			"selected-source-patch-camera-pan" :
+			"selected-source-patch");
+	const UnsignedInt render_frame_count =
+		(succeeded(end_render_result) ? 1u : 0u) +
+		(camera_pan_requested && succeeded(camera_pan_end_render_result) ? 1u : 0u);
 
-	char buffer[22000];
+	char buffer[26000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -2422,7 +2539,18 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"shaderManagerInitialized\":%s,\"visualCreated\":%s,"
 		"\"renderObjectCreated\":%s,\"renderObjectInstalled\":%s,"
 		"\"visualLoadInitializedRenderObject\":%s,"
-		"\"loadWindowRenderSelected\":%s,\"patchReinitialized\":%s},"
+		"\"loadWindowRenderSelected\":%s,\"patchReinitialized\":%s,"
+		"\"cameraConfigured\":%s,\"cameraPanRequested\":%s,"
+		"\"cameraPanMoved\":%s,\"cameraPanBeginRender\":%d,"
+		"\"cameraPanRender\":%d,\"cameraPanEndRender\":%d},"
+		"\"renderFrames\":{\"count\":%u,\"firstDrawIndexed\":%u,"
+		"\"secondDrawIndexed\":%u,\"firstClear\":%u,\"secondClear\":%u},"
+		"\"camera\":{\"primary\":{\"eyeX\":%.3f,\"eyeY\":%.3f,\"eyeZ\":%.3f,"
+		"\"targetX\":%.3f,\"targetY\":%.3f,\"targetZ\":%.3f,"
+		"\"renderSpan\":%.3f,\"lift\":%.3f},"
+		"\"pan\":{\"eyeX\":%.3f,\"eyeY\":%.3f,\"eyeZ\":%.3f,"
+		"\"targetX\":%.3f,\"targetY\":%.3f,\"targetZ\":%.3f,"
+		"\"renderSpan\":%.3f,\"lift\":%.3f}},"
 		"\"visual\":{\"class\":\"W3DTerrainVisual\","
 		"\"loadPath\":\"W3DTerrainVisual::load -> TerrainVisual::load -> "
 		"CachedFileInputStream -> WorldHeightMap -> HeightMapRenderObjClass::initHeightData -> "
@@ -2509,6 +2637,33 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		bool_json(visual_load_initialized_render_object),
 		bool_json(load_window_render_selected),
 		bool_json(patch_reinitialized),
+		bool_json(camera_configured),
+		bool_json(camera_pan_requested),
+		bool_json(camera_pan_moved),
+		camera_pan_begin_render_result,
+		camera_pan_render_result,
+		camera_pan_end_render_result,
+		render_frame_count,
+		draw_indexed_after_first_render,
+		draw_indexed_after_camera_pan,
+		clear_after_first_render,
+		clear_after_camera_pan,
+		static_cast<double>(primary_camera_view.eyeX),
+		static_cast<double>(primary_camera_view.eyeY),
+		static_cast<double>(primary_camera_view.eyeZ),
+		static_cast<double>(primary_camera_view.targetX),
+		static_cast<double>(primary_camera_view.targetY),
+		static_cast<double>(primary_camera_view.targetZ),
+		static_cast<double>(primary_camera_view.renderSpan),
+		static_cast<double>(primary_camera_view.lift),
+		static_cast<double>(camera_pan_view.eyeX),
+		static_cast<double>(camera_pan_view.eyeY),
+		static_cast<double>(camera_pan_view.eyeZ),
+		static_cast<double>(camera_pan_view.targetX),
+		static_cast<double>(camera_pan_view.targetY),
+		static_cast<double>(camera_pan_view.targetZ),
+		static_cast<double>(camera_pan_view.renderSpan),
+		static_cast<double>(camera_pan_view.lift),
 		bool_json(visual_load_initialized_render_object),
 		bool_json(visual != nullptr && !visual->hasWaterRenderObject()),
 		visual_load_draw_width,
@@ -2717,6 +2872,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_scene(
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path,
+		false,
 		false);
 }
 
@@ -2730,6 +2886,21 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_load_window_
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path,
+		true,
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_camera_pan_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path)
+{
+	return run_ww3d_terrain_visual_scene_probe(
+		g_ww3d_terrain_visual_camera_pan_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		false,
 		true);
 }
 
