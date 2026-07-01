@@ -83,6 +83,7 @@ std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
 std::string g_ww3d_terrain_prop_buffer_render_probe_json;
+std::string g_ww3d_terrain_prop_buffer_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -1490,6 +1491,51 @@ public:
 		return SphereClass(Vector3(0.0f, 0.0f, 0.0f), 1.0f);
 	}
 };
+
+class ProbeHeightMapRenderObjWithPropBuffer final : public HeightMapRenderObjClass
+{
+public:
+	ProbeW3DPropBuffer *installProbePropBuffer()
+	{
+		if (m_propBuffer != nullptr) {
+			delete m_propBuffer;
+		}
+		m_propBuffer = NEW ProbeW3DPropBuffer;
+		return static_cast<ProbeW3DPropBuffer *>(m_propBuffer);
+	}
+};
+
+bool normalize_probe_prop_mesh(RenderObjClass *prop_render_object, int &class_id)
+{
+	class_id = RenderObjClass::CLASSID_UNKNOWN;
+	if (prop_render_object == nullptr) {
+		return false;
+	}
+
+	class_id = prop_render_object->Class_ID();
+	if (class_id != RenderObjClass::CLASSID_MESH) {
+		return false;
+	}
+
+	MeshClass *mesh = static_cast<MeshClass *>(prop_render_object);
+	MeshModelClass *model = mesh->Peek_Model();
+	if (model == nullptr) {
+		return false;
+	}
+
+	ShaderClass shader;
+	shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
+	shader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
+	shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_ENABLE);
+	shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
+	shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
+	model->Set_Single_Shader(shader);
+
+	VertexMaterialClass *vmat = NEW_REF(VertexMaterialClass, ());
+	model->Set_Single_Material(vmat, 0);
+	vmat->Release_Ref();
+	return true;
+}
 
 void configure_global_data(GlobalData &global_data)
 {
@@ -3066,6 +3112,556 @@ const char *run_ww3d_terrain_bib_buffer_lifecycle_probe(std::string &target_json
 	return target_json.c_str();
 }
 
+const char *run_ww3d_terrain_prop_buffer_scene_probe(
+	std::string &target_json,
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *archive_path,
+	const char *texture_archive_path)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = nullptr;
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int init_height_data_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool map_created = false;
+	bool global_data_ready = false;
+	bool asset_manager_created = false;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
+	bool mesh_file_exists = false;
+	bool texture_file_exists = false;
+	bool water_transparency_ready = false;
+	bool shader_manager_initialized = false;
+	bool render_object_created = false;
+	bool render_object_initialized = false;
+	bool prop_buffer_installed = false;
+	bool prop_buffer_initialized = false;
+	bool add_prop_invoked = false;
+	bool update_prop_invoked = false;
+	bool update_center_invoked = false;
+	bool prop_type_created = false;
+	bool prop_render_object_created = false;
+	bool prop_mesh_normalized = false;
+	bool scene_created = false;
+	bool scene_object_added = false;
+	bool prop_visible_after_scene = false;
+	bool remove_prop_invoked = false;
+	bool clear_props_invoked = false;
+	bool prop_removed = false;
+	Int prop_types_after_add = -1;
+	Int props_after_add = -1;
+	Int props_after_update = -1;
+	Int props_after_remove = -1;
+	Int props_after_clear = -1;
+	int prop_render_object_class_id = RenderObjClass::CLASSID_UNKNOWN;
+	float prop_location_z = 0.0f;
+	float prop_bounds_center_x = 0.0f;
+	float prop_bounds_center_y = 0.0f;
+	float prop_bounds_center_z = 0.0f;
+	float prop_bounds_radius = 0.0f;
+
+	ProbeTerrainMapPatchLoad map_load;
+	WorldHeightMap *map = load_archive_terrain_map_patch(
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		map_load);
+	map_created = map_load.mapParsed && map != nullptr;
+
+	if (map_created) {
+		global_data = NEW GlobalData;
+		if (global_data != nullptr) {
+			configure_global_data(*global_data);
+			TheWritableGlobalData = global_data;
+			global_data_ready = true;
+		}
+	}
+
+	WaterTransparencySetting *old_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+	WaterTransparencySetting *probe_water_transparency = nullptr;
+	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
+	ProbeHeightMapRenderObjWithPropBuffer *render_object = nullptr;
+	ProbeW3DPropBuffer *prop_buffer = nullptr;
+	RTS3DScene *scene = nullptr;
+	CameraClass *camera = nullptr;
+	WW3DAssetManager *asset_manager = nullptr;
+
+	if (global_data_ready) {
+		init_result = WW3D::Init(nullptr, nullptr, false);
+	}
+	if (succeeded(init_result)) {
+		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager_created = asset_manager != nullptr;
+	}
+	if (asset_manager != nullptr) {
+		asset_manager->Set_WW3D_Load_On_Demand(true);
+	}
+	if (asset_manager_created) {
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		W3DShaderManager::init();
+		shader_manager_initialized = true;
+
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_paths(archive_path, texture_archive_path);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		mesh_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kPropMeshArchiveEntry);
+		texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kPropTextureArchiveEntry);
+	}
+
+	if (succeeded(set_device_result) && map_created && mesh_file_exists && texture_file_exists) {
+		if (old_water_transparency != nullptr) {
+			water_transparency_ready = true;
+		} else {
+			probe_water_transparency = newInstance(WaterTransparencySetting);
+			TheWaterTransparency = probe_water_transparency;
+			water_transparency_ready = probe_water_transparency != nullptr;
+		}
+
+		map->setDrawWidth(kMapPatchVertices);
+		map->setDrawHeight(kMapPatchVertices);
+		map->setDrawOrg(map_load.patchOriginX, map_load.patchOriginY);
+
+		render_object = NEW_REF(ProbeHeightMapRenderObjWithPropBuffer, ());
+		render_object_created = render_object != nullptr;
+		if (render_object_created) {
+			Matrix3D terrain_transform(true);
+			const float patch_center_x =
+				(static_cast<float>(map_load.patchOriginX) +
+				 static_cast<float>(kMapPatchCells) * 0.5f -
+				 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+			const float patch_center_y =
+				(static_cast<float>(map_load.patchOriginY) +
+				 static_cast<float>(kMapPatchCells) * 0.5f -
+				 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+			terrain_transform.Set_Translation(Vector3(
+				-patch_center_x,
+				-patch_center_y,
+				-180.0f));
+			render_object->Set_Transform(terrain_transform);
+			TheTerrainRenderObject = render_object;
+			init_height_data_result = render_object->initHeightData(
+				map->getDrawWidth(),
+				map->getDrawHeight(),
+				map,
+				nullptr,
+				TRUE);
+			render_object_initialized = init_height_data_result == 0;
+		}
+	}
+
+	if (water_transparency_ready && render_object_initialized) {
+		prop_buffer = render_object->installProbePropBuffer();
+		prop_buffer_installed = prop_buffer != nullptr;
+		prop_buffer_initialized = prop_buffer_installed && prop_buffer->initialized();
+	}
+
+	if (prop_buffer_initialized) {
+		const float terrain_center_z =
+			static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE - 180.0f;
+		prop_location_z = terrain_center_z + 8.0f;
+		Coord3D location;
+		location.set(0.0f, 0.0f, prop_location_z);
+		render_object->addProp(kPropProbeId, location, 0.0f, 1.0f, AsciiString(kPropModelName));
+		add_prop_invoked = true;
+		props_after_add = prop_buffer->numProps();
+		prop_types_after_add = prop_buffer->numPropTypes();
+		prop_type_created = prop_buffer->hasPropTypeRenderObject(0);
+		prop_render_object_created = prop_buffer->hasPropRenderObject(0);
+		prop_mesh_normalized =
+			normalize_probe_prop_mesh(prop_buffer->propRenderObject(0), prop_render_object_class_id);
+
+		update_prop_invoked =
+			prop_buffer->updatePropPosition(kPropProbeId, location, 0.0f, 1.0f);
+		props_after_update = prop_buffer->numProps();
+
+		const SphereClass bounds = prop_buffer->propBounds(0);
+		prop_bounds_center_x = bounds.Center.X;
+		prop_bounds_center_y = bounds.Center.Y;
+		prop_bounds_center_z = bounds.Center.Z;
+		prop_bounds_radius = bounds.Radius > 0.001f ? bounds.Radius : 1.0f;
+
+		camera = W3DNEW CameraClass();
+		if (camera != nullptr) {
+			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
+			camera->Set_Clip_Planes(1.0f, std::max(1000.0f, prop_bounds_radius * 8.0f));
+			Matrix3D camera_transform(true);
+			const Vector3 target(prop_bounds_center_x, prop_bounds_center_y, prop_bounds_center_z);
+			const Vector3 eye(
+				prop_bounds_center_x,
+				prop_bounds_center_y - prop_bounds_radius * 0.25f,
+				prop_bounds_center_z + prop_bounds_radius * 3.0f);
+			camera_transform.Look_At(eye, target, 0.0f);
+			camera->Set_Transform(camera_transform);
+		}
+	}
+
+	if (camera != nullptr && prop_render_object_created) {
+		render_object->updateCenter(camera, nullptr);
+		update_center_invoked = true;
+	}
+
+	if (camera != nullptr && update_center_invoked) {
+		scene = NEW_REF(RTS3DScene, ());
+		scene_created = scene != nullptr;
+		if (scene_created) {
+			scene->Add_Render_Object(render_object);
+			scene_object_added = render_object->Peek_Scene() == scene;
+		}
+	}
+
+	if (scene_object_added) {
+		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+		if (succeeded(begin_render_result)) {
+			render_result = WW3D::Render(scene, camera);
+			end_render_result = WW3D::End_Render(false);
+		}
+		prop_visible_after_scene = prop_buffer != nullptr && prop_buffer->propVisible(0);
+	}
+
+	if (prop_buffer_installed) {
+		render_object->removeProp(kPropProbeId);
+		remove_prop_invoked = true;
+		props_after_remove = prop_buffer->numProps();
+		prop_removed = !prop_buffer->hasPropRenderObject(0);
+		render_object->removeAllProps();
+		clear_props_invoked = true;
+		props_after_clear = prop_buffer->numProps();
+	}
+
+	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	const IniLayoutComparison ini_layout = compare_ini_layout();
+	const bool prop_scene_draw_flushed =
+		state != nullptr &&
+		state->draw_indexed_primitive_calls >= 3 &&
+		state->last_draw_stream_source_stride == sizeof(VertexFormatXYZNDUV2) &&
+		state->last_draw_vertex_shader == DX8_FVF_XYZNDUV2 &&
+		state->last_draw_vertex_count > 0 &&
+		state->last_draw_primitive_count > 0 &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE;
+	const bool ok =
+		state != nullptr &&
+		ini_layout.matches &&
+		global_data_ready &&
+		succeeded(init_result) &&
+		asset_manager_created &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		texture_file_factory_installed &&
+		mesh_file_exists &&
+		texture_file_exists &&
+		map_load.iniArchiveLoaded &&
+		map_load.mapsArchiveLoaded &&
+		map_load.terrainArchiveLoaded &&
+		map_load.terrainIniParsed &&
+		map_load.terrainTypeCount > 0 &&
+		map_load.mapEntryExists &&
+		map_load.mapEntryOpenable &&
+		map_load.mapStreamOpen &&
+		map_created &&
+		map_load.mapBytes > 0 &&
+		map_load.width > kMapPatchCells &&
+		map_load.height > kMapPatchCells &&
+		map_load.heightChecksum > 0 &&
+		map_load.patchHeightChecksum > 0 &&
+		water_transparency_ready &&
+		render_object_created &&
+		render_object_initialized &&
+		prop_buffer_installed &&
+		prop_buffer_initialized &&
+		add_prop_invoked &&
+		props_after_add == 1 &&
+		prop_types_after_add == 1 &&
+		prop_type_created &&
+		prop_render_object_created &&
+		prop_render_object_class_id == RenderObjClass::CLASSID_MESH &&
+		prop_mesh_normalized &&
+		update_prop_invoked &&
+		props_after_update == 1 &&
+		update_center_invoked &&
+		scene_created &&
+		scene_object_added &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		prop_visible_after_scene &&
+		prop_scene_draw_flushed &&
+		remove_prop_invoked &&
+		props_after_remove == 1 &&
+		prop_removed &&
+		clear_props_invoked &&
+		props_after_clear == 0 &&
+		state->browser_texture_create_calls >= 2 &&
+		state->browser_texture_update_calls >= 2 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->browser_buffer_create_calls >= 4 &&
+		state->browser_buffer_update_calls >= 4 &&
+		state->set_stream_source_calls >= 2 &&
+		state->set_indices_calls >= 2 &&
+		state->set_texture_calls >= 1;
+
+	const std::string archive_json = json_string(archive_path != nullptr ? archive_path : "");
+	const std::string texture_archive_json =
+		json_string(texture_archive_path != nullptr ? texture_archive_path : "");
+	const std::string prop_model_json = json_string(kPropModelName);
+	const std::string prop_mesh_entry_json = json_string(kPropMeshArchiveEntry);
+	const std::string prop_texture_entry_json = json_string(kPropTextureArchiveEntry);
+	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
+	const std::string first_patch_texture_class_json =
+		json_string(map_load.firstPatchTextureClassName);
+	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
+
+	char buffer[18000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_terrain_prop_buffer_scene_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
+		"W3DPropBuffer::drawProps -> RTS3DScene::Flush -> TheDX8MeshRenderer.Flush\","
+		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
+		"\"mesh\":%s,\"texture\":%s},"
+		"\"asset\":{\"model\":%s,\"meshEntry\":%s,"
+		"\"textureEntry\":%s},"
+		"\"results\":{\"globalDataReady\":%s,\"init\":%d,"
+		"\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"meshFileExists\":%s,\"textureFileExists\":%s,"
+		"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
+		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
+		"\"initHeightData\":%d,\"propBufferInstalled\":%s,"
+		"\"propBufferInitialized\":%s,\"addPropInvoked\":%s,"
+		"\"updatePropInvoked\":%s,\"updateCenterInvoked\":%s,"
+		"\"propTypeCreated\":%s,\"propRenderObjectCreated\":%s,"
+		"\"propRenderObjectClassId\":%d,\"propMeshNormalized\":%s,"
+		"\"sceneCreated\":%s,\"sceneObjectAdded\":%s,"
+		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
+		"\"propVisibleAfterScene\":%s,\"propSceneDrawFlushed\":%s,"
+		"\"removePropInvoked\":%s,\"propRemoved\":%s,"
+		"\"clearPropsInvoked\":%s},"
+		"\"ini\":{\"entry\":\"Data\\\\INI\\\\Terrain.ini\","
+		"\"loaded\":%s,\"entryExists\":%s,\"parsed\":%s,"
+		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
+		"\"originalIniParser\":true,\"terrainTypeCount\":%lu},"
+		"\"iniLayout\":%s,"
+		"\"map\":{\"entry\":%s,\"entryExists\":%s,\"entryOpenable\":%s,"
+		"\"streamOpen\":%s,\"parsed\":%s,\"bytes\":%d,"
+		"\"width\":%d,\"height\":%d,\"border\":%d,"
+		"\"heightChecksum\":%lu},"
+		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
+		"\"tileSource\":\"shipped-map-heightmap\","
+		"\"renderObject\":\"ProbeHeightMapRenderObjWithPropBuffer\","
+		"\"renderWindowWidth\":%d,\"renderWindowHeight\":%d,"
+		"\"renderOriginX\":%d,\"renderOriginY\":%d,"
+		"\"patchOriginX\":%d,\"patchOriginY\":%d,"
+		"\"patchCenterHeight\":%u,\"patchHeightChecksum\":%lu,"
+		"\"tileDiagnostics\":{\"bitmapTiles\":%d,\"textureClasses\":%d,"
+		"\"sourceTilesLoaded\":%d,\"sourceTilesPositioned\":%d,"
+		"\"patchCells\":%d,\"patchCellsWithSource\":%d,"
+		"\"patchCellsMissingSource\":%d,"
+		"\"firstPatchTile\":{\"tileIndex\":%d,\"baseTileIndex\":%d,"
+		"\"sourceTileLoaded\":%s,\"textureClass\":%d,"
+		"\"textureClassName\":%s,\"texturePositionX\":%d,"
+		"\"texturePositionY\":%d}}},"
+		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
+		"RTS3DScene::Customized_Render -> HeightMapRenderObjClass::Render -> "
+		"W3DPropBuffer::drawProps -> RTS3DScene::Flush\","
+		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
+		"\"props\":{\"afterAdd\":%d,\"typesAfterAdd\":%d,"
+		"\"afterUpdate\":%d,\"afterRemove\":%d,\"afterClear\":%d,"
+		"\"locationZ\":%.4f,\"bounds\":{\"center\":[%.4f,%.4f,%.4f],"
+		"\"radius\":%.4f}},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,"
+		"\"setVertexShader\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexShaderFvf\":%lu,"
+		"\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"texture0ColorOp\":%lu,"
+		"\"texture0ColorArg1\":%lu,\"texture0ColorArg2\":%lu}}",
+		bool_json(ok),
+		ini_archive_path != nullptr ? ini_archive_path : "",
+		maps_archive_path != nullptr ? maps_archive_path : "",
+		terrain_archive_path != nullptr ? terrain_archive_path : "",
+		archive_json.c_str(),
+		texture_archive_json.c_str(),
+		prop_model_json.c_str(),
+		prop_mesh_entry_json.c_str(),
+		prop_texture_entry_json.c_str(),
+		bool_json(global_data_ready),
+		init_result,
+		bool_json(asset_manager_created),
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(texture_file_factory_installed),
+		bool_json(mesh_file_exists),
+		bool_json(texture_file_exists),
+		bool_json(water_transparency_ready),
+		bool_json(shader_manager_initialized),
+		bool_json(render_object_created),
+		bool_json(render_object_initialized),
+		init_height_data_result,
+		bool_json(prop_buffer_installed),
+		bool_json(prop_buffer_initialized),
+		bool_json(add_prop_invoked),
+		bool_json(update_prop_invoked),
+		bool_json(update_center_invoked),
+		bool_json(prop_type_created),
+		bool_json(prop_render_object_created),
+		prop_render_object_class_id,
+		bool_json(prop_mesh_normalized),
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		bool_json(prop_visible_after_scene),
+		bool_json(prop_scene_draw_flushed),
+		bool_json(remove_prop_invoked),
+		bool_json(prop_removed),
+		bool_json(clear_props_invoked),
+		bool_json(map_load.iniArchiveLoaded),
+		bool_json(map_load.terrainIniExists),
+		bool_json(map_load.terrainIniParsed),
+		static_cast<unsigned long>(map_load.terrainTypeCount),
+		ini_layout_report_json.c_str(),
+		terrain_map_entry_json.c_str(),
+		bool_json(map_load.mapEntryExists),
+		bool_json(map_load.mapEntryOpenable),
+		bool_json(map_load.mapStreamOpen),
+		bool_json(map_load.mapParsed),
+		map_load.mapBytes,
+		map_load.width,
+		map_load.height,
+		map_load.border,
+		static_cast<unsigned long>(map_load.heightChecksum),
+		kMapPatchVertices,
+		kMapPatchCells,
+		map != nullptr ? map->getDrawWidth() : 0,
+		map != nullptr ? map->getDrawHeight() : 0,
+		map != nullptr ? map->getDrawOrgX() : 0,
+		map != nullptr ? map->getDrawOrgY() : 0,
+		map_load.patchOriginX,
+		map_load.patchOriginY,
+		map_load.patchCenterHeight,
+		static_cast<unsigned long>(map_load.patchHeightChecksum),
+		map_load.bitmapTileCount,
+		map_load.textureClassCount,
+		map_load.sourceTilesLoaded,
+		map_load.sourceTilesPositioned,
+		map_load.patchTileCells,
+		map_load.patchTilesWithSource,
+		map_load.patchTilesMissingSource,
+		map_load.firstPatchTileIndex,
+		map_load.firstPatchBaseTileIndex,
+		bool_json(map_load.firstPatchSourceTileLoaded),
+		map_load.firstPatchTextureClass,
+		first_patch_texture_class_json.c_str(),
+		map_load.firstPatchTileTextureX,
+		map_load.firstPatchTileTextureY,
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
+		props_after_add,
+		prop_types_after_add,
+		props_after_update,
+		props_after_remove,
+		props_after_clear,
+		prop_location_z,
+		prop_bounds_center_x,
+		prop_bounds_center_y,
+		prop_bounds_center_z,
+		prop_bounds_radius,
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		state != nullptr ? state->last_draw_primitive_type : 0,
+		state != nullptr ? state->last_draw_vertex_shader : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0);
+
+	target_json = buffer;
+
+	if (scene != nullptr && render_object != nullptr && scene_object_added) {
+		scene->Remove_Render_Object(render_object);
+	}
+	REF_PTR_RELEASE(scene);
+	REF_PTR_RELEASE(render_object);
+	REF_PTR_RELEASE(camera);
+	TheTerrainRenderObject = old_terrain_render_object;
+	TheWaterTransparency = old_water_transparency;
+	if (probe_water_transparency != nullptr &&
+			probe_water_transparency != old_water_transparency) {
+		probe_water_transparency->deleteInstance();
+	}
+	REF_PTR_RELEASE(map_load.map);
+	map = nullptr;
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		if (shader_manager_initialized)
+			W3DShaderManager::shutdown();
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+
+	return target_json.c_str();
+}
+
 const char *run_ww3d_terrain_prop_buffer_render_probe(
 	std::string &target_json,
 	const char *archive_path,
@@ -3163,27 +3759,8 @@ const char *run_ww3d_terrain_prop_buffer_render_probe(
 		prop_type_created = prop_buffer->hasPropTypeRenderObject(0);
 		prop_render_object_created = prop_buffer->hasPropRenderObject(0);
 		RenderObjClass *prop_render_object = prop_buffer->propRenderObject(0);
-		if (prop_render_object != nullptr) {
-			prop_render_object_class_id = prop_render_object->Class_ID();
-			if (prop_render_object_class_id == RenderObjClass::CLASSID_MESH) {
-				MeshClass *mesh = static_cast<MeshClass *>(prop_render_object);
-				MeshModelClass *model = mesh->Peek_Model();
-				if (model != nullptr) {
-					ShaderClass shader;
-					shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
-					shader.Set_Depth_Compare(ShaderClass::PASS_LEQUAL);
-					shader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_ENABLE);
-					shader.Set_Texturing(ShaderClass::TEXTURING_ENABLE);
-					shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
-					model->Set_Single_Shader(shader);
-
-					VertexMaterialClass *vmat = NEW_REF(VertexMaterialClass, ());
-					model->Set_Single_Material(vmat, 0);
-					vmat->Release_Ref();
-					prop_mesh_normalized = true;
-				}
-			}
-		}
+		prop_mesh_normalized =
+			normalize_probe_prop_mesh(prop_render_object, prop_render_object_class_id);
 
 		location.set(0.0f, 0.0f, 0.0f);
 		update_prop_invoked = prop_buffer->updatePropPosition(kPropProbeId, location, 0.0f, 1.0f);
@@ -3513,6 +4090,22 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_prop_buffer_render(
 {
 	return run_ww3d_terrain_prop_buffer_render_probe(
 		g_ww3d_terrain_prop_buffer_render_probe_json,
+		archive_path,
+		texture_archive_path);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_prop_buffer_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *archive_path,
+	const char *texture_archive_path)
+{
+	return run_ww3d_terrain_prop_buffer_scene_probe(
+		g_ww3d_terrain_prop_buffer_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
 		archive_path,
 		texture_archive_path);
 }

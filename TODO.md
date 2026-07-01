@@ -767,13 +767,13 @@ shares structure and follows behind.
       and the original `W3DPropBuffer` add/update/doFullUpdate/cull/remove/clear
       path is now browser-harness verified for a range-backed shipped
       `CINE_MOON` model/texture via the prop buffer's cloned `MeshClass`
-      rendered through `WW3D::Render` and WebGL2. The full production
-      `W3DPropBuffer::drawProps` queued scene/mesh-renderer path remains open:
-      direct attempts to flush queued `drawProps` work currently time out
-      Chromium, so browser-ready full adjacent heightmap ownership still needs
-      production scene/display integration. A direct broad removal of the
-      minimal heightmap/road bypass still times out and crashes Chromium after
-      archive mounting, so full adjacent heightmap ownership remains open. The
+      rendered through `WW3D::Render` and WebGL2. The production-shaped
+      `HeightMapRenderObjClass::Render` -> `W3DPropBuffer::drawProps` ->
+      `RTS3DScene::Flush` -> `TheDX8MeshRenderer.Flush` path is now
+      browser-harness verified against the same shipped prop model/texture on
+      a real source-backed map patch. A direct broad removal of the minimal
+      heightmap/road bypass still times out and crashes Chromium after archive
+      mounting, so full adjacent heightmap ownership remains open. The
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.

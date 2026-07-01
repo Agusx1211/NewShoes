@@ -7060,6 +7060,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle", "string", []),
       probeWW3DTerrainPropBufferRender: module.cwrap(
         "cnc_port_probe_ww3d_terrain_prop_buffer_render", "string", ["string", "string"]),
+      probeWW3DTerrainPropBufferScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_prop_buffer_scene", "string", ["string", "string", "string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -18257,6 +18259,165 @@ async function rpc(command, payload = {}) {
           command,
           probe,
           browserProbe,
+          bufferDelta,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainPropBufferScene":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D prop buffer scene cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "");
+        const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
+        const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const archivePath = String(payload.archivePath ?? "/assets/runtime/W3DZH.big");
+        const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime/TexturesZH.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          d3d8DrawIndexedSequence: 0,
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainPropBufferScene(
+          iniArchivePath,
+          mapsArchivePath,
+          terrainArchivePath,
+          archivePath,
+          textureArchivePath,
+        ));
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? {};
+        const textureAfter = harnessState.graphics.d3d8Textures ?? {};
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
+          ? harnessState.graphics.d3d8DrawHistory
+          : [];
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const isBaseTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 0
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBlendTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 1
+            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && draw?.texture0?.sampled === true;
+        const isPropMeshPass = (draw) =>
+          draw?.vertexShaderFvf === 594
+            && draw?.vertexStride === 44
+            && draw?.texture0?.sampled === true
+            && draw?.renderState?.textureStage0?.colorOp === 4
+            && draw?.renderState?.textureStage1?.colorOp === 1;
+        const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
+        const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const propMeshIndex = drawHistory.findIndex(isPropMeshPass);
+        const propAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && propMeshIndex > baseTerrainIndex
+          && propMeshIndex > blendTerrainIndex;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_prop_buffer_scene_probe"
+          && probe?.path?.includes("W3DPropBuffer::drawProps")
+          && probe?.path?.includes("RTS3DScene::Flush")
+          && probe?.asset?.model === "CINE_MOON"
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.textureFileFactoryInstalled === true
+          && probe?.results?.meshFileExists === true
+          && probe?.results?.textureFileExists === true
+          && probe?.results?.renderObjectInitialized === true
+          && probe?.results?.propBufferInstalled === true
+          && probe?.results?.propBufferInitialized === true
+          && probe?.results?.addPropInvoked === true
+          && probe?.results?.updateCenterInvoked === true
+          && probe?.results?.propTypeCreated === true
+          && probe?.results?.propRenderObjectCreated === true
+          && probe?.results?.propRenderObjectClassId === 0
+          && probe?.results?.propMeshNormalized === true
+          && probe?.results?.sceneCreated === true
+          && probe?.results?.sceneObjectAdded === true
+          && probe?.results?.propVisibleAfterScene === true
+          && probe?.results?.propSceneDrawFlushed === true
+          && probe?.ini?.parsed === true
+          && probe?.ini?.originalIniParser === true
+          && (probe?.ini?.terrainTypeCount ?? 0) > 0
+          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.parsed === true
+          && (probe?.map?.bytes ?? 0) > 0
+          && (probe?.map?.width ?? 0) > 16
+          && (probe?.map?.height ?? 0) > 16
+          && probe?.terrain?.tileSource === "shipped-map-heightmap"
+          && probe?.terrain?.renderObject === "ProbeHeightMapRenderObjWithPropBuffer"
+          && probe?.terrain?.verticesPerSide === 33
+          && probe?.terrain?.cellsPerSide === 32
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+          && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && probe?.scene?.renderPath?.includes("W3DPropBuffer::drawProps")
+          && probe?.scene?.created === true
+          && probe?.scene?.objectAdded === true
+          && probe?.scene?.terrainClassId === 4
+          && probe?.props?.afterAdd === 1
+          && probe?.props?.typesAfterAdd === 1
+          && probe?.props?.afterClear === 0
+          && probe?.calls?.drawIndexed >= 3
+          && probe?.draw?.vertexShaderFvf === 594
+          && probe?.draw?.vertexStride === 44
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && browserProbe?.ok === true
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexShaderFvf === 594
+          && browserProbe?.vertexStride === 44
+          && browserProbe?.texture0?.sampled === true
+          && Array.isArray(drawHistory)
+          && drawHistory.length >= 3
+          && propAfterTerrain
+          && bufferDelta.creates >= 4
+          && bufferDelta.updates >= 4
+          && textureDelta.creates >= 2
+          && textureDelta.updates >= 2
+          && textureDelta.binds >= 1
+          && textureDelta.samplerApplications >= 1
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          drawHistory,
+          drawSequence: {
+            baseTerrainIndex,
+            blendTerrainIndex,
+            propMeshIndex,
+            propAfterTerrain,
+          },
           bufferDelta,
           textureDelta,
           textureProbe: textureAfter,

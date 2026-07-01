@@ -1643,6 +1643,72 @@ const steps = [
     },
   },
   {
+    name: "terrain-prop-buffer-scene-render",
+    file: "harness/terrain_prop_buffer_scene_smoke.mjs",
+    args: [
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/MapsZH.big",
+      "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/W3DZH.big",
+      "artifacts/real-assets/TexturesZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "terrain prop-buffer scene render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-prop-buffer-scene",
+        "terrain prop-buffer scene render smoke emitted the wrong path", payload);
+      expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
+          && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && payload.archives?.ini?.originalIniParser === true
+          && payload.archives?.ini?.terrainTypeCount > 0
+          && iniLayoutMatches(payload.archives?.ini?.layout),
+        "terrain prop-buffer scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
+      expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && payload.map?.parsed === true
+          && payload.map?.bytes > 0
+          && payload.map?.width > 16
+          && payload.map?.height > 16,
+        "terrain prop-buffer scene render smoke did not parse the shipped MD_GLA03 map", payload.map);
+      expect(payload.terrain?.tileSource === "shipped-map-heightmap"
+          && payload.terrain?.renderObject === "ProbeHeightMapRenderObjWithPropBuffer"
+          && payload.terrain?.verticesPerSide === 33
+          && payload.terrain?.cellsPerSide === 32
+          && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0,
+        "terrain prop-buffer scene render smoke did not keep source-backed terrain geometry", payload.terrain);
+      expect(payload.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && payload.scene?.renderPath?.includes("W3DPropBuffer::drawProps")
+          && payload.scene?.renderPath?.includes("RTS3DScene::Flush")
+          && payload.scene?.created === true
+          && payload.scene?.objectAdded === true
+          && payload.scene?.terrainClassId === 4,
+        "terrain prop-buffer scene render smoke did not use the scene drawProps/flush path", payload.scene);
+      expect(payload.props?.afterAdd === 1
+          && payload.props?.typesAfterAdd === 1
+          && payload.props?.afterClear === 0,
+        "terrain prop-buffer scene render smoke did not drive original prop state", payload.props);
+      expect(payload.calls?.browserTextureCreate >= 2
+          && payload.calls?.browserTextureUpdate >= 2
+          && payload.calls?.drawIndexed >= 3,
+        "terrain prop-buffer scene render smoke did not reach terrain plus prop indexed draws", payload.calls);
+      expect(payload.draw?.vertexShaderFvf === 594
+          && payload.draw?.vertexStride === 44,
+        "terrain prop-buffer scene render smoke did not finish on the expected prop mesh FVF draw", payload.draw);
+      expect(payload.browserProbe?.vertexShaderFvf === 594
+          && payload.browserProbe?.vertexStride === 44
+          && payload.browserProbe?.texture0?.sampled === true
+          && payload.drawSequence?.propAfterTerrain === true,
+        "terrain prop-buffer scene render smoke did not flush a browser-visible prop mesh after terrain", {
+          browserProbe: payload.browserProbe,
+          drawSequence: payload.drawSequence,
+        });
+      expect(payload.coverage?.coloredPixelCount > 0,
+        "terrain prop-buffer scene render smoke did not produce colored browser pixels", payload.coverage);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-prop-buffer-scene-canvas.png"),
+        "terrain prop-buffer scene render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],

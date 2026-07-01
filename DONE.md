@@ -3743,9 +3743,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the browser D3D8/WebGL2 bridge, gates persistent buffers, shipped DXT5
       texture sampling, cleanup deltas, and 158,069 colored screenshot pixels in
       `harness-smoke-ww3d-terrain-prop-buffer-render-canvas.png`, and adds the
-      step to `test:vertical-integrations`. Full production
-      `W3DPropBuffer::drawProps` queued scene/mesh-renderer flushing remains
-      open. Verified with
+      step to `test:vertical-integrations`. This deliberately stopped short of
+      the production `W3DPropBuffer::drawProps` queued scene/mesh-renderer
+      path, which is covered by the follow-up item below. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-render`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add a browser-verified production scene proof for original terrain prop
+      drawing. The new `ww3dTerrainPropBufferScene` RPC mounts range-backed
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
+      `TexturesZH.big` subsets, parses real `Terrain.ini` and
+      `Maps\MD_GLA03\MD_GLA03.map`, initializes an original
+      `HeightMapRenderObjClass` over a source-backed patch, installs the real
+      `W3DPropBuffer` as the heightmap prop owner, adds shipped `CINE_MOON`
+      through `BaseHeightMapRenderObjClass::addProp`, and renders through
+      `WW3D::Render(RTS3DScene, CameraClass)`. The harness verifies the frame
+      submits terrain base/blend draws first, then flushes the queued prop mesh
+      from `HeightMapRenderObjClass::Render` -> `W3DPropBuffer::drawProps` ->
+      `RTS3DScene::Flush` -> `TheDX8MeshRenderer.Flush` as a browser-visible
+      `XYZNDUV2`/FVF 594 draw using the shipped DXT5 `cine_moon.dds`, captures
+      `harness-smoke-ww3d-terrain-prop-buffer-scene-canvas.png`, and adds the
+      step to `test:vertical-integrations`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-scene`,
       `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-render`,
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
