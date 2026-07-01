@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -55,6 +56,16 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
+extern "C" std::size_t cnc_port_real_ini_runtime_sizeof_ini();
+extern "C" std::size_t cnc_port_real_ini_runtime_offset_m_seps();
+extern "C" std::size_t cnc_port_real_ini_runtime_offset_m_seps_percent();
+extern "C" std::size_t cnc_port_real_ini_runtime_offset_m_seps_colon();
+extern "C" std::size_t cnc_port_real_ini_runtime_offset_m_seps_quote();
+extern "C" const char *cnc_port_real_ini_runtime_seps();
+extern "C" const char *cnc_port_real_ini_runtime_seps_percent();
+extern "C" const char *cnc_port_real_ini_runtime_seps_colon();
+extern "C" const char *cnc_port_real_ini_runtime_seps_quote();
+
 namespace {
 
 std::string g_ww3d_terrain_tile_probe_json;
@@ -88,6 +99,132 @@ const char *bool_json(bool value)
 	return value ? "true" : "false";
 }
 
+class ProbeINILayoutView final : public INI
+{
+public:
+	static std::size_t offsetOfSeps()
+	{
+		ProbeINILayoutView ini;
+		return memberOffset(ini, ini.m_seps);
+	}
+
+	static std::size_t offsetOfSepsPercent()
+	{
+		ProbeINILayoutView ini;
+		return memberOffset(ini, ini.m_sepsPercent);
+	}
+
+	static std::size_t offsetOfSepsColon()
+	{
+		ProbeINILayoutView ini;
+		return memberOffset(ini, ini.m_sepsColon);
+	}
+
+	static std::size_t offsetOfSepsQuote()
+	{
+		ProbeINILayoutView ini;
+		return memberOffset(ini, ini.m_sepsQuote);
+	}
+
+	static const char *seps()
+	{
+		static ProbeINILayoutView ini;
+		return ini.getSeps();
+	}
+
+	static const char *sepsPercent()
+	{
+		static ProbeINILayoutView ini;
+		return ini.getSepsPercent();
+	}
+
+	static const char *sepsColon()
+	{
+		static ProbeINILayoutView ini;
+		return ini.getSepsColon();
+	}
+
+	static const char *sepsQuote()
+	{
+		static ProbeINILayoutView ini;
+		return ini.getSepsQuote();
+	}
+
+private:
+	static std::size_t memberOffset(const ProbeINILayoutView &ini, const char *const &member)
+	{
+		const auto *base = reinterpret_cast<const unsigned char *>(static_cast<const INI *>(&ini));
+		const auto *field = reinterpret_cast<const unsigned char *>(&member);
+		return static_cast<std::size_t>(field - base);
+	}
+};
+
+struct IniLayoutComparison
+{
+	std::size_t probeSize = 0;
+	std::size_t runtimeSize = 0;
+	std::size_t probeSepsOffset = 0;
+	std::size_t runtimeSepsOffset = 0;
+	std::size_t probeSepsPercentOffset = 0;
+	std::size_t runtimeSepsPercentOffset = 0;
+	std::size_t probeSepsColonOffset = 0;
+	std::size_t runtimeSepsColonOffset = 0;
+	std::size_t probeSepsQuoteOffset = 0;
+	std::size_t runtimeSepsQuoteOffset = 0;
+	const char *probeSeps = nullptr;
+	const char *runtimeSeps = nullptr;
+	const char *probeSepsPercent = nullptr;
+	const char *runtimeSepsPercent = nullptr;
+	const char *probeSepsColon = nullptr;
+	const char *runtimeSepsColon = nullptr;
+	const char *probeSepsQuote = nullptr;
+	const char *runtimeSepsQuote = nullptr;
+	bool matches = false;
+};
+
+IniLayoutComparison compare_ini_layout()
+{
+	IniLayoutComparison layout;
+	layout.probeSize = sizeof(INI);
+	layout.runtimeSize = cnc_port_real_ini_runtime_sizeof_ini();
+	layout.probeSepsOffset = ProbeINILayoutView::offsetOfSeps();
+	layout.runtimeSepsOffset = cnc_port_real_ini_runtime_offset_m_seps();
+	layout.probeSepsPercentOffset = ProbeINILayoutView::offsetOfSepsPercent();
+	layout.runtimeSepsPercentOffset = cnc_port_real_ini_runtime_offset_m_seps_percent();
+	layout.probeSepsColonOffset = ProbeINILayoutView::offsetOfSepsColon();
+	layout.runtimeSepsColonOffset = cnc_port_real_ini_runtime_offset_m_seps_colon();
+	layout.probeSepsQuoteOffset = ProbeINILayoutView::offsetOfSepsQuote();
+	layout.runtimeSepsQuoteOffset = cnc_port_real_ini_runtime_offset_m_seps_quote();
+	layout.probeSeps = ProbeINILayoutView::seps();
+	layout.runtimeSeps = cnc_port_real_ini_runtime_seps();
+	layout.probeSepsPercent = ProbeINILayoutView::sepsPercent();
+	layout.runtimeSepsPercent = cnc_port_real_ini_runtime_seps_percent();
+	layout.probeSepsColon = ProbeINILayoutView::sepsColon();
+	layout.runtimeSepsColon = cnc_port_real_ini_runtime_seps_colon();
+	layout.probeSepsQuote = ProbeINILayoutView::sepsQuote();
+	layout.runtimeSepsQuote = cnc_port_real_ini_runtime_seps_quote();
+	layout.matches =
+		layout.probeSize == layout.runtimeSize &&
+		layout.probeSepsOffset == layout.runtimeSepsOffset &&
+		layout.probeSepsPercentOffset == layout.runtimeSepsPercentOffset &&
+		layout.probeSepsColonOffset == layout.runtimeSepsColonOffset &&
+		layout.probeSepsQuoteOffset == layout.runtimeSepsQuoteOffset &&
+		std::strcmp(layout.probeSeps, layout.runtimeSeps) == 0 &&
+		std::strcmp(layout.probeSepsPercent, layout.runtimeSepsPercent) == 0 &&
+		std::strcmp(layout.probeSepsColon, layout.runtimeSepsColon) == 0 &&
+		std::strcmp(layout.probeSepsQuote, layout.runtimeSepsQuote) == 0;
+	return layout;
+}
+
+void touch_ini_separator_table(const INI *ini)
+{
+	if (ini == nullptr) {
+		return;
+	}
+	volatile const char *ini_separators = ini->getSeps();
+	(void)ini_separators;
+}
+
 std::string json_string(const std::string &value)
 {
 	std::string escaped;
@@ -117,6 +254,58 @@ std::string json_string(const std::string &value)
 	}
 	escaped.push_back('"');
 	return escaped;
+}
+
+std::string ini_layout_json(const IniLayoutComparison &layout)
+{
+	char buffer[2048];
+	const std::string probe_seps_json = json_string(layout.probeSeps != nullptr ? layout.probeSeps : "");
+	const std::string runtime_seps_json = json_string(layout.runtimeSeps != nullptr ? layout.runtimeSeps : "");
+	const std::string probe_seps_percent_json =
+		json_string(layout.probeSepsPercent != nullptr ? layout.probeSepsPercent : "");
+	const std::string runtime_seps_percent_json =
+		json_string(layout.runtimeSepsPercent != nullptr ? layout.runtimeSepsPercent : "");
+	const std::string probe_seps_colon_json =
+		json_string(layout.probeSepsColon != nullptr ? layout.probeSepsColon : "");
+	const std::string runtime_seps_colon_json =
+		json_string(layout.runtimeSepsColon != nullptr ? layout.runtimeSepsColon : "");
+	const std::string probe_seps_quote_json =
+		json_string(layout.probeSepsQuote != nullptr ? layout.probeSepsQuote : "");
+	const std::string runtime_seps_quote_json =
+		json_string(layout.runtimeSepsQuote != nullptr ? layout.runtimeSepsQuote : "");
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"terrain-probe-tu-vs-real-ini-runtime\","
+		"\"matches\":%s,"
+		"\"probe\":{\"sizeofINI\":%lu,"
+		"\"offsets\":{\"m_seps\":%lu,\"m_sepsPercent\":%lu,"
+		"\"m_sepsColon\":%lu,\"m_sepsQuote\":%lu},"
+		"\"separators\":{\"seps\":%s,\"sepsPercent\":%s,"
+		"\"sepsColon\":%s,\"sepsQuote\":%s}},"
+		"\"runtime\":{\"sizeofINI\":%lu,"
+		"\"offsets\":{\"m_seps\":%lu,\"m_sepsPercent\":%lu,"
+		"\"m_sepsColon\":%lu,\"m_sepsQuote\":%lu},"
+		"\"separators\":{\"seps\":%s,\"sepsPercent\":%s,"
+		"\"sepsColon\":%s,\"sepsQuote\":%s}}}",
+		bool_json(layout.matches),
+		static_cast<unsigned long>(layout.probeSize),
+		static_cast<unsigned long>(layout.probeSepsOffset),
+		static_cast<unsigned long>(layout.probeSepsPercentOffset),
+		static_cast<unsigned long>(layout.probeSepsColonOffset),
+		static_cast<unsigned long>(layout.probeSepsQuoteOffset),
+		probe_seps_json.c_str(),
+		probe_seps_percent_json.c_str(),
+		probe_seps_colon_json.c_str(),
+		probe_seps_quote_json.c_str(),
+		static_cast<unsigned long>(layout.runtimeSize),
+		static_cast<unsigned long>(layout.runtimeSepsOffset),
+		static_cast<unsigned long>(layout.runtimeSepsPercentOffset),
+		static_cast<unsigned long>(layout.runtimeSepsColonOffset),
+		static_cast<unsigned long>(layout.runtimeSepsQuoteOffset),
+		runtime_seps_json.c_str(),
+		runtime_seps_percent_json.c_str(),
+		runtime_seps_colon_json.c_str(),
+		runtime_seps_quote_json.c_str());
+	return buffer;
 }
 
 void split_archive_path_for_probe(
@@ -689,9 +878,7 @@ WorldHeightMap *load_archive_terrain_map_patch(
 					ini = NEW INI;
 					AsciiString terrain_ini_entry(kArchiveTerrainIniEntry);
 					if (ini != nullptr) {
-						// The focused browser target needs the constructed separator table read before INI::load tokenizes.
-						volatile const char *ini_separators = ini->getSeps();
-						(void)ini_separators;
+						touch_ini_separator_table(ini);
 						if (load.defaultTerrainIniExists) {
 							AsciiString default_terrain_ini_entry(kArchiveDefaultTerrainIniEntry);
 							ini->load(default_terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
@@ -860,8 +1047,7 @@ public:
 						ini = NEW INI;
 						AsciiString terrain_ini_entry(kArchiveTerrainIniEntry);
 						if (ini != nullptr) {
-							volatile const char *ini_separators = ini->getSeps();
-							(void)ini_separators;
+							touch_ini_separator_table(ini);
 							if (load.defaultTerrainIniExists) {
 								AsciiString default_terrain_ini_entry(kArchiveDefaultTerrainIniEntry);
 								ini->load(default_terrain_ini_entry, INI_LOAD_OVERWRITE, nullptr);
@@ -1668,8 +1854,10 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
+		ini_layout.matches &&
 		succeeded(init_result) &&
 		succeeded(set_device_result) &&
 		map_load.iniArchiveLoaded &&
@@ -1712,8 +1900,9 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	const std::string first_patch_texture_class_json =
 		json_string(map_load.firstPatchTextureClassName);
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
+	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 
-	char buffer[16000];
+	char buffer[18000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_map_patch_scene_probe\","
 		"\"ok\":%s,"
@@ -1731,6 +1920,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
 		"\"originalIniParser\":true,\"terrainTypeCount\":%lu,"
 		"\"nameKeysReady\":%s,\"sidesListReady\":%s},"
+		"\"iniLayout\":%s,"
 		"\"archives\":{\"maps\":{\"argumentSupplied\":%s,\"path\":\"%s\","
 		"\"directory\":\"%s\",\"mask\":\"%s\",\"loaded\":%s},"
 		"\"terrain\":{\"argumentSupplied\":%s,\"path\":\"%s\","
@@ -1803,6 +1993,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		static_cast<unsigned long>(map_load.terrainTypeCount),
 		bool_json(map_load.nameKeysReady),
 		bool_json(map_load.sidesListReady),
+		ini_layout_report_json.c_str(),
 		bool_json(map_load.mapsArgumentSupplied),
 		map_load.mapsArchivePath.c_str(),
 		map_load.mapsArchiveDirectory.c_str(),
@@ -2165,8 +2356,10 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
 	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
+		ini_layout.matches &&
 		archive_context_ready &&
 		succeeded(init_result) &&
 		succeeded(set_device_result) &&
@@ -2210,12 +2403,13 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const std::string first_patch_texture_class_json =
 		json_string(map_load.firstPatchTextureClassName);
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
+	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 	const char *source_name = use_load_window ?
 		"ww3d_terrain_visual_load_window_scene_probe" :
 		"ww3d_terrain_visual_scene_probe";
 	const char *render_mode = use_load_window ? "visual-load-window" : "selected-source-patch";
 
-	char buffer[20000];
+	char buffer[22000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -2245,6 +2439,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
 		"\"originalIniParser\":true,\"terrainTypeCount\":%lu,"
 		"\"nameKeysReady\":%s,\"sidesListReady\":%s},"
+		"\"iniLayout\":%s,"
 		"\"archives\":{\"maps\":{\"argumentSupplied\":%s,\"path\":\"%s\","
 		"\"directory\":\"%s\",\"mask\":\"%s\",\"loaded\":%s},"
 		"\"terrain\":{\"argumentSupplied\":%s,\"path\":\"%s\","
@@ -2333,6 +2528,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		static_cast<unsigned long>(map_load.terrainTypeCount),
 		bool_json(map_load.nameKeysReady),
 		bool_json(map_load.sidesListReady),
+		ini_layout_report_json.c_str(),
 		bool_json(map_load.mapsArgumentSupplied),
 		map_load.mapsArchivePath.c_str(),
 		map_load.mapsArchiveDirectory.c_str(),

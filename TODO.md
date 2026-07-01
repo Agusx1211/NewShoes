@@ -762,18 +762,19 @@ shares structure and follows behind.
       archive mounted and tighten the load-window gate to require nonzero
       source-backed terrain cells.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
-      INI probe and fix the real root cause of the `INI::load` member-read trap.
-      (from Claude note) The warm-up read only masks the symptom; the trap on
-      `INI::m_seps` is likely an ODR / ABI layout mismatch: `INI.cpp` and the
-      focused probe TU disagree on `class INI`'s layout, so the member sits at
-      the wrong offset. Likely cause is `#pragma pack`, the in-progress
-      STLport→libc++ split, or differing `-D` defines/header views between the
-      engine source and the probe. Confirm by logging `sizeof(INI)` (and a
-      member offset) from inside `INI.cpp` vs. the probe TU — if they differ,
-      ODR is proven. Real fix: make both TUs see an identical `INI` (same
-      headers, pack, STL, defines), then drop the warm-up hack. Tracks the
-      STLport→libc++ and pragma-pack items in M1; the same ABI mismatch can
-      resurface in any other probe that links `INI.cpp`.
+      INI probe and fix the real root cause of the browser `INI::load` trap.
+      The terrain smokes now report and gate a direct `INI` layout comparison
+      between the terrain probe TU and the real INI runtime: `sizeof(INI)`,
+      `m_seps` / `m_sepsPercent` / `m_sepsColon` / `m_sepsQuote` offsets, and
+      separator literals all match under the current wasm build. That rules out
+      the original suspected header/ODR member-offset mismatch for this target,
+      but removing the separator touch still makes the map-patch browser RPC
+      time out and crash after archive mounting. Keep the workaround until the
+      remaining browser/runtime root cause is isolated with a stronger
+      constructor/lifetime or optimizer proof, then drop it and keep
+      `test:ww3d-terrain-map-patch-scene`,
+      `test:ww3d-terrain-visual-scene`, and `test:vertical-integrations`
+      gating the layout parity.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

@@ -3081,6 +3081,7 @@ target_compile_options(zh_gameengine_globaldata_runtime PRIVATE
 )
 
 add_library(zh_gameengine_real_ini_runtime STATIC
+  src/wasm_ini_layout_probe.cpp
   src/wasm_real_ini_compat.cpp
   src/wasm_real_ini_probe.cpp
   src/wasm_command_button_runtime.cpp

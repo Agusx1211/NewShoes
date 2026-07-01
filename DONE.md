@@ -3685,6 +3685,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       or improved source-backed cells when `Terrain.big` is present, while still
       requiring all 16,384 load-window cells to be accounted for. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
+- [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
+      probes before chasing the remaining `getSeps()` warm-up workaround.
+      `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while
+      `wasm_ww3d_terrain_probe.cpp` compares its own `INI` view against that
+      runtime for `sizeof(INI)`, the `m_seps` / `m_sepsPercent` /
+      `m_sepsColon` / `m_sepsQuote` offsets, and the separator literals.
+      `test:ww3d-terrain-map-patch-scene`,
+      `test:ww3d-terrain-visual-scene`, and the aggregate vertical gate now
+      require the comparison to match. A direct removal attempt still caused
+      the map-patch browser RPC to time out and crash after archive mounting,
+      so the separator touch remains while the old suspected ODR/member-offset
+      mismatch is no longer the active theory. Verified with
+      `npm --prefix WebAssembly run build:wasm`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-map-patch-scene`, and
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

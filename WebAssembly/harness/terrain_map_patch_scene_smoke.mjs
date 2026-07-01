@@ -28,6 +28,20 @@ const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
 const mapEntryBytes = 295065;
 
+function iniLayoutMatches(layout) {
+  return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
+    && layout?.matches === true
+    && layout?.probe?.sizeofINI === layout?.runtime?.sizeofINI
+    && layout?.probe?.offsets?.m_seps === layout?.runtime?.offsets?.m_seps
+    && layout?.probe?.offsets?.m_sepsPercent === layout?.runtime?.offsets?.m_sepsPercent
+    && layout?.probe?.offsets?.m_sepsColon === layout?.runtime?.offsets?.m_sepsColon
+    && layout?.probe?.offsets?.m_sepsQuote === layout?.runtime?.offsets?.m_sepsQuote
+    && layout?.probe?.separators?.seps === layout?.runtime?.separators?.seps
+    && layout?.probe?.separators?.sepsPercent === layout?.runtime?.separators?.sepsPercent
+    && layout?.probe?.separators?.sepsColon === layout?.runtime?.separators?.sepsColon
+    && layout?.probe?.separators?.sepsQuote === layout?.runtime?.separators?.sepsQuote;
+}
+
 function isInside(parent, child) {
   const path = relative(parent, child);
   return path === "" || (!path.startsWith("..") && !path.startsWith(sep));
@@ -267,6 +281,7 @@ try {
       || terrainResult.probe?.ini?.parser !== terrainIniParser
       || terrainResult.probe?.ini?.originalIniParser !== true
       || terrainResult.probe?.ini?.terrainTypeCount <= 0
+      || !iniLayoutMatches(terrainResult.probe?.iniLayout)
       || terrainResult.probe?.map?.entry !== mapEntry
       || terrainResult.probe?.map?.entryExists !== true
       || terrainResult.probe?.map?.entryOpenable !== true
@@ -340,6 +355,7 @@ try {
         parser: terrainResult.probe.ini.parser,
         originalIniParser: terrainResult.probe.ini.originalIniParser,
         terrainTypeCount: terrainResult.probe.ini.terrainTypeCount,
+        layout: terrainResult.probe.iniLayout,
       },
       maps: {
         path: mapsArchiveMemfsPath,

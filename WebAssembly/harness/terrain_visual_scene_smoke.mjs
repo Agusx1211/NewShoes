@@ -34,6 +34,20 @@ const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
 
+function iniLayoutMatches(layout) {
+  return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
+    && layout?.matches === true
+    && layout?.probe?.sizeofINI === layout?.runtime?.sizeofINI
+    && layout?.probe?.offsets?.m_seps === layout?.runtime?.offsets?.m_seps
+    && layout?.probe?.offsets?.m_sepsPercent === layout?.runtime?.offsets?.m_sepsPercent
+    && layout?.probe?.offsets?.m_sepsColon === layout?.runtime?.offsets?.m_sepsColon
+    && layout?.probe?.offsets?.m_sepsQuote === layout?.runtime?.offsets?.m_sepsQuote
+    && layout?.probe?.separators?.seps === layout?.runtime?.separators?.seps
+    && layout?.probe?.separators?.sepsPercent === layout?.runtime?.separators?.sepsPercent
+    && layout?.probe?.separators?.sepsColon === layout?.runtime?.separators?.sepsColon
+    && layout?.probe?.separators?.sepsQuote === layout?.runtime?.separators?.sepsQuote;
+}
+
 function hasTerrainPass(drawHistory, { alphaBlendEnable, texCoordIndex, firstIndex = null }) {
   const matches = (draw) =>
     draw?.renderState?.alphaBlendEnable === alphaBlendEnable
@@ -310,6 +324,7 @@ try {
       || terrainResult.probe?.ini?.parser !== terrainIniParser
       || terrainResult.probe?.ini?.originalIniParser !== true
       || terrainResult.probe?.ini?.terrainTypeCount <= 0
+      || !iniLayoutMatches(terrainResult.probe?.iniLayout)
       || terrainResult.probe?.map?.entry !== mapEntry
       || terrainResult.probe?.map?.entryExists !== true
       || terrainResult.probe?.map?.entryOpenable !== true
@@ -408,6 +423,7 @@ try {
       || loadWindowResult.probe?.ini?.parser !== terrainIniParser
       || loadWindowResult.probe?.ini?.originalIniParser !== true
       || loadWindowResult.probe?.ini?.terrainTypeCount <= 0
+      || !iniLayoutMatches(loadWindowResult.probe?.iniLayout)
       || loadWindowResult.probe?.map?.entry !== mapEntry
       || loadWindowResult.probe?.map?.entryExists !== true
       || loadWindowResult.probe?.map?.entryOpenable !== true
@@ -487,6 +503,7 @@ try {
         parser: terrainResult.probe.ini.parser,
         originalIniParser: terrainResult.probe.ini.originalIniParser,
         terrainTypeCount: terrainResult.probe.ini.terrainTypeCount,
+        layout: terrainResult.probe.iniLayout,
       },
       maps: {
         path: mapsArchiveMemfsPath,
@@ -514,6 +531,7 @@ try {
     loadWindowMap: loadWindowResult.probe.map,
     loadWindowScene: loadWindowResult.probe.scene,
     loadWindowTerrain: loadWindowResult.probe.terrain,
+    loadWindowIniLayout: loadWindowResult.probe.iniLayout,
     loadWindowCalls: loadWindowResult.probe.calls,
     loadWindowDraw: loadWindowResult.probe.draw,
     loadWindowCenterPixel: loadWindowResult.screenshot.centerPixel,

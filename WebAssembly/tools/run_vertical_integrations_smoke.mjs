@@ -18,6 +18,20 @@ function expect(condition, message, payload) {
   }
 }
 
+function iniLayoutMatches(layout) {
+  return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
+    && layout?.matches === true
+    && layout?.probe?.sizeofINI === layout?.runtime?.sizeofINI
+    && layout?.probe?.offsets?.m_seps === layout?.runtime?.offsets?.m_seps
+    && layout?.probe?.offsets?.m_sepsPercent === layout?.runtime?.offsets?.m_sepsPercent
+    && layout?.probe?.offsets?.m_sepsColon === layout?.runtime?.offsets?.m_sepsColon
+    && layout?.probe?.offsets?.m_sepsQuote === layout?.runtime?.offsets?.m_sepsQuote
+    && layout?.probe?.separators?.seps === layout?.runtime?.separators?.seps
+    && layout?.probe?.separators?.sepsPercent === layout?.runtime?.separators?.sepsPercent
+    && layout?.probe?.separators?.sepsColon === layout?.runtime?.separators?.sepsColon
+    && layout?.probe?.separators?.sepsQuote === layout?.runtime?.separators?.sepsQuote;
+}
+
 function extractJson(stdout, label) {
   const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
   for (let index = lines.length - 1; index >= 0; --index) {
@@ -1368,7 +1382,8 @@ const steps = [
       expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
           && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
           && payload.archives?.ini?.originalIniParser === true
-          && payload.archives?.ini?.terrainTypeCount > 0,
+          && payload.archives?.ini?.terrainTypeCount > 0
+          && iniLayoutMatches(payload.archives?.ini?.layout),
         "terrain map patch scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
       expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
           && payload.map?.parsed === true
@@ -1419,7 +1434,8 @@ const steps = [
       expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
           && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
           && payload.archives?.ini?.originalIniParser === true
-          && payload.archives?.ini?.terrainTypeCount > 0,
+          && payload.archives?.ini?.terrainTypeCount > 0
+          && iniLayoutMatches(payload.archives?.ini?.layout),
         "terrain visual scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
       expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
           && payload.map?.parsed === true
@@ -1498,6 +1514,8 @@ const steps = [
         "terrain visual load-window smoke did not use the expected W3D terrain FVF draw", payload.loadWindowDraw);
       expect(payload.loadWindowCoverage?.coloredPixelCount > 0,
         "terrain visual load-window smoke did not produce colored browser pixels", payload.loadWindowCoverage);
+      expect(iniLayoutMatches(payload.loadWindowIniLayout),
+        "terrain visual load-window smoke did not preserve the terrain INI layout contract", payload.loadWindowIniLayout);
       expect(payload.loadWindowScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png"),
         "terrain visual load-window smoke did not capture the expected screenshot", payload);
     },
