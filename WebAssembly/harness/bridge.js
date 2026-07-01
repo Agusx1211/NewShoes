@@ -179,6 +179,7 @@ const D3DFVF_XYZB4 = 0x008;
 const D3DFVF_NORMAL = 0x010;
 const D3DFVF_DIFFUSE = 0x040;
 const D3DFVF_SPECULAR = 0x080;
+const D3DFVF_TEX1 = 0x100;
 const D3DFVF_TEX2 = 0x200;
 const D3DFVF_TEXCOUNT_MASK = 0xf00;
 const D3DFVF_TEXCOUNT_SHIFT = 8;
@@ -7062,6 +7063,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_prop_buffer_render", "string", ["string", "string"]),
       probeWW3DTerrainPropBufferScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_prop_buffer_scene", "string", ["string", "string", "string", "string", "string"]),
+      probeWW3DTerrainTreeBufferScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_tree_buffer_scene", "string", ["string", "string", "string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -18417,6 +18420,165 @@ async function rpc(command, payload = {}) {
             blendTerrainIndex,
             propMeshIndex,
             propAfterTerrain,
+          },
+          bufferDelta,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainTreeBufferScene":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D tree buffer scene cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "");
+        const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
+        const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const runtimeArchiveDirectory = String(payload.runtimeArchiveDirectory ?? "/assets/runtime");
+        const runtimeArchiveMask = String(payload.runtimeArchiveMask ?? "*.big");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          d3d8DrawIndexedSequence: 0,
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainTreeBufferScene(
+          iniArchivePath,
+          mapsArchivePath,
+          terrainArchivePath,
+          runtimeArchiveDirectory,
+          runtimeArchiveMask,
+        ));
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? {};
+        const textureAfter = harnessState.graphics.d3d8Textures ?? {};
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
+          ? harnessState.graphics.d3d8DrawHistory
+          : [];
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const treeFvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const isBaseTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 0
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBlendTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 1
+            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && draw?.texture0?.sampled === true;
+        const isTreePass = (draw) =>
+          draw?.vertexShaderFvf === treeFvf
+            && draw?.vertexStride === 36
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
+        const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const treeIndex = drawHistory.findIndex(isTreePass);
+        const treeAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && treeIndex > baseTerrainIndex
+          && treeIndex > blendTerrainIndex;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_tree_buffer_scene_probe"
+          && probe?.path?.includes("W3DTreeBuffer::drawTrees")
+          && probe?.path?.includes("DoTrees")
+          && probe?.asset?.model === "PTDogwod01_S"
+          && probe?.asset?.texture === "PTDogwod01_S.tga"
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.textureFileFactoryInstalled === true
+          && probe?.results?.modelsFileExists === true
+          && probe?.results?.meshFileExists === true
+          && probe?.results?.treeTextureFileExists === true
+          && probe?.results?.materialTextureFileExists === true
+          && probe?.results?.renderObjectInitialized === true
+          && probe?.results?.treeBufferInstalled === true
+          && probe?.results?.treeDataConfigured === true
+          && probe?.results?.addTreeInvoked === true
+          && probe?.results?.updateTreeInvoked === true
+          && probe?.results?.updateCenterInvoked === true
+          && probe?.results?.scriptEngineReady === true
+          && probe?.results?.sceneCreated === true
+          && probe?.results?.sceneObjectAdded === true
+          && probe?.results?.treeSceneDrawFlushed === true
+          && probe?.results?.treeNeedToDrawAfterScene === false
+          && probe?.tree?.tilesAfterScene > 0
+          && probe?.ini?.parsed === true
+          && probe?.ini?.originalIniParser === true
+          && (probe?.ini?.terrainTypeCount ?? 0) > 0
+          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.parsed === true
+          && (probe?.map?.bytes ?? 0) > 0
+          && (probe?.map?.width ?? 0) > 16
+          && (probe?.map?.height ?? 0) > 16
+          && probe?.terrain?.tileSource === "shipped-map-heightmap"
+          && probe?.terrain?.renderObject === "ProbeHeightMapRenderObjWithTreeBuffer"
+          && probe?.terrain?.verticesPerSide === 33
+          && probe?.terrain?.cellsPerSide === 32
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+          && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && probe?.scene?.renderPath?.includes("W3DTreeBuffer::drawTrees")
+          && probe?.scene?.renderPath?.includes("RTS3DScene::Flush")
+          && probe?.scene?.created === true
+          && probe?.scene?.objectAdded === true
+          && probe?.scene?.terrainClassId === 4
+          && probe?.calls?.drawIndexed >= 3
+          && probe?.draw?.vertexShaderFvf === treeFvf
+          && probe?.draw?.vertexStride === 36
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexShaderFvf === treeFvf
+          && browserProbe?.vertexStride === 36
+          && browserProbe?.texture0?.sampled === true
+          && Array.isArray(drawHistory)
+          && drawHistory.length >= 3
+          && treeAfterTerrain
+          && bufferDelta.creates >= 4
+          && bufferDelta.updates >= 4
+          && textureDelta.creates >= 2
+          && textureDelta.updates >= 2
+          && textureDelta.binds >= 1
+          && textureDelta.samplerApplications >= 1
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          drawHistory,
+          drawSequence: {
+            baseTerrainIndex,
+            blendTerrainIndex,
+            treeIndex,
+            treeAfterTerrain,
           },
           bufferDelta,
           textureDelta,

@@ -3768,6 +3768,26 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-render`,
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add a browser-verified production scene proof for original terrain tree
+      drawing. The new `ww3dTerrainTreeBufferScene` RPC mounts range-backed
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
+      `TexturesZH.big` subsets, parses real `Terrain.ini` and
+      `Maps\MD_GLA03\MD_GLA03.map`, initializes an original
+      `HeightMapRenderObjClass` over a source-backed patch, installs the real
+      `W3DTreeBuffer` as the heightmap tree owner, adds shipped
+      `PTDogwod01_S` through `BaseHeightMapRenderObjClass::addTree`, and
+      renders through `WW3D::Render(RTS3DScene, CameraClass)`. The harness
+      verifies the frame submits terrain base/blend draws first, then flushes
+      the queued tree from `HeightMapRenderObjClass::Render` ->
+      `RTS3DScene::Flush` -> `DoTrees` -> `W3DTreeBuffer::drawTrees` as a
+      browser-visible `XYZNDUV1`/FVF 338 draw using
+      `Art\Terrain\PTDogwod01_S.tga` and the shipped W3D mesh, captures
+      `harness-smoke-ww3d-terrain-tree-buffer-scene-canvas.png`, and adds the
+      step to `test:vertical-integrations`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-tree-buffer-scene`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-scene`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

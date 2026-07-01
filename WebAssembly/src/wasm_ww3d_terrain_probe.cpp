@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/TerrainTypes.h"
+#include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
@@ -36,6 +38,8 @@
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "W3DDevice/GameClient/TileData.h"
+#include "W3DDevice/GameClient/W3DTreeBuffer.h"
+#include "W3DDevice/GameClient/Module/W3DTreeDraw.h"
 #include "W3DDevice/GameClient/W3DTerrainBackground.h"
 #include "W3DDevice/GameClient/W3DTerrainVisual.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
@@ -84,6 +88,7 @@ std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
 std::string g_ww3d_terrain_prop_buffer_render_probe_json;
 std::string g_ww3d_terrain_prop_buffer_scene_probe_json;
+std::string g_ww3d_terrain_tree_buffer_scene_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -101,6 +106,15 @@ constexpr const char *kPropModelName = "CINE_MOON";
 constexpr const char *kPropMeshArchiveEntry = "art\\w3d\\cine_moon.w3d";
 constexpr const char *kPropTextureArchiveEntry = "art\\textures\\cine_moon.dds";
 constexpr Int kPropProbeId = 77;
+constexpr const char *kTreeModelName = "PTDogwod01_S";
+constexpr const char *kTreeTextureName = "PTDogwod01_S.tga";
+constexpr const char *kTreeModelsArchiveEntry = "Art\\W3D\\Models.txt";
+constexpr const char *kTreeMeshArchiveEntry = "Art\\W3D\\PTDogwod01_S.W3D";
+constexpr const char *kTreeTextureArchiveEntry = "Art\\Terrain\\PTDogwod01_S.tga";
+constexpr const char *kTreeMaterialTextureArchiveEntry = "Art\\Textures\\ptdogwod01_s.dds";
+constexpr const char *kTreeVertexShaderArchiveEntry = "Shaders\\Trees.vso";
+constexpr const char *kTreePixelShaderArchiveEntry = "Shaders\\Trees.pso";
+constexpr DrawableID kTreeProbeId = static_cast<DrawableID>(91);
 constexpr int kTextureClassDiagnosticsLimit = 6;
 
 bool succeeded(int result)
@@ -1503,6 +1517,113 @@ public:
 		m_propBuffer = NEW ProbeW3DPropBuffer;
 		return static_cast<ProbeW3DPropBuffer *>(m_propBuffer);
 	}
+};
+
+class ProbeHeightMapRenderObjWithTreeBuffer final : public HeightMapRenderObjClass
+{
+public:
+	W3DTreeBuffer *installProbeTreeBuffer()
+	{
+		if (m_treeBuffer != nullptr) {
+			delete m_treeBuffer;
+		}
+		m_treeBuffer = NEW W3DTreeBuffer;
+		return m_treeBuffer;
+	}
+};
+
+class ProbeScriptEngineView : public ScriptEngine
+{
+public:
+	static void configureBreeze(ScriptEngine *engine)
+	{
+		ProbeScriptEngineView *view = reinterpret_cast<ProbeScriptEngineView *>(engine);
+		view->m_breezeInfo.m_direction = 0.0f;
+		view->m_breezeInfo.m_directionVec.x = 0.0f;
+		view->m_breezeInfo.m_directionVec.y = 1.0f;
+		view->m_breezeInfo.m_intensity = 0.0f;
+		view->m_breezeInfo.m_lean = 0.0f;
+		view->m_breezeInfo.m_randomness = 0.0f;
+		view->m_breezeInfo.m_breezePeriod = 1;
+		view->m_breezeInfo.m_breezeVersion = 0;
+	}
+};
+
+class ProbeScriptEngineScope
+{
+public:
+	ProbeScriptEngineScope() :
+		m_oldScriptEngine(TheScriptEngine)
+	{
+		std::memset(m_storage, 0, sizeof(m_storage));
+		m_scriptEngine = reinterpret_cast<ScriptEngine *>(m_storage);
+		ProbeScriptEngineView::configureBreeze(m_scriptEngine);
+		TheScriptEngine = m_scriptEngine;
+	}
+
+	~ProbeScriptEngineScope()
+	{
+		TheScriptEngine = m_oldScriptEngine;
+	}
+
+	ScriptEngine *scriptEngine() const
+	{
+		return m_scriptEngine;
+	}
+
+private:
+	alignas(ScriptEngine) unsigned char m_storage[sizeof(ScriptEngine)] = {};
+	ScriptEngine *m_oldScriptEngine = nullptr;
+	ScriptEngine *m_scriptEngine = nullptr;
+};
+
+class ProbeTreeDrawModuleDataScope
+{
+public:
+	ProbeTreeDrawModuleDataScope()
+	{
+		std::memset(m_storage, 0, sizeof(m_storage));
+		W3DTreeDrawModuleData *tree_data = data();
+		new (&tree_data->m_modelName) AsciiString(kTreeModelName);
+		new (&tree_data->m_textureName) AsciiString(kTreeTextureName);
+		new (&tree_data->m_stumpName) AsciiString();
+		tree_data->m_framesToMoveInward = 1;
+		tree_data->m_framesToMoveOutward = 1;
+		tree_data->m_darkening = 0.0f;
+		tree_data->m_maxOutwardMovement = 1.0f;
+		tree_data->m_toppleFX = nullptr;
+		tree_data->m_bounceFX = nullptr;
+		tree_data->m_killWhenToppled = TRUE;
+		tree_data->m_doTopple = FALSE;
+		tree_data->m_doShadow = FALSE;
+		tree_data->m_initialVelocityPercent = 0.2f;
+		tree_data->m_initialAccelPercent = 0.01f;
+		tree_data->m_bounceVelocityPercent = 0.3f;
+		tree_data->m_minimumToppleSpeed = 0.5f;
+		tree_data->m_sinkFrames = 300;
+		tree_data->m_sinkDistance = 20.0f;
+	}
+
+	~ProbeTreeDrawModuleDataScope()
+	{
+		W3DTreeDrawModuleData *tree_data = data();
+		tree_data->m_stumpName.~AsciiString();
+		tree_data->m_textureName.~AsciiString();
+		tree_data->m_modelName.~AsciiString();
+	}
+
+	W3DTreeDrawModuleData *data()
+	{
+		return reinterpret_cast<W3DTreeDrawModuleData *>(m_storage);
+	}
+
+	const W3DTreeDrawModuleData *data() const
+	{
+		return reinterpret_cast<const W3DTreeDrawModuleData *>(m_storage);
+	}
+
+private:
+	alignas(W3DTreeDrawModuleData) unsigned char m_storage[sizeof(W3DTreeDrawModuleData)] = {};
 };
 
 bool normalize_probe_prop_mesh(RenderObjClass *prop_render_object, int &class_id)
@@ -3662,6 +3783,575 @@ const char *run_ww3d_terrain_prop_buffer_scene_probe(
 	return target_json.c_str();
 }
 
+const char *run_ww3d_terrain_tree_buffer_scene_probe(
+	std::string &target_json,
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *runtime_archive_directory,
+	const char *runtime_archive_mask)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = nullptr;
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	int init_height_data_result = WW3D_ERROR_GENERIC;
+	int begin_render_result = WW3D_ERROR_GENERIC;
+	int render_result = WW3D_ERROR_GENERIC;
+	int end_render_result = WW3D_ERROR_GENERIC;
+	bool map_created = false;
+	bool global_data_ready = false;
+	bool asset_manager_created = false;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
+	bool models_file_exists = false;
+	bool mesh_file_exists = false;
+	bool tree_texture_file_exists = false;
+	bool material_texture_file_exists = false;
+	bool tree_vertex_shader_file_exists = false;
+	bool tree_pixel_shader_file_exists = false;
+	bool water_transparency_ready = false;
+	bool shader_manager_initialized = false;
+	bool render_object_created = false;
+	bool render_object_initialized = false;
+	bool tree_buffer_installed = false;
+	bool tree_data_configured = false;
+	bool add_tree_invoked = false;
+	bool update_tree_invoked = false;
+	bool update_center_invoked = false;
+	bool script_engine_ready = false;
+	bool scene_created = false;
+	bool scene_object_added = false;
+	bool tree_scene_draw_flushed = false;
+	bool remove_tree_invoked = false;
+	bool clear_trees_invoked = false;
+	bool tree_need_to_draw_after_center = false;
+	bool tree_need_to_draw_after_scene = false;
+	Int tree_tiles_after_scene = -1;
+	float tree_location_x = 0.0f;
+	float tree_location_y = 0.0f;
+	float tree_location_z = 0.0f;
+	float camera_eye_x = 0.0f;
+	float camera_eye_y = 0.0f;
+	float camera_eye_z = 0.0f;
+	float camera_target_x = 0.0f;
+	float camera_target_y = 0.0f;
+	float camera_target_z = 0.0f;
+
+	ProbeTerrainMapPatchLoad map_load;
+	WorldHeightMap *map = load_archive_terrain_map_patch(
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		map_load);
+	map_created = map_load.mapParsed && map != nullptr;
+
+	if (map_created) {
+		global_data = NEW GlobalData;
+		if (global_data != nullptr) {
+			configure_global_data(*global_data);
+			TheWritableGlobalData = global_data;
+			global_data_ready = true;
+		}
+	}
+
+	WaterTransparencySetting *old_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+	WaterTransparencySetting *probe_water_transparency = nullptr;
+	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
+	ProbeHeightMapRenderObjWithTreeBuffer *render_object = nullptr;
+	W3DTreeBuffer *tree_buffer = nullptr;
+	RTS3DScene *scene = nullptr;
+	CameraClass *camera = nullptr;
+	WW3DAssetManager *asset_manager = nullptr;
+
+	if (global_data_ready) {
+		init_result = WW3D::Init(nullptr, nullptr, false);
+	}
+	if (succeeded(init_result)) {
+		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager_created = asset_manager != nullptr;
+	}
+	if (asset_manager != nullptr) {
+		asset_manager->Set_WW3D_Load_On_Demand(true);
+	}
+	if (asset_manager_created) {
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+
+	if (succeeded(set_device_result)) {
+		WW3D::Set_Thumbnail_Enabled(false);
+		W3DShaderManager::init();
+		shader_manager_initialized = true;
+
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_set(runtime_archive_directory, runtime_archive_mask);
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		models_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeModelsArchiveEntry);
+		mesh_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeMeshArchiveEntry);
+		tree_texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeTextureArchiveEntry);
+		material_texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeMaterialTextureArchiveEntry);
+		tree_vertex_shader_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeVertexShaderArchiveEntry);
+		tree_pixel_shader_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreePixelShaderArchiveEntry);
+	}
+
+	if (succeeded(set_device_result) && map_created && mesh_file_exists && tree_texture_file_exists) {
+		if (old_water_transparency != nullptr) {
+			water_transparency_ready = true;
+		} else {
+			probe_water_transparency = newInstance(WaterTransparencySetting);
+			TheWaterTransparency = probe_water_transparency;
+			water_transparency_ready = probe_water_transparency != nullptr;
+		}
+
+		map->setDrawWidth(kMapPatchVertices);
+		map->setDrawHeight(kMapPatchVertices);
+		map->setDrawOrg(map_load.patchOriginX, map_load.patchOriginY);
+
+		render_object = NEW_REF(ProbeHeightMapRenderObjWithTreeBuffer, ());
+		render_object_created = render_object != nullptr;
+		if (render_object_created) {
+			Matrix3D terrain_transform(true);
+			render_object->Set_Transform(terrain_transform);
+			TheTerrainRenderObject = render_object;
+			tree_buffer = render_object->installProbeTreeBuffer();
+			tree_buffer_installed = tree_buffer != nullptr;
+			init_height_data_result = render_object->initHeightData(
+				map->getDrawWidth(),
+				map->getDrawHeight(),
+				map,
+				nullptr,
+				TRUE);
+			render_object_initialized = init_height_data_result == 0;
+		}
+	}
+
+	ProbeTreeDrawModuleDataScope tree_data_scope;
+	W3DTreeDrawModuleData *tree_data = tree_data_scope.data();
+	if (tree_buffer_installed && render_object_initialized) {
+		tree_data_configured = tree_data != nullptr;
+
+		tree_location_x =
+			(static_cast<float>(map_load.patchOriginX) +
+			 static_cast<float>(kMapPatchCells) * 0.5f -
+			 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+		tree_location_y =
+			(static_cast<float>(map_load.patchOriginY) +
+			 static_cast<float>(kMapPatchCells) * 0.5f -
+			 static_cast<float>(map_load.border)) * MAP_XY_FACTOR;
+		tree_location_z = static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE + 2.0f;
+
+		Coord3D location;
+		location.set(tree_location_x, tree_location_y, tree_location_z);
+		render_object->addTree(kTreeProbeId, location, 1.0f, 0.0f, 0.0f, tree_data);
+		add_tree_invoked = true;
+		update_tree_invoked = render_object->updateTreePosition(kTreeProbeId, location, 0.0f);
+
+		camera = W3DNEW CameraClass();
+		if (camera != nullptr) {
+			camera_target_x = tree_location_x;
+			camera_target_y = tree_location_y;
+			camera_target_z = tree_location_z + 35.0f;
+			camera_eye_x = tree_location_x;
+			camera_eye_y = tree_location_y - 140.0f;
+			camera_eye_z = tree_location_z + 95.0f;
+			camera->Set_Aspect_Ratio(static_cast<float>(kViewportWidth) / static_cast<float>(kViewportHeight));
+			camera->Set_Clip_Planes(1.0f, 2000.0f);
+			Matrix3D camera_transform(true);
+			camera_transform.Look_At(
+				Vector3(camera_eye_x, camera_eye_y, camera_eye_z),
+				Vector3(camera_target_x, camera_target_y, camera_target_z),
+				0.0f);
+			camera->Set_Transform(camera_transform);
+		}
+	}
+
+	if (camera != nullptr && update_tree_invoked) {
+		render_object->updateCenter(camera, nullptr);
+		update_center_invoked = true;
+		tree_need_to_draw_after_center = tree_buffer != nullptr && tree_buffer->needToDraw();
+	}
+
+	if (camera != nullptr && update_center_invoked) {
+		scene = NEW_REF(RTS3DScene, ());
+		scene_created = scene != nullptr;
+		if (scene_created) {
+			scene->Add_Render_Object(render_object);
+			scene_object_added = render_object->Peek_Scene() == scene;
+		}
+	}
+
+	{
+		ProbeScriptEngineScope script_engine_scope;
+		script_engine_ready = script_engine_scope.scriptEngine() != nullptr;
+		if (scene_object_added && script_engine_ready) {
+			begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(begin_render_result)) {
+				render_result = WW3D::Render(scene, camera);
+				end_render_result = WW3D::End_Render(false);
+			}
+			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
+			tree_tiles_after_scene = tree_buffer != nullptr ? tree_buffer->getNumTiles() : -1;
+		}
+	}
+
+	if (tree_buffer_installed) {
+		render_object->removeTree(kTreeProbeId);
+		remove_tree_invoked = true;
+		render_object->removeAllTrees();
+		clear_trees_invoked = true;
+	}
+
+	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const WasmD3D8DrawRenderState *draw_state =
+		state != nullptr ? &state->last_draw_render_state : nullptr;
+	const WasmD3D8DrawTextureStageState *stage0 =
+		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
+	tree_scene_draw_flushed =
+		state != nullptr &&
+		state->draw_indexed_primitive_calls >= 3 &&
+		state->last_draw_stream_source_stride == sizeof(VertexFormatXYZNDUV1) &&
+		state->last_draw_vertex_shader == DX8_FVF_XYZNDUV1 &&
+		state->last_draw_vertex_count > 0 &&
+		state->last_draw_primitive_count > 0 &&
+		stage0 != nullptr &&
+		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE;
+	const IniLayoutComparison ini_layout = compare_ini_layout();
+	const bool ok =
+		state != nullptr &&
+		ini_layout.matches &&
+		global_data_ready &&
+		succeeded(init_result) &&
+		asset_manager_created &&
+		succeeded(set_device_result) &&
+		runtime_asset_system_installed &&
+		texture_file_factory_installed &&
+		models_file_exists &&
+		mesh_file_exists &&
+		tree_texture_file_exists &&
+		material_texture_file_exists &&
+		map_load.iniArchiveLoaded &&
+		map_load.mapsArchiveLoaded &&
+		map_load.terrainArchiveLoaded &&
+		map_load.terrainIniParsed &&
+		map_load.terrainTypeCount > 0 &&
+		map_load.mapEntryExists &&
+		map_load.mapEntryOpenable &&
+		map_load.mapStreamOpen &&
+		map_created &&
+		map_load.mapBytes > 0 &&
+		map_load.width > kMapPatchCells &&
+		map_load.height > kMapPatchCells &&
+		map_load.heightChecksum > 0 &&
+		map_load.patchHeightChecksum > 0 &&
+		water_transparency_ready &&
+		shader_manager_initialized &&
+		render_object_created &&
+		render_object_initialized &&
+		tree_buffer_installed &&
+		tree_data_configured &&
+		add_tree_invoked &&
+		update_tree_invoked &&
+		update_center_invoked &&
+		scene_created &&
+		scene_object_added &&
+		script_engine_ready &&
+		succeeded(begin_render_result) &&
+		succeeded(render_result) &&
+		succeeded(end_render_result) &&
+		!tree_need_to_draw_after_scene &&
+		tree_tiles_after_scene > 0 &&
+		tree_scene_draw_flushed &&
+		remove_tree_invoked &&
+		clear_trees_invoked &&
+		state->browser_texture_create_calls >= 2 &&
+		state->browser_texture_update_calls >= 2 &&
+		state->browser_texture_bind_calls >= 1 &&
+		state->browser_buffer_create_calls >= 4 &&
+		state->browser_buffer_update_calls >= 4 &&
+		state->set_stream_source_calls >= 2 &&
+		state->set_indices_calls >= 2 &&
+		state->set_texture_calls >= 1;
+
+	const std::string runtime_archive_directory_json =
+		json_string(runtime_archive_directory != nullptr ? runtime_archive_directory : "");
+	const std::string runtime_archive_mask_json =
+		json_string(runtime_archive_mask != nullptr ? runtime_archive_mask : "");
+	const std::string tree_model_json = json_string(kTreeModelName);
+	const std::string tree_texture_json = json_string(kTreeTextureName);
+	const std::string tree_models_entry_json = json_string(kTreeModelsArchiveEntry);
+	const std::string tree_mesh_entry_json = json_string(kTreeMeshArchiveEntry);
+	const std::string tree_texture_entry_json = json_string(kTreeTextureArchiveEntry);
+	const std::string tree_material_texture_entry_json = json_string(kTreeMaterialTextureArchiveEntry);
+	const std::string tree_vertex_shader_entry_json = json_string(kTreeVertexShaderArchiveEntry);
+	const std::string tree_pixel_shader_entry_json = json_string(kTreePixelShaderArchiveEntry);
+	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
+	const std::string first_patch_texture_class_json =
+		json_string(map_load.firstPatchTextureClassName);
+	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
+	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
+
+	char buffer[19000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_terrain_tree_buffer_scene_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
+		"RTS3DScene::Flush -> DoTrees -> BaseHeightMapRenderObjClass::renderTrees -> "
+		"W3DTreeBuffer::drawTrees\","
+		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
+		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
+		"\"asset\":{\"model\":%s,\"texture\":%s,\"modelsEntry\":%s,"
+		"\"meshEntry\":%s,\"textureEntry\":%s,"
+		"\"materialTextureEntry\":%s,\"vertexShaderEntry\":%s,"
+		"\"pixelShaderEntry\":%s},"
+		"\"results\":{\"globalDataReady\":%s,\"init\":%d,"
+		"\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
+		"\"modelsFileExists\":%s,\"meshFileExists\":%s,"
+		"\"treeTextureFileExists\":%s,\"materialTextureFileExists\":%s,"
+		"\"treeVertexShaderFileExists\":%s,\"treePixelShaderFileExists\":%s,"
+		"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
+		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
+		"\"initHeightData\":%d,\"treeBufferInstalled\":%s,"
+		"\"treeDataConfigured\":%s,\"addTreeInvoked\":%s,"
+		"\"updateTreeInvoked\":%s,\"updateCenterInvoked\":%s,"
+		"\"treeNeedToDrawAfterCenter\":%s,"
+		"\"treeNeedToDrawAfterScene\":%s,"
+		"\"scriptEngineReady\":%s,"
+		"\"sceneCreated\":%s,\"sceneObjectAdded\":%s,"
+		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
+		"\"treeSceneDrawFlushed\":%s,\"removeTreeInvoked\":%s,"
+		"\"clearTreesInvoked\":%s},"
+		"\"ini\":{\"entry\":\"Data\\\\INI\\\\Terrain.ini\","
+		"\"loaded\":%s,\"entryExists\":%s,\"parsed\":%s,"
+		"\"parser\":\"GameEngine/Common/INI.cpp::load + INITerrain.cpp\","
+		"\"originalIniParser\":true,\"terrainTypeCount\":%lu},"
+		"\"iniLayout\":%s,"
+		"\"map\":{\"entry\":%s,\"entryExists\":%s,\"entryOpenable\":%s,"
+		"\"streamOpen\":%s,\"parsed\":%s,\"bytes\":%d,"
+		"\"width\":%d,\"height\":%d,\"border\":%d,"
+		"\"heightChecksum\":%lu},"
+		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
+		"\"tileSource\":\"shipped-map-heightmap\","
+		"\"renderObject\":\"ProbeHeightMapRenderObjWithTreeBuffer\","
+		"\"transform\":\"identity\","
+		"\"renderWindowWidth\":%d,\"renderWindowHeight\":%d,"
+		"\"renderOriginX\":%d,\"renderOriginY\":%d,"
+		"\"patchOriginX\":%d,\"patchOriginY\":%d,"
+		"\"patchCenterHeight\":%u,\"patchHeightChecksum\":%lu,"
+		"\"tileDiagnostics\":{\"bitmapTiles\":%d,\"textureClasses\":%d,"
+		"\"sourceTilesLoaded\":%d,\"sourceTilesPositioned\":%d,"
+		"\"patchCells\":%d,\"patchCellsWithSource\":%d,"
+		"\"patchCellsMissingSource\":%d,"
+		"\"firstPatchTile\":{\"tileIndex\":%d,\"baseTileIndex\":%d,"
+		"\"sourceTileLoaded\":%s,\"textureClass\":%d,"
+		"\"textureClassName\":%s,\"texturePositionX\":%d,"
+		"\"texturePositionY\":%d}}},"
+		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
+		"RTS3DScene::Customized_Render -> HeightMapRenderObjClass::Render -> "
+		"RTS3DScene::Flush -> DoTrees -> W3DTreeBuffer::drawTrees\","
+		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
+		"\"tree\":{\"afterAdd\":%s,\"afterUpdate\":%s,"
+		"\"tilesAfterScene\":%d,"
+		"\"location\":[%.4f,%.4f,%.4f]},"
+		"\"camera\":{\"eye\":[%.4f,%.4f,%.4f],"
+		"\"target\":[%.4f,%.4f,%.4f]},"
+		"\"runtimeAssets\":%s,"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"browserTextureBind\":%u,\"browserBufferCreate\":%u,"
+		"\"browserBufferUpdate\":%u,\"setTexture\":%u,"
+		"\"setStreamSource\":%u,\"setIndices\":%u,"
+		"\"setVertexShader\":%u,\"drawIndexed\":%u,"
+		"\"setTransform\":%u,\"clear\":%u,\"present\":%u},"
+		"\"draw\":{\"primitiveType\":%u,\"vertexShaderFvf\":%lu,"
+		"\"vertexCount\":%u,\"primitiveCount\":%u,"
+		"\"vertexStride\":%u,\"vertexBufferId\":%u,"
+		"\"indexBufferId\":%u,\"texture0ColorOp\":%lu,"
+		"\"texture0ColorArg1\":%lu,\"texture0ColorArg2\":%lu}}",
+		bool_json(ok),
+		ini_archive_path != nullptr ? ini_archive_path : "",
+		maps_archive_path != nullptr ? maps_archive_path : "",
+		terrain_archive_path != nullptr ? terrain_archive_path : "",
+		runtime_archive_directory_json.c_str(),
+		runtime_archive_mask_json.c_str(),
+		tree_model_json.c_str(),
+		tree_texture_json.c_str(),
+		tree_models_entry_json.c_str(),
+		tree_mesh_entry_json.c_str(),
+		tree_texture_entry_json.c_str(),
+		tree_material_texture_entry_json.c_str(),
+		tree_vertex_shader_entry_json.c_str(),
+		tree_pixel_shader_entry_json.c_str(),
+		bool_json(global_data_ready),
+		init_result,
+		bool_json(asset_manager_created),
+		set_device_result,
+		bool_json(runtime_asset_system_installed),
+		bool_json(texture_file_factory_installed),
+		bool_json(models_file_exists),
+		bool_json(mesh_file_exists),
+		bool_json(tree_texture_file_exists),
+		bool_json(material_texture_file_exists),
+		bool_json(tree_vertex_shader_file_exists),
+		bool_json(tree_pixel_shader_file_exists),
+		bool_json(water_transparency_ready),
+		bool_json(shader_manager_initialized),
+		bool_json(render_object_created),
+		bool_json(render_object_initialized),
+		init_height_data_result,
+		bool_json(tree_buffer_installed),
+		bool_json(tree_data_configured),
+		bool_json(add_tree_invoked),
+		bool_json(update_tree_invoked),
+		bool_json(update_center_invoked),
+		bool_json(tree_need_to_draw_after_center),
+		bool_json(tree_need_to_draw_after_scene),
+		bool_json(script_engine_ready),
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		begin_render_result,
+		render_result,
+		end_render_result,
+		bool_json(tree_scene_draw_flushed),
+		bool_json(remove_tree_invoked),
+		bool_json(clear_trees_invoked),
+		bool_json(map_load.iniArchiveLoaded),
+		bool_json(map_load.terrainIniExists),
+		bool_json(map_load.terrainIniParsed),
+		static_cast<unsigned long>(map_load.terrainTypeCount),
+		ini_layout_report_json.c_str(),
+		terrain_map_entry_json.c_str(),
+		bool_json(map_load.mapEntryExists),
+		bool_json(map_load.mapEntryOpenable),
+		bool_json(map_load.mapStreamOpen),
+		bool_json(map_load.mapParsed),
+		map_load.mapBytes,
+		map_load.width,
+		map_load.height,
+		map_load.border,
+		static_cast<unsigned long>(map_load.heightChecksum),
+		kMapPatchVertices,
+		kMapPatchCells,
+		map != nullptr ? map->getDrawWidth() : 0,
+		map != nullptr ? map->getDrawHeight() : 0,
+		map != nullptr ? map->getDrawOrgX() : 0,
+		map != nullptr ? map->getDrawOrgY() : 0,
+		map_load.patchOriginX,
+		map_load.patchOriginY,
+		map_load.patchCenterHeight,
+		static_cast<unsigned long>(map_load.patchHeightChecksum),
+		map_load.bitmapTileCount,
+		map_load.textureClassCount,
+		map_load.sourceTilesLoaded,
+		map_load.sourceTilesPositioned,
+		map_load.patchTileCells,
+		map_load.patchTilesWithSource,
+		map_load.patchTilesMissingSource,
+		map_load.firstPatchTileIndex,
+		map_load.firstPatchBaseTileIndex,
+		bool_json(map_load.firstPatchSourceTileLoaded),
+		map_load.firstPatchTextureClass,
+		first_patch_texture_class_json.c_str(),
+		map_load.firstPatchTileTextureX,
+		map_load.firstPatchTileTextureY,
+		bool_json(scene_created),
+		bool_json(scene_object_added),
+		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
+		bool_json(add_tree_invoked),
+		bool_json(update_tree_invoked),
+		tree_tiles_after_scene,
+		tree_location_x,
+		tree_location_y,
+		tree_location_z,
+		camera_eye_x,
+		camera_eye_y,
+		camera_eye_z,
+		camera_target_x,
+		camera_target_y,
+		camera_target_z,
+		runtime_assets_json.c_str(),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->browser_texture_bind_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->set_texture_calls : 0,
+		state != nullptr ? state->set_stream_source_calls : 0,
+		state != nullptr ? state->set_indices_calls : 0,
+		state != nullptr ? state->set_vertex_shader_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0,
+		state != nullptr ? state->set_transform_calls : 0,
+		state != nullptr ? state->clear_calls : 0,
+		state != nullptr ? state->present_calls : 0,
+		state != nullptr ? state->last_draw_primitive_type : 0,
+		state != nullptr ? state->last_draw_vertex_shader : 0,
+		state != nullptr ? state->last_draw_vertex_count : 0,
+		state != nullptr ? state->last_draw_primitive_count : 0,
+		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_vertex_buffer_id : 0,
+		state != nullptr ? state->last_draw_index_buffer_id : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLOROP] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG1] : 0,
+		stage0 != nullptr ? stage0->values[D3DTSS_COLORARG2] : 0);
+
+	target_json = buffer;
+
+	if (scene != nullptr && render_object != nullptr && scene_object_added) {
+		scene->Remove_Render_Object(render_object);
+	}
+	REF_PTR_RELEASE(scene);
+	REF_PTR_RELEASE(render_object);
+	REF_PTR_RELEASE(camera);
+	TheTerrainRenderObject = old_terrain_render_object;
+	TheWaterTransparency = old_water_transparency;
+	if (probe_water_transparency != nullptr &&
+			probe_water_transparency != old_water_transparency) {
+		probe_water_transparency->deleteInstance();
+	}
+	REF_PTR_RELEASE(map_load.map);
+	map = nullptr;
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
+
+	if (succeeded(init_result)) {
+		if (shader_manager_initialized)
+			W3DShaderManager::shutdown();
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+	return target_json.c_str();
+}
+
 const char *run_ww3d_terrain_prop_buffer_render_probe(
 	std::string &target_json,
 	const char *archive_path,
@@ -4108,6 +4798,22 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_prop_buffer_scene(
 		terrain_archive_path,
 		archive_path,
 		texture_archive_path);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tree_buffer_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path,
+	const char *runtime_archive_directory,
+	const char *runtime_archive_mask)
+{
+	return run_ww3d_terrain_tree_buffer_scene_probe(
+		g_ww3d_terrain_tree_buffer_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		runtime_archive_directory,
+		runtime_archive_mask);
 }
 
 }

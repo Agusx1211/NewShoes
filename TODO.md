@@ -770,10 +770,15 @@ shares structure and follows behind.
       rendered through `WW3D::Render` and WebGL2. The production-shaped
       `HeightMapRenderObjClass::Render` -> `W3DPropBuffer::drawProps` ->
       `RTS3DScene::Flush` -> `TheDX8MeshRenderer.Flush` path is now
-      browser-harness verified against the same shipped prop model/texture on
-      a real source-backed map patch. A direct broad removal of the minimal
-      heightmap/road bypass still times out and crashes Chromium after archive
-      mounting, so full adjacent heightmap ownership remains open. The
+      browser-harness verified against the same shipped prop model/texture on a
+      real source-backed map patch. The original `W3DTreeBuffer::drawTrees`
+      path is now browser-harness verified through
+      `HeightMapRenderObjClass::Render` -> `RTS3DScene::Flush` -> `DoTrees`
+      using shipped `PTDogwod01_S` W3D and terrain/tree textures on the same
+      real source-backed map patch. Production map/object tree placement and
+      shroud-aware tree behavior remain open. A direct broad removal of the
+      minimal heightmap/road bypass still times out and crashes Chromium after
+      archive mounting, so full adjacent heightmap ownership remains open. The
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.

@@ -1709,6 +1709,94 @@ const steps = [
     },
   },
   {
+    name: "terrain-tree-buffer-scene-render",
+    file: "harness/terrain_tree_buffer_scene_smoke.mjs",
+    args: [
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/MapsZH.big",
+      "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/W3DZH.big",
+      "artifacts/real-assets/TexturesZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "terrain tree-buffer scene render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-tree-buffer-scene",
+        "terrain tree-buffer scene render smoke emitted the wrong path", payload);
+      expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
+          && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && payload.archives?.ini?.originalIniParser === true
+          && payload.archives?.ini?.terrainTypeCount > 0
+          && iniLayoutMatches(payload.archives?.ini?.layout),
+        "terrain tree-buffer scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
+      expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && payload.map?.parsed === true
+          && payload.map?.bytes > 0
+          && payload.map?.width > 16
+          && payload.map?.height > 16,
+        "terrain tree-buffer scene render smoke did not parse the shipped MD_GLA03 map", payload.map);
+      expect(payload.archives?.w3d?.meshEntry === "Art\\W3D\\PTDogwod01_S.W3D"
+          && payload.archives?.terrain?.treeTextureEntry === "Art\\Terrain\\PTDogwod01_S.tga"
+          && payload.archives?.textures?.materialTextureEntry === "Art\\Textures\\ptdogwod01_s.dds"
+          && payload.probe?.asset?.model === "PTDogwod01_S"
+          && payload.probe?.asset?.texture === "PTDogwod01_S.tga",
+        "terrain tree-buffer scene render smoke did not use the expected shipped tree assets", payload.archives);
+      expect(payload.probe?.results?.runtimeAssetSystemInstalled === true
+          && payload.probe?.results?.textureFileFactoryInstalled === true
+          && payload.probe?.results?.modelsFileExists === true
+          && payload.probe?.results?.meshFileExists === true
+          && payload.probe?.results?.treeTextureFileExists === true
+          && payload.probe?.results?.materialTextureFileExists === true,
+        "terrain tree-buffer scene render smoke did not install the runtime W3D/tree asset system", payload.probe?.results);
+      expect(payload.terrain?.tileSource === "shipped-map-heightmap"
+          && payload.terrain?.renderObject === "ProbeHeightMapRenderObjWithTreeBuffer"
+          && payload.terrain?.verticesPerSide === 33
+          && payload.terrain?.cellsPerSide === 32
+          && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0,
+        "terrain tree-buffer scene render smoke did not keep source-backed terrain geometry", payload.terrain);
+      expect(payload.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && payload.scene?.renderPath?.includes("W3DTreeBuffer::drawTrees")
+          && payload.scene?.renderPath?.includes("RTS3DScene::Flush")
+          && payload.scene?.created === true
+          && payload.scene?.objectAdded === true
+          && payload.scene?.terrainClassId === 4,
+        "terrain tree-buffer scene render smoke did not use the scene drawTrees/flush path", payload.scene);
+      expect(payload.probe?.results?.treeBufferInstalled === true
+          && payload.probe?.results?.addTreeInvoked === true
+          && payload.probe?.results?.updateTreeInvoked === true
+          && payload.probe?.results?.updateCenterInvoked === true
+          && payload.probe?.results?.treeSceneDrawFlushed === true
+          && payload.probe?.results?.treeNeedToDrawAfterScene === false
+          && payload.tree?.afterAdd === true
+          && payload.tree?.afterUpdate === true
+          && payload.tree?.tilesAfterScene > 0,
+        "terrain tree-buffer scene render smoke did not drive original tree-buffer state", {
+          results: payload.probe?.results,
+          tree: payload.tree,
+        });
+      expect(payload.calls?.browserTextureCreate >= 2
+          && payload.calls?.browserTextureUpdate >= 2
+          && payload.calls?.drawIndexed >= 3,
+        "terrain tree-buffer scene render smoke did not reach terrain plus tree indexed draws", payload.calls);
+      expect(payload.draw?.vertexShaderFvf === 338
+          && payload.draw?.vertexStride === 36
+          && payload.browserProbe?.vertexShaderFvf === 338
+          && payload.browserProbe?.vertexStride === 36
+          && payload.browserProbe?.texture0?.sampled === true
+          && payload.browserProbe?.vertexDiagnostics?.projected?.visible > 0
+          && payload.drawSequence?.treeAfterTerrain === true,
+        "terrain tree-buffer scene render smoke did not flush browser-visible tree geometry after terrain", {
+          browserProbe: payload.browserProbe,
+          drawSequence: payload.drawSequence,
+        });
+      expect(payload.coverage?.coloredPixelCount > 0,
+        "terrain tree-buffer scene render smoke did not produce colored browser pixels", payload.coverage);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-tree-buffer-scene-canvas.png"),
+        "terrain tree-buffer scene render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],
@@ -1815,6 +1903,7 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
     "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window, optional base Terrain.big mounting, and browser WebGL2 pixels",
+    "original W3DTreeBuffer::drawTrees reached through RTS3DScene::Flush/DoTrees with shipped PTDogwod01_S W3D and terrain/tree textures in browser WebGL2",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
