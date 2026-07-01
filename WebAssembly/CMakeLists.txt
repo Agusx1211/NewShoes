@@ -5562,6 +5562,8 @@ target_link_options(w3d-gamewindow-manager-smoke PRIVATE
 add_executable(w3d-window-layout-script-smoke
   tests/w3d_window_layout_script_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/System/FunctionLexicon.cpp"
+  "${GAMEENGINE_COMMON_DIR}/SkirmishBattleHonors.cpp"
+  "${GAMEENGINE_COMMON_DIR}/UserPreferences.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayString.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/DisplayStringManager.cpp"
@@ -5570,6 +5572,7 @@ add_executable(w3d-window-layout-script-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/MessageBox.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/CreditsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/MainMenu.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GUICallbacks/Menus/SkirmishGameOptionsMenu.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameFont.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/GameWindowManagerScript.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/HeaderTemplate.cpp"
@@ -5577,6 +5580,8 @@ add_executable(w3d-window-layout-script-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GameInfo.cpp"
+  "${GAMEENGINE_GAMENETWORK_DIR}/GUIUtil.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/Common/System/W3DFunctionLexicon.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/GUI/GUICallbacks/W3DMainMenu.cpp"
 )

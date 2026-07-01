@@ -13,20 +13,29 @@
 #endif
 #define NULL 0
 
+#include "Common/AcademyStats.h"
 #include "Common/AudioEventRTS.h"
 #include "Common/AudioHandleSpecialValues.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/FunctionLexicon.h"
+#include "Common/GameEngine.h"
+#include "Common/GameState.h"
 #include "Common/GameAudio.h"
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/MiscAudio.h"
+#include "Common/PlayerList.h"
+#include "Common/PlayerTemplate.h"
+#include "Common/SkirmishBattleHonors.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/UserPreferences.h"
 #include "Common/ArchiveFileSystem.h"
+#include "GameClient/ChallengeGenerals.h"
 #include "GameClient/Display.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/CampaignManager.h"
@@ -36,6 +45,9 @@
 #include "GameClient/GameText.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
+#include "GameClient/GadgetComboBox.h"
+#include "GameClient/GadgetSlider.h"
+#include "GameClient/GadgetStaticText.h"
 #include "GameClient/GlobalLanguage.h"
 #include "GameClient/HeaderTemplate.h"
 #include "GameClient/Image.h"
@@ -51,6 +63,9 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameNetwork/DownloadManager.h"
+#include "GameNetwork/GameInfo.h"
+#include "GameNetwork/GameSpy/ThreadUtils.h"
+#include "GameNetwork/IPEnumeration.h"
 #include "W3DDevice/Common/W3DFunctionLexicon.h"
 #include "Win32Device/Common/Win32BIGFileSystem.h"
 #include "Win32Device/Common/Win32LocalFileSystem.h"
@@ -72,6 +87,7 @@ class SelectionTranslator;
 class ScriptEngine;
 class VideoPlayerInterface;
 class View;
+class GameSpyStagingRoom;
 class GameSpyPeerMessageQueueInterface;
 class GameSpyInfoInterface;
 void W3DMainMenuInit(WindowLayout *layout, void *userData);
@@ -111,12 +127,16 @@ GameClient *TheGameClient = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameSpyPeerMessageQueueInterface *TheGameSpyPeerMessageQueue = nullptr;
 MapCache *TheMapCache = nullptr;
+PlayerList *ThePlayerList = nullptr;
 SelectionTranslator *TheSelectionTranslator = nullptr;
 ScriptEngine *TheScriptEngine = nullptr;
 VideoPlayerInterface *TheVideoPlayer = nullptr;
 View *TheTacticalView = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
+GameSpyStagingRoom *TheGameSpyGame = nullptr;
+GameState *TheGameState = nullptr;
 GameWindowTransitionsHandler *TheTransitionHandler = nullptr;
+Int NET_CRC_INTERVAL = 100;
 Bool DontShowMainMenu = FALSE;
 Bool dispChanged = FALSE;
 DisplaySettings oldDispSettings = {800, 600, 32, TRUE};
@@ -293,6 +313,86 @@ private:
 	std::vector<char> m_data;
 	Int m_pos = 0;
 };
+
+class SmokeGameEngine : public GameEngine
+{
+public:
+	void init() override {}
+	void init(int, char *[]) override {}
+	void reset() override {}
+	void update() override {}
+	void execute() override {}
+	void setFramesPerSecondLimit(Int fps) override { m_maxFPS = fps; }
+	Int getFramesPerSecondLimit() override { return m_maxFPS; }
+	void setQuitting(Bool quitting) override { m_quitting = quitting; }
+	Bool getQuitting() override { return m_quitting; }
+	Bool isMultiplayerSession() override { return FALSE; }
+	void serviceWindowsOS() override {}
+	Bool isActive() override { return m_isActive; }
+	void setIsActive(Bool isActive) override { m_isActive = isActive; }
+
+protected:
+	LocalFileSystem *createLocalFileSystem() override { return nullptr; }
+	ArchiveFileSystem *createArchiveFileSystem() override { return nullptr; }
+	GameLogic *createGameLogic() override { return nullptr; }
+	GameClient *createGameClient() override { return nullptr; }
+	ModuleFactory *createModuleFactory() override { return nullptr; }
+	ThingFactory *createThingFactory() override { return nullptr; }
+	FunctionLexicon *createFunctionLexicon() override { return nullptr; }
+	Radar *createRadar() override { return nullptr; }
+	WebBrowser *createWebBrowser() override { return nullptr; }
+	ParticleSystemManager *createParticleSystemManager() override { return nullptr; }
+	AudioManager *createAudioManager() override { return nullptr; }
+};
+
+void seed_multiplayer_settings(MultiplayerSettings &settings)
+{
+	Money cash;
+	cash.deposit(10000, FALSE);
+	settings.addStartingMoneyChoice(cash, TRUE);
+
+	for (const char *name : {"GUI:ColorBlue", "GUI:ColorRed"}) {
+		MultiplayerColorDefinition *color = settings.newMultiplayerColorDefinition(AsciiString(name));
+		if (color != nullptr) {
+			RGBColor rgb;
+			rgb.setFromInt(name[10] == 'B' ? 0x2048F0 : 0xD03030);
+			color->setColor(rgb);
+			color->setNightColor(rgb);
+		}
+	}
+}
+
+void seed_skirmish_map_cache(MapCache &map_cache)
+{
+	MapMetaData metadata;
+	metadata.m_displayName.translate("Smoke Tournament Desert");
+	metadata.m_nameLookupTag = "MAP:SmokeTournamentDesert";
+	metadata.m_extent.lo.x = 0.0f;
+	metadata.m_extent.lo.y = 0.0f;
+	metadata.m_extent.lo.z = 0.0f;
+	metadata.m_extent.hi.x = 400.0f;
+	metadata.m_extent.hi.y = 400.0f;
+	metadata.m_extent.hi.z = 0.0f;
+	metadata.m_numPlayers = 2;
+	metadata.m_isMultiplayer = TRUE;
+	metadata.m_isOfficial = TRUE;
+	metadata.m_filesize = 1234;
+	metadata.m_CRC = 0x12345678;
+	metadata.m_fileName = "Maps\\SmokeTournamentDesert\\SmokeTournamentDesert.map";
+
+	Coord3D start;
+	start.x = 80.0f;
+	start.y = 80.0f;
+	start.z = 0.0f;
+	metadata.m_waypoints["Player_1_Start"] = start;
+	start.x = 320.0f;
+	start.y = 320.0f;
+	metadata.m_waypoints["Player_2_Start"] = start;
+
+	AsciiString key = metadata.m_fileName;
+	key.toLower();
+	map_cache[key] = metadata;
+}
 
 class ScriptLocalFileSystem : public LocalFileSystem
 {
@@ -954,6 +1054,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
+	SmokeGameEngine game_engine;
 	NameKeyGenerator name_key_generator;
 	Win32LocalFileSystem local_file_system;
 	FileSystem file_system;
@@ -968,6 +1069,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SmokeMouse mouse;
 	SmokeAudioManager audio;
 	CampaignManager campaign_manager;
+	MultiplayerSettings multiplayer_settings;
+	PlayerTemplateStore player_template_store;
+	MapCache map_cache;
 	ScriptEngine script_engine;
 	HeaderTemplateManager header_templates;
 	GameWindowTransitionsHandler transition_handler;
@@ -976,6 +1080,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 
 	GlobalData *old_global_data = TheGlobalData;
 	SubsystemInterfaceList *old_subsystem_list = TheSubsystemList;
+	GameEngine *old_game_engine = TheGameEngine;
 	NameKeyGenerator *old_name_keys = TheNameKeyGenerator;
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
@@ -987,6 +1092,13 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	GlobalLanguage *old_global_language = TheGlobalLanguageData;
 	ImageCollection *old_mapped_image_collection = TheMappedImageCollection;
 	GameLogic *old_game_logic = TheGameLogic;
+	GameInfo *old_game_info = TheGameInfo;
+	SkirmishGameInfo *old_skirmish_game_info = TheSkirmishGameInfo;
+	GameState *old_game_state = TheGameState;
+	MultiplayerSettings *old_multiplayer_settings = TheMultiplayerSettings;
+	PlayerList *old_player_list = ThePlayerList;
+	PlayerTemplateStore *old_player_template_store = ThePlayerTemplateStore;
+	MapCache *old_map_cache = TheMapCache;
 	AudioManager *old_audio = TheAudio;
 	CampaignManager *old_campaign_manager = TheCampaignManager;
 	ScriptEngine *old_script_engine = TheScriptEngine;
@@ -999,9 +1111,16 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	Shell *old_shell = TheShell;
 	char *old_skirmish_shell_hook =
 		TheShellHookNames[SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED];
+	char *old_skirmish_opened_hook =
+		TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_OPENED];
+	char *old_skirmish_closed_hook =
+		TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED];
+	char *old_skirmish_entered_hook =
+		TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME];
 
 	TheGlobalData = &global_data;
 	TheSubsystemList = &subsystem_list;
+	TheGameEngine = &game_engine;
 	TheNameKeyGenerator = &name_key_generator;
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
@@ -1013,6 +1132,15 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheGlobalLanguageData = &global_language;
 	TheMappedImageCollection = &image_collection;
 	TheGameLogic = &game_logic;
+	TheGameInfo = nullptr;
+	TheSkirmishGameInfo = nullptr;
+	TheGameState = reinterpret_cast<GameState *>(1);
+	TheMultiplayerSettings = &multiplayer_settings;
+	// PlayerList::getNthPlayer is a focused no-player boundary below; it does
+	// not read object state, but Money::deposit expects a non-null singleton.
+	ThePlayerList = reinterpret_cast<PlayerList *>(1);
+	ThePlayerTemplateStore = &player_template_store;
+	TheMapCache = &map_cache;
 	TheAudio = &audio;
 	TheCampaignManager = &campaign_manager;
 	TheScriptEngine = &script_engine;
@@ -1022,15 +1150,26 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheTransitionHandler = &transition_handler;
 	TheWindowManager = &window_manager;
 	TheFunctionLexicon = &function_lexicon;
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_OPENED] =
+		const_cast<char *>("ShellSkirmishOpened");
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED] =
+		const_cast<char *>("ShellSkirmishClosed");
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME] =
+		const_cast<char *>("ShellSkirmishEnteredFromGame");
 
 	global_data.m_initialFile.clear();
 	global_data.m_shellMapOn = FALSE;
 	global_data.m_animateWindows = FALSE;
+	global_data.m_framesPerSecondLimit = 30;
+	global_data.m_defaultStartingCash.deposit(10000, FALSE);
 	display.setWidth(800);
 	display.setHeight(600);
 	display.setBitDepth(32);
 	display.setWindowed(TRUE);
 	name_key_generator.init();
+	seed_multiplayer_settings(multiplayer_settings);
+	player_template_store.init();
+	seed_skirmish_map_cache(map_cache);
 	function_lexicon.init();
 
 	ok = expect(archive_file_system.loadBigFilesFromDirectory(archive_directory, archive_mask),
@@ -1511,10 +1650,55 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 				if (skirmish_parent != nullptr) {
 					ok = expect(skirmish_parent->winGetSystemFunc() == SkirmishGameOptionsMenuSystem,
 						"SkirmishGameOptionsMenu parent did not resolve SkirmishGameOptionsMenuSystem through the GUI lexicon") && ok;
+					ok = expect(BitTest(skirmish_parent->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+						"original SkirmishGameOptionsMenuInit did not show the options parent") && ok;
+				}
+				TheGameInfo = TheSkirmishGameInfo;
+				ok = expect(TheSkirmishGameInfo != nullptr
+						&& TheSkirmishGameInfo->isInGame()
+						&& !TheSkirmishGameInfo->isGameInProgress(),
+					"original SkirmishGameOptionsMenuInit did not create an in-setup SkirmishGameInfo") && ok;
+				ok = expect(g_script_ui_interact_calls == skirmish_script_ui_before_click + 2
+						&& g_last_script_ui_interact_hook == AsciiString("ShellSkirmishOpened"),
+					"original SkirmishGameOptionsMenuInit did not signal the Skirmish-opened shell hook") && ok;
+				GameWindow *starting_cash_combo = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ComboBoxStartingCash")));
+				GameWindow *map_window = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:MapWindow")));
+				GameWindow *game_speed_slider = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:SliderGameSpeed")));
+				GameWindow *game_speed_text = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:StaticTextGameSpeed")));
+				GameWindow *start_position_button = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonMapStartPosition0")));
+				ok = expect(starting_cash_combo != nullptr && map_window != nullptr
+						&& game_speed_slider != nullptr && game_speed_text != nullptr
+						&& start_position_button != nullptr,
+					"SkirmishGameOptionsMenuInit did not resolve the expected option gadgets") && ok;
+				if (starting_cash_combo != nullptr) {
+					ok = expect(GadgetComboBoxGetLength(starting_cash_combo) >= 1,
+						"original SkirmishGameOptionsMenuInit did not populate starting-cash choices") && ok;
+				}
+				if (map_window != nullptr && TheSkirmishGameInfo != nullptr) {
+					ok = expect(map_window->winGetUserData() == TheMapCache->findMap(TheSkirmishGameInfo->getMap()),
+						"original SkirmishGameOptionsMenuInit did not attach map metadata to the map window") && ok;
+				}
+				if (game_speed_slider != nullptr && game_speed_text != nullptr) {
+					ok = expect(GadgetSliderGetPosition(game_speed_slider) == 30
+							&& !GadgetStaticTextGetText(game_speed_text).isEmpty(),
+						"original SkirmishGameOptionsMenuInit did not initialize game-speed controls") && ok;
+				}
+				if (start_position_button != nullptr) {
+					ok = expect(BitTest(start_position_button->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+						"original SkirmishGameOptionsMenuInit did not show the first map start-position control") && ok;
 				}
 				if (shell.top() == skirmish_layout) {
+					const Int skirmish_closed_before_pop = g_script_ui_interact_calls;
 					shell.pop();
 					shell.shutdownComplete(skirmish_layout, TRUE);
+					ok = expect(g_script_ui_interact_calls == skirmish_closed_before_pop + 1
+							&& g_last_script_ui_interact_hook == AsciiString("ShellSkirmishClosed"),
+						"original SkirmishGameOptionsMenuShutdown did not signal the Skirmish-closed shell hook") && ok;
 				}
 				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
 					"original Shell::pop did not return from SkirmishGameOptionsMenu.wnd to MainMenu.wnd") && ok;
@@ -1541,6 +1725,16 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheScriptEngine = old_script_engine;
 	TheCampaignManager = old_campaign_manager;
 	TheAudio = old_audio;
+	if (TheSkirmishGameInfo != nullptr && TheSkirmishGameInfo != old_skirmish_game_info) {
+		delete TheSkirmishGameInfo;
+	}
+	TheMapCache = old_map_cache;
+	ThePlayerTemplateStore = old_player_template_store;
+	ThePlayerList = old_player_list;
+	TheMultiplayerSettings = old_multiplayer_settings;
+	TheGameState = old_game_state;
+	TheSkirmishGameInfo = old_skirmish_game_info;
+	TheGameInfo = old_game_info;
 	TheGameLogic = old_game_logic;
 	TheMappedImageCollection = old_mapped_image_collection;
 	TheGlobalLanguageData = old_global_language;
@@ -1552,10 +1746,17 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheArchiveFileSystem = old_archive_file_system;
 	TheLocalFileSystem = old_local_file_system;
 	TheNameKeyGenerator = old_name_keys;
+	TheGameEngine = old_game_engine;
 	TheSubsystemList = old_subsystem_list;
 	TheGlobalData = old_global_data;
 	TheShellHookNames[SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED] =
 		old_skirmish_shell_hook;
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_OPENED] =
+		old_skirmish_opened_hook;
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED] =
+		old_skirmish_closed_hook;
+	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_ENTERED_FROM_GAME] =
+		old_skirmish_entered_hook;
 
 	return ok;
 }
@@ -1734,7 +1935,8 @@ const AudioSettings *AudioManager::getAudioSettings() const
 
 const MiscAudio *AudioManager::getMiscAudio() const
 {
-	return nullptr;
+	static MiscAudio misc_audio;
+	return &misc_audio;
 }
 
 void AudioManager::releaseAudioEventRTS(AudioEventRTS *)
@@ -1748,7 +1950,8 @@ AudioSettings *AudioManager::friend_getAudioSettings()
 
 MiscAudio *AudioManager::friend_getMiscAudio()
 {
-	return nullptr;
+	static MiscAudio misc_audio;
+	return &misc_audio;
 }
 
 const FieldParse *AudioManager::getFieldParseTable() const
@@ -1938,9 +2141,6 @@ DEFINE_LAYOUT_STUB(ScoreScreenUpdate)
 DEFINE_LAYOUT_STUB(SinglePlayerMenuInit)
 DEFINE_LAYOUT_STUB(SinglePlayerMenuShutdown)
 DEFINE_LAYOUT_STUB(SinglePlayerMenuUpdate)
-DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuInit)
-DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuShutdown)
-DEFINE_LAYOUT_STUB(SkirmishGameOptionsMenuUpdate)
 DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuInit)
 DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuShutdown)
 DEFINE_LAYOUT_STUB(SkirmishMapSelectMenuUpdate)
@@ -2053,8 +2253,6 @@ DEFINE_WINDOW_STUB(ScoreScreenInput)
 DEFINE_WINDOW_STUB(ScoreScreenSystem)
 DEFINE_WINDOW_STUB(SinglePlayerMenuInput)
 DEFINE_WINDOW_STUB(SinglePlayerMenuSystem)
-DEFINE_WINDOW_STUB(SkirmishGameOptionsMenuInput)
-DEFINE_WINDOW_STUB(SkirmishGameOptionsMenuSystem)
 DEFINE_WINDOW_STUB(SkirmishMapSelectMenuInput)
 DEFINE_WINDOW_STUB(SkirmishMapSelectMenuSystem)
 DEFINE_WINDOW_STUB(WOLBuddyOverlayInput)
@@ -2162,11 +2360,6 @@ void StopAsyncDNSCheck()
 
 void StartDownloadingPatches()
 {
-}
-
-Bool IsFirstCDPresent()
-{
-	return TRUE;
 }
 
 const FieldParse GameWindowTransitionsHandler::m_gameWindowTransitionsFieldParseTable[] = {
@@ -2548,22 +2741,111 @@ HRESULT DownloadManager::update()
 	return S_OK;
 }
 
-UserPreferences::UserPreferences()
+GameEngine::GameEngine() :
+	m_maxFPS(DEFAULT_MAX_FPS),
+	m_quitting(FALSE),
+	m_isActive(TRUE)
 {
 }
 
-UserPreferences::~UserPreferences()
+GameEngine::~GameEngine()
 {
 }
 
-Bool UserPreferences::load(AsciiString)
+void GameEngine::init()
 {
-	return TRUE;
 }
 
-Bool UserPreferences::write()
+void GameEngine::init(int, char *[])
 {
-	return TRUE;
+}
+
+void GameEngine::reset()
+{
+}
+
+void GameEngine::update()
+{
+}
+
+void GameEngine::execute()
+{
+}
+
+void GameEngine::setFramesPerSecondLimit(Int fps)
+{
+	m_maxFPS = fps;
+}
+
+Int GameEngine::getFramesPerSecondLimit()
+{
+	return m_maxFPS;
+}
+
+Bool GameEngine::isMultiplayerSession()
+{
+	return FALSE;
+}
+
+FileSystem *GameEngine::createFileSystem()
+{
+	return nullptr;
+}
+
+MessageStream *GameEngine::createMessageStream()
+{
+	return nullptr;
+}
+
+AsciiString GameState::portableMapPathToRealMapPath(const AsciiString &in) const
+{
+	return in;
+}
+
+AsciiString GameState::realMapPathToPortableMapPath(const AsciiString &in) const
+{
+	return in;
+}
+
+std::wstring MultiByteToWideCharSingleLine(const char *orig)
+{
+	std::wstring out;
+	if (orig == nullptr) {
+		return out;
+	}
+	for (const char *cursor = orig; *cursor != '\0' && *cursor != '\n' && *cursor != '\r'; ++cursor) {
+		out.push_back(static_cast<unsigned char>(*cursor));
+	}
+	return out;
+}
+
+std::string WideCharStringToMultiByte(const WideChar *orig)
+{
+	std::string out;
+	if (orig == nullptr) {
+		return out;
+	}
+	for (const WideChar *cursor = orig; *cursor != 0; ++cursor) {
+		out.push_back(static_cast<char>(*cursor & 0xff));
+	}
+	return out;
+}
+
+void playerTemplateComboBoxTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
+void playerTemplateListBoxTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
+void AcademyStats::recordIncome()
+{
+}
+
+Player *PlayerList::getNthPlayer(Int)
+{
+	return nullptr;
 }
 
 OptionPreferences::OptionPreferences()
@@ -2578,8 +2860,224 @@ void OptionPreferences::setCampaignDifficulty(Int)
 {
 }
 
+void SignalUIInteraction(Int interaction)
+{
+	if (interaction >= 0 && interaction < SHELL_SCRIPT_HOOK_TOTAL
+			&& TheScriptEngine != nullptr
+			&& TheShellHookNames[interaction] != nullptr) {
+		TheScriptEngine->signalUIInteract(TheShellHookNames[interaction]);
+	}
+}
+
+void ResetBattleHonorInsertion()
+{
+}
+
+void InsertBattleHonor(
+	GameWindow *,
+	const Image *,
+	Bool,
+	Int,
+	Int &row,
+	Int &column,
+	UnicodeString,
+	Int)
+{
+	++column;
+	if (column >= 6) {
+		column = 0;
+		++row;
+	}
+}
+
+void BattleHonorTooltip(GameWindow *, WinInstanceData *, UnsignedInt)
+{
+}
+
+const GeneralPersona *ChallengeGenerals::getPlayerGeneralByCampaignName(AsciiString) const
+{
+	return nullptr;
+}
+
+const GeneralPersona *ChallengeGenerals::getGeneralByGeneralName(AsciiString) const
+{
+	return nullptr;
+}
+
+const GeneralPersona *ChallengeGenerals::getGeneralByTemplateName(AsciiString) const
+{
+	return nullptr;
+}
+
+IPEnumeration::IPEnumeration() :
+	m_IPlist(nullptr),
+	m_isWinsockInitialized(FALSE)
+{
+}
+
+IPEnumeration::~IPEnumeration()
+{
+}
+
+EnumeratedIP *IPEnumeration::getAddresses()
+{
+	return nullptr;
+}
+
+AsciiString IPEnumeration::getMachineName()
+{
+	return AsciiString("BrowserPlayer");
+}
+
+bool GetStringFromRegistry(std::string, std::string, std::string &)
+{
+	return false;
+}
+
+bool GetUnsignedIntFromRegistry(std::string, std::string, unsigned int &)
+{
+	return false;
+}
+
+bool SetStringInRegistry(std::string, std::string, std::string)
+{
+	return false;
+}
+
+bool SetUnsignedIntInRegistry(std::string, std::string, unsigned int)
+{
+	return false;
+}
+
+extern const Color acceptTrueColor = GameMakeColor(0, 255, 0, 255);
+extern const Color acceptFalseColor = GameMakeColor(255, 0, 0, 255);
+
+AsciiString GetStrFileFromMap(AsciiString path)
+{
+	path.removeLastChar();
+	path.removeLastChar();
+	path.removeLastChar();
+	path.concat("str");
+	return path;
+}
+
+AsciiString GetSoloINIFromMap(AsciiString path)
+{
+	path.removeLastChar();
+	path.removeLastChar();
+	path.removeLastChar();
+	path.concat("ini");
+	return path;
+}
+
+AsciiString GetAssetUsageFromMap(AsciiString path)
+{
+	path.removeLastChar();
+	path.removeLastChar();
+	path.removeLastChar();
+	path.concat("txt");
+	return path;
+}
+
+AsciiString GetReadmeFromMap(AsciiString path)
+{
+	path.removeLastChar();
+	path.removeLastChar();
+	path.removeLastChar();
+	path.concat("txt");
+	return path;
+}
+
 void MapCache::updateCache()
 {
+}
+
+AsciiString MapCache::getMapDir() const
+{
+	return AsciiString("Maps\\");
+}
+
+AsciiString MapCache::getUserMapDir() const
+{
+	return AsciiString("Maps\\UserMaps\\");
+}
+
+AsciiString MapCache::getMapExtension() const
+{
+	return AsciiString(".map");
+}
+
+const MapMetaData *MapCache::findMap(AsciiString mapName)
+{
+	mapName.toLower();
+	MapCache::iterator it = find(mapName);
+	if (it == end()) {
+		return nullptr;
+	}
+	return &it->second;
+}
+
+Bool WouldMapTransfer(const AsciiString &)
+{
+	return FALSE;
+}
+
+Bool isValidMap(AsciiString mapName, Bool isMultiplayer)
+{
+	if (TheMapCache == nullptr || mapName.isEmpty()) {
+		return FALSE;
+	}
+	mapName.toLower();
+	MapCache::iterator it = TheMapCache->find(mapName);
+	return it != TheMapCache->end() && it->second.m_isMultiplayer == isMultiplayer;
+}
+
+AsciiString getDefaultMap(Bool isMultiplayer)
+{
+	if (TheMapCache == nullptr) {
+		return AsciiString::TheEmptyString;
+	}
+	for (MapCache::const_iterator it = TheMapCache->begin(); it != TheMapCache->end(); ++it) {
+		if (it->second.m_isMultiplayer == isMultiplayer) {
+			return it->first;
+		}
+	}
+	return AsciiString::TheEmptyString;
+}
+
+AsciiString getDefaultOfficialMap()
+{
+	return getDefaultMap(TRUE);
+}
+
+Bool isOfficialMap(AsciiString mapName)
+{
+	const MapMetaData *metadata = TheMapCache != nullptr ? TheMapCache->findMap(mapName) : nullptr;
+	return metadata != nullptr && metadata->m_isOfficial;
+}
+
+Image *getMapPreviewImage(AsciiString)
+{
+	return nullptr;
+}
+
+void findDrawPositions(
+	Int startX,
+	Int startY,
+	Int width,
+	Int height,
+	Region3D,
+	ICoord2D *ul,
+	ICoord2D *lr)
+{
+	if (ul != nullptr) {
+		ul->x = startX;
+		ul->y = startY;
+	}
+	if (lr != nullptr) {
+		lr->x = startX + width;
+		lr->y = startY + height;
+	}
 }
 
 int main()
@@ -2605,10 +3103,10 @@ int main()
 		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
 		<< "\"assetArchives\":[\"WindowZH.big\",\"INIZH.big\"],"
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
-		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuSystem\",\"PassMessagesToParentSystem\"],"
-		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuSystem\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd and the owned ScriptEngine signalUIInteract hook, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\",\"PassMessagesToParentSystem\"],"
+		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\"],"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown real callback\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd, original SkirmishGameOptionsMenuInit creating an in-setup SkirmishGameInfo, populating starting-cash, color, faction, team, map metadata, game-speed, and map-start-position gadgets from focused real MultiplayerSettings/PlayerTemplate/MapCache owners, original Skirmish opened and closed ScriptEngine signalUIInteract hooks, original SkirmishGameOptionsMenuShutdown cleanup, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

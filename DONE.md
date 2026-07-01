@@ -1866,6 +1866,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       vertical integration gate requires the new callback path. Verified with
       `npm --prefix WebAssembly run test:w3d-window-layout-script` and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the Shell-pushed `SkirmishGameOptionsMenu` callback stub frontier
+      with the real original init/shutdown owner in
+      `w3d-window-layout-script-smoke`. The target now links original
+      `SkirmishGameOptionsMenu.cpp`, `GameInfo.cpp`, `GUIUtil.cpp`,
+      `UserPreferences.cpp`, and `SkirmishBattleHonors.cpp`, seeds focused
+      `MultiplayerSettings`, `PlayerTemplateStore`, and `MapCache` owners, and
+      lets `MainMenuUpdate` complete the pending
+      `Menus/SkirmishGameOptionsMenu.wnd` push into original
+      `SkirmishGameOptionsMenuInit`. The smoke verifies in-setup
+      `SkirmishGameInfo` creation, starting-cash population, map metadata
+      attachment, game-speed text/slider setup, first map start-position
+      visibility, original Skirmish opened/closed `ScriptEngine`
+      `signalUIInteract` hooks, and original `SkirmishGameOptionsMenuShutdown`
+      cleanup before returning to `MainMenu.wnd`. The startup and aggregate
+      vertical gates now require the Skirmish init/shutdown callback paths.
+      Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

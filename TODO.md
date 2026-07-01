@@ -828,11 +828,13 @@ shares structure and follows behind.
       Current original-input coverage includes Single Player dropdown/back,
       USA faction selection into Difficulty/back, Load Replay dropdown/back,
       MainMenu-to-CreditsMenu, and `ButtonSkirmish` through original
-      `MainMenuSystem` into the pending `Shell::push` /
-      `ScriptEngine::signalUIInteract` boundary for
-      `Menus/SkirmishGameOptionsMenu.wnd`. Replace the current
-      `SkirmishGameOptionsMenu` callback stubs with the real menu owner next,
-      including the map/player-option dependencies needed to drive Start/Back.
+      `MainMenuSystem` into real `SkirmishGameOptionsMenuInit` /
+      `SkirmishGameOptionsMenuShutdown` ownership, including focused
+      `SkirmishGameInfo`, `MultiplayerSettings`, `PlayerTemplateStore`, and
+      `MapCache` dependencies for option gadget population. Drive the real
+      `ButtonBack` path next, then drive `ButtonStart` once the
+      `MessageStream` game-start side effects can be owned without broad
+      gameplay stubs.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

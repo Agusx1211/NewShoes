@@ -863,6 +863,10 @@ const steps = [
         "W3D window layout script smoke did not execute real ButtonCredits submenu navigation", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd"),
         "W3D window layout script smoke did not complete the SkirmishGameOptionsMenu Shell::push", payload);
+      expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit"),
+        "W3D window layout script smoke did not execute original SkirmishGameOptionsMenuInit through Shell::push", payload);
+      expect(payload.callbackPaths?.includes("SkirmishGameOptionsMenuShutdown real callback"),
+        "W3D window layout script smoke did not execute original SkirmishGameOptionsMenuShutdown", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->original CreditsMenuInit"),
         "W3D window layout script smoke did not execute original CreditsMenuInit through Shell::push", payload);
       expect(payload.callbackPaths?.includes("CreditsMenuUpdate real callback"),
@@ -1579,7 +1583,7 @@ console.log(JSON.stringify({
     "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
     "original LANAPI game-start state driven through three Network::update frames plus original FrameData FRAMEDATA_NOTREADY and FRAMEDATA_RESEND desync states",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
-    "WindowZH/INIZH-backed Shell MainMenu Load Replay dropdown/back, USA difficulty transition/back, and CreditsMenu callback execution through real input navigation",
+    "WindowZH/INIZH-backed Shell MainMenu Load Replay dropdown/back, USA difficulty transition/back, SkirmishGameOptionsMenu init/shutdown ownership, and CreditsMenu callback execution through real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels plus Single Player, Load Replay, and Difficulty dropdown controls, and browser WebGL2 pixels",

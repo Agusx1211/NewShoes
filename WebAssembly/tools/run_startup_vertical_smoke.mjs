@@ -220,8 +220,10 @@ const steps = [
         && payload.shellCallbackNames.includes('W3DMainMenuInit')
         && payload.shellCallbackNames.includes('MainMenuUpdate')
         && payload.shellCallbackNames.includes('MainMenuSystem')
-        && payload.shellCallbackNames.includes('MainMenuShutdown'),
-        'W3D window layout script smoke did not prove MainMenu.wnd callback-name binding');
+        && payload.shellCallbackNames.includes('MainMenuShutdown')
+        && payload.shellCallbackNames.includes('SkirmishGameOptionsMenuInit')
+        && payload.shellCallbackNames.includes('SkirmishGameOptionsMenuShutdown'),
+        'W3D window layout script smoke did not prove MainMenu.wnd / SkirmishGameOptionsMenu.wnd callback-name binding');
       expect(Array.isArray(payload.callbackPaths)
         && payload.callbackPaths.includes('W3DMainMenuInit->original MainMenuInit')
         && payload.callbackPaths.includes('MainMenuSystem(GWM_INPUT_FOCUS)')
@@ -230,10 +232,12 @@ const steps = [
         && payload.callbackPaths.includes('GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return')
         && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition')
         && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return')
+        && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit')
+        && payload.callbackPaths.includes('SkirmishGameOptionsMenuShutdown real callback')
         && payload.callbackPaths.includes('GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu')
         && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original CreditsMenuInit')
         && payload.callbackPaths.includes('CreditsMenuUpdate real callback'),
-        'W3D window layout script smoke did not execute original MainMenu/CreditsMenu callback paths');
+        'W3D window layout script smoke did not execute original MainMenu/Skirmish/CreditsMenu callback paths');
       expect(typeof payload.covered === 'string' && payload.covered.includes('.wnd parser'),
         'W3D window layout script smoke did not prove parser coverage');
       expect(typeof payload.covered === 'string' && payload.covered.includes('Win32BIGFileSystem WindowZH.big'),
