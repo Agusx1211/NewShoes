@@ -800,17 +800,17 @@ shares structure and follows behind.
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
-- [ ] Promote the focused terrain shroud scene proof from probe-owned guarded
-      fallback drawing into production `W3DTerrainVisual::init` /
-      `BaseHeightMapRenderObjClass` ownership. The current
+- [ ] Promote the browser-proven terrain shroud path from focused
+      source-backed map-patch ownership into full `W3DTerrainVisual::init` /
+      partition gameplay ownership. The current
       `test:ww3d-terrain-shroud-scene` harness mounts real `INIZH.big`,
-      `MapsZH.big`, and `TerrainZH.big`, initializes a real `W3DShroud`, and
-      verifies browser-visible `W3DShroudMaterialPassClass` terrain drawing, but
-      the probe still issues the final shroud terrain draw directly when the
-      original extra-pass dispatch does not submit it. Retire that fallback by
-      wiring the real terrain visual, partition, and shroud owners, then let
-      gameplay fog updates come from
-      `PartitionManager::refreshShroudForLocalPlayer`.
+      `MapsZH.big`, and `TerrainZH.big`, initializes a `BaseHeightMap`-owned
+      `W3DShroud` in shroud mode, and verifies the original
+      `HeightMapRenderObjClass::Render` extra-pass dispatch submits a
+      browser-visible `W3DShroudMaterialPassClass` terrain draw without the old
+      probe direct-D3D fallback. Remaining work is to wire the full terrain
+      visual, partition, and shroud owners, then let gameplay fog updates come
+      from `PartitionManager::refreshShroudForLocalPlayer`.
 - [ ] Broaden the bridge-buffer scene proof from the current focused
       `W3DBridge::renderBridge` geometry route to the full
       `W3DBridgeBuffer::drawBridges` wrapper once its optional
@@ -838,6 +838,15 @@ shares structure and follows behind.
       `test:ww3d-terrain-map-patch-scene`,
       `test:ww3d-terrain-visual-scene`, and `test:vertical-integrations`
       gating the layout parity.
+- [ ] Re-stabilize the aggregate `test:vertical-integrations` umbrella before
+      relying on it as the broad post-rendering gate. A July 1, 2026 run passed
+      `startup-vertical` and `runtime-archives-startup-data`, then failed in the
+      `browser-network-relay` step inside `harness/smoke.mjs` because the
+      original `ww3d_aabox_render_probe` reported `probe.ok=true` while the
+      browser draw probe reported `ok=false` / black center pixels for the
+      AABox WebGL2 gate. Determine whether this is viewport/state leakage,
+      stale harness assumptions, or a real renderer regression, then restore
+      the umbrella gate.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

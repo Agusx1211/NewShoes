@@ -18019,27 +18019,34 @@ async function rpc(command, payload = {}) {
           samplerApplications: (textureAfter?.samplerApplications ?? 0) -
             (textureBefore.samplerApplications ?? 0),
         };
-        const isBaseTerrainPass = (draw) =>
-          draw?.vertexShaderFvf === 578
+        const terrainStage0 = (draw) =>
+          draw?.renderState?.textureStage0 ?? draw?.renderState?.textureStages?.[0];
+        const isBaseTerrainPass = (draw) => {
+          const stage0 = terrainStage0(draw);
+          return draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
             && draw?.renderState?.alphaBlendEnable === 0
-            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && stage0?.texCoordIndex === 0
             && draw?.texture0?.sampled === true;
-        const isBlendTerrainPass = (draw) =>
-          draw?.vertexShaderFvf === 578
+        };
+        const isBlendTerrainPass = (draw) => {
+          const stage0 = terrainStage0(draw);
+          return draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
             && draw?.renderState?.alphaBlendEnable === 1
-            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && stage0?.texCoordIndex === 1
             && draw?.texture0?.sampled === true;
-        const isShroudTerrainPass = (draw) =>
-          draw?.vertexShaderFvf === 578
+        };
+        const isShroudTerrainPass = (draw) => {
+          const stage0 = terrainStage0(draw);
+          return draw?.vertexShaderFvf === 578
             && draw?.vertexStride === 32
             && draw?.renderState?.zFunc === D3DCMP_EQUAL
-            && draw?.renderState?.textureStage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
-            && draw?.renderState?.textureStage0?.textureTransformFlags === D3DTTFF_COUNT2
-            && draw?.texture0?.sampled === true
+            && stage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+            && stage0?.textureTransformFlags === D3DTTFF_COUNT2
             && draw?.texture0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
             && draw?.texture0?.textureTransformFlags === D3DTTFF_COUNT2;
+        };
         const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
         const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
         const shroudTerrainIndex = drawHistory.findIndex(isShroudTerrainPass);
@@ -18088,7 +18095,8 @@ async function rpc(command, payload = {}) {
           && browserProbe?.vertexStride === 32
           && browserProbe?.vertexLayout?.source === "fvf"
           && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
-          && browserProbe?.texture0?.sampled === true
+          && (!shroudMode || isShroudTerrainPass(browserProbe))
+          && (shroudMode || browserProbe?.texture0?.sampled === true)
           && Array.isArray(drawHistory)
           && drawHistory.length >= 2
           && baseTerrainIndex >= 0
@@ -18101,6 +18109,12 @@ async function rpc(command, payload = {}) {
               && probe?.shroud?.fillInvoked === true
               && probe?.shroud?.renderInvoked === true
               && probe?.shroud?.textureReady === true
+              && probe?.shroud?.terrainRenderInvoked === true
+              && probe?.shroud?.terrainRenderSawShroud === true
+              && (probe?.shroud?.terrainAdditionalPassCount ?? 0) > 0
+              && probe?.shroud?.terrainOriginalDrawSeen === true
+              && probe?.shroud?.terrainFinalDrawSeen === true
+              && probe?.shroud?.terrainFallbackInvoked === false
               && (probe?.shroud?.cellsX ?? 0) > 0
               && (probe?.shroud?.cellsY ?? 0) > 0
               && (probe?.shroud?.textureWidth ?? 0) > 0

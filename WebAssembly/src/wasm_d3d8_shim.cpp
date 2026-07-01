@@ -2701,6 +2701,9 @@ public:
 	{
 		m_render_states[state] = value;
 		++g_state.set_render_state_calls;
+		if (state == D3DRS_ZFUNC && value == D3DCMP_EQUAL) {
+			++g_state.set_render_state_zfunc_equal_calls;
+		}
 		g_state.last_set_render_state = state;
 		g_state.last_set_render_state_value = value;
 		return S_OK;
@@ -2778,6 +2781,12 @@ public:
 	{
 		m_texture_stage_states[stage][state] = value;
 		++g_state.set_texture_stage_state_calls;
+		if (state == D3DTSS_TEXCOORDINDEX && value == D3DTSS_TCI_CAMERASPACEPOSITION) {
+			++g_state.set_texture_stage_state_camera_space_texcoord_calls;
+		}
+		if (state == D3DTSS_TEXTURETRANSFORMFLAGS && value == D3DTTFF_COUNT2) {
+			++g_state.set_texture_stage_state_texture_transform_count2_calls;
+		}
 		g_state.last_set_texture_stage_state_stage = stage;
 		g_state.last_set_texture_stage_state = state;
 		g_state.last_set_texture_stage_state_value = value;
@@ -3196,6 +3205,15 @@ private:
 			g_state.last_draw_texture1_transform);
 		capture_draw_render_state();
 		capture_draw_material();
+		const WasmD3D8DrawTextureStageState &stage0 =
+			g_state.last_draw_render_state.texture_stages[0];
+		if (g_state.last_draw_render_state.z_func == D3DCMP_EQUAL &&
+				stage0.values[D3DTSS_TEXCOORDINDEX] == D3DTSS_TCI_CAMERASPACEPOSITION &&
+				stage0.values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT2) {
+			++g_state.draw_indexed_depth_equal_camera_space_tex0_count2_calls;
+			g_state.last_draw_indexed_depth_equal_camera_space_tex0_count2_sequence =
+				g_state.draw_indexed_primitive_calls;
+		}
 
 		if (vertex_bytes == 0 || index_bytes == 0) {
 			return;

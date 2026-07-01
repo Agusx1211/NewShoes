@@ -3839,6 +3839,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `W3DTerrainVisual` / `BaseHeightMapRenderObjClass` shroud ownership
       remains open. The smoke captures
       `harness-smoke-ww3d-terrain-shroud-scene-canvas.png`.
+- [x] Retire the focused terrain shroud direct-D3D fallback. The shroud scene
+      target now lets `BaseHeightMapRenderObjClass` own `W3DShroud` in shroud
+      mode under the existing minimal heightmap-system guard, preserves that
+      base-owned shroud in the probe render object, and removes the probe's
+      guarded direct `IDirect3DDevice8::DrawIndexedPrimitive` path. The original
+      `HeightMapRenderObjClass::Render` extra-pass branch now saves/restores
+      `TheTerrainRenderObject` around `W3DShroudMaterialPassClass` material
+      install and `renderTerrainPass`, so the browser harness sees the shroud
+      draw after the base/blend terrain passes while
+      `terrainFallbackInvoked` remains false. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-shroud-scene` plus the
+      broader terrain batch:
+      `test:ww3d-terrain-map-patch-scene`,
+      `test:ww3d-terrain-visual-scene`,
+      `test:ww3d-terrain-prop-buffer-scene`,
+      `test:ww3d-terrain-tree-buffer-scene`,
+      `test:ww3d-terrain-road-buffer-scene`, and
+      `test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

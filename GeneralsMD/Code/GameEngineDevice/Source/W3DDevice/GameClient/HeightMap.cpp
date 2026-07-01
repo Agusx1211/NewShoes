@@ -2170,9 +2170,12 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 
 		if (m_shroud && rinfo.Additional_Pass_Count())
 		{
+			BaseHeightMapRenderObjClass *oldTerrainRenderObject=TheTerrainRenderObject;
+			TheTerrainRenderObject=this;
 			rinfo.Peek_Additional_Pass(0)->Install_Materials();
 			renderTerrainPass(&rinfo.Camera);
 			rinfo.Peek_Additional_Pass(0)->UnInstall_Materials();
+			TheTerrainRenderObject=oldTerrainRenderObject;
 		}
 
 		ShaderClass::Invalidate();

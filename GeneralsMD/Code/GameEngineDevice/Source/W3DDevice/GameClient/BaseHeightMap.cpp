@@ -88,6 +88,10 @@
 #include "W3DDevice/GameClient/W3DPoly.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
 
+#ifdef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
+extern "C" bool cnc_port_terrain_probe_shroud_enabled(void);
+#endif
+
 #include "Common/PerfTimer.h"
 #include "Common/UnitTimings.h" //Contains the DO_UNIT_TIMINGS define jba.		 
 #include "W3DDevice/GameClient/BaseHeightMap.h"
@@ -325,7 +329,10 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass(void)
 	clearAllScorches();
 #endif
 #ifdef CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS
-	m_shroud = NULL;
+	if (cnc_port_terrain_probe_shroud_enabled())
+		m_shroud = NEW W3DShroud;
+	else
+		m_shroud = NULL;
 #elif defined(_DEBUG) || defined(_INTERNAL)
 	if (TheGlobalData->m_shroudOn)
 		m_shroud = NEW W3DShroud;

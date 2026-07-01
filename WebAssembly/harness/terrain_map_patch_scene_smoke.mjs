@@ -330,7 +330,7 @@ try {
       || terrainResult.probe?.draw?.vertexShaderFvf !== 578
       || terrainResult.probe?.draw?.vertexStride !== 32
       || terrainResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
-      || terrainResult.browserProbe?.texture0?.sampled !== true
+      || (!shroudMode && terrainResult.browserProbe?.texture0?.sampled !== true)
       || !Array.isArray(terrainResult.drawHistory)
       || terrainResult.drawHistory.length < 2
       || !Number.isInteger(terrainResult.drawSequence?.baseTerrainIndex)
@@ -344,6 +344,12 @@ try {
           || terrainResult.probe?.shroud?.fillInvoked !== true
           || terrainResult.probe?.shroud?.renderInvoked !== true
           || terrainResult.probe?.shroud?.textureReady !== true
+          || terrainResult.probe?.shroud?.terrainRenderInvoked !== true
+          || terrainResult.probe?.shroud?.terrainRenderSawShroud !== true
+          || terrainResult.probe?.shroud?.terrainAdditionalPassCount <= 0
+          || terrainResult.probe?.shroud?.terrainOriginalDrawSeen !== true
+          || terrainResult.probe?.shroud?.terrainFinalDrawSeen !== true
+          || terrainResult.probe?.shroud?.terrainFallbackInvoked !== false
           || terrainResult.probe?.shroud?.cellsX <= 0
           || terrainResult.probe?.shroud?.cellsY <= 0
           || terrainResult.probe?.shroud?.textureWidth <= 0

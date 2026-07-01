@@ -148,6 +148,8 @@ struct WasmD3D8ShimState
 	UINT last_set_texture_stage_state_stage;
 	D3DTEXTURESTAGESTATETYPE last_set_texture_stage_state;
 	DWORD last_set_texture_stage_state_value;
+	UINT set_texture_stage_state_camera_space_texcoord_calls;
+	UINT set_texture_stage_state_texture_transform_count2_calls;
 	UINT last_browser_texture_bind_stage;
 	UINT last_browser_texture_bind_id;
 	UINT set_stream_source_calls;
@@ -156,6 +158,8 @@ struct WasmD3D8ShimState
 	DWORD last_set_vertex_shader;
 	UINT draw_primitive_calls;
 	UINT draw_indexed_primitive_calls;
+	UINT draw_indexed_depth_equal_camera_space_tex0_count2_calls;
+	UINT last_draw_indexed_depth_equal_camera_space_tex0_count2_sequence;
 	D3DPRIMITIVETYPE last_draw_primitive_type;
 	UINT last_draw_start_vertex;
 	UINT last_draw_min_vertex_index;
@@ -207,6 +211,7 @@ struct WasmD3D8ShimState
 	UINT get_viewport_calls;
 	UINT set_clip_plane_calls;
 	UINT set_render_state_calls;
+	UINT set_render_state_zfunc_equal_calls;
 	UINT get_render_state_calls;
 	UINT set_material_calls;
 	UINT get_material_calls;
