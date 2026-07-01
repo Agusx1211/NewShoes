@@ -103,6 +103,31 @@ const sourceChecks = [
         'W3DModuleFactory frontier verifier did not see the expected W3D draw registrations');
     },
   },
+  {
+    name: 'gamelogic-new-game-dispatch-frontier',
+    file: 'tools/verify_gamelogic_new_game_dispatch_frontier.mjs',
+    validate(payload) {
+      expect(payload.ok === true, 'GameLogic new-game dispatch frontier verifier did not report ok');
+      expect(payload.path === 'gamelogic-new-game-dispatch-frontier',
+        'GameLogic new-game dispatch frontier verifier emitted the wrong path');
+      expect(payload.commandTransfer?.transfer?.some(entry => entry.label === 'appendMessageList'),
+        'GameLogic new-game dispatch frontier did not prove MessageStream to CommandList transfer');
+      expect(payload.processCommandList?.dispatch?.some(entry => entry.label === 'dispatch message'),
+        'GameLogic new-game dispatch frontier did not prove processCommandList dispatch');
+      expect(payload.dispatcher?.playerLookupBeforeNewGame === true,
+        'GameLogic new-game dispatch frontier did not prove the player lookup boundary');
+      const dispatchLabels = new Set((payload.dispatcher?.newGame ?? []).map(entry => entry.label));
+      expect(dispatchLabels.has('prepare new game') && dispatchLabels.has('start new game'),
+        'GameLogic new-game dispatch frontier did not prove prepare/start calls');
+      expect(payload.startNewGame?.firstCallDefersBeforeTerrainLoad === true,
+        'GameLogic new-game dispatch frontier did not prove the first startNewGame deferral');
+      expect(payload.currentShellSmokeBoundary?.originalGameLogicCppLinked === false
+        && payload.currentShellSmokeBoundary?.originalGameLogicDispatchCppLinked === false,
+        'GameLogic new-game dispatch frontier no longer sees the current shell-smoke shim boundary');
+      expect((payload.nextRequired ?? []).includes('link a runtime target against original GameLogic.cpp and GameLogicDispatch.cpp'),
+        'GameLogic new-game dispatch frontier did not name the original GameLogic runtime target as next required');
+    },
+  },
 ];
 
 const browserChecks = [
@@ -287,11 +312,13 @@ console.log(JSON.stringify({
     'original ButtonUSA faction difficulty transition and ButtonDiffBack return through MainMenuSystem',
     'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
+    'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
   ],
   nextRequired: [
     'advance original GameEngine.cpp init singleton ownership before createAudioManager',
     'advance the next vertical startup path outside the already-proven shell menu slice',
     'prove W3DModuleFactory module-template lookup through the original public API at runtime',
+    'replace shell-smoke GameLogic/GameState/PlayerList sentinels before runtime GameLogic::processCommandList coverage',
   ],
   sourceChecks: sourceResults.map(result => result.name),
   browserChecks: browserResults.map(result => result.name),

@@ -1938,6 +1938,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`,
       `git diff --check`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Pin the original `GameLogic` `MSG_NEW_GAME` dispatch frontier after the
+      Skirmish start `CommandList` handoff. Added
+      `verify:gamelogic-new-game-dispatch-frontier`, which source-checks
+      original `MessageStream::propagateMessages`,
+      `GameLogic::processCommandList`, `logicMessageDispatcher` argument/FPS
+      handling, `prepareNewGame`, and first-call `startNewGame(FALSE)`
+      deferral before terrain load. The verifier also asserts that the current
+      `w3d-window-layout-script-smoke` still uses the focused `GameLogic` shim,
+      sentinel `GameState`, and null `PlayerList::getNthPlayer` boundary, so
+      runtime coverage must move to a real original `GameLogic.cpp` /
+      `GameLogicDispatch.cpp` target rather than faking the dispatcher in the
+      shell smoke. The startup and aggregate vertical gates now require this
+      source frontier.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

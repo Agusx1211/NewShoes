@@ -141,7 +141,8 @@ const steps = [
       expect(payload.covered?.includes("original W3DGameWindowManager window and gadget ownership"),
         "startup vertical smoke did not cover original W3DGameWindowManager ownership", payload);
       expect(payload.sourceChecks?.includes("gameengine-startup-order")
-          && payload.sourceChecks?.includes("w3d-module-factory-frontier"),
+          && payload.sourceChecks?.includes("w3d-module-factory-frontier")
+          && payload.sourceChecks?.includes("gamelogic-new-game-dispatch-frontier"),
         "startup vertical smoke did not include the expected source frontier checks", payload);
       expect(payload.browserChecks?.includes("startup-browser-frontier"),
         "startup vertical smoke did not include the browser startup frontier check", payload);
@@ -1578,7 +1579,7 @@ console.log(JSON.stringify({
   ok: true,
   path: "vertical-integrations",
   covered: [
-    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, and W3D window/layout ownership",
+    "aggregate startup vertical covering browser GameEngine.cpp startup frontier, original GameEngine lifetime, original Miles openDevice, W3D window/layout ownership, and the source-pinned GameLogic MSG_NEW_GAME dispatch frontier",
     "runtime archive preload, boot-time startup asset consumption, MSS 2D Web Audio sample playback, and startup singleton pre-audio frontier diagnostics",
     "browser Web Audio request-path playback for source-shaped AudioManager/SoundManager/MilesAudioManager 2D sample, 3D sample, and speech stream events",
     "original MilesAudioManager processRequest/playAudioEvent/playSample 2D sample playback through AudioFileCache, AIL_WAV_info, and MSS sample completion/release",
@@ -1615,6 +1616,7 @@ console.log(JSON.stringify({
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
+    "replace shell-smoke GameLogic/GameState/PlayerList sentinels before runtime GameLogic::processCommandList coverage",
     "deferred networking-last item: extend the live WebSocket UDP endpoint from LANAPI game-start into Network::update two-client match-sync coverage",
   ],
   steps: results.map((result) => result.name),

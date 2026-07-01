@@ -840,11 +840,16 @@ shares structure and follows behind.
       `CheckForCDAtGameStart`, `SkirmishGameInfo::startGame`, selected-map
       `GlobalData` write, and `MessageStream` `MSG_NEW_GAME` argument
       queueing, followed by original `MessageStream::propagateMessages`
-      handoff to `TheCommandList` and `CommandList::reset` cleanup. Drive
-      `GameLogic::processCommandList` / `prepareNewGame` into the next real
-      map-load/gameplay transition once `GameState`, load-screen/background,
-      and later terrain/player/script ownership can be real instead of
-      shell-smoke sentinels.
+      handoff to `TheCommandList` and `CommandList::reset` cleanup. The
+      source-only `verify:gamelogic-new-game-dispatch-frontier` gate now pins
+      the original `MessageStream` -> `GameLogic::processCommandList` ->
+      `logicMessageDispatcher(MSG_NEW_GAME)` -> `prepareNewGame` ->
+      first-call `startNewGame(FALSE)` path, including the current shell-smoke
+      shim blockers. Drive that path at runtime in a real original
+      `GameLogic.cpp` / `GameLogicDispatch.cpp` target once `GameState`,
+      `PlayerList`/`Player`, load-screen/background, and later
+      terrain/player/script ownership can be real instead of shell-smoke
+      sentinels.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---
