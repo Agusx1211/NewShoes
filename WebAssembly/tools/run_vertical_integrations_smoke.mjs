@@ -1204,6 +1204,63 @@ const steps = [
     },
   },
   {
+    name: "terrain-visual-scene-render",
+    file: "harness/terrain_visual_scene_smoke.mjs",
+    args: [
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/MapsZH.big",
+      "artifacts/real-assets/TerrainZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "terrain visual scene render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-visual-scene",
+        "terrain visual scene render smoke emitted the wrong path", payload);
+      expect(payload.archives?.ini?.entry === "Data\\INI\\Terrain.ini"
+          && payload.archives?.ini?.parser === "GameEngine/Common/INI.cpp::load + INITerrain.cpp"
+          && payload.archives?.ini?.originalIniParser === true
+          && payload.archives?.ini?.terrainTypeCount > 0,
+        "terrain visual scene render smoke did not read real Terrain.ini texture mappings", payload.archives?.ini);
+      expect(payload.archives?.maps?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && payload.map?.parsed === true
+          && payload.map?.bytes > 0
+          && payload.map?.width > 16
+          && payload.map?.height > 16
+          && payload.map?.heightChecksum > 0,
+        "terrain visual scene render smoke did not parse the shipped MD_GLA03 map", payload.map);
+      expect(payload.visual?.class === "W3DTerrainVisual"
+          && payload.visual?.loadPath?.includes("W3DTerrainVisual::load")
+          && payload.visual?.ownedTerrainRenderObject === true
+          && payload.visual?.waterRenderObjectNull === true,
+        "terrain visual scene render smoke did not prove original W3DTerrainVisual ownership", payload.visual);
+      expect(payload.scene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.scene?.created === true
+          && payload.scene?.objectAddedByVisualLoad === true
+          && payload.scene?.path === "W3DDisplay::m_3DScene"
+          && payload.scene?.terrainClassId === 4,
+        "terrain visual scene render smoke did not attach the visual-owned terrain object to W3DDisplay::m_3DScene", payload.scene);
+      expect(payload.terrain?.tileSource === "shipped-map-heightmap"
+          && payload.terrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.terrain?.verticesPerSide === 33
+          && payload.terrain?.cellsPerSide === 32
+          && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0
+          && payload.terrain?.patchHeightChecksum > 0,
+        "terrain visual scene render smoke did not report real visual-owned map patch geometry", payload.terrain);
+      expect(payload.calls?.browserTextureCreate >= 1
+          && payload.calls?.browserTextureUpdate >= 1
+          && payload.calls?.drawIndexed >= 1,
+        "terrain visual scene render smoke did not reach texture upload and indexed draw", payload.calls);
+      expect(payload.draw?.vertexShaderFvf === 578
+          && payload.draw?.vertexStride === 32,
+        "terrain visual scene render smoke did not use the expected W3D terrain FVF draw", payload.draw);
+      expect(payload.coverage?.coloredPixelCount > 0,
+        "terrain visual scene render smoke did not produce colored browser pixels", payload.coverage);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-visual-scene-canvas.png"),
+        "terrain visual scene render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],
@@ -1309,6 +1366,7 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene and browser WebGL2 pixels",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],

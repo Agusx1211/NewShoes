@@ -707,10 +707,12 @@ shares structure and follows behind.
       `W3DTerrainVisual::load` against the same real map/archive set, proves the
       visual-owned `HeightMapRenderObjClass` is attached by
       `W3DDisplay::m_3DScene`, and captures browser WebGL2 terrain pixels. The
-      remaining vertical is production/full-map display ownership without
-      probe-installed render objects or patch reinitialization, then broadening
-      water, shroud, objects, and gameplay camera flow on top of the same
-      original heightmap path.
+      `test:vertical-integrations` gate now includes that visual-owned terrain
+      scene beside the lower-level tile, scene-dispatch, and map-patch terrain
+      proofs. The remaining terrain vertical work is production/full-map display
+      ownership without probe-installed render objects or patch reinitialization,
+      then broadening water, shroud, objects, and gameplay camera flow on top of
+      the same original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` /
       `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and

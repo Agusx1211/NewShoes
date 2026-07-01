@@ -3418,6 +3418,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-visual-scene-canvas.png`. Full production
       `W3DTerrainVisual::init` water/tracks/shadow/smudge ownership, full-map
       camera paging, shroud, objects, and gameplay flow remain open.
+- [x] Add the visual-owned terrain scene smoke to the vertical integration
+      runner: `test:vertical-integrations` now gates
+      `test:ww3d-terrain-visual-scene`'s original `W3DTerrainVisual::load`
+      path over real `INIZH.big`, `MapsZH.big`, and `TerrainZH.big`, including
+      `Data\INI\Terrain.ini` parsing, `Maps\MD_GLA03\MD_GLA03.map` parsing,
+      visual-owned `HeightMapRenderObjClass` attachment through
+      `W3DDisplay::m_3DScene`, browser texture upload/indexed terrain draws,
+      and non-black screenshot coverage in
+      `harness-smoke-ww3d-terrain-visual-scene-canvas.png`.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture
