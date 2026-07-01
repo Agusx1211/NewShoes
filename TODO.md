@@ -827,12 +827,12 @@ shares structure and follows behind.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
       Current original-input coverage includes Single Player dropdown/back,
       USA faction selection into Difficulty/back, Load Replay dropdown/back,
-      and MainMenu-to-CreditsMenu. Before driving `ButtonSkirmish`, provide a
-      real or owned `ScriptEngine` UI-interaction path because original
-      `MainMenuSystem` calls
-      `TheScriptEngine->signalUIInteract` after pushing
-      `Menus/SkirmishGameOptionsMenu.wnd`.
-- [ ] Harness: click named UI elements through the engine command path.
+      MainMenu-to-CreditsMenu, and `ButtonSkirmish` through original
+      `MainMenuSystem` into the pending `Shell::push` /
+      `ScriptEngine::signalUIInteract` boundary for
+      `Menus/SkirmishGameOptionsMenu.wnd`. Replace the current
+      `SkirmishGameOptionsMenu` callback stubs with the real menu owner next,
+      including the map/player-option dependencies needed to drive Start/Back.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

@@ -1851,6 +1851,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Extend the Shell-owned `Menus/MainMenu.wnd` input vertical through the
+      Skirmish push boundary. `w3d-window-layout-script-smoke` now owns a
+      focused `ScriptEngine` UI-interaction boundary, drives the real
+      `ButtonSkirmish` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through original
+      `GameWindowManager::winSendInputMsg`, `GadgetPushButton`, and
+      `MainMenuSystem`, verifies the original
+      `MainMenuFactionSkirmish` / `MainMenuSinglePlayerMenuBackSkirmish`
+      transition calls, checks the
+      `ShellMainMenuSkirmishPushed` `signalUIInteract` hook, and lets
+      `MainMenuUpdate` complete the pending push into the real
+      `Menus/SkirmishGameOptionsMenu.wnd` layout while keeping the deeper
+      Skirmish menu callbacks at the existing stub frontier. The aggregate
+      vertical integration gate requires the new callback path. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script` and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

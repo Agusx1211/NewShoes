@@ -837,6 +837,8 @@ const steps = [
         "W3D window layout script smoke did not load MainMenu.wnd from WindowZH.big", payload);
       expect(payload.archiveLayouts?.includes("Menus/CreditsMenu.wnd"),
         "W3D window layout script smoke did not load CreditsMenu.wnd from WindowZH.big", payload);
+      expect(payload.archiveLayouts?.includes("Menus/SkirmishGameOptionsMenu.wnd"),
+        "W3D window layout script smoke did not load SkirmishGameOptionsMenu.wnd from WindowZH.big", payload);
       expect(payload.assetArchives?.includes("INIZH.big"),
         "W3D window layout script smoke did not mount INIZH.big for the CreditsMenu vertical", payload);
       expect(payload.callbackPaths?.includes("W3DMainMenuInit->original MainMenuInit"),
@@ -855,8 +857,12 @@ const steps = [
         "W3D window layout script smoke did not execute real ButtonLoadReplay dropdown navigation", payload);
       expect(payload.callbackPaths?.includes("GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return"),
         "W3D window layout script smoke did not execute real ButtonLoadReplayBack return navigation", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu"),
+        "W3D window layout script smoke did not execute real ButtonSkirmish submenu navigation", payload);
       expect(payload.callbackPaths?.includes("GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu"),
         "W3D window layout script smoke did not execute real ButtonCredits submenu navigation", payload);
+      expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd"),
+        "W3D window layout script smoke did not complete the SkirmishGameOptionsMenu Shell::push", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->original CreditsMenuInit"),
         "W3D window layout script smoke did not execute original CreditsMenuInit through Shell::push", payload);
       expect(payload.callbackPaths?.includes("CreditsMenuUpdate real callback"),
