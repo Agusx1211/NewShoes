@@ -3717,6 +3717,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       or improved source-backed cells when `Terrain.big` is present, while still
       requiring all 16,384 load-window cells to be accounted for. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
+- [x] Add a browser-verified lifecycle proof for the original terrain bib
+      buffer path. The new `ww3dTerrainBibBufferLifecycle` RPC constructs
+      original `W3DBibBuffer`, checks its vertex/index buffers plus
+      normal/highlight texture resources, drives `addBibDrawable`,
+      `removeHighlighting`, `removeBibDrawable`, `clearAllBibs`, and
+      `freeBibBuffers`, and gates browser D3D8/WebGL2 buffer and texture
+      create/update/release deltas. The Playwright smoke captures
+      `harness-smoke-ww3d-terrain-bib-buffer-lifecycle-canvas.png`, and
+      `test:vertical-integrations` now includes `terrain-bib-buffer-lifecycle`.
+      A broader direct removal attempt for the minimal heightmap/road bypass
+      still timed out and crashed Chromium after archive mounting, so full
+      adjacent terrain ownership remains open. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-bib-buffer-lifecycle`,
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

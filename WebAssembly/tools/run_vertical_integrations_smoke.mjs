@@ -1559,6 +1559,46 @@ const steps = [
     },
   },
   {
+    name: "terrain-bib-buffer-lifecycle",
+    file: "harness/terrain_bib_buffer_lifecycle_smoke.mjs",
+    validate(payload) {
+      expect(payload.ok === true, "terrain bib-buffer lifecycle smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-bib-buffer-lifecycle",
+        "terrain bib-buffer lifecycle smoke emitted the wrong path", payload);
+      expect(payload.probe?.source === "ww3d_terrain_bib_buffer_lifecycle_probe"
+          && payload.probe?.path?.includes("W3DBibBuffer constructor")
+          && payload.probe?.results?.bufferCreated === true
+          && payload.probe?.results?.initialized === true
+          && payload.probe?.results?.vertexBufferAllocated === true
+          && payload.probe?.results?.indexBufferAllocated === true
+          && payload.probe?.results?.normalTextureCreated === true
+          && payload.probe?.results?.highlightTextureCreated === true,
+        "terrain bib-buffer lifecycle smoke did not construct original W3DBibBuffer resources", payload.probe);
+      expect(payload.probe?.results?.addBibInvoked === true
+          && payload.probe?.results?.removeHighlightingInvoked === true
+          && payload.probe?.results?.removeBibInvoked === true
+          && payload.probe?.results?.clearBibsInvoked === true
+          && payload.probe?.bibs?.afterAdd === 1
+          && payload.probe?.bibs?.afterRemove === 1
+          && payload.probe?.bibs?.afterClear === 0,
+        "terrain bib-buffer lifecycle smoke did not drive the original bib mutation path", payload.probe?.bibs);
+      expect(payload.probe?.results?.freeBuffersInvoked === true
+          && payload.probe?.results?.vertexBufferReleased === true
+          && payload.probe?.results?.indexBufferReleased === true
+          && payload.bufferDelta?.creates >= 2
+          && payload.bufferDelta?.releases >= 2
+          && payload.textureDelta?.creates >= 1
+          && payload.textureDelta?.updates >= 1
+          && payload.textureDelta?.releases >= 1,
+        "terrain bib-buffer lifecycle smoke did not release browser-backed D3D8 resources", {
+          bufferDelta: payload.bufferDelta,
+          textureDelta: payload.textureDelta,
+        });
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-bib-buffer-lifecycle-canvas.png"),
+        "terrain bib-buffer lifecycle smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
     name: "shipped-mesh-render",
     file: "harness/shipped_mesh_render_smoke.mjs",
     args: ["artifacts/real-assets/W3DZH.big", "artifacts/real-assets/TexturesZH.big"],

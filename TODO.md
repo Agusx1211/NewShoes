@@ -761,8 +761,13 @@ shares structure and follows behind.
       `CNC_PORT_TERRAIN_PROBE_DISABLE_ROADS` guards and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
       the real tree, prop, bib, bridge, waypoint, shroud, water, and road
-      runtime systems as those subsystems become browser-ready. The
-      `W3DTerrainVisual::load` smoke currently also keeps cold
+      runtime systems as those subsystems become browser-ready. The original
+      `W3DBibBuffer` constructor/add/remove/clear/free lifecycle is now
+      browser-harness verified through browser-backed D3D8 buffers/textures,
+      but a direct broad removal of the minimal heightmap/road bypass still
+      times out and crashes Chromium after archive mounting, so full adjacent
+      heightmap ownership remains open. The `W3DTerrainVisual::load` smoke
+      currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
 - [ ] Once a base Generals `Terrain.big` artifact is available in this

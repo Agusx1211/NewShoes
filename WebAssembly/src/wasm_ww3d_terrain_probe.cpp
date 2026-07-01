@@ -30,6 +30,7 @@
 #include "GameClient/Water.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/HeightMap.h"
+#include "W3DDevice/GameClient/W3DBibBuffer.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DShaderManager.h"
@@ -75,6 +76,7 @@ std::string g_ww3d_terrain_map_patch_scene_probe_json;
 std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
+std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
 
 constexpr int kMapCells = 16;
 constexpr int kMapVertices = kMapCells + 1;
@@ -1424,6 +1426,23 @@ public:
 private:
 	W3DTerrainBackground *m_tile;
 	Bool m_disableTextures;
+};
+
+class ProbeW3DBibBuffer : public W3DBibBuffer
+{
+public:
+	bool initialized() const { return m_initialized; }
+	bool hasVertexBuffer() const { return m_vertexBib != nullptr; }
+	bool hasIndexBuffer() const { return m_indexBib != nullptr; }
+	bool hasNormalTexture() const { return m_bibTexture != nullptr; }
+	bool hasHighlightTexture() const { return m_highlightBibTexture != nullptr; }
+	Int numBibs() const { return m_numBibs; }
+	Bool anythingChanged() const { return m_anythingChanged; }
+
+	void freeBuffersForProbe()
+	{
+		freeBibBuffers();
+	}
 };
 
 void configure_global_data(GlobalData &global_data)
@@ -2817,6 +2836,177 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	return target_json.c_str();
 }
 
+const char *run_ww3d_terrain_bib_buffer_lifecycle_probe(std::string &target_json)
+{
+	initMemoryManager();
+	wasm_d3d8_reset_state();
+
+	GlobalData *old_writable_global_data = TheWritableGlobalData;
+	GlobalData *global_data = NEW GlobalData;
+	bool global_data_ready = global_data != nullptr;
+	if (global_data_ready) {
+		configure_global_data(*global_data);
+		TheWritableGlobalData = global_data;
+	}
+
+	int init_result = WW3D_ERROR_GENERIC;
+	int set_device_result = WW3D_ERROR_GENERIC;
+	bool buffer_created = false;
+	bool initialized = false;
+	bool vertex_buffer_allocated = false;
+	bool index_buffer_allocated = false;
+	bool normal_texture_created = false;
+	bool highlight_texture_created = false;
+	bool add_bib_invoked = false;
+	bool remove_highlighting_invoked = false;
+	bool remove_bib_invoked = false;
+	bool clear_bibs_invoked = false;
+	bool free_buffers_invoked = false;
+	bool vertex_buffer_released = false;
+	bool index_buffer_released = false;
+	Int bibs_after_add = -1;
+	Int bibs_after_remove = -1;
+	Int bibs_after_clear = -1;
+	Bool changed_after_add = FALSE;
+
+	if (global_data_ready) {
+		init_result = WW3D::Init(nullptr, nullptr, false);
+	}
+	if (succeeded(init_result)) {
+		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
+	}
+
+	ProbeW3DBibBuffer *bib_buffer = nullptr;
+	if (succeeded(set_device_result)) {
+		bib_buffer = NEW ProbeW3DBibBuffer;
+		buffer_created = bib_buffer != nullptr;
+	}
+
+	if (buffer_created) {
+		initialized = bib_buffer->initialized();
+		vertex_buffer_allocated = bib_buffer->hasVertexBuffer();
+		index_buffer_allocated = bib_buffer->hasIndexBuffer();
+		normal_texture_created = bib_buffer->hasNormalTexture();
+		highlight_texture_created = bib_buffer->hasHighlightTexture();
+
+		Vector3 corners[4];
+		corners[0].Set(0.0f, 0.0f, 4.0f);
+		corners[1].Set(96.0f, 0.0f, 4.0f);
+		corners[2].Set(96.0f, 96.0f, 4.0f);
+		corners[3].Set(0.0f, 96.0f, 4.0f);
+		const DrawableID probe_drawable_id = static_cast<DrawableID>(0x102);
+		bib_buffer->addBibDrawable(corners, probe_drawable_id, TRUE);
+		add_bib_invoked = true;
+		bibs_after_add = bib_buffer->numBibs();
+		changed_after_add = bib_buffer->anythingChanged();
+
+		bib_buffer->removeHighlighting();
+		remove_highlighting_invoked = true;
+		bib_buffer->removeBibDrawable(probe_drawable_id);
+		remove_bib_invoked = true;
+		bibs_after_remove = bib_buffer->numBibs();
+
+		bib_buffer->clearAllBibs();
+		clear_bibs_invoked = true;
+		bibs_after_clear = bib_buffer->numBibs();
+
+		bib_buffer->freeBuffersForProbe();
+		free_buffers_invoked = true;
+		vertex_buffer_released = !bib_buffer->hasVertexBuffer();
+		index_buffer_released = !bib_buffer->hasIndexBuffer();
+	}
+
+	const WasmD3D8ShimState *state = wasm_d3d8_get_state();
+	const bool ok =
+		global_data_ready &&
+		succeeded(init_result) &&
+		succeeded(set_device_result) &&
+		buffer_created &&
+		initialized &&
+		vertex_buffer_allocated &&
+		index_buffer_allocated &&
+		normal_texture_created &&
+		highlight_texture_created &&
+		add_bib_invoked &&
+		bibs_after_add == 1 &&
+		changed_after_add &&
+		remove_highlighting_invoked &&
+		remove_bib_invoked &&
+		bibs_after_remove == 1 &&
+		clear_bibs_invoked &&
+		bibs_after_clear == 0 &&
+		free_buffers_invoked &&
+		vertex_buffer_released &&
+		index_buffer_released &&
+		state != nullptr &&
+		state->create_vertex_buffer_calls >= 1 &&
+		state->create_index_buffer_calls >= 1;
+
+	char buffer[5000];
+	std::snprintf(buffer, sizeof(buffer),
+		"{\"source\":\"ww3d_terrain_bib_buffer_lifecycle_probe\","
+		"\"ok\":%s,"
+		"\"path\":\"original W3DBibBuffer constructor -> addBibDrawable -> "
+		"removeHighlighting -> removeBibDrawable -> clearAllBibs -> freeBibBuffers\","
+		"\"results\":{\"globalDataReady\":%s,\"init\":%d,"
+		"\"setRenderDevice\":%d,\"bufferCreated\":%s,"
+		"\"initialized\":%s,\"vertexBufferAllocated\":%s,"
+		"\"indexBufferAllocated\":%s,\"normalTextureCreated\":%s,"
+		"\"highlightTextureCreated\":%s,\"addBibInvoked\":%s,"
+		"\"removeHighlightingInvoked\":%s,\"removeBibInvoked\":%s,"
+		"\"clearBibsInvoked\":%s,\"freeBuffersInvoked\":%s,"
+		"\"vertexBufferReleased\":%s,\"indexBufferReleased\":%s},"
+		"\"bibs\":{\"afterAdd\":%d,\"afterRemove\":%d,"
+		"\"afterClear\":%d,\"changedAfterAdd\":%s},"
+		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
+		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
+		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
+		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
+		"\"drawIndexed\":%u}}",
+		bool_json(ok),
+		bool_json(global_data_ready),
+		init_result,
+		set_device_result,
+		bool_json(buffer_created),
+		bool_json(initialized),
+		bool_json(vertex_buffer_allocated),
+		bool_json(index_buffer_allocated),
+		bool_json(normal_texture_created),
+		bool_json(highlight_texture_created),
+		bool_json(add_bib_invoked),
+		bool_json(remove_highlighting_invoked),
+		bool_json(remove_bib_invoked),
+		bool_json(clear_bibs_invoked),
+		bool_json(free_buffers_invoked),
+		bool_json(vertex_buffer_released),
+		bool_json(index_buffer_released),
+		bibs_after_add,
+		bibs_after_remove,
+		bibs_after_clear,
+		bool_json(changed_after_add),
+		state != nullptr ? state->create_device_calls : 0,
+		state != nullptr ? state->create_texture_calls : 0,
+		state != nullptr ? state->create_vertex_buffer_calls : 0,
+		state != nullptr ? state->create_index_buffer_calls : 0,
+		state != nullptr ? state->browser_buffer_create_calls : 0,
+		state != nullptr ? state->browser_buffer_update_calls : 0,
+		state != nullptr ? state->browser_texture_create_calls : 0,
+		state != nullptr ? state->browser_texture_update_calls : 0,
+		state != nullptr ? state->draw_indexed_primitive_calls : 0);
+
+	target_json = buffer;
+
+	delete bib_buffer;
+	if (succeeded(init_result)) {
+		wasm_shutdown_ww3d_probe();
+	}
+
+	TheWritableGlobalData = old_writable_global_data;
+	delete global_data;
+
+	return target_json.c_str();
+}
+
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_tile()
@@ -2902,6 +3092,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_camera_pan_s
 		terrain_archive_path,
 		false,
 		true);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle()
+{
+	return run_ww3d_terrain_bib_buffer_lifecycle_probe(
+		g_ww3d_terrain_bib_buffer_lifecycle_probe_json);
 }
 
 }

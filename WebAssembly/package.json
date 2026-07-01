@@ -138,6 +138,7 @@
     "test:ww3d-terrain-tile-archive-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_tile_archive_scene_smoke.mjs artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-map-patch-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_map_patch_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-visual-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_visual_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big",
+    "test:ww3d-terrain-bib-buffer-lifecycle": "npm run build:wasm && node harness/terrain_bib_buffer_lifecycle_smoke.mjs",
     "test:ww3d-display-mapped-image": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
     "test:ww3d-display-mapped-image-clip": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_clip_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",
     "test:ww3d-display-mapped-image-unrotated": "npm run build:wasm && npm run extract:runtime-archives && node harness/display_mapped_image_unrotated_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/EnglishZH.big",

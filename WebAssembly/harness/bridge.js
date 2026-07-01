@@ -7056,6 +7056,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_load_window_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualCameraPanScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_camera_pan_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainBibBufferLifecycle: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_bib_buffer_lifecycle", "string", []),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -18116,6 +18118,74 @@ async function rpc(command, payload = {}) {
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainBibBufferLifecycle":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D bib buffer lifecycle cannot run" };
+        }
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainBibBufferLifecycle());
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? {};
+        const textureAfter = harnessState.graphics.d3d8Textures ?? {};
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releaseUnbinds: (textureAfter?.releaseUnbinds ?? 0) - (textureBefore.releaseUnbinds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_bib_buffer_lifecycle_probe"
+          && probe?.results?.globalDataReady === true
+          && probe?.results?.init === 0
+          && probe?.results?.setRenderDevice === 0
+          && probe?.results?.bufferCreated === true
+          && probe?.results?.initialized === true
+          && probe?.results?.vertexBufferAllocated === true
+          && probe?.results?.indexBufferAllocated === true
+          && probe?.results?.normalTextureCreated === true
+          && probe?.results?.highlightTextureCreated === true
+          && probe?.results?.addBibInvoked === true
+          && probe?.results?.removeHighlightingInvoked === true
+          && probe?.results?.removeBibInvoked === true
+          && probe?.results?.clearBibsInvoked === true
+          && probe?.results?.freeBuffersInvoked === true
+          && probe?.results?.vertexBufferReleased === true
+          && probe?.results?.indexBufferReleased === true
+          && probe?.bibs?.afterAdd === 1
+          && probe?.bibs?.afterRemove === 1
+          && probe?.bibs?.afterClear === 0
+          && probe?.bibs?.changedAfterAdd === true
+          && probe?.calls?.createVertexBuffer >= 1
+          && probe?.calls?.createIndexBuffer >= 1
+          && bufferDelta.creates >= 2
+          && bufferDelta.releases >= 2
+          && textureDelta.creates >= 1
+          && textureDelta.updates >= 1
+          && textureDelta.releases >= 1;
+        return {
+          ok,
+          command,
+          probe,
+          bufferDelta,
+          textureDelta,
           state: snapshotState(),
         };
       }
