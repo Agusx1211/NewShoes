@@ -680,7 +680,11 @@ shares structure and follows behind.
       now also unhides `MainMenu.wnd:MapBorder`, `EarthMap`, `ButtonUSA`,
       `ButtonGLA`, `ButtonChina`, `ButtonChallenge`, `ButtonSkirmish`, and
       `ButtonSingleBack`, including real button images, CSF labels, and
-      browser pixel proofs. Current archive inspection
+      browser pixel proofs. Its Difficulty focused mode now also unhides
+      `MainMenu.wnd:MapBorder4`, `EarthMap4`, `StaticTextSelectDifficulty`,
+      `ButtonEasy`, `ButtonMedium`, `ButtonHard`, and `ButtonDiffBack`,
+      including real button images, CSF labels, title text, and browser pixel
+      proofs. Current archive inspection
       shows `MainMenuBackdrop` is parent `ENABLEDDRAWDATA` behind a shipped
       `W3DNoDraw` callback, and the `MainMenuBackdropuserinterface.tga` /
       `MainMenuBackdrop.tga` texture is absent from the current ZH-only runtime

@@ -960,6 +960,14 @@ const steps = [
           && payload.singlePlayerOriginalPaths?.includes("MainMenu.wnd:ButtonSingleBack -> W3DGadgetPushButtonImageDraw")
           && payload.singlePlayerOriginalPaths?.includes("GameText::fetch(single-player dropdown button labels) -> W3DDisplayString::draw button labels"),
         "MainMenu layout image repaint smoke did not render the real Single Player dropdown controls", payload.singlePlayerOriginalPaths);
+      expect(payload.difficultyOriginalPaths?.includes("MainMenu.wnd:MapBorder4 -> PassSelectedButtonsToParentSystem")
+          && payload.difficultyOriginalPaths?.includes("MainMenu.wnd:EarthMap4 -> PassSelectedButtonsToParentSystem")
+          && payload.difficultyOriginalPaths?.includes("MainMenu.wnd:ButtonEasy -> W3DGadgetPushButtonImageDraw")
+          && payload.difficultyOriginalPaths?.includes("MainMenu.wnd:ButtonMedium -> W3DGadgetPushButtonImageDraw")
+          && payload.difficultyOriginalPaths?.includes("MainMenu.wnd:ButtonHard -> W3DGadgetPushButtonImageDraw")
+          && payload.difficultyOriginalPaths?.includes("MainMenu.wnd:ButtonDiffBack -> W3DGadgetPushButtonImageDraw")
+          && payload.difficultyOriginalPaths?.includes("GameText::fetch(difficulty dropdown button labels) -> W3DDisplayString::draw button labels"),
+        "MainMenu layout image repaint smoke did not render the real Difficulty dropdown controls", payload.difficultyOriginalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -992,6 +1000,11 @@ const steps = [
           && payload.gameText?.staticTextLabelExists === true
           && payload.gameText?.staticTextNonEmpty === true,
         "MainMenu layout image repaint smoke did not resolve button/static text through real GameText", payload);
+      expect(payload.difficultyGameText?.difficultyButtonLabelsExist === true
+          && payload.difficultyGameText?.difficultyButtonTextNonEmpty === true
+          && payload.difficultyGameText?.staticTextLabelExists === true
+          && payload.difficultyGameText?.staticTextNonEmpty === true,
+        "MainMenu layout image repaint smoke did not resolve Difficulty labels through real GameText", payload);
       const expectedExtraButtons = [
         ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
         ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
@@ -1100,6 +1113,49 @@ const steps = [
               && proof?.textRegion?.maxComponent >= 180;
           }),
         "MainMenu layout image repaint smoke did not report/pixel-prove the real Single Player dropdown buttons", payload);
+      const expectedDifficultyButtons = [
+        ["MainMenu.wnd:ButtonEasy", "GUI:EasyCaps", 156, 35],
+        ["MainMenu.wnd:ButtonMedium", "GUI:MediumDifficultyCaps", 196, 35],
+        ["MainMenu.wnd:ButtonHard", "GUI:HardCaps", 236, 36],
+        ["MainMenu.wnd:ButtonDiffBack", "GUI:Back", 276, 36],
+      ];
+      expect(payload.difficultyDropdown?.name === "MainMenu.wnd:MapBorder4"
+          && payload.difficultyDropdown?.x === 532
+          && payload.difficultyDropdown?.y === 108
+          && payload.difficultyDropdown?.width === 224
+          && payload.difficultyDropdown?.height === 212
+          && payload.difficultyDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && payload.difficultyDropdown?.hidden === false
+          && payload.difficultyEarthMap?.name === "MainMenu.wnd:EarthMap4"
+          && payload.difficultyEarthMap?.x === 532
+          && payload.difficultyEarthMap?.y === 108
+          && payload.difficultyEarthMap?.width === 224
+          && payload.difficultyEarthMap?.height === 212
+          && payload.difficultyEarthMap?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && payload.difficultyEarthMap?.drawFunc === "W3DGameWinDefaultDraw"
+          && payload.difficultyEarthMap?.hidden === false
+          && Array.isArray(payload.difficultyButtons)
+          && payload.difficultyButtons.length === expectedDifficultyButtons.length
+          && expectedDifficultyButtons.every(([name, label, y, height], index) => {
+            const button = payload.difficultyButtons[index];
+            const proof = payload.difficultyButtonRegions?.[index];
+            return button?.name === name
+              && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+              && button?.x === 540
+              && button?.y === y
+              && button?.width === 208
+              && button?.height === height
+              && button?.hidden === false
+              && button?.imagesBound === true
+              && button?.text?.label === label
+              && button?.text?.length > 0
+              && button?.text?.width > 0
+              && button?.text?.height > 0
+              && proof?.region?.coloredPixelCount >= 20
+              && proof?.textRegion?.coloredPixelCount >= 20
+              && proof?.textRegion?.maxComponent >= 180;
+          }),
+        "MainMenu layout image repaint smoke did not report/pixel-prove the real Difficulty dropdown buttons", payload);
       expect(payload.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
           && payload.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
           && payload.staticText?.initialHidden === true
@@ -1110,6 +1166,14 @@ const steps = [
           && payload.staticText?.text?.width > 0
           && payload.staticText?.text?.height > 0,
         "MainMenu layout image repaint smoke did not report the real hidden static text binding", payload);
+      expect(payload.difficultyStaticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
+          && payload.difficultyStaticText?.hidden === false
+          && payload.difficultyStaticText?.visibilityFocused === true
+          && payload.difficultyStaticText?.text?.label === "GUI:SelectDifficulty"
+          && payload.difficultyStaticText?.text?.length > 0
+          && payload.difficultyStaticTextRegion?.coloredPixelCount >= 20
+          && payload.difficultyStaticTextRegion?.maxComponent >= 180,
+        "MainMenu layout image repaint smoke did not capture the Difficulty dropdown title text pixels", payload);
       expect(payload.calls?.displayImageDraws >= 6
           && payload.calls?.drawIndexed >= 6
           && payload.draw?.screenRect?.left === 504
@@ -1133,6 +1197,8 @@ const steps = [
         "MainMenu layout image repaint smoke did not capture the expected Single Player dropdown screenshot", payload);
       expect(payload.loadReplayScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected Load Replay dropdown screenshot", payload);
+      expect(payload.difficultyScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-difficulty-repaint-canvas.png"),
+        "MainMenu layout image repaint smoke did not capture the expected Difficulty dropdown screenshot", payload);
     },
   },
   {
@@ -1506,7 +1572,7 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu Load Replay dropdown/back and CreditsMenu callback execution through real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
-    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels plus Single Player and Load Replay dropdown controls, and browser WebGL2 pixels",
+    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels plus Single Player, Load Replay, and Difficulty dropdown controls, and browser WebGL2 pixels",
     "real MainMenuRuler HandCreated mapped image through TexturesZH.big, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",

@@ -3691,6 +3691,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-main-menu-layout-single-player-repaint-canvas.png`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      real Difficulty dropdown controls: the probe now runs a dedicated
+      Difficulty focused mode that unhides `MainMenu.wnd:MapBorder4`,
+      `MainMenu.wnd:EarthMap4`, `StaticTextSelectDifficulty`, and the shipped
+      `ButtonEasy`, `ButtonMedium`, `ButtonHard`, and `ButtonDiffBack`
+      children. The harness verifies `PassSelectedButtonsToParentSystem`,
+      `W3DGadgetStaticTextDraw`, each `W3DGadgetPushButtonImageDraw` /
+      `GadgetPushButtonSystem` / `GadgetPushButtonInput` binding, the original
+      `Buttons-Left` / `Buttons-Middle` / `Buttons-Right` mapped images, CSF
+      labels `GUI:EasyCaps`, `GUI:MediumDifficultyCaps`, `GUI:HardCaps`,
+      `GUI:Back`, and `GUI:SelectDifficulty`, and non-empty title, button, and
+      label pixels in
+      `harness-smoke-ww3d-main-menu-layout-difficulty-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

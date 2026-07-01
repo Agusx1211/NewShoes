@@ -32,6 +32,10 @@ const loadReplayScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png",
 );
+const difficultyScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-difficulty-repaint-canvas.png",
+);
 
 const D3DPT_TRIANGLELIST = 4;
 const D3DTOP_DISABLE = 1;
@@ -750,6 +754,137 @@ try {
 
   await page.locator("#viewport").screenshot({ path: loadReplayScreenshot });
 
+  let difficultyResult;
+  try {
+    difficultyResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutDifficultyRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout difficulty dropdown repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout difficulty dropdown repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  const expectedDifficultyButtons = [
+    ["MainMenu.wnd:ButtonEasy", "GUI:EasyCaps", 156, 35],
+    ["MainMenu.wnd:ButtonMedium", "GUI:MediumDifficultyCaps", 196, 35],
+    ["MainMenu.wnd:ButtonHard", "GUI:HardCaps", 236, 36],
+    ["MainMenu.wnd:ButtonDiffBack", "GUI:Back", 276, 36],
+  ];
+  const difficultyButtons = difficultyResult.probe?.layout?.difficultyButtons ?? [];
+  const difficultyButtonsValid = expectedDifficultyButtons.every(([name, label, y, height], index) => {
+    const button = difficultyButtons[index];
+    const proof = difficultyResult.difficultyButtonRegions?.[index];
+    return button?.name === name
+      && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+      && button?.systemFunc === "GadgetPushButtonSystem"
+      && button?.inputFunc === "GadgetPushButtonInput"
+      && button?.x === 540
+      && button?.y === y
+      && button?.width === 208
+      && button?.height === height
+      && button?.hidden === false
+      && button?.labelExists === true
+      && button?.textNonEmpty === true
+      && button?.imagesBound === true
+      && button?.images?.[0] === "Buttons-Left"
+      && button?.images?.[1] === "Buttons-Middle"
+      && button?.images?.[2] === "Buttons-Right"
+      && button?.text?.label === label
+      && button?.text?.length > 0
+      && button?.text?.width > 0
+      && button?.text?.height > 0
+      && proof?.region?.coloredPixelCount >= 20
+      && proof?.textRegion?.coloredPixelCount >= 20
+      && proof?.textRegion?.maxComponent >= 180;
+  });
+  if (!difficultyResult.ok
+      || difficultyResult.command !== "ww3dMainMenuLayoutDifficultyRepaint"
+      || difficultyResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || difficultyResult.probe?.mode !== "difficultyDropdown"
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:MapBorder4 -> PassSelectedButtonsToParentSystem")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:EarthMap4 -> PassSelectedButtonsToParentSystem")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonEasy -> W3DGadgetPushButtonImageDraw")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonMedium -> W3DGadgetPushButtonImageDraw")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonHard -> W3DGadgetPushButtonImageDraw")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonDiffBack -> W3DGadgetPushButtonImageDraw")
+      || !difficultyResult.probe?.originalPaths?.includes("GameText::fetch(difficulty dropdown button labels) -> W3DDisplayString::draw button labels")
+      || !difficultyResult.probe?.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
+      || difficultyResult.probe?.results?.difficultyButtonLabelsExist !== true
+      || difficultyResult.probe?.results?.difficultyButtonTextNonEmpty !== true
+      || difficultyResult.probe?.results?.difficultyDropdownFound !== true
+      || difficultyResult.probe?.results?.difficultyDropdownCallbackBound !== true
+      || difficultyResult.probe?.results?.difficultyEarthMapFound !== true
+      || difficultyResult.probe?.results?.difficultyEarthMapCallbackBound !== true
+      || difficultyResult.probe?.results?.difficultyButtonsFound !== true
+      || difficultyResult.probe?.results?.difficultyButtonsCallbackBound !== true
+      || difficultyResult.probe?.results?.difficultyButtonsImagesBound !== true
+      || difficultyResult.probe?.results?.difficultyButtonsTextDisplayStringBound !== true
+      || difficultyResult.probe?.results?.difficultyButtonsTextSizeComputed !== true
+      || difficultyResult.probe?.results?.difficultyDropdownHidden !== false
+      || difficultyResult.probe?.results?.difficultyEarthMapHidden !== false
+      || difficultyResult.probe?.results?.difficultyButtonsVisible !== true
+      || difficultyResult.probe?.results?.staticTextFound !== true
+      || difficultyResult.probe?.results?.staticTextCallbackBound !== true
+      || difficultyResult.probe?.results?.staticTextDisplayStringBound !== true
+      || difficultyResult.probe?.results?.staticTextSizeComputed !== true
+      || difficultyResult.probe?.layout?.difficultyDropdown?.name !== "MainMenu.wnd:MapBorder4"
+      || difficultyResult.probe?.layout?.difficultyDropdown?.x !== 532
+      || difficultyResult.probe?.layout?.difficultyDropdown?.y !== 108
+      || difficultyResult.probe?.layout?.difficultyDropdown?.width !== 224
+      || difficultyResult.probe?.layout?.difficultyDropdown?.height !== 212
+      || difficultyResult.probe?.layout?.difficultyDropdown?.systemFunc !== "PassSelectedButtonsToParentSystem"
+      || difficultyResult.probe?.layout?.difficultyDropdown?.hidden !== false
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.name !== "MainMenu.wnd:EarthMap4"
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.x !== 532
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.y !== 108
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.width !== 224
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.height !== 212
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.systemFunc !== "PassSelectedButtonsToParentSystem"
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.drawFunc !== "W3DGameWinDefaultDraw"
+      || difficultyResult.probe?.layout?.difficultyEarthMap?.hidden !== false
+      || difficultyResult.probe?.layout?.staticText?.name !== "MainMenu.wnd:StaticTextSelectDifficulty"
+      || difficultyResult.probe?.layout?.staticText?.x !== 540
+      || difficultyResult.probe?.layout?.staticText?.y !== 116
+      || difficultyResult.probe?.layout?.staticText?.width !== 216
+      || difficultyResult.probe?.layout?.staticText?.height !== 36
+      || difficultyResult.probe?.layout?.staticText?.initialHidden !== true
+      || difficultyResult.probe?.layout?.staticText?.hidden !== false
+      || difficultyResult.probe?.layout?.staticText?.visibilityFocused !== true
+      || difficultyResult.probe?.layout?.staticText?.text?.label !== "GUI:SelectDifficulty"
+      || difficultyResult.probe?.layout?.staticText?.text?.length <= 0
+      || difficultyResult.probe?.layout?.staticText?.text?.width <= 0
+      || difficultyResult.probe?.layout?.staticText?.text?.height <= 0
+      || difficultyResult.probe?.gameText?.difficultyButtonLabelsExist !== true
+      || difficultyResult.probe?.gameText?.difficultyButtonTextNonEmpty !== true
+      || difficultyResult.probe?.gameText?.staticTextLabelExists !== true
+      || difficultyResult.probe?.gameText?.staticTextNonEmpty !== true
+      || difficultyButtons.length !== expectedDifficultyButtons.length
+      || !difficultyButtonsValid
+      || difficultyResult.probe?.calls?.displayImageDraws < 6
+      || difficultyResult.probe?.calls?.drawIndexed < 7
+      || difficultyResult.coloredLogoPixelCount < 1
+      || difficultyResult.coloredRulerPixelCount < 4
+      || difficultyResult.staticTextRegion?.coloredPixelCount < 20
+      || difficultyResult.staticTextRegion?.maxComponent < 180) {
+    throw new Error(`W3D MainMenu WindowLayout difficulty dropdown repaint failed: ${JSON.stringify({
+      ok: difficultyResult.ok,
+      probe: difficultyResult.probe,
+      difficultyButtonRegions: difficultyResult.difficultyButtonRegions,
+      staticTextRegion: difficultyResult.staticTextRegion,
+      coloredLogoPixelCount: difficultyResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: difficultyResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: difficultyScreenshot });
+
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
@@ -764,6 +899,7 @@ try {
     staticTextScreenshot,
     singlePlayerScreenshot,
     loadReplayScreenshot,
+    difficultyScreenshot,
     archives: {
       window: windowArchiveMemfsPath,
       ini: iniArchiveMemfsPath,
@@ -773,11 +909,13 @@ try {
     originalPaths: repaintResult.probe.originalPaths,
     singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
+    difficultyOriginalPaths: difficultyResult.probe.originalPaths,
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
     buttonImages: repaintResult.probe.buttonImages,
     gameText: repaintResult.probe.gameText,
+    difficultyGameText: difficultyResult.probe.gameText,
     texture: repaintResult.probe.texture,
     rulerTexture: repaintResult.probe.rulerTexture,
     calls: repaintResult.probe.calls,
@@ -796,13 +934,21 @@ try {
     loadReplayDropdown: loadReplayResult.probe.layout.loadReplayDropdown,
     loadReplayButtons,
     loadReplayButtonRegions: loadReplayResult.loadReplayButtonRegions,
+    difficultyDropdown: difficultyResult.probe.layout.difficultyDropdown,
+    difficultyEarthMap: difficultyResult.probe.layout.difficultyEarthMap,
+    difficultyButtons,
+    difficultyButtonRegions: difficultyResult.difficultyButtonRegions,
     staticText: staticTextResult.probe.layout.staticText,
     staticTextRegion: staticTextResult.staticTextRegion,
+    difficultyStaticText: difficultyResult.probe.layout.staticText,
+    difficultyStaticTextRegion: difficultyResult.staticTextRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
     coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
     coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
     staticTextColoredLogoPixelCount: staticTextResult.coloredLogoPixelCount,
     staticTextColoredRulerPixelCount: staticTextResult.coloredRulerPixelCount,
+    difficultyColoredLogoPixelCount: difficultyResult.coloredLogoPixelCount,
+    difficultyColoredRulerPixelCount: difficultyResult.coloredRulerPixelCount,
     renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image bindings, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
     browserEventCount: browserEvents.length,
   }));

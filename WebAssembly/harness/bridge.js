@@ -7026,6 +7026,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_single_player_repaint", "string", []),
       probeWW3DMainMenuLayoutLoadReplayRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint", "string", []),
+      probeWW3DMainMenuLayoutDifficultyRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint", "string", []),
       probeWW3DMainMenuLayoutStaticTextRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_static_text_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
@@ -16643,6 +16645,7 @@ async function rpc(command, payload = {}) {
     case "ww3dMainMenuLayoutImageRepaint":
     case "ww3dMainMenuLayoutSinglePlayerRepaint":
     case "ww3dMainMenuLayoutLoadReplayRepaint":
+    case "ww3dMainMenuLayoutDifficultyRepaint":
     case "ww3dMainMenuLayoutStaticTextRepaint":
       {
         const wasmModule = await wasmModulePromise;
@@ -16652,11 +16655,14 @@ async function rpc(command, payload = {}) {
         const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
         const singlePlayerMode = command === "ww3dMainMenuLayoutSinglePlayerRepaint";
         const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
+        const difficultyMode = command === "ww3dMainMenuLayoutDifficultyRepaint";
         const probeMode = staticTextMode
           ? "staticTextSelectDifficulty"
           : (singlePlayerMode
               ? "singlePlayerDropdown"
-              : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer"));
+              : (difficultyMode
+                  ? "difficultyDropdown"
+                  : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer")));
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -16675,7 +16681,9 @@ async function rpc(command, payload = {}) {
               ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
               : (loadReplayMode
                   ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
-                  : wasmModule.probeWW3DMainMenuLayoutImageRepaint())));
+                  : (difficultyMode
+                      ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
+                      : wasmModule.probeWW3DMainMenuLayoutImageRepaint()))));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -16790,6 +16798,10 @@ async function rpc(command, payload = {}) {
           ? probe.layout.loadReplayButtons
           : [];
         const loadReplayButtonRegions = loadReplayButtons.map(sampleButtonRegions);
+        const difficultyButtons = Array.isArray(probe?.layout?.difficultyButtons)
+          ? probe.layout.difficultyButtons
+          : [];
+        const difficultyButtonRegions = difficultyButtons.map(sampleButtonRegions);
         const staticText = probe?.layout?.staticText ?? {};
         const staticTextLeft = staticText.x ?? 540;
         const staticTextTop = staticText.y ?? 116;
@@ -16821,16 +16833,17 @@ async function rpc(command, payload = {}) {
           extraButtonRegions,
           singlePlayerButtonRegions,
           loadReplayButtonRegions,
+          difficultyButtonRegions,
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const expectedDisplayImageDraws = staticTextMode
           ? 2
-          : (singlePlayerMode ? 8 : (loadReplayMode ? 5 : 6));
+          : (singlePlayerMode ? 8 : (difficultyMode ? 6 : (loadReplayMode ? 5 : 6)));
         const expectedDrawIndexed = staticTextMode
           ? 3
-          : (singlePlayerMode ? 8 : (loadReplayMode ? 5 : 6));
-        const staticTextProbeOk = !staticTextMode
+          : (singlePlayerMode ? 8 : (difficultyMode ? 7 : (loadReplayMode ? 5 : 6)));
+        const staticTextProbeOk = !(staticTextMode || difficultyMode)
           || (probe?.results?.staticTextLabelExists === true
             && probe?.results?.staticTextNonEmpty === true
             && probe?.results?.staticTextFound === true
@@ -16861,7 +16874,7 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.staticText?.text?.height > 0
             && probe?.gameText?.staticTextLabelExists === true
             && probe?.gameText?.staticTextNonEmpty === true);
-        const buttonTextProbeOk = staticTextMode || singlePlayerMode || loadReplayMode
+        const buttonTextProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
           || (probe?.layout?.button?.text?.width > 0
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
@@ -16873,7 +16886,7 @@ async function rpc(command, payload = {}) {
           ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
           ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
         ];
-        const extraButtonsProbeOk = staticTextMode || singlePlayerMode || loadReplayMode
+        const extraButtonsProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
           || (probe?.results?.extraButtonLabelsExist === true
             && probe?.results?.extraButtonTextNonEmpty === true
             && probe?.results?.extraButtonsFound === true
@@ -16909,7 +16922,7 @@ async function rpc(command, payload = {}) {
                 && extraButton?.text?.width > 0
                 && extraButton?.text?.height > 0;
             }));
-        const extraButtonsPixelOk = staticTextMode || singlePlayerMode || loadReplayMode
+        const extraButtonsPixelOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
           || (extraButtonRegions.length === expectedExtraButtons.length
             && extraButtonRegions.every((entry) =>
               entry.region.coloredPixelCount >= 20
@@ -17043,17 +17056,90 @@ async function rpc(command, payload = {}) {
               entry.region.coloredPixelCount >= 20
               && entry.textRegion.coloredPixelCount >= 20
               && entry.textRegion.maxComponent >= 180));
+        const expectedDifficultyButtons = [
+          ["MainMenu.wnd:ButtonEasy", "GUI:EasyCaps", 156, 35],
+          ["MainMenu.wnd:ButtonMedium", "GUI:MediumDifficultyCaps", 196, 35],
+          ["MainMenu.wnd:ButtonHard", "GUI:HardCaps", 236, 36],
+          ["MainMenu.wnd:ButtonDiffBack", "GUI:Back", 276, 36],
+        ];
+        const difficultyButtonsProbeOk = !difficultyMode
+          || (probe?.results?.difficultyButtonLabelsExist === true
+            && probe?.results?.difficultyButtonTextNonEmpty === true
+            && probe?.results?.difficultyDropdownFound === true
+            && probe?.results?.difficultyDropdownCallbackBound === true
+            && probe?.results?.difficultyEarthMapFound === true
+            && probe?.results?.difficultyEarthMapCallbackBound === true
+            && probe?.results?.difficultyButtonsFound === true
+            && probe?.results?.difficultyButtonsCallbackBound === true
+            && probe?.results?.difficultyButtonsImagesBound === true
+            && probe?.results?.difficultyButtonsTextDisplayStringBound === true
+            && probe?.results?.difficultyButtonsTextSizeComputed === true
+            && probe?.results?.difficultyDropdownHidden === false
+            && probe?.results?.difficultyEarthMapHidden === false
+            && probe?.results?.difficultyButtonsVisible === true
+            && probe?.layout?.difficultyDropdown?.name === "MainMenu.wnd:MapBorder4"
+            && probe?.layout?.difficultyDropdown?.x === 532
+            && probe?.layout?.difficultyDropdown?.y === 108
+            && probe?.layout?.difficultyDropdown?.width === 224
+            && probe?.layout?.difficultyDropdown?.height === 212
+            && probe?.layout?.difficultyDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+            && probe?.layout?.difficultyDropdown?.hidden === false
+            && probe?.layout?.difficultyEarthMap?.name === "MainMenu.wnd:EarthMap4"
+            && probe?.layout?.difficultyEarthMap?.x === 532
+            && probe?.layout?.difficultyEarthMap?.y === 108
+            && probe?.layout?.difficultyEarthMap?.width === 224
+            && probe?.layout?.difficultyEarthMap?.height === 212
+            && probe?.layout?.difficultyEarthMap?.systemFunc === "PassSelectedButtonsToParentSystem"
+            && probe?.layout?.difficultyEarthMap?.drawFunc === "W3DGameWinDefaultDraw"
+            && probe?.layout?.difficultyEarthMap?.hidden === false
+            && probe?.gameText?.difficultyButtonLabelsExist === true
+            && probe?.gameText?.difficultyButtonTextNonEmpty === true
+            && difficultyButtons.length === expectedDifficultyButtons.length
+            && expectedDifficultyButtons.every(([name, label, y, height], index) => {
+              const difficultyButton = difficultyButtons[index];
+              return difficultyButton?.name === name
+                && difficultyButton?.x === 540
+                && difficultyButton?.y === y
+                && difficultyButton?.width === 208
+                && difficultyButton?.height === height
+                && difficultyButton?.drawFunc === "W3DGadgetPushButtonImageDraw"
+                && difficultyButton?.systemFunc === "GadgetPushButtonSystem"
+                && difficultyButton?.inputFunc === "GadgetPushButtonInput"
+                && difficultyButton?.hidden === false
+                && difficultyButton?.labelExists === true
+                && difficultyButton?.textNonEmpty === true
+                && difficultyButton?.imagesBound === true
+                && difficultyButton?.images?.[0] === "Buttons-Left"
+                && difficultyButton?.images?.[1] === "Buttons-Middle"
+                && difficultyButton?.images?.[2] === "Buttons-Right"
+                && difficultyButton?.text?.label === label
+                && typeof difficultyButton?.text?.ascii === "string"
+                && difficultyButton.text.ascii.length > 0
+                && difficultyButton?.text?.length > 0
+                && difficultyButton?.text?.width > 0
+                && difficultyButton?.text?.height > 0;
+            }));
+        const difficultyButtonsPixelOk = !difficultyMode
+          || (difficultyButtonRegions.length === expectedDifficultyButtons.length
+            && difficultyButtonRegions.every((entry) =>
+              entry.region.coloredPixelCount >= 20
+              && entry.textRegion.coloredPixelCount >= 20
+              && entry.textRegion.maxComponent >= 180));
         const focusedPixelOk = staticTextMode
           ? (staticTextRegion.coloredPixelCount >= 20
             && staticTextRegion.maxComponent >= 180)
           : (singlePlayerMode
               ? singlePlayerButtonsPixelOk
-              : (loadReplayMode
-                  ? loadReplayButtonsPixelOk
+              : (difficultyMode
+                  ? (difficultyButtonsPixelOk
+                    && staticTextRegion.coloredPixelCount >= 20
+                    && staticTextRegion.maxComponent >= 180)
+                  : (loadReplayMode
+                    ? loadReplayButtonsPixelOk
                   : (buttonRegion.coloredPixelCount >= 20
                     && buttonTextRegion.coloredPixelCount >= 20
                     && buttonTextRegion.maxComponent >= 180
-                    && extraButtonsPixelOk)));
+                    && extraButtonsPixelOk))));
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -17127,6 +17213,7 @@ async function rpc(command, payload = {}) {
           && extraButtonsProbeOk
           && singlePlayerButtonsProbeOk
           && loadReplayButtonsProbeOk
+          && difficultyButtonsProbeOk
           && staticTextProbeOk
           && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
           && probe?.calls?.drawIndexed >= expectedDrawIndexed
@@ -17164,6 +17251,7 @@ async function rpc(command, payload = {}) {
           extraButtonRegions,
           singlePlayerButtonRegions,
           loadReplayButtonRegions,
+          difficultyButtonRegions,
           staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,

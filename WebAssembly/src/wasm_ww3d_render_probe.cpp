@@ -322,6 +322,7 @@ enum MainMenuLayoutImageRepaintMode
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT,
 };
 
@@ -332,6 +333,8 @@ const char *main_menu_layout_image_repaint_mode_name(MainMenuLayoutImageRepaintM
 			return "staticTextSelectDifficulty";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN:
 			return "loadReplayDropdown";
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN:
+			return "difficultyDropdown";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN:
 			return "singlePlayerDropdown";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK:
@@ -378,6 +381,12 @@ bool main_menu_layout_image_repaint_is_load_replay()
 {
 	return g_ww3d_main_menu_layout_image_repaint_mode ==
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN;
+}
+
+bool main_menu_layout_image_repaint_is_difficulty()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN;
 }
 
 bool main_menu_layout_image_repaint_is_static_text()
@@ -475,6 +484,23 @@ constexpr const char *kMainMenuLoadReplayButtonLabels[kMainMenuLoadReplayButtonC
 };
 constexpr Int kMainMenuLoadReplayButtonY[kMainMenuLoadReplayButtonCount] = { 116, 156, 196 };
 constexpr Int kMainMenuLoadReplayButtonHeight[kMainMenuLoadReplayButtonCount] = { 35, 35, 36 };
+constexpr const char *kMainMenuDifficultyDropdownName = "MainMenu.wnd:MapBorder4";
+constexpr const char *kMainMenuDifficultyEarthMapName = "MainMenu.wnd:EarthMap4";
+constexpr std::size_t kMainMenuDifficultyButtonCount = 4;
+constexpr const char *kMainMenuDifficultyButtonNames[kMainMenuDifficultyButtonCount] = {
+	"MainMenu.wnd:ButtonEasy",
+	"MainMenu.wnd:ButtonMedium",
+	"MainMenu.wnd:ButtonHard",
+	"MainMenu.wnd:ButtonDiffBack",
+};
+constexpr const char *kMainMenuDifficultyButtonLabels[kMainMenuDifficultyButtonCount] = {
+	"GUI:EasyCaps",
+	"GUI:MediumDifficultyCaps",
+	"GUI:HardCaps",
+	"GUI:Back",
+};
+constexpr Int kMainMenuDifficultyButtonY[kMainMenuDifficultyButtonCount] = { 156, 196, 236, 276 };
+constexpr Int kMainMenuDifficultyButtonHeight[kMainMenuDifficultyButtonCount] = { 35, 35, 36, 36 };
 constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
@@ -7274,6 +7300,18 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool load_replay_buttons_text_display_string_bound = false;
 	bool load_replay_buttons_text_size_computed = false;
 	bool load_replay_buttons_visible = false;
+	bool difficulty_button_labels_exist = false;
+	bool difficulty_buttons_text_nonempty = false;
+	bool difficulty_dropdown_found = false;
+	bool difficulty_dropdown_callback_bound = false;
+	bool difficulty_earth_map_found = false;
+	bool difficulty_earth_map_callback_bound = false;
+	bool difficulty_buttons_found = false;
+	bool difficulty_buttons_callback_bound = false;
+	bool difficulty_buttons_images_bound = false;
+	bool difficulty_buttons_text_display_string_bound = false;
+	bool difficulty_buttons_text_size_computed = false;
+	bool difficulty_buttons_visible = false;
 	bool static_text_label_exists = false;
 	bool static_text_nonempty = false;
 	bool static_text_callback_bound = false;
@@ -7337,6 +7375,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool single_player_dropdown_hidden = false;
 	bool single_player_earth_map_hidden = false;
 	bool load_replay_dropdown_hidden = false;
+	bool difficulty_dropdown_hidden = false;
+	bool difficulty_earth_map_hidden = false;
 	bool static_text_hidden = false;
 	bool static_text_visibility_focused = false;
 	std::size_t mapped_image_count = 0;
@@ -7388,6 +7428,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	std::string extra_button_ascii[kMainMenuExtraButtonCount];
 	std::string single_player_button_ascii[kMainMenuSinglePlayerButtonCount];
 	std::string load_replay_button_ascii[kMainMenuLoadReplayButtonCount];
+	std::string difficulty_button_ascii[kMainMenuDifficultyButtonCount];
 	bool extra_button_label_exists[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_nonempty[kMainMenuExtraButtonCount] = {};
 	bool extra_button_found[kMainMenuExtraButtonCount] = {};
@@ -7412,6 +7453,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool load_replay_button_text_display_string_bound[kMainMenuLoadReplayButtonCount] = {};
 	bool load_replay_button_text_size_computed[kMainMenuLoadReplayButtonCount] = {};
 	bool load_replay_button_hidden[kMainMenuLoadReplayButtonCount] = {};
+	bool difficulty_button_label_exists[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_text_nonempty[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_found[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_callback_bound[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_images_bound[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_text_display_string_bound[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_text_size_computed[kMainMenuDifficultyButtonCount] = {};
+	bool difficulty_button_hidden[kMainMenuDifficultyButtonCount] = {};
 	Int button_left_image_width = 0;
 	Int button_left_image_height = 0;
 	Int button_middle_image_width = 0;
@@ -7458,6 +7507,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int load_replay_dropdown_y = 0;
 	Int load_replay_dropdown_width = 0;
 	Int load_replay_dropdown_height = 0;
+	Int difficulty_dropdown_x = 0;
+	Int difficulty_dropdown_y = 0;
+	Int difficulty_dropdown_width = 0;
+	Int difficulty_dropdown_height = 0;
+	Int difficulty_earth_map_x = 0;
+	Int difficulty_earth_map_y = 0;
+	Int difficulty_earth_map_width = 0;
+	Int difficulty_earth_map_height = 0;
 	Int static_text_x = 0;
 	Int static_text_y = 0;
 	Int static_text_window_width = 0;
@@ -7483,6 +7540,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int load_replay_button_text_length[kMainMenuLoadReplayButtonCount] = {};
 	Int load_replay_button_text_width[kMainMenuLoadReplayButtonCount] = {};
 	Int load_replay_button_text_height[kMainMenuLoadReplayButtonCount] = {};
+	Int difficulty_button_x[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_y[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_width[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_height[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_text_length[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_text_width[kMainMenuDifficultyButtonCount] = {};
+	Int difficulty_button_text_height[kMainMenuDifficultyButtonCount] = {};
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7502,6 +7566,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	GameWindow *single_player_buttons[kMainMenuSinglePlayerButtonCount] = {};
 	GameWindow *load_replay_dropdown = nullptr;
 	GameWindow *load_replay_buttons[kMainMenuLoadReplayButtonCount] = {};
+	GameWindow *difficulty_dropdown = nullptr;
+	GameWindow *difficulty_earth_map = nullptr;
+	GameWindow *difficulty_buttons[kMainMenuDifficultyButtonCount] = {};
 	GameWindow *static_text = nullptr;
 	const Image *target_image = nullptr;
 	const Image *ruler_image = nullptr;
@@ -7596,6 +7663,22 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 						load_replay_buttons_text_nonempty &&
 						load_replay_button_text_nonempty[i];
 				}
+				difficulty_button_labels_exist = true;
+				difficulty_buttons_text_nonempty = true;
+				for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+					UnicodeString fetched_difficulty_text =
+						game_text->fetch(
+							kMainMenuDifficultyButtonLabels[i],
+							&difficulty_button_label_exists[i]);
+					difficulty_button_text_nonempty[i] =
+						!fetched_difficulty_text.isEmpty();
+					difficulty_button_labels_exist =
+						difficulty_button_labels_exist &&
+						difficulty_button_label_exists[i];
+					difficulty_buttons_text_nonempty =
+						difficulty_buttons_text_nonempty &&
+						difficulty_button_text_nonempty[i];
+				}
 			}
 		}
 		runtime_ruler_texture_installed =
@@ -7633,6 +7716,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			(single_player_button_labels_exist && single_player_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_load_replay() ||
 			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_difficulty() ||
+			(difficulty_button_labels_exist && difficulty_buttons_text_nonempty &&
+				static_text_label_exists && static_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_static_text() ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready) {
@@ -7883,6 +7969,17 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				root,
 				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuLoadReplayButtonNames[i])));
 		}
+		difficulty_dropdown = manager->winGetWindowFromId(
+			root,
+			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuDifficultyDropdownName)));
+		difficulty_earth_map = manager->winGetWindowFromId(
+			root,
+			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuDifficultyEarthMapName)));
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			difficulty_buttons[i] = manager->winGetWindowFromId(
+				root,
+				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuDifficultyButtonNames[i])));
+		}
 		static_text = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(static_text_name)));
 		target_found = target != nullptr;
@@ -7907,6 +8004,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			load_replay_button_found[i] = load_replay_buttons[i] != nullptr;
 			load_replay_buttons_found =
 				load_replay_buttons_found && load_replay_button_found[i];
+		}
+		difficulty_dropdown_found = difficulty_dropdown != nullptr;
+		difficulty_earth_map_found = difficulty_earth_map != nullptr;
+		difficulty_buttons_found = true;
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			difficulty_button_found[i] = difficulty_buttons[i] != nullptr;
+			difficulty_buttons_found =
+				difficulty_buttons_found && difficulty_button_found[i];
 		}
 		static_text_found = static_text != nullptr;
 		root_callback_bound =
@@ -7977,6 +8082,31 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				load_replay_dropdown_y,
 				load_replay_dropdown_width,
 				load_replay_dropdown_height);
+		}
+		if (difficulty_dropdown != nullptr) {
+			difficulty_dropdown_callback_bound =
+				difficulty_dropdown->winGetSystemFunc() == PassSelectedButtonsToParentSystem;
+			difficulty_dropdown_hidden =
+				BitTest(difficulty_dropdown->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				difficulty_dropdown,
+				difficulty_dropdown_x,
+				difficulty_dropdown_y,
+				difficulty_dropdown_width,
+				difficulty_dropdown_height);
+		}
+		if (difficulty_earth_map != nullptr) {
+			difficulty_earth_map_callback_bound =
+				difficulty_earth_map->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				difficulty_earth_map->winGetSystemFunc() == PassSelectedButtonsToParentSystem;
+			difficulty_earth_map_hidden =
+				BitTest(difficulty_earth_map->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				difficulty_earth_map,
+				difficulty_earth_map_x,
+				difficulty_earth_map_y,
+				difficulty_earth_map_width,
+				difficulty_earth_map_height);
 		}
 		if (single_player_dropdown != nullptr) {
 			single_player_dropdown_callback_bound =
@@ -8204,6 +8334,76 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				load_replay_buttons_text_size_computed &&
 				load_replay_button_text_size_computed[i];
 		}
+		difficulty_buttons_callback_bound = true;
+		difficulty_buttons_images_bound = true;
+		difficulty_buttons_text_display_string_bound = true;
+		difficulty_buttons_text_size_computed = true;
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			GameWindow *difficulty_button = difficulty_buttons[i];
+			if (difficulty_button == nullptr) {
+				difficulty_buttons_callback_bound = false;
+				difficulty_buttons_images_bound = false;
+				difficulty_buttons_text_display_string_bound = false;
+				difficulty_buttons_text_size_computed = false;
+				continue;
+			}
+			difficulty_button_callback_bound[i] =
+				difficulty_button->winGetDrawFunc() == W3DGadgetPushButtonImageDraw &&
+				difficulty_button->winGetSystemFunc() == GadgetPushButtonSystem &&
+				difficulty_button->winGetInputFunc() == GadgetPushButtonInput;
+			const Image *difficulty_left_image =
+				GadgetButtonGetLeftEnabledImage(difficulty_button);
+			const Image *difficulty_middle_image =
+				GadgetButtonGetMiddleEnabledImage(difficulty_button);
+			const Image *difficulty_right_image =
+				GadgetButtonGetRightEnabledImage(difficulty_button);
+			difficulty_button_images_bound[i] =
+				difficulty_left_image != nullptr &&
+				difficulty_middle_image != nullptr &&
+				difficulty_right_image != nullptr &&
+				difficulty_left_image == button_left_image &&
+				difficulty_middle_image == button_middle_image &&
+				difficulty_right_image == button_right_image;
+			DisplayString *difficulty_text =
+				difficulty_button->winGetInstanceData()->getTextDisplayString();
+			difficulty_button_text_display_string_bound[i] =
+				difficulty_text != nullptr &&
+				difficulty_text->getTextLength() > 0;
+			if (difficulty_button_text_display_string_bound[i]) {
+				difficulty_button_text_length[i] = difficulty_text->getTextLength();
+				difficulty_text->getSize(
+					&difficulty_button_text_width[i],
+					&difficulty_button_text_height[i]);
+				difficulty_button_text_size_computed[i] =
+					difficulty_button_text_width[i] > 0 &&
+					difficulty_button_text_height[i] > 0;
+				AsciiString ascii_text;
+				ascii_text.translate(difficulty_text->getText());
+				difficulty_button_ascii[i] =
+					ascii_text.str() != nullptr ? ascii_text.str() : "";
+			}
+			difficulty_button_hidden[i] =
+				BitTest(difficulty_button->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				difficulty_button,
+				difficulty_button_x[i],
+				difficulty_button_y[i],
+				difficulty_button_width[i],
+				difficulty_button_height[i]);
+			difficulty_buttons_callback_bound =
+				difficulty_buttons_callback_bound &&
+				difficulty_button_callback_bound[i];
+			difficulty_buttons_images_bound =
+				difficulty_buttons_images_bound &&
+				difficulty_button_images_bound[i];
+			difficulty_buttons_text_display_string_bound =
+				difficulty_buttons_text_display_string_bound &&
+				difficulty_button_text_display_string_bound[i] &&
+				difficulty_button_ascii[i].length() > 0;
+			difficulty_buttons_text_size_computed =
+				difficulty_buttons_text_size_computed &&
+				difficulty_button_text_size_computed[i];
+		}
 		if (static_text != nullptr) {
 			static_text_callback_bound =
 				static_text->winGetDrawFunc() == W3DGadgetStaticTextDraw &&
@@ -8253,6 +8453,15 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					single_player_buttons_found && single_player_buttons_callback_bound &&
 					single_player_buttons_images_bound &&
 					single_player_buttons_text_display_string_bound) :
+			(main_menu_layout_image_repaint_is_difficulty() ?
+				(difficulty_dropdown_found && difficulty_dropdown_callback_bound &&
+					difficulty_earth_map_found && difficulty_earth_map_callback_bound &&
+					difficulty_buttons_found && difficulty_buttons_callback_bound &&
+					difficulty_buttons_images_bound &&
+					difficulty_buttons_text_display_string_bound &&
+					static_text_found && static_text_callback_bound &&
+					static_text_user_data_bound && static_text_display_string_bound &&
+					static_text_ascii.length() > 0) :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(load_replay_dropdown_found && load_replay_dropdown_callback_bound &&
 					load_replay_buttons_found && load_replay_buttons_callback_bound &&
@@ -8263,7 +8472,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_text_ascii.length() > 0 &&
 					extra_buttons_found && extra_buttons_callback_bound &&
 					extra_buttons_images_bound &&
-					extra_buttons_text_display_string_bound)));
+					extra_buttons_text_display_string_bound))));
 
 	if (root_found && target_found && ruler_found && focused_window_ready &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
@@ -8276,6 +8485,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		} else if (main_menu_layout_image_repaint_is_single_player()) {
 			for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
 				repaint_targets.push_back(single_player_buttons[i]);
+			}
+		} else if (main_menu_layout_image_repaint_is_difficulty()) {
+			repaint_targets.push_back(static_text);
+			for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+				repaint_targets.push_back(difficulty_buttons[i]);
 			}
 		} else if (main_menu_layout_image_repaint_is_load_replay()) {
 			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
@@ -8296,6 +8510,17 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			for (std::size_t i = 0; i < kMainMenuSinglePlayerButtonCount; ++i) {
 				if (single_player_buttons[i] != nullptr) {
 					show_window_and_ancestors(single_player_buttons[i]);
+				}
+			}
+		}
+		if (main_menu_layout_image_repaint_is_difficulty()) {
+			if (static_text != nullptr) {
+				show_window_and_ancestors(static_text);
+				static_text_visibility_focused = true;
+			}
+			for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+				if (difficulty_buttons[i] != nullptr) {
+					show_window_and_ancestors(difficulty_buttons[i]);
 				}
 			}
 		}
@@ -8342,6 +8567,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			load_replay_buttons_visible =
 				load_replay_buttons_visible && !load_replay_button_hidden[i];
 		}
+		difficulty_dropdown_hidden =
+			difficulty_dropdown != nullptr ?
+				BitTest(difficulty_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		difficulty_earth_map_hidden =
+			difficulty_earth_map != nullptr ?
+				BitTest(difficulty_earth_map->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		difficulty_buttons_visible = true;
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			difficulty_button_hidden[i] =
+				difficulty_buttons[i] != nullptr ?
+					BitTest(difficulty_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+			difficulty_buttons_visible =
+				difficulty_buttons_visible && !difficulty_button_hidden[i];
+		}
 		static_text_hidden =
 			static_text != nullptr ? BitTest(static_text->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
@@ -8352,20 +8591,27 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const Int expected_image_draws =
 		main_menu_layout_image_repaint_is_static_text() ? 2 :
 			(main_menu_layout_image_repaint_is_single_player() ? 8 :
-				(main_menu_layout_image_repaint_is_load_replay() ? 5 : 6));
+			(main_menu_layout_image_repaint_is_difficulty() ? 6 :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5 : 6)));
 	const UnsignedInt expected_indexed_draws =
 		main_menu_layout_image_repaint_is_static_text() ? 3u :
 			(main_menu_layout_image_repaint_is_single_player() ? 8u :
-				(main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u));
+			(main_menu_layout_image_repaint_is_difficulty() ? 7u :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u)));
 	const bool focused_window_visible =
 		main_menu_layout_image_repaint_is_static_text() ? !static_text_hidden :
 			(main_menu_layout_image_repaint_is_single_player() ?
 				(!single_player_dropdown_hidden &&
 					!single_player_earth_map_hidden &&
 					single_player_buttons_visible) :
+			(main_menu_layout_image_repaint_is_difficulty() ?
+				(!difficulty_dropdown_hidden &&
+					!difficulty_earth_map_hidden &&
+					difficulty_buttons_visible &&
+					!static_text_hidden) :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(!load_replay_dropdown_hidden && load_replay_buttons_visible) :
-				(!button_hidden && extra_buttons_visible)));
+				(!button_hidden && extra_buttons_visible))));
 
 	if (children_pruned && !target_hidden && !ruler_hidden && focused_window_visible) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
@@ -8456,6 +8702,27 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			load_replay_buttons_text_size_computed &&
 			load_replay_button_text_size_computed[i];
 	}
+	for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+		if (difficulty_buttons[i] != nullptr &&
+			difficulty_button_text_display_string_bound[i]) {
+			DisplayString *difficulty_text =
+				difficulty_buttons[i]->winGetInstanceData()->getTextDisplayString();
+			if (difficulty_text != nullptr) {
+				difficulty_text->getSize(
+					&difficulty_button_text_width[i],
+					&difficulty_button_text_height[i]);
+				difficulty_button_text_size_computed[i] =
+					difficulty_button_text_width[i] > 0 &&
+					difficulty_button_text_height[i] > 0;
+			}
+		}
+	}
+	difficulty_buttons_text_size_computed = true;
+	for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+		difficulty_buttons_text_size_computed =
+			difficulty_buttons_text_size_computed &&
+			difficulty_button_text_size_computed[i];
+	}
 
 	TextureClass *loaded_texture =
 		display_storage.render != nullptr ? display_storage.render->Peek_Texture() : nullptr;
@@ -8510,6 +8777,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		load_replay_dropdown = nullptr;
 		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
 			load_replay_buttons[i] = nullptr;
+		}
+		difficulty_dropdown = nullptr;
+		difficulty_earth_map = nullptr;
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			difficulty_buttons[i] = nullptr;
 		}
 		static_text = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
@@ -8663,6 +8935,59 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				load_replay_button_height[i] == kMainMenuLoadReplayButtonHeight[i];
 		}
 	}
+	bool difficulty_buttons_focus_ok = !main_menu_layout_image_repaint_is_difficulty();
+	if (main_menu_layout_image_repaint_is_difficulty()) {
+		difficulty_buttons_focus_ok =
+			difficulty_button_labels_exist &&
+			difficulty_buttons_text_nonempty &&
+			difficulty_dropdown_found &&
+			difficulty_dropdown_callback_bound &&
+			!difficulty_dropdown_hidden &&
+			difficulty_dropdown_x == 532 &&
+			difficulty_dropdown_y == 108 &&
+			difficulty_dropdown_width == 224 &&
+			difficulty_dropdown_height == 212 &&
+			difficulty_earth_map_found &&
+			difficulty_earth_map_callback_bound &&
+			!difficulty_earth_map_hidden &&
+			difficulty_earth_map_x == 532 &&
+			difficulty_earth_map_y == 108 &&
+			difficulty_earth_map_width == 224 &&
+			difficulty_earth_map_height == 212 &&
+			difficulty_buttons_found &&
+			difficulty_buttons_callback_bound &&
+			difficulty_buttons_images_bound &&
+			difficulty_buttons_text_display_string_bound &&
+			difficulty_buttons_visible &&
+			static_text_label_exists &&
+			static_text_nonempty &&
+			static_text_found &&
+			static_text_callback_bound &&
+			static_text_initial_hidden &&
+			static_text_visibility_focused &&
+			static_text_user_data_bound &&
+			static_text_display_string_bound &&
+			static_text_size_computed &&
+			static_text_ascii.length() > 0 &&
+			!static_text_hidden &&
+			static_text_x == 540 &&
+			static_text_y == 116 &&
+			static_text_window_width == 216 &&
+			static_text_window_height == 36;
+		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+			difficulty_buttons_focus_ok =
+				difficulty_buttons_focus_ok &&
+				difficulty_button_label_exists[i] &&
+				difficulty_button_text_nonempty[i] &&
+				difficulty_button_text_size_computed[i] &&
+				difficulty_button_ascii[i].length() > 0 &&
+				!difficulty_button_hidden[i] &&
+				difficulty_button_x[i] == 540 &&
+				difficulty_button_y[i] == kMainMenuDifficultyButtonY[i] &&
+				difficulty_button_width[i] == 208 &&
+				difficulty_button_height[i] == kMainMenuDifficultyButtonHeight[i];
+		}
+	}
 	const bool button_focus_ok =
 		!main_menu_layout_image_repaint_is_button_stack() ||
 		(button_found &&
@@ -8713,6 +9038,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			(single_player_button_labels_exist && single_player_buttons_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_load_replay() ||
 			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_difficulty() ||
+			(difficulty_button_labels_exist && difficulty_buttons_text_nonempty &&
+				static_text_label_exists && static_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_static_text() ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready &&
@@ -8775,6 +9103,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		extra_buttons_focus_ok &&
 		single_player_buttons_focus_ok &&
 		load_replay_buttons_focus_ok &&
+		difficulty_buttons_focus_ok &&
 		static_text_focus_ok &&
 		!target_hidden &&
 		!ruler_hidden &&
@@ -8865,6 +9194,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const std::string static_text_ascii_json = json_escape(static_text_ascii);
 	const std::string load_replay_dropdown_name_json =
 		json_escape(kMainMenuLoadReplayDropdownName);
+	const std::string difficulty_dropdown_name_json =
+		json_escape(kMainMenuDifficultyDropdownName);
+	const std::string difficulty_earth_map_name_json =
+		json_escape(kMainMenuDifficultyEarthMapName);
 	const std::string single_player_dropdown_name_json =
 		json_escape(kMainMenuSinglePlayerDropdownName);
 	const std::string single_player_earth_map_name_json =
@@ -8998,6 +9331,48 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		load_replay_buttons_json += load_replay_button_buffer;
 	}
 	load_replay_buttons_json += "]";
+	std::string difficulty_buttons_json = "[";
+	for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
+		if (i > 0) {
+			difficulty_buttons_json += ",";
+		}
+		const std::string name_json = json_escape(kMainMenuDifficultyButtonNames[i]);
+		const std::string label_json = json_escape(kMainMenuDifficultyButtonLabels[i]);
+		const std::string ascii_json = json_escape(difficulty_button_ascii[i]);
+		char difficulty_button_buffer[1400];
+		std::snprintf(
+			difficulty_button_buffer,
+			sizeof(difficulty_button_buffer),
+			"{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+			"\"width\":%d,\"height\":%d,"
+			"\"systemFunc\":\"GadgetPushButtonSystem\","
+			"\"inputFunc\":\"GadgetPushButtonInput\","
+			"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
+			"\"hidden\":%s,\"labelExists\":%s,\"textNonEmpty\":%s,"
+			"\"imagesBound\":%s,"
+			"\"images\":[\"%s\",\"%s\",\"%s\"],"
+			"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
+			"\"length\":%d,\"width\":%d,\"height\":%d}}",
+			name_json.c_str(),
+			difficulty_button_x[i],
+			difficulty_button_y[i],
+			difficulty_button_width[i],
+			difficulty_button_height[i],
+			bool_json(difficulty_button_hidden[i]),
+			bool_json(difficulty_button_label_exists[i]),
+			bool_json(difficulty_button_text_nonempty[i]),
+			bool_json(difficulty_button_images_bound[i]),
+			button_left_image_name_json.c_str(),
+			button_middle_image_name_json.c_str(),
+			button_right_image_name_json.c_str(),
+			label_json.c_str(),
+			ascii_json.c_str(),
+			difficulty_button_text_length[i],
+			difficulty_button_text_width[i],
+			difficulty_button_text_height[i]);
+		difficulty_buttons_json += difficulty_button_buffer;
+	}
+	difficulty_buttons_json += "]";
 	char single_player_results_buffer[2400];
 	std::snprintf(
 		single_player_results_buffer,
@@ -9040,10 +9415,28 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(single_player_button_labels_exist),
 		bool_json(single_player_buttons_text_nonempty));
 	const std::string single_player_game_text_json = single_player_game_text_buffer;
+	char difficulty_results_buffer[400];
+	std::snprintf(
+		difficulty_results_buffer,
+		sizeof(difficulty_results_buffer),
+		"\"difficultyButtonLabelsExist\":%s,"
+		"\"difficultyButtonTextNonEmpty\":%s,",
+		bool_json(difficulty_button_labels_exist),
+		bool_json(difficulty_buttons_text_nonempty));
+	const std::string difficulty_results_json = difficulty_results_buffer;
+	char difficulty_game_text_buffer[400];
+	std::snprintf(
+		difficulty_game_text_buffer,
+		sizeof(difficulty_game_text_buffer),
+		"\"difficultyButtonLabelsExist\":%s,"
+		"\"difficultyButtonTextNonEmpty\":%s,",
+		bool_json(difficulty_button_labels_exist),
+		bool_json(difficulty_buttons_text_nonempty));
+	const std::string difficulty_game_text_json = difficulty_game_text_buffer;
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[70000];
+	char buffer[86000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -9076,6 +9469,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"MainMenu.wnd:ButtonReplay -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonLoadReplayBack -> W3DGadgetPushButtonImageDraw\","
 		"\"GameText::fetch(load-replay dropdown button labels) -> W3DDisplayString::draw button labels\","
+		"\"MainMenu.wnd:MapBorder4 -> PassSelectedButtonsToParentSystem\","
+		"\"MainMenu.wnd:EarthMap4 -> PassSelectedButtonsToParentSystem\","
+		"\"MainMenu.wnd:ButtonEasy -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonMedium -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonHard -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonDiffBack -> W3DGadgetPushButtonImageDraw\","
+		"\"GameText::fetch(difficulty dropdown button labels) -> W3DDisplayString::draw button labels\","
 		"\"MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw\","
 		"\"GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
@@ -9101,6 +9501,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"%s"
 		"\"loadReplayButtonLabelsExist\":%s,"
 		"\"loadReplayButtonTextNonEmpty\":%s,"
+		"%s"
 		"\"staticTextLabelExists\":%s,\"staticTextNonEmpty\":%s,"
 		"\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
@@ -9124,6 +9525,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"extraButtonsFound\":%s,"
 		"\"loadReplayDropdownFound\":%s,"
 		"\"loadReplayButtonsFound\":%s,"
+		"\"difficultyDropdownFound\":%s,"
+		"\"difficultyEarthMapFound\":%s,"
+		"\"difficultyButtonsFound\":%s,"
 		"\"staticTextFound\":%s,"
 		"\"rootCallbackBound\":%s,"
 		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
@@ -9131,17 +9535,23 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"extraButtonsCallbackBound\":%s,"
 		"\"loadReplayDropdownCallbackBound\":%s,"
 		"\"loadReplayButtonsCallbackBound\":%s,"
+		"\"difficultyDropdownCallbackBound\":%s,"
+		"\"difficultyEarthMapCallbackBound\":%s,"
+		"\"difficultyButtonsCallbackBound\":%s,"
 		"\"staticTextCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
 		"\"extraButtonsImagesBound\":%s,"
 		"\"loadReplayButtonsImagesBound\":%s,"
+		"\"difficultyButtonsImagesBound\":%s,"
 		"\"buttonTextDisplayStringBound\":%s,"
 		"\"buttonTextSizeComputed\":%s,"
 		"\"extraButtonsTextDisplayStringBound\":%s,"
 		"\"extraButtonsTextSizeComputed\":%s,"
 		"\"loadReplayButtonsTextDisplayStringBound\":%s,"
 		"\"loadReplayButtonsTextSizeComputed\":%s,"
+		"\"difficultyButtonsTextDisplayStringBound\":%s,"
+		"\"difficultyButtonsTextSizeComputed\":%s,"
 		"\"staticTextUserDataBound\":%s,"
 		"\"staticTextDisplayStringBound\":%s,"
 		"\"staticTextSizeComputed\":%s,"
@@ -9149,6 +9559,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"extraButtonsVisible\":%s,"
 		"\"loadReplayDropdownHidden\":%s,"
 		"\"loadReplayButtonsVisible\":%s,"
+		"\"difficultyDropdownHidden\":%s,"
+		"\"difficultyEarthMapHidden\":%s,"
+		"\"difficultyButtonsVisible\":%s,"
 		"\"staticTextInitialHidden\":%s,\"staticTextHidden\":%s,"
 		"\"staticTextVisibilityFocused\":%s,"
 		"\"childrenPruned\":%s,"
@@ -9194,6 +9607,16 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
 		"\"hidden\":%s},"
 		"\"loadReplayButtons\":%s,"
+		"\"difficultyDropdown\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
+		"\"hidden\":%s},"
+		"\"difficultyEarthMap\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
+		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+		"\"hidden\":%s},"
+		"\"difficultyButtons\":%s,"
 		"\"staticText\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GadgetStaticTextSystem\","
@@ -9230,6 +9653,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"%s"
 		"\"loadReplayButtonLabelsExist\":%s,"
 		"\"loadReplayButtonTextNonEmpty\":%s,"
+		"%s"
 		"\"staticTextLabelExists\":%s,"
 		"\"staticTextNonEmpty\":%s},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
@@ -9303,6 +9727,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		single_player_results_json.c_str(),
 		bool_json(load_replay_button_labels_exist),
 		bool_json(load_replay_buttons_text_nonempty),
+		difficulty_results_json.c_str(),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		bool_json(name_keys_ready),
@@ -9345,6 +9770,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(extra_buttons_found),
 		bool_json(load_replay_dropdown_found),
 		bool_json(load_replay_buttons_found),
+		bool_json(difficulty_dropdown_found),
+		bool_json(difficulty_earth_map_found),
+		bool_json(difficulty_buttons_found),
 		bool_json(static_text_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
@@ -9353,18 +9781,24 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(extra_buttons_callback_bound),
 		bool_json(load_replay_dropdown_callback_bound),
 		bool_json(load_replay_buttons_callback_bound),
+		bool_json(difficulty_dropdown_callback_bound),
+		bool_json(difficulty_earth_map_callback_bound),
+		bool_json(difficulty_buttons_callback_bound),
 		bool_json(static_text_callback_bound),
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
 		bool_json(button_images_bound),
 		bool_json(extra_buttons_images_bound),
 		bool_json(load_replay_buttons_images_bound),
+		bool_json(difficulty_buttons_images_bound),
 		bool_json(button_text_display_string_bound),
 		bool_json(button_text_size_computed),
 		bool_json(extra_buttons_text_display_string_bound),
 		bool_json(extra_buttons_text_size_computed),
 		bool_json(load_replay_buttons_text_display_string_bound),
 		bool_json(load_replay_buttons_text_size_computed),
+		bool_json(difficulty_buttons_text_display_string_bound),
+		bool_json(difficulty_buttons_text_size_computed),
 		bool_json(static_text_user_data_bound),
 		bool_json(static_text_display_string_bound),
 		bool_json(static_text_size_computed),
@@ -9374,6 +9808,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(extra_buttons_visible),
 		bool_json(load_replay_dropdown_hidden),
 		bool_json(load_replay_buttons_visible),
+		bool_json(difficulty_dropdown_hidden),
+		bool_json(difficulty_earth_map_hidden),
+		bool_json(difficulty_buttons_visible),
 		bool_json(static_text_initial_hidden),
 		bool_json(static_text_hidden),
 		bool_json(static_text_visibility_focused),
@@ -9439,6 +9876,19 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		load_replay_dropdown_height,
 		bool_json(load_replay_dropdown_hidden),
 		load_replay_buttons_json.c_str(),
+		difficulty_dropdown_name_json.c_str(),
+		difficulty_dropdown_x,
+		difficulty_dropdown_y,
+		difficulty_dropdown_width,
+		difficulty_dropdown_height,
+		bool_json(difficulty_dropdown_hidden),
+		difficulty_earth_map_name_json.c_str(),
+		difficulty_earth_map_x,
+		difficulty_earth_map_y,
+		difficulty_earth_map_width,
+		difficulty_earth_map_height,
+		bool_json(difficulty_earth_map_hidden),
+		difficulty_buttons_json.c_str(),
 		static_text_window_name_json.c_str(),
 		static_text_x,
 		static_text_y,
@@ -9505,6 +9955,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		single_player_game_text_json.c_str(),
 		bool_json(load_replay_button_labels_exist),
 		bool_json(load_replay_buttons_text_nonempty),
+		difficulty_game_text_json.c_str(),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		texture_id,
@@ -9598,6 +10049,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_load_repla
 {
 	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint()
+{
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_static_text_repaint()
