@@ -10005,18 +10005,18 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 	static_assert(sizeof(TexturedQuadVertex) == 44, "TexturedQuadVertex must match XYZNDUV2 stride");
 
 	const TexturedQuadVertex base_vertices[4] = {
-		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 0.0f, 0.0f, 0.0f },
-		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 0.0f, 1.0f, 0.0f },
-		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 1.0f, 1.0f, 1.0f },
-		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ -0.75f,  0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.0f, 0.5f, 0.0f, 0.5f },
+		{  0.75f,  0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 1.0f, 0.5f, 1.0f, 0.5f },
+		{  0.0f,   0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.5f, 1.0f, 0.5f, 1.0f },
+		{  0.0f,  -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xffff0000UL, 0.5f, 0.0f, 0.5f, 0.0f },
 	};
 	const TexturedQuadVertex biased_vertices[4] = {
-		{ -0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 0.0f, 0.0f, 0.0f },
-		{  0.75f, -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 0.0f, 1.0f, 0.0f },
-		{  0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 1.0f, 1.0f, 1.0f },
-		{ -0.75f,  0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 1.0f, 0.0f, 1.0f },
+		{ -0.75f,  0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.0f, 0.5f, 0.0f, 0.5f },
+		{  0.75f,  0.0f,  0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 1.0f, 0.5f, 1.0f, 0.5f },
+		{  0.0f,   0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.5f, 1.0f, 0.5f, 1.0f },
+		{  0.0f,  -0.75f, 0.0f, 0.0f, 0.0f, 1.0f, 0xff00ff00UL, 0.5f, 0.0f, 0.5f, 0.0f },
 	};
-	const WORD indices[6] = { 0, 1, 2, 0, 2, 3 };
+	const WORD indices[6] = { 0, 1, 2, 2, 3, 0 };
 	const DWORD full_color_write =
 		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
@@ -10045,6 +10045,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 	HRESULT set_stream_biased_result = E_FAIL;
 	HRESULT set_base_z_bias_result = E_FAIL;
 	HRESULT set_biased_z_bias_result = E_FAIL;
+	HRESULT set_base_fill_mode_result = E_FAIL;
+	HRESULT set_biased_fill_mode_result = E_FAIL;
 	HRESULT base_draw_result = E_FAIL;
 	HRESULT biased_draw_result = E_FAIL;
 
@@ -10122,17 +10124,20 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 			index_buffer != nullptr) {
 		set_indices_result = device->SetIndices(index_buffer, 0);
 		set_base_z_bias_result = device->SetRenderState(D3DRS_ZBIAS, base_z_bias);
+		set_base_fill_mode_result = device->SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID);
 		set_stream_base_result = device->SetStreamSource(0, base_vertex_buffer, sizeof(TexturedQuadVertex));
 		base_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
 
 		device->SetRenderState(D3DRS_ZFUNC, D3DCMP_LESS);
 		set_biased_z_bias_result = device->SetRenderState(D3DRS_ZBIAS, biased_z_bias);
+		set_biased_fill_mode_result = device->SetRenderState(D3DRS_FILLMODE, D3DFILL_WIREFRAME);
 		set_stream_biased_result = device->SetStreamSource(0, biased_vertex_buffer, sizeof(TexturedQuadVertex));
 		biased_draw_result = device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, 4, 0, 2);
 
 		ok = ok && SUCCEEDED(set_indices_result) && SUCCEEDED(set_base_z_bias_result) &&
-			SUCCEEDED(set_stream_base_result) && SUCCEEDED(base_draw_result) &&
-			SUCCEEDED(set_biased_z_bias_result) && SUCCEEDED(set_stream_biased_result) &&
+			SUCCEEDED(set_base_fill_mode_result) && SUCCEEDED(set_stream_base_result) &&
+			SUCCEEDED(base_draw_result) && SUCCEEDED(set_biased_z_bias_result) &&
+			SUCCEEDED(set_biased_fill_mode_result) && SUCCEEDED(set_stream_biased_result) &&
 			SUCCEEDED(biased_draw_result);
 	}
 
@@ -10174,6 +10179,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 		state->last_draw_render_state.z_write_enable == TRUE &&
 		state->last_draw_render_state.z_func == D3DCMP_LESS &&
 		state->last_draw_render_state.z_bias == biased_z_bias &&
+		state->last_draw_render_state.fill_mode == D3DFILL_WIREFRAME &&
 		state->last_draw_render_state.cull_mode == D3DCULL_NONE &&
 		state->last_draw_render_state.color_write_enable == full_color_write;
 
@@ -10186,13 +10192,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 		"\"biasedVertexCreate\":%ld,\"biasedVertexLock\":%ld,\"biasedVertexUnlock\":%ld,"
 		"\"indexCreate\":%ld,\"indexLock\":%ld,\"indexUnlock\":%ld,"
 		"\"setIndices\":%ld,\"setStreamBase\":%ld,\"setStreamBiased\":%ld,"
-		"\"setBaseZBias\":%ld,\"setBiasedZBias\":%ld,\"baseDraw\":%ld,\"biasedDraw\":%ld},"
+		"\"setBaseZBias\":%ld,\"setBiasedZBias\":%ld,"
+		"\"setBaseFillMode\":%ld,\"setBiasedFillMode\":%ld,"
+		"\"baseDraw\":%ld,\"biasedDraw\":%ld},"
 		"\"calls\":{\"direct3DCreate\":%u,\"createDevice\":%u,\"clear\":%u,"
 		"\"createVertexBuffer\":%u,\"createIndexBuffer\":%u,"
 		"\"bufferLock\":%u,\"bufferUnlock\":%u,"
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
 		"\"browserBufferRelease\":%u,\"setRenderState\":%u,\"drawIndexed\":%u},"
 		"\"zBias\":{\"base\":%lu,\"biased\":%lu,\"captured\":%lu},"
+		"\"fillMode\":{\"solid\":%lu,\"wireframe\":%lu,\"captured\":%lu},"
 		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
 		"\"vertexStride\":%u,\"zEnable\":%lu,\"zWriteEnable\":%lu,\"zFunc\":%lu,"
 		"\"colorWriteEnable\":%lu},"
@@ -10214,6 +10223,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 		static_cast<long>(set_stream_biased_result),
 		static_cast<long>(set_base_z_bias_result),
 		static_cast<long>(set_biased_z_bias_result),
+		static_cast<long>(set_base_fill_mode_result),
+		static_cast<long>(set_biased_fill_mode_result),
 		static_cast<long>(base_draw_result),
 		static_cast<long>(biased_draw_result),
 		state != nullptr ? state->direct3d_create_calls : 0,
@@ -10231,6 +10242,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_z_bias()
 		static_cast<unsigned long>(base_z_bias),
 		static_cast<unsigned long>(biased_z_bias),
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.z_bias) : 0,
+		static_cast<unsigned long>(D3DFILL_SOLID),
+		static_cast<unsigned long>(D3DFILL_WIREFRAME),
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.fill_mode) : 0,
 		state != nullptr ? static_cast<unsigned int>(state->last_draw_primitive_type) : 0,
 		state != nullptr ? state->last_draw_vertex_count : 0,
 		state != nullptr ? state->last_draw_primitive_count : 0,

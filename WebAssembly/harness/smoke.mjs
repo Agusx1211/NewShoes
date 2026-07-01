@@ -4041,6 +4041,7 @@ try {
       || d3d8ZBiasResult.probe?.source !== "browser_d3d8_z_bias_probe"
       || d3d8ZBiasResult.probe?.calls?.drawIndexed !== 2
       || d3d8ZBiasResult.browserProbe?.renderState?.zBias !== 8
+      || d3d8ZBiasResult.browserProbe?.renderState?.fillMode !== 2
       || d3d8ZBiasResult.browserProbe?.renderState?.zFunc !== 2
       || d3d8ZBiasResult.browserProbe?.renderState?.zEnable !== 1
       || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.enabled !== true
@@ -4048,6 +4049,16 @@ try {
       || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.raw !== 8
       || d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.clamped !== 8
       || !(d3d8ZBiasResult.browserProbe?.appliedRenderState?.depth?.bias?.ndc > 0)
+      || d3d8ZBiasResult.browserProbe?.appliedRenderState?.fillMode?.mode !== 2
+      || d3d8ZBiasResult.browserProbe?.fillMode?.mode !== 2
+      || d3d8ZBiasResult.browserProbe?.fillMode?.wireframe !== true
+      || d3d8ZBiasResult.browserProbe?.fillMode?.temporaryIndexBuffer !== true
+      || d3d8ZBiasResult.browserProbe?.fillMode?.glPrimitiveName !== "lines"
+      || d3d8ZBiasResult.browserProbe?.fillMode?.generatedIndexCount !== 12
+      || d3d8ZBiasResult.browserProbe?.fillMode?.sourceTriangleCount !== 2
+      || d3d8ZBiasResult.browserProbe?.fillMode?.emittedTriangleCount !== 2
+      || d3d8ZBiasResult.browserProbe?.fillMode?.culledTriangleCount !== 0
+      || d3d8ZBiasResult.browserProbe?.fillMode?.drawIndexCount !== 12
       || d3d8ZBiasResult.browserProbe?.centerPixel?.join(",") !== "0,255,0,255"
       || d3d8ZBiasResult.centerPixelOk !== true) {
     throw new Error(`D3D8 z-bias probe failed: ${JSON.stringify(d3d8ZBiasResult)}`);

@@ -674,13 +674,12 @@ flow below.
       parity proof, especially original-runtime emissive/`COLOR2` paths, and
       other fixed-function lighting/render-state variants) and other W3D draw
       states → GL/shader state.
-- [ ] Refine browser D3D8 wireframe emulation to match D3D depth-bias behavior
-      before relying on W3D extra-pass selection/outline rendering in real
-      scenes. The browser bridge now applies D3D CW/CCW face culling before
-      expanding triangles into GL line indices, including triangle-strip winding
-      parity and fully culled zero-count draws, and `harness/smoke.mjs` gates
-      one emitted / one culled wireframe triangle. Remaining work is depth-bias
-      parity for those W3D extra passes in real scenes.
+- [ ] Drive original W3D extra-pass selection/outline rendering in a real scene
+      through the harness now that browser wireframe culling and depth-bias
+      parity are covered at the D3D8 bridge level. Use a real scene/RPC state
+      check plus screenshot to prove the W3D `EXTRA_PASS_LINE` /
+      `EXTRA_PASS_CLEAR_LINE` paths render their biased wireframe overlays on
+      top of the depth prepass.
 - [ ] Fixed-function pipeline emulation via generated GLSL ES shaders.
 - [ ] Port/translate `wwshade` shaders + `W3DShaderManager` to GLSL ES.
 - [ ] Matrix/transform stack and viewport/camera setup.

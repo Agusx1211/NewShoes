@@ -4034,6 +4034,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the expected WebGL pixel. Verified with
       `npm --prefix WebAssembly run build:wasm`, a focused Playwright
       `d3d8FillMode` RPC check, and `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Prove browser D3D8 wireframe depth-bias parity for W3D-style overlay
+      passes. The existing `cnc_port_probe_d3d8_z_bias` path now renders a red
+      solid depth prepass, switches to `D3DFILL_WIREFRAME` with `D3DRS_ZBIAS=8`
+      and `D3DCMP_LESS`, and draws the same-depth green indexed geometry. The
+      browser RPC now requires the final draw to carry the biased depth state,
+      expand to 12 generated GL line indices, and turn the center pixel green,
+      proving the shader depth-bias path applies to wireframe line draws.
+      Verified with `npm --prefix WebAssembly run build:wasm` and a focused
+      Playwright `d3d8ZBias` RPC check, and
+      `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

@@ -12938,6 +12938,8 @@ async function rpc(command, payload = {}) {
         const renderState = browserProbe?.renderState ?? {};
         const depth = browserProbe?.appliedRenderState?.depth ?? {};
         const depthBias = depth.bias ?? {};
+        const appliedFillMode = browserProbe?.appliedRenderState?.fillMode ?? {};
+        const fillMode = browserProbe?.fillMode ?? {};
         const caseOk = Boolean(probe.ok)
           && gl?.getContextAttributes()?.depth === true
           && browserProbe?.source === "browser_d3d8_draw_indexed"
@@ -12946,6 +12948,7 @@ async function rpc(command, payload = {}) {
           && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
           && browserProbe?.indexCount === 6
           && renderState.zBias === probe.zBias?.biased
+          && renderState.fillMode === D3DFILL_WIREFRAME
           && renderState.zFunc === D3DCMP_LESS
           && renderState.zEnable === D3DZB_TRUE
           && renderState.zWriteEnable === 1
@@ -12956,6 +12959,19 @@ async function rpc(command, payload = {}) {
           && depthBias.clamped === probe.zBias?.biased
           && typeof depthBias.ndc === "number"
           && depthBias.ndc > 0
+          && appliedFillMode.mode === D3DFILL_WIREFRAME
+          && appliedFillMode.name === "wireframe"
+          && fillMode.mode === D3DFILL_WIREFRAME
+          && fillMode.modeName === "wireframe"
+          && fillMode.supported === true
+          && fillMode.wireframe === true
+          && fillMode.temporaryIndexBuffer === true
+          && fillMode.glPrimitiveName === "lines"
+          && fillMode.generatedIndexCount === 12
+          && fillMode.sourceTriangleCount === 2
+          && fillMode.emittedTriangleCount === 2
+          && fillMode.culledTriangleCount === 0
+          && fillMode.drawIndexCount === 12
           && centerPixelOk;
         return {
           ok: caseOk,
