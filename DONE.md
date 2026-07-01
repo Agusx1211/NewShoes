@@ -4022,6 +4022,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       through `W3DDisplay::m_3DScene` and capturing
       `harness-smoke-ww3d-terrain-full-scene-canvas.png`. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Apply D3D face culling before browser wireframe expansion. The
+      D3D8/WebGL bridge now projects indexed triangles with the captured
+      world/view/projection matrices, classifies CW/CCW winding, applies
+      `D3DCULL_CW` / `D3DCULL_CCW` before expanding wireframe draws into GL
+      line indices, preserves triangle-strip winding parity, and treats a fully
+      culled wireframe batch as a valid zero-count draw. The existing
+      `cnc_port_probe_d3d8_fill_mode` path now sets identity transforms and a
+      CW cull state over one CCW and one CW triangle, and the browser harness
+      requires one emitted triangle, one culled triangle, culling metadata, and
+      the expected WebGL pixel. Verified with
+      `npm --prefix WebAssembly run build:wasm`, a focused Playwright
+      `d3d8FillMode` RPC check, and `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

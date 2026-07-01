@@ -4784,6 +4784,57 @@ function readD3D8Index(indexBytes, byteOffset, index, indexSize) {
   return null;
 }
 
+function projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, transforms, vertexIndex) {
+  if (!(vertexBytes instanceof Uint8Array) || !transforms || vertexStride < 12 || vertexIndex === null) {
+    return null;
+  }
+  const base = vertexByteOffset + vertexIndex * vertexStride;
+  if (base < 0 || base + 12 > vertexBytes.byteLength) {
+    return null;
+  }
+  const view = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
+  const position = [
+    readD3D8Float32(view, base),
+    readD3D8Float32(view, base + 4),
+    readD3D8Float32(view, base + 8),
+  ];
+  const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
+  const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
+  const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
+  const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
+  if (Math.abs(glClip[3]) <= 0.000001) {
+    return null;
+  }
+  return [
+    glClip[0] / glClip[3],
+    glClip[1] / glClip[3],
+    glClip[2] / glClip[3],
+  ];
+}
+
+function d3d8ProjectedTriangleArea(a, b, c) {
+  if (!a || !b || !c) {
+    return null;
+  }
+  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+}
+
+function d3d8TriangleCullInfo(area, cullMode) {
+  if (!Number.isFinite(area)) {
+    return { winding: "unknown", culled: false, degenerate: false };
+  }
+  if (Math.abs(area) <= 0.0000001) {
+    return { winding: "degenerate", culled: false, degenerate: true };
+  }
+  const winding = area < 0 ? "cw" : "ccw";
+  return {
+    winding,
+    culled: (cullMode === D3DCULL_CW && winding === "cw") ||
+      (cullMode === D3DCULL_CCW && winding === "ccw"),
+    degenerate: false,
+  };
+}
+
 function buildD3D8FlatShadeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
   const indexBytes = indexResource?.bytes;
   const requiredByteSize = indexByteOffset + indexCount * indexSize;
@@ -4856,7 +4907,14 @@ function buildD3D8FlatShadeIndices(indexResource, indexByteOffset, indexCount, i
   };
 }
 
-function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType) {
+function buildD3D8WireframeIndices(
+  indexResource,
+  indexByteOffset,
+  indexCount,
+  indexSize,
+  primitiveType,
+  options = {},
+) {
   const indexBytes = indexResource?.bytes;
   const requiredByteSize = indexByteOffset + indexCount * indexSize;
   if (!(indexBytes instanceof Uint8Array)) {
@@ -4866,14 +4924,53 @@ function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, i
     return { supported: false, reason: "indexRangeOutOfBounds" };
   }
 
+  const vertexBytes = options.vertexResource?.bytes;
+  const vertexByteOffset = Number(options.vertexByteOffset ?? 0) >>> 0;
+  const vertexStride = Number(options.vertexStride ?? 0) >>> 0;
+  const cullMode = Number(options.cullMode ?? D3DCULL_NONE) >>> 0;
+  const cullRequested = cullMode === D3DCULL_CW || cullMode === D3DCULL_CCW;
+  const cullingAvailable = Boolean(cullRequested &&
+    vertexBytes instanceof Uint8Array &&
+    options.transforms &&
+    vertexStride >= 12);
+  const projectedVertex = (vertexIndex) =>
+    projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, options.transforms, vertexIndex);
   const edges = [];
   let sourceTriangleCount = 0;
+  let emittedTriangleCount = 0;
+  let culledTriangleCount = 0;
+  let degenerateTriangleCount = 0;
+  let cwTriangleCount = 0;
+  let ccwTriangleCount = 0;
   const addTriangle = (a, b, c) => {
     if (a === null || b === null || c === null || a === b || b === c || c === a) {
+      degenerateTriangleCount += 1;
       return;
     }
-    edges.push(a, b, b, c, c, a);
     sourceTriangleCount += 1;
+    if (cullingAvailable) {
+      const area = d3d8ProjectedTriangleArea(
+        projectedVertex(a),
+        projectedVertex(b),
+        projectedVertex(c),
+      );
+      const cullInfo = d3d8TriangleCullInfo(area, cullMode);
+      if (cullInfo.degenerate) {
+        degenerateTriangleCount += 1;
+        return;
+      }
+      if (cullInfo.winding === "cw") {
+        cwTriangleCount += 1;
+      } else if (cullInfo.winding === "ccw") {
+        ccwTriangleCount += 1;
+      }
+      if (cullInfo.culled) {
+        culledTriangleCount += 1;
+        return;
+      }
+    }
+    edges.push(a, b, b, c, c, a);
+    emittedTriangleCount += 1;
   };
   const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
   switch (Number(primitiveType) >>> 0) {
@@ -4884,7 +4981,14 @@ function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, i
       break;
     case D3DPT_TRIANGLESTRIP:
       for (let index = 0; index + 2 < indexCount; ++index) {
-        addTriangle(readIndex(index), readIndex(index + 1), readIndex(index + 2));
+        const a = readIndex(index);
+        const b = readIndex(index + 1);
+        const c = readIndex(index + 2);
+        if ((index & 1) === 0) {
+          addTriangle(a, b, c);
+        } else {
+          addTriangle(b, a, c);
+        }
       }
       break;
     case D3DPT_TRIANGLEFAN:
@@ -4896,20 +5000,36 @@ function buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, i
       return { supported: false, reason: "nonTrianglePrimitive" };
   }
 
-  if (edges.length === 0) {
+  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
+  if (edges.length === 0 && !(cullingAvailable && sourceTriangleCount > 0 && culledTriangleCount > 0)) {
     return { supported: false, reason: "emptyWireframe" };
   }
-  const IndexArray = indexSize === 4 ? Uint32Array : Uint16Array;
   return {
     supported: true,
     lineIndices: new IndexArray(edges),
     generatedIndexCount: edges.length,
     sourceTriangleCount,
     indexTypeName: indexSize === 4 ? "uint32" : "uint16",
+    cullMode,
+    cullingRequested: cullRequested,
+    cullingApplied: cullingAvailable,
+    emittedTriangleCount,
+    culledTriangleCount,
+    degenerateTriangleCount,
+    cwTriangleCount,
+    ccwTriangleCount,
   };
 }
 
-function createD3D8FillModeDrawInfo(renderState, primitiveType, indexResource, indexByteOffset, indexCount, indexSize) {
+function createD3D8FillModeDrawInfo(
+  renderState,
+  primitiveType,
+  indexResource,
+  indexByteOffset,
+  indexCount,
+  indexSize,
+  options = {},
+) {
   const mode = Number(renderState.fillMode ?? D3DFILL_SOLID) >>> 0;
   const baseGlPrimitive = d3dPrimitiveToGl(primitiveType);
   const info = {
@@ -4923,6 +5043,14 @@ function createD3D8FillModeDrawInfo(renderState, primitiveType, indexResource, i
     drawIndexByteOffset: indexByteOffset,
     generatedIndexCount: 0,
     sourceTriangleCount: 0,
+    emittedTriangleCount: 0,
+    culledTriangleCount: 0,
+    degenerateTriangleCount: 0,
+    cwTriangleCount: 0,
+    ccwTriangleCount: 0,
+    cullMode: Number(renderState.cullMode ?? D3DCULL_NONE) >>> 0,
+    cullingRequested: false,
+    cullingApplied: false,
     indexTypeName: indexSize === 4 ? "uint32" : "uint16",
     temporaryIndexBuffer: false,
     pointFill: false,
@@ -4947,12 +5075,29 @@ function createD3D8FillModeDrawInfo(renderState, primitiveType, indexResource, i
     return info;
   }
 
-  const wireframe = buildD3D8WireframeIndices(indexResource, indexByteOffset, indexCount, indexSize, primitiveType);
+  const wireframe = buildD3D8WireframeIndices(
+    indexResource,
+    indexByteOffset,
+    indexCount,
+    indexSize,
+    primitiveType,
+    {
+      ...options,
+      cullMode: info.cullMode,
+    },
+  );
   info.wireframe = true;
   info.supported = wireframe.supported;
   info.fallbackReason = wireframe.supported ? null : wireframe.reason;
   info.generatedIndexCount = wireframe.generatedIndexCount ?? 0;
   info.sourceTriangleCount = wireframe.sourceTriangleCount ?? 0;
+  info.emittedTriangleCount = wireframe.emittedTriangleCount ?? 0;
+  info.culledTriangleCount = wireframe.culledTriangleCount ?? 0;
+  info.degenerateTriangleCount = wireframe.degenerateTriangleCount ?? 0;
+  info.cwTriangleCount = wireframe.cwTriangleCount ?? 0;
+  info.ccwTriangleCount = wireframe.ccwTriangleCount ?? 0;
+  info.cullingRequested = wireframe.cullingRequested === true;
+  info.cullingApplied = wireframe.cullingApplied === true;
   info.indexTypeName = wireframe.indexTypeName ?? info.indexTypeName;
   if (wireframe.supported) {
     info.glPrimitive = gl.LINES;
@@ -5067,6 +5212,14 @@ function d3d8FillModeProbeInfo(fillModeDraw) {
     drawIndexByteOffset: fillModeDraw.drawIndexByteOffset,
     generatedIndexCount: fillModeDraw.generatedIndexCount,
     sourceTriangleCount: fillModeDraw.sourceTriangleCount,
+    emittedTriangleCount: fillModeDraw.emittedTriangleCount,
+    culledTriangleCount: fillModeDraw.culledTriangleCount,
+    degenerateTriangleCount: fillModeDraw.degenerateTriangleCount,
+    cwTriangleCount: fillModeDraw.cwTriangleCount,
+    ccwTriangleCount: fillModeDraw.ccwTriangleCount,
+    cullMode: fillModeDraw.cullMode,
+    cullingRequested: fillModeDraw.cullingRequested,
+    cullingApplied: fillModeDraw.cullingApplied,
     indexTypeName: fillModeDraw.indexTypeName,
     temporaryIndexBuffer: fillModeDraw.temporaryIndexBuffer,
     pointFill: fillModeDraw.pointFill,
@@ -5380,38 +5533,11 @@ function inspectD3D8IndexedTriangles(vertexResource, vertexByteOffset, vertexStr
     return null;
   }
 
-  const vertexView = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
   const readProjected = (vertexIndex) => {
-    const base = vertexByteOffset + vertexIndex * vertexStride;
-    if (base < 0 || base + 12 > vertexBytes.byteLength) {
-      return null;
-    }
-    const position = [
-      readD3D8Float32(vertexView, base),
-      readD3D8Float32(vertexView, base + 4),
-      readD3D8Float32(vertexView, base + 8),
-    ];
-    const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
-    const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
-    const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
-    const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
-    if (Math.abs(glClip[3]) <= 0.000001) {
-      return null;
-    }
-    return [
-      glClip[0] / glClip[3],
-      glClip[1] / glClip[3],
-      glClip[2] / glClip[3],
-    ];
+    return projectD3D8VertexToNdc(vertexBytes, vertexByteOffset, vertexStride, transforms, vertexIndex);
   };
   const areaFor = (ia, ib, ic) => {
-    const a = readProjected(ia);
-    const b = readProjected(ib);
-    const c = readProjected(ic);
-    if (!a || !b || !c) {
-      return null;
-    }
-    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    return d3d8ProjectedTriangleArea(readProjected(ia), readProjected(ib), readProjected(ic));
   };
   const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
   const result = {
@@ -6104,6 +6230,12 @@ function paintD3D8DrawIndexed(payload = {}) {
       indexByteOffset,
       indexCount,
       indexSize,
+      {
+        vertexResource,
+        vertexByteOffset,
+        vertexStride,
+        transforms: useTransforms ? { world, view, projection } : null,
+      },
     );
     const shadeModeDraw = createD3D8ShadeModeDrawInfo(
       renderState,
@@ -12758,18 +12890,28 @@ async function rpc(command, payload = {}) {
           && browserProbe?.usedPersistentBuffers === true
           && browserProbe?.primitiveType === D3DPT_TRIANGLELIST
           && browserProbe?.indexCount === 6
+          && browserProbe?.transformMask === 7
           && browserProbe?.renderState?.fillMode === D3DFILL_WIREFRAME
+          && browserProbe?.renderState?.cullMode === D3DCULL_CW
           && appliedFillMode.mode === D3DFILL_WIREFRAME
           && appliedFillMode.name === "wireframe"
+          && browserProbe?.appliedRenderState?.cull?.enabled === true
           && fillMode.mode === D3DFILL_WIREFRAME
           && fillMode.modeName === "wireframe"
           && fillMode.supported === true
           && fillMode.wireframe === true
           && fillMode.temporaryIndexBuffer === true
           && fillMode.glPrimitiveName === "lines"
-          && fillMode.generatedIndexCount === 12
+          && fillMode.generatedIndexCount === 6
           && fillMode.sourceTriangleCount === 2
-          && fillMode.drawIndexCount === 12
+          && fillMode.emittedTriangleCount === 1
+          && fillMode.culledTriangleCount === 1
+          && fillMode.cwTriangleCount === 1
+          && fillMode.ccwTriangleCount === 1
+          && fillMode.cullMode === D3DCULL_CW
+          && fillMode.cullingRequested === true
+          && fillMode.cullingApplied === true
+          && fillMode.drawIndexCount === 6
           && fillMode.drawIndexByteOffset === 0
           && centerPixelOk;
         return {

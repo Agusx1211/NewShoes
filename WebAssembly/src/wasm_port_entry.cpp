@@ -9784,6 +9784,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 	const DWORD full_color_write =
 		D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN |
 		D3DCOLORWRITEENABLE_BLUE | D3DCOLORWRITEENABLE_ALPHA;
+	auto identity = []() {
+		D3DMATRIX matrix = {};
+		for (unsigned int index = 0; index < 4; ++index) {
+			matrix.m[index][index] = 1.0f;
+		}
+		return matrix;
+	};
 
 	IDirect3D8 *d3d = Direct3DCreate8(D3D_SDK_VERSION);
 	IDirect3DDevice8 *device = nullptr;
@@ -9792,6 +9799,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 	bool ok = d3d != nullptr;
 	HRESULT create_result = E_FAIL;
 	HRESULT clear_result = E_FAIL;
+	HRESULT set_world_result = E_FAIL;
+	HRESULT set_view_result = E_FAIL;
+	HRESULT set_projection_result = E_FAIL;
 	HRESULT vertex_create_result = E_FAIL;
 	HRESULT vertex_lock_result = E_FAIL;
 	HRESULT vertex_unlock_result = E_FAIL;
@@ -9822,13 +9832,21 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 	if (device != nullptr) {
 		clear_result = device->Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
 			0xff000000UL, 1.0f, 0);
-		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+		device->SetRenderState(D3DRS_CULLMODE, D3DCULL_CW);
 		device->SetRenderState(D3DRS_ZENABLE, D3DZB_FALSE);
 		device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
 		device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
 		device->SetRenderState(D3DRS_COLORWRITEENABLE, full_color_write);
+		D3DMATRIX world = identity();
+		D3DMATRIX view = identity();
+		D3DMATRIX projection = identity();
+		set_world_result = device->SetTransform(D3DTS_WORLD, &world);
+		set_view_result = device->SetTransform(D3DTS_VIEW, &view);
+		set_projection_result = device->SetTransform(D3DTS_PROJECTION, &projection);
 		set_fill_mode_result = device->SetRenderState(D3DRS_FILLMODE, D3DFILL_WIREFRAME);
-		ok = ok && SUCCEEDED(clear_result) && SUCCEEDED(set_fill_mode_result);
+		ok = ok && SUCCEEDED(clear_result) && SUCCEEDED(set_world_result) &&
+			SUCCEEDED(set_view_result) && SUCCEEDED(set_projection_result) &&
+			SUCCEEDED(set_fill_mode_result);
 	}
 
 	if (device != nullptr) {
@@ -9898,8 +9916,9 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 		state->last_draw_vertex_count == 4 &&
 		state->last_draw_primitive_count == 2 &&
 		state->last_draw_stream_source_stride == sizeof(TexturedQuadVertex) &&
+		state->last_draw_transform_mask == 7 &&
 		state->last_draw_render_state.fill_mode == D3DFILL_WIREFRAME &&
-		state->last_draw_render_state.cull_mode == D3DCULL_NONE &&
+		state->last_draw_render_state.cull_mode == D3DCULL_CW &&
 		state->last_draw_render_state.color_write_enable == full_color_write;
 
 	char buffer[4096];
@@ -9907,6 +9926,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 		"{\"source\":\"browser_d3d8_fill_mode_probe\","
 		"\"ok\":%s,"
 		"\"results\":{\"create\":%ld,\"clear\":%ld,"
+		"\"setWorld\":%ld,\"setView\":%ld,\"setProjection\":%ld,"
 		"\"vertexCreate\":%ld,\"vertexLock\":%ld,\"vertexUnlock\":%ld,"
 		"\"indexCreate\":%ld,\"indexLock\":%ld,\"indexUnlock\":%ld,"
 		"\"setStream\":%ld,\"setIndices\":%ld,\"setFillMode\":%ld,\"draw\":%ld},"
@@ -9916,12 +9936,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 		"\"browserBufferCreate\":%u,\"browserBufferUpdate\":%u,"
 		"\"browserBufferRelease\":%u,\"setRenderState\":%u,\"drawIndexed\":%u},"
 		"\"fillMode\":{\"wireframe\":%lu,\"solid\":%lu,\"captured\":%lu},"
+		"\"cull\":{\"cw\":%lu,\"none\":%lu,\"captured\":%lu},"
 		"\"draw\":{\"primitiveType\":%u,\"vertexCount\":%u,\"primitiveCount\":%u,"
-		"\"vertexStride\":%u,\"colorWriteEnable\":%lu},"
+		"\"vertexStride\":%u,\"transformMask\":%u,\"colorWriteEnable\":%lu},"
 		"\"expectedCenter\":[0,255,0,255]}",
 		ok ? "true" : "false",
 		static_cast<long>(create_result),
 		static_cast<long>(clear_result),
+		static_cast<long>(set_world_result),
+		static_cast<long>(set_view_result),
+		static_cast<long>(set_projection_result),
 		static_cast<long>(vertex_create_result),
 		static_cast<long>(vertex_lock_result),
 		static_cast<long>(vertex_unlock_result),
@@ -9947,10 +9971,14 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_d3d8_fill_mode()
 		static_cast<unsigned long>(D3DFILL_WIREFRAME),
 		static_cast<unsigned long>(D3DFILL_SOLID),
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.fill_mode) : 0,
+		static_cast<unsigned long>(D3DCULL_CW),
+		static_cast<unsigned long>(D3DCULL_NONE),
+		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.cull_mode) : 0,
 		state != nullptr ? static_cast<unsigned int>(state->last_draw_primitive_type) : 0,
 		state != nullptr ? state->last_draw_vertex_count : 0,
 		state != nullptr ? state->last_draw_primitive_count : 0,
 		state != nullptr ? state->last_draw_stream_source_stride : 0,
+		state != nullptr ? state->last_draw_transform_mask : 0,
 		state != nullptr ? static_cast<unsigned long>(state->last_draw_render_state.color_write_enable) : 0);
 	g_d3d8_probe_json = buffer;
 	return g_d3d8_probe_json.c_str();
