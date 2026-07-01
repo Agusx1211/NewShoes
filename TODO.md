@@ -16,6 +16,36 @@ shares structure and follows behind.
 
 ---
 
+## Strategy pivot — real `init()` whole-program link (current focus)
+
+See `AGENTS.md` "How the port advances". Probe/smoke accretion is over; these
+items supersede the per-subsystem "promote focused shim to real ownership"
+flow below.
+
+- [ ] Fold the compile-only `zh_gameengine_real_compile_frontier` (and the
+      other never-linked frontier libs) into the linked `cnc-port` runtime so
+      the full `GameEngine`/`GameEngineDevice`/`Libraries` surface links into
+      one binary, stubbed only at the true platform boundary (D3D8 device,
+      Miles, Bink, WinSock, Win32 window/input/CD).
+- [ ] Replace the probe boot sequence in `wasm_port_entry.cpp`
+      (`ensure_booted()` probe chain) with the real `main()` →
+      `GameEngine::init()` → `GameEngine::execute()` path, and remove the
+      `abort_unentered_game_engine_method()` guards on the engine virtuals.
+- [ ] Make the harness report the real-init frontier (file/line of the first
+      crash, abort, or missing dependency during `init()`/`execute()`) as the
+      single progress metric; fix the frontier, boot again, repeat.
+- [ ] Burn down the ~292 weak-symbol stubs and probe-local singletons in
+      `WebAssembly/src/` as real subsystems link in; retire `-smoke` targets
+      (and their open "promote to real ownership" TODO debt) once the real
+      boot path covers what they proved.
+- [ ] Mount the base Generals archives (`INI.big`, `English.big`,
+      `Window.big`, `Terrain.big`) when supplied, resolving the known missing
+      startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
+      `BlankWindow.wnd`) that currently blocks `init()` past
+      `createAudioManager`.
+
+---
+
 ## M0 — Build skeleton & asset pipeline
 
 ### Asset pipeline
@@ -795,11 +825,13 @@ shares structure and follows behind.
       in the browser. `test:ww3d-terrain-bridge-buffer-scene` now does the same
       full logical map-object handoff for `W3DBridgeBuffer::loadBridges` while
       retaining the current in-list bridge-template substitution needed by the
-      ZH-only archive set. The
-      remaining terrain vertical work is production/full-map display ownership
-      with source-backed coverage across the load window, then broadening water,
-      gameplay-owned shroud/partition updates, objects, and continuous
-      gameplay-owned camera flow on top of the same original heightmap path.
+      ZH-only archive set; the same bridge scene now also keeps original
+      `W3DRoadBuffer::drawRoads` and `W3DTreeBuffer::drawTrees` sidecars live
+      through the browser frame. The remaining terrain vertical work is
+      production/full-map display ownership with source-backed coverage across
+      the load window, then broadening water, gameplay-owned shroud/partition
+      updates, objects, and continuous gameplay-owned camera flow on top of the
+      same original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
@@ -831,11 +863,14 @@ shares structure and follows behind.
       from the same full logical map-object list on a real
       `Maps\MD_CHI01\MD_CHI01.map` bridge pair; the current ZH-only asset set
       still substitutes an available bridge template in-place on the selected
-      logical list entries. Production map/object tree placement, production
-      `query=false` / `W3DTerrainLogic::newMap` ownership through the normal
-      `DO_ROADS` terrain path, TerrainLogic-owned bridge damage states through
-      real AI/pathfinder ownership, and shroud-aware tree behavior remain open. A
-      direct broad removal of the
+      logical list entries. The bridge scene now also proves the original road
+      and tree sidecar draw paths in the same browser frame, using the full
+      logical road list and shipped `PTDogwod01_S` tree assets. Production
+      map/object tree placement, production `query=false` /
+      `W3DTerrainLogic::newMap` ownership through the normal `DO_ROADS` terrain
+      path, TerrainLogic-owned bridge damage states through real AI/pathfinder
+      ownership, and shroud-aware tree behavior remain open. A direct broad
+      removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
       `W3DTerrainVisual::load` smoke currently also keeps cold

@@ -44,6 +44,31 @@ code; replace the platform layer.** Re-implement the device interfaces in
 
 Toolchain: **Emscripten** (`emcc`/`em++`) targeting `STANDALONE_WASM`/browser.
 
+## How the port advances: the real `init()` strategy
+
+The port advances by running the **real engine lifecycle**, not by proving
+subsystems in isolation. The era of adding probe/smoke slices is over; the
+existing smokes stay only as regression tests.
+
+- **The driving loop is the real boot path**: `main()` →
+  `GameEngine::init()` → `GameEngine::execute()` linked into the single
+  `cnc-port` runtime. Boot it in the harness, hit the first crash / abort /
+  missing dependency, fix that, boot again. **"How far does real `init()` /
+  `execute()` get in the browser" is THE progress metric** — not probe counts.
+- **Compile and link everything.** All of `GameEngine`, `GameEngineDevice`,
+  and the required `Libraries` link into the one runtime target. Stub only at
+  the true platform boundary (Direct3D8 device, Miles, Bink, WinSock, Win32
+  window/input/CD). Do **not** shadow engine logic with weak symbols,
+  probe-local singletons, or "focused frontier" compile-only libraries.
+- **Every fix lands in the linked runtime.** Never build a fix into an
+  isolated probe that later needs "promotion to real ownership" — that is
+  double work and the backlog proves it. When the real path covers what a
+  probe proved, retire the probe and its TODO debt.
+- **Do not add new `-smoke` executables or probe targets.** New verification
+  goes through the harness driving the real `cnc-port` binary (boot, RPC
+  queries, screenshots). Reductions in the probe/stub/weak-symbol surface are
+  progress and should be committed as such.
+
 ## Hard rules
 
 - **Reuse the original source.** Big rule of thumb: if code already exists in
@@ -83,10 +108,14 @@ AI, match flow) should be reachable and checkable through it.
 
 ## Status
 
-`WebAssembly/` is the port work area. It currently holds asset-extraction
-tooling (pull `INIZH.big` from the disc images in `assets/`) for testing the
-port against real data. The real work: compile `GeneralsMD/Code` with Emscripten
-and re-target its `GameEngineDevice` / `Libraries` layer onto browser APIs.
+`WebAssembly/` is the port work area: the Emscripten build (`CMakeLists.txt`),
+Win32/D3D8 header shims (`shims/`), the browser D3D8→WebGL2 layer
+(`src/wasm_d3d8_shim.*`), the headless-browser harness (`harness/`), asset
+extraction (`tools/`), and a large legacy set of probe/smoke targets from the
+earlier incremental strategy. Under the real-`init()` strategy above, current
+work is: link the full engine into `cnc-port`, drive real
+`GameEngine::init()`/`execute()` forward in the harness, and burn down the
+probe/stub surface as the real path takes over.
 
 ## Plan & checklist
 
