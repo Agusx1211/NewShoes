@@ -1560,17 +1560,44 @@ const steps = [
           && payload.visualShroudUpdate?.render === 0
           && payload.visualShroudUpdate?.endRender === 0,
         "terrain visual shroud update smoke did not mutate and render original W3DShroud data", payload.visualShroudUpdate);
-      expect(payload.visualShroudUpdateFrames?.count === 2
+      expect(payload.visualShroudPartitionRefresh?.requested === true
+          && payload.visualShroudPartitionRefresh?.terrainLogicInstalled === true
+          && payload.visualShroudPartitionRefresh?.partitionCreated === true
+          && payload.visualShroudPartitionRefresh?.partitionInstalled === true
+          && payload.visualShroudPartitionRefresh?.partitionCellsReady === true
+          && payload.visualShroudPartitionRefresh?.displayInstalled === true
+          && payload.visualShroudPartitionRefresh?.radarInstalled === true
+          && payload.visualShroudPartitionRefresh?.playerListInstalled === true
+          && payload.visualShroudPartitionRefresh?.revealInvoked === true
+          && payload.visualShroudPartitionRefresh?.refreshInvoked === true
+          && payload.visualShroudPartitionRefresh?.sampleChanged === true
+          && payload.visualShroudPartitionRefresh?.displaySampleTouched === true
+          && payload.visualShroudPartitionRefresh?.radarSampleTouched === true
+          && payload.visualShroudPartitionRefresh?.status === 1
+          && payload.visualShroudPartitionRefresh?.expectedLevel === payload.visualShroudPartitionRefresh?.sampleAfter
+          && payload.visualShroudPartitionRefresh?.sampleAfter > payload.visualShroudPartitionRefresh?.sampleBefore
+          && payload.visualShroudPartitionRefresh?.displaySetCalls >= payload.visualShroudPartitionRefresh?.totalCells
+          && payload.visualShroudPartitionRefresh?.radarSetCalls >= payload.visualShroudPartitionRefresh?.totalCells
+          && payload.visualShroudPartitionRefresh?.displayFoggedSetCalls > 0
+          && payload.visualShroudPartitionRefresh?.radarFoggedSetCalls > 0
+          && payload.visualShroudPartitionRefresh?.beginRender === 0
+          && payload.visualShroudPartitionRefresh?.render === 0
+          && payload.visualShroudPartitionRefresh?.endRender === 0,
+        "terrain visual shroud update smoke did not refresh through original PartitionManager state", payload.visualShroudPartitionRefresh);
+      expect(payload.visualShroudUpdateFrames?.count === 3
           && payload.visualShroudUpdateFrames?.firstDrawIndexed >= 3
           && payload.visualShroudUpdateFrames?.shroudUpdateDrawIndexed >= 6
-          && payload.visualShroudUpdateFrames?.shroudUpdateTextureUpdate > payload.visualShroudUpdateFrames?.firstTextureUpdate,
-        "terrain visual shroud update smoke did not prove a second texture-uploaded shroud frame", payload.visualShroudUpdateFrames);
+          && payload.visualShroudUpdateFrames?.partitionRefreshDrawIndexed >= 9
+          && payload.visualShroudUpdateFrames?.shroudUpdateTextureUpdate > payload.visualShroudUpdateFrames?.firstTextureUpdate
+          && payload.visualShroudUpdateFrames?.partitionRefreshTextureUpdate > payload.visualShroudUpdateFrames?.shroudUpdateTextureUpdate,
+        "terrain visual shroud update smoke did not prove direct and partition texture-uploaded shroud frames", payload.visualShroudUpdateFrames);
       expect(payload.visualShroudUpdateDrawSequence?.shroudAfterTerrain === true
           && payload.visualShroudUpdateDrawSequence?.secondShroudAfterSecondTerrain === true
-          && payload.visualShroudUpdateDrawSequence?.shroudTerrainIndices?.length >= 2,
-        "terrain visual shroud update smoke did not draw two ordered shroud passes", payload.visualShroudUpdateDrawSequence);
-      expect(payload.visualShroudUpdateCalls?.drawIndexed >= 6,
-        "terrain visual shroud update smoke did not reach two terrain/shroud frame draw batches", payload.visualShroudUpdateCalls);
+          && payload.visualShroudUpdateDrawSequence?.thirdShroudAfterThirdTerrain === true
+          && payload.visualShroudUpdateDrawSequence?.shroudTerrainIndices?.length >= 3,
+        "terrain visual shroud update smoke did not draw three ordered shroud passes", payload.visualShroudUpdateDrawSequence);
+      expect(payload.visualShroudUpdateCalls?.drawIndexed >= 9,
+        "terrain visual shroud update smoke did not reach three terrain/shroud frame draw batches", payload.visualShroudUpdateCalls);
       expect(payload.visualShroudUpdateCoverage?.coloredPixelCount > 0,
         "terrain visual shroud update smoke did not produce colored browser pixels", payload.visualShroudUpdateCoverage);
       expect(payload.visualShroudUpdateScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png"),

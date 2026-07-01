@@ -27,8 +27,12 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/Player.h"
+#include "Common/PlayerList.h"
+#include "Common/Radar.h"
 #include "Common/ThingFactory.h"
 #include "Common/TerrainTypes.h"
+#include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
@@ -96,6 +100,17 @@ extern "C" bool cnc_port_terrain_probe_shroud_enabled(void)
 {
 	return g_ww3d_terrain_probe_shroud_enabled;
 }
+
+Radar::Radar() = default;
+Radar::~Radar() = default;
+void Radar::reset() {}
+void Radar::update() {}
+void Radar::refreshTerrain(TerrainLogic *) {}
+void Radar::queueTerrainRefresh() {}
+void Radar::newMap(TerrainLogic *) {}
+void Radar::crc(Xfer *) {}
+void Radar::xfer(Xfer *) {}
+void Radar::loadPostProcess() {}
 
 GameClient::GameClient()
 {
@@ -442,6 +457,53 @@ struct ProbeLogicalTerrainLoadMetrics
 	std::string sourceFilename;
 	std::string failurePhase;
 	std::string logicalHeightMapFailedParser;
+};
+
+struct ProbePartitionShroudRefreshMetrics
+{
+	bool requested = false;
+	bool terrainLogicInstalled = false;
+	bool partitionCreated = false;
+	bool partitionInstalled = false;
+	bool partitionInitInvoked = false;
+	bool partitionCellsReady = false;
+	bool displayInstalled = false;
+	bool radarInstalled = false;
+	bool playerListInstalled = false;
+	bool revealInvoked = false;
+	bool refreshInvoked = false;
+	bool samplePrepared = false;
+	bool sampleChanged = false;
+	bool displaySampleTouched = false;
+	bool radarSampleTouched = false;
+	bool renderInvoked = false;
+	Int cellCountX = 0;
+	Int cellCountY = 0;
+	Int totalCells = 0;
+	Int sampleX = -1;
+	Int sampleY = -1;
+	Int status = CELLSHROUD_SHROUDED;
+	Int expectedLevel = -1;
+	Int sampleBefore = -1;
+	Int sampleAfter = -1;
+	Int revealDisplaySetCalls = 0;
+	Int revealRadarSetCalls = 0;
+	Int displayClearCalls = 0;
+	Int radarClearCalls = 0;
+	Int displaySetCalls = 0;
+	Int radarSetCalls = 0;
+	Int displayShroudedSetCalls = 0;
+	Int displayFoggedSetCalls = 0;
+	Int displayClearSetCalls = 0;
+	Int radarShroudedSetCalls = 0;
+	Int radarFoggedSetCalls = 0;
+	Int radarClearSetCalls = 0;
+	Int beginRender = WW3D_ERROR_GENERIC;
+	Int render = WW3D_ERROR_GENERIC;
+	Int endRender = WW3D_ERROR_GENERIC;
+	UnsignedInt drawIndexed = 0;
+	UnsignedInt clear = 0;
+	UnsignedInt textureUpdate = 0;
 };
 
 class ProbeINILayoutView final : public INI
@@ -3650,6 +3712,442 @@ private:
 	UINT m_probeDrawCallsAfterBase = 0;
 };
 
+class ProbeShroudForwardingDisplay final : public Display
+{
+public:
+	void configureSample(Int x, Int y)
+	{
+		m_sampleX = x;
+		m_sampleY = y;
+	}
+
+	void resetCounters()
+	{
+		m_clearCalls = 0;
+		m_setCalls = 0;
+		m_shroudedSetCalls = 0;
+		m_foggedSetCalls = 0;
+		m_clearSetCalls = 0;
+		m_sampleTouched = false;
+		m_sampleStatus = CELLSHROUD_SHROUDED;
+	}
+
+	void doSmartAssetPurgeAndPreload(const char *) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpAssetUsage(const char *) override {}
+#endif
+	VideoBuffer *createVideoBuffer() override { return nullptr; }
+	void setClipRegion(IRegion2D *) override {}
+	Bool isClippingEnabled() override { return FALSE; }
+	void enableClipping(Bool) override {}
+	void setTimeOfDay(TimeOfDay) override {}
+	void createLightPulse(const Coord3D *, const RGBColor *, Real, Real, UnsignedInt, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt, UnsignedInt) override {}
+	void drawOpenRect(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawFillRect(Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
+	void clearShroud() override
+	{
+		++m_clearCalls;
+		m_w3dDisplay->W3DDisplay::clearShroud();
+	}
+	void setShroudLevel(Int x, Int y, CellShroudStatus setting) override
+	{
+		++m_setCalls;
+		if (setting == CELLSHROUD_SHROUDED) {
+			++m_shroudedSetCalls;
+		} else if (setting == CELLSHROUD_FOGGED) {
+			++m_foggedSetCalls;
+		} else {
+			++m_clearSetCalls;
+		}
+		if (x == m_sampleX && y == m_sampleY) {
+			m_sampleTouched = true;
+			m_sampleStatus = setting;
+		}
+		m_w3dDisplay->W3DDisplay::setShroudLevel(x, y, setting);
+	}
+	void setBorderShroudLevel(UnsignedByte level) override
+	{
+		m_w3dDisplay->W3DDisplay::setBorderShroudLevel(level);
+	}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpModelAssets(const char *) override {}
+#endif
+	void preloadModelAssets(AsciiString) override {}
+	void preloadTextureAssets(AsciiString) override {}
+	void takeScreenShot() override {}
+	void toggleMovieCapture() override {}
+	void toggleLetterBox() override {}
+	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
+	Real getAverageFPS() override { return 0.0f; }
+	Int getLastFrameDrawCalls() override { return 0; }
+
+	Int clearCalls() const { return m_clearCalls; }
+	Int setCalls() const { return m_setCalls; }
+	Int shroudedSetCalls() const { return m_shroudedSetCalls; }
+	Int foggedSetCalls() const { return m_foggedSetCalls; }
+	Int clearSetCalls() const { return m_clearSetCalls; }
+	bool sampleTouched() const { return m_sampleTouched; }
+	CellShroudStatus sampleStatus() const { return m_sampleStatus; }
+
+private:
+	alignas(W3DDisplay) unsigned char m_displayStorage[sizeof(W3DDisplay)] = {};
+	W3DDisplay *m_w3dDisplay = reinterpret_cast<W3DDisplay *>(m_displayStorage);
+	Int m_clearCalls = 0;
+	Int m_setCalls = 0;
+	Int m_shroudedSetCalls = 0;
+	Int m_foggedSetCalls = 0;
+	Int m_clearSetCalls = 0;
+	Int m_sampleX = -1;
+	Int m_sampleY = -1;
+	bool m_sampleTouched = false;
+	CellShroudStatus m_sampleStatus = CELLSHROUD_SHROUDED;
+};
+
+class ProbeShroudCountingRadar final : public Radar
+{
+public:
+	void configureSample(Int x, Int y)
+	{
+		m_sampleX = x;
+		m_sampleY = y;
+	}
+
+	void resetCounters()
+	{
+		m_clearCalls = 0;
+		m_setCalls = 0;
+		m_shroudedSetCalls = 0;
+		m_foggedSetCalls = 0;
+		m_clearSetCalls = 0;
+		m_sampleTouched = false;
+		m_sampleStatus = CELLSHROUD_SHROUDED;
+	}
+
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+	void refreshTerrain(TerrainLogic *) override {}
+	void queueTerrainRefresh() override {}
+	void newMap(TerrainLogic *) override {}
+	void draw(Int, Int, Int, Int) override {}
+	void clearShroud() override { ++m_clearCalls; }
+	void setShroudLevel(Int x, Int y, CellShroudStatus setting) override
+	{
+		++m_setCalls;
+		if (setting == CELLSHROUD_SHROUDED) {
+			++m_shroudedSetCalls;
+		} else if (setting == CELLSHROUD_FOGGED) {
+			++m_foggedSetCalls;
+		} else {
+			++m_clearSetCalls;
+		}
+		if (x == m_sampleX && y == m_sampleY) {
+			m_sampleTouched = true;
+			m_sampleStatus = setting;
+		}
+	}
+
+	Int clearCalls() const { return m_clearCalls; }
+	Int setCalls() const { return m_setCalls; }
+	Int shroudedSetCalls() const { return m_shroudedSetCalls; }
+	Int foggedSetCalls() const { return m_foggedSetCalls; }
+	Int clearSetCalls() const { return m_clearSetCalls; }
+	bool sampleTouched() const { return m_sampleTouched; }
+	CellShroudStatus sampleStatus() const { return m_sampleStatus; }
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+private:
+	Int m_clearCalls = 0;
+	Int m_setCalls = 0;
+	Int m_shroudedSetCalls = 0;
+	Int m_foggedSetCalls = 0;
+	Int m_clearSetCalls = 0;
+	Int m_sampleX = -1;
+	Int m_sampleY = -1;
+	bool m_sampleTouched = false;
+	CellShroudStatus m_sampleStatus = CELLSHROUD_SHROUDED;
+};
+
+struct alignas(Player) ProbePlayerIndexShim : public Snapshot
+{
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+public:
+	const PlayerTemplate *m_playerTemplate = nullptr;
+	UnicodeString m_playerDisplayName;
+	Handicap m_handicap;
+	AsciiString m_playerName;
+	NameKeyType m_playerNameKey = NAMEKEY_INVALID;
+	PlayerIndex m_playerIndex = 0;
+};
+
+struct alignas(PlayerList) ProbePlayerListShim : public SubsystemInterface, public Snapshot
+{
+	explicit ProbePlayerListShim(Player *localPlayer) :
+		m_local(localPlayer),
+		m_playerCount(1)
+	{
+		for (Int index = 0; index < MAX_PLAYER_COUNT; ++index) {
+			m_players[index] = nullptr;
+		}
+		m_players[0] = localPlayer;
+	}
+
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+public:
+	Player *m_local = nullptr;
+	Int m_playerCount = 0;
+	Player *m_players[MAX_PLAYER_COUNT] = {};
+};
+
+class ProbePartitionTerrainLogic final : public TerrainLogic
+{
+public:
+	ProbePartitionTerrainLogic(Int cells_x, Int cells_y, Real cell_size)
+	{
+		m_extent.lo.x = 0.0f;
+		m_extent.lo.y = 0.0f;
+		m_extent.lo.z = 0.0f;
+		m_extent.hi.x = static_cast<Real>(cells_x) * cell_size;
+		m_extent.hi.y = static_cast<Real>(cells_y) * cell_size;
+		m_extent.hi.z = 0.0f;
+	}
+
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+	Bool loadMap(AsciiString, Bool) override { return TRUE; }
+	Real getGroundHeight(Real, Real, Coord3D *normal = nullptr) const override
+	{
+		if (normal != nullptr) {
+			normal->x = 0.0f;
+			normal->y = 0.0f;
+			normal->z = 1.0f;
+		}
+		return 0.0f;
+	}
+	Real getLayerHeight(Real x, Real y, PathfindLayerEnum, Coord3D *normal = nullptr, Bool = true) const override
+	{
+		return getGroundHeight(x, y, normal);
+	}
+	void getExtent(Region3D *extent) const override
+	{
+		if (extent != nullptr) {
+			*extent = m_extent;
+		}
+	}
+	void getExtentIncludingBorder(Region3D *extent) const override { getExtent(extent); }
+	void getMaximumPathfindExtent(Region3D *extent) const override { getExtent(extent); }
+
+protected:
+	void crc(Xfer *) override {}
+	void xfer(Xfer *) override {}
+	void loadPostProcess() override {}
+
+private:
+	Region3D m_extent;
+};
+
+Int expected_shroud_level_for_status(CellShroudStatus status)
+{
+	if (TheGlobalData == nullptr) {
+		return -1;
+	}
+	Int level = TheGlobalData->m_clearAlpha;
+	if (status == CELLSHROUD_SHROUDED) {
+		level = TheGlobalData->m_shroudAlpha;
+	} else if (status == CELLSHROUD_FOGGED) {
+		level = TheGlobalData->m_fogAlpha;
+	}
+	if (level == 255) {
+		return 255;
+	}
+	const UnsignedInt color = TheGlobalData->m_shroudColor.getAsInt();
+	const UnsignedInt blue =
+		static_cast<UnsignedInt>(static_cast<Real>(level) * static_cast<Real>(color & 0xff) / 255.0f);
+	const UnsignedInt green =
+		static_cast<UnsignedInt>(static_cast<Real>(level) * static_cast<Real>((color & 0xff00) >> 8) / 255.0f);
+	const UnsignedInt red =
+		static_cast<UnsignedInt>(static_cast<Real>(level) * static_cast<Real>((color & 0xff0000) >> 16) / 255.0f);
+	const UnsignedShort pixel =
+		static_cast<UnsignedShort>(((blue & 0xf8) >> 3) | ((green & 0xfc) << 3) | ((red & 0xf8) << 8));
+	return static_cast<Int>(static_cast<Real>((pixel >> 5) & 0x3f) / 63.0f * 255.0f);
+}
+
+ProbePartitionShroudRefreshMetrics run_partition_shroud_refresh_probe(
+	const char *map_entry,
+	W3DShroud *shroud,
+	CameraClass *camera,
+	Int sample_x,
+	Int sample_y)
+{
+	ProbePartitionShroudRefreshMetrics metrics;
+	metrics.requested = true;
+	metrics.sampleX = sample_x;
+	metrics.sampleY = sample_y;
+	if (map_entry == nullptr ||
+			map_entry[0] == '\0' ||
+			shroud == nullptr ||
+			camera == nullptr ||
+			W3DDisplay::m_3DScene == nullptr ||
+			TheWritableGlobalData == nullptr ||
+			sample_x < 0 ||
+			sample_y < 0) {
+		return metrics;
+	}
+
+	Display *old_display = TheDisplay;
+	Radar *old_radar = TheRadar;
+	PlayerList *old_player_list = ThePlayerList;
+	PartitionManager *old_partition_manager = ThePartitionManager;
+	TerrainLogic *old_terrain_logic = TheTerrainLogic;
+
+	ProbeShroudForwardingDisplay display_adapter;
+	ProbeShroudCountingRadar radar_adapter;
+	ProbePlayerIndexShim player_shim;
+	player_shim.m_playerIndex = 0;
+	ProbePlayerListShim player_list_shim(reinterpret_cast<Player *>(&player_shim));
+
+	TheDisplay = &display_adapter;
+	TheRadar = &radar_adapter;
+	ThePlayerList = reinterpret_cast<PlayerList *>(&player_list_shim);
+	metrics.displayInstalled = TheDisplay == &display_adapter;
+	metrics.radarInstalled = TheRadar == &radar_adapter;
+	metrics.playerListInstalled = ThePlayerList == reinterpret_cast<PlayerList *>(&player_list_shim);
+
+	const Real old_partition_cell_size = TheWritableGlobalData->m_partitionCellSize;
+	const RGBColor old_shroud_color = TheWritableGlobalData->m_shroudColor;
+	const UnsignedByte old_shroud_alpha = TheWritableGlobalData->m_shroudAlpha;
+	const UnsignedByte old_fog_alpha = TheWritableGlobalData->m_fogAlpha;
+	const UnsignedByte old_clear_alpha = TheWritableGlobalData->m_clearAlpha;
+	const Real probe_partition_cell_size = 1.0f;
+	TheWritableGlobalData->m_partitionCellSize = probe_partition_cell_size;
+	TheWritableGlobalData->m_shroudColor.red = 1.0f;
+	TheWritableGlobalData->m_shroudColor.green = 1.0f;
+	TheWritableGlobalData->m_shroudColor.blue = 1.0f;
+	TheWritableGlobalData->m_shroudAlpha = 0;
+	TheWritableGlobalData->m_fogAlpha = 127;
+	TheWritableGlobalData->m_clearAlpha = 255;
+	ProbePartitionTerrainLogic terrain_logic(48, 48, probe_partition_cell_size);
+	TheTerrainLogic = &terrain_logic;
+	metrics.terrainLogicInstalled = TheTerrainLogic == &terrain_logic;
+	{
+		PartitionManager partition_manager;
+		metrics.partitionCreated = true;
+		ThePartitionManager = &partition_manager;
+		metrics.partitionInstalled = ThePartitionManager == &partition_manager;
+		partition_manager.init();
+		metrics.partitionInitInvoked = true;
+		metrics.cellCountX = partition_manager.getCellCountX();
+		metrics.cellCountY = partition_manager.getCellCountY();
+		metrics.totalCells = metrics.cellCountX * metrics.cellCountY;
+		metrics.sampleX = std::max(
+			0,
+			std::min(
+				std::min(sample_x, metrics.cellCountX - 1),
+				shroud->getNumShroudCellsX() - 1));
+		metrics.sampleY = std::max(
+			0,
+			std::min(
+				std::min(sample_y, metrics.cellCountY - 1),
+				shroud->getNumShroudCellsY() - 1));
+		display_adapter.configureSample(metrics.sampleX, metrics.sampleY);
+		radar_adapter.configureSample(metrics.sampleX, metrics.sampleY);
+		metrics.partitionCellsReady =
+			metrics.cellCountX > 0 &&
+			metrics.cellCountY > 0 &&
+			partition_manager.getCellAt(metrics.sampleX, metrics.sampleY) != nullptr;
+		if (metrics.partitionCellsReady) {
+			partition_manager.revealMapForPlayer(player_shim.m_playerIndex);
+			metrics.revealInvoked = true;
+			metrics.revealDisplaySetCalls = display_adapter.setCalls();
+			metrics.revealRadarSetCalls = radar_adapter.setCalls();
+			metrics.status =
+				partition_manager.getShroudStatusForPlayer(
+					player_shim.m_playerIndex,
+					metrics.sampleX,
+					metrics.sampleY);
+			metrics.expectedLevel =
+				expected_shroud_level_for_status(static_cast<CellShroudStatus>(metrics.status));
+			shroud->setShroudLevel(
+				metrics.sampleX,
+				metrics.sampleY,
+				static_cast<W3DShroudLevel>(TheGlobalData->m_shroudAlpha));
+			metrics.sampleBefore = shroud->getShroudLevel(metrics.sampleX, metrics.sampleY);
+			metrics.samplePrepared = true;
+			display_adapter.resetCounters();
+			radar_adapter.resetCounters();
+			partition_manager.refreshShroudForLocalPlayer();
+			metrics.refreshInvoked = true;
+			metrics.displayClearCalls = display_adapter.clearCalls();
+			metrics.radarClearCalls = radar_adapter.clearCalls();
+			metrics.displaySetCalls = display_adapter.setCalls();
+			metrics.radarSetCalls = radar_adapter.setCalls();
+			metrics.displayShroudedSetCalls = display_adapter.shroudedSetCalls();
+			metrics.displayFoggedSetCalls = display_adapter.foggedSetCalls();
+			metrics.displayClearSetCalls = display_adapter.clearSetCalls();
+			metrics.radarShroudedSetCalls = radar_adapter.shroudedSetCalls();
+			metrics.radarFoggedSetCalls = radar_adapter.foggedSetCalls();
+			metrics.radarClearSetCalls = radar_adapter.clearSetCalls();
+			metrics.displaySampleTouched = display_adapter.sampleTouched();
+			metrics.radarSampleTouched = radar_adapter.sampleTouched();
+			metrics.sampleAfter = shroud->getShroudLevel(metrics.sampleX, metrics.sampleY);
+			metrics.sampleChanged =
+				metrics.sampleAfter > metrics.sampleBefore &&
+				metrics.sampleAfter == metrics.expectedLevel;
+			shroud->render(camera);
+			metrics.renderInvoked = true;
+			metrics.beginRender =
+				WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(metrics.beginRender)) {
+				metrics.render = WW3D::Render(W3DDisplay::m_3DScene, camera);
+				metrics.endRender = WW3D::End_Render(false);
+				const WasmD3D8ShimState *state_after_partition_refresh = wasm_d3d8_get_state();
+				if (state_after_partition_refresh != nullptr) {
+					metrics.drawIndexed =
+						state_after_partition_refresh->draw_indexed_primitive_calls;
+					metrics.clear = state_after_partition_refresh->clear_calls;
+					metrics.textureUpdate =
+						state_after_partition_refresh->browser_texture_update_calls;
+				}
+			}
+		}
+	}
+	TheWritableGlobalData->m_partitionCellSize = old_partition_cell_size;
+	TheWritableGlobalData->m_shroudColor = old_shroud_color;
+	TheWritableGlobalData->m_shroudAlpha = old_shroud_alpha;
+	TheWritableGlobalData->m_fogAlpha = old_fog_alpha;
+	TheWritableGlobalData->m_clearAlpha = old_clear_alpha;
+
+	TheTerrainLogic = old_terrain_logic;
+	ThePartitionManager = old_partition_manager;
+	ThePlayerList = old_player_list;
+	TheRadar = old_radar;
+	TheDisplay = old_display;
+	return metrics;
+}
+
 class ProbeHeightMapRenderObjWithBridgeBuffer final : public HeightMapRenderObjClass
 {
 public:
@@ -5044,6 +5542,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		!use_load_window &&
 		!use_camera_pan;
 	const bool shroud_update_mode = visual_shroud_mode && use_shroud_update;
+	const bool partition_refresh_mode = shroud_update_mode;
 	const bool old_shroud_enabled = g_ww3d_terrain_probe_shroud_enabled;
 	g_ww3d_terrain_probe_shroud_enabled = visual_shroud_mode;
 
@@ -5152,6 +5651,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	Int shroud_update_sample_before = -1;
 	Int shroud_update_sample_after = -1;
 	Int shroud_update_cells_changed = 0;
+	ProbePartitionShroudRefreshMetrics partition_shroud_refresh;
 	ProbeTerrainCameraView primary_camera_view;
 	ProbeTerrainCameraView camera_pan_view;
 	ProbePolygonTriggerMetrics polygon_metrics;
@@ -5545,6 +6045,23 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		}
 	}
 
+	if (partition_refresh_mode &&
+			shroud_update_render_invoked &&
+			shroud_render_object != nullptr &&
+			camera != nullptr &&
+			W3DDisplay::m_3DScene != nullptr &&
+			succeeded(shroud_update_end_render_result)) {
+		W3DShroud *shroud = shroud_render_object->probeShroud();
+		if (shroud != nullptr) {
+			partition_shroud_refresh = run_partition_shroud_refresh_probe(
+				kArchiveTerrainMapEntry,
+				shroud,
+				camera,
+				shroud_update_sample_x,
+				shroud_update_sample_y);
+		}
+	}
+
 	if (visual_shroud_mode && shroud_render_object != nullptr) {
 		shroud_terrain_render_invoked = shroud_render_object->probeRenderInvoked();
 		shroud_terrain_render_saw_shroud = shroud_render_object->probeRenderSawShroud();
@@ -5704,6 +6221,39 @@ const char *run_ww3d_terrain_visual_scene_probe(
 			 draw_indexed_after_shroud_update >= 6 &&
 			 clear_after_first_render >= 1 &&
 			 clear_after_shroud_update >= 2)) &&
+			(!partition_refresh_mode ||
+				(partition_shroud_refresh.requested &&
+				 partition_shroud_refresh.terrainLogicInstalled &&
+				 partition_shroud_refresh.partitionCreated &&
+			 partition_shroud_refresh.partitionInstalled &&
+			 partition_shroud_refresh.partitionInitInvoked &&
+			 partition_shroud_refresh.partitionCellsReady &&
+			 partition_shroud_refresh.displayInstalled &&
+			 partition_shroud_refresh.radarInstalled &&
+			 partition_shroud_refresh.playerListInstalled &&
+			 partition_shroud_refresh.revealInvoked &&
+			 partition_shroud_refresh.refreshInvoked &&
+			 partition_shroud_refresh.samplePrepared &&
+			 partition_shroud_refresh.sampleChanged &&
+			 partition_shroud_refresh.displaySampleTouched &&
+			 partition_shroud_refresh.radarSampleTouched &&
+			 partition_shroud_refresh.renderInvoked &&
+			 partition_shroud_refresh.status == CELLSHROUD_FOGGED &&
+			 partition_shroud_refresh.expectedLevel == partition_shroud_refresh.sampleAfter &&
+			 partition_shroud_refresh.sampleAfter > partition_shroud_refresh.sampleBefore &&
+			 partition_shroud_refresh.totalCells > 0 &&
+			 partition_shroud_refresh.displaySetCalls >= partition_shroud_refresh.totalCells &&
+			 partition_shroud_refresh.radarSetCalls >= partition_shroud_refresh.totalCells &&
+			 partition_shroud_refresh.displayFoggedSetCalls > 0 &&
+			 partition_shroud_refresh.radarFoggedSetCalls > 0 &&
+			 partition_shroud_refresh.displayClearCalls == 1 &&
+			 partition_shroud_refresh.radarClearCalls == 1 &&
+			 succeeded(partition_shroud_refresh.beginRender) &&
+			 succeeded(partition_shroud_refresh.render) &&
+			 succeeded(partition_shroud_refresh.endRender) &&
+			 partition_shroud_refresh.textureUpdate > texture_update_after_shroud_update &&
+			 partition_shroud_refresh.drawIndexed >= 9 &&
+			 partition_shroud_refresh.clear >= 3)) &&
 		state->browser_texture_create_calls >= 1 &&
 		state->browser_texture_update_calls >= 1 &&
 		state->browser_buffer_create_calls >= 2 &&
@@ -5711,7 +6261,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
-		(!visual_shroud_mode || state->draw_indexed_primitive_calls >= (shroud_update_mode ? 6u : 3u)) &&
+		(!visual_shroud_mode ||
+			state->draw_indexed_primitive_calls >=
+				(partition_refresh_mode ? 9u : (shroud_update_mode ? 6u : 3u))) &&
 		(use_full_init || state->last_draw_primitive_type == D3DPT_TRIANGLELIST) &&
 		state->last_draw_vertex_count > 0 &&
 		state->last_draw_primitive_count > 0 &&
@@ -5759,7 +6311,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 			"selected-source-patch-camera-pan" :
 			(visual_shroud_mode ?
 				(shroud_update_mode ?
-					"visual-owned-shroud-display-update-source-patch" :
+					"visual-owned-shroud-display-and-partition-refresh-source-patch" :
 					"visual-owned-shroud-source-patch") :
 				"selected-source-patch")));
 	const char *render_object_name = visual_shroud_mode ?
@@ -5775,9 +6327,10 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const UnsignedInt render_frame_count =
 		(succeeded(end_render_result) ? 1u : 0u) +
 		(shroud_update_mode && succeeded(shroud_update_end_render_result) ? 1u : 0u) +
+		(partition_refresh_mode && succeeded(partition_shroud_refresh.endRender) ? 1u : 0u) +
 		(camera_pan_requested && succeeded(camera_pan_end_render_result) ? 1u : 0u);
 
-	char buffer[46000];
+	char buffer[54000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -5797,11 +6350,15 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"cameraConfigured\":%s,\"cameraPanRequested\":%s,"
 		"\"cameraPanMoved\":%s,\"cameraPanBeginRender\":%d,"
 		"\"cameraPanRender\":%d,\"cameraPanEndRender\":%d,"
-		"\"visualShroudRequested\":%s,\"shroudUpdateRequested\":%s},"
+		"\"visualShroudRequested\":%s,\"shroudUpdateRequested\":%s,"
+		"\"partitionRefreshRequested\":%s},"
 		"\"renderFrames\":{\"count\":%u,\"firstDrawIndexed\":%u,"
 		"\"secondDrawIndexed\":%u,\"firstClear\":%u,\"secondClear\":%u,"
 		"\"shroudUpdateDrawIndexed\":%u,\"shroudUpdateClear\":%u,"
-		"\"firstTextureUpdate\":%u,\"shroudUpdateTextureUpdate\":%u},"
+		"\"firstTextureUpdate\":%u,\"shroudUpdateTextureUpdate\":%u,"
+		"\"partitionRefreshDrawIndexed\":%u,"
+		"\"partitionRefreshClear\":%u,"
+		"\"partitionRefreshTextureUpdate\":%u},"
 		"\"camera\":{\"primary\":{\"eyeX\":%.3f,\"eyeY\":%.3f,\"eyeZ\":%.3f,"
 		"\"targetX\":%.3f,\"targetY\":%.3f,\"targetZ\":%.3f,"
 		"\"renderSpan\":%.3f,\"lift\":%.3f},"
@@ -5912,10 +6469,33 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"owner\":\"W3DTerrainVisual::m_terrainRenderObject\"},"
 		"\"shroudUpdate\":{\"requested\":%s,\"setInvoked\":%s,"
 		"\"displayInvoked\":%s,\"notifyInvoked\":%s,\"renderInvoked\":%s,"
-		"\"sampleChanged\":%s,\"status\":%d,\"expectedLevel\":%d,"
-		"\"sampleX\":%d,\"sampleY\":%d,\"sampleBefore\":%d,\"sampleAfter\":%d,"
-		"\"cellsChanged\":%d,\"beginRender\":%d,\"render\":%d,"
-		"\"endRender\":%d},"
+			"\"sampleChanged\":%s,\"status\":%d,\"expectedLevel\":%d,"
+			"\"sampleX\":%d,\"sampleY\":%d,\"sampleBefore\":%d,\"sampleAfter\":%d,"
+			"\"cellsChanged\":%d,\"beginRender\":%d,\"render\":%d,"
+			"\"endRender\":%d},"
+			"\"partitionRefresh\":{\"requested\":%s,"
+			"\"terrainLogicInstalled\":%s,"
+			"\"partitionCreated\":%s,\"partitionInstalled\":%s,"
+		"\"partitionInitInvoked\":%s,\"partitionCellsReady\":%s,"
+		"\"displayInstalled\":%s,\"radarInstalled\":%s,"
+		"\"playerListInstalled\":%s,\"revealInvoked\":%s,"
+		"\"refreshInvoked\":%s,\"samplePrepared\":%s,"
+		"\"sampleChanged\":%s,\"displaySampleTouched\":%s,"
+		"\"radarSampleTouched\":%s,\"renderInvoked\":%s,"
+		"\"cellCountX\":%d,\"cellCountY\":%d,\"totalCells\":%d,"
+		"\"sampleX\":%d,\"sampleY\":%d,\"status\":%d,"
+		"\"expectedLevel\":%d,\"sampleBefore\":%d,\"sampleAfter\":%d,"
+		"\"revealDisplaySetCalls\":%d,\"revealRadarSetCalls\":%d,"
+		"\"displayClearCalls\":%d,\"radarClearCalls\":%d,"
+		"\"displaySetCalls\":%d,\"radarSetCalls\":%d,"
+		"\"displayShroudedSetCalls\":%d,"
+		"\"displayFoggedSetCalls\":%d,"
+		"\"displayClearSetCalls\":%d,"
+		"\"radarShroudedSetCalls\":%d,"
+		"\"radarFoggedSetCalls\":%d,"
+		"\"radarClearSetCalls\":%d,"
+		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
+		"\"drawIndexed\":%u,\"clear\":%u,\"textureUpdate\":%u},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
@@ -5967,6 +6547,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		camera_pan_end_render_result,
 		bool_json(use_visual_shroud),
 		bool_json(use_shroud_update),
+		bool_json(partition_refresh_mode),
 		render_frame_count,
 		draw_indexed_after_first_render,
 		draw_indexed_after_camera_pan,
@@ -5976,6 +6557,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		clear_after_shroud_update,
 		texture_update_after_first_render,
 		texture_update_after_shroud_update,
+		partition_shroud_refresh.drawIndexed,
+		partition_shroud_refresh.clear,
+		partition_shroud_refresh.textureUpdate,
 		static_cast<double>(primary_camera_view.eyeX),
 		static_cast<double>(primary_camera_view.eyeY),
 		static_cast<double>(primary_camera_view.eyeZ),
@@ -6167,10 +6751,53 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		shroud_update_sample_y,
 		shroud_update_sample_before,
 		shroud_update_sample_after,
-		shroud_update_cells_changed,
-		shroud_update_begin_render_result,
-		shroud_update_render_result,
-		shroud_update_end_render_result,
+			shroud_update_cells_changed,
+			shroud_update_begin_render_result,
+			shroud_update_render_result,
+			shroud_update_end_render_result,
+			bool_json(partition_shroud_refresh.requested),
+			bool_json(partition_shroud_refresh.terrainLogicInstalled),
+			bool_json(partition_shroud_refresh.partitionCreated),
+		bool_json(partition_shroud_refresh.partitionInstalled),
+		bool_json(partition_shroud_refresh.partitionInitInvoked),
+		bool_json(partition_shroud_refresh.partitionCellsReady),
+		bool_json(partition_shroud_refresh.displayInstalled),
+		bool_json(partition_shroud_refresh.radarInstalled),
+		bool_json(partition_shroud_refresh.playerListInstalled),
+		bool_json(partition_shroud_refresh.revealInvoked),
+		bool_json(partition_shroud_refresh.refreshInvoked),
+		bool_json(partition_shroud_refresh.samplePrepared),
+		bool_json(partition_shroud_refresh.sampleChanged),
+		bool_json(partition_shroud_refresh.displaySampleTouched),
+		bool_json(partition_shroud_refresh.radarSampleTouched),
+		bool_json(partition_shroud_refresh.renderInvoked),
+		partition_shroud_refresh.cellCountX,
+		partition_shroud_refresh.cellCountY,
+		partition_shroud_refresh.totalCells,
+		partition_shroud_refresh.sampleX,
+		partition_shroud_refresh.sampleY,
+		partition_shroud_refresh.status,
+		partition_shroud_refresh.expectedLevel,
+		partition_shroud_refresh.sampleBefore,
+		partition_shroud_refresh.sampleAfter,
+		partition_shroud_refresh.revealDisplaySetCalls,
+		partition_shroud_refresh.revealRadarSetCalls,
+		partition_shroud_refresh.displayClearCalls,
+		partition_shroud_refresh.radarClearCalls,
+		partition_shroud_refresh.displaySetCalls,
+		partition_shroud_refresh.radarSetCalls,
+		partition_shroud_refresh.displayShroudedSetCalls,
+		partition_shroud_refresh.displayFoggedSetCalls,
+		partition_shroud_refresh.displayClearSetCalls,
+		partition_shroud_refresh.radarShroudedSetCalls,
+		partition_shroud_refresh.radarFoggedSetCalls,
+		partition_shroud_refresh.radarClearSetCalls,
+		partition_shroud_refresh.beginRender,
+		partition_shroud_refresh.render,
+		partition_shroud_refresh.endRender,
+		partition_shroud_refresh.drawIndexed,
+		partition_shroud_refresh.clear,
+		partition_shroud_refresh.textureUpdate,
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
 		state != nullptr ? state->texture_lock_rect_calls : 0,

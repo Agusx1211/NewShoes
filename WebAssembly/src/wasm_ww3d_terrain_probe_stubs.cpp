@@ -2,13 +2,16 @@
 
 class GhostObjectManager;
 class Radar;
+class PlayerList;
 class CampaignManager;
+struct Coord3D;
 class ScriptActionsInterface;
 class ScriptConditionsInterface;
 class TeamFactory;
 
 GhostObjectManager *TheGhostObjectManager __attribute__((weak)) = nullptr;
 Radar *TheRadar __attribute__((weak)) = nullptr;
+PlayerList *ThePlayerList __attribute__((weak)) = nullptr;
 CampaignManager *TheCampaignManager __attribute__((weak)) = nullptr;
 ScriptActionsInterface *TheScriptActions __attribute__((weak)) = nullptr;
 ScriptConditionsInterface *TheScriptConditions __attribute__((weak)) = nullptr;
@@ -58,7 +61,11 @@ extern "C" int cnc_port_ai_group_is_dead(const void *) __asm__("_ZNK7AIGroup13is
 extern "C" int cnc_port_ai_group_is_idle(const void *) __asm__("_ZNK7AIGroup6isIdleEv") __attribute__((weak));
 extern "C" void cnc_port_w3d_snow_release(void *) __asm__("_ZN14W3DSnowManager16ReleaseResourcesEv") __attribute__((weak));
 extern "C" int cnc_port_w3d_snow_reacquire(void *) __asm__("_ZN14W3DSnowManager18ReAcquireResourcesEv") __attribute__((weak));
-extern "C" void cnc_port_partition_refresh_shroud(void *) __asm__("_ZN16PartitionManager27refreshShroudForLocalPlayerEv") __attribute__((weak));
+extern "C" void *cnc_port_simple_object_iterator_ctor_c1(void *) __asm__("_ZN20SimpleObjectIteratorC1Ev") __attribute__((weak));
+extern "C" void cnc_port_simple_object_iterator_insert(void *, void *, float) __asm__("_ZN20SimpleObjectIterator6insertEP6Objectf") __attribute__((weak));
+extern "C" void cnc_port_simple_object_iterator_sort(void *, int) __asm__("_ZN20SimpleObjectIterator4sortE13IterOrderType") __attribute__((weak));
+extern "C" void cnc_port_object_on_partition_cell_change(void *) __asm__("_ZN6Object21onPartitionCellChangeEv") __attribute__((weak));
+extern "C" void cnc_port_object_on_collide(void *, void *, const Coord3D *, const Coord3D *) __asm__("_ZN6Object9onCollideEPS_PK7Coord3DS3_") __attribute__((weak));
 extern "C" void cnc_port_w3d_shadow_release(void *) __asm__("_ZN16W3DShadowManager16ReleaseResourcesEv") __attribute__((weak));
 extern "C" int cnc_port_w3d_shadow_reacquire(void *) __asm__("_ZN16W3DShadowManager18ReAcquireResourcesEv") __attribute__((weak));
 extern "C" void *cnc_port_w3d_shadow_ctor_c1(void *) __asm__("_ZN16W3DShadowManagerC1Ev") __attribute__((weak));
@@ -161,7 +168,11 @@ extern "C" int cnc_port_ai_group_is_dead(const void *) { return 1; }
 extern "C" int cnc_port_ai_group_is_idle(const void *) { return 1; }
 extern "C" void cnc_port_w3d_snow_release(void *) {}
 extern "C" int cnc_port_w3d_snow_reacquire(void *) { return 1; }
-extern "C" void cnc_port_partition_refresh_shroud(void *) {}
+extern "C" void *cnc_port_simple_object_iterator_ctor_c1(void *self) { return self; }
+extern "C" void cnc_port_simple_object_iterator_insert(void *, void *, float) {}
+extern "C" void cnc_port_simple_object_iterator_sort(void *, int) {}
+extern "C" void cnc_port_object_on_partition_cell_change(void *) {}
+extern "C" void cnc_port_object_on_collide(void *, void *, const Coord3D *, const Coord3D *) {}
 extern "C" void cnc_port_w3d_shadow_release(void *) {}
 extern "C" int cnc_port_w3d_shadow_reacquire(void *) { return 1; }
 extern "C" void *cnc_port_w3d_shadow_ctor_c1(void *self) { return self; }

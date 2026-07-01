@@ -18186,10 +18186,10 @@ async function rpc(command, payload = {}) {
           ? "visual-load-window"
           : (cameraPanMode
             ? "selected-source-patch-camera-pan"
-            : (visualShroudMode
-              ? (visualShroudUpdateMode
-                ? "visual-owned-shroud-display-update-source-patch"
-                : "visual-owned-shroud-source-patch")
+              : (visualShroudMode
+                ? (visualShroudUpdateMode
+                  ? "visual-owned-shroud-display-and-partition-refresh-source-patch"
+                  : "visual-owned-shroud-source-patch")
               : "selected-source-patch")));
         const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
         const expectedCellsPerSide = loadWindowMode ? 128 : 32;
@@ -18305,6 +18305,13 @@ async function rpc(command, payload = {}) {
           && shroudTerrainIndices[1] > blendTerrainIndices[1]
           && baseTerrainIndices[1] > shroudTerrainIndices[0]
           && blendTerrainIndices[1] > shroudTerrainIndices[0];
+        const thirdShroudAfterThirdTerrain = baseTerrainIndices.length >= 3
+          && blendTerrainIndices.length >= 3
+          && shroudTerrainIndices.length >= 3
+          && shroudTerrainIndices[2] > baseTerrainIndices[2]
+          && shroudTerrainIndices[2] > blendTerrainIndices[2]
+          && baseTerrainIndices[2] > shroudTerrainIndices[1]
+          && blendTerrainIndices[2] > shroudTerrainIndices[1];
         const cameraPanProbeOk = !cameraPanMode
           || (probe?.results?.cameraConfigured === true
             && probe?.results?.cameraPanRequested === true
@@ -18357,6 +18364,7 @@ async function rpc(command, payload = {}) {
             && isShroudTerrainPass(browserProbe));
         const visualShroudUpdateProbeOk = !visualShroudUpdateMode
           || (probe?.results?.shroudUpdateRequested === true
+            && probe?.results?.partitionRefreshRequested === true
             && probe?.shroudUpdate?.requested === true
             && probe?.shroudUpdate?.setInvoked === true
             && probe?.shroudUpdate?.displayInvoked === true
@@ -18372,17 +18380,50 @@ async function rpc(command, payload = {}) {
             && probe?.shroudUpdate?.beginRender === 0
             && probe?.shroudUpdate?.render === 0
             && probe?.shroudUpdate?.endRender === 0
-            && probe?.renderFrames?.count === 2
+            && probe?.renderFrames?.count === 3
             && probe?.renderFrames?.firstDrawIndexed >= 3
             && probe?.renderFrames?.shroudUpdateDrawIndexed >= 6
+            && probe?.renderFrames?.partitionRefreshDrawIndexed >= 9
             && probe?.renderFrames?.firstClear >= 1
             && probe?.renderFrames?.shroudUpdateClear >= 2
+            && probe?.renderFrames?.partitionRefreshClear >= 3
             && probe?.renderFrames?.shroudUpdateTextureUpdate > probe?.renderFrames?.firstTextureUpdate
-            && drawHistory.length >= 6
-            && baseTerrainIndices.length >= 2
-            && blendTerrainIndices.length >= 2
-            && shroudTerrainIndices.length >= 2
-            && secondShroudAfterSecondTerrain);
+            && probe?.renderFrames?.partitionRefreshTextureUpdate > probe?.renderFrames?.shroudUpdateTextureUpdate
+            && probe?.partitionRefresh?.requested === true
+            && probe?.partitionRefresh?.terrainLogicInstalled === true
+            && probe?.partitionRefresh?.partitionCreated === true
+            && probe?.partitionRefresh?.partitionInstalled === true
+            && probe?.partitionRefresh?.partitionInitInvoked === true
+            && probe?.partitionRefresh?.partitionCellsReady === true
+            && probe?.partitionRefresh?.displayInstalled === true
+            && probe?.partitionRefresh?.radarInstalled === true
+            && probe?.partitionRefresh?.playerListInstalled === true
+            && probe?.partitionRefresh?.revealInvoked === true
+            && probe?.partitionRefresh?.refreshInvoked === true
+            && probe?.partitionRefresh?.samplePrepared === true
+            && probe?.partitionRefresh?.sampleChanged === true
+            && probe?.partitionRefresh?.displaySampleTouched === true
+            && probe?.partitionRefresh?.radarSampleTouched === true
+            && probe?.partitionRefresh?.renderInvoked === true
+            && probe?.partitionRefresh?.status === 1
+            && probe?.partitionRefresh?.expectedLevel === probe?.partitionRefresh?.sampleAfter
+            && (probe?.partitionRefresh?.sampleAfter ?? 0) > (probe?.partitionRefresh?.sampleBefore ?? 0)
+            && (probe?.partitionRefresh?.totalCells ?? 0) > 0
+            && (probe?.partitionRefresh?.displaySetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
+            && (probe?.partitionRefresh?.radarSetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
+            && (probe?.partitionRefresh?.displayFoggedSetCalls ?? 0) > 0
+            && (probe?.partitionRefresh?.radarFoggedSetCalls ?? 0) > 0
+            && probe?.partitionRefresh?.displayClearCalls === 1
+            && probe?.partitionRefresh?.radarClearCalls === 1
+            && probe?.partitionRefresh?.beginRender === 0
+            && probe?.partitionRefresh?.render === 0
+            && probe?.partitionRefresh?.endRender === 0
+            && drawHistory.length >= 9
+            && baseTerrainIndices.length >= 3
+            && blendTerrainIndices.length >= 3
+            && shroudTerrainIndices.length >= 3
+            && secondShroudAfterSecondTerrain
+            && thirdShroudAfterThirdTerrain);
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
           && renderModeMatches
@@ -18487,6 +18528,7 @@ async function rpc(command, payload = {}) {
             shroudTerrainIndices,
             shroudAfterTerrain,
             secondShroudAfterSecondTerrain,
+            thirdShroudAfterThirdTerrain,
           },
           textureDelta,
           textureProbe: textureAfter,

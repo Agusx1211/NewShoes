@@ -765,6 +765,12 @@ shares structure and follows behind.
       `W3DDisplay::m_3DScene` frame, gates the second ordered shroud pass, and
       captures
       `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
+      The same update mode now also links original
+      `GameLogic/Object/PartitionManager.cpp`, builds a bounded
+      `PartitionManager` cell grid, routes `revealMapForPlayer` and
+      `refreshShroudForLocalPlayer` through forwarding display/radar adapters,
+      verifies a fogged sample updates the visual-owned `W3DShroud`, and gates a
+      third ordered shroud render frame.
       The same visual-scene smoke now also proves original
       `W3DTerrainLogic::loadMap(query=true)` against the same shipped map,
       including logic-only `WorldHeightMap` parser sections, map-object
@@ -851,10 +857,14 @@ shares structure and follows behind.
       proves the same shroud material pass under `W3DTerrainVisual::load` /
       `W3DDisplay::m_3DScene` ownership for the selected source-backed patch,
       and separately proves visual-owned shroud data updates through original
-      `W3DDisplay::setShroudLevel`. Remaining work is to wire full
-      `W3DTerrainVisual::init`, partition, and shroud owners, then let gameplay
-      fog updates originate from `PartitionManager::refreshShroudForLocalPlayer`
-      instead of a probe-driven display call.
+      `W3DDisplay::setShroudLevel` plus original
+      `PartitionManager::revealMapForPlayer` /
+      `refreshShroudForLocalPlayer` in a bounded probe grid. Remaining work is
+      to wire full `W3DTerrainVisual::init`, production `PlayerList` /
+      `Player`, real `TerrainLogic` extent ownership, and the target-wide
+      `GlobalData` layout so gameplay fog updates originate from the full
+      partition/shroud owners instead of the probe-local layout shims and
+      bounded terrain cell grid.
 - [ ] Promote bridge-buffer drawing from the focused
       `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned
       damage-state behavior. The focused browser scene now verifies the

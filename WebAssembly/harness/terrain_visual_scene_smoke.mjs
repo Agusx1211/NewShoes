@@ -666,11 +666,12 @@ try {
   if (!visualShroudUpdateResult.ok
       || visualShroudUpdateResult.command !== "ww3dTerrainVisualShroudUpdateScene"
       || visualShroudUpdateResult.probe?.source !== "ww3d_terrain_visual_shroud_update_scene_probe"
-      || visualShroudUpdateResult.probe?.renderMode !== "visual-owned-shroud-display-update-source-patch"
+      || visualShroudUpdateResult.probe?.renderMode !== "visual-owned-shroud-display-and-partition-refresh-source-patch"
       || visualShroudUpdateResult.probe?.visual?.class !== "W3DTerrainVisual"
       || visualShroudUpdateResult.probe?.visual?.ownedTerrainRenderObject !== true
       || visualShroudUpdateResult.probe?.visual?.shroudRenderObject !== true
       || visualShroudUpdateResult.probe?.results?.shroudUpdateRequested !== true
+      || visualShroudUpdateResult.probe?.results?.partitionRefreshRequested !== true
       || visualShroudUpdateResult.probe?.scene?.created !== true
       || !visualShroudUpdateResult.probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass")
       || visualShroudUpdateResult.probe?.terrain?.renderObject !== "ProbeHeightMapRenderObjWithShroud"
@@ -698,22 +699,55 @@ try {
       || visualShroudUpdateResult.probe?.shroudUpdate?.beginRender !== 0
       || visualShroudUpdateResult.probe?.shroudUpdate?.render !== 0
       || visualShroudUpdateResult.probe?.shroudUpdate?.endRender !== 0
-      || visualShroudUpdateResult.probe?.renderFrames?.count !== 2
+      || visualShroudUpdateResult.probe?.partitionRefresh?.requested !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.terrainLogicInstalled !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionCreated !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionInstalled !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionInitInvoked !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.partitionCellsReady !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.displayInstalled !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.radarInstalled !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.playerListInstalled !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.revealInvoked !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.refreshInvoked !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.samplePrepared !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.sampleChanged !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.displaySampleTouched !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.radarSampleTouched !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.renderInvoked !== true
+      || visualShroudUpdateResult.probe?.partitionRefresh?.status !== 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.expectedLevel !== visualShroudUpdateResult.probe?.partitionRefresh?.sampleAfter
+      || visualShroudUpdateResult.probe?.partitionRefresh?.sampleAfter <= visualShroudUpdateResult.probe?.partitionRefresh?.sampleBefore
+      || visualShroudUpdateResult.probe?.partitionRefresh?.totalCells <= 0
+      || visualShroudUpdateResult.probe?.partitionRefresh?.displaySetCalls < visualShroudUpdateResult.probe?.partitionRefresh?.totalCells
+      || visualShroudUpdateResult.probe?.partitionRefresh?.radarSetCalls < visualShroudUpdateResult.probe?.partitionRefresh?.totalCells
+      || visualShroudUpdateResult.probe?.partitionRefresh?.displayFoggedSetCalls <= 0
+      || visualShroudUpdateResult.probe?.partitionRefresh?.radarFoggedSetCalls <= 0
+      || visualShroudUpdateResult.probe?.partitionRefresh?.displayClearCalls !== 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.radarClearCalls !== 1
+      || visualShroudUpdateResult.probe?.partitionRefresh?.beginRender !== 0
+      || visualShroudUpdateResult.probe?.partitionRefresh?.render !== 0
+      || visualShroudUpdateResult.probe?.partitionRefresh?.endRender !== 0
+      || visualShroudUpdateResult.probe?.renderFrames?.count !== 3
       || visualShroudUpdateResult.probe?.renderFrames?.firstDrawIndexed < 3
       || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateDrawIndexed < 6
+      || visualShroudUpdateResult.probe?.renderFrames?.partitionRefreshDrawIndexed < 9
       || visualShroudUpdateResult.probe?.renderFrames?.firstClear < 1
       || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateClear < 2
+      || visualShroudUpdateResult.probe?.renderFrames?.partitionRefreshClear < 3
       || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateTextureUpdate <= visualShroudUpdateResult.probe?.renderFrames?.firstTextureUpdate
-      || visualShroudUpdateResult.probe?.calls?.drawIndexed < 6
+      || visualShroudUpdateResult.probe?.renderFrames?.partitionRefreshTextureUpdate <= visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateTextureUpdate
+      || visualShroudUpdateResult.probe?.calls?.drawIndexed < 9
       || visualShroudUpdateResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || !isShroudTerrainPass(visualShroudUpdateResult.browserProbe)
-      || visualShroudUpdateDrawHistory.length < 6
+      || visualShroudUpdateDrawHistory.length < 9
       || !hasTerrainPass(visualShroudUpdateDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 })
       || !hasTerrainPass(visualShroudUpdateDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 })
       || visualShroudUpdateResult.drawSequence?.shroudAfterTerrain !== true
       || visualShroudUpdateResult.drawSequence?.secondShroudAfterSecondTerrain !== true
-      || (visualShroudUpdateResult.drawSequence?.shroudTerrainIndices?.length ?? 0) < 2
-      || visualShroudUpdateResult.textureDelta?.updates < 2
+      || visualShroudUpdateResult.drawSequence?.thirdShroudAfterThirdTerrain !== true
+      || (visualShroudUpdateResult.drawSequence?.shroudTerrainIndices?.length ?? 0) < 3
+      || visualShroudUpdateResult.textureDelta?.updates < 3
       || visualShroudUpdateResult.textureDelta?.binds < 1
       || visualShroudUpdateResult.textureDelta?.samplerApplications < 1
       || visualShroudUpdateResult.screenshot?.coverage?.coloredPixelCount <= 0) {
@@ -1131,6 +1165,7 @@ try {
     visualShroudUpdateTerrain: visualShroudUpdateResult.probe.terrain,
     visualShroudUpdateShroud: visualShroudUpdateResult.probe.shroud,
     visualShroudUpdate: visualShroudUpdateResult.probe.shroudUpdate,
+    visualShroudPartitionRefresh: visualShroudUpdateResult.probe.partitionRefresh,
     visualShroudUpdateFrames: visualShroudUpdateResult.probe.renderFrames,
     visualShroudUpdateCalls: visualShroudUpdateResult.probe.calls,
     visualShroudUpdateDraw: visualShroudUpdateResult.probe.draw,

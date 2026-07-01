@@ -3960,6 +3960,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
       Verified with `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`
       and `npm --prefix WebAssembly run test:ww3d-terrain-shroud-scene`.
+- [x] Prove visual-owned shroud refresh through original `PartitionManager`. The
+      `zh_w3d_terrain_probe_runtime` target now links
+      `GameLogic/Object/PartitionManager.cpp`, and
+      `ww3dTerrainVisualShroudUpdateScene` runs a third shroud pass that
+      constructs a bounded real `PartitionManager`, calls `revealMapForPlayer`,
+      then routes `refreshShroudForLocalPlayer` through forwarding display/radar
+      adapters into the visual-owned `W3DShroud`. The browser harness verifies
+      the fogged sample status/level, display and radar clear/set traffic, a
+      third shroud texture upload, three ordered base/blend/shroud terrain
+      batches, and WebGL2 pixels in
+      `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
+      Verified with
+      `node harness/terrain_visual_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big`.
 - [x] Add a combined terrain full-scene missing-water-assets frontier. The
       `test:ww3d-terrain-full-scene` harness now mounts range-backed real
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,

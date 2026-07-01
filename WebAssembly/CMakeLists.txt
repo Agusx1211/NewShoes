@@ -2300,6 +2300,7 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_GAMELOGIC_DIR}/Map/PolygonTrigger.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/Object/PartitionManager.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/ObjectTypes.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DAssetManager.cpp"
