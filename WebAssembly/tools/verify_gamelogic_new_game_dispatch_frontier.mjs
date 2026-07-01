@@ -2,7 +2,8 @@
 // Verifies that the Skirmish start frontier is pinned to the original
 // GameLogic MSG_NEW_GAME dispatch path, that the current shell smoke still
 // stops before claiming original GameLogic ownership, and that the focused
-// runtime smoke links original GameLogic.cpp/GameLogicDispatch.cpp.
+// runtime smoke links original GlobalData.cpp/GameLogic.cpp/
+// GameLogicDispatch.cpp.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -20,6 +21,7 @@ const paths = {
   shellSmoke: "WebAssembly/tests/w3d_window_layout_script_smoke.cpp",
   runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
   gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
+  preRts: "WebAssembly/shims/PreRTS.h",
   cmake: "WebAssembly/CMakeLists.txt",
 };
 
@@ -146,6 +148,7 @@ const gameLogicDispatch = readRepoText(paths.gameLogicDispatch);
 const shellSmoke = readRepoText(paths.shellSmoke);
 const runtimeSmoke = readRepoText(paths.runtimeSmoke);
 const gameLogicShim = readRepoText(paths.gameLogicShim);
+const preRts = readRepoText(paths.preRts);
 const cmake = readRepoText(paths.cmake);
 
 const propagate = functionBody(
@@ -370,6 +373,10 @@ const runtimeTargetSources = cmakeInvocationBlock(
   "gamelogic-new-game-dispatch-smoke add_executable",
 );
 expect(
+  /\$\{GAMEENGINE_COMMON_DIR\}\/GlobalData\.cpp|Common\/GlobalData\.cpp|Common\\GlobalData\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GlobalData.cpp",
+);
+expect(
   /System\/GameLogic\.cpp|System\\GameLogic\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original GameLogic.cpp",
 );
@@ -403,6 +410,39 @@ expect(
     && /GUI\/Shell\/ShellMenuScheme\.cpp|GUI\\Shell\\ShellMenuScheme\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original Shell support sources",
 );
+const runtimeCompileDefinitions = cmakeInvocationBlock(
+  cmake,
+  /target_compile_definitions\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke target_compile_definitions",
+);
+expect(
+  /WASM_USE_ORIGINAL_GLOBALDATA\s*=\s*1/.test(runtimeCompileDefinitions.block),
+  "gamelogic-new-game-dispatch-smoke does not opt into original GlobalData headers",
+);
+const runtimeCompileOptions = cmakeInvocationBlock(
+  cmake,
+  /target_compile_options\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke target_compile_options",
+);
+const originalGlobalDataHeaderIndex =
+  runtimeCompileOptions.block.indexOf("-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h");
+const preRtsHeaderIndex = runtimeCompileOptions.block.indexOf("-include${WASM_SHIMS_DIR}/PreRTS.h");
+expect(
+  originalGlobalDataHeaderIndex !== -1,
+  "gamelogic-new-game-dispatch-smoke does not force-include original GlobalData.h",
+);
+expect(
+  preRtsHeaderIndex !== -1,
+  "gamelogic-new-game-dispatch-smoke does not force-include PreRTS.h",
+);
+expect(
+  originalGlobalDataHeaderIndex < preRtsHeaderIndex,
+  "gamelogic-new-game-dispatch-smoke does not include original GlobalData.h before PreRTS.h",
+);
+expect(
+  /#if\s+defined\s*\(\s*WASM_USE_ORIGINAL_GLOBALDATA\s*\)[\s\S]*#include_next\s+"Common\/GlobalData\.h"[\s\S]*#else[\s\S]*#include\s+"Common\/GlobalData\.h"/.test(preRts),
+  "PreRTS.h does not preserve the original GlobalData escape hatch",
+);
 const runtimeLinkOptions = cmakeInvocationBlock(
   cmake,
   /target_link_options\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
@@ -422,10 +462,38 @@ const runtimePathLine = lineOf(
   /gamelogic-new-game-dispatch-runtime/,
   "runtime smoke JSON path",
 );
+const runtimeSourceLine = lineOf(
+  runtimeSmoke,
+  /GlobalData\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/ScriptEngine\.cpp/,
+  "runtime smoke original source JSON",
+);
 const runtimePlayerWrapLine = lineOf(
   runtimeSmoke,
   /__wrap__ZN10PlayerList12getNthPlayerEi/,
   "runtime smoke focused PlayerList::getNthPlayer wrapper",
+);
+const runtimeGlobalDataLine = lineOf(
+  runtimeSmoke,
+  /GlobalData\s+global_data\s*;/,
+  "runtime smoke original GlobalData allocation",
+);
+const runtimeGlobalDataWritableLine = lineOf(
+  runtimeSmoke,
+  /TheWritableGlobalData\s*=\s*&global_data\s*;/,
+  "runtime smoke original TheWritableGlobalData assignment",
+);
+const runtimeGlobalDataMacroProofLine = lineOf(
+  runtimeSmoke,
+  /TheGlobalData\s*==\s*&global_data/,
+  "runtime smoke original TheGlobalData macro proof",
+);
+expect(
+  !/GlobalData\s*\*\s*TheGlobalData\s*=/.test(runtimeSmoke),
+  "runtime smoke still defines the shim TheGlobalData singleton",
+);
+expect(
+  !/shim GlobalData bridge/.test(runtimeSmoke),
+  "runtime smoke still reports the shim GlobalData bridge",
 );
 const runtimeGameLogicLine = lineOf(
   runtimeSmoke,
@@ -475,6 +543,11 @@ const runtimeOriginalOwnersLine = lineOf(
   /originalOwners/,
   "runtime smoke originalOwners JSON",
 );
+const runtimeOriginalGlobalDataOwnerLine = lineOf(
+  runtimeSmoke,
+  /GlobalData TheWritableGlobalData/,
+  "runtime smoke original GlobalData owner JSON",
+);
 
 console.log(JSON.stringify({
   ok: true,
@@ -522,7 +595,13 @@ console.log(JSON.stringify({
   runtimeTargetBoundary: {
     smokeSource: paths.runtimeSmoke,
     cmakeTargetLine: runtimeTargetSources.line,
+    cmakeCompileDefinitionsLine: runtimeCompileDefinitions.line,
+    cmakeCompileOptionsLine: runtimeCompileOptions.line,
     cmakeLinkOptionsLine: runtimeLinkOptions.line,
+    preRtsHeader: paths.preRts,
+    originalGlobalDataCppLinked: true,
+    originalGlobalDataHeaderPreincluded: true,
+    preRtsOriginalGlobalDataEscapeHatch: true,
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
@@ -532,7 +611,12 @@ console.log(JSON.stringify({
     originalShellCppLinked: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
+    runtimeSourceLine,
     focusedPlayerLookupWrapLine: runtimePlayerWrapLine,
+    globalDataAllocationLine: runtimeGlobalDataLine,
+    globalDataWritableSingletonLine: runtimeGlobalDataWritableLine,
+    globalDataMacroProofLine: runtimeGlobalDataMacroProofLine,
+    noLocalTheGlobalDataSingleton: true,
     gameLogicAllocationLine: runtimeGameLogicLine,
     scriptEngineAllocationLine: runtimeScriptEngineLine,
     scriptEngineConstructorDifficultyLine: runtimeScriptNormalLine,
@@ -541,6 +625,7 @@ console.log(JSON.stringify({
     shellPushLine: runtimeShellPushLine,
     shellHideStateProofLine: runtimeShellHideProofLine,
     originalOwnersLine: runtimeOriginalOwnersLine,
+    originalGlobalDataOwnerLine: runtimeOriginalGlobalDataOwnerLine,
   },
   covered: [
     "MessageStream::propagateMessages transfers messages to TheCommandList",
@@ -550,11 +635,10 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original ScriptEngine and Shell ownership",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, ScriptEngine, and Shell ownership",
   ],
   nextRequired: [
     "replace the runtime PlayerList::getNthPlayer linker wrap with real PlayerList/Player ownership",
-    "replace the runtime shim GlobalData bridge with original GlobalData ownership",
     "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
   ],

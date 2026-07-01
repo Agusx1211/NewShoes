@@ -165,7 +165,6 @@ OVERRIDE<WeatherSetting> TheWeatherSetting WEAK_SINGLETON = nullptr;
 
 #undef WEAK_SINGLETON
 
-GlobalData *TheGlobalData = nullptr;
 GameEngine *TheGameEngine = nullptr;
 GameSpyInfoInterface *TheGameSpyInfo = nullptr;
 IMEManagerInterface *TheIMEManager = nullptr;
@@ -410,8 +409,11 @@ int main()
 	global_data.m_framesPerSecondLimit = 30;
 	global_data.m_mapName = "Maps\\Smoke\\Before.map";
 	global_data.m_pendingFile = "Maps\\Smoke\\Skirmish.map";
-	global_data.setPath_UserData(AsciiString("UserData\\"));
-	TheGlobalData = &global_data;
+	TheWritableGlobalData = &global_data;
+	if (!expect(TheGlobalData == &global_data,
+			"original GlobalData macro should read from TheWritableGlobalData")) {
+		return 1;
+	}
 
 	SmokeGameEngine game_engine;
 	TheGameEngine = &game_engine;
@@ -512,7 +514,7 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
 		<< "\"playerLookupIndex\":" << g_player_lookup_index << ","
 		<< "\"difficulty\":" << script_engine->getGlobalDifficulty() << ","
@@ -529,9 +531,9 @@ int main()
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
 		<< "\"runtimeBoundaries\":["
 		<< "\"focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch\","
-		<< "\"shim GlobalData bridge\"],"
-		<< "\"originalOwners\":[\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
-		<< "\"nextRequired\":\"replace focused PlayerList and shim GlobalData before deferred terrain load\"}"
+		<< "\"focused in-memory BlankWindow layout adapter\"],"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
+		<< "\"nextRequired\":\"replace focused PlayerList and in-memory BlankWindow before deferred terrain load\"}"
 		<< "\n";
 
 	return 0;

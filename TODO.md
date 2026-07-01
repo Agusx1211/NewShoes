@@ -846,12 +846,16 @@ shares structure and follows behind.
       `GameLogic.cpp`, `GameLogicDispatch.cpp`, `GameState.cpp`,
       `ScriptEngine.cpp`, and `Scripts.cpp` to drive
       `GameLogic::processCommandList` on a real `MSG_NEW_GAME` through
-      original `ScriptEngine::setGlobalDifficulty`, original
-      `Shell::hideShell`, and the first-call `startNewGame(FALSE)` deferral
-      before terrain load. That runtime still uses focused
-      `PlayerList::getNthPlayer`, `GlobalData`, and BlankWindow adapters;
-      replace those with real owners before continuing the deferred update
-      into terrain/player/script map-load ownership.
+      original `GlobalData.cpp` / `TheWritableGlobalData`, original
+      `ScriptEngine::setGlobalDifficulty`, original `Shell::hideShell`, and
+      the first-call `startNewGame(FALSE)` deferral before terrain load. That
+      runtime still uses focused `PlayerList::getNthPlayer` and in-memory
+      BlankWindow adapters; replace those with real owners before continuing
+      the deferred update into terrain/player/script map-load ownership. A
+      current scan of the extracted runtime `.big` archives found no
+      `Menus/BlankWindow.wnd`, so replacing the in-memory BlankWindow adapter
+      requires locating the original shipped layout/archive path or proving a
+      real engine path to an available layout rather than inventing one.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

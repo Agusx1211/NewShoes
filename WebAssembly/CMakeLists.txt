@@ -5663,6 +5663,7 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
 
 add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
@@ -5677,6 +5678,10 @@ add_executable(gamelogic-new-game-dispatch-smoke
 
 set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
   SUFFIX ".cjs"
+)
+
+target_compile_definitions(gamelogic-new-game-dispatch-smoke PRIVATE
+  WASM_USE_ORIGINAL_GLOBALDATA=1
 )
 
 target_link_libraries(gamelogic-new-game-dispatch-smoke PRIVATE
@@ -5706,6 +5711,7 @@ target_compile_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "-include${WASM_SHIMS_DIR}/windows.h"
   "-include${WASM_SHIMS_DIR}/mmsystem.h"
   "-include${WWVEGAS_PORT_SHIM}"
+  "-include${GAMEENGINE_INCLUDE_DIR}/Common/GlobalData.h"
   "-include${WASM_SHIMS_DIR}/PreRTS.h"
   "-iquote${GAMEENGINE_INCLUDE_DIR}"
   "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
@@ -5729,6 +5735,7 @@ target_compile_options(gamelogic-new-game-dispatch-smoke PRIVATE
   -Wextra
   -Wno-extra-tokens
   -Wno-implicit-exception-spec-mismatch
+  -Wno-invalid-offsetof
   -Wno-new-returns-null
   -Wno-register
   -Wno-undefined-bool-conversion

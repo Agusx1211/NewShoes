@@ -70,7 +70,13 @@ inline int iswascii(wint_t c)
 #include "Common/UnicodeString.h"
 #include "Common/SubsystemInterface.h"
 #include "Common/GameMemory.h"
+#if defined(WASM_USE_ORIGINAL_GLOBALDATA)
+#ifndef _GLOBALDATA_H_
+#include_next "Common/GlobalData.h"
+#endif
+#else
 #include "Common/GlobalData.h"
+#endif
 #include "Common/INI.h"
 #include "Common/NameKeyGenerator.h"
 #include "GameClient/ClientRandomValue.h"

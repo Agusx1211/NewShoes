@@ -2005,6 +2005,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the focused `GlobalData` singleton bridge in the
+      `MSG_NEW_GAME` runtime dispatch smoke with original GlobalData
+      ownership. `gamelogic-new-game-dispatch-smoke` now links original
+      `GlobalData.cpp`, force-includes the original `Common/GlobalData.h`
+      before `PreRTS.h`, assigns `TheWritableGlobalData` to the runtime
+      `GlobalData` instance, and proves the original `TheGlobalData` macro
+      resolves through that writable singleton during
+      `GameLogic::prepareNewGame` / `startNewGame(FALSE)`. The source/startup
+      gates now reject the old `shim GlobalData bridge` boundary. The smoke
+      still honestly reports focused `PlayerList::getNthPlayer` and in-memory
+      BlankWindow adapter boundaries before the deferred terrain/player/script
+      load. Verified with
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
