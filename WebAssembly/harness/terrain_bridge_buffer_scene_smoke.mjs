@@ -33,6 +33,10 @@ const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const roadsIniEntry = "Data\\INI\\Roads.ini";
 const mapEntry = process.env.CNC_PORT_BRIDGE_MAP_ENTRY ?? "Maps\\MD_CHI01\\MD_CHI01.map";
 const renderTimeoutMs = Number(process.env.CNC_PORT_BRIDGE_RENDER_TIMEOUT_MS ?? 240000);
+const treeModelsEntry = "Art\\W3D\\Models.txt";
+const treeMeshEntry = "Art\\W3D\\PTDogwod01_S.W3D";
+const treeTextureEntry = "Art\\Terrain\\PTDogwod01_S.tga";
+const treeMaterialTextureEntry = "Art\\Textures\\ptdogwod01_s.dds";
 const D3DCMP_EQUAL = 3;
 const D3DTSS_TCI_CAMERASPACEPOSITION = 0x00020000;
 const D3DTTFF_COUNT2 = 2;
@@ -236,23 +240,39 @@ const bridgeTextureEntries = bridgeAssets.textures
 const broadBridgeTextureEntries = textureArchive.entries
   .filter((entry) => /^Art\\Textures\\.*(?:bridge|bridg|brdg|tbdoub|tampico).*\.(?:tga|dds)$/i.test(entry.name))
   .map((entry) => entry.name);
+const roadTextureEntries = textureArchive.entries
+  .filter((entry) => /^Art\\Textures\\tr.*\.(?:tga|dds)$/i.test(entry.name))
+  .map((entry) => entry.name);
 const w3dArchiveEntries = uniqueSorted([
-  "Art\\W3D\\Models.txt",
+  treeModelsEntry,
+  treeMeshEntry,
   ...bridgeModelEntries,
   ...broadBridgeModelEntries,
 ].filter((entry) => w3dEntriesByLower.has(entry.toLowerCase())));
 const textureArchiveEntries = uniqueSorted([
   ...bridgeTextureEntries,
   ...broadBridgeTextureEntries,
-]);
+  ...roadTextureEntries,
+  treeMaterialTextureEntry,
+].filter((entry) => textureEntriesByLower.has(entry.toLowerCase())));
 if (terrainArchiveEntries.length === 0) {
   throw new Error(`Terrain archive has no Art\\Terrain image entries: ${terrainArchivePath}`);
+}
+if (!terrainArchiveEntries.some((entry) => entry.toLowerCase() === treeTextureEntry.toLowerCase())) {
+  throw new Error(`Terrain archive does not contain ${treeTextureEntry}: ${terrainArchivePath}`);
 }
 if (w3dArchiveEntries.length === 0) {
   throw new Error(`W3D archive has no bridge-like model entries: ${w3dArchivePath}`);
 }
 if (textureArchiveEntries.length === 0) {
   throw new Error(`Texture archive has no bridge-like texture entries: ${textureArchivePath}`);
+}
+if (roadTextureEntries.length === 0) {
+  throw new Error(`Texture archive has no road-like Art\\Textures\\tr* entries: ${textureArchivePath}`);
+}
+if (!w3dEntriesByLower.has(treeMeshEntry.toLowerCase())
+    || !textureEntriesByLower.has(treeMaterialTextureEntry.toLowerCase())) {
+  throw new Error(`Tree sidecar assets are missing from W3D/texture archives`);
 }
 
 await mkdir(screenshotDir, { recursive: true });
@@ -363,6 +383,10 @@ try {
   const rangeTextureArchive = mountedArchives[4];
   const findMountedEntry = (archive, entryName) =>
     archive?.entries?.find((entry) => entry.path.toLowerCase() === entryName.toLowerCase());
+  const treeTerrainMountedEntry = findMountedEntry(rangeTerrainArchive, treeTextureEntry);
+  const treeModelsMountedEntry = findMountedEntry(rangeW3DArchive, treeModelsEntry);
+  const treeMeshMountedEntry = findMountedEntry(rangeW3DArchive, treeMeshEntry);
+  const treeMaterialTextureMountedEntry = findMountedEntry(rangeTextureArchive, treeMaterialTextureEntry);
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
@@ -377,7 +401,11 @@ try {
       || rangeTextureArchive?.path !== textureArchiveMemfsPath
       || findMountedEntry(rangeIniArchive, terrainIniEntry)?.bytes !== 25758
       || findMountedEntry(rangeIniArchive, roadsIniEntry)?.bytes !== roadsIniArchiveEntry.bytes
-      || findMountedEntry(rangeMapsArchive, mapEntry)?.bytes !== mapArchiveEntry.bytes) {
+      || findMountedEntry(rangeMapsArchive, mapEntry)?.bytes !== mapArchiveEntry.bytes
+      || treeTerrainMountedEntry?.bytes <= 0
+      || treeModelsMountedEntry?.bytes <= 0
+      || treeMeshMountedEntry?.bytes <= 0
+      || treeMaterialTextureMountedEntry?.bytes <= 0) {
     throw new Error(`Runtime terrain bridge-buffer scene archives mount failed: ${JSON.stringify(archiveMountResult)}`);
   }
 
@@ -404,8 +432,27 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> W3DBridgeBuffer::loadBridges/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
+      || result.probe?.results?.modelsFileExists !== true
+      || result.probe?.results?.meshFileExists !== true
+      || result.probe?.results?.treeTextureFileExists !== true
+      || result.probe?.results?.materialTextureFileExists !== true
+      || result.probe?.results?.roadBufferInstalled !== true
+      || result.probe?.results?.roadBufferInitialized !== true
+      || result.probe?.results?.loadRoadsInvoked !== true
+      || result.probe?.results?.roadDrawInvoked !== true
+      || (result.probe?.results?.roadDrawCallDelta ?? 0) <= 0
+      || result.probe?.results?.roadSceneDrawFlushed !== true
+      || result.probe?.results?.treeBufferInstalled !== true
+      || result.probe?.results?.treeDataConfigured !== true
+      || result.probe?.results?.addTreeInvoked !== true
+      || result.probe?.results?.updateTreeInvoked !== true
+      || result.probe?.results?.treeNeedToDrawAfterScene !== false
+      || result.probe?.results?.treeDrawInvoked !== true
+      || (result.probe?.results?.treeDrawCallDelta ?? 0) <= 0
+      || result.probe?.results?.treeSceneDrawFlushed !== true
+      || result.probe?.results?.scriptEngineReady !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
       || result.probe?.results?.terrainLogicInstalledForDraw !== true
@@ -434,6 +481,7 @@ try {
       || result.probe?.logicalTerrain?.sourceFilenameMatches !== true
       || result.probe?.logicalTerrain?.mapObjectsPresentAfterLoad !== true
       || result.probe?.logicalTerrain?.mapObjectsUsed !== true
+      || result.probe?.logicalTerrain?.roadPairsWithRoadType <= 0
       || result.probe?.logicalTerrain?.bridgePairsWithBridgeType <= 0
       || result.probe?.logicalTerrain?.timeOfDayNotified !== true
       || result.probe?.logicalTerrain?.notifiedTimeOfDay !== result.probe?.logicalTerrain?.mapTimeOfDay
@@ -448,6 +496,16 @@ try {
       || result.probe?.bridges?.afterLoad <= 0
       || result.probe?.bridges?.verticesAfterUpdate <= 0
       || result.probe?.bridges?.indicesAfterUpdate <= 0
+      || result.probe?.roads?.afterLoad <= 0
+      || result.probe?.roads?.segmentsWithVertices <= 0
+      || result.probe?.roads?.typesWithDrawData <= 0
+      || result.probe?.roads?.totalTypeVertices <= 0
+      || result.probe?.roads?.totalTypeIndices <= 0
+      || result.probe?.tree?.model !== "PTDogwod01_S"
+      || result.probe?.tree?.texture !== "PTDogwod01_S.tga"
+      || result.probe?.tree?.tilesAfterScene <= 0
+      || result.probe?.scene?.renderPath?.includes("W3DRoadBuffer::drawRoads") !== true
+      || result.probe?.scene?.renderPath?.includes("BaseHeightMapRenderObjClass::renderTrees") !== true
       || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)") !== true
       || result.probe?.scene?.renderPath?.includes("W3DBridge::renderBridge") !== true
       || result.probe?.draw?.vertexShaderFvf !== 338
@@ -459,6 +517,7 @@ try {
       || result.browserProbe?.texture0?.texCoordIndex !== D3DTSS_TCI_CAMERASPACEPOSITION
       || result.browserProbe?.texture0?.textureTransformFlags !== D3DTTFF_COUNT2
       || result.browserProbe?.vertexDiagnostics?.projected?.visible <= 0
+      || result.drawSequence?.roadAfterTerrain !== true
       || result.drawSequence?.bridgeAfterTerrain !== true
       || result.drawSequence?.bridgeShroudAfterBridge !== true
       || result.screenshot?.coverage?.coloredPixelCount <= 0) {
@@ -470,6 +529,8 @@ try {
       terrain: result.probe?.terrain,
       bridgeObjects: result.probe?.bridgeObjects,
       bridges: result.probe?.bridges,
+      roads: result.probe?.roads,
+      tree: result.probe?.tree,
       results: result.probe?.results,
       draw: result.probe?.draw,
       browserProbe: {
@@ -505,9 +566,9 @@ try {
         layout: result.probe.iniLayout,
       },
       maps: { path: rangeMapsArchive.path, entry: mapEntry },
-      terrain: { path: rangeTerrainArchive.path, terrainImageEntries: terrainArchiveEntries.length },
-      w3d: { path: rangeW3DArchive.path, bridgeModelEntries: w3dArchiveEntries },
-      textures: { path: rangeTextureArchive.path, bridgeTextureEntries: textureArchiveEntries },
+      terrain: { path: rangeTerrainArchive.path, terrainImageEntries: terrainArchiveEntries.length, treeTextureEntry },
+      w3d: { path: rangeW3DArchive.path, modelsEntry: treeModelsEntry, treeMeshEntry, bridgeModelEntries: w3dArchiveEntries },
+      textures: { path: rangeTextureArchive.path, treeMaterialTextureEntry, roadTextureEntries, bridgeTextureEntries: textureArchiveEntries },
     },
     probe: result.probe,
     map: result.probe.map,
@@ -516,6 +577,8 @@ try {
     scene: result.probe.scene,
     bridgeObjects: result.probe.bridgeObjects,
     bridges: result.probe.bridges,
+    roads: result.probe.roads,
+    tree: result.probe.tree,
     calls: result.probe.calls,
     draw: result.probe.draw,
     browserProbe: result.browserProbe,

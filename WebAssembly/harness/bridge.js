@@ -19201,6 +19201,7 @@ async function rpc(command, payload = {}) {
             (textureBefore.samplerApplications ?? 0),
         };
         const bridgeFvf = D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const roadFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
         const textureStage0 = (draw) =>
           draw?.renderState?.textureStage0 ?? draw?.renderState?.textureStages?.[0] ?? {};
         const isBaseTerrainPass = (draw) =>
@@ -19231,10 +19232,19 @@ async function rpc(command, payload = {}) {
               || draw?.texture0?.textureTransformFlags === D3DTTFF_COUNT2)
             && draw?.texture0?.sampled === true;
         };
+        const isRoadPass = (draw) =>
+          draw?.vertexShaderFvf === roadFvf
+            && draw?.vertexStride === 24
+            && draw?.texture0?.sampled === true;
         const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
         const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const roadIndex = drawHistory.findIndex(isRoadPass);
         const bridgeIndex = drawHistory.findIndex(isBridgeBasePass);
         const bridgeShroudIndex = drawHistory.findIndex(isBridgeShroudPass);
+        const roadAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && roadIndex > baseTerrainIndex
+          && roadIndex > blendTerrainIndex;
         const bridgeAfterTerrain = baseTerrainIndex >= 0
           && blendTerrainIndex >= 0
           && bridgeIndex > baseTerrainIndex
@@ -19246,7 +19256,26 @@ async function rpc(command, payload = {}) {
           && probe?.path?.includes("W3DBridgeBuffer::")
           && probe?.results?.runtimeAssetSystemInstalled === true
           && probe?.results?.textureFileFactoryInstalled === true
+          && probe?.results?.modelsFileExists === true
+          && probe?.results?.meshFileExists === true
+          && probe?.results?.treeTextureFileExists === true
+          && probe?.results?.materialTextureFileExists === true
           && probe?.results?.renderObjectInitialized === true
+          && probe?.results?.roadBufferInstalled === true
+          && probe?.results?.roadBufferInitialized === true
+          && probe?.results?.loadRoadsInvoked === true
+          && probe?.results?.roadDrawInvoked === true
+          && (probe?.results?.roadDrawCallDelta ?? 0) > 0
+          && probe?.results?.roadSceneDrawFlushed === true
+          && probe?.results?.treeBufferInstalled === true
+          && probe?.results?.treeDataConfigured === true
+          && probe?.results?.addTreeInvoked === true
+          && probe?.results?.updateTreeInvoked === true
+          && probe?.results?.treeNeedToDrawAfterScene === false
+          && probe?.results?.treeDrawInvoked === true
+          && (probe?.results?.treeDrawCallDelta ?? 0) > 0
+          && probe?.results?.treeSceneDrawFlushed === true
+          && probe?.results?.scriptEngineReady === true
           && probe?.results?.bridgeBufferInstalled === true
           && probe?.results?.bridgeBufferInitialized === true
           && probe?.results?.loadBridgesInvoked === true
@@ -19282,6 +19311,8 @@ async function rpc(command, payload = {}) {
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
           && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
           && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && probe?.scene?.renderPath?.includes("W3DRoadBuffer::drawRoads")
+          && probe?.scene?.renderPath?.includes("BaseHeightMapRenderObjClass::renderTrees")
           && probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)")
           && probe?.scene?.renderPath?.includes("W3DBridge::renderBridge")
           && probe?.scene?.created === true
@@ -19294,6 +19325,14 @@ async function rpc(command, payload = {}) {
           && (probe?.bridges?.afterLoad ?? 0) > 0
           && (probe?.bridges?.verticesAfterUpdate ?? 0) > 0
           && (probe?.bridges?.indicesAfterUpdate ?? 0) > 0
+          && (probe?.roads?.afterLoad ?? 0) > 0
+          && (probe?.roads?.segmentsWithVertices ?? 0) > 0
+          && (probe?.roads?.typesWithDrawData ?? 0) > 0
+          && (probe?.roads?.totalTypeVertices ?? 0) > 0
+          && (probe?.roads?.totalTypeIndices ?? 0) > 0
+          && probe?.tree?.model === "PTDogwod01_S"
+          && probe?.tree?.texture === "PTDogwod01_S.tga"
+          && (probe?.tree?.tilesAfterScene ?? 0) > 0
           && (probe?.calls?.drawIndexed ?? 0) >= 3
           && probe?.draw?.vertexShaderFvf === bridgeFvf
           && probe?.draw?.vertexStride === 36
@@ -19306,6 +19345,7 @@ async function rpc(command, payload = {}) {
           && isBridgeShroudPass(browserProbe)
           && Array.isArray(drawHistory)
           && drawHistory.length >= 4
+          && roadAfterTerrain
           && bridgeAfterTerrain
           && bridgeShroudAfterBridge
           && bufferDelta.creates >= 4
@@ -19322,8 +19362,10 @@ async function rpc(command, payload = {}) {
           drawSequence: {
             baseTerrainIndex,
             blendTerrainIndex,
+            roadIndex,
             bridgeIndex,
             bridgeShroudIndex,
+            roadAfterTerrain,
             bridgeAfterTerrain,
             bridgeShroudAfterBridge,
           },

@@ -3898,9 +3898,9 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       direct `terrain_bridge_buffer_scene_smoke.mjs` browser smoke over
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
       `TexturesZH.big`.
-- [x] Feed the focused terrain road and bridge adjunct buffers from the
-      original logical terrain map-object list. The road and bridge scene probes
-      now call original `W3DTerrainLogic::loadMap(query=true)` against
+	- [x] Feed the focused terrain road and bridge adjunct buffers from the
+	      original logical terrain map-object list. The road and bridge scene probes
+	      now call original `W3DTerrainLogic::loadMap(query=true)` against
       `Maps\MD_CHI01\MD_CHI01.map`, keep the resulting full `MapObject` list
       live, collect candidate point pairs from `MapObject::getFirstMapObject()`,
       and hand that list to original `W3DRoadBuffer::loadRoads` /
@@ -3910,12 +3910,28 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `roadPairMapObjectsInstalled === false`; the bridge gate requires the
       analogous typed bridge pair state, `bridgePairMapObjectsInstalled ===
       false`, and in-place selected-template substitution for the current
-      ZH-only asset gap. `test:vertical-integrations` now includes the bridge
-      scene step and checks the logical handoff for both adjuncts. Verified with
-      `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene` and
-      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
-- [x] Add a browser-verified real-map terrain shroud scene proof. The new
-      `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
+	      ZH-only asset gap. `test:vertical-integrations` now includes the bridge
+	      scene step and checks the logical handoff for both adjuncts. Verified with
+	      `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene` and
+	      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+	- [x] Batch the focused terrain sidecars into the retained bridge-buffer scene
+	      proof. The `ww3dTerrainBridgeBufferScene` RPC now installs original
+	      `W3DRoadBuffer`, `W3DTreeBuffer`, and `W3DBridgeBuffer` sidecars on the
+	      same `ProbeHeightMapRenderObjWithBridgeBuffer`, loads all typed roads
+	      from the full original MD_CHI01 logical `MapObject` list, adds shipped
+	      `PTDogwod01_S` tree assets through the original heightmap tree path, and
+	      renders terrain, roads, trees, retained-`TerrainLogic` bridge geometry,
+	      and the bridge shroud overlay in one browser frame. The harness verifies
+	      road draws follow terrain base/blend passes, tree draws flush through
+	      `BaseHeightMapRenderObjClass::renderTrees`, bridge draws still follow
+	      `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)`, and the honest
+	      `GenericBridge` / AI pathfinder blockers remain reported. Verified with
+	      `cmake --build WebAssembly/build/wasm --target cnc-port -j 8` and the
+	      direct `node WebAssembly/harness/terrain_bridge_buffer_scene_smoke.mjs`
+	      smoke over `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
+	      `TexturesZH.big`.
+	- [x] Add a browser-verified real-map terrain shroud scene proof. The new
+	      `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, parses
       `Data\INI\Terrain.ini` through original `INI::load` / `INITerrain.cpp`,
       parses `Maps\MD_GLA03\MD_GLA03.map` through original `WorldHeightMap`,

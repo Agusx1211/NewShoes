@@ -4242,11 +4242,40 @@ public:
 
 	~ProbeHeightMapRenderObjWithBridgeBuffer() override
 	{
+#ifdef DO_ROADS
+		if (m_roadBuffer != nullptr) {
+			delete m_roadBuffer;
+			m_roadBuffer = nullptr;
+		}
+#endif
 		if (m_bridgeBuffer != nullptr) {
 			delete m_bridgeBuffer;
 			m_bridgeBuffer = nullptr;
 		}
 	}
+
+	W3DTreeBuffer *installProbeTreeBuffer()
+	{
+		if (m_treeBuffer != nullptr) {
+			delete m_treeBuffer;
+		}
+		m_treeBuffer = NEW W3DTreeBuffer;
+		return m_treeBuffer;
+	}
+
+#ifdef DO_ROADS
+	ProbeW3DRoadBuffer *installProbeRoadBuffer(WorldHeightMap *map)
+	{
+		if (m_roadBuffer != nullptr) {
+			delete m_roadBuffer;
+		}
+		m_roadBuffer = NEW ProbeW3DRoadBuffer;
+		if (m_roadBuffer != nullptr) {
+			m_roadBuffer->setMap(map);
+		}
+		return static_cast<ProbeW3DRoadBuffer *>(m_roadBuffer);
+	}
+#endif
 
 	ProbeW3DBridgeBuffer *installProbeBridgeBuffer()
 	{
@@ -4271,9 +4300,69 @@ public:
 		m_probeBridgeShroudDrawCallsAfter = 0;
 		m_probeBridgeShroudDrawSeen = false;
 		m_probeBridgeShroudTextureReady = false;
+		m_probeRoadDrawInvoked = false;
+		m_probeRoadDrawCallsBefore = 0;
+		m_probeRoadDrawCallsAfter = 0;
+		m_probeRoadDrawMinX = 0;
+		m_probeRoadDrawMaxX = 0;
+		m_probeRoadDrawMinY = 0;
+		m_probeRoadDrawMaxY = 0;
+		m_probeTreeDrawInvoked = false;
+		m_probeTreeDrawCallsBefore = 0;
+		m_probeTreeDrawCallsAfter = 0;
 		m_bridgeBuffer = nullptr;
 		probe_bridge_phase_log("render-object-terrain");
 		HeightMapRenderObjClass::Render(rinfo);
+#ifdef DO_ROADS
+		probe_bridge_phase_log("render-object-road");
+		if (m_roadBuffer != nullptr && m_map != nullptr && !ShaderClass::Is_Backface_Culling_Inverted()) {
+			DX8Wrapper::Set_Texture(0, nullptr);
+			DX8Wrapper::Set_Texture(1, nullptr);
+			DX8Wrapper::Set_Transform(D3DTS_WORLD, Get_Transform());
+			ShaderClass::Invalidate();
+
+			const Int min_x = -m_map->getBorderSizeInline();
+			const Int min_y = -m_map->getBorderSizeInline();
+			const Int max_x = std::max(min_x, m_map->getXExtent() - 1 - m_map->getBorderSizeInline());
+			const Int max_y = std::max(min_y, m_map->getYExtent() - 1 - m_map->getBorderSizeInline());
+			const WasmD3D8ShimState *before_road_state = wasm_d3d8_get_state();
+			m_probeRoadDrawCallsBefore =
+				before_road_state != nullptr ? before_road_state->draw_indexed_primitive_calls : 0;
+			m_probeRoadDrawInvoked = true;
+			m_probeRoadDrawMinX = min_x;
+			m_probeRoadDrawMaxX = max_x;
+			m_probeRoadDrawMinY = min_y;
+			m_probeRoadDrawMaxY = max_y;
+			m_roadBuffer->drawRoads(
+				&rinfo.Camera,
+				nullptr,
+				nullptr,
+				m_disableTextures,
+				min_x,
+				max_x,
+				min_y,
+				max_y,
+				nullptr);
+			const WasmD3D8ShimState *after_road_state = wasm_d3d8_get_state();
+			m_probeRoadDrawCallsAfter =
+				after_road_state != nullptr ?
+					after_road_state->draw_indexed_primitive_calls :
+					m_probeRoadDrawCallsBefore;
+		}
+#endif
+		probe_bridge_phase_log("render-object-tree");
+		if (m_treeBuffer != nullptr && m_treeBuffer->needToDraw() && !ShaderClass::Is_Backface_Culling_Inverted()) {
+			const WasmD3D8ShimState *before_tree_state = wasm_d3d8_get_state();
+			m_probeTreeDrawCallsBefore =
+				before_tree_state != nullptr ? before_tree_state->draw_indexed_primitive_calls : 0;
+			m_probeTreeDrawInvoked = true;
+			renderTrees(&rinfo.Camera);
+			const WasmD3D8ShimState *after_tree_state = wasm_d3d8_get_state();
+			m_probeTreeDrawCallsAfter =
+				after_tree_state != nullptr ?
+					after_tree_state->draw_indexed_primitive_calls :
+					m_probeTreeDrawCallsBefore;
+		}
 		probe_bridge_phase_log("render-object-bridge");
 		m_bridgeBuffer = bridge_buffer;
 		if (m_bridgeBuffer == nullptr || ShaderClass::Is_Backface_Culling_Inverted()) {
@@ -4338,6 +4427,28 @@ public:
 	}
 	UINT probeBridgeShroudDrawCallsBefore() const { return m_probeBridgeShroudDrawCallsBefore; }
 	UINT probeBridgeShroudDrawCallsAfter() const { return m_probeBridgeShroudDrawCallsAfter; }
+	bool probeRoadDrawInvoked() const { return m_probeRoadDrawInvoked; }
+	UINT probeRoadDrawCallsBefore() const { return m_probeRoadDrawCallsBefore; }
+	UINT probeRoadDrawCallsAfter() const { return m_probeRoadDrawCallsAfter; }
+	UINT probeRoadDrawCallDelta() const
+	{
+		return m_probeRoadDrawCallsAfter >= m_probeRoadDrawCallsBefore ?
+			m_probeRoadDrawCallsAfter - m_probeRoadDrawCallsBefore :
+			0;
+	}
+	Int probeRoadDrawMinX() const { return m_probeRoadDrawMinX; }
+	Int probeRoadDrawMaxX() const { return m_probeRoadDrawMaxX; }
+	Int probeRoadDrawMinY() const { return m_probeRoadDrawMinY; }
+	Int probeRoadDrawMaxY() const { return m_probeRoadDrawMaxY; }
+	bool probeTreeDrawInvoked() const { return m_probeTreeDrawInvoked; }
+	UINT probeTreeDrawCallsBefore() const { return m_probeTreeDrawCallsBefore; }
+	UINT probeTreeDrawCallsAfter() const { return m_probeTreeDrawCallsAfter; }
+	UINT probeTreeDrawCallDelta() const
+	{
+		return m_probeTreeDrawCallsAfter >= m_probeTreeDrawCallsBefore ?
+			m_probeTreeDrawCallsAfter - m_probeTreeDrawCallsBefore :
+			0;
+	}
 
 private:
 	bool m_probeBridgeDrawInvoked = false;
@@ -4351,6 +4462,16 @@ private:
 	UINT m_probeBridgeDrawCallsAfter = 0;
 	UINT m_probeBridgeShroudDrawCallsBefore = 0;
 	UINT m_probeBridgeShroudDrawCallsAfter = 0;
+	bool m_probeRoadDrawInvoked = false;
+	UINT m_probeRoadDrawCallsBefore = 0;
+	UINT m_probeRoadDrawCallsAfter = 0;
+	Int m_probeRoadDrawMinX = 0;
+	Int m_probeRoadDrawMaxX = 0;
+	Int m_probeRoadDrawMinY = 0;
+	Int m_probeRoadDrawMaxY = 0;
+	bool m_probeTreeDrawInvoked = false;
+	UINT m_probeTreeDrawCallsBefore = 0;
+	UINT m_probeTreeDrawCallsAfter = 0;
 };
 
 class ProbeScriptEngineView : public ScriptEngine
@@ -9083,10 +9204,26 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool asset_manager_created = false;
 	bool runtime_asset_system_installed = false;
 	bool texture_file_factory_installed = false;
+	bool models_file_exists = false;
+	bool mesh_file_exists = false;
+	bool tree_texture_file_exists = false;
+	bool material_texture_file_exists = false;
 	bool water_transparency_ready = false;
 	bool shader_manager_initialized = false;
 	bool render_object_created = false;
 	bool render_object_initialized = false;
+	bool road_buffer_installed = false;
+	bool road_buffer_initialized = false;
+	bool load_roads_invoked = false;
+	bool road_scene_draw_flushed = false;
+	bool tree_buffer_installed = false;
+	bool tree_data_configured = false;
+	bool add_tree_invoked = false;
+	bool update_tree_invoked = false;
+	bool tree_scene_draw_flushed = false;
+	bool tree_need_to_draw_after_center = false;
+	bool tree_need_to_draw_after_scene = false;
+	bool script_engine_ready = false;
 	bool bridge_buffer_installed = false;
 	bool bridge_buffer_initialized = false;
 	bool load_bridges_invoked = false;
@@ -9107,6 +9244,13 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	Int bridge_logic_first_layer_after_seed = -1;
 	Int bridge_draw_terrain_logic_bridge_count = 0;
 	Int bridge_draw_enabled_bridge_count = 0;
+	Int roads_after_load = -1;
+	Int road_segments_with_vertices = -1;
+	Int road_types_with_textures = -1;
+	Int road_types_with_draw_data = -1;
+	Int total_road_type_vertices = -1;
+	Int total_road_type_indices = -1;
+	Int tree_tiles_after_scene = -1;
 	Int bridge_vertices_after_update = -1;
 	Int bridge_indices_after_update = -1;
 	Int bridge_manual_vertices_after_load = -1;
@@ -9117,6 +9261,9 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	float bridge_center_y = 0.0f;
 	float bridge_center_z = 0.0f;
 	float bridge_length_xy = 0.0f;
+	float tree_location_x = 0.0f;
+	float tree_location_y = 0.0f;
+	float tree_location_z = 0.0f;
 	float camera_eye_x = 0.0f;
 	float camera_eye_y = 0.0f;
 	float camera_eye_z = 0.0f;
@@ -9324,6 +9471,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		global_data = NEW GlobalData;
 		if (global_data != nullptr) {
 			configure_global_data(*global_data, true);
+			global_data->m_maxRoadSegments = 4000;
+			global_data->m_maxRoadVertex = 3000;
+			global_data->m_maxRoadIndex = 5000;
+			global_data->m_maxRoadTypes = 100;
 			TheWritableGlobalData = global_data;
 			global_data_ready = true;
 		}
@@ -9334,10 +9485,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	WaterTransparencySetting *probe_water_transparency = nullptr;
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
 	ProbeHeightMapRenderObjWithBridgeBuffer *render_object = nullptr;
+	ProbeW3DRoadBuffer *road_buffer = nullptr;
+	W3DTreeBuffer *tree_buffer = nullptr;
 	ProbeW3DBridgeBuffer *bridge_buffer = nullptr;
 	RTS3DScene *scene = nullptr;
 	CameraClass *camera = nullptr;
 	WW3DAssetManager *asset_manager = nullptr;
+	ProbeTreeDrawModuleDataScope tree_data_scope;
+	W3DTreeDrawModuleData *tree_data = tree_data_scope.data();
 
 	if (global_data_ready) {
 		probe_bridge_phase_log("ww3d-init");
@@ -9366,6 +9521,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			wasm_browser_runtime_assets_install_archive_set(runtime_archive_directory, runtime_archive_mask);
 		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
 		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		models_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeModelsArchiveEntry);
+		mesh_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeMeshArchiveEntry);
+		tree_texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeTextureArchiveEntry);
+		material_texture_file_exists =
+			runtime_asset_system_installed &&
+			wasm_browser_runtime_assets_file_exists(kTreeMaterialTextureArchiveEntry);
 	}
 
 	if (runtime_asset_system_installed && texture_file_factory_installed) {
@@ -9420,10 +9587,40 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	}
 
 	if (water_transparency_ready && render_object_initialized) {
+		probe_bridge_phase_log("install-road-buffer");
+		road_buffer = render_object->installProbeRoadBuffer(map);
+		road_buffer_installed = road_buffer != nullptr;
+		road_buffer_initialized = road_buffer_installed && road_buffer->initialized();
+		probe_bridge_phase_log("install-tree-buffer");
+		tree_buffer = render_object->installProbeTreeBuffer();
+		tree_buffer_installed = tree_buffer != nullptr;
 		probe_bridge_phase_log("install-bridge-buffer");
 		bridge_buffer = render_object->installProbeBridgeBuffer();
 		bridge_buffer_installed = bridge_buffer != nullptr;
 		bridge_buffer_initialized = bridge_buffer_installed && bridge_buffer->initialized();
+	}
+
+	if (road_buffer_initialized) {
+		probe_bridge_phase_log("load-roads");
+		road_buffer->loadRoads();
+		load_roads_invoked = true;
+		roads_after_load = road_buffer->numRoads();
+		road_segments_with_vertices = road_buffer->roadSegmentsWithVertices();
+		road_types_with_textures = road_buffer->roadTypesWithTextures();
+		probe_bridge_phase_log("load-roads-done");
+	}
+
+	if (tree_buffer_installed && mesh_file_exists && tree_texture_file_exists) {
+		tree_data_configured = tree_data != nullptr;
+		tree_location_x = bridge_center_x + 64.0f;
+		tree_location_y = bridge_center_y + 64.0f;
+		tree_location_z = static_cast<float>(map_load.patchCenterHeight) * MAP_HEIGHT_SCALE + 2.0f;
+
+		Coord3D location;
+		location.set(tree_location_x, tree_location_y, tree_location_z);
+		render_object->addTree(kTreeProbeId, location, 1.0f, 0.0f, 0.0f, tree_data);
+		add_tree_invoked = true;
+		update_tree_invoked = render_object->updateTreePosition(kTreeProbeId, location, 0.0f);
 	}
 
 	if (bridge_buffer_initialized) {
@@ -9495,9 +9692,13 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			bridge_buffer->doFullUpdate();
 		}
 		render_object->updateCenter(camera, nullptr);
+		if (road_buffer != nullptr) {
+			road_buffer->updateCenter();
+		}
 		if (bridge_buffer != nullptr) {
 			bridge_buffer->updateCenter(camera, nullptr);
 		}
+		tree_need_to_draw_after_center = tree_buffer != nullptr && tree_buffer->needToDraw();
 		probe_bridge_phase_log("update-center-done");
 		update_center_invoked = true;
 		bridge_vertices_after_update =
@@ -9525,20 +9726,32 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		}
 	}
 
-	if (scene_object_added) {
-		probe_bridge_phase_log("render-scene");
-		if (camera != nullptr && render_object != nullptr && render_object->getShroud() != nullptr) {
-			BaseHeightMapRenderObjClass *saved_terrain_render_object = TheTerrainRenderObject;
-			TheTerrainRenderObject = render_object;
-			render_object->getShroud()->render(camera);
-			TheTerrainRenderObject = saved_terrain_render_object;
+	{
+		ProbeScriptEngineScope script_engine_scope;
+		script_engine_ready = script_engine_scope.scriptEngine() != nullptr;
+		if (scene_object_added && script_engine_ready) {
+			probe_bridge_phase_log("render-scene");
+			if (camera != nullptr && render_object != nullptr && render_object->getShroud() != nullptr) {
+				BaseHeightMapRenderObjClass *saved_terrain_render_object = TheTerrainRenderObject;
+				TheTerrainRenderObject = render_object;
+				render_object->getShroud()->render(camera);
+				TheTerrainRenderObject = saved_terrain_render_object;
+			}
+			begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
+			if (succeeded(begin_render_result)) {
+				render_result = WW3D::Render(scene, camera);
+				end_render_result = WW3D::End_Render(false);
+			}
+			tree_need_to_draw_after_scene = tree_buffer != nullptr && tree_buffer->needToDraw();
+			tree_tiles_after_scene = tree_buffer != nullptr ? tree_buffer->getNumTiles() : -1;
+			road_types_with_draw_data =
+				road_buffer != nullptr ? road_buffer->roadTypesWithDrawData() : -1;
+			total_road_type_vertices =
+				road_buffer != nullptr ? road_buffer->totalRoadTypeVertices() : -1;
+			total_road_type_indices =
+				road_buffer != nullptr ? road_buffer->totalRoadTypeIndices() : -1;
+			probe_bridge_phase_log("render-scene-done");
 		}
-		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
-		if (succeeded(begin_render_result)) {
-			render_result = WW3D::Render(scene, camera);
-			end_render_result = WW3D::End_Render(false);
-		}
-		probe_bridge_phase_log("render-scene-done");
 	}
 	if (bridge_buffer != nullptr) {
 		terrain_logic_retained_for_draw =
@@ -9565,6 +9778,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		state->last_draw_primitive_count > 0 &&
 		stage0 != nullptr &&
 		stage0->values[D3DTSS_COLOROP] != D3DTOP_DISABLE;
+	road_scene_draw_flushed =
+		render_object != nullptr &&
+		render_object->probeRoadDrawInvoked() &&
+		render_object->probeRoadDrawCallDelta() > 0 &&
+		road_types_with_draw_data > 0 &&
+		total_road_type_vertices > 0 &&
+		total_road_type_indices > 0;
+	tree_scene_draw_flushed =
+		render_object != nullptr &&
+		render_object->probeTreeDrawInvoked() &&
+		render_object->probeTreeDrawCallDelta() > 0 &&
+		tree_tiles_after_scene > 0;
 	const IniLayoutComparison ini_layout = compare_ini_layout();
 	const bool ok =
 		state != nullptr &&
@@ -9602,6 +9827,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		!logical_terrain_map_objects.loadException &&
 		logical_terrain_map_objects.sourceFilenameMatches &&
 		logical_terrain_map_objects.mapObjectsPresentAfterLoad &&
+		logical_terrain_map_objects.roadPairsWithRoadType > 0 &&
 		logical_terrain_map_objects.bridgePairsWithBridgeType > 0 &&
 		logical_terrain_map_objects.timeOfDayNotified &&
 		logical_terrain_map_objects.notifiedTimeOfDay == logical_terrain_map_objects.mapTimeOfDay &&
@@ -9634,6 +9860,24 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		shader_manager_initialized &&
 		render_object_created &&
 		render_object_initialized &&
+		road_buffer_installed &&
+		road_buffer_initialized &&
+		load_roads_invoked &&
+		roads_after_load > 0 &&
+		road_segments_with_vertices > 0 &&
+		road_types_with_textures > 0 &&
+		road_types_with_draw_data > 0 &&
+		total_road_type_vertices > 0 &&
+		total_road_type_indices > 0 &&
+		road_scene_draw_flushed &&
+		tree_buffer_installed &&
+		tree_data_configured &&
+		add_tree_invoked &&
+		update_tree_invoked &&
+		!tree_need_to_draw_after_scene &&
+		tree_tiles_after_scene > 0 &&
+		tree_scene_draw_flushed &&
+		script_engine_ready &&
 		bridge_buffer_installed &&
 		bridge_buffer_initialized &&
 		load_bridges_invoked &&
@@ -9696,12 +9940,15 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		json_string(logical_terrain_map_objects.sourceFilename);
 	const std::string logical_terrain_failure_phase_json =
 		json_string(logical_terrain_map_objects.failurePhase);
+	const std::string tree_model_json = json_string(kTreeModelName);
+	const std::string tree_texture_json = json_string(kTreeTextureName);
 
-	char buffer[42000];
+	char buffer[48000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
+		"W3DRoadBuffer::drawRoads + BaseHeightMapRenderObjClass::renderTrees -> "
 		"W3DBridgeBuffer::loadBridges/updateCenter -> "
 		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
@@ -9712,13 +9959,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"init\":%d,\"assetManagerCreated\":%s,\"setRenderDevice\":%d,"
 		"\"runtimeAssetSystemInstalled\":%s,"
 		"\"textureFileFactoryInstalled\":%s,"
+		"\"modelsFileExists\":%s,\"meshFileExists\":%s,"
+		"\"treeTextureFileExists\":%s,\"materialTextureFileExists\":%s,"
 		"\"logicalMapStreamOpen\":%s,\"logicalMapParsed\":%s,"
 		"\"logicalMapParseException\":%s,"
 		"\"bridgePairCandidateSelected\":%s,"
 		"\"bridgePairMapObjectsInstalled\":%s,"
 		"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
 		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
-		"\"initHeightData\":%d,\"bridgeBufferInstalled\":%s,"
+		"\"initHeightData\":%d,"
+		"\"roadBufferInstalled\":%s,\"roadBufferInitialized\":%s,"
+		"\"loadRoadsInvoked\":%s,\"roadDrawInvoked\":%s,"
+		"\"roadDrawCallDelta\":%u,\"roadSceneDrawFlushed\":%s,"
+		"\"treeBufferInstalled\":%s,\"treeDataConfigured\":%s,"
+		"\"addTreeInvoked\":%s,\"updateTreeInvoked\":%s,"
+		"\"treeNeedToDrawAfterCenter\":%s,"
+		"\"treeNeedToDrawAfterScene\":%s,"
+		"\"treeDrawInvoked\":%s,\"treeDrawCallDelta\":%u,"
+		"\"treeSceneDrawFlushed\":%s,\"scriptEngineReady\":%s,"
+		"\"bridgeBufferInstalled\":%s,"
 		"\"bridgeBufferInitialized\":%s,\"loadBridgesInvoked\":%s,"
 		"\"updateCenterInvoked\":%s,"
 		"\"terrainLogicInstalledForDraw\":%s,"
@@ -9800,6 +10059,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
 		"RTS3DScene::Customized_Render -> ProbeHeightMapRenderObjWithBridgeBuffer::Render -> "
 		"HeightMapRenderObjClass::Render -> "
+		"W3DRoadBuffer::drawRoads -> BaseHeightMapRenderObjClass::renderTrees -> "
 		"W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
@@ -9841,6 +10101,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			"\"verticesAfterUpdate\":%d,"
 			"\"indicesAfterUpdate\":%d,\"hasVertexBuffer\":%s,"
 			"\"hasIndexBuffer\":%s},"
+		"\"roads\":{\"afterLoad\":%d,\"segmentsWithVertices\":%d,"
+		"\"typesWithTextures\":%d,\"typesWithDrawData\":%d,"
+		"\"totalTypeVertices\":%d,\"totalTypeIndices\":%d,"
+		"\"drawBounds\":{\"minX\":%d,\"maxX\":%d,"
+		"\"minY\":%d,\"maxY\":%d}},"
+		"\"tree\":{\"model\":%s,\"texture\":%s,"
+		"\"tilesAfterScene\":%d,"
+		"\"location\":[%.4f,%.4f,%.4f]},"
 		"\"camera\":{\"eye\":[%.4f,%.4f,%.4f],"
 		"\"target\":[%.4f,%.4f,%.4f]},"
 		"\"runtimeAssets\":%s,"
@@ -9871,6 +10139,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		set_device_result,
 		bool_json(runtime_asset_system_installed),
 		bool_json(texture_file_factory_installed),
+		bool_json(models_file_exists),
+		bool_json(mesh_file_exists),
+		bool_json(tree_texture_file_exists),
+		bool_json(material_texture_file_exists),
 		bool_json(logical_map_stream_open),
 		bool_json(logical_map_parsed),
 		bool_json(logical_map_parse_exception),
@@ -9881,6 +10153,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(render_object_created),
 		bool_json(render_object_initialized),
 		init_height_data_result,
+		bool_json(road_buffer_installed),
+		bool_json(road_buffer_initialized),
+		bool_json(load_roads_invoked),
+		bool_json(render_object != nullptr && render_object->probeRoadDrawInvoked()),
+		render_object != nullptr ? render_object->probeRoadDrawCallDelta() : 0,
+		bool_json(road_scene_draw_flushed),
+		bool_json(tree_buffer_installed),
+		bool_json(tree_data_configured),
+		bool_json(add_tree_invoked),
+		bool_json(update_tree_invoked),
+		bool_json(tree_need_to_draw_after_center),
+		bool_json(tree_need_to_draw_after_scene),
+		bool_json(render_object != nullptr && render_object->probeTreeDrawInvoked()),
+		render_object != nullptr ? render_object->probeTreeDrawCallDelta() : 0,
+		bool_json(tree_scene_draw_flushed),
+		bool_json(script_engine_ready),
 		bool_json(bridge_buffer_installed),
 		bool_json(bridge_buffer_initialized),
 		bool_json(load_bridges_invoked),
@@ -10060,6 +10348,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_indices_after_update,
 		bool_json(bridge_buffer != nullptr && bridge_buffer->hasVertexBuffer()),
 		bool_json(bridge_buffer != nullptr && bridge_buffer->hasIndexBuffer()),
+		roads_after_load,
+		road_segments_with_vertices,
+		road_types_with_textures,
+		road_types_with_draw_data,
+		total_road_type_vertices,
+		total_road_type_indices,
+		render_object != nullptr ? render_object->probeRoadDrawMinX() : 0,
+		render_object != nullptr ? render_object->probeRoadDrawMaxX() : 0,
+		render_object != nullptr ? render_object->probeRoadDrawMinY() : 0,
+		render_object != nullptr ? render_object->probeRoadDrawMaxY() : 0,
+		tree_model_json.c_str(),
+		tree_texture_json.c_str(),
+		tree_tiles_after_scene,
+		tree_location_x,
+		tree_location_y,
+		tree_location_z,
 		camera_eye_x,
 		camera_eye_y,
 		camera_eye_z,
