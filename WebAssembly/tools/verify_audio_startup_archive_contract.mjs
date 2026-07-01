@@ -302,77 +302,122 @@ function main() {
 
   // ========================================================================
   // 3) extract_zh_runtime_archives.sh recognizes optional base Generals
-  //    inputs. Pin the base_data_archives (INI.big/Terrain.big/Window.big) /
-  //    base_language_archives (English.big) declarations, the disc-discovery
-  //    helper, the optional base extraction function, and the optional-base
-  //    missing messages.
+  //    inputs. Pin the aggregate base archive list, the cabinet-specific
+  //    archive lists, the raw-disc and extracted-cabinet discovery helpers,
+  //    the optional base extraction function, and the optional-base missing
+  //    messages.
   // ========================================================================
   const baseDataArchivesLine = lineNumber(extract.lines, (line) =>
     /^base_data_archives=\(/.test(line),
   );
   facts.extractBaseDataArchivesLine = {
-    expectedLine: 53,
     line: baseDataArchivesLine,
   };
-  if (baseDataArchivesLine !== 53) {
-    errors.push(
-      `extract base_data_archives expected at line 53 but found at ${baseDataArchivesLine}`,
-    );
+  if (baseDataArchivesLine === -1) {
+    errors.push("extract base_data_archives declaration not found");
   }
   const iniBigLine = lineNumber(extract.lines, (line) => /^\s*INI\.big\s*$/.test(line));
-  facts.extractIniBigEntryLine = { expectedLine: 54, line: iniBigLine };
-  if (iniBigLine !== 54) {
-    errors.push(`extract INI.big entry expected at line 54 but found at ${iniBigLine}`);
+  facts.extractIniBigEntryLine = { line: iniBigLine };
+  if (iniBigLine === -1) {
+    errors.push("extract INI.big entry not found");
+  }
+  const terrainBigLine = lineNumber(extract.lines, (line) => /^\s*Terrain\.big\s*$/.test(line));
+  facts.extractTerrainBigEntryLine = { line: terrainBigLine };
+  if (terrainBigLine === -1) {
+    errors.push("extract Terrain.big entry not found");
+  }
+  const texturesBigLine = lineNumber(extract.lines, (line) => /^\s*Textures\.big\s*$/.test(line));
+  facts.extractTexturesBigEntryLine = { line: texturesBigLine };
+  if (texturesBigLine === -1) {
+    errors.push("extract Textures.big entry not found");
   }
   const windowBigLine = lineNumber(extract.lines, (line) => /^\s*Window\.big\s*$/.test(line));
-  facts.extractWindowBigEntryLine = { expectedLine: 56, line: windowBigLine };
-  if (windowBigLine !== 56) {
-    errors.push(`extract Window.big entry expected at line 56 but found at ${windowBigLine}`);
+  facts.extractWindowBigEntryLine = { line: windowBigLine };
+  if (windowBigLine === -1) {
+    errors.push("extract Window.big entry not found");
+  }
+  const baseDisc1DataArchivesLine = lineNumber(extract.lines, (line) =>
+    /^base_disc1_data_archives=\(/.test(line),
+  );
+  facts.extractBaseDisc1DataArchivesLine = { line: baseDisc1DataArchivesLine };
+  if (baseDisc1DataArchivesLine === -1) {
+    errors.push("extract base_disc1_data_archives declaration not found");
+  }
+  const baseDisc2DataArchivesLine = lineNumber(extract.lines, (line) =>
+    /^base_disc2_data_archives=\(/.test(line),
+  );
+  facts.extractBaseDisc2DataArchivesLine = { line: baseDisc2DataArchivesLine };
+  if (baseDisc2DataArchivesLine === -1) {
+    errors.push("extract base_disc2_data_archives declaration not found");
   }
   const baseLanguageArchivesLine = lineNumber(extract.lines, (line) =>
     /^base_language_archives=\(/.test(line),
   );
   facts.extractBaseLanguageArchivesLine = {
-    expectedLine: 59,
     line: baseLanguageArchivesLine,
   };
-  if (baseLanguageArchivesLine !== 59) {
-    errors.push(
-      `extract base_language_archives expected at line 59 but found at ${baseLanguageArchivesLine}`,
-    );
+  if (baseLanguageArchivesLine === -1) {
+    errors.push("extract base_language_archives declaration not found");
   }
   const englishBigLine = lineNumber(extract.lines, (line) =>
     /^\s*English\.big\s*$/.test(line),
   );
-  facts.extractEnglishBigEntryLine = { expectedLine: 60, line: englishBigLine };
-  if (englishBigLine !== 60) {
-    errors.push(
-      `extract English.big entry expected at line 60 but found at ${englishBigLine}`,
-    );
+  facts.extractEnglishBigEntryLine = { line: englishBigLine };
+  if (englishBigLine === -1) {
+    errors.push("extract English.big entry not found");
   }
   const findOptionalBaseDiscLine = lineNumber(extract.lines, (line) =>
     /^find_optional_base_disc\(\)/.test(line),
   );
   facts.extractFindOptionalBaseDiscLine = {
-    expectedLine: 84,
     line: findOptionalBaseDiscLine,
   };
-  if (findOptionalBaseDiscLine !== 84) {
-    errors.push(
-      `extract find_optional_base_disc expected at line 84 but found at ${findOptionalBaseDiscLine}`,
-    );
+  if (findOptionalBaseDiscLine === -1) {
+    errors.push("extract find_optional_base_disc helper not found");
+  }
+  const findOptionalBaseCabLine = lineNumber(extract.lines, (line) =>
+    /^find_optional_base_cab\(\)/.test(line),
+  );
+  facts.extractFindOptionalBaseCabLine = { line: findOptionalBaseCabLine };
+  if (findOptionalBaseCabLine === -1) {
+    errors.push("extract find_optional_base_cab helper not found");
+  }
+  const extractBaseCabFromDiscLine = lineNumber(extract.lines, (line) =>
+    /^extract_base_cab_from_disc\(\)/.test(line),
+  );
+  facts.extractBaseCabFromDiscLine = { line: extractBaseCabFromDiscLine };
+  if (extractBaseCabFromDiscLine === -1) {
+    errors.push("extract extract_base_cab_from_disc helper not found");
   }
   const extractOptionalBaseLine = lineNumber(extract.lines, (line) =>
     /^extract_optional_base_startup_archives\(\)/.test(line),
   );
   facts.extractOptionalBaseStartupArchivesLine = {
-    expectedLine: 164,
     line: extractOptionalBaseLine,
   };
-  if (extractOptionalBaseLine !== 164) {
-    errors.push(
-      `extract extract_optional_base_startup_archives expected at line 164 but found at ${extractOptionalBaseLine}`,
-    );
+  if (extractOptionalBaseLine === -1) {
+    errors.push("extract extract_optional_base_startup_archives helper not found");
+  }
+  const data1CabLine = lineNumber(extract.lines, (line) =>
+    /"Data1\.cab"/.test(line),
+  );
+  facts.extractData1CabReferenceLine = { line: data1CabLine };
+  if (data1CabLine === -1) {
+    errors.push("extract Data1.cab reference not found");
+  }
+  const data2CabLine = lineNumber(extract.lines, (line) =>
+    /"Data2\.cab"/.test(line),
+  );
+  facts.extractData2CabReferenceLine = { line: data2CabLine };
+  if (data2CabLine === -1) {
+    errors.push("extract Data2.cab reference not found");
+  }
+  const languageCabLine = lineNumber(extract.lines, (line) =>
+    /"Language\.cab"/.test(line),
+  );
+  facts.extractLanguageCabReferenceLine = { line: languageCabLine };
+  if (languageCabLine === -1) {
+    errors.push("extract Language.cab reference not found");
   }
   // Optional base missing/skip messages - the script either extracts/copies
   // base INI.big/English.big or emits these messages.
@@ -386,21 +431,13 @@ function main() {
       "extract optional-base BIG skip message not found",
     );
   }
-  const skipIniLine = lineNumber(
+  const skipSourceLine = lineNumber(
     extract.lines,
-    (line) => /Optional base Generals disc 1 image not found; \$\{archive\} was not extracted/.test(line),
+    (line) => /Optional base Generals \$\{source_label\} source not found; \$\{archive\} was not extracted/.test(line),
   );
-  facts.extractSkipBaseDataArchiveMessageLine = { line: skipIniLine };
-  if (skipIniLine === -1) {
-    errors.push("extract optional-base disc 1 archive-loop missing message not found");
-  }
-  const skipEnglishLine = lineNumber(
-    extract.lines,
-    (line) => /Optional base Generals disc 2 image not found; English\.big was not extracted/.test(line),
-  );
-  facts.extractSkipEnglishMessageLine = { line: skipEnglishLine };
-  if (skipEnglishLine === -1) {
-    errors.push("extract optional-base English.big missing message not found");
+  facts.extractSkipBaseCabSourceMessageLine = { line: skipSourceLine };
+  if (skipSourceLine === -1) {
+    errors.push("extract optional-base cabinet-source missing message not found");
   }
 
   // ========================================================================
@@ -500,14 +537,9 @@ function main() {
   const hasBaseIniArchiveLine = lineNumber(smoke.lines, (line) =>
     /^const\s+hasBaseIniArchive\s*=/.test(line),
   );
-  facts.smokeHasBaseIniArchiveLine = {
-    expectedLine: 3956,
-    line: hasBaseIniArchiveLine,
-  };
-  if (hasBaseIniArchiveLine !== 3956) {
-    errors.push(
-      `smoke hasBaseIniArchive expected at line 3956 but found at ${hasBaseIniArchiveLine}`,
-    );
+  facts.smokeHasBaseIniArchiveLine = { line: hasBaseIniArchiveLine };
+  if (hasBaseIniArchiveLine === -1) {
+    errors.push("smoke hasBaseIniArchive predicate not found");
   }
   // The boot-time startup-behavior branch is the `if (hasBaseIniArchive)` in
   // the main flow immediately followed by assertOriginalEngineStartupWithBaseIni
@@ -523,40 +555,25 @@ function main() {
       }
     }
   }
-  facts.smokeStartupBranchCheckLine = {
-    expectedLine: 4184,
-    line: startupBranchCheckLine,
-  };
-  if (startupBranchCheckLine !== 4184) {
-    errors.push(
-      `smoke hasBaseIniArchive startup branch expected at line 4184 but found at ${startupBranchCheckLine}`,
-    );
+  facts.smokeStartupBranchCheckLine = { line: startupBranchCheckLine };
+  if (startupBranchCheckLine === -1) {
+    errors.push("smoke hasBaseIniArchive startup branch not found");
   }
   // The two distinct startup assertion paths must exist, with the base-INI
   // (with) assertion after the missing-files assertion.
   const missingFilesAssertLine = lineNumber(smoke.lines, (line) =>
     /^function\s+assertOriginalEngineStartupMissingFiles\s*\(/.test(line),
   );
-  facts.smokeAssertOriginalEngineStartupMissingFilesLine = {
-    expectedLine: 3741,
-    line: missingFilesAssertLine,
-  };
-  if (missingFilesAssertLine !== 3741) {
-    errors.push(
-      `smoke assertOriginalEngineStartupMissingFiles expected at line 3741 but found at ${missingFilesAssertLine}`,
-    );
+  facts.smokeAssertOriginalEngineStartupMissingFilesLine = { line: missingFilesAssertLine };
+  if (missingFilesAssertLine === -1) {
+    errors.push("smoke assertOriginalEngineStartupMissingFiles helper not found");
   }
   const withBaseIniAssertLine = lineNumber(smoke.lines, (line) =>
     /^function\s+assertOriginalEngineStartupWithBaseIni\s*\(/.test(line),
   );
-  facts.smokeAssertOriginalEngineStartupWithBaseIniLine = {
-    expectedLine: 3839,
-    line: withBaseIniAssertLine,
-  };
-  if (withBaseIniAssertLine !== 3839) {
-    errors.push(
-      `smoke assertOriginalEngineStartupWithBaseIni expected at line 3839 but found at ${withBaseIniAssertLine}`,
-    );
+  facts.smokeAssertOriginalEngineStartupWithBaseIniLine = { line: withBaseIniAssertLine };
+  if (withBaseIniAssertLine === -1) {
+    errors.push("smoke assertOriginalEngineStartupWithBaseIni helper not found");
   }
   if (
     missingFilesAssertLine > 0 &&

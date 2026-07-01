@@ -912,11 +912,76 @@ std::size_t count_verified_fields(const RealDrawGroupInfoIniProbeResult &result)
 		(result.pixel_offset_y == -10 ? 1U : 0U);
 }
 
+bool draw_group_info_shape_supported(const RealDrawGroupInfoIniProbeResult &result)
+{
+	const bool common =
+		result.font_name == "Arial" &&
+		result.font_size == 10 &&
+		!result.font_is_bold &&
+		result.color_for_text == 0xffffffffU &&
+		result.color_for_text_drop_shadow == 0xff000000U &&
+		!result.using_pixel_offset_x &&
+		result.using_pixel_offset_y &&
+		result.pixel_offset_y == -10;
+	const bool zh_shape =
+		result.use_player_color &&
+		result.drop_shadow_offset_x == -1 &&
+		result.drop_shadow_offset_y == -1 &&
+		std::fabs(result.percent_offset_x - -0.05f) < 0.001f;
+	const bool base_shape =
+		!result.use_player_color &&
+		result.drop_shadow_offset_x == 1 &&
+		result.drop_shadow_offset_y == 1 &&
+		std::fabs(result.percent_offset_x - -0.20f) < 0.001f;
+	return common && (zh_shape || base_shape);
+}
+
+bool mapped_image_file_count_supported(std::size_t count)
+{
+	return count == 14 || count == 17;
+}
+
+bool mapped_image_count_supported(std::size_t count)
+{
+	return count == 1186 || count == 1320;
+}
+
+bool mapped_image_archive_shape_supported(std::size_t file_count, std::size_t image_count)
+{
+	return (file_count == 14 && image_count == 1186) ||
+		(file_count == 17 && image_count == 1320);
+}
+
+bool control_bar_scheme_right_hud_supported(const std::string &image, const char *base_image)
+{
+	return image.empty() || image == base_image;
+}
+
+bool control_bar_scheme_china_gen_arrow_supported(const std::string &image)
+{
+	return image.empty() || image == "CHINALevelUP";
+}
+
+bool control_bar_scheme_image_shape_supported(const RealControlBarSchemeIniProbeResult &result)
+{
+	const bool zh_shape =
+		result.america_right_hud_image.empty() &&
+		result.gla_right_hud_image.empty() &&
+		result.china_right_hud_image.empty() &&
+		result.china_gen_arrow_image.empty();
+	const bool base_shape =
+		result.america_right_hud_image == "SALogo" &&
+		result.gla_right_hud_image == "SULogo" &&
+		result.china_right_hud_image == "SNLogo" &&
+		result.china_gen_arrow_image == "CHINALevelUP";
+	return zh_shape || base_shape;
+}
+
 std::size_t count_verified_fields(const RealMappedImageIniProbeResult &result)
 {
 	return
-		(result.file_count == 14 ? 1U : 0U) +
-		(result.image_count == 1186 ? 1U : 0U) +
+		(mapped_image_file_count_supported(result.file_count) ? 1U : 0U) +
+		(mapped_image_count_supported(result.image_count) ? 1U : 0U) +
 		(result.sa_chinook_found ? 1U : 0U) +
 		(result.sa_chinook_texture == "SAUserInterface512_001.tga" ? 1U : 0U) +
 		(result.sa_chinook_texture_width == 512 ? 1U : 0U) +
@@ -938,7 +1003,7 @@ std::size_t count_verified_fields(const RealMappedImageIniProbeResult &result)
 std::size_t count_verified_fields(const RealChallengeModeIniProbeResult &result)
 {
 	return
-		(result.mapped_image_count == 1186 ? 1U : 0U) +
+		(mapped_image_count_supported(result.mapped_image_count) ? 1U : 0U) +
 		(result.persona_count == NUM_GENERALS ? 1U : 0U) +
 		(result.enabled_persona_count == 9 ? 1U : 0U) +
 		(result.player_template_count == 10 ? 1U : 0U) +
@@ -981,7 +1046,7 @@ std::size_t count_verified_fields(const RealControlBarSchemeIniProbeResult &resu
 		(result.america_found ? 1U : 0U) +
 		(result.america_side == "America" ? 1U : 0U) +
 		(result.america_queue_image.empty() ? 1U : 0U) +
-		(result.america_right_hud_image.empty() ? 1U : 0U) +
+		(control_bar_scheme_right_hud_supported(result.america_right_hud_image, "SALogo") ? 1U : 0U) +
 		(result.america_command_marker_image == "SAEmptyFrame" ? 1U : 0U) +
 		(result.america_power_purchase_image == "GeneralsPowerWindow_American" ? 1U : 0U) +
 		(result.america_base_image == "InGameUIAmericaBase" ? 1U : 0U) +
@@ -994,16 +1059,16 @@ std::size_t count_verified_fields(const RealControlBarSchemeIniProbeResult &resu
 		(result.america_base_height == 191 ? 1U : 0U) +
 		(result.gla_found ? 1U : 0U) +
 		(result.gla_side == "GLA" ? 1U : 0U) +
-		(result.gla_right_hud_image.empty() ? 1U : 0U) +
+		(control_bar_scheme_right_hud_supported(result.gla_right_hud_image, "SULogo") ? 1U : 0U) +
 		(result.gla_command_marker_image == "SUEmptyFrame" ? 1U : 0U) +
 		(result.gla_power_purchase_image == "GeneralsPowerWindow_GLA" ? 1U : 0U) +
 		(result.gla_base_image == "InGameUIGLABase" ? 1U : 0U) +
 		(result.china_found ? 1U : 0U) +
 		(result.china_side == "China" ? 1U : 0U) +
-		(result.china_right_hud_image.empty() ? 1U : 0U) +
+		(control_bar_scheme_right_hud_supported(result.china_right_hud_image, "SNLogo") ? 1U : 0U) +
 		(result.china_command_marker_image == "SNEmptyFrame" ? 1U : 0U) +
 		(result.china_power_purchase_image == "GeneralsPowerMenu_China" ? 1U : 0U) +
-		(result.china_gen_arrow_image.empty() ? 1U : 0U) +
+		(control_bar_scheme_china_gen_arrow_supported(result.china_gen_arrow_image) ? 1U : 0U) +
 		(result.china_base_image == "InGameUIChinaBase" ? 1U : 0U);
 }
 
@@ -4189,7 +4254,7 @@ RealDrawGroupInfoIniProbeResult probe_original_draw_group_info_ini_load(const ch
 				result.ok =
 					result.bytes > 100 &&
 					result.original_ini_load &&
-					result.parsed_fields == 12;
+					draw_group_info_shape_supported(result);
 			}
 		}
 	} catch (...) {
@@ -4299,7 +4364,7 @@ RealMappedImageIniProbeResult probe_original_mapped_image_ini_load(const char *a
 				result.parsed_fields = count_verified_fields(result);
 				result.ok =
 					result.bytes > 100000 &&
-					result.file_count == 14 &&
+					mapped_image_archive_shape_supported(result.file_count, result.image_count) &&
 					result.name_key_generator_loaded &&
 					result.original_ini_load &&
 					result.parsed_fields == 18;
@@ -4610,11 +4675,12 @@ RealControlBarSchemeIniProbeResult probe_original_control_bar_scheme_ini_load(co
 						result.default_bytes > 1000 &&
 						result.bytes > 10000 &&
 						result.mapped_images_loaded &&
-						result.mapped_image_count == 1186 &&
+						mapped_image_count_supported(result.mapped_image_count) &&
 						result.name_key_generator_loaded &&
 						result.control_bar_loaded &&
 						result.original_default_ini_load &&
 						result.original_ini_load &&
+						control_bar_scheme_image_shape_supported(result) &&
 						result.parsed_fields == 34;
 				}
 			}

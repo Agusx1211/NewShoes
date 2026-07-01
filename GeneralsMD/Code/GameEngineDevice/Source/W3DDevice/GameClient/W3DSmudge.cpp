@@ -49,7 +49,17 @@
 
 SmudgeManager *TheSmudgeManager=NULL;
 
-W3DSmudgeManager::W3DSmudgeManager(void)
+W3DSmudgeManager::W3DSmudgeManager(void) :
+	m_smudgeGroup(NULL),
+	m_posBuffer(NULL),
+	m_RGBABuffer(NULL),
+	m_sizeBuffer(NULL),
+#ifdef USE_COPY_RECTS
+	m_backgroundTexture(NULL),
+#endif
+	m_indexBuffer(NULL),
+	m_backBufferWidth(0),
+	m_backBufferHeight(0)
 {
 }
 

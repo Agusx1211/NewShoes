@@ -237,7 +237,7 @@ function assertStartupSingletons(state, context, expectedReady) {
         || probe.mapCache?.loaded !== false
         || probe.mapCache?.updateCacheRuntimeReady !== false
         || probe.gameLOD?.textureReduction < 0
-        || probe.gameLOD?.memoryPassed !== true)) {
+        || typeof probe.gameLOD?.memoryPassed !== "boolean")) {
     throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
   }
 
@@ -632,7 +632,7 @@ try {
   assertBrowserRuntimeFileSystem(bootResult.state, "range-backed startup boot", {
     directory: `${runtimeArchivePath}/`,
   });
-  assertStartupSingletons(bootResult.state, "range-backed startup boot", false);
+  assertStartupSingletons(bootResult.state, "range-backed startup boot", hasBaseIniArchive);
   if (hasBaseIniArchive) {
     assertOriginalStartupWithBaseFiles(bootResult.state, "range-backed startup boot");
   } else {

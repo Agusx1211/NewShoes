@@ -15,7 +15,8 @@ language_cab="${out_dir}/Language.cab"
 base_work_dir="${out_dir}/base-generals"
 base_disc1_iso="${base_work_dir}/Disc1.iso"
 base_disc2_iso="${base_work_dir}/Disc2.iso"
-base_data_cab="${base_work_dir}/Data1.cab"
+base_data1_cab="${base_work_dir}/Data1.cab"
+base_data2_cab="${base_work_dir}/Data2.cab"
 base_language_cab="${base_work_dir}/Language.cab"
 
 data_archives=(
@@ -55,6 +56,16 @@ base_data_archives=(
   Terrain.big
   Textures.big
   Window.big
+)
+
+base_disc1_data_archives=(
+  INI.big
+  Window.big
+)
+
+base_disc2_data_archives=(
+  Terrain.big
+  Textures.big
 )
 
 base_language_archives=(
@@ -113,6 +124,58 @@ find_optional_base_disc() {
   fi
 }
 
+find_optional_base_cab() {
+  local disc_number="$1"
+  local cab_name="$2"
+
+  local -a candidates=()
+  if [[ -d "${repo_root}/assets" ]]; then
+    while IFS= read -r -d '' candidate; do
+      candidates+=("${candidate}")
+    done < <(find "${repo_root}/assets" -maxdepth 3 -type f \
+      -iname "${cab_name}" \
+      ! -path "*Zero Hour*" \
+      -print0 | sort -z)
+  fi
+
+  if (( ${#candidates[@]} == 0 )); then
+    return
+  fi
+
+  local preferred_fragment="/Generals-CD${disc_number}/"
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ "${candidate}" == *"${preferred_fragment}"* ]]; then
+      printf '%s\n' "${candidate}"
+      return
+    fi
+  done
+
+  if (( ${#candidates[@]} > 1 )); then
+    echo "Multiple base Generals ${cab_name} candidates found; using ${candidates[0]}" >&2
+  fi
+  printf '%s\n' "${candidates[0]}"
+}
+
+extract_base_cab_from_disc() {
+  local source_image="$1"
+  local iso_image="$2"
+  local cab_name="$3"
+  local target_cab="$4"
+
+  if [[ -z "${source_image}" ]]; then
+    return
+  fi
+
+  ensure_iso "${source_image}" "${iso_image}"
+  rm -f "${target_cab}"
+  if 7z e -y "-o$(dirname "${target_cab}")" "${iso_image}" "${cab_name}" >/dev/null 2>&1; then
+    if [[ -f "${target_cab}" ]]; then
+      printf '%s\n' "${target_cab}"
+    fi
+  fi
+}
+
 require_big() {
   local archive_path="$1"
 
@@ -162,6 +225,29 @@ record_optional_archive_if_present() {
   return 0
 }
 
+extract_optional_archives_from_cab() {
+  local cab_path="$1"
+  local source_label="$2"
+  shift 2
+  local -a archives=("$@")
+
+  if [[ -n "${cab_path}" && -f "${cab_path}" ]]; then
+    7z e -y "-o${out_dir}" "${cab_path}" "${archives[@]}" >/dev/null
+    local archive
+    for archive in "${archives[@]}"; do
+      record_optional_archive_if_present "${archive}"
+    done
+    return
+  fi
+
+  local archive
+  for archive in "${archives[@]}"; do
+    if ! record_optional_archive_if_present "${archive}"; then
+      echo "Optional base Generals ${source_label} source not found; ${archive} was not extracted." >&2
+    fi
+  done
+}
+
 extract_optional_base_startup_archives() {
   local base_disc1_image
   local base_disc2_image
@@ -169,7 +255,32 @@ extract_optional_base_startup_archives() {
   base_disc1_image="$(find_optional_base_disc 1 "${CNC_GENERALS_DISC1_IMAGE:-}")"
   base_disc2_image="$(find_optional_base_disc 2 "${CNC_GENERALS_DISC2_IMAGE:-}")"
 
-  if [[ -z "${base_disc1_image}" && -z "${base_disc2_image}" ]]; then
+  mkdir -p "${base_work_dir}"
+
+  local base_data1_source
+  local base_data2_source
+  local base_language_source
+  base_data1_source="$(find_optional_base_cab 1 "Data1.cab")"
+  base_data2_source="$(find_optional_base_cab 2 "Data2.cab")"
+  base_language_source="$(find_optional_base_cab 1 "Language.cab")"
+
+  if [[ -z "${base_data1_source}" ]]; then
+    base_data1_source="$(extract_base_cab_from_disc "${base_disc1_image}" "${base_disc1_iso}" "Data1.cab" "${base_data1_cab}")"
+  fi
+  if [[ -z "${base_data2_source}" ]]; then
+    base_data2_source="$(extract_base_cab_from_disc "${base_disc2_image}" "${base_disc2_iso}" "Data2.cab" "${base_data2_cab}")"
+  fi
+  if [[ -z "${base_language_source}" ]]; then
+    base_language_source="$(extract_base_cab_from_disc "${base_disc1_image}" "${base_disc1_iso}" "Language.cab" "${base_language_cab}")"
+  fi
+  if [[ -z "${base_language_source}" ]]; then
+    base_language_source="$(find_optional_base_cab 2 "Language.cab")"
+  fi
+  if [[ -z "${base_language_source}" ]]; then
+    base_language_source="$(extract_base_cab_from_disc "${base_disc2_image}" "${base_disc2_iso}" "Language.cab" "${base_language_cab}")"
+  fi
+
+  if [[ -z "${base_data1_source}" && -z "${base_data2_source}" && -z "${base_language_source}" ]]; then
     local found_existing=false
     local archive
     for archive in "${base_data_archives[@]}" "${base_language_archives[@]}"; do
@@ -186,34 +297,9 @@ extract_optional_base_startup_archives() {
     return
   fi
 
-  mkdir -p "${base_work_dir}"
-
-  if [[ -n "${base_disc1_image}" ]]; then
-    ensure_iso "${base_disc1_image}" "${base_disc1_iso}"
-    7z e -y "-o${base_work_dir}" "${base_disc1_iso}" Data1.cab >/dev/null
-    7z e -y "-o${out_dir}" "${base_data_cab}" "${base_data_archives[@]}" >/dev/null
-    for archive in "${base_data_archives[@]}"; do
-      record_optional_archive_if_present "${archive}"
-    done
-  else
-    local archive
-    for archive in "${base_data_archives[@]}"; do
-      if ! record_optional_archive_if_present "${archive}"; then
-        echo "Optional base Generals disc 1 image not found; ${archive} was not extracted." >&2
-      fi
-    done
-  fi
-
-  if [[ -n "${base_disc2_image}" ]]; then
-    ensure_iso "${base_disc2_image}" "${base_disc2_iso}"
-    7z e -y "-o${base_work_dir}" "${base_disc2_iso}" Language.cab >/dev/null
-    7z e -y "-o${out_dir}" "${base_language_cab}" "${base_language_archives[@]}" >/dev/null
-    for archive in "${base_language_archives[@]}"; do
-      record_optional_archive_if_present "${archive}"
-    done
-  elif ! record_optional_archive_if_present "English.big"; then
-    echo "Optional base Generals disc 2 image not found; English.big was not extracted." >&2
-  fi
+  extract_optional_archives_from_cab "${base_data1_source}" "Data1.cab" "${base_disc1_data_archives[@]}"
+  extract_optional_archives_from_cab "${base_data2_source}" "Data2.cab" "${base_disc2_data_archives[@]}"
+  extract_optional_archives_from_cab "${base_language_source}" "Language.cab" "${base_language_archives[@]}"
 }
 
 mkdir -p "${out_dir}"

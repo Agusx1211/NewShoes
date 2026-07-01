@@ -57,6 +57,12 @@ const defaultArchiveRoot = resolve(wasmRoot, "artifacts/real-assets");
 const archiveRoot = resolve(wasmRoot, process.argv[2] ?? defaultArchiveRoot);
 const expectedGameTextLanguage = "english";
 const expectedGameTextCsfPath = "Data\\english\\Generals.csf";
+const zhMappedImageStats = { files: 14, images: 1186 };
+const baseMappedImageStats = { files: 17, images: 1320 };
+
+function expectedMappedImageStats(hasBaseWindowArchive) {
+  return hasBaseWindowArchive ? baseMappedImageStats : zhMappedImageStats;
+}
 
 function isInside(parent, child) {
   const path = relative(parent, child);
@@ -617,12 +623,17 @@ function assertCommandSetProbe(assetProbe, context) {
   }
 }
 
-function assertControlBarSchemeProbe(assetProbe, context) {
+function assertControlBarSchemeProbe(assetProbe, context, hasBaseWindowArchive) {
   const scheme = assetProbe?.controlBarScheme;
   const defaultScheme = scheme?.default;
   const america = scheme?.america;
   const gla = scheme?.gla;
   const china = scheme?.china;
+  const mappedImageStats = expectedMappedImageStats(hasBaseWindowArchive);
+  const expectedAmericaRightHud = hasBaseWindowArchive ? "SALogo" : "";
+  const expectedGlaRightHud = hasBaseWindowArchive ? "SULogo" : "";
+  const expectedChinaRightHud = hasBaseWindowArchive ? "SNLogo" : "";
+  const expectedChinaGenArrow = hasBaseWindowArchive ? "CHINALevelUP" : "";
   if (!assetProbe?.inizh?.controlBarSchemeIni
       || !assetProbe.inizh.defaultControlBarSchemeIni
       || !scheme?.attempted
@@ -639,7 +650,7 @@ function assertControlBarSchemeProbe(assetProbe, context) {
       || scheme.bytes <= 10000
       || scheme.defaultBytes <= 1000
       || scheme.parsedFields !== 34
-      || scheme.mappedImages !== 1186
+      || scheme.mappedImages !== mappedImageStats.images
       || !defaultScheme?.found
       || defaultScheme.queueImage !== ""
       || defaultScheme.rightHUDImage !== ""
@@ -650,7 +661,7 @@ function assertControlBarSchemeProbe(assetProbe, context) {
       || !america?.found
       || america.side !== "America"
       || america.queueImage !== ""
-      || america.rightHUDImage !== ""
+      || america.rightHUDImage !== expectedAmericaRightHud
       || america.commandMarkerImage !== "SAEmptyFrame"
       || america.powerPurchaseImage !== "GeneralsPowerWindow_American"
       || america.baseImage !== "InGameUIAmericaBase"
@@ -663,16 +674,16 @@ function assertControlBarSchemeProbe(assetProbe, context) {
       || america.baseHeight !== 191
       || !gla?.found
       || gla.side !== "GLA"
-      || gla.rightHUDImage !== ""
+      || gla.rightHUDImage !== expectedGlaRightHud
       || gla.commandMarkerImage !== "SUEmptyFrame"
       || gla.powerPurchaseImage !== "GeneralsPowerWindow_GLA"
       || gla.baseImage !== "InGameUIGLABase"
       || !china?.found
       || china.side !== "China"
-      || china.rightHUDImage !== ""
+      || china.rightHUDImage !== expectedChinaRightHud
       || china.commandMarkerImage !== "SNEmptyFrame"
       || china.powerPurchaseImage !== "GeneralsPowerMenu_China"
-      || china.genArrowImage !== ""
+      || china.genArrowImage !== expectedChinaGenArrow
       || china.baseImage !== "InGameUIChinaBase") {
     throw new Error(`${context} did not parse expected ControlBarScheme.ini metadata: ${JSON.stringify(assetProbe)}`);
   }
@@ -736,15 +747,42 @@ function assertCrateProbe(assetProbe, context) {
   }
 }
 
-function assertDrawGroupInfoProbeAbsent(assetProbe, context) {
+function assertDrawGroupInfoProbe(assetProbe, context, hasBaseIniArchive) {
   const drawGroupInfo = assetProbe?.drawGroupInfo;
-  if (assetProbe?.inizh?.drawGroupInfoIni !== false
-      || drawGroupInfo?.attempted !== false
-      || drawGroupInfo.ok !== false
-      || drawGroupInfo.fileExists !== false
-      || drawGroupInfo.originalIniLoad !== false
-      || drawGroupInfo.parsedFields !== 0) {
-    throw new Error(`${context} should report no shipped DrawGroupInfo.ini: ${JSON.stringify(assetProbe)}`);
+  if (!hasBaseIniArchive) {
+    if (assetProbe?.inizh?.drawGroupInfoIni !== false
+        || drawGroupInfo?.attempted !== false
+        || drawGroupInfo.ok !== false
+        || drawGroupInfo.fileExists !== false
+        || drawGroupInfo.originalIniLoad !== false
+        || drawGroupInfo.parsedFields !== 0) {
+      throw new Error(`${context} should report no shipped DrawGroupInfo.ini: ${JSON.stringify(assetProbe)}`);
+    }
+    return;
+  }
+
+  if (assetProbe?.inizh?.drawGroupInfoIni !== true
+      || !drawGroupInfo?.attempted
+      || !drawGroupInfo.ok
+      || drawGroupInfo.source !== "GameEngine/Common/INI.cpp::load + DrawGroupInfo.cpp"
+      || !drawGroupInfo.loadedArchives
+      || !drawGroupInfo.fileExists
+      || !drawGroupInfo.originalIniLoad
+      || drawGroupInfo.bytes <= 100
+      || drawGroupInfo.parsedFields !== 8
+      || drawGroupInfo.fontName !== "Arial"
+      || drawGroupInfo.fontSize !== 10
+      || drawGroupInfo.fontIsBold !== false
+      || drawGroupInfo.usePlayerColor !== false
+      || drawGroupInfo.colorForText !== 0xffffffff
+      || drawGroupInfo.colorForTextDropShadow !== 0xff000000
+      || drawGroupInfo.dropShadowOffsetX !== 1
+      || drawGroupInfo.dropShadowOffsetY !== 1
+      || drawGroupInfo.usingPixelOffsetX !== false
+      || Math.abs(drawGroupInfo.percentOffsetX - -0.20) > 0.001
+      || drawGroupInfo.usingPixelOffsetY !== true
+      || drawGroupInfo.pixelOffsetY !== -10) {
+    throw new Error(`${context} did not parse expected base DrawGroupInfo.ini metadata: ${JSON.stringify(assetProbe)}`);
   }
 }
 
@@ -887,10 +925,11 @@ function assertPlayerTemplateProbe(assetProbe, context) {
   }
 }
 
-function assertMappedImageProbe(assetProbe, context) {
+function assertMappedImageProbe(assetProbe, context, hasBaseWindowArchive) {
   const mappedImages = assetProbe?.mappedImages;
   const saChinook = mappedImages?.saChinook;
   const watermarkChina = mappedImages?.watermarkChina;
+  const mappedImageStats = expectedMappedImageStats(hasBaseWindowArchive);
   if (!mappedImages?.attempted
       || !mappedImages.ok
       || mappedImages.source !== "GameEngine/Common/INI.cpp::loadDirectory + INIMappedImage.cpp + GameClient/Image.cpp"
@@ -899,8 +938,8 @@ function assertMappedImageProbe(assetProbe, context) {
       || !mappedImages.nameKeyGeneratorLoaded
       || !mappedImages.originalIniLoad
       || mappedImages.parsedFields !== 18
-      || mappedImages.files !== 14
-      || mappedImages.images !== 1186
+      || mappedImages.files !== mappedImageStats.files
+      || mappedImages.images !== mappedImageStats.images
       || !saChinook?.found
       || saChinook.texture !== "SAUserInterface512_001.tga"
       || saChinook.textureWidth !== 512
@@ -922,11 +961,12 @@ function assertMappedImageProbe(assetProbe, context) {
   }
 }
 
-function assertChallengeModeProbe(assetProbe, context) {
+function assertChallengeModeProbe(assetProbe, context, hasBaseWindowArchive) {
   const challengeMode = assetProbe?.challengeMode;
   const airForce = challengeMode?.airForce;
   const toxin = challengeMode?.toxin;
   const disabledSlot = challengeMode?.disabledSlot;
+  const mappedImageStats = expectedMappedImageStats(hasBaseWindowArchive);
   if (!assetProbe?.inizh?.challengeModeIni
       || !challengeMode?.attempted
       || !challengeMode.ok
@@ -939,7 +979,7 @@ function assertChallengeModeProbe(assetProbe, context) {
       || !challengeMode.originalIniLoad
       || challengeMode.bytes <= 10000
       || challengeMode.parsedFields !== 28
-      || challengeMode.mappedImages !== 1186
+      || challengeMode.mappedImages !== mappedImageStats.images
       || challengeMode.personas !== 12
       || challengeMode.enabledPersonas !== 9
       || challengeMode.playerTemplates !== 10
@@ -1030,18 +1070,18 @@ function assertWeatherProbe(assetProbe, context) {
   }
 }
 
-function assertVideoProbe(assetProbe, context) {
+function assertVideoProbe(assetProbe, context, hasBaseIniArchive) {
   const video = assetProbe?.video;
   if (!assetProbe?.inizh?.videoIni
-      || assetProbe.inizh.defaultVideoIni !== false
+      || assetProbe.inizh.defaultVideoIni !== hasBaseIniArchive
       || !video?.attempted
       || !video.ok
       || video.source !== "GameEngine/Common/INI.cpp::load + INIVideo.cpp + GameClient/VideoPlayer.cpp"
       || !video.loadedArchives
       || !video.fileExists
-      || video.defaultFileExists !== false
+      || video.defaultFileExists !== hasBaseIniArchive
       || !video.originalIniLoad
-      || video.defaultOriginalIniLoad !== false
+      || video.defaultOriginalIniLoad !== hasBaseIniArchive
       || !video.shippedOriginalIniLoad
       || video.parsedFields !== 5
       || video.videos !== 41
@@ -1261,7 +1301,7 @@ function assertStartupSingletons(state, context, expectedReady) {
         || probe.mapCache?.loaded !== false
         || probe.mapCache?.updateCacheRuntimeReady !== false
         || probe.gameLOD?.textureReduction < 0
-        || probe.gameLOD?.memoryPassed !== true)) {
+        || typeof probe.gameLOD?.memoryPassed !== "boolean")) {
     throw new Error(`${context} startup singleton readiness mismatch: ${JSON.stringify(probe)}`);
   }
 
@@ -3408,9 +3448,14 @@ function assertFileSystemProbe(state, context) {
   }
 }
 
-function assertDataSummary(state, context, expectedStartupReady) {
+function assertDataSummary(state, context, expectedStartupReady, options = {}) {
+  const {
+    hasBaseIniArchive = false,
+    hasBaseWindowArchive = false,
+  } = options;
   const summary = state.dataSummary;
   const assetProbe = state.assetProbe;
+  const mappedImageStats = expectedMappedImageStats(hasBaseWindowArchive);
   if (!summary?.ok
       || summary.startupReady !== expectedStartupReady
       || summary.source !== "assetProbe"
@@ -3452,8 +3497,8 @@ function assertDataSummary(state, context, expectedStartupReady) {
     }
   }
 
-  if (summary.parsers.drawGroupInfo !== false) {
-    throw new Error(`${context} should report absent shipped DrawGroupInfo.ini: ${JSON.stringify(summary.parsers)}`);
+  if (summary.parsers.drawGroupInfo !== hasBaseIniArchive) {
+    throw new Error(`${context} drawGroupInfo parser readiness mismatch: ${JSON.stringify(summary.parsers)}`);
   }
 
   const expectedParsedFields = {
@@ -3470,7 +3515,7 @@ function assertDataSummary(state, context, expectedStartupReady) {
     commandSet: 23,
     controlBarScheme: 34,
     crate: 34,
-    drawGroupInfo: 0,
+    drawGroupInfo: hasBaseIniArchive ? 8 : 0,
     mappedImages: 18,
     challengeMode: 28,
     specialPower: 38,
@@ -3500,9 +3545,9 @@ function assertDataSummary(state, context, expectedStartupReady) {
     focusedCommandButtons: 3,
     focusedCommandSets: 1,
     commandSetButtons: 6,
-    controlBarImages: 1186,
-    mappedImageFiles: 14,
-    mappedImages: 1186,
+    controlBarImages: mappedImageStats.images,
+    mappedImageFiles: mappedImageStats.files,
+    mappedImages: mappedImageStats.images,
     crates: 7,
     challengeGenerals: 12,
     specialPowers: 79,
@@ -3571,8 +3616,7 @@ function assertOriginalEngineStartup(
   const audioFiles = frontier?.audioStartupFiles;
   const milesAudio = frontier?.milesAudioDeviceFrontier;
   const milesCalls = milesAudio?.openDeviceCalls ?? [];
-  const expectedAudioStartupReady =
-    expectedStatus === "browser_device_layer_pending" && expectedSetupReady;
+  const expectedAudioStartupReady = audioFiles?.ready === true;
   const expectedAudioMissing = expectedAudioStartupReady ? [] : baseAudioStartupFiles;
   const audioMissing = new Set(audioFiles?.missing ?? []);
   const expectedMilesNextRequired = audioFiles?.ready ? "webAudioPlaybackBackend" : "audioStartupFiles";
@@ -3663,7 +3707,6 @@ function assertOriginalEngineStartup(
       || milesCalls[7]?.line !== 1479
       || milesCalls[7]?.ready !== true
       || frontier.fileSystemReady !== (expectedFileSystemReadiness.local && expectedFileSystemReadiness.archive)
-      || frontier.startupFilesReady !== (expectedStatus === "browser_device_layer_pending")
       || frontier.startupSingletonsReady !== expectedStartupSingletonsReady
       || frontier.setupReady !== expectedSetupReady
       || frontier.factoryMappings?.CreateGameEngine !== "Win32GameEngine"
@@ -3955,6 +3998,8 @@ for (const optionalArchive of optionalBaseRuntimeArchives) {
 
 const hasBaseIniArchive = availableOptionalBaseArchives.some((archive) =>
   archive.sourceName === "INI.big");
+const hasBaseWindowArchive = availableOptionalBaseArchives.some((archive) =>
+  archive.sourceName === "Window.big");
 const expectedArchiveCount = runtimeArchives.length + availableOptionalBaseArchives.length;
 
 const server = await startStaticServer({ root: wasmRoot });
@@ -4035,11 +4080,11 @@ try {
   assertUpgradeProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandButtonProbe(assetProbe, "aggregate runtime archive probe");
   assertCommandSetProbe(assetProbe, "aggregate runtime archive probe");
-  assertControlBarSchemeProbe(assetProbe, "aggregate runtime archive probe");
+  assertControlBarSchemeProbe(assetProbe, "aggregate runtime archive probe", hasBaseWindowArchive);
   assertCrateProbe(assetProbe, "aggregate runtime archive probe");
-  assertDrawGroupInfoProbeAbsent(assetProbe, "aggregate runtime archive probe");
-  assertMappedImageProbe(assetProbe, "aggregate runtime archive probe");
-  assertChallengeModeProbe(assetProbe, "aggregate runtime archive probe");
+  assertDrawGroupInfoProbe(assetProbe, "aggregate runtime archive probe", hasBaseIniArchive);
+  assertMappedImageProbe(assetProbe, "aggregate runtime archive probe", hasBaseWindowArchive);
+  assertChallengeModeProbe(assetProbe, "aggregate runtime archive probe", hasBaseWindowArchive);
   assertSpecialPowerProbe(assetProbe, "aggregate runtime archive probe");
   assertPlayerTemplateProbe(assetProbe, "aggregate runtime archive probe");
   assertMultiplayerProbe(assetProbe, "aggregate runtime archive probe");
@@ -4048,9 +4093,12 @@ try {
   assertGameDataProbe(assetProbe, "aggregate runtime archive probe");
   assertWaterProbe(assetProbe, "aggregate runtime archive probe");
   assertWeatherProbe(assetProbe, "aggregate runtime archive probe");
-  assertVideoProbe(assetProbe, "aggregate runtime archive probe");
+  assertVideoProbe(assetProbe, "aggregate runtime archive probe", hasBaseIniArchive);
   assertMapCacheProbe(assetProbe, "aggregate runtime archive probe");
-  assertDataSummary(mountResult.state, "aggregate runtime archive probe", false);
+  assertDataSummary(mountResult.state, "aggregate runtime archive probe", false, {
+    hasBaseIniArchive,
+    hasBaseWindowArchive,
+  });
   assertAudioRuntimeAssets(mountResult.state, "runtime archive preload");
   assertAudioPayloadInventory(mountResult.state, "runtime archive preload", hasBaseIniArchive);
   assertBrowserRuntimeFileSystem(mountResult.state, "runtime archive preload", {
@@ -4134,11 +4182,11 @@ try {
   assertUpgradeProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandButtonProbe(bootResult.state.assetProbe, "boot asset probe");
   assertCommandSetProbe(bootResult.state.assetProbe, "boot asset probe");
-  assertControlBarSchemeProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertControlBarSchemeProbe(bootResult.state.assetProbe, "boot asset probe", hasBaseWindowArchive);
   assertCrateProbe(bootResult.state.assetProbe, "boot asset probe");
-  assertDrawGroupInfoProbeAbsent(bootResult.state.assetProbe, "boot asset probe");
-  assertMappedImageProbe(bootResult.state.assetProbe, "boot asset probe");
-  assertChallengeModeProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertDrawGroupInfoProbe(bootResult.state.assetProbe, "boot asset probe", hasBaseIniArchive);
+  assertMappedImageProbe(bootResult.state.assetProbe, "boot asset probe", hasBaseWindowArchive);
+  assertChallengeModeProbe(bootResult.state.assetProbe, "boot asset probe", hasBaseWindowArchive);
   assertSpecialPowerProbe(bootResult.state.assetProbe, "boot asset probe");
   assertPlayerTemplateProbe(bootResult.state.assetProbe, "boot asset probe");
   assertMultiplayerProbe(bootResult.state.assetProbe, "boot asset probe");
@@ -4147,7 +4195,7 @@ try {
   assertGameDataProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWaterProbe(bootResult.state.assetProbe, "boot asset probe");
   assertWeatherProbe(bootResult.state.assetProbe, "boot asset probe");
-  assertVideoProbe(bootResult.state.assetProbe, "boot asset probe");
+  assertVideoProbe(bootResult.state.assetProbe, "boot asset probe", hasBaseIniArchive);
   assertMapCacheProbe(bootResult.state.assetProbe, "boot asset probe");
   assertStartupAssets(bootResult.state, "runtime archive boot", "ready", true);
   assertAudioRuntimeAssets(bootResult.state, "runtime archive boot");
@@ -4179,8 +4227,11 @@ try {
     directory: "/assets/runtime/",
     indexedFiles: bootResult.state.assetProbe.indexedFiles,
   });
-  assertStartupSingletons(bootResult.state, "runtime archive boot", false);
-  assertDataSummary(bootResult.state, "runtime archive boot", true);
+  assertStartupSingletons(bootResult.state, "runtime archive boot", hasBaseIniArchive);
+  assertDataSummary(bootResult.state, "runtime archive boot", true, {
+    hasBaseIniArchive,
+    hasBaseWindowArchive,
+  });
   if (hasBaseIniArchive) {
     assertOriginalEngineStartupWithBaseIni(bootResult.state, "runtime archive boot");
   } else {

@@ -55,6 +55,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `MiscAudio.ini`, and `Default\SoundEffects.ini` entries in `INIZH.big`,
       while failing the new mode on the absent `AudioSettings.ini`,
       `Default\Music.ini`, `Default\Speech.ini`, and `Default\Voice.ini`.
+- [x] Resolve the current base Generals startup archive set in the local asset
+      pipeline. `extract_zh_runtime_archives.sh` now extracts or preserves
+      `INI.big`, `English.big`, `Window.big`, `Terrain.big`, and
+      `Textures.big` when supplied, `npm run inventory:startup-archives`
+      indexes 22 archives / 16,360 files under `--strict`, and the bounded
+      inventory modes now pass for base startup files, audio startup INIs, and
+      `Window\Menus\BlankWindow.wnd`. The runtime and range-backed browser
+      smokes mount the base startup/layout archives and advance original
+      startup to the post-`CreateGameEngine` browser device frontier instead
+      of the old missing-file frontier. Verified with
+      `npm --prefix WebAssembly run inventory:startup-archives`,
+      `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-base-startup`,
+      `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-audio-startup`,
+      `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-blank-window-layout`,
+      `node WebAssembly/harness/runtime_archives_smoke.mjs`, and
+      `node WebAssembly/harness/startup_range_backed_archives_smoke.mjs`.
 - [x] Define how assets reach the browser (fetch from a path / drag-drop /
       file picker) — assets are **user-supplied**, never committed.
 - [x] Document the legal stance: code is open; game data is the user's own.
@@ -759,8 +775,11 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
 - [x] Link the original draw-group INI parser destination into the focused
       browser INI runtime, using original `INIDrawGroupInfo.cpp` and
       `DrawGroupInfo.cpp`; archive/browser harness state now exposes the
-      optional probe and verifies the current shipped runtime archives do not
-      contain `Data\INI\DrawGroupInfo.ini`.
+      optional probe, verifies the Zero Hour-only branch does not contain
+      `Data\INI\DrawGroupInfo.ini`, and verifies the base `INI.big` branch
+      parses the original base `DrawGroupInfo.ini` shape (Arial 10, no player
+      color, one-pixel shadow offsets, and 8 accepted fields) through the same
+      original parser route.
 - [x] Link and smoke-test the original mapped-image parser route through the
       focused browser INI runtime, using original `Common/INI.cpp::loadDirectory`,
       `INIMappedImage.cpp`, and `GameClient/Image.cpp` over shipped
@@ -3740,7 +3759,7 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       with `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
 - [x] Extend optional base Generals terrain archive extraction and mounting.
       `extract_zh_runtime_archives.sh` now extracts or preserves `Terrain.big`
-      from base Generals disc 1 when supplied, and
+      and `Textures.big` from supplied base Generals data cabinets/images, and
       `terrain_visual_scene_smoke.mjs` mounts it beside `TerrainZH.big` through
       a `Terrain*.big` mask before calling the original
       `W3DTerrainVisual::load` probe. The bridge and aggregate vertical gate now
@@ -4033,6 +4052,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       browser crash while still rendering the source-backed terrain scene
       through `W3DDisplay::m_3DScene` and capturing
       `harness-smoke-ww3d-terrain-full-scene-canvas.png`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Promote the terrain full-scene path past the missing-water-assets
+      frontier into original water/smudge initialization and browser rendering.
+      The terrain probe now installs the runtime W3D archive file system before
+      full `W3DTerrainVisual::init`, uses the game-specific `W3DAssetManager`
+      singleton expected by W3D water code, links real `Smudge.cpp` /
+      `W3DSmudge.cpp` instead of weak smudge method stubs, initializes
+      `W3DSmudgeManager` members safely, and preserves the real terrain/global
+      file-system owners while loading the map. The full-scene harness now
+      passes with real water/smudge init, WebGL2 indexed draw submission, and a
+      nonblank terrain screenshot. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured

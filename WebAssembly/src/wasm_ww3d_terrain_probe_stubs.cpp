@@ -72,12 +72,6 @@ extern "C" void *cnc_port_w3d_shadow_ctor_c1(void *) __asm__("_ZN16W3DShadowMana
 extern "C" void *cnc_port_w3d_shadow_dtor_c1(void *) __asm__("_ZN16W3DShadowManagerD1Ev") __attribute__((weak));
 extern "C" int cnc_port_w3d_shadow_init(void *) __asm__("_ZN16W3DShadowManager4initEv") __attribute__((weak));
 extern "C" void cnc_port_w3d_shadow_reset(void *) __asm__("_ZN16W3DShadowManager5ResetEv") __attribute__((weak));
-extern "C" void *cnc_port_w3d_smudge_ctor_c1(void *) __asm__("_ZN16W3DSmudgeManagerC1Ev") __attribute__((weak));
-extern "C" void *cnc_port_w3d_smudge_dtor_c1(void *) __asm__("_ZN16W3DSmudgeManagerD1Ev") __attribute__((weak));
-extern "C" void cnc_port_w3d_smudge_init(void *) __asm__("_ZN16W3DSmudgeManager4initEv") __attribute__((weak));
-extern "C" void cnc_port_w3d_smudge_reset(void *) __asm__("_ZN16W3DSmudgeManager5resetEv") __attribute__((weak));
-extern "C" void cnc_port_w3d_smudge_release(void *) __asm__("_ZN16W3DSmudgeManager16ReleaseResourcesEv") __attribute__((weak));
-extern "C" void cnc_port_w3d_smudge_reacquire(void *) __asm__("_ZN16W3DSmudgeManager18ReAcquireResourcesEv") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_dtor_c1(void *) __asm__("_ZN18W3DProjectedShadowD1Ev") __attribute__((weak));
 extern "C" void *cnc_port_projected_shadow_dtor_c2(void *) __asm__("_ZN18W3DProjectedShadowD2Ev") __attribute__((weak));
 extern "C" void *cnc_port_water_ctor_c1(void *) __asm__("_ZN19WaterRenderObjClassC1Ev") __attribute__((weak));

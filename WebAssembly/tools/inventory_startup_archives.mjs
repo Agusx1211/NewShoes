@@ -398,17 +398,17 @@ function buildInventory(assetsDir, archives) {
   const sortedCandidateArchives = [...candidateArchives].sort();
 
   // Base Generals startup-archive readiness: each optional base archive must
-  // be present AND supply every base startup file it owns. This lets a CI
-  // bounded-verification mode prove the current startup-file blocker when
-  // INI.big/English.big are supplied, separately from the Zero Hour-only
-  // --strict contract.
+  // be present and leave every base startup file available in the mounted set.
+  // This lets a CI bounded-verification mode prove the current startup-file
+  // blocker when INI.big/English.big are supplied, separately from the
+  // Zero Hour-only --strict contract.
   const baseArchiveReadiness = optionalBaseArchives.map((name) => {
     const expectedFiles = [...baseArchiveReadinessPaths]
       .filter((path) => expectedBaseArchiveForPath(path) === name)
       .sort();
     const present = presentArchiveNames.has(name);
     const missingStartupFiles = present
-      ? expectedFiles.filter((path) => !pathExistsInArchive(byPath, path, name))
+      ? expectedFiles.filter((path) => (byPath.get(path) ?? []).length === 0)
       : expectedFiles.slice();
     return {
       name,

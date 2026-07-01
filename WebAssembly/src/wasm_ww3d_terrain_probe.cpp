@@ -46,6 +46,7 @@
 #include "GameClient/Water.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
 #include "W3DDevice/GameClient/HeightMap.h"
+#include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DPropBuffer.h"
 #include "W3DDevice/GameClient/W3DBibBuffer.h"
 #include "W3DDevice/GameClient/W3DBridgeBuffer.h"
@@ -3005,6 +3006,17 @@ public:
 			TRUE);
 	}
 
+	void activateGlobals()
+	{
+		TheLocalFileSystem = &m_localFileSystem;
+		TheArchiveFileSystem = &m_archiveFileSystem;
+		TheFileSystem = &m_fileSystem;
+		TheTerrainTypes = m_terrainTypes;
+		TheTerrainRoads = m_terrainRoads;
+		TheSidesList = m_sidesList;
+		TheNameKeyGenerator = m_nameKeyGenerator;
+	}
+
 private:
 	Win32LocalFileSystem m_localFileSystem;
 	Win32BIGFileSystem m_archiveFileSystem;
@@ -5802,6 +5814,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	bool camera_pan_requested = false;
 	bool camera_pan_moved = false;
 	bool shader_manager_initialized = false;
+	bool asset_manager_created = false;
+	bool runtime_asset_system_installed = false;
+	bool texture_file_factory_installed = false;
 	bool shroud_installed = false;
 	bool shroud_initialized = false;
 	bool shroud_fill_invoked = false;
@@ -5889,6 +5904,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	ProbeHeightMapRenderObjWithShroud *shroud_render_object = nullptr;
 	CameraClass *camera = nullptr;
 	WorldHeightMap *map = nullptr;
+	WW3DAssetManager *asset_manager = nullptr;
 
 	if (use_full_init && archive_context_ready) {
 		try {
@@ -5936,6 +5952,15 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	}
 
 	if (succeeded(init_result)) {
+		asset_manager = W3DNEW W3DAssetManager();
+		asset_manager_created = asset_manager != nullptr;
+	}
+
+	if (asset_manager != nullptr) {
+		asset_manager->Set_WW3D_Load_On_Demand(true);
+	}
+
+	if (asset_manager_created) {
 		if (use_full_init) {
 			probe_bridge_phase_log("full-scene-set-render-device");
 		}
@@ -5946,6 +5971,16 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		WW3D::Set_Thumbnail_Enabled(false);
 		W3DShaderManager::init();
 		shader_manager_initialized = true;
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-install-runtime-assets");
+		}
+		runtime_asset_system_installed =
+			wasm_browser_runtime_assets_install_archive_set(
+				map_load.terrainArchiveDirectory.c_str(),
+				map_load.terrainArchiveMask.c_str());
+		const WasmBrowserRuntimeAssetsState &runtime_assets = wasm_browser_runtime_assets_state();
+		texture_file_factory_installed = runtime_assets.w3d_file_system_installed;
+		archive_context.activateGlobals();
 
 		if (TheWaterTransparency.getNonOverloadedPointer() != nullptr) {
 			water_transparency_ready = true;
@@ -6546,6 +6581,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
 		"\"mapCreated\":%s,\"waterTransparencyReady\":%s,"
 		"\"shaderManagerInitialized\":%s,\"visualCreated\":%s,"
+		"\"assetManagerCreated\":%s,"
+		"\"runtimeAssetSystemInstalled\":%s,"
+		"\"textureFileFactoryInstalled\":%s,"
 		"\"visualInitCompleted\":%s,\"visualInitException\":%s,"
 		"\"fullInitAttempted\":%s,"
 		"\"fullInitBlockedByMissingWaterAssets\":%s,"
@@ -6735,6 +6773,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		bool_json(water_transparency_ready),
 		bool_json(shader_manager_initialized),
 		bool_json(visual_created),
+		bool_json(asset_manager_created),
+		bool_json(runtime_asset_system_installed),
+		bool_json(texture_file_factory_installed),
 		bool_json(visual_init_completed),
 		bool_json(visual_init_exception),
 		bool_json(full_init_attempted),
@@ -7060,6 +7101,10 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		delete visual;
 		visual = nullptr;
 	}
+	if (asset_manager != nullptr) {
+		delete asset_manager;
+		asset_manager = nullptr;
+	}
 	RTS3DScene *owned_3d_scene = W3DDisplay::m_3DScene;
 	W3DDisplay::m_3DScene = old_3d_scene;
 	REF_PTR_RELEASE(owned_3d_scene);
@@ -7354,7 +7399,7 @@ const char *run_ww3d_terrain_prop_buffer_scene_probe(
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 	if (succeeded(init_result)) {
-		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager = W3DNEW W3DAssetManager();
 		asset_manager_created = asset_manager != nullptr;
 	}
 	if (asset_manager != nullptr) {
@@ -7906,7 +7951,7 @@ const char *run_ww3d_terrain_tree_buffer_scene_probe(
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 	if (succeeded(init_result)) {
-		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager = W3DNEW W3DAssetManager();
 		asset_manager_created = asset_manager != nullptr;
 	}
 	if (asset_manager != nullptr) {
@@ -8606,7 +8651,7 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 	if (succeeded(init_result)) {
-		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager = W3DNEW W3DAssetManager();
 		asset_manager_created = asset_manager != nullptr;
 	}
 	if (asset_manager != nullptr) {
@@ -9500,7 +9545,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	}
 	if (succeeded(init_result)) {
 		probe_bridge_phase_log("asset-manager");
-		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager = W3DNEW W3DAssetManager();
 		asset_manager_created = asset_manager != nullptr;
 	}
 	if (asset_manager != nullptr) {
@@ -10491,7 +10536,7 @@ const char *run_ww3d_terrain_prop_buffer_render_probe(
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 	if (succeeded(init_result)) {
-		asset_manager = W3DNEW WW3DAssetManager();
+		asset_manager = W3DNEW W3DAssetManager();
 		asset_manager_created = asset_manager != nullptr;
 	}
 

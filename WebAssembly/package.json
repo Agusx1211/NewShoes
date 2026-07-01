@@ -7,7 +7,7 @@
     "clean:wasm": "bash tools/clean_wasm.sh",
     "extract:real-big": "bash tools/extract_zh_big_sample.sh",
     "extract:runtime-archives": "bash tools/extract_zh_runtime_archives.sh",
-    "inventory:startup-archives": "node tools/inventory_startup_archives.mjs artifacts/real-assets --expect-current-zh",
+    "inventory:startup-archives": "node tools/inventory_startup_archives.mjs artifacts/real-assets --strict",
     "inventory:audio-payloads": "node tools/inventory_audio_payloads.mjs artifacts/real-assets --expect-current-zh",
     "inventory:bink-video-payloads": "node tools/inventory_bink_video_payloads.mjs artifacts/real-assets --expect-current-zh",
     "transcode:bink-video": "npm run extract:runtime-archives && node tools/transcode_bink_video_payloads.mjs artifacts/real-assets artifacts/browser-video/bink --expect-current-zh",

@@ -9937,6 +9937,43 @@ function probeArchive(wasmModule, archivePath) {
   return harnessState.assetProbe;
 }
 
+function normalizedArchiveBaseName(name) {
+  return String(name ?? "")
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter(Boolean)
+    .pop()
+    ?.toLowerCase() ?? "";
+}
+
+function isOptionalBaseArchive(archive) {
+  const names = [
+    normalizedArchiveBaseName(archive?.sourceName),
+    normalizedArchiveBaseName(archive?.name),
+  ];
+  return names.some((name) =>
+    name === "ini.big"
+      || name === "english.big"
+      || name === "window.big"
+      || name === "terrain.big"
+      || name === "textures.big"
+      || name === "zzbase_ini.big"
+      || name === "zzbase_english.big"
+      || name === "zzbase_window.big"
+      || name === "zzbase_terrain.big"
+      || name === "zzbase_textures.big");
+}
+
+function archiveProbeOkForMount(assetProbe, archive) {
+  if (assetProbe?.ok) {
+    return true;
+  }
+  return isOptionalBaseArchive(archive)
+    && assetProbe?.loaded === true
+    && Number(assetProbe?.indexedFiles ?? 0) > 0
+    && Number(assetProbe?.sampleBytes ?? 0) > 0;
+}
+
 function registerArchiveSet(wasmModule, archiveSet) {
   const directory = archiveSet.path.endsWith("/") ? archiveSet.path : `${archiveSet.path}/`;
   const fileMask = archiveSet.probePath.slice(archiveSet.probePath.lastIndexOf("/") + 1) || "*.big";
@@ -10964,10 +11001,15 @@ async function mountArchives(payload = {}) {
       bytesMatch: archive.bytes === expectedBytes,
     });
     if (assetProbe) {
+      const probeOk = archiveProbeOkForMount(assetProbe, archive);
       archiveProbes.push({
         name: archive.name,
+        sourceName: archive.sourceName,
         path: archive.path,
-        ok: Boolean(assetProbe.ok),
+        ok: probeOk,
+        strictOk: Boolean(assetProbe.ok),
+        optionalBaseArchive: isOptionalBaseArchive(archive),
+        loaded: Boolean(assetProbe.loaded),
         indexedFiles: assetProbe.indexedFiles,
         sampleBytes: assetProbe.sampleBytes,
       });
@@ -11405,10 +11447,15 @@ async function mountRangeBackedArchiveSet(payload = {}) {
     };
     archives.push(mountedArchive);
     if (assetProbe) {
+      const probeOk = archiveProbeOkForMount(assetProbe, mountedArchive);
       archiveProbes.push({
         name: archive.name,
+        sourceName: mountedArchive.sourceName,
         path: archive.memfsPath,
-        ok: Boolean(assetProbe.ok),
+        ok: probeOk,
+        strictOk: Boolean(assetProbe.ok),
+        optionalBaseArchive: isOptionalBaseArchive(mountedArchive),
+        loaded: Boolean(assetProbe.loaded),
         indexedFiles: assetProbe.indexedFiles,
         sampleBytes: assetProbe.sampleBytes,
       });

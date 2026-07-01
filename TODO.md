@@ -38,34 +38,12 @@ flow below.
       `WebAssembly/src/` as real subsystems link in; retire `-smoke` targets
       (and their open "promote to real ownership" TODO debt) once the real
       boot path covers what they proved.
-- [ ] Mount the base Generals archives (`INI.big`, `English.big`,
-      `Window.big`, `Terrain.big`) when supplied, resolving the known missing
-      startup set (`Data\INI\Default\*.ini`, `Rank.ini`, `CommandMap.ini`,
-      `BlankWindow.wnd`) that currently blocks `init()` past
-      `createAudioManager`.
 
 ---
 
 ## M0 — Build skeleton & asset pipeline
 
 ### Asset pipeline
-- [ ] Resolve the remaining startup-file gaps reported by
-      `npm run inventory:startup-archives` before declaring the exact minimum
-      original boot archive set. The current extracted Zero Hour runtime
-      archive candidates for known startup paths are `INIZH.big`,
-      `EnglishZH.big`, `W3DEnglishZH.big`, and `MapsZH.big`, but default INI
-      files, `Data\INI\Rank.ini`, and `Data\INI\CommandMap.ini` are still
-      absent from the indexed asset set; use the inventory `missingByReason`
-      output to separate optional base-archive absence from real archive gaps.
-      Once base Generals `INI.big`/`English.big` are supplied, rerun
-      `npm run test:startup-range-backed-archives-browser` to verify the
-      optional range-backed base archive branch advances original startup to
-      the post-`CreateGameEngine` original init ownership frontier. The
-      inventory now also reports `Window\Menus\BlankWindow.wnd` readiness
-      separately as an optional base `Window.big` layout gap; when base
-      `Window.big` is supplied, run
-      `node WebAssembly/tools/inventory_startup_archives.mjs WebAssembly/artifacts/real-assets --require-blank-window-layout`
-      before replacing the runtime BlankWindow adapter.
 - [ ] Make `extract_zh_runtime_archives.sh` safe for parallel smoke-test
       invocations, or serialize the npm scripts that call it. Concurrent
       terrain smokes can race while extracting the shared loose `Data1.cab`
@@ -237,10 +215,6 @@ flow below.
       `AmericaInfantryRangerCommandSet` coverage to full `CommandSet.ini`
       coverage after full command-button and object-template resolution is
       available.
-- [ ] Locate or source the original `Run\Data\INI\DrawGroupInfo.ini` asset
-      referenced by the project files but absent from the current extracted
-      runtime BIG set, then enable the optional draw-group probe as a
-      real-data parse smoke.
 - [ ] Expand crate parser preflight from the focused shipped `CrateData`
       subset to full `Crate.ini` after real `ThingFactory` / `ThingTemplate`
       object-template parsing can consume the file's `Object` blocks without
@@ -595,22 +569,12 @@ flow below.
 ### File system device (Win32Device/Common → browser)
 - [ ] Re-target `Win32LocalFileSystem`/`Win32LocalFile` onto MEMFS/IDBFS.
 - [ ] Re-target `Win32BIGFileSystem`/`Win32BIGFile` to read fetched BIG archives.
-- [ ] Resolve the original `Data\INI\Rank.ini` startup dependency referenced by
-      `GameEngine.cpp` / `RankInfoStore`: source the real asset, confirm an
-      alternate shipped filename, or add the correct browser archive mapping,
-      because the current extracted Zero Hour runtime BIG/CAB inventory does
-      not contain that path.
-- [ ] Resolve the remaining original `GameEngine.cpp` default/startup INI
-      dependencies now reported by `originalEngineStartup`: the current runtime
-      BIG set also lacks `Data\INI\Default\GameData.ini`,
-      `Data\INI\Default\Water.ini`, `Data\INI\Default\Science.ini`,
-      `Data\INI\Default\Multiplayer.ini`, `Data\INI\Default\Terrain.ini`,
-      `Data\INI\Default\Roads.ini`, `Data\INI\Default\PlayerTemplate.ini`,
-      `Data\INI\Default\FXList.ini`,
-      `Data\INI\Default\ObjectCreationList.ini`,
-      `Data\INI\Default\SpecialPower.ini`,
-      `Data\INI\Default\Upgrade.ini`, `Data\INI\Default\Crate.ini`,
-      `Data\INI\CommandMap.ini`, and `Data\INI\Default\Video.ini`.
+- [ ] Thread the now-inventory-clean base startup archive set through real
+      `GameEngine.cpp` startup ownership instead of focused preflight/RPC
+      assertions. With base `INI.big`/`English.big`/`Window.big` mounted,
+      `Rank.ini`, `Data\INI\CommandMap.ini`, the default startup INIs, audio
+      startup INIs, and `Window\Menus\BlankWindow.wnd` are present; remaining
+      work is real owner consumption and removal of focused adapters.
 - [ ] Async asset loading (fetch BIGs) without blocking the main loop (Asyncify
       or preload into FS before boot).
 - [ ] Stub/neutralize `Win32CDManager` (no CD in browser; satisfy CD check).
@@ -623,15 +587,15 @@ flow below.
       creation once `ThingFactory`, `GameLogic`, `PartitionManager`, terrain,
       Drawable/FX/audio ownership, and object template loading are linked through
       the real startup path.
-- [ ] Locate and include the archive source for
-      `Data\INI\Default\SpecialPower.ini`, then load the original default +
-      shipped special-power sequence through `SpecialPowerStore::init` / full
-      `GameEngine.cpp` startup once the minimum boot archive set is defined.
-- [ ] Locate and include the archive source for
-      `Data\INI\Default\PlayerTemplate.ini`, then load the original default +
-      shipped player-template sequence through `PlayerTemplateStore::init` /
-      full `GameEngine.cpp` startup once the minimum boot archive set is
-      defined.
+- [ ] Load the original default + shipped special-power sequence
+      (`Data\INI\Default\SpecialPower.ini` then
+      `Data\INI\SpecialPower.ini`) through `SpecialPowerStore::init` / full
+      `GameEngine.cpp` startup now that the base archive source is available.
+- [ ] Load the original default + shipped player-template sequence
+      (`Data\INI\Default\PlayerTemplate.ini` then
+      `Data\INI\PlayerTemplate.ini`) through `PlayerTemplateStore::init` /
+      full `GameEngine.cpp` startup now that the base archive source is
+      available.
 - [ ] `GameText`/string tables load (CSF/GameText) for the chosen language.
 - [ ] Load the original default + shipped water sequence
       (`Data\INI\Default\Water.ini` then `Data\INI\Water.ini`) through the full
@@ -641,10 +605,10 @@ flow below.
       (`Data\INI\Default\Weather.ini` then `Data\INI\Weather.ini`) through the
       full `GameEngine.cpp` startup path with xfer CRC once engine init consumes
       the mounted archive set.
-- [ ] Locate and include the archive source for
-      `Data\INI\Default\Video.ini`, then load the original default + shipped
-      video sequence through `VideoPlayer::init` / full `GameEngine.cpp`
-      startup once the minimum boot archive set is defined.
+- [ ] Load the original default + shipped video sequence
+      (`Data\INI\Default\Video.ini` then `Data\INI\Video.ini`) through
+      `VideoPlayer::init` / full `GameEngine.cpp` startup now that the base
+      archive source is available.
 - [ ] Map cache rebuilds/scans live system and user map directories through
       original `MapCache::updateCache`, including `.map` parsing, CRC/file-info
       checks, user-data persistence, and browser MEMFS/IDBFS behavior.
@@ -912,25 +876,17 @@ flow below.
       `bridgeLogicAiPathfinderAvailable === true` and
       `bridgeLogicGenericBridgeObjectMissing === false`, and then exercise
       damaged/repaired bridge-state synchronization from real gameplay objects.
-- [ ] Promote the combined terrain-full-scene missing-water-assets frontier
-      into actual original water rendering and gameplay-owned shroud updates.
-      The current `test:ww3d-terrain-full-scene` harness mounts the real map,
-      terrain, `Terrain.ini`, and `Water.ini`, then renders the source-backed
-      `W3DTerrainVisual::load` scene while reporting a typed
-      `full-init-missing-water-assets-frontier` when the mounted archive subset
-      lacks the original Water.ini texture set. Remaining work is to supply and
-      mount the correct base/Zero Hour water texture archive set, let full
-      `W3DTerrainVisual::init` create the original `WaterRenderObjClass`, and
-      verify water draw submission, shroud overlay/gameplay ownership, and a
-      browser screenshot before adding the path to `test:vertical-integrations`.
-- [ ] Once a base Generals `Terrain.big` artifact is available in this
-      workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
-      archive mounted and tighten the load-window gate to require nonzero
-      source-backed terrain cells.
-- [ ] Once optional base Generals runtime archives are available in this
-      workspace, rerun `test:ww3d-terrain-bridge-buffer-scene` without Zero
-      Hour bridge-template substitution and tighten it to require source-backed
-      selected terrain cells for the bridge scene patch.
+- [ ] Promote the browser-verified terrain full-scene water/smudge path into
+      `test:vertical-integrations` and broaden ownership from probe-mounted
+      map/assets to real gameplay map-load, shroud, partition, and terrain
+      logic ownership.
+- [ ] Tighten `test:ww3d-terrain-visual-scene` now that base `Terrain.big` is
+      available in this workspace: rerun with the optional base archive mounted
+      and require nonzero source-backed terrain cells.
+- [ ] Tighten `test:ww3d-terrain-bridge-buffer-scene` now that optional base
+      Generals runtime archives are available: rerun without Zero Hour
+      bridge-template substitution and require source-backed selected terrain
+      cells for the bridge scene patch.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the browser `INI::load` trap.
       The terrain smokes now report and gate a direct `INI` layout comparison
@@ -1029,17 +985,12 @@ flow below.
       the first-call `startNewGame(FALSE)` deferral before terrain load. That
       runtime still uses a focused in-memory BlankWindow adapter; replace that
       with a real owner before continuing the deferred update into
-      terrain/player/script map-load ownership. A
-      current inventory of the extracted Zero Hour runtime `.big` archives
-      finds no `Window\Menus\BlankWindow.wnd` and classifies the path as an
-      absent optional base `Window.big` layout, matching the original
-      `Win32BIGFileSystem::init` behavior that also mounts base Generals
-      `*.big` archives. Supply or preserve base `Window.big`, prove
-      `blankWindowLayout.ready` with
-      `--require-blank-window-layout`, then replace the in-memory BlankWindow
-      adapter through the archive-backed `WindowLayout::load` path before
-      continuing the deferred update into terrain/player/script map-load
-      ownership.
+      terrain/player/script map-load ownership. The current inventory now
+      proves base `Window.big` supplies `Window\Menus\BlankWindow.wnd` and
+      passes `--require-blank-window-layout`; remaining work is to replace the
+      in-memory BlankWindow adapter through the archive-backed
+      `WindowLayout::load` path before continuing the deferred update into
+      terrain/player/script map-load ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---
@@ -1070,15 +1021,9 @@ flow below.
 
 ## M7 — Audio (Miles → Web Audio)
 
-- [ ] Source `Data\INI\AudioSettings.ini` from a complete base/Zero Hour
-      runtime archive set or define the browser-loaded audio settings contract
-      before treating audio payload path resolution as runtime-ready. The
-      current Zero Hour-only archive set resolves many payload candidates, but
-      `AudioEventRTS::generateFilenamePrefix` still depends on parsed
-      `AudioSettings` folders at runtime; the browser harness now exposes
-      `audioPayloadInventory.audioStartupArchiveContract` so the four current
-      missing audio startup INIs are classified as absent optional base
-      `INI.big` files instead of anonymous payload gaps.
+- [ ] Thread parsed `Data\INI\AudioSettings.ini` from mounted base `INI.big`
+      through the real `AudioManager::init` / browser audio backend path before
+      treating audio payload path resolution as runtime-ready.
 - [ ] Re-target `MilesAudioManager` (and `WWVegas/Miles6`/`WPAudio`) to Web Audio.
       The `Mss.H` startup/provider/listener/filter/sample/stream-handle
       boundaries are now stateful and harness-probed by the MSS lifecycle RPCs,

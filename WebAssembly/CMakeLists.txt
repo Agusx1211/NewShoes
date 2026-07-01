@@ -2302,6 +2302,7 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/PartitionManager.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/Object/ObjectTypes.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/System/Smudge.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Terrain/TerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DAssetManager.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/BaseHeightMap.cpp"
@@ -2315,6 +2316,7 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DRoadBuffer.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShaderManager.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DShroud.cpp"
+  "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DSmudge.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainBackground.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTerrainVisual.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/W3DTreeBuffer.cpp"
@@ -2323,6 +2325,10 @@ add_library(zh_w3d_terrain_probe_runtime STATIC
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWater.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameClient/Water/W3DWaterTracks.cpp"
   "${GAMEENGINE_DEVICE_DIR}/Source/W3DDevice/GameLogic/W3DTerrainLogic.cpp"
+)
+
+set_source_files_properties("${GAMEENGINE_GAMECLIENT_DIR}/System/Smudge.cpp" PROPERTIES
+  COMPILE_OPTIONS "-U__PRERTS_H__;-include${WASM_SHIMS_DIR}/PreRTS.h"
 )
 
 target_link_libraries(zh_w3d_terrain_probe_runtime PUBLIC
