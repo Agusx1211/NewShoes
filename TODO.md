@@ -880,9 +880,6 @@ flow below.
       `test:vertical-integrations` and broaden ownership from probe-mounted
       map/assets to real gameplay map-load, shroud, partition, and terrain
       logic ownership.
-- [ ] Tighten `test:ww3d-terrain-visual-scene` now that base `Terrain.big` is
-      available in this workspace: rerun with the optional base archive mounted
-      and require nonzero source-backed terrain cells.
 - [ ] Tighten `test:ww3d-terrain-bridge-buffer-scene` now that optional base
       Generals runtime archives are available: rerun without Zero Hour
       bridge-template substitution and require source-backed selected terrain

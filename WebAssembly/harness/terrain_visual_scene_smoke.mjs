@@ -1057,8 +1057,8 @@ try {
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCells !== 16384
-      || (loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0)
-          + (loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) !== 16384
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource !== 16384
+      || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource !== 0
       || loadWindowResult.probe?.terrain?.patchHeightChecksum <= 0
       || loadWindowResult.probe?.calls?.browserTextureCreate < 1
       || loadWindowResult.probe?.calls?.browserTextureUpdate < 1

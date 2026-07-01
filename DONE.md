@@ -4039,6 +4039,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
       Verified with
       `node harness/terrain_visual_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big`.
+- [x] Tighten the visual-owned terrain load-window gate now that base
+      `Terrain.big` is available in this workspace. The npm and vertical
+      integration invocations now pass `artifacts/real-assets/Terrain.big`
+      explicitly, `terrain_visual_scene_smoke.mjs` requires the original
+      129x129 `W3DTerrainVisual::load` window to report all 16,384 cells as
+      source-backed with zero missing source cells, and the bridge RPC
+      validator enforces the same contract for
+      `ww3dTerrainVisualLoadWindowScene`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
 - [x] Add a combined terrain full-scene missing-water-assets frontier. The
       `test:ww3d-terrain-full-scene` harness now mounts range-backed real
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,

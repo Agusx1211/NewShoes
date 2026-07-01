@@ -1375,6 +1375,7 @@ const steps = [
       "artifacts/real-assets/INIZH.big",
       "artifacts/real-assets/MapsZH.big",
       "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/Terrain.big",
     ],
     validate(payload) {
       expect(payload.ok === true, "terrain map patch scene render smoke did not report ok", payload);
@@ -1665,8 +1666,8 @@ const steps = [
           && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
           && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
           && payload.loadWindowTerrain?.tileDiagnostics?.patchCells === 16384
-          && (payload.loadWindowTerrain?.tileDiagnostics?.patchCellsWithSource ?? 0)
-            + (payload.loadWindowTerrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384
+          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsWithSource === 16384
+          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsMissingSource === 0
           && payload.loadWindowTerrain?.patchHeightChecksum > 0,
         "terrain visual load-window smoke did not report the expected no-reinit 129x129 terrain window", payload.loadWindowTerrain);
       expect(payload.loadWindowCalls?.browserTextureCreate >= 1
@@ -2208,7 +2209,7 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
-    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window, optional base Terrain.big mounting, and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window with all 16,384 cells source-backed by mounted base Terrain.big, and browser WebGL2 pixels",
     "original W3DTreeBuffer::drawTrees reached through RTS3DScene::Flush/DoTrees with shipped PTDogwod01_S W3D and terrain/tree textures in browser WebGL2",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DRoadBuffer::loadRoads and browser-visible road geometry",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DBridgeBuffer::loadBridges, W3DBridge::renderBridge, and bridge shroud browser-visible geometry",
@@ -2217,9 +2218,9 @@ console.log(JSON.stringify({
   ],
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
-    "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
-    "supply base Generals Window.big to replace the focused runtime BlankWindow layout adapter through the archive-backed layout path",
-    "supply base Generals terrain archives in this workspace and tighten the W3DTerrainVisual load-window gate to require source-backed cells once Terrain.big is available",
+    "thread mounted base Generals INI.big/English.big startup coverage through production original GameEngine.cpp init ownership",
+    "replace the focused runtime BlankWindow layout adapter with archive-backed WindowLayout::load from mounted base Window.big",
+    "broaden W3DTerrainVisual terrain ownership from the probe-mounted source-backed load window into production gameplay map-load, shroud, partition, and terrain logic ownership",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",
