@@ -4048,6 +4048,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       validator enforces the same contract for
       `ww3dTerrainVisualLoadWindowScene`. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
+- [x] Tighten the bridge-buffer terrain scene gate now that base Generals
+      runtime archives are available. The extractor now pulls `W3D.big` from
+      base `Data2.cab`, the bridge-buffer scene mounts `Terrain.big`,
+      `W3D.big`, and `Textures.big` beside the Zero Hour archives, and the
+      npm/vertical invocations pass those base sidecars explicitly. The
+      `ww3dTerrainBridgeBufferScene` RPC and smoke now require the shipped
+      MD_CHI01 `EuropeanBridgeWide` bridge to render without Zero Hour
+      template substitution, with an asset-backed bridge candidate and all
+      1,024 selected patch cells source-backed by mounted terrain tiles.
+      Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Add a combined terrain full-scene missing-water-assets frontier. The
       `test:ww3d-terrain-full-scene` harness now mounts range-backed real
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,

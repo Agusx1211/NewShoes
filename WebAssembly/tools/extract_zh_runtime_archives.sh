@@ -55,6 +55,7 @@ base_data_archives=(
   INI.big
   Terrain.big
   Textures.big
+  W3D.big
   Window.big
 )
 
@@ -66,6 +67,7 @@ base_disc1_data_archives=(
 base_disc2_data_archives=(
   Terrain.big
   Textures.big
+  W3D.big
 )
 
 base_language_archives=(

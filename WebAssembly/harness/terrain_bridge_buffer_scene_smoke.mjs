@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, stat } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
@@ -10,13 +10,46 @@ const wasmRoot = resolve(harnessRoot, "..");
 const defaultIniArchivePath = resolve(wasmRoot, "artifacts/real-assets/INIZH.big");
 const defaultMapsArchivePath = resolve(wasmRoot, "artifacts/real-assets/MapsZH.big");
 const defaultTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/TerrainZH.big");
+const defaultBaseTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terrain.big");
 const defaultW3DArchivePath = resolve(wasmRoot, "artifacts/real-assets/W3DZH.big");
+const defaultBaseW3DArchivePath = resolve(wasmRoot, "artifacts/real-assets/W3D.big");
 const defaultTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/TexturesZH.big");
+const defaultBaseTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/Textures.big");
 const iniArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultIniArchivePath);
 const mapsArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultMapsArchivePath);
 const terrainArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultTerrainArchivePath);
-const w3dArchivePath = resolve(wasmRoot, process.argv[5] ?? defaultW3DArchivePath);
-const textureArchivePath = resolve(wasmRoot, process.argv[6] ?? defaultTextureArchivePath);
+const legacyArchiveArgLayout = process.argv[5] !== undefined
+  && /(?:^|[\\/])W3D/i.test(process.argv[5]);
+const baseTerrainArchivePath = resolve(
+  wasmRoot,
+  legacyArchiveArgLayout ? defaultBaseTerrainArchivePath : (process.argv[5] ?? defaultBaseTerrainArchivePath),
+);
+const baseTerrainArchiveRequired = Boolean(process.argv[5]) && !legacyArchiveArgLayout;
+const w3dArchivePath = resolve(
+  wasmRoot,
+  legacyArchiveArgLayout ? process.argv[5] : (process.argv[6] ?? defaultW3DArchivePath),
+);
+const explicitBaseW3DArchivePath = !legacyArchiveArgLayout
+  && process.argv[7] !== undefined
+  && /(?:^|[\\/])W3D\.big$/i.test(process.argv[7])
+  ? process.argv[7]
+  : undefined;
+const baseW3DArchivePath = resolve(wasmRoot, explicitBaseW3DArchivePath ?? defaultBaseW3DArchivePath);
+const baseW3DArchiveRequired = Boolean(explicitBaseW3DArchivePath);
+const textureArchivePath = resolve(
+  wasmRoot,
+  legacyArchiveArgLayout
+    ? (process.argv[6] ?? defaultTextureArchivePath)
+    : (explicitBaseW3DArchivePath ? (process.argv[8] ?? defaultTextureArchivePath) : (process.argv[7] ?? defaultTextureArchivePath)),
+);
+const baseTextureArchivePath = resolve(
+  wasmRoot,
+  legacyArchiveArgLayout
+    ? (process.argv[7] ?? defaultBaseTextureArchivePath)
+    : (explicitBaseW3DArchivePath ? (process.argv[9] ?? defaultBaseTextureArchivePath) : (process.argv[8] ?? defaultBaseTextureArchivePath)),
+);
+const baseTextureArchiveRequired = !legacyArchiveArgLayout
+  && Boolean(explicitBaseW3DArchivePath ? process.argv[9] : process.argv[8]);
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const screenshotPath = resolve(
   screenshotDir,
@@ -26,9 +59,7 @@ const screenshotPath = resolve(
 const runtimeArchivePath = "/assets/runtime-terrain-bridge-buffer-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
-const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
-const w3dArchiveMemfsPath = `${runtimeArchivePath}/W3DZH.big`;
-const textureArchiveMemfsPath = `${runtimeArchivePath}/TexturesZH.big`;
+const terrainArchiveMemfsMaskPath = `${runtimeArchivePath}/Terrain*.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const roadsIniEntry = "Data\\INI\\Roads.ini";
 const mapEntry = process.env.CNC_PORT_BRIDGE_MAP_ENTRY ?? "Maps\\MD_CHI01\\MD_CHI01.map";
@@ -99,6 +130,17 @@ async function checkedArchive(path, label) {
     throw new Error(`${label} is not a readable file: ${path}`);
   }
   return archiveStat;
+}
+
+async function optionalArchive(path, label, required = false) {
+  try {
+    return await checkedArchive(path, label);
+  } catch (error) {
+    if (required) {
+      throw error;
+    }
+    return null;
+  }
 }
 
 async function readBigArchive(path) {
@@ -177,6 +219,49 @@ function parseBridgeAssetNames(roadsIniText) {
   return { models: uniqueSorted(models), textures: uniqueSorted(textures) };
 }
 
+function selectW3DArchiveEntries(archive, bridgeAssets) {
+  const entriesByLower = new Map(archive.entries.map((entry) => [entry.name.toLowerCase(), entry.name]));
+  const bridgeModelEntries = bridgeAssets.models
+    .flatMap((model) => [`Art\\W3D\\${model}.w3d`, `Art\\W3D\\${model}.W3D`])
+    .map((entry) => entriesByLower.get(entry.toLowerCase()))
+    .filter(Boolean);
+  const broadBridgeModelEntries = archive.entries
+    .filter((entry) => /^Art\\W3D\\.*(?:bridge|bridg|brdg|tbdoub|tampico).*\.(?:w3d)$/i.test(entry.name))
+    .map((entry) => entry.name);
+  return uniqueSorted([
+    treeModelsEntry,
+    treeMeshEntry,
+    ...bridgeModelEntries,
+    ...broadBridgeModelEntries,
+  ].filter((entry) => entriesByLower.has(entry.toLowerCase())));
+}
+
+function selectTextureArchiveEntries(archive, bridgeAssets) {
+  const entriesByLower = new Map(archive.entries.map((entry) => [entry.name.toLowerCase(), entry.name]));
+  const bridgeTextureEntries = bridgeAssets.textures
+    .flatMap((texture) => {
+      const base = `Art\\Textures\\${texture}`;
+      return [base, base.replace(/\.[^.\\]+$/i, ".dds"), base.replace(/\.[^.\\]+$/i, ".tga")];
+    })
+    .map((entry) => entriesByLower.get(entry.toLowerCase()))
+    .filter(Boolean);
+  const broadBridgeTextureEntries = archive.entries
+    .filter((entry) => /^Art\\Textures\\.*(?:bridge|bridg|brdg|tbdoub|tampico).*\.(?:tga|dds)$/i.test(entry.name))
+    .map((entry) => entry.name);
+  const roadTextureEntries = archive.entries
+    .filter((entry) => /^Art\\Textures\\tr.*\.(?:tga|dds)$/i.test(entry.name))
+    .map((entry) => entry.name);
+  return {
+    entries: uniqueSorted([
+      ...bridgeTextureEntries,
+      ...broadBridgeTextureEntries,
+      ...roadTextureEntries,
+      treeMaterialTextureEntry,
+    ].filter((entry) => entriesByLower.has(entry.toLowerCase()))),
+    roadTextureEntries,
+  };
+}
+
 async function withTimeout(label, promise, timeoutMs) {
   let timeout;
   try {
@@ -221,40 +306,90 @@ const bridgeAssets = parseBridgeAssetNames(roadsIniText);
 const terrainArchiveEntries = terrainArchive.entries
   .filter((entry) => /^Art\\Terrain\\.*\.(?:tga|dds)$/i.test(entry.name))
   .map((entry) => entry.name);
-const w3dEntriesByLower = new Map(w3dArchive.entries.map((entry) => [entry.name.toLowerCase(), entry.name]));
-const textureEntriesByLower = new Map(textureArchive.entries.map((entry) => [entry.name.toLowerCase(), entry.name]));
-const bridgeModelEntries = bridgeAssets.models
-  .flatMap((model) => [`Art\\W3D\\${model}.w3d`, `Art\\W3D\\${model}.W3D`])
-  .map((entry) => w3dEntriesByLower.get(entry.toLowerCase()))
-  .filter(Boolean);
-const broadBridgeModelEntries = w3dArchive.entries
-  .filter((entry) => /^Art\\W3D\\.*(?:bridge|bridg|brdg|tbdoub|tampico).*\.(?:w3d)$/i.test(entry.name))
-  .map((entry) => entry.name);
-const bridgeTextureEntries = bridgeAssets.textures
-  .flatMap((texture) => {
-    const base = `Art\\Textures\\${texture}`;
-    return [base, base.replace(/\.[^.\\]+$/i, ".dds"), base.replace(/\.[^.\\]+$/i, ".tga")];
-  })
-  .map((entry) => textureEntriesByLower.get(entry.toLowerCase()))
-  .filter(Boolean);
-const broadBridgeTextureEntries = textureArchive.entries
-  .filter((entry) => /^Art\\Textures\\.*(?:bridge|bridg|brdg|tbdoub|tampico).*\.(?:tga|dds)$/i.test(entry.name))
-  .map((entry) => entry.name);
-const roadTextureEntries = textureArchive.entries
-  .filter((entry) => /^Art\\Textures\\tr.*\.(?:tga|dds)$/i.test(entry.name))
-  .map((entry) => entry.name);
-const w3dArchiveEntries = uniqueSorted([
-  treeModelsEntry,
-  treeMeshEntry,
-  ...bridgeModelEntries,
-  ...broadBridgeModelEntries,
-].filter((entry) => w3dEntriesByLower.has(entry.toLowerCase())));
-const textureArchiveEntries = uniqueSorted([
-  ...bridgeTextureEntries,
-  ...broadBridgeTextureEntries,
-  ...roadTextureEntries,
-  treeMaterialTextureEntry,
-].filter((entry) => textureEntriesByLower.has(entry.toLowerCase())));
+const terrainArchives = [{
+  sourcePath: terrainArchivePath,
+  memfsName: basename(terrainArchivePath),
+  stat: terrainArchiveStat,
+  entries: terrainArchiveEntries,
+  optionalBase: false,
+}];
+const baseTerrainArchiveStat = await optionalArchive(
+  baseTerrainArchivePath,
+  "Base terrain archive",
+  baseTerrainArchiveRequired,
+);
+if (baseTerrainArchiveStat !== null && baseTerrainArchivePath !== terrainArchivePath) {
+  const baseTerrainArchive = await readBigArchive(baseTerrainArchivePath);
+  const baseTerrainArchiveEntries = baseTerrainArchive.entries
+    .filter((entry) => /^Art\\Terrain\\.*\.(?:tga|dds)$/i.test(entry.name))
+    .map((entry) => entry.name);
+  if (baseTerrainArchiveEntries.length === 0) {
+    throw new Error(`Base terrain archive has no Art\\Terrain image entries: ${baseTerrainArchivePath}`);
+  }
+  terrainArchives.push({
+    sourcePath: baseTerrainArchivePath,
+    memfsName: basename(baseTerrainArchivePath),
+    stat: baseTerrainArchiveStat,
+    entries: baseTerrainArchiveEntries,
+    optionalBase: true,
+  });
+}
+const w3dArchiveEntries = selectW3DArchiveEntries(w3dArchive, bridgeAssets);
+const w3dArchives = [{
+  sourcePath: w3dArchivePath,
+  memfsName: basename(w3dArchivePath),
+  stat: w3dArchiveStat,
+  entries: w3dArchiveEntries,
+  optionalBase: false,
+}];
+const baseW3DArchiveStat = await optionalArchive(
+  baseW3DArchivePath,
+  "Base W3D archive",
+  baseW3DArchiveRequired,
+);
+if (baseW3DArchiveStat !== null && baseW3DArchivePath !== w3dArchivePath) {
+  const baseW3DArchive = await readBigArchive(baseW3DArchivePath);
+  const baseW3DArchiveEntries = selectW3DArchiveEntries(baseW3DArchive, bridgeAssets);
+  if (baseW3DArchiveEntries.length === 0) {
+    throw new Error(`Base W3D archive has no bridge or tree model entries: ${baseW3DArchivePath}`);
+  }
+  w3dArchives.push({
+    sourcePath: baseW3DArchivePath,
+    memfsName: basename(baseW3DArchivePath),
+    stat: baseW3DArchiveStat,
+    entries: baseW3DArchiveEntries,
+    optionalBase: true,
+  });
+}
+const primaryTextureSelection = selectTextureArchiveEntries(textureArchive, bridgeAssets);
+const textureArchiveEntries = primaryTextureSelection.entries;
+const roadTextureEntries = primaryTextureSelection.roadTextureEntries;
+const textureArchives = [{
+  sourcePath: textureArchivePath,
+  memfsName: basename(textureArchivePath),
+  stat: textureArchiveStat,
+  entries: textureArchiveEntries,
+  optionalBase: false,
+}];
+const baseTextureArchiveStat = await optionalArchive(
+  baseTextureArchivePath,
+  "Base texture archive",
+  baseTextureArchiveRequired,
+);
+if (baseTextureArchiveStat !== null && baseTextureArchivePath !== textureArchivePath) {
+  const baseTextureArchive = await readBigArchive(baseTextureArchivePath);
+  const baseTextureArchiveEntries = selectTextureArchiveEntries(baseTextureArchive, bridgeAssets).entries;
+  if (baseTextureArchiveEntries.length === 0) {
+    throw new Error(`Base texture archive has no bridge, road, or tree texture entries: ${baseTextureArchivePath}`);
+  }
+  textureArchives.push({
+    sourcePath: baseTextureArchivePath,
+    memfsName: basename(baseTextureArchivePath),
+    stat: baseTextureArchiveStat,
+    entries: baseTextureArchiveEntries,
+    optionalBase: true,
+  });
+}
 if (terrainArchiveEntries.length === 0) {
   throw new Error(`Terrain archive has no Art\\Terrain image entries: ${terrainArchivePath}`);
 }
@@ -270,8 +405,8 @@ if (textureArchiveEntries.length === 0) {
 if (roadTextureEntries.length === 0) {
   throw new Error(`Texture archive has no road-like Art\\Textures\\tr* entries: ${textureArchivePath}`);
 }
-if (!w3dEntriesByLower.has(treeMeshEntry.toLowerCase())
-    || !textureEntriesByLower.has(treeMaterialTextureEntry.toLowerCase())) {
+if (!w3dArchiveEntries.some((entry) => entry.toLowerCase() === treeMeshEntry.toLowerCase())
+    || !textureArchiveEntries.some((entry) => entry.toLowerCase() === treeMaterialTextureEntry.toLowerCase())) {
   throw new Error(`Tree sidecar assets are missing from W3D/texture archives`);
 }
 
@@ -279,9 +414,21 @@ await mkdir(screenshotDir, { recursive: true });
 
 const iniArchiveRelativePath = relative(wasmRoot, iniArchivePath).split(sep).join("/");
 const mapsArchiveRelativePath = relative(wasmRoot, mapsArchivePath).split(sep).join("/");
-const terrainArchiveRelativePath = relative(wasmRoot, terrainArchivePath).split(sep).join("/");
-const w3dArchiveRelativePath = relative(wasmRoot, w3dArchivePath).split(sep).join("/");
-const textureArchiveRelativePath = relative(wasmRoot, textureArchivePath).split(sep).join("/");
+const terrainArchiveMounts = terrainArchives.map((archive) => ({
+  ...archive,
+  memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
+  urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
+}));
+const w3dArchiveMounts = w3dArchives.map((archive) => ({
+  ...archive,
+  memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
+  urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
+}));
+const textureArchiveMounts = textureArchives.map((archive) => ({
+  ...archive,
+  memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
+  urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
+}));
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 const browserEvents = [];
@@ -302,9 +449,6 @@ try {
   const harnessUrl = new URL("harness/index.html", server.url).href;
   const iniArchiveUrl = new URL(iniArchiveRelativePath, server.url).href;
   const mapsArchiveUrl = new URL(mapsArchiveRelativePath, server.url).href;
-  const terrainArchiveUrl = new URL(terrainArchiveRelativePath, server.url).href;
-  const w3dArchiveUrl = new URL(w3dArchiveRelativePath, server.url).href;
-  const textureArchiveUrl = new URL(textureArchiveRelativePath, server.url).href;
 
   await withTimeout(
     "terrain bridge-buffer scene harness page load",
@@ -350,55 +494,73 @@ try {
             sourceArchive: mapsArchivePath,
             entries: [mapEntry],
           },
-          {
-            url: terrainArchiveUrl,
-            name: "TerrainZH.big",
-            expectedSourceBytes: terrainArchiveStat.size,
-            sourceArchive: terrainArchivePath,
-            entries: terrainArchiveEntries,
-          },
-          {
-            url: w3dArchiveUrl,
-            name: "W3DZH.big",
-            expectedSourceBytes: w3dArchiveStat.size,
-            sourceArchive: w3dArchivePath,
-            entries: w3dArchiveEntries,
-          },
-          {
-            url: textureArchiveUrl,
-            name: "TexturesZH.big",
-            expectedSourceBytes: textureArchiveStat.size,
-            sourceArchive: textureArchivePath,
-            entries: textureArchiveEntries,
-          },
+          ...terrainArchiveMounts.map((archive) => ({
+            url: new URL(archive.urlPath, server.url).href,
+            name: archive.memfsName,
+            expectedSourceBytes: archive.stat.size,
+            sourceArchive: archive.sourcePath,
+            entries: archive.entries,
+          })),
+          ...w3dArchiveMounts.map((archive) => ({
+            url: new URL(archive.urlPath, server.url).href,
+            name: archive.memfsName,
+            expectedSourceBytes: archive.stat.size,
+            sourceArchive: archive.sourcePath,
+            entries: archive.entries,
+          })),
+          ...textureArchiveMounts.map((archive) => ({
+            url: new URL(archive.urlPath, server.url).href,
+            name: archive.memfsName,
+            expectedSourceBytes: archive.stat.size,
+            sourceArchive: archive.sourcePath,
+            entries: archive.entries,
+          })),
         ],
       }),
     120000,
   );
   const mountedArchives = archiveMountResult.archiveSet?.archives ?? [];
-  const rangeIniArchive = mountedArchives[0];
-  const rangeMapsArchive = mountedArchives[1];
-  const rangeTerrainArchive = mountedArchives[2];
-  const rangeW3DArchive = mountedArchives[3];
-  const rangeTextureArchive = mountedArchives[4];
+  const findMountedArchive = (name) =>
+    mountedArchives.find((archive) => archive.path === `${runtimeArchivePath}/${name}`);
+  const rangeIniArchive = findMountedArchive("INIZH.big");
+  const rangeMapsArchive = findMountedArchive("MapsZH.big");
+  const rangeTerrainArchive = findMountedArchive(basename(terrainArchivePath));
+  const rangeW3DArchive = findMountedArchive(basename(w3dArchivePath));
+  const rangeTextureArchive = findMountedArchive(basename(textureArchivePath));
+  const mountedTerrainArchives = terrainArchiveMounts.map((archive) => findMountedArchive(archive.memfsName));
+  const mountedW3DArchives = w3dArchiveMounts.map((archive) => findMountedArchive(archive.memfsName));
+  const mountedTextureArchives = textureArchiveMounts.map((archive) => findMountedArchive(archive.memfsName));
   const findMountedEntry = (archive, entryName) =>
     archive?.entries?.find((entry) => entry.path.toLowerCase() === entryName.toLowerCase());
+  const findMountedEntryInArchives = (archives, entryName) =>
+    archives
+      .map((archive) => findMountedEntry(archive, entryName))
+      .find(Boolean);
   const treeTerrainMountedEntry = findMountedEntry(rangeTerrainArchive, treeTextureEntry);
-  const treeModelsMountedEntry = findMountedEntry(rangeW3DArchive, treeModelsEntry);
-  const treeMeshMountedEntry = findMountedEntry(rangeW3DArchive, treeMeshEntry);
-  const treeMaterialTextureMountedEntry = findMountedEntry(rangeTextureArchive, treeMaterialTextureEntry);
+  const treeModelsMountedEntry = findMountedEntryInArchives(mountedW3DArchives, treeModelsEntry);
+  const treeMeshMountedEntry = findMountedEntryInArchives(mountedW3DArchives, treeMeshEntry);
+  const treeMaterialTextureMountedEntry = findMountedEntryInArchives(
+    mountedTextureArchives,
+    treeMaterialTextureEntry,
+  );
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
-      || archiveMountResult.archiveSet?.archiveCount !== 5
+      || archiveMountResult.archiveSet?.archiveCount !== 2 + terrainArchiveMounts.length + w3dArchiveMounts.length + textureArchiveMounts.length
       || archiveMountResult.archiveSet?.storage !== "range-backed-subset-big"
       || archiveMountResult.archiveSet?.reader !== "browser fetch Range -> synthesized BIG"
       || archiveMountResult.archiveSet?.registered !== false
+      || !terrainArchiveMounts.some((archive) => archive.optionalBase)
+      || !w3dArchiveMounts.some((archive) => archive.optionalBase)
+      || !textureArchiveMounts.some((archive) => archive.optionalBase)
       || rangeIniArchive?.path !== iniArchiveMemfsPath
       || rangeMapsArchive?.path !== mapsArchiveMemfsPath
-      || rangeTerrainArchive?.path !== terrainArchiveMemfsPath
-      || rangeW3DArchive?.path !== w3dArchiveMemfsPath
-      || rangeTextureArchive?.path !== textureArchiveMemfsPath
+      || rangeTerrainArchive?.path !== `${runtimeArchivePath}/${basename(terrainArchivePath)}`
+      || rangeW3DArchive?.path !== `${runtimeArchivePath}/${basename(w3dArchivePath)}`
+      || rangeTextureArchive?.path !== `${runtimeArchivePath}/${basename(textureArchivePath)}`
+      || mountedTerrainArchives.some((archive) => archive?.entries?.length <= 0)
+      || mountedW3DArchives.some((archive) => archive?.entries?.length <= 0)
+      || mountedTextureArchives.some((archive) => archive?.entries?.length <= 0)
       || findMountedEntry(rangeIniArchive, terrainIniEntry)?.bytes !== 25758
       || findMountedEntry(rangeIniArchive, roadsIniEntry)?.bytes !== roadsIniArchiveEntry.bytes
       || findMountedEntry(rangeMapsArchive, mapEntry)?.bytes !== mapArchiveEntry.bytes
@@ -417,7 +579,7 @@ try {
         window.CnCPort.rpc("ww3dTerrainBridgeBufferScene", payload), {
           iniArchivePath: iniArchiveMemfsPath,
           mapsArchivePath: mapsArchiveMemfsPath,
-          terrainArchivePath: terrainArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsMaskPath,
           runtimeArchiveDirectory: `${runtimeArchivePath}/`,
           runtimeArchiveMask: "*.big",
           mapEntry,
@@ -485,12 +647,19 @@ try {
       || result.probe?.logicalTerrain?.bridgePairsWithBridgeType <= 0
       || result.probe?.logicalTerrain?.timeOfDayNotified !== true
       || result.probe?.logicalTerrain?.notifiedTimeOfDay !== result.probe?.logicalTerrain?.mapTimeOfDay
+      || result.probe?.logicalTerrain?.selectedTemplateSubstitutedInLogicalList !== false
       || result.probe?.results?.bridgePairMapObjectsInstalled !== false
-      || (result.probe?.bridgeObjects?.templateSubstitutedForAvailableAssets === true
-        && result.probe?.logicalTerrain?.selectedTemplateSubstitutedInLogicalList !== true)
+      || result.probe?.bridgeObjects?.templateSubstitutedForAvailableAssets !== false
+      || result.probe?.bridgeObjects?.selectedTemplateSubstitutedInLogicalList !== false
+      || result.probe?.bridgeObjects?.selectedOriginalName !== result.probe?.bridgeObjects?.selectedInstalledName
       || result.probe?.terrain?.renderObject !== "ProbeHeightMapRenderObjWithBridgeBuffer"
+      || result.probe?.terrain?.tileDiagnostics?.patchCells !== 1024
+      || result.probe?.terrain?.tileDiagnostics?.patchCellsWithSource !== 1024
+      || result.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource !== 0
       || result.probe?.bridgeObjects?.pairs <= 0
       || result.probe?.bridgeObjects?.pairsWithBridgeType <= 0
+      || result.probe?.bridgeObjects?.candidatesWithAssetsAndSource <= 0
+      || result.probe?.bridgeObjects?.selectedPatchSourceCells !== 1024
       || result.probe?.bridgeObjects?.selectedModelAvailable !== true
       || result.probe?.bridgeObjects?.selectedTextureAvailable !== true
       || result.probe?.bridges?.afterLoad <= 0
@@ -566,9 +735,41 @@ try {
         layout: result.probe.iniLayout,
       },
       maps: { path: rangeMapsArchive.path, entry: mapEntry },
-      terrain: { path: rangeTerrainArchive.path, terrainImageEntries: terrainArchiveEntries.length, treeTextureEntry },
-      w3d: { path: rangeW3DArchive.path, modelsEntry: treeModelsEntry, treeMeshEntry, bridgeModelEntries: w3dArchiveEntries },
-      textures: { path: rangeTextureArchive.path, treeMaterialTextureEntry, roadTextureEntries, bridgeTextureEntries: textureArchiveEntries },
+      terrain: {
+        path: terrainArchiveMemfsMaskPath,
+        primaryPath: rangeTerrainArchive.path,
+        optionalBasePresent: terrainArchiveMounts.some((archive) => archive.optionalBase),
+        archives: terrainArchiveMounts.map((archive, index) => ({
+          path: mountedTerrainArchives[index]?.path,
+          optionalBase: archive.optionalBase,
+          terrainImageEntries: archive.entries.length,
+        })),
+        treeTextureEntry,
+      },
+      w3d: {
+        path: rangeW3DArchive.path,
+        optionalBasePresent: w3dArchiveMounts.some((archive) => archive.optionalBase),
+        archives: w3dArchiveMounts.map((archive, index) => ({
+          path: mountedW3DArchives[index]?.path,
+          optionalBase: archive.optionalBase,
+          modelEntries: archive.entries.length,
+        })),
+        modelsEntry: treeModelsEntry,
+        treeMeshEntry,
+        bridgeModelEntries: w3dArchiveEntries,
+      },
+      textures: {
+        path: rangeTextureArchive.path,
+        optionalBasePresent: textureArchiveMounts.some((archive) => archive.optionalBase),
+        archives: textureArchiveMounts.map((archive, index) => ({
+          path: mountedTextureArchives[index]?.path,
+          optionalBase: archive.optionalBase,
+          textureEntries: archive.entries.length,
+        })),
+        treeMaterialTextureEntry,
+        roadTextureEntries,
+        bridgeTextureEntries: textureArchiveEntries,
+      },
     },
     probe: result.probe,
     map: result.probe.map,

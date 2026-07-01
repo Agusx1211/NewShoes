@@ -1842,8 +1842,11 @@ const steps = [
       "artifacts/real-assets/INIZH.big",
       "artifacts/real-assets/MapsZH.big",
       "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/Terrain.big",
       "artifacts/real-assets/W3DZH.big",
+      "artifacts/real-assets/W3D.big",
       "artifacts/real-assets/TexturesZH.big",
+      "artifacts/real-assets/Textures.big",
     ],
     validate(payload) {
       expect(payload.ok === true, "terrain tree-buffer scene render smoke did not report ok", payload);
@@ -2012,8 +2015,11 @@ const steps = [
       "artifacts/real-assets/INIZH.big",
       "artifacts/real-assets/MapsZH.big",
       "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/Terrain.big",
       "artifacts/real-assets/W3DZH.big",
+      "artifacts/real-assets/W3D.big",
       "artifacts/real-assets/TexturesZH.big",
+      "artifacts/real-assets/Textures.big",
     ],
     validate(payload) {
       expect(payload.ok === true, "terrain bridge-buffer scene render smoke did not report ok", payload);
@@ -2023,8 +2029,11 @@ const steps = [
           && payload.archives?.ini?.parser?.includes("INITerrainBridge.cpp")
           && payload.archives?.ini?.originalIniParser === true
           && payload.archives?.ini?.bridgeCount > 0
+          && payload.archives?.terrain?.optionalBasePresent === true
+          && payload.archives?.w3d?.optionalBasePresent === true
+          && payload.archives?.textures?.optionalBasePresent === true
           && iniLayoutMatches(payload.archives?.ini?.layout),
-        "terrain bridge-buffer scene render smoke did not read real Roads.ini bridge definitions", payload.archives?.ini);
+        "terrain bridge-buffer scene render smoke did not read real Roads.ini bridge definitions and base archive sidecars", payload.archives);
       expect(payload.map?.entry === "Maps\\MD_CHI01\\MD_CHI01.map"
           && payload.map?.parsed === true
           && payload.map?.bytes > 0
@@ -2046,8 +2055,10 @@ const steps = [
           && payload.probe?.results?.bridgeLogicSeededForDraw === true
           && payload.probe?.results?.bridgeLogicCountAfterSeed > 0
           && payload.probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
-          && (payload.bridgeObjects?.templateSubstitutedForAvailableAssets !== true
-            || payload.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === true),
+          && payload.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === false
+          && payload.bridgeObjects?.templateSubstitutedForAvailableAssets === false
+          && payload.bridgeObjects?.selectedTemplateSubstitutedInLogicalList === false
+          && payload.bridgeObjects?.selectedOriginalName === payload.bridgeObjects?.selectedInstalledName,
         "terrain bridge-buffer scene render smoke did not consume the original logical bridge map-object list", {
           logicalTerrain: payload.logicalTerrain,
           bridgeObjects: payload.bridgeObjects,
@@ -2059,7 +2070,9 @@ const steps = [
           && payload.terrain?.cellsPerSide === 32
           && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
           && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
-          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0,
+          && payload.terrain?.tileDiagnostics?.patchCells === 1024
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource === 1024
+          && payload.terrain?.tileDiagnostics?.patchCellsMissingSource === 0,
         "terrain bridge-buffer scene render smoke did not keep source-backed terrain geometry", payload.terrain);
       expect(payload.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
           && payload.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)")
@@ -2072,6 +2085,8 @@ const steps = [
         "terrain bridge-buffer scene render smoke did not use the scene bridge draw path", payload.scene);
       expect(payload.bridgeObjects?.pairs > 0
           && payload.bridgeObjects?.pairsWithBridgeType > 0
+          && payload.bridgeObjects?.candidatesWithAssetsAndSource > 0
+          && payload.bridgeObjects?.selectedPatchSourceCells === 1024
           && payload.bridgeObjects?.selectedModelAvailable === true
           && payload.bridgeObjects?.selectedTextureAvailable === true
           && payload.bridges?.afterLoad > 0

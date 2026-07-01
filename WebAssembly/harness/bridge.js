@@ -19789,6 +19789,7 @@ async function rpc(command, payload = {}) {
           && probe?.results?.bridgeLogicSeededForDraw === true
           && (probe?.results?.bridgeLogicCountAfterSeed ?? 0) > 0
           && probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
+          && probe?.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === false
           && (probe?.results?.bridgeDrawTerrainLogicBridgeCount ?? 0) > 0
           && (probe?.results?.bridgeDrawEnabledBridgeCount ?? 0) > 0
           && probe?.results?.sceneCreated === true
@@ -19813,6 +19814,9 @@ async function rpc(command, payload = {}) {
           && probe?.terrain?.cellsPerSide === 32
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
           && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && probe?.terrain?.tileDiagnostics?.patchCells === 1024
+          && probe?.terrain?.tileDiagnostics?.patchCellsWithSource === 1024
+          && probe?.terrain?.tileDiagnostics?.patchCellsMissingSource === 0
           && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
           && probe?.scene?.renderPath?.includes("W3DRoadBuffer::drawRoads")
           && probe?.scene?.renderPath?.includes("BaseHeightMapRenderObjClass::renderTrees")
@@ -19823,6 +19827,11 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.terrainClassId === 4
           && (probe?.bridgeObjects?.pairs ?? 0) > 0
           && (probe?.bridgeObjects?.pairsWithBridgeType ?? 0) > 0
+          && probe?.bridgeObjects?.templateSubstitutedForAvailableAssets === false
+          && probe?.bridgeObjects?.selectedTemplateSubstitutedInLogicalList === false
+          && probe?.bridgeObjects?.selectedOriginalName === probe?.bridgeObjects?.selectedInstalledName
+          && (probe?.bridgeObjects?.candidatesWithAssetsAndSource ?? 0) > 0
+          && probe?.bridgeObjects?.selectedPatchSourceCells === 1024
           && probe?.bridgeObjects?.selectedModelAvailable === true
           && probe?.bridgeObjects?.selectedTextureAvailable === true
           && (probe?.bridges?.afterLoad ?? 0) > 0
