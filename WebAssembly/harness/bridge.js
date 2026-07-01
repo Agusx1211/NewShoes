@@ -7279,6 +7279,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
       probeWW3DMainMenuLayoutImageRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
+      probeWW3DMainMenuLayoutDisabledButtonRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint", "string", []),
       probeWW3DMainMenuLayoutSinglePlayerRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_single_player_repaint", "string", []),
       probeWW3DMainMenuLayoutLoadReplayRepaint: module.cwrap(
@@ -17060,6 +17062,7 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dMainMenuLayoutImageRepaint":
+    case "ww3dMainMenuLayoutDisabledButtonRepaint":
     case "ww3dMainMenuLayoutSinglePlayerRepaint":
     case "ww3dMainMenuLayoutLoadReplayRepaint":
     case "ww3dMainMenuLayoutDifficultyRepaint":
@@ -17071,19 +17074,22 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout image repaint cannot render" };
         }
         const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
+        const disabledButtonMode = command === "ww3dMainMenuLayoutDisabledButtonRepaint";
         const singlePlayerMode = command === "ww3dMainMenuLayoutSinglePlayerRepaint";
         const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
         const difficultyMode = command === "ww3dMainMenuLayoutDifficultyRepaint";
         const factionLogoMode = command === "ww3dMainMenuLayoutFactionLogoRepaint";
         const probeMode = staticTextMode
           ? "staticTextSelectDifficulty"
-          : (singlePlayerMode
-              ? "singlePlayerDropdown"
-              : (difficultyMode
-                  ? "difficultyDropdown"
-                  : (factionLogoMode
-                      ? "factionLogoStrip"
-                      : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer"))));
+          : (disabledButtonMode
+              ? "disabledButtonSinglePlayer"
+              : (singlePlayerMode
+                  ? "singlePlayerDropdown"
+                  : (difficultyMode
+                      ? "difficultyDropdown"
+                      : (factionLogoMode
+                          ? "factionLogoStrip"
+                          : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer")))));
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -17098,15 +17104,17 @@ async function rpc(command, payload = {}) {
         const textureBefore = snapshotState().graphics?.textures ?? {};
         const probe = parseModuleState(staticTextMode
           ? wasmModule.probeWW3DMainMenuLayoutStaticTextRepaint()
-          : (singlePlayerMode
-              ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
-              : (loadReplayMode
-                  ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
-                  : (difficultyMode
-                      ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
-                      : (factionLogoMode
-                          ? wasmModule.probeWW3DMainMenuLayoutFactionLogoRepaint()
-                          : wasmModule.probeWW3DMainMenuLayoutImageRepaint())))));
+          : (disabledButtonMode
+              ? wasmModule.probeWW3DMainMenuLayoutDisabledButtonRepaint()
+              : (singlePlayerMode
+                  ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
+                  : (loadReplayMode
+                      ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
+                      : (difficultyMode
+                          ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
+                          : (factionLogoMode
+                              ? wasmModule.probeWW3DMainMenuLayoutFactionLogoRepaint()
+                              : wasmModule.probeWW3DMainMenuLayoutImageRepaint()))))));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -17322,6 +17330,35 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
             && probe?.results?.buttonTextSizeComputed === true);
+        const expectedButtonImages = disabledButtonMode
+          ? ["Buttons-Disabled-Left", "Buttons-Disabled-Middle", "Buttons-Disabled-Right"]
+          : ["Buttons-Left", "Buttons-Middle", "Buttons-Right"];
+        const disabledButtonProbeOk = !disabledButtonMode
+          || (probe?.layout?.button?.renderState === "disabled"
+            && probe?.layout?.button?.enabled === false
+            && probe?.layout?.button?.disabledStateRequested === true
+            && probe?.layout?.button?.disabledImagesBound === true
+            && probe?.results?.buttonDisabledMappedImagesFound === true
+            && probe?.results?.buttonDisabledImagesBound === true
+            && probe?.results?.buttonDisabledStateRequested === true
+            && probe?.results?.buttonEnabledBeforeStateChange === true
+            && probe?.results?.buttonEnabledAfterStateChange === false
+            && probe?.results?.buttonRenderedDisabledState === true
+            && probe?.disabledButtonImages?.left?.name === "Buttons-Disabled-Left"
+            && probe?.disabledButtonImages?.middle?.name === "Buttons-Disabled-Middle"
+            && probe?.disabledButtonImages?.right?.name === "Buttons-Disabled-Right"
+            && probe?.disabledButtonImages?.left?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.disabledButtonImages?.middle?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.disabledButtonImages?.right?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.disabledButtonImages?.left?.width > 0
+            && probe?.disabledButtonImages?.middle?.width > 0
+            && probe?.disabledButtonImages?.right?.width > 0
+            && Array.isArray(probe?.display?.imageDrawNames)
+            && probe.display.imageDrawNames.includes("Buttons-Disabled-Left")
+            && probe.display.imageDrawNames.includes("Buttons-Disabled-Middle")
+            && probe.display.imageDrawNames.includes("Buttons-Disabled-Right")
+            && probe?.originalPaths?.includes(
+              "MainMenu.wnd:ButtonSinglePlayer disabled -> W3DGadgetPushButtonImageDraw disabled image triplet"));
         const expectedExtraButtons = [
           ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
           ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
@@ -17626,10 +17663,10 @@ async function rpc(command, payload = {}) {
                       ? factionLogosPixelOk
                       : (loadReplayMode
                         ? loadReplayButtonsPixelOk
-                      : (buttonRegion.coloredPixelCount >= 20
-                        && buttonTextRegion.coloredPixelCount >= 20
-                        && buttonTextRegion.maxComponent >= 180
-                        && extraButtonsPixelOk)))));
+                        : (buttonRegion.coloredPixelCount >= 20
+                          && buttonTextRegion.coloredPixelCount >= 20
+                          && buttonTextRegion.maxComponent >= (disabledButtonMode ? 64 : 180)
+                          && extraButtonsPixelOk)))));
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -17659,9 +17696,9 @@ async function rpc(command, payload = {}) {
           && probe?.layout?.button?.y === 116
           && probe?.layout?.button?.width === 208
           && probe?.layout?.button?.height === 36
-          && probe?.layout?.button?.images?.[0] === "Buttons-Left"
-          && probe?.layout?.button?.images?.[1] === "Buttons-Middle"
-          && probe?.layout?.button?.images?.[2] === "Buttons-Right"
+          && probe?.layout?.button?.images?.[0] === expectedButtonImages[0]
+          && probe?.layout?.button?.images?.[1] === expectedButtonImages[1]
+          && probe?.layout?.button?.images?.[2] === expectedButtonImages[2]
           && probe?.layout?.button?.text?.label === "GUI:SinglePlayer"
           && typeof probe?.layout?.button?.text?.ascii === "string"
           && probe.layout.button.text.ascii.length > 0
@@ -17700,6 +17737,7 @@ async function rpc(command, payload = {}) {
           && probe?.gameText?.buttonLabelExists === true
           && probe?.gameText?.buttonTextNonEmpty === true
           && buttonTextProbeOk
+          && disabledButtonProbeOk
           && extraButtonsProbeOk
           && singlePlayerButtonsProbeOk
           && loadReplayButtonsProbeOk

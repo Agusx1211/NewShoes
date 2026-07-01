@@ -20,6 +20,10 @@ const repaintScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png",
 );
+const disabledButtonScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-disabled-button-repaint-canvas.png",
+);
 const staticTextScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
@@ -489,6 +493,69 @@ try {
   }
 
   await page.locator("#viewport").screenshot({ path: repaintScreenshot });
+
+  let disabledButtonResult;
+  try {
+    disabledButtonResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutDisabledButtonRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout disabled button image repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout disabled button image repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  if (!disabledButtonResult.ok
+      || disabledButtonResult.command !== "ww3dMainMenuLayoutDisabledButtonRepaint"
+      || disabledButtonResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || disabledButtonResult.probe?.mode !== "disabledButtonSinglePlayer"
+      || !disabledButtonResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer disabled -> W3DGadgetPushButtonImageDraw disabled image triplet")
+      || disabledButtonResult.probe?.results?.buttonDisabledMappedImagesFound !== true
+      || disabledButtonResult.probe?.results?.buttonDisabledImagesBound !== true
+      || disabledButtonResult.probe?.results?.buttonDisabledStateRequested !== true
+      || disabledButtonResult.probe?.results?.buttonEnabledBeforeStateChange !== true
+      || disabledButtonResult.probe?.results?.buttonEnabledAfterStateChange !== false
+      || disabledButtonResult.probe?.results?.buttonRenderedDisabledState !== true
+      || disabledButtonResult.probe?.layout?.button?.name !== "MainMenu.wnd:ButtonSinglePlayer"
+      || disabledButtonResult.probe?.layout?.button?.enabled !== false
+      || disabledButtonResult.probe?.layout?.button?.renderState !== "disabled"
+      || disabledButtonResult.probe?.layout?.button?.disabledStateRequested !== true
+      || disabledButtonResult.probe?.layout?.button?.disabledImagesBound !== true
+      || disabledButtonResult.probe?.layout?.button?.images?.[0] !== "Buttons-Disabled-Left"
+      || disabledButtonResult.probe?.layout?.button?.images?.[1] !== "Buttons-Disabled-Middle"
+      || disabledButtonResult.probe?.layout?.button?.images?.[2] !== "Buttons-Disabled-Right"
+      || disabledButtonResult.probe?.disabledButtonImages?.left?.name !== "Buttons-Disabled-Left"
+      || disabledButtonResult.probe?.disabledButtonImages?.middle?.name !== "Buttons-Disabled-Middle"
+      || disabledButtonResult.probe?.disabledButtonImages?.right?.name !== "Buttons-Disabled-Right"
+      || disabledButtonResult.probe?.disabledButtonImages?.left?.filename !== "SCSmShellUserInterface512_001.tga"
+      || disabledButtonResult.probe?.disabledButtonImages?.middle?.filename !== "SCSmShellUserInterface512_001.tga"
+      || disabledButtonResult.probe?.disabledButtonImages?.right?.filename !== "SCSmShellUserInterface512_001.tga"
+      || !Array.isArray(disabledButtonResult.probe?.display?.imageDrawNames)
+      || !disabledButtonResult.probe.display.imageDrawNames.includes("Buttons-Disabled-Left")
+      || !disabledButtonResult.probe.display.imageDrawNames.includes("Buttons-Disabled-Middle")
+      || !disabledButtonResult.probe.display.imageDrawNames.includes("Buttons-Disabled-Right")
+      || disabledButtonResult.buttonRegion?.coloredPixelCount < 20
+      || disabledButtonResult.buttonTextRegion?.coloredPixelCount < 20
+      || disabledButtonResult.buttonTextRegion?.maxComponent < 64
+      || disabledButtonResult.coloredLogoPixelCount < 1
+      || disabledButtonResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu disabled button repaint did not prove the original disabled image path: ${JSON.stringify({
+      ok: disabledButtonResult.ok,
+      probe: disabledButtonResult.probe,
+      buttonRegion: disabledButtonResult.buttonRegion,
+      buttonTextRegion: disabledButtonResult.buttonTextRegion,
+      coloredLogoPixelCount: disabledButtonResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: disabledButtonResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: disabledButtonScreenshot });
 
   let staticTextResult;
   try {
@@ -992,6 +1059,7 @@ try {
     path: "browser-ww3d-main-menu-layout-image-repaint",
     url: harnessUrl,
     screenshot: repaintScreenshot,
+    disabledButtonScreenshot,
     staticTextScreenshot,
     singlePlayerScreenshot,
     loadReplayScreenshot,
@@ -1004,6 +1072,7 @@ try {
       rulerTexture: textureArchiveMemfsPath,
     },
     originalPaths: repaintResult.probe.originalPaths,
+    disabledButtonOriginalPaths: disabledButtonResult.probe.originalPaths,
     singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     difficultyOriginalPaths: difficultyResult.probe.originalPaths,
@@ -1012,6 +1081,9 @@ try {
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
     buttonImages: repaintResult.probe.buttonImages,
+    disabledButtonImages: disabledButtonResult.probe.disabledButtonImages,
+    disabledButtonLayout: disabledButtonResult.probe.layout.button,
+    disabledButtonImageDrawNames: disabledButtonResult.probe.display.imageDrawNames,
     gameText: repaintResult.probe.gameText,
     difficultyGameText: difficultyResult.probe.gameText,
     texture: repaintResult.probe.texture,
@@ -1023,6 +1095,8 @@ try {
     buttonPixels: repaintResult.buttonPixels,
     buttonRegion: repaintResult.buttonRegion,
     buttonTextRegion: repaintResult.buttonTextRegion,
+    disabledButtonRegion: disabledButtonResult.buttonRegion,
+    disabledButtonTextRegion: disabledButtonResult.buttonTextRegion,
     extraButtons,
     extraButtonRegions: repaintResult.extraButtonRegions,
     singlePlayerDropdown: singlePlayerResult.probe.layout.singlePlayerDropdown,
