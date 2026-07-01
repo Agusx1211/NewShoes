@@ -22,6 +22,7 @@
 #include "Common/GameMemory.h"
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
+#include "Common/INIException.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/MapReaderWriterInfo.h"
 #include "Common/NameKeyGenerator.h"
@@ -99,6 +100,7 @@ std::string g_ww3d_terrain_tile_archive_scene_probe_json;
 std::string g_ww3d_terrain_map_patch_scene_probe_json;
 std::string g_ww3d_terrain_shroud_scene_probe_json;
 std::string g_ww3d_terrain_visual_scene_probe_json;
+std::string g_ww3d_terrain_full_scene_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
@@ -122,6 +124,7 @@ constexpr const char *kArchiveRoadTerrainMapEntry = "Maps\\MD_CHI01\\MD_CHI01.ma
 constexpr const char *kArchiveBridgeTerrainMapEntry = "Maps\\MD_CHI01\\MD_CHI01.map";
 constexpr const char *kArchiveDefaultTerrainIniEntry = "Data\\INI\\Default\\Terrain.ini";
 constexpr const char *kArchiveTerrainIniEntry = "Data\\INI\\Terrain.ini";
+constexpr const char *kArchiveWaterIniEntry = "Data\\INI\\Water.ini";
 constexpr const char *kArchiveDefaultRoadsIniEntry = "Data\\INI\\Default\\Roads.ini";
 constexpr const char *kArchiveRoadsIniEntry = "Data\\INI\\Roads.ini";
 constexpr const char *kPropModelName = "CINE_MOON";
@@ -2657,7 +2660,143 @@ public:
 	{
 		return m_waterRenderObject != nullptr;
 	}
+
+	WaterRenderObjClass *waterRenderObject() const
+	{
+		return m_waterRenderObject;
+	}
 };
+
+struct ProbePolygonTriggerMetrics
+{
+	Int total = 0;
+	Int water = 0;
+	Int river = 0;
+	Int firstWaterPoints = 0;
+	Int firstWaterZ = 0;
+};
+
+ProbePolygonTriggerMetrics collect_polygon_trigger_metrics()
+{
+	ProbePolygonTriggerMetrics metrics;
+	for (PolygonTrigger *trigger = PolygonTrigger::getFirstPolygonTrigger();
+			trigger != nullptr;
+			trigger = trigger->getNext()) {
+		++metrics.total;
+		if (trigger->isWaterArea()) {
+			++metrics.water;
+			if (metrics.firstWaterPoints == 0) {
+				metrics.firstWaterPoints = trigger->getNumPoints();
+				metrics.firstWaterZ = trigger->getPoint(0)->z;
+			}
+			if (trigger->isRiver()) {
+				++metrics.river;
+			}
+		}
+	}
+	return metrics;
+}
+
+void copy_water_settings(WaterSetting *destination)
+{
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		destination[index] = WaterSettings[index];
+	}
+}
+
+void reset_water_settings()
+{
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		WaterSettings[index] = WaterSetting();
+	}
+}
+
+Int count_loaded_water_settings()
+{
+	Int count = 0;
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		if (!WaterSettings[index].m_waterTextureFile.isEmpty()) {
+			++count;
+		}
+	}
+	return count;
+}
+
+Int expected_loaded_water_settings()
+{
+	return TIME_OF_DAY_COUNT - TIME_OF_DAY_FIRST;
+}
+
+struct ProbeWaterAssetMetrics
+{
+	Int requiredTextures = 0;
+	Int availableTextures = 0;
+	Int missingTextures = 0;
+	std::string firstMissingTexture;
+};
+
+bool probe_texture_asset_available(FileSystem *file_system, const AsciiString &texture)
+{
+	if (file_system == nullptr || texture.isEmpty()) {
+		return false;
+	}
+
+	const std::string texture_path = std::string("Art\\Textures\\") + texture.str();
+	if (probe_file_exists(file_system, texture_path)) {
+		return true;
+	}
+
+	std::string dds_path = texture_path;
+	const std::size_t dot = dds_path.find_last_of('.');
+	if (dot != std::string::npos) {
+		dds_path.replace(dot, std::string::npos, ".dds");
+	} else {
+		dds_path += ".dds";
+	}
+	return probe_file_exists(file_system, dds_path);
+}
+
+void record_water_texture_asset(
+	ProbeWaterAssetMetrics &metrics,
+	FileSystem *file_system,
+	const AsciiString &texture)
+{
+	if (texture.isEmpty()) {
+		return;
+	}
+
+	++metrics.requiredTextures;
+	if (probe_texture_asset_available(file_system, texture)) {
+		++metrics.availableTextures;
+		return;
+	}
+
+	++metrics.missingTextures;
+	if (metrics.firstMissingTexture.empty()) {
+		metrics.firstMissingTexture = texture.str();
+	}
+}
+
+ProbeWaterAssetMetrics collect_water_asset_metrics(FileSystem *file_system)
+{
+	ProbeWaterAssetMetrics metrics;
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		record_water_texture_asset(metrics, file_system, WaterSettings[index].m_skyTextureFile);
+		record_water_texture_asset(metrics, file_system, WaterSettings[index].m_waterTextureFile);
+	}
+
+	const WaterTransparencySetting *water_transparency = TheWaterTransparency.getNonOverloadedPointer();
+	if (water_transparency != nullptr) {
+		record_water_texture_asset(metrics, file_system, water_transparency->m_standingWaterTexture);
+	}
+
+	record_water_texture_asset(metrics, file_system, AsciiString("TSMoonLarg.tga"));
+	record_water_texture_asset(metrics, file_system, AsciiString("Noise0000.tga"));
+	record_water_texture_asset(metrics, file_system, AsciiString("TWAlphaEdge.tga"));
+	record_water_texture_asset(metrics, file_system, AsciiString("WaterSurfaceBubbles.tga"));
+	record_water_texture_asset(metrics, file_system, AsciiString("wave256.tga"));
+	return metrics;
+}
 
 class ProbeTerrainTileRenderObj : public RenderObjClass
 {
@@ -3349,6 +3488,8 @@ void configure_global_data(GlobalData &global_data, bool enable_shroud = false)
 	global_data.m_textureReductionFactor = 0;
 	global_data.m_useCloudMap = FALSE;
 	global_data.m_useLightMap = FALSE;
+	global_data.m_useWaterPlane = TRUE;
+	global_data.m_useCloudPlane = FALSE;
 	global_data.m_showSoftWaterEdge = FALSE;
 	global_data.m_use3WayTerrainBlends = FALSE;
 	global_data.m_drawEntireTerrain = FALSE;
@@ -3371,6 +3512,31 @@ void configure_global_data(GlobalData &global_data, bool enable_shroud = false)
 	global_data.m_terrainLightPos[0].x = -0.35f;
 	global_data.m_terrainLightPos[0].y = 0.25f;
 	global_data.m_terrainLightPos[0].z = -1.0f;
+	global_data.m_waterPositionX = 0.0f;
+	global_data.m_waterPositionY = 0.0f;
+	global_data.m_waterPositionZ = 0.0f;
+	global_data.m_waterExtentX = 64.0f * MAP_XY_FACTOR;
+	global_data.m_waterExtentY = 64.0f * MAP_XY_FACTOR;
+	global_data.m_waterType = 0;
+	global_data.m_maxTerrainTracks = 16;
+	global_data.m_maxTankTrackEdges = 32;
+	global_data.m_maxTankTrackOpaqueEdges = 16;
+	global_data.m_maxTankTrackFadeDelay = 300000;
+	for (int water_setting = 0; water_setting < GlobalData::MAX_WATER_GRID_SETTINGS; ++water_setting) {
+		global_data.m_vertexWaterHeightClampLow[water_setting] = 0.0f;
+		global_data.m_vertexWaterHeightClampHi[water_setting] = 0.0f;
+		global_data.m_vertexWaterAngle[water_setting] = 0.0f;
+		global_data.m_vertexWaterXPosition[water_setting] = 0.0f;
+		global_data.m_vertexWaterYPosition[water_setting] = 0.0f;
+		global_data.m_vertexWaterZPosition[water_setting] = 0.0f;
+		global_data.m_vertexWaterXGridCells[water_setting] = 0;
+		global_data.m_vertexWaterYGridCells[water_setting] = 0;
+		global_data.m_vertexWaterGridSize[water_setting] = 0.0f;
+		global_data.m_vertexWaterAttenuationA[water_setting] = 0.0f;
+		global_data.m_vertexWaterAttenuationB[water_setting] = 0.0f;
+		global_data.m_vertexWaterAttenuationC[water_setting] = 0.0f;
+		global_data.m_vertexWaterAttenuationRange[water_setting] = 0.0f;
+	}
 	for (int time_of_day = 0; time_of_day < TIME_OF_DAY_COUNT; ++time_of_day) {
 		for (int light_index = 0; light_index < MAX_GLOBAL_LIGHTS; ++light_index) {
 			global_data.m_terrainObjectsLighting[time_of_day][light_index].ambient.red = 0.35f;
@@ -3805,7 +3971,9 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		W3DShaderManager::init();
 		shader_manager_initialized = true;
 
-		if (old_water_transparency != nullptr) {
+		WaterTransparencySetting *current_water_transparency =
+			const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
+		if (current_water_transparency != nullptr) {
 			water_transparency_ready = true;
 		} else {
 			probe_water_transparency = newInstance(WaterTransparencySetting);
@@ -4288,6 +4456,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const char *ini_archive_path,
 	const char *maps_archive_path,
 	const char *terrain_archive_path,
+	bool use_full_init,
 	bool use_load_window,
 	bool use_camera_pan)
 {
@@ -4314,6 +4483,8 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	bool map_created = false;
 	bool water_transparency_ready = false;
 	bool visual_created = false;
+	bool visual_init_completed = false;
+	bool visual_init_exception = false;
 	bool render_object_created = false;
 	bool render_object_installed = false;
 	bool visual_load_returned = false;
@@ -4321,6 +4492,19 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	bool visual_load_initialized_render_object = false;
 	bool scene_created = false;
 	bool visual_scene_object_added = false;
+	bool water_ini_loaded = false;
+	bool water_ini_exception = false;
+	bool water_ini_entry_exists = false;
+	UnsignedInt water_ini_bytes = 0;
+	std::string water_ini_error;
+	Int water_setting_count = 0;
+	ProbeWaterAssetMetrics water_asset_metrics;
+	bool water_assets_ready = false;
+	bool full_init_attempted = false;
+	bool full_init_blocked_by_missing_water_assets = false;
+	bool water_render_object_created = false;
+	bool water_render_object_global_match = false;
+	bool water_render_object_scene_added = false;
 	bool load_window_render_selected = false;
 	bool patch_reinitialized = false;
 	bool camera_configured = false;
@@ -4341,6 +4525,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	UnsignedInt clear_after_camera_pan = 0;
 	ProbeTerrainCameraView primary_camera_view;
 	ProbeTerrainCameraView camera_pan_view;
+	ProbePolygonTriggerMetrics polygon_metrics;
 
 	ProbeTerrainMapPatchLoad map_load;
 	ProbeTerrainArchiveContext archive_context;
@@ -4362,16 +4547,62 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	WaterTransparencySetting *old_water_transparency =
 		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
 	WaterTransparencySetting *probe_water_transparency = nullptr;
+	WaterSetting old_water_settings[TIME_OF_DAY_COUNT];
+	copy_water_settings(old_water_settings);
 	ProbeW3DTerrainVisual *visual = nullptr;
 	HeightMapRenderObjClass *render_object = nullptr;
 	CameraClass *camera = nullptr;
 	WorldHeightMap *map = nullptr;
 
+	if (use_full_init && archive_context_ready) {
+		try {
+			probe_bridge_phase_log("full-scene-water-ini");
+			TheWaterTransparency = nullptr;
+			reset_water_settings();
+			FileInfo water_ini_info = {};
+			water_ini_entry_exists =
+				archive_context.fileSystem() != nullptr &&
+				TheArchiveFileSystem != nullptr &&
+				TheArchiveFileSystem->getFileInfo(AsciiString(kArchiveWaterIniEntry), &water_ini_info) &&
+				water_ini_info.sizeHigh == 0 &&
+				water_ini_info.sizeLow > 0;
+			water_ini_bytes = water_ini_entry_exists ? water_ini_info.sizeLow : 0U;
+			INI water_ini;
+			touch_ini_separator_table(&water_ini);
+			water_ini.load(AsciiString(kArchiveWaterIniEntry), INI_LOAD_OVERWRITE, nullptr);
+			water_ini_loaded = true;
+			water_setting_count = count_loaded_water_settings();
+			water_asset_metrics = collect_water_asset_metrics(archive_context.fileSystem());
+			water_assets_ready =
+				water_setting_count == expected_loaded_water_settings() &&
+				water_asset_metrics.requiredTextures > 0 &&
+				water_asset_metrics.missingTextures == 0;
+			probe_bridge_phase_log("full-scene-water-ini-done");
+		} catch (const INIException &exception) {
+			water_ini_exception = true;
+			water_ini_loaded = false;
+			water_ini_error =
+				exception.mFailureMessage != nullptr
+					? exception.mFailureMessage
+					: "INIException";
+		} catch (...) {
+			water_ini_exception = true;
+			water_ini_loaded = false;
+			water_ini_error = "unknown";
+		}
+	}
+
 	if (archive_context_ready && global_data != nullptr) {
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-ww3d-init");
+		}
 		init_result = WW3D::Init(nullptr, nullptr, false);
 	}
 
 	if (succeeded(init_result)) {
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-set-render-device");
+		}
 		set_device_result = WW3D::Set_Render_Device(0, kViewportWidth, kViewportHeight, 32, 1, false, false, true);
 	}
 
@@ -4380,7 +4611,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		W3DShaderManager::init();
 		shader_manager_initialized = true;
 
-		if (old_water_transparency != nullptr) {
+		if (TheWaterTransparency.getNonOverloadedPointer() != nullptr) {
 			water_transparency_ready = true;
 		} else {
 			probe_water_transparency = newInstance(WaterTransparencySetting);
@@ -4397,21 +4628,58 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		visual_created = visual != nullptr;
 		if (visual_created) {
 			TheTerrainVisual = visual;
-			render_object = NEW_REF(HeightMapRenderObjClass, ());
-			render_object_created = render_object != nullptr;
-			render_object_installed = visual->installTerrainRenderObject(render_object);
-			if (!render_object_installed) {
-				REF_PTR_RELEASE(render_object);
+			if (use_full_init && water_assets_ready) {
+				full_init_attempted = true;
+				probe_bridge_phase_log("full-scene-visual-init");
+				try {
+					visual->W3DTerrainVisual::init();
+					visual_init_completed = true;
+				} catch (...) {
+					visual_init_exception = true;
+					visual_init_completed = false;
+				}
+				render_object = static_cast<HeightMapRenderObjClass *>(visual->terrainRenderObject());
+				render_object_created = render_object != nullptr;
+				render_object_installed =
+					render_object_created &&
+					TheTerrainRenderObject == render_object;
+				WaterRenderObjClass *water_render_object = visual->waterRenderObject();
+				water_render_object_created = water_render_object != nullptr;
+				water_render_object_global_match =
+					water_render_object_created &&
+					TheWaterRenderObj == water_render_object;
+				water_render_object_scene_added =
+					water_render_object_created &&
+					water_render_object->Peek_Scene() == W3DDisplay::m_3DScene;
+				probe_bridge_phase_log("full-scene-visual-init-done");
+			} else {
+				full_init_blocked_by_missing_water_assets =
+					use_full_init &&
+					water_ini_loaded &&
+					!water_ini_exception &&
+					!water_assets_ready;
+				render_object = NEW_REF(HeightMapRenderObjClass, ());
+				render_object_created = render_object != nullptr;
+				render_object_installed = visual->installTerrainRenderObject(render_object);
+				if (!render_object_installed) {
+					REF_PTR_RELEASE(render_object);
+				}
 			}
 		}
 	}
 
 	if (render_object_installed) {
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-visual-load");
+		}
 		try {
 			visual_load_returned = visual->W3DTerrainVisual::load(AsciiString(kArchiveTerrainMapEntry));
 		} catch (...) {
 			visual_load_exception = true;
 			visual_load_returned = false;
+		}
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-visual-load-done");
 		}
 	}
 
@@ -4422,6 +4690,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		map_load.mapStreamOpen = map_created;
 		map_load.mapParsed = map_created;
 		if (map_created) {
+			polygon_metrics = collect_polygon_trigger_metrics();
 			record_parsed_map_metrics(map_load);
 			ProbeWorldHeightMapInspector::recordTextureClassLoadMetrics(
 				map,
@@ -4446,6 +4715,16 @@ const char *run_ww3d_terrain_visual_scene_probe(
 				render_object->getMap() == map;
 			visual_scene_object_added =
 				render_object->Peek_Scene() == W3DDisplay::m_3DScene;
+			if (use_full_init) {
+				WaterRenderObjClass *water_render_object = visual->waterRenderObject();
+				water_render_object_created = water_render_object != nullptr;
+				water_render_object_global_match =
+					water_render_object_created &&
+					TheWaterRenderObj == water_render_object;
+				water_render_object_scene_added =
+					water_render_object_created &&
+					water_render_object->Peek_Scene() == W3DDisplay::m_3DScene;
+			}
 		}
 	}
 
@@ -4506,6 +4785,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	}
 
 	if (camera != nullptr && W3DDisplay::m_3DScene != nullptr) {
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-render");
+		}
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			render_result = WW3D::Render(W3DDisplay::m_3DScene, camera);
@@ -4515,6 +4797,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 				draw_indexed_after_first_render = state_after_first_render->draw_indexed_primitive_calls;
 				clear_after_first_render = state_after_first_render->clear_calls;
 			}
+		}
+		if (use_full_init) {
+			probe_bridge_phase_log("full-scene-render-done");
 		}
 	}
 
@@ -4565,9 +4850,20 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		map_load.terrainArchiveLoaded &&
 		map_load.terrainIniParsed &&
 		map_load.terrainTypeCount > 0 &&
+		(!use_full_init ||
+			(water_ini_loaded &&
+			 !water_ini_exception &&
+			 water_setting_count == expected_loaded_water_settings())) &&
 		map_load.mapEntryExists &&
 		map_load.mapEntryOpenable &&
 		visual_created &&
+		(!use_full_init ||
+			(full_init_blocked_by_missing_water_assets ||
+			 (visual_init_completed &&
+			  !visual_init_exception &&
+			  water_render_object_created &&
+			  water_render_object_global_match &&
+			  water_render_object_scene_added))) &&
 		render_object_created &&
 		render_object_installed &&
 		visual_load_returned &&
@@ -4579,7 +4875,11 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		((use_load_window && load_window_render_selected && !patch_reinitialized) ||
 			(!use_load_window && patch_reinitialized && patch_init_height_data_result == 0)) &&
 		water_transparency_ready &&
-		!visual->hasWaterRenderObject() &&
+		(use_full_init ?
+			(full_init_blocked_by_missing_water_assets ?
+				!visual->hasWaterRenderObject() :
+				visual->hasWaterRenderObject()) :
+			!visual->hasWaterRenderObject()) &&
 		camera_configured &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
@@ -4596,11 +4896,11 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
-		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
+		(use_full_init || state->last_draw_primitive_type == D3DPT_TRIANGLELIST) &&
 		state->last_draw_vertex_count > 0 &&
 		state->last_draw_primitive_count > 0 &&
-		state->last_draw_stream_source_stride == sizeof(VertexFormatXYZDUV2) &&
-		state->last_draw_vertex_shader == DX8_FVF_XYZDUV2 &&
+		(use_full_init || state->last_draw_stream_source_stride == sizeof(VertexFormatXYZDUV2)) &&
+		(use_full_init || state->last_draw_vertex_shader == DX8_FVF_XYZDUV2) &&
 		(state->last_draw_transform_mask & 7u) == 7u &&
 		(!camera_pan_requested ||
 			(state->draw_indexed_primitive_calls >= 4 &&
@@ -4612,23 +4912,31 @@ const char *run_ww3d_terrain_visual_scene_probe(
 
 	const std::string first_patch_texture_class_json =
 		json_string(map_load.firstPatchTextureClassName);
+	const std::string first_missing_water_texture_json =
+		json_string(water_asset_metrics.firstMissingTexture);
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
-	const char *source_name = use_load_window ?
+	const char *source_name = use_full_init ?
+		"ww3d_terrain_full_scene_probe" :
+		(use_load_window ?
 		"ww3d_terrain_visual_load_window_scene_probe" :
 		(camera_pan_requested ?
 			"ww3d_terrain_visual_camera_pan_scene_probe" :
-			"ww3d_terrain_visual_scene_probe");
-	const char *render_mode = use_load_window ?
+			"ww3d_terrain_visual_scene_probe"));
+	const char *render_mode = use_full_init ?
+		(full_init_blocked_by_missing_water_assets ?
+			"full-init-missing-water-assets-frontier" :
+			"full-init-source-patch") :
+		(use_load_window ?
 		"visual-load-window" :
 		(camera_pan_requested ?
 			"selected-source-patch-camera-pan" :
-			"selected-source-patch");
+			"selected-source-patch"));
 	const UnsignedInt render_frame_count =
 		(succeeded(end_render_result) ? 1u : 0u) +
 		(camera_pan_requested && succeeded(camera_pan_end_render_result) ? 1u : 0u);
 
-	char buffer[26000];
+	char buffer[28000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -4639,6 +4947,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"beginRender\":%d,\"render\":%d,\"endRender\":%d,"
 		"\"mapCreated\":%s,\"waterTransparencyReady\":%s,"
 		"\"shaderManagerInitialized\":%s,\"visualCreated\":%s,"
+		"\"visualInitCompleted\":%s,\"visualInitException\":%s,"
+		"\"fullInitAttempted\":%s,"
+		"\"fullInitBlockedByMissingWaterAssets\":%s,"
 		"\"renderObjectCreated\":%s,\"renderObjectInstalled\":%s,"
 		"\"visualLoadInitializedRenderObject\":%s,"
 		"\"loadWindowRenderSelected\":%s,\"patchReinitialized\":%s,"
@@ -4657,9 +4968,21 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"\"loadPath\":\"W3DTerrainVisual::load -> TerrainVisual::load -> "
 		"CachedFileInputStream -> WorldHeightMap -> HeightMapRenderObjClass::initHeightData -> "
 		"W3DDisplay::m_3DScene::Add_Render_Object\","
-		"\"ownedTerrainRenderObject\":%s,\"waterRenderObjectNull\":%s,"
+		"\"fullInit\":%s,\"ownedTerrainRenderObject\":%s,"
+		"\"waterRenderObjectNull\":%s,"
 		"\"loadDrawWidth\":%d,\"loadDrawHeight\":%d,"
 		"\"loadDrawOriginX\":%d,\"loadDrawOriginY\":%d},"
+		"\"water\":{\"iniEntry\":\"Data\\\\INI\\\\Water.ini\","
+		"\"iniEntryExists\":%s,\"iniBytes\":%u,"
+		"\"iniLoaded\":%s,\"iniException\":%s,\"iniError\":%s,"
+		"\"waterSettingCount\":%d,"
+		"\"assetsReady\":%s,\"requiredTextureCount\":%d,"
+		"\"availableTextureCount\":%d,\"missingTextureCount\":%d,"
+		"\"firstMissingTexture\":%s,"
+		"\"renderObjectCreated\":%s,\"globalPointerMatches\":%s,"
+		"\"sceneObjectAdded\":%s,\"polygonTriggerCount\":%d,"
+		"\"waterPolygonCount\":%d,\"riverPolygonCount\":%d,"
+		"\"firstWaterPoints\":%d,\"firstWaterZ\":%d},"
 		"\"ini\":{\"attempted\":%s,\"argumentSupplied\":%s,"
 		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
 		"\"defaultEntry\":\"Data\\\\INI\\\\Default\\\\Terrain.ini\","
@@ -4734,6 +5057,10 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		bool_json(water_transparency_ready),
 		bool_json(shader_manager_initialized),
 		bool_json(visual_created),
+		bool_json(visual_init_completed),
+		bool_json(visual_init_exception),
+		bool_json(full_init_attempted),
+		bool_json(full_init_blocked_by_missing_water_assets),
 		bool_json(render_object_created),
 		bool_json(render_object_installed),
 		bool_json(visual_load_initialized_render_object),
@@ -4766,12 +5093,32 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		static_cast<double>(camera_pan_view.targetZ),
 		static_cast<double>(camera_pan_view.renderSpan),
 		static_cast<double>(camera_pan_view.lift),
+		bool_json(use_full_init),
 		bool_json(visual_load_initialized_render_object),
 		bool_json(visual != nullptr && !visual->hasWaterRenderObject()),
 		visual_load_draw_width,
 		visual_load_draw_height,
 		visual_load_draw_origin_x,
 		visual_load_draw_origin_y,
+		bool_json(water_ini_entry_exists),
+		water_ini_bytes,
+		bool_json(water_ini_loaded),
+		bool_json(water_ini_exception),
+		json_string(water_ini_error).c_str(),
+		water_setting_count,
+		bool_json(water_assets_ready),
+		water_asset_metrics.requiredTextures,
+		water_asset_metrics.availableTextures,
+		water_asset_metrics.missingTextures,
+		first_missing_water_texture_json.c_str(),
+		bool_json(water_render_object_created),
+		bool_json(water_render_object_global_match),
+		bool_json(water_render_object_scene_added),
+		polygon_metrics.total,
+		polygon_metrics.water,
+		polygon_metrics.river,
+		polygon_metrics.firstWaterPoints,
+		polygon_metrics.firstWaterZ,
 		bool_json(map_load.attempted),
 		bool_json(map_load.iniArgumentSupplied),
 		map_load.iniArchivePath.c_str(),
@@ -4901,10 +5248,18 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	REF_PTR_RELEASE(owned_3d_scene);
 	TheTerrainRenderObject = old_terrain_render_object;
 	TheTerrainVisual = old_terrain_visual;
+	WaterTransparencySetting *current_water_transparency =
+		const_cast<WaterTransparencySetting *>(TheWaterTransparency.getNonOverloadedPointer());
 	TheWaterTransparency = old_water_transparency;
-	if (probe_water_transparency != nullptr &&
+	if (!use_full_init &&
+			probe_water_transparency != nullptr &&
 			probe_water_transparency != old_water_transparency) {
 		probe_water_transparency->deleteInstance();
+	}
+	if (use_full_init &&
+			current_water_transparency != nullptr &&
+			current_water_transparency != old_water_transparency) {
+		current_water_transparency->deleteInstance();
 	}
 
 	if (succeeded(init_result)) {
@@ -4914,6 +5269,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	}
 
 	TheWritableGlobalData = old_writable_global_data;
+	for (int index = 0; index < TIME_OF_DAY_COUNT; ++index) {
+		WaterSettings[index] = old_water_settings[index];
+	}
 	delete global_data;
 
 	return target_json.c_str();
@@ -8232,6 +8590,22 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_scene(
 		maps_archive_path,
 		terrain_archive_path,
 		false,
+		false,
+		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_full_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path)
+{
+	return run_ww3d_terrain_visual_scene_probe(
+		g_ww3d_terrain_full_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		true,
+		false,
 		false);
 }
 
@@ -8245,6 +8619,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_load_window_
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path,
+		false,
 		true,
 		false);
 }
@@ -8259,6 +8634,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_camera_pan_s
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path,
+		false,
 		false,
 		true);
 }

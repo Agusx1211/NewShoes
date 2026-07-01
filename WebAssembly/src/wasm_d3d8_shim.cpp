@@ -3536,3 +3536,36 @@ HRESULT D3DXCreateVolumeTexture(
 	}
 	return device->CreateVolumeTexture(width, height, depth, levels, usage, format, pool, texture);
 }
+
+HRESULT D3DXAssembleShaderFromFile(
+	LPCSTR,
+	const void *,
+	LPD3DXBUFFER *,
+	LPD3DXBUFFER *shader_code,
+	LPD3DXBUFFER *errors)
+{
+	if (shader_code != nullptr) {
+		*shader_code = nullptr;
+	}
+	if (errors != nullptr) {
+		*errors = nullptr;
+	}
+	return D3DERR_NOTAVAILABLE;
+}
+
+HRESULT D3DXAssembleShader(
+	const void *,
+	UINT,
+	DWORD,
+	LPD3DXBUFFER *,
+	LPD3DXBUFFER *shader_code,
+	LPD3DXBUFFER *errors)
+{
+	if (shader_code != nullptr) {
+		*shader_code = nullptr;
+	}
+	if (errors != nullptr) {
+		*errors = nullptr;
+	}
+	return D3DERR_NOTAVAILABLE;
+}

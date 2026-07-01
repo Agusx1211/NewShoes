@@ -3893,6 +3893,20 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `test:ww3d-terrain-tree-buffer-scene`,
       `test:ww3d-terrain-road-buffer-scene`, and
       `test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Add a combined terrain full-scene missing-water-assets frontier. The
+      `test:ww3d-terrain-full-scene` harness now mounts range-backed real
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,
+      and any matching water texture archives, exposes
+      `ww3dTerrainFullScene`, parses original `Data\INI\Water.ini` through
+      `INI.cpp` / `INIWater.cpp`, and reports water asset readiness before
+      entering full `W3DTerrainVisual::init`. With the current workspace's
+      Zero Hour-only texture set it intentionally stops at
+      `full-init-missing-water-assets-frontier` with 4 parsed water settings
+      and a first missing texture of `TSCloudWis.tga`, avoiding the previous
+      browser crash while still rendering the source-backed terrain scene
+      through `W3DDisplay::m_3DScene` and capturing
+      `harness-smoke-ww3d-terrain-full-scene-canvas.png`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

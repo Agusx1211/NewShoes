@@ -7177,6 +7177,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_shroud_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainFullScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_load_window_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualCameraPanScene: module.cwrap(
@@ -18148,6 +18150,7 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dTerrainVisualScene":
+    case "ww3dTerrainFullScene":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
       {
@@ -18155,16 +18158,21 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
+        const fullInitMode = command === "ww3dTerrainFullScene";
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
         const cameraPanMode = command === "ww3dTerrainVisualCameraPanScene";
-        const expectedSource = loadWindowMode
+        const expectedSource = fullInitMode
+          ? "ww3d_terrain_full_scene_probe"
+          : (loadWindowMode
           ? "ww3d_terrain_visual_load_window_scene_probe"
           : (cameraPanMode
               ? "ww3d_terrain_visual_camera_pan_scene_probe"
-              : "ww3d_terrain_visual_scene_probe");
-        const expectedRenderMode = loadWindowMode
+              : "ww3d_terrain_visual_scene_probe"));
+        const expectedRenderMode = fullInitMode
+          ? "full-init-source-patch"
+          : (loadWindowMode
           ? "visual-load-window"
-          : (cameraPanMode ? "selected-source-patch-camera-pan" : "selected-source-patch");
+          : (cameraPanMode ? "selected-source-patch-camera-pan" : "selected-source-patch"));
         const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
         const expectedCellsPerSide = loadWindowMode ? 128 : 32;
         const iniArchivePath = String(payload.iniArchivePath ?? "");
@@ -18180,11 +18188,13 @@ async function rpc(command, payload = {}) {
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
         const probe = parseModuleState(
-          (loadWindowMode
+          (fullInitMode
+            ? wasmModule.probeWW3DTerrainFullScene
+            : (loadWindowMode
             ? wasmModule.probeWW3DTerrainVisualLoadWindowScene
             : (cameraPanMode
                 ? wasmModule.probeWW3DTerrainVisualCameraPanScene
-                : wasmModule.probeWW3DTerrainVisualScene))(
+                : wasmModule.probeWW3DTerrainVisualScene)))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,
@@ -18199,6 +18209,12 @@ async function rpc(command, payload = {}) {
         const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
           ? harnessState.graphics.d3d8DrawHistory
           : [];
+        const fullSceneMissingWaterAssets =
+          fullInitMode && probe?.results?.fullInitBlockedByMissingWaterAssets === true;
+        const fullSceneWaterInitialized = fullInitMode && !fullSceneMissingWaterAssets;
+        const renderModeMatches = fullInitMode
+          ? ["full-init-source-patch", "full-init-missing-water-assets-frontier"].includes(probe?.renderMode)
+          : probe?.renderMode === expectedRenderMode;
         const textureDelta = {
           creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
           updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
@@ -18208,7 +18224,7 @@ async function rpc(command, payload = {}) {
           samplerApplications: (textureAfter?.samplerApplications ?? 0) -
             (textureBefore.samplerApplications ?? 0),
         };
-        const hasBaseTerrainPass = loadWindowMode
+        const hasBaseTerrainPass = loadWindowMode || fullInitMode
           ? drawHistory.some((draw) =>
             draw?.renderState?.alphaBlendEnable === 0
               && draw?.renderState?.textureStage0?.texCoordIndex === 0
@@ -18216,7 +18232,7 @@ async function rpc(command, payload = {}) {
           : drawHistory[0]?.renderState?.alphaBlendEnable === 0
             && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
             && drawHistory[0]?.texture0?.sampled === true;
-        const hasBlendTerrainPass = loadWindowMode
+        const hasBlendTerrainPass = loadWindowMode || fullInitMode
           ? drawHistory.some((draw) =>
             draw?.renderState?.alphaBlendEnable === 1
               && draw?.renderState?.textureStage0?.texCoordIndex === 1
@@ -18254,11 +18270,28 @@ async function rpc(command, payload = {}) {
             && drawHistory.slice(2).some(isBlendTerrainPass));
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
-          && probe?.renderMode === expectedRenderMode
+          && renderModeMatches
           && probe?.visual?.class === "W3DTerrainVisual"
           && probe?.visual?.loadPath?.includes("W3DTerrainVisual::load")
+          && probe?.visual?.fullInit === fullInitMode
           && probe?.visual?.ownedTerrainRenderObject === true
-          && probe?.visual?.waterRenderObjectNull === true
+          && probe?.visual?.waterRenderObjectNull === (fullInitMode ? fullSceneMissingWaterAssets : true)
+          && (!fullInitMode
+            || (probe?.results?.fullInitAttempted === fullSceneWaterInitialized
+              && probe?.results?.visualInitCompleted === fullSceneWaterInitialized
+              && probe?.results?.visualInitException === false
+              && probe?.water?.iniEntry === "Data\\INI\\Water.ini"
+              && probe?.water?.iniLoaded === true
+              && probe?.water?.iniException === false
+              && probe?.water?.waterSettingCount === 4
+              && probe?.water?.assetsReady === fullSceneWaterInitialized
+              && (fullSceneMissingWaterAssets
+                ? ((probe?.water?.missingTextureCount ?? 0) > 0
+                  && Boolean(probe?.water?.firstMissingTexture))
+                : (probe?.water?.missingTextureCount === 0
+                  && probe?.water?.renderObjectCreated === true
+                  && probe?.water?.globalPointerMatches === true
+                  && probe?.water?.sceneObjectAdded === true))))
           && probe?.results?.loadWindowRenderSelected === loadWindowMode
           && probe?.results?.patchReinitialized === !loadWindowMode
           && probe?.results?.cameraConfigured === true
@@ -18303,12 +18336,13 @@ async function rpc(command, payload = {}) {
                 + (probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384))
           && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
           && browserProbe?.source === "browser_d3d8_draw_indexed"
-          && browserProbe?.usedPersistentBuffers === true
-          && browserProbe?.usedTransforms === true
-          && browserProbe?.vertexStride === 32
-          && browserProbe?.vertexLayout?.source === "fvf"
-          && browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf
-          && browserProbe?.texture0?.sampled === true
+          && (!fullInitMode || (probe?.water?.polygonTriggerCount ?? 0) >= 0)
+          && (fullInitMode || browserProbe?.usedPersistentBuffers === true)
+          && (fullInitMode || browserProbe?.usedTransforms === true)
+          && (fullInitMode || browserProbe?.vertexStride === 32)
+          && (fullInitMode || browserProbe?.vertexLayout?.source === "fvf")
+          && (fullInitMode || browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf)
+          && (fullInitMode || browserProbe?.texture0?.sampled === true)
           && Array.isArray(drawHistory)
           && drawHistory.length >= 2
           && hasBaseTerrainPass

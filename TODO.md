@@ -821,14 +821,17 @@ shares structure and follows behind.
       textured bridge base pass and bridge shroud overlay, but still clears
       `TheTerrainLogic` and does not exercise damaged/repaired bridge state
       lookup from real gameplay objects.
-- [ ] Add a combined terrain-full-scene harness that promotes full
-      `W3DTerrainVisual::init`, gameplay-owned shroud updates, and first water
-      rendering in one source-backed map scene instead of continuing separate
-      one-buffer proofs. Start from `test:ww3d-terrain-visual-scene`,
-      `test:ww3d-terrain-shroud-scene`, and the existing terrain/water
-      projection probes; verify base/blend terrain ordering, shroud overlay,
-      water draw submission, and a browser screenshot before adding it to
-      `test:vertical-integrations`.
+- [ ] Promote the combined terrain-full-scene missing-water-assets frontier
+      into actual original water rendering and gameplay-owned shroud updates.
+      The current `test:ww3d-terrain-full-scene` harness mounts the real map,
+      terrain, `Terrain.ini`, and `Water.ini`, then renders the source-backed
+      `W3DTerrainVisual::load` scene while reporting a typed
+      `full-init-missing-water-assets-frontier` when the mounted archive subset
+      lacks the original Water.ini texture set. Remaining work is to supply and
+      mount the correct base/Zero Hour water texture archive set, let full
+      `W3DTerrainVisual::init` create the original `WaterRenderObjClass`, and
+      verify water draw submission, shroud overlay/gameplay ownership, and a
+      browser screenshot before adding the path to `test:vertical-integrations`.
 - [ ] Once a base Generals `Terrain.big` artifact is available in this
       workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
       archive mounted and tighten the load-window gate to require nonzero

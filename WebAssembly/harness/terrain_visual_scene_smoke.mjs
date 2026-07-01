@@ -11,15 +11,29 @@ const defaultIniArchivePath = resolve(wasmRoot, "artifacts/real-assets/INIZH.big
 const defaultMapsArchivePath = resolve(wasmRoot, "artifacts/real-assets/MapsZH.big");
 const defaultTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/TerrainZH.big");
 const defaultBaseTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terrain.big");
+const defaultTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/TexturesZH.big");
+const defaultBaseTextureArchivePath = resolve(wasmRoot, "artifacts/real-assets/Textures.big");
 const iniArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultIniArchivePath);
 const mapsArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultMapsArchivePath);
 const terrainArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultTerrainArchivePath);
 const baseTerrainArchivePath = resolve(wasmRoot, process.argv[5] ?? defaultBaseTerrainArchivePath);
 const baseTerrainArchiveRequired = Boolean(process.argv[5]);
+const textureArchivePath = resolve(
+  wasmRoot,
+  process.env.CNC_PORT_TERRAIN_TEXTURE_ARCHIVE ?? defaultTextureArchivePath,
+);
+const baseTextureArchivePath = resolve(
+  wasmRoot,
+  process.env.CNC_PORT_BASE_TERRAIN_TEXTURE_ARCHIVE ?? defaultBaseTextureArchivePath,
+);
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const terrainScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-visual-scene-canvas.png",
+);
+const terrainFullSceneScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-full-scene-canvas.png",
 );
 const terrainLoadWindowScreenshot = resolve(
   screenshotDir,
@@ -34,9 +48,27 @@ const runtimeArchivePath = "/assets/runtime-terrain-visual-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
 const terrainArchiveMemfsMaskPath = `${runtimeArchivePath}/Terrain*.big`;
+const fullSceneArchiveMemfsMaskPath = `${runtimeArchivePath}/*.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
+const waterIniEntry = "Data\\INI\\Water.ini";
 const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
+const waterTextureBaseNames = [
+  "TSCloudWis.tga",
+  "TSCloudSun.tga",
+  "TSStarFeld.tga",
+  "TSWater.tga",
+  "TWWater01.tga",
+  "TSMoonLarg.tga",
+  "Noise0000.tga",
+  "TWAlphaEdge.tga",
+  "WaterSurfaceBubbles.tga",
+  "wave256.tga",
+];
+const waterTextureCandidateNames = new Set(waterTextureBaseNames.flatMap((name) => {
+  const lower = name.toLowerCase();
+  return [lower, lower.replace(/\.[^.]+$/, ".dds")];
+}));
 
 function iniLayoutMatches(layout) {
   return layout?.source === "terrain-probe-tu-vs-real-ini-runtime"
@@ -81,6 +113,14 @@ function summarizeDrawHistory(drawHistory) {
       sampled: draw?.texture0?.sampled,
     })),
   };
+}
+
+function isWaterTextureArchiveEntry(entryName) {
+  if (!/^Art\\Textures\\/i.test(entryName)) {
+    return false;
+  }
+  const leafName = entryName.split("\\").pop().toLowerCase();
+  return waterTextureCandidateNames.has(leafName);
 }
 
 function isInside(parent, child) {
@@ -164,6 +204,7 @@ async function withTimeout(label, promise, timeoutMs) {
 const iniArchiveStat = await checkedArchive(iniArchivePath, "INI archive");
 const mapsArchiveStat = await checkedArchive(mapsArchivePath, "Maps archive");
 const terrainArchiveStat = await checkedArchive(terrainArchivePath, "Terrain archive");
+const textureArchiveStat = await checkedArchive(textureArchivePath, "Texture archive");
 const terrainArchiveEntries = (await listBigArchiveEntries(terrainArchivePath))
   .filter((entry) => /^Art\\Terrain\\.*\.(?:tga|dds)$/i.test(entry.name))
   .map((entry) => entry.name);
@@ -197,12 +238,45 @@ if (baseTerrainArchiveStat !== null && baseTerrainArchivePath !== terrainArchive
     optionalBase: true,
   });
 }
+const textureArchiveEntries = (await listBigArchiveEntries(textureArchivePath))
+  .filter((entry) => isWaterTextureArchiveEntry(entry.name))
+  .map((entry) => entry.name);
+const textureArchives = [];
+if (textureArchiveEntries.length > 0) {
+  textureArchives.push({
+    sourcePath: textureArchivePath,
+    memfsName: basename(textureArchivePath),
+    stat: textureArchiveStat,
+    entries: textureArchiveEntries,
+    optionalBase: false,
+  });
+}
+const baseTextureArchiveStat = await optionalArchive(baseTextureArchivePath, "Base texture archive");
+if (baseTextureArchiveStat !== null && baseTextureArchivePath !== textureArchivePath) {
+  const baseTextureArchiveEntries = (await listBigArchiveEntries(baseTextureArchivePath))
+    .filter((entry) => isWaterTextureArchiveEntry(entry.name))
+    .map((entry) => entry.name);
+  if (baseTextureArchiveEntries.length > 0) {
+    textureArchives.push({
+      sourcePath: baseTextureArchivePath,
+      memfsName: basename(baseTextureArchivePath),
+      stat: baseTextureArchiveStat,
+      entries: baseTextureArchiveEntries,
+      optionalBase: true,
+    });
+  }
+}
 
 await mkdir(screenshotDir, { recursive: true });
 
 const iniArchiveRelativePath = relative(wasmRoot, iniArchivePath).split(sep).join("/");
 const mapsArchiveRelativePath = relative(wasmRoot, mapsArchivePath).split(sep).join("/");
 const terrainArchiveMounts = terrainArchives.map((archive) => ({
+  ...archive,
+  memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
+  urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
+}));
+const textureArchiveMounts = textureArchives.map((archive) => ({
   ...archive,
   memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
   urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
@@ -263,7 +337,7 @@ try {
             name: "INIZH.big",
             expectedSourceBytes: iniArchiveStat.size,
             sourceArchive: iniArchivePath,
-            entries: [terrainIniEntry],
+            entries: [terrainIniEntry, waterIniEntry],
           },
           {
             url: mapsArchiveUrl,
@@ -279,6 +353,13 @@ try {
             sourceArchive: archive.sourcePath,
             entries: archive.entries,
           })),
+          ...textureArchiveMounts.map((archive) => ({
+            url: new URL(archive.urlPath, server.url).href,
+            name: archive.memfsName,
+            expectedSourceBytes: archive.stat.size,
+            sourceArchive: archive.sourcePath,
+            entries: archive.entries,
+          })),
         ],
       }),
     120000,
@@ -286,7 +367,7 @@ try {
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
-      || archiveMountResult.archiveSet?.archiveCount !== 2 + terrainArchiveMounts.length
+      || archiveMountResult.archiveSet?.archiveCount !== 2 + terrainArchiveMounts.length + textureArchiveMounts.length
       || archiveMountResult.archiveSet?.registered !== false) {
     throw new Error(`Runtime terrain visual archives mount failed: ${JSON.stringify(archiveMountResult)}`);
   }
@@ -388,6 +469,106 @@ try {
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
     throw new Error(`browser failures during W3D visual terrain scene: ${JSON.stringify(browserFailures)}`);
+  }
+
+  let fullSceneResult;
+  try {
+    fullSceneResult = await withTimeout(
+      "terrain full scene render RPC",
+      page.evaluate((payload) =>
+        window.CnCPort.rpc("ww3dTerrainFullScene", payload), {
+          iniArchivePath: iniArchiveMemfsPath,
+          mapsArchivePath: mapsArchiveMemfsPath,
+          terrainArchivePath: fullSceneArchiveMemfsMaskPath,
+        }),
+      240000,
+    );
+  } catch (error) {
+    throw new Error(`terrain full scene render RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
+  }
+  await page.locator("#viewport").screenshot({ path: terrainFullSceneScreenshot });
+
+  const fullSceneDrawHistory = Array.isArray(fullSceneResult.drawHistory)
+    ? fullSceneResult.drawHistory
+    : [];
+  const fullSceneMissingWaterAssets =
+    fullSceneResult.probe?.results?.fullInitBlockedByMissingWaterAssets === true;
+  const fullSceneWaterInitialized = !fullSceneMissingWaterAssets;
+  if (!fullSceneResult.ok
+      || fullSceneResult.command !== "ww3dTerrainFullScene"
+      || fullSceneResult.probe?.source !== "ww3d_terrain_full_scene_probe"
+      || !["full-init-source-patch", "full-init-missing-water-assets-frontier"]
+        .includes(fullSceneResult.probe?.renderMode)
+      || fullSceneResult.probe?.visual?.class !== "W3DTerrainVisual"
+      || fullSceneResult.probe?.visual?.fullInit !== true
+      || fullSceneResult.probe?.visual?.ownedTerrainRenderObject !== true
+      || fullSceneResult.probe?.visual?.waterRenderObjectNull !== fullSceneMissingWaterAssets
+      || fullSceneResult.probe?.results?.fullInitAttempted !== fullSceneWaterInitialized
+      || fullSceneResult.probe?.results?.visualInitCompleted !== fullSceneWaterInitialized
+      || fullSceneResult.probe?.results?.visualInitException !== false
+      || fullSceneResult.probe?.results?.patchReinitialized !== true
+      || fullSceneResult.probe?.water?.iniEntry !== "Data\\INI\\Water.ini"
+      || fullSceneResult.probe?.water?.iniLoaded !== true
+      || fullSceneResult.probe?.water?.iniException !== false
+      || fullSceneResult.probe?.water?.waterSettingCount !== 4
+      || fullSceneResult.probe?.water?.assetsReady !== fullSceneWaterInitialized
+      || (fullSceneMissingWaterAssets
+        ? ((fullSceneResult.probe?.water?.missingTextureCount ?? 0) <= 0
+          || !fullSceneResult.probe?.water?.firstMissingTexture)
+        : (fullSceneResult.probe?.water?.missingTextureCount !== 0
+          || fullSceneResult.probe?.water?.renderObjectCreated !== true
+          || fullSceneResult.probe?.water?.globalPointerMatches !== true
+          || fullSceneResult.probe?.water?.sceneObjectAdded !== true))
+      || fullSceneResult.probe?.ini?.entry !== terrainIniEntry
+      || fullSceneResult.probe?.ini?.loaded !== true
+      || fullSceneResult.probe?.ini?.entryExists !== true
+      || fullSceneResult.probe?.ini?.parsed !== true
+      || !iniLayoutMatches(fullSceneResult.probe?.iniLayout)
+      || fullSceneResult.probe?.map?.entry !== mapEntry
+      || fullSceneResult.probe?.map?.entryExists !== true
+      || fullSceneResult.probe?.map?.entryOpenable !== true
+      || fullSceneResult.probe?.map?.parsed !== true
+      || fullSceneResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || fullSceneResult.probe?.terrain?.verticesPerSide !== 33
+      || fullSceneResult.probe?.terrain?.cellsPerSide !== 32
+      || fullSceneResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
+      || fullSceneResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
+      || fullSceneResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource <= 0
+      || fullSceneResult.probe?.terrain?.patchHeightChecksum <= 0
+      || fullSceneResult.probe?.calls?.browserTextureCreate < 1
+      || fullSceneResult.probe?.calls?.browserTextureUpdate < 1
+      || fullSceneResult.probe?.calls?.drawIndexed < 1
+      || fullSceneResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || fullSceneDrawHistory.length < 2
+      || !hasTerrainPass(fullSceneDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 })
+      || !hasTerrainPass(fullSceneDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 })
+      || fullSceneResult.textureDelta?.creates < 1
+      || fullSceneResult.textureDelta?.updates < 1
+      || fullSceneResult.textureDelta?.binds < 1
+      || fullSceneResult.textureDelta?.samplerApplications < 1
+      || fullSceneResult.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D terrain full scene render failed: ${JSON.stringify({
+      ok: fullSceneResult.ok,
+      probe: fullSceneResult.probe,
+      browserProbe: fullSceneResult.browserProbe,
+      drawHistory: summarizeDrawHistory(fullSceneDrawHistory),
+      passChecks: {
+        base: hasTerrainPass(fullSceneDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 }),
+        blend: hasTerrainPass(fullSceneDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 }),
+      },
+      textureDelta: fullSceneResult.textureDelta,
+      screenshot: {
+        width: fullSceneResult.screenshot?.width,
+        height: fullSceneResult.screenshot?.height,
+        centerPixel: fullSceneResult.screenshot?.centerPixel,
+        coverage: fullSceneResult.screenshot?.coverage,
+      },
+    })}`);
+  }
+  const fullSceneBrowserFailures = browserEvents.filter((event) =>
+    event.type === "pageerror" || event.type === "crash");
+  if (fullSceneBrowserFailures.length > 0) {
+    throw new Error(`browser failures during W3D terrain full scene: ${JSON.stringify(fullSceneBrowserFailures)}`);
   }
 
   let cameraPanResult;
@@ -644,11 +825,32 @@ try {
           optionalBase: archive.optionalBase,
         })),
       },
+      textures: {
+        path: fullSceneArchiveMemfsMaskPath,
+        entryCount: textureArchiveMounts.reduce((sum, archive) => sum + archive.entries.length, 0),
+        optionalBasePresent: textureArchiveMounts.some((archive) => archive.optionalBase),
+        mounted: textureArchiveMounts.map((archive) => ({
+          name: archive.memfsName,
+          path: archive.memfsPath,
+          sourceArchive: archive.sourcePath,
+          entryCount: archive.entries.length,
+          optionalBase: archive.optionalBase,
+        })),
+      },
     },
     visual: terrainResult.probe.visual,
     map: terrainResult.probe.map,
     scene: terrainResult.probe.scene,
     terrain: terrainResult.probe.terrain,
+    fullSceneScreenshot: terrainFullSceneScreenshot,
+    fullSceneVisual: fullSceneResult.probe.visual,
+    fullSceneWater: fullSceneResult.probe.water,
+    fullSceneScene: fullSceneResult.probe.scene,
+    fullSceneTerrain: fullSceneResult.probe.terrain,
+    fullSceneCalls: fullSceneResult.probe.calls,
+    fullSceneDraw: fullSceneResult.probe.draw,
+    fullSceneCenterPixel: fullSceneResult.screenshot.centerPixel,
+    fullSceneCoverage: fullSceneResult.screenshot.coverage,
     cameraPanScreenshot: terrainCameraPanScreenshot,
     cameraPanScene: cameraPanResult.probe.scene,
     cameraPanTerrain: cameraPanResult.probe.terrain,
