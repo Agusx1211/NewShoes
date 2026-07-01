@@ -255,6 +255,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 	}
 
 	if (scene_created && camera_created && render_object_created) {
+		scene->Set_Extra_Pass_Polygon_Mode(SceneClass::EXTRA_PASS_LINE);
 		box->Set_Position(Vector3(0.0f, 0.0f, 0.0f));
 		box->Set_Local_Center_Extent(Vector3(0.0f, 0.0f, 0.0f), Vector3(2.0f, 2.0f, 2.0f));
 		box->Set_Color(Vector3(0.1f, 0.85f, 0.3f));
@@ -290,17 +291,16 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		render_object_created &&
 		object_added &&
 		object_visible_after_render &&
+		scene->Get_Extra_Pass_Polygon_Mode() == SceneClass::EXTRA_PASS_LINE &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
 		succeeded(end_render_result) &&
-		g_scene_probe_shadow_flushes >= 2 &&
-		g_scene_probe_particle_flushes >= 1 &&
 		state->create_device_calls >= 1 &&
 		state->create_vertex_buffer_calls >= 1 &&
 		state->create_index_buffer_calls >= 1 &&
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
-		state->draw_indexed_primitive_calls >= 1 &&
+		state->draw_indexed_primitive_calls >= 2 &&
 		state->browser_buffer_create_calls >= 2 &&
 		state->browser_buffer_update_calls >= 2 &&
 		state->set_transform_calls >= 3 &&
@@ -308,9 +308,13 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		state->last_draw_vertex_count == 8 &&
 		state->last_draw_primitive_count == 12 &&
 		state->last_draw_index_format == D3DFMT_INDEX16 &&
-		(state->last_draw_transform_mask & 7u) == 7u;
+		(state->last_draw_transform_mask & 7u) == 7u &&
+		state->last_draw_render_state.fill_mode == D3DFILL_WIREFRAME &&
+		state->last_draw_render_state.z_bias == 7 &&
+		state->last_draw_render_state.color_write_enable ==
+			(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
 
-	char buffer[3600];
+	char buffer[4300];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_rts_scene_probe\","
 		"\"ok\":%s,"
@@ -319,6 +323,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		"\"cameraCreated\":%s,\"renderObjectCreated\":%s,\"objectAdded\":%s,"
 		"\"objectVisibleAfterRender\":%s},"
 		"\"scene\":{\"type\":\"RTS3DScene\",\"path\":\"WW3D::Render(scene,camera)\","
+		"\"extraPassMode\":%d,\"extraPassName\":\"EXTRA_PASS_LINE\","
 		"\"treeFlushes\":%u,\"shadowFlushes\":%u,\"particleFlushes\":%u},"
 		"\"calls\":{\"createDevice\":%u,\"createIndexBuffer\":%u,"
 		"\"createVertexBuffer\":%u,\"setStreamSource\":%u,\"setIndices\":%u,"
@@ -331,7 +336,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		"\"indexBufferId\":%u,\"indexOffset\":%u,\"indexBytes\":%u,"
 		"\"indexFormat\":%d,\"transformMask\":%u,"
 		"\"renderState\":{\"cullMode\":%lu,\"zEnable\":%lu,"
-		"\"zWriteEnable\":%lu,\"zFunc\":%lu,\"alphaBlendEnable\":%lu,"
+		"\"zWriteEnable\":%lu,\"zFunc\":%lu,\"fillMode\":%lu,\"zBias\":%lu,"
+		"\"alphaBlendEnable\":%lu,"
 		"\"srcBlend\":%lu,\"destBlend\":%lu,\"blendOp\":%lu,"
 		"\"alphaTestEnable\":%lu,\"alphaFunc\":%lu,\"alphaRef\":%lu,"
 		"\"colorWriteEnable\":%lu}}}",
@@ -346,6 +352,7 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		bool_json(render_object_created),
 		bool_json(object_added),
 		bool_json(object_visible_after_render),
+		static_cast<int>(SceneClass::EXTRA_PASS_LINE),
 		g_scene_probe_tree_flushes,
 		g_scene_probe_shadow_flushes,
 		g_scene_probe_particle_flushes,
@@ -380,6 +387,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_rts_scene()
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_enable : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_write_enable : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_func : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.fill_mode : 0),
+		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.z_bias : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.alpha_blend_enable : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.src_blend : 0),
 		static_cast<unsigned long>(state != nullptr ? state->last_draw_render_state.dest_blend : 0),

@@ -15460,23 +15460,53 @@ async function rpc(command, payload = {}) {
         };
         const probe = parseModuleState(wasmModule.probeWW3DRTSScene());
         const screenshot = snapshotCanvas();
+        const coverage = sampleCanvasRegion({
+          left: 0,
+          top: 0,
+          width: canvas.width,
+          height: canvas.height,
+        });
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const renderState = browserProbe?.renderState ?? {};
+        const fillMode = browserProbe?.fillMode ?? {};
+        const depthBias = browserProbe?.appliedRenderState?.depth?.bias ?? {};
         const ok = Boolean(probe.ok)
           && probe?.scene?.type === "RTS3DScene"
+          && probe?.scene?.extraPassMode === 1
+          && probe?.scene?.extraPassName === "EXTRA_PASS_LINE"
+          && probe?.draw?.renderState?.fillMode === D3DFILL_WIREFRAME
+          && probe?.draw?.renderState?.zBias === 7
           && browserProbe?.source === "browser_d3d8_draw_indexed"
-          && browserProbe?.ok === true
           && browserProbe?.usedPersistentBuffers === true
           && browserProbe?.usedTransforms === true
           && browserProbe?.vertexStride === 44
           && browserProbe?.indexCount === 36
-          && pixelHasColor(browserProbe.centerPixel)
-          && pixelHasColor(screenshot.centerPixel);
+          && renderState.fillMode === D3DFILL_WIREFRAME
+          && renderState.zBias === 7
+          && renderState.colorWriteEnable === (
+            D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE)
+          && depthBias.raw === 7
+          && depthBias.clamped === 7
+          && typeof depthBias.ndc === "number"
+          && depthBias.ndc > 0
+          && fillMode.mode === D3DFILL_WIREFRAME
+          && fillMode.wireframe === true
+          && fillMode.temporaryIndexBuffer === true
+          && fillMode.glPrimitiveName === "lines"
+          && fillMode.generatedIndexCount === 24
+          && fillMode.sourceTriangleCount === 12
+          && fillMode.emittedTriangleCount === 4
+          && fillMode.culledTriangleCount === 8
+          && fillMode.cullingApplied === true
+          && coverage.coloredPixelCount > 0
+          && pixelHasColor(coverage.brightestPixel);
         return {
           ok,
           command,
           probe,
           browserProbe,
           screenshot,
+          coverage,
           state: snapshotState(),
         };
       }

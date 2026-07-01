@@ -4044,6 +4044,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       Verified with `npm --prefix WebAssembly run build:wasm` and a focused
       Playwright `d3d8ZBias` RPC check, and
       `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Prove original W3D `EXTRA_PASS_LINE` selection/outline rendering in a
+      real `RTS3DScene`. The existing `ww3dRTSScene` RPC now sets
+      `SceneClass::EXTRA_PASS_LINE`, renders through `WW3D::Render(scene,
+      camera)`, and verifies the depth prepass plus final W3D draw carrying
+      `D3DFILL_WIREFRAME`, `D3DRS_ZBIAS=7`, and RGB color writes. The browser
+      bridge expands the 12 source triangles into 24 GL line indices after
+      culling 8 triangles and emitting 4, then proves visible canvas coverage
+      with 4,899 colored pixels and brightest pixel `[25,216,76,255]` in
+      `harness-smoke-ww3d-rts-scene-canvas.png`. Verified with
+      `npm --prefix WebAssembly run build:wasm`, a focused Playwright
+      `ww3dRTSScene` RPC check, and `EXPECT_WASM=1 node harness/smoke.mjs`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

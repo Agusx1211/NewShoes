@@ -5339,14 +5339,14 @@ try {
       || rtsSceneResult.probe?.source !== "ww3d_rts_scene_probe"
       || rtsSceneResult.probe?.scene?.type !== "RTS3DScene"
       || rtsSceneResult.probe?.scene?.path !== "WW3D::Render(scene,camera)"
-      || rtsSceneResult.probe?.scene?.shadowFlushes < 2
-      || rtsSceneResult.probe?.scene?.particleFlushes < 1
+      || rtsSceneResult.probe?.scene?.extraPassMode !== 1
+      || rtsSceneResult.probe?.scene?.extraPassName !== "EXTRA_PASS_LINE"
       || rtsSceneResult.probe?.results?.sceneCreated !== true
       || rtsSceneResult.probe?.results?.cameraCreated !== true
       || rtsSceneResult.probe?.results?.renderObjectCreated !== true
       || rtsSceneResult.probe?.results?.objectAdded !== true
       || rtsSceneResult.probe?.results?.objectVisibleAfterRender !== true
-      || rtsSceneResult.probe?.calls?.drawIndexed < 1
+      || rtsSceneResult.probe?.calls?.drawIndexed < 2
       || rtsSceneResult.probe?.calls?.browserBufferCreate < 2
       || rtsSceneResult.probe?.calls?.browserBufferUpdate < 2
       || rtsSceneResult.probe?.calls?.setTransform < 3
@@ -5356,13 +5356,30 @@ try {
       || rtsSceneResult.probe?.draw?.vertexBufferId <= 0
       || rtsSceneResult.probe?.draw?.indexBufferId <= 0
       || rtsSceneResult.probe?.draw?.transformMask !== 7
+      || rtsSceneResult.probe?.draw?.renderState?.fillMode !== 2
+      || rtsSceneResult.probe?.draw?.renderState?.zBias !== 7
       || rtsSceneResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
       || rtsSceneResult.browserProbe?.vertexStride !== 44
       || rtsSceneResult.browserProbe?.indexCount !== 36
       || rtsSceneResult.browserProbe?.usedPersistentBuffers !== true
       || rtsSceneResult.browserProbe?.usedTransforms !== true
-      || !pixelHasColor(rtsSceneResult.browserProbe?.centerPixel)
-      || !pixelHasColor(rtsSceneResult.screenshot?.centerPixel)) {
+      || rtsSceneResult.browserProbe?.renderState?.fillMode !== 2
+      || rtsSceneResult.browserProbe?.renderState?.zBias !== 7
+      || rtsSceneResult.browserProbe?.renderState?.colorWriteEnable !== 7
+      || rtsSceneResult.browserProbe?.appliedRenderState?.depth?.bias?.raw !== 7
+      || rtsSceneResult.browserProbe?.appliedRenderState?.depth?.bias?.clamped !== 7
+      || !(rtsSceneResult.browserProbe?.appliedRenderState?.depth?.bias?.ndc > 0)
+      || rtsSceneResult.browserProbe?.fillMode?.mode !== 2
+      || rtsSceneResult.browserProbe?.fillMode?.wireframe !== true
+      || rtsSceneResult.browserProbe?.fillMode?.temporaryIndexBuffer !== true
+      || rtsSceneResult.browserProbe?.fillMode?.glPrimitiveName !== "lines"
+      || rtsSceneResult.browserProbe?.fillMode?.generatedIndexCount !== 24
+      || rtsSceneResult.browserProbe?.fillMode?.sourceTriangleCount !== 12
+      || rtsSceneResult.browserProbe?.fillMode?.emittedTriangleCount !== 4
+      || rtsSceneResult.browserProbe?.fillMode?.culledTriangleCount !== 8
+      || rtsSceneResult.browserProbe?.fillMode?.cullingApplied !== true
+      || rtsSceneResult.coverage?.coloredPixelCount <= 0
+      || !pixelHasColor(rtsSceneResult.coverage?.brightestPixel)) {
     throw new Error(`WW3D RTS3DScene probe failed: ${JSON.stringify(rtsSceneResult)}`);
   }
 
