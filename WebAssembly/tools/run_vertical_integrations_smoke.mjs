@@ -1428,6 +1428,7 @@ const steps = [
       "artifacts/real-assets/INIZH.big",
       "artifacts/real-assets/MapsZH.big",
       "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/Terrain.big",
     ],
     validate(payload) {
       expect(payload.ok === true, "terrain visual scene render smoke did not report ok", payload);
@@ -1603,6 +1604,53 @@ const steps = [
         "terrain visual shroud update smoke did not produce colored browser pixels", payload.visualShroudUpdateCoverage);
       expect(payload.visualShroudUpdateScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png"),
         "terrain visual shroud update smoke did not capture the expected screenshot", payload);
+      expect(payload.archives?.textures?.optionalBasePresent === true
+          && payload.archives?.textures?.entryCount >= 10,
+        "terrain full-scene smoke did not mount base water texture archives", payload.archives?.textures);
+      expect(payload.fullSceneVisual?.class === "W3DTerrainVisual"
+          && payload.fullSceneVisual?.fullInit === true
+          && payload.fullSceneVisual?.ownedTerrainRenderObject === true
+          && payload.fullSceneVisual?.waterRenderObjectNull === false,
+        "terrain full-scene smoke did not complete original W3DTerrainVisual full init", payload.fullSceneVisual);
+      expect(payload.fullSceneWater?.iniEntry === "Data\\INI\\Water.ini"
+          && payload.fullSceneWater?.iniEntryExists === true
+          && payload.fullSceneWater?.iniLoaded === true
+          && payload.fullSceneWater?.iniException === false
+          && payload.fullSceneWater?.waterSettingCount === 4
+          && payload.fullSceneWater?.assetsReady === true
+          && payload.fullSceneWater?.requiredTextureCount >= 10
+          && payload.fullSceneWater?.availableTextureCount >= payload.fullSceneWater?.requiredTextureCount
+          && payload.fullSceneWater?.missingTextureCount === 0
+          && payload.fullSceneWater?.renderObjectCreated === true
+          && payload.fullSceneWater?.globalPointerMatches === true
+          && payload.fullSceneWater?.sceneObjectAdded === true,
+        "terrain full-scene smoke did not initialize original water rendering from shipped assets", payload.fullSceneWater);
+      expect(payload.fullSceneScene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.fullSceneScene?.created === true
+          && payload.fullSceneScene?.objectAddedByVisualLoad === true
+          && payload.fullSceneScene?.path === "W3DDisplay::m_3DScene"
+          && payload.fullSceneScene?.terrainClassId === 4,
+        "terrain full-scene smoke did not render through the visual-owned W3DDisplay scene", payload.fullSceneScene);
+      expect(payload.fullSceneTerrain?.tileSource === "shipped-map-heightmap"
+          && payload.fullSceneTerrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.fullSceneTerrain?.verticesPerSide === 33
+          && payload.fullSceneTerrain?.cellsPerSide === 32
+          && payload.fullSceneTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.fullSceneTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.fullSceneTerrain?.tileDiagnostics?.patchCellsWithSource > 0
+          && payload.fullSceneTerrain?.patchHeightChecksum > 0,
+        "terrain full-scene smoke did not report source-backed visual terrain geometry", payload.fullSceneTerrain);
+      expect(payload.fullSceneCalls?.browserTextureCreate >= 1
+          && payload.fullSceneCalls?.browserTextureUpdate >= 1
+          && payload.fullSceneCalls?.drawIndexed >= 2,
+        "terrain full-scene smoke did not reach texture upload and indexed terrain draws", payload.fullSceneCalls);
+      expect(payload.fullSceneDraw?.vertexShaderFvf === 578
+          && payload.fullSceneDraw?.vertexStride === 32,
+        "terrain full-scene smoke did not use the expected W3D terrain FVF draw", payload.fullSceneDraw);
+      expect(payload.fullSceneCoverage?.coloredPixelCount > 0,
+        "terrain full-scene smoke did not produce colored browser pixels", payload.fullSceneCoverage);
+      expect(payload.fullSceneScreenshot?.endsWith("harness-smoke-ww3d-terrain-full-scene-canvas.png"),
+        "terrain full-scene smoke did not capture the expected screenshot", payload);
       expect(payload.cameraPanTerrain?.tileSource === "shipped-map-heightmap"
           && payload.cameraPanTerrain?.renderObject === "HeightMapRenderObjClass"
           && payload.cameraPanTerrain?.verticesPerSide === 33
@@ -2224,7 +2272,7 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
-    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window with all 16,384 cells source-backed by mounted base Terrain.big, and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including full W3DTerrainVisual::init water/smudge initialization from shipped Water.ini and base Textures.big, the original 129x129 load window with all 16,384 cells source-backed by mounted base Terrain.big, and browser WebGL2 pixels",
     "original W3DTreeBuffer::drawTrees reached through RTS3DScene::Flush/DoTrees with shipped PTDogwod01_S W3D and terrain/tree textures in browser WebGL2",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DRoadBuffer::loadRoads and browser-visible road geometry",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DBridgeBuffer::loadBridges, W3DBridge::renderBridge, and bridge shroud browser-visible geometry",

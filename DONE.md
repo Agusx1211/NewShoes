@@ -4084,6 +4084,15 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       passes with real water/smudge init, WebGL2 indexed draw submission, and a
       nonblank terrain screenshot. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
+- [x] Promote the terrain full-scene water/smudge path into the aggregate
+      vertical gate. `test:vertical-integrations` now runs the same
+      `terrain_visual_scene_smoke.mjs` path with mounted base `Terrain.big` and
+      requires the full-scene payload to prove base `Textures.big` water assets,
+      original `Data\INI\Water.ini` parsing, full `W3DTerrainVisual::init`,
+      `WaterRenderObjClass` scene attachment, source-backed terrain geometry,
+      WebGL2 texture uploads/indexed draws, and the
+      `harness-smoke-ww3d-terrain-full-scene-canvas.png` screenshot. Real
+      gameplay-owned map-load/terrain ownership remains open in `TODO.md`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured
       world/view/projection matrices, classifies CW/CCW winding, applies

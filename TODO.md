@@ -876,10 +876,9 @@ flow below.
       `bridgeLogicAiPathfinderAvailable === true` and
       `bridgeLogicGenericBridgeObjectMissing === false`, and then exercise
       damaged/repaired bridge-state synchronization from real gameplay objects.
-- [ ] Promote the browser-verified terrain full-scene water/smudge path into
-      `test:vertical-integrations` and broaden ownership from probe-mounted
-      map/assets to real gameplay map-load, shroud, partition, and terrain
-      logic ownership.
+- [ ] Broaden the browser-verified terrain full-scene water/smudge path from
+      `test:vertical-integrations` and probe-mounted map/assets to real
+      gameplay map-load, shroud, partition, and terrain logic ownership.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the browser `INI::load` trap.
       The terrain smokes now report and gate a direct `INI` layout comparison
