@@ -52,6 +52,7 @@ loose_video_payloads=(
 
 base_data_archives=(
   INI.big
+  Terrain.big
 )
 
 base_language_archives=(
@@ -176,9 +177,9 @@ extract_optional_base_startup_archives() {
     done
 
     if [[ "${found_existing}" == true ]]; then
-      echo "Optional base Generals disc images not found; keeping existing INI.big/English.big artifacts." >&2
+      echo "Optional base Generals disc images not found; keeping existing base Generals BIG artifacts." >&2
     else
-      echo "Optional base Generals disc images not found; skipping INI.big/English.big extraction." >&2
+      echo "Optional base Generals disc images not found; skipping base Generals BIG extraction." >&2
     fi
     return
   fi
@@ -192,8 +193,13 @@ extract_optional_base_startup_archives() {
     for archive in "${base_data_archives[@]}"; do
       record_optional_archive_if_present "${archive}"
     done
-  elif ! record_optional_archive_if_present "INI.big"; then
-    echo "Optional base Generals disc 1 image not found; INI.big was not extracted." >&2
+  else
+    local archive
+    for archive in "${base_data_archives[@]}"; do
+      if ! record_optional_archive_if_present "${archive}"; then
+        echo "Optional base Generals disc 1 image not found; ${archive} was not extracted." >&2
+      fi
+    done
   fi
 
   if [[ -n "${base_disc2_image}" ]]; then

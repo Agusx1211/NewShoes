@@ -732,8 +732,11 @@ shares structure and follows behind.
       `W3DDisplay::m_3DScene`, captures browser WebGL2 terrain pixels, and now
       also renders the original 129x129 `W3DTerrainVisual::load` draw window
       without post-load patch `initHeightData` reinitialization. The selected
-      32x32 patch remains source-backed, while the current ZH-only archive set
-      honestly records the load window as 0/16,384 source-backed terrain cells.
+      32x32 patch remains source-backed. The terrain visual harness can now
+      mount optional base Generals `Terrain.big` alongside `TerrainZH.big`
+      through the same `Terrain*.big` archive mask, while the current ZH-only
+      archive set honestly records the load window as 0/16,384 source-backed
+      terrain cells.
       `test:vertical-integrations` now includes that visual-owned terrain scene
       plus the no-reinit load-window proof beside the lower-level tile,
       scene-dispatch, and map-patch terrain proofs. The remaining terrain
@@ -749,13 +752,10 @@ shares structure and follows behind.
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
-- [ ] Extend runtime asset extraction/mounting to include the base Generals
-      terrain archives (for example `Terrain.big` when supplied) so base maps
-      such as Tournament Desert can render complete terrain texture classes
-      instead of relying on the subset of source-backed ZH campaign patches. The
-      current `W3DTerrainVisual::load` 129x129 load-window proof renders geometry
-      and browser pixels, but its 16,384 terrain cells all miss source-backed
-      tile textures under the current ZH-only `TerrainZH.big` set.
+- [ ] Once a base Generals `Terrain.big` artifact is available in this
+      workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
+      archive mounted and tighten the load-window gate to require nonzero
+      source-backed terrain cells.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the `INI::load` member-read trap.
       (from Claude note) The warm-up read only masks the symptom; the trap on

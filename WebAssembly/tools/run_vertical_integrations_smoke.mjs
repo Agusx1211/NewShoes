@@ -1459,10 +1459,10 @@ const steps = [
           && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
           && payload.loadWindowTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
           && payload.loadWindowTerrain?.tileDiagnostics?.patchCells === 16384
-          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsWithSource === 0
-          && payload.loadWindowTerrain?.tileDiagnostics?.patchCellsMissingSource === 16384
+          && (payload.loadWindowTerrain?.tileDiagnostics?.patchCellsWithSource ?? 0)
+            + (payload.loadWindowTerrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384
           && payload.loadWindowTerrain?.patchHeightChecksum > 0,
-        "terrain visual load-window smoke did not report the expected no-reinit 129x129 terrain window and current source-backed gap", payload.loadWindowTerrain);
+        "terrain visual load-window smoke did not report the expected no-reinit 129x129 terrain window", payload.loadWindowTerrain);
       expect(payload.loadWindowCalls?.browserTextureCreate >= 1
           && payload.loadWindowCalls?.browserTextureUpdate >= 1
           && payload.loadWindowCalls?.drawIndexed >= 1,
@@ -1582,14 +1582,14 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
-    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window without patch reinitialization and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window, optional base Terrain.big mounting, and browser WebGL2 pixels",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],
   nextRequired: [
     "advance MainMenu WindowLayout repaint from curated target visibility to unpruned production shell composition and display-owned font/image/archive lifetime",
     "supply base Generals INI.big/English.big to promote startup default-file coverage where available",
-    "supply base Generals terrain archives so the W3DTerrainVisual load window can become source-backed beyond the current 0/16384-cell ZH-only texture coverage",
+    "supply base Generals terrain archives in this workspace and tighten the W3DTerrainVisual load-window gate to require source-backed cells once Terrain.big is available",
     "advance full production video ownership beyond focused Bink/load-screen/score-screen harness hooks into the normal InGameUI/campaign shell path",
     "move original MilesAudioManager 2D sample playback into the same browser cnc-port runtime/Web Audio backend instead of a paired standalone/browser gate",
     "replace focused browser GameEngine lifetime with production original GameEngine.cpp init/createAudioManager ownership",

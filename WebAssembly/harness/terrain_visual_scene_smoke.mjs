@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, stat } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { startStaticServer } from "./static-server.mjs";
@@ -10,9 +10,12 @@ const wasmRoot = resolve(harnessRoot, "..");
 const defaultIniArchivePath = resolve(wasmRoot, "artifacts/real-assets/INIZH.big");
 const defaultMapsArchivePath = resolve(wasmRoot, "artifacts/real-assets/MapsZH.big");
 const defaultTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/TerrainZH.big");
+const defaultBaseTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terrain.big");
 const iniArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultIniArchivePath);
 const mapsArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultMapsArchivePath);
 const terrainArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultTerrainArchivePath);
+const baseTerrainArchivePath = resolve(wasmRoot, process.argv[5] ?? defaultBaseTerrainArchivePath);
+const baseTerrainArchiveRequired = Boolean(process.argv[5]);
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const terrainScreenshot = resolve(
   screenshotDir,
@@ -26,7 +29,7 @@ const terrainLoadWindowScreenshot = resolve(
 const runtimeArchivePath = "/assets/runtime-terrain-visual-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
-const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
+const terrainArchiveMemfsMaskPath = `${runtimeArchivePath}/Terrain*.big`;
 const terrainIniEntry = "Data\\INI\\Terrain.ini";
 const terrainIniParser = "GameEngine/Common/INI.cpp::load + INITerrain.cpp";
 const mapEntry = "Maps\\MD_GLA03\\MD_GLA03.map";
@@ -77,6 +80,17 @@ async function checkedArchive(path, label) {
     throw new Error(`${label} is not a readable file: ${path}`);
   }
   return archiveStat;
+}
+
+async function optionalArchive(path, label, required = false) {
+  try {
+    return await checkedArchive(path, label);
+  } catch (error) {
+    if (required) {
+      throw error;
+    }
+    return null;
+  }
 }
 
 async function listBigArchiveEntries(path) {
@@ -138,12 +152,43 @@ const terrainArchiveEntries = (await listBigArchiveEntries(terrainArchivePath))
 if (terrainArchiveEntries.length === 0) {
   throw new Error(`Terrain archive has no Art\\Terrain image entries: ${terrainArchivePath}`);
 }
+const terrainArchives = [{
+  sourcePath: terrainArchivePath,
+  memfsName: basename(terrainArchivePath),
+  stat: terrainArchiveStat,
+  entries: terrainArchiveEntries,
+  optionalBase: false,
+}];
+const baseTerrainArchiveStat = await optionalArchive(
+  baseTerrainArchivePath,
+  "Base terrain archive",
+  baseTerrainArchiveRequired,
+);
+if (baseTerrainArchiveStat !== null && baseTerrainArchivePath !== terrainArchivePath) {
+  const baseTerrainArchiveEntries = (await listBigArchiveEntries(baseTerrainArchivePath))
+    .filter((entry) => /^Art\\Terrain\\.*\.(?:tga|dds)$/i.test(entry.name))
+    .map((entry) => entry.name);
+  if (baseTerrainArchiveEntries.length === 0) {
+    throw new Error(`Base terrain archive has no Art\\Terrain image entries: ${baseTerrainArchivePath}`);
+  }
+  terrainArchives.push({
+    sourcePath: baseTerrainArchivePath,
+    memfsName: basename(baseTerrainArchivePath),
+    stat: baseTerrainArchiveStat,
+    entries: baseTerrainArchiveEntries,
+    optionalBase: true,
+  });
+}
 
 await mkdir(screenshotDir, { recursive: true });
 
 const iniArchiveRelativePath = relative(wasmRoot, iniArchivePath).split(sep).join("/");
 const mapsArchiveRelativePath = relative(wasmRoot, mapsArchivePath).split(sep).join("/");
-const terrainArchiveRelativePath = relative(wasmRoot, terrainArchivePath).split(sep).join("/");
+const terrainArchiveMounts = terrainArchives.map((archive) => ({
+  ...archive,
+  memfsPath: `${runtimeArchivePath}/${archive.memfsName}`,
+  urlPath: relative(wasmRoot, archive.sourcePath).split(sep).join("/"),
+}));
 const server = await startStaticServer({ root: wasmRoot });
 let browser;
 const browserEvents = [];
@@ -164,7 +209,6 @@ try {
   const harnessUrl = new URL("harness/index.html", server.url).href;
   const iniArchiveUrl = new URL(iniArchiveRelativePath, server.url).href;
   const mapsArchiveUrl = new URL(mapsArchiveRelativePath, server.url).href;
-  const terrainArchiveUrl = new URL(terrainArchiveRelativePath, server.url).href;
 
   await withTimeout(
     "terrain visual harness page load",
@@ -210,13 +254,13 @@ try {
             sourceArchive: mapsArchivePath,
             entries: [mapEntry],
           },
-          {
-            url: terrainArchiveUrl,
-            name: "TerrainZH.big",
-            expectedSourceBytes: terrainArchiveStat.size,
-            sourceArchive: terrainArchivePath,
-            entries: terrainArchiveEntries,
-          },
+          ...terrainArchiveMounts.map((archive) => ({
+            url: new URL(archive.urlPath, server.url).href,
+            name: archive.memfsName,
+            expectedSourceBytes: archive.stat.size,
+            sourceArchive: archive.sourcePath,
+            entries: archive.entries,
+          })),
         ],
       }),
     120000,
@@ -224,7 +268,7 @@ try {
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
-      || archiveMountResult.archiveSet?.archiveCount !== 3
+      || archiveMountResult.archiveSet?.archiveCount !== 2 + terrainArchiveMounts.length
       || archiveMountResult.archiveSet?.registered !== false) {
     throw new Error(`Runtime terrain visual archives mount failed: ${JSON.stringify(archiveMountResult)}`);
   }
@@ -237,7 +281,7 @@ try {
         window.CnCPort.rpc("ww3dTerrainVisualScene", payload), {
           iniArchivePath: iniArchiveMemfsPath,
           mapsArchivePath: mapsArchiveMemfsPath,
-          terrainArchivePath: terrainArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsMaskPath,
         }),
       240000,
     );
@@ -335,7 +379,7 @@ try {
         window.CnCPort.rpc("ww3dTerrainVisualLoadWindowScene", payload), {
           iniArchivePath: iniArchiveMemfsPath,
           mapsArchivePath: mapsArchiveMemfsPath,
-          terrainArchivePath: terrainArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsMaskPath,
         }),
       240000,
     );
@@ -389,7 +433,8 @@ try {
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
       || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCells !== 16384
-      || loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource !== 16384
+      || (loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0)
+          + (loadWindowResult.probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) !== 16384
       || loadWindowResult.probe?.terrain?.patchHeightChecksum <= 0
       || loadWindowResult.probe?.calls?.browserTextureCreate < 1
       || loadWindowResult.probe?.calls?.browserTextureUpdate < 1
@@ -448,8 +493,16 @@ try {
         entry: mapEntry,
       },
       terrain: {
-        path: terrainArchiveMemfsPath,
-        entryCount: terrainArchiveEntries.length,
+        path: terrainArchiveMemfsMaskPath,
+        entryCount: terrainArchiveMounts.reduce((sum, archive) => sum + archive.entries.length, 0),
+        optionalBasePresent: terrainArchiveMounts.some((archive) => archive.optionalBase),
+        mounted: terrainArchiveMounts.map((archive) => ({
+          name: archive.memfsName,
+          path: archive.memfsPath,
+          sourceArchive: archive.sourcePath,
+          entryCount: archive.entries.length,
+          optionalBase: archive.optionalBase,
+        })),
       },
     },
     visual: terrainResult.probe.visual,

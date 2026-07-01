@@ -3472,6 +3472,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       non-black screenshot coverage, and the explicit 16,384-cell missing
       source-backed texture gap under the current ZH-only `TerrainZH.big`
       archive set.
+- [x] Extend optional base Generals terrain archive extraction and mounting.
+      `extract_zh_runtime_archives.sh` now extracts or preserves `Terrain.big`
+      from base Generals disc 1 when supplied, and
+      `terrain_visual_scene_smoke.mjs` mounts it beside `TerrainZH.big` through
+      a `Terrain*.big` mask before calling the original
+      `W3DTerrainVisual::load` probe. The bridge and aggregate vertical gate now
+      accept either the current ZH-only 0/16,384 source-backed load-window cells
+      or improved source-backed cells when `Terrain.big` is present, while still
+      requiring all 16,384 load-window cells to be accounted for. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`.
 - [x] Feed shipped map height/blend data into the terrain scene proof:
       `test:ww3d-terrain-map-patch-scene` mounts `INIZH.big`, `MapsZH.big`,
       and `TerrainZH.big`, reads real `Data\INI\Terrain.ini` terrain texture

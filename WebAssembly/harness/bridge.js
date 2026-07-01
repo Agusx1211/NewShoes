@@ -17970,7 +17970,8 @@ async function rpc(command, payload = {}) {
           && (!loadWindowMode
             ? (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
             : ((probe?.terrain?.tileDiagnostics?.patchCells ?? 0) === 16384
-              && (probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384))
+              && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0)
+                + (probe?.terrain?.tileDiagnostics?.patchCellsMissingSource ?? 0) === 16384))
           && (probe?.terrain?.patchHeightChecksum ?? 0) > 0
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.usedPersistentBuffers === true
