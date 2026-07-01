@@ -7179,6 +7179,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualShroudScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_shroud_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainVisualShroudUpdateScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_visual_shroud_update_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
@@ -18153,6 +18155,7 @@ async function rpc(command, payload = {}) {
       }
     case "ww3dTerrainVisualScene":
     case "ww3dTerrainVisualShroudScene":
+    case "ww3dTerrainVisualShroudUpdateScene":
     case "ww3dTerrainFullScene":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
@@ -18162,7 +18165,8 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
         const fullInitMode = command === "ww3dTerrainFullScene";
-        const visualShroudMode = command === "ww3dTerrainVisualShroudScene";
+        const visualShroudUpdateMode = command === "ww3dTerrainVisualShroudUpdateScene";
+        const visualShroudMode = command === "ww3dTerrainVisualShroudScene" || visualShroudUpdateMode;
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
         const cameraPanMode = command === "ww3dTerrainVisualCameraPanScene";
         const expectedSource = fullInitMode
@@ -18172,7 +18176,9 @@ async function rpc(command, payload = {}) {
           : (cameraPanMode
               ? "ww3d_terrain_visual_camera_pan_scene_probe"
               : (visualShroudMode
-                ? "ww3d_terrain_visual_shroud_scene_probe"
+                ? (visualShroudUpdateMode
+                  ? "ww3d_terrain_visual_shroud_update_scene_probe"
+                  : "ww3d_terrain_visual_shroud_scene_probe")
                 : "ww3d_terrain_visual_scene_probe")));
         const expectedRenderMode = fullInitMode
           ? "full-init-source-patch"
@@ -18180,7 +18186,11 @@ async function rpc(command, payload = {}) {
           ? "visual-load-window"
           : (cameraPanMode
             ? "selected-source-patch-camera-pan"
-            : (visualShroudMode ? "visual-owned-shroud-source-patch" : "selected-source-patch")));
+            : (visualShroudMode
+              ? (visualShroudUpdateMode
+                ? "visual-owned-shroud-display-update-source-patch"
+                : "visual-owned-shroud-source-patch")
+              : "selected-source-patch")));
         const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
         const expectedCellsPerSide = loadWindowMode ? 128 : 32;
         const iniArchivePath = String(payload.iniArchivePath ?? "");
@@ -18203,7 +18213,9 @@ async function rpc(command, payload = {}) {
             : (cameraPanMode
                 ? wasmModule.probeWW3DTerrainVisualCameraPanScene
                 : (visualShroudMode
-                  ? wasmModule.probeWW3DTerrainVisualShroudScene
+                  ? (visualShroudUpdateMode
+                    ? wasmModule.probeWW3DTerrainVisualShroudUpdateScene
+                    : wasmModule.probeWW3DTerrainVisualShroudScene)
                   : wasmModule.probeWW3DTerrainVisualScene))))(
             iniArchivePath,
             mapsArchivePath,
@@ -18273,10 +18285,26 @@ async function rpc(command, payload = {}) {
         const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
         const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
         const shroudTerrainIndex = drawHistory.findIndex(isShroudTerrainPass);
+        const baseTerrainIndices = drawHistory
+          .map((draw, index) => (isBaseTerrainPass(draw) ? index : -1))
+          .filter((index) => index >= 0);
+        const blendTerrainIndices = drawHistory
+          .map((draw, index) => (isBlendTerrainPass(draw) ? index : -1))
+          .filter((index) => index >= 0);
+        const shroudTerrainIndices = drawHistory
+          .map((draw, index) => (isShroudTerrainPass(draw) ? index : -1))
+          .filter((index) => index >= 0);
         const shroudAfterTerrain = baseTerrainIndex >= 0
           && blendTerrainIndex >= 0
           && shroudTerrainIndex > baseTerrainIndex
           && shroudTerrainIndex > blendTerrainIndex;
+        const secondShroudAfterSecondTerrain = baseTerrainIndices.length >= 2
+          && blendTerrainIndices.length >= 2
+          && shroudTerrainIndices.length >= 2
+          && shroudTerrainIndices[1] > baseTerrainIndices[1]
+          && shroudTerrainIndices[1] > blendTerrainIndices[1]
+          && baseTerrainIndices[1] > shroudTerrainIndices[0]
+          && blendTerrainIndices[1] > shroudTerrainIndices[0];
         const cameraPanProbeOk = !cameraPanMode
           || (probe?.results?.cameraConfigured === true
             && probe?.results?.cameraPanRequested === true
@@ -18299,7 +18327,8 @@ async function rpc(command, payload = {}) {
             && drawHistory.slice(2).some(isBlendTerrainPass));
         const visualShroudProbeOk = !visualShroudMode
           || (probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") === true
-            && probe?.results?.visualShroudRequested === true
+            && (probe?.results?.visualShroudRequested === true
+              || (visualShroudUpdateMode && probe?.results?.shroudUpdateRequested === true))
             && probe?.visual?.shroudRenderObject === true
             && probe?.shroud?.requested === true
             && probe?.shroud?.installed === true
@@ -18326,6 +18355,34 @@ async function rpc(command, payload = {}) {
             && shroudTerrainIndex >= 0
             && shroudAfterTerrain
             && isShroudTerrainPass(browserProbe));
+        const visualShroudUpdateProbeOk = !visualShroudUpdateMode
+          || (probe?.results?.shroudUpdateRequested === true
+            && probe?.shroudUpdate?.requested === true
+            && probe?.shroudUpdate?.setInvoked === true
+            && probe?.shroudUpdate?.displayInvoked === true
+            && probe?.shroudUpdate?.notifyInvoked === true
+            && probe?.shroudUpdate?.renderInvoked === true
+            && probe?.shroudUpdate?.sampleChanged === true
+            && probe?.shroudUpdate?.status === 0
+            && probe?.shroudUpdate?.expectedLevel === probe?.shroudUpdate?.sampleAfter
+            && (probe?.shroudUpdate?.sampleX ?? -1) >= 0
+            && (probe?.shroudUpdate?.sampleY ?? -1) >= 0
+            && (probe?.shroudUpdate?.sampleAfter ?? 0) > (probe?.shroudUpdate?.sampleBefore ?? 0)
+            && (probe?.shroudUpdate?.cellsChanged ?? 0) > 0
+            && probe?.shroudUpdate?.beginRender === 0
+            && probe?.shroudUpdate?.render === 0
+            && probe?.shroudUpdate?.endRender === 0
+            && probe?.renderFrames?.count === 2
+            && probe?.renderFrames?.firstDrawIndexed >= 3
+            && probe?.renderFrames?.shroudUpdateDrawIndexed >= 6
+            && probe?.renderFrames?.firstClear >= 1
+            && probe?.renderFrames?.shroudUpdateClear >= 2
+            && probe?.renderFrames?.shroudUpdateTextureUpdate > probe?.renderFrames?.firstTextureUpdate
+            && drawHistory.length >= 6
+            && baseTerrainIndices.length >= 2
+            && blendTerrainIndices.length >= 2
+            && shroudTerrainIndices.length >= 2
+            && secondShroudAfterSecondTerrain);
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
           && renderModeMatches
@@ -18409,6 +18466,7 @@ async function rpc(command, payload = {}) {
           && hasBlendTerrainPass
           && cameraPanProbeOk
           && visualShroudProbeOk
+          && visualShroudUpdateProbeOk
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1
@@ -18424,7 +18482,11 @@ async function rpc(command, payload = {}) {
             baseTerrainIndex,
             blendTerrainIndex,
             shroudTerrainIndex,
+            baseTerrainIndices,
+            blendTerrainIndices,
+            shroudTerrainIndices,
             shroudAfterTerrain,
+            secondShroudAfterSecondTerrain,
           },
           textureDelta,
           textureProbe: textureAfter,

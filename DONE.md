@@ -3945,6 +3945,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       gates the new visual shroud payload. Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene` and
       `npm --prefix WebAssembly run test:ww3d-terrain-shroud-scene`.
+- [x] Prove visual-owned shroud data updates through the original display shroud
+      API. The new `ww3dTerrainVisualShroudUpdateScene` RPC reuses
+      `W3DTerrainVisual::load` on the real MD_GLA03 map, keeps a
+      shroud-capable `HeightMapRenderObjClass` in the visual-owned terrain
+      render-object slot, renders an initial base/blend/shroud frame, routes a
+      25x25 clear-cell update through original
+      `W3DDisplay::setShroudLevel(CELLSHROUD_CLEAR)`, verifies the sampled
+      `W3DShroud` level reaches `GlobalData::m_clearAlpha`, re-renders the
+      shroud texture, and renders a second `W3DDisplay::m_3DScene` frame. The
+      browser harness gates two ordered `W3DShroudMaterialPassClass` terrain
+      draws, a second shroud texture-update count, colored WebGL2 pixels, and
+      captures
+      `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
+      Verified with `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`
+      and `npm --prefix WebAssembly run test:ww3d-terrain-shroud-scene`.
 - [x] Add a combined terrain full-scene missing-water-assets frontier. The
       `test:ww3d-terrain-full-scene` harness now mounts range-backed real
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,

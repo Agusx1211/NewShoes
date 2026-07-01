@@ -1528,6 +1528,53 @@ const steps = [
         "terrain visual shroud smoke did not produce colored browser pixels", payload.visualShroudCoverage);
       expect(payload.visualShroudScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-shroud-scene-canvas.png"),
         "terrain visual shroud smoke did not capture the expected screenshot", payload);
+      expect(payload.visualShroudUpdateVisual?.class === "W3DTerrainVisual"
+          && payload.visualShroudUpdateVisual?.ownedTerrainRenderObject === true
+          && payload.visualShroudUpdateVisual?.waterRenderObjectNull === true
+          && payload.visualShroudUpdateVisual?.shroudRenderObject === true,
+        "terrain visual shroud update smoke did not keep shroud update under W3DTerrainVisual ownership", payload.visualShroudUpdateVisual);
+      expect(payload.visualShroudUpdateScene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.visualShroudUpdateScene?.renderPath?.includes("W3DShroudMaterialPassClass")
+          && payload.visualShroudUpdateScene?.created === true
+          && payload.visualShroudUpdateScene?.objectAddedByVisualLoad === true,
+        "terrain visual shroud update smoke did not render through the visual-owned shroud scene path", payload.visualShroudUpdateScene);
+      expect(payload.visualShroudUpdateTerrain?.tileSource === "shipped-map-heightmap"
+          && payload.visualShroudUpdateTerrain?.renderObject === "ProbeHeightMapRenderObjWithShroud"
+          && payload.visualShroudUpdateTerrain?.verticesPerSide === 33
+          && payload.visualShroudUpdateTerrain?.cellsPerSide === 32
+          && payload.visualShroudUpdateTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.visualShroudUpdateTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.visualShroudUpdateTerrain?.tileDiagnostics?.patchCellsWithSource > 0,
+        "terrain visual shroud update smoke did not report source-backed visual terrain geometry", payload.visualShroudUpdateTerrain);
+      expect(payload.visualShroudUpdate?.requested === true
+          && payload.visualShroudUpdate?.setInvoked === true
+          && payload.visualShroudUpdate?.displayInvoked === true
+          && payload.visualShroudUpdate?.notifyInvoked === true
+          && payload.visualShroudUpdate?.renderInvoked === true
+          && payload.visualShroudUpdate?.sampleChanged === true
+          && payload.visualShroudUpdate?.status === 0
+          && payload.visualShroudUpdate?.expectedLevel === payload.visualShroudUpdate?.sampleAfter
+          && payload.visualShroudUpdate?.sampleAfter > payload.visualShroudUpdate?.sampleBefore
+          && payload.visualShroudUpdate?.cellsChanged > 0
+          && payload.visualShroudUpdate?.beginRender === 0
+          && payload.visualShroudUpdate?.render === 0
+          && payload.visualShroudUpdate?.endRender === 0,
+        "terrain visual shroud update smoke did not mutate and render original W3DShroud data", payload.visualShroudUpdate);
+      expect(payload.visualShroudUpdateFrames?.count === 2
+          && payload.visualShroudUpdateFrames?.firstDrawIndexed >= 3
+          && payload.visualShroudUpdateFrames?.shroudUpdateDrawIndexed >= 6
+          && payload.visualShroudUpdateFrames?.shroudUpdateTextureUpdate > payload.visualShroudUpdateFrames?.firstTextureUpdate,
+        "terrain visual shroud update smoke did not prove a second texture-uploaded shroud frame", payload.visualShroudUpdateFrames);
+      expect(payload.visualShroudUpdateDrawSequence?.shroudAfterTerrain === true
+          && payload.visualShroudUpdateDrawSequence?.secondShroudAfterSecondTerrain === true
+          && payload.visualShroudUpdateDrawSequence?.shroudTerrainIndices?.length >= 2,
+        "terrain visual shroud update smoke did not draw two ordered shroud passes", payload.visualShroudUpdateDrawSequence);
+      expect(payload.visualShroudUpdateCalls?.drawIndexed >= 6,
+        "terrain visual shroud update smoke did not reach two terrain/shroud frame draw batches", payload.visualShroudUpdateCalls);
+      expect(payload.visualShroudUpdateCoverage?.coloredPixelCount > 0,
+        "terrain visual shroud update smoke did not produce colored browser pixels", payload.visualShroudUpdateCoverage);
+      expect(payload.visualShroudUpdateScreenshot?.endsWith("harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png"),
+        "terrain visual shroud update smoke did not capture the expected screenshot", payload);
       expect(payload.cameraPanTerrain?.tileSource === "shipped-map-heightmap"
           && payload.cameraPanTerrain?.renderObject === "HeightMapRenderObjClass"
           && payload.cameraPanTerrain?.verticesPerSide === 33

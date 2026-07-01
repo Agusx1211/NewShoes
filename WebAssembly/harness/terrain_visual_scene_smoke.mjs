@@ -35,6 +35,10 @@ const terrainVisualShroudScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-visual-shroud-scene-canvas.png",
 );
+const terrainVisualShroudUpdateScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png",
+);
 const terrainFullSceneScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-full-scene-canvas.png",
@@ -639,6 +643,101 @@ try {
     throw new Error(`browser failures during W3D visual terrain shroud scene: ${JSON.stringify(visualShroudBrowserFailures)}`);
   }
 
+  let visualShroudUpdateResult;
+  try {
+    visualShroudUpdateResult = await withTimeout(
+      "terrain visual shroud update render RPC",
+      page.evaluate((payload) =>
+        window.CnCPort.rpc("ww3dTerrainVisualShroudUpdateScene", payload), {
+          iniArchivePath: iniArchiveMemfsPath,
+          mapsArchivePath: mapsArchiveMemfsPath,
+          terrainArchivePath: terrainArchiveMemfsMaskPath,
+        }),
+      240000,
+    );
+  } catch (error) {
+    throw new Error(`terrain visual shroud update render RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
+  }
+  await page.locator("#viewport").screenshot({ path: terrainVisualShroudUpdateScreenshot });
+
+  const visualShroudUpdateDrawHistory = Array.isArray(visualShroudUpdateResult.drawHistory)
+    ? visualShroudUpdateResult.drawHistory
+    : [];
+  if (!visualShroudUpdateResult.ok
+      || visualShroudUpdateResult.command !== "ww3dTerrainVisualShroudUpdateScene"
+      || visualShroudUpdateResult.probe?.source !== "ww3d_terrain_visual_shroud_update_scene_probe"
+      || visualShroudUpdateResult.probe?.renderMode !== "visual-owned-shroud-display-update-source-patch"
+      || visualShroudUpdateResult.probe?.visual?.class !== "W3DTerrainVisual"
+      || visualShroudUpdateResult.probe?.visual?.ownedTerrainRenderObject !== true
+      || visualShroudUpdateResult.probe?.visual?.shroudRenderObject !== true
+      || visualShroudUpdateResult.probe?.results?.shroudUpdateRequested !== true
+      || visualShroudUpdateResult.probe?.scene?.created !== true
+      || !visualShroudUpdateResult.probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass")
+      || visualShroudUpdateResult.probe?.terrain?.renderObject !== "ProbeHeightMapRenderObjWithShroud"
+      || visualShroudUpdateResult.probe?.terrain?.verticesPerSide !== 33
+      || visualShroudUpdateResult.probe?.terrain?.cellsPerSide !== 32
+      || visualShroudUpdateResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
+      || visualShroudUpdateResult.probe?.terrain?.tileDiagnostics?.sourceTilesPositioned <= 0
+      || visualShroudUpdateResult.probe?.terrain?.tileDiagnostics?.patchCellsWithSource <= 0
+      || !logicalTerrainMatches(visualShroudUpdateResult.probe)
+      || visualShroudUpdateResult.probe?.shroud?.requested !== true
+      || visualShroudUpdateResult.probe?.shroud?.installed !== true
+      || visualShroudUpdateResult.probe?.shroud?.initialized !== true
+      || visualShroudUpdateResult.probe?.shroud?.terrainFinalDrawSeen !== true
+      || visualShroudUpdateResult.probe?.shroud?.terrainFallbackInvoked !== false
+      || visualShroudUpdateResult.probe?.shroudUpdate?.requested !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.setInvoked !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.displayInvoked !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.notifyInvoked !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.renderInvoked !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.sampleChanged !== true
+      || visualShroudUpdateResult.probe?.shroudUpdate?.status !== 0
+      || visualShroudUpdateResult.probe?.shroudUpdate?.expectedLevel !== visualShroudUpdateResult.probe?.shroudUpdate?.sampleAfter
+      || visualShroudUpdateResult.probe?.shroudUpdate?.sampleAfter <= visualShroudUpdateResult.probe?.shroudUpdate?.sampleBefore
+      || visualShroudUpdateResult.probe?.shroudUpdate?.cellsChanged <= 0
+      || visualShroudUpdateResult.probe?.shroudUpdate?.beginRender !== 0
+      || visualShroudUpdateResult.probe?.shroudUpdate?.render !== 0
+      || visualShroudUpdateResult.probe?.shroudUpdate?.endRender !== 0
+      || visualShroudUpdateResult.probe?.renderFrames?.count !== 2
+      || visualShroudUpdateResult.probe?.renderFrames?.firstDrawIndexed < 3
+      || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateDrawIndexed < 6
+      || visualShroudUpdateResult.probe?.renderFrames?.firstClear < 1
+      || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateClear < 2
+      || visualShroudUpdateResult.probe?.renderFrames?.shroudUpdateTextureUpdate <= visualShroudUpdateResult.probe?.renderFrames?.firstTextureUpdate
+      || visualShroudUpdateResult.probe?.calls?.drawIndexed < 6
+      || visualShroudUpdateResult.browserProbe?.source !== "browser_d3d8_draw_indexed"
+      || !isShroudTerrainPass(visualShroudUpdateResult.browserProbe)
+      || visualShroudUpdateDrawHistory.length < 6
+      || !hasTerrainPass(visualShroudUpdateDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 })
+      || !hasTerrainPass(visualShroudUpdateDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 })
+      || visualShroudUpdateResult.drawSequence?.shroudAfterTerrain !== true
+      || visualShroudUpdateResult.drawSequence?.secondShroudAfterSecondTerrain !== true
+      || (visualShroudUpdateResult.drawSequence?.shroudTerrainIndices?.length ?? 0) < 2
+      || visualShroudUpdateResult.textureDelta?.updates < 2
+      || visualShroudUpdateResult.textureDelta?.binds < 1
+      || visualShroudUpdateResult.textureDelta?.samplerApplications < 1
+      || visualShroudUpdateResult.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D visual-owned terrain shroud update render failed: ${JSON.stringify({
+      ok: visualShroudUpdateResult.ok,
+      probe: visualShroudUpdateResult.probe,
+      browserProbe: visualShroudUpdateResult.browserProbe,
+      drawHistory: summarizeDrawHistory(visualShroudUpdateDrawHistory),
+      drawSequence: visualShroudUpdateResult.drawSequence,
+      textureDelta: visualShroudUpdateResult.textureDelta,
+      screenshot: {
+        width: visualShroudUpdateResult.screenshot?.width,
+        height: visualShroudUpdateResult.screenshot?.height,
+        centerPixel: visualShroudUpdateResult.screenshot?.centerPixel,
+        coverage: visualShroudUpdateResult.screenshot?.coverage,
+      },
+    })}`);
+  }
+  const visualShroudUpdateBrowserFailures = browserEvents.filter((event) =>
+    event.type === "pageerror" || event.type === "crash");
+  if (visualShroudUpdateBrowserFailures.length > 0) {
+    throw new Error(`browser failures during W3D visual terrain shroud update scene: ${JSON.stringify(visualShroudUpdateBrowserFailures)}`);
+  }
+
   let fullSceneResult;
   try {
     fullSceneResult = await withTimeout(
@@ -1025,6 +1124,19 @@ try {
     visualShroudDrawSequence: visualShroudResult.drawSequence,
     visualShroudCenterPixel: visualShroudResult.screenshot.centerPixel,
     visualShroudCoverage: visualShroudResult.screenshot.coverage,
+    visualShroudUpdateScreenshot: terrainVisualShroudUpdateScreenshot,
+    visualShroudUpdateLogicalTerrain: visualShroudUpdateResult.probe.logicalTerrain,
+    visualShroudUpdateVisual: visualShroudUpdateResult.probe.visual,
+    visualShroudUpdateScene: visualShroudUpdateResult.probe.scene,
+    visualShroudUpdateTerrain: visualShroudUpdateResult.probe.terrain,
+    visualShroudUpdateShroud: visualShroudUpdateResult.probe.shroud,
+    visualShroudUpdate: visualShroudUpdateResult.probe.shroudUpdate,
+    visualShroudUpdateFrames: visualShroudUpdateResult.probe.renderFrames,
+    visualShroudUpdateCalls: visualShroudUpdateResult.probe.calls,
+    visualShroudUpdateDraw: visualShroudUpdateResult.probe.draw,
+    visualShroudUpdateDrawSequence: visualShroudUpdateResult.drawSequence,
+    visualShroudUpdateCenterPixel: visualShroudUpdateResult.screenshot.centerPixel,
+    visualShroudUpdateCoverage: visualShroudUpdateResult.screenshot.coverage,
     fullSceneScreenshot: terrainFullSceneScreenshot,
     fullSceneLogicalTerrain: fullSceneResult.probe.logicalTerrain,
     fullSceneVisual: fullSceneResult.probe.visual,
@@ -1060,7 +1172,7 @@ try {
     draw: terrainResult.probe.draw,
     centerPixel: terrainResult.screenshot.centerPixel,
     coverage: terrainResult.screenshot.coverage,
-    renderer: "original W3DTerrainVisual::load owns WorldHeightMap + HeightMapRenderObjClass scene attachment, with visual-owned W3DShroud material pass coverage, then W3DDisplay::m_3DScene renders through browser D3D8/WebGL2",
+    renderer: "original W3DTerrainVisual::load owns WorldHeightMap + HeightMapRenderObjClass scene attachment, with visual-owned W3DShroud material pass coverage and W3DDisplay::setShroudLevel data updates, then W3DDisplay::m_3DScene renders through browser D3D8/WebGL2",
     browserEventCount: browserEvents.length,
   }, null, 2));
 } finally {

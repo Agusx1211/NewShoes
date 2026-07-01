@@ -758,6 +758,13 @@ shares structure and follows behind.
       `W3DShroudMaterialPassClass` terrain pass after base/blend terrain, and
       captures
       `harness-smoke-ww3d-terrain-visual-shroud-scene-canvas.png`.
+      A second visual-owned shroud update mode now routes a 25x25 cell update
+      through original `W3DDisplay::setShroudLevel(CELLSHROUD_CLEAR)`, verifies
+      the sample reaches `GlobalData::m_clearAlpha`, re-renders
+      `W3DShroud` so the browser texture updates, renders a second
+      `W3DDisplay::m_3DScene` frame, gates the second ordered shroud pass, and
+      captures
+      `harness-smoke-ww3d-terrain-visual-shroud-update-scene-canvas.png`.
       The same visual-scene smoke now also proves original
       `W3DTerrainLogic::loadMap(query=true)` against the same shipped map,
       including logic-only `WorldHeightMap` parser sections, map-object
@@ -770,9 +777,9 @@ shares structure and follows behind.
       archive set honestly records the load window as 0/16,384 source-backed
       terrain cells.
       `test:vertical-integrations` now includes that visual-owned terrain scene
-      plus the visual-owned shroud proof, no-reinit load-window proof, and
-      camera-pan proof beside the lower-level tile, scene-dispatch, and
-      map-patch terrain proofs.
+      plus the visual-owned shroud pass/update payloads, no-reinit load-window
+      proof, and camera-pan proof beside the lower-level tile, scene-dispatch,
+      and map-patch terrain proofs.
       `test:ww3d-terrain-road-buffer-scene` now also proves a focused original
       `W3DRoadBuffer::drawRoads` pass over the original heightmap render object
       on a real source-backed `Maps\MD_CHI01\MD_CHI01.map` patch, with
@@ -842,10 +849,12 @@ shares structure and follows behind.
       browser-visible `W3DShroudMaterialPassClass` terrain draw without the old
       probe direct-D3D fallback. `test:ww3d-terrain-visual-scene` now also
       proves the same shroud material pass under `W3DTerrainVisual::load` /
-      `W3DDisplay::m_3DScene` ownership for the selected source-backed patch.
-      Remaining work is to wire full `W3DTerrainVisual::init`, partition, and
-      shroud owners, then let gameplay fog updates come
-      from `PartitionManager::refreshShroudForLocalPlayer`.
+      `W3DDisplay::m_3DScene` ownership for the selected source-backed patch,
+      and separately proves visual-owned shroud data updates through original
+      `W3DDisplay::setShroudLevel`. Remaining work is to wire full
+      `W3DTerrainVisual::init`, partition, and shroud owners, then let gameplay
+      fog updates originate from `PartitionManager::refreshShroudForLocalPlayer`
+      instead of a probe-driven display call.
 - [ ] Promote bridge-buffer drawing from the focused
       `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned
       damage-state behavior. The focused browser scene now verifies the
