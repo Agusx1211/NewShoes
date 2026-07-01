@@ -24,6 +24,10 @@ const disabledButtonScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-disabled-button-repaint-canvas.png",
 );
+const hiliteButtonScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-hilite-button-repaint-canvas.png",
+);
 const staticTextScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
@@ -557,6 +561,70 @@ try {
 
   await page.locator("#viewport").screenshot({ path: disabledButtonScreenshot });
 
+  let hiliteButtonResult;
+  try {
+    hiliteButtonResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutHiliteButtonRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout hilite button image repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout hilite button image repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  if (!hiliteButtonResult.ok
+      || hiliteButtonResult.command !== "ww3dMainMenuLayoutHiliteButtonRepaint"
+      || hiliteButtonResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || hiliteButtonResult.probe?.mode !== "hiliteButtonSinglePlayer"
+      || !hiliteButtonResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer hilite -> W3DGadgetPushButtonImageDraw hilite image triplet")
+      || hiliteButtonResult.probe?.results?.buttonHiliteMappedImagesFound !== true
+      || hiliteButtonResult.probe?.results?.buttonHiliteImagesBound !== true
+      || hiliteButtonResult.probe?.results?.buttonHiliteStateRequested !== true
+      || hiliteButtonResult.probe?.results?.buttonHilitedBeforeStateChange !== false
+      || hiliteButtonResult.probe?.results?.buttonHilitedAfterStateChange !== true
+      || hiliteButtonResult.probe?.results?.buttonRenderedHiliteState !== true
+      || hiliteButtonResult.probe?.layout?.button?.name !== "MainMenu.wnd:ButtonSinglePlayer"
+      || hiliteButtonResult.probe?.layout?.button?.enabled !== true
+      || hiliteButtonResult.probe?.layout?.button?.renderState !== "hilite"
+      || hiliteButtonResult.probe?.layout?.button?.hiliteStateRequested !== true
+      || hiliteButtonResult.probe?.layout?.button?.hilited !== true
+      || hiliteButtonResult.probe?.layout?.button?.hiliteImagesBound !== true
+      || hiliteButtonResult.probe?.layout?.button?.images?.[0] !== "Buttons-HiLite-Left"
+      || hiliteButtonResult.probe?.layout?.button?.images?.[1] !== "Buttons-HiLite-Middle"
+      || hiliteButtonResult.probe?.layout?.button?.images?.[2] !== "Buttons-HiLite-Right"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.left?.name !== "Buttons-HiLite-Left"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.middle?.name !== "Buttons-HiLite-Middle"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.right?.name !== "Buttons-HiLite-Right"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.left?.filename !== "SCSmShellUserInterface512_001.tga"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.middle?.filename !== "SCSmShellUserInterface512_001.tga"
+      || hiliteButtonResult.probe?.hiliteButtonImages?.right?.filename !== "SCSmShellUserInterface512_001.tga"
+      || !Array.isArray(hiliteButtonResult.probe?.display?.imageDrawNames)
+      || !hiliteButtonResult.probe.display.imageDrawNames.includes("Buttons-HiLite-Left")
+      || !hiliteButtonResult.probe.display.imageDrawNames.includes("Buttons-HiLite-Middle")
+      || !hiliteButtonResult.probe.display.imageDrawNames.includes("Buttons-HiLite-Right")
+      || hiliteButtonResult.buttonRegion?.coloredPixelCount < 20
+      || hiliteButtonResult.buttonTextRegion?.coloredPixelCount < 20
+      || hiliteButtonResult.buttonTextRegion?.maxComponent < 180
+      || hiliteButtonResult.coloredLogoPixelCount < 1
+      || hiliteButtonResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu hilite button repaint did not prove the original hilite image path: ${JSON.stringify({
+      ok: hiliteButtonResult.ok,
+      probe: hiliteButtonResult.probe,
+      buttonRegion: hiliteButtonResult.buttonRegion,
+      buttonTextRegion: hiliteButtonResult.buttonTextRegion,
+      coloredLogoPixelCount: hiliteButtonResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: hiliteButtonResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: hiliteButtonScreenshot });
+
   let staticTextResult;
   try {
     staticTextResult = await withTimeout(
@@ -1060,6 +1128,7 @@ try {
     url: harnessUrl,
     screenshot: repaintScreenshot,
     disabledButtonScreenshot,
+    hiliteButtonScreenshot,
     staticTextScreenshot,
     singlePlayerScreenshot,
     loadReplayScreenshot,
@@ -1073,6 +1142,7 @@ try {
     },
     originalPaths: repaintResult.probe.originalPaths,
     disabledButtonOriginalPaths: disabledButtonResult.probe.originalPaths,
+    hiliteButtonOriginalPaths: hiliteButtonResult.probe.originalPaths,
     singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     difficultyOriginalPaths: difficultyResult.probe.originalPaths,
@@ -1084,6 +1154,9 @@ try {
     disabledButtonImages: disabledButtonResult.probe.disabledButtonImages,
     disabledButtonLayout: disabledButtonResult.probe.layout.button,
     disabledButtonImageDrawNames: disabledButtonResult.probe.display.imageDrawNames,
+    hiliteButtonImages: hiliteButtonResult.probe.hiliteButtonImages,
+    hiliteButtonLayout: hiliteButtonResult.probe.layout.button,
+    hiliteButtonImageDrawNames: hiliteButtonResult.probe.display.imageDrawNames,
     gameText: repaintResult.probe.gameText,
     difficultyGameText: difficultyResult.probe.gameText,
     texture: repaintResult.probe.texture,
@@ -1097,6 +1170,8 @@ try {
     buttonTextRegion: repaintResult.buttonTextRegion,
     disabledButtonRegion: disabledButtonResult.buttonRegion,
     disabledButtonTextRegion: disabledButtonResult.buttonTextRegion,
+    hiliteButtonRegion: hiliteButtonResult.buttonRegion,
+    hiliteButtonTextRegion: hiliteButtonResult.buttonTextRegion,
     extraButtons,
     extraButtonRegions: repaintResult.extraButtonRegions,
     singlePlayerDropdown: singlePlayerResult.probe.layout.singlePlayerDropdown,

@@ -320,6 +320,7 @@ enum MainMenuLayoutImageRepaintMode
 {
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_HILITE_BUTTON_STACK,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN,
@@ -340,6 +341,8 @@ const char *main_menu_layout_image_repaint_mode_name(MainMenuLayoutImageRepaintM
 			return "difficultyDropdown";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_SINGLE_PLAYER_DROPDOWN:
 			return "singlePlayerDropdown";
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_HILITE_BUTTON_STACK:
+			return "hiliteButtonSinglePlayer";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK:
 			return "disabledButtonSinglePlayer";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK:
@@ -376,13 +379,21 @@ bool main_menu_layout_image_repaint_is_button_stack()
 		g_ww3d_main_menu_layout_image_repaint_mode ==
 			MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK ||
 		g_ww3d_main_menu_layout_image_repaint_mode ==
-			MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK;
+			MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK ||
+		g_ww3d_main_menu_layout_image_repaint_mode ==
+			MAIN_MENU_LAYOUT_IMAGE_REPAINT_HILITE_BUTTON_STACK;
 }
 
 bool main_menu_layout_image_repaint_is_disabled_button_stack()
 {
 	return g_ww3d_main_menu_layout_image_repaint_mode ==
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK;
+}
+
+bool main_menu_layout_image_repaint_is_hilite_button_stack()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_HILITE_BUTTON_STACK;
 }
 
 bool main_menu_layout_image_repaint_is_single_player()
@@ -450,6 +461,9 @@ constexpr const char *kMainMenuButtonRightImageName = "Buttons-Right";
 constexpr const char *kMainMenuButtonDisabledLeftImageName = "Buttons-Disabled-Left";
 constexpr const char *kMainMenuButtonDisabledMiddleImageName = "Buttons-Disabled-Middle";
 constexpr const char *kMainMenuButtonDisabledRightImageName = "Buttons-Disabled-Right";
+constexpr const char *kMainMenuButtonHiliteLeftImageName = "Buttons-HiLite-Left";
+constexpr const char *kMainMenuButtonHiliteMiddleImageName = "Buttons-HiLite-Middle";
+constexpr const char *kMainMenuButtonHiliteRightImageName = "Buttons-HiLite-Right";
 constexpr const char *kMainMenuButtonTextLabel = "GUI:SinglePlayer";
 constexpr std::size_t kMainMenuExtraButtonCount = 5;
 constexpr const char *kMainMenuExtraButtonNames[kMainMenuExtraButtonCount] = {
@@ -7224,6 +7238,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool ruler_mapped_image_found = false;
 	bool button_mapped_images_found = false;
 	bool button_disabled_mapped_images_found = false;
+	bool button_hilite_mapped_images_found = false;
 	bool mapped_image_rotated = false;
 	bool ruler_mapped_image_rotated = false;
 	bool image_raw_texture = false;
@@ -7260,6 +7275,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool button_enabled_before_state_change = false;
 	bool button_enabled_after_state_change = false;
 	bool button_rendered_disabled_state = false;
+	bool button_hilite_images_bound = false;
+	bool button_hilite_state_requested = false;
+	bool button_hilited_before_state_change = false;
+	bool button_hilited_after_state_change = false;
+	bool button_rendered_hilite_state = false;
 	bool children_pruned = false;
 	bool begin_repaint_called = false;
 	bool repaint_called = false;
@@ -7320,6 +7340,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	std::string button_disabled_left_image_filename;
 	std::string button_disabled_middle_image_filename;
 	std::string button_disabled_right_image_filename;
+	std::string button_hilite_left_image_filename;
+	std::string button_hilite_middle_image_filename;
+	std::string button_hilite_right_image_filename;
 	std::string button_text_ascii;
 	std::string static_text_ascii;
 	std::string loaded_texture_name;
@@ -7379,6 +7402,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int button_disabled_middle_image_height = 0;
 	Int button_disabled_right_image_width = 0;
 	Int button_disabled_right_image_height = 0;
+	Int button_hilite_left_image_width = 0;
+	Int button_hilite_left_image_height = 0;
+	Int button_hilite_middle_image_width = 0;
+	Int button_hilite_middle_image_height = 0;
+	Int button_hilite_right_image_width = 0;
+	Int button_hilite_right_image_height = 0;
 	Int button_text_length = 0;
 	Int button_text_width = 0;
 	Int button_text_height = 0;
@@ -7497,6 +7526,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const Image *button_disabled_left_image = nullptr;
 	const Image *button_disabled_middle_image = nullptr;
 	const Image *button_disabled_right_image = nullptr;
+	const Image *button_hilite_left_image = nullptr;
+	const Image *button_hilite_middle_image = nullptr;
+	const Image *button_hilite_right_image = nullptr;
 	const Image *target_enabled_image = nullptr;
 	const Image *ruler_enabled_image = nullptr;
 	const Image *button_left_enabled_image = nullptr;
@@ -7505,6 +7537,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const Image *button_left_disabled_image = nullptr;
 	const Image *button_middle_disabled_image = nullptr;
 	const Image *button_right_disabled_image = nullptr;
+	const Image *button_left_hilite_image = nullptr;
+	const Image *button_middle_hilite_image = nullptr;
+	const Image *button_right_hilite_image = nullptr;
 	const Image *faction_logo_images[kMainMenuFactionLogoCount] = {};
 
 	if (succeeded(init_result)) {
@@ -7708,6 +7743,15 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				button_disabled_right_image =
 					mapped_image_collection->findImageByName(
 						AsciiString(kMainMenuButtonDisabledRightImageName));
+				button_hilite_left_image =
+					mapped_image_collection->findImageByName(
+						AsciiString(kMainMenuButtonHiliteLeftImageName));
+				button_hilite_middle_image =
+					mapped_image_collection->findImageByName(
+						AsciiString(kMainMenuButtonHiliteMiddleImageName));
+				button_hilite_right_image =
+					mapped_image_collection->findImageByName(
+						AsciiString(kMainMenuButtonHiliteRightImageName));
 				ruler_image = mapped_image_collection->findImageByName(AsciiString(kMainMenuRulerImageName));
 				mapped_image_found = target_image != nullptr;
 				ruler_mapped_image_found = ruler_image != nullptr;
@@ -7719,6 +7763,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_disabled_left_image != nullptr &&
 					button_disabled_middle_image != nullptr &&
 					button_disabled_right_image != nullptr;
+				button_hilite_mapped_images_found =
+					button_hilite_left_image != nullptr &&
+					button_hilite_middle_image != nullptr &&
+					button_hilite_right_image != nullptr;
 				faction_logo_mapped_images_found =
 					!main_menu_layout_image_repaint_is_faction_logos();
 				if (main_menu_layout_image_repaint_is_faction_logos()) {
@@ -7802,6 +7850,23 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				button_disabled_middle_image_height = button_disabled_middle_image->getImageHeight();
 				button_disabled_right_image_width = button_disabled_right_image->getImageWidth();
 				button_disabled_right_image_height = button_disabled_right_image->getImageHeight();
+			}
+			if (button_hilite_mapped_images_found) {
+				button_hilite_left_image_filename =
+					button_hilite_left_image->getFilename().str() != nullptr ?
+						button_hilite_left_image->getFilename().str() : "";
+				button_hilite_middle_image_filename =
+					button_hilite_middle_image->getFilename().str() != nullptr ?
+						button_hilite_middle_image->getFilename().str() : "";
+				button_hilite_right_image_filename =
+					button_hilite_right_image->getFilename().str() != nullptr ?
+						button_hilite_right_image->getFilename().str() : "";
+				button_hilite_left_image_width = button_hilite_left_image->getImageWidth();
+				button_hilite_left_image_height = button_hilite_left_image->getImageHeight();
+				button_hilite_middle_image_width = button_hilite_middle_image->getImageWidth();
+				button_hilite_middle_image_height = button_hilite_middle_image->getImageHeight();
+				button_hilite_right_image_width = button_hilite_right_image->getImageWidth();
+				button_hilite_right_image_height = button_hilite_right_image->getImageHeight();
 			}
 			for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
 				const Image *logo_image = faction_logo_images[i];
@@ -8028,6 +8093,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			button_left_disabled_image = GadgetButtonGetLeftDisabledImage(button);
 			button_middle_disabled_image = GadgetButtonGetMiddleDisabledImage(button);
 			button_right_disabled_image = GadgetButtonGetRightDisabledImage(button);
+			button_left_hilite_image = GadgetButtonGetLeftHiliteImage(button);
+			button_middle_hilite_image = GadgetButtonGetMiddleHiliteImage(button);
+			button_right_hilite_image = GadgetButtonGetRightHiliteImage(button);
 			button_images_bound =
 				button_left_enabled_image != nullptr &&
 				button_middle_enabled_image != nullptr &&
@@ -8042,6 +8110,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				button_left_disabled_image == button_disabled_left_image &&
 				button_middle_disabled_image == button_disabled_middle_image &&
 				button_right_disabled_image == button_disabled_right_image;
+			button_hilite_images_bound =
+				button_left_hilite_image != nullptr &&
+				button_middle_hilite_image != nullptr &&
+				button_right_hilite_image != nullptr &&
+				button_left_hilite_image == button_hilite_left_image &&
+				button_middle_hilite_image == button_hilite_middle_image &&
+				button_right_hilite_image == button_hilite_right_image;
 			DisplayString *button_text = button->winGetInstanceData()->getTextDisplayString();
 			button_text_display_string_bound =
 				button_text != nullptr &&
@@ -8494,6 +8569,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_images_bound && button_text_display_string_bound &&
 					(!main_menu_layout_image_repaint_is_disabled_button_stack() ||
 						button_disabled_images_bound) &&
+					(!main_menu_layout_image_repaint_is_hilite_button_stack() ||
+						button_hilite_images_bound) &&
 					button_text_ascii.length() > 0 &&
 					extra_buttons_found && extra_buttons_callback_bound &&
 					extra_buttons_images_bound &&
@@ -8630,17 +8707,36 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		if (button != nullptr) {
 			button_enabled_before_state_change =
 				BitTest(button->winGetStatus(), WIN_STATUS_ENABLED);
+			WinInstanceData *button_instance = button->winGetInstanceData();
+			button_hilited_before_state_change =
+				button_instance != nullptr ?
+					BitTest(button_instance->m_state, WIN_STATE_HILITED) : false;
 			if (main_menu_layout_image_repaint_is_disabled_button_stack()) {
 				button_disabled_state_requested = true;
 				button->winClearStatus(WIN_STATUS_ENABLED);
 			}
+			if (button_instance != nullptr &&
+				main_menu_layout_image_repaint_is_hilite_button_stack()) {
+				button_hilite_state_requested = true;
+				BitSet(button_instance->m_state, WIN_STATE_HILITED);
+				BitClear(button_instance->m_state, WIN_STATE_SELECTED);
+			}
 			button_enabled_after_state_change =
 				BitTest(button->winGetStatus(), WIN_STATUS_ENABLED);
+			button_hilited_after_state_change =
+				button_instance != nullptr ?
+					BitTest(button_instance->m_state, WIN_STATE_HILITED) : false;
 			button_rendered_disabled_state =
 				main_menu_layout_image_repaint_is_disabled_button_stack() &&
 				button_disabled_state_requested &&
 				button_disabled_images_bound &&
 				!button_enabled_after_state_change;
+			button_rendered_hilite_state =
+				main_menu_layout_image_repaint_is_hilite_button_stack() &&
+				button_hilite_state_requested &&
+				button_hilite_images_bound &&
+				button_enabled_after_state_change &&
+				button_hilited_after_state_change;
 		}
 	}
 
@@ -9092,6 +9188,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_enabled_before_state_change &&
 					!button_enabled_after_state_change &&
 					button_rendered_disabled_state)) &&
+			(!main_menu_layout_image_repaint_is_hilite_button_stack() ||
+				(button_hilite_images_bound &&
+					!button_hilited_before_state_change &&
+					button_hilited_after_state_change &&
+					button_rendered_hilite_state)) &&
 			button_text_display_string_bound &&
 			button_text_size_computed &&
 			!button_hidden &&
@@ -9168,6 +9269,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_mapped_images_found &&
 		(!main_menu_layout_image_repaint_is_disabled_button_stack() ||
 			button_disabled_mapped_images_found) &&
+		(!main_menu_layout_image_repaint_is_hilite_button_stack() ||
+			button_hilite_mapped_images_found) &&
 		(!main_menu_layout_image_repaint_is_faction_logos() ||
 			faction_logo_mapped_images_found) &&
 		!mapped_image_rotated &&
@@ -9291,6 +9394,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		json_escape(button_disabled_middle_image_filename);
 	const std::string button_disabled_right_image_filename_json =
 		json_escape(button_disabled_right_image_filename);
+	const std::string button_hilite_left_image_filename_json =
+		json_escape(button_hilite_left_image_filename);
+	const std::string button_hilite_middle_image_filename_json =
+		json_escape(button_hilite_middle_image_filename);
+	const std::string button_hilite_right_image_filename_json =
+		json_escape(button_hilite_right_image_filename);
 	const std::string loaded_texture_name_json = json_escape(loaded_texture_name);
 	const std::string ruler_loaded_texture_name_json = json_escape(ruler_loaded_texture_name);
 	const std::string archive_window_path_json = json_escape(archive_window_path);
@@ -9315,17 +9424,30 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		json_escape(kMainMenuButtonDisabledMiddleImageName);
 	const std::string button_disabled_right_image_name_json =
 		json_escape(kMainMenuButtonDisabledRightImageName);
+	const std::string button_hilite_left_image_name_json =
+		json_escape(kMainMenuButtonHiliteLeftImageName);
+	const std::string button_hilite_middle_image_name_json =
+		json_escape(kMainMenuButtonHiliteMiddleImageName);
+	const std::string button_hilite_right_image_name_json =
+		json_escape(kMainMenuButtonHiliteRightImageName);
 	const std::string button_render_left_image_name_json =
 		main_menu_layout_image_repaint_is_disabled_button_stack() ?
-			button_disabled_left_image_name_json : button_left_image_name_json;
+			button_disabled_left_image_name_json :
+			(main_menu_layout_image_repaint_is_hilite_button_stack() ?
+				button_hilite_left_image_name_json : button_left_image_name_json);
 	const std::string button_render_middle_image_name_json =
 		main_menu_layout_image_repaint_is_disabled_button_stack() ?
-			button_disabled_middle_image_name_json : button_middle_image_name_json;
+			button_disabled_middle_image_name_json :
+			(main_menu_layout_image_repaint_is_hilite_button_stack() ?
+				button_hilite_middle_image_name_json : button_middle_image_name_json);
 	const std::string button_render_right_image_name_json =
 		main_menu_layout_image_repaint_is_disabled_button_stack() ?
-			button_disabled_right_image_name_json : button_right_image_name_json;
+			button_disabled_right_image_name_json :
+			(main_menu_layout_image_repaint_is_hilite_button_stack() ?
+				button_hilite_right_image_name_json : button_right_image_name_json);
 	const char *button_render_state =
-		main_menu_layout_image_repaint_is_disabled_button_stack() ? "disabled" : "enabled";
+		main_menu_layout_image_repaint_is_disabled_button_stack() ? "disabled" :
+			(main_menu_layout_image_repaint_is_hilite_button_stack() ? "hilite" : "enabled");
 	const std::string button_text_label_json = json_escape(kMainMenuButtonTextLabel);
 	const std::string button_text_ascii_json = json_escape(button_text_ascii);
 	const std::string static_text_window_name_json = json_escape(static_text_name);
@@ -9637,6 +9759,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		main_menu_layout_image_repaint_is_disabled_button_stack() ?
 			"\"MainMenu.wnd:ButtonSinglePlayer disabled -> W3DGadgetPushButtonImageDraw disabled image triplet\"," :
 			"";
+	const char *hilite_button_original_path_json =
+		main_menu_layout_image_repaint_is_hilite_button_stack() ?
+			"\"MainMenu.wnd:ButtonSinglePlayer hilite -> W3DGadgetPushButtonImageDraw hilite image triplet\"," :
+			"";
 
 	char buffer[96000];
 	std::snprintf(buffer, sizeof(buffer),
@@ -9650,6 +9776,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:Logo -> W3DGameWinDefaultDraw\","
 		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
+		"%s"
 		"%s"
 		"\"GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label\","
 		"\"MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw\","
@@ -9723,6 +9850,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"mappedImages\":%zu,\"mappedImageFound\":%s,"
 		"\"rulerMappedImageFound\":%s,\"buttonMappedImagesFound\":%s,"
 		"\"buttonDisabledMappedImagesFound\":%s,"
+		"\"buttonHiliteMappedImagesFound\":%s,"
 		"\"factionLogoMappedImagesFound\":%s,"
 		"\"texturePreloaded\":%s,\"textureRegistered\":%s,"
 		"\"textureResolved\":%s,\"textureLoaded\":%s,"
@@ -9756,6 +9884,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
 		"\"buttonDisabledImagesBound\":%s,"
+		"\"buttonHiliteImagesBound\":%s,"
 		"\"extraButtonsImagesBound\":%s,"
 		"\"loadReplayButtonsImagesBound\":%s,"
 		"\"difficultyButtonsImagesBound\":%s,"
@@ -9785,6 +9914,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"buttonEnabledBeforeStateChange\":%s,"
 		"\"buttonEnabledAfterStateChange\":%s,"
 		"\"buttonRenderedDisabledState\":%s,"
+		"\"buttonHiliteStateRequested\":%s,"
+		"\"buttonHilitedBeforeStateChange\":%s,"
+		"\"buttonHilitedAfterStateChange\":%s,"
+		"\"buttonRenderedHiliteState\":%s,"
 		"\"childrenPruned\":%s,"
 		"\"hiddenChildCount\":%d,\"beginRender\":%d,"
 		"\"beginRepaintCalled\":%s,\"repaintCalled\":%s,"
@@ -9812,6 +9945,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"enabled\":%s,\"renderState\":\"%s\","
 		"\"disabledStateRequested\":%s,"
 		"\"disabledImagesBound\":%s,"
+		"\"hiliteStateRequested\":%s,"
+		"\"hilited\":%s,"
+		"\"hiliteImagesBound\":%s,"
 		"\"images\":[\"%s\",\"%s\",\"%s\"],"
 		"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
 		"\"length\":%d,\"width\":%d,\"height\":%d}},"
@@ -9876,6 +10012,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"width\":%d,\"height\":%d},"
 		"\"right\":{\"name\":\"%s\",\"filename\":\"%s\","
 		"\"width\":%d,\"height\":%d}},"
+		"\"hiliteButtonImages\":{\"left\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d},"
+		"\"middle\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d},"
+		"\"right\":{\"name\":\"%s\",\"filename\":\"%s\","
+		"\"width\":%d,\"height\":%d}},"
 		"\"gameText\":{\"csfPath\":\"%s\",\"created\":%s,"
 		"\"initialized\":%s,\"buttonLabelExists\":%s,"
 		"\"buttonTextNonEmpty\":%s,"
@@ -9932,6 +10074,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(ok),
 		probe_mode_json.c_str(),
 		disabled_button_original_path_json,
+		hilite_button_original_path_json,
 		window_archive_json.c_str(),
 		ini_archive_json.c_str(),
 		texture_archive_json.c_str(),
@@ -9985,6 +10128,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(ruler_mapped_image_found),
 		bool_json(button_mapped_images_found),
 		bool_json(button_disabled_mapped_images_found),
+		bool_json(button_hilite_mapped_images_found),
 		bool_json(faction_logo_mapped_images_found),
 		bool_json(texture_preloaded),
 		bool_json(texture_registered),
@@ -10031,6 +10175,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(ruler_image_bound),
 		bool_json(button_images_bound),
 		bool_json(button_disabled_images_bound),
+		bool_json(button_hilite_images_bound),
 		bool_json(extra_buttons_images_bound),
 		bool_json(load_replay_buttons_images_bound),
 		bool_json(difficulty_buttons_images_bound),
@@ -10063,6 +10208,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(button_enabled_before_state_change),
 		bool_json(button_enabled_after_state_change),
 		bool_json(button_rendered_disabled_state),
+		bool_json(button_hilite_state_requested),
+		bool_json(button_hilited_before_state_change),
+		bool_json(button_hilited_after_state_change),
+		bool_json(button_rendered_hilite_state),
 		bool_json(children_pruned),
 		hidden_child_count,
 		begin_render_result,
@@ -10100,6 +10249,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_render_state,
 		bool_json(button_disabled_state_requested),
 		bool_json(button_disabled_images_bound),
+		bool_json(button_hilite_state_requested),
+		bool_json(button_hilited_after_state_change),
+		bool_json(button_hilite_images_bound),
 		button_render_left_image_name_json.c_str(),
 		button_render_middle_image_name_json.c_str(),
 		button_render_right_image_name_json.c_str(),
@@ -10211,6 +10363,18 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		button_disabled_right_image_filename_json.c_str(),
 		button_disabled_right_image_width,
 		button_disabled_right_image_height,
+		button_hilite_left_image_name_json.c_str(),
+		button_hilite_left_image_filename_json.c_str(),
+		button_hilite_left_image_width,
+		button_hilite_left_image_height,
+		button_hilite_middle_image_name_json.c_str(),
+		button_hilite_middle_image_filename_json.c_str(),
+		button_hilite_middle_image_width,
+		button_hilite_middle_image_height,
+		button_hilite_right_image_name_json.c_str(),
+		button_hilite_right_image_filename_json.c_str(),
+		button_hilite_right_image_width,
+		button_hilite_right_image_height,
 		game_text_csf_path_json.c_str(),
 		bool_json(game_text_created),
 		bool_json(game_text_initialized),
@@ -10310,6 +10474,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_disabled_b
 {
 	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_DISABLED_BUTTON_STACK);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint()
+{
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_HILITE_BUTTON_STACK);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_single_player_repaint()

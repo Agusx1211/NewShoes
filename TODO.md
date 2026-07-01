@@ -740,8 +740,8 @@ flow below.
       archive set, so backdrop proof needs the real source archive/path instead
       of a forced synthetic parent draw.
       Remaining work is broader unpruned shell composition (for example
-      `MainMenuBackdrop`, image states beyond the currently proved disabled
-      `ButtonSinglePlayer` triplet, and text under normal display-owned
+      `MainMenuBackdrop`, image states beyond the currently proved disabled and
+      hilite `ButtonSinglePlayer` triplets, and text under normal display-owned
       font/archive lifetime) instead of curated target
       visibility.
 - [ ] Locate a real shipped shell layout or state that exercises

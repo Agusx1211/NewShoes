@@ -4375,6 +4375,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       button remains visibly rendered with dim disabled text, and writes
       `harness-smoke-ww3d-main-menu-layout-disabled-button-repaint-canvas.png`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      hilite `ButtonSinglePlayer` image state. The probe now runs a dedicated
+      `hiliteButtonSinglePlayer` mode that sets `WIN_STATE_HILITED` and clears
+      `WIN_STATE_SELECTED` on the real `MainMenu.wnd:ButtonSinglePlayer`
+      child, verifies the parsed `Buttons-HiLite-Left` /
+      `Buttons-HiLite-Middle` / `Buttons-HiLite-Right` triplet from
+      `MainMenu.wnd` and `SCSmShellUserInterface512.INI`, and captures the
+      original `W3DGadgetPushButtonImageDraw` hilite triplet draw through
+      `ProbeForwardingW3DDisplay -> W3DDisplay::drawImage`. The browser
+      harness asserts the hilite triplet appears in the draw sequence, the
+      button remains visibly rendered with bright label text, and writes
+      `harness-smoke-ww3d-main-menu-layout-hilite-button-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the full shipped
       `INIZH.big` `Data\INI\MappedImages` directory subset needed by

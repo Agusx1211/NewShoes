@@ -7281,6 +7281,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
       probeWW3DMainMenuLayoutDisabledButtonRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_disabled_button_repaint", "string", []),
+      probeWW3DMainMenuLayoutHiliteButtonRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_hilite_button_repaint", "string", []),
       probeWW3DMainMenuLayoutSinglePlayerRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_single_player_repaint", "string", []),
       probeWW3DMainMenuLayoutLoadReplayRepaint: module.cwrap(
@@ -17063,6 +17065,7 @@ async function rpc(command, payload = {}) {
       }
     case "ww3dMainMenuLayoutImageRepaint":
     case "ww3dMainMenuLayoutDisabledButtonRepaint":
+    case "ww3dMainMenuLayoutHiliteButtonRepaint":
     case "ww3dMainMenuLayoutSinglePlayerRepaint":
     case "ww3dMainMenuLayoutLoadReplayRepaint":
     case "ww3dMainMenuLayoutDifficultyRepaint":
@@ -17075,6 +17078,7 @@ async function rpc(command, payload = {}) {
         }
         const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
         const disabledButtonMode = command === "ww3dMainMenuLayoutDisabledButtonRepaint";
+        const hiliteButtonMode = command === "ww3dMainMenuLayoutHiliteButtonRepaint";
         const singlePlayerMode = command === "ww3dMainMenuLayoutSinglePlayerRepaint";
         const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
         const difficultyMode = command === "ww3dMainMenuLayoutDifficultyRepaint";
@@ -17083,13 +17087,15 @@ async function rpc(command, payload = {}) {
           ? "staticTextSelectDifficulty"
           : (disabledButtonMode
               ? "disabledButtonSinglePlayer"
-              : (singlePlayerMode
-                  ? "singlePlayerDropdown"
-                  : (difficultyMode
-                      ? "difficultyDropdown"
-                      : (factionLogoMode
-                          ? "factionLogoStrip"
-                          : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer")))));
+              : (hiliteButtonMode
+                  ? "hiliteButtonSinglePlayer"
+                  : (singlePlayerMode
+                      ? "singlePlayerDropdown"
+                      : (difficultyMode
+                          ? "difficultyDropdown"
+                          : (factionLogoMode
+                              ? "factionLogoStrip"
+                              : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer"))))));
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -17106,15 +17112,17 @@ async function rpc(command, payload = {}) {
           ? wasmModule.probeWW3DMainMenuLayoutStaticTextRepaint()
           : (disabledButtonMode
               ? wasmModule.probeWW3DMainMenuLayoutDisabledButtonRepaint()
-              : (singlePlayerMode
-                  ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
-                  : (loadReplayMode
-                      ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
-                      : (difficultyMode
-                          ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
-                          : (factionLogoMode
-                              ? wasmModule.probeWW3DMainMenuLayoutFactionLogoRepaint()
-                              : wasmModule.probeWW3DMainMenuLayoutImageRepaint()))))));
+              : (hiliteButtonMode
+                  ? wasmModule.probeWW3DMainMenuLayoutHiliteButtonRepaint()
+                  : (singlePlayerMode
+                      ? wasmModule.probeWW3DMainMenuLayoutSinglePlayerRepaint()
+                      : (loadReplayMode
+                          ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
+                          : (difficultyMode
+                              ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
+                              : (factionLogoMode
+                                  ? wasmModule.probeWW3DMainMenuLayoutFactionLogoRepaint()
+                                  : wasmModule.probeWW3DMainMenuLayoutImageRepaint())))))));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -17332,7 +17340,9 @@ async function rpc(command, payload = {}) {
             && probe?.results?.buttonTextSizeComputed === true);
         const expectedButtonImages = disabledButtonMode
           ? ["Buttons-Disabled-Left", "Buttons-Disabled-Middle", "Buttons-Disabled-Right"]
-          : ["Buttons-Left", "Buttons-Middle", "Buttons-Right"];
+          : (hiliteButtonMode
+              ? ["Buttons-HiLite-Left", "Buttons-HiLite-Middle", "Buttons-HiLite-Right"]
+              : ["Buttons-Left", "Buttons-Middle", "Buttons-Right"]);
         const disabledButtonProbeOk = !disabledButtonMode
           || (probe?.layout?.button?.renderState === "disabled"
             && probe?.layout?.button?.enabled === false
@@ -17359,6 +17369,33 @@ async function rpc(command, payload = {}) {
             && probe.display.imageDrawNames.includes("Buttons-Disabled-Right")
             && probe?.originalPaths?.includes(
               "MainMenu.wnd:ButtonSinglePlayer disabled -> W3DGadgetPushButtonImageDraw disabled image triplet"));
+        const hiliteButtonProbeOk = !hiliteButtonMode
+          || (probe?.layout?.button?.renderState === "hilite"
+            && probe?.layout?.button?.enabled === true
+            && probe?.layout?.button?.hiliteStateRequested === true
+            && probe?.layout?.button?.hilited === true
+            && probe?.layout?.button?.hiliteImagesBound === true
+            && probe?.results?.buttonHiliteMappedImagesFound === true
+            && probe?.results?.buttonHiliteImagesBound === true
+            && probe?.results?.buttonHiliteStateRequested === true
+            && probe?.results?.buttonHilitedBeforeStateChange === false
+            && probe?.results?.buttonHilitedAfterStateChange === true
+            && probe?.results?.buttonRenderedHiliteState === true
+            && probe?.hiliteButtonImages?.left?.name === "Buttons-HiLite-Left"
+            && probe?.hiliteButtonImages?.middle?.name === "Buttons-HiLite-Middle"
+            && probe?.hiliteButtonImages?.right?.name === "Buttons-HiLite-Right"
+            && probe?.hiliteButtonImages?.left?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.hiliteButtonImages?.middle?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.hiliteButtonImages?.right?.filename === "SCSmShellUserInterface512_001.tga"
+            && probe?.hiliteButtonImages?.left?.width > 0
+            && probe?.hiliteButtonImages?.middle?.width > 0
+            && probe?.hiliteButtonImages?.right?.width > 0
+            && Array.isArray(probe?.display?.imageDrawNames)
+            && probe.display.imageDrawNames.includes("Buttons-HiLite-Left")
+            && probe.display.imageDrawNames.includes("Buttons-HiLite-Middle")
+            && probe.display.imageDrawNames.includes("Buttons-HiLite-Right")
+            && probe?.originalPaths?.includes(
+              "MainMenu.wnd:ButtonSinglePlayer hilite -> W3DGadgetPushButtonImageDraw hilite image triplet"));
         const expectedExtraButtons = [
           ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
           ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
@@ -17738,6 +17775,7 @@ async function rpc(command, payload = {}) {
           && probe?.gameText?.buttonTextNonEmpty === true
           && buttonTextProbeOk
           && disabledButtonProbeOk
+          && hiliteButtonProbeOk
           && extraButtonsProbeOk
           && singlePlayerButtonsProbeOk
           && loadReplayButtonsProbeOk
