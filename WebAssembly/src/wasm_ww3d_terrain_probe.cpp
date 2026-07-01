@@ -918,6 +918,8 @@ struct ProbeRoadPairCandidate
 {
 	ProbeRoadObjectSnapshot first;
 	ProbeRoadObjectSnapshot second;
+	MapObject *firstMapObject = nullptr;
+	MapObject *secondMapObject = nullptr;
 	Int patchOriginX = 0;
 	Int patchOriginY = 0;
 	Int loadedSourceCells = 0;
@@ -929,6 +931,8 @@ struct ProbeBridgePairCandidate
 {
 	ProbeRoadObjectSnapshot first;
 	ProbeRoadObjectSnapshot second;
+	MapObject *firstMapObject = nullptr;
+	MapObject *secondMapObject = nullptr;
 	Int patchOriginX = 0;
 	Int patchOriginY = 0;
 	Int loadedSourceCells = 0;
@@ -964,294 +968,87 @@ struct ProbeBridgeAssetDiagnostics
 	Int rightPolygons = 0;
 };
 
-struct ProbeMapObjectParserState
+ProbeRoadObjectSnapshot probe_snapshot_map_object(MapObject *object)
 {
-	ProbeRoadObjectSnapshot pendingPoint1;
-	bool hasPendingPoint1 = false;
-	std::vector<ProbeRoadPairCandidate> *candidates = nullptr;
-};
-
-struct ProbeBridgeMapObjectParserState
-{
-	ProbeRoadObjectSnapshot pendingPoint1;
-	bool hasPendingPoint1 = false;
-	std::vector<ProbeBridgePairCandidate> *candidates = nullptr;
-};
-
-Bool parse_probe_map_object_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *)
-{
-	Coord3D location;
-	location.x = file.readReal();
-	location.y = file.readReal();
-	location.z = file.readReal();
-	if (info != nullptr && info->version <= K_OBJECTS_VERSION_2) {
-		location.z = 0.0f;
+	ProbeRoadObjectSnapshot snapshot;
+	if (object == nullptr) {
+		return snapshot;
 	}
 
-	const Real angle = file.readReal();
-	const Int flags = file.readInt();
-	const AsciiString name = file.readAsciiString();
-	Dict properties;
-	if (info != nullptr && info->version >= K_OBJECTS_VERSION_2) {
-		properties = file.readDict();
+	if (object->getLocation() != nullptr) {
+		snapshot.location = *object->getLocation();
 	}
-
-	ProbeMapObjectParserState *state =
-		static_cast<ProbeMapObjectParserState *>(file.m_userData);
-	if (state == nullptr || state->candidates == nullptr) {
-		return TRUE;
+	snapshot.angle = object->getAngle();
+	snapshot.flags = object->getFlags();
+	snapshot.name = object->getName();
+	if (object->getProperties() != nullptr) {
+		snapshot.properties = *object->getProperties();
 	}
+	return snapshot;
+}
 
-	const bool is_point1 = (flags & FLAG_ROAD_POINT1) != 0;
-	const bool is_point2 = (flags & FLAG_ROAD_POINT2) != 0;
-	if (is_point1) {
-		if (TheTerrainRoads != nullptr && TheTerrainRoads->findRoad(name) == nullptr) {
-			state->hasPendingPoint1 = false;
-			return TRUE;
+void collect_probe_road_pairs_from_map_objects(
+	TerrainRoadCollection *terrain_roads,
+	std::vector<ProbeRoadPairCandidate> &candidates)
+{
+	candidates.clear();
+	MapObject *pending_point1 = nullptr;
+	for (MapObject *object = MapObject::getFirstMapObject(); object != nullptr;
+			object = object->getNext()) {
+		if (object->getFlag(FLAG_ROAD_POINT1)) {
+			if (terrain_roads != nullptr && terrain_roads->findRoad(object->getName()) == nullptr) {
+				pending_point1 = nullptr;
+				continue;
+			}
+			pending_point1 = object;
+			continue;
 		}
-		state->pendingPoint1.location = location;
-		state->pendingPoint1.angle = angle;
-		state->pendingPoint1.flags = flags;
-		state->pendingPoint1.name = name;
-		state->pendingPoint1.properties = properties;
-		state->hasPendingPoint1 = true;
-		return TRUE;
-	}
 
-	if (is_point2 && state->hasPendingPoint1) {
-		ProbeRoadPairCandidate candidate;
-		candidate.first = state->pendingPoint1;
-		candidate.second.location = location;
-		candidate.second.angle = angle;
-		candidate.second.flags = flags;
-		candidate.second.name = name;
-		candidate.second.properties = properties;
-		state->candidates->push_back(candidate);
-		state->hasPendingPoint1 = false;
-		return TRUE;
-	}
-
-	state->hasPendingPoint1 = false;
-	return TRUE;
-}
-
-Bool parse_probe_map_objects_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *user_data)
-{
-	file.m_currentObject = nullptr;
-	file.registerParser(
-		AsciiString("Object"),
-		info != nullptr ? info->label : AsciiString::TheEmptyString,
-		parse_probe_map_object_data_chunk);
-	return file.parse(user_data);
-}
-
-bool parse_probe_map_objects_from_archive(
-	const char *map_entry,
-	std::vector<ProbeRoadPairCandidate> &candidates,
-	bool &stream_open,
-	bool &parsed,
-	bool &parse_exception)
-{
-	stream_open = false;
-	parsed = false;
-	parse_exception = false;
-	if (map_entry == nullptr || map_entry[0] == '\0') {
-		return false;
-	}
-
-	CachedFileInputStream stream;
-	stream_open = stream.open(AsciiString(map_entry));
-	if (!stream_open) {
-		return false;
-	}
-
-	ProbeMapObjectParserState state;
-	state.candidates = &candidates;
-	try {
-		DataChunkInput file(&stream);
-		file.m_userData = &state;
-		file.registerParser(
-			AsciiString("ObjectsList"),
-			AsciiString::TheEmptyString,
-			parse_probe_map_objects_data_chunk);
-		parsed = file.parse(nullptr);
-	} catch (...) {
-		parse_exception = true;
-		parsed = false;
-		WorldHeightMap::freeListOfMapObjects();
-	}
-	stream.close();
-	parsed = parsed && !candidates.empty();
-	return parsed;
-}
-
-Bool parse_probe_bridge_map_object_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *)
-{
-	Coord3D location;
-	location.x = file.readReal();
-	location.y = file.readReal();
-	location.z = file.readReal();
-	if (info != nullptr && info->version <= K_OBJECTS_VERSION_2) {
-		location.z = 0.0f;
-	}
-
-	const Real angle = file.readReal();
-	const Int flags = file.readInt();
-	const AsciiString name = file.readAsciiString();
-	Dict properties;
-	if (info != nullptr && info->version >= K_OBJECTS_VERSION_2) {
-		properties = file.readDict();
-	}
-
-	ProbeBridgeMapObjectParserState *state =
-		static_cast<ProbeBridgeMapObjectParserState *>(file.m_userData);
-	if (state == nullptr || state->candidates == nullptr) {
-		return TRUE;
-	}
-
-	const bool is_point1 = (flags & FLAG_BRIDGE_POINT1) != 0;
-	const bool is_point2 = (flags & FLAG_BRIDGE_POINT2) != 0;
-	if (is_point1) {
-		if (TheTerrainRoads != nullptr && TheTerrainRoads->findBridge(name) == nullptr) {
-			state->hasPendingPoint1 = false;
-			return TRUE;
+		if (object->getFlag(FLAG_ROAD_POINT2) && pending_point1 != nullptr) {
+			ProbeRoadPairCandidate candidate;
+			candidate.first = probe_snapshot_map_object(pending_point1);
+			candidate.second = probe_snapshot_map_object(object);
+			candidate.firstMapObject = pending_point1;
+			candidate.secondMapObject = object;
+			candidates.push_back(candidate);
+			pending_point1 = nullptr;
+			continue;
 		}
-		state->pendingPoint1.location = location;
-		state->pendingPoint1.angle = angle;
-		state->pendingPoint1.flags = flags;
-		state->pendingPoint1.name = name;
-		state->pendingPoint1.properties = properties;
-		state->hasPendingPoint1 = true;
-		return TRUE;
-	}
 
-	if (is_point2 && state->hasPendingPoint1) {
-		ProbeBridgePairCandidate candidate;
-		candidate.first = state->pendingPoint1;
-		candidate.second.location = location;
-		candidate.second.angle = angle;
-		candidate.second.flags = flags;
-		candidate.second.name = name;
-		candidate.second.properties = properties;
-		state->candidates->push_back(candidate);
-		state->hasPendingPoint1 = false;
-		return TRUE;
+		pending_point1 = nullptr;
 	}
-
-	state->hasPendingPoint1 = false;
-	return TRUE;
 }
 
-Bool parse_probe_bridge_map_objects_data_chunk(DataChunkInput &file, DataChunkInfo *info, void *user_data)
+void collect_probe_bridge_pairs_from_map_objects(
+	TerrainRoadCollection *terrain_roads,
+	std::vector<ProbeBridgePairCandidate> &candidates)
 {
-	file.m_currentObject = nullptr;
-	file.registerParser(
-		AsciiString("Object"),
-		info != nullptr ? info->label : AsciiString::TheEmptyString,
-		parse_probe_bridge_map_object_data_chunk);
-	return file.parse(user_data);
-}
+	candidates.clear();
+	MapObject *pending_point1 = nullptr;
+	for (MapObject *object = MapObject::getFirstMapObject(); object != nullptr;
+			object = object->getNext()) {
+		if (object->getFlag(FLAG_BRIDGE_POINT1)) {
+			if (terrain_roads != nullptr && terrain_roads->findBridge(object->getName()) == nullptr) {
+				pending_point1 = nullptr;
+				continue;
+			}
+			pending_point1 = object;
+			continue;
+		}
 
-bool parse_probe_bridge_map_objects_from_archive(
-	const char *map_entry,
-	std::vector<ProbeBridgePairCandidate> &candidates,
-	bool &stream_open,
-	bool &parsed,
-	bool &parse_exception)
-{
-	stream_open = false;
-	parsed = false;
-	parse_exception = false;
-	if (map_entry == nullptr || map_entry[0] == '\0') {
-		return false;
+		if (object->getFlag(FLAG_BRIDGE_POINT2) && pending_point1 != nullptr) {
+			ProbeBridgePairCandidate candidate;
+			candidate.first = probe_snapshot_map_object(pending_point1);
+			candidate.second = probe_snapshot_map_object(object);
+			candidate.firstMapObject = pending_point1;
+			candidate.secondMapObject = object;
+			candidates.push_back(candidate);
+			pending_point1 = nullptr;
+			continue;
+		}
+
+		pending_point1 = nullptr;
 	}
-
-	CachedFileInputStream stream;
-	stream_open = stream.open(AsciiString(map_entry));
-	if (!stream_open) {
-		return false;
-	}
-
-	ProbeBridgeMapObjectParserState state;
-	state.candidates = &candidates;
-	try {
-		DataChunkInput file(&stream);
-		file.m_userData = &state;
-		file.registerParser(
-			AsciiString("ObjectsList"),
-			AsciiString::TheEmptyString,
-			parse_probe_bridge_map_objects_data_chunk);
-		parsed = file.parse(nullptr);
-	} catch (...) {
-		parse_exception = true;
-		parsed = false;
-		WorldHeightMap::freeListOfMapObjects();
-	}
-	stream.close();
-	parsed = parsed && !candidates.empty();
-	return parsed;
-}
-
-bool install_probe_road_pair_map_objects(const ProbeRoadPairCandidate &candidate)
-{
-	WorldHeightMap::freeListOfMapObjects();
-	MapObject *point1 = newInstance(MapObject)(
-		candidate.first.location,
-		candidate.first.name,
-		candidate.first.angle,
-		candidate.first.flags,
-		&candidate.first.properties,
-		nullptr);
-	if (point1 == nullptr) {
-		return false;
-	}
-
-	MapObject *point2 = newInstance(MapObject)(
-		candidate.second.location,
-		candidate.second.name,
-		candidate.second.angle,
-		candidate.second.flags,
-		&candidate.second.properties,
-		nullptr);
-	if (point2 == nullptr) {
-		point1->deleteInstance();
-		return false;
-	}
-
-	point1->setNextMap(point2);
-	MapObject::TheMapObjectListPtr = point1;
-	return true;
-}
-
-bool install_probe_bridge_pair_map_objects(const ProbeBridgePairCandidate &candidate)
-{
-	WorldHeightMap::freeListOfMapObjects();
-	MapObject *point1 = newInstance(MapObject)(
-		candidate.first.location,
-		candidate.first.name,
-		candidate.first.angle,
-		candidate.first.flags,
-		&candidate.first.properties,
-		nullptr);
-	if (point1 == nullptr) {
-		return false;
-	}
-
-	MapObject *point2 = newInstance(MapObject)(
-		candidate.second.location,
-		candidate.second.name,
-		candidate.second.angle,
-		candidate.second.flags,
-		&candidate.second.properties,
-		nullptr);
-	if (point2 == nullptr) {
-		point1->deleteInstance();
-		return false;
-	}
-
-	point1->setNextMap(point2);
-	MapObject::TheMapObjectListPtr = point1;
-	return true;
 }
 
 bool probe_file_exists(FileSystem *file_system, const std::string &path)
@@ -4168,6 +3965,163 @@ void configure_global_data(GlobalData &global_data, bool enable_shroud = false)
 			global_data.m_terrainObjectsLighting[time_of_day][light_index].lightPos.z = -1.0f;
 		}
 	}
+}
+
+struct ProbeLogicalMapObjectLoadMetrics
+{
+	bool attempted = false;
+	bool localGlobalDataInstalled = false;
+	bool mapCacheInstalled = false;
+	bool terrainLogicInstalled = false;
+	bool gameClientInstalled = false;
+	bool thingFactoryInstalled = false;
+	bool scriptEngineInstalled = false;
+	bool loadReturned = false;
+	bool loadException = false;
+	bool sourceFilenameMatches = false;
+	bool mapObjectsPresentAfterLoad = false;
+	bool timeOfDayNotified = false;
+	Int loadError = 0;
+	Int mapObjectCount = 0;
+	Int roadPoint1 = 0;
+	Int roadPoint2 = 0;
+	Int roadPairs = 0;
+	Int roadPairsWithRoadType = 0;
+	Int bridgePoint1 = 0;
+	Int bridgePoint2 = 0;
+	Int bridgePairs = 0;
+	Int bridgePairsWithBridgeType = 0;
+	TimeOfDay mapTimeOfDay = TIME_OF_DAY_INVALID;
+	TimeOfDay notifiedTimeOfDay = TIME_OF_DAY_INVALID;
+	std::string failurePhase;
+	std::string sourceFilename;
+};
+
+class ProbeWritableGlobalDataScope
+{
+public:
+	ProbeWritableGlobalDataScope() :
+		m_oldWritableGlobalData(TheWritableGlobalData)
+	{
+		if (TheWritableGlobalData == nullptr) {
+			configure_global_data(m_localGlobalData, false);
+			TheWritableGlobalData = &m_localGlobalData;
+			m_installedLocalGlobalData = true;
+		}
+	}
+
+	~ProbeWritableGlobalDataScope()
+	{
+		if (m_installedLocalGlobalData) {
+			TheWritableGlobalData = m_oldWritableGlobalData;
+		}
+	}
+
+	bool installedLocalGlobalData() const
+	{
+		return m_installedLocalGlobalData && TheWritableGlobalData == &m_localGlobalData;
+	}
+
+private:
+	GlobalData *m_oldWritableGlobalData = nullptr;
+	GlobalData m_localGlobalData;
+	bool m_installedLocalGlobalData = false;
+};
+
+void record_logical_map_object_counts(
+	ProbeLogicalMapObjectLoadMetrics &metrics,
+	TerrainRoadCollection *terrain_roads)
+{
+	for (MapObject *object = MapObject::getFirstMapObject(); object != nullptr;
+			object = object->getNext()) {
+		++metrics.mapObjectCount;
+		if (object->getFlag(FLAG_ROAD_POINT1)) {
+			++metrics.roadPoint1;
+			MapObject *next = object->getNext();
+			if (next != nullptr && next->getFlag(FLAG_ROAD_POINT2)) {
+				++metrics.roadPairs;
+				if (terrain_roads != nullptr && terrain_roads->findRoad(object->getName()) != nullptr) {
+					++metrics.roadPairsWithRoadType;
+				}
+			}
+		}
+		if (object->getFlag(FLAG_ROAD_POINT2)) {
+			++metrics.roadPoint2;
+		}
+		if (object->getFlag(FLAG_BRIDGE_POINT1)) {
+			++metrics.bridgePoint1;
+			MapObject *next = object->getNext();
+			if (next != nullptr && next->getFlag(FLAG_BRIDGE_POINT2)) {
+				++metrics.bridgePairs;
+				if (terrain_roads != nullptr && terrain_roads->findBridge(object->getName()) != nullptr) {
+					++metrics.bridgePairsWithBridgeType;
+				}
+			}
+		}
+		if (object->getFlag(FLAG_BRIDGE_POINT2)) {
+			++metrics.bridgePoint2;
+		}
+	}
+	metrics.mapObjectsPresentAfterLoad = metrics.mapObjectCount > 0;
+}
+
+ProbeLogicalMapObjectLoadMetrics load_probe_logical_terrain_map_objects(
+	const char *map_entry,
+	TerrainRoadCollection *terrain_roads)
+{
+	ProbeLogicalMapObjectLoadMetrics metrics;
+	metrics.attempted = true;
+	if (map_entry == nullptr || map_entry[0] == '\0') {
+		return metrics;
+	}
+
+	ProbeWritableGlobalDataScope global_data_scope;
+	MapCache map_cache;
+	ProbeTerrainLogicGameClient game_client;
+	ThingFactory thing_factory;
+	ProbeLogicalScriptEngineScope script_engine_scope;
+	W3DTerrainLogic terrain_logic;
+	ProbeLogicalTerrainGlobalScope global_scope(
+		&map_cache,
+		&game_client,
+		&thing_factory,
+		&terrain_logic);
+
+	metrics.localGlobalDataInstalled = global_data_scope.installedLocalGlobalData();
+	metrics.mapCacheInstalled = TheMapCache == &map_cache;
+	metrics.gameClientInstalled = TheGameClient == &game_client;
+	metrics.thingFactoryInstalled = TheThingFactory == &thing_factory;
+	metrics.terrainLogicInstalled = TheTerrainLogic == &terrain_logic;
+	metrics.scriptEngineInstalled = script_engine_scope.installed();
+
+	WorldHeightMap::freeListOfMapObjects();
+	metrics.failurePhase = "W3DTerrainLogic::init";
+	terrain_logic.init();
+	metrics.failurePhase = "W3DTerrainLogic::loadMap(query=true)";
+	try {
+		metrics.loadReturned =
+			terrain_logic.loadMap(AsciiString(map_entry), TRUE) == TRUE;
+		metrics.failurePhase.clear();
+	} catch (ErrorCode error) {
+		metrics.loadException = true;
+		metrics.loadReturned = false;
+		metrics.loadError = static_cast<Int>(error);
+	} catch (...) {
+		metrics.loadException = true;
+		metrics.loadReturned = false;
+	}
+
+	if (metrics.loadReturned) {
+		metrics.sourceFilename = terrain_logic.getSourceFilename().str();
+		metrics.sourceFilenameMatches =
+			terrain_logic.getSourceFilename().compareNoCase(map_entry) == 0;
+		metrics.mapTimeOfDay = TheGlobalData->m_timeOfDay;
+		metrics.timeOfDayNotified = game_client.timeOfDayNotified();
+		metrics.notifiedTimeOfDay = game_client.notifiedTimeOfDay();
+	}
+
+	record_logical_map_object_counts(metrics, terrain_roads);
+	return metrics;
 }
 
 } // namespace
@@ -7342,6 +7296,7 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	bool logical_map_parse_exception = false;
 	bool road_pair_candidate_selected = false;
 	bool road_pair_map_objects_installed = false;
+	bool logical_map_objects_used = false;
 	Int road_pair_candidate_count = 0;
 	Int selected_road_pair_candidate = -1;
 	Int selected_road_pair_source_cells = 0;
@@ -7352,6 +7307,7 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	bool selected_road_pair_texture_available = false;
 	std::string road_pair_candidate_summaries_json = "[]";
 	std::vector<ProbeRoadPairCandidate> road_pair_candidates;
+	ProbeLogicalMapObjectLoadMetrics logical_terrain_map_objects;
 
 	ProbeTerrainMapPatchLoad map_load;
 	ProbeTerrainArchiveContext archive_context;
@@ -7393,12 +7349,20 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		}
 	}
 	if (map_created) {
-		parse_probe_map_objects_from_archive(
-			road_map_entry,
-			road_pair_candidates,
-			logical_map_stream_open,
-			logical_map_parsed,
-			logical_map_parse_exception);
+		logical_terrain_map_objects =
+			load_probe_logical_terrain_map_objects(
+				road_map_entry,
+				archive_context.terrainRoads());
+		logical_map_stream_open = logical_terrain_map_objects.loadReturned;
+		logical_map_parse_exception = logical_terrain_map_objects.loadException;
+		if (logical_terrain_map_objects.loadReturned) {
+			collect_probe_road_pairs_from_map_objects(
+				archive_context.terrainRoads(),
+				road_pair_candidates);
+			logical_map_parsed = !road_pair_candidates.empty();
+			logical_map_objects_used =
+				logical_terrain_map_objects.mapObjectsPresentAfterLoad;
+		}
 	}
 	road_pair_candidate_count =
 		static_cast<Int>(std::min<std::size_t>(
@@ -7445,18 +7409,21 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 					road_pair_candidates,
 					archive_context.terrainRoads(),
 					selected_road_pair_candidate);
-			road_pair_map_objects_installed =
-				install_probe_road_pair_map_objects(
-					road_pair_candidates[
-						static_cast<std::size_t>(selected_road_pair_candidate)]);
 		}
 	}
 
 	ProbeMapRoadObjectMetrics road_object_metrics =
 		inspect_map_road_objects(archive_context.terrainRoads());
 	if (map_created && road_object_metrics.roadPairs > 0) {
-		road_center_x = (road_object_metrics.firstRoadX + road_object_metrics.secondRoadX) * 0.5f;
-		road_center_y = (road_object_metrics.firstRoadY + road_object_metrics.secondRoadY) * 0.5f;
+		if (road_pair_candidate_selected && selected_road_pair_candidate >= 0) {
+			const ProbeRoadPairCandidate &selected =
+				road_pair_candidates[static_cast<std::size_t>(selected_road_pair_candidate)];
+			road_center_x = (selected.first.location.x + selected.second.location.x) * 0.5f;
+			road_center_y = (selected.first.location.y + selected.second.location.y) * 0.5f;
+		} else {
+			road_center_x = (road_object_metrics.firstRoadX + road_object_metrics.secondRoadX) * 0.5f;
+			road_center_y = (road_object_metrics.firstRoadY + road_object_metrics.secondRoadY) * 0.5f;
+		}
 		record_patch_height_metrics(map_load);
 	}
 
@@ -7643,9 +7610,23 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		logical_map_stream_open &&
 		logical_map_parsed &&
 		!logical_map_parse_exception &&
+		logical_terrain_map_objects.attempted &&
+		logical_terrain_map_objects.mapCacheInstalled &&
+		logical_terrain_map_objects.terrainLogicInstalled &&
+		logical_terrain_map_objects.gameClientInstalled &&
+		logical_terrain_map_objects.thingFactoryInstalled &&
+		logical_terrain_map_objects.scriptEngineInstalled &&
+		logical_terrain_map_objects.loadReturned &&
+		!logical_terrain_map_objects.loadException &&
+		logical_terrain_map_objects.sourceFilenameMatches &&
+		logical_terrain_map_objects.mapObjectsPresentAfterLoad &&
+		logical_terrain_map_objects.roadPairsWithRoadType > 0 &&
+		logical_terrain_map_objects.timeOfDayNotified &&
+		logical_terrain_map_objects.notifiedTimeOfDay == logical_terrain_map_objects.mapTimeOfDay &&
+		logical_map_objects_used &&
 		road_pair_candidate_count > 0 &&
 		road_pair_candidate_selected &&
-		road_pair_map_objects_installed &&
+		!road_pair_map_objects_installed &&
 		selected_road_pair_candidate >= 0 &&
 		selected_road_pair_source_cells > 0 &&
 		selected_road_pair_texture_available &&
@@ -7695,8 +7676,12 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 	const std::string first_road_name_json = json_string(road_object_metrics.firstRoadName);
+	const std::string logical_terrain_source_filename_json =
+		json_string(logical_terrain_map_objects.sourceFilename);
+	const std::string logical_terrain_failure_phase_json =
+		json_string(logical_terrain_map_objects.failurePhase);
 
-	char buffer[21000];
+	char buffer[30000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_road_buffer_scene_probe\","
 		"\"ok\":%s,"
@@ -7721,6 +7706,22 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		"\"sceneObjectAdded\":%s,\"beginRender\":%d,\"render\":%d,"
 		"\"endRender\":%d,\"roadDrawInvoked\":%s,"
 		"\"roadSceneDrawFlushed\":%s},"
+		"\"logicalTerrain\":{\"path\":\"W3DTerrainLogic::loadMap(query=true) -> "
+		"MapObject list -> W3DRoadBuffer::loadRoads\","
+		"\"attempted\":%s,\"localGlobalDataInstalled\":%s,"
+		"\"mapCacheInstalled\":%s,\"terrainLogicInstalled\":%s,"
+		"\"gameClientInstalled\":%s,\"thingFactoryInstalled\":%s,"
+		"\"scriptEngineInstalled\":%s,\"loadReturned\":%s,"
+		"\"loadException\":%s,\"loadError\":%d,"
+		"\"failurePhase\":%s,\"sourceFilename\":%s,"
+		"\"sourceFilenameMatches\":%s,"
+		"\"mapObjectsPresentAfterLoad\":%s,\"mapObjectsUsed\":%s,"
+		"\"mapObjectCount\":%d,\"roadPoint1\":%d,\"roadPoint2\":%d,"
+		"\"roadPairs\":%d,\"roadPairsWithRoadType\":%d,"
+		"\"bridgePoint1\":%d,\"bridgePoint2\":%d,"
+		"\"bridgePairs\":%d,\"bridgePairsWithBridgeType\":%d,"
+		"\"timeOfDayNotified\":%s,\"mapTimeOfDay\":%d,"
+		"\"notifiedTimeOfDay\":%d},"
 		"\"ini\":{\"terrainEntry\":\"Data\\\\INI\\\\Terrain.ini\","
 		"\"terrainLoaded\":%s,\"terrainEntryExists\":%s,"
 		"\"terrainParsed\":%s,"
@@ -7826,6 +7827,33 @@ const char *run_ww3d_terrain_road_buffer_scene_probe(
 		end_render_result,
 		bool_json(render_object != nullptr && render_object->probeRoadDrawInvoked()),
 		bool_json(road_scene_draw_flushed),
+		bool_json(logical_terrain_map_objects.attempted),
+		bool_json(logical_terrain_map_objects.localGlobalDataInstalled),
+		bool_json(logical_terrain_map_objects.mapCacheInstalled),
+		bool_json(logical_terrain_map_objects.terrainLogicInstalled),
+		bool_json(logical_terrain_map_objects.gameClientInstalled),
+		bool_json(logical_terrain_map_objects.thingFactoryInstalled),
+		bool_json(logical_terrain_map_objects.scriptEngineInstalled),
+		bool_json(logical_terrain_map_objects.loadReturned),
+		bool_json(logical_terrain_map_objects.loadException),
+		logical_terrain_map_objects.loadError,
+		logical_terrain_failure_phase_json.c_str(),
+		logical_terrain_source_filename_json.c_str(),
+		bool_json(logical_terrain_map_objects.sourceFilenameMatches),
+		bool_json(logical_terrain_map_objects.mapObjectsPresentAfterLoad),
+		bool_json(logical_map_objects_used),
+		logical_terrain_map_objects.mapObjectCount,
+		logical_terrain_map_objects.roadPoint1,
+		logical_terrain_map_objects.roadPoint2,
+		logical_terrain_map_objects.roadPairs,
+		logical_terrain_map_objects.roadPairsWithRoadType,
+		logical_terrain_map_objects.bridgePoint1,
+		logical_terrain_map_objects.bridgePoint2,
+		logical_terrain_map_objects.bridgePairs,
+		logical_terrain_map_objects.bridgePairsWithBridgeType,
+		bool_json(logical_terrain_map_objects.timeOfDayNotified),
+		static_cast<int>(logical_terrain_map_objects.mapTimeOfDay),
+		static_cast<int>(logical_terrain_map_objects.notifiedTimeOfDay),
 		bool_json(map_load.iniArchiveLoaded),
 		bool_json(map_load.terrainIniExists),
 		bool_json(map_load.terrainIniParsed),
@@ -8050,6 +8078,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool logical_map_parse_exception = false;
 	bool bridge_pair_candidate_selected = false;
 	bool bridge_pair_map_objects_installed = false;
+	bool logical_map_objects_used = false;
+	bool bridge_pair_template_substituted_in_logical_list = false;
 	Int bridge_pair_candidate_count = 0;
 	Int selected_bridge_pair_candidate = -1;
 	Int selected_bridge_pair_source_cells = 0;
@@ -8065,6 +8095,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	std::string selected_bridge_installed_name;
 	std::string bridge_pair_candidate_summaries_json = "[]";
 	std::vector<ProbeBridgePairCandidate> bridge_pair_candidates;
+	ProbeLogicalMapObjectLoadMetrics logical_terrain_map_objects;
 	ProbeBridgeAssetDiagnostics bridge_asset_diagnostics;
 
 	ProbeTerrainMapPatchLoad map_load;
@@ -8105,13 +8136,21 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		}
 	}
 	if (map_created) {
-		probe_bridge_phase_log("parse-bridge-map-objects");
-		parse_probe_bridge_map_objects_from_archive(
-			bridge_map_entry,
-			bridge_pair_candidates,
-			logical_map_stream_open,
-			logical_map_parsed,
-			logical_map_parse_exception);
+		probe_bridge_phase_log("load-logical-bridge-map-objects");
+		logical_terrain_map_objects =
+			load_probe_logical_terrain_map_objects(
+				bridge_map_entry,
+				archive_context.terrainRoads());
+		logical_map_stream_open = logical_terrain_map_objects.loadReturned;
+		logical_map_parse_exception = logical_terrain_map_objects.loadException;
+		if (logical_terrain_map_objects.loadReturned) {
+			collect_probe_bridge_pairs_from_map_objects(
+				archive_context.terrainRoads(),
+				bridge_pair_candidates);
+			logical_map_parsed = !bridge_pair_candidates.empty();
+			logical_map_objects_used =
+				logical_terrain_map_objects.mapObjectsPresentAfterLoad;
+		}
 	}
 	bridge_pair_candidate_count =
 		static_cast<Int>(std::min<std::size_t>(
@@ -8196,9 +8235,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			} else {
 				selected_bridge_installed_name = selected_bridge_original_name;
 			}
-			probe_bridge_phase_log("install-bridge-map-objects");
-			bridge_pair_map_objects_installed =
-				install_probe_bridge_pair_map_objects(installed);
+			if (bridge_template_substituted &&
+					installed.firstMapObject != nullptr &&
+					installed.secondMapObject != nullptr) {
+				probe_bridge_phase_log("substitute-logical-bridge-template");
+				installed.firstMapObject->setName(installed.first.name);
+				installed.secondMapObject->setName(installed.second.name);
+				bridge_pair_template_substituted_in_logical_list = true;
+			}
 			bridge_center_x = (selected.first.location.x + selected.second.location.x) * 0.5f;
 			bridge_center_y = (selected.first.location.y + selected.second.location.y) * 0.5f;
 			const float bridge_delta_x = selected.second.location.x - selected.first.location.x;
@@ -8290,7 +8334,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 
 	if (succeeded(set_device_result) &&
 			map_created &&
-			bridge_pair_map_objects_installed &&
+			logical_map_objects_used &&
 			bridge_object_metrics.bridgePairs > 0) {
 		probe_bridge_phase_log("init-height-data");
 		if (old_water_transparency != nullptr) {
@@ -8467,9 +8511,25 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		logical_map_stream_open &&
 		logical_map_parsed &&
 		!logical_map_parse_exception &&
+		logical_terrain_map_objects.attempted &&
+		logical_terrain_map_objects.mapCacheInstalled &&
+		logical_terrain_map_objects.terrainLogicInstalled &&
+		logical_terrain_map_objects.gameClientInstalled &&
+		logical_terrain_map_objects.thingFactoryInstalled &&
+		logical_terrain_map_objects.scriptEngineInstalled &&
+		logical_terrain_map_objects.loadReturned &&
+		!logical_terrain_map_objects.loadException &&
+		logical_terrain_map_objects.sourceFilenameMatches &&
+		logical_terrain_map_objects.mapObjectsPresentAfterLoad &&
+		logical_terrain_map_objects.bridgePairsWithBridgeType > 0 &&
+		logical_terrain_map_objects.timeOfDayNotified &&
+		logical_terrain_map_objects.notifiedTimeOfDay == logical_terrain_map_objects.mapTimeOfDay &&
+		logical_map_objects_used &&
 		bridge_pair_candidate_count > 0 &&
 		bridge_pair_candidate_selected &&
-		bridge_pair_map_objects_installed &&
+		!bridge_pair_map_objects_installed &&
+		(!bridge_template_substituted ||
+			bridge_pair_template_substituted_in_logical_list) &&
 		selected_bridge_pair_candidate >= 0 &&
 		selected_bridge_pair_model_available &&
 		selected_bridge_pair_texture_available &&
@@ -8543,8 +8603,12 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 				archive_context.terrainRoads(),
 				selected_bridge_installed_ascii) :
 			"");
+	const std::string logical_terrain_source_filename_json =
+		json_string(logical_terrain_map_objects.sourceFilename);
+	const std::string logical_terrain_failure_phase_json =
+		json_string(logical_terrain_map_objects.failurePhase);
 
-	char buffer[30000];
+	char buffer[42000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
@@ -8581,6 +8645,23 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			"\"bridgeShroudDrawCallsBefore\":%u,"
 			"\"bridgeShroudDrawCallsAfter\":%u,"
 			"\"bridgeSceneDrawFlushed\":%s},"
+		"\"logicalTerrain\":{\"path\":\"W3DTerrainLogic::loadMap(query=true) -> "
+		"MapObject list -> W3DBridgeBuffer::loadBridges\","
+		"\"attempted\":%s,\"localGlobalDataInstalled\":%s,"
+		"\"mapCacheInstalled\":%s,\"terrainLogicInstalled\":%s,"
+		"\"gameClientInstalled\":%s,\"thingFactoryInstalled\":%s,"
+		"\"scriptEngineInstalled\":%s,\"loadReturned\":%s,"
+		"\"loadException\":%s,\"loadError\":%d,"
+		"\"failurePhase\":%s,\"sourceFilename\":%s,"
+		"\"sourceFilenameMatches\":%s,"
+		"\"mapObjectsPresentAfterLoad\":%s,\"mapObjectsUsed\":%s,"
+		"\"mapObjectCount\":%d,\"roadPoint1\":%d,\"roadPoint2\":%d,"
+		"\"roadPairs\":%d,\"roadPairsWithRoadType\":%d,"
+		"\"bridgePoint1\":%d,\"bridgePoint2\":%d,"
+		"\"bridgePairs\":%d,\"bridgePairsWithBridgeType\":%d,"
+		"\"timeOfDayNotified\":%s,\"mapTimeOfDay\":%d,"
+		"\"notifiedTimeOfDay\":%d,"
+		"\"selectedTemplateSubstitutedInLogicalList\":%s},"
 		"\"ini\":{\"terrainEntry\":\"Data\\\\INI\\\\Terrain.ini\","
 		"\"terrainLoaded\":%s,\"terrainEntryExists\":%s,"
 		"\"terrainParsed\":%s,"
@@ -8628,6 +8709,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			"\"selectedModelAvailable\":%s,"
 			"\"selectedTextureAvailable\":%s,"
 			"\"templateSubstitutedForAvailableAssets\":%s,"
+			"\"selectedTemplateSubstitutedInLogicalList\":%s,"
 			"\"selectedOriginalName\":%s,\"selectedInstalledName\":%s,"
 			"\"selectedModel\":%s,\"selectedTexture\":%s,"
 			"\"assetManager\":{\"modelArchiveExists\":%s,"
@@ -8723,6 +8805,34 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		render_object != nullptr ? render_object->probeBridgeShroudDrawCallsBefore() : 0,
 		render_object != nullptr ? render_object->probeBridgeShroudDrawCallsAfter() : 0,
 		bool_json(bridge_scene_draw_flushed),
+		bool_json(logical_terrain_map_objects.attempted),
+		bool_json(logical_terrain_map_objects.localGlobalDataInstalled),
+		bool_json(logical_terrain_map_objects.mapCacheInstalled),
+		bool_json(logical_terrain_map_objects.terrainLogicInstalled),
+		bool_json(logical_terrain_map_objects.gameClientInstalled),
+		bool_json(logical_terrain_map_objects.thingFactoryInstalled),
+		bool_json(logical_terrain_map_objects.scriptEngineInstalled),
+		bool_json(logical_terrain_map_objects.loadReturned),
+		bool_json(logical_terrain_map_objects.loadException),
+		logical_terrain_map_objects.loadError,
+		logical_terrain_failure_phase_json.c_str(),
+		logical_terrain_source_filename_json.c_str(),
+		bool_json(logical_terrain_map_objects.sourceFilenameMatches),
+		bool_json(logical_terrain_map_objects.mapObjectsPresentAfterLoad),
+		bool_json(logical_map_objects_used),
+		logical_terrain_map_objects.mapObjectCount,
+		logical_terrain_map_objects.roadPoint1,
+		logical_terrain_map_objects.roadPoint2,
+		logical_terrain_map_objects.roadPairs,
+		logical_terrain_map_objects.roadPairsWithRoadType,
+		logical_terrain_map_objects.bridgePoint1,
+		logical_terrain_map_objects.bridgePoint2,
+		logical_terrain_map_objects.bridgePairs,
+		logical_terrain_map_objects.bridgePairsWithBridgeType,
+		bool_json(logical_terrain_map_objects.timeOfDayNotified),
+		static_cast<int>(logical_terrain_map_objects.mapTimeOfDay),
+		static_cast<int>(logical_terrain_map_objects.notifiedTimeOfDay),
+		bool_json(bridge_pair_template_substituted_in_logical_list),
 		bool_json(map_load.iniArchiveLoaded),
 		bool_json(map_load.terrainIniExists),
 		bool_json(map_load.terrainIniParsed),
@@ -8785,6 +8895,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(selected_bridge_pair_model_available),
 		bool_json(selected_bridge_pair_texture_available),
 		bool_json(bridge_template_substituted),
+		bool_json(bridge_pair_template_substituted_in_logical_list),
 		selected_bridge_original_name_json.c_str(),
 		selected_bridge_installed_name_json.c_str(),
 		selected_bridge_model_json.c_str(),

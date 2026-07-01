@@ -1821,6 +1821,19 @@ const steps = [
           && payload.map?.width > 16
           && payload.map?.height > 16,
         "terrain road-buffer scene render smoke did not parse the shipped MD_CHI01 map", payload.map);
+      expect(payload.logicalTerrain?.loadReturned === true
+          && payload.logicalTerrain?.loadException === false
+          && payload.logicalTerrain?.sourceFilenameMatches === true
+          && payload.logicalTerrain?.mapObjectsPresentAfterLoad === true
+          && payload.logicalTerrain?.mapObjectsUsed === true
+          && payload.logicalTerrain?.roadPairsWithRoadType > 0
+          && payload.logicalTerrain?.timeOfDayNotified === true
+          && payload.logicalTerrain?.notifiedTimeOfDay === payload.logicalTerrain?.mapTimeOfDay
+          && payload.probe?.results?.roadPairMapObjectsInstalled === false,
+        "terrain road-buffer scene render smoke did not consume the original logical map-object list", {
+          logicalTerrain: payload.logicalTerrain,
+          results: payload.probe?.results,
+        });
       expect(payload.terrain?.tileSource === "shipped-map-heightmap"
           && payload.terrain?.renderObject === "ProbeHeightMapRenderObjWithRoadBuffer"
           && payload.terrain?.verticesPerSide === 33
@@ -1863,6 +1876,96 @@ const steps = [
         "terrain road-buffer scene render smoke did not produce colored browser pixels", payload.coverage);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-road-buffer-scene-canvas.png"),
         "terrain road-buffer scene render smoke did not capture the expected screenshot", payload);
+    },
+  },
+  {
+    name: "terrain-bridge-buffer-scene-render",
+    file: "harness/terrain_bridge_buffer_scene_smoke.mjs",
+    args: [
+      "artifacts/real-assets/INIZH.big",
+      "artifacts/real-assets/MapsZH.big",
+      "artifacts/real-assets/TerrainZH.big",
+      "artifacts/real-assets/W3DZH.big",
+      "artifacts/real-assets/TexturesZH.big",
+    ],
+    validate(payload) {
+      expect(payload.ok === true, "terrain bridge-buffer scene render smoke did not report ok", payload);
+      expect(payload.path === "browser-ww3d-terrain-bridge-buffer-scene",
+        "terrain bridge-buffer scene render smoke emitted the wrong path", payload);
+      expect(payload.archives?.ini?.roadsEntry === "Data\\INI\\Roads.ini"
+          && payload.archives?.ini?.parser?.includes("INITerrainBridge.cpp")
+          && payload.archives?.ini?.originalIniParser === true
+          && payload.archives?.ini?.bridgeCount > 0
+          && iniLayoutMatches(payload.archives?.ini?.layout),
+        "terrain bridge-buffer scene render smoke did not read real Roads.ini bridge definitions", payload.archives?.ini);
+      expect(payload.map?.entry === "Maps\\MD_CHI01\\MD_CHI01.map"
+          && payload.map?.parsed === true
+          && payload.map?.bytes > 0
+          && payload.map?.width > 16
+          && payload.map?.height > 16,
+        "terrain bridge-buffer scene render smoke did not parse the shipped MD_CHI01 map", payload.map);
+      expect(payload.logicalTerrain?.loadReturned === true
+          && payload.logicalTerrain?.loadException === false
+          && payload.logicalTerrain?.sourceFilenameMatches === true
+          && payload.logicalTerrain?.mapObjectsPresentAfterLoad === true
+          && payload.logicalTerrain?.mapObjectsUsed === true
+          && payload.logicalTerrain?.bridgePairsWithBridgeType > 0
+          && payload.logicalTerrain?.timeOfDayNotified === true
+          && payload.logicalTerrain?.notifiedTimeOfDay === payload.logicalTerrain?.mapTimeOfDay
+          && payload.probe?.results?.bridgePairMapObjectsInstalled === false
+          && (payload.bridgeObjects?.templateSubstitutedForAvailableAssets !== true
+            || payload.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === true),
+        "terrain bridge-buffer scene render smoke did not consume the original logical bridge map-object list", {
+          logicalTerrain: payload.logicalTerrain,
+          bridgeObjects: payload.bridgeObjects,
+          results: payload.probe?.results,
+        });
+      expect(payload.terrain?.tileSource === "shipped-map-heightmap"
+          && payload.terrain?.renderObject === "ProbeHeightMapRenderObjWithBridgeBuffer"
+          && payload.terrain?.verticesPerSide === 33
+          && payload.terrain?.cellsPerSide === 32
+          && payload.terrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.terrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0,
+        "terrain bridge-buffer scene render smoke did not keep source-backed terrain geometry", payload.terrain);
+      expect(payload.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && payload.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)")
+          && payload.scene?.renderPath?.includes("W3DBridge::renderBridge")
+          && payload.scene?.created === true
+          && payload.scene?.objectAdded === true
+          && payload.scene?.terrainClassId === 4,
+        "terrain bridge-buffer scene render smoke did not use the scene bridge draw path", payload.scene);
+      expect(payload.bridgeObjects?.pairs > 0
+          && payload.bridgeObjects?.pairsWithBridgeType > 0
+          && payload.bridgeObjects?.selectedModelAvailable === true
+          && payload.bridgeObjects?.selectedTextureAvailable === true
+          && payload.bridges?.afterLoad > 0
+          && payload.bridges?.verticesAfterUpdate > 0
+          && payload.bridges?.indicesAfterUpdate > 0,
+        "terrain bridge-buffer scene render smoke did not drive original bridge map-object state", {
+          bridgeObjects: payload.bridgeObjects,
+          bridges: payload.bridges,
+        });
+      expect(payload.calls?.browserBufferCreate >= 4
+          && payload.calls?.browserBufferUpdate >= 4
+          && payload.calls?.drawIndexed >= 3,
+        "terrain bridge-buffer scene render smoke did not reach terrain plus bridge indexed draws", payload.calls);
+      expect(payload.draw?.vertexShaderFvf === 338
+          && payload.draw?.vertexStride === 36
+          && payload.browserProbe?.vertexShaderFvf === 338
+          && payload.browserProbe?.vertexStride === 36
+          && payload.browserProbe?.texture0?.sampled === true
+          && payload.browserProbe?.vertexDiagnostics?.projected?.visible > 0
+          && payload.drawSequence?.bridgeAfterTerrain === true
+          && payload.drawSequence?.bridgeShroudAfterBridge === true,
+        "terrain bridge-buffer scene render smoke did not flush browser-visible bridge geometry after terrain", {
+          browserProbe: payload.browserProbe,
+          drawSequence: payload.drawSequence,
+        });
+      expect(payload.coverage?.coloredPixelCount > 0,
+        "terrain bridge-buffer scene render smoke did not produce colored browser pixels", payload.coverage);
+      expect(payload.screenshot?.endsWith("harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png"),
+        "terrain bridge-buffer scene render smoke did not capture the expected screenshot", payload);
     },
   },
   {
@@ -1973,6 +2076,8 @@ console.log(JSON.stringify({
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
     "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including the original 129x129 load window, optional base Terrain.big mounting, and browser WebGL2 pixels",
     "original W3DTreeBuffer::drawTrees reached through RTS3DScene::Flush/DoTrees with shipped PTDogwod01_S W3D and terrain/tree textures in browser WebGL2",
+    "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DRoadBuffer::loadRoads and browser-visible road geometry",
+    "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DBridgeBuffer::loadBridges, W3DBridge::renderBridge, and bridge shroud browser-visible geometry",
     "shipped W3D mesh and DDS texture rendering through the browser D3D8/WebGL bridge",
     "shipped Bink sidecar frames copied by original BinkVideoPlayer into real W3DVideoBuffer textures and presented through original W3DDisplay::drawVideoBuffer",
   ],

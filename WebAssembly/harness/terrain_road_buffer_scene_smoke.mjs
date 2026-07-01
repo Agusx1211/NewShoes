@@ -333,6 +333,15 @@ try {
       || !iniLayoutMatches(result.probe?.iniLayout)
       || result.probe?.map?.entry !== mapEntry
       || result.probe?.map?.parsed !== true
+      || result.probe?.logicalTerrain?.loadReturned !== true
+      || result.probe?.logicalTerrain?.loadException !== false
+      || result.probe?.logicalTerrain?.sourceFilenameMatches !== true
+      || result.probe?.logicalTerrain?.mapObjectsPresentAfterLoad !== true
+      || result.probe?.logicalTerrain?.mapObjectsUsed !== true
+      || result.probe?.logicalTerrain?.roadPairsWithRoadType <= 0
+      || result.probe?.logicalTerrain?.timeOfDayNotified !== true
+      || result.probe?.logicalTerrain?.notifiedTimeOfDay !== result.probe?.logicalTerrain?.mapTimeOfDay
+      || result.probe?.results?.roadPairMapObjectsInstalled !== false
       || result.probe?.terrain?.renderObject !== "ProbeHeightMapRenderObjWithRoadBuffer"
       || result.probe?.roadObjects?.pairs <= 0
       || result.probe?.roadObjects?.pairsWithRoadType <= 0
@@ -351,6 +360,7 @@ try {
       ok: result.ok,
       probeOk: result.probe?.ok,
       map: result.probe?.map,
+      logicalTerrain: result.probe?.logicalTerrain,
       terrain: result.probe?.terrain,
       roadObjects: result.probe?.roadObjects,
       roads: result.probe?.roads,
@@ -394,6 +404,7 @@ try {
     },
     probe: result.probe,
     map: result.probe.map,
+    logicalTerrain: result.probe.logicalTerrain,
     terrain: result.probe.terrain,
     scene: result.probe.scene,
     roadObjects: result.probe.roadObjects,

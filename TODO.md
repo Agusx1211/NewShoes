@@ -769,8 +769,13 @@ shares structure and follows behind.
       `test:ww3d-terrain-road-buffer-scene` now also proves a focused original
       `W3DRoadBuffer::drawRoads` pass over the original heightmap render object
       on a real source-backed `Maps\MD_CHI01\MD_CHI01.map` patch, with
-      `Roads.ini` parsed by original `INI::load` / terrain-road parsers and a
-      real road texture sampled in the browser. The
+      `Roads.ini` parsed by original `INI::load` / terrain-road parsers, the
+      road buffer fed from the full original logical map-object list created by
+      `W3DTerrainLogic::loadMap(query=true)`, and a real road texture sampled
+      in the browser. `test:ww3d-terrain-bridge-buffer-scene` now does the same
+      full logical map-object handoff for `W3DBridgeBuffer::loadBridges` while
+      retaining the current in-list bridge-template substitution needed by the
+      ZH-only archive set. The
       remaining terrain vertical work is production/full-map display ownership
       with source-backed coverage across the load window, then broadening water,
       shroud, objects, and continuous gameplay-owned camera flow on top of the
@@ -796,17 +801,20 @@ shares structure and follows behind.
       real source-backed map patch. The original `W3DRoadBuffer::drawRoads`
       path is now browser-harness verified through
       `HeightMapRenderObjClass::Render` on a real MD_CHI01 source-backed patch:
-      the probe parses real map road endpoints, installs one selected
-      `MapObject` point pair for original `W3DRoadBuffer::loadRoads`, samples
-      the shipped `TRThickLine` road texture from `TexturesZH.big`, and proves
-      the road draw follows the terrain base/blend passes. The original
+      the probe calls original `W3DTerrainLogic::loadMap(query=true)`, keeps
+      the resulting full `MapObject` list live, collects road candidate pairs
+      from that list, feeds the list to original `W3DRoadBuffer::loadRoads`,
+      samples the shipped `TRThickLine` road texture from `TexturesZH.big`, and
+      proves the road draw follows the terrain base/blend passes. The original
       `W3DBridgeBuffer::loadBridges` / `updateCenter` plus
       `W3DBridge::renderBridge` geometry path is now browser-harness verified
-      on a real `Maps\MD_CHI01\MD_CHI01.map` bridge pair with shipped bridge
-      model/texture assets available from the mounted Zero Hour archives.
-      Production map/object tree placement, production logical-map road
-      ownership through the normal `DO_ROADS` terrain path, TerrainLogic-owned
-      bridge damage states, and shroud-aware tree behavior remain open. A
+      from the same full logical map-object list on a real
+      `Maps\MD_CHI01\MD_CHI01.map` bridge pair; the current ZH-only asset set
+      still substitutes an available bridge template in-place on the selected
+      logical list entries. Production map/object tree placement, production
+      `query=false` / `W3DTerrainLogic::newMap` ownership through the normal
+      `DO_ROADS` terrain path, TerrainLogic-owned bridge damage states through
+      real AI/pathfinder ownership, and shroud-aware tree behavior remain open. A
       direct broad removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
@@ -831,9 +839,11 @@ shares structure and follows behind.
 - [ ] Promote bridge-buffer drawing from the focused
       `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned
       damage-state behavior. The focused browser scene now verifies the
-      textured bridge base pass and bridge shroud overlay, but still clears
-      `TheTerrainLogic` and does not exercise damaged/repaired bridge state
-      lookup from real gameplay objects.
+      textured bridge base pass and bridge shroud overlay from the full logical
+      map-object list, but still clears `TheTerrainLogic` for drawing and passes
+      `nullptr` into `W3DBridgeBuffer::loadBridges` so it does not exercise
+      damaged/repaired bridge state lookup or `TheAI->pathfinder()->addBridge`
+      ownership from real gameplay objects.
 - [ ] Promote the combined terrain-full-scene missing-water-assets frontier
       into actual original water rendering and gameplay-owned shroud updates.
       The current `test:ww3d-terrain-full-scene` harness mounts the real map,

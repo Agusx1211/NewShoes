@@ -3879,6 +3879,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/terrain_bridge_buffer_scene_smoke.mjs`,
       `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene`, and
       `CNC_PORT_TERRAIN_SCENE_MODE=shroud node WebAssembly/harness/terrain_map_patch_scene_smoke.mjs`.
+- [x] Feed the focused terrain road and bridge adjunct buffers from the
+      original logical terrain map-object list. The road and bridge scene probes
+      now call original `W3DTerrainLogic::loadMap(query=true)` against
+      `Maps\MD_CHI01\MD_CHI01.map`, keep the resulting full `MapObject` list
+      live, collect candidate point pairs from `MapObject::getFirstMapObject()`,
+      and hand that list to original `W3DRoadBuffer::loadRoads` /
+      `W3DBridgeBuffer::loadBridges` instead of installing a two-node selected
+      pair. The road gate requires the logical-load source filename,
+      time-of-day notification, map-object presence, typed road pairs, and
+      `roadPairMapObjectsInstalled === false`; the bridge gate requires the
+      analogous typed bridge pair state, `bridgePairMapObjectsInstalled ===
+      false`, and in-place selected-template substitution for the current
+      ZH-only asset gap. `test:vertical-integrations` now includes the bridge
+      scene step and checks the logical handoff for both adjuncts. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Add a browser-verified real-map terrain shroud scene proof. The new
       `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, parses
