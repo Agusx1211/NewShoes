@@ -5661,6 +5661,88 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
   "SHELL:-sNODERAWFS=1"
 )
 
+add_executable(gamelogic-new-game-dispatch-smoke
+  tests/gamelogic_new_game_dispatch_smoke.cpp
+  "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
+)
+
+set_target_properties(gamelogic-new-game-dispatch-smoke PROPERTIES
+  SUFFIX ".cjs"
+)
+
+target_link_libraries(gamelogic-new-game-dispatch-smoke PRIVATE
+  zh_gameclient_gui_input_runtime
+)
+
+target_include_directories(gamelogic-new-game-dispatch-smoke PRIVATE
+  "${WASM_SHIMS_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}"
+  "${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "${GAMEENGINE_DIR}/Source"
+  "${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "${MAIN_DIR}"
+  "${ZH_LIB_INCLUDE_DIR}"
+  "${ZH_CODE_DIR}/Libraries/Source"
+  "${WWVEGAS_DIR}"
+  "${WWVEGAS_DIR}/WW3D2"
+  "${WWDEBUG_DIR}"
+  "${WWLIB_DIR}"
+  "${WWMATH_DIR}"
+  "${WWSAVELOAD_DIR}"
+  "${COMPRESSION_DIR}"
+  "${COMPRESSION_EAC_DIR}"
+)
+
+target_compile_options(gamelogic-new-game-dispatch-smoke PRIVATE
+  "-include${WASM_SHIMS_DIR}/windows.h"
+  "-include${WASM_SHIMS_DIR}/mmsystem.h"
+  "-include${WWVEGAS_PORT_SHIM}"
+  "-include${WASM_SHIMS_DIR}/PreRTS.h"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}"
+  "-iquote${GAMEENGINE_INCLUDE_DIR}/Precompiled"
+  "-iquote${GAMEENGINE_DIR}/Source"
+  "-iquote${GAMEENGINE_DEVICE_INCLUDE_DIR}"
+  "-iquote${MAIN_DIR}"
+  "-iquote${ZH_LIB_INCLUDE_DIR}"
+  "-iquote${ZH_CODE_DIR}/Libraries/Source"
+  "-iquote${WWVEGAS_DIR}"
+  "-iquote${WWVEGAS_DIR}/WW3D2"
+  "-iquote${WWDEBUG_DIR}"
+  "-iquote${WWLIB_DIR}"
+  "-iquote${WWMATH_DIR}"
+  "-iquote${WWSAVELOAD_DIR}"
+  "-iquote${COMPRESSION_DIR}"
+  "-iquote${COMPRESSION_EAC_DIR}"
+  -ffunction-sections
+  -fdata-sections
+  -fms-extensions
+  -Wall
+  -Wextra
+  -Wno-extra-tokens
+  -Wno-implicit-exception-spec-mismatch
+  -Wno-new-returns-null
+  -Wno-register
+  -Wno-undefined-bool-conversion
+  -Wno-unknown-pragmas
+  -Wno-unused-parameter
+  -Wno-writable-strings
+)
+
+target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
+  "SHELL:-Wl,--gc-sections"
+  "SHELL:-Wl,--wrap=_ZN10PlayerList12getNthPlayerEi"
+  "SHELL:-Wl,--unresolved-symbols=ignore-all"
+  "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"
+  "SHELL:-sENVIRONMENT=node"
+  "SHELL:-sSINGLE_FILE=1"
+  "SHELL:-sASSERTIONS=1"
+  "SHELL:-sALLOW_MEMORY_GROWTH=1"
+  "SHELL:-sINITIAL_MEMORY=67108864"
+)
+
 add_executable(win32-gameengine-message-pump-smoke
   tests/win32_gameengine_message_pump_smoke.cpp
 )

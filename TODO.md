@@ -841,15 +841,15 @@ shares structure and follows behind.
       `GlobalData` write, and `MessageStream` `MSG_NEW_GAME` argument
       queueing, followed by original `MessageStream::propagateMessages`
       handoff to `TheCommandList` and `CommandList::reset` cleanup. The
-      source-only `verify:gamelogic-new-game-dispatch-frontier` gate now pins
-      the original `MessageStream` -> `GameLogic::processCommandList` ->
-      `logicMessageDispatcher(MSG_NEW_GAME)` -> `prepareNewGame` ->
-      first-call `startNewGame(FALSE)` path, including the current shell-smoke
-      shim blockers. Drive that path at runtime in a real original
-      `GameLogic.cpp` / `GameLogicDispatch.cpp` target once `GameState`,
-      `PlayerList`/`Player`, load-screen/background, and later
-      terrain/player/script ownership can be real instead of shell-smoke
-      sentinels.
+      `verify:gamelogic-new-game-dispatch-frontier` gate now pins that original
+      source path, and `gamelogic-new-game-dispatch-smoke` links original
+      `GameLogic.cpp`, `GameLogicDispatch.cpp`, and `GameState.cpp` to drive
+      `GameLogic::processCommandList` on a real `MSG_NEW_GAME` through
+      `prepareNewGame` and the first-call `startNewGame(FALSE)` deferral before
+      terrain load. That runtime still uses focused
+      `PlayerList::getNthPlayer`, `ScriptEngine`, `Shell`, `GlobalData`, and
+      BlankWindow adapters; replace those with real owners before continuing the
+      deferred update into terrain/player/script map-load ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

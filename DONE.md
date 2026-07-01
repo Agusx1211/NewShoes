@@ -1951,6 +1951,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `GameLogicDispatch.cpp` target rather than faking the dispatcher in the
       shell smoke. The startup and aggregate vertical gates now require this
       source frontier.
+- [x] Drive original `GameLogic::processCommandList` through the
+      `MSG_NEW_GAME` runtime dispatch boundary. Added
+      `gamelogic-new-game-dispatch-smoke`, which links original
+      `GameLogic.cpp`, `GameLogicDispatch.cpp`, and `GameState.cpp`, moves a
+      real `MSG_NEW_GAME` from original `MessageStream` to `CommandList`, and
+      calls original `GameLogic::processCommandList` through
+      `logicMessageDispatcher(MSG_NEW_GAME)`, `prepareNewGame`, and the
+      first-call `startNewGame(FALSE)` deferral before terrain load. The smoke
+      proves difficulty, BlankWindow creation, shell hide, FPS-limit,
+      pending-map promotion, pristine-map recording, loading-map state, and
+      rank-points side effects while explicitly reporting the remaining
+      focused `PlayerList::getNthPlayer`, `ScriptEngine`, `Shell`,
+      `GlobalData`, and BlankWindow adapter boundaries. The startup and
+      aggregate vertical gates now require the runtime proof in addition to
+      the source frontier. Verified with
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

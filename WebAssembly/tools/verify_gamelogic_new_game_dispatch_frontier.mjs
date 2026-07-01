@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Verifies that the next Skirmish start frontier is pinned to the original
-// GameLogic MSG_NEW_GAME dispatch path, and that the current shell smoke still
-// stops before claiming original GameLogic runtime ownership.
+// Verifies that the Skirmish start frontier is pinned to the original
+// GameLogic MSG_NEW_GAME dispatch path, that the current shell smoke still
+// stops before claiming original GameLogic ownership, and that the focused
+// runtime smoke links original GameLogic.cpp/GameLogicDispatch.cpp.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -17,6 +18,7 @@ const paths = {
   gameLogicDispatch:
     "GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogicDispatch.cpp",
   shellSmoke: "WebAssembly/tests/w3d_window_layout_script_smoke.cpp",
+  runtimeSmoke: "WebAssembly/tests/gamelogic_new_game_dispatch_smoke.cpp",
   gameLogicShim: "WebAssembly/shims/GameLogic/GameLogic.h",
   cmake: "WebAssembly/CMakeLists.txt",
 };
@@ -142,6 +144,7 @@ const messageStream = readRepoText(paths.messageStream);
 const gameLogic = readRepoText(paths.gameLogic);
 const gameLogicDispatch = readRepoText(paths.gameLogicDispatch);
 const shellSmoke = readRepoText(paths.shellSmoke);
+const runtimeSmoke = readRepoText(paths.runtimeSmoke);
 const gameLogicShim = readRepoText(paths.gameLogicShim);
 const cmake = readRepoText(paths.cmake);
 
@@ -361,6 +364,53 @@ const playerLookupShimReturnLine = expectInBody(
   "shell smoke PlayerList::getNthPlayer returns null",
 );
 
+const runtimeTargetSources = cmakeInvocationBlock(
+  cmake,
+  /add_executable\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke add_executable",
+);
+expect(
+  /System\/GameLogic\.cpp|System\\GameLogic\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GameLogic.cpp",
+);
+expect(
+  /System\/GameLogicDispatch\.cpp|System\\GameLogicDispatch\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GameLogicDispatch.cpp",
+);
+expect(
+  /System\/SaveGame\/GameState\.cpp|System\\SaveGame\\GameState\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original GameState.cpp",
+);
+const runtimeLinkOptions = cmakeInvocationBlock(
+  cmake,
+  /target_link_options\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
+  "gamelogic-new-game-dispatch-smoke target_link_options",
+);
+expect(
+  runtimeLinkOptions.block.includes("--wrap=_ZN10PlayerList12getNthPlayerEi"),
+  "gamelogic-new-game-dispatch-smoke does not declare the focused PlayerList lookup wrap",
+);
+const runtimeProcessCommandListLine = lineOf(
+  runtimeSmoke,
+  /logic->processCommandList\s*\(\s*TheCommandList\s*\)\s*;/,
+  "runtime smoke GameLogic::processCommandList call",
+);
+const runtimePathLine = lineOf(
+  runtimeSmoke,
+  /gamelogic-new-game-dispatch-runtime/,
+  "runtime smoke JSON path",
+);
+const runtimePlayerWrapLine = lineOf(
+  runtimeSmoke,
+  /__wrap__ZN10PlayerList12getNthPlayerEi/,
+  "runtime smoke focused PlayerList::getNthPlayer wrapper",
+);
+const runtimeGameLogicLine = lineOf(
+  runtimeSmoke,
+  /GameLogic\s*\*\s*logic\s*=\s*new\s+GameLogic\s*;/,
+  "runtime smoke original GameLogic allocation",
+);
+
 console.log(JSON.stringify({
   ok: true,
   source: "GeneralsMD original",
@@ -404,6 +454,18 @@ console.log(JSON.stringify({
     playerLookupShimLine: playerLookupShim.line,
     playerLookupShimReturnLine,
   },
+  runtimeTargetBoundary: {
+    smokeSource: paths.runtimeSmoke,
+    cmakeTargetLine: runtimeTargetSources.line,
+    cmakeLinkOptionsLine: runtimeLinkOptions.line,
+    originalGameLogicCppLinked: true,
+    originalGameLogicDispatchCppLinked: true,
+    originalGameStateCppLinked: true,
+    processCommandListLine: runtimeProcessCommandListLine,
+    runtimePathLine,
+    focusedPlayerLookupWrapLine: runtimePlayerWrapLine,
+    gameLogicAllocationLine: runtimeGameLogicLine,
+  },
   covered: [
     "MessageStream::propagateMessages transfers messages to TheCommandList",
     "GameLogic::processCommandList dispatches CommandList messages through logicMessageDispatcher",
@@ -412,12 +474,13 @@ console.log(JSON.stringify({
     "prepareNewGame owns difficulty, BlankWindow background, game-mode, pending-map, and shell-hide setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
+    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp and calls GameLogic::processCommandList at runtime",
   ],
   nextRequired: [
-    "link a runtime target against original GameLogic.cpp and GameLogicDispatch.cpp",
-    "replace the shell-smoke GameState sentinel with a real GameState owner",
-    "replace the no-player PlayerList boundary with real PlayerList/Player ownership",
-    "own the BlankWindow/load-screen/background path before entering prepareNewGame at runtime",
+    "replace the runtime PlayerList::getNthPlayer linker wrap with real PlayerList/Player ownership",
+    "replace the runtime focused ScriptEngine/Shell adapters with original owners",
+    "replace the runtime shim GlobalData bridge with original GlobalData ownership",
+    "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
   ],
 }, null, 2));
