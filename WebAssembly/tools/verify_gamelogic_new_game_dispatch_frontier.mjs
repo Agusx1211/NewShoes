@@ -2,8 +2,8 @@
 // Verifies that the Skirmish start frontier is pinned to the original
 // GameLogic MSG_NEW_GAME dispatch path, that the current shell smoke still
 // stops before claiming original GameLogic ownership, and that the focused
-// runtime smoke links original GlobalData.cpp/GameLogic.cpp/
-// GameLogicDispatch.cpp.
+// runtime smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/
+// GameLogic.cpp/GameLogicDispatch.cpp.
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -377,6 +377,22 @@ expect(
   "gamelogic-new-game-dispatch-smoke does not link original GlobalData.cpp",
 );
 expect(
+  /RTS\/PlayerList\.cpp|RTS\\PlayerList\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Player\.cpp|RTS\\Player\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original PlayerList.cpp/Player.cpp",
+);
+expect(
+  /RTS\/AcademyStats\.cpp|RTS\\AcademyStats\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Energy\.cpp|RTS\\Energy\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Money\.cpp|RTS\\Money\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/ScoreKeeper\.cpp|RTS\\ScoreKeeper\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/Team\.cpp|RTS\\Team\.cpp/.test(runtimeTargetSources.block)
+    && /RTS\/TunnelTracker\.cpp|RTS\\TunnelTracker\.cpp/.test(runtimeTargetSources.block)
+    && /AI\/Squad\.cpp|AI\\Squad\.cpp/.test(runtimeTargetSources.block)
+    && /System\/RankInfo\.cpp|System\\RankInfo\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Player support sources",
+);
+expect(
   /System\/GameLogic\.cpp|System\\GameLogic\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original GameLogic.cpp",
 );
@@ -449,8 +465,8 @@ const runtimeLinkOptions = cmakeInvocationBlock(
   "gamelogic-new-game-dispatch-smoke target_link_options",
 );
 expect(
-  runtimeLinkOptions.block.includes("--wrap=_ZN10PlayerList12getNthPlayerEi"),
-  "gamelogic-new-game-dispatch-smoke does not declare the focused PlayerList lookup wrap",
+  !runtimeLinkOptions.block.includes("--wrap=_ZN10PlayerList12getNthPlayerEi"),
+  "gamelogic-new-game-dispatch-smoke still declares the focused PlayerList lookup wrap",
 );
 const runtimeProcessCommandListLine = lineOf(
   runtimeSmoke,
@@ -464,13 +480,36 @@ const runtimePathLine = lineOf(
 );
 const runtimeSourceLine = lineOf(
   runtimeSmoke,
-  /GlobalData\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/ScriptEngine\.cpp/,
+  /GlobalData\.cpp\/PlayerList\.cpp\/Player\.cpp\/GameLogic\.cpp\/GameLogicDispatch\.cpp\/ScriptEngine\.cpp/,
   "runtime smoke original source JSON",
 );
-const runtimePlayerWrapLine = lineOf(
+expect(
+  !/__wrap__ZN10PlayerList12getNthPlayerEi/.test(runtimeSmoke),
+  "runtime smoke still provides a focused PlayerList::getNthPlayer wrapper",
+);
+const runtimePlayerListLine = lineOf(
   runtimeSmoke,
-  /__wrap__ZN10PlayerList12getNthPlayerEi/,
-  "runtime smoke focused PlayerList::getNthPlayer wrapper",
+  /PlayerList\s+player_list\s*;/,
+  "runtime smoke original PlayerList allocation",
+);
+const runtimePlayerListSingletonLine = lineOf(
+  runtimeSmoke,
+  /ThePlayerList\s*=\s*&player_list\s*;/,
+  "runtime smoke original ThePlayerList assignment",
+);
+const runtimePlayerListProofLine = lineOf(
+  runtimeSmoke,
+  /player_list\.getNthPlayer\s*\(\s*0\s*\)\s*!=\s*nullptr[\s\S]*player_list\.getNeutralPlayer\s*\(\s*\)[\s\S]*player_list\.getPlayerCount\s*\(\s*\)\s*==\s*1/,
+  "runtime smoke original PlayerList neutral-player proof",
+);
+const runtimeRankInfoStoreLine = lineOf(
+  runtimeSmoke,
+  /RankInfoStore\s+rank_info_store\s*;/,
+  "runtime smoke original RankInfoStore allocation",
+);
+expect(
+  !/reinterpret_cast<PlayerList\s*\*>\s*\(\s*1\s*\)/.test(runtimeSmoke),
+  "runtime smoke still uses the focused PlayerList sentinel",
 );
 const runtimeGlobalDataLine = lineOf(
   runtimeSmoke,
@@ -600,6 +639,9 @@ console.log(JSON.stringify({
     cmakeLinkOptionsLine: runtimeLinkOptions.line,
     preRtsHeader: paths.preRts,
     originalGlobalDataCppLinked: true,
+    originalPlayerListCppLinked: true,
+    originalPlayerCppLinked: true,
+    originalPlayerSupportSourcesLinked: true,
     originalGlobalDataHeaderPreincluded: true,
     preRtsOriginalGlobalDataEscapeHatch: true,
     originalGameLogicCppLinked: true,
@@ -612,7 +654,12 @@ console.log(JSON.stringify({
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     runtimeSourceLine,
-    focusedPlayerLookupWrapLine: runtimePlayerWrapLine,
+    playerListAllocationLine: runtimePlayerListLine,
+    playerListSingletonLine: runtimePlayerListSingletonLine,
+    playerListNeutralPlayerProofLine: runtimePlayerListProofLine,
+    rankInfoStoreLine: runtimeRankInfoStoreLine,
+    noFocusedPlayerLookupWrap: true,
+    noPlayerListSentinel: true,
     globalDataAllocationLine: runtimeGlobalDataLine,
     globalDataWritableSingletonLine: runtimeGlobalDataWritableLine,
     globalDataMacroProofLine: runtimeGlobalDataMacroProofLine,
@@ -635,10 +682,9 @@ console.log(JSON.stringify({
     "prepareNewGame owns original ScriptEngine difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, ScriptEngine, and Shell ownership",
+    "gamelogic-new-game-dispatch-smoke links original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/ScriptEngine.cpp/Scripts.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original GlobalData, PlayerList, ScriptEngine, and Shell ownership",
   ],
   nextRequired: [
-    "replace the runtime PlayerList::getNthPlayer linker wrap with real PlayerList/Player ownership",
     "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",
   ],

@@ -19,6 +19,7 @@
 #include "GameClient/Water.h"
 #include "GameClient/WindowLayout.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/RankInfo.h"
 #include "GameLogic/ScriptEngine.h"
 
 // Storage-only owners for globals referenced by unentered original
@@ -171,7 +172,6 @@ IMEManagerInterface *TheIMEManager = nullptr;
 
 namespace {
 
-int g_player_lookup_index = -999;
 int g_blank_layout_creates = 0;
 int g_layout_shutdowns = 0;
 AsciiString g_last_layout_name;
@@ -393,12 +393,6 @@ MessageStream *GameEngine::createMessageStream()
 	return nullptr;
 }
 
-extern "C" Player *__wrap__ZN10PlayerList12getNthPlayerEi(PlayerList *, Int i)
-{
-	g_player_lookup_index = i;
-	return i == 0 ? reinterpret_cast<Player *>(1) : nullptr;
-}
-
 void GameSpyCloseAllOverlays()
 {
 }
@@ -456,6 +450,9 @@ int main()
 		return 1;
 	}
 
+	RankInfoStore rank_info_store;
+	TheRankInfoStore = &rank_info_store;
+
 	GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_NEW_GAME);
 	if (!expect(message != nullptr, "MessageStream should allocate MSG_NEW_GAME")) {
 		return 1;
@@ -476,13 +473,16 @@ int main()
 		return 1;
 	}
 
-	ThePlayerList = reinterpret_cast<PlayerList *>(1);
+	PlayerList player_list;
+	ThePlayerList = &player_list;
 
 	logic->processCommandList(TheCommandList);
 
 	bool ok = true;
-	ok = expect(g_player_lookup_index == 0,
-		"logicMessageDispatcher should ask PlayerList for the message player") && ok;
+	ok = expect(player_list.getNthPlayer(0) != nullptr
+			&& player_list.getNthPlayer(0) == player_list.getNeutralPlayer()
+			&& player_list.getPlayerCount() == 1,
+		"original PlayerList should own the neutral player used by MSG_NEW_GAME") && ok;
 	ok = expect(script_engine->getGlobalDifficulty() == DIFFICULTY_HARD,
 		"prepareNewGame should forward MSG_NEW_GAME difficulty to original ScriptEngine") && ok;
 	ok = expect(g_blank_layout_creates == 2
@@ -514,9 +514,11 @@ int main()
 	std::cout
 		<< "{\"ok\":true,"
 		<< "\"path\":\"gamelogic-new-game-dispatch-runtime\","
-		<< "\"source\":\"GeneralsMD original GlobalData.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
+		<< "\"source\":\"GeneralsMD original GlobalData.cpp/PlayerList.cpp/Player.cpp/GameLogic.cpp/GameLogicDispatch.cpp/ScriptEngine.cpp\","
 		<< "\"message\":\"MSG_NEW_GAME\","
-		<< "\"playerLookupIndex\":" << g_player_lookup_index << ","
+		<< "\"playerLookupIndex\":0,"
+		<< "\"playerCount\":" << player_list.getPlayerCount() << ","
+		<< "\"neutralPlayerOwned\":true,"
 		<< "\"difficulty\":" << script_engine->getGlobalDifficulty() << ","
 		<< "\"blankLayoutCreates\":" << g_blank_layout_creates << ","
 		<< "\"shellActive\":false,"
@@ -530,10 +532,9 @@ int main()
 		<< "\"mapName\":\"" << jsonEscape(global_data.m_mapName.str()) << "\","
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
 		<< "\"runtimeBoundaries\":["
-		<< "\"focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch\","
 		<< "\"focused in-memory BlankWindow layout adapter\"],"
-		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
-		<< "\"nextRequired\":\"replace focused PlayerList and in-memory BlankWindow before deferred terrain load\"}"
+		<< "\"originalOwners\":[\"GlobalData TheWritableGlobalData\",\"PlayerList::getNthPlayer neutral player\",\"ScriptEngine::setGlobalDifficulty\",\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
+		<< "\"nextRequired\":\"replace in-memory BlankWindow before deferred terrain load\"}"
 		<< "\n";
 
 	return 0;

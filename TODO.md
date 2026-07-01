@@ -844,14 +844,16 @@ shares structure and follows behind.
       `verify:gamelogic-new-game-dispatch-frontier` gate now pins that original
       source path, and `gamelogic-new-game-dispatch-smoke` links original
       `GameLogic.cpp`, `GameLogicDispatch.cpp`, `GameState.cpp`,
-      `ScriptEngine.cpp`, and `Scripts.cpp` to drive
+      `PlayerList.cpp`, `Player.cpp`, `ScriptEngine.cpp`, and `Scripts.cpp`
+      to drive
       `GameLogic::processCommandList` on a real `MSG_NEW_GAME` through
       original `GlobalData.cpp` / `TheWritableGlobalData`, original
+      `PlayerList::getNthPlayer` neutral-player ownership, original
       `ScriptEngine::setGlobalDifficulty`, original `Shell::hideShell`, and
       the first-call `startNewGame(FALSE)` deferral before terrain load. That
-      runtime still uses focused `PlayerList::getNthPlayer` and in-memory
-      BlankWindow adapters; replace those with real owners before continuing
-      the deferred update into terrain/player/script map-load ownership. A
+      runtime still uses a focused in-memory BlankWindow adapter; replace that
+      with a real owner before continuing the deferred update into
+      terrain/player/script map-load ownership. A
       current scan of the extracted runtime `.big` archives found no
       `Menus/BlankWindow.wnd`, so replacing the in-memory BlankWindow adapter
       requires locating the original shipped layout/archive path or proving a

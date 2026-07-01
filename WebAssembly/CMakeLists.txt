@@ -5664,6 +5664,14 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
 add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/GlobalData.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/AcademyStats.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Energy.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Money.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Player.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/PlayerList.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/ScoreKeeper.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/Team.cpp"
+  "${GAMEENGINE_COMMON_DIR}/RTS/TunnelTracker.cpp"
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
@@ -5672,6 +5680,8 @@ add_executable(gamelogic-new-game-dispatch-smoke
   "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/Scripts.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/ScriptEngine/ScriptEngine.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/AI/Squad.cpp"
+  "${GAMEENGINE_GAMELOGIC_DIR}/System/RankInfo.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
 )
@@ -5746,7 +5756,6 @@ target_compile_options(gamelogic-new-game-dispatch-smoke PRIVATE
 
 target_link_options(gamelogic-new-game-dispatch-smoke PRIVATE
   "SHELL:-Wl,--gc-sections"
-  "SHELL:-Wl,--wrap=_ZN10PlayerList12getNthPlayerEi"
   "SHELL:-Wl,--unresolved-symbols=ignore-all"
   "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=0"
   "SHELL:-sWARN_ON_UNDEFINED_SYMBOLS=0"

@@ -2021,6 +2021,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the focused `PlayerList::getNthPlayer` linker wrap in the
+      `MSG_NEW_GAME` runtime dispatch smoke with original PlayerList/Player
+      ownership. `gamelogic-new-game-dispatch-smoke` now links original
+      `PlayerList.cpp`, `Player.cpp`, and the original neutral-player support
+      owners (`AcademyStats`, `Energy`, `Money`, `ScoreKeeper`, `Team`,
+      `TunnelTracker`, `Squad`, and `RankInfoStore`), removes the
+      `--wrap=_ZN10PlayerList12getNthPlayerEi` linker path, constructs a real
+      `PlayerList`, assigns `ThePlayerList`, and proves the dispatcher uses the
+      owned neutral player for `MSG_NEW_GAME`. The smoke now reports only the
+      focused in-memory BlankWindow layout adapter before the deferred
+      terrain/player/script load. Verified with
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
