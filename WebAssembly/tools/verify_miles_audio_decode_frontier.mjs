@@ -5,7 +5,8 @@
 // decoded/loaded audio payload bytes and Miles playback. It reads (never
 // executes) the original MilesAudioManager device source, its immediate
 // header, the Common/file.h abstraction it loads payload bytes through, and
-// the wasm compile-only Mss.H shim, and emits a JSON report.
+// the wasm Mss.H shim (which now implements the IMA ADPCM decode boundary),
+// and emits a JSON report.
 //
 // This is the decode/load companion to:
 //   - verify_miles_audio_device_frontier.mjs      (device *startup* frontier)
@@ -80,8 +81,13 @@
 //       PlayingAudioType enum @ 31, PlayingAudio struct @ 54 (m_file @ 66,
 //       m_status @ 64, m_type @ 63), AudioFileCache *m_audioCache @ 320.
 //     - Common/file.h: READ @ 93, STREAMING @ 104, readEntireAndClose @ 174.
-//     - WebAssembly/shims/Mss.H: inert compile-only declarations present for
-//       every Miles decode/load call referenced above (compileOnly: true).
+//     - WebAssembly/shims/Mss.H: declarations present for every Miles
+//       decode/load call referenced above, and the ADPCM decode boundary is
+//       now *implemented* (not stubbed): AILSOUNDINFO carries the original
+//       Miles field surface (data_ptr/data_len/samples/block_size/
+//       initial_ptr), AIL_WAV_info parses fmt/fact/data chunks,
+//       AIL_decompress_ADPCM performs the standard IMA ADPCM -> PCM16 WAV
+//       decode into a heap buffer, and AIL_mem_free_lock actually frees it.
 //
 // Exit 0 only if all checks pass; exit 1 with JSON errors otherwise.
 //
@@ -752,7 +758,8 @@ function main() {
   facts.fileHDeclarations = fileHFacts;
 
   // =====================================================================
-  // 7. Shim: inert compile-only declarations for every Miles decode/load call
+  // 7. Shim: declarations for every Miles decode/load call, plus the
+  //    implemented IMA ADPCM decode boundary (no longer a stub)
   // =====================================================================
   const shimFunctions = [
     "AIL_WAV_info",
@@ -775,22 +782,71 @@ function main() {
     const ln = lineNumber(shim.lines, (line) => re.test(line));
     shimInfo[fn] = { line: ln };
     if (ln === -1) {
-      errors.push(`shim Mss.H: missing inert declaration ${fn}`);
+      errors.push(`shim Mss.H: missing declaration ${fn}`);
     }
   }
   const shimAllPresent = Object.values(shimInfo).every(
     (info) => info.line !== -1,
   );
-  facts.mssShim = {
-    compileOnly: true,
-    declarations: shimInfo,
-    allInertDeclarationsPresent: shimAllPresent,
-  };
   if (!shimAllPresent) {
     errors.push(
-      "shim Mss.H: not all inert compile-only decode/load declarations are present",
+      "shim Mss.H: not all decode/load declarations are present",
     );
   }
+
+  // The ADPCM decode boundary must be implemented, not stubbed. These checks
+  // fail if the decoder regresses to the old inert stub state.
+  const adpcmDefLine = lineNumber(shim.lines, (line) =>
+    /S32\s+AIL_decompress_ADPCM\s*\(\s*const\s+AILSOUNDINFO\s*\*/.test(line));
+  const adpcmRange = adpcmDefLine > 0
+    ? functionBodyLineRange(shim.lines, adpcmDefLine)
+    : null;
+  const decoderChecks = {
+    AILSOUNDINFO_data_ptr: lineNumber(shim.lines, (line) =>
+      /const\s+void\s*\*\s*data_ptr/.test(line)),
+    AILSOUNDINFO_block_size: lineNumber(shim.lines, (line) =>
+      /U32\s+block_size/.test(line)),
+    imaNibbleExpansion: lineNumber(shim.lines, (line) =>
+      /MSSImaAdpcmDecodeNibble/.test(line)),
+    imaStepTable: lineNumber(shim.lines, (line) =>
+      /step_table\s*\[\s*89\s*\]/.test(line)),
+    decompressAllocates: adpcmRange
+      ? firstMatchInRange(shim.lines, adpcmRange.start, adpcmRange.end, /std::malloc\s*\(/)
+      : -1,
+    decompressDecodesNibbles: adpcmRange
+      ? firstMatchInRange(shim.lines, adpcmRange.start, adpcmRange.end, /MSSImaAdpcmDecodeNibble\s*\(/)
+      : -1,
+    memFreeLockFrees: lineNumber(shim.lines, (line, index) =>
+      /std::free\s*\(\s*ptr\s*\)/.test(line)
+        && shim.lines.slice(Math.max(0, index - 3), index).some((prev) =>
+          /AIL_mem_free_lock/.test(prev))),
+    wavInfoFillsDataChunk: lineNumber(shim.lines, (line) =>
+      /info->data_ptr\s*=/.test(line)),
+    wavInfoFillsFactSamples: lineNumber(shim.lines, (line) =>
+      /fact_samples\s*=\s*MSSReadU32LE/.test(line)),
+  };
+  const decoderImplemented = adpcmDefLine > 0
+    && Object.values(decoderChecks).every((line) => line > 0);
+  for (const [key, line] of Object.entries(decoderChecks)) {
+    if (line <= 0) {
+      errors.push(`shim Mss.H: ADPCM decoder implementation marker missing: ${key}`);
+    }
+  }
+  if (adpcmDefLine <= 0) {
+    errors.push(
+      "shim Mss.H: AIL_decompress_ADPCM(const AILSOUNDINFO *, ...) implementation not found",
+    );
+  }
+  facts.mssShim = {
+    compileOnly: false,
+    adpcmDecoderImplemented: decoderImplemented,
+    adpcmDecoderDefLine: adpcmDefLine,
+    decoderChecks,
+    declarations: shimInfo,
+    allDeclarationsPresent: shimAllPresent,
+    runtimeProof:
+      "harness/audio_miles_webaudio_vertical_smoke.mjs decodes real mono+stereo IMA ADPCM payloads through AudioFileCache::openFile and compares sample-exactly against independent references",
+  };
 
   const report = {
     ok: errors.length === 0,

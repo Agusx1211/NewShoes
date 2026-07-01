@@ -1193,7 +1193,8 @@ function readMssSampleWaveBytes(payload, heapu8) {
     throw new Error(`MSS sample payload pointer is outside wasm memory: ${dataPtr}`);
   }
   const riffSize = readU32LE(heapu8, dataPtr + 4) + 8;
-  if (riffSize < 44 || riffSize > 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
+  // Decoded IMA ADPCM payloads expand ~4x, so allow multi-megabyte PCM WAVs.
+  if (riffSize < 44 || riffSize > 64 * 1024 * 1024 || dataPtr + riffSize > heapu8.byteLength) {
     throw new Error(`MSS sample RIFF size is invalid: ${riffSize}`);
   }
   return heapu8.slice(dataPtr, dataPtr + riffSize);
@@ -1264,6 +1265,7 @@ function cncPortMssSampleStart(payload, heapu8) {
         sampleRate: decoded.info.samplesPerSec,
         channels: decoded.info.channels,
         bitsPerSample: decoded.info.bitsPerSample,
+        stats: summarizeDecodedSamples(decoded.samples),
       },
       sample: {
         volume,
@@ -7181,6 +7183,9 @@ async function loadWasmModule() {
       probeMssStartup: module.cwrap("cnc_port_probe_mss_startup", "string", []),
       probeMssSampleLifecycle: module.cwrap("cnc_port_probe_mss_sample_lifecycle", "string", []),
       probeMssSamplePlaybackStart: module.cwrap("cnc_port_probe_mss_sample_playback_start", "string", []),
+      mssAdpcmPayloadBuffer: module.cwrap("cnc_port_mss_adpcm_payload_buffer", "number", ["number"]),
+      probeMssAdpcmSamplePlaybackStart: module.cwrap(
+        "cnc_port_probe_mss_adpcm_sample_playback_start", "string", ["number"]),
       probeMssSamplePlaybackFinish: module.cwrap("cnc_port_probe_mss_sample_playback_finish", "string", []),
       probeMssStreamLifecycle: module.cwrap("cnc_port_probe_mss_stream_lifecycle", "string", []),
       probeMss3DSampleLifecycle: module.cwrap("cnc_port_probe_mss_3d_sample_lifecycle", "string", []),
@@ -7414,6 +7419,7 @@ async function loadWasmModule() {
       probeGdiFont: module.cwrap("cnc_port_probe_gdi_font", "string", ["number", "string"]),
       state: module.cwrap("cnc_port_state", "string", []),
       fs: module.FS,
+      heapU8: () => module.HEAPU8,
     };
   } catch (error) {
     console.info("[wasm-harness] wasm module unavailable; using JS boot stub", error);
@@ -21077,6 +21083,98 @@ async function rpc(command, payload = {}) {
             && runtime.ended === 1
             && runtime.released === 1,
           command,
+          startProbe,
+          completion,
+          finishProbe,
+          browserMssSamplePlaybackRuntime: runtime,
+          state: snapshotState(),
+        };
+      }
+    case "mssAdpcmSamplePlaybackProbe":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; MSS ADPCM sample playback probe cannot run" };
+        }
+        const archiveName = String(payload.archive ?? "AudioZH.big");
+        const entryPath = String(payload.path ?? "Data\\Audio\\Sounds\\cleftria.wav");
+        const mounted = harnessState.mountedArchives.find((archive) =>
+          archive.name === archiveName || archive.sourceName === archiveName);
+        if (!mounted) {
+          return { ok: false, command, error: `archive ${archiveName} is not mounted` };
+        }
+        let payloadBytes;
+        let payloadInfo;
+        try {
+          const archiveBytes = wasmModule.fs.readFile(mounted.path);
+          const entries = readBigDirectoryFromBytes(archiveBytes, archiveName);
+          const entry = entries.find((candidate) =>
+            candidate.normalizedPath === normalizeBigPath(entryPath));
+          if (!entry) {
+            return { ok: false, command, error: `entry ${entryPath} not found in ${archiveName}` };
+          }
+          payloadBytes = archiveBytes.slice(entry.offset, entry.offset + entry.size);
+          payloadInfo = parseAudioWavPayload(payloadBytes);
+        } catch (error) {
+          return { ok: false, command, error: error?.message ?? String(error) };
+        }
+        if (payloadInfo.wFormatTag !== 17) {
+          return {
+            ok: false,
+            command,
+            error: `entry ${entryPath} is not IMA ADPCM (wFormatTag ${payloadInfo.wFormatTag})`,
+          };
+        }
+        resetBrowserMssSamplePlaybackRuntime();
+        const stagingPtr = wasmModule.mssAdpcmPayloadBuffer(payloadBytes.byteLength);
+        if (!stagingPtr) {
+          return { ok: false, command, error: "wasm ADPCM staging buffer allocation failed" };
+        }
+        wasmModule.heapU8().set(payloadBytes, stagingPtr);
+        const startProbe = parseModuleState(
+          wasmModule.probeMssAdpcmSamplePlaybackStart(payloadBytes.byteLength));
+        let completion = null;
+        let completionError = null;
+        if (startProbe.ok && Number.isFinite(startProbe.sample?.handle)) {
+          const decodedFrames = Number(startProbe.decoded?.frames ?? 0);
+          const decodedRate = Number(startProbe.decoded?.rate ?? 44100);
+          const playbackMs = decodedRate > 0
+            ? Math.ceil((decodedFrames / decodedRate) * 1000)
+            : 0;
+          try {
+            completion = await waitForBrowserMssSamplePlayback(
+              startProbe.sample.handle, playbackMs + 3000);
+          } catch (error) {
+            completionError = error?.message ?? String(error);
+            browserMssSamplePlaybackRuntime.lastError = completionError;
+          }
+        }
+        const finishProbe = parseModuleState(wasmModule.probeMssSamplePlaybackFinish());
+        const runtime = summarizeBrowserMssSamplePlaybackRuntime();
+        const scheduledPayload = runtime.lastEvent?.payload ?? null;
+        return {
+          ok: Boolean(startProbe.ok)
+            && Boolean(finishProbe.ok)
+            && completionError === null
+            && runtime.runtimePlayback === true
+            && runtime.completed === 1
+            && runtime.ended === 1
+            && runtime.released === 1
+            && scheduledPayload?.codec === "PCM"
+            && (scheduledPayload?.stats?.nonZeroSamples ?? 0) > 0,
+          command,
+          archive: archiveName,
+          path: entryPath,
+          sourcePayload: {
+            bytes: payloadBytes.byteLength,
+            wFormatTag: payloadInfo.wFormatTag,
+            codec: payloadInfo.codec,
+            channels: payloadInfo.channels,
+            samplesPerSec: payloadInfo.samplesPerSec,
+            blockAlign: payloadInfo.blockAlign,
+            factSamples: payloadInfo.factSamples,
+            dataBytes: payloadInfo.dataBytes,
+          },
           startProbe,
           completion,
           finishProbe,

@@ -400,8 +400,10 @@ function buildStrictErrors(scan, audioArchivesPresent, options) {
   }
 
   // WAV codec frontier: the current ZH set is PCM (wFormatTag 1) + IMA ADPCM
-  // (wFormatTag 17). Web Audio can decode PCM directly; IMA ADPCM must be
-  // decoded/transcoded before it can be handed to decodeAudioData.
+  // (wFormatTag 17). Web Audio can decode PCM directly; IMA ADPCM is decoded
+  // at the original Miles boundary (Mss.H AIL_WAV_info ->
+  // AIL_decompress_ADPCM -> PCM16 WAV) before any Web Audio handoff, exactly
+  // like the shipped engine's AudioFileCache::openFile branch.
   const expectedWavCodec = { 1: 951, 17: 2572 };
   for (const [tag, expected] of Object.entries(expectedWavCodec)) {
     const actual = s.wavCodec[tag] ?? 0;
@@ -464,7 +466,7 @@ async function buildReport(options) {
     errors,
     facts,
     note:
-      "Classifies audio payload bytes by extension and file magic. PCM WAV can be handed to Web Audio decodeAudioData directly; IMA ADPCM WAV (wFormatTag 17) must be decoded/transcoded first, and MP3 (ID3/MPEG frame sync) is decodable by decodeAudioData. This preflight does not decode or play audio.",
+      "Classifies audio payload bytes by extension and file magic. PCM WAV can be handed to Web Audio decodeAudioData directly; IMA ADPCM WAV (wFormatTag 17) is decoded to PCM16 at the original Miles boundary (Mss.H AIL_decompress_ADPCM, exercised by AudioFileCache::openFile), and MP3 (ID3/MPEG frame sync) is decodable by decodeAudioData. This preflight does not decode or play audio.",
   };
 }
 
