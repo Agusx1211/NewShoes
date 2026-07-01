@@ -381,6 +381,20 @@ expect(
   /System\/SaveGame\/GameState\.cpp|System\\SaveGame\\GameState\.cpp/.test(runtimeTargetSources.block),
   "gamelogic-new-game-dispatch-smoke does not link original GameState.cpp",
 );
+expect(
+  /Display\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Display.cpp for Shell display-size ownership",
+);
+expect(
+  /GUI\/Shell\/Shell\.cpp|GUI\\Shell\\Shell\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Shell.cpp",
+);
+expect(
+  /GUI\/AnimateWindowManager\.cpp|GUI\\AnimateWindowManager\.cpp/.test(runtimeTargetSources.block)
+    && /GUI\/ProcessAnimateWindow\.cpp|GUI\\ProcessAnimateWindow\.cpp/.test(runtimeTargetSources.block)
+    && /GUI\/Shell\/ShellMenuScheme\.cpp|GUI\\Shell\\ShellMenuScheme\.cpp/.test(runtimeTargetSources.block),
+  "gamelogic-new-game-dispatch-smoke does not link original Shell support sources",
+);
 const runtimeLinkOptions = cmakeInvocationBlock(
   cmake,
   /target_link_options\s*\(\s*gamelogic-new-game-dispatch-smoke\b/,
@@ -409,6 +423,30 @@ const runtimeGameLogicLine = lineOf(
   runtimeSmoke,
   /GameLogic\s*\*\s*logic\s*=\s*new\s+GameLogic\s*;/,
   "runtime smoke original GameLogic allocation",
+);
+expect(
+  !/void\s+Shell::hideShell\s*\(/.test(runtimeSmoke),
+  "runtime smoke still provides a focused Shell::hideShell body",
+);
+const runtimeShellLine = lineOf(
+  runtimeSmoke,
+  /Shell\s*\*\s*shell\s*=\s*new\s+Shell\s*;/,
+  "runtime smoke original Shell allocation",
+);
+const runtimeShellPushLine = lineOf(
+  runtimeSmoke,
+  /shell->push\s*\(\s*"Menus\/BlankWindow\.wnd"\s*\)\s*;/,
+  "runtime smoke original Shell::push seed",
+);
+const runtimeShellHideProofLine = lineOf(
+  runtimeSmoke,
+  /shell->isShellActive\s*\(\s*\)\s*==\s*FALSE\s*&&\s*g_layout_shutdowns\s*==\s*1/,
+  "runtime smoke original Shell::hideShell state proof",
+);
+const runtimeOriginalOwnersLine = lineOf(
+  runtimeSmoke,
+  /originalOwners/,
+  "runtime smoke originalOwners JSON",
 );
 
 console.log(JSON.stringify({
@@ -461,24 +499,30 @@ console.log(JSON.stringify({
     originalGameLogicCppLinked: true,
     originalGameLogicDispatchCppLinked: true,
     originalGameStateCppLinked: true,
+    originalDisplayCppLinked: true,
+    originalShellCppLinked: true,
     processCommandListLine: runtimeProcessCommandListLine,
     runtimePathLine,
     focusedPlayerLookupWrapLine: runtimePlayerWrapLine,
     gameLogicAllocationLine: runtimeGameLogicLine,
+    shellAllocationLine: runtimeShellLine,
+    shellPushLine: runtimeShellPushLine,
+    shellHideStateProofLine: runtimeShellHideProofLine,
+    originalOwnersLine: runtimeOriginalOwnersLine,
   },
   covered: [
     "MessageStream::propagateMessages transfers messages to TheCommandList",
     "GameLogic::processCommandList dispatches CommandList messages through logicMessageDispatcher",
     "MSG_NEW_GAME reads game mode, difficulty, rank points, and game speed arguments",
     "MSG_NEW_GAME applies the FPS limit, calls prepareNewGame, then calls startNewGame(FALSE)",
-    "prepareNewGame owns difficulty, BlankWindow background, game-mode, pending-map, and shell-hide setup",
+    "prepareNewGame owns difficulty, BlankWindow background, game-mode, pending-map, and original Shell::hideShell setup",
     "startNewGame(FALSE) records the pristine map and defers the first call before terrain load",
     "w3d-window-layout-script-smoke still uses a focused GameLogic shim and sentinel gameplay owners",
-    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp and calls GameLogic::processCommandList at runtime",
+    "gamelogic-new-game-dispatch-smoke links original GameLogic.cpp/GameLogicDispatch.cpp/GameState.cpp/Shell.cpp and calls GameLogic::processCommandList at runtime through original Shell::push/hideShell ownership",
   ],
   nextRequired: [
     "replace the runtime PlayerList::getNthPlayer linker wrap with real PlayerList/Player ownership",
-    "replace the runtime focused ScriptEngine/Shell adapters with original owners",
+    "replace the runtime focused ScriptEngine adapter with original ScriptEngine ownership",
     "replace the runtime shim GlobalData bridge with original GlobalData ownership",
     "replace the runtime BlankWindow in-memory adapter with the archive-backed layout path",
     "then continue from the deferred startNewGame update into terrain, player, and script map-load ownership",

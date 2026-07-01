@@ -845,11 +845,12 @@ shares structure and follows behind.
       source path, and `gamelogic-new-game-dispatch-smoke` links original
       `GameLogic.cpp`, `GameLogicDispatch.cpp`, and `GameState.cpp` to drive
       `GameLogic::processCommandList` on a real `MSG_NEW_GAME` through
-      `prepareNewGame` and the first-call `startNewGame(FALSE)` deferral before
-      terrain load. That runtime still uses focused
-      `PlayerList::getNthPlayer`, `ScriptEngine`, `Shell`, `GlobalData`, and
-      BlankWindow adapters; replace those with real owners before continuing the
-      deferred update into terrain/player/script map-load ownership.
+      `prepareNewGame`, original `Shell::hideShell`, and the first-call
+      `startNewGame(FALSE)` deferral before terrain load. That runtime still
+      uses focused `PlayerList::getNthPlayer`, `ScriptEngine`, `GlobalData`,
+      and BlankWindow adapters; replace those with real owners before
+      continuing the deferred update into terrain/player/script map-load
+      ownership.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

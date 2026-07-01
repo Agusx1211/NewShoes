@@ -1970,6 +1970,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:gamelogic-new-game-dispatch`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Replace the focused `Shell::hideShell` adapter in the
+      `MSG_NEW_GAME` runtime dispatch smoke with original Shell ownership.
+      `gamelogic-new-game-dispatch-smoke` now links original `Display.cpp`,
+      `Shell.cpp`, `AnimateWindowManager.cpp`, `ProcessAnimateWindow.cpp`,
+      and `ShellMenuScheme.cpp`, seeds an original `Shell::push` over the
+      focused in-memory `Menus/BlankWindow.wnd` layout, then proves original
+      `GameLogic::prepareNewGame` drives `Shell::hideShell` by observing
+      `m_isShellActive` transition to false and one layout shutdown callback.
+      The smoke still honestly reports focused `PlayerList::getNthPlayer`,
+      `ScriptEngine`, `GlobalData`, and BlankWindow adapter boundaries before
+      the deferred terrain/player/script load. Verified with
+      `cmake --build WebAssembly/build/wasm --target gamelogic-new-game-dispatch-smoke -j2`
+      and `node WebAssembly/dist/gamelogic-new-game-dispatch-smoke.cjs`;
+      the updated source/startup/aggregate gates were verified with
+      `npm --prefix WebAssembly run verify:gamelogic-new-game-dispatch-frontier`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

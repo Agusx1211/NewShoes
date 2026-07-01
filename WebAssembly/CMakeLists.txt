@@ -5664,6 +5664,11 @@ target_link_options(w3d-window-layout-script-smoke PRIVATE
 add_executable(gamelogic-new-game-dispatch-smoke
   tests/gamelogic_new_game_dispatch_smoke.cpp
   "${GAMEENGINE_COMMON_DIR}/System/SaveGame/GameState.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/Display.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/AnimateWindowManager.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/ProcessAnimateWindow.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/Shell.cpp"
+  "${GAMEENGINE_GAMECLIENT_DIR}/GUI/Shell/ShellMenuScheme.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogic.cpp"
   "${GAMEENGINE_GAMELOGIC_DIR}/System/GameLogicDispatch.cpp"
 )

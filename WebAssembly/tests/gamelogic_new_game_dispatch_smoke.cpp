@@ -11,6 +11,7 @@
 #include "Common/MapObject.h"
 #include "Common/MessageStream.h"
 #include "Common/PlayerList.h"
+#include "GameClient/Display.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Shell.h"
@@ -47,11 +48,13 @@ class FunctionLexicon;
 class GameClient;
 class GameInfo;
 class GameLODManager;
+class GameSpyInfoInterface;
 class GameSpyStagingRoom;
 class GameStateMap;
 class GameTextInterface;
 class GhostObjectManager;
 class GlobalLanguage;
+class IMEManagerInterface;
 class ImageCollection;
 class InGameUI;
 class LanguageFilter;
@@ -165,14 +168,15 @@ OVERRIDE<WeatherSetting> TheWeatherSetting WEAK_SINGLETON = nullptr;
 GlobalData *TheGlobalData = nullptr;
 GameEngine *TheGameEngine = nullptr;
 ScriptEngine *TheScriptEngine = nullptr;
-Shell *TheShell = nullptr;
+GameSpyInfoInterface *TheGameSpyInfo = nullptr;
+IMEManagerInterface *TheIMEManager = nullptr;
 
 namespace {
 
 int g_last_script_difficulty = -1;
-int g_hide_shell_calls = 0;
 int g_player_lookup_index = -999;
 int g_blank_layout_creates = 0;
+int g_layout_shutdowns = 0;
 AsciiString g_last_layout_name;
 
 bool expect(bool condition, const char *message)
@@ -227,6 +231,43 @@ protected:
 	AudioManager *createAudioManager() override { return nullptr; }
 };
 
+class SmokeDisplay : public Display
+{
+public:
+	void doSmartAssetPurgeAndPreload(const char *) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpAssetUsage(const char *) override {}
+#endif
+	VideoBuffer *createVideoBuffer() override { return nullptr; }
+	void setClipRegion(IRegion2D *) override {}
+	Bool isClippingEnabled() override { return FALSE; }
+	void enableClipping(Bool) override {}
+	void setTimeOfDay(TimeOfDay) override {}
+	void createLightPulse(const Coord3D *, const RGBColor *, Real, Real, UnsignedInt, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawLine(Int, Int, Int, Int, Real, UnsignedInt, UnsignedInt) override {}
+	void drawOpenRect(Int, Int, Int, Int, Real, UnsignedInt) override {}
+	void drawFillRect(Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawRemainingRectClock(Int, Int, Int, Int, Int, UnsignedInt) override {}
+	void drawImage(const Image *, Int, Int, Int, Int, Color, DrawImageMode) override {}
+	void drawVideoBuffer(VideoBuffer *, Int, Int, Int, Int) override {}
+	void clearShroud() override {}
+	void setShroudLevel(Int, Int, CellShroudStatus) override {}
+	void setBorderShroudLevel(UnsignedByte) override {}
+#if defined(_DEBUG) || defined(_INTERNAL)
+	void dumpModelAssets(const char *) override {}
+#endif
+	void preloadModelAssets(AsciiString) override {}
+	void preloadTextureAssets(AsciiString) override {}
+	void takeScreenShot() override {}
+	void toggleMovieCapture() override {}
+	void toggleLetterBox() override {}
+	void enableLetterBox(Bool enable) override { m_letterBoxEnabled = enable; }
+	Real getAverageFPS() override { return 0.0f; }
+	Int getLastFrameDrawCalls() override { return 0; }
+};
+
 class SmokeGameWindow : public GameWindow
 {
 	MEMORY_POOL_GLUE_WITH_EXPLICIT_CREATE(SmokeGameWindow, "SmokeGameWindow", 1, 1)
@@ -241,6 +282,8 @@ EMPTY_DTOR(SmokeGameWindow)
 void SmokeNoDraw(GameWindow *, WinInstanceData *)
 {
 }
+
+void SmokeLayoutShutdown(WindowLayout *, void *);
 
 class SmokeGameWindowManager : public GameWindowManager
 {
@@ -284,10 +327,16 @@ public:
 		}
 
 		layout->addWindow(window);
+		layout->setShutdown(SmokeLayoutShutdown);
 		++g_blank_layout_creates;
 		return layout;
 	}
 };
+
+void SmokeLayoutShutdown(WindowLayout *, void *)
+{
+	++g_layout_shutdowns;
+}
 
 } // namespace
 
@@ -358,9 +407,8 @@ void ScriptEngine::setGlobalDifficulty(GameDifficulty difficulty)
 	g_last_script_difficulty = difficulty;
 }
 
-void Shell::hideShell()
+void GameSpyCloseAllOverlays()
 {
-	++g_hide_shell_calls;
 }
 
 int main()
@@ -375,6 +423,11 @@ int main()
 	SmokeGameEngine game_engine;
 	TheGameEngine = &game_engine;
 
+	SmokeDisplay display;
+	TheDisplay = &display;
+	display.setWidth(800);
+	display.setHeight(600);
+
 	GameState game_state;
 	TheGameState = &game_state;
 
@@ -388,6 +441,18 @@ int main()
 
 	GameLogic *logic = new GameLogic;
 	TheGameLogic = logic;
+
+	Shell *shell = new Shell;
+	TheShell = shell;
+	shell->push("Menus/BlankWindow.wnd");
+	if (!expect(shell->isShellActive(),
+			"original Shell should start active before MSG_NEW_GAME hides it")) {
+		return 1;
+	}
+	if (!expect(shell->getScreenCount() == 1,
+			"original Shell::push should own the seeded BlankWindow layout")) {
+		return 1;
+	}
 
 	GameMessage *message = TheMessageStream->appendMessage(GameMessage::MSG_NEW_GAME);
 	if (!expect(message != nullptr, "MessageStream should allocate MSG_NEW_GAME")) {
@@ -410,7 +475,6 @@ int main()
 	}
 
 	TheScriptEngine = reinterpret_cast<ScriptEngine *>(1);
-	TheShell = reinterpret_cast<Shell *>(1);
 	ThePlayerList = reinterpret_cast<PlayerList *>(1);
 
 	logic->processCommandList(TheCommandList);
@@ -420,16 +484,17 @@ int main()
 		"logicMessageDispatcher should ask PlayerList for the message player") && ok;
 	ok = expect(g_last_script_difficulty == DIFFICULTY_HARD,
 		"prepareNewGame should forward MSG_NEW_GAME difficulty to ScriptEngine") && ok;
-	ok = expect(g_blank_layout_creates == 1
+	ok = expect(g_blank_layout_creates == 2
 			&& g_last_layout_name.compareNoCase("Menus/BlankWindow.wnd") == 0,
-		"prepareNewGame should request the BlankWindow background layout") && ok;
+		"prepareNewGame should request the BlankWindow background after the Shell seed layout") && ok;
 	ok = expect(logic->isInSkirmishGame(),
 		"prepareNewGame should switch GameLogic to GAME_SKIRMISH") && ok;
 	ok = expect(global_data.m_mapName == "Maps\\Smoke\\Skirmish.map"
 			&& global_data.m_pendingFile.isEmpty(),
 		"prepareNewGame should promote pending map into GlobalData mapName") && ok;
-	ok = expect(g_hide_shell_calls == 1,
-		"prepareNewGame should hide the shell for non-shell game modes") && ok;
+	ok = expect(shell->isShellActive() == FALSE && g_layout_shutdowns == 1
+			&& shell->getScreenCount() == 1,
+		"prepareNewGame should drive original Shell::hideShell on the active shell layout") && ok;
 	ok = expect(game_engine.getFramesPerSecondLimit() == 55 && global_data.m_useFpsLimit == TRUE,
 		"MSG_NEW_GAME should apply the game-speed FPS limit") && ok;
 	ok = expect(game_state.getPristineMapName() == "Maps\\Smoke\\Skirmish.map",
@@ -453,7 +518,9 @@ int main()
 		<< "\"playerLookupIndex\":" << g_player_lookup_index << ","
 		<< "\"difficulty\":" << g_last_script_difficulty << ","
 		<< "\"blankLayoutCreates\":" << g_blank_layout_creates << ","
-		<< "\"hideShellCalls\":" << g_hide_shell_calls << ","
+		<< "\"shellActive\":false,"
+		<< "\"shellScreenCount\":" << shell->getScreenCount() << ","
+		<< "\"shellLayoutShutdowns\":" << g_layout_shutdowns << ","
 		<< "\"fpsLimit\":" << game_engine.getFramesPerSecondLimit() << ","
 		<< "\"useFpsLimit\":true,"
 		<< "\"gameMode\":\"GAME_SKIRMISH\","
@@ -463,10 +530,10 @@ int main()
 		<< "\"pristineMapName\":\"" << jsonEscape(game_state.getPristineMapName().str()) << "\","
 		<< "\"runtimeBoundaries\":["
 		<< "\"focused ScriptEngine::setGlobalDifficulty\","
-		<< "\"focused Shell::hideShell\","
 		<< "\"focused linker wrap for PlayerList::getNthPlayer before MSG_NEW_GAME switch\","
 		<< "\"shim GlobalData bridge\"],"
-		<< "\"nextRequired\":\"replace focused PlayerList/ScriptEngine/Shell and shim GlobalData before deferred terrain load\"}"
+		<< "\"originalOwners\":[\"Shell::push seeded BlankWindow\",\"Shell::hideShell\"],"
+		<< "\"nextRequired\":\"replace focused PlayerList/ScriptEngine and shim GlobalData before deferred terrain load\"}"
 		<< "\n";
 
 	return 0;
