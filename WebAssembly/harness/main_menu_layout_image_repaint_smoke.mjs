@@ -36,6 +36,10 @@ const difficultyScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-difficulty-repaint-canvas.png",
 );
+const factionLogoScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-faction-logo-repaint-canvas.png",
+);
 
 const D3DPT_TRIANGLELIST = 4;
 const D3DTOP_DISABLE = 1;
@@ -51,8 +55,11 @@ const layoutEntry = "Window\\Menus\\MainMenu.wnd";
 const logoTextureEntry = "Data\\English\\Art\\Textures\\SCSmShellUserInterface512_001.tga";
 const gameTextCsfEntry = "Data\\English\\generals.csf";
 const rulerTextureEntry = "Art\\Textures\\mainmenuruleruserinterface.tga";
+const factionLogoTextureEntry = "Art\\Textures\\sclogosuserinterface512_001.tga";
 const logoMappedImageEntry =
   "Data\\INI\\MappedImages\\TextureSize_512\\SCSmShellUserInterface512.INI";
+const factionLogoMappedImageEntry =
+  "Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI";
 const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\HandCreated\\HandCreatedMappedImages.INI",
   "Data\\INI\\MappedImages\\TextureSize_512\\HandCreatedMappedImages.INI",
@@ -61,7 +68,7 @@ const mappedImageIniEntries = [
   "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeLoad512.INI",
   "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeSelect512.INI",
   "Data\\INI\\MappedImages\\TextureSize_512\\SCGenChallengeWinLoss512.INI",
-  "Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI",
+  factionLogoMappedImageEntry,
   "Data\\INI\\MappedImages\\TextureSize_512\\SCPurchasePowers512.INI",
   "Data\\INI\\MappedImages\\TextureSize_512\\SCShellUserInterface512.INI",
   logoMappedImageEntry,
@@ -185,7 +192,7 @@ try {
           name: "TexturesZH.big",
           expectedSourceBytes: textureArchiveStat.size,
           sourceArchive: textureArchivePath,
-          entries: [rulerTextureEntry],
+          entries: [rulerTextureEntry, factionLogoTextureEntry],
         },
       ],
     });
@@ -203,6 +210,8 @@ try {
     entry.path.toLowerCase() === gameTextCsfEntry.toLowerCase());
   const rulerTextureArchiveEntry = rangeTextureArchive?.entries?.find((entry) =>
     entry.path.toLowerCase() === rulerTextureEntry.toLowerCase());
+  const factionLogoTextureArchiveEntry = rangeTextureArchive?.entries?.find((entry) =>
+    entry.path.toLowerCase() === factionLogoTextureEntry.toLowerCase());
   if (!archiveMountResult.ok
       || archiveMountResult.command !== "mountRangeBackedArchiveSet"
       || archiveMountResult.archiveSet?.path !== runtimeArchivePath
@@ -233,7 +242,7 @@ try {
       || rangeTextureArchive?.storage !== "range-backed-subset-big"
       || rangeTextureArchive?.reader !== "browser fetch Range -> synthesized BIG"
       || rangeTextureArchive?.sourceBytes !== textureArchiveStat.size
-      || rangeTextureArchive?.entryCount !== 1
+      || rangeTextureArchive?.entryCount !== 2
       || windowEntry?.sourceOffset !== 4140728
       || windowEntry?.bytes !== 208561
       || windowEntry?.reader !== "browser fetch Range"
@@ -248,7 +257,10 @@ try {
       || gameTextCsfArchiveEntry?.reader !== "browser fetch Range"
       || rulerTextureArchiveEntry?.sourceOffset !== 152340144
       || rulerTextureArchiveEntry?.bytes !== 4194348
-      || rulerTextureArchiveEntry?.reader !== "browser fetch Range") {
+      || factionLogoTextureArchiveEntry?.sourceOffset !== 189933456
+      || factionLogoTextureArchiveEntry?.bytes !== 1048620
+      || rulerTextureArchiveEntry?.reader !== "browser fetch Range"
+      || factionLogoTextureArchiveEntry?.reader !== "browser fetch Range") {
     throw new Error(`range-backed MainMenu image archive subset mount failed: ${JSON.stringify(archiveMountResult)}`);
   }
 
@@ -885,6 +897,89 @@ try {
 
   await page.locator("#viewport").screenshot({ path: difficultyScreenshot });
 
+  let factionLogoResult;
+  try {
+    factionLogoResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutFactionLogoRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout faction logo repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout faction logo repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  const expectedFactionLogos = [
+    ["MainMenu.wnd:WinFactionUS", "SAFactionLogo96_US", 67, 423, 96, 96],
+    ["MainMenu.wnd:WinFactionGLA", "SUFactionLogo96_GLA", 211, 423, 96, 96],
+    ["MainMenu.wnd:WinFactionChina", "SNFactionLogo96_China", 352, 423, 96, 96],
+    ["MainMenu.wnd:WinFactionTraining", "Training96", 497, 423, 93, 84],
+    ["MainMenu.wnd:WinFactionSkirmish", "Skirmish96", 640, 423, 96, 96],
+  ];
+  const factionLogos = factionLogoResult.probe?.layout?.factionLogos ?? [];
+  const factionLogosValid = expectedFactionLogos.every(([name, image, x, y, imageWidth, imageHeight], index) => {
+    const logo = factionLogos[index];
+    const proof = factionLogoResult.factionLogoRegions?.[index];
+    return logo?.name === name
+      && logo?.image === image
+      && logo?.filename === "SCLogosUserInterface512_001.tga"
+      && logo?.x === x
+      && logo?.y === y
+      && logo?.width === 96
+      && logo?.height === 96
+      && logo?.drawFunc === "W3DGameWinDefaultDraw"
+      && logo?.systemFunc === "GameWinDefaultSystem"
+      && logo?.initialHidden === true
+      && logo?.hidden === false
+      && logo?.imageWidth === imageWidth
+      && logo?.imageHeight === imageHeight
+      && logo?.found === true
+      && logo?.callbackBound === true
+      && logo?.mappedImageFound === true
+      && logo?.imageBound === true
+      && proof?.region?.coloredPixelCount >= 20
+      && proof?.region?.maxComponent >= 64;
+  });
+  if (!factionLogoResult.ok
+      || factionLogoResult.command !== "ww3dMainMenuLayoutFactionLogoRepaint"
+      || factionLogoResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || factionLogoResult.probe?.mode !== "factionLogoStrip"
+      || !factionLogoResult.probe?.originalPaths?.includes("MainMenu.wnd faction logo strip -> W3DGameWinDefaultDraw")
+      || !factionLogoResult.probe?.originalPaths?.includes("SCLogos mapped-image INI -> TexturesZH.big texture")
+      || factionLogoResult.probe?.archives?.factionLogoMappedImageEntry !== factionLogoMappedImageEntry
+      || factionLogoResult.probe?.archives?.factionLogoTextureEntry !== factionLogoTextureEntry
+      || factionLogoResult.probe?.results?.factionLogoMappedIniExists !== true
+      || factionLogoResult.probe?.results?.factionLogoTextureFileExists !== true
+      || factionLogoResult.probe?.results?.factionLogoMappedImagesFound !== true
+      || factionLogoResult.probe?.results?.factionLogoWindowsFound !== true
+      || factionLogoResult.probe?.results?.factionLogoWindowsCallbackBound !== true
+      || factionLogoResult.probe?.results?.factionLogoImagesBound !== true
+      || factionLogoResult.probe?.results?.factionLogosVisible !== true
+      || factionLogos.length !== expectedFactionLogos.length
+      || !factionLogosValid
+      || factionLogoResult.probe?.calls?.displayImageDraws < 7
+      || factionLogoResult.probe?.calls?.drawIndexed < 7
+      || factionLogoResult.probe?.calls?.browserTextureCreate < 3
+      || factionLogoResult.probe?.calls?.browserTextureUpdate < 3
+      || factionLogoResult.probe?.calls?.browserTextureBind < 3
+      || factionLogoResult.coloredLogoPixelCount < 1
+      || factionLogoResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu WindowLayout faction logo repaint failed: ${JSON.stringify({
+      ok: factionLogoResult.ok,
+      probe: factionLogoResult.probe,
+      factionLogoRegions: factionLogoResult.factionLogoRegions,
+      coloredLogoPixelCount: factionLogoResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: factionLogoResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: factionLogoScreenshot });
+
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
@@ -900,6 +995,7 @@ try {
     singlePlayerScreenshot,
     loadReplayScreenshot,
     difficultyScreenshot,
+    factionLogoScreenshot,
     archives: {
       window: windowArchiveMemfsPath,
       ini: iniArchiveMemfsPath,
@@ -910,6 +1006,7 @@ try {
     singlePlayerOriginalPaths: singlePlayerResult.probe.originalPaths,
     loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     difficultyOriginalPaths: difficultyResult.probe.originalPaths,
+    factionLogoOriginalPaths: factionLogoResult.probe.originalPaths,
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
@@ -938,6 +1035,8 @@ try {
     difficultyEarthMap: difficultyResult.probe.layout.difficultyEarthMap,
     difficultyButtons,
     difficultyButtonRegions: difficultyResult.difficultyButtonRegions,
+    factionLogos,
+    factionLogoRegions: factionLogoResult.factionLogoRegions,
     staticText: staticTextResult.probe.layout.staticText,
     staticTextRegion: staticTextResult.staticTextRegion,
     difficultyStaticText: difficultyResult.probe.layout.staticText,
@@ -949,6 +1048,8 @@ try {
     staticTextColoredRulerPixelCount: staticTextResult.coloredRulerPixelCount,
     difficultyColoredLogoPixelCount: difficultyResult.coloredLogoPixelCount,
     difficultyColoredRulerPixelCount: difficultyResult.coloredRulerPixelCount,
+    factionLogoColoredLogoPixelCount: factionLogoResult.coloredLogoPixelCount,
+    factionLogoColoredRulerPixelCount: factionLogoResult.coloredRulerPixelCount,
     renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image bindings, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
     browserEventCount: browserEvents.length,
   }));

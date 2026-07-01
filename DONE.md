@@ -3950,6 +3950,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-main-menu-layout-difficulty-repaint-canvas.png`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      shipped faction-logo strip. The probe now runs a dedicated
+      `factionLogoStrip` mode that mounts
+      `Data\INI\MappedImages\TextureSize_512\SCLogosUserInterface512.INI`
+      from `INIZH.big` and
+      `Art\Textures\sclogosuserinterface512_001.tga` from `TexturesZH.big`,
+      then unhides `WinFactionUS`, `WinFactionGLA`, `WinFactionChina`,
+      `WinFactionTraining`, and `WinFactionSkirmish`. The browser harness
+      verifies each child's original `W3DGameWinDefaultDraw` /
+      `GameWinDefaultSystem` binding, exact WND geometry, mapped-image
+      dimensions including the real 93x84 `Training96` image inside its 96x96
+      WND slot, three texture-family WebGL uploads/binds, and non-empty pixels
+      in
+      `harness-smoke-ww3d-main-menu-layout-faction-logo-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

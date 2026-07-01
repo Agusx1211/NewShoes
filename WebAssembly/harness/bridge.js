@@ -7030,6 +7030,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_difficulty_repaint", "string", []),
       probeWW3DMainMenuLayoutStaticTextRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_static_text_repaint", "string", []),
+      probeWW3DMainMenuLayoutFactionLogoRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
       probeWW3DDisplayLineGradient: module.cwrap(
@@ -16647,6 +16649,7 @@ async function rpc(command, payload = {}) {
     case "ww3dMainMenuLayoutLoadReplayRepaint":
     case "ww3dMainMenuLayoutDifficultyRepaint":
     case "ww3dMainMenuLayoutStaticTextRepaint":
+    case "ww3dMainMenuLayoutFactionLogoRepaint":
       {
         const wasmModule = await wasmModulePromise;
         if (!wasmModule) {
@@ -16656,13 +16659,16 @@ async function rpc(command, payload = {}) {
         const singlePlayerMode = command === "ww3dMainMenuLayoutSinglePlayerRepaint";
         const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
         const difficultyMode = command === "ww3dMainMenuLayoutDifficultyRepaint";
+        const factionLogoMode = command === "ww3dMainMenuLayoutFactionLogoRepaint";
         const probeMode = staticTextMode
           ? "staticTextSelectDifficulty"
           : (singlePlayerMode
               ? "singlePlayerDropdown"
               : (difficultyMode
                   ? "difficultyDropdown"
-                  : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer")));
+                  : (factionLogoMode
+                      ? "factionLogoStrip"
+                      : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer"))));
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -16683,7 +16689,9 @@ async function rpc(command, payload = {}) {
                   ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
                   : (difficultyMode
                       ? wasmModule.probeWW3DMainMenuLayoutDifficultyRepaint()
-                      : wasmModule.probeWW3DMainMenuLayoutImageRepaint()))));
+                      : (factionLogoMode
+                          ? wasmModule.probeWW3DMainMenuLayoutFactionLogoRepaint()
+                          : wasmModule.probeWW3DMainMenuLayoutImageRepaint())))));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -16802,6 +16810,25 @@ async function rpc(command, payload = {}) {
           ? probe.layout.difficultyButtons
           : [];
         const difficultyButtonRegions = difficultyButtons.map(sampleButtonRegions);
+        const factionLogos = Array.isArray(probe?.layout?.factionLogos)
+          ? probe.layout.factionLogos
+          : [];
+        const factionLogoRegions = factionLogos.map((logo) => {
+          const x = Number(logo?.x ?? 0);
+          const y = Number(logo?.y ?? 0);
+          const w = Number(logo?.width ?? 0);
+          const h = Number(logo?.height ?? 0);
+          return {
+            name: logo?.name ?? null,
+            image: logo?.image ?? null,
+            region: sampleCanvasRegion({
+              left: Math.floor(x * virtualScaleX),
+              top: Math.floor(y * virtualScaleY),
+              right: Math.ceil((x + w) * virtualScaleX),
+              bottom: Math.ceil((y + h) * virtualScaleY),
+            }, 10),
+          };
+        });
         const staticText = probe?.layout?.staticText ?? {};
         const staticTextLeft = staticText.x ?? 540;
         const staticTextTop = staticText.y ?? 116;
@@ -16834,15 +16861,16 @@ async function rpc(command, payload = {}) {
           singlePlayerButtonRegions,
           loadReplayButtonRegions,
           difficultyButtonRegions,
+          factionLogoRegions,
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
         const expectedDisplayImageDraws = staticTextMode
           ? 2
-          : (singlePlayerMode ? 8 : (difficultyMode ? 6 : (loadReplayMode ? 5 : 6)));
+          : (singlePlayerMode ? 8 : (difficultyMode ? 6 : (factionLogoMode ? 7 : (loadReplayMode ? 5 : 6))));
         const expectedDrawIndexed = staticTextMode
           ? 3
-          : (singlePlayerMode ? 8 : (difficultyMode ? 7 : (loadReplayMode ? 5 : 6)));
+          : (singlePlayerMode ? 8 : (difficultyMode ? 7 : (factionLogoMode ? 7 : (loadReplayMode ? 5 : 6))));
         const staticTextProbeOk = !(staticTextMode || difficultyMode)
           || (probe?.results?.staticTextLabelExists === true
             && probe?.results?.staticTextNonEmpty === true
@@ -16874,7 +16902,7 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.staticText?.text?.height > 0
             && probe?.gameText?.staticTextLabelExists === true
             && probe?.gameText?.staticTextNonEmpty === true);
-        const buttonTextProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
+        const buttonTextProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode || factionLogoMode
           || (probe?.layout?.button?.text?.width > 0
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
@@ -16886,7 +16914,7 @@ async function rpc(command, payload = {}) {
           ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
           ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
         ];
-        const extraButtonsProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
+        const extraButtonsProbeOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode || factionLogoMode
           || (probe?.results?.extraButtonLabelsExist === true
             && probe?.results?.extraButtonTextNonEmpty === true
             && probe?.results?.extraButtonsFound === true
@@ -16922,7 +16950,7 @@ async function rpc(command, payload = {}) {
                 && extraButton?.text?.width > 0
                 && extraButton?.text?.height > 0;
             }));
-        const extraButtonsPixelOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode
+        const extraButtonsPixelOk = staticTextMode || singlePlayerMode || loadReplayMode || difficultyMode || factionLogoMode
           || (extraButtonRegions.length === expectedExtraButtons.length
             && extraButtonRegions.every((entry) =>
               entry.region.coloredPixelCount >= 20
@@ -17125,6 +17153,51 @@ async function rpc(command, payload = {}) {
               entry.region.coloredPixelCount >= 20
               && entry.textRegion.coloredPixelCount >= 20
               && entry.textRegion.maxComponent >= 180));
+        const expectedFactionLogos = [
+          ["MainMenu.wnd:WinFactionUS", "SAFactionLogo96_US", 67, 423, 96, 96],
+          ["MainMenu.wnd:WinFactionGLA", "SUFactionLogo96_GLA", 211, 423, 96, 96],
+          ["MainMenu.wnd:WinFactionChina", "SNFactionLogo96_China", 352, 423, 96, 96],
+          ["MainMenu.wnd:WinFactionTraining", "Training96", 497, 423, 93, 84],
+          ["MainMenu.wnd:WinFactionSkirmish", "Skirmish96", 640, 423, 96, 96],
+        ];
+        const factionLogosProbeOk = !factionLogoMode
+          || (probe?.results?.factionLogoMappedIniExists === true
+            && probe?.results?.factionLogoTextureFileExists === true
+            && probe?.results?.factionLogoMappedImagesFound === true
+            && probe?.results?.factionLogoWindowsFound === true
+            && probe?.results?.factionLogoWindowsCallbackBound === true
+            && probe?.results?.factionLogoImagesBound === true
+            && probe?.results?.factionLogosVisible === true
+            && probe?.archives?.factionLogoMappedImageEntry ===
+              "Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI"
+            && probe?.archives?.factionLogoTextureEntry ===
+              "Art\\Textures\\sclogosuserinterface512_001.tga"
+            && factionLogos.length === expectedFactionLogos.length
+            && expectedFactionLogos.every(([name, image, x, y, imageWidth, imageHeight], index) => {
+              const logo = factionLogos[index];
+              return logo?.name === name
+                && logo?.image === image
+                && logo?.filename === "SCLogosUserInterface512_001.tga"
+                && logo?.x === x
+                && logo?.y === y
+                && logo?.width === 96
+                && logo?.height === 96
+                && logo?.drawFunc === "W3DGameWinDefaultDraw"
+                && logo?.systemFunc === "GameWinDefaultSystem"
+                && logo?.initialHidden === true
+                && logo?.hidden === false
+                && logo?.imageWidth === imageWidth
+                && logo?.imageHeight === imageHeight
+                && logo?.found === true
+                && logo?.callbackBound === true
+                && logo?.mappedImageFound === true
+                && logo?.imageBound === true;
+            }));
+        const factionLogosPixelOk = !factionLogoMode
+          || (factionLogoRegions.length === expectedFactionLogos.length
+            && factionLogoRegions.every((entry) =>
+              entry.region.coloredPixelCount >= 20
+              && entry.region.maxComponent >= 64));
         const focusedPixelOk = staticTextMode
           ? (staticTextRegion.coloredPixelCount >= 20
             && staticTextRegion.maxComponent >= 180)
@@ -17134,12 +17207,14 @@ async function rpc(command, payload = {}) {
                   ? (difficultyButtonsPixelOk
                     && staticTextRegion.coloredPixelCount >= 20
                     && staticTextRegion.maxComponent >= 180)
-                  : (loadReplayMode
-                    ? loadReplayButtonsPixelOk
-                  : (buttonRegion.coloredPixelCount >= 20
-                    && buttonTextRegion.coloredPixelCount >= 20
-                    && buttonTextRegion.maxComponent >= 180
-                    && extraButtonsPixelOk))));
+                  : (factionLogoMode
+                      ? factionLogosPixelOk
+                      : (loadReplayMode
+                        ? loadReplayButtonsPixelOk
+                      : (buttonRegion.coloredPixelCount >= 20
+                        && buttonTextRegion.coloredPixelCount >= 20
+                        && buttonTextRegion.maxComponent >= 180
+                        && extraButtonsPixelOk)))));
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -17214,12 +17289,13 @@ async function rpc(command, payload = {}) {
           && singlePlayerButtonsProbeOk
           && loadReplayButtonsProbeOk
           && difficultyButtonsProbeOk
+          && factionLogosProbeOk
           && staticTextProbeOk
           && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
           && probe?.calls?.drawIndexed >= expectedDrawIndexed
-          && probe?.calls?.browserTextureCreate >= 2
-          && probe?.calls?.browserTextureUpdate >= 2
-          && probe?.calls?.browserTextureBind >= 2
+          && probe?.calls?.browserTextureCreate >= (factionLogoMode ? 3 : 2)
+          && probe?.calls?.browserTextureUpdate >= (factionLogoMode ? 3 : 2)
+          && probe?.calls?.browserTextureBind >= (factionLogoMode ? 3 : 2)
           && browserProbe?.source === "browser_d3d8_draw_indexed"
           && browserProbe?.usedPersistentBuffers === true
           && browserProbe?.usedTransforms === true
@@ -17252,6 +17328,7 @@ async function rpc(command, payload = {}) {
           singlePlayerButtonRegions,
           loadReplayButtonRegions,
           difficultyButtonRegions,
+          factionLogoRegions,
           staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,

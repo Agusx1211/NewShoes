@@ -324,11 +324,14 @@ enum MainMenuLayoutImageRepaintMode
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_DIFFICULTY_DROPDOWN,
 	MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_FACTION_LOGOS,
 };
 
 const char *main_menu_layout_image_repaint_mode_name(MainMenuLayoutImageRepaintMode mode)
 {
 	switch (mode) {
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_FACTION_LOGOS:
+			return "factionLogoStrip";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT:
 			return "staticTextSelectDifficulty";
 		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN:
@@ -393,6 +396,12 @@ bool main_menu_layout_image_repaint_is_static_text()
 {
 	return g_ww3d_main_menu_layout_image_repaint_mode ==
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT;
+}
+
+bool main_menu_layout_image_repaint_is_faction_logos()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_FACTION_LOGOS;
 }
 
 std::string g_ww3d_display_line_probe_json;
@@ -501,6 +510,32 @@ constexpr const char *kMainMenuDifficultyButtonLabels[kMainMenuDifficultyButtonC
 };
 constexpr Int kMainMenuDifficultyButtonY[kMainMenuDifficultyButtonCount] = { 156, 196, 236, 276 };
 constexpr Int kMainMenuDifficultyButtonHeight[kMainMenuDifficultyButtonCount] = { 35, 35, 36, 36 };
+constexpr std::size_t kMainMenuFactionLogoCount = 5;
+constexpr const char *kMainMenuFactionLogoWindowNames[kMainMenuFactionLogoCount] = {
+	"MainMenu.wnd:WinFactionUS",
+	"MainMenu.wnd:WinFactionGLA",
+	"MainMenu.wnd:WinFactionChina",
+	"MainMenu.wnd:WinFactionTraining",
+	"MainMenu.wnd:WinFactionSkirmish",
+};
+constexpr const char *kMainMenuFactionLogoImageNames[kMainMenuFactionLogoCount] = {
+	"SAFactionLogo96_US",
+	"SUFactionLogo96_GLA",
+	"SNFactionLogo96_China",
+	"Training96",
+	"Skirmish96",
+};
+constexpr Int kMainMenuFactionLogoX[kMainMenuFactionLogoCount] = { 67, 211, 352, 497, 640 };
+constexpr Int kMainMenuFactionLogoY[kMainMenuFactionLogoCount] = { 423, 423, 423, 423, 423 };
+constexpr Int kMainMenuFactionLogoWidth[kMainMenuFactionLogoCount] = { 96, 96, 96, 96, 96 };
+constexpr Int kMainMenuFactionLogoHeight[kMainMenuFactionLogoCount] = { 96, 96, 96, 96, 96 };
+constexpr Int kMainMenuFactionLogoImageWidth[kMainMenuFactionLogoCount] = { 96, 96, 96, 93, 96 };
+constexpr Int kMainMenuFactionLogoImageHeight[kMainMenuFactionLogoCount] = { 96, 96, 96, 84, 96 };
+constexpr const char *kMainMenuFactionLogoSampleIni =
+	"Data\\INI\\MappedImages\\TextureSize_512\\SCLogosUserInterface512.INI";
+constexpr const char *kMainMenuFactionLogoTextureName = "SCLogosUserInterface512_001.tga";
+constexpr const char *kMainMenuFactionLogoTextureArchiveEntry =
+	"Art\\Textures\\sclogosuserinterface512_001.tga";
 constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
@@ -7312,6 +7347,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool difficulty_buttons_text_display_string_bound = false;
 	bool difficulty_buttons_text_size_computed = false;
 	bool difficulty_buttons_visible = false;
+	bool faction_logo_windows_found = false;
+	bool faction_logo_windows_callback_bound = false;
+	bool faction_logo_mapped_images_found = false;
+	bool faction_logo_images_bound = false;
+	bool faction_logos_visible = false;
 	bool static_text_label_exists = false;
 	bool static_text_nonempty = false;
 	bool static_text_callback_bound = false;
@@ -7323,8 +7363,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool archive_window_openable = false;
 	bool mapped_ini_exists = false;
 	bool ruler_mapped_ini_exists = false;
+	bool faction_logo_mapped_ini_exists = false;
 	bool texture_file_exists = false;
 	bool ruler_texture_file_exists = false;
+	bool faction_logo_texture_file_exists = false;
 	bool texture_file_factory_installed = false;
 	bool function_lexicon_initialized = false;
 	bool callbacks_resolved = false;
@@ -7429,6 +7471,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	std::string single_player_button_ascii[kMainMenuSinglePlayerButtonCount];
 	std::string load_replay_button_ascii[kMainMenuLoadReplayButtonCount];
 	std::string difficulty_button_ascii[kMainMenuDifficultyButtonCount];
+	std::string faction_logo_image_filename[kMainMenuFactionLogoCount];
 	bool extra_button_label_exists[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_nonempty[kMainMenuExtraButtonCount] = {};
 	bool extra_button_found[kMainMenuExtraButtonCount] = {};
@@ -7461,6 +7504,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	bool difficulty_button_text_display_string_bound[kMainMenuDifficultyButtonCount] = {};
 	bool difficulty_button_text_size_computed[kMainMenuDifficultyButtonCount] = {};
 	bool difficulty_button_hidden[kMainMenuDifficultyButtonCount] = {};
+	bool faction_logo_window_found[kMainMenuFactionLogoCount] = {};
+	bool faction_logo_window_callback_bound[kMainMenuFactionLogoCount] = {};
+	bool faction_logo_mapped_image_found[kMainMenuFactionLogoCount] = {};
+	bool faction_logo_image_bound[kMainMenuFactionLogoCount] = {};
+	bool faction_logo_initial_hidden[kMainMenuFactionLogoCount] = {};
+	bool faction_logo_hidden[kMainMenuFactionLogoCount] = {};
 	Int button_left_image_width = 0;
 	Int button_left_image_height = 0;
 	Int button_middle_image_width = 0;
@@ -7547,6 +7596,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	Int difficulty_button_text_length[kMainMenuDifficultyButtonCount] = {};
 	Int difficulty_button_text_width[kMainMenuDifficultyButtonCount] = {};
 	Int difficulty_button_text_height[kMainMenuDifficultyButtonCount] = {};
+	Int faction_logo_x[kMainMenuFactionLogoCount] = {};
+	Int faction_logo_y[kMainMenuFactionLogoCount] = {};
+	Int faction_logo_width[kMainMenuFactionLogoCount] = {};
+	Int faction_logo_height[kMainMenuFactionLogoCount] = {};
+	Int faction_logo_image_width[kMainMenuFactionLogoCount] = {};
+	Int faction_logo_image_height[kMainMenuFactionLogoCount] = {};
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7569,6 +7624,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	GameWindow *difficulty_dropdown = nullptr;
 	GameWindow *difficulty_earth_map = nullptr;
 	GameWindow *difficulty_buttons[kMainMenuDifficultyButtonCount] = {};
+	GameWindow *faction_logo_windows[kMainMenuFactionLogoCount] = {};
 	GameWindow *static_text = nullptr;
 	const Image *target_image = nullptr;
 	const Image *ruler_image = nullptr;
@@ -7580,6 +7636,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const Image *button_left_enabled_image = nullptr;
 	const Image *button_middle_enabled_image = nullptr;
 	const Image *button_right_enabled_image = nullptr;
+	const Image *faction_logo_images[kMainMenuFactionLogoCount] = {};
 
 	if (succeeded(init_result)) {
 		asset_manager = WW3DAssetManager::Get_Instance();
@@ -7696,18 +7753,28 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		ruler_mapped_ini_exists =
 			runtime_ini_installed &&
 			wasm_browser_runtime_assets_file_exists(kMainMenuRulerSampleIni);
+		faction_logo_mapped_ini_exists =
+			runtime_ini_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuFactionLogoSampleIni);
 		texture_file_exists =
 			runtime_texture_installed &&
 			wasm_browser_runtime_assets_file_exists(kMainMenuLogoTextureArchiveEntry);
 		ruler_texture_file_exists =
 			runtime_ruler_texture_installed &&
 			wasm_browser_runtime_assets_file_exists(kMainMenuRulerTextureArchiveEntry);
+		faction_logo_texture_file_exists =
+			runtime_ruler_texture_installed &&
+			wasm_browser_runtime_assets_file_exists(kMainMenuFactionLogoTextureArchiveEntry);
 		TheNameKeyGenerator = &name_key_generator;
 		name_keys_ready = TheNameKeyGenerator != nullptr;
 	}
 
 	if (mapped_ini_exists && ruler_mapped_ini_exists &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			faction_logo_mapped_ini_exists) &&
 		texture_file_exists && ruler_texture_file_exists &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			faction_logo_texture_file_exists) &&
 		game_text_initialized && button_text_label_exists &&
 		button_text_nonempty &&
 		(!main_menu_layout_image_repaint_is_button_stack() ||
@@ -7772,12 +7839,24 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				*mapped_image_collection,
 				kMainMenuRulerSampleIni,
 				kMainMenuRulerImageName);
+			bool faction_logos_loaded = true;
+			if (main_menu_layout_image_repaint_is_faction_logos()) {
+				for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+					faction_logos_loaded =
+						load_mapped_image_ini_file(
+							*mapped_image_collection,
+							kMainMenuFactionLogoSampleIni,
+							kMainMenuFactionLogoImageNames[i]) &&
+						faction_logos_loaded;
+				}
+			}
 			mapped_collection_loaded =
 				logo_loaded &&
 				button_left_loaded &&
 				button_middle_loaded &&
 				button_right_loaded &&
-				ruler_loaded;
+				ruler_loaded &&
+				faction_logos_loaded;
 			TheGlobalData = mapped_image_load_global_data;
 			if (mapped_collection_loaded) {
 				mapped_image_count = count_mapped_images(*mapped_image_collection);
@@ -7795,6 +7874,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_left_image != nullptr &&
 					button_middle_image != nullptr &&
 					button_right_image != nullptr;
+				faction_logo_mapped_images_found =
+					!main_menu_layout_image_repaint_is_faction_logos();
+				if (main_menu_layout_image_repaint_is_faction_logos()) {
+					faction_logo_mapped_images_found = true;
+					for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+						faction_logo_images[i] = mapped_image_collection->findImageByName(
+							AsciiString(kMainMenuFactionLogoImageNames[i]));
+						faction_logo_mapped_image_found[i] =
+							faction_logo_images[i] != nullptr;
+						faction_logo_mapped_images_found =
+							faction_logo_mapped_images_found &&
+							faction_logo_mapped_image_found[i];
+					}
+				}
 			}
 			if (mapped_image_found) {
 				image_status = target_image->getStatus();
@@ -7847,6 +7940,16 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				button_middle_image_height = button_middle_image->getImageHeight();
 				button_right_image_width = button_right_image->getImageWidth();
 				button_right_image_height = button_right_image->getImageHeight();
+			}
+			for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+				const Image *logo_image = faction_logo_images[i];
+				if (logo_image != nullptr) {
+					faction_logo_image_filename[i] =
+						logo_image->getFilename().str() != nullptr ?
+							logo_image->getFilename().str() : "";
+					faction_logo_image_width[i] = logo_image->getImageWidth();
+					faction_logo_image_height[i] = logo_image->getImageHeight();
+				}
 			}
 		}
 	}
@@ -7980,6 +8083,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				root,
 				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuDifficultyButtonNames[i])));
 		}
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			faction_logo_windows[i] = manager->winGetWindowFromId(
+				root,
+				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuFactionLogoWindowNames[i])));
+		}
 		static_text = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(static_text_name)));
 		target_found = target != nullptr;
@@ -8012,6 +8120,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			difficulty_button_found[i] = difficulty_buttons[i] != nullptr;
 			difficulty_buttons_found =
 				difficulty_buttons_found && difficulty_button_found[i];
+		}
+		faction_logo_windows_found = true;
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			faction_logo_window_found[i] = faction_logo_windows[i] != nullptr;
+			faction_logo_windows_found =
+				faction_logo_windows_found && faction_logo_window_found[i];
 		}
 		static_text_found = static_text != nullptr;
 		root_callback_bound =
@@ -8404,6 +8518,38 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				difficulty_buttons_text_size_computed &&
 				difficulty_button_text_size_computed[i];
 		}
+		faction_logo_windows_callback_bound = true;
+		faction_logo_images_bound = true;
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			GameWindow *faction_logo = faction_logo_windows[i];
+			if (faction_logo == nullptr) {
+				faction_logo_windows_callback_bound = false;
+				faction_logo_images_bound = false;
+				continue;
+			}
+			faction_logo_window_callback_bound[i] =
+				faction_logo->winGetDrawFunc() == W3DGameWinDefaultDraw &&
+				faction_logo->winGetSystemFunc() == GameWinDefaultSystem;
+			const Image *enabled_image = faction_logo->winGetEnabledImage(0);
+			faction_logo_image_bound[i] =
+				enabled_image != nullptr &&
+				enabled_image == faction_logo_images[i];
+			faction_logo_initial_hidden[i] =
+				BitTest(faction_logo->winGetStatus(), WIN_STATUS_HIDDEN);
+			faction_logo_hidden[i] = faction_logo_initial_hidden[i];
+			get_window_rect(
+				faction_logo,
+				faction_logo_x[i],
+				faction_logo_y[i],
+				faction_logo_width[i],
+				faction_logo_height[i]);
+			faction_logo_windows_callback_bound =
+				faction_logo_windows_callback_bound &&
+				faction_logo_window_callback_bound[i];
+			faction_logo_images_bound =
+				faction_logo_images_bound &&
+				faction_logo_image_bound[i];
+		}
 		if (static_text != nullptr) {
 			static_text_callback_bound =
 				static_text->winGetDrawFunc() == W3DGadgetStaticTextDraw &&
@@ -8462,6 +8608,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					static_text_found && static_text_callback_bound &&
 					static_text_user_data_bound && static_text_display_string_bound &&
 					static_text_ascii.length() > 0) :
+			(main_menu_layout_image_repaint_is_faction_logos() ?
+				(faction_logo_windows_found &&
+					faction_logo_windows_callback_bound &&
+					faction_logo_mapped_images_found &&
+					faction_logo_images_bound) :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(load_replay_dropdown_found && load_replay_dropdown_callback_bound &&
 					load_replay_buttons_found && load_replay_buttons_callback_bound &&
@@ -8472,7 +8623,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					button_text_ascii.length() > 0 &&
 					extra_buttons_found && extra_buttons_callback_bound &&
 					extra_buttons_images_bound &&
-					extra_buttons_text_display_string_bound))));
+					extra_buttons_text_display_string_bound)))));
 
 	if (root_found && target_found && ruler_found && focused_window_ready &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
@@ -8490,6 +8641,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			repaint_targets.push_back(static_text);
 			for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
 				repaint_targets.push_back(difficulty_buttons[i]);
+			}
+		} else if (main_menu_layout_image_repaint_is_faction_logos()) {
+			for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+				repaint_targets.push_back(faction_logo_windows[i]);
 			}
 		} else if (main_menu_layout_image_repaint_is_load_replay()) {
 			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
@@ -8528,6 +8683,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
 				if (load_replay_buttons[i] != nullptr) {
 					show_window_and_ancestors(load_replay_buttons[i]);
+				}
+			}
+		}
+		if (main_menu_layout_image_repaint_is_faction_logos()) {
+			for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+				if (faction_logo_windows[i] != nullptr) {
+					show_window_and_ancestors(faction_logo_windows[i]);
 				}
 			}
 		}
@@ -8581,6 +8743,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 			difficulty_buttons_visible =
 				difficulty_buttons_visible && !difficulty_button_hidden[i];
 		}
+		faction_logos_visible = true;
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			faction_logo_hidden[i] =
+				faction_logo_windows[i] != nullptr ?
+					BitTest(faction_logo_windows[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+			faction_logos_visible =
+				faction_logos_visible && !faction_logo_hidden[i];
+		}
 		static_text_hidden =
 			static_text != nullptr ? BitTest(static_text->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
@@ -8592,12 +8762,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		main_menu_layout_image_repaint_is_static_text() ? 2 :
 			(main_menu_layout_image_repaint_is_single_player() ? 8 :
 			(main_menu_layout_image_repaint_is_difficulty() ? 6 :
-				(main_menu_layout_image_repaint_is_load_replay() ? 5 : 6)));
+			(main_menu_layout_image_repaint_is_faction_logos() ? 7 :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5 : 6))));
 	const UnsignedInt expected_indexed_draws =
 		main_menu_layout_image_repaint_is_static_text() ? 3u :
 			(main_menu_layout_image_repaint_is_single_player() ? 8u :
 			(main_menu_layout_image_repaint_is_difficulty() ? 7u :
-				(main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u)));
+			(main_menu_layout_image_repaint_is_faction_logos() ? 7u :
+				(main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u))));
 	const bool focused_window_visible =
 		main_menu_layout_image_repaint_is_static_text() ? !static_text_hidden :
 			(main_menu_layout_image_repaint_is_single_player() ?
@@ -8609,9 +8781,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 					!difficulty_earth_map_hidden &&
 					difficulty_buttons_visible &&
 					!static_text_hidden) :
+			(main_menu_layout_image_repaint_is_faction_logos() ?
+				faction_logos_visible :
 			(main_menu_layout_image_repaint_is_load_replay() ?
 				(!load_replay_dropdown_hidden && load_replay_buttons_visible) :
-				(!button_hidden && extra_buttons_visible))));
+				(!button_hidden && extra_buttons_visible)))));
 
 	if (children_pruned && !target_hidden && !ruler_hidden && focused_window_visible) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
@@ -8782,6 +8956,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		difficulty_earth_map = nullptr;
 		for (std::size_t i = 0; i < kMainMenuDifficultyButtonCount; ++i) {
 			difficulty_buttons[i] = nullptr;
+		}
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			faction_logo_windows[i] = nullptr;
 		}
 		static_text = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
@@ -8988,6 +9165,34 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				difficulty_button_height[i] == kMainMenuDifficultyButtonHeight[i];
 		}
 	}
+	bool faction_logos_focus_ok = !main_menu_layout_image_repaint_is_faction_logos();
+	if (main_menu_layout_image_repaint_is_faction_logos()) {
+		faction_logos_focus_ok =
+			faction_logo_mapped_ini_exists &&
+			faction_logo_texture_file_exists &&
+			faction_logo_mapped_images_found &&
+			faction_logo_windows_found &&
+			faction_logo_windows_callback_bound &&
+			faction_logo_images_bound &&
+			faction_logos_visible;
+		for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+			faction_logos_focus_ok =
+				faction_logos_focus_ok &&
+				faction_logo_mapped_image_found[i] &&
+				faction_logo_window_found[i] &&
+				faction_logo_window_callback_bound[i] &&
+				faction_logo_image_bound[i] &&
+				faction_logo_initial_hidden[i] &&
+				!faction_logo_hidden[i] &&
+				faction_logo_image_filename[i] == kMainMenuFactionLogoTextureName &&
+				faction_logo_image_width[i] == kMainMenuFactionLogoImageWidth[i] &&
+				faction_logo_image_height[i] == kMainMenuFactionLogoImageHeight[i] &&
+				faction_logo_x[i] == kMainMenuFactionLogoX[i] &&
+				faction_logo_y[i] == kMainMenuFactionLogoY[i] &&
+				faction_logo_width[i] == kMainMenuFactionLogoWidth[i] &&
+				faction_logo_height[i] == kMainMenuFactionLogoHeight[i];
+		}
+	}
 	const bool button_focus_ok =
 		!main_menu_layout_image_repaint_is_button_stack() ||
 		(button_found &&
@@ -9043,13 +9248,21 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 				static_text_label_exists && static_text_nonempty)) &&
 		(!main_menu_layout_image_repaint_is_static_text() ||
 			(static_text_label_exists && static_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			(faction_logo_mapped_ini_exists &&
+				faction_logo_texture_file_exists &&
+				faction_logo_mapped_images_found)) &&
 		name_keys_ready &&
 		archive_window_exists &&
 		archive_window_openable &&
 		mapped_ini_exists &&
 		ruler_mapped_ini_exists &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			faction_logo_mapped_ini_exists) &&
 		texture_file_exists &&
 		ruler_texture_file_exists &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			faction_logo_texture_file_exists) &&
 		texture_file_factory_installed &&
 		function_lexicon_initialized &&
 		callbacks_resolved &&
@@ -9059,6 +9272,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		mapped_image_found &&
 		ruler_mapped_image_found &&
 		button_mapped_images_found &&
+		(!main_menu_layout_image_repaint_is_faction_logos() ||
+			faction_logo_mapped_images_found) &&
 		!mapped_image_rotated &&
 		!ruler_mapped_image_rotated &&
 		!image_raw_texture &&
@@ -9104,6 +9319,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		single_player_buttons_focus_ok &&
 		load_replay_buttons_focus_ok &&
 		difficulty_buttons_focus_ok &&
+		faction_logos_focus_ok &&
 		static_text_focus_ok &&
 		!target_hidden &&
 		!ruler_hidden &&
@@ -9180,6 +9396,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const std::string ruler_mapped_image_entry_json = json_escape(kMainMenuRulerSampleIni);
 	const std::string texture_entry_json = json_escape(kMainMenuLogoTextureArchiveEntry);
 	const std::string ruler_texture_entry_json = json_escape(kMainMenuRulerTextureArchiveEntry);
+	const std::string faction_logo_mapped_image_entry_json =
+		json_escape(kMainMenuFactionLogoSampleIni);
+	const std::string faction_logo_texture_entry_json =
+		json_escape(kMainMenuFactionLogoTextureArchiveEntry);
 	const std::string image_name_json = json_escape(kMainMenuLogoImageName);
 	const std::string ruler_image_name_json = json_escape(kMainMenuRulerImageName);
 	const std::string ruler_window_name_json = json_escape(ruler_name);
@@ -9373,6 +9593,45 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		difficulty_buttons_json += difficulty_button_buffer;
 	}
 	difficulty_buttons_json += "]";
+	std::string faction_logos_json = "[";
+	for (std::size_t i = 0; i < kMainMenuFactionLogoCount; ++i) {
+		if (i > 0) {
+			faction_logos_json += ",";
+		}
+		const std::string window_name_json = json_escape(kMainMenuFactionLogoWindowNames[i]);
+		const std::string image_json = json_escape(kMainMenuFactionLogoImageNames[i]);
+		const std::string filename_json = json_escape(faction_logo_image_filename[i]);
+		char faction_logo_buffer[1200];
+		std::snprintf(
+			faction_logo_buffer,
+			sizeof(faction_logo_buffer),
+			"{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+			"\"width\":%d,\"height\":%d,"
+			"\"systemFunc\":\"GameWinDefaultSystem\","
+			"\"drawFunc\":\"W3DGameWinDefaultDraw\","
+			"\"initialHidden\":%s,\"hidden\":%s,"
+			"\"image\":\"%s\",\"filename\":\"%s\","
+			"\"imageWidth\":%d,\"imageHeight\":%d,"
+			"\"found\":%s,\"callbackBound\":%s,"
+			"\"mappedImageFound\":%s,\"imageBound\":%s}",
+			window_name_json.c_str(),
+			faction_logo_x[i],
+			faction_logo_y[i],
+			faction_logo_width[i],
+			faction_logo_height[i],
+			bool_json(faction_logo_initial_hidden[i]),
+			bool_json(faction_logo_hidden[i]),
+			image_json.c_str(),
+			filename_json.c_str(),
+			faction_logo_image_width[i],
+			faction_logo_image_height[i],
+			bool_json(faction_logo_window_found[i]),
+			bool_json(faction_logo_window_callback_bound[i]),
+			bool_json(faction_logo_mapped_image_found[i]),
+			bool_json(faction_logo_image_bound[i]));
+		faction_logos_json += faction_logo_buffer;
+	}
+	faction_logos_json += "]";
 	char single_player_results_buffer[2400];
 	std::snprintf(
 		single_player_results_buffer,
@@ -9424,6 +9683,25 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(difficulty_button_labels_exist),
 		bool_json(difficulty_buttons_text_nonempty));
 	const std::string difficulty_results_json = difficulty_results_buffer;
+	char faction_logo_results_buffer[700];
+	std::snprintf(
+		faction_logo_results_buffer,
+		sizeof(faction_logo_results_buffer),
+		"\"factionLogoMappedIniExists\":%s,"
+		"\"factionLogoTextureFileExists\":%s,"
+		"\"factionLogoMappedImagesFound\":%s,"
+		"\"factionLogoWindowsFound\":%s,"
+		"\"factionLogoWindowsCallbackBound\":%s,"
+		"\"factionLogoImagesBound\":%s,"
+		"\"factionLogosVisible\":%s,",
+		bool_json(faction_logo_mapped_ini_exists),
+		bool_json(faction_logo_texture_file_exists),
+		bool_json(faction_logo_mapped_images_found),
+		bool_json(faction_logo_windows_found),
+		bool_json(faction_logo_windows_callback_bound),
+		bool_json(faction_logo_images_bound),
+		bool_json(faction_logos_visible));
+	const std::string faction_logo_results_json = faction_logo_results_buffer;
 	char difficulty_game_text_buffer[400];
 	std::snprintf(
 		difficulty_game_text_buffer,
@@ -9436,7 +9714,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[86000];
+	char buffer[96000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -9478,6 +9756,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"GameText::fetch(difficulty dropdown button labels) -> W3DDisplayString::draw button labels\","
 		"\"MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw\","
 		"\"GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text\","
+		"\"MainMenu.wnd faction logo strip -> W3DGameWinDefaultDraw\","
+		"\"SCLogos mapped-image INI -> TexturesZH.big texture\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
 		"\"ProbeForwardingW3DDisplay -> W3DDisplay::drawImage\","
 		"\"TextureClass::Init -> W3DFileSystem -> EnglishZH.big texture\","
@@ -9486,7 +9766,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"rulerTexture\":\"%s\","
 		"\"windowEntry\":\"%s\",\"mappedImageEntry\":\"%s\","
 		"\"rulerMappedImageEntry\":\"%s\","
-		"\"textureEntry\":\"%s\",\"rulerTextureEntry\":\"%s\"},"
+		"\"factionLogoMappedImageEntry\":\"%s\","
+		"\"textureEntry\":\"%s\",\"rulerTextureEntry\":\"%s\","
+		"\"factionLogoTextureEntry\":\"%s\"},"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
 		"\"assetManagerCreated\":%s,\"usedExistingAssetManager\":%s,"
 		"\"runtimeIniInstalled\":%s,\"runtimeWindowInstalled\":%s,"
@@ -9502,16 +9784,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"loadReplayButtonLabelsExist\":%s,"
 		"\"loadReplayButtonTextNonEmpty\":%s,"
 		"%s"
+		"%s"
 		"\"staticTextLabelExists\":%s,\"staticTextNonEmpty\":%s,"
 		"\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
 		"\"mappedIniExists\":%s,\"rulerMappedIniExists\":%s,"
+		"\"factionLogoMappedIniExists\":%s,"
 		"\"textureFileExists\":%s,\"rulerTextureFileExists\":%s,"
+		"\"factionLogoTextureFileExists\":%s,"
 		"\"textureFileFactoryInstalled\":%s,"
 		"\"functionLexiconInitialized\":%s,\"callbacksResolved\":%s,"
 		"\"mappedCollectionAllocated\":%s,\"mappedCollectionLoaded\":%s,"
 		"\"mappedImages\":%zu,\"mappedImageFound\":%s,"
 		"\"rulerMappedImageFound\":%s,\"buttonMappedImagesFound\":%s,"
+		"\"factionLogoMappedImagesFound\":%s,"
 		"\"texturePreloaded\":%s,\"textureRegistered\":%s,"
 		"\"textureResolved\":%s,\"textureLoaded\":%s,"
 		"\"textureHasD3DSurface\":%s,\"textureLevelDesc\":%ld,"
@@ -9528,6 +9814,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"difficultyDropdownFound\":%s,"
 		"\"difficultyEarthMapFound\":%s,"
 		"\"difficultyButtonsFound\":%s,"
+		"\"factionLogoWindowsFound\":%s,"
 		"\"staticTextFound\":%s,"
 		"\"rootCallbackBound\":%s,"
 		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
@@ -9538,12 +9825,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"difficultyDropdownCallbackBound\":%s,"
 		"\"difficultyEarthMapCallbackBound\":%s,"
 		"\"difficultyButtonsCallbackBound\":%s,"
+		"\"factionLogoWindowsCallbackBound\":%s,"
 		"\"staticTextCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
 		"\"extraButtonsImagesBound\":%s,"
 		"\"loadReplayButtonsImagesBound\":%s,"
 		"\"difficultyButtonsImagesBound\":%s,"
+		"\"factionLogoImagesBound\":%s,"
 		"\"buttonTextDisplayStringBound\":%s,"
 		"\"buttonTextSizeComputed\":%s,"
 		"\"extraButtonsTextDisplayStringBound\":%s,"
@@ -9562,6 +9851,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"difficultyDropdownHidden\":%s,"
 		"\"difficultyEarthMapHidden\":%s,"
 		"\"difficultyButtonsVisible\":%s,"
+		"\"factionLogosVisible\":%s,"
 		"\"staticTextInitialHidden\":%s,\"staticTextHidden\":%s,"
 		"\"staticTextVisibilityFocused\":%s,"
 		"\"childrenPruned\":%s,"
@@ -9617,6 +9907,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		"\"drawFunc\":\"W3DGameWinDefaultDraw\","
 		"\"hidden\":%s},"
 		"\"difficultyButtons\":%s,"
+		"\"factionLogos\":%s,"
 		"\"staticText\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GadgetStaticTextSystem\","
@@ -9706,8 +9997,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		archive_window_path_json.c_str(),
 		mapped_image_entry_json.c_str(),
 		ruler_mapped_image_entry_json.c_str(),
+		faction_logo_mapped_image_entry_json.c_str(),
 		texture_entry_json.c_str(),
 		ruler_texture_entry_json.c_str(),
+		faction_logo_texture_entry_json.c_str(),
 		init_result,
 		set_device_result,
 		bool_json(asset_manager_created),
@@ -9728,6 +10021,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(load_replay_button_labels_exist),
 		bool_json(load_replay_buttons_text_nonempty),
 		difficulty_results_json.c_str(),
+		faction_logo_results_json.c_str(),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		bool_json(name_keys_ready),
@@ -9735,8 +10029,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(archive_window_openable),
 		bool_json(mapped_ini_exists),
 		bool_json(ruler_mapped_ini_exists),
+		bool_json(faction_logo_mapped_ini_exists),
 		bool_json(texture_file_exists),
 		bool_json(ruler_texture_file_exists),
+		bool_json(faction_logo_texture_file_exists),
 		bool_json(texture_file_factory_installed),
 		bool_json(function_lexicon_initialized),
 		bool_json(callbacks_resolved),
@@ -9746,6 +10042,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(mapped_image_found),
 		bool_json(ruler_mapped_image_found),
 		bool_json(button_mapped_images_found),
+		bool_json(faction_logo_mapped_images_found),
 		bool_json(texture_preloaded),
 		bool_json(texture_registered),
 		bool_json(texture_resolved),
@@ -9773,6 +10070,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(difficulty_dropdown_found),
 		bool_json(difficulty_earth_map_found),
 		bool_json(difficulty_buttons_found),
+		bool_json(faction_logo_windows_found),
 		bool_json(static_text_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
@@ -9784,6 +10082,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(difficulty_dropdown_callback_bound),
 		bool_json(difficulty_earth_map_callback_bound),
 		bool_json(difficulty_buttons_callback_bound),
+		bool_json(faction_logo_windows_callback_bound),
 		bool_json(static_text_callback_bound),
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
@@ -9791,6 +10090,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(extra_buttons_images_bound),
 		bool_json(load_replay_buttons_images_bound),
 		bool_json(difficulty_buttons_images_bound),
+		bool_json(faction_logo_images_bound),
 		bool_json(button_text_display_string_bound),
 		bool_json(button_text_size_computed),
 		bool_json(extra_buttons_text_display_string_bound),
@@ -9811,6 +10111,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		bool_json(difficulty_dropdown_hidden),
 		bool_json(difficulty_earth_map_hidden),
 		bool_json(difficulty_buttons_visible),
+		bool_json(faction_logos_visible),
 		bool_json(static_text_initial_hidden),
 		bool_json(static_text_hidden),
 		bool_json(static_text_visibility_focused),
@@ -9889,6 +10190,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		difficulty_earth_map_height,
 		bool_json(difficulty_earth_map_hidden),
 		difficulty_buttons_json.c_str(),
+		faction_logos_json.c_str(),
 		static_text_window_name_json.c_str(),
 		static_text_x,
 		static_text_y,
@@ -10061,6 +10363,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_static_tex
 {
 	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
 		MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_faction_logo_repaint()
+{
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_FACTION_LOGOS);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()

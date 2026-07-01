@@ -692,7 +692,14 @@ shares structure and follows behind.
       `MainMenu.wnd:MapBorder4`, `EarthMap4`, `StaticTextSelectDifficulty`,
       `ButtonEasy`, `ButtonMedium`, `ButtonHard`, and `ButtonDiffBack`,
       including real button images, CSF labels, title text, and browser pixel
-      proofs. Current archive inspection
+      proofs. Its faction-logo focused mode now also mounts the shipped
+      `INIZH.big` `SCLogosUserInterface512.INI` mapped images and
+      `TexturesZH.big` `sclogosuserinterface512_001.tga`, unhides
+      `WinFactionUS`, `WinFactionGLA`, `WinFactionChina`,
+      `WinFactionTraining`, and `WinFactionSkirmish`, and proves their
+      `W3DGameWinDefaultDraw` browser pixels in
+      `harness-smoke-ww3d-main-menu-layout-faction-logo-repaint-canvas.png`.
+      Current archive inspection
       shows `MainMenuBackdrop` is parent `ENABLEDDRAWDATA` behind a shipped
       `W3DNoDraw` callback, and the `MainMenuBackdropuserinterface.tga` /
       `MainMenuBackdrop.tga` texture is absent from the current ZH-only runtime
