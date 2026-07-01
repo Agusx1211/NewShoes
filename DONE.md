@@ -3586,6 +3586,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       label`, 21 browser indexed draws, and a non-empty button text pixel
       region in
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      real hidden static text child: the probe now finds the shipped
+      `MainMenu.wnd:StaticTextSelectDifficulty` window, verifies its original
+      `W3DGadgetStaticTextDraw` / `GadgetStaticTextSystem` /
+      `GadgetStaticTextInput` callbacks, preserves its hidden initial state,
+      then runs a focused repaint that unhides the child and hides the
+      overlapping Single Player button. The browser harness fetches
+      `GUI:SelectDifficulty` from `Data\English\generals.csf`, renders
+      `SELECT DIFFICULTY` through a real `W3DDisplayString`, samples a
+      non-empty static-text pixel region, and writes
+      `harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

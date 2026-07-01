@@ -665,11 +665,20 @@ shares structure and follows behind.
       smoke now carries the full-screen ruler, logo overlay, and
       `MainMenu.wnd:ButtonSinglePlayer` enabled three-piece button images plus
       the real `GUI:SinglePlayer` label through `GameText::fetch` and
-      `W3DDisplayString::draw`.
+      `W3DDisplayString::draw`; its static-text-focused mode also unhides the
+      shipped `MainMenu.wnd:StaticTextSelectDifficulty` child and renders
+      `GUI:SelectDifficulty` through original `W3DGadgetStaticTextDraw` /
+      `GadgetStaticTextSystem` / `W3DDisplayString`.
       Remaining work is broader unpruned shell composition (for example
-      `MainMenuBackdrop`, additional image states, hidden/static/random text
-      children, and text under normal display-owned font/archive lifetime)
-      instead of curated target visibility.
+      `MainMenuBackdrop`, additional image states, and text under normal
+      display-owned font/archive lifetime) instead of curated target
+      visibility.
+- [ ] Locate a real shipped shell layout or state that exercises
+      `W3DMainMenuRandomTextDraw` / `StaticTextRandom1` / `StaticTextRandom2`
+      before claiming random-text coverage. The current Zero Hour
+      `Menus/MainMenu.wnd` asset does not contain those windows, and
+      `W3DMainMenuInit` leaves the random-text setup commented out, so the next
+      proof must be asset-backed rather than synthesized solely for completion.
 - [ ] Restore the generic original mapped-image directory load route for
       browser render smokes: replace the focused exact-block
       `load_mapped_image_ini_file` bridge with `ImageCollection::load(512)` /

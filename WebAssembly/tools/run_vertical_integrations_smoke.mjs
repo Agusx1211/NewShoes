@@ -930,6 +930,9 @@ const steps = [
         "MainMenu layout image repaint smoke did not target the real ButtonSinglePlayer image-state child", payload.originalPaths);
       expect(payload.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label"),
         "MainMenu layout image repaint smoke did not render the real ButtonSinglePlayer text label", payload.originalPaths);
+      expect(payload.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
+          && payload.originalPaths?.includes("GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text"),
+        "MainMenu layout image repaint smoke did not render the real hidden static text child", payload.originalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -956,8 +959,20 @@ const steps = [
           && payload.gameText?.created === true
           && payload.gameText?.initialized === true
           && payload.gameText?.buttonLabelExists === true
-          && payload.gameText?.buttonTextNonEmpty === true,
-        "MainMenu layout image repaint smoke did not resolve button text through real GameText", payload);
+          && payload.gameText?.buttonTextNonEmpty === true
+          && payload.gameText?.staticTextLabelExists === true
+          && payload.gameText?.staticTextNonEmpty === true,
+        "MainMenu layout image repaint smoke did not resolve button/static text through real GameText", payload);
+      expect(payload.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
+          && payload.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
+          && payload.staticText?.initialHidden === true
+          && payload.staticText?.hidden === false
+          && payload.staticText?.visibilityFocused === true
+          && payload.staticText?.text?.label === "GUI:SelectDifficulty"
+          && payload.staticText?.text?.length > 0
+          && payload.staticText?.text?.width > 0
+          && payload.staticText?.text?.height > 0,
+        "MainMenu layout image repaint smoke did not report the real hidden static text binding", payload);
       expect(payload.calls?.displayImageDraws >= 5
           && payload.calls?.drawIndexed >= 5
           && payload.draw?.screenRect?.left === 504
@@ -970,8 +985,13 @@ const steps = [
       expect(payload.buttonTextRegion?.coloredPixelCount >= 20
           && payload.buttonTextRegion?.maxComponent >= 180,
         "MainMenu layout image repaint smoke did not capture the real button text pixels", payload);
+      expect(payload.staticTextRegion?.coloredPixelCount >= 20
+          && payload.staticTextRegion?.maxComponent >= 180,
+        "MainMenu layout image repaint smoke did not capture the real static text pixels", payload);
       expect(payload.screenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
+      expect(payload.staticTextScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png"),
+        "MainMenu layout image repaint smoke did not capture the expected static text screenshot", payload);
     },
   },
   {

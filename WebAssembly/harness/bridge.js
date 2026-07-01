@@ -7022,6 +7022,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
       probeWW3DMainMenuLayoutImageRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
+      probeWW3DMainMenuLayoutStaticTextRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_static_text_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
         "cnc_port_probe_ww3d_display_line", "string", []),
       probeWW3DDisplayLineGradient: module.cwrap(
@@ -16633,11 +16635,14 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dMainMenuLayoutImageRepaint":
+    case "ww3dMainMenuLayoutStaticTextRepaint":
       {
         const wasmModule = await wasmModulePromise;
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout image repaint cannot render" };
         }
+        const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
+        const probeMode = staticTextMode ? "staticTextSelectDifficulty" : "buttonSinglePlayer";
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -16650,7 +16655,12 @@ async function rpc(command, payload = {}) {
           lastD3D8DrawIndexed: null,
         };
         const textureBefore = snapshotState().graphics?.textures ?? {};
-        const probe = parseModuleState(wasmModule.probeWW3DMainMenuLayoutImageRepaint());
+        const probe = parseModuleState(staticTextMode
+          ? wasmModule.probeWW3DMainMenuLayoutStaticTextRepaint()
+          : wasmModule.probeWW3DMainMenuLayoutImageRepaint());
+        if (probe && probe.source === "ww3d_main_menu_layout_image_repaint_probe") {
+          probe.mode = probeMode;
+        }
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -16726,6 +16736,27 @@ async function rpc(command, payload = {}) {
           right: Math.ceil((buttonTextLeft + buttonTextWidth) * virtualScaleX),
           bottom: Math.ceil((buttonTextTop + buttonTextHeight) * virtualScaleY),
         }, 10);
+        const staticText = probe?.layout?.staticText ?? {};
+        const staticTextLeft = staticText.x ?? 540;
+        const staticTextTop = staticText.y ?? 116;
+        const staticTextWidth = staticText.width ?? 216;
+        const staticTextHeight = staticText.height ?? 36;
+        const staticTextMetrics = staticText.text ?? {};
+        const staticTextTextWidth = Number(staticTextMetrics.width ?? 150);
+        const staticTextTextHeight = Number(staticTextMetrics.height ?? 18);
+        const staticTextMarginLeft = Number(staticText.leftMargin ?? 7);
+        const staticTextTextLeft = staticText.centered
+          ? staticTextLeft + Math.floor((staticTextWidth - staticTextTextWidth) / 2)
+          : staticTextLeft + staticTextMarginLeft;
+        const staticTextTextTop = staticText.centeredVertically
+          ? staticTextTop + Math.floor((staticTextHeight - staticTextTextHeight) / 2)
+          : staticTextTop + Number(staticText.topMargin ?? 7);
+        const staticTextRegion = sampleCanvasRegion({
+          left: Math.floor(staticTextTextLeft * virtualScaleX),
+          top: Math.floor(staticTextTextTop * virtualScaleY),
+          right: Math.ceil((staticTextTextLeft + staticTextTextWidth) * virtualScaleX),
+          bottom: Math.ceil((staticTextTextTop + staticTextTextHeight) * virtualScaleY),
+        }, 10);
         const screenshot = {
           ...canvasSnapshot,
           logoPixels,
@@ -16733,10 +16764,56 @@ async function rpc(command, payload = {}) {
           buttonPixels,
           buttonRegion,
           buttonTextRegion,
+          staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const expectedDisplayImageDraws = staticTextMode ? 2 : 5;
+        const expectedDrawIndexed = staticTextMode ? 3 : 5;
+        const staticTextProbeOk = !staticTextMode
+          || (probe?.results?.staticTextLabelExists === true
+            && probe?.results?.staticTextNonEmpty === true
+            && probe?.results?.staticTextFound === true
+            && probe?.results?.staticTextCallbackBound === true
+            && probe?.results?.staticTextUserDataBound === true
+            && probe?.results?.staticTextDisplayStringBound === true
+            && probe?.results?.staticTextSizeComputed === true
+            && probe?.layout?.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
+            && probe?.layout?.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
+            && probe?.layout?.staticText?.systemFunc === "GadgetStaticTextSystem"
+            && probe?.layout?.staticText?.inputFunc === "GadgetStaticTextInput"
+            && probe?.layout?.staticText?.x === 540
+            && probe?.layout?.staticText?.y === 116
+            && probe?.layout?.staticText?.width === 216
+            && probe?.layout?.staticText?.height === 36
+            && probe?.layout?.staticText?.initialHidden === true
+            && probe?.layout?.staticText?.hidden === false
+            && probe?.layout?.staticText?.visibilityFocused === true
+            && probe?.layout?.staticText?.centered === false
+            && probe?.layout?.staticText?.centeredVertically === true
+            && probe?.layout?.staticText?.leftMargin === 7
+            && probe?.layout?.staticText?.topMargin === 7
+            && probe?.layout?.staticText?.text?.label === "GUI:SelectDifficulty"
+            && typeof probe?.layout?.staticText?.text?.ascii === "string"
+            && probe.layout.staticText.text.ascii.length > 0
+            && probe?.layout?.staticText?.text?.length > 0
+            && probe?.layout?.staticText?.text?.width > 0
+            && probe?.layout?.staticText?.text?.height > 0
+            && probe?.gameText?.staticTextLabelExists === true
+            && probe?.gameText?.staticTextNonEmpty === true);
+        const buttonTextProbeOk = staticTextMode
+          || (probe?.layout?.button?.text?.width > 0
+            && probe?.layout?.button?.text?.height > 0
+            && probe?.results?.buttonTextDisplayStringBound === true
+            && probe?.results?.buttonTextSizeComputed === true);
+        const focusedPixelOk = staticTextMode
+          ? (staticTextRegion.coloredPixelCount >= 20
+            && staticTextRegion.maxComponent >= 180)
+          : (buttonRegion.coloredPixelCount >= 20
+            && buttonTextRegion.coloredPixelCount >= 20
+            && buttonTextRegion.maxComponent >= 180);
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
+          && probe?.mode === probeMode
           && probe?.display?.path === "WindowLayout::load -> GameWindowManager::winRepaint -> Display adapter -> W3DDisplay::drawImage"
           && probe?.archives?.window === windowArchivePath
           && probe?.archives?.ini === iniArchivePath
@@ -16770,8 +16847,6 @@ async function rpc(command, payload = {}) {
           && typeof probe?.layout?.button?.text?.ascii === "string"
           && probe.layout.button.text.ascii.length > 0
           && probe?.layout?.button?.text?.length > 0
-          && probe?.layout?.button?.text?.width > 0
-          && probe?.layout?.button?.text?.height > 0
           && probe?.image?.name === "GeneralsLogo"
           && probe?.image?.filename === "SCSmShellUserInterface512_001.tga"
           && probe?.image?.width === 370
@@ -16800,15 +16875,15 @@ async function rpc(command, payload = {}) {
           && probe?.results?.gameTextInitialized === true
           && probe?.results?.buttonTextLabelExists === true
           && probe?.results?.buttonTextNonEmpty === true
-          && probe?.results?.buttonTextDisplayStringBound === true
-          && probe?.results?.buttonTextSizeComputed === true
           && probe?.gameText?.csfPath === "data\\english\\generals.csf"
           && probe?.gameText?.created === true
           && probe?.gameText?.initialized === true
           && probe?.gameText?.buttonLabelExists === true
           && probe?.gameText?.buttonTextNonEmpty === true
-          && probe?.calls?.displayImageDraws >= 5
-          && probe?.calls?.drawIndexed >= 5
+          && buttonTextProbeOk
+          && staticTextProbeOk
+          && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
+          && probe?.calls?.drawIndexed >= expectedDrawIndexed
           && probe?.calls?.browserTextureCreate >= 2
           && probe?.calls?.browserTextureUpdate >= 2
           && probe?.calls?.browserTextureBind >= 2
@@ -16822,9 +16897,7 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.sampled === true
           && coloredLogoPixels.length >= 1
           && coloredRulerPixels.length >= 4
-          && buttonRegion.coloredPixelCount >= 20
-          && buttonTextRegion.coloredPixelCount >= 20
-          && buttonTextRegion.maxComponent >= 180;
+          && focusedPixelOk;
         return {
           ok,
           command,
@@ -16842,6 +16915,7 @@ async function rpc(command, payload = {}) {
           buttonPixels,
           buttonRegion,
           buttonTextRegion,
+          staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,
           coloredButtonPixelCount: coloredButtonPixels.length,

@@ -20,6 +20,10 @@ const repaintScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png",
 );
+const staticTextScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
+);
 
 const D3DPT_TRIANGLELIST = 4;
 const D3DTOP_DISABLE = 1;
@@ -258,11 +262,13 @@ try {
   if (!repaintResult.ok
       || repaintResult.command !== "ww3dMainMenuLayoutImageRepaint"
       || repaintResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || repaintResult.probe?.mode !== "buttonSinglePlayer"
       || !repaintResult.probe?.originalPaths?.includes("parseDrawData IMAGE -> TheMappedImageCollection->findImageByName")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:MainMenuRuler -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:Logo -> W3DGameWinDefaultDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
       || repaintResult.probe?.archives?.windowEntry !== layoutEntry
       || repaintResult.probe?.archives?.mappedImageEntry !== logoMappedImageEntry
       || repaintResult.probe?.archives?.textureEntry !== logoTextureEntry
@@ -407,6 +413,74 @@ try {
 
   await page.locator("#viewport").screenshot({ path: repaintScreenshot });
 
+  let staticTextResult;
+  try {
+    staticTextResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutStaticTextRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout static text repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout static text repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  if (!staticTextResult.ok
+      || staticTextResult.command !== "ww3dMainMenuLayoutStaticTextRepaint"
+      || staticTextResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || staticTextResult.probe?.mode !== "staticTextSelectDifficulty"
+      || !staticTextResult.probe?.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
+      || !staticTextResult.probe?.originalPaths?.includes("GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text")
+      || staticTextResult.probe?.results?.staticTextLabelExists !== true
+      || staticTextResult.probe?.results?.staticTextNonEmpty !== true
+      || staticTextResult.probe?.results?.staticTextFound !== true
+      || staticTextResult.probe?.results?.staticTextCallbackBound !== true
+      || staticTextResult.probe?.results?.staticTextUserDataBound !== true
+      || staticTextResult.probe?.results?.staticTextDisplayStringBound !== true
+      || staticTextResult.probe?.results?.staticTextSizeComputed !== true
+      || staticTextResult.probe?.layout?.staticText?.name !== "MainMenu.wnd:StaticTextSelectDifficulty"
+      || staticTextResult.probe?.layout?.staticText?.drawFunc !== "W3DGadgetStaticTextDraw"
+      || staticTextResult.probe?.layout?.staticText?.systemFunc !== "GadgetStaticTextSystem"
+      || staticTextResult.probe?.layout?.staticText?.inputFunc !== "GadgetStaticTextInput"
+      || staticTextResult.probe?.layout?.staticText?.x !== 540
+      || staticTextResult.probe?.layout?.staticText?.y !== 116
+      || staticTextResult.probe?.layout?.staticText?.width !== 216
+      || staticTextResult.probe?.layout?.staticText?.height !== 36
+      || staticTextResult.probe?.layout?.staticText?.initialHidden !== true
+      || staticTextResult.probe?.layout?.staticText?.hidden !== false
+      || staticTextResult.probe?.layout?.staticText?.visibilityFocused !== true
+      || staticTextResult.probe?.layout?.staticText?.centered !== false
+      || staticTextResult.probe?.layout?.staticText?.centeredVertically !== true
+      || staticTextResult.probe?.layout?.staticText?.leftMargin !== 7
+      || staticTextResult.probe?.layout?.staticText?.topMargin !== 7
+      || staticTextResult.probe?.layout?.staticText?.text?.label !== "GUI:SelectDifficulty"
+      || staticTextResult.probe?.layout?.staticText?.text?.length <= 0
+      || staticTextResult.probe?.layout?.staticText?.text?.width <= 0
+      || staticTextResult.probe?.layout?.staticText?.text?.height <= 0
+      || staticTextResult.probe?.gameText?.staticTextLabelExists !== true
+      || staticTextResult.probe?.gameText?.staticTextNonEmpty !== true
+      || staticTextResult.probe?.calls?.displayImageDraws < 2
+      || staticTextResult.probe?.calls?.drawIndexed < 3
+      || staticTextResult.coloredLogoPixelCount < 1
+      || staticTextResult.coloredRulerPixelCount < 4
+      || staticTextResult.staticTextRegion?.coloredPixelCount < 20
+      || staticTextResult.staticTextRegion?.maxComponent < 180) {
+    throw new Error(`W3D MainMenu WindowLayout static text repaint failed: ${JSON.stringify({
+      ok: staticTextResult.ok,
+      probe: staticTextResult.probe,
+      staticTextRegion: staticTextResult.staticTextRegion,
+      coloredLogoPixelCount: staticTextResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: staticTextResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: staticTextScreenshot });
+
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
@@ -418,6 +492,7 @@ try {
     path: "browser-ww3d-main-menu-layout-image-repaint",
     url: harnessUrl,
     screenshot: repaintScreenshot,
+    staticTextScreenshot,
     archives: {
       window: windowArchiveMemfsPath,
       ini: iniArchiveMemfsPath,
@@ -439,9 +514,13 @@ try {
     buttonPixels: repaintResult.buttonPixels,
     buttonRegion: repaintResult.buttonRegion,
     buttonTextRegion: repaintResult.buttonTextRegion,
+    staticText: staticTextResult.probe.layout.staticText,
+    staticTextRegion: staticTextResult.staticTextRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
     coloredRulerPixelCount: repaintResult.coloredRulerPixelCount,
     coloredButtonPixelCount: repaintResult.coloredButtonPixelCount,
+    staticTextColoredLogoPixelCount: staticTextResult.coloredLogoPixelCount,
+    staticTextColoredRulerPixelCount: staticTextResult.coloredRulerPixelCount,
     renderer: "WindowLayout::load MainMenu.wnd from WindowZH.big through parseDrawData mapped image bindings, W3DGameWinDefaultDraw, W3DDisplay::drawImage, TextureClass, and browser D3D8/WebGL2 bridge",
     browserEventCount: browserEvents.length,
   }));
