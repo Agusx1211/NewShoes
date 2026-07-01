@@ -752,6 +752,12 @@ shares structure and follows behind.
       `WW3D::Render(W3DDisplay::m_3DScene, camera)` frames, gates two
       base/blend terrain pass pairs, and captures
       `harness-smoke-ww3d-terrain-visual-camera-pan-scene-canvas.png`.
+      It also now runs a visual-owned shroud render mode: the probe installs a
+      shroud-capable `HeightMapRenderObjClass` through `W3DTerrainVisual::load`,
+      initializes/fills/renders the original `W3DShroud`, verifies the
+      `W3DShroudMaterialPassClass` terrain pass after base/blend terrain, and
+      captures
+      `harness-smoke-ww3d-terrain-visual-shroud-scene-canvas.png`.
       The same visual-scene smoke now also proves original
       `W3DTerrainLogic::loadMap(query=true)` against the same shipped map,
       including logic-only `WorldHeightMap` parser sections, map-object
@@ -764,8 +770,9 @@ shares structure and follows behind.
       archive set honestly records the load window as 0/16,384 source-backed
       terrain cells.
       `test:vertical-integrations` now includes that visual-owned terrain scene
-      plus the no-reinit load-window proof and camera-pan proof beside the
-      lower-level tile, scene-dispatch, and map-patch terrain proofs.
+      plus the visual-owned shroud proof, no-reinit load-window proof, and
+      camera-pan proof beside the lower-level tile, scene-dispatch, and
+      map-patch terrain proofs.
       `test:ww3d-terrain-road-buffer-scene` now also proves a focused original
       `W3DRoadBuffer::drawRoads` pass over the original heightmap render object
       on a real source-backed `Maps\MD_CHI01\MD_CHI01.map` patch, with
@@ -778,8 +785,8 @@ shares structure and follows behind.
       ZH-only archive set. The
       remaining terrain vertical work is production/full-map display ownership
       with source-backed coverage across the load window, then broadening water,
-      shroud, objects, and continuous gameplay-owned camera flow on top of the
-      same original heightmap path.
+      gameplay-owned shroud/partition updates, objects, and continuous
+      gameplay-owned camera flow on top of the same original heightmap path.
 - [ ] Replace the probe-only
       `CNC_PORT_TERRAIN_PROBE_MINIMAL_HEIGHTMAP_SYSTEMS` guard and
       `wasm_ww3d_terrain_probe_stubs.cpp` weak adjacent-system symbols with
@@ -825,16 +832,19 @@ shares structure and follows behind.
       `ThingFactory`, and `ScriptEngine` ownership plus weak adjacent-script
       symbols only to reach query-mode map load; replace those with full
       original runtime ownership before treating the path as gameplay-owned.
-- [ ] Promote the browser-proven terrain shroud path from focused
-      source-backed map-patch ownership into full `W3DTerrainVisual::init` /
+- [ ] Promote the browser-proven terrain shroud path from visual-owned
+      source-backed patch ownership into full `W3DTerrainVisual::init` /
       partition gameplay ownership. The current
       `test:ww3d-terrain-shroud-scene` harness mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, initializes a `BaseHeightMap`-owned
       `W3DShroud` in shroud mode, and verifies the original
       `HeightMapRenderObjClass::Render` extra-pass dispatch submits a
       browser-visible `W3DShroudMaterialPassClass` terrain draw without the old
-      probe direct-D3D fallback. Remaining work is to wire the full terrain
-      visual, partition, and shroud owners, then let gameplay fog updates come
+      probe direct-D3D fallback. `test:ww3d-terrain-visual-scene` now also
+      proves the same shroud material pass under `W3DTerrainVisual::load` /
+      `W3DDisplay::m_3DScene` ownership for the selected source-backed patch.
+      Remaining work is to wire full `W3DTerrainVisual::init`, partition, and
+      shroud owners, then let gameplay fog updates come
       from `PartitionManager::refreshShroudForLocalPlayer`.
 - [ ] Promote bridge-buffer drawing from the focused
       `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned

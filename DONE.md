@@ -3928,6 +3928,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `test:ww3d-terrain-tree-buffer-scene`,
       `test:ww3d-terrain-road-buffer-scene`, and
       `test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Promote the shroud terrain pass into a visual-owned scene proof. The
+      `ww3dTerrainVisualShroudScene` RPC now calls
+      `W3DTerrainVisual::load` against the real MD_GLA03 map, installs a
+      shroud-capable `HeightMapRenderObjClass` through the visual-owned terrain
+      render-object slot, initializes/fills/renders the original `W3DShroud`,
+      and then renders `W3DDisplay::m_3DScene`. The browser harness verifies
+      source-backed terrain base/blend draws followed by the
+      `W3DShroudMaterialPassClass` pass with `D3DCMP_EQUAL`, camera-space
+      texture projection, `D3DTTFF_COUNT2`, no fallback draw, and colored
+      WebGL2 pixels in
+      `harness-smoke-ww3d-terrain-visual-shroud-scene-canvas.png`.
+      `test:ww3d-terrain-visual-scene` now runs this visual-owned shroud mode
+      beside the baseline visual scene, full-scene water-assets frontier,
+      camera-pan, and load-window proofs, and the vertical integration validator
+      gates the new visual shroud payload. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene` and
+      `npm --prefix WebAssembly run test:ww3d-terrain-shroud-scene`.
 - [x] Add a combined terrain full-scene missing-water-assets frontier. The
       `test:ww3d-terrain-full-scene` harness now mounts range-backed real
       `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, optional base `Terrain.big`,

@@ -7177,6 +7177,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_shroud_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainVisualShroudScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_visual_shroud_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
@@ -18150,6 +18152,7 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dTerrainVisualScene":
+    case "ww3dTerrainVisualShroudScene":
     case "ww3dTerrainFullScene":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
@@ -18159,6 +18162,7 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
         const fullInitMode = command === "ww3dTerrainFullScene";
+        const visualShroudMode = command === "ww3dTerrainVisualShroudScene";
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
         const cameraPanMode = command === "ww3dTerrainVisualCameraPanScene";
         const expectedSource = fullInitMode
@@ -18167,12 +18171,16 @@ async function rpc(command, payload = {}) {
           ? "ww3d_terrain_visual_load_window_scene_probe"
           : (cameraPanMode
               ? "ww3d_terrain_visual_camera_pan_scene_probe"
-              : "ww3d_terrain_visual_scene_probe"));
+              : (visualShroudMode
+                ? "ww3d_terrain_visual_shroud_scene_probe"
+                : "ww3d_terrain_visual_scene_probe")));
         const expectedRenderMode = fullInitMode
           ? "full-init-source-patch"
           : (loadWindowMode
           ? "visual-load-window"
-          : (cameraPanMode ? "selected-source-patch-camera-pan" : "selected-source-patch"));
+          : (cameraPanMode
+            ? "selected-source-patch-camera-pan"
+            : (visualShroudMode ? "visual-owned-shroud-source-patch" : "selected-source-patch")));
         const expectedVerticesPerSide = loadWindowMode ? 129 : 33;
         const expectedCellsPerSide = loadWindowMode ? 128 : 32;
         const iniArchivePath = String(payload.iniArchivePath ?? "");
@@ -18194,7 +18202,9 @@ async function rpc(command, payload = {}) {
             ? wasmModule.probeWW3DTerrainVisualLoadWindowScene
             : (cameraPanMode
                 ? wasmModule.probeWW3DTerrainVisualCameraPanScene
-                : wasmModule.probeWW3DTerrainVisualScene)))(
+                : (visualShroudMode
+                  ? wasmModule.probeWW3DTerrainVisualShroudScene
+                  : wasmModule.probeWW3DTerrainVisualScene))))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,
@@ -18224,7 +18234,7 @@ async function rpc(command, payload = {}) {
           samplerApplications: (textureAfter?.samplerApplications ?? 0) -
             (textureBefore.samplerApplications ?? 0),
         };
-        const hasBaseTerrainPass = loadWindowMode || fullInitMode
+        const hasBaseTerrainPass = loadWindowMode || fullInitMode || visualShroudMode
           ? drawHistory.some((draw) =>
             draw?.renderState?.alphaBlendEnable === 0
               && draw?.renderState?.textureStage0?.texCoordIndex === 0
@@ -18232,7 +18242,7 @@ async function rpc(command, payload = {}) {
           : drawHistory[0]?.renderState?.alphaBlendEnable === 0
             && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
             && drawHistory[0]?.texture0?.sampled === true;
-        const hasBlendTerrainPass = loadWindowMode || fullInitMode
+        const hasBlendTerrainPass = loadWindowMode || fullInitMode || visualShroudMode
           ? drawHistory.some((draw) =>
             draw?.renderState?.alphaBlendEnable === 1
               && draw?.renderState?.textureStage0?.texCoordIndex === 1
@@ -18248,6 +18258,25 @@ async function rpc(command, payload = {}) {
           draw?.renderState?.alphaBlendEnable === 1
             && draw?.renderState?.textureStage0?.texCoordIndex === 1
             && draw?.texture0?.sampled === true;
+        const terrainStage0 = (draw) =>
+          draw?.renderState?.textureStage0 ?? draw?.renderState?.textureStages?.[0];
+        const isShroudTerrainPass = (draw) => {
+          const stage0 = terrainStage0(draw);
+          return draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.zFunc === D3DCMP_EQUAL
+            && stage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+            && stage0?.textureTransformFlags === D3DTTFF_COUNT2
+            && draw?.texture0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+            && draw?.texture0?.textureTransformFlags === D3DTTFF_COUNT2;
+        };
+        const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
+        const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const shroudTerrainIndex = drawHistory.findIndex(isShroudTerrainPass);
+        const shroudAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && shroudTerrainIndex > baseTerrainIndex
+          && shroudTerrainIndex > blendTerrainIndex;
         const cameraPanProbeOk = !cameraPanMode
           || (probe?.results?.cameraConfigured === true
             && probe?.results?.cameraPanRequested === true
@@ -18268,6 +18297,35 @@ async function rpc(command, payload = {}) {
             && drawHistory.length >= 4
             && drawHistory.slice(2).some(isBaseTerrainPass)
             && drawHistory.slice(2).some(isBlendTerrainPass));
+        const visualShroudProbeOk = !visualShroudMode
+          || (probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") === true
+            && probe?.results?.visualShroudRequested === true
+            && probe?.visual?.shroudRenderObject === true
+            && probe?.shroud?.requested === true
+            && probe?.shroud?.installed === true
+            && probe?.shroud?.initialized === true
+            && probe?.shroud?.fillInvoked === true
+            && probe?.shroud?.renderInvoked === true
+            && probe?.shroud?.textureReady === true
+            && probe?.shroud?.terrainRenderInvoked === true
+            && probe?.shroud?.terrainRenderSawShroud === true
+            && probe?.shroud?.terrainRenderSawShroudAfter === true
+            && (probe?.shroud?.terrainAdditionalPassCount ?? 0) > 0
+            && probe?.shroud?.terrainOriginalInstallZFuncEqualSeen === true
+            && probe?.shroud?.terrainOriginalInstallCameraSpaceSeen === true
+            && probe?.shroud?.terrainOriginalInstallCount2Seen === true
+            && probe?.shroud?.terrainOriginalDrawSeen === true
+            && probe?.shroud?.terrainFinalDrawSeen === true
+            && probe?.shroud?.terrainFallbackInvoked === false
+            && (probe?.shroud?.cellsX ?? 0) > 0
+            && (probe?.shroud?.cellsY ?? 0) > 0
+            && (probe?.shroud?.textureWidth ?? 0) > 0
+            && (probe?.shroud?.textureHeight ?? 0) > 0
+            && (probe?.shroud?.sampleLevel ?? -1) >= 0
+            && drawHistory.length >= 3
+            && shroudTerrainIndex >= 0
+            && shroudAfterTerrain
+            && isShroudTerrainPass(browserProbe));
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
           && renderModeMatches
@@ -18319,7 +18377,9 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.path === "W3DDisplay::m_3DScene"
           && probe?.scene?.terrainClassId === 4
           && probe?.terrain?.tileSource === "shipped-map-heightmap"
-          && probe?.terrain?.renderObject === "HeightMapRenderObjClass"
+          && probe?.terrain?.renderObject === (visualShroudMode
+            ? "ProbeHeightMapRenderObjWithShroud"
+            : "HeightMapRenderObjClass")
           && probe?.terrain?.verticesPerSide === expectedVerticesPerSide
           && probe?.terrain?.cellsPerSide === expectedCellsPerSide
           && (!loadWindowMode
@@ -18342,12 +18402,13 @@ async function rpc(command, payload = {}) {
           && (fullInitMode || browserProbe?.vertexStride === 32)
           && (fullInitMode || browserProbe?.vertexLayout?.source === "fvf")
           && (fullInitMode || browserProbe?.vertexShaderFvf === probe?.draw?.vertexShaderFvf)
-          && (fullInitMode || browserProbe?.texture0?.sampled === true)
+          && (fullInitMode || (visualShroudMode ? isShroudTerrainPass(browserProbe) : browserProbe?.texture0?.sampled === true))
           && Array.isArray(drawHistory)
           && drawHistory.length >= 2
           && hasBaseTerrainPass
           && hasBlendTerrainPass
           && cameraPanProbeOk
+          && visualShroudProbeOk
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1
@@ -18359,6 +18420,12 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           drawHistory,
+          drawSequence: {
+            baseTerrainIndex,
+            blendTerrainIndex,
+            shroudTerrainIndex,
+            shroudAfterTerrain,
+          },
           textureDelta,
           textureProbe: textureAfter,
           screenshot,
