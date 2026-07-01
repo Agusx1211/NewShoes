@@ -17,6 +17,7 @@
 #include "Common/AcademyStats.h"
 #include "Common/AudioEventRTS.h"
 #include "Common/AudioHandleSpecialValues.h"
+#include "Common/CDManager.h"
 #include "Common/File.h"
 #include "Common/FileSystem.h"
 #include "Common/FunctionLexicon.h"
@@ -27,6 +28,7 @@
 #include "Common/GlobalData.h"
 #include "Common/INI.h"
 #include "Common/LocalFileSystem.h"
+#include "Common/MessageStream.h"
 #include "Common/MultiplayerSettings.h"
 #include "Common/NameKeyGenerator.h"
 #include "Common/MiscAudio.h"
@@ -435,6 +437,54 @@ public:
 private:
 	std::string m_payload;
 	MemoryScriptFile m_file;
+};
+
+class ShellLocalFileSystem : public Win32LocalFileSystem
+{
+public:
+	File *openFile(const Char *filename, Int access = 0) override
+	{
+		const std::string path = normalized_path(filename);
+		const std::string cd_probe = "genseczh.big";
+		if (path.size() >= cd_probe.size()
+				&& path.compare(path.size() - cd_probe.size(), cd_probe.size(), cd_probe) == 0) {
+			m_cd_file.close();
+			m_cd_file.setPayload("");
+			return m_cd_file.open(filename, access) ? &m_cd_file : nullptr;
+		}
+		return Win32LocalFileSystem::openFile(filename, access);
+	}
+
+private:
+	MemoryScriptFile m_cd_file;
+};
+
+class SmokeCDDrive : public CDDriveInterface
+{
+public:
+	void refreshInfo() override {}
+	AsciiString getDiskName() override { return AsciiString("SmokeCD"); }
+	AsciiString getPath() override { return AsciiString("SmokeCD"); }
+	CD::Disk getDisk() override { return CD::DISK_1; }
+};
+
+class SmokeCDManager : public CDManagerInterface
+{
+public:
+	void init() override {}
+	void reset() override {}
+	void update() override {}
+	Int driveCount() override { return 1; }
+	CDDriveInterface *getDrive(Int index) override { return index == 0 ? &m_drive : nullptr; }
+	CDDriveInterface *newDrive(const Char *) override { return &m_drive; }
+	void refreshDrives() override {}
+	void destroyAllDrives() override {}
+
+protected:
+	CDDriveInterface *createDrive() override { return &m_drive; }
+
+private:
+	SmokeCDDrive m_drive;
 };
 
 class SmokeGameWindow : public GameWindow
@@ -1060,7 +1110,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	SubsystemInterfaceList subsystem_list;
 	SmokeGameEngine game_engine;
 	NameKeyGenerator name_key_generator;
-	Win32LocalFileSystem local_file_system;
+	ShellLocalFileSystem local_file_system;
 	FileSystem file_system;
 	Win32BIGFileSystem archive_file_system;
 	SmokeDisplay display;
@@ -1079,6 +1129,9 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	ScriptEngine script_engine;
 	HeaderTemplateManager header_templates;
 	GameWindowTransitionsHandler transition_handler;
+	SmokeCDManager cd_manager;
+	MessageStream message_stream;
+	CommandList command_list;
 	SmokeGameWindowManager window_manager;
 	W3DFunctionLexicon function_lexicon;
 
@@ -1089,6 +1142,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	FileSystem *old_file_system = TheFileSystem;
 	LocalFileSystem *old_local_file_system = TheLocalFileSystem;
 	ArchiveFileSystem *old_archive_file_system = TheArchiveFileSystem;
+	CDManagerInterface *old_cd_manager = TheCDManager;
 	Display *old_display = TheDisplay;
 	FontLibrary *old_font_library = TheFontLibrary;
 	DisplayStringManager *old_display_string_manager = TheDisplayStringManager;
@@ -1112,6 +1166,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	GameWindowTransitionsHandler *old_transition_handler = TheTransitionHandler;
 	GameWindowManager *old_window_manager = TheWindowManager;
 	FunctionLexicon *old_function_lexicon = TheFunctionLexicon;
+	MessageStream *old_message_stream = TheMessageStream;
+	CommandList *old_command_list = TheCommandList;
 	Shell *old_shell = TheShell;
 	char *old_skirmish_shell_hook =
 		TheShellHookNames[SHELL_SCRIPT_HOOK_MAIN_MENU_SKIRMISH_SELECTED];
@@ -1129,6 +1185,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheLocalFileSystem = &local_file_system;
 	TheArchiveFileSystem = &archive_file_system;
 	TheFileSystem = &file_system;
+	TheCDManager = &cd_manager;
 	TheDisplay = &display;
 	TheFontLibrary = &font_library;
 	TheDisplayStringManager = &display_string_manager;
@@ -1154,6 +1211,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheTransitionHandler = &transition_handler;
 	TheWindowManager = &window_manager;
 	TheFunctionLexicon = &function_lexicon;
+	TheMessageStream = &message_stream;
+	TheCommandList = &command_list;
 	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_OPENED] =
 		const_cast<char *>("ShellSkirmishOpened");
 	TheShellHookNames[SHELL_SCRIPT_HOOK_SKIRMISH_CLOSED] =
@@ -1730,6 +1789,117 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 				}
 				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
 					"original Skirmish ButtonBack/Shell::pop did not return to MainMenu.wnd") && ok;
+
+				GameWindow *start_main_parent = TheWindowManager->winGetWindowFromId(
+					nullptr, TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MainMenuParent")));
+				GameWindow *start_single_player_button = start_main_parent != nullptr
+					? TheWindowManager->winGetWindowFromId(start_main_parent,
+						TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonSinglePlayer")))
+					: nullptr;
+				GameWindow *start_skirmish_button = start_main_parent != nullptr
+					? TheWindowManager->winGetWindowFromId(start_main_parent,
+						TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonSkirmish")))
+					: nullptr;
+				ok = expect(start_main_parent != nullptr
+						&& start_single_player_button != nullptr
+						&& start_skirmish_button != nullptr,
+					"MainMenu.wnd did not expose the controls needed for Skirmish start navigation") && ok;
+				if (start_main_parent != nullptr
+						&& start_single_player_button != nullptr
+						&& start_skirmish_button != nullptr) {
+					if (top != nullptr) {
+						top->hide(FALSE);
+						top->bringForward();
+					}
+					const WindowMsgData packed_start_single_player_click = center_click_data(start_single_player_button);
+					ok = expect(TheWindowManager->winSendInputMsg(start_single_player_button, GWM_LEFT_DOWN, packed_start_single_player_click, 0) == MSG_HANDLED,
+						"ButtonSinglePlayer did not handle the Skirmish-start GWM_LEFT_DOWN input") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(start_single_player_button, GWM_LEFT_UP, packed_start_single_player_click, 0) == MSG_HANDLED,
+						"ButtonSinglePlayer did not handle the Skirmish-start GWM_LEFT_UP input") && ok;
+					if (top != nullptr) {
+						top->runUpdate();
+					}
+
+					const WindowMsgData packed_start_skirmish_click = center_click_data(start_skirmish_button);
+					const Int start_skirmish_script_ui_before_click = g_script_ui_interact_calls;
+					ok = expect(TheWindowManager->winSendInputMsg(start_skirmish_button, GWM_LEFT_DOWN, packed_start_skirmish_click, 0) == MSG_HANDLED,
+						"ButtonSkirmish did not handle the Skirmish-start GWM_LEFT_DOWN input") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(start_skirmish_button, GWM_LEFT_UP, packed_start_skirmish_click, 0) == MSG_HANDLED,
+						"ButtonSkirmish did not handle the Skirmish-start GWM_LEFT_UP input") && ok;
+					if (top != nullptr) {
+						top->runUpdate();
+					}
+
+					WindowLayout *start_skirmish_layout = shell.top();
+					GameWindow *start_skirmish_parent = TheWindowManager->winGetWindowFromId(nullptr,
+						TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:SkirmishGameOptionsMenuParent")));
+					GameWindow *start_button = start_skirmish_parent != nullptr
+						? TheWindowManager->winGetWindowFromId(start_skirmish_parent,
+							TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonStart")))
+						: nullptr;
+					GameWindow *start_game_speed_slider = start_skirmish_parent != nullptr
+						? TheWindowManager->winGetWindowFromId(start_skirmish_parent,
+							TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:SliderGameSpeed")))
+						: nullptr;
+					ok = expect(shell.getScreenCount() == 2
+							&& start_skirmish_layout != nullptr
+							&& start_skirmish_layout != top
+							&& start_skirmish_layout->getFilename() == AsciiString("Menus/SkirmishGameOptionsMenu.wnd"),
+						"original ButtonSkirmish start path did not push Menus/SkirmishGameOptionsMenu.wnd") && ok;
+					ok = expect(start_skirmish_parent != nullptr && start_button != nullptr
+							&& start_game_speed_slider != nullptr,
+						"SkirmishGameOptionsMenu.wnd did not expose the controls needed for ButtonStart") && ok;
+					ok = expect(g_script_ui_interact_calls == start_skirmish_script_ui_before_click + 2
+							&& g_last_script_ui_interact_hook == AsciiString("ShellSkirmishOpened"),
+						"original Skirmish start navigation did not signal the Skirmish-opened shell hook") && ok;
+					TheGameInfo = TheSkirmishGameInfo;
+					ok = expect(TheSkirmishGameInfo != nullptr
+							&& TheSkirmishGameInfo->isInGame()
+							&& !TheSkirmishGameInfo->isGameInProgress(),
+						"original Skirmish start path did not create an in-setup SkirmishGameInfo") && ok;
+					if (TheSkirmishGameInfo != nullptr && start_button != nullptr && start_game_speed_slider != nullptr) {
+						const AsciiString start_map = TheSkirmishGameInfo->getMap();
+						const Int start_slider_position = GadgetSliderGetPosition(start_game_speed_slider);
+						ok = expect(start_slider_position == 30,
+							"Skirmish ButtonStart precondition did not keep the initialized game speed slider") && ok;
+						ok = expect(message_stream.getFirstMessage() == nullptr,
+							"MessageStream was not empty before driving Skirmish ButtonStart") && ok;
+						const WindowMsgData packed_start_click = center_click_data(start_button);
+						ok = expect(TheWindowManager->winSendInputMsg(start_button, GWM_LEFT_DOWN, packed_start_click, 0) == MSG_HANDLED,
+							"ButtonStart did not handle original Skirmish GWM_LEFT_DOWN input") && ok;
+						ok = expect(BitTest(start_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED),
+							"ButtonStart did not enter selected state after original Skirmish GWM_LEFT_DOWN") && ok;
+						ok = expect(TheWindowManager->winSendInputMsg(start_button, GWM_LEFT_UP, packed_start_click, 0) == MSG_HANDLED,
+							"ButtonStart did not handle original Skirmish GWM_LEFT_UP input") && ok;
+						ok = expect(BitTest(start_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+							"ButtonStart did not clear selected state after original Skirmish GWM_LEFT_UP") && ok;
+						GameMessage *new_game_message = message_stream.getFirstMessage();
+						ok = expect(new_game_message != nullptr
+								&& new_game_message->next() == nullptr
+								&& new_game_message->getType() == GameMessage::MSG_NEW_GAME
+								&& new_game_message->getArgumentCount() == 4,
+							"original Skirmish ButtonStart did not append one four-argument MSG_NEW_GAME") && ok;
+						if (new_game_message != nullptr && new_game_message->getArgumentCount() == 4) {
+							ok = expect(new_game_message->getArgumentDataType(0) == ARGUMENTDATATYPE_INTEGER
+									&& new_game_message->getArgument(0)->integer == GAME_SKIRMISH
+									&& new_game_message->getArgumentDataType(1) == ARGUMENTDATATYPE_INTEGER
+									&& new_game_message->getArgument(1)->integer == DIFFICULTY_NORMAL
+									&& new_game_message->getArgumentDataType(2) == ARGUMENTDATATYPE_INTEGER
+									&& new_game_message->getArgument(2)->integer == 0
+									&& new_game_message->getArgumentDataType(3) == ARGUMENTDATATYPE_INTEGER
+									&& new_game_message->getArgument(3)->integer == start_slider_position,
+								"original Skirmish ButtonStart MSG_NEW_GAME arguments did not match the skirmish start contract") && ok;
+						}
+						ok = expect(global_data.m_mapName == start_map,
+							"original Skirmish ButtonStart did not copy the selected map into GlobalData") && ok;
+						ok = expect(TheSkirmishGameInfo != nullptr
+								&& TheSkirmishGameInfo->isGameInProgress()
+								&& TheSkirmishGameInfo->getGameID() == 0,
+							"original Skirmish ButtonStart did not mark SkirmishGameInfo as game-in-progress") && ok;
+						ok = expect(shell.getScreenCount() == 2 && shell.top() == start_skirmish_layout,
+							"original Skirmish ButtonStart should leave the shell stack intact until MSG_NEW_GAME is consumed") && ok;
+					}
+				}
 			}
 			while (shell.getScreenCount() > 0) {
 				shell.popImmediate();
@@ -1747,6 +1917,8 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 
 	TheFunctionLexicon = old_function_lexicon;
 	TheWindowManager = old_window_manager;
+	TheCommandList = old_command_list;
+	TheMessageStream = old_message_stream;
 	TheTransitionHandler = old_transition_handler;
 	TheHeaderTemplateManager = old_header_templates;
 	TheMouse = old_mouse;
@@ -1754,6 +1926,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	TheScriptEngine = old_script_engine;
 	TheCampaignManager = old_campaign_manager;
 	TheAudio = old_audio;
+	TheCDManager = old_cd_manager;
 	if (TheSkirmishGameInfo != nullptr && TheSkirmishGameInfo != old_skirmish_game_info) {
 		delete TheSkirmishGameInfo;
 	}
@@ -3134,8 +3307,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuUpdate\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuUpdate\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit\",\"GadgetPushButton ButtonBack click->SkirmishGameOptionsMenuSystem pending Shell::pop\",\"SkirmishGameOptionsMenuShutdown real callback\",\"SkirmishGameOptionsMenuUpdate shutdownComplete->MainMenu.wnd\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd, original SkirmishGameOptionsMenuInit creating an in-setup SkirmishGameInfo, populating starting-cash, color, faction, team, map metadata, game-speed, and map-start-position gadgets from focused real MultiplayerSettings/PlayerTemplate/MapCache owners, original Skirmish ButtonBack click through SkirmishGameOptionsMenuSystem writing SkirmishPreferences, issuing Shell::pop, deleting TheSkirmishGameInfo, and completing the pending pop through SkirmishGameOptionsMenuUpdate, original Skirmish opened and closed ScriptEngine signalUIInteract hooks, original SkirmishGameOptionsMenuShutdown cleanup, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit\",\"GadgetPushButton ButtonBack click->SkirmishGameOptionsMenuSystem pending Shell::pop\",\"SkirmishGameOptionsMenuShutdown real callback\",\"SkirmishGameOptionsMenuUpdate shutdownComplete->MainMenu.wnd\",\"GadgetPushButton ButtonStart click->SkirmishGameOptionsMenuSystem MSG_NEW_GAME\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd, original SkirmishGameOptionsMenuInit creating an in-setup SkirmishGameInfo, populating starting-cash, color, faction, team, map metadata, game-speed, and map-start-position gadgets from focused real MultiplayerSettings/PlayerTemplate/MapCache owners, original Skirmish ButtonBack click through SkirmishGameOptionsMenuSystem writing SkirmishPreferences, issuing Shell::pop, deleting TheSkirmishGameInfo, and completing the pending pop through SkirmishGameOptionsMenuUpdate, original Skirmish ButtonStart click through SkirmishGameOptionsMenuSystem, CheckForCDAtGameStart, SkirmishGameInfo::startGame, selected-map GlobalData write, and MessageStream MSG_NEW_GAME argument queueing, original Skirmish opened and closed ScriptEngine signalUIInteract hooks, original SkirmishGameOptionsMenuShutdown cleanup, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

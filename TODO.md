@@ -835,9 +835,13 @@ shares structure and follows behind.
       `ButtonBack` path is now driven through
       `SkirmishGameOptionsMenuSystem`, including Skirmish preferences write,
       `Shell::pop`, `TheSkirmishGameInfo` deletion, and
-      `SkirmishGameOptionsMenuUpdate` completing the pending pop. Drive
-      `ButtonStart` next once the `MessageStream` game-start side effects can
-      be owned without broad gameplay stubs.
+      `SkirmishGameOptionsMenuUpdate` completing the pending pop. The real
+      `ButtonStart` path is now driven through `SkirmishGameOptionsMenuSystem`,
+      `CheckForCDAtGameStart`, `SkirmishGameInfo::startGame`, selected-map
+      `GlobalData` write, and `MessageStream` `MSG_NEW_GAME` argument
+      queueing. Drive `MSG_NEW_GAME` consumption into the next real
+      map-load/gameplay transition once the `MessageStream` / `CommandList`
+      lifecycle can be owned by the broader runtime.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---
