@@ -137,6 +137,7 @@
     "test:ww3d-terrain-tile-archive": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_tile_archive_smoke.mjs artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-tile-archive-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_tile_archive_scene_smoke.mjs artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-map-patch-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_map_patch_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big",
+    "test:ww3d-terrain-shroud-scene": "npm run build:wasm && npm run extract:runtime-archives && CNC_PORT_TERRAIN_SCENE_MODE=shroud node harness/terrain_map_patch_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-visual-scene": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_visual_scene_smoke.mjs artifacts/real-assets/INIZH.big artifacts/real-assets/MapsZH.big artifacts/real-assets/TerrainZH.big",
     "test:ww3d-terrain-bib-buffer-lifecycle": "npm run build:wasm && node harness/terrain_bib_buffer_lifecycle_smoke.mjs",
     "test:ww3d-terrain-prop-buffer-render": "npm run build:wasm && npm run extract:runtime-archives && node harness/terrain_prop_buffer_render_smoke.mjs artifacts/real-assets/W3DZH.big artifacts/real-assets/TexturesZH.big",

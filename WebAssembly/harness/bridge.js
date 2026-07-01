@@ -5490,6 +5490,7 @@ function d3d8TextureStageDrawSummary(textureStage = {}) {
     minFilter: textureStage.minFilter,
     magFilter: textureStage.magFilter,
     mipFilter: textureStage.mipFilter,
+    textureTransformFlags: textureStage.textureTransformFlags,
   };
 }
 
@@ -6646,6 +6647,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         sampled: probe.texture0.sampled,
         texCoordIndex: probe.texture0.texCoordIndex,
         texCoordSet: probe.texture0.texCoordSet,
+        textureTransformFlags: probe.texture0.textureTransformFlags,
         samplePixels: probe.texture0.samplePixels,
         sampleVertexPixels: probe.texture0.sampleVertexPixels,
         combiner: probe.texture0.combiner,
@@ -6655,6 +6657,7 @@ function paintD3D8DrawIndexed(payload = {}) {
         sampled: probe.texture1.sampled,
         texCoordIndex: probe.texture1.texCoordIndex,
         texCoordSet: probe.texture1.texCoordSet,
+        textureTransformFlags: probe.texture1.textureTransformFlags,
         samplePixels: probe.texture1.samplePixels,
         sampleVertexPixels: probe.texture1.sampleVertexPixels,
         combiner: probe.texture1.combiner,
@@ -7172,6 +7175,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_tile_archive_scene", "string", ["string"]),
       probeWW3DTerrainMapPatchScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_map_patch_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainShroudScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_shroud_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
@@ -17968,11 +17973,13 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dTerrainMapPatchScene":
+    case "ww3dTerrainShroudScene":
       {
         const wasmModule = await wasmModulePromise;
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; real-map WW3D terrain scene cannot render" };
         }
+        const shroudMode = command === "ww3dTerrainShroudScene";
         const iniArchivePath = String(payload.iniArchivePath ?? "");
         const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
@@ -17985,11 +17992,15 @@ async function rpc(command, payload = {}) {
           lastD3D8DrawIndexed: null,
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
-        const probe = parseModuleState(wasmModule.probeWW3DTerrainMapPatchScene(
-          iniArchivePath,
-          mapsArchivePath,
-          terrainArchivePath,
-        ));
+        const probe = parseModuleState(
+          (shroudMode
+            ? wasmModule.probeWW3DTerrainShroudScene
+            : wasmModule.probeWW3DTerrainMapPatchScene)(
+            iniArchivePath,
+            mapsArchivePath,
+            terrainArchivePath,
+          ),
+        );
         const textureAfter = harnessState.graphics.d3d8Textures ?? null;
         const screenshot = {
           ...snapshotCanvas(),
@@ -18008,8 +18019,38 @@ async function rpc(command, payload = {}) {
           samplerApplications: (textureAfter?.samplerApplications ?? 0) -
             (textureBefore.samplerApplications ?? 0),
         };
+        const isBaseTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 0
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBlendTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 1
+            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && draw?.texture0?.sampled === true;
+        const isShroudTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.zFunc === D3DCMP_EQUAL
+            && draw?.renderState?.textureStage0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+            && draw?.renderState?.textureStage0?.textureTransformFlags === D3DTTFF_COUNT2
+            && draw?.texture0?.sampled === true
+            && draw?.texture0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+            && draw?.texture0?.textureTransformFlags === D3DTTFF_COUNT2;
+        const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
+        const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const shroudTerrainIndex = drawHistory.findIndex(isShroudTerrainPass);
+        const shroudAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && shroudTerrainIndex > baseTerrainIndex
+          && shroudTerrainIndex > blendTerrainIndex;
         const ok = Boolean(probe.ok)
-          && probe?.source === "ww3d_terrain_map_patch_scene_probe"
+          && probe?.source === (shroudMode
+            ? "ww3d_terrain_shroud_scene_probe"
+            : "ww3d_terrain_map_patch_scene_probe")
           && probe?.ini?.loaded === true
           && probe?.ini?.entryExists === true
           && probe?.ini?.parsed === true
@@ -18032,7 +18073,9 @@ async function rpc(command, payload = {}) {
           && probe?.scene?.objectAdded === true
           && probe?.scene?.terrainClassId === 4
           && probe?.terrain?.tileSource === "shipped-map-heightmap"
-          && probe?.terrain?.renderObject === "HeightMapRenderObjClass"
+          && probe?.terrain?.renderObject === (shroudMode
+            ? "ProbeHeightMapRenderObjWithShroud"
+            : "HeightMapRenderObjClass")
           && probe?.terrain?.verticesPerSide === 33
           && probe?.terrain?.cellsPerSide === 32
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
@@ -18048,12 +18091,27 @@ async function rpc(command, payload = {}) {
           && browserProbe?.texture0?.sampled === true
           && Array.isArray(drawHistory)
           && drawHistory.length >= 2
-          && drawHistory[0]?.renderState?.alphaBlendEnable === 0
-          && drawHistory[0]?.renderState?.textureStage0?.texCoordIndex === 0
-          && drawHistory[0]?.texture0?.sampled === true
-          && drawHistory[1]?.renderState?.alphaBlendEnable === 1
-          && drawHistory[1]?.renderState?.textureStage0?.texCoordIndex === 1
-          && drawHistory[1]?.texture0?.sampled === true
+          && baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && (!shroudMode ||
+            (probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") === true
+              && probe?.shroud?.requested === true
+              && probe?.shroud?.installed === true
+              && probe?.shroud?.initialized === true
+              && probe?.shroud?.fillInvoked === true
+              && probe?.shroud?.renderInvoked === true
+              && probe?.shroud?.textureReady === true
+              && (probe?.shroud?.cellsX ?? 0) > 0
+              && (probe?.shroud?.cellsY ?? 0) > 0
+              && (probe?.shroud?.textureWidth ?? 0) > 0
+              && (probe?.shroud?.textureHeight ?? 0) > 0
+              && (probe?.shroud?.sampleLevel ?? -1) >= 0
+              && drawHistory.length >= 3
+              && shroudTerrainIndex >= 0
+              && shroudAfterTerrain
+              && browserProbe?.renderState?.zFunc === D3DCMP_EQUAL
+              && browserProbe?.texture0?.texCoordIndex === D3DTSS_TCI_CAMERASPACEPOSITION
+              && browserProbe?.texture0?.textureTransformFlags === D3DTTFF_COUNT2))
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1
@@ -18065,6 +18123,12 @@ async function rpc(command, payload = {}) {
           probe,
           browserProbe,
           drawHistory,
+          drawSequence: {
+            baseTerrainIndex,
+            blendTerrainIndex,
+            shroudTerrainIndex,
+            shroudAfterTerrain,
+          },
           textureDelta,
           textureProbe: textureAfter,
           screenshot,

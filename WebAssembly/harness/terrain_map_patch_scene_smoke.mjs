@@ -13,13 +13,22 @@ const defaultTerrainArchivePath = resolve(wasmRoot, "artifacts/real-assets/Terra
 const iniArchivePath = resolve(wasmRoot, process.argv[2] ?? defaultIniArchivePath);
 const mapsArchivePath = resolve(wasmRoot, process.argv[3] ?? defaultMapsArchivePath);
 const terrainArchivePath = resolve(wasmRoot, process.argv[4] ?? defaultTerrainArchivePath);
+const sceneMode = process.env.CNC_PORT_TERRAIN_SCENE_MODE ?? "map-patch";
+const shroudMode = sceneMode === "shroud";
+if (sceneMode !== "map-patch" && sceneMode !== "shroud") {
+  throw new Error(`Unsupported CNC_PORT_TERRAIN_SCENE_MODE: ${sceneMode}`);
+}
 const screenshotDir = resolve(wasmRoot, "artifacts/screenshots");
 const terrainScreenshot = resolve(
   screenshotDir,
-  "harness-smoke-ww3d-terrain-map-patch-scene-canvas.png",
+  shroudMode
+    ? "harness-smoke-ww3d-terrain-shroud-scene-canvas.png"
+    : "harness-smoke-ww3d-terrain-map-patch-scene-canvas.png",
 );
 
-const runtimeArchivePath = "/assets/runtime-terrain-map-patch-scene";
+const runtimeArchivePath = shroudMode
+  ? "/assets/runtime-terrain-shroud-scene"
+  : "/assets/runtime-terrain-map-patch-scene";
 const iniArchiveMemfsPath = `${runtimeArchivePath}/INIZH.big`;
 const mapsArchiveMemfsPath = `${runtimeArchivePath}/MapsZH.big`;
 const terrainArchiveMemfsPath = `${runtimeArchivePath}/TerrainZH.big`;
@@ -163,9 +172,10 @@ try {
 
   const bootResult = await withTimeout(
     "terrain map patch boot RPC",
-    page.evaluate(() => window.CnCPort.rpc("boot", {
-      source: "W3D real map terrain patch scene render smoke",
-    })),
+    page.evaluate((source) => window.CnCPort.rpc("boot", { source }),
+      shroudMode
+        ? "W3D real map terrain shroud scene render smoke"
+        : "W3D real map terrain patch scene render smoke"),
     30000,
   );
   if (!bootResult.ok || bootResult.state.wasm !== "loaded") {
@@ -259,7 +269,12 @@ try {
     terrainResult = await withTimeout(
       "terrain map patch render RPC",
       page.evaluate((payload) =>
-        window.CnCPort.rpc("ww3dTerrainMapPatchScene", payload), {
+        window.CnCPort.rpc(payload.command, {
+          iniArchivePath: payload.iniArchivePath,
+          mapsArchivePath: payload.mapsArchivePath,
+          terrainArchivePath: payload.terrainArchivePath,
+        }), {
+          command: shroudMode ? "ww3dTerrainShroudScene" : "ww3dTerrainMapPatchScene",
           iniArchivePath: iniArchiveMemfsPath,
           mapsArchivePath: mapsArchiveMemfsPath,
           terrainArchivePath: terrainArchiveMemfsPath,
@@ -272,8 +287,10 @@ try {
   await page.locator("#viewport").screenshot({ path: terrainScreenshot });
 
   if (!terrainResult.ok
-      || terrainResult.command !== "ww3dTerrainMapPatchScene"
-      || terrainResult.probe?.source !== "ww3d_terrain_map_patch_scene_probe"
+      || terrainResult.command !== (shroudMode ? "ww3dTerrainShroudScene" : "ww3dTerrainMapPatchScene")
+      || terrainResult.probe?.source !== (shroudMode
+        ? "ww3d_terrain_shroud_scene_probe"
+        : "ww3d_terrain_map_patch_scene_probe")
       || terrainResult.probe?.ini?.entry !== terrainIniEntry
       || terrainResult.probe?.ini?.loaded !== true
       || terrainResult.probe?.ini?.entryExists !== true
@@ -292,11 +309,15 @@ try {
       || terrainResult.probe?.map?.height <= 16
       || terrainResult.probe?.map?.heightChecksum <= 0
       || !terrainResult.probe?.scene?.renderPath?.includes("RTS3DScene::Customized_Render")
+      || (shroudMode
+        && terrainResult.probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") !== true)
       || terrainResult.probe?.scene?.created !== true
       || terrainResult.probe?.scene?.objectAdded !== true
       || terrainResult.probe?.scene?.terrainClassId !== 4
       || terrainResult.probe?.terrain?.tileSource !== "shipped-map-heightmap"
-      || terrainResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || terrainResult.probe?.terrain?.renderObject !== (shroudMode
+        ? "ProbeHeightMapRenderObjWithShroud"
+        : "HeightMapRenderObjClass")
       || terrainResult.probe?.terrain?.verticesPerSide !== 33
       || terrainResult.probe?.terrain?.cellsPerSide !== 32
       || terrainResult.probe?.terrain?.tileDiagnostics?.sourceTilesLoaded <= 0
@@ -312,12 +333,29 @@ try {
       || terrainResult.browserProbe?.texture0?.sampled !== true
       || !Array.isArray(terrainResult.drawHistory)
       || terrainResult.drawHistory.length < 2
-      || terrainResult.drawHistory[0]?.renderState?.alphaBlendEnable !== 0
-      || terrainResult.drawHistory[0]?.renderState?.textureStage0?.texCoordIndex !== 0
-      || terrainResult.drawHistory[0]?.texture0?.sampled !== true
-      || terrainResult.drawHistory[1]?.renderState?.alphaBlendEnable !== 1
-      || terrainResult.drawHistory[1]?.renderState?.textureStage0?.texCoordIndex !== 1
-      || terrainResult.drawHistory[1]?.texture0?.sampled !== true
+      || !Number.isInteger(terrainResult.drawSequence?.baseTerrainIndex)
+      || !Number.isInteger(terrainResult.drawSequence?.blendTerrainIndex)
+      || terrainResult.drawSequence.baseTerrainIndex < 0
+      || terrainResult.drawSequence.blendTerrainIndex < 0
+      || (shroudMode
+        && (terrainResult.probe?.shroud?.requested !== true
+          || terrainResult.probe?.shroud?.installed !== true
+          || terrainResult.probe?.shroud?.initialized !== true
+          || terrainResult.probe?.shroud?.fillInvoked !== true
+          || terrainResult.probe?.shroud?.renderInvoked !== true
+          || terrainResult.probe?.shroud?.textureReady !== true
+          || terrainResult.probe?.shroud?.cellsX <= 0
+          || terrainResult.probe?.shroud?.cellsY <= 0
+          || terrainResult.probe?.shroud?.textureWidth <= 0
+          || terrainResult.probe?.shroud?.textureHeight <= 0
+          || terrainResult.probe?.shroud?.sampleLevel < 0
+          || terrainResult.drawHistory.length < 3
+          || !Number.isInteger(terrainResult.drawSequence?.shroudTerrainIndex)
+          || terrainResult.drawSequence.shroudTerrainIndex < 0
+          || terrainResult.drawSequence?.shroudAfterTerrain !== true
+          || terrainResult.browserProbe?.renderState?.zFunc !== 3
+          || terrainResult.browserProbe?.texture0?.texCoordIndex !== 0x00020000
+          || terrainResult.browserProbe?.texture0?.textureTransformFlags !== 2))
       || terrainResult.textureDelta?.creates < 1
       || terrainResult.textureDelta?.updates < 1
       || terrainResult.textureDelta?.binds < 1
@@ -328,6 +366,7 @@ try {
       probe: terrainResult.probe,
       browserProbe: terrainResult.browserProbe,
       drawHistory: terrainResult.drawHistory,
+      drawSequence: terrainResult.drawSequence,
       textureDelta: terrainResult.textureDelta,
       screenshot: {
         width: terrainResult.screenshot?.width,
@@ -345,7 +384,9 @@ try {
 
   console.log(JSON.stringify({
     ok: true,
-    path: "browser-ww3d-terrain-map-patch-scene",
+    path: shroudMode
+      ? "browser-ww3d-terrain-shroud-scene"
+      : "browser-ww3d-terrain-map-patch-scene",
     url: harnessUrl,
     screenshot: terrainScreenshot,
     archives: {
@@ -368,12 +409,17 @@ try {
     },
     map: terrainResult.probe.map,
     scene: terrainResult.probe.scene,
+    shroud: terrainResult.probe.shroud,
     terrain: terrainResult.probe.terrain,
     calls: terrainResult.probe.calls,
     draw: terrainResult.probe.draw,
+    drawSequence: terrainResult.drawSequence,
     centerPixel: terrainResult.screenshot.centerPixel,
     coverage: terrainResult.screenshot.coverage,
-    renderer: "original INI::load Terrain.ini terrain texture mappings + MapsZH MD_GLA03 -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> HeightMapRenderObjClass -> browser D3D8/WebGL2",
+    renderer: shroudMode
+      ? "original INI::load Terrain.ini terrain texture mappings + MapsZH MD_GLA03 -> original WorldHeightMap -> W3DShroud::render -> RTS3DScene::Customized_Render W3DShroudMaterialPassClass -> HeightMapRenderObjClass::renderTerrainPass -> browser D3D8/WebGL2"
+      : "original INI::load Terrain.ini terrain texture mappings + MapsZH MD_GLA03 -> original WorldHeightMap -> RTS3DScene::Customized_Render CLASSID_TILEMAP -> HeightMapRenderObjClass -> browser D3D8/WebGL2",
+    mode: sceneMode,
     browserEventCount: browserEvents.length,
   }, null, 2));
 } finally {

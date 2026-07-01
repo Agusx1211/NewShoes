@@ -42,6 +42,7 @@
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DShaderManager.h"
+#include "W3DDevice/GameClient/W3DShroud.h"
 #include "W3DDevice/GameClient/TileData.h"
 #include "W3DDevice/GameClient/W3DTreeBuffer.h"
 #include "W3DDevice/GameClient/Module/W3DTreeDraw.h"
@@ -88,6 +89,7 @@ std::string g_ww3d_terrain_tile_probe_json;
 std::string g_ww3d_terrain_tile_archive_probe_json;
 std::string g_ww3d_terrain_tile_archive_scene_probe_json;
 std::string g_ww3d_terrain_map_patch_scene_probe_json;
+std::string g_ww3d_terrain_shroud_scene_probe_json;
 std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
@@ -3028,6 +3030,197 @@ private:
 	Int m_probeRoadDrawMaxY = 0;
 };
 
+class ProbeHeightMapRenderObjWithShroud final : public HeightMapRenderObjClass
+{
+public:
+	ProbeHeightMapRenderObjWithShroud()
+	{
+		m_shroud = nullptr;
+	}
+
+	bool installProbeShroud()
+	{
+		if (m_shroud != nullptr) {
+			delete m_shroud;
+		}
+		m_shroud = NEW W3DShroud;
+		return m_shroud != nullptr;
+	}
+
+	W3DShroud *probeShroud() const
+	{
+		return m_shroud;
+	}
+
+	void Render(RenderInfoClass &rinfo) override
+	{
+		m_probeRenderInvoked = true;
+		m_probeRenderSawShroud = m_shroud != nullptr;
+		m_probeAdditionalPassCount = rinfo.Additional_Pass_Count();
+		const WasmD3D8ShimState *before_state = wasm_d3d8_get_state();
+		const UINT draw_calls_before =
+			before_state != nullptr ? before_state->draw_indexed_primitive_calls : 0;
+		m_probeDrawCallsBefore = draw_calls_before;
+		HeightMapRenderObjClass::Render(rinfo);
+		const WasmD3D8ShimState *after_state = wasm_d3d8_get_state();
+		m_probeDrawCallsAfter =
+			after_state != nullptr ? after_state->draw_indexed_primitive_calls : draw_calls_before;
+		m_probeDrawCallsAfterBase = m_probeDrawCallsAfter;
+		m_probeOriginalShroudDrawSeen = lastDrawLooksLikeShroud(after_state, draw_calls_before);
+		m_probeFinalShroudDrawSeen = m_probeOriginalShroudDrawSeen;
+		if (m_shroud != nullptr &&
+			m_probeAdditionalPassCount > 0 &&
+			!m_probeOriginalShroudDrawSeen) {
+			m_probeDrawCallsBeforeFallback = m_probeDrawCallsAfter;
+			BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
+			TheTerrainRenderObject = this;
+			m_probeFallbackGlobalSawShroud =
+				TheTerrainRenderObject != nullptr && TheTerrainRenderObject->getShroud() != nullptr;
+			const WasmD3D8ShimState *install_before_state = wasm_d3d8_get_state();
+			const UINT set_texture_calls_before =
+				install_before_state != nullptr ? install_before_state->set_texture_calls : 0;
+			const UINT texture_stage_calls_before =
+				install_before_state != nullptr ? install_before_state->set_texture_stage_state_calls : 0;
+			const UINT render_state_calls_before =
+				install_before_state != nullptr ? install_before_state->set_render_state_calls : 0;
+			W3DShroudMaterialPassClass *shroud_pass = NEW_REF(W3DShroudMaterialPassClass, ());
+			if (shroud_pass != nullptr) {
+				DX8Wrapper::Invalidate_Cached_Render_States();
+				W3DShaderManager::resetShader(W3DShaderManager::ST_SHROUD_TEXTURE);
+				renderProbeShroudTerrainPass(
+					shroud_pass,
+					set_texture_calls_before,
+					texture_stage_calls_before,
+					render_state_calls_before);
+				REF_PTR_RELEASE(shroud_pass);
+				m_probeFallbackInvoked = true;
+				const WasmD3D8ShimState *fallback_state = wasm_d3d8_get_state();
+				m_probeDrawCallsAfter =
+					fallback_state != nullptr ? fallback_state->draw_indexed_primitive_calls : m_probeDrawCallsAfter;
+				m_probeDrawCallsAfterFallback = m_probeDrawCallsAfter;
+				m_probeFinalShroudDrawSeen = lastDrawLooksLikeShroud(fallback_state, draw_calls_before);
+			}
+			TheTerrainRenderObject = old_terrain_render_object;
+		}
+	}
+
+	bool probeRenderInvoked() const { return m_probeRenderInvoked; }
+	bool probeRenderSawShroud() const { return m_probeRenderSawShroud; }
+	Int probeAdditionalPassCount() const { return m_probeAdditionalPassCount; }
+	bool probeOriginalShroudDrawSeen() const { return m_probeOriginalShroudDrawSeen; }
+	bool probeFinalShroudDrawSeen() const { return m_probeFinalShroudDrawSeen; }
+	bool probeFallbackInvoked() const { return m_probeFallbackInvoked; }
+	UINT probeDrawCallsBefore() const { return m_probeDrawCallsBefore; }
+	UINT probeDrawCallsAfter() const { return m_probeDrawCallsAfter; }
+	UINT probeDrawCallsAfterBase() const { return m_probeDrawCallsAfterBase; }
+	UINT probeDrawCallsBeforeFallback() const { return m_probeDrawCallsBeforeFallback; }
+	UINT probeDrawCallsAfterFallback() const { return m_probeDrawCallsAfterFallback; }
+	bool probeFallbackGlobalSawShroud() const { return m_probeFallbackGlobalSawShroud; }
+	UINT probeFallbackInstallSetTextureDelta() const { return m_probeFallbackInstallSetTextureDelta; }
+	UINT probeFallbackInstallTextureStageDelta() const { return m_probeFallbackInstallTextureStageDelta; }
+	UINT probeFallbackInstallRenderStateDelta() const { return m_probeFallbackInstallRenderStateDelta; }
+	UINT probeFallbackInstallLastTextureId() const { return m_probeFallbackInstallLastTextureId; }
+	DWORD probeFallbackInstallZFunc() const { return m_probeFallbackInstallZFunc; }
+	DWORD probeFallbackInstallTexcoordIndex() const { return m_probeFallbackInstallTexcoordIndex; }
+	DWORD probeFallbackInstallTextureTransformFlags() const
+	{
+		return m_probeFallbackInstallTextureTransformFlags;
+	}
+	DWORD probeFallbackInstallColorOp() const { return m_probeFallbackInstallColorOp; }
+
+private:
+	void renderProbeShroudTerrainPass(
+		W3DShroudMaterialPassClass *shroud_pass,
+		UINT set_texture_calls_before,
+		UINT texture_stage_calls_before,
+		UINT render_state_calls_before)
+	{
+		DX8Wrapper::Set_Transform(D3DTS_WORLD, Matrix3D(1));
+		DX8Wrapper::Set_Index_Buffer(m_indexBuffer, 0);
+
+		for (Int j = 0; j < m_numVBTilesY; ++j) {
+			for (Int i = 0; i < m_numVBTilesX; ++i) {
+				const Int num_polys = VERTEX_BUFFER_TILE_LENGTH * VERTEX_BUFFER_TILE_LENGTH * 2;
+				const Int num_vertices = (VERTEX_BUFFER_TILE_LENGTH * 2) * (VERTEX_BUFFER_TILE_LENGTH * 2);
+				DX8Wrapper::Set_Vertex_Buffer(m_vertexBufferTiles[j * m_numVBTilesX + i]);
+				shroud_pass->Install_Materials();
+				captureFallbackInstallState(
+					set_texture_calls_before,
+					texture_stage_calls_before,
+					render_state_calls_before);
+				IDirect3DDevice8 *device = DX8Wrapper::_Get_D3D_Device8();
+				if (device != nullptr) {
+					device->DrawIndexedPrimitive(D3DPT_TRIANGLELIST, 0, num_vertices, 0, num_polys);
+				}
+				shroud_pass->UnInstall_Materials();
+			}
+		}
+	}
+
+	void captureFallbackInstallState(
+		UINT set_texture_calls_before,
+		UINT texture_stage_calls_before,
+		UINT render_state_calls_before)
+	{
+		if (m_probeFallbackInstallCaptured) {
+			return;
+		}
+		m_probeFallbackInstallCaptured = true;
+		const WasmD3D8ShimState *install_after_state = wasm_d3d8_get_state();
+		if (install_after_state != nullptr) {
+			m_probeFallbackInstallSetTextureDelta =
+				install_after_state->set_texture_calls - set_texture_calls_before;
+			m_probeFallbackInstallTextureStageDelta =
+				install_after_state->set_texture_stage_state_calls - texture_stage_calls_before;
+			m_probeFallbackInstallRenderStateDelta =
+				install_after_state->set_render_state_calls - render_state_calls_before;
+			m_probeFallbackInstallLastTextureId = install_after_state->last_set_texture_id;
+		}
+		IDirect3DDevice8 *device = DX8Wrapper::_Get_D3D_Device8();
+		if (device != nullptr) {
+			device->GetRenderState(D3DRS_ZFUNC, &m_probeFallbackInstallZFunc);
+			device->GetTextureStageState(0, D3DTSS_TEXCOORDINDEX, &m_probeFallbackInstallTexcoordIndex);
+			device->GetTextureStageState(
+				0, D3DTSS_TEXTURETRANSFORMFLAGS, &m_probeFallbackInstallTextureTransformFlags);
+			device->GetTextureStageState(0, D3DTSS_COLOROP, &m_probeFallbackInstallColorOp);
+		}
+	}
+
+	static bool lastDrawLooksLikeShroud(const WasmD3D8ShimState *state, UINT draw_calls_before)
+	{
+		if (state == nullptr || state->draw_indexed_primitive_calls <= draw_calls_before) {
+			return false;
+		}
+		const WasmD3D8DrawTextureStageState &stage0 =
+			state->last_draw_render_state.texture_stages[0];
+		return state->last_draw_render_state.z_func == D3DCMP_EQUAL &&
+			stage0.values[D3DTSS_TEXCOORDINDEX] == D3DTSS_TCI_CAMERASPACEPOSITION &&
+			stage0.values[D3DTSS_TEXTURETRANSFORMFLAGS] == D3DTTFF_COUNT2;
+	}
+
+	bool m_probeRenderInvoked = false;
+	bool m_probeRenderSawShroud = false;
+	bool m_probeOriginalShroudDrawSeen = false;
+	bool m_probeFinalShroudDrawSeen = false;
+	bool m_probeFallbackInvoked = false;
+	Int m_probeAdditionalPassCount = -1;
+	UINT m_probeDrawCallsBefore = 0;
+	UINT m_probeDrawCallsAfter = 0;
+	UINT m_probeDrawCallsAfterBase = 0;
+	UINT m_probeDrawCallsBeforeFallback = 0;
+	UINT m_probeDrawCallsAfterFallback = 0;
+	bool m_probeFallbackGlobalSawShroud = false;
+	UINT m_probeFallbackInstallSetTextureDelta = 0;
+	UINT m_probeFallbackInstallTextureStageDelta = 0;
+	UINT m_probeFallbackInstallRenderStateDelta = 0;
+	UINT m_probeFallbackInstallLastTextureId = 0;
+	DWORD m_probeFallbackInstallZFunc = 0;
+	DWORD m_probeFallbackInstallTexcoordIndex = 0;
+	DWORD m_probeFallbackInstallTextureTransformFlags = 0;
+	DWORD m_probeFallbackInstallColorOp = 0;
+	bool m_probeFallbackInstallCaptured = false;
+};
+
 class ProbeHeightMapRenderObjWithBridgeBuffer final : public HeightMapRenderObjClass
 {
 public:
@@ -3207,7 +3400,7 @@ bool normalize_probe_prop_mesh(RenderObjClass *prop_render_object, int &class_id
 	return true;
 }
 
-void configure_global_data(GlobalData &global_data)
+void configure_global_data(GlobalData &global_data, bool enable_shroud = false)
 {
 	global_data.m_textureReductionFactor = 0;
 	global_data.m_useCloudMap = FALSE;
@@ -3216,6 +3409,17 @@ void configure_global_data(GlobalData &global_data)
 	global_data.m_use3WayTerrainBlends = FALSE;
 	global_data.m_drawEntireTerrain = FALSE;
 	global_data.m_stretchTerrain = FALSE;
+	if (enable_shroud) {
+		global_data.m_partitionCellSize = MAP_XY_FACTOR;
+		global_data.m_shroudColor.red = 0.0f;
+		global_data.m_shroudColor.green = 0.0f;
+		global_data.m_shroudColor.blue = 0.0f;
+		global_data.m_shroudAlpha = 0;
+#if defined(_DEBUG) || defined(_INTERNAL)
+		global_data.m_shroudOn = TRUE;
+		global_data.m_fogOfWarOn = FALSE;
+#endif
+	}
 	global_data.m_timeOfDay = TIME_OF_DAY_AFTERNOON;
 	global_data.m_numGlobalLights = 1;
 	global_data.m_terrainAmbient[0].red = 0.28f;
@@ -3572,7 +3776,8 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	std::string &target_json,
 	const char *ini_archive_path,
 	const char *maps_archive_path,
-	const char *terrain_archive_path)
+	const char *terrain_archive_path,
+	bool enable_shroud = false)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
@@ -3592,6 +3797,38 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	bool render_object_initialized = false;
 	bool scene_created = false;
 	bool scene_object_added = false;
+	bool shroud_installed = false;
+	bool shroud_initialized = false;
+	bool shroud_fill_invoked = false;
+	bool shroud_render_invoked = false;
+	bool shroud_texture_ready = false;
+	bool shroud_terrain_render_invoked = false;
+	bool shroud_terrain_render_saw_shroud = false;
+	bool shroud_terrain_original_draw_seen = false;
+	bool shroud_terrain_final_draw_seen = false;
+	bool shroud_terrain_fallback_invoked = false;
+	Int shroud_terrain_additional_pass_count = -1;
+	UINT shroud_terrain_draw_calls_before = 0;
+	UINT shroud_terrain_draw_calls_after = 0;
+	UINT shroud_terrain_draw_calls_after_base = 0;
+	UINT shroud_terrain_draw_calls_before_fallback = 0;
+	UINT shroud_terrain_draw_calls_after_fallback = 0;
+	bool shroud_terrain_fallback_global_saw_shroud = false;
+	UINT shroud_terrain_fallback_install_set_texture_delta = 0;
+	UINT shroud_terrain_fallback_install_texture_stage_delta = 0;
+	UINT shroud_terrain_fallback_install_render_state_delta = 0;
+	UINT shroud_terrain_fallback_install_last_texture_id = 0;
+	DWORD shroud_terrain_fallback_install_z_func = 0;
+	DWORD shroud_terrain_fallback_install_texcoord_index = 0;
+	DWORD shroud_terrain_fallback_install_texture_transform_flags = 0;
+	DWORD shroud_terrain_fallback_install_color_op = 0;
+	Int shroud_cells_x = 0;
+	Int shroud_cells_y = 0;
+	Int shroud_texture_width = 0;
+	Int shroud_texture_height = 0;
+	Int shroud_sample_level = -1;
+	float shroud_draw_origin_x = 0.0f;
+	float shroud_draw_origin_y = 0.0f;
 
 	ProbeTerrainMapPatchLoad map_load;
 	WorldHeightMap *map = load_archive_terrain_map_patch(
@@ -3604,7 +3841,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	if (map_created) {
 		global_data = NEW GlobalData;
 		if (global_data != nullptr) {
-			configure_global_data(*global_data);
+			configure_global_data(*global_data, enable_shroud);
 			TheWritableGlobalData = global_data;
 		}
 	}
@@ -3614,6 +3851,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	WaterTransparencySetting *probe_water_transparency = nullptr;
 	BaseHeightMapRenderObjClass *old_terrain_render_object = TheTerrainRenderObject;
 	HeightMapRenderObjClass *render_object = nullptr;
+	ProbeHeightMapRenderObjWithShroud *shroud_render_object = nullptr;
 	RTS3DScene *scene = nullptr;
 	CameraClass *camera = nullptr;
 	bool shader_manager_initialized = false;
@@ -3658,7 +3896,12 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 			map->setDrawHeight(kMapPatchVertices);
 			map->setDrawOrg(map_load.patchOriginX, map_load.patchOriginY);
 
-			render_object = NEW_REF(HeightMapRenderObjClass, ());
+			if (enable_shroud) {
+				shroud_render_object = NEW_REF(ProbeHeightMapRenderObjWithShroud, ());
+				render_object = shroud_render_object;
+			} else {
+				render_object = NEW_REF(HeightMapRenderObjClass, ());
+			}
 			render_object_created = render_object != nullptr;
 			if (render_object_created) {
 				Matrix3D terrain_transform(true);
@@ -3683,6 +3926,32 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 					nullptr,
 					TRUE);
 				render_object_initialized = init_height_data_result == 0;
+				if (enable_shroud && render_object_initialized && shroud_render_object != nullptr) {
+					shroud_installed = shroud_render_object->installProbeShroud();
+					W3DShroud *shroud = shroud_render_object->probeShroud();
+					if (shroud_installed && shroud != nullptr) {
+						shroud->init(
+							map,
+							TheGlobalData->m_partitionCellSize,
+							TheGlobalData->m_partitionCellSize);
+					}
+					shroud_initialized =
+						shroud_installed &&
+						shroud != nullptr &&
+						shroud->getNumShroudCellsX() > 0 &&
+						shroud->getNumShroudCellsY() > 0 &&
+						shroud->getShroudTexture() != nullptr;
+					if (shroud_initialized) {
+						shroud->fillShroudData(96);
+						shroud_fill_invoked = true;
+						shroud->setShroudFilter(FALSE);
+						shroud_cells_x = shroud->getNumShroudCellsX();
+						shroud_cells_y = shroud->getNumShroudCellsY();
+						shroud_texture_width = shroud->getTextureWidth();
+						shroud_texture_height = shroud->getTextureHeight();
+						shroud_sample_level = shroud->getShroudLevel(0, 0);
+					}
+				}
 			}
 		}
 	}
@@ -3697,11 +3966,51 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 	}
 
 	if (render_object_created && scene_object_added) {
+		if (enable_shroud && shroud_initialized && shroud_render_object != nullptr) {
+			W3DShroud *shroud = shroud_render_object->probeShroud();
+			if (shroud != nullptr) {
+				shroud->render(camera);
+				shroud_render_invoked = true;
+				shroud_texture_ready = shroud->getShroudTexture() != nullptr;
+				shroud_draw_origin_x = shroud->getDrawOriginX();
+				shroud_draw_origin_y = shroud->getDrawOriginY();
+			}
+		}
 		begin_render_result = WW3D::Begin_Render(true, true, Vector3(0.0f, 0.0f, 0.0f));
 		if (succeeded(begin_render_result)) {
 			render_result = WW3D::Render(scene, camera);
 			end_render_result = WW3D::End_Render(false);
 		}
+	}
+
+	if (enable_shroud && shroud_render_object != nullptr) {
+		shroud_terrain_render_invoked = shroud_render_object->probeRenderInvoked();
+		shroud_terrain_render_saw_shroud = shroud_render_object->probeRenderSawShroud();
+		shroud_terrain_original_draw_seen = shroud_render_object->probeOriginalShroudDrawSeen();
+		shroud_terrain_final_draw_seen = shroud_render_object->probeFinalShroudDrawSeen();
+		shroud_terrain_fallback_invoked = shroud_render_object->probeFallbackInvoked();
+		shroud_terrain_additional_pass_count = shroud_render_object->probeAdditionalPassCount();
+		shroud_terrain_draw_calls_before = shroud_render_object->probeDrawCallsBefore();
+		shroud_terrain_draw_calls_after = shroud_render_object->probeDrawCallsAfter();
+		shroud_terrain_draw_calls_after_base = shroud_render_object->probeDrawCallsAfterBase();
+		shroud_terrain_draw_calls_before_fallback = shroud_render_object->probeDrawCallsBeforeFallback();
+		shroud_terrain_draw_calls_after_fallback = shroud_render_object->probeDrawCallsAfterFallback();
+		shroud_terrain_fallback_global_saw_shroud =
+			shroud_render_object->probeFallbackGlobalSawShroud();
+		shroud_terrain_fallback_install_set_texture_delta =
+			shroud_render_object->probeFallbackInstallSetTextureDelta();
+		shroud_terrain_fallback_install_texture_stage_delta =
+			shroud_render_object->probeFallbackInstallTextureStageDelta();
+		shroud_terrain_fallback_install_render_state_delta =
+			shroud_render_object->probeFallbackInstallRenderStateDelta();
+		shroud_terrain_fallback_install_last_texture_id =
+			shroud_render_object->probeFallbackInstallLastTextureId();
+		shroud_terrain_fallback_install_z_func = shroud_render_object->probeFallbackInstallZFunc();
+		shroud_terrain_fallback_install_texcoord_index =
+			shroud_render_object->probeFallbackInstallTexcoordIndex();
+		shroud_terrain_fallback_install_texture_transform_flags =
+			shroud_render_object->probeFallbackInstallTextureTransformFlags();
+		shroud_terrain_fallback_install_color_op = shroud_render_object->probeFallbackInstallColorOp();
 	}
 
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
@@ -3732,6 +4041,12 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		render_object_initialized &&
 		scene_created &&
 		scene_object_added &&
+		(!enable_shroud ||
+			(shroud_installed &&
+				shroud_initialized &&
+				shroud_fill_invoked &&
+				shroud_render_invoked &&
+				shroud_texture_ready)) &&
 		init_height_data_result == 0 &&
 		succeeded(begin_render_result) &&
 		succeeded(render_result) &&
@@ -3743,6 +4058,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
+		(!enable_shroud || state->draw_indexed_primitive_calls >= 3) &&
 		state->last_draw_primitive_type == D3DPT_TRIANGLELIST &&
 		state->last_draw_vertex_count > 0 &&
 		state->last_draw_primitive_count > 0 &&
@@ -3754,16 +4070,28 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		json_string(map_load.firstPatchTextureClassName);
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
+	const char *probe_source =
+		enable_shroud ?
+			"ww3d_terrain_shroud_scene_probe" :
+			"ww3d_terrain_map_patch_scene_probe";
+	const char *render_object_name =
+		enable_shroud ?
+			"ProbeHeightMapRenderObjWithShroud" :
+			"HeightMapRenderObjClass";
+	const char *render_path =
+		enable_shroud ?
+			"RTS3DScene::Customized_Render -> W3DShroudMaterialPassClass -> HeightMapRenderObjClass::renderTerrainPass" :
+			"RTS3DScene::Customized_Render -> CLASSID_TILEMAP Render -> HeightMapRenderObjClass::Render";
 
-	char buffer[18000];
+	char buffer[24000];
 	std::snprintf(buffer, sizeof(buffer),
-		"{\"source\":\"ww3d_terrain_map_patch_scene_probe\","
+		"{\"source\":\"%s\","
 		"\"ok\":%s,"
 		"\"results\":{\"init\":%d,\"setRenderDevice\":%d,"
 		"\"initHeightData\":%d,\"beginRender\":%d,"
 		"\"render\":%d,\"endRender\":%d,\"mapCreated\":%s,"
-			"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
-			"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s},"
+		"\"waterTransparencyReady\":%s,\"shaderManagerInitialized\":%s,"
+		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s},"
 		"\"ini\":{\"attempted\":%s,\"argumentSupplied\":%s,"
 		"\"path\":\"%s\",\"directory\":\"%s\",\"mask\":\"%s\","
 		"\"defaultEntry\":\"Data\\\\INI\\\\Default\\\\Terrain.ini\","
@@ -3785,7 +4113,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"drawHeight\":%d,\"firstHeight\":%u,\"heightChecksum\":%lu},"
 		"\"terrain\":{\"verticesPerSide\":%d,\"cellsPerSide\":%d,"
 		"\"expectedFlatTextureSize\":%u,\"tileSource\":\"shipped-map-heightmap\","
-		"\"renderObject\":\"HeightMapRenderObjClass\","
+		"\"renderObject\":\"%s\","
 		"\"renderWindowWidth\":%d,\"renderWindowHeight\":%d,"
 		"\"renderOriginX\":%d,\"renderOriginY\":%d,"
 		"\"patchOriginX\":%d,\"patchOriginY\":%d,\"patchCenterHeight\":%u,"
@@ -3800,9 +4128,30 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"texturePositionY\":%d},"
 		"\"sampleTextureClasses\":%s}},"
 		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
-		"RTS3DScene::Customized_Render -> CLASSID_TILEMAP Render -> "
-		"HeightMapRenderObjClass::Render\","
+		"%s\","
 		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
+		"\"shroud\":{\"requested\":%s,\"installed\":%s,"
+		"\"initialized\":%s,\"fillInvoked\":%s,\"renderInvoked\":%s,"
+		"\"textureReady\":%s,\"terrainRenderInvoked\":%s,"
+		"\"terrainRenderSawShroud\":%s,\"terrainAdditionalPassCount\":%d,"
+		"\"terrainOriginalDrawSeen\":%s,\"terrainFinalDrawSeen\":%s,"
+		"\"terrainFallbackInvoked\":%s,"
+		"\"terrainDrawCallsBefore\":%u,\"terrainDrawCallsAfter\":%u,"
+		"\"terrainDrawCallsAfterBase\":%u,"
+		"\"terrainDrawCallsBeforeFallback\":%u,"
+		"\"terrainDrawCallsAfterFallback\":%u,"
+		"\"terrainFallbackGlobalSawShroud\":%s,"
+		"\"terrainFallbackInstallSetTextureDelta\":%u,"
+		"\"terrainFallbackInstallTextureStageDelta\":%u,"
+		"\"terrainFallbackInstallRenderStateDelta\":%u,"
+		"\"terrainFallbackInstallLastTextureId\":%u,"
+		"\"terrainFallbackInstallZFunc\":%lu,"
+		"\"terrainFallbackInstallTexcoordIndex\":%lu,"
+		"\"terrainFallbackInstallTextureTransformFlags\":%lu,"
+		"\"terrainFallbackInstallColorOp\":%lu,"
+		"\"cellsX\":%d,\"cellsY\":%d,"
+		"\"textureWidth\":%d,\"textureHeight\":%d,\"sampleLevel\":%d,"
+		"\"drawOriginX\":%.4f,\"drawOriginY\":%.4f},"
 		"\"calls\":{\"createDevice\":%u,\"createTexture\":%u,"
 		"\"textureLockRect\":%u,\"textureUnlockRect\":%u,"
 		"\"browserTextureCreate\":%u,\"browserTextureUpdate\":%u,"
@@ -3821,6 +4170,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		"\"transformMask\":%u,\"renderState\":{\"cullMode\":%lu,"
 		"\"zEnable\":%lu,\"zWriteEnable\":%lu,\"zFunc\":%lu,"
 		"\"textureStage0ColorOp\":%lu,\"textureStage1ColorOp\":%lu}}}",
+		probe_source,
 		bool_json(ok),
 		init_result,
 		set_device_result,
@@ -3874,6 +4224,7 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		kMapPatchVertices,
 		kMapPatchCells,
 		kMapPatchExpectedFlatTextureSize,
+		render_object_name,
 		map != nullptr ? map->getDrawWidth() : 0,
 		map != nullptr ? map->getDrawHeight() : 0,
 		map != nullptr ? map->getDrawOrgX() : 0,
@@ -3897,9 +4248,43 @@ const char *run_ww3d_terrain_map_patch_scene_probe(
 		map_load.firstPatchTileTextureX,
 		map_load.firstPatchTileTextureY,
 		map_load.textureClassesJson.c_str(),
+		render_path,
 		bool_json(scene_created),
 		bool_json(scene_object_added),
 		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
+		bool_json(enable_shroud),
+		bool_json(shroud_installed),
+		bool_json(shroud_initialized),
+		bool_json(shroud_fill_invoked),
+		bool_json(shroud_render_invoked),
+		bool_json(shroud_texture_ready),
+		bool_json(shroud_terrain_render_invoked),
+		bool_json(shroud_terrain_render_saw_shroud),
+		shroud_terrain_additional_pass_count,
+		bool_json(shroud_terrain_original_draw_seen),
+		bool_json(shroud_terrain_final_draw_seen),
+		bool_json(shroud_terrain_fallback_invoked),
+		shroud_terrain_draw_calls_before,
+		shroud_terrain_draw_calls_after,
+		shroud_terrain_draw_calls_after_base,
+		shroud_terrain_draw_calls_before_fallback,
+		shroud_terrain_draw_calls_after_fallback,
+		bool_json(shroud_terrain_fallback_global_saw_shroud),
+		shroud_terrain_fallback_install_set_texture_delta,
+		shroud_terrain_fallback_install_texture_stage_delta,
+		shroud_terrain_fallback_install_render_state_delta,
+		shroud_terrain_fallback_install_last_texture_id,
+		static_cast<unsigned long>(shroud_terrain_fallback_install_z_func),
+		static_cast<unsigned long>(shroud_terrain_fallback_install_texcoord_index),
+		static_cast<unsigned long>(shroud_terrain_fallback_install_texture_transform_flags),
+		static_cast<unsigned long>(shroud_terrain_fallback_install_color_op),
+		shroud_cells_x,
+		shroud_cells_y,
+		shroud_texture_width,
+		shroud_texture_height,
+		shroud_sample_level,
+		shroud_draw_origin_x,
+		shroud_draw_origin_y,
 		state != nullptr ? state->create_device_calls : 0,
 		state != nullptr ? state->create_texture_calls : 0,
 		state != nullptr ? state->texture_lock_rect_calls : 0,
@@ -7845,6 +8230,19 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_map_patch_scene(
 		ini_archive_path,
 		maps_archive_path,
 		terrain_archive_path);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_shroud_scene(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path)
+{
+	return run_ww3d_terrain_map_patch_scene_probe(
+		g_ww3d_terrain_shroud_scene_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		true);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_scene(

@@ -3824,6 +3824,21 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png` is captured.
       Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Add a browser-verified real-map terrain shroud scene proof. The new
+      `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
+      `MapsZH.big`, and `TerrainZH.big`, parses
+      `Data\INI\Terrain.ini` through original `INI::load` / `INITerrain.cpp`,
+      parses `Maps\MD_GLA03\MD_GLA03.map` through original `WorldHeightMap`,
+      initializes a source-backed `HeightMapRenderObjClass` patch with a real
+      `W3DShroud`, calls `W3DShroud::init`, `fillShroudData`, and
+      `W3DShroud::render`, then verifies the shroud terrain pass reaches
+      browser WebGL2 with `D3DCMP_EQUAL`, camera-space texture projection, and
+      `D3DTTFF_COUNT2` texture transform state after the base/blend terrain
+      passes. The focused probe uses a guarded direct D3D draw after installing
+      the original `W3DShroudMaterialPassClass`, so full production
+      `W3DTerrainVisual` / `BaseHeightMapRenderObjClass` shroud ownership
+      remains open. The smoke captures
+      `harness-smoke-ww3d-terrain-shroud-scene-canvas.png`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

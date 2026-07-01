@@ -800,6 +800,17 @@ shares structure and follows behind.
       `W3DTerrainVisual::load` smoke currently also keeps cold
       water/tracks/shadow/smudge methods weakly stubbed because the focused
       proof keeps water null and does not call full `W3DTerrainVisual::init`.
+- [ ] Promote the focused terrain shroud scene proof from probe-owned guarded
+      fallback drawing into production `W3DTerrainVisual::init` /
+      `BaseHeightMapRenderObjClass` ownership. The current
+      `test:ww3d-terrain-shroud-scene` harness mounts real `INIZH.big`,
+      `MapsZH.big`, and `TerrainZH.big`, initializes a real `W3DShroud`, and
+      verifies browser-visible `W3DShroudMaterialPassClass` terrain drawing, but
+      the probe still issues the final shroud terrain draw directly when the
+      original extra-pass dispatch does not submit it. Retire that fallback by
+      wiring the real terrain visual, partition, and shroud owners, then let
+      gameplay fog updates come from
+      `PartitionManager::refreshShroudForLocalPlayer`.
 - [ ] Broaden the bridge-buffer scene proof from the current focused
       `W3DBridge::renderBridge` geometry route to the full
       `W3DBridgeBuffer::drawBridges` wrapper once its optional
