@@ -5984,8 +5984,6 @@ function paintD3D8DrawIndexed(payload = {}) {
   const texture1Transform = normalizeD3DMatrix(payload.transforms?.texture1);
   const transformMask = Number(payload.transformMask ?? 0) >>> 0;
   const useTransforms = transformMask === 7 && world !== null && view !== null && projection !== null;
-  // Render2D emits already-normalized clip-space vertices under identity
-  // matrices; D3D's screen-space winding lands opposite WebGL's cull test.
   const usesIdentityClipSpace =
     useTransforms &&
     isIdentityD3DMatrix(world) &&
@@ -6069,7 +6067,7 @@ function paintD3D8DrawIndexed(payload = {}) {
     const bridgeProgram = ensureD3D8DrawProgram();
     gl.useProgram(bridgeProgram.program);
     appliedRenderState = applyD3D8RenderState(renderState, {
-      invertCullWinding: usesIdentityClipSpace,
+      invertCullWinding: false,
     });
     appliedRenderState.clipPlanes = d3d8ClipPlaneInfo(renderState, clipPlanes);
     appliedRenderState.lighting = {

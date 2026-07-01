@@ -838,15 +838,6 @@ shares structure and follows behind.
       `test:ww3d-terrain-map-patch-scene`,
       `test:ww3d-terrain-visual-scene`, and `test:vertical-integrations`
       gating the layout parity.
-- [ ] Re-stabilize the aggregate `test:vertical-integrations` umbrella before
-      relying on it as the broad post-rendering gate. A July 1, 2026 run passed
-      `startup-vertical` and `runtime-archives-startup-data`, then failed in the
-      `browser-network-relay` step inside `harness/smoke.mjs` because the
-      original `ww3d_aabox_render_probe` reported `probe.ok=true` while the
-      browser draw probe reported `ok=false` / black center pixels for the
-      AABox WebGL2 gate. Determine whether this is viewport/state leakage,
-      stale harness assumptions, or a real renderer regression, then restore
-      the umbrella gate.
 - [ ] Scene/camera (`W3DScene`, `W3DDisplay`) renders the shell/menu background.
       Current coverage: `test:ww3d-display-shell-composite` layers a focused
       `W3DDisplay::m_3DScene` render, real `WatermarkChina` mapped shell UI art,

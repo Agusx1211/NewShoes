@@ -5657,5 +5657,16 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       making focused WW3D probes mirror `W3DDisplay` statistics cleanup before
       `WW3D::Shutdown()`. Verified with `npm run build:wasm`,
       `node harness/smoke.mjs`, and `EXPECT_WASM=1 node harness/smoke.mjs`.
+- [x] Re-stabilize the aggregate browser render smoke and vertical umbrella
+      after the AABox WebGL2 gate regressed. The focused AABox and
+      scene-camera probes now frame their original `AABoxRenderObjClass` with
+      an explicit `CameraClass` transform before rendering, the browser D3D8
+      bridge now trusts original Render2D identity-clip index winding instead
+      of flipping cull face, and the EdgeMapper browser probe seeds a distinct
+      texture transform before measuring original `EdgeMapperClass::Apply` so
+      the long-lived browser module proves the real `D3DTS_TEXTURE1`
+      `SetTransform` emission. Verified with the wasm `cnc-port` build, the
+      `EXPECT_WASM=1` aggregate smoke, `test:vertical-integrations`, the
+      shroud terrain scene smoke, and the bridge-buffer terrain scene smoke.
 
 ## Cross-cutting: project hygiene

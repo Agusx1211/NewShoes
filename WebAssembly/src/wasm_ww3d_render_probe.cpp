@@ -1431,6 +1431,15 @@ struct ProbeW3DDisplayStorage
 	bool prepared = false;
 };
 
+void configure_ww3d_probe_camera(CameraClass &camera)
+{
+	Matrix3D camera_transform(true);
+	camera_transform.Look_At(Vector3(0.0f, -8.0f, 4.0f), Vector3(0.0f, 0.0f, 0.0f), 0.0f);
+	camera.Set_Transform(camera_transform);
+	camera.Set_Aspect_Ratio(800.0f / 600.0f);
+	camera.Set_Clip_Planes(1.0f, 1000.0f);
+}
+
 } // namespace
 
 __attribute__((weak)) void W3DLeftHUDDraw(GameWindow *, WinInstanceData *) {}
@@ -1484,6 +1493,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_aabox()
 		allocated = camera != nullptr && box != nullptr;
 
 		if (allocated) {
+			configure_ww3d_probe_camera(*camera);
+
 			box->Set_Local_Center_Extent(Vector3(0.0f, 0.0f, 0.0f), Vector3(1.0f, 2.0f, 3.0f));
 			box->Set_Color(Vector3(0.1f, 0.85f, 0.3f));
 			box->Set_Opacity(1.0f);
@@ -1648,6 +1659,8 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_scene_camera()
 	}
 
 	if (camera_created && scene_created && render_object_created) {
+		configure_ww3d_probe_camera(*camera);
+
 		box->Set_Local_Center_Extent(Vector3(0.0f, 0.0f, 0.0f), Vector3(1.0f, 2.0f, 3.0f));
 		box->Set_Color(Vector3(0.1f, 0.85f, 0.3f));
 		box->Set_Opacity(1.0f);

@@ -121,6 +121,14 @@ EdgeMapperCaseResult run_edge_mapper_case(const char *name, bool use_reflect, un
 		stage, D3DTSS_TEXCOORDINDEX, D3DTSS_TCI_PASSTHRU | 0);
 	DX8Wrapper::Set_DX8_Texture_Stage_State(
 		stage, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+	// Force Apply to cross the SetTransform path even when the browser smoke
+	// reuses a long-lived module with prior texture-transform state.
+	Matrix4x4 seed_transform;
+	seed_transform.Make_Identity();
+	seed_transform[0][0] = 0.25f;
+	seed_transform[1][1] = 0.5f;
+	seed_transform[2][2] = 0.75f;
+	DX8Wrapper::Set_Transform(result.expected_transform_state, seed_transform);
 
 	const WasmD3D8ShimState *before_state = wasm_d3d8_get_state();
 	const UINT transform_calls_before =

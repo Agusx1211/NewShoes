@@ -5424,8 +5424,8 @@ try {
       || render2DResult.browserProbe?.usedPersistentBuffers !== true
       || render2DResult.browserProbe?.usedTransforms !== true
       || render2DResult.browserProbe?.usedIdentityClipSpace !== true
-      || render2DResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== true
-      || render2DResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1028
+      || render2DResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== false
+      || render2DResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1029
       || render2DResult.browserProbe?.texture0?.id !== render2DResult.probe?.texture?.id
       || render2DResult.browserProbe?.texture0?.ready !== true
       || render2DResult.browserProbe?.texture0?.sampled !== true
@@ -5576,8 +5576,8 @@ try {
       || displayDrawImageResult.browserProbe?.usedPersistentBuffers !== true
       || displayDrawImageResult.browserProbe?.usedTransforms !== true
       || displayDrawImageResult.browserProbe?.usedIdentityClipSpace !== true
-      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== true
-      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1028
+      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.invertWinding !== false
+      || displayDrawImageResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1029
       || displayDrawImageResult.browserProbe?.texture0?.id !== displayDrawImageResult.probe?.texture?.id
       || displayDrawImageResult.browserProbe?.texture0?.ready !== true
       || displayDrawImageResult.browserProbe?.texture0?.sampled !== true
