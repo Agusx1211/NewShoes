@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <string>
@@ -97,6 +98,9 @@ void MainMenuShutdown(WindowLayout *layout, void *userData);
 void CreditsMenuInit(WindowLayout *layout, void *userData);
 void CreditsMenuUpdate(WindowLayout *layout, void *userData);
 void CreditsMenuShutdown(WindowLayout *layout, void *userData);
+void SkirmishGameOptionsMenuInit(WindowLayout *layout, void *userData);
+void SkirmishGameOptionsMenuUpdate(WindowLayout *layout, void *userData);
+void SkirmishGameOptionsMenuShutdown(WindowLayout *layout, void *userData);
 WindowMsgHandledType MainMenuSystem(GameWindow *window, UnsignedInt msg,
 	WindowMsgData mData1, WindowMsgData mData2);
 WindowMsgHandledType CreditsMenuInput(GameWindow *window, UnsignedInt msg,
@@ -1200,6 +1204,15 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 	ok = expect(TheFunctionLexicon->gameWinSystemFunc(
 			TheNameKeyGenerator->nameToKey(AsciiString("CreditsMenuSystem"))) == CreditsMenuSystem,
 		"FunctionLexicon did not resolve CreditsMenuSystem to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutInitFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenuInit"))) == SkirmishGameOptionsMenuInit,
+		"FunctionLexicon did not resolve SkirmishGameOptionsMenuInit to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutUpdateFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenuUpdate"))) == SkirmishGameOptionsMenuUpdate,
+		"FunctionLexicon did not resolve SkirmishGameOptionsMenuUpdate to the original callback owner") && ok;
+	ok = expect(TheFunctionLexicon->winLayoutShutdownFunc(
+			TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenuShutdown"))) == SkirmishGameOptionsMenuShutdown,
+		"FunctionLexicon did not resolve SkirmishGameOptionsMenuShutdown to the original callback owner") && ok;
 
 	global_data.m_breakTheMovie = TRUE;
 	g_mouse_visibility_true_calls = 0;
@@ -1671,9 +1684,11 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:StaticTextGameSpeed")));
 				GameWindow *start_position_button = TheWindowManager->winGetWindowFromId(skirmish_parent,
 					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonMapStartPosition0")));
+				GameWindow *back_button = TheWindowManager->winGetWindowFromId(skirmish_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("SkirmishGameOptionsMenu.wnd:ButtonBack")));
 				ok = expect(starting_cash_combo != nullptr && map_window != nullptr
 						&& game_speed_slider != nullptr && game_speed_text != nullptr
-						&& start_position_button != nullptr,
+						&& start_position_button != nullptr && back_button != nullptr,
 					"SkirmishGameOptionsMenuInit did not resolve the expected option gadgets") && ok;
 				if (starting_cash_combo != nullptr) {
 					ok = expect(GadgetComboBoxGetLength(starting_cash_combo) >= 1,
@@ -1692,16 +1707,29 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					ok = expect(BitTest(start_position_button->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
 						"original SkirmishGameOptionsMenuInit did not show the first map start-position control") && ok;
 				}
-				if (shell.top() == skirmish_layout) {
-					const Int skirmish_closed_before_pop = g_script_ui_interact_calls;
-					shell.pop();
-					shell.shutdownComplete(skirmish_layout, TRUE);
-					ok = expect(g_script_ui_interact_calls == skirmish_closed_before_pop + 1
+				if (shell.top() == skirmish_layout && back_button != nullptr) {
+					const WindowMsgData packed_skirmish_back_click = center_click_data(back_button);
+					const Int skirmish_closed_before_back = g_script_ui_interact_calls;
+					ok = expect(TheWindowManager->winSendInputMsg(back_button, GWM_LEFT_DOWN, packed_skirmish_back_click, 0) == MSG_HANDLED,
+						"ButtonBack did not handle original Skirmish GWM_LEFT_DOWN input") && ok;
+					ok = expect(BitTest(back_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED),
+						"ButtonBack did not enter selected state after original Skirmish GWM_LEFT_DOWN") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(back_button, GWM_LEFT_UP, packed_skirmish_back_click, 0) == MSG_HANDLED,
+						"ButtonBack did not handle original Skirmish GWM_LEFT_UP input") && ok;
+					ok = expect(BitTest(back_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+						"ButtonBack did not clear selected state after original Skirmish GWM_LEFT_UP") && ok;
+					ok = expect(TheSkirmishGameInfo == nullptr,
+						"original Skirmish ButtonBack path did not delete TheSkirmishGameInfo") && ok;
+					TheGameInfo = TheSkirmishGameInfo;
+					ok = expect(g_script_ui_interact_calls == skirmish_closed_before_back + 1
 							&& g_last_script_ui_interact_hook == AsciiString("ShellSkirmishClosed"),
-						"original SkirmishGameOptionsMenuShutdown did not signal the Skirmish-closed shell hook") && ok;
+						"original Skirmish ButtonBack path did not signal the Skirmish-closed shell hook") && ok;
+					ok = expect(shell.getScreenCount() == 2 && shell.top() == skirmish_layout,
+						"original Skirmish ButtonBack path should leave a pending Shell::pop until shutdown completion") && ok;
+					skirmish_layout->runUpdate();
 				}
 				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
-					"original Shell::pop did not return from SkirmishGameOptionsMenu.wnd to MainMenu.wnd") && ok;
+					"original Skirmish ButtonBack/Shell::pop did not return to MainMenu.wnd") && ok;
 			}
 			while (shell.getScreenCount() > 0) {
 				shell.popImmediate();
@@ -1713,6 +1741,7 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 		}
 	TheShell = old_shell;
 	window_manager.update();
+	std::remove("Skirmish.ini");
 	ok = expect(window_manager.winGetWindowList() == nullptr,
 		"popping MainMenu.wnd through Shell should clear the original window list") && ok;
 
@@ -3103,10 +3132,10 @@ int main()
 		<< "\"archiveLayouts\":[\"Menus/MessageBox.wnd\",\"Menus/QuitMessageBox.wnd\",\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
 		<< "\"assetArchives\":[\"WindowZH.big\",\"INIZH.big\"],"
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\",\"Menus/SkirmishGameOptionsMenu.wnd\"],"
-		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\",\"PassMessagesToParentSystem\"],"
-		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuShutdown real callback\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd, original SkirmishGameOptionsMenuInit creating an in-setup SkirmishGameInfo, populating starting-cash, color, faction, team, map metadata, game-speed, and map-start-position gadgets from focused real MultiplayerSettings/PlayerTemplate/MapCache owners, original Skirmish opened and closed ScriptEngine signalUIInteract hooks, original SkirmishGameOptionsMenuShutdown cleanup, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuUpdate\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\",\"PassMessagesToParentSystem\"],"
+		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\",\"SkirmishGameOptionsMenuInit\",\"SkirmishGameOptionsMenuUpdate\",\"SkirmishGameOptionsMenuShutdown\",\"SkirmishGameOptionsMenuSystem\"],"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonUSA click->MainMenuSystem faction difficulty transition\",\"GadgetPushButton ButtonDiffBack click->MainMenuSystem difficulty return\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonSkirmish click->MainMenuSystem pending Shell::push SkirmishGameOptionsMenu\",\"MainMenuUpdate shutdownComplete->SkirmishGameOptionsMenu.wnd\",\"MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit\",\"GadgetPushButton ButtonBack click->SkirmishGameOptionsMenuSystem pending Shell::pop\",\"SkirmishGameOptionsMenuShutdown real callback\",\"SkirmishGameOptionsMenuUpdate shutdownComplete->MainMenu.wnd\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonUSA click selecting the USA campaign and entering MainMenuDifficultyMenuUS through the original MainMenuSystem path, original ButtonDiffBack click clearing the campaign and returning to MainMenuSinglePlayerUSAMenuFromDiff, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonSkirmish click through MainMenuSystem into Shell::push SkirmishGameOptionsMenu.wnd, original SkirmishGameOptionsMenuInit creating an in-setup SkirmishGameInfo, populating starting-cash, color, faction, team, map metadata, game-speed, and map-start-position gadgets from focused real MultiplayerSettings/PlayerTemplate/MapCache owners, original Skirmish ButtonBack click through SkirmishGameOptionsMenuSystem writing SkirmishPreferences, issuing Shell::pop, deleting TheSkirmishGameInfo, and completing the pending pop through SkirmishGameOptionsMenuUpdate, original Skirmish opened and closed ScriptEngine signalUIInteract hooks, original SkirmishGameOptionsMenuShutdown cleanup, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd stack ownership, MainMenu.wnd, SkirmishGameOptionsMenu.wnd, and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }

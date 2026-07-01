@@ -222,6 +222,7 @@ const steps = [
         && payload.shellCallbackNames.includes('MainMenuSystem')
         && payload.shellCallbackNames.includes('MainMenuShutdown')
         && payload.shellCallbackNames.includes('SkirmishGameOptionsMenuInit')
+        && payload.shellCallbackNames.includes('SkirmishGameOptionsMenuUpdate')
         && payload.shellCallbackNames.includes('SkirmishGameOptionsMenuShutdown'),
         'W3D window layout script smoke did not prove MainMenu.wnd / SkirmishGameOptionsMenu.wnd callback-name binding');
       expect(Array.isArray(payload.callbackPaths)
@@ -233,7 +234,9 @@ const steps = [
         && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition')
         && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return')
         && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original SkirmishGameOptionsMenuInit')
+        && payload.callbackPaths.includes('GadgetPushButton ButtonBack click->SkirmishGameOptionsMenuSystem pending Shell::pop')
         && payload.callbackPaths.includes('SkirmishGameOptionsMenuShutdown real callback')
+        && payload.callbackPaths.includes('SkirmishGameOptionsMenuUpdate shutdownComplete->MainMenu.wnd')
         && payload.callbackPaths.includes('GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu')
         && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original CreditsMenuInit')
         && payload.callbackPaths.includes('CreditsMenuUpdate real callback'),

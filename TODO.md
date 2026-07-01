@@ -831,10 +831,13 @@ shares structure and follows behind.
       `MainMenuSystem` into real `SkirmishGameOptionsMenuInit` /
       `SkirmishGameOptionsMenuShutdown` ownership, including focused
       `SkirmishGameInfo`, `MultiplayerSettings`, `PlayerTemplateStore`, and
-      `MapCache` dependencies for option gadget population. Drive the real
-      `ButtonBack` path next, then drive `ButtonStart` once the
-      `MessageStream` game-start side effects can be owned without broad
-      gameplay stubs.
+      `MapCache` dependencies for option gadget population. The real
+      `ButtonBack` path is now driven through
+      `SkirmishGameOptionsMenuSystem`, including Skirmish preferences write,
+      `Shell::pop`, `TheSkirmishGameInfo` deletion, and
+      `SkirmishGameOptionsMenuUpdate` completing the pending pop. Drive
+      `ButtonStart` next once the `MessageStream` game-start side effects can
+      be owned without broad gameplay stubs.
 - [ ] Touch input mapping (stretch, for mobile).
 
 ---

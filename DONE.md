@@ -1885,6 +1885,23 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
       `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Drive the real `SkirmishGameOptionsMenu` `ButtonBack` path from the
+      Shell-owned `Menus/MainMenu.wnd` input vertical. The
+      `w3d-window-layout-script-smoke` now resolves the original
+      `SkirmishGameOptionsMenuInit` / `Update` / `Shutdown` callbacks, clicks
+      `SkirmishGameOptionsMenu.wnd:ButtonBack` through
+      `GameWindowManager::winSendInputMsg` and `GadgetPushButton`, verifies
+      `SkirmishGameOptionsMenuSystem` writes `SkirmishPreferences`, issues a
+      pending `Shell::pop`, deletes and nulls `TheSkirmishGameInfo`, clears the
+      harness `TheGameInfo` alias before it can be reused, signals the
+      Skirmish-closed shell hook through original shutdown, and lets original
+      `SkirmishGameOptionsMenuUpdate` complete `shutdownComplete` back to
+      `MainMenu.wnd`. The startup and aggregate vertical gates now require the
+      new ButtonBack and update-completed pop callback paths. Verified with
+      `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `node --check WebAssembly/tools/run_startup_vertical_smoke.mjs`,
+      `node --check WebAssembly/tools/run_vertical_integrations_smoke.mjs`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the
