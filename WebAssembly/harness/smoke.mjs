@@ -5234,7 +5234,7 @@ try {
       || aaBoxResult.browserProbe?.renderState?.alphaFunc !== 4
       || aaBoxResult.browserProbe?.renderState?.colorWriteEnable !== 15
       || aaBoxResult.browserProbe?.appliedRenderState?.cull?.enabled !== true
-      || aaBoxResult.browserProbe?.appliedRenderState?.cull?.frontFace !== 2304
+      || aaBoxResult.browserProbe?.appliedRenderState?.cull?.frontFace !== 2305
       || aaBoxResult.browserProbe?.appliedRenderState?.cull?.cullFace !== 1029
       || aaBoxResult.browserProbe?.appliedRenderState?.depth?.enabled !== true
       || aaBoxResult.browserProbe?.appliedRenderState?.depth?.mask !== false

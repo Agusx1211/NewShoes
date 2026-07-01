@@ -751,7 +751,12 @@ shares structure and follows behind.
       terrain cells.
       `test:vertical-integrations` now includes that visual-owned terrain scene
       plus the no-reinit load-window proof and camera-pan proof beside the
-      lower-level tile, scene-dispatch, and map-patch terrain proofs. The
+      lower-level tile, scene-dispatch, and map-patch terrain proofs.
+      `test:ww3d-terrain-road-buffer-scene` now also proves a focused original
+      `W3DRoadBuffer::drawRoads` pass over the original heightmap render object
+      on a real source-backed `Maps\MD_CHI01\MD_CHI01.map` patch, with
+      `Roads.ini` parsed by original `INI::load` / terrain-road parsers and a
+      real road texture sampled in the browser. The
       remaining terrain vertical work is production/full-map display ownership
       with source-backed coverage across the load window, then broadening water,
       shroud, objects, and continuous gameplay-owned camera flow on top of the
@@ -775,8 +780,16 @@ shares structure and follows behind.
       path is now browser-harness verified through
       `HeightMapRenderObjClass::Render` -> `RTS3DScene::Flush` -> `DoTrees`
       using shipped `PTDogwod01_S` W3D and terrain/tree textures on the same
-      real source-backed map patch. Production map/object tree placement and
-      shroud-aware tree behavior remain open. A direct broad removal of the
+      real source-backed map patch. The original `W3DRoadBuffer::drawRoads`
+      path is now browser-harness verified through
+      `HeightMapRenderObjClass::Render` on a real MD_CHI01 source-backed patch:
+      the probe parses real map road endpoints, installs one selected
+      `MapObject` point pair for original `W3DRoadBuffer::loadRoads`, samples
+      the shipped `TRThickLine` road texture from `TexturesZH.big`, and proves
+      the road draw follows the terrain base/blend passes. Production map/object
+      tree placement, production logical-map road ownership through the normal
+      `DO_ROADS` terrain path, and shroud-aware tree behavior remain open. A
+      direct broad removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
       `W3DTerrainVisual::load` smoke currently also keeps cold

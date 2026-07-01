@@ -3788,6 +3788,24 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:ww3d-terrain-prop-buffer-scene`,
       `npm --prefix WebAssembly run test:ww3d-terrain-visual-scene`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Add a browser-verified production scene proof for original terrain road
+      drawing. The new `ww3dTerrainRoadBufferScene` RPC mounts range-backed
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, and `TexturesZH.big`
+      subsets, parses real `Terrain.ini` and `Roads.ini` through original
+      `INI::load` / `INITerrain.cpp` / `INITerrainRoad.cpp` /
+      `INITerrainBridge.cpp` / `TerrainRoads.cpp`, parses
+      `Maps\MD_CHI01\MD_CHI01.map`, selects a real source-backed road endpoint
+      pair with an available shipped road texture, installs the pair in the
+      original `MapObject` linked-list shape, and drives
+      `W3DRoadBuffer::loadRoads` plus `W3DRoadBuffer::drawRoads` from
+      `HeightMapRenderObjClass::Render`. The harness verifies the frame submits
+      terrain base/blend draws first, then flushes the road as browser-visible
+      `XYZDUV1`/FVF 322 geometry using `TRThickLine` from `TexturesZH.big`,
+      captures `harness-smoke-ww3d-terrain-road-buffer-scene-canvas.png`, and
+      adds the step to `test:vertical-integrations`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene`,
+      `node WebAssembly/harness/terrain_road_buffer_scene_smoke.mjs`, and
+      `node WebAssembly/harness/terrain_visual_scene_smoke.mjs`.
 - [x] Add a harness-checked `INI` layout parity proof to the terrain rendering
       probes before chasing the remaining `getSeps()` warm-up workaround.
       `wasm_ini_layout_probe.cpp` is built with the real INI runtime, while

@@ -5367,6 +5367,113 @@ function inspectD3D8DrawVertices(resource, byteOffset, vertexStride, vertexCount
   };
 }
 
+function inspectD3D8IndexedTriangles(vertexResource, vertexByteOffset, vertexStride,
+    indexResource, indexByteOffset, indexCount, indexSize, primitiveType, transforms) {
+  const vertexBytes = vertexResource?.bytes;
+  const indexBytes = indexResource?.bytes;
+  if (!(vertexBytes instanceof Uint8Array) ||
+      !(indexBytes instanceof Uint8Array) ||
+      vertexStride < 12 ||
+      !transforms ||
+      indexCount < 3 ||
+      (indexSize !== 2 && indexSize !== 4)) {
+    return null;
+  }
+
+  const vertexView = new DataView(vertexBytes.buffer, vertexBytes.byteOffset, vertexBytes.byteLength);
+  const readProjected = (vertexIndex) => {
+    const base = vertexByteOffset + vertexIndex * vertexStride;
+    if (base < 0 || base + 12 > vertexBytes.byteLength) {
+      return null;
+    }
+    const position = [
+      readD3D8Float32(vertexView, base),
+      readD3D8Float32(vertexView, base + 4),
+      readD3D8Float32(vertexView, base + 8),
+    ];
+    const worldPosition = multiplyD3D8ColumnMatrixVector(transforms.world, [...position, 1]);
+    const viewPosition = multiplyD3D8ColumnMatrixVector(transforms.view, worldPosition);
+    const d3dClip = multiplyD3D8ColumnMatrixVector(transforms.projection, viewPosition);
+    const glClip = [d3dClip[0], d3dClip[1], d3dClip[2] * 2.0 - d3dClip[3], d3dClip[3]];
+    if (Math.abs(glClip[3]) <= 0.000001) {
+      return null;
+    }
+    return [
+      glClip[0] / glClip[3],
+      glClip[1] / glClip[3],
+      glClip[2] / glClip[3],
+    ];
+  };
+  const areaFor = (ia, ib, ic) => {
+    const a = readProjected(ia);
+    const b = readProjected(ib);
+    const c = readProjected(ic);
+    if (!a || !b || !c) {
+      return null;
+    }
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  };
+  const readIndex = (index) => readD3D8Index(indexBytes, indexByteOffset, index, indexSize);
+  const result = {
+    primitiveType,
+    inspected: 0,
+    cw: 0,
+    ccw: 0,
+    degenerate: 0,
+    samples: [],
+  };
+  const recordTriangle = (triangleIndex, ia, ib, ic) => {
+    if (ia < 0 || ib < 0 || ic < 0) {
+      return;
+    }
+    const area = areaFor(ia, ib, ic);
+    if (!Number.isFinite(area)) {
+      return;
+    }
+    result.inspected += 1;
+    if (Math.abs(area) <= 0.0000001) {
+      result.degenerate += 1;
+    } else if (area < 0) {
+      result.cw += 1;
+    } else {
+      result.ccw += 1;
+    }
+    if (result.samples.length < 8) {
+      result.samples.push({
+        triangleIndex,
+        indices: [ia, ib, ic],
+        ndcSignedArea: Number(area.toFixed(8)),
+        winding: Math.abs(area) <= 0.0000001 ? "degenerate" : (area < 0 ? "cw" : "ccw"),
+      });
+    }
+  };
+
+  if (primitiveType === D3DPT_TRIANGLELIST) {
+    const triangleCount = Math.floor(indexCount / 3);
+    for (let triangleIndex = 0; triangleIndex < triangleCount; ++triangleIndex) {
+      const index = triangleIndex * 3;
+      recordTriangle(triangleIndex, readIndex(index), readIndex(index + 1), readIndex(index + 2));
+    }
+  } else if (primitiveType === D3DPT_TRIANGLESTRIP) {
+    for (let triangleIndex = 0; triangleIndex < indexCount - 2; ++triangleIndex) {
+      const ia = readIndex(triangleIndex);
+      const ib = readIndex(triangleIndex + 1);
+      const ic = readIndex(triangleIndex + 2);
+      if (ia === ib || ib === ic || ia === ic) {
+        result.degenerate += 1;
+        continue;
+      }
+      if (triangleIndex % 2 === 0) {
+        recordTriangle(triangleIndex, ia, ib, ic);
+      } else {
+        recordTriangle(triangleIndex, ib, ia, ic);
+      }
+    }
+  }
+
+  return result.inspected > 0 ? result : null;
+}
+
 function d3d8TextureStageDrawSummary(textureStage = {}) {
   return {
     colorOp: textureStage.colorOp,
@@ -5395,6 +5502,7 @@ function d3d8DrawVertexSummary(vertexDiagnostics) {
     positionBounds: vertexDiagnostics.positionBounds,
     diffuse: vertexDiagnostics.diffuse,
     projected: vertexDiagnostics.projected,
+    triangles: vertexDiagnostics.triangles,
     samples: vertexDiagnostics.samples,
   };
 }
@@ -5719,7 +5827,7 @@ function applyD3D8RenderState(renderState, options = {}) {
     a: Boolean(state.colorWriteEnable & D3DCOLORWRITEENABLE_ALPHA),
   };
 
-  gl.frontFace(gl.CW);
+  gl.frontFace(gl.CCW);
   if (cullEnabled) {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(cullFace);
@@ -5759,7 +5867,7 @@ function applyD3D8RenderState(renderState, options = {}) {
     d3d: state,
     cull: {
       enabled: cullEnabled,
-      frontFace: gl.CW,
+      frontFace: gl.CCW,
       cullFace: cullEnabled ? cullFace : gl.BACK,
       invertWinding: Boolean(options.invertCullWinding),
     },
@@ -5939,6 +6047,19 @@ function paintD3D8DrawIndexed(payload = {}) {
     useTransforms ? { world, view, projection } : null,
     appliedViewport,
   );
+  if (vertexDiagnostics) {
+    vertexDiagnostics.triangles = inspectD3D8IndexedTriangles(
+      vertexResource,
+      vertexByteOffset,
+      vertexStride,
+      indexResource,
+      indexByteOffset,
+      indexCount,
+      indexSize,
+      payload.primitiveType,
+      useTransforms ? { world, view, projection } : null,
+    );
+  }
   const preDrawCenterPixel = sampleCanvasPixel(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2));
   let centerPixel = preDrawCenterPixel;
 
@@ -7065,6 +7186,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_prop_buffer_scene", "string", ["string", "string", "string", "string", "string"]),
       probeWW3DTerrainTreeBufferScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_tree_buffer_scene", "string", ["string", "string", "string", "string", "string"]),
+      probeWW3DTerrainRoadBufferScene: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_road_buffer_scene", "string", ["string", "string", "string", "string", "string", "string"]),
       probeWW3DTexturedMesh: module.cwrap(
         "cnc_port_probe_ww3d_textured_mesh", "string", []),
       probeWW3DShippedMesh: module.cwrap(
@@ -17851,6 +17974,7 @@ async function rpc(command, payload = {}) {
         const iniArchivePath = String(payload.iniArchivePath ?? "");
         const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const mapEntry = String(payload.mapEntry ?? "Maps\\MD_GLA03\\MD_GLA03.map");
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
@@ -17892,7 +18016,7 @@ async function rpc(command, payload = {}) {
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
           && probe?.archives?.maps?.loaded === true
           && probe?.archives?.terrain?.loaded === true
-          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.entry === mapEntry
           && probe?.map?.entryExists === true
           && probe?.map?.entryOpenable === true
           && probe?.map?.streamOpen === true
@@ -17968,6 +18092,7 @@ async function rpc(command, payload = {}) {
         const iniArchivePath = String(payload.iniArchivePath ?? "");
         const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const mapEntry = String(payload.mapEntry ?? "Maps\\MD_GLA03\\MD_GLA03.map");
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
@@ -18068,7 +18193,7 @@ async function rpc(command, payload = {}) {
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
           && probe?.archives?.maps?.loaded === true
           && probe?.archives?.terrain?.loaded === true
-          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.entry === mapEntry
           && probe?.map?.entryExists === true
           && probe?.map?.entryOpenable === true
           && probe?.map?.streamOpen === true
@@ -18278,6 +18403,7 @@ async function rpc(command, payload = {}) {
         const iniArchivePath = String(payload.iniArchivePath ?? "");
         const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const mapEntry = String(payload.mapEntry ?? "Maps\\MD_GLA03\\MD_GLA03.map");
         const archivePath = String(payload.archivePath ?? "/assets/runtime/W3DZH.big");
         const textureArchivePath = String(payload.textureArchivePath ?? "/assets/runtime/TexturesZH.big");
         clearCanvas({ rgba: [0, 0, 0, 255] });
@@ -18369,7 +18495,7 @@ async function rpc(command, payload = {}) {
           && probe?.ini?.parsed === true
           && probe?.ini?.originalIniParser === true
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
-          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.entry === mapEntry
           && probe?.map?.parsed === true
           && (probe?.map?.bytes ?? 0) > 0
           && (probe?.map?.width ?? 0) > 16
@@ -18439,6 +18565,7 @@ async function rpc(command, payload = {}) {
         const terrainArchivePath = String(payload.terrainArchivePath ?? "");
         const runtimeArchiveDirectory = String(payload.runtimeArchiveDirectory ?? "/assets/runtime");
         const runtimeArchiveMask = String(payload.runtimeArchiveMask ?? "*.big");
+        const mapEntry = String(payload.mapEntry ?? "Maps\\MD_GLA03\\MD_GLA03.map");
         clearCanvas({ rgba: [0, 0, 0, 255] });
         harnessState.graphics = {
           ...harnessState.graphics,
@@ -18530,7 +18657,7 @@ async function rpc(command, payload = {}) {
           && probe?.ini?.parsed === true
           && probe?.ini?.originalIniParser === true
           && (probe?.ini?.terrainTypeCount ?? 0) > 0
-          && probe?.map?.entry === "Maps\\MD_GLA03\\MD_GLA03.map"
+          && probe?.map?.entry === mapEntry
           && probe?.map?.parsed === true
           && (probe?.map?.bytes ?? 0) > 0
           && (probe?.map?.width ?? 0) > 16
@@ -18579,6 +18706,157 @@ async function rpc(command, payload = {}) {
             blendTerrainIndex,
             treeIndex,
             treeAfterTerrain,
+          },
+          bufferDelta,
+          textureDelta,
+          textureProbe: textureAfter,
+          screenshot,
+          state: snapshotState(),
+        };
+      }
+    case "ww3dTerrainRoadBufferScene":
+      {
+        const wasmModule = await wasmModulePromise;
+        if (!wasmModule) {
+          return { ok: false, command, error: "Wasm module unavailable; W3D road buffer scene cannot render" };
+        }
+        const iniArchivePath = String(payload.iniArchivePath ?? "");
+        const mapsArchivePath = String(payload.mapsArchivePath ?? payload.mapArchivePath ?? "");
+        const terrainArchivePath = String(payload.terrainArchivePath ?? "");
+        const runtimeArchiveDirectory = String(payload.runtimeArchiveDirectory ?? "/assets/runtime");
+        const runtimeArchiveMask = String(payload.runtimeArchiveMask ?? "*.big");
+        const mapEntry = String(payload.mapEntry ?? "Maps\\MD_CHI01\\MD_CHI01.map");
+        clearCanvas({ rgba: [0, 0, 0, 255] });
+        harnessState.graphics = {
+          ...harnessState.graphics,
+          d3d8DrawHistory: [],
+          d3d8DrawIndexedSequence: 0,
+          lastD3D8DrawIndexed: null,
+        };
+        const bufferBefore = harnessState.graphics.d3d8Buffers ?? {};
+        const textureBefore = harnessState.graphics.d3d8Textures ?? {};
+        const probe = parseModuleState(wasmModule.probeWW3DTerrainRoadBufferScene(
+          iniArchivePath,
+          mapsArchivePath,
+          terrainArchivePath,
+          runtimeArchiveDirectory,
+          runtimeArchiveMask,
+          mapEntry,
+        ));
+        const bufferAfter = harnessState.graphics.d3d8Buffers ?? {};
+        const textureAfter = harnessState.graphics.d3d8Textures ?? {};
+        const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
+        const drawHistory = Array.isArray(harnessState.graphics.d3d8DrawHistory)
+          ? harnessState.graphics.d3d8DrawHistory
+          : [];
+        const screenshot = {
+          ...snapshotCanvas(),
+          coverage: sampleCanvasRegion({ left: 0, top: 0, right: canvas.width, bottom: canvas.height }, 8),
+        };
+        const bufferDelta = {
+          creates: (bufferAfter?.creates ?? 0) - (bufferBefore.creates ?? 0),
+          updates: (bufferAfter?.updates ?? 0) - (bufferBefore.updates ?? 0),
+          releases: (bufferAfter?.releases ?? 0) - (bufferBefore.releases ?? 0),
+        };
+        const textureDelta = {
+          creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
+          updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
+          binds: (textureAfter?.binds ?? 0) - (textureBefore.binds ?? 0),
+          releases: (textureAfter?.releases ?? 0) - (textureBefore.releases ?? 0),
+          samplerApplications: (textureAfter?.samplerApplications ?? 0) -
+            (textureBefore.samplerApplications ?? 0),
+        };
+        const roadFvf = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+        const isBaseTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 0
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const isBlendTerrainPass = (draw) =>
+          draw?.vertexShaderFvf === 578
+            && draw?.vertexStride === 32
+            && draw?.renderState?.alphaBlendEnable === 1
+            && draw?.renderState?.textureStage0?.texCoordIndex === 1
+            && draw?.texture0?.sampled === true;
+        const isRoadPass = (draw) =>
+          draw?.vertexShaderFvf === roadFvf
+            && draw?.vertexStride === 24
+            && draw?.renderState?.textureStage0?.texCoordIndex === 0
+            && draw?.texture0?.sampled === true;
+        const baseTerrainIndex = drawHistory.findIndex(isBaseTerrainPass);
+        const blendTerrainIndex = drawHistory.findIndex(isBlendTerrainPass);
+        const roadIndex = drawHistory.findIndex(isRoadPass);
+        const roadAfterTerrain = baseTerrainIndex >= 0
+          && blendTerrainIndex >= 0
+          && roadIndex > baseTerrainIndex
+          && roadIndex > blendTerrainIndex;
+        const ok = Boolean(probe.ok)
+          && probe?.source === "ww3d_terrain_road_buffer_scene_probe"
+          && probe?.path?.includes("W3DRoadBuffer::drawRoads")
+          && probe?.results?.runtimeAssetSystemInstalled === true
+          && probe?.results?.textureFileFactoryInstalled === true
+          && probe?.results?.renderObjectInitialized === true
+          && probe?.results?.roadBufferInstalled === true
+          && probe?.results?.roadBufferInitialized === true
+          && probe?.results?.loadRoadsInvoked === true
+          && probe?.results?.updateCenterInvoked === true
+          && probe?.results?.sceneCreated === true
+          && probe?.results?.sceneObjectAdded === true
+          && probe?.results?.roadDrawInvoked === true
+          && probe?.results?.roadSceneDrawFlushed === true
+          && probe?.ini?.roadsParsed === true
+          && probe?.ini?.originalIniParser === true
+          && (probe?.ini?.roadCount ?? 0) > 0
+          && probe?.map?.entry === mapEntry
+          && probe?.map?.parsed === true
+          && (probe?.map?.bytes ?? 0) > 0
+          && probe?.terrain?.tileSource === "shipped-map-heightmap"
+          && probe?.terrain?.renderObject === "ProbeHeightMapRenderObjWithRoadBuffer"
+          && probe?.terrain?.verticesPerSide === 33
+          && probe?.terrain?.cellsPerSide === 32
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
+          && (probe?.terrain?.tileDiagnostics?.patchCellsWithSource ?? 0) > 0
+          && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
+          && probe?.scene?.renderPath?.includes("W3DRoadBuffer::drawRoads")
+          && probe?.scene?.created === true
+          && probe?.scene?.objectAdded === true
+          && probe?.scene?.terrainClassId === 4
+          && (probe?.roadObjects?.pairs ?? 0) > 0
+          && (probe?.roadObjects?.pairsWithRoadType ?? 0) > 0
+          && (probe?.roads?.afterLoad ?? 0) > 0
+          && (probe?.roads?.segmentsWithVertices ?? 0) > 0
+          && (probe?.roads?.typesWithDrawData ?? 0) > 0
+          && (probe?.calls?.drawIndexed ?? 0) >= 3
+          && probe?.draw?.vertexShaderFvf === roadFvf
+          && probe?.draw?.vertexStride === 24
+          && browserProbe?.source === "browser_d3d8_draw_indexed"
+          && (browserProbe?.vertexDiagnostics?.projected?.visible ?? 0) > 0
+          && browserProbe?.usedPersistentBuffers === true
+          && browserProbe?.usedTransforms === true
+          && browserProbe?.vertexShaderFvf === roadFvf
+          && browserProbe?.vertexStride === 24
+          && browserProbe?.texture0?.sampled === true
+          && Array.isArray(drawHistory)
+          && drawHistory.length >= 3
+          && roadAfterTerrain
+          && bufferDelta.creates >= 4
+          && bufferDelta.updates >= 4
+          && textureDelta.binds >= 1
+          && textureDelta.samplerApplications >= 1
+          && (screenshot?.coverage?.coloredPixelCount ?? 0) > 0;
+        return {
+          ok,
+          command,
+          probe,
+          browserProbe,
+          drawHistory,
+          drawSequence: {
+            baseTerrainIndex,
+            blendTerrainIndex,
+            roadIndex,
+            roadAfterTerrain,
           },
           bufferDelta,
           textureDelta,

@@ -27,7 +27,7 @@
 // modes a naive mapping gets wrong and that the spec is meant to pin):
 //
 //   * CULL: D3D's default front-face winding is CW; OpenGL's is CCW. The
-//     canonical translation sets gl.frontFace(GL_CW) globally and then
+//     canonical translation sets gl.frontFace(GL_CCW) globally and then
 //     D3DCULL_CW  -> cullFace(GL_BACK)   (cull the CW-wound faces == back)
 //         D3DCULL_CCW -> cullFace(GL_FRONT)  (cull the CCW-wound faces == front)
 //         D3DCULL_NONE -> gl.disable(CULL_FACE).
@@ -182,7 +182,7 @@ int map_blend_op(DWORD d3d_op)
 }
 
 // Records the expected CULL_FACE GL state for a given D3DRS_CULLMODE value,
-// assuming gl.frontFace(GL_CW) is set globally to match D3D's default winding.
+// assuming gl.frontFace(GL_CCW) is set globally so D3DCULL_CW culls CW faces.
 struct CullGlState {
 	int enabled;
 	int cull_face;
@@ -192,9 +192,9 @@ struct CullGlState {
 CullGlState map_cull(DWORD d3d_cull)
 {
 	switch (d3d_cull) {
-	case D3DCULL_NONE: return { 0, GL_BACK, GL_CW };
-	case D3DCULL_CW:   return { 1, GL_BACK,  GL_CW };
-	case D3DCULL_CCW:  return { 1, GL_FRONT, GL_CW };
+	case D3DCULL_NONE: return { 0, GL_BACK, GL_CCW };
+	case D3DCULL_CW:   return { 1, GL_BACK,  GL_CCW };
+	case D3DCULL_CCW:  return { 1, GL_FRONT, GL_CCW };
 	default:           return { 0, GL_NONE_ENUM, GL_NONE_ENUM };
 	}
 }
