@@ -369,20 +369,23 @@ constexpr const char *kMainMenuButtonLeftImageName = "Buttons-Left";
 constexpr const char *kMainMenuButtonMiddleImageName = "Buttons-Middle";
 constexpr const char *kMainMenuButtonRightImageName = "Buttons-Right";
 constexpr const char *kMainMenuButtonTextLabel = "GUI:SinglePlayer";
-constexpr std::size_t kMainMenuExtraButtonCount = 4;
+constexpr std::size_t kMainMenuExtraButtonCount = 5;
 constexpr const char *kMainMenuExtraButtonNames[kMainMenuExtraButtonCount] = {
 	"MainMenu.wnd:ButtonMultiplayer",
+	"MainMenu.wnd:ButtonLoadReplay",
 	"MainMenu.wnd:ButtonOptions",
 	"MainMenu.wnd:ButtonCredits",
 	"MainMenu.wnd:ButtonExit",
 };
 constexpr const char *kMainMenuExtraButtonLabels[kMainMenuExtraButtonCount] = {
 	"GUI:Multiplayer",
+	"GUI:ReplayMenu",
 	"GUI:Options",
 	"GUI:Credits",
 	"GUI:Exit",
 };
-constexpr Int kMainMenuExtraButtonY[kMainMenuExtraButtonCount] = { 156, 236, 276, 316 };
+constexpr Int kMainMenuExtraButtonY[kMainMenuExtraButtonCount] = { 156, 196, 236, 276, 316 };
+constexpr Int kMainMenuExtraButtonHeight[kMainMenuExtraButtonCount] = { 36, 35, 36, 36, 36 };
 constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
@@ -7883,9 +7886,9 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
 
 	const Int expected_image_draws =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ? 2 : 5;
+		g_ww3d_main_menu_layout_image_repaint_static_mode ? 2 : 6;
 	const UnsignedInt expected_indexed_draws =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ? 3u : 5u;
+		g_ww3d_main_menu_layout_image_repaint_static_mode ? 3u : 6u;
 	const bool focused_window_visible =
 		g_ww3d_main_menu_layout_image_repaint_static_mode ?
 			!static_text_hidden :
@@ -8064,7 +8067,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 				extra_button_x[i] == 540 &&
 				extra_button_y[i] == kMainMenuExtraButtonY[i] &&
 				extra_button_width[i] == 208 &&
-				extra_button_height[i] == 36;
+				extra_button_height[i] == kMainMenuExtraButtonHeight[i];
 		}
 	}
 	const bool button_focus_ok =
@@ -8306,7 +8309,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[46000];
+	char buffer[48000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -8320,6 +8323,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw\","
 		"\"GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label\","
 		"\"MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonLoadReplay -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw\","

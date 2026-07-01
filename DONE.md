@@ -3611,6 +3611,14 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-main-menu-layout-image-repaint-canvas.png`. Verified
       with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` visible button stack
+      through `ButtonLoadReplay`: `test:ww3d-main-menu-layout-image-repaint`
+      now resolves the shipped `GUI:ReplayMenu` CSF label, preserves the real
+      208x35 WND geometry at y=196, binds the same enabled
+      `Buttons-Left` / `Buttons-Middle` / `Buttons-Right` images, and verifies
+      browser pixels for the button body and text through the original
+      `W3DGadgetPushButtonImageDraw` / `W3DDisplayString::draw` path. The
+      vertical integration gate also requires this MainMenu child.
 - [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
       real hidden static text child: the probe now finds the shipped
       `MainMenu.wnd:StaticTextSelectDifficulty` window, verifies its original

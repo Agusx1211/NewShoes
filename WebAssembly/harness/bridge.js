@@ -16799,8 +16799,8 @@ async function rpc(command, payload = {}) {
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
-        const expectedDisplayImageDraws = staticTextMode ? 2 : 5;
-        const expectedDrawIndexed = staticTextMode ? 3 : 5;
+        const expectedDisplayImageDraws = staticTextMode ? 2 : 6;
+        const expectedDrawIndexed = staticTextMode ? 3 : 6;
         const staticTextProbeOk = !staticTextMode
           || (probe?.results?.staticTextLabelExists === true
             && probe?.results?.staticTextNonEmpty === true
@@ -16838,10 +16838,11 @@ async function rpc(command, payload = {}) {
             && probe?.results?.buttonTextDisplayStringBound === true
             && probe?.results?.buttonTextSizeComputed === true);
         const expectedExtraButtons = [
-          ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
-          ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
-          ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
-          ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+          ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
+          ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
+          ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236, 36],
+          ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
+          ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
         ];
         const extraButtonsProbeOk = staticTextMode
           || (probe?.results?.extraButtonLabelsExist === true
@@ -16855,13 +16856,13 @@ async function rpc(command, payload = {}) {
             && probe?.gameText?.extraButtonLabelsExist === true
             && probe?.gameText?.extraButtonTextNonEmpty === true
             && extraButtons.length === expectedExtraButtons.length
-            && expectedExtraButtons.every(([name, label, y], index) => {
+            && expectedExtraButtons.every(([name, label, y, height], index) => {
               const extraButton = extraButtons[index];
               return extraButton?.name === name
                 && extraButton?.x === 540
                 && extraButton?.y === y
                 && extraButton?.width === 208
-                && extraButton?.height === 36
+                && extraButton?.height === height
                 && extraButton?.drawFunc === "W3DGadgetPushButtonImageDraw"
                 && extraButton?.systemFunc === "GadgetPushButtonSystem"
                 && extraButton?.inputFunc === "GadgetPushButtonInput"

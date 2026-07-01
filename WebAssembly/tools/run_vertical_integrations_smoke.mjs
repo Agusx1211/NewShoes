@@ -931,6 +931,7 @@ const steps = [
       expect(payload.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label"),
         "MainMenu layout image repaint smoke did not render the real ButtonSinglePlayer text label", payload.originalPaths);
       expect(payload.originalPaths?.includes("MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw")
+          && payload.originalPaths?.includes("MainMenu.wnd:ButtonLoadReplay -> W3DGadgetPushButtonImageDraw")
           && payload.originalPaths?.includes("MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw")
           && payload.originalPaths?.includes("MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw")
           && payload.originalPaths?.includes("MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw")
@@ -972,14 +973,15 @@ const steps = [
           && payload.gameText?.staticTextNonEmpty === true,
         "MainMenu layout image repaint smoke did not resolve button/static text through real GameText", payload);
       const expectedExtraButtons = [
-        ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
-        ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
-        ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
-        ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+        ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
+        ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
+        ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236, 36],
+        ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
+        ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
       ];
       expect(Array.isArray(payload.extraButtons)
           && payload.extraButtons.length === expectedExtraButtons.length
-          && expectedExtraButtons.every(([name, label, y], index) => {
+          && expectedExtraButtons.every(([name, label, y, height], index) => {
             const button = payload.extraButtons[index];
             const proof = payload.extraButtonRegions?.[index];
             return button?.name === name
@@ -987,7 +989,7 @@ const steps = [
               && button?.x === 540
               && button?.y === y
               && button?.width === 208
-              && button?.height === 36
+              && button?.height === height
               && button?.hidden === false
               && button?.imagesBound === true
               && button?.text?.label === label
@@ -1009,8 +1011,8 @@ const steps = [
           && payload.staticText?.text?.width > 0
           && payload.staticText?.text?.height > 0,
         "MainMenu layout image repaint smoke did not report the real hidden static text binding", payload);
-      expect(payload.calls?.displayImageDraws >= 5
-          && payload.calls?.drawIndexed >= 5
+      expect(payload.calls?.displayImageDraws >= 6
+          && payload.calls?.drawIndexed >= 6
           && payload.draw?.screenRect?.left === 504
           && payload.draw?.screenRect?.bottom === 110,
         "MainMenu layout image repaint smoke did not reach the W3DDisplay/WebGL draw path", payload);
@@ -1360,7 +1362,7 @@ console.log(JSON.stringify({
     "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
-    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels, and browser WebGL2 pixels",
+    "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels including ButtonLoadReplay, and browser WebGL2 pixels",
     "real MainMenuRuler HandCreated mapped image through TexturesZH.big, W3DDisplay::drawImage, and browser WebGL2 pixels",
     "composed W3DDisplay shell render frame layering W3DDisplay::m_3DScene, real mapped shell UI art, and GameText-backed W3DDisplayString text in one browser screenshot",
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",

@@ -260,13 +260,14 @@ try {
   const stage0 = repaintResult.probe?.draw?.renderState?.textureStages?.[0];
   const stage1 = repaintResult.probe?.draw?.renderState?.textureStages?.[1];
   const expectedExtraButtons = [
-    ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156],
-    ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236],
-    ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276],
-    ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316],
+    ["MainMenu.wnd:ButtonMultiplayer", "GUI:Multiplayer", 156, 36],
+    ["MainMenu.wnd:ButtonLoadReplay", "GUI:ReplayMenu", 196, 35],
+    ["MainMenu.wnd:ButtonOptions", "GUI:Options", 236, 36],
+    ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
+    ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
   ];
   const extraButtons = repaintResult.probe?.layout?.extraButtons ?? [];
-  const extraButtonsValid = expectedExtraButtons.every(([name, label, y], index) => {
+  const extraButtonsValid = expectedExtraButtons.every(([name, label, y, height], index) => {
     const button = extraButtons[index];
     const proof = repaintResult.extraButtonRegions?.[index];
     return button?.name === name
@@ -276,7 +277,7 @@ try {
       && button?.x === 540
       && button?.y === y
       && button?.width === 208
-      && button?.height === 36
+      && button?.height === height
       && button?.hidden === false
       && button?.labelExists === true
       && button?.textNonEmpty === true
@@ -302,6 +303,7 @@ try {
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonSinglePlayer -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("GameText::fetch(GUI:SinglePlayer) -> W3DDisplayString::draw button label")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonMultiplayer -> W3DGadgetPushButtonImageDraw")
+      || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonLoadReplay -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonOptions -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw")
       || !repaintResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw")
@@ -413,8 +415,8 @@ try {
       || repaintResult.probe?.rulerTexture?.width !== 1024
       || repaintResult.probe?.rulerTexture?.height !== 1024
       || repaintResult.probe?.rulerTexture?.uploadedLevels !== repaintResult.probe?.rulerTexture?.levels
-      || repaintResult.probe?.calls?.displayImageDraws < 5
-      || repaintResult.probe?.calls?.drawIndexed < 5
+      || repaintResult.probe?.calls?.displayImageDraws < 6
+      || repaintResult.probe?.calls?.drawIndexed < 6
       || repaintResult.probe?.calls?.browserTextureCreate < 2
       || repaintResult.probe?.calls?.browserTextureUpdate < 2
       || repaintResult.probe?.calls?.browserTextureBind < 2

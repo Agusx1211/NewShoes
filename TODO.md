@@ -664,12 +664,18 @@ shares structure and follows behind.
       `MainMenuRuleruserinterface.tga` texture path, and the WND image repaint
       smoke now carries the full-screen ruler, logo overlay, and the visible
       main button stack (`ButtonSinglePlayer`, `ButtonMultiplayer`,
-      `ButtonOptions`, `ButtonCredits`, and `ButtonExit`) through enabled
-      three-piece button images plus real CSF labels through `GameText::fetch`
-      and `W3DDisplayString::draw`; its static-text-focused mode also unhides
-      the shipped `MainMenu.wnd:StaticTextSelectDifficulty` child and renders
+      `ButtonLoadReplay`, `ButtonOptions`, `ButtonCredits`, and `ButtonExit`)
+      through enabled three-piece button images plus real CSF labels through
+      `GameText::fetch` and `W3DDisplayString::draw`; its static-text-focused
+      mode also unhides the shipped
+      `MainMenu.wnd:StaticTextSelectDifficulty` child and renders
       `GUI:SelectDifficulty` through original `W3DGadgetStaticTextDraw` /
-      `GadgetStaticTextSystem` / `W3DDisplayString`.
+      `GadgetStaticTextSystem` / `W3DDisplayString`. Current archive inspection
+      shows `MainMenuBackdrop` is parent `ENABLEDDRAWDATA` behind a shipped
+      `W3DNoDraw` callback, and the `MainMenuBackdropuserinterface.tga` /
+      `MainMenuBackdrop.tga` texture is absent from the current ZH-only runtime
+      archive set, so backdrop proof needs the real source archive/path instead
+      of a forced synthetic parent draw.
       Remaining work is broader unpruned shell composition (for example
       `MainMenuBackdrop`, additional image states, and text under normal
       display-owned font/archive lifetime) instead of curated target
