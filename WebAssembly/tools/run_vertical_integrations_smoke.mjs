@@ -944,6 +944,12 @@ const steps = [
       expect(payload.originalPaths?.includes("MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw")
           && payload.originalPaths?.includes("GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text"),
         "MainMenu layout image repaint smoke did not render the real hidden static text child", payload.originalPaths);
+      expect(payload.loadReplayOriginalPaths?.includes("MainMenu.wnd:MapBorder3 -> PassSelectedButtonsToParentSystem")
+          && payload.loadReplayOriginalPaths?.includes("MainMenu.wnd:ButtonLoadGame -> W3DGadgetPushButtonImageDraw")
+          && payload.loadReplayOriginalPaths?.includes("MainMenu.wnd:ButtonReplay -> W3DGadgetPushButtonImageDraw")
+          && payload.loadReplayOriginalPaths?.includes("MainMenu.wnd:ButtonLoadReplayBack -> W3DGadgetPushButtonImageDraw")
+          && payload.loadReplayOriginalPaths?.includes("GameText::fetch(load-replay dropdown button labels) -> W3DDisplayString::draw button labels"),
+        "MainMenu layout image repaint smoke did not render the real Load Replay dropdown controls", payload.loadReplayOriginalPaths);
       expect(payload.layout?.target?.name === "MainMenu.wnd:Logo"
           && payload.layout?.target?.image === "GeneralsLogo"
           && payload.image?.filename === "SCSmShellUserInterface512_001.tga",
@@ -1005,6 +1011,40 @@ const steps = [
               && proof?.textRegion?.maxComponent >= 180;
           }),
         "MainMenu layout image repaint smoke did not report/pixel-prove the other visible main buttons", payload);
+      const expectedLoadReplayButtons = [
+        ["MainMenu.wnd:ButtonLoadGame", "GUI:MainMenuLoadGame", 116, 35],
+        ["MainMenu.wnd:ButtonReplay", "GUI:MainMenuLoadReplay", 156, 35],
+        ["MainMenu.wnd:ButtonLoadReplayBack", "GUI:Back", 196, 36],
+      ];
+      expect(payload.loadReplayDropdown?.name === "MainMenu.wnd:MapBorder3"
+          && payload.loadReplayDropdown?.x === 532
+          && payload.loadReplayDropdown?.y === 108
+          && payload.loadReplayDropdown?.width === 224
+          && payload.loadReplayDropdown?.height === 132
+          && payload.loadReplayDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+          && payload.loadReplayDropdown?.hidden === false
+          && Array.isArray(payload.loadReplayButtons)
+          && payload.loadReplayButtons.length === expectedLoadReplayButtons.length
+          && expectedLoadReplayButtons.every(([name, label, y, height], index) => {
+            const button = payload.loadReplayButtons[index];
+            const proof = payload.loadReplayButtonRegions?.[index];
+            return button?.name === name
+              && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+              && button?.x === 540
+              && button?.y === y
+              && button?.width === 208
+              && button?.height === height
+              && button?.hidden === false
+              && button?.imagesBound === true
+              && button?.text?.label === label
+              && button?.text?.length > 0
+              && button?.text?.width > 0
+              && button?.text?.height > 0
+              && proof?.region?.coloredPixelCount >= 20
+              && proof?.textRegion?.coloredPixelCount >= 20
+              && proof?.textRegion?.maxComponent >= 180;
+          }),
+        "MainMenu layout image repaint smoke did not report/pixel-prove the real Load Replay dropdown buttons", payload);
       expect(payload.staticText?.name === "MainMenu.wnd:StaticTextSelectDifficulty"
           && payload.staticText?.drawFunc === "W3DGadgetStaticTextDraw"
           && payload.staticText?.initialHidden === true
@@ -1034,6 +1074,8 @@ const steps = [
         "MainMenu layout image repaint smoke did not capture the expected screenshot", payload);
       expect(payload.staticTextScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png"),
         "MainMenu layout image repaint smoke did not capture the expected static text screenshot", payload);
+      expect(payload.loadReplayScreenshot?.endsWith("harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png"),
+        "MainMenu layout image repaint smoke did not capture the expected Load Replay dropdown screenshot", payload);
     },
   },
   {

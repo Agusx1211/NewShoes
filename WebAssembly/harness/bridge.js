@@ -7022,6 +7022,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_main_menu_layout_repaint", "string", ["string"]),
       probeWW3DMainMenuLayoutImageRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_image_repaint", "string", []),
+      probeWW3DMainMenuLayoutLoadReplayRepaint: module.cwrap(
+        "cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint", "string", []),
       probeWW3DMainMenuLayoutStaticTextRepaint: module.cwrap(
         "cnc_port_probe_ww3d_main_menu_layout_static_text_repaint", "string", []),
       probeWW3DDisplayLine: module.cwrap(
@@ -16635,6 +16637,7 @@ async function rpc(command, payload = {}) {
         };
       }
     case "ww3dMainMenuLayoutImageRepaint":
+    case "ww3dMainMenuLayoutLoadReplayRepaint":
     case "ww3dMainMenuLayoutStaticTextRepaint":
       {
         const wasmModule = await wasmModulePromise;
@@ -16642,7 +16645,10 @@ async function rpc(command, payload = {}) {
           return { ok: false, command, error: "Wasm module unavailable; W3D MainMenu layout image repaint cannot render" };
         }
         const staticTextMode = command === "ww3dMainMenuLayoutStaticTextRepaint";
-        const probeMode = staticTextMode ? "staticTextSelectDifficulty" : "buttonSinglePlayer";
+        const loadReplayMode = command === "ww3dMainMenuLayoutLoadReplayRepaint";
+        const probeMode = staticTextMode
+          ? "staticTextSelectDifficulty"
+          : (loadReplayMode ? "loadReplayDropdown" : "buttonSinglePlayer");
         const archiveDirectoryPath = String(payload.archiveDirectoryPath ?? payload.runtimeArchivePath ?? "");
         const directoryPrefix = archiveDirectoryPath.endsWith("/") ? archiveDirectoryPath : `${archiveDirectoryPath}/`;
         const windowArchivePath = String(payload.windowArchivePath ?? `${directoryPrefix}WindowZH.big`);
@@ -16657,10 +16663,9 @@ async function rpc(command, payload = {}) {
         const textureBefore = snapshotState().graphics?.textures ?? {};
         const probe = parseModuleState(staticTextMode
           ? wasmModule.probeWW3DMainMenuLayoutStaticTextRepaint()
-          : wasmModule.probeWW3DMainMenuLayoutImageRepaint());
-        if (probe && probe.source === "ww3d_main_menu_layout_image_repaint_probe") {
-          probe.mode = probeMode;
-        }
+          : (loadReplayMode
+              ? wasmModule.probeWW3DMainMenuLayoutLoadReplayRepaint()
+              : wasmModule.probeWW3DMainMenuLayoutImageRepaint()));
         const target = probe?.layout?.target ?? {};
         const left = target.x ?? 504;
         const top = target.y ?? 16;
@@ -16767,6 +16772,10 @@ async function rpc(command, payload = {}) {
           };
         };
         const extraButtonRegions = extraButtons.map(sampleButtonRegions);
+        const loadReplayButtons = Array.isArray(probe?.layout?.loadReplayButtons)
+          ? probe.layout.loadReplayButtons
+          : [];
+        const loadReplayButtonRegions = loadReplayButtons.map(sampleButtonRegions);
         const staticText = probe?.layout?.staticText ?? {};
         const staticTextLeft = staticText.x ?? 540;
         const staticTextTop = staticText.y ?? 116;
@@ -16796,11 +16805,12 @@ async function rpc(command, payload = {}) {
           buttonRegion,
           buttonTextRegion,
           extraButtonRegions,
+          loadReplayButtonRegions,
           staticTextRegion,
         };
         const browserProbe = harnessState.graphics.lastD3D8DrawIndexed ?? null;
-        const expectedDisplayImageDraws = staticTextMode ? 2 : 6;
-        const expectedDrawIndexed = staticTextMode ? 3 : 6;
+        const expectedDisplayImageDraws = staticTextMode ? 2 : (loadReplayMode ? 5 : 6);
+        const expectedDrawIndexed = staticTextMode ? 3 : (loadReplayMode ? 5 : 6);
         const staticTextProbeOk = !staticTextMode
           || (probe?.results?.staticTextLabelExists === true
             && probe?.results?.staticTextNonEmpty === true
@@ -16832,7 +16842,7 @@ async function rpc(command, payload = {}) {
             && probe?.layout?.staticText?.text?.height > 0
             && probe?.gameText?.staticTextLabelExists === true
             && probe?.gameText?.staticTextNonEmpty === true);
-        const buttonTextProbeOk = staticTextMode
+        const buttonTextProbeOk = staticTextMode || loadReplayMode
           || (probe?.layout?.button?.text?.width > 0
             && probe?.layout?.button?.text?.height > 0
             && probe?.results?.buttonTextDisplayStringBound === true
@@ -16844,7 +16854,7 @@ async function rpc(command, payload = {}) {
           ["MainMenu.wnd:ButtonCredits", "GUI:Credits", 276, 36],
           ["MainMenu.wnd:ButtonExit", "GUI:Exit", 316, 36],
         ];
-        const extraButtonsProbeOk = staticTextMode
+        const extraButtonsProbeOk = staticTextMode || loadReplayMode
           || (probe?.results?.extraButtonLabelsExist === true
             && probe?.results?.extraButtonTextNonEmpty === true
             && probe?.results?.extraButtonsFound === true
@@ -16880,19 +16890,78 @@ async function rpc(command, payload = {}) {
                 && extraButton?.text?.width > 0
                 && extraButton?.text?.height > 0;
             }));
-        const extraButtonsPixelOk = staticTextMode
+        const extraButtonsPixelOk = staticTextMode || loadReplayMode
           || (extraButtonRegions.length === expectedExtraButtons.length
             && extraButtonRegions.every((entry) =>
+              entry.region.coloredPixelCount >= 20
+              && entry.textRegion.coloredPixelCount >= 20
+              && entry.textRegion.maxComponent >= 180));
+        const expectedLoadReplayButtons = [
+          ["MainMenu.wnd:ButtonLoadGame", "GUI:MainMenuLoadGame", 116, 35],
+          ["MainMenu.wnd:ButtonReplay", "GUI:MainMenuLoadReplay", 156, 35],
+          ["MainMenu.wnd:ButtonLoadReplayBack", "GUI:Back", 196, 36],
+        ];
+        const loadReplayButtonsProbeOk = !loadReplayMode
+          || (probe?.results?.loadReplayButtonLabelsExist === true
+            && probe?.results?.loadReplayButtonTextNonEmpty === true
+            && probe?.results?.loadReplayDropdownFound === true
+            && probe?.results?.loadReplayDropdownCallbackBound === true
+            && probe?.results?.loadReplayButtonsFound === true
+            && probe?.results?.loadReplayButtonsCallbackBound === true
+            && probe?.results?.loadReplayButtonsImagesBound === true
+            && probe?.results?.loadReplayButtonsTextDisplayStringBound === true
+            && probe?.results?.loadReplayButtonsTextSizeComputed === true
+            && probe?.results?.loadReplayDropdownHidden === false
+            && probe?.results?.loadReplayButtonsVisible === true
+            && probe?.layout?.loadReplayDropdown?.name === "MainMenu.wnd:MapBorder3"
+            && probe?.layout?.loadReplayDropdown?.x === 532
+            && probe?.layout?.loadReplayDropdown?.y === 108
+            && probe?.layout?.loadReplayDropdown?.width === 224
+            && probe?.layout?.loadReplayDropdown?.height === 132
+            && probe?.layout?.loadReplayDropdown?.systemFunc === "PassSelectedButtonsToParentSystem"
+            && probe?.layout?.loadReplayDropdown?.hidden === false
+            && probe?.gameText?.loadReplayButtonLabelsExist === true
+            && probe?.gameText?.loadReplayButtonTextNonEmpty === true
+            && loadReplayButtons.length === expectedLoadReplayButtons.length
+            && expectedLoadReplayButtons.every(([name, label, y, height], index) => {
+              const loadReplayButton = loadReplayButtons[index];
+              return loadReplayButton?.name === name
+                && loadReplayButton?.x === 540
+                && loadReplayButton?.y === y
+                && loadReplayButton?.width === 208
+                && loadReplayButton?.height === height
+                && loadReplayButton?.drawFunc === "W3DGadgetPushButtonImageDraw"
+                && loadReplayButton?.systemFunc === "GadgetPushButtonSystem"
+                && loadReplayButton?.inputFunc === "GadgetPushButtonInput"
+                && loadReplayButton?.hidden === false
+                && loadReplayButton?.labelExists === true
+                && loadReplayButton?.textNonEmpty === true
+                && loadReplayButton?.imagesBound === true
+                && loadReplayButton?.images?.[0] === "Buttons-Left"
+                && loadReplayButton?.images?.[1] === "Buttons-Middle"
+                && loadReplayButton?.images?.[2] === "Buttons-Right"
+                && loadReplayButton?.text?.label === label
+                && typeof loadReplayButton?.text?.ascii === "string"
+                && loadReplayButton.text.ascii.length > 0
+                && loadReplayButton?.text?.length > 0
+                && loadReplayButton?.text?.width > 0
+                && loadReplayButton?.text?.height > 0;
+            }));
+        const loadReplayButtonsPixelOk = !loadReplayMode
+          || (loadReplayButtonRegions.length === expectedLoadReplayButtons.length
+            && loadReplayButtonRegions.every((entry) =>
               entry.region.coloredPixelCount >= 20
               && entry.textRegion.coloredPixelCount >= 20
               && entry.textRegion.maxComponent >= 180));
         const focusedPixelOk = staticTextMode
           ? (staticTextRegion.coloredPixelCount >= 20
             && staticTextRegion.maxComponent >= 180)
-          : (buttonRegion.coloredPixelCount >= 20
-            && buttonTextRegion.coloredPixelCount >= 20
-            && buttonTextRegion.maxComponent >= 180
-            && extraButtonsPixelOk);
+          : (loadReplayMode
+              ? loadReplayButtonsPixelOk
+              : (buttonRegion.coloredPixelCount >= 20
+                && buttonTextRegion.coloredPixelCount >= 20
+                && buttonTextRegion.maxComponent >= 180
+                && extraButtonsPixelOk));
         const ok = Boolean(probe.ok)
           && probe?.source === "ww3d_main_menu_layout_image_repaint_probe"
           && probe?.mode === probeMode
@@ -16964,6 +17033,7 @@ async function rpc(command, payload = {}) {
           && probe?.gameText?.buttonTextNonEmpty === true
           && buttonTextProbeOk
           && extraButtonsProbeOk
+          && loadReplayButtonsProbeOk
           && staticTextProbeOk
           && probe?.calls?.displayImageDraws >= expectedDisplayImageDraws
           && probe?.calls?.drawIndexed >= expectedDrawIndexed
@@ -16999,6 +17069,7 @@ async function rpc(command, payload = {}) {
           buttonRegion,
           buttonTextRegion,
           extraButtonRegions,
+          loadReplayButtonRegions,
           staticTextRegion,
           coloredLogoPixelCount: coloredLogoPixels.length,
           coloredRulerPixelCount: coloredRulerPixels.length,

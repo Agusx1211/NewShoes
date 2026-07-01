@@ -3644,6 +3644,19 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png`.
       Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
       `npm run test:vertical-integrations`.
+- [x] Extend the archive-backed `Menus/MainMenu.wnd` repaint smoke through the
+      real Load Replay dropdown controls: the probe now runs a dedicated
+      Load Replay focused mode that unhides the shipped
+      `MainMenu.wnd:MapBorder3` parent plus `ButtonLoadGame`, `ButtonReplay`,
+      and `ButtonLoadReplayBack`, verifies `PassSelectedButtonsToParentSystem`
+      and each `W3DGadgetPushButtonImageDraw` / `GadgetPushButtonSystem` /
+      `GadgetPushButtonInput` binding, reuses the original `Buttons-Left` /
+      `Buttons-Middle` / `Buttons-Right` mapped images, fetches
+      `GUI:MainMenuLoadGame`, `GUI:MainMenuLoadReplay`, and `GUI:Back`
+      through `GameText`, and samples non-empty button and label pixels in
+      `harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png`.
+      Verified with `npm run test:ww3d-main-menu-layout-image-repaint` and
+      `npm run test:vertical-integrations`.
 - [x] Add a direct display-level MainMenuRuler mapped-image vertical:
       `test:ww3d-display-main-menu-ruler` range-fetches the exact
       `INIZH.big` `Data\INI\MappedImages\HandCreated\HandCreatedMappedImages.INI`

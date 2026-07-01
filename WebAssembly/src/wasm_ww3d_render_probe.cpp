@@ -317,6 +317,27 @@ void DisplayStringManager::unLink(DisplayString *string)
 
 namespace {
 
+enum MainMenuLayoutImageRepaintMode
+{
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN,
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT,
+};
+
+const char *main_menu_layout_image_repaint_mode_name(MainMenuLayoutImageRepaintMode mode)
+{
+	switch (mode) {
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT:
+			return "staticTextSelectDifficulty";
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN:
+			return "loadReplayDropdown";
+		case MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK:
+			return "buttonSinglePlayer";
+		default:
+			return "unknown";
+	}
+}
+
 std::string g_ww3d_aabox_probe_json;
 std::string g_ww3d_render2d_probe_json;
 std::string g_ww3d_scene_camera_probe_json;
@@ -335,7 +356,27 @@ std::string g_ww3d_window_repaint_probe_json;
 std::string g_ww3d_window_layout_repaint_probe_json;
 std::string g_ww3d_main_menu_layout_repaint_probe_json;
 std::string g_ww3d_main_menu_layout_image_repaint_probe_json;
-bool g_ww3d_main_menu_layout_image_repaint_static_mode = false;
+MainMenuLayoutImageRepaintMode g_ww3d_main_menu_layout_image_repaint_mode =
+	MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK;
+
+bool main_menu_layout_image_repaint_is_button_stack()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK;
+}
+
+bool main_menu_layout_image_repaint_is_load_replay()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN;
+}
+
+bool main_menu_layout_image_repaint_is_static_text()
+{
+	return g_ww3d_main_menu_layout_image_repaint_mode ==
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT;
+}
+
 std::string g_ww3d_display_line_probe_json;
 std::string g_ww3d_display_line_gradient_probe_json;
 std::string g_ww3d_display_openrect_probe_json;
@@ -386,6 +427,20 @@ constexpr const char *kMainMenuExtraButtonLabels[kMainMenuExtraButtonCount] = {
 };
 constexpr Int kMainMenuExtraButtonY[kMainMenuExtraButtonCount] = { 156, 196, 236, 276, 316 };
 constexpr Int kMainMenuExtraButtonHeight[kMainMenuExtraButtonCount] = { 36, 35, 36, 36, 36 };
+constexpr const char *kMainMenuLoadReplayDropdownName = "MainMenu.wnd:MapBorder3";
+constexpr std::size_t kMainMenuLoadReplayButtonCount = 3;
+constexpr const char *kMainMenuLoadReplayButtonNames[kMainMenuLoadReplayButtonCount] = {
+	"MainMenu.wnd:ButtonLoadGame",
+	"MainMenu.wnd:ButtonReplay",
+	"MainMenu.wnd:ButtonLoadReplayBack",
+};
+constexpr const char *kMainMenuLoadReplayButtonLabels[kMainMenuLoadReplayButtonCount] = {
+	"GUI:MainMenuLoadGame",
+	"GUI:MainMenuLoadReplay",
+	"GUI:Back",
+};
+constexpr Int kMainMenuLoadReplayButtonY[kMainMenuLoadReplayButtonCount] = { 116, 156, 196 };
+constexpr Int kMainMenuLoadReplayButtonHeight[kMainMenuLoadReplayButtonCount] = { 35, 35, 36 };
 constexpr const char *kMainMenuGameTextCsfPath = "data\\english\\generals.csf";
 constexpr const char *kMainMenuLayoutImageRuntimeWindowArchive =
 	"/assets/runtime-main-menu-layout-image-repaint/WindowZH.big";
@@ -7077,11 +7132,12 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_repaint(co
 	return g_ww3d_main_menu_layout_repaint_probe_json.c_str();
 }
 
-const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_mode)
+const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+	MainMenuLayoutImageRepaintMode mode)
 {
 	initMemoryManager();
 	wasm_d3d8_reset_state();
-	g_ww3d_main_menu_layout_image_repaint_static_mode = static_mode;
+	g_ww3d_main_menu_layout_image_repaint_mode = mode;
 
 	constexpr const char *layout_path = "Menus/MainMenu.wnd";
 	constexpr const char *archive_window_path = "Window\\Menus\\MainMenu.wnd";
@@ -7091,9 +7147,6 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	constexpr const char *button_name = "MainMenu.wnd:ButtonSinglePlayer";
 	constexpr const char *static_text_name = "MainMenu.wnd:StaticTextSelectDifficulty";
 	constexpr const char *static_text_label = "GUI:SelectDifficulty";
-	const char *probe_mode =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ?
-			"staticTextSelectDifficulty" : "buttonSinglePlayer";
 
 	GlobalData global_data;
 	SubsystemInterfaceList subsystem_list;
@@ -7165,6 +7218,16 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	bool extra_buttons_text_display_string_bound = false;
 	bool extra_buttons_text_size_computed = false;
 	bool extra_buttons_visible = false;
+	bool load_replay_button_labels_exist = false;
+	bool load_replay_buttons_text_nonempty = false;
+	bool load_replay_dropdown_found = false;
+	bool load_replay_dropdown_callback_bound = false;
+	bool load_replay_buttons_found = false;
+	bool load_replay_buttons_callback_bound = false;
+	bool load_replay_buttons_images_bound = false;
+	bool load_replay_buttons_text_display_string_bound = false;
+	bool load_replay_buttons_text_size_computed = false;
+	bool load_replay_buttons_visible = false;
 	bool static_text_label_exists = false;
 	bool static_text_nonempty = false;
 	bool static_text_callback_bound = false;
@@ -7225,6 +7288,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	bool target_hidden = false;
 	bool ruler_hidden = false;
 	bool button_hidden = false;
+	bool load_replay_dropdown_hidden = false;
 	bool static_text_hidden = false;
 	bool static_text_visibility_focused = false;
 	std::size_t mapped_image_count = 0;
@@ -7274,6 +7338,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	std::string loaded_texture_name;
 	std::string ruler_loaded_texture_name;
 	std::string extra_button_ascii[kMainMenuExtraButtonCount];
+	std::string load_replay_button_ascii[kMainMenuLoadReplayButtonCount];
 	bool extra_button_label_exists[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_nonempty[kMainMenuExtraButtonCount] = {};
 	bool extra_button_found[kMainMenuExtraButtonCount] = {};
@@ -7282,6 +7347,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	bool extra_button_text_display_string_bound[kMainMenuExtraButtonCount] = {};
 	bool extra_button_text_size_computed[kMainMenuExtraButtonCount] = {};
 	bool extra_button_hidden[kMainMenuExtraButtonCount] = {};
+	bool load_replay_button_label_exists[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_text_nonempty[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_found[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_callback_bound[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_images_bound[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_text_display_string_bound[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_text_size_computed[kMainMenuLoadReplayButtonCount] = {};
+	bool load_replay_button_hidden[kMainMenuLoadReplayButtonCount] = {};
 	Int button_left_image_width = 0;
 	Int button_left_image_height = 0;
 	Int button_middle_image_width = 0;
@@ -7316,6 +7389,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	Int button_y = 0;
 	Int button_width = 0;
 	Int button_height = 0;
+	Int load_replay_dropdown_x = 0;
+	Int load_replay_dropdown_y = 0;
+	Int load_replay_dropdown_width = 0;
+	Int load_replay_dropdown_height = 0;
 	Int static_text_x = 0;
 	Int static_text_y = 0;
 	Int static_text_window_width = 0;
@@ -7327,6 +7404,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	Int extra_button_text_length[kMainMenuExtraButtonCount] = {};
 	Int extra_button_text_width[kMainMenuExtraButtonCount] = {};
 	Int extra_button_text_height[kMainMenuExtraButtonCount] = {};
+	Int load_replay_button_x[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_y[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_width[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_height[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_text_length[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_text_width[kMainMenuLoadReplayButtonCount] = {};
+	Int load_replay_button_text_height[kMainMenuLoadReplayButtonCount] = {};
 	UnsignedInt draw_calls_before_repaint = 0;
 	UnsignedInt draw_calls_after_repaint = 0;
 
@@ -7341,6 +7425,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	GameWindow *ruler = nullptr;
 	GameWindow *button = nullptr;
 	GameWindow *extra_buttons[kMainMenuExtraButtonCount] = {};
+	GameWindow *load_replay_dropdown = nullptr;
+	GameWindow *load_replay_buttons[kMainMenuLoadReplayButtonCount] = {};
 	GameWindow *static_text = nullptr;
 	const Image *target_image = nullptr;
 	const Image *ruler_image = nullptr;
@@ -7405,6 +7491,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 					extra_buttons_text_nonempty =
 						extra_buttons_text_nonempty && extra_button_text_nonempty[i];
 				}
+				load_replay_button_labels_exist = true;
+				load_replay_buttons_text_nonempty = true;
+				for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+					UnicodeString fetched_load_replay_text =
+						game_text->fetch(
+							kMainMenuLoadReplayButtonLabels[i],
+							&load_replay_button_label_exists[i]);
+					load_replay_button_text_nonempty[i] = !fetched_load_replay_text.isEmpty();
+					load_replay_button_labels_exist =
+						load_replay_button_labels_exist && load_replay_button_label_exists[i];
+					load_replay_buttons_text_nonempty =
+						load_replay_buttons_text_nonempty &&
+						load_replay_button_text_nonempty[i];
+				}
 			}
 		}
 		runtime_ruler_texture_installed =
@@ -7436,9 +7536,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		texture_file_exists && ruler_texture_file_exists &&
 		game_text_initialized && button_text_label_exists &&
 		button_text_nonempty &&
-		(g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		(!main_menu_layout_image_repaint_is_button_stack() ||
 			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
-		(!g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		(!main_menu_layout_image_repaint_is_load_replay() ||
+			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_static_text() ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready) {
 		function_lexicon.init();
@@ -7669,6 +7771,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 				root,
 				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuExtraButtonNames[i])));
 		}
+		load_replay_dropdown = manager->winGetWindowFromId(
+			root,
+			TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuLoadReplayDropdownName)));
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			load_replay_buttons[i] = manager->winGetWindowFromId(
+				root,
+				TheNameKeyGenerator->nameToKey(AsciiString(kMainMenuLoadReplayButtonNames[i])));
+		}
 		static_text = manager->winGetWindowFromId(
 			root, TheNameKeyGenerator->nameToKey(AsciiString(static_text_name)));
 		target_found = target != nullptr;
@@ -7678,6 +7788,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 			extra_button_found[i] = extra_buttons[i] != nullptr;
 			extra_buttons_found = extra_buttons_found && extra_button_found[i];
+		}
+		load_replay_dropdown_found = load_replay_dropdown != nullptr;
+		load_replay_buttons_found = true;
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			load_replay_button_found[i] = load_replay_buttons[i] != nullptr;
+			load_replay_buttons_found =
+				load_replay_buttons_found && load_replay_button_found[i];
 		}
 		static_text_found = static_text != nullptr;
 		root_callback_bound =
@@ -7736,6 +7853,18 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			}
 			button_hidden = BitTest(button->winGetStatus(), WIN_STATUS_HIDDEN);
 			get_window_rect(button, button_x, button_y, button_width, button_height);
+		}
+		if (load_replay_dropdown != nullptr) {
+			load_replay_dropdown_callback_bound =
+				load_replay_dropdown->winGetSystemFunc() == PassSelectedButtonsToParentSystem;
+			load_replay_dropdown_hidden =
+				BitTest(load_replay_dropdown->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				load_replay_dropdown,
+				load_replay_dropdown_x,
+				load_replay_dropdown_y,
+				load_replay_dropdown_width,
+				load_replay_dropdown_height);
 		}
 		extra_buttons_callback_bound = true;
 		extra_buttons_images_bound = true;
@@ -7798,6 +7927,76 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			extra_buttons_text_size_computed =
 				extra_buttons_text_size_computed && extra_button_text_size_computed[i];
 		}
+		load_replay_buttons_callback_bound = true;
+		load_replay_buttons_images_bound = true;
+		load_replay_buttons_text_display_string_bound = true;
+		load_replay_buttons_text_size_computed = true;
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			GameWindow *load_replay_button = load_replay_buttons[i];
+			if (load_replay_button == nullptr) {
+				load_replay_buttons_callback_bound = false;
+				load_replay_buttons_images_bound = false;
+				load_replay_buttons_text_display_string_bound = false;
+				load_replay_buttons_text_size_computed = false;
+				continue;
+			}
+			load_replay_button_callback_bound[i] =
+				load_replay_button->winGetDrawFunc() == W3DGadgetPushButtonImageDraw &&
+				load_replay_button->winGetSystemFunc() == GadgetPushButtonSystem &&
+				load_replay_button->winGetInputFunc() == GadgetPushButtonInput;
+			const Image *load_replay_left_image =
+				GadgetButtonGetLeftEnabledImage(load_replay_button);
+			const Image *load_replay_middle_image =
+				GadgetButtonGetMiddleEnabledImage(load_replay_button);
+			const Image *load_replay_right_image =
+				GadgetButtonGetRightEnabledImage(load_replay_button);
+			load_replay_button_images_bound[i] =
+				load_replay_left_image != nullptr &&
+				load_replay_middle_image != nullptr &&
+				load_replay_right_image != nullptr &&
+				load_replay_left_image == button_left_image &&
+				load_replay_middle_image == button_middle_image &&
+				load_replay_right_image == button_right_image;
+			DisplayString *load_replay_text =
+				load_replay_button->winGetInstanceData()->getTextDisplayString();
+			load_replay_button_text_display_string_bound[i] =
+				load_replay_text != nullptr &&
+				load_replay_text->getTextLength() > 0;
+			if (load_replay_button_text_display_string_bound[i]) {
+				load_replay_button_text_length[i] = load_replay_text->getTextLength();
+				load_replay_text->getSize(
+					&load_replay_button_text_width[i],
+					&load_replay_button_text_height[i]);
+				load_replay_button_text_size_computed[i] =
+					load_replay_button_text_width[i] > 0 &&
+					load_replay_button_text_height[i] > 0;
+				AsciiString ascii_text;
+				ascii_text.translate(load_replay_text->getText());
+				load_replay_button_ascii[i] =
+					ascii_text.str() != nullptr ? ascii_text.str() : "";
+			}
+			load_replay_button_hidden[i] =
+				BitTest(load_replay_button->winGetStatus(), WIN_STATUS_HIDDEN);
+			get_window_rect(
+				load_replay_button,
+				load_replay_button_x[i],
+				load_replay_button_y[i],
+				load_replay_button_width[i],
+				load_replay_button_height[i]);
+			load_replay_buttons_callback_bound =
+				load_replay_buttons_callback_bound &&
+				load_replay_button_callback_bound[i];
+			load_replay_buttons_images_bound =
+				load_replay_buttons_images_bound &&
+				load_replay_button_images_bound[i];
+			load_replay_buttons_text_display_string_bound =
+				load_replay_buttons_text_display_string_bound &&
+				load_replay_button_text_display_string_bound[i] &&
+				load_replay_button_ascii[i].length() > 0;
+			load_replay_buttons_text_size_computed =
+				load_replay_buttons_text_size_computed &&
+				load_replay_button_text_size_computed[i];
+		}
 		if (static_text != nullptr) {
 			static_text_callback_bound =
 				static_text->winGetDrawFunc() == W3DGadgetStaticTextDraw &&
@@ -7837,16 +8036,21 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	}
 
 	const bool focused_window_ready =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ?
+		main_menu_layout_image_repaint_is_static_text() ?
 			(static_text_found && static_text_callback_bound &&
 				static_text_user_data_bound && static_text_display_string_bound &&
 				static_text_ascii.length() > 0) :
-			(button_found && button_callback_bound &&
-				button_images_bound && button_text_display_string_bound &&
-				button_text_ascii.length() > 0 &&
-				extra_buttons_found && extra_buttons_callback_bound &&
-				extra_buttons_images_bound &&
-				extra_buttons_text_display_string_bound);
+			(main_menu_layout_image_repaint_is_load_replay() ?
+				(load_replay_dropdown_found && load_replay_dropdown_callback_bound &&
+					load_replay_buttons_found && load_replay_buttons_callback_bound &&
+					load_replay_buttons_images_bound &&
+					load_replay_buttons_text_display_string_bound) :
+				(button_found && button_callback_bound &&
+					button_images_bound && button_text_display_string_bound &&
+					button_text_ascii.length() > 0 &&
+					extra_buttons_found && extra_buttons_callback_bound &&
+					extra_buttons_images_bound &&
+					extra_buttons_text_display_string_bound));
 
 	if (root_found && target_found && ruler_found && focused_window_ready &&
 		root_callback_bound && target_callback_bound && ruler_callback_bound &&
@@ -7854,8 +8058,12 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		std::vector<GameWindow *> repaint_targets;
 		repaint_targets.push_back(target);
 		repaint_targets.push_back(ruler);
-		if (g_ww3d_main_menu_layout_image_repaint_static_mode) {
+		if (main_menu_layout_image_repaint_is_static_text()) {
 			repaint_targets.push_back(static_text);
+		} else if (main_menu_layout_image_repaint_is_load_replay()) {
+			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+				repaint_targets.push_back(load_replay_buttons[i]);
+			}
 		} else {
 			repaint_targets.push_back(button);
 			for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
@@ -7863,9 +8071,16 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			}
 		}
 		hidden_child_count = hide_root_children_except_targets(root, repaint_targets);
-		if (g_ww3d_main_menu_layout_image_repaint_static_mode && static_text != nullptr) {
+		if (main_menu_layout_image_repaint_is_static_text() && static_text != nullptr) {
 			show_window_and_ancestors(static_text);
 			static_text_visibility_focused = true;
+		}
+		if (main_menu_layout_image_repaint_is_load_replay()) {
+			for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+				if (load_replay_buttons[i] != nullptr) {
+					show_window_and_ancestors(load_replay_buttons[i]);
+				}
+			}
 		}
 		children_pruned = hidden_child_count >= 1;
 		target_hidden = target != nullptr ? BitTest(target->winGetStatus(), WIN_STATUS_HIDDEN) : true;
@@ -7878,6 +8093,17 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 					BitTest(extra_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 			extra_buttons_visible = extra_buttons_visible && !extra_button_hidden[i];
 		}
+		load_replay_dropdown_hidden =
+			load_replay_dropdown != nullptr ?
+				BitTest(load_replay_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+		load_replay_buttons_visible = true;
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			load_replay_button_hidden[i] =
+				load_replay_buttons[i] != nullptr ?
+					BitTest(load_replay_buttons[i]->winGetStatus(), WIN_STATUS_HIDDEN) : true;
+			load_replay_buttons_visible =
+				load_replay_buttons_visible && !load_replay_button_hidden[i];
+		}
 		static_text_hidden =
 			static_text != nullptr ? BitTest(static_text->winGetStatus(), WIN_STATUS_HIDDEN) : true;
 	}
@@ -7886,13 +8112,14 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	draw_calls_before_repaint = state_before != nullptr ? state_before->draw_indexed_primitive_calls : 0;
 
 	const Int expected_image_draws =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ? 2 : 6;
+		main_menu_layout_image_repaint_is_static_text() ? 2 : (main_menu_layout_image_repaint_is_load_replay() ? 5 : 6);
 	const UnsignedInt expected_indexed_draws =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ? 3u : 6u;
+		main_menu_layout_image_repaint_is_static_text() ? 3u : (main_menu_layout_image_repaint_is_load_replay() ? 5u : 6u);
 	const bool focused_window_visible =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ?
-			!static_text_hidden :
-			(!button_hidden && extra_buttons_visible);
+		main_menu_layout_image_repaint_is_static_text() ? !static_text_hidden :
+			(main_menu_layout_image_repaint_is_load_replay() ?
+				(!load_replay_dropdown_hidden && load_replay_buttons_visible) :
+				(!button_hidden && extra_buttons_visible));
 
 	if (children_pruned && !target_hidden && !ruler_hidden && focused_window_visible) {
 		begin_render_result = WW3D::Begin_Render(false, false, Vector3(0.0f, 0.0f, 0.0f));
@@ -7941,6 +8168,27 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		extra_buttons_text_size_computed =
 			extra_buttons_text_size_computed && extra_button_text_size_computed[i];
 	}
+	for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+		if (load_replay_buttons[i] != nullptr &&
+			load_replay_button_text_display_string_bound[i]) {
+			DisplayString *load_replay_text =
+				load_replay_buttons[i]->winGetInstanceData()->getTextDisplayString();
+			if (load_replay_text != nullptr) {
+				load_replay_text->getSize(
+					&load_replay_button_text_width[i],
+					&load_replay_button_text_height[i]);
+				load_replay_button_text_size_computed[i] =
+					load_replay_button_text_width[i] > 0 &&
+					load_replay_button_text_height[i] > 0;
+			}
+		}
+	}
+	load_replay_buttons_text_size_computed = true;
+	for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+		load_replay_buttons_text_size_computed =
+			load_replay_buttons_text_size_computed &&
+			load_replay_button_text_size_computed[i];
+	}
 
 	TextureClass *loaded_texture =
 		display_storage.render != nullptr ? display_storage.render->Peek_Texture() : nullptr;
@@ -7986,6 +8234,10 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		button = nullptr;
 		for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 			extra_buttons[i] = nullptr;
+		}
+		load_replay_dropdown = nullptr;
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			load_replay_buttons[i] = nullptr;
 		}
 		static_text = nullptr;
 		destroy_result = window_list_cleared ? WIN_ERR_OK : WIN_ERR_GENERAL_FAILURE;
@@ -8046,8 +8298,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		draw_state != nullptr ? &draw_state->texture_stages[0] : nullptr;
 	const WasmD3D8DrawTextureStageState *stage1 =
 		draw_state != nullptr ? &draw_state->texture_stages[1] : nullptr;
-	bool extra_buttons_focus_ok = g_ww3d_main_menu_layout_image_repaint_static_mode;
-	if (!g_ww3d_main_menu_layout_image_repaint_static_mode) {
+	bool extra_buttons_focus_ok = !main_menu_layout_image_repaint_is_button_stack();
+	if (main_menu_layout_image_repaint_is_button_stack()) {
 		extra_buttons_focus_ok =
 			extra_button_labels_exist &&
 			extra_buttons_text_nonempty &&
@@ -8070,8 +8322,39 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 				extra_button_height[i] == kMainMenuExtraButtonHeight[i];
 		}
 	}
+	bool load_replay_buttons_focus_ok = !main_menu_layout_image_repaint_is_load_replay();
+	if (main_menu_layout_image_repaint_is_load_replay()) {
+		load_replay_buttons_focus_ok =
+			load_replay_button_labels_exist &&
+			load_replay_buttons_text_nonempty &&
+			load_replay_dropdown_found &&
+			load_replay_dropdown_callback_bound &&
+			!load_replay_dropdown_hidden &&
+			load_replay_dropdown_x == 532 &&
+			load_replay_dropdown_y == 108 &&
+			load_replay_dropdown_width == 224 &&
+			load_replay_dropdown_height == 132 &&
+			load_replay_buttons_found &&
+			load_replay_buttons_callback_bound &&
+			load_replay_buttons_images_bound &&
+			load_replay_buttons_text_display_string_bound &&
+			load_replay_buttons_visible;
+		for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+			load_replay_buttons_focus_ok =
+				load_replay_buttons_focus_ok &&
+				load_replay_button_label_exists[i] &&
+				load_replay_button_text_nonempty[i] &&
+				load_replay_button_text_size_computed[i] &&
+				load_replay_button_ascii[i].length() > 0 &&
+				!load_replay_button_hidden[i] &&
+				load_replay_button_x[i] == 540 &&
+				load_replay_button_y[i] == kMainMenuLoadReplayButtonY[i] &&
+				load_replay_button_width[i] == 208 &&
+				load_replay_button_height[i] == kMainMenuLoadReplayButtonHeight[i];
+		}
+	}
 	const bool button_focus_ok =
-		g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		!main_menu_layout_image_repaint_is_button_stack() ||
 		(button_found &&
 			button_callback_bound &&
 			button_images_bound &&
@@ -8083,7 +8366,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 			button_width == 208 &&
 			button_height == 36);
 	const bool static_text_focus_ok =
-		!g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		!main_menu_layout_image_repaint_is_static_text() ||
 		(static_text_label_exists &&
 			static_text_nonempty &&
 			static_text_found &&
@@ -8114,9 +8397,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		game_text_initialized &&
 		button_text_label_exists &&
 		button_text_nonempty &&
-		(g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		(!main_menu_layout_image_repaint_is_button_stack() ||
 			(extra_button_labels_exist && extra_buttons_text_nonempty)) &&
-		(!g_ww3d_main_menu_layout_image_repaint_static_mode ||
+		(!main_menu_layout_image_repaint_is_load_replay() ||
+			(load_replay_button_labels_exist && load_replay_buttons_text_nonempty)) &&
+		(!main_menu_layout_image_repaint_is_static_text() ||
 			(static_text_label_exists && static_text_nonempty)) &&
 		name_keys_ready &&
 		archive_window_exists &&
@@ -8176,6 +8461,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		ruler_image_bound &&
 		button_focus_ok &&
 		extra_buttons_focus_ok &&
+		load_replay_buttons_focus_ok &&
 		static_text_focus_ok &&
 		!target_hidden &&
 		!ruler_hidden &&
@@ -8264,6 +8550,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 	const std::string static_text_window_name_json = json_escape(static_text_name);
 	const std::string static_text_label_json = json_escape(static_text_label);
 	const std::string static_text_ascii_json = json_escape(static_text_ascii);
+	const std::string load_replay_dropdown_name_json =
+		json_escape(kMainMenuLoadReplayDropdownName);
+	const std::string probe_mode_json =
+		json_escape(main_menu_layout_image_repaint_mode_name(
+			g_ww3d_main_menu_layout_image_repaint_mode));
 	std::string extra_buttons_json = "[";
 	for (std::size_t i = 0; i < kMainMenuExtraButtonCount; ++i) {
 		if (i > 0) {
@@ -8306,10 +8597,52 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		extra_buttons_json += extra_button_buffer;
 	}
 	extra_buttons_json += "]";
+	std::string load_replay_buttons_json = "[";
+	for (std::size_t i = 0; i < kMainMenuLoadReplayButtonCount; ++i) {
+		if (i > 0) {
+			load_replay_buttons_json += ",";
+		}
+		const std::string name_json = json_escape(kMainMenuLoadReplayButtonNames[i]);
+		const std::string label_json = json_escape(kMainMenuLoadReplayButtonLabels[i]);
+		const std::string ascii_json = json_escape(load_replay_button_ascii[i]);
+		char load_replay_button_buffer[1400];
+		std::snprintf(
+			load_replay_button_buffer,
+			sizeof(load_replay_button_buffer),
+			"{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+			"\"width\":%d,\"height\":%d,"
+			"\"systemFunc\":\"GadgetPushButtonSystem\","
+			"\"inputFunc\":\"GadgetPushButtonInput\","
+			"\"drawFunc\":\"W3DGadgetPushButtonImageDraw\","
+			"\"hidden\":%s,\"labelExists\":%s,\"textNonEmpty\":%s,"
+			"\"imagesBound\":%s,"
+			"\"images\":[\"%s\",\"%s\",\"%s\"],"
+			"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
+			"\"length\":%d,\"width\":%d,\"height\":%d}}",
+			name_json.c_str(),
+			load_replay_button_x[i],
+			load_replay_button_y[i],
+			load_replay_button_width[i],
+			load_replay_button_height[i],
+			bool_json(load_replay_button_hidden[i]),
+			bool_json(load_replay_button_label_exists[i]),
+			bool_json(load_replay_button_text_nonempty[i]),
+			bool_json(load_replay_button_images_bound[i]),
+			button_left_image_name_json.c_str(),
+			button_middle_image_name_json.c_str(),
+			button_right_image_name_json.c_str(),
+			label_json.c_str(),
+			ascii_json.c_str(),
+			load_replay_button_text_length[i],
+			load_replay_button_text_width[i],
+			load_replay_button_text_height[i]);
+		load_replay_buttons_json += load_replay_button_buffer;
+	}
+	load_replay_buttons_json += "]";
 	const std::string game_text_csf_path_json = json_escape(kMainMenuGameTextCsfPath);
 	const std::string runtime_assets_json = wasm_browser_runtime_assets_state_json();
 
-	char buffer[48000];
+	char buffer[56000];
 	std::snprintf(buffer, sizeof(buffer),
 		"{\"source\":\"%s\","
 		"\"ok\":%s,"
@@ -8328,6 +8661,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"MainMenu.wnd:ButtonCredits -> W3DGadgetPushButtonImageDraw\","
 		"\"MainMenu.wnd:ButtonExit -> W3DGadgetPushButtonImageDraw\","
 		"\"GameText::fetch(main visible button labels) -> W3DDisplayString::draw button labels\","
+		"\"MainMenu.wnd:MapBorder3 -> PassSelectedButtonsToParentSystem\","
+		"\"MainMenu.wnd:ButtonLoadGame -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonReplay -> W3DGadgetPushButtonImageDraw\","
+		"\"MainMenu.wnd:ButtonLoadReplayBack -> W3DGadgetPushButtonImageDraw\","
+		"\"GameText::fetch(load-replay dropdown button labels) -> W3DDisplayString::draw button labels\","
 		"\"MainMenu.wnd:StaticTextSelectDifficulty -> W3DGadgetStaticTextDraw\","
 		"\"GameText::fetch(GUI:SelectDifficulty) -> W3DDisplayString::draw static text\","
 		"\"GameWindowManager::winRepaint -> TheWindowManager->winDrawImage\","
@@ -8350,6 +8688,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"buttonTextNonEmpty\":%s,"
 		"\"extraButtonLabelsExist\":%s,"
 		"\"extraButtonTextNonEmpty\":%s,"
+		"\"loadReplayButtonLabelsExist\":%s,"
+		"\"loadReplayButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,\"staticTextNonEmpty\":%s,"
 		"\"nameKeysReady\":%s,"
 		"\"archiveWindowExists\":%s,\"archiveWindowOpenable\":%s,"
@@ -8371,24 +8711,33 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"layoutWindowCount\":%d,\"rootFound\":%s,"
 		"\"targetFound\":%s,\"rulerFound\":%s,\"buttonFound\":%s,"
 		"\"extraButtonsFound\":%s,"
+		"\"loadReplayDropdownFound\":%s,"
+		"\"loadReplayButtonsFound\":%s,"
 		"\"staticTextFound\":%s,"
 		"\"rootCallbackBound\":%s,"
 		"\"targetCallbackBound\":%s,\"rulerCallbackBound\":%s,"
 		"\"buttonCallbackBound\":%s,"
 		"\"extraButtonsCallbackBound\":%s,"
+		"\"loadReplayDropdownCallbackBound\":%s,"
+		"\"loadReplayButtonsCallbackBound\":%s,"
 		"\"staticTextCallbackBound\":%s,"
 		"\"targetImageBound\":%s,\"rulerImageBound\":%s,"
 		"\"buttonImagesBound\":%s,"
 		"\"extraButtonsImagesBound\":%s,"
+		"\"loadReplayButtonsImagesBound\":%s,"
 		"\"buttonTextDisplayStringBound\":%s,"
 		"\"buttonTextSizeComputed\":%s,"
 		"\"extraButtonsTextDisplayStringBound\":%s,"
 		"\"extraButtonsTextSizeComputed\":%s,"
+		"\"loadReplayButtonsTextDisplayStringBound\":%s,"
+		"\"loadReplayButtonsTextSizeComputed\":%s,"
 		"\"staticTextUserDataBound\":%s,"
 		"\"staticTextDisplayStringBound\":%s,"
 		"\"staticTextSizeComputed\":%s,"
 		"\"targetHidden\":%s,\"rulerHidden\":%s,\"buttonHidden\":%s,"
 		"\"extraButtonsVisible\":%s,"
+		"\"loadReplayDropdownHidden\":%s,"
+		"\"loadReplayButtonsVisible\":%s,"
 		"\"staticTextInitialHidden\":%s,\"staticTextHidden\":%s,"
 		"\"staticTextVisibilityFocused\":%s,"
 		"\"childrenPruned\":%s,"
@@ -8419,6 +8768,11 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"text\":{\"label\":\"%s\",\"ascii\":\"%s\","
 		"\"length\":%d,\"width\":%d,\"height\":%d}},"
 		"\"extraButtons\":%s,"
+		"\"loadReplayDropdown\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
+		"\"width\":%d,\"height\":%d,"
+		"\"systemFunc\":\"PassSelectedButtonsToParentSystem\","
+		"\"hidden\":%s},"
+		"\"loadReplayButtons\":%s,"
 		"\"staticText\":{\"name\":\"%s\",\"x\":%d,\"y\":%d,"
 		"\"width\":%d,\"height\":%d,"
 		"\"systemFunc\":\"GadgetStaticTextSystem\","
@@ -8452,6 +8806,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"buttonTextNonEmpty\":%s,"
 		"\"extraButtonLabelsExist\":%s,"
 		"\"extraButtonTextNonEmpty\":%s,"
+		"\"loadReplayButtonLabelsExist\":%s,"
+		"\"loadReplayButtonTextNonEmpty\":%s,"
 		"\"staticTextLabelExists\":%s,"
 		"\"staticTextNonEmpty\":%s},"
 		"\"texture\":{\"id\":%u,\"name\":\"%s\","
@@ -8496,7 +8852,7 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		"\"texCoordIndex\":%lu}]}}}",
 		"ww3d_main_menu_layout_image_repaint_probe",
 		bool_json(ok),
-		probe_mode,
+		probe_mode_json.c_str(),
 		window_archive_json.c_str(),
 		ini_archive_json.c_str(),
 		texture_archive_json.c_str(),
@@ -8522,6 +8878,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(button_text_nonempty),
 		bool_json(extra_button_labels_exist),
 		bool_json(extra_buttons_text_nonempty),
+		bool_json(load_replay_button_labels_exist),
+		bool_json(load_replay_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		bool_json(name_keys_ready),
@@ -8562,21 +8920,28 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(ruler_found),
 		bool_json(button_found),
 		bool_json(extra_buttons_found),
+		bool_json(load_replay_dropdown_found),
+		bool_json(load_replay_buttons_found),
 		bool_json(static_text_found),
 		bool_json(root_callback_bound),
 		bool_json(target_callback_bound),
 		bool_json(ruler_callback_bound),
 		bool_json(button_callback_bound),
 		bool_json(extra_buttons_callback_bound),
+		bool_json(load_replay_dropdown_callback_bound),
+		bool_json(load_replay_buttons_callback_bound),
 		bool_json(static_text_callback_bound),
 		bool_json(target_image_bound),
 		bool_json(ruler_image_bound),
 		bool_json(button_images_bound),
 		bool_json(extra_buttons_images_bound),
+		bool_json(load_replay_buttons_images_bound),
 		bool_json(button_text_display_string_bound),
 		bool_json(button_text_size_computed),
 		bool_json(extra_buttons_text_display_string_bound),
 		bool_json(extra_buttons_text_size_computed),
+		bool_json(load_replay_buttons_text_display_string_bound),
+		bool_json(load_replay_buttons_text_size_computed),
 		bool_json(static_text_user_data_bound),
 		bool_json(static_text_display_string_bound),
 		bool_json(static_text_size_computed),
@@ -8584,6 +8949,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(ruler_hidden),
 		bool_json(button_hidden),
 		bool_json(extra_buttons_visible),
+		bool_json(load_replay_dropdown_hidden),
+		bool_json(load_replay_buttons_visible),
 		bool_json(static_text_initial_hidden),
 		bool_json(static_text_hidden),
 		bool_json(static_text_visibility_focused),
@@ -8629,6 +8996,13 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		button_text_width,
 		button_text_height,
 		extra_buttons_json.c_str(),
+		load_replay_dropdown_name_json.c_str(),
+		load_replay_dropdown_x,
+		load_replay_dropdown_y,
+		load_replay_dropdown_width,
+		load_replay_dropdown_height,
+		bool_json(load_replay_dropdown_hidden),
+		load_replay_buttons_json.c_str(),
 		static_text_window_name_json.c_str(),
 		static_text_x,
 		static_text_y,
@@ -8692,6 +9066,8 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 		bool_json(button_text_nonempty),
 		bool_json(extra_button_labels_exist),
 		bool_json(extra_buttons_text_nonempty),
+		bool_json(load_replay_button_labels_exist),
+		bool_json(load_replay_buttons_text_nonempty),
 		bool_json(static_text_label_exists),
 		bool_json(static_text_nonempty),
 		texture_id,
@@ -8771,12 +9147,20 @@ const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(bool static_
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_image_repaint()
 {
-	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(false);
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_BUTTON_STACK);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_load_replay_repaint()
+{
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_LOAD_REPLAY_DROPDOWN);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_main_menu_layout_static_text_repaint()
 {
-	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(true);
+	return cnc_port_probe_ww3d_main_menu_layout_image_repaint_impl(
+		MAIN_MENU_LAYOUT_IMAGE_REPAINT_STATIC_TEXT);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_display_line()

@@ -24,6 +24,10 @@ const staticTextScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-main-menu-layout-static-text-repaint-canvas.png",
 );
+const loadReplayScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-main-menu-layout-load-replay-repaint-canvas.png",
+);
 
 const D3DPT_TRIANGLELIST = 4;
 const D3DTOP_DISABLE = 1;
@@ -534,6 +538,101 @@ try {
 
   await page.locator("#viewport").screenshot({ path: staticTextScreenshot });
 
+  let loadReplayResult;
+  try {
+    loadReplayResult = await withTimeout(
+      page.evaluate((payload) => window.CnCPort.rpc("ww3dMainMenuLayoutLoadReplayRepaint", payload), {
+        archiveDirectoryPath: runtimeArchivePath,
+        windowArchivePath: windowArchiveMemfsPath,
+        iniArchivePath: iniArchiveMemfsPath,
+        textureArchivePath: englishArchiveMemfsPath,
+        rulerTextureArchivePath: textureArchiveMemfsPath,
+      }),
+      45000,
+      "W3D MainMenu WindowLayout load replay dropdown repaint",
+    );
+  } catch (error) {
+    throw new Error(`W3D MainMenu WindowLayout load replay dropdown repaint crashed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents)}`);
+  }
+
+  const expectedLoadReplayButtons = [
+    ["MainMenu.wnd:ButtonLoadGame", "GUI:MainMenuLoadGame", 116, 35],
+    ["MainMenu.wnd:ButtonReplay", "GUI:MainMenuLoadReplay", 156, 35],
+    ["MainMenu.wnd:ButtonLoadReplayBack", "GUI:Back", 196, 36],
+  ];
+  const loadReplayButtons = loadReplayResult.probe?.layout?.loadReplayButtons ?? [];
+  const loadReplayButtonsValid = expectedLoadReplayButtons.every(([name, label, y, height], index) => {
+    const button = loadReplayButtons[index];
+    const proof = loadReplayResult.loadReplayButtonRegions?.[index];
+    return button?.name === name
+      && button?.drawFunc === "W3DGadgetPushButtonImageDraw"
+      && button?.systemFunc === "GadgetPushButtonSystem"
+      && button?.inputFunc === "GadgetPushButtonInput"
+      && button?.x === 540
+      && button?.y === y
+      && button?.width === 208
+      && button?.height === height
+      && button?.hidden === false
+      && button?.labelExists === true
+      && button?.textNonEmpty === true
+      && button?.imagesBound === true
+      && button?.images?.[0] === "Buttons-Left"
+      && button?.images?.[1] === "Buttons-Middle"
+      && button?.images?.[2] === "Buttons-Right"
+      && button?.text?.label === label
+      && button?.text?.length > 0
+      && button?.text?.width > 0
+      && button?.text?.height > 0
+      && proof?.region?.coloredPixelCount >= 20
+      && proof?.textRegion?.coloredPixelCount >= 20
+      && proof?.textRegion?.maxComponent >= 180;
+  });
+  if (!loadReplayResult.ok
+      || loadReplayResult.command !== "ww3dMainMenuLayoutLoadReplayRepaint"
+      || loadReplayResult.probe?.source !== "ww3d_main_menu_layout_image_repaint_probe"
+      || loadReplayResult.probe?.mode !== "loadReplayDropdown"
+      || !loadReplayResult.probe?.originalPaths?.includes("MainMenu.wnd:MapBorder3 -> PassSelectedButtonsToParentSystem")
+      || !loadReplayResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonLoadGame -> W3DGadgetPushButtonImageDraw")
+      || !loadReplayResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonReplay -> W3DGadgetPushButtonImageDraw")
+      || !loadReplayResult.probe?.originalPaths?.includes("MainMenu.wnd:ButtonLoadReplayBack -> W3DGadgetPushButtonImageDraw")
+      || !loadReplayResult.probe?.originalPaths?.includes("GameText::fetch(load-replay dropdown button labels) -> W3DDisplayString::draw button labels")
+      || loadReplayResult.probe?.results?.loadReplayButtonLabelsExist !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonTextNonEmpty !== true
+      || loadReplayResult.probe?.results?.loadReplayDropdownFound !== true
+      || loadReplayResult.probe?.results?.loadReplayDropdownCallbackBound !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonsFound !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonsCallbackBound !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonsImagesBound !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonsTextDisplayStringBound !== true
+      || loadReplayResult.probe?.results?.loadReplayButtonsTextSizeComputed !== true
+      || loadReplayResult.probe?.results?.loadReplayDropdownHidden !== false
+      || loadReplayResult.probe?.results?.loadReplayButtonsVisible !== true
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.name !== "MainMenu.wnd:MapBorder3"
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.x !== 532
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.y !== 108
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.width !== 224
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.height !== 132
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.systemFunc !== "PassSelectedButtonsToParentSystem"
+      || loadReplayResult.probe?.layout?.loadReplayDropdown?.hidden !== false
+      || loadReplayResult.probe?.gameText?.loadReplayButtonLabelsExist !== true
+      || loadReplayResult.probe?.gameText?.loadReplayButtonTextNonEmpty !== true
+      || loadReplayButtons.length !== expectedLoadReplayButtons.length
+      || !loadReplayButtonsValid
+      || loadReplayResult.probe?.calls?.displayImageDraws < 5
+      || loadReplayResult.probe?.calls?.drawIndexed < 5
+      || loadReplayResult.coloredLogoPixelCount < 1
+      || loadReplayResult.coloredRulerPixelCount < 4) {
+    throw new Error(`W3D MainMenu WindowLayout load replay dropdown repaint failed: ${JSON.stringify({
+      ok: loadReplayResult.ok,
+      probe: loadReplayResult.probe,
+      loadReplayButtonRegions: loadReplayResult.loadReplayButtonRegions,
+      coloredLogoPixelCount: loadReplayResult.coloredLogoPixelCount,
+      coloredRulerPixelCount: loadReplayResult.coloredRulerPixelCount,
+    })}`);
+  }
+
+  await page.locator("#viewport").screenshot({ path: loadReplayScreenshot });
+
   const browserFailures = browserEvents.filter((event) =>
     event.type === "pageerror" || event.type === "crash");
   if (browserFailures.length > 0) {
@@ -546,6 +645,7 @@ try {
     url: harnessUrl,
     screenshot: repaintScreenshot,
     staticTextScreenshot,
+    loadReplayScreenshot,
     archives: {
       window: windowArchiveMemfsPath,
       ini: iniArchiveMemfsPath,
@@ -553,6 +653,7 @@ try {
       rulerTexture: textureArchiveMemfsPath,
     },
     originalPaths: repaintResult.probe.originalPaths,
+    loadReplayOriginalPaths: loadReplayResult.probe.originalPaths,
     layout: repaintResult.probe.layout,
     image: repaintResult.probe.image,
     rulerImage: repaintResult.probe.rulerImage,
@@ -569,6 +670,9 @@ try {
     buttonTextRegion: repaintResult.buttonTextRegion,
     extraButtons,
     extraButtonRegions: repaintResult.extraButtonRegions,
+    loadReplayDropdown: loadReplayResult.probe.layout.loadReplayDropdown,
+    loadReplayButtons,
+    loadReplayButtonRegions: loadReplayResult.loadReplayButtonRegions,
     staticText: staticTextResult.probe.layout.staticText,
     staticTextRegion: staticTextResult.staticTextRegion,
     coloredLogoPixelCount: repaintResult.coloredLogoPixelCount,
