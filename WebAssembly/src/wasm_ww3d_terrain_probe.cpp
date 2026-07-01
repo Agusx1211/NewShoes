@@ -32,6 +32,7 @@
 #include "Common/Radar.h"
 #include "Common/ThingFactory.h"
 #include "Common/TerrainTypes.h"
+#include "GameLogic/AI.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/PolygonTrigger.h"
@@ -2340,6 +2341,51 @@ private:
 	ThingFactory *m_oldThingFactory = nullptr;
 };
 
+class ProbeTerrainLogicForBridgeDraw final : public W3DTerrainLogic
+{
+public:
+	bool seedBridgeForDraw(
+		const BridgeInfo &sourceInfo,
+		Dict *props,
+		const AsciiString &bridgeTemplateName,
+		bool &genericBridgeObjectMissing)
+	{
+		BridgeInfo bridge_info = sourceInfo;
+		Bridge *bridge = newInstance(Bridge)(bridge_info, props, bridgeTemplateName);
+		if (bridge == nullptr) {
+			return false;
+		}
+
+		bridge->setNext(m_bridgeListHead);
+		m_bridgeListHead = bridge;
+		bridge->setLayer(LAYER_GROUND);
+
+		BridgeInfo stored_info;
+		bridge->getBridgeInfo(&stored_info);
+		genericBridgeObjectMissing = stored_info.bridgeObjectID == INVALID_ID;
+		return true;
+	}
+
+	Int bridgeCountForProbe() const
+	{
+		Int count = 0;
+		for (Bridge *bridge = m_bridgeListHead; bridge != nullptr; bridge = bridge->getNext()) {
+			++count;
+		}
+		return count;
+	}
+
+	bool firstBridgeForProbe(BridgeInfo &info, PathfindLayerEnum &layer) const
+	{
+		if (m_bridgeListHead == nullptr) {
+			return false;
+		}
+		m_bridgeListHead->getBridgeInfo(&info);
+		layer = m_bridgeListHead->getLayer();
+		return true;
+	}
+};
+
 struct ProbeLogicalHeightMapParseTrace
 {
 	ProbeLogicalTerrainLoadMetrics *metrics = nullptr;
@@ -3483,9 +3529,42 @@ public:
 	void drawBridgesWithProbe(CameraClass *camera, Bool wireframe, TextureClass *cloudTexture)
 	{
 		probe_bridge_phase_log("bridge-wrapper-enter");
+		m_lastDrawTerrainLogicPresent = TheTerrainLogic != nullptr;
+		m_lastDrawTerrainLogicBridgeCount = 0;
+		if (TheTerrainLogic != nullptr) {
+			for (Bridge *bridge = TheTerrainLogic->getFirstBridge();
+					bridge != nullptr;
+					bridge = bridge->getNext()) {
+				++m_lastDrawTerrainLogicBridgeCount;
+			}
+		}
 		W3DBridgeBuffer::drawBridges(camera, wireframe, cloudTexture);
+		m_lastDrawEnabledBridgeCount = 0;
+		for (Int index = 0; index < m_numBridges; ++index) {
+			if (m_bridges[index].isEnabled()) {
+				++m_lastDrawEnabledBridgeCount;
+			}
+		}
 		probe_bridge_phase_log("bridge-wrapper-exit");
 	}
+
+	bool firstBridgeInfo(BridgeInfo &info)
+	{
+		if (m_numBridges <= 0) {
+			return false;
+		}
+		m_bridges[0].getBridgeInfo(&info);
+		return true;
+	}
+
+	AsciiString firstBridgeTemplateName()
+	{
+		return m_numBridges > 0 ? m_bridges[0].getTemplateName() : AsciiString::TheEmptyString;
+	}
+
+	bool lastDrawTerrainLogicPresent() const { return m_lastDrawTerrainLogicPresent; }
+	Int lastDrawTerrainLogicBridgeCount() const { return m_lastDrawTerrainLogicBridgeCount; }
+	Int lastDrawEnabledBridgeCount() const { return m_lastDrawEnabledBridgeCount; }
 
 	bool firstBridgeManualGeometry(Int &vertices, Int &indices, bool &exception)
 	{
@@ -3513,6 +3592,11 @@ public:
 		}
 		return vertices > 0 && indices > 0;
 	}
+
+private:
+	bool m_lastDrawTerrainLogicPresent = false;
+	Int m_lastDrawTerrainLogicBridgeCount = 0;
+	Int m_lastDrawEnabledBridgeCount = 0;
 };
 
 class ProbeHeightMapRenderObjWithPropBuffer final : public HeightMapRenderObjClass
@@ -8976,7 +9060,15 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	GlobalData *global_data = nullptr;
 	TerrainLogic *old_terrain_logic = TheTerrainLogic;
-	TheTerrainLogic = nullptr;
+	MapCache bridge_draw_map_cache;
+	ProbeTerrainLogicGameClient bridge_draw_game_client;
+	ThingFactory bridge_draw_thing_factory;
+	ProbeTerrainLogicForBridgeDraw bridge_draw_terrain_logic;
+	ProbeLogicalTerrainGlobalScope bridge_draw_global_scope(
+		&bridge_draw_map_cache,
+		&bridge_draw_game_client,
+		&bridge_draw_thing_factory,
+		&bridge_draw_terrain_logic);
 
 	int init_result = WW3D_ERROR_GENERIC;
 	int set_device_result = WW3D_ERROR_GENERIC;
@@ -8999,11 +9091,22 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_buffer_initialized = false;
 	bool load_bridges_invoked = false;
 	bool update_center_invoked = false;
-	bool terrain_logic_cleared_for_draw = TheTerrainLogic == nullptr;
+	bool terrain_logic_installed_for_draw = TheTerrainLogic == &bridge_draw_terrain_logic;
+	bool terrain_logic_retained_for_draw = false;
+	bool bridge_logic_seeded_for_draw = false;
+	bool bridge_logic_generic_bridge_object_missing = false;
+	bool bridge_logic_seed_info_available = false;
+	bool bridge_logic_ai_pathfinder_available = TheAI != nullptr && TheAI->pathfinder() != nullptr;
 	bool scene_created = false;
 	bool scene_object_added = false;
 	bool bridge_scene_draw_flushed = false;
 	Int bridges_after_load = -1;
+	Int bridge_logic_count_after_seed = 0;
+	Int bridge_logic_first_index_after_seed = -1;
+	Int bridge_logic_first_damage_state_after_seed = -1;
+	Int bridge_logic_first_layer_after_seed = -1;
+	Int bridge_draw_terrain_logic_bridge_count = 0;
+	Int bridge_draw_enabled_bridge_count = 0;
 	Int bridge_vertices_after_update = -1;
 	Int bridge_indices_after_update = -1;
 	Int bridge_manual_vertices_after_load = -1;
@@ -9329,6 +9432,29 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		probe_bridge_phase_log("load-bridges-done");
 		load_bridges_invoked = true;
 		bridges_after_load = bridge_buffer->numBridges();
+		BridgeInfo bridge_info_for_logic;
+		bridge_logic_seed_info_available = bridge_buffer->firstBridgeInfo(bridge_info_for_logic);
+		if (bridge_logic_seed_info_available) {
+			bridge_info_for_logic.bridgeIndex = 0;
+			probe_bridge_phase_log("seed-terrain-logic-bridge");
+			bridge_logic_seeded_for_draw =
+				bridge_draw_terrain_logic.seedBridgeForDraw(
+					bridge_info_for_logic,
+					nullptr,
+					bridge_buffer->firstBridgeTemplateName(),
+					bridge_logic_generic_bridge_object_missing);
+			bridge_logic_count_after_seed =
+				bridge_draw_terrain_logic.bridgeCountForProbe();
+			BridgeInfo seeded_bridge_info;
+			PathfindLayerEnum seeded_bridge_layer = LAYER_GROUND;
+			if (bridge_draw_terrain_logic.firstBridgeForProbe(
+					seeded_bridge_info,
+					seeded_bridge_layer)) {
+				bridge_logic_first_index_after_seed = seeded_bridge_info.bridgeIndex;
+				bridge_logic_first_damage_state_after_seed = seeded_bridge_info.curDamageState;
+				bridge_logic_first_layer_after_seed = seeded_bridge_layer;
+			}
+		}
 		bridge_manual_geometry_after_load =
 			bridge_buffer->firstBridgeManualGeometry(
 				bridge_manual_vertices_after_load,
@@ -9414,6 +9540,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		}
 		probe_bridge_phase_log("render-scene-done");
 	}
+	if (bridge_buffer != nullptr) {
+		terrain_logic_retained_for_draw =
+			bridge_buffer->lastDrawTerrainLogicPresent();
+		bridge_draw_terrain_logic_bridge_count =
+			bridge_buffer->lastDrawTerrainLogicBridgeCount();
+		bridge_draw_enabled_bridge_count =
+			bridge_buffer->lastDrawEnabledBridgeCount();
+	}
 
 	ProbeWorldHeightMapInspector::recordRenderedTileMetrics(map, map_load);
 
@@ -9475,6 +9609,14 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bridge_pair_candidate_count > 0 &&
 		bridge_pair_candidate_selected &&
 		!bridge_pair_map_objects_installed &&
+		terrain_logic_installed_for_draw &&
+		bridge_logic_seed_info_available &&
+		bridge_logic_seeded_for_draw &&
+		bridge_logic_count_after_seed > 0 &&
+		bridge_logic_first_index_after_seed == 0 &&
+		terrain_logic_retained_for_draw &&
+		bridge_draw_terrain_logic_bridge_count > 0 &&
+		bridge_draw_enabled_bridge_count > 0 &&
 		(!bridge_template_substituted ||
 			bridge_pair_template_substituted_in_logical_list) &&
 		selected_bridge_pair_candidate >= 0 &&
@@ -9560,7 +9702,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
-		"W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(FALSE) -> "
+		"W3DBridgeBuffer::loadBridges/updateCenter -> "
+		"TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
 		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
@@ -9577,7 +9720,19 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
 		"\"initHeightData\":%d,\"bridgeBufferInstalled\":%s,"
 		"\"bridgeBufferInitialized\":%s,\"loadBridgesInvoked\":%s,"
-		"\"updateCenterInvoked\":%s,\"terrainLogicClearedForDraw\":%s,"
+		"\"updateCenterInvoked\":%s,"
+		"\"terrainLogicInstalledForDraw\":%s,"
+		"\"terrainLogicRetainedForDraw\":%s,"
+		"\"bridgeLogicSeedInfoAvailable\":%s,"
+		"\"bridgeLogicSeededForDraw\":%s,"
+		"\"bridgeLogicGenericBridgeObjectMissing\":%s,"
+		"\"bridgeLogicAiPathfinderAvailable\":%s,"
+		"\"bridgeLogicCountAfterSeed\":%d,"
+		"\"bridgeLogicFirstIndexAfterSeed\":%d,"
+		"\"bridgeLogicFirstDamageStateAfterSeed\":%d,"
+		"\"bridgeLogicFirstLayerAfterSeed\":%d,"
+		"\"bridgeDrawTerrainLogicBridgeCount\":%d,"
+		"\"bridgeDrawEnabledBridgeCount\":%d,"
 		"\"sceneCreated\":%s,"
 		"\"sceneObjectAdded\":%s,\"beginRender\":%d,\"render\":%d,"
 			"\"endRender\":%d,\"bridgeDrawInvoked\":%s,"
@@ -9591,9 +9746,10 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 			"\"bridgeDrawCallDelta\":%u,"
 			"\"bridgeShroudDrawCallsBefore\":%u,"
 			"\"bridgeShroudDrawCallsAfter\":%u,"
-			"\"bridgeSceneDrawFlushed\":%s},"
+		"\"bridgeSceneDrawFlushed\":%s},"
 		"\"logicalTerrain\":{\"path\":\"W3DTerrainLogic::loadMap(query=true) -> "
-		"MapObject list -> W3DBridgeBuffer::loadBridges\","
+		"MapObject list -> W3DBridgeBuffer::loadBridges + retained "
+		"TerrainLogic bridge draw list\","
 		"\"attempted\":%s,\"localGlobalDataInstalled\":%s,"
 		"\"mapCacheInstalled\":%s,\"terrainLogicInstalled\":%s,"
 		"\"gameClientInstalled\":%s,\"thingFactoryInstalled\":%s,"
@@ -9643,7 +9799,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"texturePositionY\":%d}}},"
 		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
 		"RTS3DScene::Customized_Render -> ProbeHeightMapRenderObjWithBridgeBuffer::Render -> "
-		"HeightMapRenderObjClass::Render -> W3DBridgeBuffer::drawBridges(FALSE) -> "
+		"HeightMapRenderObjClass::Render -> "
+		"W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic) -> "
 		"W3DBridge::renderBridge + bridge shroud overlay\","
 		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
 		"\"bridgeObjects\":{\"mapObjects\":%d,\"point1\":%d,\"point2\":%d,"
@@ -9728,7 +9885,18 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_buffer_initialized),
 		bool_json(load_bridges_invoked),
 		bool_json(update_center_invoked),
-		bool_json(terrain_logic_cleared_for_draw),
+		bool_json(terrain_logic_installed_for_draw),
+		bool_json(terrain_logic_retained_for_draw),
+		bool_json(bridge_logic_seed_info_available),
+		bool_json(bridge_logic_seeded_for_draw),
+		bool_json(bridge_logic_generic_bridge_object_missing),
+		bool_json(bridge_logic_ai_pathfinder_available),
+		bridge_logic_count_after_seed,
+		bridge_logic_first_index_after_seed,
+		bridge_logic_first_damage_state_after_seed,
+		bridge_logic_first_layer_after_seed,
+		bridge_draw_terrain_logic_bridge_count,
+		bridge_draw_enabled_bridge_count,
 		bool_json(scene_created),
 		bool_json(scene_object_added),
 		begin_render_result,

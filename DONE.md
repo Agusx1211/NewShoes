@@ -3879,6 +3879,25 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `node WebAssembly/harness/terrain_bridge_buffer_scene_smoke.mjs`,
       `npm --prefix WebAssembly run test:ww3d-terrain-road-buffer-scene`, and
       `CNC_PORT_TERRAIN_SCENE_MODE=shroud node WebAssembly/harness/terrain_map_patch_scene_smoke.mjs`.
+- [x] Promote the bridge-buffer terrain scene draw from the null
+      `TheTerrainLogic` WorldBuilder branch to a retained TerrainLogic-owned
+      draw branch. The focused bridge scene now installs a live
+      `W3DTerrainLogic` scope for the render, seeds one original logical
+      `Bridge` node from the first visual bridge's original `BridgeInfo`, and
+      calls `W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)` so the
+      original production draw loop walks `TheTerrainLogic->getFirstBridge()`,
+      leaves the selected visual bridge enabled, and still submits the textured
+      bridge base pass plus shroud overlay in the browser. The probe records
+      `terrainLogicInstalledForDraw`, `terrainLogicRetainedForDraw`,
+      `bridgeLogicSeededForDraw`, `bridgeDrawTerrainLogicBridgeCount`, and
+      `bridgeDrawEnabledBridgeCount`; it also honestly reports the remaining
+      production gap with `bridgeLogicAiPathfinderAvailable === false` and
+      `bridgeLogicGenericBridgeObjectMissing === true` until the target has real
+      AI/pathfinder and `GenericBridge` ThingFactory ownership. Verified with
+      `cmake --build WebAssembly/build/wasm --target cnc-port -j 8` and the
+      direct `terrain_bridge_buffer_scene_smoke.mjs` browser smoke over
+      `INIZH.big`, `MapsZH.big`, `TerrainZH.big`, `W3DZH.big`, and
+      `TexturesZH.big`.
 - [x] Feed the focused terrain road and bridge adjunct buffers from the
       original logical terrain map-object list. The road and bridge scene probes
       now call original `W3DTerrainLogic::loadMap(query=true)` against

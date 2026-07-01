@@ -404,11 +404,18 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter -> TerrainLogic-retained W3DBridgeBuffer::drawBridges(FALSE) -> W3DBridge::renderBridge + bridge shroud overlay"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
-      || result.probe?.results?.terrainLogicClearedForDraw !== true
+      || result.probe?.results?.terrainLogicInstalledForDraw !== true
+      || result.probe?.results?.terrainLogicRetainedForDraw !== true
+      || result.probe?.results?.bridgeLogicSeedInfoAvailable !== true
+      || result.probe?.results?.bridgeLogicSeededForDraw !== true
+      || result.probe?.results?.bridgeLogicCountAfterSeed <= 0
+      || result.probe?.results?.bridgeLogicFirstIndexAfterSeed !== 0
+      || result.probe?.results?.bridgeDrawTerrainLogicBridgeCount <= 0
+      || result.probe?.results?.bridgeDrawEnabledBridgeCount <= 0
       || result.probe?.results?.bridgeDrawWrapperInvoked !== true
       || result.probe?.results?.bridgeDrawWrapperWireframe !== false
       || result.probe?.results?.bridgeTerrainRenderObjectPinned !== true
@@ -441,7 +448,7 @@ try {
       || result.probe?.bridges?.afterLoad <= 0
       || result.probe?.bridges?.verticesAfterUpdate <= 0
       || result.probe?.bridges?.indicesAfterUpdate <= 0
-      || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)") !== true
+      || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)") !== true
       || result.probe?.scene?.renderPath?.includes("W3DBridge::renderBridge") !== true
       || result.probe?.draw?.vertexShaderFvf !== 338
       || result.probe?.draw?.vertexStride !== 36

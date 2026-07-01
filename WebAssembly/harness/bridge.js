@@ -19251,7 +19251,14 @@ async function rpc(command, payload = {}) {
           && probe?.results?.bridgeBufferInitialized === true
           && probe?.results?.loadBridgesInvoked === true
           && probe?.results?.updateCenterInvoked === true
-          && probe?.results?.terrainLogicClearedForDraw === true
+          && probe?.results?.terrainLogicInstalledForDraw === true
+          && probe?.results?.terrainLogicRetainedForDraw === true
+          && probe?.results?.bridgeLogicSeedInfoAvailable === true
+          && probe?.results?.bridgeLogicSeededForDraw === true
+          && (probe?.results?.bridgeLogicCountAfterSeed ?? 0) > 0
+          && probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
+          && (probe?.results?.bridgeDrawTerrainLogicBridgeCount ?? 0) > 0
+          && (probe?.results?.bridgeDrawEnabledBridgeCount ?? 0) > 0
           && probe?.results?.sceneCreated === true
           && probe?.results?.sceneObjectAdded === true
           && probe?.results?.bridgeDrawWrapperInvoked === true
@@ -19275,7 +19282,7 @@ async function rpc(command, payload = {}) {
           && (probe?.terrain?.tileDiagnostics?.sourceTilesLoaded ?? 0) > 0
           && (probe?.terrain?.tileDiagnostics?.sourceTilesPositioned ?? 0) > 0
           && probe?.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
-          && probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)")
+          && probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)")
           && probe?.scene?.renderPath?.includes("W3DBridge::renderBridge")
           && probe?.scene?.created === true
           && probe?.scene?.objectAdded === true

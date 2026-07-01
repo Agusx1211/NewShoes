@@ -2039,6 +2039,12 @@ const steps = [
           && payload.logicalTerrain?.timeOfDayNotified === true
           && payload.logicalTerrain?.notifiedTimeOfDay === payload.logicalTerrain?.mapTimeOfDay
           && payload.probe?.results?.bridgePairMapObjectsInstalled === false
+          && payload.probe?.results?.terrainLogicInstalledForDraw === true
+          && payload.probe?.results?.terrainLogicRetainedForDraw === true
+          && payload.probe?.results?.bridgeLogicSeedInfoAvailable === true
+          && payload.probe?.results?.bridgeLogicSeededForDraw === true
+          && payload.probe?.results?.bridgeLogicCountAfterSeed > 0
+          && payload.probe?.results?.bridgeLogicFirstIndexAfterSeed === 0
           && (payload.bridgeObjects?.templateSubstitutedForAvailableAssets !== true
             || payload.logicalTerrain?.selectedTemplateSubstitutedInLogicalList === true),
         "terrain bridge-buffer scene render smoke did not consume the original logical bridge map-object list", {
@@ -2055,8 +2061,10 @@ const steps = [
           && payload.terrain?.tileDiagnostics?.patchCellsWithSource > 0,
         "terrain bridge-buffer scene render smoke did not keep source-backed terrain geometry", payload.terrain);
       expect(payload.scene?.renderPath?.includes("HeightMapRenderObjClass::Render")
-          && payload.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE)")
+          && payload.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(FALSE, TheTerrainLogic)")
           && payload.scene?.renderPath?.includes("W3DBridge::renderBridge")
+          && payload.probe?.results?.bridgeDrawTerrainLogicBridgeCount > 0
+          && payload.probe?.results?.bridgeDrawEnabledBridgeCount > 0
           && payload.scene?.created === true
           && payload.scene?.objectAdded === true
           && payload.scene?.terrainClassId === 4,

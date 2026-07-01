@@ -865,14 +865,22 @@ shares structure and follows behind.
       `GlobalData` layout so gameplay fog updates originate from the full
       partition/shroud owners instead of the probe-local layout shims and
       bounded terrain cell grid.
-- [ ] Promote bridge-buffer drawing from the focused
-      `drawBridges(FALSE, nullptr)` proof into production TerrainLogic-owned
-      damage-state behavior. The focused browser scene now verifies the
-      textured bridge base pass and bridge shroud overlay from the full logical
-      map-object list, but still clears `TheTerrainLogic` for drawing and passes
-      `nullptr` into `W3DBridgeBuffer::loadBridges` so it does not exercise
-      damaged/repaired bridge state lookup or `TheAI->pathfinder()->addBridge`
-      ownership from real gameplay objects.
+- [ ] Promote the bridge-buffer scene from probe-seeded retained
+      `TheTerrainLogic` draw ownership into production
+      `W3DBridgeBuffer::loadBridges(&W3DTerrainLogic, FALSE)` /
+      `TerrainLogic::addBridgeToLogic` ownership. The focused browser scene now
+      keeps `TheTerrainLogic` live through `W3DBridgeBuffer::drawBridges(FALSE,
+      TheTerrainLogic)` and verifies the original draw loop consults a retained
+      logical `Bridge` node before enabling the visual bridge, but the probe
+      still seeds that `Bridge` list entry after visual load because this target
+      links metadata-only `AI` (`AI::pathfinder()` is unavailable) and the
+      probe-local `ThingFactory` cannot create the original `GenericBridge`
+      object. Remaining work is to wire full object-template/ThingFactory and
+      real AI/pathfinder runtime ownership, pass the live `W3DTerrainLogic` into
+      `W3DBridgeBuffer::loadBridges`, require
+      `bridgeLogicAiPathfinderAvailable === true` and
+      `bridgeLogicGenericBridgeObjectMissing === false`, and then exercise
+      damaged/repaired bridge-state synchronization from real gameplay objects.
 - [ ] Promote the combined terrain-full-scene missing-water-assets frontier
       into actual original water rendering and gameplay-owned shroud updates.
       The current `test:ww3d-terrain-full-scene` harness mounts the real map,
