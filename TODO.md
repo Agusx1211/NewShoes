@@ -486,8 +486,8 @@ shares structure and follows behind.
       is driven through real original input/navigation and asset loading.
       `test:vertical-integrations` now gates runtime archive preload/startup
       asset consumption, range-backed startup archive delivery, WindowZH-backed
-      MainMenu-to-CreditsMenu layout callbacks, mapped-image W3DDisplay
-      rendering, composed W3DDisplay scene + real shell UI art + GameText
+      MainMenu dropdown/back and CreditsMenu layout callbacks, mapped-image
+      W3DDisplay rendering, composed W3DDisplay scene + real shell UI art + GameText
       rendering, and shipped W3D mesh rendering together so cross-subsystem
       regressions are visible; the browser-pixel repaint path now also includes
       archive-loaded shell `WindowLayout` coverage via
@@ -501,7 +501,10 @@ shares structure and follows behind.
       dropdown and stops at the transition boundary without pushing campaign or
       skirmish screens. It then runs one original `MainMenuUpdate` to clear the
       transition lock and drives `ButtonSingleBack` through the same input path
-      to prove return navigation to the main dropdown. It now also mounts real
+      to prove return navigation to the main dropdown. It now also drives
+      `ButtonLoadReplay` and `ButtonLoadReplayBack` through the same original
+      input path, proving the load-replay dropdown transition and return stay
+      inside the `MainMenu.wnd` shell layout. It now also mounts real
       `INIZH.big`, loads `Menus/CreditsMenu.wnd` and `Data\INI\Credits.ini`,
       drives `ButtonCredits` through the original input path, lets
       `MainMenuUpdate` complete the pending `Shell::push`, and verifies
@@ -801,6 +804,12 @@ shares structure and follows behind.
       normal display path.
 - [ ] `GameClient/GUI` widgets receive events and are clickable.
 - [ ] Navigate shell menus (Single Player, Skirmish, Options) via harness.
+      Current original-input coverage includes Single Player dropdown/back,
+      Load Replay dropdown/back, and MainMenu-to-CreditsMenu. Before driving
+      `ButtonSkirmish`, provide a real or owned `ScriptEngine` UI-interaction
+      path because original `MainMenuSystem` calls
+      `TheScriptEngine->signalUIInteract` after pushing
+      `Menus/SkirmishGameOptionsMenu.wnd`.
 - [ ] Harness: click named UI elements through the engine command path.
 - [ ] Touch input mapping (stretch, for mobile).
 

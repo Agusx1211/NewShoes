@@ -226,6 +226,8 @@ const steps = [
         && payload.callbackPaths.includes('W3DMainMenuInit->original MainMenuInit')
         && payload.callbackPaths.includes('MainMenuSystem(GWM_INPUT_FOCUS)')
         && payload.callbackPaths.includes('MainMenuUpdate(first idle frame)')
+        && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition')
+        && payload.callbackPaths.includes('GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return')
         && payload.callbackPaths.includes('GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu')
         && payload.callbackPaths.includes('MainMenuUpdate shutdownComplete->original CreditsMenuInit')
         && payload.callbackPaths.includes('CreditsMenuUpdate real callback'),
@@ -267,6 +269,7 @@ console.log(JSON.stringify({
     'original W3DMainMenuInit executing original MainMenuInit first-run state mutation',
     'original MainMenuSystem input-focus handling',
     'original MainMenuUpdate first idle frame under shell GameLogic state',
+    'original ButtonLoadReplay dropdown and ButtonLoadReplayBack return through MainMenuSystem',
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
   ],
   nextRequired: [

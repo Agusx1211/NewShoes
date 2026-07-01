@@ -1824,6 +1824,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `npm --prefix WebAssembly run test:w3d-window-layout-script`,
       `npm --prefix WebAssembly run test:startup-vertical`, and
       `npm --prefix WebAssembly run test:vertical-integrations`.
+- [x] Extend the Shell-owned `Menus/MainMenu.wnd` input vertical through the
+      Load Replay dropdown. `w3d-window-layout-script-smoke` now drives the
+      real `ButtonLoadReplay` `GWM_LEFT_DOWN`/`GWM_LEFT_UP` pair through
+      original `GameWindowManager::winSendInputMsg`, `GadgetPushButton`, and
+      `MainMenuSystem`, verifies the shipped `MapBorder3` load-replay dropdown
+      is unhidden, checks the original `MainMenuLoadReplayMenu` transition
+      group, then drives `ButtonLoadReplayBack` back to `MainMenuDefaultMenu`
+      without pushing another shell layout. The startup vertical and aggregate
+      vertical integration gate both require the new callback paths. Verified
+      with `npm --prefix WebAssembly run test:w3d-window-layout-script`,
+      `npm --prefix WebAssembly run test:startup-vertical`, and
+      `npm --prefix WebAssembly run test:vertical-integrations`.
 - [x] Promote the startup vertical into the aggregate cross-subsystem gate.
       `test:vertical-integrations` now runs `run_startup_vertical_smoke.mjs`
       before the archive/audio/network/render/video steps and asserts the

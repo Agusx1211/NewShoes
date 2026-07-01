@@ -847,6 +847,10 @@ const steps = [
         "W3D window layout script smoke did not execute real MainMenu button input/navigation", payload);
       expect(payload.callbackPaths?.includes("GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return"),
         "W3D window layout script smoke did not execute real MainMenu dropdown return navigation", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition"),
+        "W3D window layout script smoke did not execute real ButtonLoadReplay dropdown navigation", payload);
+      expect(payload.callbackPaths?.includes("GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return"),
+        "W3D window layout script smoke did not execute real ButtonLoadReplayBack return navigation", payload);
       expect(payload.callbackPaths?.includes("GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu"),
         "W3D window layout script smoke did not execute real ButtonCredits submenu navigation", payload);
       expect(payload.callbackPaths?.includes("MainMenuUpdate shutdownComplete->original CreditsMenuInit"),
@@ -1359,7 +1363,7 @@ console.log(JSON.stringify({
     "original LANAPI game-start state driven through Network::update, GetCommandsFromCommandList, processCommand, ConnectionManager::allCommandsReady, timeForNewFrame, RelayCommandsToCommandList, and frameDataReady transition",
     "original LANAPI game-start state driven through three Network::update frames plus original FrameData FRAMEDATA_NOTREADY and FRAMEDATA_RESEND desync states",
     "browser Range archive delivery through synthesized BIG files, original Win32BIGFileSystem, and base INI blocker reporting",
-    "WindowZH/INIZH-backed Shell MainMenu-to-CreditsMenu callback execution and real input navigation",
+    "WindowZH/INIZH-backed Shell MainMenu Load Replay dropdown/back and CreditsMenu callback execution through real input navigation",
     "synthetic W3DGameWindowManager winRepaint dispatch into W3DGadgetPushButtonDraw, a vtable-safe Display adapter, and real W3DDisplay/WebGL2 button pixels",
     "mapped-image W3DDisplay drawImage over real INIZH/EnglishZH assets",
     "real WindowZH MainMenu.wnd image child repaint through parseDrawData, W3DGameWinDefaultDraw, W3DDisplay::drawImage, GameText-backed visible main-button labels including ButtonLoadReplay, and browser WebGL2 pixels",

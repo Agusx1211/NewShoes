@@ -1129,13 +1129,20 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MapBorder")));
 		GameWindow *main_dropdown = TheWindowManager->winGetWindowFromId(main_parent,
 			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MapBorder2")));
+		GameWindow *load_replay_dropdown = TheWindowManager->winGetWindowFromId(main_parent,
+			TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:MapBorder3")));
 		ok = expect(single_player_button != nullptr,
 			"MainMenu.wnd did not create ButtonSinglePlayer for input navigation") && ok;
 		ok = expect(single_dropdown != nullptr,
 			"MainMenu.wnd did not create the single-player dropdown window") && ok;
 		ok = expect(main_dropdown != nullptr,
 			"MainMenu.wnd did not create the main dropdown window") && ok;
-		if (single_player_button != nullptr && single_dropdown != nullptr && main_dropdown != nullptr) {
+		ok = expect(load_replay_dropdown != nullptr,
+			"MainMenu.wnd did not create the load-replay dropdown window") && ok;
+		if (single_player_button != nullptr
+				&& single_dropdown != nullptr
+				&& main_dropdown != nullptr
+				&& load_replay_dropdown != nullptr) {
 			const WindowMsgData packed_click = center_click_data(single_player_button);
 			const Int transition_is_finished_before_click = g_transition_is_finished_calls;
 			const Int transition_remove_before_click = g_transition_remove_calls;
@@ -1202,6 +1209,78 @@ bool exercise_w3d_shell_main_menu_push(const char *archive_path)
 					"original MainMenuSystem did not set MainMenuDefaultMenu for ButtonSingleBack") && ok;
 				ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
 					"ButtonSingleBack input should stay inside the MainMenu shell layout") && ok;
+				}
+				if (top != nullptr) {
+					top->runUpdate();
+				}
+				GameWindow *load_replay_button = TheWindowManager->winGetWindowFromId(main_parent,
+					TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonLoadReplay")));
+				ok = expect(load_replay_button != nullptr,
+					"MainMenu.wnd did not create ButtonLoadReplay for dropdown navigation") && ok;
+				if (load_replay_button != nullptr) {
+					const WindowMsgData packed_load_replay_click = center_click_data(load_replay_button);
+					const Int load_replay_transition_is_finished_before_click = g_transition_is_finished_calls;
+					const Int load_replay_transition_remove_before_click = g_transition_remove_calls;
+					const Int load_replay_transition_reverse_before_click = g_transition_reverse_calls;
+					const Int load_replay_transition_set_group_before_click = g_transition_set_group_calls;
+					ok = expect(BitTest(load_replay_dropdown->winGetStatus(), WIN_STATUS_HIDDEN),
+						"load-replay dropdown should start hidden after original MainMenuInit") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(load_replay_button, GWM_LEFT_DOWN, packed_load_replay_click, 0) == MSG_HANDLED,
+						"ButtonLoadReplay did not handle original GWM_LEFT_DOWN input") && ok;
+					ok = expect(TheWindowManager->winSendInputMsg(load_replay_button, GWM_LEFT_UP, packed_load_replay_click, 0) == MSG_HANDLED,
+						"ButtonLoadReplay did not handle original GWM_LEFT_UP input") && ok;
+					ok = expect(BitTest(load_replay_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+						"ButtonLoadReplay did not clear selected state after original GWM_LEFT_UP") && ok;
+					ok = expect(BitTest(load_replay_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+						"original MainMenuSystem did not unhide the load-replay dropdown after ButtonLoadReplay input") && ok;
+					ok = expect(g_transition_is_finished_calls == load_replay_transition_is_finished_before_click + 1,
+						"original MainMenuSystem did not query the transition boundary for ButtonLoadReplay") && ok;
+					ok = expect(g_transition_remove_calls == load_replay_transition_remove_before_click + 1
+							&& g_last_transition_remove_group == AsciiString("MainMenuDefaultMenu"),
+						"original MainMenuSystem did not remove MainMenuDefaultMenu for ButtonLoadReplay") && ok;
+					ok = expect(g_transition_reverse_calls == load_replay_transition_reverse_before_click + 1
+							&& g_last_transition_reverse_group == AsciiString("MainMenuDefaultMenuBack"),
+						"original MainMenuSystem did not reverse MainMenuDefaultMenuBack for ButtonLoadReplay") && ok;
+					ok = expect(g_transition_set_group_calls == load_replay_transition_set_group_before_click + 1
+							&& g_last_transition_group == AsciiString("MainMenuLoadReplayMenu"),
+						"original MainMenuSystem did not set MainMenuLoadReplayMenu for ButtonLoadReplay") && ok;
+					ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+						"ButtonLoadReplay input should stay inside the MainMenu shell layout") && ok;
+					if (top != nullptr) {
+						top->runUpdate();
+					}
+					GameWindow *load_replay_back_button = TheWindowManager->winGetWindowFromId(main_parent,
+						TheNameKeyGenerator->nameToKey(AsciiString("MainMenu.wnd:ButtonLoadReplayBack")));
+					ok = expect(load_replay_back_button != nullptr,
+						"MainMenu.wnd did not create ButtonLoadReplayBack for dropdown return navigation") && ok;
+					if (load_replay_back_button != nullptr) {
+						const WindowMsgData packed_load_replay_back_click = center_click_data(load_replay_back_button);
+						const Int load_replay_back_transition_is_finished_before_click = g_transition_is_finished_calls;
+						const Int load_replay_back_transition_remove_before_click = g_transition_remove_calls;
+						const Int load_replay_back_transition_reverse_before_click = g_transition_reverse_calls;
+						const Int load_replay_back_transition_set_group_before_click = g_transition_set_group_calls;
+						ok = expect(TheWindowManager->winSendInputMsg(load_replay_back_button, GWM_LEFT_DOWN, packed_load_replay_back_click, 0) == MSG_HANDLED,
+							"ButtonLoadReplayBack did not handle original GWM_LEFT_DOWN input") && ok;
+						ok = expect(TheWindowManager->winSendInputMsg(load_replay_back_button, GWM_LEFT_UP, packed_load_replay_back_click, 0) == MSG_HANDLED,
+							"ButtonLoadReplayBack did not handle original GWM_LEFT_UP input") && ok;
+						ok = expect(BitTest(load_replay_back_button->winGetInstanceData()->m_state, WIN_STATE_SELECTED) == FALSE,
+							"ButtonLoadReplayBack did not clear selected state after original GWM_LEFT_UP") && ok;
+						ok = expect(BitTest(main_dropdown->winGetStatus(), WIN_STATUS_HIDDEN) == FALSE,
+							"original MainMenuSystem did not unhide the main dropdown after ButtonLoadReplayBack input") && ok;
+						ok = expect(g_transition_is_finished_calls == load_replay_back_transition_is_finished_before_click + 1,
+							"original MainMenuSystem did not query the transition boundary for ButtonLoadReplayBack") && ok;
+						ok = expect(g_transition_remove_calls == load_replay_back_transition_remove_before_click + 1
+								&& g_last_transition_remove_group == AsciiString("MainMenuLoadReplayMenu"),
+							"original MainMenuSystem did not remove MainMenuLoadReplayMenu for ButtonLoadReplayBack") && ok;
+						ok = expect(g_transition_reverse_calls == load_replay_back_transition_reverse_before_click + 1
+								&& g_last_transition_reverse_group == AsciiString("MainMenuLoadReplayMenuBack"),
+							"original MainMenuSystem did not reverse MainMenuLoadReplayMenuBack for ButtonLoadReplayBack") && ok;
+						ok = expect(g_transition_set_group_calls == load_replay_back_transition_set_group_before_click + 1
+								&& g_last_transition_group == AsciiString("MainMenuDefaultMenu"),
+							"original MainMenuSystem did not set MainMenuDefaultMenu for ButtonLoadReplayBack") && ok;
+						ok = expect(shell.getScreenCount() == 1 && shell.top() == top,
+							"ButtonLoadReplayBack input should stay inside the MainMenu shell layout") && ok;
+					}
 				}
 				if (top != nullptr) {
 					top->runUpdate();
@@ -2051,8 +2130,8 @@ int main()
 		<< "\"shellLayouts\":[\"Menus/MainMenu.wnd\",\"Menus/CreditsMenu.wnd\"],"
 		<< "\"callbackOwners\":[\"MessageBoxSystem\",\"QuitMessageBoxSystem\",\"CreditsMenuSystem\",\"PassMessagesToParentSystem\"],"
 		<< "\"shellCallbackNames\":[\"W3DMainMenuInit\",\"MainMenuUpdate\",\"MainMenuSystem\",\"MainMenuShutdown\",\"CreditsMenuInit\",\"CreditsMenuUpdate\",\"CreditsMenuSystem\"],"
-		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
-		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
+		<< "\"callbackPaths\":[\"W3DMainMenuInit->original MainMenuInit\",\"MainMenuSystem(GWM_INPUT_FOCUS)\",\"MainMenuUpdate(first idle frame)\",\"GadgetPushButton ButtonSinglePlayer click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonSingleBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonLoadReplay click->MainMenuSystem dropdown transition\",\"GadgetPushButton ButtonLoadReplayBack click->MainMenuSystem dropdown return\",\"GadgetPushButton ButtonCredits click->MainMenuSystem pending Shell::push CreditsMenu\",\"MainMenuUpdate shutdownComplete->original CreditsMenuInit\",\"CreditsMenuUpdate real callback\"],"
+		<< "\"covered\":\"original WindowLayout load, Win32BIGFileSystem WindowZH.big and INIZH.big mount, .wnd parser, W3DFunctionLexicon device layout-init/update lookup, original W3DMainMenuInit to original MainMenuInit first-run state mutation, original MainMenuSystem input-focus handling, original MainMenuUpdate first idle frame under shell GameLogic state, original GadgetPushButton ButtonSinglePlayer click through GameWindowManager::winSendInputMsg to MainMenuSystem dropdown transition, original ButtonSingleBack click returning to the main dropdown through the same input path, original ButtonLoadReplay click opening the load-replay dropdown through MainMenuSystem, original ButtonLoadReplayBack click returning to the main dropdown through MainMenuSystem, original ButtonCredits click through MainMenuSystem into Shell::push CreditsMenu.wnd, original MainMenuUpdate shutdownComplete running original CreditsMenuInit, original CreditsMenuUpdate callback execution, real CreditsManager load from INIZH.big Data\\\\INI\\\\Credits.ini, original CreditsMenu audio-event boundary through local AudioManager device owner, original Shell::showShell/Shell::push MainMenu.wnd and CreditsMenu.wnd stack ownership, MainMenu.wnd and CreditsMenu.wnd callback-name binding, original message-box callback ownership, NameKey window id, and parsed GameWindow ownership\"}"
 		<< "\n";
 	return 0;
 }
