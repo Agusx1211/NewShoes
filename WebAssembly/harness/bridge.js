@@ -7323,6 +7323,8 @@ async function loadWasmModule() {
         "cnc_port_probe_ww3d_terrain_visual_shroud_update_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainFullScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_full_scene", "string", ["string", "string", "string"]),
+      probeWW3DTerrainFullSceneShroudUpdate: module.cwrap(
+        "cnc_port_probe_ww3d_terrain_full_scene_shroud_update", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualLoadWindowScene: module.cwrap(
         "cnc_port_probe_ww3d_terrain_visual_load_window_scene", "string", ["string", "string", "string"]),
       probeWW3DTerrainVisualCameraPanScene: module.cwrap(
@@ -18660,6 +18662,7 @@ async function rpc(command, payload = {}) {
     case "ww3dTerrainVisualShroudScene":
     case "ww3dTerrainVisualShroudUpdateScene":
     case "ww3dTerrainFullScene":
+    case "ww3dTerrainFullSceneShroudUpdate":
     case "ww3dTerrainVisualLoadWindowScene":
     case "ww3dTerrainVisualCameraPanScene":
       {
@@ -18667,13 +18670,16 @@ async function rpc(command, payload = {}) {
         if (!wasmModule) {
           return { ok: false, command, error: "Wasm module unavailable; visual-owned WW3D terrain scene cannot render" };
         }
-        const fullInitMode = command === "ww3dTerrainFullScene";
+        const fullInitShroudUpdateMode = command === "ww3dTerrainFullSceneShroudUpdate";
+        const fullInitMode = command === "ww3dTerrainFullScene" || fullInitShroudUpdateMode;
         const visualShroudUpdateMode = command === "ww3dTerrainVisualShroudUpdateScene";
         const visualShroudMode = command === "ww3dTerrainVisualShroudScene" || visualShroudUpdateMode;
         const loadWindowMode = command === "ww3dTerrainVisualLoadWindowScene";
         const cameraPanMode = command === "ww3dTerrainVisualCameraPanScene";
         const expectedSource = fullInitMode
-          ? "ww3d_terrain_full_scene_probe"
+          ? (fullInitShroudUpdateMode
+            ? "ww3d_terrain_full_scene_shroud_update_probe"
+            : "ww3d_terrain_full_scene_probe")
           : (loadWindowMode
           ? "ww3d_terrain_visual_load_window_scene_probe"
           : (cameraPanMode
@@ -18684,7 +18690,9 @@ async function rpc(command, payload = {}) {
                   : "ww3d_terrain_visual_shroud_scene_probe")
                 : "ww3d_terrain_visual_scene_probe")));
         const expectedRenderMode = fullInitMode
-          ? "full-init-source-patch"
+          ? (fullInitShroudUpdateMode
+            ? "full-init-shroud-display-and-partition-refresh-source-patch"
+            : "full-init-source-patch")
           : (loadWindowMode
           ? "visual-load-window"
           : (cameraPanMode
@@ -18709,7 +18717,9 @@ async function rpc(command, payload = {}) {
         };
         const textureBefore = harnessState.graphics.d3d8Textures ?? {};
         const probe = parseModuleState(
-          (fullInitMode
+          (fullInitShroudUpdateMode
+            ? wasmModule.probeWW3DTerrainFullSceneShroudUpdate
+            : (fullInitMode
             ? wasmModule.probeWW3DTerrainFullScene
             : (loadWindowMode
             ? wasmModule.probeWW3DTerrainVisualLoadWindowScene
@@ -18719,7 +18729,7 @@ async function rpc(command, payload = {}) {
                   ? (visualShroudUpdateMode
                     ? wasmModule.probeWW3DTerrainVisualShroudUpdateScene
                     : wasmModule.probeWW3DTerrainVisualShroudScene)
-                  : wasmModule.probeWW3DTerrainVisualScene))))(
+                  : wasmModule.probeWW3DTerrainVisualScene)))))(
             iniArchivePath,
             mapsArchivePath,
             terrainArchivePath,
@@ -18737,9 +18747,11 @@ async function rpc(command, payload = {}) {
         const fullSceneMissingWaterAssets =
           fullInitMode && probe?.results?.fullInitBlockedByMissingWaterAssets === true;
         const fullSceneWaterInitialized = fullInitMode && !fullSceneMissingWaterAssets;
-        const renderModeMatches = fullInitMode
+        const renderModeMatches = fullInitShroudUpdateMode
+          ? probe?.renderMode === expectedRenderMode
+          : (fullInitMode
           ? ["full-init-source-patch", "full-init-missing-water-assets-frontier"].includes(probe?.renderMode)
-          : probe?.renderMode === expectedRenderMode;
+          : probe?.renderMode === expectedRenderMode);
         const textureDelta = {
           creates: (textureAfter?.creates ?? 0) - (textureBefore.creates ?? 0),
           updates: (textureAfter?.updates ?? 0) - (textureBefore.updates ?? 0),
@@ -18927,6 +18939,83 @@ async function rpc(command, payload = {}) {
             && shroudTerrainIndices.length >= 3
             && secondShroudAfterSecondTerrain
             && thirdShroudAfterThirdTerrain);
+        const fullInitShroudUpdateProbeOk = !fullInitShroudUpdateMode
+          || (probe?.results?.visualShroudRequested === true
+            && probe?.results?.shroudUpdateRequested === true
+            && probe?.results?.partitionRefreshRequested === true
+            && probe?.visual?.fullInit === true
+            && probe?.visual?.waterRenderObjectNull === false
+            && probe?.visual?.shroudRenderObject === true
+            && probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") === true
+            && probe?.shroud?.requested === true
+            && probe?.shroud?.installed === true
+            && probe?.shroud?.initialized === true
+            && probe?.shroud?.fillInvoked === true
+            && probe?.shroud?.renderInvoked === true
+            && probe?.shroud?.textureReady === true
+            && (probe?.shroud?.cellsX ?? 0) > 0
+            && (probe?.shroud?.cellsY ?? 0) > 0
+            && (probe?.shroud?.textureWidth ?? 0) > 0
+            && (probe?.shroud?.textureHeight ?? 0) > 0
+            && (probe?.shroud?.sampleLevel ?? -1) >= 0
+            && probe?.shroudUpdate?.requested === true
+            && probe?.shroudUpdate?.setInvoked === true
+            && probe?.shroudUpdate?.displayInvoked === true
+            && probe?.shroudUpdate?.notifyInvoked === true
+            && probe?.shroudUpdate?.renderInvoked === true
+            && probe?.shroudUpdate?.sampleChanged === true
+            && probe?.shroudUpdate?.status === 0
+            && probe?.shroudUpdate?.expectedLevel === probe?.shroudUpdate?.sampleAfter
+            && (probe?.shroudUpdate?.sampleAfter ?? 0) > (probe?.shroudUpdate?.sampleBefore ?? 0)
+            && (probe?.shroudUpdate?.cellsChanged ?? 0) > 0
+            && probe?.shroudUpdate?.beginRender === 0
+            && probe?.shroudUpdate?.render === 0
+            && probe?.shroudUpdate?.endRender === 0
+            && probe?.partitionRefresh?.requested === true
+            && probe?.partitionRefresh?.terrainLogicInstalled === true
+            && probe?.partitionRefresh?.partitionCreated === true
+            && probe?.partitionRefresh?.partitionInstalled === true
+            && probe?.partitionRefresh?.partitionInitInvoked === true
+            && probe?.partitionRefresh?.partitionCellsReady === true
+            && probe?.partitionRefresh?.displayInstalled === true
+            && probe?.partitionRefresh?.radarInstalled === true
+            && probe?.partitionRefresh?.playerListInstalled === true
+            && probe?.partitionRefresh?.revealInvoked === true
+            && probe?.partitionRefresh?.refreshInvoked === true
+            && probe?.partitionRefresh?.samplePrepared === true
+            && probe?.partitionRefresh?.sampleChanged === true
+            && probe?.partitionRefresh?.displaySampleTouched === true
+            && probe?.partitionRefresh?.radarSampleTouched === true
+            && probe?.partitionRefresh?.renderInvoked === true
+            && probe?.partitionRefresh?.status === 1
+            && probe?.partitionRefresh?.expectedLevel === probe?.partitionRefresh?.sampleAfter
+            && (probe?.partitionRefresh?.sampleAfter ?? 0) > (probe?.partitionRefresh?.sampleBefore ?? 0)
+            && (probe?.partitionRefresh?.totalCells ?? 0) > 0
+            && (probe?.partitionRefresh?.displaySetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
+            && (probe?.partitionRefresh?.radarSetCalls ?? 0) >= (probe?.partitionRefresh?.totalCells ?? 1)
+            && (probe?.partitionRefresh?.displayFoggedSetCalls ?? 0) > 0
+            && (probe?.partitionRefresh?.radarFoggedSetCalls ?? 0) > 0
+            && probe?.partitionRefresh?.displayClearCalls === 1
+            && probe?.partitionRefresh?.radarClearCalls === 1
+            && probe?.partitionRefresh?.beginRender === 0
+            && probe?.partitionRefresh?.render === 0
+            && probe?.partitionRefresh?.endRender === 0
+            && probe?.renderFrames?.count === 3
+            && probe?.renderFrames?.firstDrawIndexed >= 3
+            && probe?.renderFrames?.shroudUpdateDrawIndexed >= 6
+            && probe?.renderFrames?.partitionRefreshDrawIndexed >= 9
+            && probe?.renderFrames?.firstClear >= 1
+            && probe?.renderFrames?.shroudUpdateClear >= 2
+            && probe?.renderFrames?.partitionRefreshClear >= 3
+            && probe?.renderFrames?.shroudUpdateTextureUpdate > probe?.renderFrames?.firstTextureUpdate
+            && probe?.renderFrames?.partitionRefreshTextureUpdate > probe?.renderFrames?.shroudUpdateTextureUpdate
+            && drawHistory.length >= 9
+            && baseTerrainIndices.length >= 3
+            && blendTerrainIndices.length >= 3
+            && shroudTerrainIndices.length >= 3
+            && secondShroudAfterSecondTerrain
+            && thirdShroudAfterThirdTerrain
+            && isShroudTerrainPass(browserProbe));
         const ok = Boolean(probe.ok)
           && probe?.source === expectedSource
           && renderModeMatches
@@ -19011,6 +19100,7 @@ async function rpc(command, payload = {}) {
           && cameraPanProbeOk
           && visualShroudProbeOk
           && visualShroudUpdateProbeOk
+          && fullInitShroudUpdateProbeOk
           && textureDelta.creates >= 1
           && textureDelta.updates >= 1
           && textureDelta.binds >= 1

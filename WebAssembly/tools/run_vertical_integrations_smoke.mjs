@@ -1651,6 +1651,85 @@ const steps = [
         "terrain full-scene smoke did not produce colored browser pixels", payload.fullSceneCoverage);
       expect(payload.fullSceneScreenshot?.endsWith("harness-smoke-ww3d-terrain-full-scene-canvas.png"),
         "terrain full-scene smoke did not capture the expected screenshot", payload);
+      expect(payload.fullSceneShroudUpdateVisual?.class === "W3DTerrainVisual"
+          && payload.fullSceneShroudUpdateVisual?.fullInit === true
+          && payload.fullSceneShroudUpdateVisual?.ownedTerrainRenderObject === true
+          && payload.fullSceneShroudUpdateVisual?.waterRenderObjectNull === false
+          && payload.fullSceneShroudUpdateVisual?.shroudRenderObject === true,
+        "terrain full-scene shroud update smoke did not keep shroud under full W3DTerrainVisual::init ownership", payload.fullSceneShroudUpdateVisual);
+      expect(payload.fullSceneShroudUpdateWater?.assetsReady === true
+          && payload.fullSceneShroudUpdateWater?.missingTextureCount === 0
+          && payload.fullSceneShroudUpdateWater?.renderObjectCreated === true
+          && payload.fullSceneShroudUpdateWater?.globalPointerMatches === true
+          && payload.fullSceneShroudUpdateWater?.sceneObjectAdded === true,
+        "terrain full-scene shroud update smoke did not preserve water ownership", payload.fullSceneShroudUpdateWater);
+      expect(payload.fullSceneShroudUpdateScene?.renderPath?.includes("W3DDisplay::m_3DScene")
+          && payload.fullSceneShroudUpdateScene?.renderPath?.includes("W3DShroudMaterialPassClass")
+          && payload.fullSceneShroudUpdateScene?.created === true
+          && payload.fullSceneShroudUpdateScene?.objectAddedByVisualLoad === true,
+        "terrain full-scene shroud update smoke did not render through the full-init shroud scene path", payload.fullSceneShroudUpdateScene);
+      expect(payload.fullSceneShroudUpdateTerrain?.tileSource === "shipped-map-heightmap"
+          && payload.fullSceneShroudUpdateTerrain?.renderObject === "HeightMapRenderObjClass"
+          && payload.fullSceneShroudUpdateTerrain?.verticesPerSide === 33
+          && payload.fullSceneShroudUpdateTerrain?.cellsPerSide === 32
+          && payload.fullSceneShroudUpdateTerrain?.tileDiagnostics?.sourceTilesLoaded > 0
+          && payload.fullSceneShroudUpdateTerrain?.tileDiagnostics?.sourceTilesPositioned > 0
+          && payload.fullSceneShroudUpdateTerrain?.tileDiagnostics?.patchCellsWithSource > 0,
+        "terrain full-scene shroud update smoke did not report source-backed full-init terrain geometry", payload.fullSceneShroudUpdateTerrain);
+      expect(payload.fullSceneShroudUpdateShroud?.requested === true
+          && payload.fullSceneShroudUpdateShroud?.installed === true
+          && payload.fullSceneShroudUpdateShroud?.initialized === true
+          && payload.fullSceneShroudUpdateShroud?.fillInvoked === true
+          && payload.fullSceneShroudUpdateShroud?.renderInvoked === true
+          && payload.fullSceneShroudUpdateShroud?.textureReady === true
+          && payload.fullSceneShroudUpdateShroud?.cellsX > 0
+          && payload.fullSceneShroudUpdateShroud?.cellsY > 0
+          && payload.fullSceneShroudUpdateShroud?.textureWidth > 0
+          && payload.fullSceneShroudUpdateShroud?.textureHeight > 0,
+        "terrain full-scene shroud update smoke did not initialize the original heightmap shroud", payload.fullSceneShroudUpdateShroud);
+      expect(payload.fullSceneShroudUpdate?.requested === true
+          && payload.fullSceneShroudUpdate?.setInvoked === true
+          && payload.fullSceneShroudUpdate?.displayInvoked === true
+          && payload.fullSceneShroudUpdate?.notifyInvoked === true
+          && payload.fullSceneShroudUpdate?.renderInvoked === true
+          && payload.fullSceneShroudUpdate?.sampleChanged === true
+          && payload.fullSceneShroudUpdate?.expectedLevel === payload.fullSceneShroudUpdate?.sampleAfter
+          && payload.fullSceneShroudUpdate?.sampleAfter > payload.fullSceneShroudUpdate?.sampleBefore
+          && payload.fullSceneShroudUpdate?.cellsChanged > 0,
+        "terrain full-scene shroud update smoke did not mutate the full-init shroud data", payload.fullSceneShroudUpdate);
+      expect(payload.fullSceneShroudPartitionRefresh?.requested === true
+          && payload.fullSceneShroudPartitionRefresh?.terrainLogicInstalled === true
+          && payload.fullSceneShroudPartitionRefresh?.partitionCreated === true
+          && payload.fullSceneShroudPartitionRefresh?.partitionInstalled === true
+          && payload.fullSceneShroudPartitionRefresh?.partitionCellsReady === true
+          && payload.fullSceneShroudPartitionRefresh?.displayInstalled === true
+          && payload.fullSceneShroudPartitionRefresh?.radarInstalled === true
+          && payload.fullSceneShroudPartitionRefresh?.playerListInstalled === true
+          && payload.fullSceneShroudPartitionRefresh?.refreshInvoked === true
+          && payload.fullSceneShroudPartitionRefresh?.sampleChanged === true
+          && payload.fullSceneShroudPartitionRefresh?.displaySampleTouched === true
+          && payload.fullSceneShroudPartitionRefresh?.radarSampleTouched === true
+          && payload.fullSceneShroudPartitionRefresh?.expectedLevel === payload.fullSceneShroudPartitionRefresh?.sampleAfter
+          && payload.fullSceneShroudPartitionRefresh?.sampleAfter > payload.fullSceneShroudPartitionRefresh?.sampleBefore,
+        "terrain full-scene shroud update smoke did not refresh through original PartitionManager state", payload.fullSceneShroudPartitionRefresh);
+      expect(payload.fullSceneShroudUpdateFrames?.count === 3
+          && payload.fullSceneShroudUpdateFrames?.firstDrawIndexed >= 3
+          && payload.fullSceneShroudUpdateFrames?.shroudUpdateDrawIndexed >= 6
+          && payload.fullSceneShroudUpdateFrames?.partitionRefreshDrawIndexed >= 9
+          && payload.fullSceneShroudUpdateFrames?.shroudUpdateTextureUpdate > payload.fullSceneShroudUpdateFrames?.firstTextureUpdate
+          && payload.fullSceneShroudUpdateFrames?.partitionRefreshTextureUpdate > payload.fullSceneShroudUpdateFrames?.shroudUpdateTextureUpdate,
+        "terrain full-scene shroud update smoke did not prove three texture-uploaded shroud frames", payload.fullSceneShroudUpdateFrames);
+      expect(payload.fullSceneShroudUpdateDrawSequence?.shroudAfterTerrain === true
+          && payload.fullSceneShroudUpdateDrawSequence?.secondShroudAfterSecondTerrain === true
+          && payload.fullSceneShroudUpdateDrawSequence?.thirdShroudAfterThirdTerrain === true
+          && payload.fullSceneShroudUpdateDrawSequence?.shroudTerrainIndices?.length >= 3,
+        "terrain full-scene shroud update smoke did not draw ordered full-init shroud passes", payload.fullSceneShroudUpdateDrawSequence);
+      expect(payload.fullSceneShroudUpdateCalls?.drawIndexed >= 9,
+        "terrain full-scene shroud update smoke did not reach three terrain/shroud frame draw batches", payload.fullSceneShroudUpdateCalls);
+      expect(payload.fullSceneShroudUpdateCoverage?.coloredPixelCount > 0,
+        "terrain full-scene shroud update smoke did not produce colored browser pixels", payload.fullSceneShroudUpdateCoverage);
+      expect(payload.fullSceneShroudUpdateScreenshot?.endsWith("harness-smoke-ww3d-terrain-full-scene-shroud-update-canvas.png"),
+        "terrain full-scene shroud update smoke did not capture the expected screenshot", payload);
       expect(payload.cameraPanTerrain?.tileSource === "shipped-map-heightmap"
           && payload.cameraPanTerrain?.renderObject === "HeightMapRenderObjClass"
           && payload.cameraPanTerrain?.verticesPerSide === 33
@@ -2272,7 +2351,7 @@ console.log(JSON.stringify({
     "real TerrainZH.big terrain tile data through WorldHeightMap::readTiles, W3DTerrainBackground stage-1 texture sampling, and browser WebGL2 pixels",
     "real TerrainZH.big terrain tile data through RTS3DScene::Customized_Render CLASSID_TILEMAP dispatch and browser WebGL2 pixels",
     "real INIZH.big Terrain.ini texture mappings plus MapsZH.big MD_GLA03 height/blend data through WorldHeightMap, RTS3DScene::Customized_Render, HeightMapRenderObjClass, and browser WebGL2 pixels",
-    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including full W3DTerrainVisual::init water/smudge initialization from shipped Water.ini and base Textures.big, the original 129x129 load window with all 16,384 cells source-backed by mounted base Terrain.big, and browser WebGL2 pixels",
+    "real W3DTerrainVisual::load ownership of WorldHeightMap and HeightMapRenderObjClass through W3DDisplay::m_3DScene, including full W3DTerrainVisual::init water/smudge initialization from shipped Water.ini and base Textures.big, full-init HeightMapRenderObjClass shroud updates through W3DDisplay::setShroudLevel and PartitionManager::refreshShroudForLocalPlayer, the original 129x129 load window with all 16,384 cells source-backed by mounted base Terrain.big, and browser WebGL2 pixels",
     "original W3DTreeBuffer::drawTrees reached through RTS3DScene::Flush/DoTrees with shipped PTDogwod01_S W3D and terrain/tree textures in browser WebGL2",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DRoadBuffer::loadRoads and browser-visible road geometry",
     "original W3DTerrainLogic::loadMap(query=true) map-object list feeding W3DBridgeBuffer::loadBridges, W3DBridge::renderBridge, and bridge shroud browser-visible geometry",

@@ -4093,6 +4093,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       WebGL2 texture uploads/indexed draws, and the
       `harness-smoke-ww3d-terrain-full-scene-canvas.png` screenshot. Real
       gameplay-owned map-load/terrain ownership remains open in `TODO.md`.
+- [x] Add a full-init terrain shroud refresh proof beside the full-scene water
+      gate. The new `ww3dTerrainFullSceneShroudUpdate` RPC runs full
+      `W3DTerrainVisual::init`, keeps the original `HeightMapRenderObjClass`
+      terrain render object and its `getShroud()` owner, fills/renders that
+      shroud, routes a clear-cell update through original
+      `W3DDisplay::setShroudLevel`, and then refreshes through original
+      `PartitionManager::refreshShroudForLocalPlayer` using the existing bounded
+      partition adapters. The harness verifies original water/smudge ownership
+      remains active, three ordered base/blend/shroud browser frames render
+      through `W3DDisplay::m_3DScene`, shroud texture uploads advance after both
+      updates, and
+      `harness-smoke-ww3d-terrain-full-scene-shroud-update-canvas.png` contains
+      colored WebGL2 pixels. The aggregate vertical gate now asserts the same
+      payload; real gameplay-owned map-load/partition/terrain ownership remains
+      open in `TODO.md`. Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-full-scene`.
 - [x] Apply D3D face culling before browser wireframe expansion. The
       D3D8/WebGL bridge now projects indexed triangles with the captured
       world/view/projection matrices, classifies CW/CCW winding, applies

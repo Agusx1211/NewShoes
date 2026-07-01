@@ -297,6 +297,7 @@ std::string g_ww3d_terrain_visual_scene_probe_json;
 std::string g_ww3d_terrain_visual_shroud_scene_probe_json;
 std::string g_ww3d_terrain_visual_shroud_update_scene_probe_json;
 std::string g_ww3d_terrain_full_scene_probe_json;
+std::string g_ww3d_terrain_full_scene_shroud_update_probe_json;
 std::string g_ww3d_terrain_visual_load_window_scene_probe_json;
 std::string g_ww3d_terrain_visual_camera_pan_scene_probe_json;
 std::string g_ww3d_terrain_bib_buffer_lifecycle_probe_json;
@@ -5758,10 +5759,18 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		!use_full_init &&
 		!use_load_window &&
 		!use_camera_pan;
+	const bool full_init_shroud_update_mode =
+		use_full_init &&
+		use_shroud_update &&
+		!use_load_window &&
+		!use_camera_pan;
+	const bool shroud_scene_mode = visual_shroud_mode || full_init_shroud_update_mode;
 	const bool shroud_update_mode = visual_shroud_mode && use_shroud_update;
-	const bool partition_refresh_mode = shroud_update_mode;
+	const bool full_init_shroud_update_requested = full_init_shroud_update_mode && use_shroud_update;
+	const bool shroud_update_requested = shroud_update_mode || full_init_shroud_update_requested;
+	const bool partition_refresh_mode = shroud_update_requested;
 	const bool old_shroud_enabled = g_ww3d_terrain_probe_shroud_enabled;
-	g_ww3d_terrain_probe_shroud_enabled = visual_shroud_mode;
+	g_ww3d_terrain_probe_shroud_enabled = shroud_scene_mode;
 
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	GlobalData *global_data = nullptr;
@@ -5889,7 +5898,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	if (archive_context_ready) {
 		global_data = NEW GlobalData;
 		if (global_data != nullptr) {
-			configure_global_data(*global_data, visual_shroud_mode);
+			configure_global_data(*global_data, shroud_scene_mode);
 			TheWritableGlobalData = global_data;
 		}
 	}
@@ -6161,13 +6170,20 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		}
 	}
 
-	if (visual_shroud_mode &&
+	if (shroud_scene_mode &&
 			patch_reinitialized &&
 			camera_configured &&
-			shroud_render_object != nullptr) {
-		shroud_installed = shroud_render_object->installProbeShroud();
-		W3DShroud *shroud = shroud_render_object->probeShroud();
-		if (shroud_installed && shroud != nullptr) {
+			render_object != nullptr) {
+		W3DShroud *shroud = nullptr;
+		if (shroud_render_object != nullptr) {
+			shroud_installed = shroud_render_object->installProbeShroud();
+			shroud = shroud_render_object->probeShroud();
+		} else {
+			// Full-init mode expects W3DTerrainVisual::init to own shroud initialization.
+			shroud = render_object->getShroud();
+			shroud_installed = shroud != nullptr;
+		}
+		if (visual_shroud_mode && shroud_installed && shroud != nullptr) {
 			shroud->init(
 				map,
 				TheGlobalData->m_partitionCellSize,
@@ -6216,13 +6232,16 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		}
 	}
 
-	if (shroud_update_mode &&
+	if (shroud_update_requested &&
 			shroud_initialized &&
 			camera != nullptr &&
 			W3DDisplay::m_3DScene != nullptr &&
 			succeeded(end_render_result) &&
-			shroud_render_object != nullptr) {
-		W3DShroud *shroud = shroud_render_object->probeShroud();
+			render_object != nullptr) {
+		W3DShroud *shroud =
+			shroud_render_object != nullptr ?
+				shroud_render_object->probeShroud() :
+				render_object->getShroud();
 		if (shroud != nullptr) {
 			alignas(W3DDisplay) unsigned char display_storage[sizeof(W3DDisplay)] = {};
 			W3DDisplay *display = reinterpret_cast<W3DDisplay *>(display_storage);
@@ -6287,11 +6306,14 @@ const char *run_ww3d_terrain_visual_scene_probe(
 
 	if (partition_refresh_mode &&
 			shroud_update_render_invoked &&
-			shroud_render_object != nullptr &&
+			render_object != nullptr &&
 			camera != nullptr &&
 			W3DDisplay::m_3DScene != nullptr &&
 			succeeded(shroud_update_end_render_result)) {
-		W3DShroud *shroud = shroud_render_object->probeShroud();
+		W3DShroud *shroud =
+			shroud_render_object != nullptr ?
+				shroud_render_object->probeShroud() :
+				render_object->getShroud();
 		if (shroud != nullptr) {
 			partition_shroud_refresh = run_partition_shroud_refresh_probe(
 				kArchiveTerrainMapEntry,
@@ -6413,23 +6435,24 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		visual_scene_object_added &&
 		((use_load_window && load_window_render_selected && !patch_reinitialized) ||
 			(!use_load_window && patch_reinitialized && patch_init_height_data_result == 0)) &&
-		(!(use_visual_shroud || use_shroud_update) || visual_shroud_mode) &&
-		(!visual_shroud_mode ||
+		(!(use_visual_shroud || use_shroud_update) || shroud_scene_mode) &&
+		(!shroud_scene_mode ||
 			(shroud_installed &&
 				shroud_initialized &&
 				shroud_fill_invoked &&
 				shroud_render_invoked &&
 				shroud_texture_ready &&
-				shroud_terrain_render_invoked &&
-				shroud_terrain_render_saw_shroud &&
-				shroud_terrain_render_saw_shroud_after &&
-				shroud_terrain_additional_pass_count > 0 &&
-				shroud_terrain_original_install_zfunc_equal_seen &&
-				shroud_terrain_original_install_camera_space_seen &&
-				shroud_terrain_original_install_count2_seen &&
-				shroud_terrain_original_draw_seen &&
-				shroud_terrain_final_draw_seen &&
-				!shroud_terrain_fallback_invoked)) &&
+				(!visual_shroud_mode ||
+					(shroud_terrain_render_invoked &&
+						shroud_terrain_render_saw_shroud &&
+						shroud_terrain_render_saw_shroud_after &&
+						shroud_terrain_additional_pass_count > 0 &&
+						shroud_terrain_original_install_zfunc_equal_seen &&
+						shroud_terrain_original_install_camera_space_seen &&
+						shroud_terrain_original_install_count2_seen &&
+						shroud_terrain_original_draw_seen &&
+						shroud_terrain_final_draw_seen &&
+						!shroud_terrain_fallback_invoked)))) &&
 		water_transparency_ready &&
 		(use_full_init ?
 			(full_init_blocked_by_missing_water_assets ?
@@ -6445,7 +6468,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 			 succeeded(camera_pan_begin_render_result) &&
 			 succeeded(camera_pan_render_result) &&
 			 succeeded(camera_pan_end_render_result))) &&
-		(!shroud_update_mode ||
+		(!shroud_update_requested ||
 			(shroud_update_set_invoked &&
 			 shroud_update_display_invoked &&
 			 shroud_update_notify_invoked &&
@@ -6501,9 +6524,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		state->set_stream_source_calls >= 1 &&
 		state->set_indices_calls >= 1 &&
 		state->draw_indexed_primitive_calls >= 1 &&
-		(!visual_shroud_mode ||
+		(!shroud_scene_mode ||
 			state->draw_indexed_primitive_calls >=
-				(partition_refresh_mode ? 9u : (shroud_update_mode ? 6u : 3u))) &&
+				(partition_refresh_mode ? 9u : (shroud_update_requested ? 6u : 3u))) &&
 		(use_full_init || state->last_draw_primitive_type == D3DPT_TRIANGLELIST) &&
 		state->last_draw_vertex_count > 0 &&
 		state->last_draw_primitive_count > 0 &&
@@ -6531,7 +6554,9 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const std::string terrain_map_entry_json = json_string(kArchiveTerrainMapEntry);
 	const std::string ini_layout_report_json = ini_layout_json(ini_layout);
 	const char *source_name = use_full_init ?
-		"ww3d_terrain_full_scene_probe" :
+		(full_init_shroud_update_mode ?
+			"ww3d_terrain_full_scene_shroud_update_probe" :
+			"ww3d_terrain_full_scene_probe") :
 		(use_load_window ?
 		"ww3d_terrain_visual_load_window_scene_probe" :
 		(camera_pan_requested ?
@@ -6542,9 +6567,11 @@ const char *run_ww3d_terrain_visual_scene_probe(
 					"ww3d_terrain_visual_shroud_scene_probe") :
 				"ww3d_terrain_visual_scene_probe")));
 	const char *render_mode = use_full_init ?
-		(full_init_blocked_by_missing_water_assets ?
+		(full_init_shroud_update_mode ?
+			"full-init-shroud-display-and-partition-refresh-source-patch" :
+			(full_init_blocked_by_missing_water_assets ?
 			"full-init-missing-water-assets-frontier" :
-			"full-init-source-patch") :
+			"full-init-source-patch")) :
 		(use_load_window ?
 		"visual-load-window" :
 		(camera_pan_requested ?
@@ -6557,7 +6584,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 	const char *render_object_name = visual_shroud_mode ?
 		"ProbeHeightMapRenderObjWithShroud" :
 		"HeightMapRenderObjClass";
-	const char *scene_render_path = visual_shroud_mode ?
+	const char *scene_render_path = shroud_scene_mode ?
 		"WW3D::Render(W3DDisplay::m_3DScene,CameraClass) -> "
 		"RTS3DScene::Customized_Render -> W3DShroudMaterialPassClass -> "
 		"HeightMapRenderObjClass::renderTerrainPass -> HeightMapRenderObjClass::Render" :
@@ -6566,7 +6593,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		"HeightMapRenderObjClass::Render";
 	const UnsignedInt render_frame_count =
 		(succeeded(end_render_result) ? 1u : 0u) +
-		(shroud_update_mode && succeeded(shroud_update_end_render_result) ? 1u : 0u) +
+		(shroud_update_requested && succeeded(shroud_update_end_render_result) ? 1u : 0u) +
 		(partition_refresh_mode && succeeded(partition_shroud_refresh.endRender) ? 1u : 0u) +
 		(camera_pan_requested && succeeded(camera_pan_end_render_result) ? 1u : 0u);
 
@@ -6791,8 +6818,8 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		camera_pan_begin_render_result,
 		camera_pan_render_result,
 		camera_pan_end_render_result,
-		bool_json(use_visual_shroud),
-		bool_json(use_shroud_update),
+		bool_json(shroud_scene_mode),
+		bool_json(shroud_update_requested),
 		bool_json(partition_refresh_mode),
 		render_frame_count,
 		draw_indexed_after_first_render,
@@ -6825,7 +6852,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		bool_json(use_full_init),
 		bool_json(visual_load_initialized_render_object),
 		bool_json(visual != nullptr && !visual->hasWaterRenderObject()),
-		bool_json(shroud_render_object != nullptr),
+		bool_json(shroud_installed),
 		visual_load_draw_width,
 		visual_load_draw_height,
 		visual_load_draw_origin_x,
@@ -6958,7 +6985,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		bool_json(scene_created),
 		bool_json(visual_scene_object_added),
 		render_object != nullptr ? render_object->Class_ID() : RenderObjClass::CLASSID_UNKNOWN,
-		bool_json(visual_shroud_mode),
+		bool_json(shroud_scene_mode),
 		bool_json(shroud_installed),
 		bool_json(shroud_initialized),
 		bool_json(shroud_fill_invoked),
@@ -6985,7 +7012,7 @@ const char *run_ww3d_terrain_visual_scene_probe(
 		shroud_sample_level,
 		shroud_draw_origin_x,
 		shroud_draw_origin_y,
-		bool_json(shroud_update_mode),
+		bool_json(shroud_update_requested),
 		bool_json(shroud_update_set_invoked),
 		bool_json(shroud_update_display_invoked),
 		bool_json(shroud_update_notify_invoked),
@@ -10932,6 +10959,23 @@ EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_full_scene(
 		false,
 		false,
 		false);
+}
+
+EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_full_scene_shroud_update(
+	const char *ini_archive_path,
+	const char *maps_archive_path,
+	const char *terrain_archive_path)
+{
+	return run_ww3d_terrain_visual_scene_probe(
+		g_ww3d_terrain_full_scene_shroud_update_probe_json,
+		ini_archive_path,
+		maps_archive_path,
+		terrain_archive_path,
+		true,
+		false,
+		false,
+		false,
+		true);
 }
 
 EMSCRIPTEN_KEEPALIVE const char *cnc_port_probe_ww3d_terrain_visual_load_window_scene(

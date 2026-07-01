@@ -840,9 +840,8 @@ flow below.
       `ThingFactory`, and `ScriptEngine` ownership plus weak adjacent-script
       symbols only to reach query-mode map load; replace those with full
       original runtime ownership before treating the path as gameplay-owned.
-- [ ] Promote the browser-proven terrain shroud path from visual-owned
-      source-backed patch ownership into full `W3DTerrainVisual::init` /
-      partition gameplay ownership. The current
+- [ ] Promote the browser-proven terrain shroud path from probe-mounted
+      ownership into production partition gameplay ownership. The current
       `test:ww3d-terrain-shroud-scene` harness mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, initializes a `BaseHeightMap`-owned
       `W3DShroud` in shroud mode, and verifies the original
@@ -854,8 +853,12 @@ flow below.
       and separately proves visual-owned shroud data updates through original
       `W3DDisplay::setShroudLevel` plus original
       `PartitionManager::revealMapForPlayer` /
-      `refreshShroudForLocalPlayer` in a bounded probe grid. Remaining work is
-      to wire full `W3DTerrainVisual::init`, production `PlayerList` /
+      `refreshShroudForLocalPlayer` in a bounded probe grid. The full-scene
+      smoke now also runs full `W3DTerrainVisual::init`, uses the original
+      `HeightMapRenderObjClass::getShroud()` owner, drives
+      `W3DDisplay::setShroudLevel`, and refreshes shroud through original
+      `PartitionManager` before browser-verifying three ordered
+      base/blend/shroud frames. Remaining work is production `PlayerList` /
       `Player`, real `TerrainLogic` extent ownership, and the target-wide
       `GlobalData` layout so gameplay fog updates originate from the full
       partition/shroud owners instead of the probe-local layout shims and
@@ -876,9 +879,10 @@ flow below.
       `bridgeLogicAiPathfinderAvailable === true` and
       `bridgeLogicGenericBridgeObjectMissing === false`, and then exercise
       damaged/repaired bridge-state synchronization from real gameplay objects.
-- [ ] Broaden the browser-verified terrain full-scene water/smudge path from
-      `test:vertical-integrations` and probe-mounted map/assets to real
-      gameplay map-load, shroud, partition, and terrain logic ownership.
+- [ ] Broaden the browser-verified terrain full-scene water/smudge/shroud
+      refresh path from `test:vertical-integrations` and probe-mounted
+      map/assets to real gameplay map-load, partition, and terrain logic
+      ownership.
 - [ ] Remove the `volatile getSeps()` "warm-up read" workaround in the terrain
       INI probe and fix the real root cause of the browser `INI::load` trap.
       The terrain smokes now report and gate a direct `INI` layout comparison

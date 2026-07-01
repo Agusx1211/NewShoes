@@ -43,6 +43,10 @@ const terrainFullSceneScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-full-scene-canvas.png",
 );
+const terrainFullSceneShroudUpdateScreenshot = resolve(
+  screenshotDir,
+  "harness-smoke-ww3d-terrain-full-scene-shroud-update-canvas.png",
+);
 const terrainLoadWindowScreenshot = resolve(
   screenshotDir,
   "harness-smoke-ww3d-terrain-visual-load-window-scene-canvas.png",
@@ -873,6 +877,109 @@ try {
     throw new Error(`browser failures during W3D terrain full scene: ${JSON.stringify(fullSceneBrowserFailures)}`);
   }
 
+  let fullSceneShroudUpdateResult;
+  try {
+    fullSceneShroudUpdateResult = await withTimeout(
+      "terrain full scene shroud update RPC",
+      page.evaluate((payload) =>
+        window.CnCPort.rpc("ww3dTerrainFullSceneShroudUpdate", payload), {
+          iniArchivePath: iniArchiveMemfsPath,
+          mapsArchivePath: mapsArchiveMemfsPath,
+          terrainArchivePath: fullSceneArchiveMemfsMaskPath,
+        }),
+      240000,
+    );
+  } catch (error) {
+    throw new Error(`terrain full scene shroud update RPC failed: ${error?.message ?? String(error)}; browser events: ${JSON.stringify(browserEvents.slice(-40))}`);
+  }
+  await page.locator("#viewport").screenshot({ path: terrainFullSceneShroudUpdateScreenshot });
+
+  const fullSceneShroudDrawHistory = Array.isArray(fullSceneShroudUpdateResult.drawHistory)
+    ? fullSceneShroudUpdateResult.drawHistory
+    : [];
+  if (!fullSceneShroudUpdateResult.ok
+      || fullSceneShroudUpdateResult.command !== "ww3dTerrainFullSceneShroudUpdate"
+      || fullSceneShroudUpdateResult.probe?.source !== "ww3d_terrain_full_scene_shroud_update_probe"
+      || fullSceneShroudUpdateResult.probe?.renderMode !== "full-init-shroud-display-and-partition-refresh-source-patch"
+      || fullSceneShroudUpdateResult.probe?.visual?.class !== "W3DTerrainVisual"
+      || fullSceneShroudUpdateResult.probe?.visual?.fullInit !== true
+      || fullSceneShroudUpdateResult.probe?.visual?.ownedTerrainRenderObject !== true
+      || fullSceneShroudUpdateResult.probe?.visual?.waterRenderObjectNull !== false
+      || fullSceneShroudUpdateResult.probe?.visual?.shroudRenderObject !== true
+      || fullSceneShroudUpdateResult.probe?.results?.fullInitAttempted !== true
+      || fullSceneShroudUpdateResult.probe?.results?.visualInitCompleted !== true
+      || fullSceneShroudUpdateResult.probe?.results?.visualInitException !== false
+      || fullSceneShroudUpdateResult.probe?.results?.visualShroudRequested !== true
+      || fullSceneShroudUpdateResult.probe?.results?.shroudUpdateRequested !== true
+      || fullSceneShroudUpdateResult.probe?.results?.partitionRefreshRequested !== true
+      || fullSceneShroudUpdateResult.probe?.water?.assetsReady !== true
+      || fullSceneShroudUpdateResult.probe?.water?.missingTextureCount !== 0
+      || fullSceneShroudUpdateResult.probe?.water?.renderObjectCreated !== true
+      || fullSceneShroudUpdateResult.probe?.water?.globalPointerMatches !== true
+      || fullSceneShroudUpdateResult.probe?.water?.sceneObjectAdded !== true
+      || !logicalTerrainMatches(fullSceneShroudUpdateResult.probe)
+      || fullSceneShroudUpdateResult.probe?.scene?.renderPath?.includes("W3DShroudMaterialPassClass") !== true
+      || fullSceneShroudUpdateResult.probe?.terrain?.renderObject !== "HeightMapRenderObjClass"
+      || fullSceneShroudUpdateResult.probe?.terrain?.verticesPerSide !== 33
+      || fullSceneShroudUpdateResult.probe?.terrain?.cellsPerSide !== 32
+      || fullSceneShroudUpdateResult.probe?.shroud?.requested !== true
+      || fullSceneShroudUpdateResult.probe?.shroud?.installed !== true
+      || fullSceneShroudUpdateResult.probe?.shroud?.initialized !== true
+      || fullSceneShroudUpdateResult.probe?.shroud?.fillInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroud?.renderInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroud?.textureReady !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.requested !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.setInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.displayInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.notifyInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.renderInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.sampleChanged !== true
+      || fullSceneShroudUpdateResult.probe?.shroudUpdate?.expectedLevel !== fullSceneShroudUpdateResult.probe?.shroudUpdate?.sampleAfter
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.requested !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.terrainLogicInstalled !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCreated !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionInstalled !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.partitionCellsReady !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.refreshInvoked !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.sampleChanged !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.displaySampleTouched !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.radarSampleTouched !== true
+      || fullSceneShroudUpdateResult.probe?.partitionRefresh?.expectedLevel !== fullSceneShroudUpdateResult.probe?.partitionRefresh?.sampleAfter
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.count !== 3
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.firstDrawIndexed < 3
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.shroudUpdateDrawIndexed < 6
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.partitionRefreshDrawIndexed < 9
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.shroudUpdateTextureUpdate <= fullSceneShroudUpdateResult.probe?.renderFrames?.firstTextureUpdate
+      || fullSceneShroudUpdateResult.probe?.renderFrames?.partitionRefreshTextureUpdate <= fullSceneShroudUpdateResult.probe?.renderFrames?.shroudUpdateTextureUpdate
+      || fullSceneShroudUpdateResult.drawSequence?.shroudAfterTerrain !== true
+      || fullSceneShroudUpdateResult.drawSequence?.secondShroudAfterSecondTerrain !== true
+      || fullSceneShroudUpdateResult.drawSequence?.thirdShroudAfterThirdTerrain !== true
+      || fullSceneShroudDrawHistory.length < 9
+      || !hasTerrainPass(fullSceneShroudDrawHistory, { alphaBlendEnable: 0, texCoordIndex: 0 })
+      || !hasTerrainPass(fullSceneShroudDrawHistory, { alphaBlendEnable: 1, texCoordIndex: 1 })
+      || fullSceneShroudUpdateResult.probe?.calls?.drawIndexed < 9
+      || fullSceneShroudUpdateResult.screenshot?.coverage?.coloredPixelCount <= 0) {
+    throw new Error(`W3D terrain full scene shroud update failed: ${JSON.stringify({
+      ok: fullSceneShroudUpdateResult.ok,
+      probe: fullSceneShroudUpdateResult.probe,
+      browserProbe: fullSceneShroudUpdateResult.browserProbe,
+      drawSequence: fullSceneShroudUpdateResult.drawSequence,
+      drawHistory: summarizeDrawHistory(fullSceneShroudDrawHistory),
+      textureDelta: fullSceneShroudUpdateResult.textureDelta,
+      screenshot: {
+        width: fullSceneShroudUpdateResult.screenshot?.width,
+        height: fullSceneShroudUpdateResult.screenshot?.height,
+        centerPixel: fullSceneShroudUpdateResult.screenshot?.centerPixel,
+        coverage: fullSceneShroudUpdateResult.screenshot?.coverage,
+      },
+    })}`);
+  }
+  const fullSceneShroudBrowserFailures = browserEvents.filter((event) =>
+    event.type === "pageerror" || event.type === "crash");
+  if (fullSceneShroudBrowserFailures.length > 0) {
+    throw new Error(`browser failures during W3D terrain full scene shroud update: ${JSON.stringify(fullSceneShroudBrowserFailures)}`);
+  }
+
   let cameraPanResult;
   try {
     cameraPanResult = await withTimeout(
@@ -1182,6 +1289,21 @@ try {
     fullSceneDraw: fullSceneResult.probe.draw,
     fullSceneCenterPixel: fullSceneResult.screenshot.centerPixel,
     fullSceneCoverage: fullSceneResult.screenshot.coverage,
+    fullSceneShroudUpdateScreenshot: terrainFullSceneShroudUpdateScreenshot,
+    fullSceneShroudUpdateLogicalTerrain: fullSceneShroudUpdateResult.probe.logicalTerrain,
+    fullSceneShroudUpdateVisual: fullSceneShroudUpdateResult.probe.visual,
+    fullSceneShroudUpdateWater: fullSceneShroudUpdateResult.probe.water,
+    fullSceneShroudUpdateScene: fullSceneShroudUpdateResult.probe.scene,
+    fullSceneShroudUpdateTerrain: fullSceneShroudUpdateResult.probe.terrain,
+    fullSceneShroudUpdateShroud: fullSceneShroudUpdateResult.probe.shroud,
+    fullSceneShroudUpdate: fullSceneShroudUpdateResult.probe.shroudUpdate,
+    fullSceneShroudPartitionRefresh: fullSceneShroudUpdateResult.probe.partitionRefresh,
+    fullSceneShroudUpdateFrames: fullSceneShroudUpdateResult.probe.renderFrames,
+    fullSceneShroudUpdateCalls: fullSceneShroudUpdateResult.probe.calls,
+    fullSceneShroudUpdateDraw: fullSceneShroudUpdateResult.probe.draw,
+    fullSceneShroudUpdateDrawSequence: fullSceneShroudUpdateResult.drawSequence,
+    fullSceneShroudUpdateCenterPixel: fullSceneShroudUpdateResult.screenshot.centerPixel,
+    fullSceneShroudUpdateCoverage: fullSceneShroudUpdateResult.screenshot.coverage,
     cameraPanScreenshot: terrainCameraPanScreenshot,
     cameraPanLogicalTerrain: cameraPanResult.probe.logicalTerrain,
     cameraPanScene: cameraPanResult.probe.scene,
@@ -1207,7 +1329,7 @@ try {
     draw: terrainResult.probe.draw,
     centerPixel: terrainResult.screenshot.centerPixel,
     coverage: terrainResult.screenshot.coverage,
-    renderer: "original W3DTerrainVisual::load owns WorldHeightMap + HeightMapRenderObjClass scene attachment, with visual-owned W3DShroud material pass coverage and W3DDisplay::setShroudLevel data updates, then W3DDisplay::m_3DScene renders through browser D3D8/WebGL2",
+    renderer: "original W3DTerrainVisual::load owns WorldHeightMap + HeightMapRenderObjClass scene attachment, full W3DTerrainVisual::init owns water/smudge plus the original HeightMapRenderObjClass shroud, W3DDisplay::setShroudLevel and PartitionManager::refreshShroudForLocalPlayer update shroud data, then W3DDisplay::m_3DScene renders ordered shroud frames through browser D3D8/WebGL2",
     browserEventCount: browserEvents.length,
   }, null, 2));
 } finally {
