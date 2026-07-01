@@ -3824,6 +3824,22 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       `harness-smoke-ww3d-terrain-bridge-buffer-scene-canvas.png` is captured.
       Verified with
       `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
+- [x] Broaden the bridge-buffer terrain scene proof to the original
+      `W3DBridgeBuffer::drawBridges` wrapper in wireframe mode. The focused
+      bridge render object no longer copies the wrapper's material, index,
+      vertex-buffer, shader, and bridge-iteration setup in probe code; it pins
+      `TheTerrainRenderObject`, clears `TheTerrainLogic`, temporarily suppresses
+      the inherited shroud, and calls original
+      `W3DBridgeBuffer::drawBridges(TRUE, nullptr)` from
+      `HeightMapRenderObjClass::Render`. The harness now records
+      `bridgeDrawWrapperInvoked`, `bridgeDrawWrapperWireframe`,
+      `bridgeTerrainRenderObjectPinned`, `bridgeShroudOverlaySuppressed`, and a
+      positive wrapper draw-call delta, then verifies the bridge draw follows
+      the terrain base/blend passes with browser-visible FVF 338/36-byte bridge
+      vertices. The full textured `drawBridges(FALSE, nullptr)` branch still
+      crashes after entering the wrapper and remains tracked in `TODO.md`.
+      Verified with
+      `npm --prefix WebAssembly run test:ww3d-terrain-bridge-buffer-scene`.
 - [x] Add a browser-verified real-map terrain shroud scene proof. The new
       `test:ww3d-terrain-shroud-scene` path mounts real `INIZH.big`,
       `MapsZH.big`, and `TerrainZH.big`, parses

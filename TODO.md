@@ -792,8 +792,8 @@ shares structure and follows behind.
       on a real `Maps\MD_CHI01\MD_CHI01.map` bridge pair with shipped bridge
       model/texture assets available from the mounted Zero Hour archives.
       Production map/object tree placement, production logical-map road
-      ownership through the normal `DO_ROADS` terrain path, full bridge-buffer
-      wrapper ownership, and shroud-aware tree behavior remain open. A
+      ownership through the normal `DO_ROADS` terrain path, textured/non-wireframe
+      bridge-buffer wrapper ownership, and shroud-aware tree behavior remain open. A
       direct broad removal of the
       minimal heightmap/road bypass still times out and crashes Chromium after
       archive mounting, so full adjacent heightmap ownership remains open. The
@@ -811,11 +811,17 @@ shares structure and follows behind.
       probe direct-D3D fallback. Remaining work is to wire the full terrain
       visual, partition, and shroud owners, then let gameplay fog updates come
       from `PartitionManager::refreshShroudForLocalPlayer`.
-- [ ] Broaden the bridge-buffer scene proof from the current focused
-      `W3DBridge::renderBridge` geometry route to the full
-      `W3DBridgeBuffer::drawBridges` wrapper once its optional
-      TerrainLogic/shroud/damage-state branch can run safely in the focused
-      browser terrain scene.
+- [ ] Finish the remaining non-wireframe bridge-buffer wrapper branches in the
+      focused browser terrain scene. The current bridge-buffer smoke now drives
+      original `W3DBridgeBuffer::drawBridges(wireframe)` from
+      `HeightMapRenderObjClass::Render`, but the full textured
+      `drawBridges(FALSE, nullptr)` path still crashes Chromium after entering
+      the wrapper, and the original TerrainLogic damage-state and bridge shroud
+      overlay branches remain deferred until they can run safely. Start by
+      proving whether the bridge shroud branch has a valid
+      `getShroudTexture()` before `W3DShaderManager::ST_SHROUD_TEXTURE`, then
+      add browser assertions for the shroud texture bind/reset path once it is
+      safe.
 - [ ] Once a base Generals `Terrain.big` artifact is available in this
       workspace, rerun `test:ww3d-terrain-visual-scene` with the optional base
       archive mounted and tighten the load-window gate to require nonzero

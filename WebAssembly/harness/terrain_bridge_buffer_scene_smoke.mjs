@@ -399,10 +399,16 @@ try {
   if (!result.ok
       || result.command !== "ww3dTerrainBridgeBufferScene"
       || result.probe?.source !== "ww3d_terrain_bridge_buffer_scene_probe"
-      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter -> W3DBridge::renderBridge"
+      || result.probe?.path !== "original WorldHeightMap + HeightMapRenderObjClass::Render -> W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(wireframe) -> W3DBridge::renderBridge"
       || result.probe?.results?.runtimeAssetSystemInstalled !== true
       || result.probe?.results?.bridgeBufferInstalled !== true
       || result.probe?.results?.loadBridgesInvoked !== true
+      || result.probe?.results?.terrainLogicClearedForDraw !== true
+      || result.probe?.results?.bridgeDrawWrapperInvoked !== true
+      || result.probe?.results?.bridgeDrawWrapperWireframe !== true
+      || result.probe?.results?.bridgeTerrainRenderObjectPinned !== true
+      || result.probe?.results?.bridgeShroudOverlaySuppressed !== true
+      || (result.probe?.results?.bridgeDrawCallDelta ?? 0) <= 0
       || result.probe?.results?.bridgeSceneDrawFlushed !== true
       || result.probe?.ini?.roadsParsed !== true
       || result.probe?.ini?.bridgeCount <= 0
@@ -417,12 +423,13 @@ try {
       || result.probe?.bridges?.afterLoad <= 0
       || result.probe?.bridges?.verticesAfterUpdate <= 0
       || result.probe?.bridges?.indicesAfterUpdate <= 0
+      || result.probe?.scene?.renderPath?.includes("W3DBridgeBuffer::drawBridges(wireframe)") !== true
       || result.probe?.scene?.renderPath?.includes("W3DBridge::renderBridge") !== true
       || result.probe?.draw?.vertexShaderFvf !== 338
       || result.probe?.draw?.vertexStride !== 36
       || result.browserProbe?.vertexShaderFvf !== 338
       || result.browserProbe?.vertexStride !== 36
-      || result.browserProbe?.texture0?.sampled !== true
+      || result.browserProbe?.texture0?.sampled !== false
       || result.browserProbe?.vertexDiagnostics?.projected?.visible <= 0
       || result.drawSequence?.bridgeAfterTerrain !== true
       || result.screenshot?.coverage?.coloredPixelCount <= 0) {

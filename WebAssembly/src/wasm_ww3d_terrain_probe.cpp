@@ -30,6 +30,7 @@
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Scripts.h"
+#include "GameLogic/TerrainLogic.h"
 #include "GameClient/TerrainRoads.h"
 #include "GameClient/View.h"
 #include "GameClient/Water.h"
@@ -2864,47 +2865,11 @@ public:
 	bool hasVertexBuffer() const { return m_vertexBridge != nullptr; }
 	bool hasIndexBuffer() const { return m_indexBridge != nullptr; }
 
-	bool drawBridgeGeometryStepwise(CameraClass *camera, Bool wireframe)
+	void drawBridgesWithProbe(CameraClass *camera, Bool wireframe, TextureClass *cloudTexture)
 	{
-		probe_bridge_phase_log("bridge-draw-cull");
-		cull(camera);
-		if (m_curNumBridgeIndices == 0 || m_numBridges <= 0) {
-			return false;
-		}
-
-		static ShaderClass detail_alpha_shader(SHADE_CNST(
-			ShaderClass::PASS_LEQUAL,
-			ShaderClass::DEPTH_WRITE_ENABLE,
-			ShaderClass::COLOR_WRITE_ENABLE,
-			ShaderClass::SRCBLEND_SRC_ALPHA,
-			ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA,
-			ShaderClass::FOG_DISABLE,
-			ShaderClass::GRADIENT_MODULATE,
-			ShaderClass::SECONDARY_GRADIENT_DISABLE,
-			ShaderClass::TEXTURING_ENABLE,
-			ShaderClass::ALPHATEST_ENABLE,
-			ShaderClass::CULL_MODE_DISABLE,
-			ShaderClass::DETAILCOLOR_DISABLE,
-			ShaderClass::DETAILALPHA_DISABLE));
-
-		probe_bridge_phase_log("bridge-draw-material");
-		DX8Wrapper::Set_Material(m_vertexMaterial);
-		probe_bridge_phase_log("bridge-draw-index-buffer");
-		DX8Wrapper::Set_Index_Buffer(m_indexBridge, 0);
-		probe_bridge_phase_log("bridge-draw-vertex-buffer");
-		DX8Wrapper::Set_Vertex_Buffer(m_vertexBridge);
-		probe_bridge_phase_log("bridge-draw-shader");
-		DX8Wrapper::Set_Shader(detail_alpha_shader);
-		probe_bridge_phase_log("bridge-draw-apply");
-		DX8Wrapper::Apply_Render_State_Changes();
-		probe_bridge_phase_log("bridge-draw-render-bridge");
-		for (Int index = 0; index < m_numBridges; ++index) {
-			if (m_bridges[index].isEnabled() && m_bridges[index].isVisible()) {
-				m_bridges[index].renderBridge(wireframe);
-			}
-		}
-		probe_bridge_phase_log("bridge-draw-render-bridge-done");
-		return true;
+		probe_bridge_phase_log("bridge-wrapper-enter");
+		W3DBridgeBuffer::drawBridges(camera, wireframe, cloudTexture);
+		probe_bridge_phase_log("bridge-wrapper-exit");
 	}
 
 	bool firstBridgeManualGeometry(Int &vertices, Int &indices, bool &exception)
@@ -3161,6 +3126,12 @@ public:
 	{
 		W3DBridgeBuffer *bridge_buffer = m_bridgeBuffer;
 		m_probeBridgeDrawInvoked = false;
+		m_probeBridgeDrawWrapperInvoked = false;
+		m_probeBridgeDrawWrapperWireframe = false;
+		m_probeBridgeShroudOverlaySuppressed = false;
+		m_probeBridgeTerrainRenderObjectPinned = false;
+		m_probeBridgeDrawCallsBefore = 0;
+		m_probeBridgeDrawCallsAfter = 0;
 		m_bridgeBuffer = nullptr;
 		probe_bridge_phase_log("render-object-terrain");
 		HeightMapRenderObjClass::Render(rinfo);
@@ -3170,19 +3141,61 @@ public:
 			return;
 		}
 
+		probe_bridge_phase_log("render-object-bridge-state-reset");
 		DX8Wrapper::Set_Texture(0, nullptr);
 		DX8Wrapper::Set_Texture(1, nullptr);
 		ShaderClass::Invalidate();
 		DX8Wrapper::Apply_Render_State_Changes();
+		probe_bridge_phase_log("render-object-bridge-state-ready");
 		m_probeBridgeDrawInvoked = true;
-		static_cast<ProbeW3DBridgeBuffer *>(m_bridgeBuffer)->drawBridgeGeometryStepwise(&rinfo.Camera, m_disableTextures);
+		m_probeBridgeDrawWrapperInvoked = true;
+		const WasmD3D8ShimState *before_state = wasm_d3d8_get_state();
+		m_probeBridgeDrawCallsBefore =
+			before_state != nullptr ? before_state->draw_indexed_primitive_calls : 0;
+		probe_bridge_phase_log("render-object-bridge-wrapper-call");
+		BaseHeightMapRenderObjClass *saved_terrain_render_object = TheTerrainRenderObject;
+		TheTerrainRenderObject = this;
+		m_probeBridgeTerrainRenderObjectPinned = TheTerrainRenderObject == this;
+		W3DShroud *saved_shroud = m_shroud;
+		m_probeBridgeShroudOverlaySuppressed = saved_shroud != nullptr;
+		m_shroud = nullptr;
+		m_probeBridgeDrawWrapperWireframe = true;
+		static_cast<ProbeW3DBridgeBuffer *>(m_bridgeBuffer)->drawBridgesWithProbe(
+			&rinfo.Camera,
+			TRUE,
+			nullptr);
+		m_shroud = saved_shroud;
+		TheTerrainRenderObject = saved_terrain_render_object;
+		const WasmD3D8ShimState *after_state = wasm_d3d8_get_state();
+		m_probeBridgeDrawCallsAfter =
+			after_state != nullptr ?
+				after_state->draw_indexed_primitive_calls :
+				m_probeBridgeDrawCallsBefore;
 		probe_bridge_phase_log("render-object-bridge-done");
 	}
 
 	bool probeBridgeDrawInvoked() const { return m_probeBridgeDrawInvoked; }
+	bool probeBridgeDrawWrapperInvoked() const { return m_probeBridgeDrawWrapperInvoked; }
+	bool probeBridgeDrawWrapperWireframe() const { return m_probeBridgeDrawWrapperWireframe; }
+	bool probeBridgeShroudOverlaySuppressed() const { return m_probeBridgeShroudOverlaySuppressed; }
+	bool probeBridgeTerrainRenderObjectPinned() const { return m_probeBridgeTerrainRenderObjectPinned; }
+	UINT probeBridgeDrawCallsBefore() const { return m_probeBridgeDrawCallsBefore; }
+	UINT probeBridgeDrawCallsAfter() const { return m_probeBridgeDrawCallsAfter; }
+	UINT probeBridgeDrawCallDelta() const
+	{
+		return m_probeBridgeDrawCallsAfter >= m_probeBridgeDrawCallsBefore ?
+			m_probeBridgeDrawCallsAfter - m_probeBridgeDrawCallsBefore :
+			0;
+	}
 
 private:
 	bool m_probeBridgeDrawInvoked = false;
+	bool m_probeBridgeDrawWrapperInvoked = false;
+	bool m_probeBridgeDrawWrapperWireframe = false;
+	bool m_probeBridgeShroudOverlaySuppressed = false;
+	bool m_probeBridgeTerrainRenderObjectPinned = false;
+	UINT m_probeBridgeDrawCallsBefore = 0;
+	UINT m_probeBridgeDrawCallsAfter = 0;
 };
 
 class ProbeScriptEngineView : public ScriptEngine
@@ -6895,6 +6908,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 
 	GlobalData *old_writable_global_data = TheWritableGlobalData;
 	GlobalData *global_data = nullptr;
+	TerrainLogic *old_terrain_logic = TheTerrainLogic;
+	TheTerrainLogic = nullptr;
 
 	int init_result = WW3D_ERROR_GENERIC;
 	int set_device_result = WW3D_ERROR_GENERIC;
@@ -6917,6 +6932,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	bool bridge_buffer_initialized = false;
 	bool load_bridges_invoked = false;
 	bool update_center_invoked = false;
+	bool terrain_logic_cleared_for_draw = TheTerrainLogic == nullptr;
 	bool scene_created = false;
 	bool scene_object_added = false;
 	bool bridge_scene_draw_flushed = false;
@@ -7381,6 +7397,11 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		succeeded(end_render_result) &&
 		render_object != nullptr &&
 		render_object->probeBridgeDrawInvoked() &&
+		render_object->probeBridgeDrawWrapperInvoked() &&
+		render_object->probeBridgeDrawWrapperWireframe() &&
+		render_object->probeBridgeTerrainRenderObjectPinned() &&
+		render_object->probeBridgeShroudOverlaySuppressed() &&
+		render_object->probeBridgeDrawCallDelta() > 0 &&
 		bridge_scene_draw_flushed &&
 		state->browser_buffer_create_calls >= 4 &&
 		state->browser_buffer_update_calls >= 4 &&
@@ -7424,7 +7445,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"{\"source\":\"ww3d_terrain_bridge_buffer_scene_probe\","
 		"\"ok\":%s,"
 		"\"path\":\"original WorldHeightMap + HeightMapRenderObjClass::Render -> "
-		"W3DBridgeBuffer::loadBridges/updateCenter -> W3DBridge::renderBridge\","
+		"W3DBridgeBuffer::loadBridges/updateCenter/drawBridges(wireframe) -> "
+		"W3DBridge::renderBridge\","
 		"\"archives\":{\"ini\":\"%s\",\"maps\":\"%s\",\"terrain\":\"%s\","
 		"\"runtimeDirectory\":%s,\"runtimeMask\":%s},"
 		"\"results\":{\"archiveContextReady\":%s,\"globalDataReady\":%s,"
@@ -7440,9 +7462,16 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"renderObjectCreated\":%s,\"renderObjectInitialized\":%s,"
 		"\"initHeightData\":%d,\"bridgeBufferInstalled\":%s,"
 		"\"bridgeBufferInitialized\":%s,\"loadBridgesInvoked\":%s,"
-		"\"updateCenterInvoked\":%s,\"sceneCreated\":%s,"
+		"\"updateCenterInvoked\":%s,\"terrainLogicClearedForDraw\":%s,"
+		"\"sceneCreated\":%s,"
 		"\"sceneObjectAdded\":%s,\"beginRender\":%d,\"render\":%d,"
 			"\"endRender\":%d,\"bridgeDrawInvoked\":%s,"
+			"\"bridgeDrawWrapperInvoked\":%s,"
+			"\"bridgeDrawWrapperWireframe\":%s,"
+			"\"bridgeTerrainRenderObjectPinned\":%s,"
+			"\"bridgeShroudOverlaySuppressed\":%s,"
+			"\"bridgeDrawCallsBefore\":%u,\"bridgeDrawCallsAfter\":%u,"
+			"\"bridgeDrawCallDelta\":%u,"
 			"\"bridgeSceneDrawFlushed\":%s},"
 		"\"ini\":{\"terrainEntry\":\"Data\\\\INI\\\\Terrain.ini\","
 		"\"terrainLoaded\":%s,\"terrainEntryExists\":%s,"
@@ -7478,7 +7507,8 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		"\"texturePositionY\":%d}}},"
 		"\"scene\":{\"renderPath\":\"WW3D::Render(RTS3DScene,CameraClass) -> "
 		"RTS3DScene::Customized_Render -> ProbeHeightMapRenderObjWithBridgeBuffer::Render -> "
-		"HeightMapRenderObjClass::Render -> W3DBridge::renderBridge\","
+		"HeightMapRenderObjClass::Render -> W3DBridgeBuffer::drawBridges(wireframe) -> "
+		"W3DBridge::renderBridge\","
 		"\"created\":%s,\"objectAdded\":%s,\"terrainClassId\":%d},"
 		"\"bridgeObjects\":{\"mapObjects\":%d,\"point1\":%d,\"point2\":%d,"
 		"\"candidatePairs\":%d,\"selectedCandidate\":%d,"
@@ -7561,12 +7591,23 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 		bool_json(bridge_buffer_initialized),
 		bool_json(load_bridges_invoked),
 		bool_json(update_center_invoked),
+		bool_json(terrain_logic_cleared_for_draw),
 		bool_json(scene_created),
 		bool_json(scene_object_added),
 		begin_render_result,
 		render_result,
 		end_render_result,
 		bool_json(render_object != nullptr && render_object->probeBridgeDrawInvoked()),
+		bool_json(render_object != nullptr && render_object->probeBridgeDrawWrapperInvoked()),
+		bool_json(render_object != nullptr &&
+			render_object->probeBridgeDrawWrapperWireframe()),
+		bool_json(render_object != nullptr &&
+			render_object->probeBridgeTerrainRenderObjectPinned()),
+		bool_json(render_object != nullptr &&
+			render_object->probeBridgeShroudOverlaySuppressed()),
+		render_object != nullptr ? render_object->probeBridgeDrawCallsBefore() : 0,
+		render_object != nullptr ? render_object->probeBridgeDrawCallsAfter() : 0,
+		render_object != nullptr ? render_object->probeBridgeDrawCallDelta() : 0,
 		bool_json(bridge_scene_draw_flushed),
 		bool_json(map_load.iniArchiveLoaded),
 		bool_json(map_load.terrainIniExists),
@@ -7723,6 +7764,7 @@ const char *run_ww3d_terrain_bridge_buffer_scene_probe(
 	REF_PTR_RELEASE(render_object);
 	REF_PTR_RELEASE(camera);
 	TheTerrainRenderObject = old_terrain_render_object;
+	TheTerrainLogic = old_terrain_logic;
 	TheWaterTransparency = old_water_transparency;
 	if (probe_water_transparency != nullptr &&
 			probe_water_transparency != old_water_transparency) {
