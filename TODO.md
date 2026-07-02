@@ -56,7 +56,8 @@ flow below.
       `KeyboardOptionsMenu` system/input/init/update/shutdown callbacks with
       original `MetaEvent` global ownership, original `OptionsMenu`
       system/input/init/update/shutdown callbacks with original
-      `OptionPreferences` ownership, original `InGamePopupMessage`
+      `OptionPreferences` ownership, original `SkirmishMapSelectMenu`
+      system/input/init/update/shutdown callbacks, original `InGamePopupMessage`
       system/input/init callbacks with original `InGameUI` global ownership,
       original `IdleWorkerSystem`, original `BeaconWindowInput`, original
       `ControlBarInput`, original `ReplayControl` system/input callbacks,
@@ -95,6 +96,8 @@ flow below.
       `KeyboardOptionsMenu` system/input/init/update/shutdown lookups,
       original `OptionsMenu` system/input/init/update/shutdown lookups with
       the old `wasm_real_ini_compat.cpp` `OptionPreferences` fallback retired,
+      original `SkirmishMapSelectMenu` system/input/init/update/shutdown
+      lookups,
       original `InGamePopupMessage` system/input/init lookups,
       original `IdleWorkerSystem`, `BeaconWindowInput`, `ControlBarInput`, and
       `ReplayControl` system/input lookups, and
@@ -145,6 +148,10 @@ flow below.
       runtime-owned without weak stubs. The callback group appears non-network,
       but it should not become a FunctionLexicon frontier claim until those
       owners are real.
+- [ ] Replace the weak `LANPreferences::usesSystemMapDir()` fresh-install
+      browser boundary used by `SkirmishMapSelectMenu` with a split original
+      LAN preferences owner or final browser preferences storage once that can
+      be done without linking the LAN lobby/GameSpy flow into `cnc-port`.
 - [ ] Stage base-Generals `Music.big` in `extract_zh_runtime_archives.sh`
       (currently manually extracted via
       `cabextract -F Music.big` from the Generals CD1 `Data1.cab` into

@@ -281,7 +281,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
   const probe = state.functionLexiconRuntime;
   expect(probe?.attempted === true, "function lexicon runtime probe did not run", probe);
   expect(probe.ok === false, "function lexicon runtime should not claim full ownership yet", probe);
-  expect(probe.status === "base_function_lexicon_options_menu_runtime_owned",
+  expect(probe.status === "base_function_lexicon_skirmish_map_select_menu_runtime_owned",
     "function lexicon runtime status mismatch", probe);
   expect(probe.nextRequired === "originalFunctionLexiconRemainingShellCallbacks",
     "function lexicon runtime nextRequired mismatch", probe);
@@ -325,6 +325,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.optionsMenuSystem === true
       && probe.lookups.creditsMenuSystem === true
       && probe.lookups.skirmishGameOptionsMenuSystem === true
+      && probe.lookups.skirmishMapSelectMenuSystem === true
       && probe.lookups.singlePlayerMenuSystem === true
       && probe.lookups.challengeMenuSystem === true
       && probe.lookups.popupCommunicatorSystem === true
@@ -353,6 +354,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.optionsMenuInput === true
       && probe.lookups.creditsMenuInput === true
       && probe.lookups.skirmishGameOptionsMenuInput === true
+      && probe.lookups.skirmishMapSelectMenuInput === true
       && probe.lookups.singlePlayerMenuInput === true
       && probe.lookups.challengeMenuInput === true
       && probe.lookups.popupCommunicatorInput === true
@@ -372,6 +374,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.optionsMenuInit === true
       && probe.lookups.creditsMenuInit === true
       && probe.lookups.skirmishGameOptionsMenuInit === true
+      && probe.lookups.skirmishMapSelectMenuInit === true
       && probe.lookups.singlePlayerMenuInit === true
       && probe.lookups.challengeMenuInit === true
       && probe.lookups.popupCommunicatorInit === true
@@ -385,6 +388,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.optionsMenuUpdate === true
       && probe.lookups.creditsMenuUpdate === true
       && probe.lookups.skirmishGameOptionsMenuUpdate === true
+      && probe.lookups.skirmishMapSelectMenuUpdate === true
       && probe.lookups.singlePlayerMenuUpdate === true
       && probe.lookups.challengeMenuUpdate === true
       && probe.lookups.mapSelectMenuUpdate === true
@@ -394,6 +398,7 @@ function assertFunctionLexiconRuntimeFrontier(state) {
       && probe.lookups.optionsMenuShutdown === true
       && probe.lookups.creditsMenuShutdown === true
       && probe.lookups.skirmishGameOptionsMenuShutdown === true
+      && probe.lookups.skirmishMapSelectMenuShutdown === true
       && probe.lookups.singlePlayerMenuShutdown === true
       && probe.lookups.challengeMenuShutdown === true
       && probe.lookups.popupCommunicatorShutdown === true
@@ -497,7 +502,7 @@ function assertAudioOwnedFrontier(state) {
       && frontier.audioManagerRuntime.tornDown === true,
     "frontier audioManagerRuntime summary mismatch", frontier.audioManagerRuntime);
   expect(frontier.functionLexiconRuntime?.ready === false
-      && frontier.functionLexiconRuntime.status === "base_function_lexicon_options_menu_runtime_owned"
+      && frontier.functionLexiconRuntime.status === "base_function_lexicon_skirmish_map_select_menu_runtime_owned"
       && frontier.functionLexiconRuntime.w3dDeviceDrawReady === true
       && frontier.functionLexiconRuntime.w3dLayoutInitReady === true
       && frontier.functionLexiconRuntime.messageBoxSystemReady === true
@@ -726,7 +731,7 @@ try {
   // W3DModuleFactory / W3DParticleSystemManager,
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
-  // base shell callbacks, the promoted Options/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
+  // base shell callbacks, the promoted Options/SkirmishMapSelect/Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
   // and honestly keeps the device-factory frontier at createFunctionLexicon
   // until the remaining shell callback graph is owned by cnc-port.
   const archives = await buildAudioOwnershipArchiveSpecs();

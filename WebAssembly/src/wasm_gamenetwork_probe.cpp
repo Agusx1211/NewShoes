@@ -254,6 +254,10 @@ __attribute__((weak)) AsciiString LANPreferences::getPreferredMap()
 {
 	return AsciiString("Maps/TournamentDesert");
 }
+__attribute__((weak)) Bool LANPreferences::usesSystemMapDir()
+{
+	return TRUE;
+}
 __attribute__((weak)) void LANPreferences::setSuperweaponRestricted(Bool)
 {
 }

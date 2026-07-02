@@ -2356,6 +2356,17 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       five callback-name lookups in the browser and now reports
       `base_function_lexicon_options_menu_runtime_owned` with
       `originalFunctionLexiconRemainingShellCallbacks` next.
+- [x] Promote the original offline `SkirmishMapSelectMenu` callback owner into
+      the linked `cnc-port` base `FunctionLexicon`: `zh_window_layout_script_runtime`
+      now links original `GUI/GUICallbacks/Menus/SkirmishMapSelectMenu.cpp`,
+      and the reduced wasm system/input/init/update/shutdown tables register
+      its five callback names. Startup vertical verifies all five lookups in
+      the browser and now reports
+      `base_function_lexicon_skirmish_map_select_menu_runtime_owned` with
+      `originalFunctionLexiconRemainingShellCallbacks` next. The only new
+      network-adjacent boundary is the existing `LANPreferences` browser
+      fallback gaining `usesSystemMapDir()`, matching the original fresh-install
+      default while LAN lobby/GameSpy ownership remains out of scope.
 - [x] Prove the original `W3DModuleFactory` runtime path in the browser startup
       frontier without pretending the earlier `FunctionLexicon` blocker is done.
       `wasm_module_factory_runtime` now constructs original `W3DModuleFactory`

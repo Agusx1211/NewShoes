@@ -190,6 +190,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SkirmishGameOptionsMenuSystem")) ==
 				SkirmishGameOptionsMenuSystem;
+	result.skirmish_map_select_menu_system_lookup =
+		TheFunctionLexicon->gameWinSystemFunc(
+			key_for("SkirmishMapSelectMenuSystem")) ==
+				SkirmishMapSelectMenuSystem;
 	result.single_player_menu_system_lookup =
 		TheFunctionLexicon->gameWinSystemFunc(
 			key_for("SinglePlayerMenuSystem")) == SinglePlayerMenuSystem;
@@ -276,6 +280,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("SkirmishGameOptionsMenuInput")) ==
 				SkirmishGameOptionsMenuInput;
+	result.skirmish_map_select_menu_input_lookup =
+		TheFunctionLexicon->gameWinInputFunc(
+			key_for("SkirmishMapSelectMenuInput")) ==
+				SkirmishMapSelectMenuInput;
 	result.single_player_menu_input_lookup =
 		TheFunctionLexicon->gameWinInputFunc(
 			key_for("SinglePlayerMenuInput")) == SinglePlayerMenuInput;
@@ -334,6 +342,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("SkirmishGameOptionsMenuInit")) ==
 				SkirmishGameOptionsMenuInit;
+	result.skirmish_map_select_menu_init_lookup =
+		TheFunctionLexicon->winLayoutInitFunc(
+			key_for("SkirmishMapSelectMenuInit")) ==
+				SkirmishMapSelectMenuInit;
 	result.single_player_menu_init_lookup =
 		TheFunctionLexicon->winLayoutInitFunc(
 			key_for("SinglePlayerMenuInit")) == SinglePlayerMenuInit;
@@ -374,6 +386,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("SkirmishGameOptionsMenuUpdate")) ==
 				SkirmishGameOptionsMenuUpdate;
+	result.skirmish_map_select_menu_update_lookup =
+		TheFunctionLexicon->winLayoutUpdateFunc(
+			key_for("SkirmishMapSelectMenuUpdate")) ==
+				SkirmishMapSelectMenuUpdate;
 	result.single_player_menu_update_lookup =
 		TheFunctionLexicon->winLayoutUpdateFunc(
 			key_for("SinglePlayerMenuUpdate")) == SinglePlayerMenuUpdate;
@@ -402,6 +418,10 @@ void capture_lookup_state(FunctionLexiconRuntimeProbeResult &result)
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("SkirmishGameOptionsMenuShutdown")) ==
 				SkirmishGameOptionsMenuShutdown;
+	result.skirmish_map_select_menu_shutdown_lookup =
+		TheFunctionLexicon->winLayoutShutdownFunc(
+			key_for("SkirmishMapSelectMenuShutdown")) ==
+				SkirmishMapSelectMenuShutdown;
 	result.single_player_menu_shutdown_lookup =
 		TheFunctionLexicon->winLayoutShutdownFunc(
 			key_for("SinglePlayerMenuShutdown")) == SinglePlayerMenuShutdown;
@@ -567,6 +587,16 @@ bool options_menu_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &re
 		result.options_menu_shutdown_lookup;
 }
 
+bool skirmish_map_select_menu_lookup_state_ready(
+	const FunctionLexiconRuntimeProbeResult &result)
+{
+	return result.skirmish_map_select_menu_system_lookup &&
+		result.skirmish_map_select_menu_input_lookup &&
+		result.skirmish_map_select_menu_init_lookup &&
+		result.skirmish_map_select_menu_update_lookup &&
+		result.skirmish_map_select_menu_shutdown_lookup;
+}
+
 bool challenge_menu_lookup_state_ready(
 	const FunctionLexiconRuntimeProbeResult &result)
 {
@@ -651,11 +681,11 @@ bool idle_worker_lookup_state_ready(const FunctionLexiconRuntimeProbeResult &res
 bool base_layout_callback_graph_ready(const FunctionLexiconRuntimeProbeResult &)
 {
 	// The linked runtime currently proves a shell-menu subset plus the
-	// options-menu, challenge-menu, popup-communicator, in-game popup-message,
-	// idle-worker, control-bar input, beacon-window, replay-control,
-	// map-select, replay-menu, popup-replay modal callbacks, and
-	// game-info-window callback owners. Full ownership requires the remaining
-	// non-network layout callback graph.
+	// options-menu, skirmish-map-select, challenge-menu,
+	// popup-communicator, in-game popup-message, idle-worker, control-bar
+	// input, beacon-window, replay-control, map-select, replay-menu,
+	// popup-replay modal callbacks, and game-info-window callback owners.
+	// Full ownership requires the remaining non-network layout callback graph.
 	return false;
 }
 
@@ -665,6 +695,7 @@ bool lookup_state_ready(const FunctionLexiconRuntimeProbeResult &result)
 		base_layout_lookup_state_ready(result) &&
 		shell_menu_lookup_state_ready(result) &&
 		options_menu_lookup_state_ready(result) &&
+		skirmish_map_select_menu_lookup_state_ready(result) &&
 		challenge_menu_lookup_state_ready(result) &&
 		popup_communicator_lookup_state_ready(result) &&
 		map_select_menu_lookup_state_ready(result) &&
@@ -769,6 +800,11 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
+	if (!skirmish_map_select_menu_lookup_state_ready(result)) {
+		result.status = "base_function_lexicon_options_menu_runtime_owned";
+		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
+		return;
+	}
 	if (!in_game_popup_message_lookup_state_ready(result)) {
 		result.status = "base_function_lexicon_extended_message_box_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
@@ -825,7 +861,7 @@ void finish_status(FunctionLexiconRuntimeProbeResult &result)
 		return;
 	}
 	if (!base_layout_callback_graph_ready(result)) {
-		result.status = "base_function_lexicon_options_menu_runtime_owned";
+		result.status = "base_function_lexicon_skirmish_map_select_menu_runtime_owned";
 		result.next_required = "originalFunctionLexiconRemainingShellCallbacks";
 		return;
 	}
@@ -964,7 +1000,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 	const std::string next_required_json = json_escape(state.next_required);
 	const std::string init_error_json = json_escape(state.init_error);
 
-	static char json[20000];
+	static char json[21000];
 	std::snprintf(json, sizeof(json),
 		"{\"attempted\":%s,\"ok\":%s,\"source\":\"%s\","
 		"\"status\":\"%s\",\"nextRequired\":\"%s\","
@@ -1006,6 +1042,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"optionsMenuSystem\":%s,"
 		"\"creditsMenuSystem\":%s,"
 		"\"skirmishGameOptionsMenuSystem\":%s,"
+		"\"skirmishMapSelectMenuSystem\":%s,"
 		"\"singlePlayerMenuSystem\":%s,"
 		"\"challengeMenuSystem\":%s,"
 		"\"popupCommunicatorSystem\":%s,"
@@ -1034,6 +1071,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"optionsMenuInput\":%s,"
 		"\"creditsMenuInput\":%s,"
 		"\"skirmishGameOptionsMenuInput\":%s,"
+		"\"skirmishMapSelectMenuInput\":%s,"
 		"\"singlePlayerMenuInput\":%s,"
 		"\"challengeMenuInput\":%s,"
 		"\"popupCommunicatorInput\":%s,"
@@ -1053,6 +1091,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"optionsMenuInit\":%s,"
 		"\"creditsMenuInit\":%s,"
 		"\"skirmishGameOptionsMenuInit\":%s,"
+		"\"skirmishMapSelectMenuInit\":%s,"
 		"\"singlePlayerMenuInit\":%s,"
 		"\"challengeMenuInit\":%s,"
 		"\"popupCommunicatorInit\":%s,"
@@ -1066,6 +1105,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"optionsMenuUpdate\":%s,"
 		"\"creditsMenuUpdate\":%s,"
 		"\"skirmishGameOptionsMenuUpdate\":%s,"
+		"\"skirmishMapSelectMenuUpdate\":%s,"
 		"\"singlePlayerMenuUpdate\":%s,"
 		"\"challengeMenuUpdate\":%s,"
 		"\"mapSelectMenuUpdate\":%s,"
@@ -1075,6 +1115,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		"\"optionsMenuShutdown\":%s,"
 		"\"creditsMenuShutdown\":%s,"
 		"\"skirmishGameOptionsMenuShutdown\":%s,"
+		"\"skirmishMapSelectMenuShutdown\":%s,"
 		"\"singlePlayerMenuShutdown\":%s,"
 		"\"challengeMenuShutdown\":%s,"
 		"\"popupCommunicatorShutdown\":%s,"
@@ -1133,6 +1174,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.options_menu_system_lookup),
 		json_bool(state.credits_menu_system_lookup),
 		json_bool(state.skirmish_game_options_menu_system_lookup),
+		json_bool(state.skirmish_map_select_menu_system_lookup),
 		json_bool(state.single_player_menu_system_lookup),
 		json_bool(state.challenge_menu_system_lookup),
 		json_bool(state.popup_communicator_system_lookup),
@@ -1161,6 +1203,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.options_menu_input_lookup),
 		json_bool(state.credits_menu_input_lookup),
 		json_bool(state.skirmish_game_options_menu_input_lookup),
+		json_bool(state.skirmish_map_select_menu_input_lookup),
 		json_bool(state.single_player_menu_input_lookup),
 		json_bool(state.challenge_menu_input_lookup),
 		json_bool(state.popup_communicator_input_lookup),
@@ -1180,6 +1223,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.options_menu_init_lookup),
 		json_bool(state.credits_menu_init_lookup),
 		json_bool(state.skirmish_game_options_menu_init_lookup),
+		json_bool(state.skirmish_map_select_menu_init_lookup),
 		json_bool(state.single_player_menu_init_lookup),
 		json_bool(state.challenge_menu_init_lookup),
 		json_bool(state.popup_communicator_init_lookup),
@@ -1193,6 +1237,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.options_menu_update_lookup),
 		json_bool(state.credits_menu_update_lookup),
 		json_bool(state.skirmish_game_options_menu_update_lookup),
+		json_bool(state.skirmish_map_select_menu_update_lookup),
 		json_bool(state.single_player_menu_update_lookup),
 		json_bool(state.challenge_menu_update_lookup),
 		json_bool(state.map_select_menu_update_lookup),
@@ -1202,6 +1247,7 @@ const char *wasm_function_lexicon_runtime_state_json()
 		json_bool(state.options_menu_shutdown_lookup),
 		json_bool(state.credits_menu_shutdown_lookup),
 		json_bool(state.skirmish_game_options_menu_shutdown_lookup),
+		json_bool(state.skirmish_map_select_menu_shutdown_lookup),
 		json_bool(state.single_player_menu_shutdown_lookup),
 		json_bool(state.challenge_menu_shutdown_lookup),
 		json_bool(state.popup_communicator_shutdown_lookup),
