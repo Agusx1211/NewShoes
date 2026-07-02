@@ -84,20 +84,25 @@ function assertDeviceFrontier(payload, label) {
   const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
   const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
   const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+  const particleSystemReady = frontier?.particleSystemRuntime?.ready === true;
   const expectedFirstUnownedFactory = !audioManagerReady
     ? "createAudioManager"
     : !functionLexiconReady
       ? "createFunctionLexicon"
       : !moduleFactoryReady
         ? "createModuleFactory"
-        : "createParticleSystemManager";
+        : !particleSystemReady
+          ? "createParticleSystemManager"
+          : "createThingFactory";
   const expectedFirstUnownedLine = !audioManagerReady
     ? 434
     : !functionLexiconReady
       ? 446
       : !moduleFactoryReady
         ? 447
-        : 453;
+        : !particleSystemReady
+          ? 453
+          : 482;
   expect(frontier?.firstUnownedInitFactory === expectedFirstUnownedFactory,
     `${label} did not report the expected first unowned device factory`, frontier);
   expect(frontier.firstUnownedInitLine === expectedFirstUnownedLine,
@@ -144,13 +149,16 @@ function assertStartupSingletonFrontier(payload, label) {
     const audioManagerReady = frontier?.audioManagerRuntime?.ready === true;
     const functionLexiconReady = frontier?.functionLexiconRuntime?.ready === true;
     const moduleFactoryReady = frontier?.moduleFactoryRuntime?.ready === true;
+    const particleSystemReady = frontier?.particleSystemRuntime?.ready === true;
     const expectedNextRequired = !audioManagerReady
       ? "createAudioManager"
       : !functionLexiconReady
         ? "createFunctionLexicon"
         : !moduleFactoryReady
           ? "createModuleFactory"
-          : "createParticleSystemManager";
+          : !particleSystemReady
+            ? "createParticleSystemManager"
+            : "createThingFactory";
     expect(startup.status === "browser_device_layer_pending",
       `${label} with base INI mounted should advance to browser device layer pending`, startup);
     expect(frontier.nextRequired === expectedNextRequired && frontier.setupReady === true,

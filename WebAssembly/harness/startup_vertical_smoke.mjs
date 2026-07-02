@@ -409,6 +409,36 @@ function assertModuleFactoryRuntimeFrontier(state) {
     "ModuleFactory gameplay/client-update/W3D draw lookups did not resolve", probe.lookups);
 }
 
+function assertParticleSystemRuntimeFrontier(state) {
+  const probe = state.particleSystemRuntime;
+  expect(probe?.attempted === true, "particle system runtime probe did not run", probe);
+  expect(probe.ok === true, "particle system runtime did not report ready", probe);
+  expect(probe.status === "ready", "particle system runtime status mismatch", probe);
+  expect(probe.nextRequired === "createThingFactory",
+    "particle system runtime nextRequired mismatch", probe);
+  expect(probe.constructed === true
+      && probe.w3dManagerConstructed === true
+      && probe.theParticleSystemManagerOwned === true,
+    "original W3DParticleSystemManager was not constructed as TheParticleSystemManager", probe);
+  expect(probe.initRan === true && probe.initThrew === false,
+    "original W3DParticleSystemManager::init() did not complete", probe);
+  expect(probe.gameEngineInit?.factory === "createParticleSystemManager"
+      && probe.gameEngineInit.line === 453
+      && probe.gameEngineInit.originalConcrete === "W3DParticleSystemManager",
+    "GameEngine.cpp createParticleSystemManager ownership mismatch", probe);
+  expect(probe.queueParticleRenderCalled === true,
+    "W3DParticleSystemManager virtual queue path was not exercised", probe);
+  expect(probe.templateCount > 100
+      && probe.templates?.tsingMaTrailSmoke === true
+      && probe.templates.jetContrailThin === true
+      && probe.templates.toxinLenzflare === true
+      && probe.templates.smallTankStruckSmoke === true
+      && probe.templates.nukeMushroomRing === true,
+    "ParticleSystem.ini template load did not resolve expected shipped templates", probe);
+  expect(probe.zeroLiveSystems === true && probe.zeroLiveParticles === true,
+    "particle manager should only own templates during startup init", probe);
+}
+
 function assertAudioOwnedFrontier(state) {
   const startup = state.originalEngineStartup;
   const frontier = startup?.deviceFactoryFrontier;
@@ -456,13 +486,26 @@ function assertAudioOwnedFrontier(state) {
       && frontier.moduleFactoryRuntime.w3dDrawReady === true
       && frontier.moduleFactoryRuntime.nextRequired === "createParticleSystemManager",
     "frontier moduleFactoryRuntime summary mismatch", frontier.moduleFactoryRuntime);
+  expect(frontier.particleSystemRuntime?.ready === true
+      && frontier.particleSystemRuntime.status === "ready"
+      && frontier.particleSystemRuntime.w3dManagerReady === true
+      && frontier.particleSystemRuntime.templateCount > 100
+      && frontier.particleSystemRuntime.templateLookupsReady === true
+      && frontier.particleSystemRuntime.zeroLiveSystems === true
+      && frontier.particleSystemRuntime.nextRequired === "createThingFactory",
+    "frontier particleSystemRuntime summary mismatch", frontier.particleSystemRuntime);
   expect(entryByFactory(frontier, "createModuleFactory")?.ready === true
       && entryByFactory(frontier, "createModuleFactory")?.status === "browser_runtime_initialized_original_w3d_module_factory",
     "createModuleFactory frontier entry should be runtime-owned", frontier);
+  expect(entryByFactory(frontier, "createParticleSystemManager")?.ready === true
+      && entryByFactory(frontier, "createParticleSystemManager")?.status === "browser_runtime_initialized_original_w3d_particle_system_manager",
+    "createParticleSystemManager frontier entry should be runtime-owned", frontier);
   expect(startup.browserDeviceLayer?.functionLexicon === false,
     "browser device layer should not mark the full function lexicon runtime-owned", startup.browserDeviceLayer);
   expect(startup.browserDeviceLayer.moduleFactory === true,
     "browser device layer should mark the module factory runtime-owned", startup.browserDeviceLayer);
+  expect(startup.browserDeviceLayer.particleSystemManager === true,
+    "browser device layer should mark the particle system manager runtime-owned", startup.browserDeviceLayer);
 }
 
 function assertStartupSingletonsMissing(state) {
@@ -507,6 +550,8 @@ function assertOriginalStartupFrontier(state) {
     "browser function lexicon should not be runtime-ready without archives", browserLayer);
   expect(browserLayer.moduleFactory === false,
     "browser module factory should not be runtime-ready without archives", browserLayer);
+  expect(browserLayer.particleSystemManager === false,
+    "browser particle system manager should not be runtime-ready without archives", browserLayer);
   expect(browserLayer.display === false, "browser display should not be production-ready", browserLayer);
 
   const frontier = startup.deviceFactoryFrontier;
@@ -606,6 +651,11 @@ function assertOriginalStartupFrontier(state) {
       && frontier.moduleFactoryRuntime.status === "missing_runtime_archives",
     "module factory runtime should be blocked without archives",
     frontier.moduleFactoryRuntime);
+  expect(frontier.particleSystemRuntime?.attempted === true
+      && frontier.particleSystemRuntime.ready === false
+      && frontier.particleSystemRuntime.status === "missing_runtime_archives",
+    "particle system runtime should be blocked without archives",
+    frontier.particleSystemRuntime);
 
   expect(frontier.fileSystemReady === false, "frontier filesystem should not be archive-ready", frontier);
   expect(frontier.startupFilesReady === false, "frontier startup files should be missing", frontier);
@@ -646,7 +696,7 @@ try {
 
   // Archive-backed boot: mount the startup + audio archive set and prove the
   // boot constructs the original MilesAudioManager, W3DFunctionLexicon, and
-  // W3DModuleFactory,
+  // W3DModuleFactory / W3DParticleSystemManager,
   // runs the real AudioManager::init()/openDevice() path plus the original
   // W3DFunctionLexicon device-table load, original MainMenu/Credits/Skirmish
   // base shell callbacks, the promoted Challenge/PopupCommunicator/MapSelect/Replay/PopupReplay-modal/GameInfo owners,
@@ -684,6 +734,7 @@ try {
   assertAudioManagerRuntimeOwned(audioBootResult.state);
   assertFunctionLexiconRuntimeFrontier(audioBootResult.state);
   assertModuleFactoryRuntimeFrontier(audioBootResult.state);
+  assertParticleSystemRuntimeFrontier(audioBootResult.state);
   assertAudioOwnedFrontier(audioBootResult.state);
 
   await audioPage.screenshot({ path: audioBootScreenshot });
@@ -704,6 +755,7 @@ try {
       audioManagerRuntime: audioBootResult.state.audioManagerRuntime,
       functionLexiconRuntime: audioBootResult.state.functionLexiconRuntime,
       moduleFactoryRuntime: audioBootResult.state.moduleFactoryRuntime,
+      particleSystemRuntime: audioBootResult.state.particleSystemRuntime,
     },
   }));
 } finally {

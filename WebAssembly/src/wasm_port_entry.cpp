@@ -18,6 +18,7 @@
 #include "wasm_audio_manager_probe.h"
 #include "wasm_function_lexicon_runtime.h"
 #include "wasm_module_factory_runtime.h"
+#include "wasm_particle_system_runtime.h"
 #include "wasm_d3d8_shim.h"
 
 #include "D3dx8core.h"
@@ -77,6 +78,8 @@ int g_common_debug_log_count = 0;
 int g_common_debug_log_flags = 0;
 std::string g_common_debug_log_last_message;
 bool g_original_core_probe_ok = false;
+
+bool original_engine_startup_files_ready();
 Int g_original_logic_random_value = 0;
 UnsignedInt g_original_logic_seed_crc = 0;
 ArchiveProbeResult g_archive_probe;
@@ -416,6 +419,34 @@ void run_module_factory_runtime_probe()
 		result.status != nullptr ? result.status : "",
 		(result.w3d_default_draw_lookup && result.w3d_model_draw_lookup) ? 1 : 0,
 		(result.active_body_lookup && result.destroy_die_lookup) ? 1 : 0,
+		result.next_required != nullptr ? result.next_required : "");
+}
+
+void run_particle_system_runtime_probe()
+{
+	const AudioManagerRuntimeProbeResult &audio_runtime =
+		wasm_audio_manager_probe_state();
+	const FunctionLexiconRuntimeProbeResult &function_lexicon_runtime =
+		wasm_function_lexicon_runtime_state();
+	const ModuleFactoryRuntimeProbeResult &module_factory_runtime =
+		wasm_module_factory_runtime_state();
+	const bool function_lexicon_init_ready =
+		function_lexicon_runtime.init_ran &&
+		!function_lexicon_runtime.init_threw;
+	const ParticleSystemRuntimeProbeResult &result =
+		wasm_particle_system_runtime_install(
+			g_archive_mount.registered,
+			original_engine_startup_files_ready(),
+			audio_runtime.ok,
+			function_lexicon_init_ready,
+			module_factory_runtime.ok);
+	std::printf(
+		"cnc-port: particle system runtime probe ok=%d status=%s "
+		"templates=%zu w3d=%d next=%s\n",
+		result.ok ? 1 : 0,
+		result.status != nullptr ? result.status : "",
+		result.template_count,
+		result.w3d_manager_constructed ? 1 : 0,
 		result.next_required != nullptr ? result.next_required : "");
 }
 
@@ -1553,7 +1584,7 @@ const char *json_bool(bool value)
 
 const char *build_device_factory_frontier_json()
 {
-	static char buffer[40000];
+	static char buffer[46000];
 	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
 	const bool setup_ready =
 		g_global_data_probe.ok &&
@@ -1576,6 +1607,9 @@ const char *build_device_factory_frontier_json()
 	const ModuleFactoryRuntimeProbeResult &module_factory_runtime =
 		wasm_module_factory_runtime_state();
 	const bool module_factory_owned = module_factory_runtime.ok;
+	const ParticleSystemRuntimeProbeResult &particle_system_runtime =
+		wasm_particle_system_runtime_state();
+	const bool particle_system_owned = particle_system_runtime.ok;
 	const char *first_unowned_factory = "createAudioManager";
 	int first_unowned_line = 434;
 	const char *first_unowned_subsystem = "TheAudio";
@@ -1588,10 +1622,14 @@ const char *build_device_factory_frontier_json()
 			first_unowned_factory = "createModuleFactory";
 			first_unowned_line = 447;
 			first_unowned_subsystem = "TheModuleFactory";
-		} else {
+		} else if (!particle_system_owned) {
 			first_unowned_factory = "createParticleSystemManager";
 			first_unowned_line = 453;
 			first_unowned_subsystem = "TheParticleSystemManager";
+		} else {
+			first_unowned_factory = "createThingFactory";
+			first_unowned_line = 482;
+			first_unowned_subsystem = "TheThingFactory";
 		}
 	}
 	const std::string audio_runtime_status_json =
@@ -1605,6 +1643,10 @@ const char *build_device_factory_frontier_json()
 	const std::string module_factory_runtime_status_json =
 		json_escape(module_factory_runtime.status != nullptr
 			? module_factory_runtime.status
+			: "");
+	const std::string particle_system_runtime_status_json =
+		json_escape(particle_system_runtime.status != nullptr
+			? particle_system_runtime.status
 			: "");
 	const char *next_required = "startupAssets";
 	if (startup_assets_ready() && !startup_files_ready) {
@@ -1626,8 +1668,13 @@ const char *build_device_factory_frontier_json()
 		setup_ready &&
 		!module_factory_owned) {
 		next_required = "createModuleFactory";
-	} else if (startup_assets_ready() && startup_files_ready && setup_ready) {
+	} else if (startup_assets_ready() &&
+		startup_files_ready &&
+		setup_ready &&
+		!particle_system_owned) {
 		next_required = "createParticleSystemManager";
+	} else if (startup_assets_ready() && startup_files_ready && setup_ready) {
+		next_required = "createThingFactory";
 	}
 
 	std::snprintf(buffer, sizeof(buffer),
@@ -1715,6 +1762,11 @@ const char *build_device_factory_frontier_json()
 		"\"status\":\"%s\",\"initRan\":%s,"
 		"\"baseBehaviorReady\":%s,\"clientUpdateReady\":%s,"
 		"\"w3dDrawReady\":%s,\"nextRequired\":\"%s\"},"
+		"\"particleSystemRuntime\":{\"attempted\":%s,\"ready\":%s,"
+		"\"status\":\"%s\",\"initRan\":%s,"
+		"\"w3dManagerReady\":%s,\"templateCount\":%zu,"
+		"\"templateLookupsReady\":%s,\"zeroLiveSystems\":%s,"
+		"\"nextRequired\":\"%s\"},"
 		"\"entries\":["
 		"{\"order\":1,\"line\":1122,\"subsystem\":\"TheGameEngine\",\"factory\":\"CreateGameEngine\",\"originalConcrete\":\"Win32GameEngine\",\"ready\":true,\"called\":true,\"status\":\"browser_focused_lifetime_constructed\"},"
 		"{\"order\":2,\"line\":297,\"subsystem\":\"TheSubsystemList\",\"factory\":\"SubsystemInterfaceList\",\"originalConcrete\":\"SubsystemInterfaceList\",\"ready\":%s,\"called\":true,\"status\":\"browser_runtime_owned\"},"
@@ -1734,7 +1786,7 @@ const char *build_device_factory_frontier_json()
 		"{\"order\":16,\"line\":434,\"subsystem\":\"TheAudio\",\"factory\":\"createAudioManager\",\"originalConcrete\":\"MilesAudioManager\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
 		"{\"order\":17,\"line\":446,\"subsystem\":\"TheFunctionLexicon\",\"factory\":\"createFunctionLexicon\",\"originalConcrete\":\"W3DFunctionLexicon\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
 		"{\"order\":18,\"line\":447,\"subsystem\":\"TheModuleFactory\",\"factory\":\"createModuleFactory\",\"originalConcrete\":\"W3DModuleFactory\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
-		"{\"order\":19,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_particle_runtime\"},"
+		"{\"order\":19,\"line\":453,\"subsystem\":\"TheParticleSystemManager\",\"factory\":\"createParticleSystemManager\",\"originalConcrete\":\"W3DParticleSystemManager\",\"ready\":%s,\"called\":true,\"status\":\"%s\"},"
 		"{\"order\":20,\"line\":482,\"subsystem\":\"TheThingFactory\",\"factory\":\"createThingFactory\",\"originalConcrete\":\"W3DThingFactory\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_thing_factory\"},"
 		"{\"order\":21,\"line\":493,\"subsystem\":\"TheGameClient\",\"factory\":\"createGameClient\",\"originalConcrete\":\"W3DGameClient\",\"ready\":false,\"called\":true,\"status\":\"needs_browser_game_client_display_input\"},"
 		"{\"order\":22,\"line\":505,\"subsystem\":\"TheGameLogic\",\"factory\":\"createGameLogic\",\"originalConcrete\":\"W3DGameLogic\",\"ready\":false,\"called\":true,\"status\":\"needs_full_game_logic_runtime\"},"
@@ -1819,6 +1871,23 @@ const char *build_device_factory_frontier_json()
 		module_factory_runtime.next_required != nullptr
 			? module_factory_runtime.next_required
 			: "",
+		json_bool(particle_system_runtime.attempted),
+		json_bool(particle_system_runtime.ok),
+		particle_system_runtime_status_json.c_str(),
+		json_bool(particle_system_runtime.init_ran),
+		json_bool(particle_system_runtime.w3d_manager_constructed &&
+			particle_system_runtime.queue_particle_render_called),
+		particle_system_runtime.template_count,
+		json_bool(particle_system_runtime.template_tsing_ma_trail_smoke_lookup &&
+			particle_system_runtime.template_jet_contrail_thin_lookup &&
+			particle_system_runtime.template_toxin_lenzflare_lookup &&
+			particle_system_runtime.template_small_tank_struck_smoke_lookup &&
+			particle_system_runtime.template_nuke_mushroom_ring_lookup),
+		json_bool(particle_system_runtime.zero_live_systems &&
+			particle_system_runtime.zero_live_particles),
+		particle_system_runtime.next_required != nullptr
+			? particle_system_runtime.next_required
+			: "",
 		json_bool(startup_singletons.subsystem_list_owned),
 		json_bool(g_file_system_probe.local_ok),
 		json_bool(startup_singletons.name_key_generator_owned),
@@ -1857,6 +1926,10 @@ const char *build_device_factory_frontier_json()
 		module_factory_owned
 			? "browser_runtime_initialized_original_w3d_module_factory"
 			: "needs_browser_w3d_factory",
+		json_bool(particle_system_owned),
+		particle_system_owned
+			? "browser_runtime_initialized_original_w3d_particle_system_manager"
+			: "needs_browser_particle_runtime",
 		json_bool(startup_singletons.map_cache_loaded),
 		json_bool(file_system_ready),
 		json_bool(startup_files_ready),
@@ -1868,12 +1941,14 @@ const char *build_device_factory_frontier_json()
 
 const char *build_original_engine_startup_json()
 {
-	static char buffer[60000];
+	static char buffer[66000];
 	const StartupSingletonsProbeResult &startup_singletons = wasm_startup_singletons_state();
 	const FunctionLexiconRuntimeProbeResult &function_lexicon_runtime =
 		wasm_function_lexicon_runtime_state();
 	const ModuleFactoryRuntimeProbeResult &module_factory_runtime =
 		wasm_module_factory_runtime_state();
+	const ParticleSystemRuntimeProbeResult &particle_system_runtime =
+		wasm_particle_system_runtime_state();
 	const std::string status_json = json_escape(original_engine_startup_status());
 	const std::string message_json = json_escape(original_engine_startup_message());
 	const std::string missing_files_json =
@@ -1915,7 +1990,7 @@ const char *build_original_engine_startup_json()
 		"\"archiveFileSystem\":%s,\"startupSingletons\":%s,\"gameLogic\":false,"
 		"\"gameClient\":false,\"moduleFactory\":%s,"
 		"\"thingFactory\":false,\"functionLexicon\":%s,\"radar\":false,"
-		"\"webBrowser\":false,\"particleSystemManager\":false,"
+		"\"webBrowser\":false,\"particleSystemManager\":%s,"
 		"\"audioManager\":false,\"display\":false,\"input\":false},"
 		"\"deviceFactoryFrontier\":%s}",
 		status_json.c_str(),
@@ -1980,6 +2055,7 @@ const char *build_original_engine_startup_json()
 		startup_singletons.ok ? "true" : "false",
 		module_factory_runtime.ok ? "true" : "false",
 		function_lexicon_runtime.ok ? "true" : "false",
+		particle_system_runtime.ok ? "true" : "false",
 		device_factory_frontier_json);
 
 	return buffer;
@@ -3262,6 +3338,7 @@ void ensure_booted()
 		run_audio_manager_runtime_probe();
 		run_function_lexicon_runtime_probe();
 		run_module_factory_runtime_probe();
+		run_particle_system_runtime_probe();
 		log_boot_state();
 	}
 }
@@ -3453,6 +3530,8 @@ const char *write_state_json()
 		wasm_function_lexicon_runtime_state_json();
 	const char *module_factory_runtime_json =
 		wasm_module_factory_runtime_state_json();
+	const char *particle_system_runtime_json =
+		wasm_particle_system_runtime_state_json();
 	const std::string audio_runtime_assets_json = build_audio_runtime_assets_json();
 	const std::string startup_asset_status_json = json_escape(startup_asset_status());
 	const std::string startup_asset_message_json = json_escape(startup_asset_message());
@@ -3698,6 +3777,7 @@ const char *write_state_json()
 		"\"audioManagerRuntime\":%s,"
 		"\"functionLexiconRuntime\":%s,"
 		"\"moduleFactoryRuntime\":%s,"
+		"\"particleSystemRuntime\":%s,"
 		"\"audioRuntimeAssets\":%s,"
 		"\"startupAssets\":{\"ok\":%s,\"status\":\"%s\",\"message\":\"%s\","
 		"\"archiveSetRegistered\":%s,\"bootProbeAttempted\":%s,\"bootProbeOk\":%s,"
@@ -4201,6 +4281,7 @@ const char *write_state_json()
 		audio_manager_runtime_json,
 		function_lexicon_runtime_json,
 		module_factory_runtime_json,
+		particle_system_runtime_json,
 		audio_runtime_assets_json.c_str(),
 		startup_assets_ready() ? "true" : "false",
 		startup_asset_status_json.c_str(),

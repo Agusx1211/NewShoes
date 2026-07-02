@@ -2354,6 +2354,18 @@ Grouped by the same milestones as `PROJECT.md` / `TODO.md`.
       the `createModuleFactory` frontier entry runtime-owned while keeping the
       first unowned init factory at `createFunctionLexicon` until the remaining
       callback graph is complete.
+- [x] Prove the original `W3DParticleSystemManager` startup runtime path in the
+      browser frontier. `wasm_particle_system_runtime` now links the original
+      `W3DParticleSys.cpp` plus its original `W3DSnow.cpp` render-path
+      dependency into `cnc-port`, constructs original
+      `W3DParticleSystemManager` as `TheParticleSystemManager`, runs inherited
+      `ParticleSystemManager::init()` against `Data\INI\ParticleSystem.ini`,
+      and verifies public template lookups for shipped systems such as
+      `TsingMaTrailSmoke`, `JetContrailThin`, `ToxinLenzflare`,
+      `SmallTankStruckSmoke`, and `NukeMushroomRing`. Startup vertical reports
+      `particleSystemRuntime.status:"ready"` with 1084 templates and marks
+      `createParticleSystemManager` runtime-owned while still keeping the first
+      unowned init factory at `createFunctionLexicon`.
 ---
 
 ## M3 — File / data subsystem (real data)

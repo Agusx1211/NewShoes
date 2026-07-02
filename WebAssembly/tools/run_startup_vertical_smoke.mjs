@@ -197,6 +197,13 @@ const browserChecks = [
           && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.w3dModelDraw === true
           && payload.archiveBackedStartup.moduleFactoryRuntime.lookups.w3dPropDraw === true,
         'Archive-backed startup boot did not prove ModuleFactory gameplay/client-update/W3D draw lookups');
+      expect(payload.archiveBackedStartup.particleSystemRuntime?.status === 'ready',
+        'Archive-backed startup boot did not report the expected W3DParticleSystemManager runtime frontier');
+      expect(payload.archiveBackedStartup.particleSystemRuntime?.templateCount > 100
+          && payload.archiveBackedStartup.particleSystemRuntime?.templates?.tsingMaTrailSmoke === true
+          && payload.archiveBackedStartup.particleSystemRuntime.templates.jetContrailThin === true
+          && payload.archiveBackedStartup.particleSystemRuntime.templates.nukeMushroomRing === true,
+        'Archive-backed startup boot did not prove ParticleSystem.ini template ownership');
     },
   },
 ];
@@ -410,13 +417,14 @@ console.log(JSON.stringify({
     'original ButtonCredits path through Shell::push into CreditsMenuInit/CreditsMenuUpdate with INIZH-backed Credits.ini',
     'browser boot constructs original W3DFunctionLexicon, verifies W3D device callback-name tables, and loads the non-network base GUI widget/input, IME draw, original ExtendedMessageBoxSystem, original DifficultySelect system/input/init callbacks, original KeyboardOptionsMenu system/input/init/update/shutdown callbacks with original MetaEvent global ownership, original InGamePopupMessage system/input/init callbacks, original IdleWorkerSystem callback, original BeaconWindowInput callback, original ControlBarInput callback, original ReplayControl system/input callbacks, original ChallengeMenu callbacks, original PopupCommunicator callbacks, original MapSelectMenu callbacks, original ReplayMenu callbacks, original PopupReplay modal callbacks, original GameInfoWindowSystem lookup, and original MainMenu/Credits/Skirmish/SinglePlayer shell callback tables while the remaining layout graph remains the FunctionLexicon boundary',
     'browser boot constructs original W3DModuleFactory, runs W3DModuleFactory::init(), and proves public ModuleFactory lookups for representative base gameplay, client-update, and W3D draw modules',
+    'browser boot constructs original W3DParticleSystemManager, runs ParticleSystemManager::init() against Data\\INI\\ParticleSystem.ini, and proves shipped particle template lookups through the public manager API',
     'source-pinned original GameLogic MSG_NEW_GAME dispatch frontier after CommandList handoff',
     'runtime original GameLogic::processCommandList dispatch of MSG_NEW_GAME through prepareNewGame, original GlobalData TheWritableGlobalData, original PlayerList::getNthPlayer neutral-player ownership, original ScriptEngine::setGlobalDifficulty, original Shell::hideShell, and first-call startNewGame(FALSE) deferral',
   ],
   nextRequired: [
     'replace the remaining base FunctionLexicon shell/HUD callback registrations, including PopupReplay score-screen-dependent System/Update and broader ControlBarSystem/LeftHUDInput callbacks, so GameEngine.cpp line 446 can become fully runtime-owned',
     'advance the next vertical startup path outside the already-proven shell menu slice',
-    'advance the post-module-factory startup path to createParticleSystemManager once createFunctionLexicon is fully owned',
+    'advance the post-particle startup data stores toward createThingFactory once createFunctionLexicon is fully owned',
     'supply base Generals Window.big and replace the focused runtime in-memory BlankWindow adapter before continuing deferred startNewGame into terrain/player/script load',
   ],
   sourceChecks: sourceResults.map(result => result.name),

@@ -71,11 +71,20 @@ flow below.
       rest of the non-network layout callback graph). The same archive-backed
       boot now constructs original `W3DModuleFactory`, runs
       `W3DModuleFactory::init()`, and proves public `ModuleFactory` lookups for
-      representative base gameplay, client-update, and W3D draw modules;
+      representative base gameplay, client-update, and W3D draw modules. It
+      also constructs original `W3DParticleSystemManager`, links the required
+      original `W3DParticleSys.cpp` / `W3DSnow.cpp` device sources, runs
+      inherited `ParticleSystemManager::init()` over
+      `Data\INI\ParticleSystem.ini`, and proves representative shipped
+      particle-template lookups; the next post-particle startup work is the
+      data-store stretch toward `createThingFactory` once `FunctionLexicon` is
+      fully owned;
       archiveless or music-less boots honestly stay at line 434.
 - [ ] Own `createFunctionLexicon` (`W3DFunctionLexicon`, `GameEngine.cpp:446`)
-      and then advance past the now-proven `createModuleFactory` (line 447) to
-      `createParticleSystemManager` (line 453) in the browser boot. The current
+      and then advance past the now-proven `createModuleFactory` (line 447) and
+      `createParticleSystemManager` (line 453) toward the post-particle
+      data-store stretch before `createThingFactory` (line 482) in the browser
+      boot. The current
       linked runtime constructs original `W3DFunctionLexicon` and verifies the
       W3D device draw/layout callback tables plus the non-network base GUI
       system/input/tooltip/widget, IME draw, original `PopupReplay`
@@ -102,10 +111,13 @@ flow below.
       `zh_gameengine_real_object_ini_runtime` link surface in the browser
       startup: `moduleFactoryRuntime` constructs the original module factory,
       runs `W3DModuleFactory::init()`, and verifies representative
-      `findModuleInterfaceMask()` lookups. The first unowned init factory
+      `findModuleInterfaceMask()` lookups. `particleSystemRuntime` constructs
+      original `W3DParticleSystemManager`, runs the real
+      `ParticleSystemManager::init()` INI load, and verifies 1084 shipped
+      particle templates through public lookups. The first unowned init factory
       honestly remains `createFunctionLexicon` until the callback graph is
-      complete; after that the next startup owner is
-      `createParticleSystemManager`.
+      complete; after that the next startup owner is the post-particle
+      data-store path toward `createThingFactory`.
 - [ ] Promote `PopupReplaySystem` and `PopupReplayUpdate` only after the
       ScoreScreen replay-save state is split or runtime-owned without pulling
       LAN/WOL/GameSpy into `cnc-port`. Directly registering those callbacks
@@ -179,6 +191,12 @@ flow below.
       serialize npm scripts that share `WebAssembly/build/wasm`. Concurrent
       `build:wasm` runs can race during CMake/Ninja regeneration and fail with
       `ninja: error: failed recompaction` before the harness code runs.
+- [ ] Investigate the browser-stage hang in `test:runtime-archives-browser`.
+      On 2026-07-02, `timeout --kill-after=15s 300s npm --prefix WebAssembly
+      run test:runtime-archives-browser` reached
+      `harness/runtime_archives_smoke.mjs` and exited 124 with
+      `page.evaluate: Target crashed`; the focused startup vertical still
+      proves the W3D particle-system startup runtime.
 
 ---
 
@@ -1082,7 +1100,11 @@ flow below.
       `WaterRenderObjClass` call-path probes once those renderer surfaces are
       linked into the browser runtime without broad compile-frontier-only
       dependencies.
-- [ ] Particles (`W3DParticleSys`), shadows, water, shroud, decals (later).
+- [ ] Particle rendering (`W3DParticleSys::doParticles` against the real W3D
+      scene/display/terrain/texture path), shadows, water, shroud, decals
+      (later). Startup ownership is already proven by `particleSystemRuntime`,
+      including original W3D particle/snow device-source linkage and
+      `ParticleSystem.ini` template loading.
 - [ ] Replace the focused particle-template metadata path's weak Object/Drawable
       compatibility bridges with the full original `ParticleSystem` /
       `ParticleSystemManager` runtime once object, drawable, game-client, and
